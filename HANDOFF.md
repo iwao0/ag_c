@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き537: JS import `fread` / `fwrite` size validation 補強）
+最終更新: 2026-07-05（続き539: default runtime missing path の ENOENT 化）
 
 ## 現状
 - 直近の部分確認:
@@ -49,6 +49,49 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き539: **default runtime missing path の ENOENT 化**。
+  続き538で default runtime に path store を入れた後も、`fopen("missing", "r")` /
+  `open("missing", 0)` / `remove("missing")` は store を新規作成して成功し得るままだった。
+  path ごとの存在を区別できるようになったため、default runtime では read-only `fopen` /
+  `freopen`、`O_CREAT` なしの `open`、missing path の `remove` を `errno=ENOENT` の失敗にした。
+  `remove(path)` は空ファイル化ではなく store 削除扱いにし、削除済み store を指す open FILE/FD は
+  後続の store 再利用を誤読しないよう無効化する。
+  `AGC_RUNTIME_JS_CALLBACKS` 経路は selfhost/JS pipeline の既存単一仮想 file 互換を維持している。
+  `tools/wasm_obj_linker/test_smoke.sh` の `remove_state` / `path_storage_state` /
+  `stdio_invalid_state` と、`tools/wasm_js_api/test_compile_link_pipeline.mjs` の linked stdio case を
+  新しい `ENOENT` 期待へ更新した。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
+- 続き538: **default runtime file store の path 分離**。
+  これまで default linked runtime の file I/O は `ag_rt_file_buf` / `ag_rt_file_len` 1本を
+  全 path で共有していたため、`fopen("alpha.txt", "w")` と `fopen("beta.txt", "w")` の内容が
+  実質同じ backing store を上書きする浅いモデルだった。
+  `tools/wasm_obj_linker/runtime/parts/common.c` / `stdio.c` に path ごとの小さな store table を追加し、
+  default runtime では `fopen` / `open` / `fdopen` / `remove` / `rename` が store index を通して
+  path ごとの内容・長さ・FD 位置を扱うようにした。
+  大きな file については既存 64KiB primary buffer を1本維持し、小さい別 path は inline buffer で保持する。
+  `AGC_RUNTIME_JS_CALLBACKS` の selfhost/JS callback runtime は、既存 pipeline の単一仮想 file 前提と
+  selfhost linker のメモリ制約を保つため、従来互換の単一 store 経路に分けた。
+  `tools/wasm_obj_linker/test_smoke.sh` には `path_storage_state` を追加し、
+  2 path の内容分離、`remove("alpha.txt")` が `beta.txt` を消さないこと、
+  `rename("beta.txt", "alpha.txt")`、FD 経路の path 分離と `fstat` size を確認した。
+  併せて `tools/wasm_js_api/test_compile_link_pipeline.mjs` は重い後半 smoke 前に
+  selfhost toolchain を作り直すようにし、単一 linker instance の累積 allocation による
+  `ag_wasm_link: out of memory` を避けるようにした。
+  確認:
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c`、
+  `make build/libagc_runtime.o`、
+  `make test-wasm-obj-linker`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
 - 続き537: **JS import `fread` / `fwrite` size validation 補強**。
   linked runtime 側の `fread` / `fwrite` は負の size/nmemb や overflow 相当を `EINVAL` に落とす一方、
   `useStdlib: false` の JS import runtime は `size <= 0` を単なる no-op として扱うだけで、

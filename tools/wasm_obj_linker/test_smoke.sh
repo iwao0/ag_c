@@ -1038,9 +1038,10 @@ int *__error(void);
 #define EINVAL 22
 #define EBADF 9
 #define ENOMEM 12
+#define O_CREAT 0x0200
 int main(void) {
-  int fd = open("tmp.txt", 0);
-  int fd2 = open("tmp.txt", 0);
+  int fd = open("tmp.txt", O_CREAT);
+  int fd2 = open("tmp.txt", O_CREAT);
   FILE *ok = fdopen(fd, "r");
   errno = 0;
   int bad_path = fopen(0, "r") == 0 && errno == EINVAL;
@@ -1154,6 +1155,7 @@ int fputc(int c, FILE *stream);
 int feof(FILE *stream);
 int *__error(void);
 #define errno (*__error())
+#define ENOENT 2
 #define EINVAL 22
 int main(void) {
   FILE *wf = fopen("tmp.txt", "w");
@@ -1163,10 +1165,9 @@ int main(void) {
   errno = 0;
   if (remove(0) == 0 || errno != EINVAL) return 4;
   if (remove("tmp.txt") != 0) return 5;
+  errno = 0;
   FILE *rf = fopen("tmp.txt", "r");
-  if (!rf) return 6;
-  if (fgetc(rf) != EOF || !feof(rf)) return 7;
-  if (fclose(rf) != 0) return 8;
+  if (rf != 0 || errno != ENOENT) return 6;
   FILE *wf2 = fopen("tmp.txt", "w");
   if (!wf2) return 9;
   if (fputc('Z', wf2) != 'Z' || fclose(wf2) != 0) return 10;
@@ -1183,6 +1184,78 @@ int main(void) {
   if (!rf3) return 17;
   if (fgetc(rf3) != 'Z') return 18;
   if (fclose(rf3) != 0) return 19;
+  return 42;
+}
+SRC
+
+cat > "$out_dir/path_storage_state.c" <<'SRC'
+typedef void FILE;
+struct stat {
+  unsigned short st_mode;
+  long st_size;
+};
+#define EOF (-1)
+#define O_CREAT 0x0200
+#define O_TRUNC 0x0400
+FILE *fopen(char *path, char *mode);
+int fclose(FILE *stream);
+int fputc(int c, FILE *stream);
+int fgetc(FILE *stream);
+int remove(char *path);
+int rename(char *oldpath, char *newpath);
+int open(char *path, int oflag);
+int close(int fd);
+long read(int fd, void *buf, unsigned long count);
+long write(int fd, void *buf, unsigned long count);
+long lseek(int fd, long offset, int whence);
+int fstat(int fd, struct stat *st);
+int *__error(void);
+int main(void) {
+  FILE *a = fopen("alpha.txt", "w");
+  FILE *b = fopen("beta.txt", "w");
+  if (!a || !b) return 1;
+  if (fputc('A', a) != 'A' || fputc('B', a) != 'B') return 2;
+  if (fputc('X', b) != 'X' || fputc('Y', b) != 'Y') return 3;
+  if (fclose(a) != 0 || fclose(b) != 0) return 4;
+
+  a = fopen("alpha.txt", "r");
+  b = fopen("beta.txt", "r");
+  if (!a || !b) return 5;
+  if (fgetc(a) != 'A' || fgetc(a) != 'B' || fgetc(a) != EOF) return 6;
+  if (fgetc(b) != 'X' || fgetc(b) != 'Y' || fgetc(b) != EOF) return 7;
+  if (fclose(a) != 0 || fclose(b) != 0) return 8;
+
+  if (remove("alpha.txt") != 0) return 9;
+  int *errp = __error();
+  *errp = 0;
+  a = fopen("alpha.txt", "r");
+  b = fopen("beta.txt", "r");
+  if (a != 0 || *errp != 2 || !b) return 10;
+  if (fgetc(b) != 'X' || fgetc(b) != 'Y' || fgetc(b) != EOF) return 12;
+  if (fclose(b) != 0) return 13;
+
+  if (rename("beta.txt", "alpha.txt") != 0) return 14;
+  *errp = 0;
+  a = fopen("alpha.txt", "r");
+  b = fopen("beta.txt", "r");
+  if (!a || b != 0 || *errp != 2) return 15;
+  if (fgetc(a) != 'X' || fgetc(a) != 'Y' || fgetc(a) != EOF) return 16;
+  if (fclose(a) != 0) return 18;
+
+  int fd_a = open("fd_a.txt", O_CREAT | O_TRUNC);
+  int fd_b = open("fd_b.txt", O_CREAT | O_TRUNC);
+  if (fd_a < 0 || fd_b < 0) return 19;
+  if (write(fd_a, "12", 2) != 2 || write(fd_b, "Q", 1) != 1) return 20;
+  if (lseek(fd_a, 0, 0) != 0 || lseek(fd_b, 0, 0) != 0) return 21;
+  char fdabuf[3];
+  char fdbbuf[2];
+  if (read(fd_a, fdabuf, 2) != 2 || read(fd_b, fdbbuf, 1) != 1) return 22;
+  if (fdabuf[0] != '1' || fdabuf[1] != '2' || fdbbuf[0] != 'Q') return 23;
+  struct stat sta = {0, 0};
+  struct stat stb = {0, 0};
+  if (fstat(fd_a, &sta) != 0 || fstat(fd_b, &stb) != 0) return 24;
+  if (sta.st_size != 2 || stb.st_size != 1) return 25;
+  if (close(fd_a) != 0 || close(fd_b) != 0) return 26;
   return 42;
 }
 SRC
@@ -4350,6 +4423,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_locale_state.interp"
 wasm-validate "$out_dir/linked_remove_state.wasm"
 wasm-interp "$out_dir/linked_remove_state.wasm" --run-all-exports > "$out_dir/linked_remove_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_remove_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/path_storage_state.o" "$out_dir/path_storage_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_path_storage_state.wasm" \
+  "$out_dir/path_storage_state.o"
+wasm-validate "$out_dir/linked_path_storage_state.wasm"
+wasm-interp "$out_dir/linked_path_storage_state.wasm" --run-all-exports > "$out_dir/linked_path_storage_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_path_storage_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/freopen_state.o" "$out_dir/freopen_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_freopen_state.wasm" \

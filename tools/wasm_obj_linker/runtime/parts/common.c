@@ -31,14 +31,21 @@ static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";
 #define AG_RT_FILE_BUF_CAP (64 * 1024)
+#ifdef AGC_RUNTIME_JS_CALLBACKS
+#define AG_RT_FILE_STORE_COUNT 1
+#else
+#define AG_RT_FILE_STORE_COUNT 4
+#endif
+#define AG_RT_FILE_NAME_CAP 64
+#define AG_RT_FILE_SMALL_BUF_CAP 256
 
 static char *ag_rt_strerror_message(int errnum) {
   return errnum == 0 ? "no error" : ag_rt_strerror;
 }
 
 static char ag_rt_file_buf[AG_RT_FILE_BUF_CAP];
+static int ag_rt_primary_file_store = -1;
 static char ag_rt_stdin_buf[AG_RT_FILE_BUF_CAP];
-static long ag_rt_file_len = 0;
 static long ag_rt_stdin_len = 0;
 static char ag_rt_stdout_buf[8192];
 static long ag_rt_stdout_len = 0;
@@ -78,11 +85,23 @@ struct ag_rt_file {
   int is_stdin;
   int has_ungetc;
   int ungetc_ch;
+  int store_index;
 };
 
 struct ag_rt_fd {
   int used;
   long pos;
+  int store_index;
+};
+
+struct ag_rt_file_store {
+  int used;
+  int temporary;
+  char name[AG_RT_FILE_NAME_CAP];
+  char *buf;
+  char small_buf[AG_RT_FILE_SMALL_BUF_CAP];
+  long cap;
+  long len;
 };
 
 struct ag_rt_lconv {
@@ -91,8 +110,9 @@ struct ag_rt_lconv {
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_fd ag_rt_fds[8];
-static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, -1, 1, 1, 0, 0};
+static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1};
 static struct ag_rt_file ag_rt_files[8];
+static struct ag_rt_file_store ag_rt_file_stores[AG_RT_FILE_STORE_COUNT];
 
 static int ag_rt_decimal_point_char(void) {
   char *dp = ag_rt_lconv_value.decimal_point;
@@ -117,7 +137,7 @@ static void ag_rt_file_set_pos(struct ag_rt_file *f, long pos) {
   }
 }
 
-static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write, int fd_index, long pos, int is_stdin) {
+static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write, int fd_index, long pos, int is_stdin, int store_index) {
   if (!f) return;
   f->used = 1;
   f->write_mode = write_mode;
@@ -126,13 +146,14 @@ static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int read_write
   f->error = 0;
   f->fd_index = fd_index;
   f->is_stdin = is_stdin;
+  f->store_index = store_index;
   ag_rt_file_set_pos(f, pos);
 }
 
-static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int read_write, int fd_index, long pos) {
+static struct ag_rt_file *ag_rt_alloc_file(int write_mode, int read_write, int fd_index, long pos, int store_index) {
   for (int i = 0; i < 8; i++) {
     if (!ag_rt_files[i].used) {
-      ag_rt_file_init(&ag_rt_files[i], write_mode, read_write, fd_index, pos, 0);
+      ag_rt_file_init(&ag_rt_files[i], write_mode, read_write, fd_index, pos, 0, store_index);
       return &ag_rt_files[i];
     }
   }
@@ -151,19 +172,219 @@ static void ag_rt_reset_files(void) {
     ag_rt_files[i].is_stdin = 0;
     ag_rt_files[i].has_ungetc = 0;
     ag_rt_files[i].ungetc_ch = 0;
+    ag_rt_files[i].store_index = -1;
   }
-  ag_rt_file_init(&ag_rt_file_value, 0, 0, -1, 0, 1);
+  ag_rt_file_init(&ag_rt_file_value, 0, 0, -1, 0, 1, -1);
 }
 
 static char *ag_rt_stream_buf(struct ag_rt_file *f) {
   if (f && f->is_stdin) return ag_rt_stdin_buf;
-  return ag_rt_file_buf;
+  if (f && f->store_index >= 0 && f->store_index < AG_RT_FILE_STORE_COUNT &&
+      ag_rt_file_stores[f->store_index].used) {
+    return ag_rt_file_stores[f->store_index].buf;
+  }
+  return 0;
 }
 
 static long ag_rt_stream_len(struct ag_rt_file *f) {
   if (f && f->is_stdin) return ag_rt_stdin_len;
-  return ag_rt_file_len;
+  if (f && f->store_index >= 0 && f->store_index < AG_RT_FILE_STORE_COUNT &&
+      ag_rt_file_stores[f->store_index].used) {
+    return ag_rt_file_stores[f->store_index].len;
+  }
+  return 0;
 }
+
+#ifndef AGC_RUNTIME_JS_CALLBACKS
+static int ag_rt_store_name_equal(const char *a, const char *b) {
+  int i = 0;
+  if (!a || !b) return 0;
+  while (a[i] && b[i] && a[i] == b[i]) i++;
+  return a[i] == 0 && b[i] == 0;
+}
+
+static void ag_rt_store_name_copy(char *dst, const char *src) {
+  int i = 0;
+  if (!dst) return;
+  if (!src) {
+    dst[0] = 0;
+    return;
+  }
+  while (src[i] && i + 1 < AG_RT_FILE_NAME_CAP) {
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = 0;
+}
+
+static int ag_rt_find_store_by_name(const char *path) {
+  int i;
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (ag_rt_file_stores[i].used && !ag_rt_file_stores[i].temporary &&
+        ag_rt_store_name_equal(ag_rt_file_stores[i].name, path)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static int ag_rt_alloc_store(const char *path, int temporary) {
+  int i;
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (!ag_rt_file_stores[i].used) {
+      if (ag_rt_primary_file_store == i) ag_rt_primary_file_store = -1;
+      ag_rt_file_stores[i].used = 1;
+      ag_rt_file_stores[i].temporary = temporary;
+      ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
+      ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+      ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      ag_rt_file_stores[i].len = 0;
+      return i;
+    }
+  }
+  for (i = 0; i < AG_RT_FILE_STORE_COUNT; i++) {
+    if (i != ag_rt_primary_file_store) {
+      ag_rt_file_stores[i].used = 1;
+      ag_rt_file_stores[i].temporary = temporary;
+      ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
+      ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+      ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+      ag_rt_file_stores[i].len = 0;
+      return i;
+    }
+  }
+  i = 0;
+  ag_rt_primary_file_store = -1;
+  ag_rt_file_stores[i].used = 1;
+  ag_rt_file_stores[i].temporary = temporary;
+  ag_rt_store_name_copy(ag_rt_file_stores[i].name, temporary ? "" : path);
+  ag_rt_file_stores[i].buf = ag_rt_file_stores[i].small_buf;
+  ag_rt_file_stores[i].cap = AG_RT_FILE_SMALL_BUF_CAP;
+  ag_rt_file_stores[i].len = 0;
+  return i;
+}
+#endif
+
+#ifdef AGC_RUNTIME_JS_CALLBACKS
+static int ag_rt_store_for_path(long path_addr, int create) {
+  (void)path_addr;
+  if (!ag_rt_file_stores[0].used && create) {
+    ag_rt_file_stores[0].used = 1;
+    ag_rt_file_stores[0].temporary = 0;
+    ag_rt_file_stores[0].name[0] = 0;
+    ag_rt_file_stores[0].buf = ag_rt_file_buf;
+    ag_rt_file_stores[0].cap = AG_RT_FILE_BUF_CAP;
+    ag_rt_file_stores[0].len = 0;
+    ag_rt_primary_file_store = 0;
+  }
+  return ag_rt_file_stores[0].used ? 0 : -1;
+}
+#else
+static int ag_rt_store_for_path(long path_addr, int create) {
+  char *path = ag_rt_ptr(path_addr);
+  int idx = ag_rt_find_store_by_name(path);
+  if (idx >= 0 || !create) return idx;
+  return ag_rt_alloc_store(path, 0);
+}
+#endif
+
+#ifdef AGC_RUNTIME_JS_CALLBACKS
+static int ag_rt_temp_store(void) {
+  if (!ag_rt_file_stores[0].used) {
+    ag_rt_file_stores[0].used = 1;
+    ag_rt_file_stores[0].temporary = 0;
+    ag_rt_file_stores[0].name[0] = 0;
+    ag_rt_file_stores[0].buf = ag_rt_file_buf;
+    ag_rt_file_stores[0].cap = AG_RT_FILE_BUF_CAP;
+    ag_rt_file_stores[0].len = 0;
+    ag_rt_primary_file_store = 0;
+  }
+  return 0;
+}
+#else
+static int ag_rt_temp_store(void) {
+  return ag_rt_alloc_store("", 1);
+}
+#endif
+
+#ifdef AGC_RUNTIME_JS_CALLBACKS
+static int ag_rt_js_single_store(void) {
+  long i;
+  if (!ag_rt_file_stores[0].used) {
+    ag_rt_file_stores[0].used = 1;
+    ag_rt_file_stores[0].temporary = 0;
+    ag_rt_file_stores[0].name[0] = 0;
+    ag_rt_file_stores[0].buf = ag_rt_file_buf;
+    ag_rt_file_stores[0].cap = AG_RT_FILE_BUF_CAP;
+    ag_rt_file_stores[0].len = 0;
+    ag_rt_primary_file_store = 0;
+  } else if (ag_rt_file_stores[0].buf != ag_rt_file_buf) {
+    i = 0;
+    while (i < ag_rt_file_stores[0].len && i < AG_RT_FILE_SMALL_BUF_CAP) {
+      ag_rt_file_buf[i] = ag_rt_file_stores[0].buf[i];
+      i++;
+    }
+    ag_rt_file_stores[0].buf = ag_rt_file_buf;
+    ag_rt_file_stores[0].cap = AG_RT_FILE_BUF_CAP;
+    ag_rt_primary_file_store = 0;
+  }
+  return 0;
+}
+#endif
+
+#ifdef AGC_RUNTIME_JS_CALLBACKS
+static char *ag_rt_store_buf_for_write(int store_index, long needed) {
+  (void)store_index;
+  (void)needed;
+  ag_rt_js_single_store();
+  return ag_rt_file_buf;
+}
+#else
+static char *ag_rt_store_buf_for_write(int store_index, long needed) {
+  long i;
+  int old_store;
+  if (store_index < 0 || store_index >= AG_RT_FILE_STORE_COUNT ||
+      !ag_rt_file_stores[store_index].used) {
+    ag_rt_set_errno(9);
+    return 0;
+  }
+  if (needed < 1) needed = 1;
+  if (needed > AG_RT_FILE_BUF_CAP) needed = AG_RT_FILE_BUF_CAP;
+  if (ag_rt_file_stores[store_index].buf &&
+      ag_rt_file_stores[store_index].cap >= needed) {
+    return ag_rt_file_stores[store_index].buf;
+  }
+  if (ag_rt_primary_file_store >= 0 && ag_rt_primary_file_store != store_index) {
+    old_store = ag_rt_primary_file_store;
+    i = 0;
+    while (old_store >= 0 && old_store < AG_RT_FILE_STORE_COUNT &&
+           ag_rt_file_stores[old_store].used &&
+           i < ag_rt_file_stores[old_store].len &&
+           i < AG_RT_FILE_SMALL_BUF_CAP) {
+      ag_rt_file_stores[old_store].small_buf[i] = ag_rt_file_buf[i];
+      i++;
+    }
+    if (old_store >= 0 && old_store < AG_RT_FILE_STORE_COUNT) {
+      if (ag_rt_file_stores[old_store].len > AG_RT_FILE_SMALL_BUF_CAP) {
+        ag_rt_file_stores[old_store].len = AG_RT_FILE_SMALL_BUF_CAP;
+      }
+      ag_rt_file_stores[old_store].buf = ag_rt_file_stores[old_store].small_buf;
+      ag_rt_file_stores[old_store].cap = AG_RT_FILE_SMALL_BUF_CAP;
+    }
+  }
+  ag_rt_primary_file_store = store_index;
+  i = 0;
+  while (i < ag_rt_file_stores[store_index].len && i < AG_RT_FILE_BUF_CAP &&
+         ag_rt_file_stores[store_index].buf &&
+         ag_rt_file_stores[store_index].buf != ag_rt_file_buf) {
+    ag_rt_file_buf[i] = ag_rt_file_stores[store_index].buf[i];
+    i++;
+  }
+  ag_rt_file_stores[store_index].buf = ag_rt_file_buf;
+  ag_rt_file_stores[store_index].cap = AG_RT_FILE_BUF_CAP;
+  return ag_rt_file_stores[store_index].buf;
+}
+#endif
 
 static int ag_rt_file_can_read(struct ag_rt_file *f) {
   return f && (!f->write_mode || f->read_write);

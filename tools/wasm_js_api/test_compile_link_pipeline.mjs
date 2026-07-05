@@ -9,11 +9,17 @@ const linkerWasmPath = process.argv[3] || "build/wasm_linker_selfhost/ag_wasm_li
 const outDir = "build/wasm_js_pipeline_smoke";
 await mkdir(outDir, { recursive: true });
 
-const toolchain = await createToolchain({
-  compilerWasm: await readFile(compilerWasmPath),
-  linkerWasm: await readFile(linkerWasmPath),
-  runtimeObject: await readFile("build/libagc_runtime.o"),
-});
+const compilerWasm = await readFile(compilerWasmPath);
+const linkerWasm = await readFile(linkerWasmPath);
+const runtimeObject = await readFile("build/libagc_runtime.o");
+async function freshToolchain() {
+  return createToolchain({
+    compilerWasm,
+    linkerWasm,
+    runtimeObject,
+  });
+}
+let toolchain = await freshToolchain();
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
 const mainSource = "int other(void); int main(void) { return other() + 1; }\n";
@@ -644,10 +650,9 @@ int main(void) {
   errno = 0;
   if (remove(NULL) == 0 || errno != EINVAL) return 15;
   if (remove("tmp.txt") != 0) return 16;
+  errno = 0;
   rf = fopen("tmp.txt", "r");
-  if (!rf) return 17;
-  if (fgetc(rf) != EOF || !feof(rf)) return 18;
-  if (fclose(rf) != 0) return 19;
+  if (rf != NULL || errno != ENOENT) return 17;
 
   FILE *uf = fopen("tmp.txt", "w");
   if (!uf) return 20;
@@ -1611,6 +1616,8 @@ const linkedFloatFormatResult = linkedFloatFormat.instance.exports.main();
 if (linkedFloatFormatResult !== 42) {
   throw new Error(`linked runtime float format padding failed: ${linkedFloatFormatResult}`);
 }
+
+toolchain = await freshToolchain();
 
 const linkedMathClassSource = await inlineStandardIncludes(`#include <math.h>
 #include <fenv.h>
