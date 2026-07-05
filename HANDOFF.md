@@ -1,9 +1,15 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-05（続き564: table full時のlong path errno優先）
+最終更新: 2026-07-05（続き565: JS import stdio errno/error同期）
 
 ## 現状
 - 直近の部分確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
+  `make test-wasm-js-pipeline` = **green**、
+  `make test-wasm-js-api` = **green**、
+  `git diff --check` = **green**。
+- 以前の直近確認:
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_js_probe.o tools/wasm_obj_linker/runtime/libagc_runtime_js.c` = **green**、
   `env AGC_SUPPRESS_WARNINGS=1 ./build/ag_c_wasm -c -o /tmp/libagc_runtime_probe_preflight.o tools/wasm_obj_linker/runtime/libagc_runtime.c` = **green**、
@@ -13,7 +19,7 @@
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-js-api` = **green**、
   `git diff --check` = **green**。
-- 以前の直近確認:
+- さらに以前の直近確認:
   `node --check tools/wasm_js_api/agc-runtime-imports.js` = **green**、
   `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs` = **green**、
   `make test-wasm-js-pipeline` = **green**、
@@ -51,6 +57,70 @@
   **218 pass / fail 0 / skip 2 / validate 218 / ran 218**。
 -  `bash scripts/run_c_testsuite.sh --list-fail` = **218 pass / 2 unsupported skip / fail 0**
   （00206/00216 は unsupported GNU skip）。
+- 続き565: **JS import stdio `fopen` / `write` / `ungetc` errno/error同期**。
+  続き562-564で linked stdlib runtime 側の長すぎる path を `ENAMETOOLONG` に揃えたが、
+  `useStdlib: false` の JS import runtime (`tools/wasm_js_api/agc-runtime-imports.js`) は
+  `fopen(long_path, ...)` を通常の missing file と同じ `ENOENT` にしていた。
+  これだと JS import path だけ、path 自体が不正な失敗と「存在しない file」の失敗を区別できない浅い分岐になる。
+  JS import 側に runtime store 名と同じ 64 byte cap (`AGC_FILE_NAME_CAP`) の
+  `cStringFileNameErrno()` を追加し、範囲外 path pointer は `EINVAL`、
+  NUL を除く 63 byte を超える path は `ENAMETOOLONG` で `fopen()` を失敗させるようにした。
+  `tools/wasm_js_api/test_compile_link_pipeline.mjs` の `useStdlib:false` basic stdio import smoke では、
+  `fopen((void *)-1, "r")` が `EINVAL`、`fopen("missing.txt", "r")` が引き続き `ENOENT`、
+  70 byte の path が `ENAMETOOLONG` になる確認を追加した。
+  さらに同じ JS import runtime の `write(fd, ptr, count)` は `fread` / `fwrite` と違って
+  巨大 count を検査せず、`(unsigned long)-1` が渡っても JS 側の文字列読み取りに進み得た。
+  `ioByteCount()` を追加し、0 count は従来通り成功、負数/非有限/`Number.MAX_SAFE_INTEGER` 超過は
+  `errno=EINVAL` で `write()` 失敗にした。basic stdio import smoke には
+  `write(1, "x", (unsigned long)-1)` が `EINVAL` になる確認を追加した。
+  ただし linked runtime の `write()` は fd/write-mode 検査を count 検査より先に行うため、
+  JS import 側も fd 1/2 以外は count に関係なく `EBADF` を優先する順序にした。
+  smoke には `write(0, "x", (unsigned long)-1)` が `EBADF` になる確認も追加した。
+  `ungetc()` も linked runtime と JS import で値域の扱いがずれていたため同期した。
+  linked runtime は stream 検査を先に行い、`EOF` (`-1`) だけを `EINVAL` にし、それ以外の値は
+  `c & 0xff` を pushback / return する。JS import 側も同じ順序と byte masking に変更し、
+  smoke では `ungetc(-1, stdin)` が `EINVAL`、`ungetc(0x141, stdout)` が `EBADF`、
+  `ungetc(0x141, stdin)` が `'A'`、`ungetc(-2, stdin)` が `254` として読めることを確認した。
+  同じ errno 優先順位の観点で `fread()` も見直した。linked runtime は stream 解決を
+  size overflow 検査より先に行うため、JS import 側も `fread(..., stdout)` では size が
+  `(unsigned long)-1` でも `EBADF` を優先するようにした。smoke には
+  `fread(buf, (unsigned long)-1, 1, stdout)` が `EBADF` になる確認を追加し、
+  `fread(..., stdin)` の size overflow は引き続き `EINVAL` になる確認も残している。
+  `fgets()` も linked runtime では stream 解決を先に行い、有効 stream の `size <= 0` だけ
+  `EINVAL` にするため、JS import 側を同じ順序へ変更した。smoke には
+  `fgets(line, 0, stdout)` が `EBADF`、`fgets(line, 0, stdin)` が `EINVAL` になり、
+  後者では `ferror(stdin)` を立てない確認を追加した。wide 側の `fgetws()` は linked runtime でも
+  `n <= 0` を errno なしで返すため今回は触っていない。
+  その後 `fgetws()` の null destination も確認し、linked runtime が `dst == NULL` を stream より先に見て
+  errno を変えず return することに合わせた。JS import 側でも `fgetws(NULL, ..., stdin/stdout)` は
+  errno を変えず 0 を返し、`stdin` 入力を消費しないことを smoke で確認している。
+  wide import の `ungetwc()` も linked runtime と順序がずれていた。linked runtime は
+  `wc < 0 || wc > 0x7f` なら stream を見ず errno も変更せず `-1` を返すため、JS import 側も
+  wide char 範囲チェックを stream validation より前へ移し、範囲外では `EINVAL` を立てないようにした。
+  smoke には `ungetwc(0x3042, stdout)` と `ungetwc(0x3042, stdin)` がどちらも errno を変えずに
+  失敗する確認を追加し、valid `ungetwc('Z', stdout)` は引き続き `EBADF` になる確認も残している。
+  同様に `fputwc()` も linked runtime では `wcrtomb()` 変換を stream validation より前に行い、
+  範囲外 wide char では errno を変えずに `-1` を返す。JS import 側も変換を先に行い、
+  `fputwc(0x110000, stdin/stdout)` が errno を変更せず失敗する確認を追加した。
+  valid `fputwc('Z', stdin)` は引き続き `EBADF` になる確認を残している。
+  `fputws()` は以前、wide string 全体を先に JS string 化しており、範囲外 wide char で空文字成功扱いに
+  なり得た。linked runtime と同じく 1 文字ずつ `fputwc()` を呼ぶ実装へ変え、
+  `fputws({0x110000,0}, stdin/stdout)` が errno を変えず `-1` になる確認を追加した。
+  さらに `fputws({'P',0x110000,0}, stdout)` は `P` だけ出力してから errno を変えず失敗することも確認している。
+  valid string の `fputws(text, stdin)` は引き続き `EBADF` になる確認を残している。
+  さらに linked runtime は `fputws(NULL, stream)` で string pointer を先に見て errno を変えず `-1` を返すため、
+  JS import 側も null pointer を stream validation より先に拒否するようにした。
+  smoke には `fputws(NULL, stdin/stdout)` がどちらも errno を変えず失敗する確認を追加した。
+  また、JS import runtime は `stdin` の error indicator を `stdinError` として保持し、
+  `fputs(..., stdin)` 後に `ferror(stdin)` が立って `clearerr(stdin)` で落ちることを確認している。
+  `stdout/stderr` は linked runtime の `ferror(stdout/stderr)==0` に合わせ、input 失敗後も
+  error indicator は立てない。smoke では `fgetc(stdout)` 後も `ferror(stdout)==0` になることを確認している。
+  確認:
+  `node --check tools/wasm_js_api/agc-runtime-imports.js`、
+  `node --check tools/wasm_js_api/test_compile_link_pipeline.mjs`、
+  `make test-wasm-js-pipeline`、
+  `make test-wasm-js-api`、
+  `git diff --check`。
 - 続き564: **table full時のlong path errno優先**。
   続き562/563で長すぎる path を `ENAMETOOLONG` で拒否するようにしたが、
   `fopen()` / `open()` は file/FD slot 空き確認を path 長 preflight より先に行っていた。

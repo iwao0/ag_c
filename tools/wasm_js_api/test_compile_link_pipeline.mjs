@@ -2206,13 +2206,17 @@ long write(int fd, const void *buf, unsigned long count);
 long lseek(int fd, long offset, int whence);
 void *fopen(const char *path, const char *mode);
 int *__error(void);
+int ferror(void *stream);
+void clearerr(void *stream);
 void perror(const char *s);
 #define errno (*__error())
 #define ENOENT 2
 #define EBADF 9
+#define ENAMETOOLONG 36
 #define EINVAL 22
 int main(void) {
   char buf[4];
+  char long_path[80];
   if (fputs("A", (void *)1) != 1) return 1;
   if (fputc('B', (void *)1) != 'B') return 2;
   if (fputs("E", (void *)2) != 1) return 3;
@@ -2227,6 +2231,9 @@ int main(void) {
   if (fwrite("!", 1, 1, (void *)2) != 1) return 7;
   errno = 0;
   if (fputs("q", (void *)0) != -1 || errno != EBADF) return 8;
+  if (ferror((void *)0) != 1) return 31;
+  clearerr((void *)0);
+  if (ferror((void *)0) != 0) return 32;
   errno = 0;
   if (fputc('r', (void *)0) != -1 || errno != EBADF) return 9;
   errno = 0;
@@ -2239,8 +2246,14 @@ int main(void) {
   if (fwrite("z", (unsigned long)-1, 1, (void *)1) != 0 || errno != EINVAL) return 26;
   errno = 0;
   if (fread(buf, (unsigned long)-1, 1, (void *)0) != 0 || errno != EINVAL) return 27;
+  errno = 0;
+  if (fread(buf, (unsigned long)-1, 1, (void *)1) != 0 || errno != EBADF) return 34;
   if (write(1, "W", 1) != 1) return 11;
   if (write(2, "e", 1) != 1) return 12;
+  errno = 0;
+  if (write(1, "x", (unsigned long)-1) != -1 || errno != EINVAL) return 30;
+  errno = 0;
+  if (write(0, "x", (unsigned long)-1) != -1 || errno != EBADF) return 33;
   errno = 0;
   if (write(0, "n", 1) != -1) return 13;
   if (errno != EBADF) return 16;
@@ -2251,7 +2264,13 @@ int main(void) {
   errno = 0;
   if (fopen((void *)0, "r") != 0 || errno != EINVAL) return 18;
   errno = 0;
+  if (fopen((void *)-1, "r") != 0 || errno != EINVAL) return 29;
+  errno = 0;
   if (fopen("missing.txt", "r") != 0 || errno != ENOENT) return 19;
+  for (int i = 0; i < 70; i++) long_path[i] = 'a';
+  long_path[70] = 0;
+  errno = 0;
+  if (fopen(long_path, "r") != 0 || errno != ENAMETOOLONG) return 28;
   errno = 0;
   if (fread(buf, 1, 1, (void *)1) != 0 || errno != EBADF) return 20;
   if (fread(buf, 1, sizeof(buf), (void *)0) != 0) return 15;
@@ -2287,17 +2306,32 @@ int *__error(void);
 void perror(const char *s);
 #define errno (*__error())
 #define EBADF 9
+#define EINVAL 22
 int main(void) {
   char line[4];
   char rest[4];
   errno = 0;
   if (fgetc((void *)1) != -1 || errno != EBADF) return 11;
+  if (ferror((void *)1) != 0) return 18;
   errno = 0;
   if (fgets(line, sizeof(line), (void *)1) != 0 || errno != EBADF) return 12;
+  errno = 0;
+  if (fgets(line, 0, (void *)1) != 0 || errno != EBADF) return 20;
+  errno = 0;
+  if (fgets(line, 0, (void *)0) != 0 || errno != EINVAL || ferror((void *)0)) return 21;
   errno = 0;
   if (fread(rest, 1, 1, (void *)1) != 0 || errno != EBADF) return 13;
   errno = 0;
   if (ungetc('z', (void *)1) != -1 || errno != EBADF) return 14;
+  errno = 0;
+  if (ungetc(-1, (void *)0) != -1 || errno != EINVAL) return 22;
+  errno = 0;
+  if (ungetc(0x141, (void *)1) != -1 || errno != EBADF) return 23;
+  errno = 0;
+  if (ungetc(0x141, (void *)0) != 'A' || errno != 0) return 24;
+  if (fgetc((void *)0) != 'A') return 25;
+  if (ungetc(-2, (void *)0) != 254) return 26;
+  if (fgetc((void *)0) != 254) return 27;
   errno = 0;
   if (feof((void *)3) != 0 || errno != EBADF) return 15;
   errno = 0;
@@ -2352,6 +2386,8 @@ int *__error(void);
 int main(void) {
   int line[4];
   int text[] = {0x3042, '!', 0};
+  int bad_text[] = {0x110000, 0};
+  int partial_bad_text[] = {'P', 0x110000, 0};
   if (fwide((void *)0, 1) != 1) return 1;
   if (fwide((void *)0, -1) != -1) return 2;
   if (fwide((void *)0, 0) != 0) return 3;
@@ -2364,20 +2400,41 @@ int main(void) {
   errno = 0;
   if (fputwc('Z', (void *)0) != -1 || errno != EBADF) return 19;
   errno = 0;
+  if (fputwc(0x110000, (void *)0) != -1 || errno != 0) return 23;
+  errno = 0;
+  if (fputwc(0x110000, (void *)1) != -1 || errno != 0) return 24;
+  errno = 0;
   if (fputws(text, (void *)0) != -1 || errno != EBADF) return 20;
+  errno = 0;
+  if (fputws((void *)0, (void *)0) != -1 || errno != 0) return 27;
+  errno = 0;
+  if (fputws((void *)0, (void *)1) != -1 || errno != 0) return 28;
+  errno = 0;
+  if (fputws(bad_text, (void *)0) != -1 || errno != 0) return 25;
+  errno = 0;
+  if (fputws(bad_text, (void *)1) != -1 || errno != 0) return 26;
+  errno = 0;
+  if (fputws(partial_bad_text, (void *)1) != -1 || errno != 0) return 31;
   errno = 0;
   if (fgetwc((void *)1) != -1 || errno != EBADF) return 16;
   errno = 0;
   if (fgetws(line, 4, (void *)1) != 0 || errno != EBADF) return 17;
   errno = 0;
+  if (fgetws((void *)0, 4, (void *)1) != 0 || errno != 0) return 29;
+  errno = 0;
+  if (fgetws((void *)0, 4, (void *)0) != 0 || errno != 0) return 30;
+  errno = 0;
   if (ungetwc('Z', (void *)1) != -1 || errno != EBADF) return 18;
+  errno = 0;
+  if (ungetwc(0x3042, (void *)1) != -1 || errno != 0) return 22;
   if (fgetwc((void *)0) != 'x') return 8;
   if (ungetwc('Y', (void *)0) != 'Y') return 9;
   if (getwc((void *)0) != 'Y') return 10;
   if (getwchar() != 0x3042) return 11;
   if (fgetws(line, 4, (void *)0) != line) return 12;
   if (line[0] != '\\n' || line[1] != 0) return 13;
-  if (ungetwc(0x3042, (void *)0) != -1) return 14;
+  errno = 0;
+  if (ungetwc(0x3042, (void *)0) != -1 || errno != 0) return 14;
   if (fgetwc((void *)0) != -1) return 15;
   return 42;
 }
@@ -2393,7 +2450,7 @@ const jsWideStdio = await toolchain.instantiateLinkedWasm(jsWideStdioSource, {
   onStderr: (chunk) => { jsWideStderr += chunk; },
 });
 const jsWideStdioResult = jsWideStdio.instance.exports.main();
-if (jsWideStdioResult !== 42 || jsWideStdout !== "AあQ" || jsWideStderr !== "あ!") {
+if (jsWideStdioResult !== 42 || jsWideStdout !== "AあQP" || jsWideStderr !== "あ!") {
   throw new Error(
     `JS wide stdio imports failed: result=${jsWideStdioResult}, stdout=${JSON.stringify(jsWideStdout)}, stderr=${JSON.stringify(jsWideStderr)}`,
   );
