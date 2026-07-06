@@ -3203,6 +3203,44 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
   var->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
 }
 
+void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->pointee_fp_kind = fp_kind;
+}
+
+void psx_decl_set_lvar_bool(lvar_t *var, int is_bool) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->is_bool = is_bool ? 1 : 0;
+}
+
+void psx_decl_set_lvar_complex(lvar_t *var, int is_complex) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->is_complex = is_complex ? 1 : 0;
+}
+
+void psx_decl_set_lvar_atomic(lvar_t *var, int is_atomic) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->is_atomic = is_atomic ? 1 : 0;
+}
+
+void psx_decl_set_lvar_integer_identity(lvar_t *var,
+                                        int is_long_long,
+                                        int is_plain_char) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->is_long_long = is_long_long ? 1 : 0;
+  var->is_plain_char = is_plain_char ? 1 : 0;
+}
+
+void psx_decl_set_lvar_long_double(lvar_t *var, int is_long_double) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->is_long_double = is_long_double ? 1 : 0;
+}
+
+void psx_decl_set_lvar_pointee_void(lvar_t *var, int pointee_is_void) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->pointee_is_void = pointee_is_void ? 1 : 0;
+}
+
 void psx_decl_set_lvar_qualifiers(lvar_t *var,
                                   int is_const_qualified,
                                   int is_volatile_qualified,
@@ -4972,7 +5010,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           /* VLA は continue で下の fp_kind/is_unsigned 設定をスキップする。VLA 記述子
            * 自体はベースポインタ (整数) なので fp_kind は NONE のまま、要素型は
            * pointee_fp_kind に入れて subscript の fp load/store に伝播させる。 */
-          var->pointee_fp_kind = decl_fp_kind;
+          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           /* タグ情報も carry (struct/union 要素 VLA `struct P arr[n]` で `arr[i].m` を解決可能に)。
            * is_tag_pointer=0: 配列なので tag ポインタではない。 */
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
@@ -4990,7 +5028,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         if (!size_inferred_from_init && decl_peek_trailing_array_dims_have_vla()) {
           node_t *first_size_node = psx_node_new_num((int)array_size);
           var = register_vla_lvar_and_append_alloc(tok, elem_size, first_size_node, &init_chain);
-          var->pointee_fp_kind = decl_fp_kind;
+          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                           var->fp_kind, decl_is_unsigned,
                                           tag_kind, tag_name, tag_len, 0);
@@ -5040,15 +5078,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                     storage_fp_kind, decl_is_unsigned,
                                     var->tag_kind, var->tag_name, var->tag_len,
                                     var->is_tag_pointer);
-    if (!is_pointer) {
-      var->pointee_fp_kind = TK_FLOAT_KIND_NONE;
-    } else if (is_funcptr_decl) {
-      var->pointee_fp_kind = TK_FLOAT_KIND_NONE;
+    if (!is_pointer || is_funcptr_decl) {
+      psx_decl_set_lvar_pointee_fp_kind(var, TK_FLOAT_KIND_NONE);
     } else {
       /* 多段ポインタ (`double **pp`) でも最内 pointee の fp 種別を保持する。
        * build_unary_deref_node が 1 段ずつ引き継ぎ、最終 deref で fp load/store に
        * する。中間段は pql>=2 のため fp 値化されない (deref 結果はポインタのまま)。 */
-      var->pointee_fp_kind = decl_fp_kind;
+      psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
     }
     if (is_pointer && base_is_pointer && !td_is_array_for_this_decl &&
         td_array_dim_count > 0 && ptr_levels >= 1 && var->ptr_array_pointee_bytes == 0) {
@@ -5059,14 +5095,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels, elem_size,
                                              td_pointee_count * elem_size);
     }
-    if (decl_is_complex && !is_pointer) var->is_complex = 1;
-    if (decl_is_atomic) var->is_atomic = 1;
+    if (decl_is_complex && !is_pointer) psx_decl_set_lvar_complex(var, 1);
+    if (decl_is_atomic) psx_decl_set_lvar_atomic(var, 1);
     /* _Generic で long/long long, char/signed char を区別するための型識別 (非ポインタの
      * スカラ変数のみ。サイズは同じなので別フラグで持つ)。 */
     if (!is_pointer) {
-      var->is_long_long = decl_is_long_long ? 1 : 0;
-      var->is_plain_char = decl_is_plain_char ? 1 : 0;
-      var->is_long_double = decl_is_long_double ? 1 : 0;
+      psx_decl_set_lvar_integer_identity(var, decl_is_long_long, decl_is_plain_char);
+      psx_decl_set_lvar_long_double(var, decl_is_long_double);
     }
     /* 可変長関数ポインタ (`int (*f)(int, ...)`): 経由呼び出しで variadic ABI を
      * 選べるよう、固定引数数と共に記録する。 */
@@ -5109,11 +5144,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       psx_decl_set_lvar_funcptr_signature(var, &sig);
     }
     /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
-    if (decl_base_is_bool && !is_pointer) var->is_bool = 1;
+    if (decl_base_is_bool && !is_pointer) psx_decl_set_lvar_bool(var, 1);
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。
      * deref のエラー検出 (C11 6.5.3.2) で必要。 */
     if (decl_base_is_void && is_pointer && total_pointer_levels == 1) {
-      var->pointee_is_void = 1;
+      psx_decl_set_lvar_pointee_void(var, 1);
     }
     (void)psx_lvar_refresh_decl_type(var);
 

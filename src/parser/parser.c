@@ -3734,7 +3734,7 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
    * (=8) で lvar_is_pointer の size>elem_size 判定に漏れる double 要素でも、これで
    * ポインタ認識され subscript が fp load になる (int a[n] は size>elem_size で OK)。 */
   if (inner_first_dim == 0 && ds->fp_kind != TK_FLOAT_KIND_NONE) {
-    var->pointee_fp_kind = ds->fp_kind;
+    psx_decl_set_lvar_pointee_fp_kind(var, ds->fp_kind);
   }
   /* 全 inner dim が定数 (N-D const inner、`int t[][2][3][4]` 等): outer/mid/extra strides を立てる。
    * 3D 以下は既存挙動を維持。4D 以上は N-D 一般経路 (下記) で extra_strides まで設定する。 */
@@ -3987,7 +3987,8 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、
      * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
      * なって値が壊れていた)。 */
-    var->pointee_fp_kind = (param_ptr_levels == 1) ? ds->fp_kind : TK_FLOAT_KIND_NONE;
+    psx_decl_set_lvar_pointee_fp_kind(
+        var, (param_ptr_levels == 1) ? ds->fp_kind : TK_FLOAT_KIND_NONE);
     psx_decl_set_lvar_funcptr_signature(var, &param_funcptr_sig);
     /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
      * captured inner dims を使って outer_stride / mid_stride を設定する。 */
@@ -4024,8 +4025,8 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     psx_decl_init_lvar_storage_type(var, 2 * half, 2 * half, 0,
                                     ds->fp_kind, ds->is_unsigned,
                                     TK_EOF, NULL, 0, 0);
-    var->is_complex = 1;
-    var->is_long_double = ds->is_long_double ? 1 : 0;
+    psx_decl_set_lvar_complex(var, 1);
+    psx_decl_set_lvar_long_double(var, ds->is_long_double);
     return var;
   }
   // スカラー型仮引数（既存の動作）
@@ -4034,7 +4035,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                     ds->fp_kind, ds->is_unsigned,
                                     TK_EOF, NULL, 0, 0);
-    var->is_long_double = ds->is_long_double ? 1 : 0;
+    psx_decl_set_lvar_long_double(var, ds->is_long_double);
     return var;
   }
 }

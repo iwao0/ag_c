@@ -207,6 +207,15 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
                                             int pointer_qual_levels,
                                             int base_deref_size,
                                             int ptr_array_pointee_bytes);
+void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind);
+void psx_decl_set_lvar_bool(lvar_t *var, int is_bool);
+void psx_decl_set_lvar_complex(lvar_t *var, int is_complex);
+void psx_decl_set_lvar_atomic(lvar_t *var, int is_atomic);
+void psx_decl_set_lvar_integer_identity(lvar_t *var,
+                                        int is_long_long,
+                                        int is_plain_char);
+void psx_decl_set_lvar_long_double(lvar_t *var, int is_long_double);
+void psx_decl_set_lvar_pointee_void(lvar_t *var, int pointee_is_void);
 void psx_decl_set_lvar_qualifiers(lvar_t *var,
                                   int is_const_qualified,
                                   int is_volatile_qualified,

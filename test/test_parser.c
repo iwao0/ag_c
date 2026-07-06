@@ -1997,6 +1997,34 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tmp_lvar.decl_type == tmp_lvar_ptr);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_lvar_ptr->kind);
 
+  lvar_t tmp_fp_ptr_lvar = {0};
+  psx_decl_init_lvar_storage_type(&tmp_fp_ptr_lvar, 8, 8, 0,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  psx_decl_set_lvar_pointer_derived_type(&tmp_fp_ptr_lvar, 1, 8, 0);
+  psx_type_t *tmp_fp_ptr_int = psx_lvar_get_decl_type(&tmp_fp_ptr_lvar);
+  ASSERT_TRUE(tmp_fp_ptr_int != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_fp_ptr_int->kind);
+  psx_decl_set_lvar_pointee_fp_kind(&tmp_fp_ptr_lvar, TK_FLOAT_KIND_DOUBLE);
+  ASSERT_TRUE(tmp_fp_ptr_lvar.decl_type == NULL);
+  psx_type_t *tmp_fp_ptr_double = psx_lvar_refresh_decl_type(&tmp_fp_ptr_lvar);
+  ASSERT_TRUE(tmp_fp_ptr_double != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_fp_ptr_double->kind);
+  ASSERT_TRUE(tmp_fp_ptr_double->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, tmp_fp_ptr_double->base->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_fp_ptr_double->base->fp_kind);
+
+  lvar_t tmp_complex_lvar = {0};
+  psx_decl_init_lvar_storage_type(&tmp_complex_lvar, 16, 16, 0,
+                                  TK_FLOAT_KIND_DOUBLE, 0, TK_EOF, NULL, 0, 0);
+  psx_type_t *tmp_scalar_double = psx_lvar_get_decl_type(&tmp_complex_lvar);
+  ASSERT_TRUE(tmp_scalar_double != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, tmp_scalar_double->kind);
+  psx_decl_set_lvar_complex(&tmp_complex_lvar, 1);
+  ASSERT_TRUE(tmp_complex_lvar.decl_type == NULL);
+  psx_type_t *tmp_complex_type = psx_lvar_refresh_decl_type(&tmp_complex_lvar);
+  ASSERT_TRUE(tmp_complex_type != NULL);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, tmp_complex_type->kind);
+
   node_mem_t typed_mem = {0};
   typed_mem.base.kind = ND_LVAR;
   typed_mem.type_size = 4;
@@ -2180,6 +2208,28 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(local_extern_dp->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, local_extern_dp->decl_type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, local_extern_dp->decl_type->fp_kind);
+
+  node_t *compound_lit_expr = parse_expr_input("(int[3]){1,2,3}");
+  ASSERT_EQ(ND_COMMA, compound_lit_expr->kind);
+  ASSERT_TRUE(compound_lit_expr->rhs != NULL);
+  ASSERT_EQ(ND_ADDR, compound_lit_expr->rhs->kind);
+  ASSERT_TRUE(compound_lit_expr->rhs->lhs != NULL);
+  ASSERT_EQ(ND_LVAR, compound_lit_expr->rhs->lhs->kind);
+  lvar_t *compound_lit_local = as_lvar(compound_lit_expr->rhs->lhs)->var;
+  ASSERT_TRUE(compound_lit_local != NULL);
+  ASSERT_TRUE(compound_lit_local->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, compound_lit_local->decl_type->kind);
+  ASSERT_EQ(12, psx_type_sizeof(compound_lit_local->decl_type));
+
+  ps_reset_translation_unit_state();
+  parsed_code = parse_program_input("int *__tm_compound_lit_global = (int[]){1,2,3}; int main(void) { return 0; }");
+  (void)parsed_code;
+  global_var_t *compound_lit_global =
+      psx_find_global_var("__compound_lit_0", (int)(sizeof("__compound_lit_0") - 1));
+  ASSERT_TRUE(compound_lit_global != NULL);
+  ASSERT_TRUE(compound_lit_global->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, compound_lit_global->decl_type->kind);
+  ASSERT_EQ(12, psx_type_sizeof(compound_lit_global->decl_type));
 
   parsed_code = parse_program_input(
       "long __tm_lf(void); int *__tm_ip(void); int **__tm_pp(void); "

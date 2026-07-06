@@ -1188,17 +1188,14 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       global_var_t *gv = calloc(1, sizeof(global_var_t));
       gv->name = tmp_name;
       gv->name_len = (int)strlen(tmp_name);
-      gv->type_size = var_size;
-      gv->deref_size = base_elem;
-      gv->is_array = is_arr;
+      psx_decl_init_gvar_storage_type(gv, var_size, base_elem, is_arr,
+                                      cast_fp_kind, 0,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      is_pointer_elem_array &&
+                                      cast_tag_kind != TK_EOF);
       if (is_pointer_elem_array) {
         gv->pointee_elem_size = cast_elem_size > 0 ? (short)cast_elem_size : 8;
-        gv->is_tag_pointer = (cast_tag_kind != TK_EOF) ? 1 : 0;
       }
-      gv->fp_kind = cast_fp_kind;
-      gv->tag_kind = cast_tag_kind;
-      gv->tag_name = cast_tag_name;
-      gv->tag_len = cast_tag_len;
       if (is_arr) {
         psx_decl_set_gvar_array_strides_from_dims(gv, local_array_dims,
                                                   local_array_dim_count, base_elem);
@@ -1214,6 +1211,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
       gv->init_count = 0;
       psx_parse_global_brace_init_flat(gv, &cap, -1);
+      (void)psx_gvar_refresh_decl_type(gv);
       psx_register_global_var(gv);
       if (is_arr) {
         /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
@@ -1234,10 +1232,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     global_var_t *gv = calloc(1, sizeof(global_var_t));
     gv->name = tmp_name;
     gv->name_len = (int)strlen(tmp_name);
-    gv->type_size = var_size;
-    gv->deref_size = base_elem;
-    gv->is_array = is_arr;
-    gv->fp_kind = cast_fp_kind;
+    psx_decl_init_gvar_storage_type(gv, var_size, base_elem, is_arr,
+                                    cast_fp_kind, 0,
+                                    cast_tag_kind, cast_tag_name, cast_tag_len,
+                                    cast_is_ptr);
     gv->is_static = 1;  /* 匿名複合リテラルは内部リンケージ (.global を出さない) */
     if (is_arr) {
       psx_decl_set_gvar_array_strides_from_dims(gv, local_array_dims,
@@ -1254,6 +1252,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         gv->init_val = n->val;
       }
     }
+    (void)psx_gvar_refresh_decl_type(gv);
     psx_register_global_var(gv);
     node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
     return apply_postfix((node_t *)gvar_node, ctx);
@@ -1267,7 +1266,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     psx_decl_set_lvar_array_strides_from_dims(var, local_array_dims,
                                               local_array_dim_count, base_elem);
   }
-  if (cl_complex_scalar) var->is_complex = 1;  /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
+  if (cl_complex_scalar) {
+    /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
+    psx_decl_set_lvar_complex(var, 1);
+  }
   /* 要素がポインタの配列は、ローカル `T *arr[N]` と同じく subscript 後の値を
    * 単段ポインタとして扱えるよう pointer metadata を持たせる。 */
   if (is_pointer_elem_array) {
@@ -1282,6 +1284,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                     TK_EOF, NULL, 0, 0);
   }
   node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
+  (void)psx_lvar_refresh_decl_type(var);
   node_t *ref;
   if (is_arr) {
     ref = psx_node_new_compound_lvar_array_addr_for(
@@ -1715,6 +1718,7 @@ static node_t *lower_union_value_cast(node_t *operand,
   psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
                                   cast_fp_kind, 0,
                                   cast_tag_kind, cast_tag_name, cast_tag_len, 0);
+  (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
@@ -1745,6 +1749,7 @@ static node_t *lower_struct_value_cast(node_t *operand,
   psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
                                   cast_fp_kind, 0,
                                   cast_tag_kind, cast_tag_name, cast_tag_len, 0);
+  (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);

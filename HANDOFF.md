@@ -1,8 +1,62 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き774: static local / local extern の decl_type refresh と配列 materialize 明示化）
+最終更新: 2026-07-07（続き776: lvar 型属性 mutation の setter 化）
 
 ## 現状
+- 続き776: **`lvar_t` の型属性 direct mutation を invalidating setter に寄せた**。
+
+  続き775までで compound literal などの一時 object も宣言型 refresh 規約に乗ったが、
+  `pointee_fp_kind` / `is_complex` / `is_long_double` / `_Bool` / `_Atomic` /
+  long long/plain char 識別 / `void *` pointee などは、まだ宣言処理中に direct field
+  代入される箇所が残っていた。これらは `decl_type` materialize 後に更新されると stale
+  cache を作れるため、`decl.c` に invalidation 付き setter を追加し、宣言 parser・
+  parameter 登録・compound literal の該当 mutation を setter 経由へ寄せた。
+
+  追加 API は `psx_decl_set_lvar_pointee_fp_kind()` /
+  `psx_decl_set_lvar_bool()` / `psx_decl_set_lvar_complex()` /
+  `psx_decl_set_lvar_atomic()` / `psx_decl_set_lvar_integer_identity()` /
+  `psx_decl_set_lvar_long_double()` / `psx_decl_set_lvar_pointee_void()`。
+  `rg` で `src/parser/decl.c` / `parser.c` / `expr.c` の該当 direct assignment を確認し、
+  残りは setter 実装内だけになっている。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。
+  一度 pointer-to-int として materialize した synthetic lvar に
+  `psx_decl_set_lvar_pointee_fp_kind(..., TK_FLOAT_KIND_DOUBLE)` を適用し、
+  `decl_type` が NULL へ落ちて refresh 後に pointer-to-double になることを確認する。
+  同様に scalar double を materialize 後、`psx_decl_set_lvar_complex()` で stale cache が
+  落ち、refresh 後に `PSX_TYPE_COMPLEX` になることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き775: **compound literal の一時 `lvar_t` / `global_var_t` も宣言型 refresh 規約に乗せた**。
+
+  続き774までで通常の宣言確定点・static local・local extern は refresh されるようになったが、
+  compound literal は通常宣言とは別に `expr.c` で一時 object を直接構築するため、
+  `decl_type` の生成責任がまだ分散していた。
+
+  今回は `parse_compound_literal_from_type()` の file-scope 一時 `global_var_t` を
+  手書き field 代入から `psx_decl_init_gvar_storage_type()` 経由へ寄せ、global 登録前に
+  `psx_gvar_refresh_decl_type()` を呼ぶようにした。関数内 compound literal の一時
+  `lvar_t` は initializer 構築後に `psx_lvar_refresh_decl_type()` を呼ぶ。
+  また同じ `__compound_lit_N` 系の temp を作る struct/union value cast lowering でも
+  `psx_lvar_refresh_decl_type()` を追加した。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。
+  `(int[3]){1,2,3}` の `ND_COMMA -> ND_ADDR -> ND_LVAR` から一時 lvar を辿り、
+  `decl_type` が `PSX_TYPE_ARRAY` / sizeof 12 で materialize 済みであることを確認する。
+  file-scope `int *p = (int[]){1,2,3};` では `__compound_lit_0` の global を引き、
+  同じく `decl_type` が array として保持されることを確認する。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き774: **static local lowering / local extern 経路の `decl_type` refresh 漏れを潰し、
   配列 `decl_type` の materialize を宣言元の `is_array` から明示するようにした**。
 
