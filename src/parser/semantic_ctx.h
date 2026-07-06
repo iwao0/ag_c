@@ -70,7 +70,7 @@ void psx_ctx_set_tag_member_funcptr_param_int_mask(token_kind_t tag_kind, char *
  *
  * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
  * 初期化されるので、struct メンバが bitfield でないとき bit_width=0 等を返す。 */
-typedef struct {
+typedef struct tag_member_info_t {
   char *name;
   int len;
   int offset;

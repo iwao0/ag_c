@@ -1186,16 +1186,7 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
   deref->bit_is_signed = mem_info->bit_is_signed;
-  deref->funcptr_param_fp_mask = mem_info->funcptr_param_fp_mask;
-  deref->funcptr_param_int_mask = mem_info->funcptr_param_int_mask;
-  deref->funcptr_ret_int_width = mem_info->funcptr_ret_int_width;
-  deref->is_variadic_funcptr = mem_info->is_variadic_funcptr ? 1 : 0;
-  deref->funcptr_nargs_fixed = mem_info->funcptr_nargs_fixed;
-  deref->funcptr_ret_is_void = mem_info->funcptr_ret_is_void ? 1 : 0;
-  deref->funcptr_ret_is_data_pointer = mem_info->funcptr_ret_is_pointer ? 1 : 0;
-  deref->funcptr_ret_is_complex = mem_info->funcptr_ret_is_complex ? 1 : 0;
-  PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(
-      deref, mem_info->funcptr_ret_pointee_array);
+  psx_node_copy_funcptr_metadata_from_tag_member(deref, mem_info);
   /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
    * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
    * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと

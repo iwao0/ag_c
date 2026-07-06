@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き727: lvar/gvar 関数ポインタ metadata コピーの集約）
+最終更新: 2026-07-06（続き728: tag member 関数ポインタ metadata コピーの集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き728: **tag member 由来の関数ポインタ metadata コピーも `node_utils` に集約した**。
+  続き727の後、`build_member_deref_node()` だけが `tag_member_info_t` から
+  `node_mem_t` へ `funcptr_param_*` / `funcptr_ret_*` /
+  ret-pointee-array fields を手でコピーしていた。
+
+  根本対応として `psx_node_copy_funcptr_metadata_from_tag_member()` を
+  `node_utils` に追加し、member access 側はこの入口を呼ぶだけにした。
+  `node_utils.h` が `semantic_ctx.h` を include して依存を太らせないよう、
+  `tag_member_info_t` は名前付き struct に変更し、`node_utils.h` では
+  forward declaration だけで参照できる形にした。
+  これで lvar/gvar/tag member から `node_mem_t` への関数ポインタ ABI metadata
+  コピーは `node_utils` 側に揃った。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き727: **lvar/gvar 由来の関数ポインタ metadata コピーを `node_utils` に集約した**。
   続き726の後も、`build_array_lvar_addr_node()` / `build_lvar_or_vla_node()` /
   `build_gvar_node()` 系で `lvar_t` / `global_var_t` から `node_mem_t` へ
