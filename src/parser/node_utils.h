@@ -21,6 +21,8 @@ int psx_node_base_deref_size(node_t *node);
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);
+int psx_node_pointee_is_bool(node_t *node);
+int psx_node_pointee_is_void(node_t *node);
 int psx_node_pointee_is_const_qualified(node_t *node);
 int psx_node_pointee_is_volatile_qualified(node_t *node);
 int psx_node_is_unsigned_type(node_t *node);

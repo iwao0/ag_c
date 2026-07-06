@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き722: _Generic 制御式型の型ヘルパー集約）
+最終更新: 2026-07-06（続き723: pointee bool/void/unsigned 判定の型ヘルパー集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,27 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き723: **単項 deref / subscript の pointee bool/void/unsigned 判定を型ヘルパーへ集約した**。
+  続き722の後、`build_unary_deref_node()` には `node_pointee_is_unsigned()` /
+  `node_pointee_is_void()` というローカル helper が残り、`node_mem_t` を直接読んでいた。
+  また `_Bool` 配列/ポインタの subscript 伝播も `base_mem->pointee_is_bool` を直接見ていた。
+
+  根本対応として `node_utils` に `psx_node_pointee_is_unsigned()` /
+  `psx_node_pointee_is_bool()` / `psx_node_pointee_is_void()` を揃え、
+  `psx_type_t` の pointer/array base を優先しつつ、ADD/SUB や inc/dec も
+  `psx_node_pointee_fp_kind()` と同じ規則で辿るようにした。
+  併せて `type_from_mem()` が `pointee_is_void` を pointer base の `PSX_TYPE_VOID`
+  に反映するようにし、`void*` 判定も型から読めるようにした。
+  これで `expr.c` 側の単項 deref / subscript は pointee の unsigned/bool/void 判定を
+  旧 metadata の形ではなく `node_utils` の型入口から読む。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `make -j4 build/test_wasm32_e2e && ./build/test_wasm32_e2e` =
+  **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き722: **`_Generic` の制御式型推論から `node_mem_t` 直接参照を外し、型ヘルパー経由へ集約した**。
   1から作り直すなら避けたい設計として「型情報の正本が `psx_type_t` と
   `node_mem_t` / `lvar_t` 系に分散している」点を優先ターゲットにした。

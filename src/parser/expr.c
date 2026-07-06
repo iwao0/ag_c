@@ -3439,56 +3439,6 @@ static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op, expr_par
   return node;
 }
 
-/* operand が指す pointee が unsigned か。`unsigned char *p` の `*p` / `*(p+i)` を
- * zero-extend load させるため、ポインタ算術 (ND_ADD/SUB) や inc/dec を辿って pointee の
- * unsigned 性を引く (psx_node_pointee_fp_kind と対称)。これがないと `*(p+2)` が ldrsb で
- * 符号拡張されていた。 */
-static int node_pointee_is_unsigned(node_t *n) {
-  if (!n) return 0;
-  switch (n->kind) {
-    case ND_LVAR: return as_lvar(n)->mem.pointee_is_unsigned;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ADDR:
-    case ND_CAST:
-      return ((node_mem_t *)n)->pointee_is_unsigned;
-    case ND_ADD:
-    case ND_SUB:
-      return node_pointee_is_unsigned(n->lhs) || node_pointee_is_unsigned(n->rhs);
-    case ND_PRE_INC:
-    case ND_PRE_DEC:
-    case ND_POST_INC:
-    case ND_POST_DEC:
-      return node_pointee_is_unsigned(n->lhs);
-    default:
-      return 0;
-  }
-}
-
-static int node_pointee_is_void(node_t *n) {
-  if (!n) return 0;
-  switch (n->kind) {
-    case ND_LVAR: return as_lvar(n)->mem.pointee_is_void;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ADDR:
-    case ND_ASSIGN:
-    case ND_STRING:
-    case ND_CAST:
-      return ((node_mem_t *)n)->pointee_is_void;
-    case ND_ADD:
-    case ND_SUB:
-      return node_pointee_is_void(n->lhs) || node_pointee_is_void(n->rhs);
-    case ND_PRE_INC:
-    case ND_PRE_DEC:
-    case ND_POST_INC:
-    case ND_POST_DEC:
-      return node_pointee_is_void(n->lhs);
-    default:
-      return 0;
-  }
-}
-
 // `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
 static node_t *build_unary_deref_node(node_t *operand) {
   /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
@@ -3508,11 +3458,11 @@ static node_t *build_unary_deref_node(node_t *operand) {
                    "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
     }
     /* void* の deref は不正 (pointee の型が不完全)。 */
-    if (node_pointee_is_void(operand)) {
+    if (psx_node_pointee_is_void(operand)) {
       psx_diag_ctx(curtok(), "deref",
                    "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
     }
-  } else if (node_pointee_is_void(operand)) {
+  } else if (psx_node_pointee_is_void(operand)) {
     psx_diag_ctx(curtok(), "deref",
                  "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
@@ -3547,7 +3497,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
   /* `unsigned *p` の `*p`: pointee が unsigned なら deref 結果も unsigned
    * (zero-extend load)。pointee_is_unsigned は build_lvar_or_vla_node が立てる。 */
   if (pql <= 1) {
-    if (node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
+    if (psx_node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
   }
   if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
                   operand->kind == ND_DEREF || operand->kind == ND_ADDR)) {
@@ -4315,7 +4265,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     node_mem_t *base_mem = (node_t *)node && (node->kind == ND_ADDR || node->kind == ND_LVAR ||
                                               node->kind == ND_GVAR || node->kind == ND_DEREF)
                               ? (node_mem_t *)node : NULL;
-    if (base_mem && base_mem->pointee_is_bool) {
+    if (psx_node_pointee_is_bool(node)) {
       if (pql == 0 && inner_ds == 0) {
         /* 最終要素まで到達: 代入正規化用に is_bool を立てる。 */
         deref->is_bool = 1;
