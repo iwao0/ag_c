@@ -18,6 +18,16 @@ static int is_mem_node_kind(node_kind_t kind) {
          kind == ND_PTR_CAST;
 }
 
+static int node_kind_has_explicit_cast_type(node_kind_t kind) {
+  return kind == ND_PTR_CAST || kind == ND_FP_TO_INT || kind == ND_INT_TO_FP ||
+         kind == ND_FNEG || kind == ND_CREAL || kind == ND_CIMAG;
+}
+
+static psx_type_t *node_explicit_cast_type(node_t *node) {
+  if (!node || !node->type || !node_kind_has_explicit_cast_type(node->kind)) return NULL;
+  return node->type;
+}
+
 static void type_copy_funcptr_metadata(psx_type_t *type, const node_mem_t *mem) {
   if (!type || !mem) return;
   type->funcptr_nargs_fixed = mem->funcptr_nargs_fixed;
@@ -414,6 +424,63 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
                                 fn->base.is_unsigned, 0, width >= 8);
 }
 
+static int type_is_integer_like(const psx_type_t *type) {
+  if (!type) return 0;
+  return type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER;
+}
+
+static int type_integer_promotion_size(const psx_type_t *type) {
+  int size = psx_type_sizeof(type);
+  if (size <= 0) return 4;
+  return size < 4 ? 4 : size;
+}
+
+static int type_uac_effective_unsigned(const psx_type_t *type) {
+  if (!type_is_integer_like(type)) return 0;
+  int original_size = psx_type_sizeof(type);
+  return original_size >= 4 && psx_type_is_unsigned(type);
+}
+
+static psx_type_t *type_usual_arith_result(psx_type_t *lhs_type, psx_type_t *rhs_type,
+                                           tk_float_kind_t fp_kind, int is_complex) {
+  if (is_complex) {
+    int size = psx_type_sizeof(lhs_type);
+    int rhs_size = psx_type_sizeof(rhs_type);
+    if (rhs_size > size) size = rhs_size;
+    if (size <= 0) size = fp_kind == TK_FLOAT_KIND_FLOAT ? 8 : 16;
+    return type_from_scalar_shape(TK_EOF, fp_kind, size, 0, 1, 0);
+  }
+
+  if ((lhs_type && lhs_type->kind == PSX_TYPE_FLOAT) ||
+      (rhs_type && rhs_type->kind == PSX_TYPE_FLOAT) ||
+      fp_kind != TK_FLOAT_KIND_NONE) {
+    tk_float_kind_t fp = fp_kind;
+    if (lhs_type && lhs_type->fp_kind > fp) fp = lhs_type->fp_kind;
+    if (rhs_type && rhs_type->fp_kind > fp) fp = rhs_type->fp_kind;
+    if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
+    return psx_type_new_float(fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  }
+
+  int lsize = type_integer_promotion_size(lhs_type);
+  int rsize = type_integer_promotion_size(rhs_type);
+  int lunsigned = type_uac_effective_unsigned(lhs_type);
+  int rhs_unsigned = type_uac_effective_unsigned(rhs_type);
+  int is_unsigned;
+  if (lunsigned == rhs_unsigned) {
+    is_unsigned = lunsigned;
+  } else {
+    int unsigned_w = lunsigned ? lsize : rsize;
+    int signed_w = lunsigned ? rsize : lsize;
+    is_unsigned = unsigned_w >= signed_w;
+  }
+  int size = lsize > rsize ? lsize : rsize;
+  int is_long_long = (lhs_type && lhs_type->is_long_long) ||
+                     (rhs_type && rhs_type->is_long_long);
+  psx_type_t *type = psx_type_new_integer(TK_EOF, size, is_unsigned);
+  type->is_long_long = is_long_long ? 1 : 0;
+  return type;
+}
+
 static psx_type_t *type_from_binary_expr(node_t *node) {
   if (!node) return NULL;
   switch (node->kind) {
@@ -440,10 +507,10 @@ static psx_type_t *type_from_binary_expr(node_t *node) {
     case ND_BITAND:
     case ND_BITXOR:
     case ND_BITOR: {
-      int size = ps_node_type_size(node);
-      return type_from_scalar_shape(TK_EOF, (tk_float_kind_t)node->fp_kind, size,
-                                    ps_node_is_unsigned(node), node->is_complex,
-                                    node_is_long_long(node));
+      return type_usual_arith_result(psx_node_get_type(node->lhs),
+                                     psx_node_get_type(node->rhs),
+                                     (tk_float_kind_t)node->fp_kind,
+                                     node->is_complex);
     }
     default:
       return NULL;
@@ -462,15 +529,14 @@ static psx_type_t *type_from_ternary_expr(node_t *node) {
       (then_type->kind == PSX_TYPE_STRUCT || then_type->kind == PSX_TYPE_UNION)) {
     return then_type;
   }
-  int size = ps_node_type_size(node);
-  return type_from_scalar_shape(TK_EOF, (tk_float_kind_t)node->fp_kind, size,
-                                ps_node_is_unsigned(node), node->is_complex,
-                                node_is_long_long(node));
+  return type_usual_arith_result(then_type, else_type, (tk_float_kind_t)node->fp_kind,
+                                 node->is_complex);
 }
 
 psx_type_t *psx_node_get_type(node_t *node) {
   if (!node) return NULL;
-  if (node->type && !is_mem_node_kind(node->kind)) return node->type;
+  if (node->type && (!is_mem_node_kind(node->kind) || node_explicit_cast_type(node)))
+    return node->type;
   switch (node->kind) {
     case ND_LVAR:
     case ND_GVAR:
@@ -512,8 +578,11 @@ psx_type_t *psx_node_get_type(node_t *node) {
       if (!type) type = type_from_indirect_funcall((node_func_t *)node);
       return node->type = type;
     }
-    case ND_FP_TO_INT:
-      return node->type = psx_type_new_integer(TK_INT, 4, node->is_unsigned);
+    case ND_FP_TO_INT: {
+      int width = ((node_mem_t *)node)->type_size;
+      if (width <= 0) width = 4;
+      return node->type = psx_type_new_integer(TK_INT, width, node->is_unsigned);
+    }
     case ND_INT_TO_FP:
     case ND_FNEG:
     case ND_CREAL:
@@ -570,6 +639,11 @@ static int funcall_ret_pointee_size(node_t *node) {
 
 int ps_node_type_size(node_t *node) {
   if (!node) return 0;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type) {
+    int s = psx_type_sizeof(explicit_type);
+    if (s > 0) return s;
+  }
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.type_size;
     case ND_GVAR: return as_mem(node)->type_size;
@@ -653,6 +727,14 @@ int ps_node_type_size(node_t *node) {
     case ND_POST_DEC: {
       int s = ps_node_type_size(node->lhs);
       return s > 0 ? s : 4;
+    }
+    case ND_FP_TO_INT:
+    case ND_INT_TO_FP:
+    case ND_FNEG:
+    case ND_CREAL:
+    case ND_CIMAG: {
+      int s = psx_type_sizeof(psx_node_get_type(node));
+      return s > 0 ? s : 0;
     }
     case ND_LT: case ND_LE:
     case ND_EQ: case ND_NE:
@@ -805,6 +887,9 @@ int ps_node_is_pointer(node_t *node) {
 
 int psx_node_pointer_qual_levels(node_t *node) {
   if (!node) return 0;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type && explicit_type->pointer_qual_levels > 0)
+    return explicit_type->pointer_qual_levels;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.pointer_qual_levels;
     case ND_GVAR:
@@ -843,6 +928,9 @@ int psx_node_pointer_qual_levels(node_t *node) {
 
 int psx_node_base_deref_size(node_t *node) {
   if (!node) return 0;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type && explicit_type->base_deref_size > 0)
+    return explicit_type->base_deref_size;
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.base_deref_size;
     case ND_GVAR:
@@ -878,6 +966,9 @@ int psx_node_base_deref_size(node_t *node) {
 
 tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type && explicit_type->pointee_fp_kind != TK_FLOAT_KIND_NONE)
+    return explicit_type->pointee_fp_kind;
   switch (node->kind) {
     case ND_LVAR: return (tk_float_kind_t)as_lvar(node)->mem.pointee_fp_kind;
     case ND_GVAR:
@@ -1109,6 +1200,9 @@ int psx_node_get_tag_scope_depth(node_t *node) {
 
 static int node_is_unsigned(node_t *node) {
   if (!node) return 0;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type && explicit_type->kind != PSX_TYPE_POINTER)
+    return psx_type_is_unsigned(explicit_type);
   switch (node->kind) {
     case ND_LVAR:
       return psx_type_is_unsigned(psx_node_get_type(node)) || as_lvar(node)->mem.is_unsigned;

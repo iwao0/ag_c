@@ -846,11 +846,21 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_INT_TO_FP, c2->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, c2->fp_kind);
   ASSERT_EQ(ND_NUM, c2->lhs->kind);
+  psx_type_t *c2_ty = psx_node_get_type(c2);
+  ASSERT_TRUE(c2_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, c2_ty->kind);
+  ASSERT_EQ(16, psx_type_sizeof(c2_ty));
+  ASSERT_EQ(16, ps_node_type_size(c2));
 
     node_t *c3 = parse_expr_input("(float _Imaginary)1");
   ASSERT_EQ(ND_INT_TO_FP, c3->kind);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, c3->fp_kind);
   ASSERT_EQ(ND_NUM, c3->lhs->kind);
+  psx_type_t *c3_ty = psx_node_get_type(c3);
+  ASSERT_TRUE(c3_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, c3_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(c3_ty));
+  ASSERT_EQ(8, ps_node_type_size(c3));
 
     node_t *c4 = parse_expr_input("(long double)1");
   ASSERT_EQ(ND_INT_TO_FP, c4->kind);
@@ -862,6 +872,79 @@ static void test_expr_sizeof() {
 
     node_t *c6 = parse_expr_input("(_Atomic(int*))0");
   ASSERT_EQ(ND_NUM, c6->kind);
+
+    node_t *ci = parse_expr_input("(int)a");
+  psx_type_t *ci_ty = psx_node_get_type(ci);
+  ASSERT_TRUE(ci_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ci_ty->kind);
+  ASSERT_EQ(4, psx_type_sizeof(ci_ty));
+  ASSERT_TRUE(!psx_type_is_unsigned(ci_ty));
+  ASSERT_TRUE(!ps_node_is_unsigned(ci));
+
+    node_t *cus = parse_expr_input("(unsigned short)a");
+  psx_type_t *cus_ty = psx_node_get_type(cus);
+  ASSERT_TRUE(cus_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, cus_ty->kind);
+  ASSERT_EQ(2, psx_type_sizeof(cus_ty));
+  ASSERT_EQ(2, ps_node_type_size(cus));
+  ASSERT_TRUE(psx_type_is_unsigned(cus_ty));
+  ASSERT_TRUE(ps_node_is_unsigned(cus));
+
+    node_t *cul = parse_expr_input("(unsigned long)a");
+  psx_type_t *cul_ty = psx_node_get_type(cul);
+  ASSERT_TRUE(cul_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, cul_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(cul_ty));
+  ASSERT_EQ(8, ps_node_type_size(cul));
+  ASSERT_TRUE(psx_type_is_unsigned(cul_ty));
+  ASSERT_TRUE(ps_node_is_unsigned(cul));
+
+    node_t *cf = parse_expr_input("(float)a");
+  psx_type_t *cf_ty = psx_node_get_type(cf);
+  ASSERT_TRUE(cf_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, cf_ty->kind);
+  ASSERT_EQ(4, psx_type_sizeof(cf_ty));
+
+    node_t *cp = parse_expr_input("(double*)a");
+  psx_type_t *cp_ty = psx_node_get_type(cp);
+  ASSERT_TRUE(cp_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, cp_ty->kind);
+  ASSERT_EQ(8, ps_node_type_size(cp));
+  ASSERT_EQ(8, psx_type_deref_size(cp_ty));
+  ASSERT_EQ(8, ps_node_deref_size(cp));
+  ASSERT_EQ(1, psx_node_pointer_qual_levels(cp));
+  ASSERT_EQ(8, psx_node_base_deref_size(cp));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind(cp));
+  ASSERT_TRUE(ps_node_is_pointer(cp));
+
+    node_t *uac_promote = parse_expr_input("(unsigned char)1 + (short)2");
+  psx_type_t *uac_promote_ty = psx_node_get_type(uac_promote);
+  ASSERT_TRUE(uac_promote_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, uac_promote_ty->kind);
+  ASSERT_EQ(4, psx_type_sizeof(uac_promote_ty));
+  ASSERT_TRUE(!psx_type_is_unsigned(uac_promote_ty));
+
+    node_t *uac_signed_wider = parse_expr_input("(unsigned int)1 + (long)-1");
+  psx_type_t *uac_signed_wider_ty = psx_node_get_type(uac_signed_wider);
+  ASSERT_TRUE(uac_signed_wider_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, uac_signed_wider_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(uac_signed_wider_ty));
+  ASSERT_TRUE(!psx_type_is_unsigned(uac_signed_wider_ty));
+
+    node_t *uac_unsigned_same_width = parse_expr_input("(unsigned long)1 + (long)-1");
+  psx_type_t *uac_unsigned_same_width_ty = psx_node_get_type(uac_unsigned_same_width);
+  ASSERT_TRUE(uac_unsigned_same_width_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, uac_unsigned_same_width_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(uac_unsigned_same_width_ty));
+  ASSERT_TRUE(psx_type_is_unsigned(uac_unsigned_same_width_ty));
+
+    node_t *uac_long_long = parse_expr_input("((unsigned long long)9ULL) ^ ((unsigned short)3)");
+  psx_type_t *uac_long_long_ty = psx_node_get_type(uac_long_long);
+  ASSERT_TRUE(uac_long_long_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, uac_long_long_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(uac_long_long_ty));
+  ASSERT_TRUE(psx_type_is_unsigned(uac_long_long_ty));
+  ASSERT_TRUE(uac_long_long_ty->is_long_long);
 }
 
 static void test_expr_inc_dec() {

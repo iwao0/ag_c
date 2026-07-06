@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き692: typed AST の funcptr metadata / indirect call 型投影）
+最終更新: 2026-07-06（続き696: typed UAC helper を binary/ternary 型生成へ導入）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,93 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き696: **typed UAC helper を binary/ternary 型生成へ導入**。
+  `node_utils.c` に `type_usual_arith_result()` と整数 promotion / 符号判定 helper を追加し、
+  `psx_node_get_type()` の binary arithmetic/bitwise と scalar ternary の型生成を
+  `ps_node_type_size(node)` / `ps_node_is_unsigned(node)` / `node_is_long_long(node)` から、
+  左右 operand の `psx_type_t` を読む形へ寄せた。
+  これにより typed AST の result type 構築では、cast や operand 側に載った型情報を
+  node wrapper の個別フィールド推定より優先できるようになった。
+  ただし codegen 側が直接使う legacy helper 全体はまだ置き換えていないため、
+  挙動リスクを binary/ternary の `psx_node_get_type()` 結果生成に限定している。
+  regression として `test/test_parser.c` に
+  `(unsigned char)1 + (short)2` の int promotion、
+  `(unsigned int)1 + (long)-1` の signed wider case、
+  `(unsigned long)1 + (long)-1` の same-width unsigned case、
+  `((unsigned long long)9ULL) ^ ((unsigned short)3)` の unsigned long long identity を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き695: **cast pointer metadata を typed AST から読む**。
+  続き694の explicit cast type 判定を `node_explicit_cast_type()` に整理し、
+  cast 系ノード (`ND_PTR_CAST` / `ND_FP_TO_INT` / `ND_INT_TO_FP` /
+  `ND_FNEG` / `ND_CREAL` / `ND_CIMAG`) の明示型を読む入口を共通化した。
+  `psx_node_pointer_qual_levels()` / `psx_node_base_deref_size()` /
+  `psx_node_pointee_fp_kind()` / `node_is_unsigned()` は、明示型を持つ cast 系では
+  `node_mem_t` の個別フィールドより先に `psx_type_t` の metadata を参照する。
+  これにより `(double*)x` のような cast で pointee FP kind や base deref size を
+  wrapper のフィールド埋め忘れに依存せず typed AST から取れるようになった。
+  まだ binary / ternary / function call には広げず、前回壊れた `node->type` 全面優先を避けて
+  explicit cast type に限定している。
+  regression として `test/test_parser.c` に `(double*)a` の
+  `psx_node_pointer_qual_levels()==1` / `psx_node_base_deref_size()==8` /
+  `psx_node_pointee_fp_kind()==TK_FLOAT_KIND_DOUBLE`、および `(int)a` の
+  `!ps_node_is_unsigned()`、`(float _Imaginary)1` の `ps_node_type_size()==8` を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き694: **cast explicit type を旧 helper へ接続**。
+  続き693の typed AST cast annotation を一段進め、`node_utils.c` に
+  `node_kind_has_explicit_cast_type()` を追加した。`psx_node_get_type()` と
+  `ps_node_type_size()` は `ND_PTR_CAST` / `ND_FP_TO_INT` / `ND_INT_TO_FP` /
+  `ND_FNEG` / `ND_CREAL` / `ND_CIMAG` の明示型を尊重するようになり、
+  cast 結果の幅を `node_mem_t::type_size` と別々に推定する箇所を減らした。
+  ただし binary / ternary などにはまだ広げていない。前回の `node->type` 全面優先で
+  `int_cast_truncates_long` が壊れたため、明示型を持つ cast 系に限定している。
+  また通常 cast parser が捨てていた `cast_is_complex` を `apply_cast()` まで渡し、
+  `(_Complex double)1` / `(float _Imaginary)1` の `psx_type_t` を通常 float ではなく
+  `PSX_TYPE_COMPLEX` として表現するようにした。`parse_cast_type()` の `cast_elem_size` は
+  complex 全体ではなく基底 FP 幅なので、typed AST 側では `elem_size * 2` にしている。
+  regression として `test/test_parser.c` に complex cast の `PSX_TYPE_COMPLEX` / 16B/8B、
+  unsigned short/long cast の `ps_node_type_size()` / `ps_node_is_unsigned()`、
+  double pointer cast の `ps_node_type_size()` / `ps_node_deref_size()` /
+  `ps_node_is_pointer()` を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き693: **cast target type の typed AST 明示化**。
+  typed AST へ寄せる次の根本対応として、cast lowering が作る値変換ノードと
+  「cast 結果の型」を分離した。`expr.c` に `expr_cast_target_type()` /
+  `annotate_cast_type()` を追加し、`(int)x` / `(unsigned short)x` /
+  `(unsigned long)x` / `(float)x` / `(double*)x` などの cast 結果へ
+  `psx_type_t` を明示的に載せるようにした。`node_utils.c` 側では
+  explicit type を持つ `ND_PTR_CAST` を `psx_node_get_type()` が尊重し、
+  `ND_FP_TO_INT` は `node_mem_t::type_size` から 4/8 byte の整数型を返すようにした。
+  さらに `ps_node_type_size()` が `ND_FP_TO_INT` / `ND_INT_TO_FP` /
+  `ND_FNEG` / `ND_CREAL` / `ND_CIMAG` の型幅を typed AST から読めるようにした。
+  前回の単純な `node->type` 優先切替は `int_cast_truncates_long` を壊したため、
+  今回は helper 全体を一気に差し替えず、cast node が正しい target type を持つところから
+  足場を固めている。
+  regression として `test/test_parser.c` の cast テストに `psx_node_get_type()` 直接確認を追加し、
+  cast 結果の幅・符号・ポインタ deref size が typed AST から取れることを固定した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
 - 続き668: **stmt typedef state の local 化**。
   `stmt.c` の関数内 typedef parser に残っていた宣言子単位の global state
   (`g_stmt_typedef_ptr_in_paren` / `g_stmt_typedef_has_func_suffix`) と、

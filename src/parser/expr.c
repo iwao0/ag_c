@@ -2432,6 +2432,76 @@ static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
   return node;
 }
 
+static psx_type_t *expr_type_new_void(void) {
+  psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
+  type->scalar_kind = TK_VOID;
+  return type;
+}
+
+static int expr_integer_type_size(token_kind_t kind, int fallback_size) {
+  switch (kind) {
+    case TK_BOOL:
+    case TK_CHAR:
+      return 1;
+    case TK_SHORT:
+      return 2;
+    case TK_LONG:
+      return 8;
+    case TK_INT:
+    case TK_SIGNED:
+    case TK_UNSIGNED:
+    case TK_ENUM:
+      return 4;
+    default:
+      return fallback_size > 0 ? fallback_size : 4;
+  }
+}
+
+static psx_type_t *expr_cast_target_type(token_kind_t type_kind, int is_pointer,
+                                         token_kind_t cast_tag_kind, char *cast_tag_name,
+                                         int cast_tag_len, int cast_elem_size,
+                                         tk_float_kind_t cast_fp_kind,
+                                         int cast_is_unsigned, int cast_is_long_long,
+                                         int cast_is_plain_char, int cast_is_complex) {
+  psx_type_t *base = NULL;
+  if (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION) {
+    base = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len, 0, cast_elem_size);
+  } else if (type_kind == TK_VOID) {
+    base = expr_type_new_void();
+  } else if (cast_is_complex) {
+    base = psx_type_new(PSX_TYPE_COMPLEX);
+    base->fp_kind = cast_fp_kind;
+    int elem_size = cast_elem_size > 0 ? cast_elem_size
+                  : cast_fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8;
+    base->size = elem_size * 2;
+    base->align = base->size >= 8 ? 8 : 4;
+  } else if (cast_fp_kind != TK_FLOAT_KIND_NONE || type_kind == TK_FLOAT || type_kind == TK_DOUBLE) {
+    tk_float_kind_t fp = cast_fp_kind != TK_FLOAT_KIND_NONE ? cast_fp_kind
+                       : type_kind == TK_FLOAT ? TK_FLOAT_KIND_FLOAT
+                       : TK_FLOAT_KIND_DOUBLE;
+    base = psx_type_new_float(fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  } else {
+    int sz = expr_integer_type_size(type_kind, cast_elem_size);
+    token_kind_t scalar = type_kind == TK_SIGNED ? TK_INT : type_kind;
+    base = psx_type_new_integer(scalar, sz, cast_is_unsigned);
+    base->is_long_long = cast_is_long_long ? 1 : 0;
+    base->is_plain_char = cast_is_plain_char ? 1 : 0;
+  }
+
+  if (!is_pointer) return base;
+
+  int deref_size = cast_elem_size > 0 ? cast_elem_size : psx_type_sizeof(base);
+  psx_type_t *ptr = psx_type_new_pointer(base, deref_size);
+  ptr->pointer_qual_levels = 1;
+  ptr->base_deref_size = psx_type_sizeof(base);
+  return ptr;
+}
+
+static node_t *annotate_cast_type(node_t *node, psx_type_t *type) {
+  if (node && type) node->type = type;
+  return node;
+}
+
 // 浮動小数式を整数へ変換するため ND_FP_TO_INT でラップ。fp_kind==NONE なら no-op。
 // `(int)d`/`(char)d`/`(long)d` 等で codegen に fcvtzs を出させるために使う。
 static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
@@ -2442,7 +2512,7 @@ static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
   cvt->lhs = operand;
   cvt->fp_kind = TK_FLOAT_KIND_NONE;
   mem->type_size = 4;
-  return cvt;
+  return annotate_cast_type(cvt, psx_type_new_integer(TK_INT, 4, 0));
 }
 
 static node_t *wrap_fp_to_int_width(node_t *operand, int width) {
@@ -2453,7 +2523,7 @@ static node_t *wrap_fp_to_int_width(node_t *operand, int width) {
   cvt->lhs = operand;
   cvt->fp_kind = TK_FLOAT_KIND_NONE;
   mem->type_size = (width == 8) ? 8 : 4;
-  return cvt;
+  return annotate_cast_type(cvt, psx_type_new_integer(TK_INT, mem->type_size, 0));
 }
 
 /* `(float)x` / `(double)x` キャスト。operand が目的のFP型と異なる (整数、または
@@ -2461,25 +2531,27 @@ static node_t *wrap_fp_to_int_width(node_t *operand, int width) {
  * 発行できるようにする。同じFP型なら no-op で素通りさせる。 */
 static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
   if (!operand) return operand;
-  if (operand->fp_kind == target) return operand;
+  psx_type_t *target_type = psx_type_new_float(target, target == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  if (operand->fp_kind == target) return annotate_cast_type(operand, target_type);
   // float(4) と double/long double(8) は同幅グループで判定する。
   bool op_is_double = operand->fp_kind >= TK_FLOAT_KIND_DOUBLE;
   bool tgt_is_double = target >= TK_FLOAT_KIND_DOUBLE;
   if (operand->fp_kind != TK_FLOAT_KIND_NONE && op_is_double == tgt_is_double) {
     operand->fp_kind = target;
-    return operand;
+    return annotate_cast_type(operand, target_type);
   }
   node_t *cvt = arena_alloc(sizeof(node_t));
   cvt->kind = ND_INT_TO_FP;
   cvt->lhs = operand;
   cvt->fp_kind = target;
-  return cvt;
+  return annotate_cast_type(cvt, target_type);
 }
 
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
-                          int cast_elem_size, int cast_is_unsigned, int cast_is_long_long,
-                          int cast_is_plain_char) {
+                          int cast_elem_size, tk_float_kind_t cast_fp_kind,
+                          int cast_is_unsigned, int cast_is_long_long, int cast_is_plain_char,
+                          int cast_is_complex) {
   /* 浮動小数点定数 ND_NUM をスカラ整数型へキャストするのは定数畳み込みできる。
    * wrap_fp_to_int_if_needed 経由で ND_FP_TO_INT に変換してしまうと「定数」ではなく
    * なり、グローバル初期化 (`int g = (int)3.7;`) の has_init が立たず `.comm` に
@@ -2493,6 +2565,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     double f = ((node_num_t *)operand)->fval;
     operand = psx_node_new_num((long long)f);
   }
+  psx_type_t *cast_type = expr_cast_target_type(type_kind, is_pointer,
+                                                cast_tag_kind, cast_tag_name, cast_tag_len,
+                                                cast_elem_size, cast_fp_kind,
+                                                cast_is_unsigned, cast_is_long_long,
+                                                cast_is_plain_char, cast_is_complex);
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
@@ -2501,7 +2578,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         ((node_num_t *)operand)->int_is_long = 1;
         ((node_num_t *)operand)->int_is_long_long = cast_is_long_long ? 1 : 0;
         psx_node_set_unsigned(operand, cast_is_unsigned);
-        return operand;
+        return annotate_cast_type(operand, cast_type);
       }
       if (!ps_node_is_pointer(operand)) {
         node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
@@ -2512,7 +2589,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         wrap->is_long_long = cast_is_long_long ? 1 : 0;
         if (ps_node_is_unsigned(operand) && ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
           wrap->widen_zext_i64 = 1;
-        return (node_t *)wrap;
+        return annotate_cast_type((node_t *)wrap, cast_type);
       }
     }
     /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
@@ -2530,7 +2607,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->type_size = 8;
       wrap->is_unsigned = 1;
       wrap->widen_zext_i64 = 1;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
      * ND_PTR_CAST でラップする (operand 自体は他から共有される可能性があるので
@@ -2548,7 +2625,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->type_size = 8;
       if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
       wrap->pointer_qual_levels = 1;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     // `(float*)X` / `(double*)X` の場合、後段の `*` deref が FP load を出せる
     // よう pointee_fp_kind を保持する ND_PTR_CAST でラップする。
@@ -2566,7 +2643,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * 「ポインタ要素」ではない。立てると `((double*)X)[i]` の添字結果が誤って
        * ポインタ扱いされ E3064 になる (`*(double*)X` の deref は deref_size/pointee_fp_kind
        * のみ見るので影響なし)。 */
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
      * が立っている場合、後続 deref エラーを誤発生させないよう ND_PTR_CAST で
@@ -2584,7 +2661,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * (立てると「要素自体がポインタ」扱いになり subscript 結果が誤ってポインタ化する)。 */
       if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
       /* pointee_is_void は明示的にデフォルト (0) のままにする */
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(int *)x` / `(char *)x` など、スカラ整数型への (単段) ポインタキャスト:
      * 後段の deref / ポインタ算術が新しい要素サイズを使うよう ND_PTR_CAST で
@@ -2617,7 +2694,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * ポインタ扱いされたり整数ロードになる (`*(double*)p` / creal のメモリ経由に必要)。 */
       if (type_kind == TK_FLOAT) wrap->pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
       else if (type_kind == TK_DOUBLE) wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* (long)ptr のようにポインタ→long の明示キャスト: 結果は整数なので
      * node_mem_t の is_pointer をクリアし、後段の代入/初期化制約検査が
@@ -2637,7 +2714,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (is_pointer && operand->kind == ND_NUM) {
       ((node_num_t *)operand)->from_pointer_cast = 1;
     }
-    return operand;
+    return annotate_cast_type(operand, cast_type);
   }
   if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
     const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
@@ -2645,10 +2722,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
                  kind);
   }
   if (type_kind == TK_FLOAT) {
-    return wrap_to_fp(operand, TK_FLOAT_KIND_FLOAT);
+    return annotate_cast_type(wrap_to_fp(operand, TK_FLOAT_KIND_FLOAT), cast_type);
   }
   if (type_kind == TK_DOUBLE) {
-    return wrap_to_fp(operand, TK_FLOAT_KIND_DOUBLE);
+    return annotate_cast_type(wrap_to_fp(operand, TK_FLOAT_KIND_DOUBLE), cast_type);
   }
   if (type_kind == TK_INT || type_kind == TK_ENUM) {
     operand = wrap_fp_to_int_if_needed(operand);
@@ -2657,7 +2734,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * `(int)0x100000000L == 0` が定数畳み込みで 0x100000000==0 と評価され偽になっていた
      * (戻り値や代入では store 幅で切り詰められ偶然合っていた)。 */
     if (operand->kind == ND_NUM) {
-      return psx_node_new_num((long long)(int)((node_num_t *)operand)->val);
+      return annotate_cast_type(psx_node_new_num((long long)(int)((node_num_t *)operand)->val),
+                                cast_type);
     }
     /* int 幅超 (long, 8B) の非ポインタ値の (int) キャスト: 32bit 符号付きへ切り詰める。
      * `(x << 32) >> 32` (算術右シフト) で低 32bit を 64bit へ符号拡張するため、後段の
@@ -2682,7 +2760,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base.kind = ND_PTR_CAST;
       wrap->base.lhs = shr;
       wrap->type_size = 4;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
      * node_mem_t を持つノードの is_pointer をクリアする。 */
@@ -2706,9 +2784,9 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base.kind = ND_PTR_CAST;
       wrap->base.lhs = operand;
       wrap->type_size = 4;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
-    return operand;
+    return annotate_cast_type(operand, cast_type);
   }
   if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
     operand = wrap_fp_to_int_if_needed(operand);
@@ -2720,7 +2798,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       node_t *n = psx_node_new_num(target_unsigned ? (long long)(unsigned)v
                                                     : (long long)(int)v);
       if (target_unsigned) psx_node_set_unsigned(n, 1);
-      return n;
+      return annotate_cast_type(n, cast_type);
     }
     /* int 幅超 (long, 8B) の非ポインタ値の (signed/unsigned) キャスト: 32bit へ
      * 切り詰める。`(x<<32)>>32` で低 32bit を 64bit へ拡張 (unsigned は論理シフトで
@@ -2737,7 +2815,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base.lhs = shr;
       wrap->type_size = 4;
       wrap->is_unsigned = target_unsigned ? 1 : 0;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* sub-int (char/short) を (unsigned) へ: operand 自身の load 符号性 (ldrsh/ldrh)
      * を保ったまま 32bit unsigned 値へ昇格する必要がある。is_unsigned を直接立てると
@@ -2752,7 +2830,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         operand->fp_kind == TK_FLOAT_KIND_NONE && !ps_node_is_pointer(operand)) {
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(0xffffffffLL));
       psx_node_set_unsigned(masked, 1);
-      return masked;
+      return annotate_cast_type(masked, cast_type);
     }
     if (op_sz >= 4 && !ps_node_is_pointer(operand)) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
@@ -2760,7 +2838,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base.lhs = operand;
       wrap->type_size = 4;
       wrap->is_unsigned = target_unsigned ? 1 : 0;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
         operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
@@ -2772,15 +2850,16 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       if (ps_node_type_size(operand) >= 4)
         psx_node_set_unsigned(operand, target_unsigned);
     }
-    return operand;
+    return annotate_cast_type(operand, cast_type);
   }
   if (type_kind == TK_BOOL) {
-    return psx_node_new_binary(ND_NE, operand, psx_node_new_num(0));
+    return annotate_cast_type(psx_node_new_binary(ND_NE, operand, psx_node_new_num(0)),
+                              cast_type);
   }
   if (type_kind == TK_VOID) {
     // 現状ASTでは専用ノードを持たず、既存ノードのまま評価値を捨てる文脈で利用する。
     operand->fp_kind = TK_FLOAT_KIND_NONE;
-    return operand;
+    return annotate_cast_type(operand, cast_type);
   }
   if (type_kind == TK_SHORT || type_kind == TK_CHAR) {
     operand = wrap_fp_to_int_if_needed(operand);
@@ -2801,7 +2880,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       ((node_num_t *)n)->int_width = (unsigned char)(type_kind == TK_SHORT ? 2 : 1);
       if (cast_is_plain_char) ((node_num_t *)n)->int_is_plain_char = 1;
       if (cast_is_unsigned) psx_node_set_unsigned(n, 1);
-      return n;
+      return annotate_cast_type(n, cast_type);
     }
     /* unsigned char/short: & マスクでゼロ拡張し unsigned ラベルを付ける。 */
     if (cast_is_unsigned) {
@@ -2812,7 +2891,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       wrap->base.lhs = masked;
       wrap->type_size = (short)(width / 8);
       wrap->is_unsigned = 1;
-      return (node_t *)wrap;
+      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* signed char/short: `(x << (src_width-width)) >> (src_width-width)` の算術シフトで符号拡張する。
      * 従来の `& マスク` だけだとビット (width-1) が立った runtime 値が符号拡張されず、
@@ -2829,12 +2908,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     wrap->base.lhs = shr;
     wrap->type_size = (short)(width / 8);
     if (cast_is_plain_char) wrap->is_plain_char = 1;
-    return (node_t *)wrap;
+    return annotate_cast_type((node_t *)wrap, cast_type);
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
   psx_diag_ctx(curtok(), "cast", "%s",
                diag_message_for(DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED));
-  return operand;
+  return annotate_cast_type(operand, cast_type);
 }
 
 static bool is_compound_assign_token(token_kind_t k) {
@@ -3180,11 +3259,12 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
   int cast_is_unsigned = 0;
   int cast_is_long_long = 0;
   int cast_is_plain_char = 0;
+  int cast_is_complex = 0;
   if (parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL, NULL,
                       &cast_is_unsigned, &cast_is_long_long, &cast_is_plain_char,
-                      NULL, NULL)) {
+                      &cast_is_complex, NULL)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       // compound literal は primary/postfix 側で処理する
       return unary_with_compound_addr_context(compound_addr_context, ctx);
@@ -3243,8 +3323,9 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand,
                                      cast_tag_kind, cast_tag_name, cast_tag_len,
-                                     cast_elem_size, cast_is_unsigned, cast_is_long_long,
-                                     cast_is_plain_char), ctx);
+                                     cast_elem_size, cast_fp_kind,
+                                     cast_is_unsigned, cast_is_long_long,
+                                     cast_is_plain_char, cast_is_complex), ctx);
   }
   return unary_ctx(ctx);
 }
