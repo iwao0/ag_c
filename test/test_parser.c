@@ -923,6 +923,9 @@ static void test_expr_sizeof() {
   ASSERT_EQ(PSX_TYPE_INTEGER, uac_promote_ty->kind);
   ASSERT_EQ(4, psx_type_sizeof(uac_promote_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(uac_promote_ty));
+  ASSERT_EQ(4, ps_node_type_size(uac_promote));
+  ASSERT_TRUE(!ps_node_is_unsigned(uac_promote));
+  ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(uac_promote));
 
     node_t *uac_signed_wider = parse_expr_input("(unsigned int)1 + (long)-1");
   psx_type_t *uac_signed_wider_ty = psx_node_get_type(uac_signed_wider);
@@ -930,6 +933,9 @@ static void test_expr_sizeof() {
   ASSERT_EQ(PSX_TYPE_INTEGER, uac_signed_wider_ty->kind);
   ASSERT_EQ(8, psx_type_sizeof(uac_signed_wider_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(uac_signed_wider_ty));
+  ASSERT_EQ(8, ps_node_type_size(uac_signed_wider));
+  ASSERT_TRUE(!ps_node_is_unsigned(uac_signed_wider));
+  ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(uac_signed_wider));
 
     node_t *uac_unsigned_same_width = parse_expr_input("(unsigned long)1 + (long)-1");
   psx_type_t *uac_unsigned_same_width_ty = psx_node_get_type(uac_unsigned_same_width);
@@ -937,6 +943,9 @@ static void test_expr_sizeof() {
   ASSERT_EQ(PSX_TYPE_INTEGER, uac_unsigned_same_width_ty->kind);
   ASSERT_EQ(8, psx_type_sizeof(uac_unsigned_same_width_ty));
   ASSERT_TRUE(psx_type_is_unsigned(uac_unsigned_same_width_ty));
+  ASSERT_EQ(8, ps_node_type_size(uac_unsigned_same_width));
+  ASSERT_TRUE(ps_node_is_unsigned(uac_unsigned_same_width));
+  ASSERT_TRUE(psx_node_usual_arith_is_unsigned(uac_unsigned_same_width));
 
     node_t *uac_long_long = parse_expr_input("((unsigned long long)9ULL) ^ ((unsigned short)3)");
   psx_type_t *uac_long_long_ty = psx_node_get_type(uac_long_long);
@@ -945,6 +954,22 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, psx_type_sizeof(uac_long_long_ty));
   ASSERT_TRUE(psx_type_is_unsigned(uac_long_long_ty));
   ASSERT_TRUE(uac_long_long_ty->is_long_long);
+  ASSERT_EQ(8, ps_node_type_size(uac_long_long));
+  ASSERT_TRUE(ps_node_is_unsigned(uac_long_long));
+  ASSERT_TRUE(psx_node_usual_arith_is_unsigned(uac_long_long));
+
+    node_t *ternary_uac = parse_expr_input("1 ? (unsigned int)1 : (long)-1");
+  psx_type_t *ternary_uac_ty = psx_node_get_type(ternary_uac);
+  ASSERT_TRUE(ternary_uac_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ternary_uac_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(ternary_uac_ty));
+  ASSERT_TRUE(!psx_type_is_unsigned(ternary_uac_ty));
+  ASSERT_EQ(8, ps_node_type_size(ternary_uac));
+  ASSERT_TRUE(!ps_node_is_unsigned(ternary_uac));
+  ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(ternary_uac));
+
+    node_t *cmp_uac = parse_expr_input("(unsigned int)1 < (long)-1");
+  ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(cmp_uac));
 }
 
 static void test_expr_inc_dec() {
@@ -2326,6 +2351,12 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok_with_message("int main(void){ int x=1; return x&&x; }", "W3020");
   expect_parse_ok_with_message("int main(void){ unsigned int u=1; int s=-1; return s<u; }",
                                "W3018");
+  expect_parse_ok_without_message("int main(void){ unsigned int u=1; long s=-1; return s<u; }",
+                                  "W3018");
+  expect_parse_ok_without_message(
+      "int main(void){ unsigned char u=1; int s=-1; return s<u; }", "W3018");
+  expect_parse_ok_with_message(
+      "int main(void){ unsigned long u=1; long s=-1; return s<u; }", "W3018");
   expect_parse_ok_with_message("int main(void){ unsigned int u=1; return u>=0; }", "W3019");
   expect_parse_ok_with_message("int main(void){ unsigned int u=1; return 0>u; }", "W3019");
   expect_parse_ok_with_message("int main(void){ int *p; return p==5; }", "W3022");

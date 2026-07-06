@@ -368,16 +368,7 @@ static void semantic_warn_identical_logical(node_t *node, const token_t *fallbac
 }
 
 static int semantic_sign_cmp_effective_unsigned(node_t *n) {
-  if (!n) return 0;
-  if (ps_node_is_pointer(n)) return 0;
-  if (n->fp_kind != TK_FLOAT_KIND_NONE) return 0;
-  if (ps_node_type_size(n) < 4) return 0;
-  return ps_node_is_unsigned(n) ? 1 : 0;
-}
-
-static int semantic_sign_cmp_effective_size(node_t *n) {
-  int sz = n ? ps_node_type_size(n) : 4;
-  return sz < 4 ? 4 : sz;
+  return psx_node_integer_promotion_is_unsigned(n);
 }
 
 static void semantic_warn_sign_compare(node_t *lhs, node_t *rhs, const char *op,
@@ -387,10 +378,8 @@ static void semantic_warn_sign_compare(node_t *lhs, node_t *rhs, const char *op,
   int ru = semantic_sign_cmp_effective_unsigned(rhs);
   if (lu == ru) return;
   node_t *signed_side = lu ? rhs : lhs;
-  node_t *unsigned_side = lu ? lhs : rhs;
   if (signed_side->kind == ND_NUM && ((node_num_t *)signed_side)->val >= 0) return;
-  if (semantic_sign_cmp_effective_size(signed_side) >
-      semantic_sign_cmp_effective_size(unsigned_side)) return;
+  if (!psx_node_usual_arith_operands_is_unsigned(lhs, rhs)) return;
   diag_warn_tokf(DIAG_WARN_PARSER_SIGN_COMPARE, tok,
                  "符号付きと符号なしの整数を比較しています ('%s' / 負値が大きな正の値として扱われる可能性)",
                  op);

@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き696: typed UAC helper を binary/ternary 型生成へ導入）
+最終更新: 2026-07-06（続き700: sign-compare warning を typed UAC helper へ集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,82 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き700: **sign-compare warning を typed UAC helper へ集約**。
+  parser/node_utils 側に `psx_node_integer_promotion_is_unsigned()` と
+  `psx_node_usual_arith_operands_is_unsigned()` を公開し、
+  `semantic_warn_sign_compare()` に残っていた integer promotion 幅・signed/unsigned rank の
+  手計算を削除した。
+  W3018 は operand が integer promotion 後に signed/unsigned で分かれ、かつ
+  typed UAC result が unsigned になる場合だけ warning する。
+  既存の「非負 signed literal は warning しない」抑制は維持した。
+  regression として
+  `unsigned int` vs `int` は warning、
+  `unsigned int` vs `long` は signed-wider なので no warning、
+  `unsigned char` vs `int` は promotion 後 signed int なので no warning、
+  `unsigned long` vs `long` は same-width unsigned result なので warning を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き699: **ternary wide-int 判定を typed result へ一本化**。
+  `ir_builder.c` に残っていた `ternary_branch_is_wide_int()` を削除した。
+  これは `ps_node_type_size(ND_NUM)` が 0 だった時代に、ternary の branch を再帰的に見て
+  64bit integer literal / nested ternary を拾うための補助だったが、続き697で
+  `ps_node_type_size(ND_TERNARY)` が `psx_node_get_type()` / typed UAC result から幅を返すように
+  なったため、IR 側で branch 幅を別推定する必要がなくなった。
+  `build_node_ternary_with_sig()` は pointer / function pointer の特別扱い後、
+  `ps_node_type_size(node) >= 8` の typed result 判定だけで 8byte slot を選ぶ。
+  これで ternary result width の source of truth を typed AST 側へ寄せ、IR 側の古い
+  literal/nested-ternary 迂回を除去した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き698: **IR の UAC 符号判定を typed helper へ集約**。
+  `ir_builder.c` の `build_node_binop()` に残っていた通常算術変換の符号判定再実装
+  (`lsz/rsz`、`lu/ru`、unsigned 側幅 >= signed 側幅の手計算) を削除した。
+  parser 側に `psx_node_usual_arith_is_unsigned()` を公開し、
+  `node_utils.c` の typed UAC / `psx_type_t` result helper を経由して
+  比較 (`LT`/`LE`) と除算/剰余 (`DIV`/`MOD`) の signed/unsigned IR op を選ぶ。
+  これで UAC の rank/promotion/signedness ルールを IR 側で別管理せず、
+  parser の typed AST result と同じ source of truth を使う形になった。
+  `ps_node_is_unsigned()` は shift の ASR/LSR 選択など legacy 動作も含むため置き換えず、
+  UAC 専用 API を別名にして役割を分けている。
+  regression として `test/test_parser.c` の UAC ケースに
+  `psx_node_usual_arith_is_unsigned()` assertion を追加し、
+  `(unsigned int)1 < (long)-1` の signed-wider comparison 判定も固定した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き697: **legacy type helpers の binary/ternary 結果を typed AST へ寄せる**。
+  続き696で `psx_node_get_type()` 側へ入れた typed UAC を、codegen / semantic が使う
+  legacy helper の入口にも接続した。`ps_node_type_size()` は `ND_TERNARY` と
+  arithmetic / bitwise / shift の結果幅を `psx_node_get_type()` の `psx_type_t` から読むようにし、
+  `node_is_unsigned()` は ternary と arithmetic / bitwise の結果符号を `psx_type_t` から読む。
+  `binary_usual_arith_unsigned()` も operand の `psx_type_t` から同じ UAC helper を使う形にしたため、
+  typed AST と legacy helper の二重実装が減った。
+  ただし `ND_SHL` / `ND_SHR` の signedness は単なる型情報ではなく、cast lowering が
+  ASR/LSR の選択として明示上書きする codegen 動作でもあるため、`node->is_unsigned` を
+  残して typed result からは読まない。ここを typed result に寄せると
+  `int_cast_truncates_long` の `(int)unsigned long` 切り詰めが logical shift になり壊れるため、
+  「結果型」と「変換内部の演算動作」を分離した。
+  regression として `test/test_parser.c` の UAC ケースに `ps_node_type_size()` /
+  `ps_node_is_unsigned()` の確認を追加し、ternary の signed wider case も追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
 - 続き696: **typed UAC helper を binary/ternary 型生成へ導入**。
   `node_utils.c` に `type_usual_arith_result()` と整数 promotion / 符号判定 helper を追加し、
   `psx_node_get_type()` の binary arithmetic/bitwise と scalar ternary の型生成を

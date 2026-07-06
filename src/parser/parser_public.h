@@ -32,6 +32,9 @@ int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
 int ps_node_is_unsigned(node_t *n);
 int ps_node_type_size(node_t *n);
+int psx_node_integer_promotion_is_unsigned(node_t *n);
+int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
+int psx_node_usual_arith_is_unsigned(node_t *n);
 int psx_node_pointer_qual_levels(node_t *n);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
                            char **tag_name, int *tag_len, int *is_tag_pointer);

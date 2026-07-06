@@ -1627,26 +1627,9 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
                    (node->lhs && node->lhs->is_unsigned) ||
                    (node->rhs && node->rhs->is_unsigned));
   /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
-   * 従って別途決める。上の unsig (どちらかが unsigned なら unsigned) は rank を
-   * 無視しており、`long < unsigned int` や `long / unsigned int`、
-   * `unsigned char < int` を誤って符号なし演算にしてしまう。
-   * 整数昇格: int 未満 (i8/i16) は符号付き int になるので幅<4 は符号付き 4byte 扱い。
-   * 両辺の符号が異なる場合、符号なし側の幅が符号付き側の幅以上のときのみ符号なし。
-   * 広い符号付き型は狭い符号なし型の全値を表現できるため符号付き演算になる。 */
-  int lsz = ps_node_type_size(node->lhs), rsz = ps_node_type_size(node->rhs);
-  if (lsz <= 0) lsz = ir_type_size(l.type);
-  if (rsz <= 0) rsz = ir_type_size(r.type);
-  int lu = (lsz >= 4) && ps_node_is_unsigned(node->lhs);
-  int ru = (rsz >= 4) && ps_node_is_unsigned(node->rhs);
-  int lw = lsz < 4 ? 4 : lsz, rw = rsz < 4 ? 4 : rsz;
-  int uac_unsig;  /* 通常算術変換 (usual arithmetic conversion) の符号 */
-  if (lu == ru) {
-    uac_unsig = lu;
-  } else {
-    int uw = lu ? lw : rw;  /* 符号なし側の幅 */
-    int sw = lu ? rw : lw;  /* 符号付き側の幅 */
-    uac_unsig = uw >= sw;
-  }
+   * 従う。UAC 判定は parser/node_utils.c の typed result helper に集約し、
+   * IR 側で rank / promotion を再実装しない。 */
+  int uac_unsig = psx_node_usual_arith_is_unsigned(node);
   ir_op_t op = IR_ADD;
   switch (node->kind) {
     case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
@@ -2368,27 +2351,6 @@ static ir_val_t build_node_logand_or(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(v_res, IR_TY_I32);
 }
 
-/* 三項演算子の分岐値が 64bit 整数 (long / long long、または 32bit に収まらない
- * リテラル) かを判定する。ポインタ・浮動小数は別経路で扱うので対象外。
- * 64bit 分岐があるのに結果型を i32 と誤判定すると、8 バイト値が 4 バイト slot へ
- * 切り詰められる (例 `(c)?5:10000000000L` が下位 32bit になる)。 */
-static int ternary_branch_is_wide_int(node_t *n) {
-  if (!n) return 0;
-  if (n->fp_kind != TK_FLOAT_KIND_NONE) return 0;
-  if (n->kind == ND_NUM) {
-    long long v = ((node_num_t *)n)->val;
-    /* build_node_num と同じ境界: [INT32_MIN, UINT32_MAX] は 32bit で扱う。 */
-    return v > 0xFFFFFFFFLL || v < (-2147483647LL - 1);
-  }
-  /* 入れ子三項 (`a ? x : (b ? bigL : y)`): 内側の分岐に 64bit があれば結果も 64bit。
-   * ps_node_type_size は NUM リテラルを 0 とみなすため、再帰でリテラルを拾う。 */
-  if (n->kind == ND_TERNARY) {
-    return ternary_branch_is_wide_int(n->rhs) ||
-           ternary_branch_is_wide_int(((node_ctrl_t *)n)->els);
-  }
-  return ps_node_type_size(n) >= 8;
-}
-
 static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node) {
   build_stmt_block(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
@@ -2423,12 +2385,6 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     slot_size = 8;
   }
   if (res_ty == IR_TY_I32 && ps_node_type_size(node) >= 8) {
-    res_ty = IR_TY_I64;
-    slot_size = 8;
-  }
-  /* long / long long 分岐: 結果は 64bit 整数。8 バイト slot で扱う。 */
-  if (res_ty == IR_TY_I32 &&
-      (ternary_branch_is_wide_int(node->rhs) || ternary_branch_is_wide_int(c->els))) {
     res_ty = IR_TY_I64;
     slot_size = 8;
   }

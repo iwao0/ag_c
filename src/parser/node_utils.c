@@ -481,6 +481,18 @@ static psx_type_t *type_usual_arith_result(psx_type_t *lhs_type, psx_type_t *rhs
   return type;
 }
 
+static psx_type_t *type_from_operand_usual_arith(node_t *lhs, node_t *rhs) {
+  tk_float_kind_t fp = TK_FLOAT_KIND_NONE;
+  if (lhs && lhs->fp_kind > fp) fp = (tk_float_kind_t)lhs->fp_kind;
+  if (rhs && rhs->fp_kind > fp) fp = (tk_float_kind_t)rhs->fp_kind;
+  return type_usual_arith_result(psx_node_get_type(lhs), psx_node_get_type(rhs), fp,
+                                 (lhs && lhs->is_complex) || (rhs && rhs->is_complex));
+}
+
+static int type_result_unsigned(const psx_type_t *type) {
+  return type && type->kind != PSX_TYPE_POINTER && psx_type_is_unsigned(type);
+}
+
 static psx_type_t *type_from_binary_expr(node_t *node) {
   if (!node) return NULL;
   switch (node->kind) {
@@ -658,15 +670,8 @@ int ps_node_type_size(node_t *node) {
     case ND_STMT_EXPR:
       return ps_node_type_size(node->rhs);
     case ND_TERNARY: {
-      int l = ps_node_type_size(node->rhs);
-      int r = ps_node_type_size(((node_ctrl_t *)node)->els);
-      if (ps_node_is_pointer(node->rhs) || ps_node_is_pointer(((node_ctrl_t *)node)->els))
-        return 8;
-      if (l <= 0) l = 4;
-      if (r <= 0) r = 4;
-      if (l < 4) l = 4;
-      if (r < 4) r = 4;
-      return l > r ? l : r;
+      int s = psx_type_sizeof(psx_node_get_type(node));
+      return s > 0 ? s : 4;
     }
     case ND_FUNCALL: {
       /* 関数呼び出し: 戻り値の型サイズを semantic ctx から推定する。
@@ -708,18 +713,13 @@ int ps_node_type_size(node_t *node) {
     case ND_BITAND:
     case ND_BITOR:
     case ND_BITXOR: {
-      if (ps_node_is_pointer(node)) return 8;
-      int l = ps_node_type_size(node->lhs);
-      int r = ps_node_type_size(node->rhs);
-      int m = l > r ? l : r;
-      if (m <= 0) return 4;
-      return m < 4 ? 4 : m;
+      int s = psx_type_sizeof(psx_node_get_type(node));
+      return s > 0 ? s : 4;
     }
     case ND_SHL:
     case ND_SHR: {
-      int l = ps_node_type_size(node->lhs);
-      if (l <= 0) return 4;
-      return l < 4 ? 4 : l;
+      int s = psx_type_sizeof(psx_node_get_type(node));
+      return s > 0 ? s : 4;
     }
     case ND_PRE_INC:
     case ND_PRE_DEC:
@@ -1213,22 +1213,25 @@ static int node_is_unsigned(node_t *node) {
     case ND_PTR_CAST:
       return psx_type_is_unsigned(psx_node_get_type(node)) || as_mem(node)->is_unsigned || node->is_unsigned;
     case ND_TERNARY: {
-      node_ctrl_t *t = (node_ctrl_t *)node;
-      if (!t->base.rhs || !t->els) return node->is_unsigned;
-      if (ps_node_is_pointer(t->base.rhs) || ps_node_is_pointer(t->els)) return 0;
-      if (t->base.rhs->fp_kind != TK_FLOAT_KIND_NONE ||
-          t->els->fp_kind != TK_FLOAT_KIND_NONE) return 0;
-      int lsz = ps_node_type_size(t->base.rhs);
-      int rsz = ps_node_type_size(t->els);
-      int lu = (lsz >= 4) && node_is_unsigned(t->base.rhs);
-      int ru = (rsz >= 4) && node_is_unsigned(t->els);
-      if (lu == ru) return lu;
-      int lw = lsz < 4 ? 4 : lsz;
-      int rw = rsz < 4 ? 4 : rsz;
-      int unsigned_w = lu ? lw : rw;
-      int signed_w = lu ? rw : lw;
-      return unsigned_w >= signed_w;
+      psx_type_t *type = psx_node_get_type(node);
+      return type ? type_result_unsigned(type) : node->is_unsigned;
     }
+    case ND_ADD:
+    case ND_SUB:
+    case ND_MUL:
+    case ND_DIV:
+    case ND_MOD:
+    case ND_BITAND:
+    case ND_BITXOR:
+    case ND_BITOR: {
+      psx_type_t *type = psx_node_get_type(node);
+      return type ? type_result_unsigned(type) : node->is_unsigned;
+    }
+    case ND_SHL:
+    case ND_SHR:
+      /* Shift signedness doubles as the codegen ASR/LSR selector. Cast lowering
+       * may override it independently of the lhs/result type. */
+      return node->is_unsigned;
     default: return node->is_unsigned;
   }
 }
@@ -1257,27 +1260,41 @@ static int node_is_long_long(node_t *node) {
   }
 }
 
-static int node_uac_effective_unsigned(node_t *node) {
-  if (!node) return 0;
-  if (ps_node_is_pointer(node)) return 0;
-  if (node->fp_kind != TK_FLOAT_KIND_NONE) return 0;
-  return ps_node_type_size(node) >= 4 && node_is_unsigned(node);
-}
-
-static int node_uac_effective_size(node_t *node) {
-  int sz = ps_node_type_size(node);
-  return sz < 4 ? 4 : sz;
-}
-
 static int binary_usual_arith_unsigned(node_t *lhs, node_t *rhs) {
-  int lu = node_uac_effective_unsigned(lhs);
-  int ru = node_uac_effective_unsigned(rhs);
-  if (lu == ru) return lu;
-  int lw = node_uac_effective_size(lhs);
-  int rw = node_uac_effective_size(rhs);
-  int unsigned_w = lu ? lw : rw;
-  int signed_w = lu ? rw : lw;
-  return unsigned_w >= signed_w;
+  return type_result_unsigned(type_from_operand_usual_arith(lhs, rhs));
+}
+
+int psx_node_integer_promotion_is_unsigned(node_t *node) {
+  return type_uac_effective_unsigned(psx_node_get_type(node));
+}
+
+int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
+  return binary_usual_arith_unsigned(lhs, rhs);
+}
+
+int psx_node_usual_arith_is_unsigned(node_t *node) {
+  if (!node) return 0;
+  switch (node->kind) {
+    case ND_ADD:
+    case ND_SUB:
+    case ND_MUL:
+    case ND_DIV:
+    case ND_MOD:
+    case ND_BITAND:
+    case ND_BITXOR:
+    case ND_BITOR:
+    case ND_LT:
+    case ND_LE:
+    case ND_EQ:
+    case ND_NE:
+      return psx_node_usual_arith_operands_is_unsigned(node->lhs, node->rhs);
+    case ND_TERNARY: {
+      psx_type_t *type = psx_node_get_type(node);
+      return type_result_unsigned(type);
+    }
+    default:
+      return type_result_unsigned(psx_node_get_type(node));
+  }
 }
 
 /* node_is_unsigned の公開ラッパ。IR builder が比較の符号 (通常算術変換) を
