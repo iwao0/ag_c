@@ -3066,8 +3066,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
 }
 
 static node_t *sizeof_vla_runtime_size_node(int slot_off) {
-  node_t *lvar = psx_node_new_lvar_typed(slot_off, 8);
-  as_lvar(lvar)->mem.is_unsigned = 1;
+  node_t *lvar = psx_node_new_unsigned_lvar_typed(slot_off, 8);
   node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
   cast->base.kind = ND_CAST;
   cast->base.lhs = lvar;
@@ -3330,7 +3329,8 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node->base.fp_kind = pointee_fp;
   }
   /* `unsigned *p` の `*p`: pointee が unsigned なら deref 結果も unsigned
-   * (zero-extend load)。pointee_is_unsigned は build_lvar_or_vla_node が立てる。 */
+   * (zero-extend load)。pointee_is_unsigned は
+   * psx_node_new_lvar_identifier_ref_for() が立てる。 */
   if (pql <= 1) {
     if (psx_node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
   }

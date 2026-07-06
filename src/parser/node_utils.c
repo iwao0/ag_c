@@ -2103,6 +2103,13 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size) {
   return (node_t *)node;
 }
 
+node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(offset, type_size);
+  node->mem.base.is_unsigned = 1;
+  node->mem.is_unsigned = 1;
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_lvar_for(lvar_t *var) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar(var ? var->offset : 0);
   if (var) mem_from_lvar(&node->mem, var);

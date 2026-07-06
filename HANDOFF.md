@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き739: identifier lvar/VLA ref constructor 化）
+最終更新: 2026-07-06（続き740: unsigned lvar constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,23 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き740: **sizeof VLA runtime size 用 unsigned lvar metadata を
+  `node_utils` の constructor に寄せた**。
+  続き739の後も、`sizeof_vla_runtime_size_node()` は
+  `psx_node_new_lvar_typed()` で作った `ND_LVAR` に対して
+  `mem.is_unsigned` を直接上書きしていた。
+
+  根本対応として `psx_node_new_unsigned_lvar_typed()` を追加し、
+  base node と `node_mem_t` の unsigned bit を同じ入口で初期化するようにした。
+  併せて、`build_unary_deref_node()` 内の古い `build_lvar_or_vla_node()` 参照コメントを
+  `psx_node_new_lvar_identifier_ref_for()` に更新した。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き739: **identifier 解決時の lvar/VLA/static-local 参照ノード構築を
   `node_utils` に寄せた**。
   続き738の後も、`expr.c` の `build_lvar_or_vla_node()` が

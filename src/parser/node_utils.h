@@ -74,6 +74,7 @@ node_t *psx_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_
 node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *psx_node_new_lvar_typed(int offset, int type_size);
+node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
 node_t *psx_node_new_lvar_expr_ref_for(struct lvar_t *var, int is_pointer);
