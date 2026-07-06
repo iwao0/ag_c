@@ -2034,14 +2034,31 @@ static void test_type_metadata_bridge() {
   typed_mem.is_pointer = 1;
   typed_mem.deref_size = 4;
   typed_mem.is_unsigned = 1;
+  typed_mem.is_long_long = 1;
+  typed_mem.is_plain_char = 1;
+  typed_mem.is_long_double = 1;
   ASSERT_TRUE(!ps_node_is_pointer((node_t *)&typed_mem));
   ASSERT_EQ(0, ps_node_deref_size((node_t *)&typed_mem));
   ASSERT_TRUE(!psx_node_is_unsigned_type((node_t *)&typed_mem));
+  ASSERT_TRUE(!psx_node_conversion_value_is_unsigned((node_t *)&typed_mem));
+  ASSERT_TRUE(!psx_node_is_long_long_type((node_t *)&typed_mem));
+  ASSERT_TRUE(!psx_node_is_plain_char_type((node_t *)&typed_mem));
+  ASSERT_TRUE(!psx_node_is_long_double_type((node_t *)&typed_mem));
 
   node_mem_t typed_ptr_mem = {0};
   typed_ptr_mem.base.kind = ND_LVAR;
   typed_ptr_mem.type_size = 4;
-  typed_ptr_mem.pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  typed_ptr_mem.is_unsigned = 1;
+  typed_ptr_mem.pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
+  typed_ptr_mem.pointer_qual_levels = 7;
+  typed_ptr_mem.base_deref_size = 99;
+  typed_ptr_mem.ptr_array_pointee_bytes = 88;
+  typed_ptr_mem.pointer_const_qual_mask = 9;
+  typed_ptr_mem.pointer_volatile_qual_mask = 8;
+  typed_ptr_mem.pointee_is_unsigned = 1;
+  typed_ptr_mem.pointee_is_bool = 1;
+  typed_ptr_mem.pointee_is_void = 1;
+  typed_ptr_mem.is_volatile_qualified = 1;
   typed_ptr_mem.vla_row_stride_frame_off = 48;
   typed_ptr_mem.vla_strides_remaining = 7;
   typed_ptr_mem.inner_deref_size = 99;
@@ -2059,6 +2076,7 @@ static void test_type_metadata_bridge() {
   typed_ptr_mem.base.type->outer_stride = 12;
   typed_ptr_mem.base.type->mid_stride = 6;
   ASSERT_TRUE(ps_node_is_pointer((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(!psx_node_conversion_value_is_unsigned((node_t *)&typed_ptr_mem));
   ASSERT_EQ(8, ps_node_deref_size((node_t *)&typed_ptr_mem));
   ASSERT_EQ(2, psx_node_pointer_qual_levels((node_t *)&typed_ptr_mem));
   ASSERT_EQ(3u, psx_node_pointer_const_qual_mask((node_t *)&typed_ptr_mem));
@@ -2081,6 +2099,28 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, typed_vla_sub->vla_strides_remaining);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind((node_t *)&typed_ptr_mem));
   ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(!psx_node_pointee_is_volatile_qualified((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(!psx_node_pointee_is_unsigned((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(!psx_node_pointee_is_bool((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(!psx_node_pointee_is_void((node_t *)&typed_ptr_mem));
+
+  node_mem_t typed_unsigned_ptr_mem = {0};
+  typed_unsigned_ptr_mem.base.kind = ND_LVAR;
+  typed_unsigned_ptr_mem.base.type =
+      psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 1), 8);
+  ASSERT_TRUE(psx_node_pointee_is_unsigned((node_t *)&typed_unsigned_ptr_mem));
+
+  node_mem_t typed_bool_ptr_mem = {0};
+  typed_bool_ptr_mem.base.kind = ND_LVAR;
+  psx_type_t *typed_bool_type = psx_type_new(PSX_TYPE_BOOL);
+  typed_bool_type->size = 1;
+  typed_bool_ptr_mem.base.type = psx_type_new_pointer(typed_bool_type, 8);
+  ASSERT_TRUE(psx_node_pointee_is_bool((node_t *)&typed_bool_ptr_mem));
+
+  node_mem_t typed_void_ptr_mem = {0};
+  typed_void_ptr_mem.base.kind = ND_LVAR;
+  typed_void_ptr_mem.base.type = psx_type_new_pointer(psx_type_new(PSX_TYPE_VOID), 8);
+  ASSERT_TRUE(psx_node_pointee_is_void((node_t *)&typed_void_ptr_mem));
 
   node_mem_t typed_const_view_mem = {0};
   typed_const_view_mem.base.kind = ND_LVAR;

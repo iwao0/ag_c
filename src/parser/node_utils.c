@@ -15,8 +15,34 @@ static node_mem_t *node_mem_view(node_t *node);
 static int type_is_pointer_view_type(const psx_type_t *type);
 static node_mem_t *node_mem_view_for_explicit_non_pointer_type(node_t *node,
                                                                const psx_type_t *type);
-static int node_is_long_long(node_t *node);
 static psx_type_t *type_new_void(void);
+
+typedef enum {
+  NODE_SCALAR_UNSIGNED,
+  NODE_SCALAR_LONG_LONG,
+  NODE_SCALAR_PLAIN_CHAR,
+  NODE_SCALAR_LONG_DOUBLE,
+} node_scalar_flag_t;
+
+typedef enum {
+  NODE_POINTEE_UNSIGNED,
+  NODE_POINTEE_BOOL,
+  NODE_POINTEE_VOID,
+  NODE_POINTEE_CONST,
+  NODE_POINTEE_VOLATILE,
+} node_pointee_flag_t;
+
+typedef enum {
+  NODE_POINTER_QUAL_LEVELS,
+  NODE_POINTER_BASE_DEREF_SIZE,
+  NODE_POINTER_PTR_ARRAY_POINTEE_BYTES,
+  NODE_POINTER_CONST_MASK,
+  NODE_POINTER_VOLATILE_MASK,
+  NODE_POINTER_POINTEE_FP_KIND,
+} node_pointer_view_field_t;
+
+static int pointer_view_from_node_direct(node_t *node, node_pointer_view_field_t field,
+                                         int *value);
 
 static int is_mem_node_kind(node_kind_t kind) {
   return kind == ND_LVAR || kind == ND_GVAR || kind == ND_DEREF ||
@@ -1080,22 +1106,7 @@ int ps_node_is_pointer(node_t *node) {
 
 int psx_node_pointer_qual_levels(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->pointer_qual_levels;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->pointer_qual_levels : 0;
-  }
   switch (node->kind) {
-    case ND_LVAR: return as_lvar(node)->mem.pointer_qual_levels;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-    case ND_CAST:
-      return as_mem(node)->pointer_qual_levels;
     case ND_COMMA:
       return psx_node_pointer_qual_levels(node->rhs);
     /* ポインタ算術 `pp + n` / `pp - n`: ポインタ側 (通常 lhs、稀に rhs) の pql を carry。
@@ -1108,33 +1119,21 @@ int psx_node_pointer_qual_levels(node_t *node) {
       return psx_node_pointer_qual_levels(node->rhs);
     }
     case ND_FUNCALL: {
-      psx_type_t *type = psx_node_get_type(node);
-      if (type && type->pointer_qual_levels >= 2) return type->pointer_qual_levels;
-      return 0;
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_QUAL_LEVELS, &value);
+      return value;
     }
-    default:
-      return 0;
+    default: {
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_QUAL_LEVELS, &value);
+      return value;
+    }
   }
 }
 
 int psx_node_base_deref_size(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base_deref_size > 0)
-    return type->base_deref_size;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view(node);
-    if (mem && mem->base_deref_size > 0) return mem->base_deref_size;
-  }
   switch (node->kind) {
-    case ND_LVAR: return as_lvar(node)->mem.base_deref_size;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-    case ND_CAST:
-      return as_mem(node)->base_deref_size;
     case ND_COMMA:
       return psx_node_base_deref_size(node->rhs);
     /* ポインタ算術 `pp + n` / `pp - n`: ポインタ側 (通常 lhs、稀に rhs) の bds を carry。
@@ -1146,34 +1145,21 @@ int psx_node_base_deref_size(node_t *node) {
       return psx_node_base_deref_size(node->rhs);
     }
     case ND_FUNCALL: {
-      psx_type_t *type = psx_node_get_type(node);
-      if (type && type->pointer_qual_levels >= 2 && type->base_deref_size > 0)
-        return type->base_deref_size;
-      return 0;
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_BASE_DEREF_SIZE, &value);
+      return value;
     }
-    default:
-      return 0;
+    default: {
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_BASE_DEREF_SIZE, &value);
+      return value;
+    }
   }
 }
 
 int psx_node_ptr_array_pointee_bytes(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->ptr_array_pointee_bytes > 0)
-    return type->ptr_array_pointee_bytes;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view(node);
-    if (mem && mem->ptr_array_pointee_bytes > 0) return mem->ptr_array_pointee_bytes;
-  }
   switch (node->kind) {
-    case ND_LVAR: return as_lvar(node)->mem.ptr_array_pointee_bytes;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-    case ND_CAST:
-      return as_mem(node)->ptr_array_pointee_bytes;
     case ND_COMMA:
     case ND_STMT_EXPR:
       return psx_node_ptr_array_pointee_bytes(node->rhs);
@@ -1189,13 +1175,17 @@ int psx_node_ptr_array_pointee_bytes(node_t *node) {
     case ND_POST_DEC:
       return psx_node_ptr_array_pointee_bytes(node->lhs);
     case ND_FUNCALL: {
-      psx_type_t *type = psx_node_get_type(node);
-      if (type && type->ptr_array_pointee_bytes > 0)
-        return type->ptr_array_pointee_bytes;
+      int value = 0;
+      if (pointer_view_from_node_direct(node, NODE_POINTER_PTR_ARRAY_POINTEE_BYTES,
+                                        &value))
+        return value;
       return 0;
     }
-    default:
-      return 0;
+    default: {
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_PTR_ARRAY_POINTEE_BYTES, &value);
+      return value;
+    }
   }
 }
 
@@ -1223,6 +1213,175 @@ static node_mem_t *node_mem_view_for_explicit_non_pointer_type(node_t *node,
                                                                const psx_type_t *type) {
   if (!node || !node->type || type_is_pointer_view_type(type)) return NULL;
   return node_mem_view(node);
+}
+
+static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag) {
+  if (!type || type_is_pointer_view_type(type)) return 0;
+  switch (flag) {
+    case NODE_SCALAR_UNSIGNED:
+      return psx_type_is_unsigned(type);
+    case NODE_SCALAR_LONG_LONG:
+      return type->is_long_long ? 1 : 0;
+    case NODE_SCALAR_PLAIN_CHAR:
+      return type->is_plain_char ? 1 : 0;
+    case NODE_SCALAR_LONG_DOUBLE:
+      return type->is_long_double ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+static int scalar_flag_from_mem(const node_mem_t *mem, node_scalar_flag_t flag) {
+  if (!mem) return 0;
+  switch (flag) {
+    case NODE_SCALAR_UNSIGNED:
+      return mem->is_unsigned ? 1 : 0;
+    case NODE_SCALAR_LONG_LONG:
+      return mem->is_long_long ? 1 : 0;
+    case NODE_SCALAR_PLAIN_CHAR:
+      return mem->is_plain_char ? 1 : 0;
+    case NODE_SCALAR_LONG_DOUBLE:
+      return mem->is_long_double ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+static int scalar_flag_from_node_fallback(node_t *node, node_scalar_flag_t flag) {
+  node_mem_t *mem = node_mem_view(node);
+  if (mem) return scalar_flag_from_mem(mem, flag);
+  switch (flag) {
+    case NODE_SCALAR_UNSIGNED:
+      return node && node->is_unsigned ? 1 : 0;
+    case NODE_SCALAR_LONG_LONG:
+      return node && node->is_long_long ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+static int pointee_flag_from_type(const psx_type_t *type, node_pointee_flag_t flag) {
+  if (!type_is_pointer_view_type(type) || !type->base) return 0;
+  const psx_type_t *base = type->base;
+  switch (flag) {
+    case NODE_POINTEE_UNSIGNED:
+      return psx_type_is_unsigned(base);
+    case NODE_POINTEE_BOOL:
+      return base->kind == PSX_TYPE_BOOL;
+    case NODE_POINTEE_VOID:
+      return base->kind == PSX_TYPE_VOID;
+    case NODE_POINTEE_CONST:
+      return base->is_const_qualified ? 1 : 0;
+    case NODE_POINTEE_VOLATILE:
+      return base->is_volatile_qualified ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+static int pointee_flag_from_mem(const node_mem_t *mem, node_pointee_flag_t flag) {
+  if (!mem) return 0;
+  switch (flag) {
+    case NODE_POINTEE_UNSIGNED:
+      return (mem->pointee_is_unsigned || mem->is_unsigned) ? 1 : 0;
+    case NODE_POINTEE_BOOL:
+      return mem->pointee_is_bool ? 1 : 0;
+    case NODE_POINTEE_VOID:
+      return mem->pointee_is_void ? 1 : 0;
+    case NODE_POINTEE_CONST:
+      return mem->is_const_qualified ? 1 : 0;
+    case NODE_POINTEE_VOLATILE:
+      return mem->is_volatile_qualified ? 1 : 0;
+    default:
+      return 0;
+  }
+}
+
+static int pointee_flag_from_node_direct(node_t *node, node_pointee_flag_t flag) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type_is_pointer_view_type(type) && type->base)
+    return pointee_flag_from_type(type, flag);
+  if (node->type) {
+    if (type_is_pointer_view_type(type)) return 0;
+    return pointee_flag_from_mem(node_mem_view_for_explicit_non_pointer_type(node, type),
+                                 flag);
+  }
+  return pointee_flag_from_mem(node_mem_view(node), flag);
+}
+
+static int pointer_view_from_type(const psx_type_t *type, node_pointer_view_field_t field,
+                                  int *value) {
+  if (!type_is_pointer_view_type(type)) return 0;
+  switch (field) {
+    case NODE_POINTER_QUAL_LEVELS:
+      if (value) *value = type->pointer_qual_levels;
+      return 1;
+    case NODE_POINTER_BASE_DEREF_SIZE:
+      if (type->base_deref_size <= 0) return 0;
+      if (value) *value = type->base_deref_size;
+      return 1;
+    case NODE_POINTER_PTR_ARRAY_POINTEE_BYTES:
+      if (type->ptr_array_pointee_bytes <= 0) return 0;
+      if (value) *value = type->ptr_array_pointee_bytes;
+      return 1;
+    case NODE_POINTER_CONST_MASK:
+      if (value) *value = (int)type->pointer_const_qual_mask;
+      return 1;
+    case NODE_POINTER_VOLATILE_MASK:
+      if (value) *value = (int)type->pointer_volatile_qual_mask;
+      return 1;
+    case NODE_POINTER_POINTEE_FP_KIND:
+      if (value) *value = (int)type->pointee_fp_kind;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int pointer_view_from_mem(const node_mem_t *mem, node_pointer_view_field_t field,
+                                 int *value) {
+  if (!mem) return 0;
+  switch (field) {
+    case NODE_POINTER_QUAL_LEVELS:
+      if (value) *value = mem->pointer_qual_levels;
+      return 1;
+    case NODE_POINTER_BASE_DEREF_SIZE:
+      if (mem->base_deref_size <= 0) return 0;
+      if (value) *value = mem->base_deref_size;
+      return 1;
+    case NODE_POINTER_PTR_ARRAY_POINTEE_BYTES:
+      if (mem->ptr_array_pointee_bytes <= 0) return 0;
+      if (value) *value = mem->ptr_array_pointee_bytes;
+      return 1;
+    case NODE_POINTER_CONST_MASK:
+      if (value) *value = (int)mem->pointer_const_qual_mask;
+      return 1;
+    case NODE_POINTER_VOLATILE_MASK:
+      if (value) *value = (int)mem->pointer_volatile_qual_mask;
+      return 1;
+    case NODE_POINTER_POINTEE_FP_KIND:
+      if (value) *value = (int)mem->pointee_fp_kind;
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int pointer_view_from_node_direct(node_t *node, node_pointer_view_field_t field,
+                                         int *value) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (pointer_view_from_type(type, field, value)) return 1;
+  if (node->type) {
+    if (field == NODE_POINTER_BASE_DEREF_SIZE ||
+        field == NODE_POINTER_PTR_ARRAY_POINTEE_BYTES) {
+      return pointer_view_from_mem(node_mem_view(node), field, value);
+    }
+    return pointer_view_from_mem(node_mem_view_for_explicit_non_pointer_type(node, type),
+                                 field, value);
+  }
+  return pointer_view_from_mem(node_mem_view(node), field, value);
 }
 
 static psx_decl_funcptr_sig_t funcptr_sig_from_node(node_t *node, int copy_variadic) {
@@ -1533,13 +1692,6 @@ void psx_node_init_compound_gvar_array_addr_metadata(node_mem_t *addr, const glo
 
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->pointer_const_qual_mask;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->pointer_const_qual_mask : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1556,21 +1708,15 @@ unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
       return psx_node_pointer_const_qual_mask(node->rhs);
     }
     default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->pointer_const_qual_mask : 0;
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_CONST_MASK, &value);
+      return (unsigned int)value;
     }
   }
 }
 
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->pointer_volatile_qual_mask;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->pointer_volatile_qual_mask : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1587,22 +1733,15 @@ unsigned int psx_node_pointer_volatile_qual_mask(node_t *node) {
       return psx_node_pointer_volatile_qual_mask(node->rhs);
     }
     default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->pointer_volatile_qual_mask : 0;
+      int value = 0;
+      pointer_view_from_node_direct(node, NODE_POINTER_VOLATILE_MASK, &value);
+      return (unsigned int)value;
     }
   }
 }
 
 int psx_node_pointee_is_unsigned(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base) {
-    return psx_type_is_unsigned(type->base);
-  }
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? (mem->pointee_is_unsigned || mem->is_unsigned) : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1616,23 +1755,13 @@ int psx_node_pointee_is_unsigned(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_is_unsigned(node->lhs);
-    default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? (mem->pointee_is_unsigned || mem->is_unsigned) : 0;
-    }
+    default:
+      return pointee_flag_from_node_direct(node, NODE_POINTEE_UNSIGNED);
   }
 }
 
 int psx_node_pointee_is_bool(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base) {
-    return type->base->kind == PSX_TYPE_BOOL;
-  }
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->pointee_is_bool : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1646,23 +1775,13 @@ int psx_node_pointee_is_bool(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_is_bool(node->lhs);
-    default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->pointee_is_bool : 0;
-    }
+    default:
+      return pointee_flag_from_node_direct(node, NODE_POINTEE_BOOL);
   }
 }
 
 int psx_node_pointee_is_void(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base) {
-    return type->base->kind == PSX_TYPE_VOID;
-  }
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->pointee_is_void : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1676,23 +1795,13 @@ int psx_node_pointee_is_void(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_is_void(node->lhs);
-    default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->pointee_is_void : 0;
-    }
+    default:
+      return pointee_flag_from_node_direct(node, NODE_POINTEE_VOID);
   }
 }
 
 int psx_node_pointee_is_const_qualified(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base) {
-    return type->base->is_const_qualified ? 1 : 0;
-  }
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->is_const_qualified : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1706,23 +1815,13 @@ int psx_node_pointee_is_const_qualified(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_is_const_qualified(node->lhs);
-    default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->is_const_qualified : 0;
-    }
+    default:
+      return pointee_flag_from_node_direct(node, NODE_POINTEE_CONST);
   }
 }
 
 int psx_node_pointee_is_volatile_qualified(node_t *node) {
   if (!node) return 0;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type) && type->base) {
-    return type->base->is_volatile_qualified ? 1 : 0;
-  }
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? mem->is_volatile_qualified : 0;
-  }
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1736,10 +1835,8 @@ int psx_node_pointee_is_volatile_qualified(node_t *node) {
     case ND_POST_INC:
     case ND_POST_DEC:
       return psx_node_pointee_is_volatile_qualified(node->lhs);
-    default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->is_volatile_qualified : 0;
-    }
+    default:
+      return pointee_flag_from_node_direct(node, NODE_POINTEE_VOLATILE);
   }
 }
 
@@ -1747,12 +1844,9 @@ int psx_node_is_unsigned_type(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
   if (node->type) {
-    return (type && type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)
-               ? psx_type_is_unsigned(type)
-               : 0;
+    return scalar_flag_from_type(type, NODE_SCALAR_UNSIGNED);
   }
-  if (type && type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)
-    return psx_type_is_unsigned(type);
+  if (scalar_flag_from_type(type, NODE_SCALAR_UNSIGNED)) return 1;
   switch (node->kind) {
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -1763,8 +1857,7 @@ int psx_node_is_unsigned_type(node_t *node) {
       return 0;
     }
     default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->is_unsigned : (node->is_unsigned ? 1 : 0);
+      return scalar_flag_from_node_fallback(node, NODE_SCALAR_UNSIGNED);
     }
   }
 }
@@ -1772,8 +1865,8 @@ int psx_node_is_unsigned_type(node_t *node) {
 int psx_node_is_long_long_type(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type) return type && type->is_long_long ? 1 : 0;
-  if (type && type->is_long_long) return 1;
+  if (node->type) return scalar_flag_from_type(type, NODE_SCALAR_LONG_LONG);
+  if (scalar_flag_from_type(type, NODE_SCALAR_LONG_LONG)) return 1;
   switch (node->kind) {
     case ND_NUM:
       return ((node_num_t *)node)->int_is_long_long ? 1 : 0;
@@ -1786,8 +1879,7 @@ int psx_node_is_long_long_type(node_t *node) {
              psx_node_is_long_long_type(ctrl->els);
     }
     default: {
-      node_mem_t *mem = node_mem_view(node);
-      return mem ? mem->is_long_long : (node->is_long_long ? 1 : 0);
+      return scalar_flag_from_node_fallback(node, NODE_SCALAR_LONG_LONG);
     }
   }
 }
@@ -1795,8 +1887,8 @@ int psx_node_is_long_long_type(node_t *node) {
 int psx_node_is_plain_char_type(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type) return type && type->is_plain_char ? 1 : 0;
-  if (type && type->is_plain_char) return 1;
+  if (node->type) return scalar_flag_from_type(type, NODE_SCALAR_PLAIN_CHAR);
+  if (scalar_flag_from_type(type, NODE_SCALAR_PLAIN_CHAR)) return 1;
   if (node->kind == ND_NUM) return ((node_num_t *)node)->int_is_plain_char ? 1 : 0;
   if (node->kind == ND_COMMA || node->kind == ND_STMT_EXPR)
     return psx_node_is_plain_char_type(node->rhs);
@@ -1805,15 +1897,14 @@ int psx_node_is_plain_char_type(node_t *node) {
     return psx_node_is_plain_char_type(ctrl->base.rhs) ||
            psx_node_is_plain_char_type(ctrl->els);
   }
-  node_mem_t *mem = node_mem_view(node);
-  return mem ? mem->is_plain_char : 0;
+  return scalar_flag_from_node_fallback(node, NODE_SCALAR_PLAIN_CHAR);
 }
 
 int psx_node_is_long_double_type(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type) return type && type->is_long_double ? 1 : 0;
-  if (type && type->is_long_double) return 1;
+  if (node->type) return scalar_flag_from_type(type, NODE_SCALAR_LONG_DOUBLE);
+  if (scalar_flag_from_type(type, NODE_SCALAR_LONG_DOUBLE)) return 1;
   if (node->kind == ND_COMMA || node->kind == ND_STMT_EXPR)
     return psx_node_is_long_double_type(node->rhs);
   if (node->kind == ND_TERNARY) {
@@ -1821,28 +1912,12 @@ int psx_node_is_long_double_type(node_t *node) {
     return psx_node_is_long_double_type(ctrl->base.rhs) ||
            psx_node_is_long_double_type(ctrl->els);
   }
-  node_mem_t *mem = node_mem_view(node);
-  return mem ? mem->is_long_double : 0;
+  return scalar_flag_from_node_fallback(node, NODE_SCALAR_LONG_DOUBLE);
 }
 
 tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
-  psx_type_t *type = psx_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->pointee_fp_kind;
-  if (node->type) {
-    node_mem_t *mem = node_mem_view_for_explicit_non_pointer_type(node, type);
-    return mem ? (tk_float_kind_t)mem->pointee_fp_kind : TK_FLOAT_KIND_NONE;
-  }
   switch (node->kind) {
-    case ND_LVAR: return (tk_float_kind_t)as_lvar(node)->mem.pointee_fp_kind;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-    case ND_CAST:
-      return (tk_float_kind_t)as_mem(node)->pointee_fp_kind;
     case ND_COMMA:
       return psx_node_pointee_fp_kind(node->rhs);
     /* ポインタ算術 (`a + 1`) / inc・dec (`a++`) の結果も同じ pointee を指す。
@@ -1861,13 +1936,17 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
     /* `double *g(); g()[i]` の subscript を fp load にするため、ポインタ戻り値の
      * pointee fp 種別を返す。 */
     case ND_FUNCALL: {
-      psx_type_t *type = psx_node_get_type(node);
-      if (type && type->pointee_fp_kind != TK_FLOAT_KIND_NONE)
-        return type->pointee_fp_kind;
+      int value = TK_FLOAT_KIND_NONE;
+      if (pointer_view_from_node_direct(node, NODE_POINTER_POINTEE_FP_KIND, &value) &&
+          value != TK_FLOAT_KIND_NONE)
+        return (tk_float_kind_t)value;
       return TK_FLOAT_KIND_NONE;
     }
-    default:
-      return TK_FLOAT_KIND_NONE;
+    default: {
+      int value = TK_FLOAT_KIND_NONE;
+      pointer_view_from_node_direct(node, NODE_POINTER_POINTEE_FP_KIND, &value);
+      return (tk_float_kind_t)value;
+    }
   }
 }
 
@@ -2169,18 +2248,21 @@ static int node_is_unsigned(node_t *node) {
      * may override it independently of the lhs/result type. */
     return node->is_unsigned;
   }
-  if (node->type && node->type->kind != PSX_TYPE_POINTER &&
-      node->type->kind != PSX_TYPE_ARRAY)
-    return psx_type_is_unsigned(node->type);
+  psx_type_t *explicit_type = node->type;
+  if (explicit_type) return scalar_flag_from_type(explicit_type, NODE_SCALAR_UNSIGNED);
   switch (node->kind) {
     case ND_LVAR:
-      return psx_type_is_unsigned(psx_node_get_type(node)) || as_lvar(node)->mem.is_unsigned;
+      return scalar_flag_from_type(psx_node_get_type(node), NODE_SCALAR_UNSIGNED) ||
+             scalar_flag_from_mem(&as_lvar(node)->mem, NODE_SCALAR_UNSIGNED);
     case ND_GVAR:
     case ND_DEREF:
     case ND_ASSIGN:
-      return psx_type_is_unsigned(psx_node_get_type(node)) || as_mem(node)->is_unsigned;
+      return scalar_flag_from_type(psx_node_get_type(node), NODE_SCALAR_UNSIGNED) ||
+             scalar_flag_from_mem(as_mem(node), NODE_SCALAR_UNSIGNED);
     case ND_CAST:
-      return psx_type_is_unsigned(psx_node_get_type(node)) || as_mem(node)->is_unsigned || node->is_unsigned;
+      return scalar_flag_from_type(psx_node_get_type(node), NODE_SCALAR_UNSIGNED) ||
+             scalar_flag_from_mem(as_mem(node), NODE_SCALAR_UNSIGNED) ||
+             (node->is_unsigned ? 1 : 0);
     case ND_TERNARY: {
       psx_type_t *type = psx_node_get_type(node);
       return type ? type_result_unsigned(type) : node->is_unsigned;
@@ -2197,31 +2279,6 @@ static int node_is_unsigned(node_t *node) {
       return type ? type_result_unsigned(type) : node->is_unsigned;
     }
     default: return node->is_unsigned;
-  }
-}
-
-static int node_is_long_long(node_t *node) {
-  if (!node) return 0;
-  if (node->type) return node->type->is_long_long ? 1 : 0;
-  switch (node->kind) {
-    case ND_NUM:
-      return ((node_num_t *)node)->int_is_long_long ? 1 : 0;
-    case ND_LVAR:
-      return (psx_node_get_type(node) && psx_node_get_type(node)->is_long_long) ||
-             as_lvar(node)->mem.is_long_long ? 1 : 0;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_CAST:
-      return (psx_node_get_type(node) && psx_node_get_type(node)->is_long_long) ||
-             as_mem(node)->is_long_long ? 1 : 0;
-    case ND_TERNARY: {
-      node_ctrl_t *t = (node_ctrl_t *)node;
-      return node_is_long_long(t->base.rhs) || node_is_long_long(t->els);
-    }
-    default:
-      return node->is_long_long ? 1 : 0;
   }
 }
 
@@ -2322,13 +2379,13 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   if (kind == ND_SHL || kind == ND_SHR) {
     int lhs_sz = ps_node_type_size(lhs);
     if (lhs_sz >= 4 && node_is_unsigned(lhs)) node->is_unsigned = 1;
-    if (lhs_sz >= 8 && node_is_long_long(lhs)) node->is_long_long = 1;
+    if (lhs_sz >= 8 && psx_node_is_long_long_type(lhs)) node->is_long_long = 1;
   } else if (kind == ND_ADD || kind == ND_SUB || kind == ND_MUL ||
              kind == ND_DIV || kind == ND_MOD || kind == ND_BITAND ||
              kind == ND_BITXOR || kind == ND_BITOR) {
     node->is_unsigned = binary_usual_arith_unsigned(lhs, rhs) ? 1 : 0;
     if (ps_node_type_size(node) >= 8 &&
-        (node_is_long_long(lhs) || node_is_long_long(rhs))) {
+        (psx_node_is_long_long_type(lhs) || psx_node_is_long_long_type(rhs))) {
       node->is_long_long = 1;
     }
   } else if (kind == ND_EQ || kind == ND_NE || kind == ND_LT || kind == ND_LE ||

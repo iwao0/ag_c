@@ -1,8 +1,127 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き788: unary deref stride metadata の helper 経由化）
+最終更新: 2026-07-07（続き792: pointer view size metadata の helper 化）
 
 ## 現状
+- 続き792: **pointer qual levels / base deref size / ptr-array pointee bytes の
+  direct node view も typed-first helper に寄せた**。
+
+  続き791で pointer qualifier mask と pointee fp kind を
+  `pointer_view_from_node_direct()` 経由にしたが、
+  `psx_node_pointer_qual_levels()` / `psx_node_base_deref_size()` /
+  `psx_node_ptr_array_pointee_bytes()` はまだ direct node の `psx_type_t` view と
+  legacy `node_mem_t` fallback を個別実装していた。今回 `node_pointer_view_field_t` に
+  `NODE_POINTER_QUAL_LEVELS` / `NODE_POINTER_BASE_DEREF_SIZE` /
+  `NODE_POINTER_PTR_ARRAY_POINTEE_BYTES` を追加し、3つの公開 helper の direct 読み取りを
+  同じ typed-first helper へ寄せた。
+
+  `pointer_qual_levels` は typed pointer/array の `psx_type_t` 側を正本として読む。
+  `base_deref_size` と `ptr_array_pointee_bytes` は、typed view に正の値がある場合は
+  `psx_type_t` 側を優先し、typed view に値が無い explicit typed node では従来互換のため
+  legacy mem 側の正の値へ fallback する。`ND_FUNCALL` も helper を使いつつ、従来の
+  top-level typed view 読み取りと同じく `pointer_qual_levels == 1` や正の
+  `base_deref_size` を落とさないようにしている。
+
+  回帰テストは `test_type_metadata_bridge()` の typed pointer node に stale mem 側の
+  `pointer_qual_levels = 7` / `base_deref_size = 99` /
+  `ptr_array_pointee_bytes = 88` を持たせても、公開 helper が typed view の
+  `2` / `4` / `16` を返すことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き791: **pointer qualifier mask と pointee fp kind の direct node view を
+  typed-first helper に寄せた**。
+
+  続き790で pointee flag の direct 読み取りを共通 helper に寄せたが、
+  `psx_node_pointer_const_qual_mask()` / `psx_node_pointer_volatile_qual_mask()` /
+  `psx_node_pointee_fp_kind()` はまだ、それぞれが `psx_type_t` pointer/array view と
+  legacy `node_mem_t` fallback を個別に実装していた。特に typed pointer で
+  `psx_type_t::pointee_fp_kind` と stale `node_mem_t::pointee_fp_kind` が食い違う場合、
+  「どちらを正本として読むか」の規約が pointee flag helper と別経路になっていた。
+
+  今回は `node_pointer_view_field_t` と `pointer_view_from_type()` /
+  `pointer_view_from_mem()` / `pointer_view_from_node_direct()` を追加し、pointer const/volatile
+  mask と pointee fp kind の direct node 読み取りを共通化した。typed pointer/array の
+  mask と pointee fp kind は `psx_type_t` 側を正本として読み、明示 non-pointer type の
+  compatibility fallback では従来どおり legacy mem view を読む。
+
+  回帰テストは `test_type_metadata_bridge()` の typed pointer node に stale mem 側の
+  `pointer_const_qual_mask` / `pointer_volatile_qual_mask` / `pointee_fp_kind` を
+  type 側と異なる値で持たせ、公開 helper が typed view を優先することを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き790: **pointee metadata（unsigned / _Bool / void / const / volatile）の
+  typed/mem fallback 規約を共通 helper に寄せた**。
+
+  続き789で scalar type flag の読み取りを typed-first helper に寄せたが、
+  `psx_node_pointee_is_unsigned()` / `psx_node_pointee_is_bool()` /
+  `psx_node_pointee_is_void()` / `psx_node_pointee_is_const_qualified()` /
+  `psx_node_pointee_is_volatile_qualified()` は、各関数がそれぞれ
+  `psx_type_t` の pointer/array base と legacy `node_mem_t` fallback、さらに
+  comma/add/sub/inc/dec の traversal を個別に持っていた。そのため pointee 系も
+  「typed pointer の base が正本」という規約が複数箇所に分散していた。
+
+  今回は `node_pointee_flag_t` と `pointee_flag_from_type()` /
+  `pointee_flag_from_mem()` / `pointee_flag_from_node_direct()` を追加し、5つの公開 helper は
+  traversal だけを残して direct node 読み取りを共通 helper に集約した。明示
+  `node->type` が pointer/array の場合は、`psx_type_t::base` 側だけを正本として扱い、
+  base が無い場合に stale legacy mem へ戻らない従来の境界も維持している。
+
+  回帰テストは `test_type_metadata_bridge()` の typed pointer node に stale mem 側の
+  `pointee_is_unsigned` / `pointee_is_bool` / `pointee_is_void` /
+  `is_volatile_qualified` を立てても、typed base が float const なら unsigned/bool/void/volatile
+  へ漏れないことを確認している。あわせて typed pointer base が unsigned int / _Bool / void の
+  positive case も追加した。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き789: **scalar type flag（unsigned / long long / plain char / long double）の
+  typed/mem fallback 規約を `node_utils.c` の共通 helper に寄せた**。
+
+  `psx_node_is_unsigned_type()` / `psx_node_is_long_long_type()` /
+  `psx_node_is_plain_char_type()` / `psx_node_is_long_double_type()` と、codegen/conversion 用の
+  内部 `node_is_unsigned()` / `node_is_long_long()` が、それぞれ別々に
+  `psx_type_t` と legacy `node_mem_t` の fallback を実装していた。そのため、明示
+  `node->type` がある typed node で mem 側に古い scalar flag が残った場合に、どの経路が
+  typed view を正本として扱うかが分散していた。
+
+  今回は `scalar_flag_from_type()` / `scalar_flag_from_mem()` /
+  `scalar_flag_from_node_fallback()` を追加し、scalar flag の読み取りを typed-first の
+  共通規約へ寄せた。明示 `node->type` がある場合は `psx_type_t` 側を正本にし、pointer/array
+  type では scalar flag を返さない。`ND_SHL` / `ND_SHR` の forced signedness override は
+  codegen selector として別用途なので、従来どおり `node->is_unsigned` を読む経路を残している。
+
+  `node_is_long_long()` の独自実装は削除し、binary node 生成時も
+  `psx_node_is_long_long_type()` の typed view helper を直接使うようにした。
+
+  回帰テストは `test_type_metadata_bridge()` の synthetic typed node に stale mem 側の
+  `is_unsigned` / `is_long_long` / `is_plain_char` / `is_long_double` を立てても、明示
+  `psx_type_t` 側の scalar flag が優先されることを確認している。typed pointer node でも
+  stale mem `is_unsigned` が conversion signedness に漏れないことを確認した。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き788: **unary deref 生成時の pointer stride 読み取りも
   `psx_node_pointer_stride_metadata()` 経由へ寄せた**。
 
