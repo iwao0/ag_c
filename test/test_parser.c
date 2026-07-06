@@ -1981,6 +1981,22 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(x_decl_a == x_decl_b);
   ASSERT_TRUE(x_lvar->decl_type == x_decl_a);
 
+  lvar_t tmp_lvar = {0};
+  psx_decl_init_lvar_storage_type(&tmp_lvar, 4, 4, 0,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  psx_type_t *tmp_lvar_int = psx_lvar_get_decl_type(&tmp_lvar);
+  ASSERT_TRUE(tmp_lvar_int != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, tmp_lvar_int->kind);
+  psx_decl_set_lvar_pointer_derived_type(&tmp_lvar, 1, 4, 0);
+  tmp_lvar.size = 8;
+  tmp_lvar.elem_size = 4;
+  ASSERT_TRUE(tmp_lvar.decl_type == NULL);
+  psx_type_t *tmp_lvar_ptr = psx_lvar_refresh_decl_type(&tmp_lvar);
+  ASSERT_TRUE(tmp_lvar_ptr != NULL);
+  ASSERT_TRUE(tmp_lvar_ptr != tmp_lvar_int);
+  ASSERT_TRUE(tmp_lvar.decl_type == tmp_lvar_ptr);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_lvar_ptr->kind);
+
   node_mem_t typed_mem = {0};
   typed_mem.base.kind = ND_LVAR;
   typed_mem.type_size = 4;
@@ -2050,6 +2066,16 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(p_lvar->decl_type->base != NULL);
   ASSERT_EQ(TK_STRUCT, p_lvar->decl_type->base->tag_kind);
 
+  parsed_code = parse_program_input("double __tm_param_fp(double *p) { return p[0]; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *param_fp_lvar = find_func_lvar(fn, "p");
+  ASSERT_TRUE(param_fp_lvar != NULL);
+  ASSERT_TRUE(param_fp_lvar->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, param_fp_lvar->decl_type->kind);
+  ASSERT_TRUE(param_fp_lvar->decl_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, param_fp_lvar->decl_type->base->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, param_fp_lvar->decl_type->base->fp_kind);
+
   parsed_code = parse_program_input(
       "main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
   fn = as_func(parsed_code[0]);
@@ -2082,6 +2108,24 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(gu_decl_a != NULL);
   ASSERT_TRUE(gu_decl_a == gu_decl_b);
   ASSERT_TRUE(gu->decl_type == gu_decl_a);
+
+  global_var_t tmp_gv = {0};
+  psx_decl_init_gvar_storage_type(&tmp_gv, 4, 4, 0,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  psx_type_t *tmp_gv_int = psx_gvar_get_decl_type(&tmp_gv);
+  ASSERT_TRUE(tmp_gv_int != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, tmp_gv_int->kind);
+  psx_decl_init_gvar_storage_type(&tmp_gv, 8, 4, 0,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  tmp_gv.pointer_qual_levels = 1;
+  psx_decl_invalidate_gvar_decl_type(&tmp_gv);
+  ASSERT_TRUE(tmp_gv.decl_type == NULL);
+  psx_type_t *tmp_gv_ptr = psx_gvar_refresh_decl_type(&tmp_gv);
+  ASSERT_TRUE(tmp_gv_ptr != NULL);
+  ASSERT_TRUE(tmp_gv_ptr != tmp_gv_int);
+  ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_ptr);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_ptr->kind);
+
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);
   ASSERT_TRUE(gp->decl_type != NULL);
@@ -2100,6 +2144,42 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(gext->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, gext->decl_type->kind);
   ASSERT_EQ(12, psx_type_sizeof(gext->decl_type));
+
+  parsed_code = parse_program_input("int __tm_static_decl_type(void) { static double sd = 1.0; return 0; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *sd = find_func_lvar(fn, "sd");
+  ASSERT_TRUE(sd != NULL);
+  ASSERT_TRUE(sd->is_static_local);
+  ASSERT_TRUE(sd->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, sd->decl_type->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, sd->decl_type->fp_kind);
+  global_var_t *sd_gv = psx_find_global_var(sd->static_global_name, sd->static_global_name_len);
+  ASSERT_TRUE(sd_gv != NULL);
+  ASSERT_TRUE(sd_gv->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, sd_gv->decl_type->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, sd_gv->decl_type->fp_kind);
+
+  parsed_code = parse_program_input("int __tm_static_arr_decl_type(void) { static int sa[2] = {1,2}; return sa[0]; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *sa = find_func_lvar(fn, "sa");
+  ASSERT_TRUE(sa != NULL);
+  ASSERT_TRUE(sa->is_static_local);
+  ASSERT_TRUE(sa->decl_type != NULL);
+  global_var_t *sa_gv = psx_find_global_var(sa->static_global_name, sa->static_global_name_len);
+  ASSERT_TRUE(sa_gv != NULL);
+  ASSERT_TRUE(sa_gv->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, sa_gv->decl_type->kind);
+  ASSERT_EQ(8, psx_type_sizeof(sa_gv->decl_type));
+
+  parsed_code = parse_program_input("int __tm_local_extern_decl_type(void) { extern double __tm_local_extern_dp; return 0; }");
+  (void)parsed_code;
+  const char *local_extern_name = "__tm_local_extern_dp";
+  global_var_t *local_extern_dp =
+      psx_find_global_var((char *)local_extern_name, (int)(sizeof("__tm_local_extern_dp") - 1));
+  ASSERT_TRUE(local_extern_dp != NULL);
+  ASSERT_TRUE(local_extern_dp->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, local_extern_dp->decl_type->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, local_extern_dp->decl_type->fp_kind);
 
   parsed_code = parse_program_input(
       "long __tm_lf(void); int *__tm_ip(void); int **__tm_pp(void); "

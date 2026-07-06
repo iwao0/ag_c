@@ -1,8 +1,123 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き769: function return funcptr / pointer-to-VLA metadata を signature・行ノード基準へ整理）
+最終更新: 2026-07-07（続き774: static local / local extern の decl_type refresh と配列 materialize 明示化）
 
 ## 現状
+- 続き774: **static local lowering / local extern 経路の `decl_type` refresh 漏れを潰し、
+  配列 `decl_type` の materialize を宣言元の `is_array` から明示するようにした**。
+
+  続き773で semantic pass の backfill を削除した結果、宣言確定点の漏れが露出する状態に
+  なった。今回は関数内 `static` の lowering 経路で、backing `global_var_t` と alias
+  `lvar_t` の `decl_type` が確定時に refresh されていない箇所を修正した。
+  `try_lower_static_local_*` 系の各成功経路で
+  `psx_gvar_refresh_decl_type()` / `psx_lvar_refresh_decl_type()` を呼ぶようにし、
+  `register_local_extern_decl()` でも global 登録前に refresh するようにした。
+
+  さらに、`node_utils.c` の `type_from_mem()` はこれまで `node_mem_t::is_pointer` と
+  `type_size/deref_size` から配列を推測していたが、`global_var_t::is_array` /
+  `lvar_t::is_array` が正本として分かっている `decl_type` materialize では推測に
+  依存しないよう、`type_from_mem(mem, force_array, force_vla)` に分けた。
+  これにより static local array の backing global が pointer として materialize される
+  余地を減らした。AST ノードの通常型推論 (`psx_node_get_type`) は従来どおり
+  推測ベースで呼び、宣言型キャッシュの正本化だけを明示化している。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。
+  static local scalar / static local array / local extern の `decl_type` を確認し、
+  static local array backing global が `PSX_TYPE_ARRAY` として保持されることを見ている。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き773: **semantic pass 末尾の `decl_type` backfill を削除した**。
+  続き772で宣言確定点に refresh を入れたため、`semantic_pass.c` の
+  `semantic_materialize_local_decl_types()` と
+  `psx_semantic_analyze_program()` 末尾の global materialize loop は
+  型情報の正本を semantic pass に分散させる backfill になっていた。
+
+  この backfill を削除し、`decl_type` の生成責任を宣言 parser の確定点へ寄せた。
+  これにより、宣言経路に refresh 漏れがある場合は semantic pass が隠さず、
+  parser/test/e2e で露出する構造になった。
+
+  確認は backfill 削除後に
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き772: **宣言確定点を invalidate-only から refresh (`invalidate -> materialize`) へ進めた**。
+  `node_utils.h/c` に
+  `psx_lvar_refresh_decl_type()` / `psx_gvar_refresh_decl_type()` を追加し、
+  `decl_type` を落としてから即座に現在の split field から `psx_type_t` を再構築する
+  API とした。
+
+  呼び出し側は、ローカル宣言の通常確定点、VLA early-continue 経路、
+  parameter lvar の metadata 確定点、top-level global の登録直前・extern incomplete array
+  complete 時・initializer 適用後を refresh に切り替えた。
+  これにより「semantic pass の最後に初めて decl_type ができる」寄りの状態から、
+  宣言 parser の確定点で `decl_type` が現在型として materialize される構造へ寄った。
+  setter 内の `psx_decl_invalidate_*_decl_type()` はそのまま残しており、後続 mutation があれば
+  stale cache は落ちる。
+
+  回帰テストでは synthetic lvar/gvar の更新後に
+  `psx_lvar_refresh_decl_type()` / `psx_gvar_refresh_decl_type()` を直接呼び、
+  `decl_type` が更新後の pointer 型として保持されることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き771: **関数パラメータ登録経路にも `decl_type` 無効化の確定点を追加した**。
+  続き770で storage init / setter / global direct update の stale cache は落とすようにしたが、
+  `parser.c` の `register_param_lvar()` は `double *p` の `pointee_fp_kind`、
+  `_Complex` / `long double` などを分岐内で直接 field 代入してから
+  `parse_param_decl()` に戻す構造だった。
+  そこで `parse_param_decl()` の metadata 確定後、`args[]` ノード作成前に
+  `psx_decl_invalidate_lvar_decl_type(var)` を呼び、parameter lvar も同じ
+  「型 field 更新後の `decl_type` は必ず再 materialize」規約に乗せた。
+
+  回帰テストとして `double __tm_param_fp(double *p) { return p[0]; }` を
+  `test_type_metadata_bridge()` に追加し、パラメータ `p` の `decl_type` が
+  pointer-to-double として materialize されることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き770: **`lvar_t` / `global_var_t` の `decl_type` が split field 更新後に stale になる
+  余地を潰した**。
+  続き769以前の型情報統一で `psx_lvar_get_decl_type()` /
+  `psx_gvar_get_decl_type()` は materialized `decl_type` を返すようになったが、
+  宣言 parser は `size` / `elem_size` / pointer 派生情報 / array stride /
+  tag / funcptr signature などを段階的に更新するため、一度 materialize した後に
+  setter が走ると古い `psx_type_t` が残る構造だった。
+
+  根本寄りの対応として `decl.h` に
+  `psx_decl_invalidate_lvar_decl_type()` /
+  `psx_decl_invalidate_gvar_decl_type()` を追加し、
+  tag setter、storage init、pointer 派生 setter、qualifier setter、
+  array stride clear/setter、VLA descriptor、VLA param dims、funcptr signature setter で
+  `decl_type` を必ず NULL に戻すようにした。
+  また `parser.c` のトップレベル global direct update 経路では、
+  extern incomplete array が定義で complete される箇所、global 登録直前、
+  initializer 適用後に gvar `decl_type` を無効化している。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。
+  一度 `psx_lvar_get_decl_type()` / `psx_gvar_get_decl_type()` で型を materialize した後、
+  storage/pointer metadata を更新し、`decl_type == NULL` へ戻ることと、
+  次の accessor が更新後の pointer 型を返すことを確認する。
+
+  確認は
+  `make -j4 build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**。
+  次の根本候補は、まだ直接 field 代入が多い宣言経路を
+  `psx_type_t` / typed declarator builder 起点へ寄せ、split field を派生ビューに落とすこと。
+
 - 直近の部分確認:
   `make -j4 build/test_parser` = **pass**、
   `./build/test_parser` =

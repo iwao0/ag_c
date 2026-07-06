@@ -12,8 +12,10 @@ psx_type_t *psx_node_get_type(node_t *node);
 psx_type_t *psx_node_materialize_type(node_t *node);
 psx_type_t *psx_lvar_get_decl_type(struct lvar_t *var);
 psx_type_t *psx_lvar_materialize_decl_type(struct lvar_t *var);
+psx_type_t *psx_lvar_refresh_decl_type(struct lvar_t *var);
 psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
+psx_type_t *psx_gvar_refresh_decl_type(struct global_var_t *gv);
 
 int ps_node_type_size(node_t *node);
 int ps_node_deref_size(node_t *node);

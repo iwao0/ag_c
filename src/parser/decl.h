@@ -121,12 +121,21 @@ typedef enum {
   PSX_LVAR_USAGE_INITIALIZED,
 } psx_lvar_usage_kind_t;
 
+static inline void psx_decl_invalidate_lvar_decl_type(lvar_t *var) {
+  if (var) var->decl_type = NULL;
+}
+
+static inline void psx_decl_invalidate_gvar_decl_type(global_var_t *gv) {
+  if (gv) gv->decl_type = NULL;
+}
+
 /* lvar_t / global_var_t の tag 4 フィールド (kind/name/len/is_tag_pointer)
  * を 1 行で設定するヘルパ (Phase A2 リファクタリング)。
  * decl.c / parser.c で 4 行のパターンが 9 箇所重複していたのを集約する。 */
 static inline void psx_decl_set_var_tag(lvar_t *var,
                                          token_kind_t tag_kind, char *tag_name, int tag_len,
                                          int is_tag_pointer) {
+  psx_decl_invalidate_lvar_decl_type(var);
   var->tag_kind = tag_kind;
   var->tag_name = tag_name;
   var->tag_len = tag_len;
@@ -144,6 +153,7 @@ static inline void psx_decl_set_var_tag(lvar_t *var,
 static inline void psx_decl_set_gvar_tag(global_var_t *gv,
                                           token_kind_t tag_kind, char *tag_name, int tag_len,
                                           int is_tag_pointer) {
+  psx_decl_invalidate_gvar_decl_type(gv);
   gv->tag_kind = tag_kind;
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;

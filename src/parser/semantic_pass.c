@@ -1210,13 +1210,6 @@ static void semantic_warn_unused_uninitialized_locals(node_func_t *func,
   }
 }
 
-static void semantic_materialize_local_decl_types(node_func_t *func) {
-  if (!func) return;
-  for (lvar_t *v = func->lvars; v; v = v->next_all) {
-    (void)psx_lvar_materialize_decl_type(v);
-  }
-}
-
 static void semantic_record_preinitialized_locals(node_func_t *func) {
   if (!func) return;
   for (lvar_t *v = func->lvars; v; v = v->next_all) {
@@ -1239,7 +1232,6 @@ void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_to
     semantic_collect_lvar_usage_events(func, NULL);
     semantic_record_preinitialized_locals(fn);
     psx_decl_replay_lvar_usage_events(fn->lvars);
-    semantic_materialize_local_decl_types(fn);
     semantic_warn_unused_uninitialized_locals(fn, fallback_diag_tok);
   } else {
     semantic_visit_node(func);
@@ -1248,7 +1240,4 @@ void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_to
 
 void psx_semantic_analyze_program(node_t **program) {
   semantic_visit_node_array(program);
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    (void)psx_gvar_materialize_decl_type(gv);
-  }
 }
