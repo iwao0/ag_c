@@ -846,7 +846,6 @@ static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int siz
     node_t *lhs = new_byte_lvar_at(dst_base_off + i);
     node_t *rhs = new_byte_lvar_at(src_base_off + i);
     node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
-    assign_node->type_size = 1;
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -894,7 +893,6 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
       node_t *lhs = psx_node_new_tag_member_lvar_ref_for(dst, info.offset, &info);
       node_t *rhs_member = psx_node_new_tag_member_lvar_ref_for(&src_var, info.offset, &info);
       node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
-      assign_node->type_size = info.type_size;
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -920,7 +918,6 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
     int src_elem_off = src->offset + idx * src->elem_size;
     node_t *rhs = psx_node_new_lvar_typed(src_elem_off, elem_size);
     node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
-    assign_node->type_size = elem_size;
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -960,7 +957,6 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
     }
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
     node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)cp));
-    assign_node->type_size = elem_size;
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -969,7 +965,6 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   if (idx < array_len) {
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
     node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign_node->type_size = elem_size;
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1013,7 +1008,6 @@ static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
     value = psx_node_new_binary(ND_NE, value, psx_node_new_num(0));
   }
   node_mem_t *assign_node = psx_node_new_assign(lhs, value);
-  assign_node->type_size = var->elem_size;
   return (node_t *)assign_node;
 }
 
@@ -1398,7 +1392,6 @@ static node_t *parse_array_initializer(lvar_t *var) {
       node_t *src_node = psx_node_new_lvar_typed(src->offset + i * elem_size, elem_size);
       ((node_lvar_t *)src_node)->var = src->var;
       node_mem_t *assign = psx_node_new_assign(dst, src_node);
-      assign->type_size = elem_size;
       init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     }
     return init_chain;
@@ -1424,14 +1417,13 @@ static node_t *bool_normalize_if(node_t *v, int is_bool) {
 
 /* 配列メンバの 1 要素代入を構築する。_Bool 正規化と float/double の fp_kind 伝播
  * (float 配列メンバ `float v[4]` の要素 store を fp store にする) をまとめて行う。 */
-static node_mem_t *build_member_array_elem_assign_node(node_t *lhs, node_t *value, int elem_size,
+static node_mem_t *build_member_array_elem_assign_node(node_t *lhs, node_t *value,
                                                        tk_float_kind_t fp_kind, int is_bool) {
   value = bool_normalize_if(value, is_bool);
   if (fp_kind != TK_FLOAT_KIND_NONE) {
     lhs->fp_kind = fp_kind;
   }
   node_mem_t *an = psx_node_new_assign(lhs, value);
-  an->type_size = elem_size;
   return an;
 }
 
@@ -1528,7 +1520,7 @@ static node_t *parse_scalar_array_member_brace_body(lvar_t *owner, int member_of
       }
       node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
       node_mem_t *assign_node = build_member_array_elem_assign_node(
-          lhs, parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
+          lhs, parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
       init_chain = append_to_init_chain(init_chain, (node_t *)assign_node);
       idx = target_idx + 1;
       if (tk_consume('}')) break;
@@ -1615,7 +1607,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
               node_t *_lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size,      \
                                                     flat + _j);                                    \
               node_mem_t *_an = build_member_array_elem_assign_node(                               \
-                  _lhs, psx_node_new_num((int)_cp), elem_size, member_fp_kind, member_is_bool);    \
+                  _lhs, psx_node_new_num((int)_cp), member_fp_kind, member_is_bool);               \
               if (!init_chain) init_chain = (node_t *)_an;                                         \
               else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)_an);          \
               _j++;                                                                                \
@@ -1695,7 +1687,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                   }
                   if (k < inner_len && flat < array_len) {
                     node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
-                    node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
+                    node_mem_t *an = build_member_array_elem_assign_node(lhs, val,
                         member_fp_kind, member_is_bool);
                     if (!init_chain) init_chain = (node_t *)an;
                     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
@@ -1715,7 +1707,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                 EMIT_ROW_FROM_STRING(val);
               } else if (flat < array_len) {
                 node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, flat);
-                node_mem_t *an = build_member_array_elem_assign_node(lhs, val, elem_size,
+                node_mem_t *an = build_member_array_elem_assign_node(lhs, val,
                     member_fp_kind, member_is_bool);
                 if (!init_chain) init_chain = (node_t *)an;
                 else init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an);
@@ -1768,7 +1760,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           } else {
             node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, target_idx);
             node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,
-                parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
+                parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
             init_node = (node_t *)assign_node;
           }
           if (!init_chain) init_chain = init_node;
@@ -1826,7 +1818,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       if (consume_terminal_zero_initializer()) return psx_node_new_num(0);
       node_t *lhs0 = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, 0);
       node_mem_t *assign0 = build_member_array_elem_assign_node(lhs0,
-          parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
+          parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
       init_chain = (node_t *)assign0;
       for (int idx = 1; idx < array_len; idx++) {
         /* comma の次が designator (`.m`) / 終端 (`}`) ならこの配列メンバの省略充填は
@@ -1835,7 +1827,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
         if (!elision_consume_separator()) break;
         node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, elem_size, idx);
         node_mem_t *assign_node = build_member_array_elem_assign_node(lhs,
-            parse_scalar_brace_initializer(), elem_size, member_fp_kind, member_is_bool);
+            parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
         init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
       }
       return init_chain;
@@ -1900,7 +1892,7 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
     } else { cp = (unsigned char)lit->str[sp]; sp++; }
     node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat + j);
     node_mem_t *an = build_member_array_elem_assign_node(
-        lhs, psx_node_new_num((int)cp), 1, fp_kind, is_bool);
+        lhs, psx_node_new_num((int)cp), fp_kind, is_bool);
     init_chain = init_chain
         ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
         : (node_t *)an;
@@ -2007,7 +1999,7 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
             }
             if (k < row_w && *flat + k < array_len) {
               node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat + k);
-              node_mem_t *an = build_member_array_elem_assign_node(lhs, val, 1,
+              node_mem_t *an = build_member_array_elem_assign_node(lhs, val,
                   member_fp_kind, member_is_bool);
               init_chain = init_chain
                   ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
@@ -2040,7 +2032,7 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
       node_t *val = parse_scalar_brace_initializer();
       if (*flat < array_len) {
         node_t *lhs = new_array_elem_lvar_at(owner->offset + member_offset, 1, *flat);
-        node_mem_t *an = build_member_array_elem_assign_node(lhs, val, 1,
+        node_mem_t *an = build_member_array_elem_assign_node(lhs, val,
             member_fp_kind, member_is_bool);
         init_chain = init_chain
             ? psx_node_new_binary(ND_COMMA, init_chain, (node_t *)an)
@@ -2141,7 +2133,6 @@ static node_t *build_nested_array_designator_assign(lvar_t *var,
   node_t *lhs = new_array_elem_lvar_at(var->offset + info->offset, info->type_size, nested_idx);
   node_t *val = parse_scalar_brace_initializer();
   node_mem_t *assign_node = psx_node_new_assign(lhs, val);
-  assign_node->type_size = info->type_size;
   return (node_t *)assign_node;
 }
 
@@ -2167,7 +2158,6 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info->offset, info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
-  assign_node->type_size = info->type_size;
   return (node_t *)assign_node;
 }
 
@@ -2284,7 +2274,6 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, cumulative_offset, &cur_info);
   node_t *rhs_val = parse_scalar_brace_initializer();
   node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
-  assign_node->type_size = cur_info.type_size;
   return (node_t *)assign_node;
 }
 
@@ -2337,7 +2326,6 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 8);
     ((node_lvar_t *)lhs)->var = var;
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign->type_size = 8;
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 8;
   }
@@ -2345,7 +2333,6 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 4);
     ((node_lvar_t *)lhs)->var = var;
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign->type_size = 4;
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 4;
   }
@@ -2353,7 +2340,6 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 2);
     ((node_lvar_t *)lhs)->var = var;
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign->type_size = 2;
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 2;
   }
@@ -2361,7 +2347,6 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
     node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 1);
     ((node_lvar_t *)lhs)->var = var;
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
-    assign->type_size = 1;
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 1;
   }
@@ -2533,7 +2518,6 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
      * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
     node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-    assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_DEREF &&
              is_compatible_tag_object_mem((node_mem_t *)value, var)) {
@@ -2541,7 +2525,6 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
      * struct lvalue that can be copied as a whole. */
     node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-    assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
@@ -2558,7 +2541,6 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
       if (var->size <= 8 || ps_node_type_size(value) == var->size) {
         node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
         node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-        assign_node->type_size = var->size;
         return (node_t *)assign_node;
       }
       psx_diag_ctx(curtok(), "decl", "%s",
@@ -2583,19 +2565,16 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
       ((node_mem_t *)value)->type_size = var->size;
     }
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-    assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   } else if (var->size > 8 && var->size <= 16 && value && value->kind == ND_FUNCALL) {
     // 9-16B struct: 関数呼び出し結果を x0/x1 ペアで受け取り、2ワード代入で初期化
     node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-    assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   } else if (var->size > 16 && value && value->kind == ND_FUNCALL) {
     // >16B struct: indirect return (x8) 経由で呼び出し先が直接代入先に書き込む
     node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
-    assign_node->type_size = var->size;
     init_chain = (node_t *)assign_node;
   }
   return init_chain;  // 互換型でなければ NULL
@@ -2685,7 +2664,6 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
   if (!tag_get_next_named_member(nested, &ordinal, &info) || info.len <= 0) return first;
   node_t *lhs0 = psx_node_new_tag_member_lvar_ref_for(nested, info.offset, &info);
   node_mem_t *a0 = psx_node_new_assign(lhs0, first);
-  a0->type_size = info.type_size;
   node_t *chain = prefix ? psx_node_new_binary(ND_COMMA, prefix, (node_t *)a0) : (node_t *)a0;
   while (ordinal < member_count) {
     if (!elision_consume_separator()) break;
@@ -2725,7 +2703,6 @@ static node_t *parse_union_initializer_no_brace(lvar_t *var) {
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
-  assign_node->type_size = info.type_size;
   return (node_t *)assign_node;
 }
 
@@ -3232,12 +3209,10 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     node_t *re_lv = psx_node_new_lvar_typed_for(var, half);
     re_lv->fp_kind = var->fp_kind;
     node_mem_t *re_as = psx_node_new_assign(re_lv, re);
-    re_as->type_size = half;
     node_t *im_lv = psx_node_new_lvar_typed(var->offset + half, half);
     ((node_lvar_t *)im_lv)->var = var;
     im_lv->fp_kind = var->fp_kind;
     node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
-    im_as->type_size = half;
     return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
   }
   node_t *init_expr = parse_scalar_brace_initializer();
@@ -3284,7 +3259,6 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     }
   }
   node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);
-  assign_node->type_size = is_pointer ? 8 : var->elem_size;
   assign_node->base.is_decl_initializer = 1;
   return (node_t *)assign_node;
 }

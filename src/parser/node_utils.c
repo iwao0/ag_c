@@ -2304,6 +2304,7 @@ node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   node->base.kind = ND_ASSIGN;
   node->base.lhs = lhs;
   node->base.rhs = rhs;
+  node->type_size = ps_node_type_size(lhs);
   node->base.fp_kind = lhs ? lhs->fp_kind : TK_FLOAT_KIND_NONE;
   if (lhs && lhs->is_complex) {
     node->base.is_complex = 1;
@@ -2403,6 +2404,5 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
     op_expr = psx_node_new_binary(ND_NE, op_expr, psx_node_new_num(0));
   }
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
-  assign_node->type_size = ps_node_type_size(lhs);
   return (node_t *)assign_node;
 }

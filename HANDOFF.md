@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き744: assign fp metadata constructor 化）
+最終更新: 2026-07-06（続き745: assign type_size metadata constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,24 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き745: **`ND_ASSIGN` の `type_size` metadata 正本も
+  `psx_node_new_assign()` に寄せた**。
+  続き744の後も、`decl.c` / `expr.c` の initializer、struct/union copy、
+  nested designator、通常代入、compound assignment helper は、assign node 生成直後に
+  `assign_node->type_size = lhs の型サイズ` を個別に設定していた。
+
+  根本対応として、`psx_node_new_assign()` が `ps_node_type_size(lhs)` を default の
+  `node_mem_t::type_size` として初期化するようにした。
+  これにより assign の store size は lhs node が持つ型 metadata から一貫して決まり、
+  parser 側の `assign_node->type_size = ...` 重複設定を削除した。
+  `build_member_array_elem_assign_node()` からも不要になった `elem_size` 引数を削除した。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き744: **`ND_ASSIGN` の FP metadata 正本を `psx_node_new_assign()` に
   寄せた**。
   続き743の後も、`decl.c` の配列要素 initializer、配列メンバ要素 initializer、
