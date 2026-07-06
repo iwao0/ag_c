@@ -2054,6 +2054,20 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind((node_t *)&typed_ptr_mem));
   ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_ptr_mem));
 
+  node_mem_t typed_const_view_mem = {0};
+  typed_const_view_mem.base.kind = ND_LVAR;
+  typed_const_view_mem.base.type = psx_type_new_tag(TK_STRUCT, "TypedView", 9, 1, 4);
+  typed_const_view_mem.is_const_qualified = 1;
+  typed_const_view_mem.is_volatile_qualified = 1;
+  typed_const_view_mem.pointee_is_unsigned = 1;
+  typed_const_view_mem.pointee_is_bool = 1;
+  typed_const_view_mem.pointee_is_void = 1;
+  ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_const_view_mem));
+  ASSERT_TRUE(psx_node_pointee_is_volatile_qualified((node_t *)&typed_const_view_mem));
+  ASSERT_TRUE(psx_node_pointee_is_unsigned((node_t *)&typed_const_view_mem));
+  ASSERT_TRUE(psx_node_pointee_is_bool((node_t *)&typed_const_view_mem));
+  ASSERT_TRUE(psx_node_pointee_is_void((node_t *)&typed_const_view_mem));
+
   node_mem_t typed_tag_mem = {0};
   typed_tag_mem.base.kind = ND_LVAR;
   typed_tag_mem.tag_kind = TK_UNION;
@@ -2145,14 +2159,35 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_gv_int->kind);
   psx_decl_init_gvar_storage_type(&tmp_gv, 8, 4, 0,
                                   TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
-  tmp_gv.pointer_qual_levels = 1;
-  psx_decl_invalidate_gvar_decl_type(&tmp_gv);
+  psx_decl_set_gvar_pointer_qual_levels(&tmp_gv, 1);
   ASSERT_TRUE(tmp_gv.decl_type == NULL);
   psx_type_t *tmp_gv_ptr = psx_gvar_refresh_decl_type(&tmp_gv);
   ASSERT_TRUE(tmp_gv_ptr != NULL);
   ASSERT_TRUE(tmp_gv_ptr != tmp_gv_int);
   ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_ptr);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_ptr->kind);
+  psx_decl_set_gvar_pointer_derived_type(&tmp_gv, 8, 8, 0);
+  psx_decl_set_gvar_pointee_fp_kind(&tmp_gv, TK_FLOAT_KIND_DOUBLE);
+  ASSERT_TRUE(tmp_gv.decl_type == NULL);
+  psx_type_t *tmp_gv_double_ptr = psx_gvar_refresh_decl_type(&tmp_gv);
+  ASSERT_TRUE(tmp_gv_double_ptr != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_double_ptr->kind);
+  ASSERT_TRUE(tmp_gv_double_ptr->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, tmp_gv_double_ptr->base->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_gv_double_ptr->base->fp_kind);
+
+  global_var_t tmp_arr_gv = {0};
+  psx_decl_init_gvar_storage_type(&tmp_arr_gv, 0, 4, 1,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  psx_type_t *tmp_arr_empty = psx_gvar_get_decl_type(&tmp_arr_gv);
+  ASSERT_TRUE(tmp_arr_empty != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_empty->kind);
+  psx_decl_set_gvar_type_size(&tmp_arr_gv, 12);
+  ASSERT_TRUE(tmp_arr_gv.decl_type == NULL);
+  psx_type_t *tmp_arr_sized = psx_gvar_refresh_decl_type(&tmp_arr_gv);
+  ASSERT_TRUE(tmp_arr_sized != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_sized->kind);
+  ASSERT_EQ(12, psx_type_sizeof(tmp_arr_sized));
 
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);

@@ -1194,7 +1194,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                       is_pointer_elem_array &&
                                       cast_tag_kind != TK_EOF);
       if (is_pointer_elem_array) {
-        gv->pointee_elem_size = cast_elem_size > 0 ? (short)cast_elem_size : 8;
+        psx_decl_set_gvar_pointee_elem_size(gv, cast_elem_size > 0 ? cast_elem_size : 8);
       }
       if (is_arr) {
         psx_decl_set_gvar_array_strides_from_dims(gv, local_array_dims,

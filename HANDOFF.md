@@ -1,8 +1,97 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き776: lvar 型属性 mutation の setter 化）
+最終更新: 2026-07-07（続き779: typed node の pointee view 判定 fallback 拡張）
 
 ## 現状
+- 続き779: **typed node と legacy `node_mem_t` view の共存を
+  pointee unsigned/bool/void 判定にも広げた**。
+
+  続き778で const/volatile qualifier helper は、`node->type` が非ポインタ/非配列でも
+  `node_mem_view()` が取れる場合に legacy view bit へ fallback するようにした。
+  同じ早期 return の形が `psx_node_pointee_is_unsigned()` /
+  `psx_node_pointee_is_bool()` / `psx_node_pointee_is_void()` にも残っていたため、
+  explicit type を持つ typed node が非ポインタ型というだけで、mem view 側の
+  pointee 情報を落とす状態だった。
+
+  今回は、pointer/array の `psx_type_t` がある場合はこれまで通り typed base を正本として読み、
+  explicit type が非ポインタ/非配列で `node_mem_view()` が取れる場合だけ legacy view bit へ
+  fallback するように揃えた。これにより `node->type` 導入範囲を広げる前提で、
+  qualifier だけでなく unsigned/bool/void の pointee view も同じ規約で扱える。
+
+  回帰テストは `test_type_metadata_bridge()` の typed `node_mem_t` synthetic case を拡張し、
+  explicit `base.type` を持つ node で `pointee_is_unsigned` /
+  `pointee_is_bool` / `pointee_is_void` が短絡せず読まれることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き778: **`node->type` がある node でも legacy `node_mem_t` の qualifier view を
+  落とさないようにした**。
+
+  次の根本候補として通常の `ND_LVAR` / `ND_GVAR` 参照 node に宣言元の `decl_type` を
+  載せ、`psx_node_get_type()` が split field ではなく宣言型を正本として返す方向を試した。
+  その過程で、`psx_node_pointee_is_const_qualified()` /
+  `psx_node_pointee_is_volatile_qualified()` が `node->type` の非ポインタ型を見た時点で
+  0 を返し、`node_mem_t::is_const_qualified` / `is_volatile_qualified` の view を見ない
+  構造だと分かった。
+
+  これは `const struct S s; s.x = ...` のような「オブジェクト全体は非ポインタ型だが、
+  member/deref の view には const を伝播させる」経路と衝突する。実際、通常参照へ
+  `node->type = decl_type` を載せる試作では `const_struct_member_assign_rejected` が
+  通ってしまった。また多段 global pointer では宣言型そのものと段階的 deref view が
+  食い違うため、通常参照へ `decl_type` を直接載せる変更は今回は採用していない。
+
+  採用した変更は、typed node の型が非ポインタ/非配列でも `node_mem_view()` が取れる場合は
+  legacy view の qualifier を fallback として読むこと。これで、将来 `node->type` を
+  参照 node に広げる前提を一つ整えた。回帰テストでは explicit `base.type` を持つ
+  `node_mem_t` に `is_const_qualified` / `is_volatile_qualified` を立て、
+  pointee qualifier helper が 0 に短絡せず view を読めることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
+- 続き777: **`global_var_t` の型属性 direct mutation も invalidating setter に寄せた**。
+
+  続き776で `lvar_t` の型属性更新は setter 経由になったが、top-level global 側には
+  `type_size` / `deref_size` / `pointee_elem_size` / `ptr_array_pointee_bytes` /
+  `pointee_fp_kind` / `_Bool` / `long double` / qualifier / `pointer_qual_levels` の
+  direct field 更新が残っていた。多くは最終 refresh で救われていたが、
+  extern incomplete array の complete、initializer からの array size 推論、
+  pointer-to-array 補正などが field を直接触る構造で、`decl_type` stale cache の規約が
+  呼び出し側の注意に依存していた。
+
+  今回は `psx_decl_set_gvar_type_size()` /
+  `psx_decl_set_gvar_pointer_derived_type()` /
+  `psx_decl_set_gvar_pointer_qual_levels()` /
+  `psx_decl_set_gvar_pointee_elem_size()` /
+  `psx_decl_set_gvar_ptr_array_pointee_bytes()` /
+  `psx_decl_set_gvar_pointee_fp_kind()` /
+  `psx_decl_set_gvar_bool()` /
+  `psx_decl_set_gvar_long_double()` /
+  `psx_decl_set_gvar_qualifiers()` を追加し、
+  top-level global 登録・incomplete array complete・initializer size inference・
+  pointer-to-array/typedef pointer-array 補正・file-scope compound literal の該当更新を
+  setter 経由へ寄せた。検索上、対象 field の direct assignment は
+  `psx_decl_init_gvar_storage_type()` と setter 実装内だけになっている。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。
+  synthetic `global_var_t` を一度 materialize した後、
+  `psx_decl_set_gvar_pointer_qual_levels()` /
+  `psx_decl_set_gvar_pointer_derived_type()` /
+  `psx_decl_set_gvar_pointee_fp_kind()` で cache が落ち、refresh 後に
+  pointer-to-double になることを確認する。また incomplete array 形の gvar を
+  materialize 後、`psx_decl_set_gvar_type_size()` で cache が落ち、refresh 後に
+  sizeof 12 の array になることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  **native 1200/1200 pass, wasm32 1195 compiled/executed**。
+
 - 続き776: **`lvar_t` の型属性 direct mutation を invalidating setter に寄せた**。
 
   続き775までで compound literal などの一時 object も宣言型 refresh 規約に乗ったが、

@@ -1576,11 +1576,13 @@ unsigned int psx_node_pointer_volatile_qual_mask(node_t *node) {
 int psx_node_pointee_is_unsigned(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)))
-    return 0;
   if (type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
     return psx_type_is_unsigned(type->base);
+  }
+  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))) {
+    node_mem_t *mem = node_mem_view(node);
+    return mem ? (mem->pointee_is_unsigned || mem->is_unsigned) : 0;
   }
   switch (node->kind) {
     case ND_COMMA:
@@ -1605,11 +1607,13 @@ int psx_node_pointee_is_unsigned(node_t *node) {
 int psx_node_pointee_is_bool(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)))
-    return 0;
   if (type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
     return type->base->kind == PSX_TYPE_BOOL;
+  }
+  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))) {
+    node_mem_t *mem = node_mem_view(node);
+    return mem ? mem->pointee_is_bool : 0;
   }
   switch (node->kind) {
     case ND_COMMA:
@@ -1634,11 +1638,13 @@ int psx_node_pointee_is_bool(node_t *node) {
 int psx_node_pointee_is_void(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)))
-    return 0;
   if (type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
     return type->base->kind == PSX_TYPE_VOID;
+  }
+  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))) {
+    node_mem_t *mem = node_mem_view(node);
+    return mem ? mem->pointee_is_void : 0;
   }
   switch (node->kind) {
     case ND_COMMA:
@@ -1663,11 +1669,13 @@ int psx_node_pointee_is_void(node_t *node) {
 int psx_node_pointee_is_const_qualified(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)))
-    return 0;
   if (type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
     return type->base->is_const_qualified ? 1 : 0;
+  }
+  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))) {
+    node_mem_t *mem = node_mem_view(node);
+    return mem ? mem->is_const_qualified : 0;
   }
   switch (node->kind) {
     case ND_COMMA:
@@ -1692,11 +1700,13 @@ int psx_node_pointee_is_const_qualified(node_t *node) {
 int psx_node_pointee_is_volatile_qualified(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
-  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)))
-    return 0;
   if (type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
     return type->base->is_volatile_qualified ? 1 : 0;
+  }
+  if (node->type && (!type || (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))) {
+    node_mem_t *mem = node_mem_view(node);
+    return mem ? mem->is_volatile_qualified : 0;
   }
   switch (node->kind) {
     case ND_COMMA:

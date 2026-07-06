@@ -256,6 +256,22 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
                                                      const int *inner_dims,
                                                      int inner_dim_count,
                                                      int elem_size);
+void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size);
+void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
+                                            int deref_size,
+                                            int pointee_elem_size,
+                                            int ptr_array_pointee_bytes);
+void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
+                                           int pointer_qual_levels);
+void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size);
+void psx_decl_set_gvar_ptr_array_pointee_bytes(global_var_t *gv,
+                                               int ptr_array_pointee_bytes);
+void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind);
+void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool);
+void psx_decl_set_gvar_long_double(global_var_t *gv, int is_long_double);
+void psx_decl_set_gvar_qualifiers(global_var_t *gv,
+                                  int is_const_qualified,
+                                  int is_volatile_qualified);
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig);
 void psx_decl_set_current_funcname(char *name, int len);

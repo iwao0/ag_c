@@ -3463,6 +3463,64 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
   }
 }
 
+void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->type_size = type_size;
+}
+
+void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
+                                            int deref_size,
+                                            int pointee_elem_size,
+                                            int ptr_array_pointee_bytes) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->deref_size = (short)deref_size;
+  gv->pointee_elem_size = (short)pointee_elem_size;
+  gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+}
+
+void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
+                                           int pointer_qual_levels) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->pointer_qual_levels = (pointer_qual_levels > 0 && pointer_qual_levels < 256)
+                                ? (unsigned char)pointer_qual_levels
+                                : 0;
+}
+
+void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->pointee_elem_size = (short)pointee_elem_size;
+}
+
+void psx_decl_set_gvar_ptr_array_pointee_bytes(global_var_t *gv,
+                                               int ptr_array_pointee_bytes) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+}
+
+void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->pointee_fp_kind = (unsigned char)fp_kind;
+}
+
+void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->is_bool = is_bool ? 1 : 0;
+  gv->elem_is_bool = elem_is_bool ? 1 : 0;
+}
+
+void psx_decl_set_gvar_long_double(global_var_t *gv, int is_long_double) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->is_long_double = is_long_double ? 1 : 0;
+}
+
+void psx_decl_set_gvar_qualifiers(global_var_t *gv,
+                                  int is_const_qualified,
+                                  int is_volatile_qualified) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->is_const_qualified = is_const_qualified ? 1 : 0;
+  gv->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
+}
+
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!gv || !sig) return;
@@ -3910,7 +3968,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     /* サイズが確定できないケース (`[];` で init もなし) は scope 外として
      * 受け付けたくない — gv を破棄して呼び出し側 fallback に戻したいが、
      * curtok は既に進めてしまっているため戻せない。診断を出して 0 で続行。 */
-    gv->type_size = elem_size; /* 暫定 1 要素 */
+    psx_decl_set_gvar_type_size(gv, elem_size); /* 暫定 1 要素 */
   }
 
   /* mangled name: スカラ版と同じ "funcname.varname.<seq>" スキーム。配列用に

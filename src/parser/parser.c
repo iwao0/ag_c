@@ -1162,7 +1162,7 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
     if (existing->is_extern_decl && !is_extern_decl) {
       existing->is_extern_decl = 0;
       if (existing->type_size == 0 && new_type_size > 0) {
-        existing->type_size = new_type_size;
+        psx_decl_set_gvar_type_size(existing, new_type_size);
         (void)psx_gvar_refresh_decl_type(existing);
       }
     }
@@ -1183,7 +1183,7 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
   /* `char *names[N]` のような「ポインタ配列」では、各要素 (ポインタ値) の deref_size
    * は要素サイズ (8) になり、pointee の素のサイズ (char なら 1) が失われる。
    * 2 段 subscript (names[i][j]) が正しく動くよう pointee 要素サイズを保存する。 */
-  gv->pointee_elem_size = (is_ptr && is_array) ? spec->elem_size : 0;
+  psx_decl_set_gvar_pointee_elem_size(gv, (is_ptr && is_array) ? spec->elem_size : 0);
   gv->is_extern_decl = is_extern_decl;
   /* static (内部リンケージ): codegen で .global を抑制し、暫定定義を .comm でなく
    * .zerofill (ローカル) に出す。extern 宣言のみのときは linkage 対象外。 */
@@ -1201,17 +1201,17 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
     psx_decl_set_gvar_funcptr_signature(gv, &sig);
   }
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
-  gv->is_bool = (!is_ptr && !is_array && spec->base_kind == TK_BOOL) ? 1 : 0;
-  gv->elem_is_bool = (!is_ptr && is_array && spec->base_kind == TK_BOOL) ? 1 : 0;
-  gv->is_long_double = (!is_ptr && !is_array && spec->is_long_double) ? 1 : 0;
-  gv->is_const_qualified = spec->pointee_const ? 1 : 0;
-  gv->is_volatile_qualified = spec->pointee_volatile ? 1 : 0;
+  psx_decl_set_gvar_bool(gv,
+                         (!is_ptr && !is_array && spec->base_kind == TK_BOOL),
+                         (!is_ptr && is_array && spec->base_kind == TK_BOOL));
+  psx_decl_set_gvar_long_double(gv, (!is_ptr && !is_array && spec->is_long_double));
+  psx_decl_set_gvar_qualifiers(gv, spec->pointee_const, spec->pointee_volatile);
   /* 多段ポインタグローバル (`int **gp` / pointer typedef `PP gp`) の段数 = 宣言子の
    * `*` 数 + 基底ポインタ typedef の段数。`*gp` が int* を返すよう、参照ノード構築時に
    * deref_size=8 等を立てるために記録する (単段以下は意味なし)。 */
   if (is_ptr && !is_array) {
     int lvls = head->ptr_levels + spec->base_pointer_levels;
-    gv->pointer_qual_levels = (lvls > 0 && lvls < 256) ? (unsigned char)lvls : 0;
+    psx_decl_set_gvar_pointer_qual_levels(gv, lvls);
   }
   (void)psx_gvar_refresh_decl_type(gv);
   psx_register_global_var(gv);
@@ -2276,7 +2276,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
     int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
     int total_slots = outer_dim * elem_slots;
     pad_global_init_zeros(gv, cap, total_slots);
-    gv->type_size = outer_dim * gv->deref_size;
+    psx_decl_set_gvar_type_size(gv, outer_dim * gv->deref_size);
   } else if (gv->outer_stride > gv->deref_size) {
     /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
     int inner_slots = gv->outer_stride / gv->deref_size;
@@ -2284,12 +2284,12 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
       int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
       int total_slots = outer_dim * inner_slots;
       pad_global_init_zeros(gv, cap, total_slots);
-      gv->type_size = total_slots * gv->deref_size;
+      psx_decl_set_gvar_type_size(gv, total_slots * gv->deref_size);
     } else {
-      gv->type_size = gv->init_count * gv->deref_size;
+      psx_decl_set_gvar_type_size(gv, gv->init_count * gv->deref_size);
     }
   } else {
-    gv->type_size = gv->init_count * gv->deref_size;
+    psx_decl_set_gvar_type_size(gv, gv->init_count * gv->deref_size);
   }
 }
 
@@ -2564,7 +2564,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   validate_toplevel_object_array_suffix(spec, arr);
   global_var_t *gv = register_toplevel_object_from_declarator(spec, head, arr);
   if (gv && ptr_array_pointee_bytes > 0) {
-    gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+    psx_decl_set_gvar_ptr_array_pointee_bytes(gv, ptr_array_pointee_bytes);
   }
   if (gv && head.is_ptr && !gv->is_array && !head.has_func_suffix &&
       !head.paren_array_present &&
@@ -2576,9 +2576,8 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
       int dim = spec->td_array_dims[i];
       if (dim > 0) target_count *= dim;
     }
-    gv->ptr_array_pointee_bytes = target_count * spec->elem_size;
-    gv->pointee_elem_size = (short)spec->elem_size;
-    gv->deref_size = 8;
+    psx_decl_set_gvar_pointer_derived_type(gv, 8, spec->elem_size,
+                                           target_count * spec->elem_size);
   }
   /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化してグローバル sig 表に記録する。
    * 複雑な派生型 ('(' を含む funcptr / ネスト宣言子) のみ非 NULL。consume-once で先頭のみ。 */
@@ -2605,11 +2604,9 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
         paren_dim_count = 1;
       }
       psx_decl_set_gvar_array_strides_from_inner_dims(gv, paren_dims, paren_dim_count, 8);
-      gv->deref_size = 8;
-      gv->pointee_elem_size = (short)elem;
       int target_count = pointee_total / head.paren_array_mul;
       if (target_count <= 0) target_count = 1;
-      gv->ptr_array_pointee_bytes = target_count * elem;
+      psx_decl_set_gvar_pointer_derived_type(gv, 8, elem, target_count * elem);
     } else if (pointee_dim_count >= 2) {
       int vdims[9];
       vdims[0] = 1;
@@ -2642,7 +2639,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
       !head.has_func_suffix &&
       (head.ptr_levels + spec->base_pointer_levels) >= 1 &&
       spec->fp_kind != TK_FLOAT_KIND_NONE) {
-    gv->pointee_fp_kind = (unsigned char)spec->fp_kind;
+    psx_decl_set_gvar_pointee_fp_kind(gv, spec->fp_kind);
   }
   if (gv && head.is_ptr) {
     int ret_is_data_pointer =
