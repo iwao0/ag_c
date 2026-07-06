@@ -2723,7 +2723,6 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->type_size = ps_node_type_size(assign_node->base.lhs);
-      assign_node->base.fp_kind = assign_node->base.lhs ? assign_node->base.lhs->fp_kind : 0;
       assign_node->base.is_source_assignment = 1;
       node = (node_t *)assign_node;
       if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node);

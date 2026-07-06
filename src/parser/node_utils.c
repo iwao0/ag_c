@@ -2404,6 +2404,5 @@ node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *r
   }
   node_mem_t *assign_node = psx_node_new_assign(lhs, op_expr);
   assign_node->type_size = ps_node_type_size(lhs);
-  assign_node->base.fp_kind = lhs ? lhs->fp_kind : 0;
   return (node_t *)assign_node;
 }

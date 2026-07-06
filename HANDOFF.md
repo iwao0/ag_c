@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き743: tag member fp metadata constructor 化）
+最終更新: 2026-07-06（続き744: assign fp metadata constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き744: **`ND_ASSIGN` の FP metadata 正本を `psx_node_new_assign()` に
+  寄せた**。
+  続き743の後も、`decl.c` の配列要素 initializer、配列メンバ要素 initializer、
+  `_Complex` brace initializer、通常 scalar initializer、`expr.c` の通常代入、
+  `node_utils.c` の compound assignment が、assign node 生成後に
+  `assign_node->base.fp_kind` を呼び出し側で直接設定していた。
+
+  根本対応として、`psx_node_new_assign()` が持つ「assign の FP 種別は lhs の格納型」
+  という入口を正本にし、呼び出し側の重複代入を削除した。
+  配列メンバ要素 initializer だけは、assign 生成前に lhs へ member element の
+  `fp_kind` を載せる順序へ変更し、assign constructor が同じ経路で拾うようにした。
+  これにより `assign_node->base.fp_kind = ...` の個別設定は parser 側から消えた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き743: **tag member lvar の FP metadata 初期化も `tag_member_info_t`
   constructor に寄せた**。
   続き742で `psx_node_new_tag_member_lvar_ref_for()` を追加した後も、

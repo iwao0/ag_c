@@ -1014,7 +1014,6 @@ static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
   }
   node_mem_t *assign_node = psx_node_new_assign(lhs, value);
   assign_node->type_size = var->elem_size;
-  assign_node->base.fp_kind = var->fp_kind;
   return (node_t *)assign_node;
 }
 
@@ -1428,12 +1427,11 @@ static node_t *bool_normalize_if(node_t *v, int is_bool) {
 static node_mem_t *build_member_array_elem_assign_node(node_t *lhs, node_t *value, int elem_size,
                                                        tk_float_kind_t fp_kind, int is_bool) {
   value = bool_normalize_if(value, is_bool);
-  node_mem_t *an = psx_node_new_assign(lhs, value);
-  an->type_size = elem_size;
   if (fp_kind != TK_FLOAT_KIND_NONE) {
     lhs->fp_kind = fp_kind;
-    an->base.fp_kind = fp_kind;
   }
+  node_mem_t *an = psx_node_new_assign(lhs, value);
+  an->type_size = elem_size;
   return an;
 }
 
@@ -3234,13 +3232,11 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     node_t *re_lv = psx_node_new_lvar_typed_for(var, half);
     re_lv->fp_kind = var->fp_kind;
     node_mem_t *re_as = psx_node_new_assign(re_lv, re);
-    re_as->base.fp_kind = var->fp_kind;
     re_as->type_size = half;
     node_t *im_lv = psx_node_new_lvar_typed(var->offset + half, half);
     ((node_lvar_t *)im_lv)->var = var;
     im_lv->fp_kind = var->fp_kind;
     node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
-    im_as->base.fp_kind = var->fp_kind;
     im_as->type_size = half;
     return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
   }
@@ -3289,7 +3285,6 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   }
   node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);
   assign_node->type_size = is_pointer ? 8 : var->elem_size;
-  assign_node->base.fp_kind = var->fp_kind;
   assign_node->base.is_decl_initializer = 1;
   return (node_t *)assign_node;
 }
