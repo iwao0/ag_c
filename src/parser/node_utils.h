@@ -75,6 +75,9 @@ int psx_node_usual_arith_is_unsigned(node_t *node);
 void psx_node_set_unsigned(node_t *node, int is_unsigned);
 tk_float_kind_t psx_node_pointee_fp_kind(node_t *node);
 int psx_node_vla_row_stride_frame_off(node_t *node);
+int psx_node_pointer_stride_metadata(node_t *node, int *inner_stride,
+                                     int *next_stride, int *extra_strides,
+                                     int *extra_strides_count);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 /* タグ shadow 応用形向け: ノードに紐付くタグの宣言時 scope_depth を返す (見つからなければ -1)。
  * build_member_access が「変数が宣言時に見ていた tag」のメンバを引くのに使う。 */

@@ -1,8 +1,116 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き784: funcptr signature の node view merge helper 化）
+最終更新: 2026-07-07（続き788: unary deref stride metadata の helper 経由化）
 
 ## 現状
+- 続き788: **unary deref 生成時の pointer stride 読み取りも
+  `psx_node_pointer_stride_metadata()` 経由へ寄せた**。
+
+  続き787で subscript scaling と subscript deref 生成側の stride metadata 読み取りは
+  node-level helper に集約したが、`psx_node_new_unary_deref_for()` にはまだ
+  `func_type->outer_stride` / `func_type->mid_stride` や
+  `node_mem_t::inner_deref_size` / `next_deref_size` / `extra_strides[]` を直接読む経路が
+  残っていた。そのため、`*expr` の deref metadata だけが typed pointer/array view ではなく
+  legacy mem view の個別規約に戻る分散が残りうる状態だった。
+
+  今回は `ND_FUNCALL` の funcptr-return pointer-to-array、`ND_DEREF` の tag pointer 補正、
+  および `node->deref_size == 0` の最終 fallback を
+  `psx_node_pointer_stride_metadata()` 経由へ置き換えた。これにより、typed
+  `psx_type_t::outer_stride` / `mid_stride` / `extra_strides[]`、funcptr
+  `ret_pointee_array` からの stride 補完、legacy mem fallback が同じ helper 規約で使われる。
+
+  既存の lvar 固有の tag/pointer metadata 補完、`psx_node_copy_funcptr_metadata()`、
+  および legacy fallback 自体は残している。今回の変更は、unary deref 側に残っていた
+  direct stride read を helper view に寄せる範囲に限定している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き787: **多次元配列 / pointer-to-array の stride metadata 読み取りを
+  node-level helper に集約した**。
+
+  `psx_type_t` 側では `outer_stride` / `mid_stride` / `extra_strides[]` として持つ一方、
+  legacy node 側では `inner_deref_size` / `next_deref_size` / `extra_strides[]` として持っており、
+  `expr.c::make_subscript_scaled_offset()` が node kind ごとに legacy mem field を直接読んでいた。
+  そのため typed pointer/array metadata が進んでも、subscript のスケール計算だけが
+  古い mem view に戻る分散が残っていた。
+
+  今回は `psx_node_pointer_stride_metadata()` を `node_utils` に追加し、typed pointer/array
+  の `outer_stride` / `mid_stride` / `extra_strides[]` を優先して、欠けている場合は
+  legacy `node_mem_t` view に fallback する規約へ寄せた。`ND_FUNCALL` の
+  funcptr-return pointer-to-array については、既存の `ret_pointee_array` から stride を補う
+  fallback も helper 側へ移した。
+
+  `expr.c::make_subscript_scaled_offset()` は、VLA row stride と多次元 stride を
+  `psx_node_vla_row_stride_frame_off()` / `psx_node_pointer_stride_metadata()` 経由で読む形になり、
+  `as_lvar()` の direct legacy access は不要になった。`psx_node_new_subscript_deref_for()` も
+  parent stride の取得を同 helper 経由へ寄せている。
+
+  回帰テストは `test_type_metadata_bridge()` の synthetic typed pointer node に、
+  legacy mem 側の stale `inner_deref_size` / `next_deref_size` と typed type 側の
+  `outer_stride` / `mid_stride` を別値で持たせ、`psx_node_pointer_stride_metadata()` が
+  typed metadata を優先することを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き786: **VLA runtime stride metadata の読み取りを typed pointer/array view 優先へ寄せた**。
+
+  `type_from_mem()` / `psx_type_copy_pointer_metadata()` は
+  `vla_row_stride_frame_off` / `vla_strides_remaining` を `psx_type_t` 側へコピーしていたが、
+  `psx_node_vla_row_stride_frame_off()` と subscript deref 生成時の remaining 読み取りは
+  legacy `node_mem_t` を直接見ていた。そのため pointer-to-VLA 系の型 metadata が
+  `psx_type_t` に載っていても、ポインタ算術や subscript 経路では古い mem view に戻る
+  分散が残っていた。
+
+  今回は `psx_node_vla_row_stride_frame_off()` を typed pointer/array view 優先にし、
+  `node_vla_strides_remaining()` を内部 helper として追加した。`psx_node_new_subscript_deref_for()`
+  は row/remaining をこの helper 経由で読み、`arr_pointee_fp` の VLA row 判定も
+  `psx_node_vla_row_stride_frame_off()` 経由にした。legacy mem fallback と ADD/SUB 再帰は
+  残している。
+
+  回帰テストは `test_type_metadata_bridge()` の synthetic typed pointer node に、legacy mem 側の
+  stale VLA row/remaining と typed type 側の row/remaining を別値で持たせ、
+  `psx_node_vla_row_stride_frame_off()` と subscript deref 生成後の
+  `vla_row_stride_frame_off` / `vla_strides_remaining` が typed metadata を優先することを
+  確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き785: **tag kind/name と tag scope depth の読み取り元を typed tag view 側へ揃えた**。
+
+  `psx_node_get_tag_type()` は `node->type` / `psx_node_get_type()` から
+  `psx_type_t` の tag metadata を先に読んでいたが、`psx_node_get_tag_scope_depth()` は
+  legacy `node_mem_t::tag_scope_depth_p1` だけを見ていた。そのため、typed node 化が進むと
+  tag の kind/name は `psx_type_t`、shadow 解決に使う scope depth は古い `node_mem_t`
+  という分散が残りうる状態だった。
+
+  今回は `tag_type_from_type()` に `tag_scope_depth_p1` の optional output を追加し、
+  `psx_node_get_tag_scope_depth()` も direct `node->type` / funcall type に typed tag view が
+  ある場合はそこから scope depth を返すようにした。既存の comma/add/sub/ternary/inc/dec の
+  再帰 fallback と legacy mem fallback は残している。
+
+  回帰テストは `test_type_metadata_bridge()` の synthetic typed tag node に、legacy mem 側の
+  stale scope depth と typed tag 側の scope depth を別値で持たせ、`psx_node_get_tag_type()` と
+  `psx_node_get_tag_scope_depth()` が同じ typed tag view を優先することを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
 - 続き784: **function pointer signature の type/mem view merge を
   `node_utils.c` の共通 helper に寄せた**。
 

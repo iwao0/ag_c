@@ -30,8 +30,6 @@ static int compound_lit_seq = 0;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
-static node_lvar_t *as_lvar(node_t *node) { return (node_lvar_t *)node; }
-
 typedef struct {
   token_kind_t kind;
   int scalar_size;
@@ -3174,62 +3172,8 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   int next_ds = 0;  // さらに次の次元の要素サイズ (3D 用、0=なし)
   int extras[5] = {0};
   int extras_count = 0;
-  if (node->kind == ND_LVAR) {
-    vla_rsf = as_lvar(node)->mem.vla_row_stride_frame_off;
-    inner_ds = as_lvar(node)->mem.inner_deref_size;
-    next_ds = as_lvar(node)->mem.next_deref_size;
-    extras_count = as_lvar(node)->mem.extra_strides_count;
-    for (int i = 0; i < extras_count && i < 5; i++) extras[i] = as_lvar(node)->mem.extra_strides[i];
-  } else if (node->kind == ND_DEREF || node->kind == ND_ADDR || node->kind == ND_GVAR) {
-    /* ND_GVAR も node_mem_t を先頭メンバに持つので同じキャストで読める。配列へのポインタ
-     * グローバル `T (*pa)[N]` は inner_deref_size=elem を持ち、第1subscript `pa[i]` の
-     * 結果 (行) が第2subscript `pa[i][j]` 用の要素ストライドを引き継げるようにする
-     * (これがないと inner_ds=0 で第2subscript が行ストライドのまま誤ロードしていた)。 */
-    node_mem_t *m = (node_mem_t *)node;
-    inner_ds = m->inner_deref_size;
-    next_ds = m->next_deref_size;
-    extras_count = m->extra_strides_count;
-    for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
-    /* 3D VLA chain: t[i] の結果 deref が vla_row_stride_frame_off = mid slot を持っているとき、
-     * 続く `t[i][j]` の subscript は runtime mid stride で行う。これがないと vla_rsf=0 のまま
-     * inner_ds (= elem_size) でスケールしてしまい mid stride (k*elem) が反映されない。 */
-    if (node->kind == ND_DEREF) vla_rsf = m->vla_row_stride_frame_off;
-  } else if (node->kind == ND_ADD || node->kind == ND_SUB) {
-    /* ポインタ算術 `t+1` の結果 (ND_ADD) を subscript するとき、ポインタ被演算子
-     * (配列へのポインタ等) の多段ストライド (inner_deref_size 等) を引き継ぐ。
-     * これがないと `(t+1)[0]` の結果 deref_size が 0 になり配列へ decay せず誤ロードし、
-     * 外側 `*` が値をアドレスとして deref して SIGBUS になる (`t[1]` は base が lvar で
-     * 上の分岐が拾えていた)。スカラポインタは inner_deref_size=0 なので無影響。 */
-    node_t *p = node;
-    while (p && (p->kind == ND_ADD || p->kind == ND_SUB)) p = p->lhs;
-    if (p && (p->kind == ND_LVAR || p->kind == ND_DEREF ||
-              p->kind == ND_ADDR || p->kind == ND_GVAR)) {
-      node_mem_t *m = (node_mem_t *)p;
-      inner_ds = m->inner_deref_size;
-      next_ds = m->next_deref_size;
-      extras_count = m->extra_strides_count;
-      for (int i = 0; i < extras_count && i < 5; i++) extras[i] = m->extra_strides[i];
-    }
-  } else if (node->kind == ND_FUNCALL) {
-    /* 配列へのポインタ戻り `int (*f())[N]`: 第1 subscript `f()[i]` の結果 (行) が第2
-     * subscript `f()[i][j]` 用の要素ストライド (base elem) を引き継げるよう inner_ds を立てる
-     * (ローカル `int (*p)[N]` の inner_deref_size=elem と同じ。これがないと f()[i][j] が
-    * 行ストライドのまま誤ロード→SIGSEGV)。 */
-    psx_type_t *func_type = psx_node_get_type(node);
-    psx_ret_pointee_array_t ret_array =
-        func_type ? func_type->funcptr_sig.ret_pointee_array : (psx_ret_pointee_array_t){0};
-    if (func_type && psx_ret_pointee_array_has_dims(ret_array)) {
-      inner_ds = func_type->outer_stride;
-      next_ds = func_type->mid_stride;
-      if (inner_ds <= 0) {
-        psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-            ret_array.first_dim,
-            ret_array.second_dim,
-            0);
-        psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
-      }
-    }
-  }
+  vla_rsf = psx_node_vla_row_stride_frame_off(node);
+  psx_node_pointer_stride_metadata(node, &inner_ds, &next_ds, extras, &extras_count);
   node_t *scaled;
   if (vla_rsf) {
     // 実行時ストライド: フレームスロットから行ストライドをロード
