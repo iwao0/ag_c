@@ -122,17 +122,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_bool = 0;
     int member_is_unsigned = 0;
     int member_is_complex = 0;
-    int member_base_is_void = 0;
     int member_is_ptr_typedef = 0;
-    unsigned short member_typedef_funcptr_param_fp_mask = 0;
-    unsigned short member_typedef_funcptr_param_int_mask = 0;
-    unsigned char member_typedef_funcptr_ret_int_width = 0;
-    int member_typedef_funcptr_ret_is_void = 0;
-    int member_typedef_funcptr_ret_is_pointer = 0;
-    int member_typedef_funcptr_ret_is_complex = 0;
-    int member_typedef_is_variadic_funcptr = 0;
-    short member_typedef_funcptr_nargs_fixed = 0;
-    psx_ret_pointee_array_t member_typedef_funcptr_ret_pointee_array = {0};
+    psx_decl_funcptr_sig_t member_typedef_funcptr_sig = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
     int member_typedef_ptr_array_pointee_bytes = 0;
@@ -147,7 +138,6 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       if (builtin_member_kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
       else if (builtin_member_kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
       else if (builtin_member_kind == TK_BOOL) member_is_bool = 1;
-      else if (builtin_member_kind == TK_VOID) member_base_is_void = 1;
       member_is_unsigned = member_type_spec.is_unsigned ? 1 : 0;
       member_is_complex = member_type_spec.is_complex ? 1 : 0;
       if (member_is_complex) elem_size *= 2;
@@ -215,31 +205,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * ようにする。修正前は ptr-typedef で elem_size のままにしていたため type_size=4
          * (関数戻り型 int) で 32bit `str w` に潰れ呼び出し時 SIGSEGV していた。 */
         if (_ti.is_pointer) member_is_ptr_typedef = 1;
-        if (_ti.is_pointer && _ti.funcptr_param_fp_mask) {
-          member_typedef_funcptr_param_fp_mask = _ti.funcptr_param_fp_mask;
-        }
-        if (_ti.is_pointer && _ti.funcptr_param_int_mask) {
-          member_typedef_funcptr_param_int_mask = _ti.funcptr_param_int_mask;
-        }
-        if (_ti.is_pointer && _ti.funcptr_ret_int_width) {
-          member_typedef_funcptr_ret_int_width = _ti.funcptr_ret_int_width;
-        }
-        if (_ti.is_pointer && _ti.funcptr_ret_is_void) {
-          member_typedef_funcptr_ret_is_void = 1;
-        }
-        if (_ti.is_pointer && _ti.funcptr_ret_is_pointer) {
-          member_typedef_funcptr_ret_is_pointer = 1;
-        }
-        if (_ti.is_pointer && _ti.funcptr_ret_is_complex) {
-          member_typedef_funcptr_ret_is_complex = 1;
-        }
-        if (_ti.is_pointer && _ti.is_variadic_funcptr) {
-          member_typedef_is_variadic_funcptr = 1;
-          member_typedef_funcptr_nargs_fixed = _ti.funcptr_nargs_fixed;
-        }
-        if (_ti.is_pointer && psx_ret_pointee_array_has_dims(_ti.funcptr_ret_pointee_array)) {
-          member_typedef_funcptr_ret_pointee_array = _ti.funcptr_ret_pointee_array;
-        }
+        if (_ti.is_pointer) member_typedef_funcptr_sig = psx_ctx_typedef_funcptr_sig(&_ti);
         if (_ti.is_pointer && _ti.fp_kind != TK_FLOAT_KIND_NONE) {
           member_fp_kind = _ti.fp_kind;
         }
@@ -509,38 +475,22 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
         if (member_is_ptr) {
-          _mi.funcptr_param_fp_mask = head.has_func_suffix
-                                          ? head.func_suffix_sig.param_fp_mask
-                                          : member_typedef_funcptr_param_fp_mask;
-          _mi.funcptr_param_int_mask = head.has_func_suffix
-                                           ? head.func_suffix_sig.param_int_mask
-                                           : member_typedef_funcptr_param_int_mask;
-          _mi.funcptr_ret_is_void = head.has_func_suffix
-                                        ? (member_base_is_void ? 1 : 0)
-                                        : member_typedef_funcptr_ret_is_void;
-          _mi.funcptr_ret_is_pointer = head.has_func_suffix
-                                           ? ((member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0)
-                                           : member_typedef_funcptr_ret_is_pointer;
-          _mi.funcptr_ret_is_complex = head.has_func_suffix
-                                           ? ((member_is_complex && !_mi.funcptr_ret_is_pointer) ? 1 : 0)
-                                           : member_typedef_funcptr_ret_is_complex;
-          _mi.funcptr_ret_int_width = head.has_func_suffix
-                                          ? psx_funcptr_ret_int_width_from_kind(
-                                                member_base_kind,
-                                                _mi.funcptr_ret_is_pointer,
-                                                member_fp_kind)
-                                          : member_typedef_funcptr_ret_int_width;
-          _mi.is_variadic_funcptr = head.has_func_suffix
-                                        ? (head.func_suffix_sig.is_variadic ? 1 : 0)
-                                        : member_typedef_is_variadic_funcptr;
-          _mi.funcptr_nargs_fixed = head.has_func_suffix
-                                        ? (short)head.func_suffix_sig.nargs_fixed
-                                        : member_typedef_funcptr_nargs_fixed;
+          psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
+          if (head.has_func_suffix) {
+            int ret_is_data_pointer = (member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0;
+            member_funcptr_sig = psx_decl_make_funcptr_sig_from_kind(
+                &head.func_suffix_sig, member_base_kind, member_fp_kind,
+                ret_is_data_pointer, 0, member_is_complex,
+                member_typedef_funcptr_sig.ret_pointee_array);
+          }
           psx_ret_pointee_array_t ret_pointee_array = {0};
           PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
-                                            &member_typedef_funcptr_ret_pointee_array,
+                                            &member_typedef_funcptr_sig.ret_pointee_array,
                                             &direct_funcptr_ret_pointee_array);
-          _mi.funcptr_ret_pointee_array = ret_pointee_array;
+          if (!psx_ret_pointee_array_has_dims(member_funcptr_sig.ret_pointee_array)) {
+            member_funcptr_sig.ret_pointee_array = ret_pointee_array;
+          }
+          psx_ctx_tag_member_set_funcptr_sig(&_mi, member_funcptr_sig);
         }
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
@@ -599,38 +549,6 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             member_fp_kind != TK_FLOAT_KIND_NONE) {
           psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
                                           member_name, member_len, member_fp_kind);
-        }
-        /* 関数ポインタメンバ `double (*f)(double)`: 戻り型の fp_kind を保存する。
-         * メンバ自体はポインタ (fp_kind は通常 !is_ptr のみ保存) なので、戻り fp を
-         * member fp_kind フィールドに載せておき、build_member_deref_node が
-         * pointee_fp_kind (= 戻り fp) として deref に伝播 → `s.f(x)` の funcall が
-         * 戻り値を d0 で読めるようにする。これがないと戻り値を x0 で読み値が化けた。
-         * データポインタメンバは上の分岐で扱う。 */
-        if (has_member_name && head.is_ptr && head.has_func_suffix &&
-            member_fp_kind != TK_FLOAT_KIND_NONE) {
-          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
-                                          member_name, member_len, member_fp_kind);
-        }
-        if (has_member_name && member_is_ptr && member_typedef_funcptr_param_fp_mask &&
-            member_fp_kind != TK_FLOAT_KIND_NONE) {
-          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
-                                          member_name, member_len, member_fp_kind);
-        }
-        if (has_member_name && member_is_ptr) {
-          unsigned short fp_mask = head.has_func_suffix
-                                       ? head.func_suffix_sig.param_fp_mask
-                                       : member_typedef_funcptr_param_fp_mask;
-          unsigned short int_mask = head.has_func_suffix
-                                        ? head.func_suffix_sig.param_int_mask
-                                        : member_typedef_funcptr_param_int_mask;
-          if (fp_mask) {
-            psx_ctx_set_tag_member_funcptr_param_fp_mask(tag_kind, tag_name, tag_len,
-                                                         member_name, member_len, fp_mask);
-          }
-          if (int_mask) {
-            psx_ctx_set_tag_member_funcptr_param_int_mask(tag_kind, tag_name, tag_len,
-                                                          member_name, member_len, int_mask);
-          }
         }
         if (has_member_name && !head.is_ptr && member_is_bool) {
           psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len,

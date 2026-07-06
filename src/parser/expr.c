@@ -85,8 +85,6 @@ static int expr_node_is_long_long_type(node_t *n) {
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
-static void set_lvar_array_strides_from_dims(lvar_t *var, const int *dims, int dim_count, int elem_size);
-static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, int dim_count, int elem_size);
 static int lvar_is_static_local_array(lvar_t *var);
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
@@ -1043,17 +1041,6 @@ static node_t *materialize_struct_rvalue_ternary(node_t *base,
   return psx_node_new_binary(ND_COMMA, (node_t *)select, psx_node_new_lvar_expr_ref_for(var, 0));
 }
 
-static int member_ptr_array_pointee_elem_size(const tag_member_info_t *mem_info) {
-  if (!mem_info || mem_info->ptr_array_pointee_bytes <= 0 || mem_info->arr_ndim <= 0) return 0;
-  int count = 1;
-  for (int i = 0; i < mem_info->arr_ndim && i < 8; i++) {
-    if (mem_info->arr_dims[i] <= 0) return 0;
-    count *= mem_info->arr_dims[i];
-  }
-  if (count <= 0 || (mem_info->ptr_array_pointee_bytes % count) != 0) return 0;
-  return mem_info->ptr_array_pointee_bytes / count;
-}
-
 /* `base.member` / `base->member` の deref node を組み立てる。
  * base アドレス + member offset を ADD して DEREF。
  * mem_info から type_size / deref_size / 配列メンバ / スカラポインタメンバ /
@@ -1064,152 +1051,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   node_t *addr_base = base;
   if (!from_ptr) {
     if (base->kind == ND_COMMA && base->rhs) {
-      node_mem_t *addr_rhs = arena_alloc(sizeof(node_mem_t));
-      addr_rhs->base.kind = ND_ADDR;
-      addr_rhs->base.lhs = base->rhs;
-      addr_rhs->type_size = 8;
-      addr_base = psx_node_new_binary(ND_COMMA, base->lhs, (node_t *)addr_rhs);
+      addr_base = psx_node_new_binary(ND_COMMA, base->lhs,
+                                      psx_node_new_addr_value_for(base->rhs));
     } else {
-      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-      addr->base.kind = ND_ADDR;
-      addr->base.lhs = base;
-      addr->type_size = 8;
-      addr_base = (node_t *)addr;
+      addr_base = psx_node_new_addr_value_for(base);
     }
   }
-  node_t *addr = psx_node_new_binary(ND_ADD, addr_base, psx_node_new_num(mem_info->offset));
-  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-  deref->base.kind = ND_DEREF;
-  deref->base.lhs = addr;
-  int mem_size = mem_info->type_size;
-  int mem_array_len = mem_info->array_len;
-  int mem_is_ptr = mem_info->is_tag_pointer;
-  deref->type_size = mem_size ? mem_size : 8;
-  deref->deref_size = mem_info->deref_size;
-  if (mem_array_len > 0 && mem_size > 0) {
-    /* メンバが配列 (ポインタ配列も含む): 式中では配列名がポインタへ崩壊する。
-     * 後続 subscript / pointer arith のため、type_size を配列全体、deref_size を
-     * 1 要素サイズに合わせ、is_pointer=1 を立てる。
-     * `int *arr[N]` のような配列メンバではこの経路で `arr[i]` が 8 byte step に
-     * なる (mem_size = 8 = sizeof(int*) なので)。 */
-    deref->type_size = mem_size * mem_array_len;
-    deref->deref_size = mem_size;
-    deref->is_pointer = 1;
-    /* 多次元配列メンバ (`int a[2][2]`): 第1サブスクリプトは行ストライド
-     * (outer_stride) でステップし、その結果が要素サイズ (mem_size) で添字できる
-     * よう inner_deref_size に要素サイズを置く。ローカル多次元配列の decay と同じ
-     * 表現 (deref_size=行ストライド, inner_deref_size=要素)。 */
-    if (mem_info->outer_stride > 0) {
-      deref->deref_size = mem_info->outer_stride;
-      deref->inner_deref_size = (short)mem_size;
-      /* 3 次元以上の配列メンバ (`int t[2][2][2]` / `char c[2][2][3]`): 1 段目 subscript の
-       * 後に内側 2 段以上が残るため、ローカル/グローバルの 3D 配列と同じく mid_stride /
-       * elem_size の 2 段を渡す。ローカル build_array_lvar_addr_node では
-       * inner_deref_size=mid_stride, next_deref_size=elem_size として 3 段の subscript を
-       * 連鎖させる。member 経由でも同じ表現に乗せる。これがないと 3 段目 subscript が
-       * elem_size 直接 step にならず誤アドレスを load して SIGSEGV になっていた。 */
-      if (mem_info->mid_stride > 0) {
-        deref->inner_deref_size = (short)mem_info->mid_stride;
-        deref->next_deref_size = (short)mem_size;
-      }
-    }
-    /* ポインタ配列の各要素は単一ポインタ。subscript 後の 1 段 deref では qual_levels を引き継ぐ。 */
-    if (mem_is_ptr) {
-      deref->is_tag_pointer = 0;
-      /* ポインタ配列メンバ (`T *arr[N]`) の各要素は単段ポインタ。ローカルの
-       * `T *arr[N]` と同じく pql=1 / base_deref_size=要素 pointee サイズ を立て、
-       * build_subscript_deref の「要素がポインタ」分岐に乗せる。これにより
-       * `struct N *arr[N]` の `arr[i]` 結果に is_tag_pointer が立ち、`arr[i]->m`
-       * が解決できる (それまで struct 値扱いで E3005)。 */
-      deref->pointer_qual_levels = 1;
-      deref->base_deref_size = (short)mem_info->deref_size;
-      /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 要素ポインタが指す配列の
-       * 全バイト数を deref ノードに carry。build_subscript_deref が `s.p[i]` の結果
-       * deref に pointer-to-array 情報を伝播し、`(*s.p[i])[j]` の単項 `*` が要素ストライドに
-       * 再設定する経路に乗せる。 */
-      if (mem_info->ptr_array_pointee_bytes > 0) {
-        deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
-        int ptr_arr_elem = member_ptr_array_pointee_elem_size(mem_info);
-        if (ptr_arr_elem > 0) deref->base_deref_size = (short)ptr_arr_elem;
-      }
-    }
-  } else if (mem_is_ptr && mem_size > 0 && mem_info->outer_stride > 0) {
-    /* pointer-to-array メンバ (`struct S { int (*p)[N]; }` / `int (*p)[M][N]`):
-     * mem_info->outer_stride に pointee の全バイト数を保存。多次元 pointee の場合は
-     * mem_info->mid_stride に 1 段目 subscript stride (= N*elem) も保存されている。
-     * deref->deref_size に outer_stride、続いて inner_deref_size / next_deref_size に
-     * 段ストライドを並べ、build_unary_deref_node が `*s.p` 構築時に 1 段スライドして
-     * carry できるようにする (ローカル `int (*p)[M][N]` の lvar 表現と整合)。 */
-    deref->is_pointer = 1;
-    deref->is_scalar_ptr_member = 1;
-    deref->deref_size = (short)mem_info->outer_stride;
-    if (mem_info->mid_stride > 0) {
-      /* 2D pointee: 1 段目 subscript stride = mid_stride、最終要素 = elem */
-      deref->inner_deref_size = (short)mem_info->mid_stride;
-      deref->next_deref_size = (short)mem_info->deref_size;
-    } else {
-      /* 1D pointee: 要素サイズだけ */
-      deref->inner_deref_size = (short)mem_info->deref_size;
-    }
-  } else if (mem_is_ptr && mem_size > 0) {
-    /* スカラポインタメンバ (`char *name`): subscript や pointer 算術で
-     * is_pointer 判定が要るため立てておく。is_scalar_ptr_member を立てて
-     * 配列メンバの decay 表現と区別する。 */
-    deref->is_pointer = 1;
-    deref->is_scalar_ptr_member = 1;
-    if ((mem_info->tag_kind == TK_STRUCT || mem_info->tag_kind == TK_UNION) &&
-        mem_info->tag_name) {
-      int pointee_size = psx_ctx_get_tag_size(mem_info->tag_kind, mem_info->tag_name,
-                                              mem_info->tag_len);
-      deref->pointer_qual_levels = mem_info->pointer_qual_levels > 0
-                                      ? mem_info->pointer_qual_levels
-                                      : 1;
-      deref->base_deref_size = (short)(pointee_size > 0 ? pointee_size : 8);
-    }
-    if (mem_info->ptr_array_pointee_bytes > 0) {
-      deref->ptr_array_pointee_bytes = mem_info->ptr_array_pointee_bytes;
-      int ptr_arr_elem = member_ptr_array_pointee_elem_size(mem_info);
-      deref->base_deref_size = (short)(ptr_arr_elem > 0 ? ptr_arr_elem : mem_info->deref_size);
-      deref->deref_size = 8;
-    }
-  }
-  deref->tag_kind = mem_info->tag_kind;
-  deref->tag_name = mem_info->tag_name;
-  deref->tag_len = mem_info->tag_len;
-  deref->is_tag_pointer = mem_is_ptr;
-  if (psx_node_pointee_is_const_qualified(base)) deref->is_const_qualified = 1;
-  if (psx_node_pointee_is_volatile_qualified(base)) deref->is_volatile_qualified = 1;
-  deref->bit_width = mem_info->bit_width;
-  deref->bit_offset = mem_info->bit_offset;
-  deref->bit_is_signed = mem_info->bit_is_signed;
-  psx_node_copy_funcptr_metadata_from_tag_member(deref, mem_info);
-  /* float/double メンバなら fp_kind を deref に伝播。配列メンバ (`float v[4]`) は
-   * 式中でポインタへ decay するので pointee_fp_kind に入れて subscript 結果を fp load
-   * にする (スカラメンバはそのまま base.fp_kind)。is_bool と同じ分岐。これがないと
-   * `s.v[i]` が整数 load になり float 値が化けていた。 */
-  if (mem_info->fp_kind != TK_FLOAT_KIND_NONE) {
-    if (mem_array_len > 0 && mem_size > 0)      deref->pointee_fp_kind = mem_info->fp_kind;
-    /* ポインタメンバ (関数ポインタ `double (*f)(double)`): fp_kind は「指す先 /
-     * 戻り型」の種別なので pointee_fp_kind に載せる (base.fp_kind に載せると 8B の
-     * ポインタ値を double としてロードしてしまう)。呼び出し側 parse_call_postfix が
-     * pointee_fp_kind を funcall に伝播し、戻り値を d0 で読む。 */
-    else if (mem_is_ptr && mem_size > 0)        deref->pointee_fp_kind = mem_info->fp_kind;
-    else                                         deref->base.fp_kind = mem_info->fp_kind;
-  }
-  /* _Bool メンバ: 配列メンバなら pointee_is_bool、それ以外は is_bool。 */
-  if (mem_info->is_bool) {
-    if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_bool = 1;
-    else                                    deref->is_bool = 1;
-  }
-  /* unsigned メンバ: load を zero-extend させるため伝播。配列メンバなら
-   * pointee_is_unsigned (build_subscript_deref が要素 load を zero-extend にする)、
-   * スカラメンバなら is_unsigned。is_bool と同じ分岐。これがないと
-   * `struct S { unsigned char x[1]; }` の s.x[0]=200 が ldrsb で -56 に化ける。 */
-  if (mem_info->is_unsigned) {
-    if (mem_array_len > 0 && mem_size > 0) deref->pointee_is_unsigned = 1;
-    else                                    deref->is_unsigned = 1;
-  }
-  return (node_t *)deref;
+  return psx_node_new_tag_member_deref_for(addr_base, base, mem_info);
 }
 
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
@@ -1350,7 +1198,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->tag_kind = cast_tag_kind;
       gv->tag_name = cast_tag_name;
       gv->tag_len = cast_tag_len;
-      if (is_arr) set_gvar_array_strides_from_dims(gv, local_array_dims, local_array_dim_count, base_elem);
+      if (is_arr) {
+        psx_decl_set_gvar_array_strides_from_dims(gv, local_array_dims,
+                                                  local_array_dim_count, base_elem);
+      }
       /* 匿名複合リテラルは内部リンケージ (.global を出さない)。`___compound_lit_N` は
        * namespace 対象外 (__ 始まり) なので、.global だと別 fixture とリンク衝突する。 */
       gv->is_static = 1;
@@ -1363,16 +1214,12 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->init_count = 0;
       psx_parse_global_brace_init_flat(gv, &cap, -1);
       psx_register_global_var(gv);
-      node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
       if (is_arr) {
         /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
-        node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-        addr->base.kind = ND_ADDR;
-        addr->base.lhs = (node_t *)gvar_node;
-        psx_node_init_compound_gvar_array_addr_metadata(addr, gv, cl_ptr_array_pointee_bytes,
-                                                        cast_elem_size, var_size);
-        return apply_postfix((node_t *)addr, ctx);
+        return apply_postfix(psx_node_new_compound_gvar_array_addr_for(
+            gv, cl_ptr_array_pointee_bytes, cast_elem_size, var_size), ctx);
       }
+      node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
       return apply_postfix((node_t *)gvar_node, ctx);
     }
     tk_expect('{');
@@ -1391,7 +1238,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     gv->is_array = is_arr;
     gv->fp_kind = cast_fp_kind;
     gv->is_static = 1;  /* 匿名複合リテラルは内部リンケージ (.global を出さない) */
-    if (is_arr) set_gvar_array_strides_from_dims(gv, local_array_dims, local_array_dim_count, base_elem);
+    if (is_arr) {
+      psx_decl_set_gvar_array_strides_from_dims(gv, local_array_dims,
+                                                local_array_dim_count, base_elem);
+    }
     if (init_expr && init_expr->kind == ND_NUM) {
       node_num_t *n = (node_num_t *)init_expr;
       gv->has_init = 1;
@@ -1409,39 +1259,34 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   }
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name),
                                              var_size, cl_complex_scalar ? var_size : base_elem, is_arr);
-  var->tag_kind = cast_tag_kind;
-  var->tag_name = cast_tag_name;
-  var->tag_len = cast_tag_len;
-  if (is_arr) set_lvar_array_strides_from_dims(var, local_array_dims, local_array_dim_count, base_elem);
+  psx_decl_init_lvar_storage_type(var, var_size, cl_complex_scalar ? var_size : base_elem,
+                                  is_arr, cast_fp_kind, 0,
+                                  cast_tag_kind, cast_tag_name, cast_tag_len, cast_is_ptr);
+  if (is_arr) {
+    psx_decl_set_lvar_array_strides_from_dims(var, local_array_dims,
+                                              local_array_dim_count, base_elem);
+  }
   if (cl_complex_scalar) var->is_complex = 1;  /* elem_size = var_size (=base_elem*2)、brace-init で half= elem/2 */
   /* 要素がポインタの配列は、ローカル `T *arr[N]` と同じく subscript 後の値を
    * 単段ポインタとして扱えるよう pointer metadata を持たせる。 */
   if (is_pointer_elem_array) {
-    var->is_tag_pointer = 0;
-    var->pointer_qual_levels = 1;
-    var->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
-    var->ptr_array_pointee_bytes = cl_ptr_array_pointee_bytes;
+    psx_decl_set_lvar_pointer_derived_type(var, 1,
+                                           cast_elem_size > 0 ? cast_elem_size : 8,
+                                           cl_ptr_array_pointee_bytes);
     /* 配列要素はタグ実体ではなくポインタ。初期化 lvar に tag を残すと
      * parse_array_braced_init が `{&a,&b}` を brace 省略 struct 値として扱い、
      * struct 内容を 32bit store してしまう。 */
-    var->tag_kind = TK_EOF;
-    var->tag_name = NULL;
-    var->tag_len = 0;
-  } else {
-    var->is_tag_pointer = cast_is_ptr ? 1 : 0;
+    psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
+                                    var->fp_kind, var->is_unsigned,
+                                    TK_EOF, NULL, 0, 0);
   }
-  var->fp_kind = cast_fp_kind;
   node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
   node_t *ref;
   if (is_arr) {
-    node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
-    addr_node->base.kind = ND_ADDR;
-    addr_node->base.lhs = psx_node_new_lvar_for(var);
-    psx_node_init_compound_lvar_array_addr_metadata(
-        addr_node, var, is_pointer_elem_array ? cast_tag_kind : var->tag_kind,
+    ref = psx_node_new_compound_lvar_array_addr_for(
+        var, is_pointer_elem_array ? cast_tag_kind : var->tag_kind,
         is_pointer_elem_array ? cast_tag_name : var->tag_name,
         is_pointer_elem_array ? cast_tag_len : var->tag_len, var_size);
-    ref = (node_t *)addr_node;
   } else {
     ref = psx_node_new_lvar_expr_ref_for(var, cast_is_ptr);
   }
@@ -1860,72 +1705,15 @@ static char *new_compound_lit_name(void) {
   return name;
 }
 
-static void set_lvar_array_strides_from_dims(lvar_t *var, const int *dims, int dim_count, int elem_size) {
-  if (!var || !dims || dim_count < 2 || elem_size <= 0) return;
-  int outer_mul = 1;
-  for (int i = 1; i < dim_count; i++) {
-    if (dims[i] > 0) outer_mul *= dims[i];
-  }
-  var->outer_stride = outer_mul * elem_size;
-  if (dim_count >= 3) {
-    int mid_mul = 1;
-    for (int i = 2; i < dim_count; i++) {
-      if (dims[i] > 0) mid_mul *= dims[i];
-    }
-    var->mid_stride = mid_mul * elem_size;
-  }
-  if (dim_count >= 4) {
-    var->extra_strides = calloc(5, sizeof(int));
-    int idx = 0;
-    for (int start = 3; start < dim_count && idx < 5; start++) {
-      int rest_mul = 1;
-      for (int j = start; j < dim_count; j++) {
-        if (dims[j] > 0) rest_mul *= dims[j];
-      }
-      var->extra_strides[idx++] = rest_mul * elem_size;
-    }
-    var->extra_strides_count = (unsigned char)idx;
-  }
-}
-
-static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, int dim_count, int elem_size) {
-  if (!gv || !dims || dim_count < 2 || elem_size <= 0) return;
-  int outer_mul = 1;
-  for (int i = 1; i < dim_count; i++) {
-    if (dims[i] > 0) outer_mul *= dims[i];
-  }
-  gv->outer_stride = outer_mul * elem_size;
-  if (dim_count >= 3) {
-    int mid_mul = 1;
-    for (int i = 2; i < dim_count; i++) {
-      if (dims[i] > 0) mid_mul *= dims[i];
-    }
-    gv->mid_stride = mid_mul * elem_size;
-  }
-  if (dim_count >= 4) {
-    int idx = 0;
-    for (int start = 3; start < dim_count && idx < 5; start++) {
-      int rest_mul = 1;
-      for (int j = start; j < dim_count; j++) {
-        if (dims[j] > 0) rest_mul *= dims[j];
-      }
-      gv->extra_strides[idx++] = rest_mul * elem_size;
-    }
-    gv->extra_strides_count = (unsigned char)idx;
-  }
-}
-
 static node_t *lower_union_value_cast(node_t *operand,
                                       token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                                       int cast_elem_size, tk_float_kind_t cast_fp_kind) {
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
   char *tmp_name = new_compound_lit_name();
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), base_elem, base_elem, 0);
-  var->tag_kind = cast_tag_kind;
-  var->tag_name = cast_tag_name;
-  var->tag_len = cast_tag_len;
-  var->is_tag_pointer = 0;
-  var->fp_kind = cast_fp_kind;
+  psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
+                                  cast_fp_kind, 0,
+                                  cast_tag_kind, cast_tag_name, cast_tag_len, 0);
 
   tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
@@ -1953,11 +1741,9 @@ static node_t *lower_struct_value_cast(node_t *operand,
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
   char *tmp_name = new_compound_lit_name();
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), base_elem, base_elem, 0);
-  var->tag_kind = cast_tag_kind;
-  var->tag_name = cast_tag_name;
-  var->tag_len = cast_tag_len;
-  var->is_tag_pointer = 0;
-  var->fp_kind = cast_fp_kind;
+  psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
+                                  cast_fp_kind, 0,
+                                  cast_tag_kind, cast_tag_name, cast_tag_len, 0);
 
   tag_member_info_t info = {0};
   int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
@@ -2274,24 +2060,12 @@ static node_t *annotate_cast_type(node_t *node, psx_type_t *type) {
 // `(int)d`/`(char)d`/`(long)d` 等で codegen に fcvtzs を出させるために使う。
 static node_t *wrap_fp_to_int_if_needed(node_t *operand) {
   if (!operand || operand->fp_kind == TK_FLOAT_KIND_NONE) return operand;
-  node_mem_t *mem = arena_alloc(sizeof(node_mem_t));
-  node_t *cvt = &mem->base;
-  cvt->kind = ND_FP_TO_INT;
-  cvt->lhs = operand;
-  cvt->fp_kind = TK_FLOAT_KIND_NONE;
-  mem->type_size = 4;
-  return annotate_cast_type(cvt, psx_type_new_integer(TK_INT, 4, 0));
+  return psx_node_new_fp_to_int_cast(operand, 4, NULL);
 }
 
 static node_t *wrap_fp_to_int_width(node_t *operand, int width) {
   if (!operand || operand->fp_kind == TK_FLOAT_KIND_NONE) return operand;
-  node_mem_t *mem = arena_alloc(sizeof(node_mem_t));
-  node_t *cvt = &mem->base;
-  cvt->kind = ND_FP_TO_INT;
-  cvt->lhs = operand;
-  cvt->fp_kind = TK_FLOAT_KIND_NONE;
-  mem->type_size = (width == 8) ? 8 : 4;
-  return annotate_cast_type(cvt, psx_type_new_integer(TK_INT, mem->type_size, 0));
+  return psx_node_new_fp_to_int_cast(operand, width, NULL);
 }
 
 /* `(float)x` / `(double)x` キャスト。operand が目的のFP型と異なる (整数、または
@@ -2308,35 +2082,28 @@ static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
     operand->fp_kind = target;
     return annotate_cast_type(operand, target_type);
   }
-  node_t *cvt = arena_alloc(sizeof(node_t));
-  cvt->kind = ND_INT_TO_FP;
-  cvt->lhs = operand;
-  cvt->fp_kind = target;
-  return annotate_cast_type(cvt, target_type);
+  return psx_node_new_int_to_fp_cast(operand, target, target_type);
 }
 
 static node_t *wrap_i64_to_i32_trunc_cast(node_t *operand, psx_type_t *cast_type,
                                           int target_unsigned) {
-  node_t *trunc = psx_node_new_shift_trunc_extend(operand, 32, target_unsigned);
-
-  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-  wrap->base.kind = ND_CAST;
-  wrap->base.lhs = trunc;
-  wrap->type_size = 4;
-  wrap->is_unsigned = target_unsigned ? 1 : 0;
-  return annotate_cast_type((node_t *)wrap, cast_type);
+  return psx_node_new_i64_to_i32_trunc_cast(operand, cast_type, target_unsigned);
 }
 
 static node_t *wrap_integer_cast_result(node_t *operand, psx_type_t *cast_type,
                                         int type_size, int target_unsigned,
                                         int target_long_long) {
-  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-  wrap->base.kind = ND_CAST;
-  wrap->base.lhs = operand;
-  wrap->type_size = (short)type_size;
-  wrap->is_unsigned = target_unsigned ? 1 : 0;
-  wrap->is_long_long = target_long_long ? 1 : 0;
-  return annotate_cast_type((node_t *)wrap, cast_type);
+  return psx_node_new_integer_cast_result(operand, cast_type, type_size,
+                                          target_unsigned, target_long_long);
+}
+
+static node_t *wrap_integer_cast_result_ex(node_t *operand, psx_type_t *cast_type,
+                                           int type_size, int target_unsigned,
+                                           int target_long_long, int is_plain_char,
+                                           int widen_zext_i64) {
+  return psx_node_new_integer_cast_result_ex(operand, cast_type, type_size,
+                                             target_unsigned, target_long_long,
+                                             is_plain_char, widen_zext_i64);
 }
 
 static node_t *wrap_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
@@ -2345,40 +2112,13 @@ static node_t *wrap_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
                                         char *cast_tag_name, int cast_tag_len,
                                         int cast_elem_size,
                                         int cast_is_unsigned) {
-  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-  wrap->base.kind = ND_CAST;
-  wrap->base.lhs = operand;
-  wrap->is_pointer = 1;
-  wrap->pointer_qual_levels = 1;
-  wrap->type_size = 8;
-  if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
-  if (type_kind == TK_VOID) {
-    wrap->pointee_is_void = 1;
-  } else if (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION) {
-    wrap->tag_kind = cast_tag_kind;
-    wrap->tag_name = cast_tag_name;
-    wrap->tag_len = cast_tag_len;
-    wrap->is_tag_pointer = 1;
-  } else if (type_kind == TK_FLOAT) {
-    wrap->pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
-    if (wrap->deref_size <= 0) wrap->deref_size = 4;
-  } else if (type_kind == TK_DOUBLE) {
-    wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
-    if (wrap->deref_size <= 0) wrap->deref_size = 8;
-  } else if (cast_is_unsigned || type_kind == TK_UNSIGNED) {
-    wrap->pointee_is_unsigned = 1;
-  } else if (type_kind == TK_BOOL) {
-    wrap->pointee_is_bool = 1;
-  }
-  return annotate_cast_type((node_t *)wrap, cast_type);
+  return psx_node_new_pointer_cast_result(operand, cast_type, type_kind,
+                                          cast_tag_kind, cast_tag_name, cast_tag_len,
+                                          cast_elem_size, cast_is_unsigned);
 }
 
 static node_t *wrap_void_cast_result(node_t *operand, psx_type_t *cast_type) {
-  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-  wrap->base.kind = ND_CAST;
-  wrap->base.lhs = operand;
-  wrap->type_size = 0;
-  return annotate_cast_type((node_t *)wrap, cast_type);
+  return psx_node_new_void_cast_result(operand, cast_type);
 }
 
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
@@ -2421,16 +2161,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
        * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
        * widen_zext_i64 は立てない。 */
       if (!ps_node_is_pointer(operand)) {
-        node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-        wrap->base.kind = ND_CAST;
-        wrap->base.lhs = operand;
-        wrap->type_size = 8;
-        wrap->is_unsigned = cast_is_unsigned ? 1 : 0;
-        wrap->is_long_long = cast_is_long_long ? 1 : 0;
-        if (psx_node_integer_value_is_unsigned(operand) &&
-            ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
-          wrap->widen_zext_i64 = 1;
-        return annotate_cast_type((node_t *)wrap, cast_type);
+        int widen_zext = psx_node_integer_value_is_unsigned(operand) &&
+                         ps_node_type_size(operand) >= 1 &&
+                         ps_node_type_size(operand) < 8;
+        return wrap_integer_cast_result_ex(operand, cast_type, 8, cast_is_unsigned,
+                                           cast_is_long_long, 0, widen_zext);
       }
     }
     /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
@@ -2473,7 +2208,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 変数の型で正しく動いていた)。多段ポインタ (`int**`) は operand 側の表現を
      * 優先するためここでは触れない (cast_elem_size は基底型サイズで段数を持たない)。 */
     /* オペランドがポインタ (通常 is_pointer=1) または tag ポインタ (struct/union の `&s`、
-     * wrap_as_addr が is_tag_pointer=1 / is_pointer=0 で生成) のとき、新しいポインタ型として
+     * psx_node_new_unary_addr_for が is_tag_pointer=1 / is_pointer=0 で生成) のとき、新しいポインタ型として
      * ラップする。後者を含めないと `(char*)&s - (char*)&s.c` のような struct ポインタの cast が
      * 元の ND_ADDR をそのまま返し is_pointer=0 のまま残るため、ND_SUB の「ポインタ - ポインタ
      * = ptrdiff_t」分岐が成立せず、long 初期化が「ポインタを scalar に init」と reject される。 */
@@ -2619,12 +2354,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (cast_is_unsigned) {
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(mask));
       psx_node_set_unsigned(masked, 1);
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_CAST;
-      wrap->base.lhs = masked;
-      wrap->type_size = (short)(width / 8);
-      wrap->is_unsigned = 1;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_integer_cast_result(masked, cast_type, width / 8, 1, 0);
     }
     /* signed char/short: `(x << (src_width-width)) >> (src_width-width)` の算術シフトで符号拡張する。
      * 従来の `& マスク` だけだとビット (width-1) が立った runtime 値が符号拡張されず、
@@ -2633,12 +2363,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     int src_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
     int sh = src_width - width;
     node_t *trunc = psx_node_new_shift_trunc_extend(operand, sh, 0);
-    node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-    wrap->base.kind = ND_CAST;
-    wrap->base.lhs = trunc;
-    wrap->type_size = (short)(width / 8);
-    if (cast_is_plain_char) wrap->is_plain_char = 1;
-    return annotate_cast_type((node_t *)wrap, cast_type);
+    return wrap_integer_cast_result_ex(trunc, cast_type, width / 8, 0, 0,
+                                       cast_is_plain_char, 0);
   }
   // Guard rail for unexpected parser state: known cast kinds should be handled above.
   psx_diag_ctx(curtok(), "cast", "%s",
@@ -2666,14 +2392,12 @@ static node_t *hoist_compound_assign_lvalue(node_t *target, node_t **prefix_io) 
   /* t = &target (アドレスを一度だけ評価) */
   node_mem_t *t_assign = psx_node_new_assign(psx_node_new_lvar_expr_ref_for(t, 1), addr);
   /* target のメタ情報を複製し、アドレス部だけ副作用のない temp 参照へ差し替える。 */
-  node_mem_t *via = arena_alloc(sizeof(node_mem_t));
-  *via = *(node_mem_t *)target;
-  via->base.lhs = psx_node_new_lvar_expr_ref_for(t, 1);
+  node_t *via = psx_node_clone_lvalue_with_lhs(target, psx_node_new_lvar_expr_ref_for(t, 1));
   if (*prefix_io)
     *prefix_io = psx_node_new_binary(ND_COMMA, *prefix_io, (node_t *)t_assign);
   else
     *prefix_io = (node_t *)t_assign;
-  return (node_t *)via;
+  return via;
 }
 
 static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
@@ -2704,19 +2428,6 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       set_curtok(curtok()->next);
       node_t *rhs = assign_ctx(ctx);
       psx_node_reject_const_qual_discard(assign_target, rhs);
-      /* C11 6.3.1.2: _Bool への代入は (rhs != 0) を 0/1 で表す。
-       * struct メンバ `s.b` (ND_DEREF で mem.is_bool が立っている) や、
-       * _Bool ローカル変数 (ND_LVAR で lvar の is_bool) の場合に正規化する。 */
-      int lhs_is_bool = 0;
-      if (assign_target) {
-        if (assign_target->kind == ND_DEREF || assign_target->kind == ND_GVAR ||
-            assign_target->kind == ND_LVAR) {
-          lhs_is_bool = ((node_mem_t *)assign_target)->is_bool;
-        }
-      }
-      if (lhs_is_bool && rhs) {
-        rhs = psx_node_new_binary(ND_NE, rhs, psx_node_new_num(0));
-      }
       node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
       assign_node->base.is_source_assignment = 1;
       node = (node_t *)assign_node;
@@ -3059,12 +2770,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
 
 static node_t *sizeof_vla_runtime_size_node(int slot_off) {
   node_t *lvar = psx_node_new_unsigned_lvar_typed(slot_off, 8);
-  node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
-  cast->base.kind = ND_CAST;
-  cast->base.lhs = lvar;
-  cast->type_size = 8;
-  cast->is_unsigned = 1;
-  return (node_t *)cast;
+  return psx_node_new_integer_cast_result(lvar, NULL, 8, 1, 0);
 }
 
 static node_t *append_comma_expr(node_t *prefix, node_t *expr) {
@@ -3131,7 +2837,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
        * 式として評価しなければならない。ident 直後が `)` のときだけ全体サイズ扱いにする
        * (非 VLA 配列分岐と同じく peek で確認。これがないと `sizeof(a[0])` が `a` を消費して
        * `)` を期待し E2006 になっていた)。 */
-      if (arr_var && arr_var->is_vla &&
+      if (arr_var && arr_var->is_vla && arr_var->pointer_qual_levels == 0 &&
           curtok()->next && curtok()->next->kind == TK_RPAREN) {
         set_curtok(curtok()->next);
         tk_expect(')');
@@ -3268,22 +2974,16 @@ static node_t *build_pre_inc_dec_node(node_kind_t kind, const char *op, expr_par
 // `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
 static node_t *build_unary_deref_node(node_t *operand) {
   /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
-   * 明確に「小さな整数スカラ」(ND_LVAR/ND_GVAR で type_size < 8 かつ
-   * 非ポインタ非配列) を deref するときだけエラーにする。8B 値は関数ポインタ
-   * や long も含まれるので保守的に許容する。
-   * また pointee_is_void が立っているとき (`void *p`) は deref 不可。 */
+   * 診断は parser 側に残し、ND_DEREF の型 metadata 初期化は node_utils に集約する。 */
   if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
                   operand->kind == ND_NUM)) {
     int looks_ptr = ps_node_is_pointer(operand) ||
                     psx_node_pointer_qual_levels(operand) > 0;
     int ts = ps_node_type_size(operand);
-    /* type_size が 1/2/4 (char/short/int) で pointer 指示がなければ明確に
-     * スカラ整数 → deref はエラー。 */
     if (!looks_ptr && ts > 0 && ts < 8) {
       psx_diag_ctx(curtok(), "deref",
                    "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
     }
-    /* void* の deref は不正 (pointee の型が不完全)。 */
     if (psx_node_pointee_is_void(operand)) {
       psx_diag_ctx(curtok(), "deref",
                    "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
@@ -3292,268 +2992,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
     psx_diag_ctx(curtok(), "deref",
                  "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
-  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-  node->base.kind = ND_DEREF;
-  node->base.lhs = operand;
-  node->base.fp_kind = TK_FLOAT_KIND_NONE;
-  int ds = ps_node_deref_size(operand);
-  node->type_size = ds ? ds : 8;
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_ptr = 0;
-  psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-  if (tag_kind != TK_EOF && is_tag_ptr) {
-    node->tag_kind = tag_kind;
-    node->tag_name = tag_name;
-    node->tag_len = tag_len;
-    /* `*p` (p=struct N*) は struct 実体だが、`*pp` (pp=struct N**) の結果は
-     * まだ struct ポインタ。多段ポインタ (pql>=2) なら is_tag_pointer を維持する。 */
-    node->is_tag_pointer = (psx_node_pointer_qual_levels(operand) >= 2) ? 1 : 0;
-    node->deref_size = 0;
-  }
-  // 多段ポインタ: *pp (int**) → int* なので is_pointer と deref_size を伝播
-  int pql = psx_node_pointer_qual_levels(operand);
-  tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(operand);
-  /* `double *a` 仮引数のように pql を持たず pointee_fp_kind だけで fp ポインタを
-   * 表す場合も含め、単段 (pql<=1) の deref 結果に fp 種別を引き継ぐ。 */
-  if (pql <= 1 && pointee_fp != TK_FLOAT_KIND_NONE) {
-    node->base.fp_kind = pointee_fp;
-  }
-  /* `unsigned *p` の `*p`: pointee が unsigned なら deref 結果も unsigned
-   * (zero-extend load)。pointee_is_unsigned は
-   * psx_node_new_lvar_identifier_ref_for() が立てる。 */
-  if (pql <= 1) {
-    if (psx_node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
-  }
-  int operand_ptr_array_pointee_bytes = psx_node_ptr_array_pointee_bytes(operand);
-  if (operand_ptr_array_pointee_bytes > 0) {
-    node->ptr_array_pointee_bytes = operand_ptr_array_pointee_bytes;
-    int operand_base_deref_size = psx_node_base_deref_size(operand);
-    if (node->base_deref_size == 0 && operand_base_deref_size > 0) {
-      node->base_deref_size = (short)operand_base_deref_size;
-    }
-  }
-  if (psx_node_pointee_is_const_qualified(operand)) node->is_const_qualified = 1;
-  if (psx_node_pointee_is_volatile_qualified(operand)) node->is_volatile_qualified = 1;
-  if (pql >= 2) {
-    node->is_pointer = 1;
-    int new_pql = pql - 1;
-    node->pointer_qual_levels = new_pql;
-    int bds = psx_node_base_deref_size(operand);
-    node->base_deref_size = (short)bds;
-    node->deref_size = (new_pql >= 2) ? 8 : (short)bds;
-    /* 最内 pointee の fp 種別を 1 段下の deref 結果へ引き継ぐ。これがないと
-     * `double **pp` の `*pp` が fp 情報を失い、最終 `**pp` が fp load/store に
-     * ならず float がゴミ・double の書き込みが落ちていた。 */
-    node->pointee_fp_kind = pointee_fp;
-  }
-  // 仮引数 typedef 配列ポインタ (`typedef int M[D0][D1]...; void f(M *p)`):
-  // p (ND_LVAR) は M のサイズと strides を保持しているが、
-  //   outer_stride = sizeof(M) (= p[i] のステップ、つまり M 全体)
-  //   mid_stride   = M の 1 段目のステップ
-  //   extra_strides = それ以降の段
-  // ということに注意。`*p` の結果は M 自身であり、subscript するときの
-  // ステップは「M の 1 段目」(= p->mid_stride) になる。よって 1 段スライドして
-  // 継承する: deref_size ← mid_stride、inner_deref_size ← extra_strides[0]、…
-  /* `int (*p)[N]` (1D 配列へのポインタ) の `*p` および `*(p+k)` を解決する。
-   * operand が ND_LVAR 直接、または ND_ADD(p, ...) の場合に、p の outer_stride>0
-   * かつ非配列なら、ND_DEREF の deref_size を elem_size にセットして
-   * subscript_base_address_of が load を skip できるようにする。 */
-  {
-    node_t *probe = operand;
-    while (probe && probe->kind == ND_ADD) probe = probe->lhs;
-    if (probe && probe->kind == ND_LVAR) {
-      lvar_t *src = psx_node_lvar_symbol(probe);
-      if (src && src->outer_stride > 0 && src->mid_stride == 0 && !src->is_array) {
-        node->deref_size = (short)src->elem_size;
-        /* タグ情報の carry: `struct S (*ap)[N]` の `*ap` は struct S[N] (配列) を表す。
-         * 変数 ap 自体は is_tag_pointer=0 (ポインタ-to-配列であって tag ポインタでない)
-         * のため上流の `is_tag_ptr` ガードで tag が落ちている。subscript 結果の
-         * `(*ap)[i].m` 解決のため、deref ノードに tag を carry する (is_tag_pointer=0:
-         * 結果は配列で、その要素が struct)。 */
-        if (src->tag_kind != TK_EOF && !src->is_tag_pointer && node->tag_kind == TK_EOF) {
-          node->tag_kind = src->tag_kind;
-          node->tag_name = src->tag_name;
-          node->tag_len = src->tag_len;
-          node->is_tag_pointer = 0;
-        }
-        /* 要素がポインタの配列へのポインタ (`IP (*pia)[3]` / `BinOp (*pa)[3]`): src 側で
-         * pointer_qual_levels=1 と base_deref_size=要素 pointee サイズが立つ。これを ND_DEREF
-         * に carry し、build_subscript_deref の「要素はポインタ」分岐に乗せて `(*pia)[0]` の
-         * 結果を scalar pointer として扱えるようにする。これがないと `*(*pia)[0]` の最終
-         * deref が 8B のままで int (4B) 比較が型ずれする。 */
-        if (src->pointer_qual_levels >= 1 && src->base_deref_size > 0) {
-          node->pointer_qual_levels = src->pointer_qual_levels;
-          node->base_deref_size = src->base_deref_size;
-        }
-        if (src->ptr_array_pointee_bytes > 0) {
-          node->ptr_array_pointee_bytes = src->ptr_array_pointee_bytes;
-          if (node->base_deref_size == 0) node->base_deref_size = (short)src->elem_size;
-        }
-      }
-    } else if (probe && probe->kind == ND_FUNCALL) {
-      /* `int (*f())[N]` の `*f()` / `*(f()+k)`: 結果は行 (int[N])。subscript_base_address_of が
-       * load を skip し `(*f())[i]` が要素ストライドで添字できるよう、deref_size を要素サイズに
-       * する (ローカル `int (*p)[N]` の `*p` と同じ)。 ds=N*elem を first_dim で割って elem を得る。 */
-      psx_type_t *func_type = psx_node_get_type(probe);
-      if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
-        int inner = func_type->outer_stride;
-        int next = func_type->mid_stride;
-        if (inner <= 0) {
-          psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-              func_type->funcptr_ret_pointee_array_first_dim,
-              func_type->funcptr_ret_pointee_array_second_dim,
-              0);
-          int rowstride = ps_node_deref_size(probe);
-          psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, &next);
-        }
-        if (inner > 0) {
-          node->deref_size = (short)inner;
-          if (next > 0) node->inner_deref_size = (short)next;
-        }
-        if (func_type->base &&
-            (func_type->base->kind == PSX_TYPE_STRUCT ||
-             func_type->base->kind == PSX_TYPE_UNION)) {
-          node->tag_kind = func_type->base->tag_kind;
-          node->tag_name = func_type->base->tag_name;
-          node->tag_len = func_type->base->tag_len;
-          node->tag_scope_depth_p1 = func_type->base->tag_scope_depth_p1;
-          node->is_tag_pointer = 0;
-        }
-      }
-    } else if (probe && probe->kind == ND_DEREF) {
-      /* struct メンバ `int (*p)[N]` (および 2D pointee `int (*p)[M][N]`) の `*s.p`:
-       * probe (= s.p のメンバ deref) は build_member_deref_node で is_tag_pointer=1、
-       * deref_size=pointee 全バイト数、inner_deref_size=1 段目 stride、next_deref_size=elem
-       * (2D 時) として組まれている。1 段スライドして carry:
-       *   新 deref_size      ← probe.inner_deref_size  (1 段目 subscript の要素 stride)
-       *   新 inner_deref_size ← probe.next_deref_size  (2 段目 subscript の要素 stride)
-       * ローカル `int (*p)[M][N]` の `*p` と同じ表現に揃え、subscript_base_address_of が
-       * lhs (= s.p) を返す経路に乗せる (is_pointer は立てない)。 */
-      node_mem_t *pm = (node_mem_t *)probe;
-      if (pm->is_tag_pointer && pm->inner_deref_size > 0
-          && pm->deref_size > pm->inner_deref_size) {
-        node->deref_size = pm->inner_deref_size;
-        if (pm->next_deref_size > 0) {
-          node->inner_deref_size = pm->next_deref_size;
-        }
-      }
-    }
-  }
-  if (operand && operand->kind == ND_LVAR) {
-    lvar_t *src = psx_node_lvar_symbol(operand);
-    if (src && src->outer_stride > 0 && src->mid_stride > 0) {
-      // 2D 以上 (`*p` の結果が配列)
-      node->deref_size = (short)src->mid_stride;
-      /* タグ情報の carry: `struct S (*ap)[N][M]` の `*ap` は struct S[N][M] (2D 配列)。
-       * 1D 版と同様に、subscript 連鎖 `(*ap)[i][j].m` の解決のため tag を deref ノードへ
-       * carry する (is_tag_pointer=0: 結果は配列で、最終要素が struct)。 */
-      if (src->tag_kind != TK_EOF && !src->is_tag_pointer && node->tag_kind == TK_EOF) {
-        node->tag_kind = src->tag_kind;
-        node->tag_name = src->tag_name;
-        node->tag_len = src->tag_len;
-        node->is_tag_pointer = 0;
-      }
-      if (src->extra_strides_count > 0) {
-        node->inner_deref_size = (short)src->extra_strides[0];
-        if (src->extra_strides_count > 1) {
-          node->next_deref_size = (short)src->extra_strides[1];
-          for (int i = 2; i < src->extra_strides_count && (i - 2) < 5; i++) {
-            node->extra_strides[i - 2] = src->extra_strides[i];
-          }
-          // 末尾要素 stride = elem_size
-          if (src->extra_strides_count - 2 < 5) {
-            node->extra_strides[src->extra_strides_count - 2] = src->elem_size;
-            node->extra_strides_count = (unsigned char)(src->extra_strides_count - 1);
-          } else {
-            node->extra_strides_count = (unsigned char)(src->extra_strides_count - 2);
-          }
-        } else {
-          node->next_deref_size = (short)src->elem_size;
-        }
-      } else {
-        node->inner_deref_size = (short)src->elem_size;
-      }
-    }
-  }
-  /* 通常の多次元配列 `int m[3][4]` は build_array_lvar_addr_node により
-   * ND_ADDR(deref_size=行ストライド, inner_deref_size=要素) として表現される
-   * (上の ND_LVAR 専用ブロックには該当しない)。`*m` / `*(m+k)` の operand を
-   * ND_ADD を辿って基底まで下り、inner_deref_size>0 (= まだ多次元) なら結果の
-   * 「行」に内側ストライドを 1 段シフトして引き継ぐ。これがないと結果 deref_size=0
-   * のままで build_node_deref の配列崩壊判定に乗らず、行を値ロードして garbage を返す
-   * (`int *q=m[0]` 相当の `*m` / `*(m+k)`)。
-   * 旧実装は `node->type_size > 8` を門にしていたが、それだと行全体が 8 バイト以下に
-   * なる 3 次元以上の中間行 (`int t[2][2][2]` の `*(t[i]+k)` = int[2] = 8B) で伝播が
-   * 漏れ SIGSEGV していた。pm->inner_deref_size>0 自体が「結果がまだ配列」の指標なので
-   * type_size 門は不要。is_pointer は立てない: subscript 経路の行と統一し !is_pointer の
-   * まま扱う。崩壊は build_node_deref の小行節、算術スケールは node_is_ptr_for_arith に
-   * 委ねる (is_pointer を立てると loaded ポインタ値と区別できず崩壊判定が壊れる)。 */
-  if (node->deref_size == 0) {
-    node_t *probe = operand;
-    while (probe && (probe->kind == ND_ADD || probe->kind == ND_SUB)) probe = probe->lhs;
-    node_mem_t *pm = NULL;
-    if (probe && probe->kind == ND_LVAR) pm = &as_lvar(probe)->mem;
-    else if (probe && (probe->kind == ND_ADDR || probe->kind == ND_GVAR ||
-                       probe->kind == ND_DEREF || probe->kind == ND_CAST ||
-                       probe->kind == ND_STRING)) pm = (node_mem_t *)probe;
-    if (pm && pm->inner_deref_size > 0) {
-      node->deref_size = pm->inner_deref_size;
-      node->inner_deref_size = pm->next_deref_size;
-      if (pm->extra_strides_count > 0) {
-        node->next_deref_size = (short)pm->extra_strides[0];
-        for (int i = 1; i < pm->extra_strides_count && (i - 1) < 5; i++)
-          node->extra_strides[i - 1] = pm->extra_strides[i];
-        node->extra_strides_count = (unsigned char)(pm->extra_strides_count - 1);
-      }
-    }
-  }
-  /* deref 結果がまだ「行」(配列) の場合 (`(*dp)[j]` の *dp、`*m`/`*(m+k)` 等)、要素 fp 種別を
-   * pointee_fp_kind にも伝播し、後続 subscript `(*dp)[j]` が要素を fp load できるようにする。
-   * 上の `pql<=1` 分岐 (2549) は `double *p` のスカラ deref を想定して base.fp_kind を立てるが、
-   * 配列へのポインタや多次元配列の行 deref では結果はスカラでなく行なので、subscript 経路は
-   * pointee_fp_kind を見る。base.fp_kind は残す: スカラ deref `*p` を `_Generic(*p, double:..)`
-   * が control->fp_kind で判定するため (クリアすると double* deref が default に落ちる)。
-   * deref_size>0 が「結果がまだ subscript 可能な配列/行」の指標。これがないと double の
-   * `(*dp)[j]` が整数 load になり値が化けていた (local/global 共通)。 */
-  if (node->deref_size > 0 && node->base.fp_kind != TK_FLOAT_KIND_NONE &&
-      node->pointee_fp_kind == TK_FLOAT_KIND_NONE) {
-    node->pointee_fp_kind = node->base.fp_kind;
-  }
-  return (node_t *)node;
-}
-
-// `&operand` を ND_ADDR でラップする。
-// オペランドが struct タグを持っていれば is_tag_pointer/deref_size/type_size を設定。
-// 非タグ型 (int / char / 関数ポインタ等) でも is_pointer=1 と deref_size を立てる
-// — ポインタ - ポインタ や ポインタ + 整数 の判定に使われる。
-static node_t *wrap_as_addr(node_t *operand) {
-  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-  node->base.kind = ND_ADDR;
-  node->base.lhs = operand;
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_ptr = 0;
-  psx_node_get_tag_type(operand, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-  if (tag_kind != TK_EOF && !is_tag_ptr) {
-    node->tag_kind = tag_kind;
-    node->tag_name = tag_name;
-    node->tag_len = tag_len;
-    node->is_tag_pointer = 1;
-    node->deref_size = ps_node_type_size(operand);
-    node->type_size = 8;
-    return (node_t *)node;
-  }
-  /* タグなしオペランド: operand の型サイズが pointee サイズ */
-  int ts = ps_node_type_size(operand);
-  if (ts > 0) {
-    node->deref_size = ts;
-    node->is_pointer = 1;
-    node->type_size = 8;
-  }
-  return (node_t *)node;
+  return psx_node_new_unary_deref_for(operand);
 }
 
 // `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
@@ -3570,7 +3009,7 @@ static node_t *build_unary_addr_node(node_t *operand) {
   }
   if (operand && operand->kind == ND_COMMA && operand->rhs) {
     /* `&(compound-literal)` 等、値が COMMA(init, ref) の形。rhs に同じ単項 & の
-     * ロジックを再帰適用する (wrap_as_addr 直呼びだと配列複合リテラルの rhs が
+     * ロジックを再帰適用する (直接 ND_ADDR で包むと配列複合リテラルの rhs が
      * 既に ND_ADDR (decay 済み) のとき二重に ND_ADDR でラップされ ir_build が
      * 失敗する)。下の ND_ADDR/ND_FUNCREF 簡約をここでも効かせる。 */
     return psx_node_new_binary(ND_COMMA, operand->lhs, build_unary_addr_node(operand->rhs));
@@ -3585,44 +3024,14 @@ static node_t *build_unary_addr_node(node_t *operand) {
     /* `&arr` : 配列は既に decay 済みの ND_ADDR で表現されアドレス値は同じ。ただし
      * 結果型は `int(*)[N]` (ポインタ, 8B) なので、type_size=8 のコピーを返して
      * sizeof(&arr) が要素サイズでなく 8 を返すようにする (共有ノードは変更しない)。 */
-    node_mem_t *opm = (node_mem_t *)operand;
-    if (opm->type_size != 8 || opm->compound_literal_array_size > 0) {
-      node_mem_t *cp = arena_alloc(sizeof(node_mem_t));
-      *cp = *opm;
-      cp->type_size = 8;
-      if (opm->compound_literal_array_size > 0) {
-        int old_inner = opm->inner_deref_size;
-        int old_next = opm->next_deref_size;
-        int old_extras[5] = {0};
-        int old_extra_count = opm->extra_strides_count;
-        for (int i = 0; i < old_extra_count && i < 5; i++) old_extras[i] = opm->extra_strides[i];
-        cp->inner_deref_size = opm->deref_size;
-        cp->deref_size = opm->compound_literal_array_size;
-        cp->next_deref_size = old_inner;
-        cp->extra_strides_count = 0;
-        for (int i = 0; i < 5; i++) cp->extra_strides[i] = 0;
-        if (old_next > 0) {
-          cp->extra_strides[0] = old_next;
-          int n = 1;
-          for (int i = 0; i < old_extra_count && n < 5; i++, n++) cp->extra_strides[n] = old_extras[i];
-          cp->extra_strides_count = (unsigned char)n;
-        }
-      }
-      cp->compound_literal_array_size = 0;
-      cp->base.is_explicit_addr_expr = 1;
-      return (node_t *)cp;
-    }
-    operand->is_explicit_addr_expr = 1;
-    return operand;
+    return psx_node_new_explicit_addr_value_for(operand);
   }
   /* `&f` (f は関数): 関数のアドレスは関数ポインタそのもの (= `f`)。ND_FUNCREF を
    * そのまま返す (ND_ADDR でラップすると IR builder が扱えず失敗する)。 */
   if (operand && operand->kind == ND_FUNCREF) {
     return operand;
   }
-  node_t *addr = wrap_as_addr(operand);
-  if (addr) addr->is_explicit_addr_expr = 1;
-  return addr;
+  return psx_node_new_unary_addr_for(operand);
 }
 
 static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
@@ -3853,300 +3262,8 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
   node_t *scaled = make_subscript_scaled_offset(node, idx, &es, &inner_ds, &next_ds,
                                                 extras, &extras_count);
   node_t *base_addr = subscript_base_address_of(node);
-  node_t *addr = psx_node_new_binary(ND_ADD, base_addr, scaled);
-  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-  deref->base.kind = ND_DEREF;
-  deref->base.lhs = addr;
-  deref->type_size = es;
-  deref->deref_size = inner_ds; // 多次元配列: 次段のストライド (0=スカラ)
-  deref->inner_deref_size = (short)next_ds; // さらに次段のストライド (3D 用)
-  // 4 次元以上: extra_strides[0..n-1] を 1 段シフトして new node に格納。
-  // current.extra_strides[0] が新しい next_deref_size に、以降が新しい extra_strides になる。
-  if (extras_count > 0) {
-    deref->next_deref_size = (short)extras[0];
-    for (int i = 1; i < extras_count && (i - 1) < 5; i++) {
-      deref->extra_strides[i - 1] = extras[i];
-    }
-    deref->extra_strides_count = (unsigned char)(extras_count - 1);
-  }
-  deref->base.fp_kind = TK_FLOAT_KIND_NONE;
-  /* N-D VLA (N>=3) の subscript chain:
-   * - t (ND_LVAR or ND_DEREF) は vla_row_stride_frame_off = 次の runtime stride スロット、
-   *   vla_strides_remaining = その後にまだ何個 runtime stride スロットが続くか、を持つ。
-   * - 1 段 subscript で stride を消費したら、結果 deref に vla_row += 8、vla_strides_remaining -= 1
-   *   を carry する。remaining が消費後 0 未満になる (= もう runtime stride がない) ときは
-   *   vla_row = 0 にして「以降は elem 定数 stride」へ移行する。
-   * これにより 2D/3D/4D/N-D VLA を統一的に解決できる。 */
-  {
-    int parent_vla_row = 0;
-    int parent_remaining = 0;
-    int parent_elem = 0;
-    if (node->kind == ND_LVAR) {
-      parent_vla_row = as_lvar(node)->mem.vla_row_stride_frame_off;
-      parent_remaining = as_lvar(node)->mem.vla_strides_remaining;
-      parent_elem = as_lvar(node)->mem.inner_deref_size;
-    } else if (node->kind == ND_DEREF || node->kind == ND_ADDR || node->kind == ND_GVAR) {
-      node_mem_t *m = (node_mem_t *)node;
-      parent_vla_row = m->vla_row_stride_frame_off;
-      parent_remaining = m->vla_strides_remaining;
-      parent_elem = m->inner_deref_size;
-    }
-    if (parent_vla_row != 0) {
-      if (parent_remaining > 0) {
-        /* 次の段もまだ runtime stride。vla_row を 8 シフトして carry。 */
-        deref->vla_row_stride_frame_off = parent_vla_row + 8;
-        deref->vla_strides_remaining = parent_remaining - 1;
-      }
-      /* parent_remaining == 0 のときは current が最終 runtime stride。
-       * 結果 deref は vla_row=0 (default)、以降の subscript は elem 定数で動く。 */
-      /* elem を chain に carry する (subscript_base_address_of が次段で「中間配列」を正しく
-       * 認識し、make が es=elem として要素サイズを伝播できるように)。make の next_ds 伝播は
-       * 2 段までしか効かないため、4D 以降で明示的に carry が必要。 */
-      if (parent_elem > 0) {
-        deref->inner_deref_size = (short)parent_elem;
-        deref->next_deref_size = (short)parent_elem;
-      }
-    }
-  }
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_ptr = 0;
-  psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_ptr);
-  if (tag_kind != TK_EOF) {
-    /* tag を持つ配列 (struct[N]) や struct ポインタを subscript した結果は
-     * tag 要素そのもの。is_tag_ptr フラグの有無を問わず tag を deref へ伝播し、
-     * `arr[i].member` の解決を可能にする。is_tag_pointer は 0 (実体)。 */
-    deref->tag_kind = tag_kind;
-    deref->tag_name = tag_name;
-    deref->tag_len = tag_len;
-    deref->is_tag_pointer = 0;
-  }
-  // 配列要素がポインタ型の場合: サブスクリプト結果にポインタ情報を伝播
-  int pql = psx_node_pointer_qual_levels(node);
-  int bds = psx_node_base_deref_size(node);
-  /* subscript 結果がポインタになるのは「要素自体がポインタ」のときだけ:
-   *   int **pp     (pql>=2, bds>0)     → pp[i] は int*
-   *   int *arr[N]  (配列, pql=1, bds>0) → arr[i] は int*
-   * 単段ポインタ int *p / long *p / char *p (pql=1, bds=0) の p[i] はスカラ。
-   * base_deref_size>0 が「要素がさらにポインタ」の指標 (pointee が pointee を持つ)。
-   * bds==0 も含め pql>=1 だけで判定していたため、`int x = p[0];` が誤って
-   * 「スカラにポインタを代入」と E3064 拒否されていた (pp8/pp1/pp5)。 */
-  /* 多次元ポインタ配列 (`int *t[2][2]`) の中間行: 結果はまだ「行」(配列) でポインタ要素
-   * でない。pql>=1 && bds>0 の「要素はポインタ」分岐がここで発火すると deref_size が
-   * 要素 stride (inner_ds) でなく bds に上書きされ、次段 subscript が誤スケール (+4 等) になる。
-   * fp/unsigned と同じ中間行判定 (inner_ds>0 && es>inner_ds: 行サイズ es が要素 stride
-   * inner_ds より大きい) で中間行を見分け、pointer-element 化を最終次元まで遅延する。
-   * 単段 `int *arr[N]` (inner_ds==0) や genuine 多段ポインタ `int **pp` (es==inner_ds) は
-   * 中間行でないので従来どおり最終要素として扱う。 */
-  int subscript_is_intermediate_row = (inner_ds > 0 && es > inner_ds);
-  int deref_from_pointer_to_array = 0;
-  if (node->kind == ND_DEREF && node->lhs) {
-    node_t *probe = node->lhs;
-    while (probe && probe->kind == ND_ADD) probe = probe->lhs;
-    if (probe && probe->kind == ND_LVAR) {
-      lvar_t *src = psx_node_lvar_symbol(probe);
-      if (src && src->outer_stride > 0 && !src->is_array) {
-        deref_from_pointer_to_array = 1;
-      }
-    }
-  }
-  if (pql >= 1 && bds > 0 && subscript_is_intermediate_row) {
-    /* 中間行: pointer 化せず deref_size=inner_ds を保ち、pql / bds を次段へ carry して
-     * 最終次元の subscript が「要素はポインタ」分岐に乗れるようにする。 */
-    deref->pointer_qual_levels = pql;
-    deref->base_deref_size = (short)bds;
-  } else if (pql == 1 && bds > 0 &&
-             (node->kind == ND_LVAR || node->kind == ND_GVAR ||
-              node->kind == ND_FUNCALL ||
-              (node->kind == ND_DEREF &&
-               !deref_from_pointer_to_array &&
-               ((node_mem_t *)node)->ptr_array_pointee_bytes == 0 &&
-               (!(node->lhs && node->lhs->kind == ND_ADD) ||
-                ((node_mem_t *)node)->is_scalar_ptr_member)))) {
-    /* 単段のスカラポインタ値 (`long *p`, `unsigned long *p`) の subscript は
-     * pointee スカラ。`long *` ではポインタ認識のため pql=1 / bds=8 を持つが、
-     * これは「要素がポインタ」ではなく「指している要素が 8B」という情報なので
-     * 結果に pointer_qual_levels を carry しない。
-     * `T **pp` の `(*pp)[i].member` も `*pp` が単段の `T *` 値になるためここで
-     * `T` 実体に落とす。これを下の「要素がポインタ」分岐に入れると `.member` が
-     * `T *` への `.` と誤判定される。 */
-    deref->deref_size = 0;
-  } else if (pql >= 1 && bds > 0) {
-    deref->is_pointer = 1;
-    /* genuine ポインタ変数 (`int **pp`, ND_LVAR/ND_GVAR) の subscript は 1 段の
-     * ポインタを消費するので結果の pql を 1 減らす (`pp[i]` は int*、pql=1)。
-     * 配列 (`int *arr[N]`, ND_ADDR decay) は配列次元を消費し要素の pql を保つ
-     * (`arr[i]` は int*、pql=1)。pql を減らさないと `*pp[0]` がポインタ扱いの
-     * ままになり、スカラ初期化 `int u=*pp[0];` が誤って弾かれ、算術も pointer 化
-     * していた。 */
-    int result_pql = pql;
-    if ((node->kind == ND_LVAR || node->kind == ND_GVAR ||
-         node->kind == ND_FUNCALL ||
-         (node->kind == ND_DEREF && ((node_mem_t *)node)->is_scalar_ptr_member)) &&
-        pql >= 2) {
-      /* 多段ポインタ戻り `int **g()` の `g()[i]` も genuine ポインタ値の subscript
-       * (配列 decay でなく)。1 段消費して結果 pql を減らす (`g()[i]` は int*)。 */
-      result_pql = pql - 1;
-    }
-    deref->pointer_qual_levels = result_pql;
-    /* base_deref_size は「結果がさらに内側ポインタを持つか」を表す。結果が単段
-     * ポインタ (result_pql==1, 例 int**→int*) なら pointee はスカラなので 0。
-     * 多段のまま (result_pql>=2, 例 int***→int**) なら内側 scalar size を保つ。
-     * ここを常に bds にしていたため、`int **m` の `m[i]` が bds=4 を持ち、
-     * `m[i][j]` が誤ってポインタ扱い (4 倍スケール) されていた。 */
-    deref->base_deref_size = (result_pql >= 2) ? (short)bds : 0;
-    deref->deref_size = (result_pql >= 2) ? 8 : (short)bds;
-    /* 要素が struct/union ポインタ (`struct N *arr[N]`) の場合、subscript 結果は
-     * struct ポインタ値なので is_tag_pointer を立てる (`arr[i]->m` の解決に必要)。 */
-    if (deref->tag_kind != TK_EOF) {
-      deref->is_tag_pointer = 1;
-    }
-    /* 結果がまだポインタ (多段ポインタの `pp[i]` や `int *arr[i]`) のとき、最内
-     * pointee の fp 種別を引き継ぐ。これがないと `double **pp; *pp[0]` の最終 deref が
-     * fp と分からず整数 load になっていた。結果はポインタなので base.fp_kind ではなく
-     * pointee_fp_kind に運ぶ (build_unary_deref_node の多段分岐と対称)。 */
-    deref->pointee_fp_kind = psx_node_pointee_fp_kind(node);
-  }
-  /* 配列 (pql=0 でも pointee_fp_kind を持つ ND_ADDR) の subscript 結果も
-   * FP load にするため、pointee_fp_kind を見て fp_kind を引き継ぐ。多次元配列
-   * (`float m[2][3]`) の 1 段目 subscript 結果はまだ配列なので、base.fp_kind では
-   * なく pointee_fp_kind に伝播して次段 subscript が fp load になるようにする
-   * (is_bool と同じ分岐)。これがないと `m[i][j]` が整数 load になっていた。 */
-  {
-    tk_float_kind_t arr_pointee_fp = psx_node_pointee_fp_kind(node);
-    /* pointer-to-VLA `double (*p)[m]` の第1 subscript: vla_rsf 経路では es==inner_ds に
-     * なり下の `es > inner_ds` で「最終スカラ」と誤分類される。実行時ストライド (vla_rsf)
-     * があり内側次元 (inner_ds>0) を持つなら結果は「行」(中間) なので明示的に区別する。 */
-    int node_vla_rsf = (node->kind == ND_LVAR) ? as_lvar(node)->mem.vla_row_stride_frame_off : 0;
-    int is_vla_row = (node_vla_rsf != 0 && inner_ds > 0);
-    if (arr_pointee_fp != TK_FLOAT_KIND_NONE && pql == 0) {
-      /* 結果がまだ多次元配列の「行」(要素サイズ es が次段ストライド inner_ds より
-       * 大きい) なら pointee_fp_kind に伝播して次段 subscript を fp load にする。
-       * 最終スカラ要素 (es <= inner_ds、または inner_ds==0) なら base.fp_kind。
-       * 1D の `float *a` 仮引数は inner_ds=elem_size が立つことがあるので es>inner_ds
-       * で「多次元の中間」かどうかを区別する。 */
-      if ((inner_ds > 0 && es > inner_ds) || is_vla_row) {
-        deref->pointee_fp_kind = arr_pointee_fp;
-      } else if (inner_ds == 0 && bds > 0) {
-        /* 関数ポインタ配列の要素 (`double (*ops[N])(double)` の `ops[i]`): 要素は
-         * 8B の関数ポインタ値であって double 値ではない。base.fp_kind に載せると
-         * subscript 結果を double としてロードしてしまうため、is_pointer を立てて
-         * ポインタ値としてロードし、戻り型 fp_kind を pointee_fp_kind に運ぶ
-         * (呼び出し側 parse_call_postfix がこれを見て戻り値を d0 で読む)。配列要素は
-         * pql=0 で登録され (line 2777 の funcptr 配列分岐)、bds>0 が「要素がポインタ」、
-         * inner_ds==0 が「要素を更に添字できない不透明ポインタ」の指標。fp ポインタ
-         * 仮引数 `double *a` は a[i] が fp スカラで inner_ds==es>0 になるため除外され、
-         * 純粋な fp スカラ配列は bds==0 で下の else に落ちる。 */
-        deref->pointee_fp_kind = arr_pointee_fp;
-        deref->is_pointer = 1;
-        deref->deref_size = 8;
-      } else {
-        deref->base.fp_kind = arr_pointee_fp;
-      }
-    }
-  }
-  if (pql == 1) {
-    tk_float_kind_t pointee_fp = psx_node_pointee_fp_kind(node);
-    if (pointee_fp != TK_FLOAT_KIND_NONE) {
-      deref->base.fp_kind = pointee_fp;
-    }
-  }
-  /* array-of-pointer-to-array (`int (*p[M])[N]`) の `p[i]` / `s.p[i]`: 要素は
-   * pointer-to-array。結果 deref を「単一 pointer-to-array」(`int (*sp)[N]`) と同じ表現に
-   * 組み直す。2D 以上の `int (*m[A][B])[N]` では 1 段目 `m[a]` はまだ行なので、
-   * ptr_array_pointee_bytes / bds を carry し、最終次元で同じ組み直しを行う。 */
-  {
-    int base_ptr_array_pointee_bytes = psx_node_ptr_array_pointee_bytes(node);
-    if (base_ptr_array_pointee_bytes > 0 && bds > 0) {
-      if (subscript_is_intermediate_row) {
-        deref->ptr_array_pointee_bytes = base_ptr_array_pointee_bytes;
-        deref->base_deref_size = (short)bds;
-      } else {
-        deref->is_tag_pointer = 1;
-        deref->is_pointer = 1;
-        deref->type_size = 8;
-        deref->deref_size = (short)base_ptr_array_pointee_bytes;
-        deref->inner_deref_size = (short)bds;
-        deref->pointer_qual_levels = 0;
-        deref->base_deref_size = 0;
-      }
-    }
-  }
-  /* `_Bool a[5]` の subscript 結果は _Bool スカラ。代入時に rhs を `!= 0` で
-   * 正規化させるため is_bool を立てる。配列ベース node が pointee_is_bool を
-   * 持っていればそれを引き継ぐ。多次元配列 (`_Bool m[2][3]`) では 1 段目の
-   * subscript 結果が「内側配列」(まだ要素ではない) として返るため、
-   * pointee_is_bool を引き継いで次の subscript に渡せるようにする。 */
-  {
-    node_mem_t *base_mem = (node_t *)node && (node->kind == ND_ADDR || node->kind == ND_LVAR ||
-                                              node->kind == ND_GVAR || node->kind == ND_DEREF)
-                              ? (node_mem_t *)node : NULL;
-    if (psx_node_pointee_is_bool(node)) {
-      if (pql == 0 && inner_ds == 0) {
-        /* 最終要素まで到達: 代入正規化用に is_bool を立てる。 */
-        deref->is_bool = 1;
-      } else {
-        /* 中間配列 (まだ要素ではない): 次段 subscript へ pointee_is_bool を伝播。 */
-        deref->pointee_is_bool = 1;
-      }
-    }
-    /* unsigned 配列/ポインタの subscript 結果: 最終スカラ要素なら is_unsigned
-     * (zero-extend load)、中間 (まだ配列の行 / ポインタ) なら次段へ pointee_is_unsigned
-     * を伝播。最終スカラ判定は「結果がポインタでなく、かつ多次元の中間行 (es>inner_ds)
-     * でない」。旧条件 `pql==0 && inner_ds==0` は `unsigned char *p` のように単段ポインタ
-     * で pql=1 / inner_ds=elem(1) になるケースを最終要素と認識できず、`p[i]` が ldrsb で
-     * 符号拡張されていた (es>inner_ds 判定は fp の中間行判定と対称)。 */
-    if (psx_node_pointee_is_unsigned(node)) {
-      int is_final_scalar = !deref->is_pointer && !(inner_ds > 0 && es > inner_ds);
-      if (is_final_scalar) deref->is_unsigned = 1;
-      else                 deref->pointee_is_unsigned = 1;
-    }
-    psx_node_copy_funcptr_metadata(deref, node);
-    if (psx_node_pointee_is_const_qualified(node)) deref->is_const_qualified = 1;
-    if (psx_node_pointee_is_volatile_qualified(node)) deref->is_volatile_qualified = 1;
-    /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で
-     * array_len=0 のスカラに潰れ pointee_is_unsigned を持てない。base 自体が
-     * unsigned スカラ (is_unsigned) を最終要素まで添字した場合も zero-extend する。
-     * 真のスカラの subscript は clang が拒否するのでここに来るのは [1] 配列のみ。 */
-    if (base_mem && base_mem->is_unsigned && !deref->is_unsigned &&
-        !deref->is_pointer && pql == 0 && inner_ds == 0) {
-      deref->is_unsigned = 1;
-    }
-    /* `char *names[N]` 等: グローバルポインタ配列の要素 subscript 結果は
-     * 「スカラポインタ値の load」(= struct メンバ char* と同じ semantics)。
-     * is_scalar_ptr_member を立てて subscript_base_address_of が ND_DEREF を
-     * そのまま返し、次段の subscript でポインタ値を base として使うようにする。 */
-    if (base_mem && base_mem->pointee_is_scalar_ptr && pql == 0) {
-      if (inner_ds == 0) {
-        /* 最終次元: 要素 (スカラポインタ値) を load する。 */
-        deref->is_scalar_ptr_member = 1;
-        deref->is_pointer = 1;
-        /* deref_size を pointee の素のサイズに更新 (char* なら 1)。1D 配列は base が ND_ADDR
-         * なので gv->pointee_elem_size を引く。2D 以上は base が中間 ND_DEREF なので
-         * base_mem->base_deref_size に carry された値を使う。 */
-        int pelem = 0;
-        if (node->kind == ND_ADDR && node->lhs && node->lhs->kind == ND_GVAR) {
-          node_gvar_t *gv_node = (node_gvar_t *)node->lhs;
-          for (global_var_t *gv = psx_find_global_var(gv_node->name, gv_node->name_len); gv; gv = NULL) {
-            if (gv->name_len == gv_node->name_len &&
-                memcmp(gv->name, gv_node->name, (size_t)gv->name_len) == 0) {
-              pelem = gv->pointee_elem_size;
-              break;
-            }
-          }
-        }
-        if (pelem == 0) pelem = base_mem->base_deref_size;
-        if (pelem > 0) deref->deref_size = pelem;
-      } else {
-        /* 中間次元 (2D 以上のポインタ配列の行): まだ要素でないので load せず、
-         * pointee_is_scalar_ptr と pointee サイズ (base_deref_size) を次段へ carry する。 */
-        deref->pointee_is_scalar_ptr = 1;
-        deref->base_deref_size = base_mem->base_deref_size;
-      }
-    }
-  }
-  return (node_t *)deref;
+  return psx_node_new_subscript_deref_for(node, base_addr, scaled, es, inner_ds, next_ds,
+                                           extras, extras_count);
 }
 
 static node_t *build_post_inc_dec_node(node_kind_t kind, node_t *operand, const char *op) {
@@ -4262,17 +3379,13 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   } else {
     node->callee = callee;
   }
-  /* 間接呼び出しで callee の pointee fp_kind (= 関数戻り型の fp_kind。
-   * `double (*d)(double)` は宣言時 `double *d` と同じく pointee_fp_kind=double が
-   * 立つ) を funcall ノードに載せる。これがないと ir_builder が戻り値型を整数
+  /* 間接呼び出しで callee の funcptr_ret_fp_kind (= 関数戻り型の fp_kind) を
+   * funcall ノードに載せる。これがないと ir_builder が戻り値型を整数
    * (I32) と判定し戻り値を x0 で読んでいた (FP 戻り値は d0 に返るため化けていた)。
-   * 呼び出し文脈なので callee は関数ポインタであり、データポインタ `double *p` の
-   * pointee と取り違える心配はない。関数ポインタ変数 (ND_LVAR/ND_GVAR) に加え、
-   * 関数ポインタ配列の要素 `ops[i]` (ND_DEREF、build_subscript_deref が pointee_fp_kind
-   * を設定済み) や struct メンバ `s.f` / `p->f` (build_member_deref_node が funcptr
-   * メンバの戻り fp_kind を pointee_fp_kind として設定済み) も拾う。 */
+   * 以前は `pointee_fp_kind` を流用していたため、データポインタ pointee と function
+   * pointer return FP の正本が混ざっていた。 */
   if (callee) {
-    tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
+    tk_float_kind_t ret_fp = psx_node_funcptr_ret_fp_kind(callee);
     if (ret_fp != TK_FLOAT_KIND_NONE &&
         !psx_node_funcptr_returns_pointee_array(callee)) {
       node->base.fp_kind = ret_fp;
@@ -4727,12 +3840,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
   for (global_var_t *gv = psx_find_global_var(tok->str, tok->len); gv; gv = NULL) {
     if (gv->name_len != tok->len || memcmp(gv->name, tok->str, (size_t)tok->len) != 0) continue;
     if (gv->is_array) {
-      node_t *base = psx_node_new_gvar_array_base_for(gv);
-      node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-      addr->base.kind = ND_ADDR;
-      addr->base.lhs = base;
-      psx_node_init_gvar_array_addr_metadata(addr, gv);
-      return (node_t *)addr;
+      return psx_node_new_gvar_array_addr_for(gv);
     }
     return psx_node_new_gvar_for(gv);
   }
@@ -4755,12 +3863,7 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
       break;
     }
   }
-  node_t *base = psx_node_new_static_local_gvar_for(var, gv_type_size);
-  node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
-  addr->base.kind = ND_ADDR;
-  addr->base.lhs = base;
-  psx_node_init_lvar_array_addr_metadata(addr, var, 0);
-  return (node_t *)addr;
+  return psx_node_new_static_local_array_addr_for(var, gv_type_size);
 }
 
 /* alias lvar が「static local 配列」を表すかを判別。
@@ -4775,11 +3878,7 @@ static int lvar_is_static_local_array(lvar_t *var) {
 
 // 配列ローカル変数（非 VLA）: ベースアドレスを ND_ADDR(ND_LVAR) として返す。
 static node_t *build_array_lvar_addr_node(lvar_t *var) {
-  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
-  node->base.kind = ND_ADDR;
-  node->base.lhs = psx_node_new_lvar_for(var);
-  psx_node_init_lvar_array_addr_metadata(node, var, var->tag_kind != TK_EOF);
-  return (node_t *)node;
+  return psx_node_new_lvar_array_addr_for(var, var->tag_kind != TK_EOF);
 }
 
 // byref 仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
@@ -4787,16 +3886,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
 //   p.member → build_member_access(ND_DEREF(ptr_lvar), from_ptr=0)
 //     → ND_ADDR(ND_DEREF(ptr_lvar)) = struct base ptr → offset → deref → member ✓
 static node_t *build_byref_param_node(lvar_t *var) {
-  node_t *ptr_lvar = psx_node_new_lvar_typed_for(var, 8); // loads ptr from frame
-  node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
-  deref->base.kind = ND_DEREF;
-  deref->base.lhs = ptr_lvar;
-  deref->type_size = var->elem_size; // 実際の構造体サイズ
-  deref->tag_kind = var->tag_kind;
-  deref->tag_name = var->tag_name;
-  deref->tag_len = var->tag_len;
-  deref->is_tag_pointer = 0; // 値（構造体）であってポインタではない
-  return (node_t *)deref;
+  return psx_node_new_byref_param_deref_for(var);
 }
 
 // 識別子トークン tok を解決して node を返す:

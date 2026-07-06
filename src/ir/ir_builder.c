@@ -427,8 +427,6 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
-static int mem_has_funcptr_sig(const node_mem_t *m);
-static void merge_funcptr_sig_from_lvar(node_mem_t *m, const lvar_t *var);
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const node_mem_t *expected_sig);
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
@@ -795,7 +793,7 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const node_mem_t *expected_sig) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!mem_has_funcptr_sig(expected_sig)) return build_expr(ctx, node);
+  if (!psx_node_mem_has_funcptr_metadata(expected_sig)) return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
       return build_node_funcref_with_sig(ctx, node, expected_sig);
@@ -1264,7 +1262,7 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
   node_mem_t sig = lv->mem;
-  merge_funcptr_sig_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
+  psx_node_merge_funcptr_metadata_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
@@ -1379,36 +1377,10 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
-static int mem_has_funcptr_sig(const node_mem_t *m) {
-  return m && (m->funcptr_param_fp_mask || m->funcptr_param_int_mask ||
-               m->funcptr_ret_int_width || m->funcptr_ret_is_void ||
-               m->funcptr_ret_is_data_pointer || m->funcptr_ret_is_complex ||
-               m->is_variadic_funcptr || m->pointee_fp_kind != TK_FLOAT_KIND_NONE);
-}
-
-static void merge_funcptr_sig_from_lvar(node_mem_t *m, const lvar_t *var) {
-  if (!m || !var) return;
-  if (!m->funcptr_param_fp_mask) m->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
-  if (!m->funcptr_param_int_mask) m->funcptr_param_int_mask = var->funcptr_param_int_mask;
-  if (!m->funcptr_ret_int_width) m->funcptr_ret_int_width = var->funcptr_ret_int_width;
-  if (!m->funcptr_ret_is_void) m->funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
-  if (!m->funcptr_ret_is_data_pointer) {
-    m->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
-  }
-  if (!m->funcptr_ret_is_complex) m->funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
-  if (!m->is_variadic_funcptr) {
-    m->is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
-    m->funcptr_nargs_fixed = var->funcptr_nargs_fixed;
-  } else if (!m->funcptr_nargs_fixed) {
-    m->funcptr_nargs_fixed = var->funcptr_nargs_fixed;
-  }
-  if (m->pointee_fp_kind == TK_FLOAT_KIND_NONE) m->pointee_fp_kind = var->pointee_fp_kind;
-}
-
 static void attach_funcptr_sig(ir_inst_t *sym, const node_mem_t *m) {
-  if (!sym || !mem_has_funcptr_sig(m)) return;
+  if (!sym || !psx_node_mem_has_funcptr_metadata(m)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_ret_fp_kind = (unsigned char)m->pointee_fp_kind;
+  sym->funcptr_ret_fp_kind = (unsigned char)m->funcptr_ret_fp_kind;
   sym->funcptr_ret_int_width = m->funcptr_ret_int_width;
   sym->funcptr_ret_is_void = m->funcptr_ret_is_void ? 1 : 0;
   sym->funcptr_ret_is_data_pointer = m->funcptr_ret_is_data_pointer ? 1 : 0;
@@ -1424,25 +1396,15 @@ static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call,
   node_mem_t sig = {0};
   if (callee->kind == ND_LVAR) {
     lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    merge_funcptr_sig_from_lvar(&sig, lv);
+    psx_node_merge_funcptr_metadata_from_lvar(&sig, lv);
   } else if (callee->kind == ND_GVAR) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
     global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
-    if (gv) {
-      sig.funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
-      sig.funcptr_param_int_mask = gv->funcptr_param_int_mask;
-      sig.funcptr_ret_int_width = gv->funcptr_ret_int_width;
-      sig.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
-      sig.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
-      sig.funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
-      sig.is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
-      sig.funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
-      sig.pointee_fp_kind = gv->pointee_fp_kind;
-    }
+    psx_node_merge_funcptr_metadata_from_gvar(&sig, gv);
   } else if (callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
     sig = *(node_mem_t *)callee;
   }
-  if (!mem_has_funcptr_sig(&sig) &&
+  if (!psx_node_mem_has_funcptr_metadata(&sig) &&
       (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
        callee->kind == ND_DEREF || callee->kind == ND_ADDR)) {
     sig = *(node_mem_t *)callee;
@@ -1468,7 +1430,7 @@ static void fill_return_funcptr_sig(node_mem_t *m, const node_func_t *fn) {
   m->funcptr_ret_is_complex = fn->ret_funcptr_ret_is_complex ? 1 : 0;
   m->is_variadic_funcptr = fn->ret_funcptr_is_variadic ? 1 : 0;
   m->funcptr_nargs_fixed = fn->ret_funcptr_nargs_fixed;
-  m->pointee_fp_kind = fn->ret_funcptr_pointee_fp_kind;
+  m->funcptr_ret_fp_kind = fn->ret_funcptr_pointee_fp_kind;
 }
 
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
@@ -1819,7 +1781,12 @@ static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
     if (!fn->callee && fn->funcname) {
       psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
                                                                   fn->funcname_len);
-      if (ret.is_funcptr) return ret.funcptr_ret_is_pointer;
+      if (ret.is_funcptr) {
+        return (ret.funcptr_sig.ret_is_data_pointer ||
+                psx_ret_pointee_array_has_dims(ret.funcptr_sig.ret_pointee_array))
+                   ? 1
+                   : 0;
+      }
     }
   }
   return 0;
@@ -1836,7 +1803,7 @@ static int indirect_funcptr_ret_int_width(node_t *callee) {
     if (!fn->callee && fn->funcname) {
       psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
                                                                   fn->funcname_len);
-      if (ret.is_funcptr) return ret.funcptr_ret_int_width;
+      if (ret.is_funcptr) return ret.funcptr_sig.ret_int_width;
     }
   }
   return 0;

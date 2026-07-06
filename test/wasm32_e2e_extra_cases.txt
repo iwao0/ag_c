@@ -88,6 +88,7 @@ probes_found_bugs/double_pointer_double_subscript.c
 probes_found_bugs/double_pointer_subscript_deref.c
 probes_found_bugs/duplicate_designator_override.c
 probes_found_bugs/empty_macro_argument.c
+probes_found_bugs/bool_array_member_designator.c
 probes_found_bugs/extern_then_def_same_tu.c
 probes_found_bugs/extern_global_got.c
 probes_found_bugs/file_scope_array_compound_literal_decay.c
@@ -114,6 +115,7 @@ probes_found_bugs/func_return_pointer_to_array.c
 probes_found_bugs/func_returning_funcptr.c
 probes_found_bugs/func_returning_funcptr_call.c
 probes_found_bugs/func_returning_funcptr_chain.c
+probes_found_bugs/func_returning_funcptr_int_to_fp_arg.c
 probes_found_bugs/funcall_struct_ptr_arrow.c
 probes_found_bugs/funcptr_address_of_init.c
 probes_found_bugs/funcptr_array_compound_literal.c
@@ -389,6 +391,7 @@ probes_found_bugs/unsupported_gnu_extensions_warn_skip.c
 probes_found_bugs/variadic_macro_empty_va.c
 probes_found_bugs/variadic_macro_forward.c
 probes_found_bugs/variadic_unnamed_proto_fixed_args.c
+probes_found_bugs/variadic_unnamed_proto_fp_fixed_arg.c
 probes_found_bugs/variadic_via_func_pointer.c
 probes_found_bugs/void_ptr_return.c
 probes_found_bugs/vla_2d_param.c

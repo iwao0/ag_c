@@ -3,6 +3,7 @@
 
 /* core.h は AST node 型を使わない (token_kind_t と bool のみ)。
  * Phase C1-2: ast.h ではなく token.h を直接 include する。 */
+#include "ret_pointee_array.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -46,6 +47,22 @@ typedef struct {
   unsigned short param_fp_mask;
   unsigned short param_int_mask;
 } psx_funcptr_signature_t;
+
+typedef struct {
+  unsigned short param_fp_mask;
+  unsigned short param_int_mask;
+  unsigned char ret_int_width;
+  tk_float_kind_t ret_fp_kind;
+  psx_ret_pointee_array_t ret_pointee_array;
+  int ret_is_void;
+  int ret_is_data_pointer;
+  int ret_is_funcptr;
+  int ret_is_complex;
+  int is_variadic;
+  short nargs_fixed;
+} psx_decl_funcptr_sig_t;
+
+int psx_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig);
 void psx_funcptr_signature_reset(psx_funcptr_signature_t *sig);
 void psx_skip_func_param_list(psx_funcptr_signature_t *sig);
 void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,

@@ -54,6 +54,7 @@ struct psx_type_t {
   unsigned int pointer_volatile_qual_mask;
 
   tk_float_kind_t pointee_fp_kind;
+  tk_float_kind_t funcptr_ret_fp_kind;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   int ptr_array_pointee_bytes;

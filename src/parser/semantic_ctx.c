@@ -76,11 +76,13 @@ struct tag_member_t {
   /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
    * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。 */
   int ptr_array_pointee_bytes;
+  int is_funcptr;
   int is_variadic_funcptr;
   short funcptr_nargs_fixed;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   unsigned char funcptr_ret_int_width;
+  tk_float_kind_t funcptr_ret_fp_kind;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
@@ -142,6 +144,69 @@ struct typedef_name_t {
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int scope_depth;
 };
+
+static psx_decl_funcptr_sig_t tag_member_record_funcptr_sig(const tag_member_t *m) {
+  if (!m) return (psx_decl_funcptr_sig_t){0};
+  return (psx_decl_funcptr_sig_t){
+      .param_fp_mask = m->funcptr_param_fp_mask,
+      .param_int_mask = m->funcptr_param_int_mask,
+      .ret_int_width = m->funcptr_ret_int_width,
+      .ret_fp_kind = m->is_funcptr ? m->funcptr_ret_fp_kind : TK_FLOAT_KIND_NONE,
+      .ret_pointee_array = m->funcptr_ret_pointee_array,
+      .ret_is_void = m->funcptr_ret_is_void,
+      .ret_is_data_pointer = m->funcptr_ret_is_pointer,
+      .ret_is_complex = m->funcptr_ret_is_complex,
+      .is_variadic = m->is_variadic_funcptr,
+      .nargs_fixed = m->funcptr_nargs_fixed,
+  };
+}
+
+static void tag_member_record_set_funcptr_sig(tag_member_t *m,
+                                              psx_decl_funcptr_sig_t sig) {
+  if (!m) return;
+  m->funcptr_param_fp_mask = sig.param_fp_mask;
+  m->funcptr_param_int_mask = sig.param_int_mask;
+  m->funcptr_ret_int_width = sig.ret_int_width;
+  m->funcptr_ret_fp_kind = sig.ret_fp_kind;
+  m->funcptr_ret_pointee_array = sig.ret_pointee_array;
+  m->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
+  m->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
+  m->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
+  m->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
+  m->funcptr_nargs_fixed = sig.nargs_fixed;
+  m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
+}
+
+static psx_decl_funcptr_sig_t typedef_record_funcptr_sig(const typedef_name_t *t) {
+  if (!t) return (psx_decl_funcptr_sig_t){0};
+  return (psx_decl_funcptr_sig_t){
+      .param_fp_mask = t->funcptr_param_fp_mask,
+      .param_int_mask = t->funcptr_param_int_mask,
+      .ret_int_width = t->funcptr_ret_int_width,
+      .ret_fp_kind = t->is_funcptr ? t->fp_kind : TK_FLOAT_KIND_NONE,
+      .ret_pointee_array = t->funcptr_ret_pointee_array,
+      .ret_is_void = t->funcptr_ret_is_void,
+      .ret_is_data_pointer = t->funcptr_ret_is_pointer,
+      .ret_is_complex = t->funcptr_ret_is_complex,
+      .is_variadic = t->is_variadic_funcptr,
+      .nargs_fixed = t->funcptr_nargs_fixed,
+  };
+}
+
+static void typedef_record_set_funcptr_sig(typedef_name_t *t,
+                                           psx_decl_funcptr_sig_t sig) {
+  if (!t) return;
+  t->funcptr_param_fp_mask = sig.param_fp_mask;
+  t->funcptr_param_int_mask = sig.param_int_mask;
+  t->funcptr_ret_int_width = sig.ret_int_width;
+  if (sig.ret_fp_kind != TK_FLOAT_KIND_NONE) t->fp_kind = sig.ret_fp_kind;
+  t->funcptr_ret_pointee_array = sig.ret_pointee_array;
+  t->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
+  t->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
+  t->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
+  t->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
+  t->funcptr_nargs_fixed = sig.nargs_fixed;
+}
 typedef struct func_name_t func_name_t;
 struct func_name_t {
   func_name_t *next_hash;
@@ -174,12 +239,9 @@ struct func_name_t {
    * 幅 (1 段目=ポインタ8B / 最内=基底型) で組むために別途保持する。 */
   int ret_pointer_levels;
   /* 1: 戻り値型が関数ポインタ (`fty go()` / `int (*f())()`)。ret_tag は指し示す
-   * 関数の戻り tag を保持し、funcptr_ret_is_pointer がその戻りがポインタかを表す。 */
+   * 関数の戻り tag を保持し、funcptr_sig が指し示す関数の ABI 上の署名を表す。 */
   int ret_is_funcptr;
-  int funcptr_ret_is_pointer;
-  int funcptr_ret_is_void;
-  int funcptr_ret_is_complex;
-  unsigned char funcptr_ret_int_width;
+  psx_decl_funcptr_sig_t funcptr_sig;
   /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
    * (ULT/ULE 比較選択) に使う。 */
@@ -551,15 +613,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_width = desc->bit_width;
       m->bit_offset = desc->bit_offset;
       m->bit_is_signed = desc->bit_is_signed;
-      m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
-      m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-      m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
-      m->is_variadic_funcptr = desc->is_variadic_funcptr ? 1 : 0;
-      m->funcptr_nargs_fixed = desc->funcptr_nargs_fixed;
-      m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
-      m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
-      m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
-      m->funcptr_ret_is_complex = desc->funcptr_ret_is_complex;
+      tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
       return;
     }
   }
@@ -581,15 +635,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_width = desc->bit_width;
   m->bit_offset = desc->bit_offset;
   m->bit_is_signed = desc->bit_is_signed;
-  m->funcptr_param_fp_mask = desc->funcptr_param_fp_mask;
-  m->funcptr_param_int_mask = desc->funcptr_param_int_mask;
-  m->funcptr_ret_int_width = desc->funcptr_ret_int_width;
-  m->is_variadic_funcptr = desc->is_variadic_funcptr ? 1 : 0;
-  m->funcptr_nargs_fixed = desc->funcptr_nargs_fixed;
-  m->funcptr_ret_pointee_array = desc->funcptr_ret_pointee_array;
-  m->funcptr_ret_is_void = desc->funcptr_ret_is_void;
-  m->funcptr_ret_is_pointer = desc->funcptr_ret_is_pointer;
-  m->funcptr_ret_is_complex = desc->funcptr_ret_is_complex;
+  tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -692,38 +738,6 @@ void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char 
   }
 }
 
-void psx_ctx_set_tag_member_funcptr_param_fp_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                  char *member_name, int member_len,
-                                                  unsigned short mask) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->funcptr_param_fp_mask = mask;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_funcptr_param_int_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                   char *member_name, int member_len,
-                                                   unsigned short mask) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0 &&
-        m->scope_depth == tag_scope_depth) {
-      m->funcptr_param_int_mask = mask;
-      return;
-    }
-  }
-}
-
 void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
                                         char *member_name, int member_len, int is_unsigned) {
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -772,15 +786,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   for (int i = 0; i < 8; i++) out->arr_dims[i] = m->arr_dims[i];
   out->arr_ndim = m->arr_ndim;
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
-  out->is_variadic_funcptr = m->is_variadic_funcptr ? 1 : 0;
-  out->funcptr_nargs_fixed = m->funcptr_nargs_fixed;
-  out->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
-  out->funcptr_param_int_mask = m->funcptr_param_int_mask;
-  out->funcptr_ret_int_width = m->funcptr_ret_int_width;
-  out->funcptr_ret_pointee_array = m->funcptr_ret_pointee_array;
-  out->funcptr_ret_is_void = m->funcptr_ret_is_void;
-  out->funcptr_ret_is_pointer = m->funcptr_ret_is_pointer;
-  out->funcptr_ret_is_complex = m->funcptr_ret_is_complex;
+  psx_ctx_tag_member_set_funcptr_sig(out, tag_member_record_funcptr_sig(m));
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -995,15 +1001,7 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
   t->is_array = info->is_array;
   t->array_first_dim = info->array_first_dim;
   t->is_funcptr = info->is_funcptr;
-  t->is_variadic_funcptr = info->is_variadic_funcptr;
-  t->funcptr_nargs_fixed = info->funcptr_nargs_fixed;
-  t->funcptr_ret_is_void = info->funcptr_ret_is_void;
-  t->funcptr_ret_is_pointer = info->funcptr_ret_is_pointer;
-  t->funcptr_ret_is_complex = info->funcptr_ret_is_complex;
-  t->funcptr_ret_int_width = info->funcptr_ret_int_width;
-  t->funcptr_param_fp_mask = info->funcptr_param_fp_mask;
-  t->funcptr_param_int_mask = info->funcptr_param_int_mask;
-  t->funcptr_ret_pointee_array = info->funcptr_ret_pointee_array;
+  typedef_record_set_funcptr_sig(t, psx_ctx_typedef_funcptr_sig(info));
 }
 
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
@@ -1014,6 +1012,8 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
   if (existing) {
     int n_new = (info->array_dim_count < 0) ? 0 : info->array_dim_count;
     if (n_new > 8) n_new = 8;
+    psx_decl_funcptr_sig_t existing_funcptr_sig = typedef_record_funcptr_sig(existing);
+    psx_decl_funcptr_sig_t new_funcptr_sig = psx_ctx_typedef_funcptr_sig(info);
     int same = (existing->base_kind == info->base_kind &&
                 existing->elem_size == info->elem_size &&
                 existing->fp_kind == info->fp_kind &&
@@ -1030,16 +1030,17 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
                 existing->array_first_dim == info->array_first_dim &&
                 existing->array_dim_count == n_new &&
                 existing->is_funcptr == info->is_funcptr &&
-                existing->is_variadic_funcptr == info->is_variadic_funcptr &&
-                existing->funcptr_nargs_fixed == info->funcptr_nargs_fixed &&
-                existing->funcptr_ret_is_void == info->funcptr_ret_is_void &&
-                existing->funcptr_ret_is_pointer == info->funcptr_ret_is_pointer &&
-                existing->funcptr_ret_is_complex == info->funcptr_ret_is_complex &&
-                existing->funcptr_ret_int_width == info->funcptr_ret_int_width &&
-                existing->funcptr_param_fp_mask == info->funcptr_param_fp_mask &&
-                existing->funcptr_param_int_mask == info->funcptr_param_int_mask &&
-                psx_ret_pointee_array_equal(existing->funcptr_ret_pointee_array,
-                                            info->funcptr_ret_pointee_array));
+                existing_funcptr_sig.is_variadic == new_funcptr_sig.is_variadic &&
+                existing_funcptr_sig.nargs_fixed == new_funcptr_sig.nargs_fixed &&
+                existing_funcptr_sig.ret_is_void == new_funcptr_sig.ret_is_void &&
+                existing_funcptr_sig.ret_is_data_pointer == new_funcptr_sig.ret_is_data_pointer &&
+                existing_funcptr_sig.ret_is_complex == new_funcptr_sig.ret_is_complex &&
+                existing_funcptr_sig.ret_int_width == new_funcptr_sig.ret_int_width &&
+                existing_funcptr_sig.ret_fp_kind == new_funcptr_sig.ret_fp_kind &&
+                existing_funcptr_sig.param_fp_mask == new_funcptr_sig.param_fp_mask &&
+                existing_funcptr_sig.param_int_mask == new_funcptr_sig.param_int_mask &&
+                psx_ret_pointee_array_equal(existing_funcptr_sig.ret_pointee_array,
+                                            new_funcptr_sig.ret_pointee_array));
     if (same) {
       for (int i = 0; i < n_new; i++) {
         if (existing->array_dims[i] != info->array_dims[i]) { same = 0; break; }
@@ -1107,15 +1108,7 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     for (int i = 0; i < n; i++) out->array_dims[i] = t->array_dims[i];
     for (int i = n; i < 8; i++) out->array_dims[i] = 0;
     out->is_funcptr = t->is_funcptr;
-    out->is_variadic_funcptr = t->is_variadic_funcptr;
-    out->funcptr_nargs_fixed = t->funcptr_nargs_fixed;
-    out->funcptr_ret_is_void = t->funcptr_ret_is_void;
-    out->funcptr_ret_is_pointer = t->funcptr_ret_is_pointer;
-    out->funcptr_ret_is_complex = t->funcptr_ret_is_complex;
-    out->funcptr_ret_int_width = t->funcptr_ret_int_width;
-    out->funcptr_param_fp_mask = t->funcptr_param_fp_mask;
-    out->funcptr_param_int_mask = t->funcptr_param_int_mask;
-    out->funcptr_ret_pointee_array = t->funcptr_ret_pointee_array;
+    psx_ctx_typedef_set_funcptr_sig(out, typedef_record_funcptr_sig(t));
   }
   return true;
 }
@@ -1194,10 +1187,7 @@ psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len) {
   info.is_void = f->is_ret_void ? 1 : 0;
   info.is_complex = f->ret_is_complex ? 1 : 0;
   info.is_funcptr = f->ret_is_funcptr ? 1 : 0;
-  info.funcptr_ret_is_pointer = f->funcptr_ret_is_pointer ? 1 : 0;
-  info.funcptr_ret_is_void = f->funcptr_ret_is_void ? 1 : 0;
-  info.funcptr_ret_is_complex = f->funcptr_ret_is_complex ? 1 : 0;
-  info.funcptr_ret_int_width = f->funcptr_ret_int_width;
+  info.funcptr_sig = f->funcptr_sig;
   info.pointer_levels = f->ret_pointer_levels;
   info.pointee_const_qualified = f->ret_pointee_const ? 1 : 0;
   info.pointee_volatile_qualified = f->ret_pointee_volatile ? 1 : 0;
@@ -1361,16 +1351,12 @@ int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
   return (f && f->ret_set_once) ? f->ret_is_pointer : 0;
 }
 
-void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
-                                         int funcptr_ret_is_pointer,
-                                         int funcptr_ret_is_void,
-                                         int funcptr_ret_is_complex) {
+void psx_ctx_set_function_ret_funcptr_sig(char *name, int len, int is_funcptr,
+                                          psx_decl_funcptr_sig_t sig) {
   func_name_t *f = find_function_name(name, len);
   if (!f) return;
   f->ret_is_funcptr = is_funcptr ? 1 : 0;
-  f->funcptr_ret_is_pointer = funcptr_ret_is_pointer ? 1 : 0;
-  f->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
-  f->funcptr_ret_is_complex = funcptr_ret_is_complex ? 1 : 0;
+  f->funcptr_sig = f->ret_is_funcptr ? sig : (psx_decl_funcptr_sig_t){0};
 }
 
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
@@ -1378,20 +1364,9 @@ int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
   return f ? f->ret_is_funcptr : 0;
 }
 
-int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len) {
+psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
-  return f ? f->funcptr_ret_is_pointer : 0;
-}
-
-void psx_ctx_set_function_funcptr_ret_int_width(char *name, int len, int width) {
-  func_name_t *f = find_function_name(name, len);
-  if (!f) return;
-  f->funcptr_ret_int_width = (width == 8) ? 8 : (width == 4 ? 4 : 0);
-}
-
-int psx_ctx_get_function_funcptr_ret_int_width(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
-  return f ? f->funcptr_ret_int_width : 0;
+  return (f && f->ret_is_funcptr) ? f->funcptr_sig : (psx_decl_funcptr_sig_t){0};
 }
 
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等) を返す。未登録なら TK_EOF。

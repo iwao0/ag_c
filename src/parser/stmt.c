@@ -310,18 +310,10 @@ static void parse_typedef_decl(void) {
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
     if (decl_state.has_func_suffix && (is_ptr || decl_state.ptr_in_paren)) {
       _ti.is_funcptr = 1;
-      _ti.funcptr_ret_is_void = (base_kind == TK_VOID) ? 1 : 0;
-      _ti.funcptr_ret_is_pointer = 0;
-      _ti.funcptr_ret_is_complex =
-          (type_state.type_spec.is_complex && !_ti.funcptr_ret_is_pointer) ? 1 : 0;
-      _ti.funcptr_ret_int_width =
-          psx_funcptr_ret_int_width_from_kind(base_kind, _ti.funcptr_ret_is_pointer, fp_kind);
-      _ti.funcptr_param_fp_mask = decl_state.func_suffix_sig.param_fp_mask;
-      _ti.funcptr_param_int_mask = decl_state.func_suffix_sig.param_int_mask;
-      if (decl_state.func_suffix_sig.is_variadic) {
-        _ti.is_variadic_funcptr = 1;
-        _ti.funcptr_nargs_fixed = (short)decl_state.func_suffix_sig.nargs_fixed;
-      }
+      psx_decl_funcptr_sig_t sig = psx_decl_make_funcptr_sig_from_kind(
+          &decl_state.func_suffix_sig, base_kind, fp_kind, 0, 0,
+          type_state.type_spec.is_complex, (psx_ret_pointee_array_t){0});
+      psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
     }
     if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
@@ -456,9 +448,7 @@ static node_t *parse_decl_like_stmt(void) {
                                                       tag_path_saw_volatile, 0,
                                                       &tag_type_spec, NULL, 0,
                                                       0, 0, 0, 0,
-                                                      0, 0, 0,
-                                                      psx_ret_pointee_array_make(0, 0, 0),
-                                                      0, 0, 0, 0, 0,
+                                                      (psx_decl_funcptr_sig_t){0},
                                                       NULL,
                                                       0, 0);
     }
@@ -489,9 +479,7 @@ static node_t *parse_decl_like_stmt(void) {
                                                     tag_path_saw_const, tag_path_saw_volatile, 0,
                                                     &tag_type_spec, NULL, 0,
                                                     0, 0, 0, 0,
-                                                    0, 0, 0,
-                                                    psx_ret_pointee_array_make(0, 0, 0),
-                                                    0, 0, 0, 0, 0,
+                                                    (psx_decl_funcptr_sig_t){0},
                                                     NULL,
                                                     0, 0);
   }

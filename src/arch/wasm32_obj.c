@@ -1150,8 +1150,8 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
   obj_sig_t sig = {0};
   if (gv->funcptr_ret_is_void) sig.result = IR_TY_VOID;
   else if (gv->funcptr_ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (gv->pointee_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (gv->pointee_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else if (gv->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (gv->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
   else sig.result = gv->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
   int nparams = gv->is_variadic_funcptr
@@ -1175,8 +1175,8 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
   obj_sig_t sig = {0};
   if (mi->funcptr_ret_is_void) sig.result = IR_TY_VOID;
   else if (mi->funcptr_ret_is_pointer) sig.result = IR_TY_I32;
-  else if (mi->fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (mi->fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else if (mi->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (mi->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
   else sig.result = mi->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
   int nparams = mi->is_variadic_funcptr

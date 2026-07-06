@@ -2123,6 +2123,62 @@ static void test_type_metadata_bridge() {
             psx_node_pointee_fp_kind(indirect_double_ptr_to_array_call));
 
   parsed_code = parse_program_input(
+      "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
+  (void)parsed_code;
+  tag_member_info_t dp_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.fp_kind);
+  ASSERT_EQ(0, dp_info.is_funcptr);
+  psx_decl_funcptr_sig_t dp_sig = psx_ctx_tag_member_funcptr_sig(&dp_info);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.ret_fp_kind);
+  ASSERT_TRUE(!psx_decl_funcptr_sig_has_payload(dp_sig));
+  tag_member_info_t fp_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "fp", 2, &fp_info));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.fp_kind);
+  ASSERT_EQ(1, fp_info.is_funcptr);
+  psx_decl_funcptr_sig_t fp_sig = psx_ctx_tag_member_funcptr_sig(&fp_info);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_sig.ret_fp_kind);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(fp_sig));
+
+  parsed_code = parse_program_input(
+      "double __tm696_ret_d(void){ return 1.0; } "
+      "double *__tm696_gdp; double (*__tm696_gfp)(void)=__tm696_ret_d; "
+      "int main(void){ double d; double *dp=&d; double (*fp)(void)=__tm696_ret_d; return 0; }");
+  fn = as_func(parsed_code[1]);
+  lvar_t *dp_lvar = find_func_lvar(fn, "dp");
+  ASSERT_TRUE(dp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_lvar->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_lvar->funcptr_ret_fp_kind);
+  node_mem_t dp_mem = {0};
+  psx_node_copy_funcptr_metadata_from_lvar(&dp_mem, dp_lvar);
+  ASSERT_TRUE(!psx_node_mem_has_funcptr_metadata(&dp_mem));
+  lvar_t *fp_lvar = find_func_lvar(fn, "fp");
+  ASSERT_TRUE(fp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_lvar->funcptr_ret_fp_kind);
+  node_mem_t fp_mem = {0};
+  psx_node_copy_funcptr_metadata_from_lvar(&fp_mem, fp_lvar);
+  ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&fp_mem));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_mem.funcptr_ret_fp_kind);
+  global_var_t *gdp = psx_find_global_var("__tm696_gdp", 11);
+  ASSERT_TRUE(gdp != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gdp->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gdp->funcptr_ret_fp_kind);
+  node_mem_t gdp_mem = {0};
+  psx_node_copy_funcptr_metadata_from_gvar(&gdp_mem, gdp);
+  ASSERT_TRUE(!psx_node_mem_has_funcptr_metadata(&gdp_mem));
+  global_var_t *gfp = psx_find_global_var("__tm696_gfp", 11);
+  ASSERT_TRUE(gfp != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp->funcptr_ret_fp_kind);
+  node_mem_t gfp_mem = {0};
+  psx_node_copy_funcptr_metadata_from_gvar(&gfp_mem, gfp);
+  ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&gfp_mem));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp_mem.funcptr_ret_fp_kind);
+
+  parsed_code = parse_program_input(
       "double __tm_sq(double x){ return x*x; } "
       "int *__tm_makep(void){ static int x=1; return &x; } "
       "int main(void){ double (*df)(double)=__tm_sq; int *(*pf)(void)=__tm_makep; "

@@ -23,6 +23,7 @@ struct lvar_t {
   int elem_size;
   tk_float_kind_t fp_kind;
   tk_float_kind_t pointee_fp_kind;
+  tk_float_kind_t funcptr_ret_fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
@@ -179,6 +180,18 @@ lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind);
+psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *suffix_sig,
+                                                 unsigned char ret_int_width,
+                                                 tk_float_kind_t ret_fp_kind,
+                                                 psx_ret_pointee_array_t ret_pointee_array,
+                                                 int ret_is_void,
+                                                 int ret_is_data_pointer,
+                                                 int ret_is_funcptr,
+                                                 int ret_is_complex);
+psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
+    const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
+    tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
+    int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 void psx_decl_replay_lvar_usage_events(lvar_t *all_locals);
@@ -190,6 +203,59 @@ void psx_decl_attach_lvar_current_region(lvar_t *var);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
+void psx_decl_init_lvar_storage_type(lvar_t *var, int size,
+                                     int elem_size, int is_array,
+                                     tk_float_kind_t fp_kind,
+                                     int is_unsigned,
+                                     token_kind_t tag_kind,
+                                     char *tag_name, int tag_len,
+                                     int is_tag_pointer);
+void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
+                                            int pointer_qual_levels,
+                                            int base_deref_size,
+                                            int ptr_array_pointee_bytes);
+void psx_decl_set_lvar_qualifiers(lvar_t *var,
+                                  int is_const_qualified,
+                                  int is_volatile_qualified,
+                                  int is_pointer_const_qualified,
+                                  int is_pointer_volatile_qualified,
+                                  unsigned int pointer_const_qual_mask,
+                                  unsigned int pointer_volatile_qual_mask);
+void psx_decl_set_lvar_array_strides_from_dims(lvar_t *var,
+                                               const int *dims, int dim_count,
+                                               int elem_size);
+void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
+                                                     const int *inner_dims,
+                                                     int inner_dim_count,
+                                                     int elem_size);
+void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
+                                      int outer_stride,
+                                      int row_stride_frame_off,
+                                      int strides_remaining,
+                                      int row_stride_src_offset,
+                                      int row_stride_elem_size);
+void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
+                                            const int *inner_dim_consts,
+                                            const int *inner_dim_src_offsets,
+                                            int inner_dim_count);
+void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
+                                         const psx_decl_funcptr_sig_t *sig);
+void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
+                                     int elem_size, int is_array,
+                                     tk_float_kind_t fp_kind,
+                                     int is_unsigned,
+                                     token_kind_t tag_kind,
+                                     char *tag_name, int tag_len,
+                                     int is_tag_pointer);
+void psx_decl_set_gvar_array_strides_from_dims(global_var_t *gv,
+                                               const int *dims, int dim_count,
+                                               int elem_size);
+void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
+                                                     const int *inner_dims,
+                                                     int inner_dim_count,
+                                                     int elem_size);
+void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
+                                         const psx_decl_funcptr_sig_t *sig);
 void psx_decl_set_current_funcname(char *name, int len);
 void psx_decl_get_current_funcname(char **out_name, int *out_len);
 
@@ -210,15 +276,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  const int *td_array_dims, int td_array_dim_count,
                                                  int td_array_elem_size, int td_is_array,
                                                  int td_is_long_double, int base_pointer_levels,
-                                                 unsigned short base_funcptr_param_fp_mask,
-                                                 unsigned short base_funcptr_param_int_mask,
-                                                 unsigned char base_funcptr_ret_int_width,
-                                                 psx_ret_pointee_array_t base_funcptr_ret_pointee_array,
-                                                 int base_funcptr_ret_is_void,
-                                                 int base_funcptr_ret_is_pointer,
-                                                 int base_funcptr_ret_is_complex,
-                                                 int base_is_variadic_funcptr,
-                                                 short base_funcptr_nargs_fixed,
+                                                 psx_decl_funcptr_sig_t base_funcptr_sig,
                                                  token_t *typespec_start,
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool);
@@ -235,6 +293,7 @@ long long psx_decl_count_brace_init_elements(token_t *brace_tok);
  * init_value_symbols[] / init_value_symbol_lens[] / init_fvalues[] を埋める。
  * static local 配列の lowering (decl.c) からも再利用する。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx);
+void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap);
 
 void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
                                           psx_lvar_usage_region_t *region);

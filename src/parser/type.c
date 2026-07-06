@@ -128,6 +128,7 @@ void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src) {
   dst->pointer_const_qual_mask = src->pointer_const_qual_mask;
   dst->pointer_volatile_qual_mask = src->pointer_volatile_qual_mask;
   dst->pointee_fp_kind = src->pointee_fp_kind;
+  dst->funcptr_ret_fp_kind = src->funcptr_ret_fp_kind;
   dst->vla_row_stride_frame_off = src->vla_row_stride_frame_off;
   dst->vla_strides_remaining = src->vla_strides_remaining;
   dst->ptr_array_pointee_bytes = src->ptr_array_pointee_bytes;

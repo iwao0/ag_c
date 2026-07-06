@@ -1,6 +1,7 @@
 #ifndef PARSER_SEMANTIC_CTX_H
 #define PARSER_SEMANTIC_CTX_H
 
+#include "core.h"
 #include "ret_pointee_array.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
@@ -54,13 +55,6 @@ void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int 
  * 全バイト数 (= N * elem) を保存する。 */
 void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                      char *member_name, int member_len, int bytes);
-void psx_ctx_set_tag_member_funcptr_param_fp_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                  char *member_name, int member_len,
-                                                  unsigned short mask);
-void psx_ctx_set_tag_member_funcptr_param_int_mask(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                   char *member_name, int member_len,
-                                                   unsigned short mask);
-
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
  *
@@ -104,16 +98,51 @@ typedef struct tag_member_info_t {
    * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
    * build_subscript_deref / build_unary_deref_node に伝える。 */
   int ptr_array_pointee_bytes;
+  int is_funcptr;
   int is_variadic_funcptr;
   short funcptr_nargs_fixed;
   unsigned short funcptr_param_fp_mask;
   unsigned short funcptr_param_int_mask;
   unsigned char funcptr_ret_int_width;
+  tk_float_kind_t funcptr_ret_fp_kind;
   psx_ret_pointee_array_t funcptr_ret_pointee_array;
   int funcptr_ret_is_void;
   int funcptr_ret_is_pointer;
   int funcptr_ret_is_complex;
 } tag_member_info_t;
+
+static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(
+    const tag_member_info_t *m) {
+  if (!m) return (psx_decl_funcptr_sig_t){0};
+  return (psx_decl_funcptr_sig_t){
+      .param_fp_mask = m->funcptr_param_fp_mask,
+      .param_int_mask = m->funcptr_param_int_mask,
+      .ret_int_width = m->funcptr_ret_int_width,
+      .ret_fp_kind = m->is_funcptr ? m->funcptr_ret_fp_kind : TK_FLOAT_KIND_NONE,
+      .ret_pointee_array = m->funcptr_ret_pointee_array,
+      .ret_is_void = m->funcptr_ret_is_void,
+      .ret_is_data_pointer = m->funcptr_ret_is_pointer,
+      .ret_is_complex = m->funcptr_ret_is_complex,
+      .is_variadic = m->is_variadic_funcptr,
+      .nargs_fixed = m->funcptr_nargs_fixed,
+  };
+}
+
+static inline void psx_ctx_tag_member_set_funcptr_sig(
+    tag_member_info_t *m, psx_decl_funcptr_sig_t sig) {
+  if (!m) return;
+  m->funcptr_param_fp_mask = sig.param_fp_mask;
+  m->funcptr_param_int_mask = sig.param_int_mask;
+  m->funcptr_ret_int_width = sig.ret_int_width;
+  m->funcptr_ret_fp_kind = sig.ret_fp_kind;
+  m->funcptr_ret_pointee_array = sig.ret_pointee_array;
+  m->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
+  m->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
+  m->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
+  m->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
+  m->funcptr_nargs_fixed = sig.nargs_fixed;
+  m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
+}
 
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
                                   tag_member_info_t *out);
@@ -183,6 +212,38 @@ typedef struct {
   psx_ret_pointee_array_t funcptr_ret_pointee_array; // 関数ポインタ戻り値が `T (*)[N][M]` のときの pointee 配列
 } psx_typedef_info_t;
 
+static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
+    const psx_typedef_info_t *info) {
+  if (!info) return (psx_decl_funcptr_sig_t){0};
+  return (psx_decl_funcptr_sig_t){
+      .param_fp_mask = info->funcptr_param_fp_mask,
+      .param_int_mask = info->funcptr_param_int_mask,
+      .ret_int_width = info->funcptr_ret_int_width,
+      .ret_fp_kind = info->is_funcptr ? info->fp_kind : TK_FLOAT_KIND_NONE,
+      .ret_pointee_array = info->funcptr_ret_pointee_array,
+      .ret_is_void = info->funcptr_ret_is_void,
+      .ret_is_data_pointer = info->funcptr_ret_is_pointer,
+      .ret_is_complex = info->funcptr_ret_is_complex,
+      .is_variadic = info->is_variadic_funcptr,
+      .nargs_fixed = info->funcptr_nargs_fixed,
+  };
+}
+
+static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
+                                                   psx_decl_funcptr_sig_t sig) {
+  if (!info) return;
+  info->funcptr_param_fp_mask = sig.param_fp_mask;
+  info->funcptr_param_int_mask = sig.param_int_mask;
+  info->funcptr_ret_int_width = sig.ret_int_width;
+  if (sig.ret_fp_kind != TK_FLOAT_KIND_NONE) info->fp_kind = sig.ret_fp_kind;
+  info->funcptr_ret_pointee_array = sig.ret_pointee_array;
+  info->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
+  info->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
+  info->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
+  info->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
+  info->funcptr_nargs_fixed = sig.nargs_fixed;
+}
+
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、
  * 0 = 既存と型が異なる衝突。呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
@@ -213,10 +274,7 @@ typedef struct {
   int is_void;
   int is_complex;
   int is_funcptr;
-  int funcptr_ret_is_pointer;
-  int funcptr_ret_is_void;
-  int funcptr_ret_is_complex;
-  int funcptr_ret_int_width;
+  psx_decl_funcptr_sig_t funcptr_sig;
   int pointer_levels;
   int pointee_const_qualified;
   int pointee_volatile_qualified;
@@ -283,14 +341,10 @@ int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
-void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
-                                         int funcptr_ret_is_pointer,
-                                         int funcptr_ret_is_void,
-                                         int funcptr_ret_is_complex);
+void psx_ctx_set_function_ret_funcptr_sig(char *name, int len, int is_funcptr,
+                                          psx_decl_funcptr_sig_t sig);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
-int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len);
-void psx_ctx_set_function_funcptr_ret_int_width(char *name, int len, int width);
-int psx_ctx_get_function_funcptr_ret_int_width(char *name, int len);
+psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */

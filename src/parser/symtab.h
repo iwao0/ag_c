@@ -98,11 +98,10 @@ struct global_var_t {
   // 浮動小数スカラ用: 宣言型の fp_kind。fp_kind != TK_FLOAT_KIND_NONE のとき、
   // codegen は fval をビットパターンで出力する。配列は未対応 (init_values[] が long long)。
   unsigned char fp_kind;
-  // 関数ポインタグローバル `double (*gops)(double)` の戻り型 fp_kind。
-  // メンバ/ローカル funcptr と同じく、ポインタ自体の fp_kind は NONE のまま戻り fp を
-  // ここに保持し、識別子解決時に ND_GVAR ノードの pointee_fp_kind へ伝播する。
-  // これがないと `gops(x)` の funcall が戻り値を x0 で読み float/double が化ける。
+  // データポインタ/配列の pointee fp_kind (`double *p`, `double a[N]`)。
   unsigned char pointee_fp_kind;
+  // 関数ポインタグローバル `double (*gops)(double)` の戻り型 fp_kind。
+  unsigned char funcptr_ret_fp_kind;
   unsigned char funcptr_ret_int_width;
   unsigned char extra_strides_count;
   // 多段ポインタグローバル (`int **gp`) の段数。`*gp` が int* (8B) を返すよう、

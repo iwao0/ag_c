@@ -152,6 +152,7 @@ struct node_mem_t {
   unsigned int funcptr_ret_is_complex : 1;
   unsigned int is_variadic_funcptr : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
+  unsigned int funcptr_ret_fp_kind : 3;     // tk_float_kind_t: 関数ポインタ戻りFP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
   // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。
   // subscript_base_address_of がスカラポインタ deref の場合 ND_DEREF を返し

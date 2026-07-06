@@ -1,15 +1,16 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き749: member array FP slot constructor 化）
+最終更新: 2026-07-06（続き769: function return funcptr / pointer-to-VLA metadata を signature・行ノード基準へ整理）
 
 ## 現状
 - 直近の部分確認:
+  `make -j4 build/test_parser` = **pass**、
   `./build/test_parser` =
   **pass**、
   `./build/test_e2e` =
-  **1197/1197 pass**、
+  **1200/1200 pass**、
   `./build/test_wasm32_e2e` =
-  **1192 compiled, 1192 executed**、
+  **1195 compiled, 1195 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -41,6 +42,576 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き769: **function return 側の funcptr metadata を `psx_decl_funcptr_sig_t`
+  基準に寄せ、pointer-to-VLA の本物の pointer level と行ノード分類を直した**。
+  続き768後も、関数戻り値が function pointer のときの情報は
+  `func_name_t` / `psx_function_ret_info_t` / IR 側 getter に
+  `funcptr_ret_*` 個別フィールドとして残っていた。また
+  `double (*pick(void))(double)` のような「関数が function pointer を返す」
+  宣言では、返される function pointer の引数列 `(...)` を skip するだけで
+  signature に記録しておらず、`pick()(3)` の indirect call で
+  int 実引数が double 仮引数へ変換されない経路が残っていた。
+
+  根本対応として `psx_function_ret_info_t` と semantic context の function record を
+  `psx_decl_funcptr_sig_t funcptr_sig` へ畳み、
+  `psx_ctx_set_function_ret_funcptr_sig()` /
+  `psx_ctx_get_function_ret_funcptr_sig()` を追加した。
+  旧 `psx_ctx_set_function_funcptr_ret_int_width()` /
+  `psx_ctx_get_function_funcptr_ret_is_pointer()` などの function-return 専用の
+  分割 API は削除し、`node_utils.c` と `ir_builder.c` は
+  `ret.funcptr_sig` から戻り shape を読むようにした。
+
+  `parser.c` では function definition の戻り function pointer declarator で、
+  返される function pointer 自身の suffix `(...)` を
+  `psx_skip_func_param_list(&returned_func_sig)` で読むように変更した。
+  これにより `pick()(3)` の `3` が indirect ABI metadata に従って
+  `scvtf` される。回帰 fixture として
+  `test/fixtures/probes_found_bugs/func_returning_funcptr_int_to_fp_arg.c` を追加し、
+  `test/test_e2e.c` と `test/wasm32_e2e_extra_cases.txt` に登録した。
+
+  途中で `sizeof(p)` (`int (*p)[m]`) が VLA object size へ誤分類される問題も見つかった。
+  これは pointer-to-VLA を `pointer_qual_levels=0` の派生配列っぽく扱っていたためで、
+  `decl.c` の pointer-to-VLA 登録で pointer level を少なくとも 1 にし、
+  `expr.c` の sizeof VLA fast path は real pointer level がない VLA object のみに限定した。
+
+  その結果、`double (*dp)[m]` / `float (*fp)[k]` の第1添字結果が
+  fp scalar や行先頭 load として扱われる副作用も露出した。
+  `node_utils.c` の subscript deref 生成で、runtime-stride pointer-to-VLA の
+  第1添字結果は「行アドレスを次の添字へ渡す中間行」として
+  `deref_size` と `pointee_fp_kind` を保持するようにした。
+  これで `dp[0][1] = 9.5` の整数変換警告と、`fp[1][0]` の
+  行先頭値をアドレスとして deref する SIGSEGV が解消した。
+
+  併せて、`psx_node_reject_const_qual_discard()` は tag pointer 限定ではなく
+  一般の pointer-like LHS/RHS で const pointee discard を検出するように広げた。
+  ただし既存互換として `ND_STRING` は const discard 判定から外し、
+  `char *p = "..."` は従来どおり通す。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**。
+- 続き768: **`decl.c` の local typedef/base funcptr 引数列も
+  `psx_decl_funcptr_sig_t` に置き換えた**。
+  続き767で `psx_decl_funcptr_sig_t` は core/semantic まで広げたが、
+  `psx_decl_parse_declaration_after_type_ex()` の引数はまだ
+  `base_funcptr_param_fp_mask` / `base_funcptr_param_int_mask` /
+  `base_funcptr_ret_int_width` / `base_funcptr_ret_pointee_array` /
+  `base_funcptr_ret_is_void` / `base_funcptr_ret_is_pointer` /
+  `base_funcptr_ret_is_complex` / `base_is_variadic_funcptr` /
+  `base_funcptr_nargs_fixed` の 9 個に分かれていた。
+  また `local_decl_spec_t` も `td_funcptr_*` 群を個別フィールドで保持していた。
+
+  根本対応として `psx_decl_parse_declaration_after_type_ex()` の公開境界を
+  `psx_decl_funcptr_sig_t base_funcptr_sig` 1 引数に変更し、
+  `local_decl_spec_t` も `td_funcptr_sig` 1 つへ畳んだ。
+  呼び出し元の通常宣言・tag 宣言・typedef 経路は、空 signature または
+  `psx_ctx_typedef_funcptr_sig()` の結果を渡す形にした。
+
+  `decl.c` 内部では `decl_funcptr_sig_has_payload()` と
+  `decl_funcptr_sig_from_suffix()` を追加し、static local scalar lowering と
+  通常 local lvar 登録の function-pointer signature 組み立てを同じ型に寄せた。
+  `try_lower_static_local_scalar()` も個別 mask/ret フィールドではなく
+  `psx_decl_funcptr_sig_t` を受け取るようにした。
+
+  さらに local typedef 登録 (`define_local_typedef_from_declarator`) と
+  `stmt.c` の typedef 登録も `psx_ctx_typedef_set_funcptr_sig()` 経由に変え、
+  `psx_typedef_info_t` への function-pointer signature 直書きを減らした。
+  検索上、`decl.c` / `decl.h` / `stmt.c` から古い
+  `base_funcptr_*` / `td_funcptr_*` 引数列は消えている。
+
+  まだ残る構造的候補は `psx_type_t` / AST node / function return info 側に残る
+  互換用の個別フィールドと、関数戻り値 funcptr metadata の semantic context API。
+  次は function return info (`func_name_t` / `psx_function_ret_info_t`) を
+  signature helper 経由に寄せるのが自然。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = **green**。
+- 続き767: **関数ポインタ signature の AST 伝播・parser state・semantic context を
+  `psx_decl_funcptr_sig_t` に寄せた**。
+  続き766で lvar/global への保存は `psx_decl_set_*_funcptr_signature()` へ
+  集約したが、その後も `node_utils.c` の lvar/global/tag member/type/mem から
+  AST mem/type node へのコピーと、`parser.c` の typedef / 仮引数 / 関数戻り値の
+  一時 state が、同じ `funcptr_param_*` / `funcptr_ret_*` /
+  `is_variadic_funcptr` / `funcptr_nargs_fixed` 群を手書きコピーしていた。
+  これは「保存先」は寄ったものの、伝播・解析途中の正本がまだ分散している状態だった。
+
+  根本対応として `node_utils.c` に
+  `funcptr_sig_from_mem/type/lvar/gvar/tag_member()`、
+  `node_mem_store_funcptr_signature()`、
+  `node_mem_merge_funcptr_signature()` を追加し、mem/type node への伝播コピーを
+  `psx_decl_funcptr_sig_t` 経由にまとめた。merge の既存意味を保つため、
+  `psx_node_copy_funcptr_metadata()` では variadic flag を従来どおり merge 対象に
+  しないよう `copy_variadic=0` にしている。
+
+  さらに `psx_decl_funcptr_sig_t` を `decl.h` から `core.h` へ移し、
+  decl だけでなく parser / semantic context / struct layout から参照できる
+  正本型にした。`semantic_ctx.h` には
+  `psx_ctx_typedef_funcptr_sig()` / `psx_ctx_typedef_set_funcptr_sig()` と
+  `psx_ctx_tag_member_funcptr_sig()` / `psx_ctx_tag_member_set_funcptr_sig()` を追加し、
+  typedef info と tag member info の個別フィールド列との変換を 1 箇所に寄せた。
+
+  `parser.c` の `func_ret_parse_state_t`、`toplevel_decl_spec_t`、
+  `param_decl_spec_t`、`psx_function_signature_t` は、個別の function-pointer
+  signature フィールド群ではなく `psx_decl_funcptr_sig_t` を保持する形にした。
+  typedef 情報との変換は semantic context の共通 helper、declarator suffix からの生成は
+  `funcptr_sig_from_suffix()` に寄せた。これにより parser 内部で
+  signature field を追加・修正するときの同期漏れリスクが下がった。
+
+  `semantic_ctx.c` では typedef/tag member の内部 record と公開 info の相互コピーを
+  record helper 経由にし、`struct_layout.c` では typedef 由来の member function-pointer
+  metadata を 8 個のローカル変数から `psx_decl_funcptr_sig_t` 1 個へ畳んだ。
+  後付けの fp/int mask setter 分岐も、`psx_ctx_add_tag_member()` への一括 signature
+  保存で重複する分は削除した。
+
+  まだ残る構造的候補は `psx_type_t` / AST node / function return info 側に残る互換用の
+  個別フィールドそのものと、`decl.c` の `psx_decl_parse_declaration_after_type_ex()`
+  など古い引数列。次は `decl.c` の typedef/base funcptr 引数列を
+  `psx_decl_funcptr_sig_t` で受け渡す方向が自然。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = **green**。
+- 続き766: **関数ポインタ signature の保存 metadata も `decl.c` API へ寄せた**。
+  続き765後も、`funcptr_param_fp_mask` / `funcptr_param_int_mask` /
+  `funcptr_ret_int_width` / `funcptr_ret_is_void` /
+  `funcptr_ret_is_data_pointer` / `funcptr_ret_is_complex` /
+  `is_variadic_funcptr` / `funcptr_nargs_fixed` /
+  `funcptr_ret_pointee_array_*` の保存が、static local lowering、
+  local lvar 宣言末尾、file-scope global 登録、仮引数登録に分散していた。
+  これは「呼び出し ABI と戻り値型を表す signature metadata」の正本が
+  lvar/global の各登録経路に割れている状態だった。
+
+  根本対応として `psx_decl_funcptr_sig_t` と
+  `psx_decl_set_lvar_funcptr_signature()` /
+  `psx_decl_set_gvar_funcptr_signature()` を追加した。
+  static local の実体 global と alias lvar、通常 local lvar、
+  function-pointer array parameter、scalar pointer parameter、
+  file-scope global / function-pointer array global は同じ保存 helper 経由で
+  signature metadata を設定する。
+  検索上、lvar/global の function-pointer signature フィールドへの通常直書きは
+  helper 本体に閉じている。なお `parser.c` に残る代入は
+  `param_decl_spec_t` や function return parse state へのコピーで、
+  lvar/global 保存 metadata とは別の宣言解析 state。
+
+  まだ残る構造的候補は AST mem/type node への function-pointer metadata 伝播
+  (`node_utils.c` の `funcptr_*` コピー群) と、`global_var_t` 側の
+  pointer/qualifier 派生 metadata。次は `node_utils` 側に
+  mem/type node signature propagation helper を切るのが自然。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**。
+- 続き765: **VLA runtime stride descriptor metadata も `decl.c` API へ寄せた**。
+  続き764で compile-time array stride は `decl.c` API に集約したが、
+  VLA runtime stride はまだ local VLA 宣言 (`decl.c`) と仮引数 VLA 宣言
+  (`parser.c`) が `lvar_t` の `is_vla`、`vla_row_stride_frame_off`、
+  `vla_strides_remaining`、`vla_row_stride_src_offset`、
+  `vla_row_stride_elem_size`、`vla_param_inner_dim_*` を直接書いていた。
+  これは compile-time stride とは別の runtime descriptor だが、同じ lvar 型情報の
+  正本が宣言処理の複数箇所に割れている状態だった。
+
+  根本対応として `psx_decl_set_lvar_vla_descriptor()` と
+  `psx_decl_set_lvar_vla_param_inner_dims()` を追加した。
+  local VLA、pointer-to-VLA local、2D VLA 仮引数、N-D VLA 仮引数は
+  これらの helper 経由で runtime descriptor を設定する。
+  検索上、lvar の VLA descriptor フィールドへの直書きは helper 本体に閉じており、
+  残っている `node_utils.c` の書き込みは lvar から AST mem node へ伝播する派生ノード情報、
+  `ND_VLA_ALLOC` の `vla_row_stride_frame_off` は allocation node 固有情報。
+
+  まだ残る構造的候補は funcptr signature metadata
+  (`funcptr_param_*` / `funcptr_ret_*` / `is_variadic_funcptr` /
+  `funcptr_nargs_fixed`) と、`global_var_t` 側の pointer/qualifier 派生 metadata。
+  次は funcptr signature helper を lvar/global/type node で分けて切るのが自然。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**。
+- 続き764: **array stride metadata (`outer_stride` / `mid_stride` /
+  `extra_strides`) も `decl.c` API へ寄せた**。
+  続き763後も、多次元配列の stride 計算は `expr.c` の compound literal 用 helper、
+  `parser.c` の global 用 helper、`decl.c` の static local / typedef array /
+  local array 登録 helper などに重複していた。特に「dims 全体から計算する」
+  経路と「pointee/inner dims から計算する」経路が同じフィールドへ直接書くため、
+  array-shape metadata の正本がまだ分散していた。
+
+  根本対応として `psx_decl_set_lvar_array_strides_from_dims()`、
+  `psx_decl_set_lvar_array_strides_from_inner_dims()`、
+  `psx_decl_set_gvar_array_strides_from_dims()`、
+  `psx_decl_set_gvar_array_strides_from_inner_dims()` を追加した。
+  compound literal の local/global 一時、file-scope global 多次元配列、
+  global pointer-to-array、仮引数の pointer-to-array / typedef-array pointee、
+  static local consumed multidim array、typedef array local、
+  通常 local multidim array 登録は同じ stride setter 経由になった。
+  検索上、`decl.c` / `parser.c` / `expr.c` の通常 stride 直書きは
+  helper 本体と VLA runtime 表現の `outer_stride` 代入だけに縮小している。
+
+  まだ残る構造的候補は VLA runtime stride slot metadata
+  (`vla_row_stride_frame_off` / `vla_strides_remaining` /
+  `vla_param_inner_dim_*`) と funcptr signature metadata。
+  ここは compile-time stride helper と混ぜると逆に見通しが悪くなるので、
+  次は VLA descriptor helper か funcptr signature helper のどちらかを独立して切るのがよい。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**。
+- 続き763: **`lvar_t` の pointer/qualifier 派生 metadata も
+  `decl.c` API へ寄せた**。
+  続き762で basic storage/type metadata は `psx_decl_init_lvar_storage_type()` に
+  集約できたが、`pointer_qual_levels` / `base_deref_size` /
+  `ptr_array_pointee_bytes` と const/volatile qualifier 群は
+  `parser.c::register_param_lvar()`、`decl.c` のローカル宣言分岐、
+  `expr.c` の compound literal 一時 lvar で直接書かれていた。
+  これは「宣言子から導出される lvar metadata」の正本がまだ分散している状態だった。
+
+  根本対応として `psx_decl_set_lvar_pointer_derived_type()` と
+  `psx_decl_set_lvar_qualifiers()` を追加した。
+  関数ポインタ配列仮引数、struct array/pointer 仮引数、scalar pointer/array 仮引数、
+  typedef array 調整、VLA 仮引数、pointer-to-VLA / pointer-to-array ローカル宣言、
+  typedef array/pointer ローカル宣言、多次元配列、scalar local、
+  static local pointer element alias、compound literal pointer-element lvar が
+  これらの API 経由で derived metadata を設定する形になった。
+  検索上、上記 pointer/qualifier フィールドへの通常直書きは
+  helper 本体だけに閉じている（判定用の read は残る）。
+
+  まだ残る構造的候補は `outer_stride` / `mid_stride` / `extra_strides`、
+  VLA runtime stride、funcptr signature metadata、`global_var_t` 側の
+  pointer/qualifier 派生 metadata。次は stride metadata を
+  array-shape helper に寄せるのが一番自然。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き762: **`lvar_t` の basic storage/type metadata 初期化も
+  `decl.c` API へ寄せた**。
+  続き761後も、`lvar_t` 側は `size` / `elem_size` / `is_array` の初期化が
+  register helper にありつつ、`fp_kind` / `is_unsigned` / tag metadata は
+  `decl.c`、`parser.c`、`expr.c` の各呼び出し側で後付けされていた。
+  これは `global_var_t` 側で潰した分散と同じ形で、ローカル変数・仮引数・
+  compound literal 一時変数の型 metadata 正本が割れている状態だった。
+
+  根本対応として `psx_decl_init_lvar_storage_type()` を追加し、
+  `psx_decl_register_lvar_sized_align()`、static-local alias 登録、
+  struct/union 仮引数、scalar pointer 仮引数、複素数/スカラー仮引数、
+  VLA 早期経路、通常ローカル宣言の共通末尾、compound literal / struct/union value cast
+  一時 lvar が同じ helper で basic storage/type metadata を設定する形にした。
+  検索上、`var->fp_kind =` / `var->is_unsigned =` / `var->tag_* =` の通常直書きは
+  `psx_decl_init_lvar_storage_type()` 本体以外から消えている。
+
+  まだ宣言子固有の metadata は意図的に残している。具体的には
+  `base_deref_size`、`pointer_qual_levels`、`outer_stride` / `mid_stride` /
+  `extra_strides`、VLA runtime stride、funcptr signature、const/volatile qualifier など。
+  次に根本化するなら、これらを「pointer/array derived metadata」単位の helper へ
+  分けるのがよい。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き761: **初期化子から推論する `global_var_t.type_size` 確定を
+  共有 finalizer へ切り出した**。
+  続き760で宣言時の basic storage metadata は
+  `psx_decl_init_gvar_storage_type()` へ寄ったが、`T a[] = {...}` や
+  `char a[] = "..."` のように初期化子から配列長を確定する処理は
+  `parser.c::apply_toplevel_object_initializer()` に残っていた。
+  さらに static local array の brace 初期化後も `decl.c` 側で
+  `gv->type_size = gv->init_count * elem_size` を直接書いていた。
+
+  根本対応として `psx_decl_finalize_gvar_inferred_array_size()` を追加し、
+  file-scope global の brace/string 初期化後と static local array の brace 初期化後が
+  同じ finalizer を呼ぶ形にした。finalizer 側では
+  struct 配列の flat slot 数、plain 多次元配列の inner slab、通常 1D 配列を一元的に扱い、
+  必要に応じて `pad_global_init_zeros()` で要素境界まで 0 埋めする。
+  これで “宣言時の型 metadata 初期化” と “初期化子で不完全配列サイズを確定する後処理” が
+  API として分かれた。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き760: **file-scope global の storage/type metadata 初期化も
+  `decl.c` API へ寄せた**。
+  続き759で static local 実体 global と local extern 宣言は
+  `init_gvar_storage_type()` 経由になったが、file-scope global の
+  `parser.c::register_global_decl()` はまだ `global_var_t` の
+  `type_size` / `deref_size` / `is_array` / `fp_kind` / `is_unsigned` /
+  tag metadata を直接書いていた。これは同じ `global_var_t` の基本 storage metadata が
+  `decl.c` と `parser.c` に分かれて残る状態だった。
+
+  根本対応として helper を `psx_decl_init_gvar_storage_type()` として公開し、
+  `decl.h` に宣言した。`decl.c` の static local / local extern 経路も新しい公開名へ
+  揃え、`parser.c::register_global_decl()` は `new_type_size` と
+  pointer/scalar/array で決まる `storage_deref_size` を渡して同じ API から
+  basic storage metadata を初期化するようにした。
+  `pointee_elem_size`、linkage、funcptr 戻り値 metadata、`_Bool`、long double、
+  qualifier、pointer level など宣言子固有の metadata は既存どおり呼び出し側に残している。
+
+  残りの構造的候補は parameter/local `lvar_t` の storage metadata 初期化の分散。
+  なお初期化子処理後の `gv->type_size` 確定は続き761で finalizer API 化済み。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き759: **`global_var_t` / static-local alias `lvar_t` の storage metadata
+  初期化を `decl.c` helper へ寄せた**。
+  続き758の後も、`decl.c` の static local lowering は
+  scalar / scalar array / consumed multidim array / struct / aggregate array の各経路で
+  `global_var_t` の `type_size` / `deref_size` / `is_array` / `fp_kind` /
+  `is_unsigned` / tag metadata を直接設定し、さらに alias `lvar_t` 側にも
+  `size` / `elem_size` / `fp_kind` / `is_unsigned` / tag / static global name を
+  個別に設定していた。local extern 宣言の `global_var_t` も同じ storage metadata を
+  別経路で直接持っていた。
+
+  根本対応として `init_gvar_storage_type()` と
+  `register_static_local_alias()` を追加し、static local 実体 global と
+  alias lvar の基本 storage/type metadata を同じ入口で初期化するようにした。
+  `register_local_extern_decl()` も `init_gvar_storage_type()` 経由に変更した。
+  各 lowering 経路には初期化子、mangled name、stride/funcptr など個別要素だけを残している。
+  なお file-scope global の `parser.c::register_global_decl()` は続き760で共有化済み。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き758: **複合代入 lvalue hoist の metadata clone を `node_utils` 側へ寄せた**。
+  続き757の後も、`expr.c` の `hoist_compound_assign_lvalue()` は
+  `target` の `node_mem_t` を直接 `arena_alloc()` で複製し、`base.lhs` だけを
+  temp pointer 参照へ差し替えていた。これは `ND_DEREF` / mem node の型 metadata を
+  丸ごとコピーする処理が式解析本体に残っている状態で、constructor 化した
+  subscript/unary/member deref と同じく正本の分散だった。
+
+  根本対応として `psx_node_clone_lvalue_with_lhs()` を追加し、
+  mem node metadata の clone と `lhs` 差し替えを `node_utils` 側へ移した。
+  `hoist_compound_assign_lvalue()` は temp lvar 作成、アドレス式の一度だけ評価、
+  prefix comma の組み立てだけを担当する形になり、`expr.c` から
+  `arena_alloc(sizeof(node_mem_t))` の直接 allocation は消えている。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き757: **subscript 結果と byref param の `ND_DEREF` metadata 初期化を
+  `node_utils` 側へ寄せた**。
+  続き756の後も、`expr.c` の `build_subscript_deref()` は `a[b]` 用の
+  `ND_DEREF` を直接 `arena_alloc()` し、要素 `type_size` / 次段 stride /
+  VLA runtime stride / tag / pointer qual / pointer-to-array /
+  FP / `_Bool` / unsigned / funcptr / const/volatile / scalar pointer array
+  metadata をまとめて後付けしていた。これは subscript result node の正本が
+  式解析本体に残っている状態だった。
+
+  根本対応として `psx_node_new_subscript_deref_for()` を追加し、
+  `build_subscript_deref()` は C11 6.5.2.1 の診断、`a[b]` の左右入れ替え、
+  scaled offset と base address の計算だけを担当する形にした。
+  `ND_DEREF` allocation と result metadata 初期化は `node_utils` 側へ移っている。
+  併せて byref 仮引数 (`>16B` struct value param) の
+  `ND_DEREF(ptr_lvar)` wrapper も `psx_node_new_byref_param_deref_for()` に寄せ、
+  `expr.c` の直接 `node_mem_t` deref 初期化を削除した。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き756: **unary `&` address wrapper の型 metadata 初期化を `node_utils` 側へ寄せた**。
+  続き755の後も、`expr.c` の `wrap_as_addr()` と `build_unary_addr_node()` の
+  `ND_ADDR` 分岐は、`&operand` 用の `ND_ADDR` allocation、
+  struct/union tag pointer metadata、`deref_size` / `type_size` / `is_pointer`、
+  さらに `&arr` / compound literal array の explicit address 用コピー調整を
+  直接持っていた。これは unary addr result の正本が式解析本体に残っている状態だった。
+
+  根本対応として `psx_node_new_unary_addr_for()` と
+  `psx_node_new_explicit_addr_value_for()` を追加し、通常 `&operand` wrapper と
+  既に `ND_ADDR` で表現された配列 address value の `type_size=8` / stride 調整を
+  `node_utils` 側へ移した。`expr.c` の `build_unary_addr_node()` は bitfield 診断、
+  comma / function reference / already-address 分岐だけを残し、型 metadata の
+  初期化は constructor API へ委譲する形になった。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き755: **unary `*` deref の型 metadata 初期化を `node_utils` 側へ寄せた**。
+  続き754の後も、`expr.c` の `build_unary_deref_node()` は `*operand` 用の
+  `ND_DEREF` を直接 `arena_alloc()` し、
+  `type_size` / `deref_size` / tag metadata / pointer qual levels /
+  pointer-to-array stride / multi-dimensional array stride / FP / unsigned /
+  const/volatile metadata をまとめて後付けしていた。これは unary deref result の
+  正本が式解析本体に残っている状態だった。
+
+  根本対応として `psx_node_new_unary_deref_for()` を追加し、`ND_DEREF` の
+  allocation と result metadata 初期化を `node_utils` 側へ閉じ込めた。
+  `expr.c` の `build_unary_deref_node()` は C11 6.5.3.2 の診断だけを残し、
+  型 metadata 構築は constructor へ委譲する形になった。これで
+  tag member deref と通常 unary deref の metadata 初期化が同じ層へ寄った。
+
+  確認は
+  `make -j4 build/test_parser` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き754: **struct/union member access の deref metadata 初期化を
+  `node_utils` 側へ寄せた**。
+  続き753の後も、`expr.c` の `build_member_deref_node()` は
+  `base.member` / `base->member` 用の `ND_DEREF` を直接 `arena_alloc()` し、
+  member の `type_size` / `deref_size` / array decay / pointer-to-array stride /
+  scalar pointer / bitfield / FP / `_Bool` / unsigned / funcptr metadata を
+  まとめて後付けしていた。これは `tag_member_info_t` から node metadata へ変換する
+  重要な正本が式解析本体に残っている状態だった。
+
+  根本対応として `psx_node_new_tag_member_deref_for()` を追加し、
+  member offset 加算と `ND_DEREF` metadata 初期化を `node_utils` 側に移した。
+  あわせて `psx_node_new_addr_value_for()` を追加し、`.` のときに base 値の
+  address wrapper を作る処理も constructor 経由にした。
+  `expr.c` の `build_member_deref_node()` は、`->` なら base をそのまま使い、
+  `.` なら base のアドレスを用意して constructor に渡すだけになった。
+  member 配列 / pointer-to-array / FP / bool / unsigned の既存挙動は同じ E2E で確認済み。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き753: **配列 decay 用 `ND_ADDR` wrapper の metadata 初期化を
+  constructor/API 側へ寄せた**。
+  続き752の後も、`expr.c` の global array / static local array /
+  local array / compound literal array 経路は、`ND_ADDR` wrapper を
+  `arena_alloc()` で作ってから
+  `psx_node_init_*array_addr_metadata()` を直接呼んでいた。
+  init helper は `node_utils` にあったが、wrapper の allocation と lhs 選択は
+  parser 本体側に散っていたため、配列アドレス node の正本としてはまだ弱かった。
+
+  根本対応として `psx_node_new_gvar_array_addr_for()`、
+  `psx_node_new_static_local_array_addr_for()`、
+  `psx_node_new_lvar_array_addr_for()`、
+  `psx_node_new_compound_gvar_array_addr_for()`、
+  `psx_node_new_compound_lvar_array_addr_for()` を追加し、
+  配列アドレス wrapper の `ND_ADDR` 生成、base node 選択、array metadata 初期化を
+  `node_utils` 側へ閉じ込めた。
+  `expr.c` 側はどの配列アドレスを作るかだけを選び、metadata init 関数を直接呼ばない。
+  なお member access と unary `&` の `ND_ADDR` 生成は診断・特殊ケースを含むため、
+  今回は配列 decay wrapper と分けて残している。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き752: **cast result wrapper の型 metadata 初期化を `node_utils` 側へ寄せた**。
+  続き751の後も、`expr.c` の `apply_cast()` 周辺は
+  `ND_CAST` / `ND_FP_TO_INT` / `ND_INT_TO_FP` wrapper を `arena_alloc()` で作り、
+  `type_size` / `is_unsigned` / `is_plain_char` / `widen_zext_i64` /
+  pointer pointee metadata をその場で直接設定していた。
+  cast 分岐は式解析側に残すとしても、cast result node の metadata 初期化が
+  parser 本体へ散っている状態だった。
+
+  根本対応として `psx_node_new_fp_to_int_cast()`、
+  `psx_node_new_int_to_fp_cast()`、
+  `psx_node_new_integer_cast_result()` / `_ex()`、
+  `psx_node_new_i64_to_i32_trunc_cast()`、
+  `psx_node_new_pointer_cast_result()`、
+  `psx_node_new_void_cast_result()` を追加し、
+  cast result wrapper の allocation と metadata 初期化を `node_utils` に閉じ込めた。
+  `expr.c` は cast 種別と target type を選んで constructor を呼ぶだけになり、
+  `sizeof` VLA runtime size 用の unsigned 8B cast wrapper も同じ入口に寄せた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き751: **無名 prototype 固定引数 placeholder の型 metadata 初期化を
+  constructor/API 側へ寄せた**。
+  続き750の後も、`parser.c` の `parse_param_decl()` は
+  `int printf(const char *, ...)` のような無名固定引数を `node->args` に数える際、
+  `psx_node_new_lvar_typed()` / `psx_node_new_num()` で placeholder を作った後に
+  `mem.is_pointer` / `mem.type_size` / `fp_kind` / `is_unsigned` を直接設定していた。
+  これは関数 prototype の ABI metadata を parser 本体と node constructor に分散させる形だった。
+
+  根本対応として `psx_node_new_param_placeholder()` を追加し、
+  pointer placeholder は 8B pointer lvar、scalar placeholder は number node に
+  `fp_kind` / `is_unsigned` を持たせる既存意味を `node_utils` 側へ閉じ込めた。
+  `parse_param_decl()` は「placeholder が pointer か」「FP/unsigned metadata は何か」を
+  渡すだけになり、`node_lvar_t` cast による直接 metadata 書き込みが消えた。
+
+  回帰として `variadic_unnamed_proto_fp_fixed_arg.c` を追加し、
+  `int sum_fp(double, long, ...)` のような無名 fixed `double` prototype 経由でも
+  fixed FP 引数 metadata が call ABI に残ることを E2E と wasm32 E2E に入れた。
+  既存の `variadic_unnamed_proto_fixed_args.c` は pointer / unsigned fixed 引数側の
+  互換確認として引き続き通る。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1199/1199 pass**、
+  `./build/test_wasm32_e2e` = **1194 compiled, 1194 executed**、
+  `git diff --check` = green。
+- 続き750: **`_Bool` 代入正規化と scalar slot metadata を
+  `node_utils` 側へ寄せた**。
+  続き749で member array の FP slot metadata は constructor 化したが、
+  `_Bool` については `decl.c` / `expr.c` の各経路が個別に
+  `(value != 0)` を作っていた。また `.b[0] = 7` の nested designator 経路は
+  `psx_node_new_assign()` へ直接入るため、局所 wrap を足し続けると
+  型変換の正本がさらに散る状態だった。
+
+  根本対応として `psx_node_new_assign()` が lhs の `is_bool` metadata を見て
+  RHS を一元的に `(rhs != 0)` へ正規化するようにした。これに合わせて
+  `expr.c` の通常代入、`node_utils.c` の compound assignment、`decl.c` の
+  ローカル配列要素 / scalar initializer / struct member initializer 用の
+  個別 `_Bool` wrap を削除した。
+  さらに assign constructor が判断できるよう、
+  `psx_node_new_array_elem_lvar_for()` と
+  `psx_node_new_tag_member_lvar_ref_for()` が `_Bool` / unsigned metadata を
+  slot に載せるようにした。member array 用には
+  `psx_node_new_lvar_scalar_slot_at()` を追加し、FP と `_Bool` の scalar slot
+  metadata を同じ constructor 経路で作る。
+
+  回帰として `bool_array_member_designator.c` を追加し、
+  `struct { _Bool b[3]; }` の `.b[0] = 7` / `.b[2] = -3` が 0/1 に
+  正規化されることを E2E と wasm32 E2E に入れた。既存の
+  `bool_initializer_normalization.c` も、局所 wrap 削除後に
+  constructor metadata 経路で通ることを確認した。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1198/1198 pass**、
+  `./build/test_wasm32_e2e` = **1193 compiled, 1193 executed**、
+  `git diff --check` = green。
 - 続き749: **member array element store の FP slot metadata 初期化を
   constructor/API 側へ寄せた**。
   続き748の後も、struct/union の配列メンバ初期化 helper は
@@ -12654,3 +13225,138 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = **1193/1193 OK**
   - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
   - `git diff --check` = **green**
+
+### このセッション（続き693）: funcptr signature 生成規則の正本化を前進
+- 見つかった浅い箇所:
+  - function pointer の戻り値 metadata で、local variable だけ `var->funcptr_ret_is_pointer`
+    を宣言処理の途中から直接書いていた。
+  - `psx_decl_funcptr_sig_t` は正本として使い始めていたが、`decl.c` と `parser.c` が
+    それぞれ別の `*_funcptr_sig_from_suffix()` / payload 判定を持ち、signature 生成規則が分散していた。
+  - tag member 用の `psx_ctx_set_tag_member_funcptr_param_*()` は split field 時代の未使用 API として残っていた。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t` に `ret_is_funcptr` を追加し、関数ポインタがさらに関数ポインタを返す情報を
+    signature 経由で運ぶようにした。
+  - local variable の `funcptr_ret_is_pointer` は `psx_decl_set_lvar_funcptr_signature()` だけが書く形に寄せ、
+    宣言途中の直接代入を削除した。
+  - `psx_decl_funcptr_sig_has_payload()` / `psx_decl_make_funcptr_sig()` /
+    `psx_decl_make_funcptr_sig_from_kind()` を公開 helper 化し、top-level object / typedef /
+    local / struct member / statement typedef の signature 生成を同じ入口へ寄せた。
+  - 未使用だった tag member split setter API (`psx_ctx_set_tag_member_funcptr_param_fp_mask`,
+    `psx_ctx_set_tag_member_funcptr_param_int_mask`) を削除した。
+- 注意:
+  - 旧互換 field 自体はまだ `node_mem_t` / `lvar_t` / `global_var_t` / `tag_member_info_t` /
+    `psx_typedef_info_t` / `ir_inst_t` に残っている。今回の対応は生成・更新入口の集約であり、
+    storage layout 全体の `psx_type_t` 一本化まではまだ未完。
+  - `funcptr_ret_is_pointer` は既存互換 field 名のまま残っているが、local variable では
+    `ret_is_funcptr` から helper 経由でのみ設定する。
+- 確認:
+  - `make -j4 build/test_parser build/test_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr_call.c` = **pass**
+  - `git diff --check` = **green**
+
+### このセッション（続き694）: IR 側の funcptr metadata split-field 直読みを parser helper へ隔離
+- 見つかった浅い箇所:
+  - `ir_builder.c` が indirect call / function pointer assignment 用に、`lvar_t` / `global_var_t`
+    の `funcptr_*` split field を直接読んで `node_mem_t` へ詰め直していた。
+  - 続き693で signature 生成規則は `psx_decl_funcptr_sig_t` helper に寄ったが、IR 境界側には
+    parser 内部の storage layout 知識が残っていた。
+- 根本対応:
+  - `node_utils.c` に `psx_node_mem_has_funcptr_metadata()` と
+    `psx_node_merge_funcptr_metadata_from_lvar()` /
+    `psx_node_merge_funcptr_metadata_from_gvar()` を追加した。
+  - `parser_public.h` へ上記 helper と既存 copy helper を公開し、IR は parser 公開 API 越しに
+    function pointer metadata を受け取る形へ寄せた。
+  - `ir_builder.c` から `mem_has_funcptr_sig()` / `merge_funcptr_sig_from_lvar()` と
+    global var の `funcptr_*` 手詰め替えを削除した。
+- 注意:
+  - `pointee_fp_kind` はまだ `psx_decl_funcptr_sig_t` 外に残っている。今回の helper は現行 ABI を保つため、
+    signature 互換 field と `pointee_fp_kind` を合わせて merge する。
+  - 次の大きい候補は、function pointer 戻り FP 種別も signature/typed AST 側の正本に含め、
+    `node_mem_t` / `psx_type_t` / `ir_inst_t` の split field をさらに減らすこと。
+- 確認:
+  - `make -j4 build/test_parser build/test_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr_call.c` = **pass**
+  - `git diff --check` = **green**
+  - `rg -n "funcptr_param_fp_mask = gv->|funcptr_param_fp_mask = var->|funcptr_ret_is_data_pointer = gv->|funcptr_ret_is_data_pointer = var->|merge_funcptr_sig_from_lvar|mem_has_funcptr_sig" src/ir src/arch`
+    = **no matches**
+
+### このセッション（続き695）: funcptr 戻り FP 種別を signature に収容し tag member の二重用途を分離
+- 見つかった浅い箇所:
+  - function pointer の FP 戻り種別は `psx_decl_funcptr_sig_t` 外の
+    `pointee_fp_kind` / `ret_funcptr_pointee_fp_kind` / `funcptr_ret_fp_kind` で流れていた。
+  - 続き694で IR 境界は helper 化したが、signature 本体には戻り FP 種別が無く、
+    global / struct member では互換 field への直接同期が残っていた。
+  - `tag_member_info_t` / 内部 `tag_member_t` は `fp_kind` を通常の `double` メンバ・
+    `double *` メンバの pointee・function pointer の `double` 戻りの全部に使っており、
+    tag member だけ typedef より正本が曖昧だった。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t.ret_fp_kind` を追加し、make/helper/semantic_ctx/node_utils/lvar/gvar/
+    function-ret 変換で運ぶようにした。
+  - lvar/gvar/node/type/tag member/typedef の互換 field は signature から同期する形へ寄せた。
+  - `parser.c` の global funcptr / global funcptr array の直接 `gv->pointee_fp_kind` セットと、
+    `struct_layout.c` の funcptr member 直接 `psx_ctx_set_tag_member_fp_kind` を削除した。
+  - `tag_member_info_t` / `tag_member_t` に `is_funcptr` と `funcptr_ret_fp_kind` を追加し、
+    通常の `fp_kind` と function pointer 戻り FP 種別を分離した。
+  - `psx_ctx_tag_member_funcptr_sig()` / `tag_member_record_funcptr_sig()` は
+    `is_funcptr` のときだけ `funcptr_ret_fp_kind` を signature へ戻すようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `struct TM695 { double *dp; double (*fp)(void); }` の
+    regression を追加した。
+  - `dp` は `fp_kind=DOUBLE` だが funcptr signature payload なし、
+    `fp` は `fp_kind=NONE` かつ `funcptr_ret_fp_kind=DOUBLE` として見えることを確認する。
+- 注意:
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` にはまだ
+    `pointee_fp_kind` 互換 field が残る。今回で tag member の `fp_kind` 二重用途は外したが、
+    typed AST 側の完全一本化は未完。
+  - function return の `ret_funcptr_pointee_fp_kind` も ABI 互換 field として残っている。
+- 確認:
+  - `make -j4 build/test_parser build/test_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n "ret_fp_kind = m->fp_kind|ret_fp_kind = \\(.*\\)m->fp_kind|funcptr_ret_fp_kind|is_funcptr|psx_ctx_set_tag_member_fp_kind\\(.*member_fp_kind|head\\.has_func_suffix.*pointee_fp_kind" src/parser/semantic_ctx.h src/parser/semantic_ctx.c src/parser/struct_layout.c src/parser/parser.c test/test_parser.c`
+    = **旧 `m->fp_kind` 直読 / funcptr member 直接 fp_kind 同期は no matches、追加した専用 field と回帰テストのみ match**
+
+### このセッション（続き696）: node/lvar/gvar/type の funcptr 戻り FP を pointee から分離
+- 見つかった浅い箇所:
+  - 続き695で tag member は分離したが、`node_mem_t` / `lvar_t` / `global_var_t` /
+    `psx_type_t` はまだ function pointer 戻り FP を `pointee_fp_kind` で表していた。
+  - `psx_node_mem_has_funcptr_metadata()` が `pointee_fp_kind` だけで true になり、
+    `double *` の data pointer metadata と function pointer metadata が混ざっていた。
+  - `parse_call_postfix()` も callee の `psx_node_pointee_fp_kind()` を function pointer 戻り
+    FP として読んでいたため、旧 field の二重用途に依存していた。
+- 根本対応:
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` に `funcptr_ret_fp_kind`
+    を追加し、function pointer signature の `ret_fp_kind` はこの専用 field へ保存するようにした。
+  - function pointer signature helper は `funcptr_ret_fp_kind` から読み書きし、
+    data pointer / array の pointee FP は `pointee_fp_kind` に残した。
+  - local function pointer 宣言では `pointee_fp_kind` を立てず、`double *` と
+    `double (*)(void)` が metadata 上で区別されるようにした。
+  - IR attach と wasm obj の global/member function pointer signature result 判定も
+    `funcptr_ret_fp_kind` を読むようにした。
+  - `parse_call_postfix()` は `psx_node_funcptr_ret_fp_kind()` で indirect call の FP 戻りを判定するようにした。
+  - `psx_node_mem_has_funcptr_metadata()` は signature payload のみを見るようにし、
+    data pointer pointee FP 単独では function pointer metadata と扱わない。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `__tm696_*` regression を追加し、local/global の
+    `double *` と `double (*)(void)` で `pointee_fp_kind` / `funcptr_ret_fp_kind` /
+    function pointer metadata payload が分離していることを確認した。
+- 注意:
+  - `node_func_t.ret_funcptr_pointee_fp_kind` など legacy 名はまだ残る。
+  - function pointer の data-pointer return では `ret_fp_kind` / `funcptr_ret_fp_kind` が
+    「返るポインタの pointee FP」として使われるため、名前と意味の整理は次の候補。
+- 確認:
+  - `make -j4 build/ag_c build/test_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n "ret_fp_kind = .*pointee_fp_kind|funcptr_ret_fp_kind|pointee_fp_kind.*funcptr|funcptr.*pointee_fp_kind|psx_node_pointee_fp_kind\\(callee\\)" src/parser src/ir src/arch test/test_parser.c`
+    = **旧 ret_fp_kind <- pointee_fp_kind / callee pointee FP 直読は no matches、追加した専用 field と既存 legacy 名のみ match**
