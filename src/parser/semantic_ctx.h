@@ -214,6 +214,8 @@ typedef struct {
   int is_complex;
   int is_funcptr;
   int funcptr_ret_is_pointer;
+  int funcptr_ret_is_void;
+  int funcptr_ret_is_complex;
   int funcptr_ret_int_width;
   int pointer_levels;
   int pointee_const_qualified;
@@ -282,7 +284,9 @@ int psx_ctx_track_function_ret_type(char *name, int len,
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
-                                         int funcptr_ret_is_pointer);
+                                         int funcptr_ret_is_pointer,
+                                         int funcptr_ret_is_void,
+                                         int funcptr_ret_is_complex);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
 int psx_ctx_get_function_funcptr_ret_is_pointer(char *name, int len);
 void psx_ctx_set_function_funcptr_ret_int_width(char *name, int len, int width);

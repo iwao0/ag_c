@@ -177,6 +177,8 @@ struct func_name_t {
    * 関数の戻り tag を保持し、funcptr_ret_is_pointer がその戻りがポインタかを表す。 */
   int ret_is_funcptr;
   int funcptr_ret_is_pointer;
+  int funcptr_ret_is_void;
+  int funcptr_ret_is_complex;
   unsigned char funcptr_ret_int_width;
   /* 1: 戻り値型が unsigned。`unsigned` は ret_token_kind が TK_INT に正規化され
    * 符号性が落ちるため別途保持する。呼び出し側 funcall ノードの is_unsigned 伝播
@@ -1193,6 +1195,8 @@ psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len) {
   info.is_complex = f->ret_is_complex ? 1 : 0;
   info.is_funcptr = f->ret_is_funcptr ? 1 : 0;
   info.funcptr_ret_is_pointer = f->funcptr_ret_is_pointer ? 1 : 0;
+  info.funcptr_ret_is_void = f->funcptr_ret_is_void ? 1 : 0;
+  info.funcptr_ret_is_complex = f->funcptr_ret_is_complex ? 1 : 0;
   info.funcptr_ret_int_width = f->funcptr_ret_int_width;
   info.pointer_levels = f->ret_pointer_levels;
   info.pointee_const_qualified = f->ret_pointee_const ? 1 : 0;
@@ -1358,11 +1362,15 @@ int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
 }
 
 void psx_ctx_set_function_ret_is_funcptr(char *name, int len, int is_funcptr,
-                                         int funcptr_ret_is_pointer) {
+                                         int funcptr_ret_is_pointer,
+                                         int funcptr_ret_is_void,
+                                         int funcptr_ret_is_complex) {
   func_name_t *f = find_function_name(name, len);
   if (!f) return;
   f->ret_is_funcptr = is_funcptr ? 1 : 0;
   f->funcptr_ret_is_pointer = funcptr_ret_is_pointer ? 1 : 0;
+  f->funcptr_ret_is_void = funcptr_ret_is_void ? 1 : 0;
+  f->funcptr_ret_is_complex = funcptr_ret_is_complex ? 1 : 0;
 }
 
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {

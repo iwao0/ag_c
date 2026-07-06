@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き720: ND_FUNCALL deref/stride/void 判定の型集約）
+最終更新: 2026-07-06（続き721: function-pointer return chain の型投影）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,31 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き721: **関数が返した関数ポインタをさらに呼ぶ `go()()` 系も型投影で解決するようにした**。
+  続き720後も `psx_node_get_tag_type(ND_FUNCALL)` には、
+  direct call なら `psx_ctx_get_function_ret_info()`、indirect call なら callee の tag /
+  pointer level を手で読む大きな fallback が残っていた。特に `go()()->m` は
+  「`go()` が返した関数ポインタの戻り型」を tag getter 側で特別推論しており、
+  `ND_FUNCALL` の型が source of truth になりきっていなかった。
+
+  根本対応として `psx_function_ret_info_t` に funcptr return の void/complex 情報を追加し、
+  direct funcall が「返す関数ポインタの戻り型 metadata」を materialized type に載せるようにした。
+  さらに `type_from_indirect_funcall()` は callee が `ND_FUNCALL` の場合も、
+  callee の `psx_type_t` から返り値型を投影できるようにした。
+  これにより `go()()` の戻り値 tag / pointer 判定は `psx_node_get_tag_type()` の
+  ad hoc 分岐ではなく、通常の `tag_type_from_type(psx_node_get_type(...))` 経路に乗る。
+  そのうえで `psx_node_get_tag_type(ND_FUNCALL)` に残っていた direct/indirect fallback を削除した。
+
+  regression は `test_type_metadata_bridge()` に
+  `typedef struct FS *(*__tm_fty)(void); __tm_fty __tm_go(void); __tm_go()();`
+  を追加し、2段目 funcall の materialized type が `struct FS *` になり、
+  `psx_node_get_tag_type()` も型から `is_tag_pointer=1` を返すことを確認している。
+  既存 e2e の `func_returning_funcptr_chain` / `funcptr_return_struct_member` も同じ経路で通る。
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  `1196/1196 pass` / `1191 compiled, 1191 executed`、
+  `git diff --check` = green。
 - 続き720: **`ND_FUNCALL` の deref size / pointee FP / pointer-to-array stride / void 代入判定を型情報へ集約した**。
   続き718-719で funcall ノードに戻り値型を materialize したが、まだ
   `ps_node_deref_size(ND_FUNCALL)` は `funcall_ret_pointee_size()` で semantic ctx を直接読み、

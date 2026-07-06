@@ -3153,7 +3153,9 @@ static void register_function_signature(const psx_function_signature_t *sig) {
                                           sig->ret_token_kind, sig->funcptr_ret_is_pointer,
                                           sig->ret_fp_kind);
     psx_ctx_set_function_ret_is_funcptr(tok->str, tok->len, 1,
-                                        sig->funcptr_ret_is_pointer);
+                                        sig->funcptr_ret_is_pointer,
+                                        sig->funcptr_ret_is_void,
+                                        sig->funcptr_ret_is_complex);
     psx_ctx_set_function_funcptr_ret_int_width(tok->str, tok->len,
                                                funcptr_ret_int_width);
     if (sig->func_node) {

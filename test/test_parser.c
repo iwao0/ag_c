@@ -2186,6 +2186,43 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, call_tag_len);
   ASSERT_TRUE(strncmp(call_tag_name, "CQ", 2) == 0);
   ASSERT_EQ(1, call_is_tag_ptr);
+
+  parsed_code = parse_program_input(
+      "int __tm_zero(void){ return 0; } "
+      "struct FS { int (*zerofunc)(void); }; "
+      "struct FS __tm_fs = { __tm_zero }; "
+      "struct FS *__tm_anon(void){ return &__tm_fs; } "
+      "typedef struct FS *(*__tm_fty)(void); "
+      "__tm_fty __tm_go(void){ return __tm_anon; } "
+      "int main(void){ __tm_go()(); return 0; }");
+  fn = as_func(parsed_code[3]);
+  body = as_block(fn->base.rhs);
+  node_t *funcptr_chain_call = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    node_t *n = body->body[i];
+    if (n->kind != ND_FUNCALL) continue;
+    node_func_t *call = as_func(n);
+    if (call->callee && call->callee->kind == ND_FUNCALL) {
+      funcptr_chain_call = n;
+      break;
+    }
+  }
+  ASSERT_TRUE(funcptr_chain_call != NULL);
+  psx_type_t *funcptr_chain_ty = psx_node_get_type(funcptr_chain_call);
+  ASSERT_TRUE(funcptr_chain_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, funcptr_chain_ty->kind);
+  ASSERT_TRUE(funcptr_chain_ty->base != NULL);
+  ASSERT_EQ(TK_STRUCT, funcptr_chain_ty->base->tag_kind);
+  call_tag = TK_EOF;
+  call_tag_name = NULL;
+  call_tag_len = 0;
+  call_is_tag_ptr = 0;
+  psx_node_get_tag_type(funcptr_chain_call, &call_tag, &call_tag_name,
+                        &call_tag_len, &call_is_tag_ptr);
+  ASSERT_EQ(TK_STRUCT, call_tag);
+  ASSERT_EQ(2, call_tag_len);
+  ASSERT_TRUE(strncmp(call_tag_name, "FS", 2) == 0);
+  ASSERT_EQ(1, call_is_tag_ptr);
 	}
 
 static void test_translation_unit_reset_static_local_state() {
