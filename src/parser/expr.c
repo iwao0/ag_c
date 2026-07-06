@@ -4864,21 +4864,10 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
       break;
     }
   }
-  node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
-  base->mem.base.kind = ND_GVAR;
-  base->mem.type_size = gv_type_size;
-  base->mem.deref_size = (short)var->elem_size;
-  base->mem.is_unsigned = var->is_unsigned;
-  base->mem.tag_kind = var->tag_kind;
-  base->mem.tag_name = var->tag_name;
-  base->mem.tag_len = var->tag_len;
-  base->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
-  base->mem.is_tag_pointer = 0;
-  base->name = var->static_global_name;
-  base->name_len = var->static_global_name_len;
+  node_t *base = psx_node_new_static_local_gvar_for(var, gv_type_size);
   node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
   addr->base.kind = ND_ADDR;
-  addr->base.lhs = (node_t *)base;
+  addr->base.lhs = base;
   psx_node_init_lvar_array_addr_metadata(addr, var, 0);
   return (node_t *)addr;
 }
@@ -4926,35 +4915,8 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   /* `static` ローカル: 実体はグローバルに lowering されているので、
    * ローカル参照ではなく ND_GVAR を返す。 */
   if (var->is_static_local && var->static_global_name) {
-    node_gvar_t *gv = arena_alloc(sizeof(node_gvar_t));
-    gv->mem.base.kind = ND_GVAR;
     int sz = var->size > 0 ? var->size : var->elem_size;
-    gv->mem.type_size = (short)sz;
-    gv->mem.deref_size = (short)(var->elem_size > 0 ? var->elem_size : sz);
-    gv->mem.is_unsigned = var->is_unsigned;
-    gv->mem.base.fp_kind = var->fp_kind;
-    psx_node_copy_funcptr_metadata_from_lvar(&gv->mem, var);
-    gv->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
-    gv->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
-    /* `static struct S a` の tag 情報を ND_GVAR に伝播して `a.member` の
-     * メンバアクセスを解決可能にする (tag を落とすと build_member_access が
-     * 失敗する)。is_tag_pointer は実体 (= 0)。 */
-    gv->mem.tag_kind = var->tag_kind;
-    gv->mem.tag_name = var->tag_name;
-    gv->mem.tag_len = var->tag_len;
-    gv->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
-    gv->mem.is_tag_pointer = 0;
-    /* スカラ static local がポインタ型 (`static char *msg = "..."`) のとき、
-     * size==8 かつ pointee の elem_size がそれより小さい (char=1, int=4 等) なら
-     * is_pointer を立てる。非ポインタの static スカラ (`static int n = 5;`) は
-     * size==elem_size==4 で偽になる。修正前は is_pointer 未設定で subscript
-     * `msg[i]` が両辺非ポインタとして E3064 reject されていた。同 elem (long*)
-     * のケースは pointer_qual_levels を立てる必要があるが、現状の static-local
-     * 経路では追跡しないので別 follow-up。 */
-    if (sz > var->elem_size && var->elem_size > 0) gv->mem.is_pointer = 1;
-    gv->name = var->static_global_name;
-    gv->name_len = var->static_global_name_len;
-    return (node_t *)gv;
+    return psx_node_new_static_local_gvar_for(var, sz);
   }
   int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
                         (var->size > var->elem_size) ||

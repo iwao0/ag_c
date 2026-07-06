@@ -1280,6 +1280,32 @@ void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const global_var_t *gv) {
   mem->is_long_double = gv->is_long_double ? 1 : 0;
 }
 
+void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const lvar_t *var,
+                                                  int type_size) {
+  if (!mem) return;
+  *mem = (node_mem_t){0};
+  mem->base.kind = ND_GVAR;
+  if (!var) return;
+  int sz = type_size > 0 ? type_size : (var->size > 0 ? var->size : var->elem_size);
+  int deref = var->elem_size > 0 ? var->elem_size : sz;
+  mem->type_size = (short)sz;
+  mem->deref_size = (short)deref;
+  mem->base.fp_kind = var->fp_kind;
+  mem->base.is_unsigned = var->is_unsigned ? 1 : 0;
+  mem->is_unsigned = var->is_unsigned ? 1 : 0;
+  mem->is_bool = var->is_bool ? 1 : 0;
+  mem->is_long_double = var->is_long_double ? 1 : 0;
+  psx_node_copy_funcptr_metadata_from_lvar(mem, var);
+  mem->tag_kind = var->tag_kind;
+  mem->tag_name = var->tag_name;
+  mem->tag_len = var->tag_len;
+  mem->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  mem->is_tag_pointer = 0;
+  mem->is_const_qualified = var->is_const_qualified ? 1 : 0;
+  mem->is_volatile_qualified = var->is_volatile_qualified ? 1 : 0;
+  if (var->size > 0 && sz > var->elem_size && var->elem_size > 0) mem->is_pointer = 1;
+}
+
 void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
                                             int is_tag_pointer) {
   if (!addr || !var) return;
@@ -2042,6 +2068,16 @@ node_t *psx_node_new_gvar_for(global_var_t *gv) {
     node->name = gv->name;
     node->name_len = gv->name_len;
     node->is_thread_local = gv->is_thread_local ? 1 : 0;
+  }
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_static_local_gvar_for(lvar_t *var, int type_size) {
+  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+  psx_node_init_static_local_gvar_ref_metadata(&node->mem, var, type_size);
+  if (var) {
+    node->name = var->static_global_name;
+    node->name_len = var->static_global_name_len;
   }
   return (node_t *)node;
 }

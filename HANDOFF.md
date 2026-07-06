@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き734: ファイルスコープ複合リテラル gvar 参照の constructor 化）
+最終更新: 2026-07-06（続き735: static local gvar 参照 metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き735: **static local を global 実体へ lower した後の `ND_GVAR`
+  metadata 初期化を `node_utils` に集約した**。
+  続き734の後も、`build_static_local_array_addr_node()` と
+  `build_lvar_or_vla_node()` の static local 分岐は、alias `lvar_t` から
+  lowered global 参照用 `node_gvar_t` へ type_size / deref_size / unsigned /
+  fp / funcptr / tag / pointer 判定 / name を手でコピーしていた。
+
+  根本対応として `psx_node_init_static_local_gvar_ref_metadata()` と
+  `psx_node_new_static_local_gvar_for()` を追加し、static local の lowered global 参照生成を
+  この constructor に寄せた。
+  static local array alias は `size=0` なので、既存同様に array object base を
+  pointer 扱いにしない一方、scalar static local の pointer heuristic は helper 側に移した。
+  これで `lvar_t` 由来の `ND_GVAR` 参照 metadata も `expr.c` の個別コピーから外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き734: **ファイルスコープ複合リテラルの匿名 gvar 参照生成も
   `psx_node_new_gvar_for()` に寄せた**。
   続き733で通常の global variable 参照は constructor 化したが、
