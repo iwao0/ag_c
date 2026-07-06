@@ -96,6 +96,7 @@ probes_found_bugs/file_scope_aggregate_compound_literal_addr.c
 probes_found_bugs/file_scope_compound_literal_init.c
 probes_found_bugs/file_scope_ptr_from_array_compound.c
 probes_found_bugs/float_array_member.c
+probes_found_bugs/float_array_member_designator.c
 probes_found_bugs/float_inc_dec.c
 probes_found_bugs/float_logical_operand.c
 probes_found_bugs/float_to_int_narrowing_extended.c

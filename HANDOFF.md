@@ -1,15 +1,15 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き748: complex FP slot constructor 化）
+最終更新: 2026-07-06（続き749: member array FP slot constructor 化）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_parser` =
   **pass**、
   `./build/test_e2e` =
-  **1196/1196 pass**、
+  **1197/1197 pass**、
   `./build/test_wasm32_e2e` =
-  **1191 compiled, 1191 executed**、
+  **1192 compiled, 1192 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -41,6 +41,29 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き749: **member array element store の FP slot metadata 初期化を
+  constructor/API 側へ寄せた**。
+  続き748の後も、struct/union の配列メンバ初期化 helper は
+  `new_array_elem_lvar_at()` で raw lvar slot を作った後、
+  `build_member_array_elem_assign_node()` 内で `lhs->fp_kind = member_fp_kind` を
+  直接設定していた。また `.member[index] = ...` の nested designator 経路は
+  `tag_member_info_t::fp_kind` を持っているのに raw lvar のまま assign していた。
+
+  根本対応として explicit `fp_kind` 付きの
+  `psx_node_new_lvar_fp_slot_at()` を追加し、member array element store は
+  `build_member_array_elem_assign_at()` が offset / element size / index から
+  FP scalar slot を作る形へ変更した。これにより `decl.c` の
+  `lhs->fp_kind = ...` 後付けは消え、通常 brace、brace elision、多次元 char 展開、
+  nested designator が同じ slot constructor 経路を使う。
+  併せて `float_array_member_designator.c` を追加し、
+  `.f[1]` / `.d[0]` の FP 配列メンバ designator 初期化を E2E と wasm32 E2E に入れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1197/1197 pass**、
+  `./build/test_wasm32_e2e` = **1192 compiled, 1192 executed**、
+  `git diff --check` = green。
 - 続き748: **`_Complex` brace initializer の実部/虚部 FP slot metadata を
   `node_utils` に寄せた**。
   続き747で absolute offset の owner metadata は constructor 化したが、

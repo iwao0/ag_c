@@ -2109,9 +2109,16 @@ node_t *psx_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size)
   return (node_t *)node;
 }
 
+node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(offset, type_size);
+  node->mem.base.fp_kind = fp_kind;
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_lvar_fp_slot_for(lvar_t *owner, int offset, int type_size) {
-  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed_at_for(owner, offset, type_size);
-  node->mem.base.fp_kind = owner ? owner->fp_kind : TK_FLOAT_KIND_NONE;
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_fp_slot_at(
+      offset, type_size, owner ? owner->fp_kind : TK_FLOAT_KIND_NONE);
+  node->var = owner;
   return (node_t *)node;
 }
 
