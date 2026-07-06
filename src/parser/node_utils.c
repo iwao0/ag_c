@@ -190,6 +190,9 @@ static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {
   mem->funcptr_param_int_mask = var->funcptr_param_int_mask;
   mem->funcptr_ret_int_width = var->funcptr_ret_int_width;
   mem->funcptr_nargs_fixed = var->funcptr_nargs_fixed;
+  mem->funcptr_ret_pointee_array_first_dim = var->funcptr_ret_pointee_array_first_dim;
+  mem->funcptr_ret_pointee_array_second_dim = var->funcptr_ret_pointee_array_second_dim;
+  mem->funcptr_ret_pointee_array_elem_size = var->funcptr_ret_pointee_array_elem_size;
   mem->funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
   mem->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
   mem->funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
@@ -339,12 +342,17 @@ static psx_type_t *type_from_scalar_shape(token_kind_t kind, tk_float_kind_t fp_
 static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   if (!fn || fn->callee != NULL || !fn->funcname) return NULL;
   psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
+  tk_float_kind_t ret_fp_kind = ret.fp_kind;
+  if (ret_fp_kind == TK_FLOAT_KIND_NONE) {
+    if (ret.token_kind == TK_FLOAT) ret_fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (ret.token_kind == TK_DOUBLE) ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  }
   int size = ret.struct_size > 0 ? ret.struct_size : integer_token_size(ret.token_kind, 4);
 
   if (!ret.is_pointer) {
     if (ret.tag_kind == TK_STRUCT || ret.tag_kind == TK_UNION)
       return psx_type_new_tag(ret.tag_kind, ret.tag_name, ret.tag_len, 0, ret.struct_size);
-    return type_from_scalar_shape(ret.token_kind, ret.fp_kind, size,
+    return type_from_scalar_shape(ret.token_kind, ret_fp_kind, size,
                                   ret.is_unsigned, ret.is_complex, 0);
   }
 
@@ -352,14 +360,32 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   if (ret.tag_kind == TK_STRUCT || ret.tag_kind == TK_UNION) {
     base = psx_type_new_tag(ret.tag_kind, ret.tag_name, ret.tag_len, 0, ret.struct_size);
   } else {
-    base = type_from_scalar_shape(ret.token_kind, ret.fp_kind, size,
+    base = type_from_scalar_shape(ret.token_kind, ret_fp_kind, size,
                                   ret.is_unsigned, ret.is_complex, 0);
   }
-  int levels = psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len);
+  psx_ret_pointee_array_t ret_array = ret.pointee_array;
+  if (ret_array.first_dim <= 0) {
+    ret_array.first_dim =
+        psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
+    ret_array.second_dim =
+        psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
+  }
+  ret_array.elem_size = psx_type_sizeof(base);
+  int levels = ret.pointer_levels;
+  if (levels <= 0) levels = psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len);
   int deref_size = levels >= 2 ? 8 : psx_type_sizeof(base);
+  if (psx_ret_pointee_array_has_dims(ret_array)) {
+    int row = psx_ret_pointee_array_row_stride(ret_array);
+    if (row > 0) deref_size = row;
+  }
   psx_type_t *type = psx_type_new_pointer(base, deref_size);
   type->pointer_qual_levels = levels;
   type->base_deref_size = psx_type_sizeof(base);
+  PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(type, ret_array);
+  if (psx_ret_pointee_array_has_dims(ret_array)) {
+    type->outer_stride = psx_ret_pointee_array_inner_stride(ret_array);
+    type->mid_stride = psx_ret_pointee_array_next_stride(ret_array);
+  }
   return type;
 }
 
@@ -382,8 +408,9 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
   if (!cm) return NULL;
   if (cm->funcptr_ret_is_void) return type_new_void();
   if (cm->funcptr_ret_is_complex) {
+    int complex_size = fn->base.fp_kind == TK_FLOAT_KIND_FLOAT ? 8 : 16;
     return type_from_scalar_shape(TK_EOF, (tk_float_kind_t)fn->base.fp_kind,
-                                  ps_node_type_size((node_t *)fn), 0, 1, 0);
+                                  complex_size, 0, 1, 0);
   }
 
   token_kind_t tag_kind = TK_EOF;
@@ -398,7 +425,10 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
                             psx_node_get_tag_scope_depth(fn->callee) + 1, size);
   }
 
-  if (cm->funcptr_ret_is_data_pointer) {
+  psx_ret_pointee_array_t ret_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
+  int returns_data_pointer =
+      cm->funcptr_ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_array);
+  if (returns_data_pointer) {
     psx_type_t *base = NULL;
     if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
       int size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
@@ -412,14 +442,28 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
       if (base_size <= 0 || base_size > 8) base_size = 4;
       base = psx_type_new_integer(TK_EOF, base_size, cm->pointee_is_unsigned);
     }
-    psx_type_t *type = psx_type_new_pointer(base, psx_type_sizeof(base));
+    int deref_size = psx_type_sizeof(base);
+    if (psx_ret_pointee_array_has_dims(ret_array)) {
+      int row = psx_ret_pointee_array_row_stride(ret_array);
+      if (row > 0) deref_size = row;
+    }
+    psx_type_t *type = psx_type_new_pointer(base, deref_size);
+    PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(type, ret_array);
+    if (psx_ret_pointee_array_has_dims(ret_array)) {
+      type->outer_stride = psx_ret_pointee_array_inner_stride(ret_array);
+      type->mid_stride = psx_ret_pointee_array_next_stride(ret_array);
+    }
     type->base_deref_size = psx_type_sizeof(base);
     type->pointer_qual_levels = psx_node_pointer_qual_levels(fn->callee) >= 2 ? 1 : 0;
     return type;
   }
 
   int width = cm->funcptr_ret_int_width;
-  if (width <= 0) width = ps_node_type_size((node_t *)fn);
+  if (width <= 0) {
+    if (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) width = 4;
+    else if (fn->base.fp_kind >= TK_FLOAT_KIND_DOUBLE) width = 8;
+    else width = 4;
+  }
   return type_from_scalar_shape(TK_EOF, (tk_float_kind_t)fn->base.fp_kind, width,
                                 fn->base.is_unsigned, 0, width >= 8);
 }
@@ -656,6 +700,10 @@ int ps_node_type_size(node_t *node) {
     int s = psx_type_sizeof(explicit_type);
     if (s > 0) return s;
   }
+  if (node->kind == ND_FUNCALL) {
+    int s = psx_type_sizeof(psx_node_get_type(node));
+    if (s > 0) return s;
+  }
   switch (node->kind) {
     case ND_LVAR: return as_lvar(node)->mem.type_size;
     case ND_GVAR: return as_mem(node)->type_size;
@@ -674,31 +722,9 @@ int ps_node_type_size(node_t *node) {
       return s > 0 ? s : 4;
     }
     case ND_FUNCALL: {
-      /* 関数呼び出し: 戻り値の型サイズを semantic ctx から推定する。
-       *   struct 戻り値 (ret_struct_size > 0)  → そのサイズ
-       *   float                                → 4
-       *   double / long double (lowered to d)  → 8
-       *   それ以外 (int / pointer 等)          → 4 (int)
-       * ポインタ戻り値 (`char *get(void)`) の sizeof は本来 8 だが、
-       * parser がポインタ戻り値かを覚えていないので int と区別がつかない。
-       * 既存 fixture でこのケースは使われていないため一旦 4 にしている。 */
       if (node->ret_struct_size > 0) return node->ret_struct_size;
-      /* ポインタ戻り値 (`int *g()`) は値が 8 バイト (`sizeof(g())`==8)。 */
-      {
-        node_func_t *fn = (node_func_t *)node;
-        if (fn->callee == NULL && fn->funcname &&
-            psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len).is_pointer)
-          return 8;
-      }
       if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
       if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
-      {
-        node_func_t *fn = (node_func_t *)node;
-        if (fn->callee == NULL && fn->funcname) {
-          psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
-          if (ret.token_kind == TK_LONG) return 8;
-        }
-      }
       return 4;
     }
     /* 算術/論理演算: ポインタ算術 (ptr ± int) なら 8、それ以外は
@@ -799,6 +825,9 @@ int ps_node_deref_size(node_t *node) {
      * 添字/ポインタ算術がスケールせず 1 バイト加算になる (miscompile/SIGSEGV)。
      * 配列へのポインタ戻り `int (*f())[N]` では pointee は配列 (N*base) なので行ストライドを返す。 */
     case ND_FUNCALL: {
+      psx_type_t *type = psx_node_get_type(node);
+      int typed = psx_type_deref_size(type);
+      if (typed > 0) return typed;
       int base = funcall_ret_pointee_size(node);
       node_func_t *fn = (node_func_t *)node;
       if (base == 0 && fn->callee) {
@@ -864,19 +893,8 @@ int ps_node_is_pointer(node_t *node) {
        * ポインタ - 整数 のみポインタ扱い。 */
       if (ps_node_is_pointer(node->lhs) && ps_node_is_pointer(node->rhs)) return 0;
       return ps_node_is_pointer(node->lhs);
-    /* 関数呼び出しの戻り値型がポインタ (`int *get(void); get()[0]`) なら、
-     * その式は配列/ポインタ。subscript チェックを通すために 1 を返す。 */
-    case ND_FUNCALL: {
-      node_func_t *fn = (node_func_t *)node;
-      if (fn->callee == NULL && fn->funcname) {
-        return psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len).is_pointer;
-      }
-      if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-                         fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
-        return PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT((node_mem_t *)fn->callee);
-      }
-      return 0;
-    }
+    case ND_FUNCALL:
+      return psx_type_is_pointer(psx_node_get_type(node));
     case ND_FUNCREF:
       /* 関数シンボルは関数ポインタ値。 */
       return 1;
@@ -910,15 +928,9 @@ int psx_node_pointer_qual_levels(node_t *node) {
       if (l > 0) return l;
       return psx_node_pointer_qual_levels(node->rhs);
     }
-    /* 多段ポインタ戻り `int **g()` の funcall: 段数 (>=2) を返し、build_unary_deref_node の
-     * pql>=2 分岐に乗せて `*g()` を「1 段減らしたポインタ」として組ませる。単段ポインタ戻り
-     * (`int *g()`) は従来どおり 0 を返し挙動を変えない (ps_node_is_pointer 側で別途ポインタ判定)。 */
     case ND_FUNCALL: {
-      node_func_t *fn = (node_func_t *)node;
-      if (fn->callee == NULL && fn->funcname) {
-        int lv = psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len);
-        if (lv >= 2) return lv;
-      }
+      psx_type_t *type = psx_node_get_type(node);
+      if (type && type->pointer_qual_levels >= 2) return type->pointer_qual_levels;
       return 0;
     }
     default:
@@ -950,13 +962,10 @@ int psx_node_base_deref_size(node_t *node) {
       if (l > 0) return l;
       return psx_node_base_deref_size(node->rhs);
     }
-    /* 多段ポインタ戻り `int **g()` の funcall: 最内基底型サイズ (int=4) を返す。
-     * build_unary_deref_node の pql>=2 分岐が最終 deref のロード幅に使う。 */
     case ND_FUNCALL: {
-      node_func_t *fn = (node_func_t *)node;
-      if (fn->callee == NULL && fn->funcname &&
-          psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len) >= 2)
-        return funcall_ret_pointee_size(node);
+      psx_type_t *type = psx_node_get_type(node);
+      if (type && type->pointer_qual_levels >= 2 && type->base_deref_size > 0)
+        return type->base_deref_size;
       return 0;
     }
     default:
@@ -996,6 +1005,9 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
     /* `double *g(); g()[i]` の subscript を fp load にするため、ポインタ戻り値の
      * pointee fp 種別を返す。 */
     case ND_FUNCALL: {
+      psx_type_t *type = psx_node_get_type(node);
+      if (type && type->pointee_fp_kind != TK_FLOAT_KIND_NONE)
+        return type->pointee_fp_kind;
       node_func_t *fn = (node_func_t *)node;
       if (fn->callee &&
           (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||

@@ -215,6 +215,10 @@ typedef struct {
   int is_funcptr;
   int funcptr_ret_is_pointer;
   int funcptr_ret_int_width;
+  int pointer_levels;
+  int pointee_const_qualified;
+  int pointee_volatile_qualified;
+  psx_ret_pointee_array_t pointee_array;
 } psx_function_ret_info_t;
 psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len);
 // 関数戻り値の浮動小数点種別 (float/double) を取得/設定する。

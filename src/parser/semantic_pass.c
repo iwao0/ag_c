@@ -432,7 +432,6 @@ static void semantic_warn_pointer_int_compare(node_t *lhs, node_t *rhs, const ch
   if (!p) return;
   node_num_t *num = (node_num_t *)n;
   if (num->val == 0) return;
-  if (num->from_pointer_cast) return;
   (void)p;
   diag_warn_tokf(DIAG_WARN_PARSER_POINTER_INTEGER_COMPARE, tok,
                  "ポインタを非ゼロ整数定数 (%lld) と '%s' で比較しています (C11 6.5.16.1)",

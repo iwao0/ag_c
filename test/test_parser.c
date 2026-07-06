@@ -477,8 +477,16 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(1, as_num(bitnot->rhs)->val);
 
     node_t *voidcast = parse_expr_input("(void)1");
-  ASSERT_EQ(ND_NUM, voidcast->kind);
-  ASSERT_EQ(1, as_num(voidcast)->val);
+  ASSERT_EQ(ND_CAST, voidcast->kind);
+  ASSERT_TRUE(psx_node_get_type(voidcast)->kind == PSX_TYPE_VOID);
+  ASSERT_EQ(ND_NUM, voidcast->lhs->kind);
+  ASSERT_EQ(1, as_num(voidcast->lhs)->val);
+
+    node_t *ptr_const_cast = parse_expr_input("(int *)0x1000");
+  ASSERT_EQ(ND_CAST, ptr_const_cast->kind);
+  ASSERT_TRUE(ps_node_is_pointer(ptr_const_cast));
+  ASSERT_EQ(ND_NUM, ptr_const_cast->lhs->kind);
+  ASSERT_EQ(0x1000, as_num(ptr_const_cast->lhs)->val);
 
     node_t *boolcast = parse_expr_input("(_Bool)3");
   ASSERT_EQ(ND_NE, boolcast->kind);
@@ -502,16 +510,20 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(21, as_num(post_dup_const_cast)->val);
 
     node_t *multi_ptr_qual_cast = parse_expr_input("(int const * volatile * restrict)0");
-  ASSERT_EQ(ND_NUM, multi_ptr_qual_cast->kind);
-  ASSERT_EQ(0, as_num(multi_ptr_qual_cast)->val);
+  ASSERT_EQ(ND_CAST, multi_ptr_qual_cast->kind);
+  ASSERT_TRUE(ps_node_is_pointer(multi_ptr_qual_cast));
+  ASSERT_EQ(ND_NUM, multi_ptr_qual_cast->lhs->kind);
+  ASSERT_EQ(0, as_num(multi_ptr_qual_cast->lhs)->val);
 
     node_t *unsigned_int_const_cast = parse_expr_input("(unsigned int const)13");
   ASSERT_EQ(ND_NUM, unsigned_int_const_cast->kind);
   ASSERT_EQ(13, as_num(unsigned_int_const_cast)->val);
 
     node_t *funcptr_const_cast = parse_expr_input("(int (*const)(int))0");
-  ASSERT_EQ(ND_NUM, funcptr_const_cast->kind);
-  ASSERT_EQ(0, as_num(funcptr_const_cast)->val);
+  ASSERT_EQ(ND_CAST, funcptr_const_cast->kind);
+  ASSERT_TRUE(ps_node_is_pointer(funcptr_const_cast));
+  ASSERT_EQ(ND_NUM, funcptr_const_cast->lhs->kind);
+  ASSERT_EQ(0, as_num(funcptr_const_cast->lhs)->val);
 
     node_t *long_long_cast = parse_expr_input("(long long)14");
   ASSERT_EQ(ND_NUM, long_long_cast->kind);
@@ -561,12 +573,16 @@ static void test_expr_unary_ops() {
   ASSERT_TRUE(!psx_node_integer_value_is_unsigned(long_signed_short_cast->lhs));
 
     node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
-  ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
-  ASSERT_EQ(0, as_num(restrict_ptr_cast)->val);
+  ASSERT_EQ(ND_CAST, restrict_ptr_cast->kind);
+  ASSERT_TRUE(ps_node_is_pointer(restrict_ptr_cast));
+  ASSERT_EQ(ND_NUM, restrict_ptr_cast->lhs->kind);
+  ASSERT_EQ(0, as_num(restrict_ptr_cast->lhs)->val);
 
     node_t *dup_restrict_ptr_cast = parse_expr_input("(restrict restrict int*)0");
-  ASSERT_EQ(ND_NUM, dup_restrict_ptr_cast->kind);
-  ASSERT_EQ(0, as_num(dup_restrict_ptr_cast)->val);
+  ASSERT_EQ(ND_CAST, dup_restrict_ptr_cast->kind);
+  ASSERT_TRUE(ps_node_is_pointer(dup_restrict_ptr_cast));
+  ASSERT_EQ(ND_NUM, dup_restrict_ptr_cast->lhs->kind);
+  ASSERT_EQ(0, as_num(dup_restrict_ptr_cast->lhs)->val);
 
     node_t *atomic_cast = parse_expr_input("(_Atomic int)9");
   ASSERT_EQ(ND_NUM, atomic_cast->kind);
@@ -930,7 +946,9 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, c5->kind);
 
     node_t *c6 = parse_expr_input("(_Atomic(int*))0");
-  ASSERT_EQ(ND_NUM, c6->kind);
+  ASSERT_EQ(ND_CAST, c6->kind);
+  ASSERT_TRUE(ps_node_is_pointer(c6));
+  ASSERT_EQ(ND_NUM, c6->lhs->kind);
 
     node_t *ci = parse_expr_input("(int)a");
   psx_type_t *ci_ty = psx_node_get_type(ci);
@@ -1340,6 +1358,28 @@ static void test_stmt_return() {
   ASSERT_EQ(8, ps_node_type_size(ret->lhs));
   ASSERT_EQ(ND_LVAR, ret->lhs->lhs->kind);
   ASSERT_TRUE(ps_node_is_pointer(ret->lhs->lhs));
+
+  parsed_code = parse_program_input("int deref_intptr_cast(long addr) { return *(int *)addr; }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_DEREF, ret->lhs->kind);
+  ASSERT_EQ(ND_CAST, ret->lhs->lhs->kind);
+  ASSERT_TRUE(ps_node_is_pointer(ret->lhs->lhs));
+  ASSERT_EQ(4, ps_node_deref_size(ret->lhs->lhs));
+  ASSERT_EQ(ND_LVAR, ret->lhs->lhs->lhs->kind);
+  ASSERT_TRUE(!ps_node_is_pointer(ret->lhs->lhs->lhs));
+
+  parsed_code = parse_program_input("double void_cast_keeps_operand_fp(double d) { (void)d; return d; }");
+  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  ASSERT_EQ(ND_CAST, body->body[0]->kind);
+  ASSERT_TRUE(psx_node_get_type(body->body[0])->kind == PSX_TYPE_VOID);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, body->body[0]->fp_kind);
+  ASSERT_EQ(ND_LVAR, body->body[0]->lhs->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, body->body[0]->lhs->fp_kind);
+  ret = body->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_LVAR, ret->lhs->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ret->lhs->fp_kind);
 
   parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
@@ -2025,18 +2065,22 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(long_add_ty != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, long_add_ty->kind);
   ASSERT_EQ(8, psx_type_sizeof(long_add_ty));
-  psx_type_t *ptr_add_ty = psx_node_get_type(ptr_add);
-  ASSERT_TRUE(ptr_add_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ptr_add_ty->kind);
-  ASSERT_EQ(4, psx_type_deref_size(ptr_add_ty));
-  psx_type_t *long_call_ty = psx_node_get_type(long_call);
-  ASSERT_TRUE(long_call_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, long_call_ty->kind);
-  ASSERT_EQ(8, psx_type_sizeof(long_call_ty));
-  psx_type_t *ptr_call_ty = psx_node_get_type(ptr_call);
-  ASSERT_TRUE(ptr_call_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, ptr_call_ty->kind);
-  ASSERT_EQ(4, psx_type_deref_size(ptr_call_ty));
+	  psx_type_t *ptr_add_ty = psx_node_get_type(ptr_add);
+	  ASSERT_TRUE(ptr_add_ty != NULL);
+	  ASSERT_EQ(PSX_TYPE_POINTER, ptr_add_ty->kind);
+	  ASSERT_EQ(4, psx_type_deref_size(ptr_add_ty));
+	  ASSERT_TRUE(long_call->type != NULL);
+	  psx_type_t *long_call_ty = psx_node_get_type(long_call);
+	  ASSERT_TRUE(long_call_ty != NULL);
+	  ASSERT_EQ(PSX_TYPE_INTEGER, long_call_ty->kind);
+	  ASSERT_EQ(8, psx_type_sizeof(long_call_ty));
+	  ASSERT_EQ(8, ps_node_type_size(long_call));
+	  ASSERT_TRUE(ptr_call->type != NULL);
+	  psx_type_t *ptr_call_ty = psx_node_get_type(ptr_call);
+	  ASSERT_TRUE(ptr_call_ty != NULL);
+	  ASSERT_EQ(PSX_TYPE_POINTER, ptr_call_ty->kind);
+	  ASSERT_EQ(4, psx_type_deref_size(ptr_call_ty));
+	  ASSERT_TRUE(ps_node_is_pointer(ptr_call));
 
   parsed_code = parse_program_input(
       "double __tm_sq(double x){ return x*x; } "
@@ -2057,16 +2101,19 @@ static void test_type_metadata_bridge() {
       indirect_double_call = n;
     if (callee_lvar && callee_lvar->len == 2 && strncmp(callee_lvar->name, "pf", 2) == 0)
       indirect_ptr_call = n;
-  }
-  psx_type_t *indirect_double_ty = psx_node_get_type(indirect_double_call);
-  ASSERT_TRUE(indirect_double_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_FLOAT, indirect_double_ty->kind);
-  ASSERT_EQ(8, psx_type_sizeof(indirect_double_ty));
-  psx_type_t *indirect_ptr_ty = psx_node_get_type(indirect_ptr_call);
-  ASSERT_TRUE(indirect_ptr_ty != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, indirect_ptr_ty->kind);
-  ASSERT_EQ(4, psx_type_deref_size(indirect_ptr_ty));
-}
+	  }
+	  ASSERT_TRUE(indirect_double_call->type != NULL);
+	  psx_type_t *indirect_double_ty = psx_node_get_type(indirect_double_call);
+	  ASSERT_TRUE(indirect_double_ty != NULL);
+	  ASSERT_EQ(PSX_TYPE_FLOAT, indirect_double_ty->kind);
+	  ASSERT_EQ(8, psx_type_sizeof(indirect_double_ty));
+	  ASSERT_TRUE(indirect_ptr_call->type != NULL);
+	  psx_type_t *indirect_ptr_ty = psx_node_get_type(indirect_ptr_call);
+	  ASSERT_TRUE(indirect_ptr_ty != NULL);
+	  ASSERT_EQ(PSX_TYPE_POINTER, indirect_ptr_ty->kind);
+	  ASSERT_EQ(4, psx_type_deref_size(indirect_ptr_ty));
+	  ASSERT_TRUE(ps_node_is_pointer(indirect_ptr_call));
+	}
 
 static void test_translation_unit_reset_static_local_state() {
   printf("test_translation_unit_reset_static_local_state...\n");
@@ -2256,6 +2303,7 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
+  expect_parse_fail("main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
   expect_parse_fail("int main(void) { int x = ({ continue; 0; }); return x; }");
@@ -2296,6 +2344,8 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
+  expect_parse_fail_with_message("main() { int x; int *p=&x; return *(void *)p; }",
+                                 "void* の deref はできません");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");

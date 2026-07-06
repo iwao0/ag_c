@@ -2,11 +2,12 @@
 // (clang -Wpointer-integer-compare 相当、C11 6.5.16.1)。
 //
 // equality() で warn_if_pointer_int_compare を呼び、片方が pointer で他方が
-// ND_NUM の非ゼロかつ from_pointer_cast=0 なら警告。
+// ND_NUM の非ゼロなら警告。明示 pointer cast は ND_CAST の pointer result なので
+// pointer-vs-pointer 比較として扱われる。
 //
 // 抑制条件:
 //   - `p == 0` (NULL ポインタ定数)
-//   - `p == (void*)5` (明示キャスト、from_pointer_cast=1)
+//   - `p == (void*)5` (明示キャスト、ND_CAST pointer result)
 //   - 両辺ポインタ、両辺整数 (符号比較や signed/unsigned は別経路で扱う)
 //
 // 本 fixture は合法形のみ。

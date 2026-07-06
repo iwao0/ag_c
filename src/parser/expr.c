@@ -2571,6 +2571,48 @@ static node_t *wrap_integer_cast_result(node_t *operand, psx_type_t *cast_type,
   return annotate_cast_type((node_t *)wrap, cast_type);
 }
 
+static node_t *wrap_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
+                                        token_kind_t type_kind,
+                                        token_kind_t cast_tag_kind,
+                                        char *cast_tag_name, int cast_tag_len,
+                                        int cast_elem_size,
+                                        int cast_is_unsigned) {
+  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+  wrap->base.kind = ND_CAST;
+  wrap->base.lhs = operand;
+  wrap->is_pointer = 1;
+  wrap->pointer_qual_levels = 1;
+  wrap->type_size = 8;
+  if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
+  if (type_kind == TK_VOID) {
+    wrap->pointee_is_void = 1;
+  } else if (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION) {
+    wrap->tag_kind = cast_tag_kind;
+    wrap->tag_name = cast_tag_name;
+    wrap->tag_len = cast_tag_len;
+    wrap->is_tag_pointer = 1;
+  } else if (type_kind == TK_FLOAT) {
+    wrap->pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
+    if (wrap->deref_size <= 0) wrap->deref_size = 4;
+  } else if (type_kind == TK_DOUBLE) {
+    wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
+    if (wrap->deref_size <= 0) wrap->deref_size = 8;
+  } else if (cast_is_unsigned || type_kind == TK_UNSIGNED) {
+    wrap->pointee_is_unsigned = 1;
+  } else if (type_kind == TK_BOOL) {
+    wrap->pointee_is_bool = 1;
+  }
+  return annotate_cast_type((node_t *)wrap, cast_type);
+}
+
+static node_t *wrap_void_cast_result(node_t *operand, psx_type_t *cast_type) {
+  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+  wrap->base.kind = ND_CAST;
+  wrap->base.lhs = operand;
+  wrap->type_size = 0;
+  return annotate_cast_type((node_t *)wrap, cast_type);
+}
+
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                           int cast_elem_size, tk_float_kind_t cast_fp_kind,
@@ -2628,54 +2670,33 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * 直接書き換えない)。これで `((struct V*)0)->b` のような offsetof 風や
      * `((struct V*)void_ptr)->m` が動く。 */
     if (is_pointer && (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION)) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_CAST;
-      wrap->base.lhs = operand;
-      wrap->tag_kind = cast_tag_kind;
-      wrap->tag_name = cast_tag_name;
-      wrap->tag_len = cast_tag_len;
-      wrap->is_tag_pointer = 1;
-      wrap->is_pointer = 1;
-      wrap->type_size = 8;
-      if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
-      wrap->pointer_qual_levels = 1;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_pointer_cast_result(operand, cast_type, type_kind,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_is_unsigned);
     }
     // `(float*)X` / `(double*)X` の場合、後段の `*` deref が FP load を出せる
     // よう pointee_fp_kind を保持する ND_CAST でラップする。
     if (is_pointer && (type_kind == TK_FLOAT || type_kind == TK_DOUBLE)) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_CAST;
-      wrap->base.lhs = operand;
-      wrap->pointee_fp_kind = (type_kind == TK_FLOAT) ? TK_FLOAT_KIND_FLOAT
-                                                     : TK_FLOAT_KIND_DOUBLE;
-      wrap->deref_size = (type_kind == TK_FLOAT) ? 4 : 8;
-      wrap->type_size = 8; // pointer 値そのもの
-      wrap->is_pointer = 1;
-      wrap->pointer_qual_levels = 1;
       /* base_deref_size は立てない: `(double*)X` の指す要素はスカラ double であって
        * 「ポインタ要素」ではない。立てると `((double*)X)[i]` の添字結果が誤って
        * ポインタ扱いされ E3064 になる (`*(double*)X` の deref は deref_size/pointee_fp_kind
        * のみ見るので影響なし)。 */
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_pointer_cast_result(operand, cast_type, type_kind,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_is_unsigned);
     }
     /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
      * が立っている場合、後続 deref エラーを誤発生させないよう ND_CAST で
      * ラップして pointee_is_void をクリアする。 */
     if (is_pointer && operand->kind == ND_LVAR &&
         ((node_lvar_t *)operand)->mem.pointee_is_void) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_CAST;
-      wrap->base.lhs = operand;
-      wrap->is_pointer = 1;
-      wrap->pointer_qual_levels = 1;
-      wrap->type_size = 8;
       /* キャスト先のポインタ要素サイズを反映する。これがないと `((int*)void_p)[i]` が
        * 既定の 8 バイトストライドで添字され誤った要素を読む。base_deref_size は立てない
        * (立てると「要素自体がポインタ」扱いになり subscript 結果が誤ってポインタ化する)。 */
-      if (cast_elem_size > 0) wrap->deref_size = (short)cast_elem_size;
       /* pointee_is_void は明示的にデフォルト (0) のままにする */
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_pointer_cast_result(operand, cast_type, type_kind,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_is_unsigned);
     }
     /* `(int *)x` / `(char *)x` など、スカラ整数型への (単段) ポインタキャスト:
      * 後段の deref / ポインタ算術が新しい要素サイズを使うよう ND_CAST で
@@ -2696,19 +2717,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (is_pointer && cast_elem_size > 0 &&
         operand_is_ptr_or_tag &&
         psx_node_pointer_qual_levels(operand) <= 1) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_CAST;
-      wrap->base.lhs = operand;
-      wrap->is_pointer = 1;
-      wrap->pointer_qual_levels = 1;
-      wrap->type_size = 8;
-      wrap->deref_size = (short)cast_elem_size;
       /* float/double ポインタへのキャストは pointee_fp_kind を立てる。これがないと
        * deref_size=8 が「8 バイトポインタ要素」と誤解され `((double*)&d)[i]` の結果が
        * ポインタ扱いされたり整数ロードになる (`*(double*)p` / creal のメモリ経由に必要)。 */
-      if (type_kind == TK_FLOAT) wrap->pointee_fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (type_kind == TK_DOUBLE) wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_pointer_cast_result(operand, cast_type, type_kind,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_is_unsigned);
     }
     /* (long)ptr のような pointer→integer cast は、operand の pointer 情報を
      * 壊さずに scalar 結果 wrapper として表す。 */
@@ -2716,12 +2730,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       return wrap_integer_cast_result(operand, cast_type, 8,
                                       cast_is_unsigned, cast_is_long_long);
     }
-    /* `(void*)0xdeadbeefL` のように整数定数をポインタ型へキャストすると、operand は
-     * folding で ND_NUM のまま返る (ND_CAST にラップされない経路)。後段の
-     * 「ポインタ変数の非ゼロ整数初期化」検査 (C11 6.5.16.1) が誤発火しないよう、
-     * NUM ノードにフラグを立てて「これはキャスト経由」と通知する。 */
-    if (is_pointer && operand->kind == ND_NUM) {
-      ((node_num_t *)operand)->from_pointer_cast = 1;
+    if (is_pointer) {
+      return wrap_pointer_cast_result(operand, cast_type, type_kind,
+                                      cast_tag_kind, cast_tag_name, cast_tag_len,
+                                      cast_elem_size, cast_is_unsigned);
     }
     return annotate_cast_type(operand, cast_type);
   }
@@ -2812,9 +2824,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
                               cast_type);
   }
   if (type_kind == TK_VOID) {
-    // 現状ASTでは専用ノードを持たず、既存ノードのまま評価値を捨てる文脈で利用する。
-    operand->fp_kind = TK_FLOAT_KIND_NONE;
-    return annotate_cast_type(operand, cast_type);
+    return wrap_void_cast_result(operand, cast_type);
   }
   if (type_kind == TK_SHORT || type_kind == TK_CHAR) {
     operand = wrap_fp_to_int_if_needed(operand);
@@ -3517,6 +3527,30 @@ static int node_pointee_is_unsigned(node_t *n) {
   }
 }
 
+static int node_pointee_is_void(node_t *n) {
+  if (!n) return 0;
+  switch (n->kind) {
+    case ND_LVAR: return as_lvar(n)->mem.pointee_is_void;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ADDR:
+    case ND_ASSIGN:
+    case ND_STRING:
+    case ND_CAST:
+      return ((node_mem_t *)n)->pointee_is_void;
+    case ND_ADD:
+    case ND_SUB:
+      return node_pointee_is_void(n->lhs) || node_pointee_is_void(n->rhs);
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return node_pointee_is_void(n->lhs);
+    default:
+      return 0;
+  }
+}
+
 // `*operand` を表す ND_DEREF ノードを構築する。tag/pointer-qual の伝播も行う。
 static node_t *build_unary_deref_node(node_t *operand) {
   /* C11 6.5.3.2p2: 単項 `*` のオペランドはポインタ型でなければならない。
@@ -3536,13 +3570,13 @@ static node_t *build_unary_deref_node(node_t *operand) {
                    "deref のオペランドはポインタ型でなければなりません (C11 6.5.3.2p2)");
     }
     /* void* の deref は不正 (pointee の型が不完全)。 */
-    int pointee_void = 0;
-    if (operand->kind == ND_LVAR) pointee_void = ((node_lvar_t *)operand)->mem.pointee_is_void;
-    else if (operand->kind == ND_GVAR) pointee_void = ((node_mem_t *)operand)->pointee_is_void;
-    if (pointee_void) {
+    if (node_pointee_is_void(operand)) {
       psx_diag_ctx(curtok(), "deref",
                    "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
     }
+  } else if (node_pointee_is_void(operand)) {
+    psx_diag_ctx(curtok(), "deref",
+                 "void* の deref はできません — キャストが必要です (C11 6.5.3.2)");
   }
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_DEREF;
@@ -3654,7 +3688,32 @@ static node_t *build_unary_deref_node(node_t *operand) {
        * load を skip し `(*f())[i]` が要素ストライドで添字できるよう、deref_size を要素サイズに
        * する (ローカル `int (*p)[N]` の `*p` と同じ)。 ds=N*elem を first_dim で割って elem を得る。 */
       node_func_t *fn = (node_func_t *)probe;
-      if (fn->callee == NULL && fn->funcname) {
+      psx_type_t *func_type = psx_node_get_type(probe);
+      if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
+        int inner = func_type->outer_stride;
+        int next = func_type->mid_stride;
+        if (inner <= 0) {
+          psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+              func_type->funcptr_ret_pointee_array_first_dim,
+              func_type->funcptr_ret_pointee_array_second_dim,
+              0);
+          int rowstride = ps_node_deref_size(probe);
+          psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, &next);
+        }
+        if (inner > 0) {
+          node->deref_size = (short)inner;
+          if (next > 0) node->inner_deref_size = (short)next;
+        }
+        if (func_type->base &&
+            (func_type->base->kind == PSX_TYPE_STRUCT ||
+             func_type->base->kind == PSX_TYPE_UNION)) {
+          node->tag_kind = func_type->base->tag_kind;
+          node->tag_name = func_type->base->tag_name;
+          node->tag_len = func_type->base->tag_len;
+          node->tag_scope_depth_p1 = func_type->base->tag_scope_depth_p1;
+          node->is_tag_pointer = 0;
+        }
+      } else if (fn->callee == NULL && fn->funcname) {
         psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
             psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
             psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len),
@@ -4041,7 +4100,18 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
      * (ローカル `int (*p)[N]` の inner_deref_size=elem と同じ。これがないと f()[i][j] が
      * 行ストライドのまま誤ロード→SIGSEGV)。 */
     node_func_t *fn = (node_func_t *)node;
-    if (fn->callee == NULL && fn->funcname &&
+    psx_type_t *func_type = psx_node_get_type(node);
+    if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
+      inner_ds = func_type->outer_stride;
+      next_ds = func_type->mid_stride;
+      if (inner_ds <= 0) {
+        psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
+            func_type->funcptr_ret_pointee_array_first_dim,
+            func_type->funcptr_ret_pointee_array_second_dim,
+            0);
+        psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
+      }
+    } else if (fn->callee == NULL && fn->funcname &&
         psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len) > 0) {
       psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
           psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
@@ -4678,6 +4748,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
     }
   }
   node->nargs = nargs;
+  psx_node_materialize_type((node_t *)node);
   return (node_t *)node;
 }
 
@@ -5048,6 +5119,7 @@ static node_t *build_unqualified_call(token_ident_t *tok, expr_parse_ctx_t *ctx)
       node->base.is_unsigned = 1;
     }
   }
+  psx_node_materialize_type((node_t *)node);
   return (node_t *)node;
 }
 

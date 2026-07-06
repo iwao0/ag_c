@@ -370,6 +370,12 @@ static long long eval_const_expr_decl(node_t *n, int *ok) {
   switch (n->kind) {
   case ND_NUM:
     return ((node_num_t *)n)->val;
+  case ND_CAST:
+    if (n->type && n->type->kind == PSX_TYPE_VOID) {
+      *ok = 0;
+      return 0;
+    }
+    return eval_const_expr_decl(n->lhs, ok);
   case ND_GVAR: {
     /* グローバル変数参照: 整数定数で初期化された const gvar は ICE として
      * 折り畳む (例: `const int A = 5; const int C = A * 7;`)。
@@ -3323,12 +3329,11 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   if (is_pointer) {
     psx_node_reject_const_qual_discard(lvar, init_expr);
     /* C11 6.5.16.1: ポインタ変数を非ゼロ整数定数で初期化するのは制約違反。
-     * NULL ポインタ定数 (整数 0) のみ例外として許可する。
-     * 例外: `(void*)0xdeadbeefL` のように明示キャスト経由でポインタ型に変換された
-     * 整数定数 (apply_cast が num->from_pointer_cast=1 を立てる) は許容。 */
+     * NULL ポインタ定数 (整数 0) のみ例外として許可する。明示ポインタ cast は
+     * ND_CAST の pointer result として表すため、この ND_NUM 検査には入らない。 */
     if (init_expr && init_expr->kind == ND_NUM) {
       node_num_t *num = (node_num_t *)init_expr;
-      if (num->val != 0 && !num->from_pointer_cast) {
+      if (num->val != 0) {
         psx_diag_ctx(curtok(), "init",
                      "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
                      num->val);

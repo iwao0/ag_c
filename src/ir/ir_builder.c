@@ -2661,11 +2661,13 @@ static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   /* Cast wrapper. Pointer casts mainly carry pointee metadata for later deref,
    * while scalar integer casts use the same node shape to keep the operand's
-   * original type intact and expose the cast result type. */
+   * original type intact and expose the cast result type. Void casts evaluate
+   * lhs for side effects and deliberately produce no value. */
   if (!node->lhs) return ir_val_none();
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   node_mem_t *cast = (node_mem_t *)node;
+  if (node->type && node->type->kind == PSX_TYPE_VOID) return ir_val_none();
   /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。
    * coerce_to_type は常に SEXT なので unsigned widen には使えず、ここで明示挿入する。
    * これにより `(long)u + (long)u` の二項演算が I64 で計算され (I32 ラップマスク回避)、

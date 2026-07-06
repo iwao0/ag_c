@@ -1194,6 +1194,11 @@ psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len) {
   info.is_funcptr = f->ret_is_funcptr ? 1 : 0;
   info.funcptr_ret_is_pointer = f->funcptr_ret_is_pointer ? 1 : 0;
   info.funcptr_ret_int_width = f->funcptr_ret_int_width;
+  info.pointer_levels = f->ret_pointer_levels;
+  info.pointee_const_qualified = f->ret_pointee_const ? 1 : 0;
+  info.pointee_volatile_qualified = f->ret_pointee_volatile ? 1 : 0;
+  info.pointee_array = psx_ret_pointee_array_make(
+      f->ret_pointee_array_first_dim, f->ret_pointee_array_second_dim, 0);
   return info;
 }
 

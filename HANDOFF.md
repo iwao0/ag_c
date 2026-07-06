@@ -1,15 +1,15 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き715: AST kind 名を ND_CAST へ改名）
+最終更新: 2026-07-06（続き718: ND_FUNCALL return type materialize と型メタデータ集約）
 
 ## 現状
 - 直近の部分確認:
   `./build/test_parser` =
   **pass**、
   `./build/test_e2e` =
-  **1193/1193 pass**、
+  **1196/1196 pass**、
   `./build/test_wasm32_e2e` =
-  **1188 compiled, 1188 executed**、
+  **1191 compiled, 1191 executed**、
   `make wasm32-wat-c-testsuite-scan` =
   **218/218 pass, fail 0**、
   `make wasm32-object-c-testsuite-scan` =
@@ -39,6 +39,92 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
 	  `git diff --check` = **green**、
 	  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き718: **`ND_FUNCALL` の戻り値型を construction 時に materialize し、直接/間接呼び出しの
+  pointer metadata 参照を型側へ寄せた**。
+  続き717後も `ps_node_is_pointer(ND_FUNCALL)` / `ps_node_type_size(ND_FUNCALL)` /
+  pointer qual/base deref は semantic ctx や callee の ad hoc metadata を都度見ており、
+  funcall ノード自身の `node->type` は戻り値型の source of truth になっていなかった。
+  根本対応として `parse_call_postfix()` と `build_unqualified_call()` の末尾で
+  `psx_node_materialize_type()` を呼び、`type_from_direct_funcall()` /
+  `type_from_indirect_funcall()` に direct/indirect の pointer return、pointer-to-array return、
+  FP pointee、tag pointee、multi pointer metadata を集約した。
+
+  途中で `type_from_indirect_funcall()` が自分自身の型サイズを `ps_node_type_size(fn)` で
+  求めて再帰 segfault したため、complex/int fallback 幅は `fp_kind` / funcptr metadata から
+  決める形に修正した。また local function pointer だけ
+  `funcptr_ret_pointee_array_*` を `node_mem_t` にコピーしていない漏れがあり、
+  `int (*(*fp)())[N]` が型生成で pointer-to-array return と認識されない問題を修正した。
+  `psx_function_ret_info_t` には pointer levels / pointee qualifiers /
+  pointee array dims を追加し、direct funcall の型生成でも同じ情報を使う。
+  direct `double (*f())[N]` は pointer return のため ret `fp_kind` が semantic ctx に保存されない
+  経路があり、`ret_token_kind == TK_FLOAT/TK_DOUBLE` から FP pointee を補完するようにした。
+  `build_unary_deref_node()` / subscript stride も materialized type の
+  `funcptr_ret_pointee_array_*` / `outer_stride` / `mid_stride` を先に見る。
+  これで `funcptr_return_pointer_to_array` の direct/local/global/struct member 経由や
+  direct `getd()[1][0]` の wasm stride が同じ型メタデータ経路に乗る。
+
+  regression は既存の
+  `funcptr_return_pointer_to_array.c` / `funcptr_return_pointer_to_2d_array.c` /
+  `func_return_pointer_to_array.c` / `funcptr_return_const_pointee.c` と parser の
+  `test_type_metadata_bridge()` で確認。parser test には direct/indirect funcall が
+  construction 後すでに `type != NULL` であること、long return size と pointer return 判定を追加した。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1196/1196 pass`、
+  `./build/test_wasm32_e2e` = `1191 compiled, 1191 executed`、
+  `git diff --check` = green。
+- 続き717: **`(void)expr` と整数定数→pointer cast を独立 wrapper 化**。
+  続き716後も `apply_cast()` には、cast 結果を独立ノードにせず既存 operand へ
+  後付けする互換経路が残っていた。`(void)expr` は operand の `fp_kind` を直接
+  `NONE` にして同じノードを返しており、`(void)d` が元の `double d` ノードの型メタ情報を
+  壊し得る形だった。根本対応として `wrap_void_cast_result()` を追加し、`ND_CAST` が
+  `PSX_TYPE_VOID` の result type を持つようにした。IR の `build_node_cast_wrapper()` は
+  void cast では lhs を評価して副作用を残し、値は `none` を返す。
+  併せて `(int *)0x1000` / `(void*)5` のような整数定数→pointer cast も、
+  `ND_NUM.from_pointer_cast` で例外通知する形をやめ、常に `ND_CAST(ND_NUM)` にした。
+  そのため `node_num_t::from_pointer_cast` を削除し、pointer 初期化・pointer/int 比較警告は
+  wrapper の pointer result 型を見て自然に判定する。`psx_decl_eval_const_int()` は
+  `ND_CAST` を unwrap できるようにし、グローバル `static int *gp = (int *)0x1000;` も
+  const init として扱える。
+  regression は parser test に `(void)1` / `(int *)0x1000` / pointer-qualified zero cast の
+  AST shape と、`double void_cast_keeps_operand_fp(double d) { (void)d; return d; }` で
+  operand の FP metadata が壊れないことを追加。実行 fixture
+  `test/fixtures/probes_found_bugs/void_cast_wrapper_side_effect.c` と
+  `test/fixtures/probes_found_bugs/pointer_constant_cast_wrapper.c` を追加し、
+  native/wasm32 e2e に登録した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1196/1196 pass`、
+  `./build/test_wasm32_e2e` = `1191 compiled, 1191 executed`、
+  `rg -n "from_pointer_cast" src test -g'*.c' -g'*.h'` = no matches、
+  `git diff --check` = green。
+- 続き716: **pointer cast result wrapper を共通化し、整数式→ポインタcast漏れを修正**。
+  続き715で `ND_CAST` の命名は揃ったが、`apply_cast()` 内にはまだ pointer cast 用の
+  `ND_CAST` 生成が複数箇所に散っており、条件から漏れた `is_pointer` cast は
+  `annotate_cast_type(operand, cast_type)` へ落ちていた。このため `(int *)addr` のような
+  整数式→ポインタcastでは、cast result が pointer wrapper にならず、元の `addr` が
+  scalar のまま後続 deref / pointer metadata 判定へ渡り得た。
+  根本対応として `wrap_pointer_cast_result()` を追加し、struct/union pointer、FP pointer、
+  void*、通常 scalar pointer、unsigned/bool pointee の metadata を同じ helper で設定するようにした。
+  既存の `void*` deref チェックも `ND_LVAR`/`ND_GVAR` 限定だったため、
+  `*(void *)p` のような cast wrapper 経由が漏れていた。`node_pointee_is_void()` を追加し、
+  `ND_CAST` や pointer arithmetic/inc/dec 経由でも void pointee を検出する形へ変えた。
+  regression は parser test に
+  `int deref_intptr_cast(long addr) { return *(int *)addr; }` の AST shape
+  (`ND_DEREF -> ND_CAST -> ND_LVAR`, cast result は pointer、operand は non-pointer) と、
+  `*(void *)p` の reject 診断を追加。実行 fixture
+  `test/fixtures/probes_found_bugs/int_expr_pointer_cast_deref.c` を追加し、
+  native/wasm32 e2e の静的一覧にも登録した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1194/1194 pass`、
+  `./build/test_wasm32_e2e` = `1189 compiled, 1189 executed`、
+  `git diff --check` = green。
 - 続き715: **AST kind 名を `ND_CAST` へ改名**。
   続き712-714で `ND_PTR_CAST` は pointer 専用ノードではなく明示 cast wrapper になったが、
   enum 名そのものが `ND_PTR_CAST` のままだった。コメントだけ直しても、分岐追加時に
