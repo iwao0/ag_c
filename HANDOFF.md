@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き721: function-pointer return chain の型投影）
+最終更新: 2026-07-06（続き722: _Generic 制御式型の型ヘルパー集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き722: **`_Generic` の制御式型推論から `node_mem_t` 直接参照を外し、型ヘルパー経由へ集約した**。
+  1から作り直すなら避けたい設計として「型情報の正本が `psx_type_t` と
+  `node_mem_t` / `lvar_t` 系に分散している」点を優先ターゲットにした。
+  今回は `_Generic` の `infer_generic_control_type()` が control node の
+  `is_pointer` / pointer qualifier mask / pointee const/volatile/unsigned /
+  long long / plain char / long double を直接 `mem` から読んでいた経路を、
+  `node_utils` の `psx_node_*_type()` / pointee helper 経由へ移した。
+
+  併せて `type_from_mem()` が pointer/array の pointee const/volatile を
+  `psx_type_t.base` に反映するようにし、`psx_type_t` を優先して読める情報を増やした。
+  まだ `node_utils` 内部では旧 metadata から型を合成する橋が残っているが、
+  `expr.c` の `_Generic` 側はその橋の詳細を知らない形になったため、
+  次は同じ方針で deref/subscript/member 周辺を細らせられる。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/test_e2e && ./build/test_e2e` = **1196/1196 pass**、
+  `make -j4 build/test_wasm32_e2e && ./build/test_wasm32_e2e` =
+  **1191 compiled, 1191 executed**。
 - 続き721: **関数が返した関数ポインタをさらに呼ぶ `go()()` 系も型投影で解決するようにした**。
   続き720後も `psx_node_get_tag_type(ND_FUNCALL)` には、
   direct call なら `psx_ctx_get_function_ret_info()`、indirect call なら callee の tag /

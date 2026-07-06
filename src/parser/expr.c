@@ -80,26 +80,7 @@ static void consume_local_type_quals(token_t **cur);
 static long long eval_const_expr_type_size(node_t *n, int *ok);
 
 static int expr_node_is_long_long_type(node_t *n) {
-  if (!n) return 0;
-  switch (n->kind) {
-    case ND_NUM:
-      return ((node_num_t *)n)->int_is_long_long ? 1 : 0;
-    case ND_LVAR:
-      return as_lvar(n)->mem.is_long_long ? 1 : 0;
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_CAST:
-      return ((node_mem_t *)n)->is_long_long ? 1 : 0;
-    case ND_TERNARY: {
-      node_ctrl_t *t = (node_ctrl_t *)n;
-      return expr_node_is_long_long_type(t->base.rhs) ||
-             expr_node_is_long_long_type(t->els);
-    }
-    default:
-      return n->is_long_long ? 1 : 0;
-  }
+  return psx_node_is_long_long_type(n);
 }
 static void apply_array_abstract_suffix_size(int *sz);
 static int is_type_name_start_token(token_t *t);
@@ -737,22 +718,13 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     /* long double は double に lowering され fp_kind=DOUBLE になるが _Generic では別型。
      * 宣言時に立てた is_long_double ビット (ノードへ伝播済み) を読んで区別し、
      * `long double:` 関連型と一致させる。 */
-    if (control->kind == ND_LVAR && as_lvar(control)->mem.is_long_double)
-      gt.is_long_double = 1;
-    else if ((control->kind == ND_GVAR || control->kind == ND_DEREF ||
-              control->kind == ND_ASSIGN || control->kind == ND_ADDR) &&
-             ((node_mem_t *)control)->is_long_double)
-      gt.is_long_double = 1;
+    gt.is_long_double = psx_node_is_long_double_type(control);
     return gt;
   }
   int ts = ps_node_type_size(control);
   int ds = ps_node_deref_size(control);
   int is_ptr = 0;
-  if (control->kind == ND_LVAR) is_ptr = ((node_lvar_t *)control)->mem.is_pointer;
-  else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
-           control->kind == ND_ADDR || control->kind == ND_STRING || control->kind == ND_CAST) {
-    is_ptr = ((node_mem_t *)control)->is_pointer;
-  }
+  is_ptr = ps_node_is_pointer(control);
   if (is_ptr) {
     gt.is_pointer = 1;
     gt.kind = TK_INT;
@@ -760,43 +732,18 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     gt.ptr_deref_size = ds;
     gt.ptr_base_deref_size = psx_node_base_deref_size(control);
     gt.ptr_pointee_fp_kind = psx_node_pointee_fp_kind(control);
-    if (control->kind == ND_LVAR) {
-      gt.ptr_const_mask = ((node_lvar_t *)control)->mem.pointer_const_qual_mask;
-      gt.ptr_volatile_mask = ((node_lvar_t *)control)->mem.pointer_volatile_qual_mask;
-      gt.ptr_pointee_unsigned = ((node_lvar_t *)control)->mem.is_unsigned;
-      gt.ptr_pointee_const = ((node_lvar_t *)control)->mem.is_const_qualified;
-      gt.ptr_pointee_volatile = ((node_lvar_t *)control)->mem.is_volatile_qualified;
-    } else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
-               control->kind == ND_ADDR || control->kind == ND_STRING) {
-      gt.ptr_const_mask = ((node_mem_t *)control)->pointer_const_qual_mask;
-      gt.ptr_volatile_mask = ((node_mem_t *)control)->pointer_volatile_qual_mask;
-      gt.ptr_pointee_unsigned = ((node_mem_t *)control)->is_unsigned;
-      gt.ptr_pointee_const = ((node_mem_t *)control)->is_const_qualified;
-      gt.ptr_pointee_volatile = ((node_mem_t *)control)->is_volatile_qualified;
-    }
+    gt.ptr_const_mask = psx_node_pointer_const_qual_mask(control);
+    gt.ptr_volatile_mask = psx_node_pointer_volatile_qual_mask(control);
+    gt.ptr_pointee_unsigned = psx_node_pointee_is_unsigned(control);
+    gt.ptr_pointee_const = psx_node_pointee_is_const_qualified(control);
+    gt.ptr_pointee_volatile = psx_node_pointee_is_volatile_qualified(control);
     return gt;
   }
-  if (control->kind == ND_LVAR) gt.is_unsigned = ((node_lvar_t *)control)->mem.is_unsigned;
-  else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
-           control->kind == ND_ADDR || control->kind == ND_STRING) {
-    gt.is_unsigned = ((node_mem_t *)control)->is_unsigned;
-  } else {
-    gt.is_unsigned = psx_node_conversion_value_is_unsigned(control);
-  }
+  gt.is_unsigned = psx_node_is_unsigned_type(control);
   gt.scalar_size = ts ? ts : 4;
-  /* 変数等の long long / plain char の型識別を制御式型へ反映 (_Generic 用)。
-   * ND_LVAR は ->mem、その他の mem ノードは直接キャストで読む (is_unsigned と同じ流儀)。 */
-  if (control->kind == ND_LVAR) {
-    if (as_lvar(control)->mem.is_long_long) gt.is_long_long = 1;
-    if (as_lvar(control)->mem.is_plain_char) gt.is_plain_char = 1;
-  } else if (control->kind == ND_GVAR || control->kind == ND_DEREF ||
-             control->kind == ND_ASSIGN || control->kind == ND_ADDR ||
-             control->kind == ND_CAST) {
-    if (((node_mem_t *)control)->is_long_long) gt.is_long_long = 1;
-    if (((node_mem_t *)control)->is_plain_char) gt.is_plain_char = 1;
-  } else if (expr_node_is_long_long_type(control)) {
-    gt.is_long_long = 1;
-  }
+  /* 変数等の long long / plain char の型識別を制御式型へ反映 (_Generic 用)。 */
+  if (expr_node_is_long_long_type(control)) gt.is_long_long = 1;
+  if (psx_node_is_plain_char_type(control)) gt.is_plain_char = 1;
   /* long/long long サフィックス付き整数リテラル (`42L`) は long (8B) として扱い、
    * _Generic の `long:` association と一致させる (int_is_long は parse_num_literal が立てる)。 */
   if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_long) {
@@ -804,9 +751,6 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     /* `0LL` は long long。long (8B) の association より long long を優先させるため
      * is_long_long を立てる (generic_type_matches が同サイズ整数で区別する)。 */
     if (((node_num_t *)control)->int_is_long_long) gt.is_long_long = 1;
-  }
-  if (control->kind == ND_NUM && ((node_num_t *)control)->int_is_plain_char) {
-    gt.is_plain_char = 1;
   }
   gt.kind = gt.is_unsigned ? TK_UNSIGNED : TK_INT;
   return gt;
