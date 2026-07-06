@@ -24,6 +24,7 @@ struct lvar_t {
   tk_float_kind_t fp_kind;
   tk_float_kind_t pointee_fp_kind;
   tk_float_kind_t funcptr_ret_fp_kind;
+  tk_float_kind_t funcptr_ret_pointee_fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;

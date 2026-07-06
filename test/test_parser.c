@@ -2121,6 +2121,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, ps_node_deref_size(indirect_double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             psx_node_pointee_fp_kind(indirect_double_ptr_to_array_call));
+  lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
+  ASSERT_TRUE(dpa_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dpa_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dpa_lvar->funcptr_ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
@@ -2131,6 +2135,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, dp_info.is_funcptr);
   psx_decl_funcptr_sig_t dp_sig = psx_ctx_tag_member_funcptr_sig(&dp_info);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.ret_pointee_fp_kind);
   ASSERT_TRUE(!psx_decl_funcptr_sig_has_payload(dp_sig));
   tag_member_info_t fp_info = {0};
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "fp", 2, &fp_info));
@@ -2138,6 +2143,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, fp_info.is_funcptr);
   psx_decl_funcptr_sig_t fp_sig = psx_ctx_tag_member_funcptr_sig(&fp_info);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_sig.ret_pointee_fp_kind);
   ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(fp_sig));
 
   parsed_code = parse_program_input(
@@ -2156,11 +2162,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(fp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->pointee_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->funcptr_ret_pointee_fp_kind);
   node_mem_t fp_mem = {0};
   psx_node_copy_funcptr_metadata_from_lvar(&fp_mem, fp_lvar);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&fp_mem));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.pointee_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_mem.funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.funcptr_ret_pointee_fp_kind);
   global_var_t *gdp = psx_find_global_var("__tm696_gdp", 11);
   ASSERT_TRUE(gdp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gdp->pointee_fp_kind);
@@ -2172,11 +2180,62 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(gfp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->pointee_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->funcptr_ret_pointee_fp_kind);
   node_mem_t gfp_mem = {0};
   psx_node_copy_funcptr_metadata_from_gvar(&gfp_mem, gfp);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&gfp_mem));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.pointee_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp_mem.funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.funcptr_ret_pointee_fp_kind);
+
+  parsed_code = parse_program_input(
+      "double __tm697_ret_d(void){ return 1.0; } "
+      "typedef double *TM697_DP; typedef double (*TM697_FP)(void); "
+      "int main(void){ double d; TM697_DP dp=&d; TM697_FP fp=__tm697_ret_d; "
+      "{ typedef double (*TM697_BFP)(void); TM697_BFP bfp=__tm697_ret_d; bfp(); } "
+      "return fp() == *dp; }");
+  (void)parsed_code;
+  psx_typedef_info_t td_dp = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TM697_DP", 8, &td_dp));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp.fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp.funcptr_ret_fp_kind);
+  ASSERT_TRUE(!psx_decl_funcptr_sig_has_payload(psx_ctx_typedef_funcptr_sig(&td_dp)));
+  psx_typedef_info_t td_fp = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TM697_FP", 8, &td_fp));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp.fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp.funcptr_ret_fp_kind);
+  psx_decl_funcptr_sig_t td_fp_sig = psx_ctx_typedef_funcptr_sig(&td_fp);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp_sig.ret_fp_kind);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(td_fp_sig));
+  fn = as_func(parsed_code[1]);
+  lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
+  ASSERT_TRUE(td_dp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp_lvar->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp_lvar->funcptr_ret_fp_kind);
+  lvar_t *td_fp_lvar = find_func_lvar(fn, "fp");
+  ASSERT_TRUE(td_fp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp_lvar->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp_lvar->funcptr_ret_pointee_fp_kind);
+  lvar_t *td_bfp_lvar = find_func_lvar(fn, "bfp");
+  ASSERT_TRUE(td_bfp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_bfp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->funcptr_ret_pointee_fp_kind);
+
+  parsed_code = parse_program_input(
+      "double __tm700_d; double *__tm700_ret_dp(void){ return &__tm700_d; } "
+      "double *(*__tm700_gfp)(void)=__tm700_ret_dp; "
+      "int main(void){ double *(*fp)(void)=__tm700_ret_dp; fp(); __tm700_gfp(); return 0; }");
+  fn = as_func(parsed_code[1]);
+  lvar_t *tm700_fp_lvar = find_func_lvar(fn, "fp");
+  ASSERT_TRUE(tm700_fp_lvar != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_fp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_fp_lvar->funcptr_ret_pointee_fp_kind);
+  global_var_t *tm700_gfp = psx_find_global_var("__tm700_gfp", 11);
+  ASSERT_TRUE(tm700_gfp != NULL);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_gfp->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_gfp->funcptr_ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "double __tm_sq(double x){ return x*x; } "
@@ -2251,6 +2310,19 @@ static void test_type_metadata_bridge() {
       "typedef struct FS *(*__tm_fty)(void); "
       "__tm_fty __tm_go(void){ return __tm_anon; } "
       "int main(void){ __tm_go()(); return 0; }");
+  node_func_t *go_def = as_func(parsed_code[2]);
+  psx_decl_funcptr_sig_t go_node_sig = psx_node_funcdef_ret_funcptr_sig(go_def);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(go_node_sig));
+  ASSERT_EQ(1, go_node_sig.ret_is_data_pointer);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, go_node_sig.ret_fp_kind);
+  psx_decl_funcptr_sig_t go_ctx_sig =
+      psx_ctx_get_function_ret_funcptr_sig("__tm_go", 7);
+  ASSERT_EQ(go_ctx_sig.ret_is_data_pointer, go_node_sig.ret_is_data_pointer);
+  ASSERT_EQ(go_ctx_sig.ret_fp_kind, go_node_sig.ret_fp_kind);
+  node_mem_t go_ret_mem = {0};
+  psx_node_store_funcptr_metadata(&go_ret_mem, go_node_sig);
+  ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&go_ret_mem));
+  ASSERT_EQ(1, go_ret_mem.funcptr_ret_is_data_pointer);
   fn = as_func(parsed_code[3]);
   body = as_block(fn->base.rhs);
   node_t *funcptr_chain_call = NULL;
@@ -2279,6 +2351,21 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, call_tag_len);
   ASSERT_TRUE(strncmp(call_tag_name, "FS", 2) == 0);
   ASSERT_EQ(1, call_is_tag_ptr);
+
+  parsed_code = parse_program_input(
+      "double __tm698_add(double x){ return x + 0.5; } "
+      "typedef double (*TM698_DF)(double); "
+      "TM698_DF __tm698_pick(void){ return __tm698_add; } "
+      "int main(void){ return __tm698_pick()(3.0) == 3.5; }");
+  node_func_t *pick_def = as_func(parsed_code[1]);
+  psx_decl_funcptr_sig_t pick_node_sig = psx_node_funcdef_ret_funcptr_sig(pick_def);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(pick_node_sig));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, pick_node_sig.ret_fp_kind);
+  ASSERT_EQ(2u, pick_node_sig.param_fp_mask);
+  psx_decl_funcptr_sig_t pick_ctx_sig =
+      psx_ctx_get_function_ret_funcptr_sig("__tm698_pick", 12);
+  ASSERT_EQ(pick_ctx_sig.ret_fp_kind, pick_node_sig.ret_fp_kind);
+  ASSERT_EQ(pick_ctx_sig.param_fp_mask, pick_node_sig.param_fp_mask);
 	}
 
 static void test_translation_unit_reset_static_local_state() {

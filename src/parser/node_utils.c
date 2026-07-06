@@ -32,6 +32,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_mem(const node_mem_t *mem) {
       .param_int_mask = mem->funcptr_param_int_mask,
       .ret_int_width = mem->funcptr_ret_int_width,
       .ret_fp_kind = (tk_float_kind_t)mem->funcptr_ret_fp_kind,
+      .ret_pointee_fp_kind = (tk_float_kind_t)mem->funcptr_ret_pointee_fp_kind,
       .ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(mem),
       .ret_is_void = mem->funcptr_ret_is_void,
       .ret_is_data_pointer = mem->funcptr_ret_is_data_pointer,
@@ -48,6 +49,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_type(const psx_type_t *type) {
       .param_int_mask = type->funcptr_param_int_mask,
       .ret_int_width = type->funcptr_ret_int_width,
       .ret_fp_kind = type->funcptr_ret_fp_kind,
+      .ret_pointee_fp_kind = type->funcptr_ret_pointee_fp_kind,
       .ret_pointee_array = psx_ret_pointee_array_make(
           type->funcptr_ret_pointee_array_first_dim,
           type->funcptr_ret_pointee_array_second_dim,
@@ -67,6 +69,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_lvar(const lvar_t *src) {
       .param_int_mask = src->funcptr_param_int_mask,
       .ret_int_width = src->funcptr_ret_int_width,
       .ret_fp_kind = src->funcptr_ret_fp_kind,
+      .ret_pointee_fp_kind = src->funcptr_ret_pointee_fp_kind,
       .ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(src),
       .ret_is_void = src->funcptr_ret_is_void,
       .ret_is_data_pointer = src->funcptr_ret_is_data_pointer,
@@ -83,6 +86,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_gvar(const global_var_t *src) {
       .param_int_mask = src->funcptr_param_int_mask,
       .ret_int_width = src->funcptr_ret_int_width,
       .ret_fp_kind = (tk_float_kind_t)src->funcptr_ret_fp_kind,
+      .ret_pointee_fp_kind = (tk_float_kind_t)src->funcptr_ret_pointee_fp_kind,
       .ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(src),
       .ret_is_void = src->funcptr_ret_is_void,
       .ret_is_data_pointer = src->funcptr_ret_is_data_pointer,
@@ -103,6 +107,7 @@ static void node_mem_store_funcptr_signature(node_mem_t *dst,
   dst->funcptr_param_int_mask = sig->param_int_mask;
   dst->funcptr_ret_int_width = sig->ret_int_width;
   dst->funcptr_ret_fp_kind = sig->ret_fp_kind;
+  dst->funcptr_ret_pointee_fp_kind = sig->ret_pointee_fp_kind;
   dst->is_variadic_funcptr = sig->is_variadic ? 1 : 0;
   dst->funcptr_nargs_fixed = sig->nargs_fixed;
   dst->funcptr_ret_is_void = sig->ret_is_void ? 1 : 0;
@@ -111,6 +116,20 @@ static void node_mem_store_funcptr_signature(node_mem_t *dst,
   dst->funcptr_ret_pointee_array_first_dim = (short)sig->ret_pointee_array.first_dim;
   dst->funcptr_ret_pointee_array_second_dim = (short)sig->ret_pointee_array.second_dim;
   dst->funcptr_ret_pointee_array_elem_size = (short)sig->ret_pointee_array.elem_size;
+}
+
+void psx_node_store_funcptr_metadata(node_mem_t *dst, psx_decl_funcptr_sig_t sig) {
+  node_mem_store_funcptr_signature(dst, &sig);
+}
+
+psx_decl_funcptr_sig_t psx_node_funcdef_ret_funcptr_sig(const node_func_t *fn) {
+  if (!fn) return (psx_decl_funcptr_sig_t){0};
+  return fn->ret_funcptr_sig;
+}
+
+void psx_node_funcdef_set_ret_funcptr_sig(node_func_t *fn, psx_decl_funcptr_sig_t sig) {
+  if (!fn) return;
+  fn->ret_funcptr_sig = sig;
 }
 
 static void node_mem_merge_funcptr_signature(node_mem_t *dst,
@@ -125,6 +144,9 @@ static void node_mem_merge_funcptr_signature(node_mem_t *dst,
     dst->funcptr_ret_int_width = sig->ret_int_width;
   if (dst->funcptr_ret_fp_kind == TK_FLOAT_KIND_NONE && sig->ret_fp_kind != TK_FLOAT_KIND_NONE)
     dst->funcptr_ret_fp_kind = sig->ret_fp_kind;
+  if (dst->funcptr_ret_pointee_fp_kind == TK_FLOAT_KIND_NONE &&
+      sig->ret_pointee_fp_kind != TK_FLOAT_KIND_NONE)
+    dst->funcptr_ret_pointee_fp_kind = sig->ret_pointee_fp_kind;
   if (!dst->funcptr_nargs_fixed && sig->nargs_fixed)
     dst->funcptr_nargs_fixed = sig->nargs_fixed;
   if (copy_variadic && sig->is_variadic) dst->is_variadic_funcptr = 1;
@@ -156,6 +178,7 @@ static void type_copy_funcptr_metadata(psx_type_t *type, const node_mem_t *mem) 
   type->funcptr_param_int_mask = sig.param_int_mask;
   type->funcptr_ret_int_width = sig.ret_int_width;
   type->funcptr_ret_fp_kind = sig.ret_fp_kind;
+  type->funcptr_ret_pointee_fp_kind = sig.ret_pointee_fp_kind;
   type->funcptr_ret_pointee_array_first_dim = (short)sig.ret_pointee_array.first_dim;
   type->funcptr_ret_pointee_array_second_dim = (short)sig.ret_pointee_array.second_dim;
   type->funcptr_ret_pointee_array_elem_size = (short)sig.ret_pointee_array.elem_size;
@@ -510,6 +533,7 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
     type->funcptr_param_int_mask = ret.funcptr_sig.param_int_mask;
     type->funcptr_nargs_fixed = ret.funcptr_sig.nargs_fixed;
     type->funcptr_ret_fp_kind = ret.funcptr_sig.ret_fp_kind;
+    type->funcptr_ret_pointee_fp_kind = ret.funcptr_sig.ret_pointee_fp_kind;
   }
   PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(type, ret_array);
   if (psx_ret_pointee_array_has_dims(ret_array)) {
@@ -599,9 +623,9 @@ static psx_type_t *type_from_funcptr_callee_type(node_func_t *fn) {
       base = psx_type_new_tag(tag_kind, tag_name, tag_len,
                               callee_type->base ? callee_type->base->tag_scope_depth_p1 : 0,
                               size);
-    } else if (callee_type->funcptr_ret_fp_kind != TK_FLOAT_KIND_NONE) {
-      base = psx_type_new_float(callee_type->funcptr_ret_fp_kind,
-                                callee_type->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+    } else if (callee_type->funcptr_ret_pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+      base = psx_type_new_float(callee_type->funcptr_ret_pointee_fp_kind,
+                                callee_type->funcptr_ret_pointee_fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8);
     } else {
       int base_size = callee_type->base_deref_size > 0
                           ? callee_type->base_deref_size
@@ -670,8 +694,8 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
       cm->funcptr_ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_array);
   if (returns_data_pointer) {
     tk_float_kind_t ret_pointee_fp = (tk_float_kind_t)fn->base.fp_kind;
-    if (ret_pointee_fp == TK_FLOAT_KIND_NONE && psx_ret_pointee_array_has_dims(ret_array))
-      ret_pointee_fp = (tk_float_kind_t)cm->funcptr_ret_fp_kind;
+    if (ret_pointee_fp == TK_FLOAT_KIND_NONE)
+      ret_pointee_fp = (tk_float_kind_t)cm->funcptr_ret_pointee_fp_kind;
     psx_type_t *base = NULL;
     if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
       int size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);

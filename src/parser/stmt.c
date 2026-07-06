@@ -310,6 +310,7 @@ static void parse_typedef_decl(void) {
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
     if (decl_state.has_func_suffix && (is_ptr || decl_state.ptr_in_paren)) {
       _ti.is_funcptr = 1;
+      _ti.fp_kind = TK_FLOAT_KIND_NONE;
       psx_decl_funcptr_sig_t sig = psx_decl_make_funcptr_sig_from_kind(
           &decl_state.func_suffix_sig, base_kind, fp_kind, 0, 0,
           type_state.type_spec.is_complex, (psx_ret_pointee_array_t){0});

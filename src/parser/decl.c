@@ -572,6 +572,7 @@ unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_poin
 int psx_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig) {
   return sig.param_fp_mask || sig.param_int_mask || sig.ret_int_width ||
          sig.ret_fp_kind != TK_FLOAT_KIND_NONE ||
+         sig.ret_pointee_fp_kind != TK_FLOAT_KIND_NONE ||
          sig.ret_is_void || sig.ret_is_data_pointer || sig.ret_is_funcptr ||
          sig.ret_is_complex || sig.is_variadic ||
          psx_ret_pointee_array_has_dims(sig.ret_pointee_array);
@@ -593,8 +594,11 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *
     sig.nargs_fixed = (short)suffix_sig->nargs_fixed;
   }
   sig.ret_int_width = ret_int_width;
-  sig.ret_fp_kind = ret_fp_kind;
   sig.ret_pointee_array = ret_pointee_array;
+  int ret_is_pointer_like =
+      ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_pointee_array);
+  sig.ret_fp_kind = ret_is_pointer_like ? TK_FLOAT_KIND_NONE : ret_fp_kind;
+  sig.ret_pointee_fp_kind = ret_is_pointer_like ? ret_fp_kind : TK_FLOAT_KIND_NONE;
   sig.ret_is_void = (ret_is_void && !ret_is_data_pointer) ? 1 : 0;
   sig.ret_is_data_pointer = ret_is_data_pointer ? 1 : 0;
   sig.ret_is_funcptr = ret_is_funcptr ? 1 : 0;
@@ -3309,6 +3313,7 @@ void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
   var->funcptr_param_int_mask = sig->param_int_mask;
   var->funcptr_ret_int_width = sig->ret_int_width;
   var->funcptr_ret_fp_kind = sig->ret_fp_kind;
+  var->funcptr_ret_pointee_fp_kind = sig->ret_pointee_fp_kind;
   var->funcptr_ret_is_void = sig->ret_is_void ? 1 : 0;
   var->funcptr_ret_is_data_pointer = sig->ret_is_data_pointer ? 1 : 0;
   var->funcptr_ret_is_pointer = sig->ret_is_funcptr ? 1 : 0;
@@ -3429,6 +3434,7 @@ void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
   gv->funcptr_param_int_mask = sig->param_int_mask;
   gv->funcptr_ret_int_width = sig->ret_int_width;
   gv->funcptr_ret_fp_kind = (unsigned char)sig->ret_fp_kind;
+  gv->funcptr_ret_pointee_fp_kind = (unsigned char)sig->ret_pointee_fp_kind;
   gv->funcptr_ret_is_void = sig->ret_is_void ? 1 : 0;
   gv->funcptr_ret_is_data_pointer = sig->ret_is_data_pointer ? 1 : 0;
   gv->funcptr_ret_is_complex = sig->ret_is_complex ? 1 : 0;
@@ -5428,6 +5434,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
   if (typedef_is_funcptr) {
     _ti.is_funcptr = 1;
+    _ti.fp_kind = TK_FLOAT_KIND_NONE;
     int ret_is_data_pointer = (paren_array_mul == 0 && !td_base_is_void &&
                                decl_state && decl_state->had_paren_group &&
                                decl_state->func_suffix_count == 1 &&

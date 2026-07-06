@@ -2827,6 +2827,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
   if (head.has_func_suffix && (head.is_ptr || head.ptr_in_paren_group)) {
     _ti.is_funcptr = 1;
+    _ti.fp_kind = TK_FLOAT_KIND_NONE;
     psx_decl_funcptr_sig_t sig =
         psx_decl_make_funcptr_sig_from_kind(
             &head.func_suffix_sig, spec->base_kind, spec->fp_kind,
@@ -3023,7 +3024,14 @@ static void register_function_signature(const psx_function_signature_t *sig) {
   }
   if (sig->ret_is_funcptr) {
     psx_decl_funcptr_sig_t funcptr_sig = sig->funcptr_sig;
-    if (funcptr_sig.ret_fp_kind == TK_FLOAT_KIND_NONE) {
+    int funcptr_returns_pointer =
+        funcptr_sig.ret_is_data_pointer ||
+        psx_ret_pointee_array_has_dims(funcptr_sig.ret_pointee_array);
+    if (funcptr_returns_pointer &&
+        funcptr_sig.ret_pointee_fp_kind == TK_FLOAT_KIND_NONE) {
+      funcptr_sig.ret_pointee_fp_kind = sig->ret_fp_kind;
+    } else if (!funcptr_returns_pointer &&
+               funcptr_sig.ret_fp_kind == TK_FLOAT_KIND_NONE) {
       funcptr_sig.ret_fp_kind = sig->ret_fp_kind;
     }
     int funcptr_ret_int_width = funcptr_sig.ret_int_width
@@ -3033,21 +3041,7 @@ static void register_function_signature(const psx_function_signature_t *sig) {
                                           funcptr_sig.ret_fp_kind);
     funcptr_sig.ret_int_width = (unsigned char)funcptr_ret_int_width;
     psx_ctx_set_function_ret_funcptr_sig(tok->str, tok->len, 1, funcptr_sig);
-    if (sig->func_node) {
-      sig->func_node->ret_funcptr_param_fp_mask = funcptr_sig.param_fp_mask;
-      sig->func_node->ret_funcptr_param_int_mask = funcptr_sig.param_int_mask;
-      sig->func_node->ret_funcptr_ret_int_width = funcptr_sig.ret_int_width;
-      sig->func_node->ret_funcptr_ret_is_void = funcptr_sig.ret_is_void ? 1 : 0;
-      sig->func_node->ret_funcptr_ret_is_data_pointer =
-          funcptr_sig.ret_is_data_pointer ? 1 : 0;
-      sig->func_node->ret_funcptr_ret_is_complex = funcptr_sig.ret_is_complex ? 1 : 0;
-      sig->func_node->ret_funcptr_is_variadic = funcptr_sig.is_variadic ? 1 : 0;
-      sig->func_node->ret_funcptr_nargs_fixed = (short)funcptr_sig.nargs_fixed;
-      if (funcptr_sig.ret_fp_kind != TK_FLOAT_KIND_NONE) {
-        sig->func_node->ret_funcptr_pointee_fp_kind =
-            (unsigned char)funcptr_sig.ret_fp_kind;
-      }
-    }
+    if (sig->func_node) psx_node_funcdef_set_ret_funcptr_sig(sig->func_node, funcptr_sig);
   }
 }
 

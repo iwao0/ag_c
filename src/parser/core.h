@@ -53,6 +53,7 @@ typedef struct {
   unsigned short param_int_mask;
   unsigned char ret_int_width;
   tk_float_kind_t ret_fp_kind;
+  tk_float_kind_t ret_pointee_fp_kind;
   psx_ret_pointee_array_t ret_pointee_array;
   int ret_is_void;
   int ret_is_data_pointer;

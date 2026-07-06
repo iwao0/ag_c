@@ -13360,3 +13360,149 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `git diff --check` = **green**
   - `rg -n "ret_fp_kind = .*pointee_fp_kind|funcptr_ret_fp_kind|pointee_fp_kind.*funcptr|funcptr.*pointee_fp_kind|psx_node_pointee_fp_kind\\(callee\\)" src/parser src/ir src/arch test/test_parser.c`
     = **旧 ret_fp_kind <- pointee_fp_kind / callee pointee FP 直読は no matches、追加した専用 field と既存 legacy 名のみ match**
+
+### このセッション（続き697）: typedef funcptr 戻り FP を typedef fp_kind から分離
+- 見つかった浅い箇所:
+  - 続き695/696で tag member と node/lvar/gvar/type は分離したが、`psx_typedef_info_t` と
+    内部 `typedef_name_t` はまだ `fp_kind` を通常の FP typedef と function pointer 戻り FP の
+    両方に使っていた。
+  - `psx_ctx_typedef_funcptr_sig()` / `typedef_record_funcptr_sig()` が `is_funcptr` のときだけ
+    `fp_kind` を `ret_fp_kind` として読んでおり、typedef だけ tag member と同じ二重用途が残っていた。
+- 根本対応:
+  - `psx_typedef_info_t` と内部 `typedef_name_t` に `funcptr_ret_fp_kind` を追加した。
+  - typedef の function pointer signature helper は `funcptr_ret_fp_kind` を読む/書くように変更した。
+  - top-level typedef / local typedef / statement typedef の function pointer 登録時は通常の
+    `fp_kind` を `TK_FLOAT_KIND_NONE` に落とし、戻り FP は `funcptr_ret_fp_kind` にだけ保持するようにした。
+  - 通常の `typedef double *DP;` の pointee FP は従来通り `fp_kind` に残し、
+    `typedef double (*FP)(void);` とは metadata 上で分離した。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `TM697_DP` / `TM697_FP` / block local `TM697_BFP`
+    regression を追加した。
+  - `TM697_DP` は `fp_kind=DOUBLE` かつ `funcptr_ret_fp_kind=NONE`、
+    `TM697_FP` は `fp_kind=NONE` かつ `funcptr_ret_fp_kind=DOUBLE` として見えることを確認した。
+  - typedef 経由で作った local の `double *` と function pointer local でも
+    `pointee_fp_kind` / `funcptr_ret_fp_kind` が分離していることを確認した。
+- 注意:
+  - `node_func_t.ret_funcptr_pointee_fp_kind` はまだ legacy 名として残る。
+  - `ret_fp_kind` は scalar FP return と data-pointer return の pointee FP を同じ field で表すため、
+    function pointer return signature の意味分割はまだ次の候補。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n "ret_fp_kind = .*fp_kind|funcptr_ret_fp_kind|psx_ctx_typedef_set_funcptr_sig\\(&_ti|_ti\\.fp_kind = TK_FLOAT_KIND_NONE|typedef_record_funcptr_sig|psx_ctx_typedef_funcptr_sig" src/parser test/test_parser.c`
+    = **typedef funcptr signature は専用 field 経由。通常関数戻り型生成の `ret_fp_kind = spec/fp_kind` は残る**
+
+### このセッション（続き698）: function return funcptr signature の AST/IR 境界を helper 化
+- 見つかった浅い箇所:
+  - 関数シンボル側は `psx_decl_funcptr_sig_t funcptr_sig` を持っているが、`node_func_t` は
+    `ret_funcptr_param_fp_mask` / `ret_funcptr_ret_int_width` /
+    `ret_funcptr_pointee_fp_kind` などの split field を直接持っていた。
+  - `parser.c` が function pointer return signature を `node_func_t` の各 field へ直接代入し、
+    `ir_builder.c` も同じ split field を直接読んで `node_mem_t` へ詰め替えていた。
+  - そのため function return funcptr だけ、signature の正本が semantic_ctx /
+    AST split field / IR 詰め替えの 3 箇所に見えていた。
+- 根本対応:
+  - `node_utils` に `psx_node_funcdef_ret_funcptr_sig()` /
+    `psx_node_funcdef_set_ret_funcptr_sig()` / `psx_node_store_funcptr_metadata()` を追加した。
+  - `parser.c` は `node_func_t` の split field へ直接代入せず、
+    `psx_node_funcdef_set_ret_funcptr_sig()` 経由で同期するようにした。
+  - `ir_builder.c` は `node_func_t` の split field を直接読まず、
+    `psx_node_funcdef_ret_funcptr_sig()` と `psx_node_store_funcptr_metadata()` で
+    `node_mem_t` へ変換するようにした。
+  - 旧 `node_func_t.ret_funcptr_*` field 自体は ABI 互換として残したが、参照箇所は
+    `ast.h` と `node_utils.c` の helper 内だけに閉じた。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `__tm_go` の function-pointer-return signature
+    helper 確認を追加した。
+  - `__tm698_pick` regression を追加し、`double (*pick(void))(double)` の戻り FP と
+    double 仮引数 mask が AST helper と semantic_ctx で一致することを確認した。
+- 注意:
+  - `node_func_t.ret_funcptr_pointee_fp_kind` など legacy field 名はまだ構造体上に残る。
+    次の候補は `node_func_t` 自体を `psx_decl_funcptr_sig_t` field に置き換え、
+    legacy split field を削除すること。
+  - `ret_fp_kind` が scalar FP return と data-pointer return の pointee FP を兼ねる問題も未完。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n "ret_funcptr_param_fp_mask|ret_funcptr_param_int_mask|ret_funcptr_ret_int_width|ret_funcptr_ret_is_void|ret_funcptr_ret_is_data_pointer|ret_funcptr_ret_is_complex|ret_funcptr_is_variadic|ret_funcptr_pointee_fp_kind|ret_funcptr_nargs_fixed" src/parser src/ir test/test_parser.c`
+    = **`ast.h` と `node_utils.c` helper 内のみ match**
+
+### このセッション（続き699）: node_func_t の function-return funcptr split field を削除
+- 見つかった浅い箇所:
+  - 続き698で `node_func_t.ret_funcptr_*` の読み書きは `node_utils` helper に閉じたが、
+    `node_func_t` 自体にはまだ `ret_funcptr_param_fp_mask` /
+    `ret_funcptr_ret_int_width` / `ret_funcptr_pointee_fp_kind` などの split field が残っていた。
+  - helper 化だけだと、構造体 layout 上はまだ function-return function pointer signature の正本が
+    `psx_decl_funcptr_sig_t` と split field の二重表現に見える状態だった。
+- 根本対応:
+  - `node_func_t` に `psx_decl_funcptr_sig_t ret_funcptr_sig` を持たせ、旧 `ret_funcptr_*`
+    split field 群を削除した。
+  - `psx_node_funcdef_ret_funcptr_sig()` / `psx_node_funcdef_set_ret_funcptr_sig()` は
+    split field の組み立て/分解ではなく、`ret_funcptr_sig` をそのまま読み書きするようにした。
+  - `ast.h` は `core.h` を include し、AST node が function pointer signature の正本型を
+    直接保持できるようにした。
+- 追加テスト:
+  - 続き698で追加した `__tm_go` / `__tm698_pick` regression が、`node_func_t.ret_funcptr_sig`
+    直接保持でも semantic_ctx と一致することを継続確認している。
+- 注意:
+  - function pointer signature 内の `ret_fp_kind` は、scalar FP return と data-pointer return の
+    pointee FP を兼ねている。この意味分割はまだ次の候補。
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` などの互換 field はまだ残るが、
+    function-return funcptr の AST 表現は `psx_decl_funcptr_sig_t` に一本化された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n "ret_funcptr_param_fp_mask|ret_funcptr_param_int_mask|ret_funcptr_ret_int_width|ret_funcptr_ret_is_void|ret_funcptr_ret_is_data_pointer|ret_funcptr_ret_is_complex|ret_funcptr_is_variadic|ret_funcptr_pointee_fp_kind|ret_funcptr_nargs_fixed" src/parser src/ir test/test_parser.c`
+    = **no matches**
+  - `rg -n "ret_funcptr_sig|psx_node_funcdef_ret_funcptr_sig|psx_node_funcdef_set_ret_funcptr_sig|psx_node_store_funcptr_metadata" src/parser src/ir test/test_parser.c`
+    = **AST は `ret_funcptr_sig`、parser/IR は helper 経由で match**
+
+### このセッション（続き700）: function pointer signature の戻り FP と戻りポインタ pointee FP を分離
+- 見つかった浅い箇所:
+  - `psx_decl_funcptr_sig_t.ret_fp_kind` が、`double (*fp)(void)` のような scalar FP return と、
+    `double *(*fp)(void)` / `double (*(*fp)(void))[2]` のような data-pointer / pointer-to-array return の
+    pointee FP の両方を表していた。
+  - 続き699で AST 側の正本は `psx_decl_funcptr_sig_t` に寄せたが、その中の field 名と意味が
+    まだ二重用途だったため、型情報の正本としては曖昧さが残っていた。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t` に `ret_pointee_fp_kind` を追加し、`ret_fp_kind` は scalar FP return 専用、
+    `ret_pointee_fp_kind` は戻りポインタの pointee FP 専用に分けた。
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` / tag member / typedef の
+    function pointer metadata に `funcptr_ret_pointee_fp_kind` を追加した。
+  - `psx_decl_make_funcptr_sig()` で data-pointer / pointer-to-array return の場合は
+    `ret_fp_kind=NONE`、`ret_pointee_fp_kind=<base fp>` に正規化するようにした。
+  - `node_utils` の mem/type/lvar/gvar 変換、merge、type copy、indirect call type reconstruction を
+    新 field 経由に更新した。
+  - `parser.c` の function-return funcptr 登録時の補完も、戻り値が pointer-like なら
+    `ret_pointee_fp_kind`、scalar なら `ret_fp_kind` に入れるよう分岐した。
+  - typedef duplicate 判定でも `ret_pointee_fp_kind` を比較対象に加えた。
+- 追加テスト:
+  - `test_type_metadata_bridge()` の pointer-to-array function pointer local `dpa` に、
+    `funcptr_ret_fp_kind=NONE` / `funcptr_ret_pointee_fp_kind=DOUBLE` の検査を追加した。
+  - `double *(*fp)(void)` / `double *(*__tm700_gfp)(void)` regression を追加し、
+    local/global とも戻りポインタ pointee FP が専用 field に入ることを確認した。
+  - scalar function pointer 側は `funcptr_ret_fp_kind=DOUBLE` / `funcptr_ret_pointee_fp_kind=NONE`
+    のまま維持されることを追加確認した。
+- 注意:
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` はまだ split metadata field を持つ。
+    次の候補は storage 側も `psx_decl_funcptr_sig_t` を直接保持する方向へ寄せること。
+  - IR 側は scalar return の呼び出し ABI に `funcptr_ret_fp_kind` を使うため、pointee field は
+    parser/type reconstruction 側に閉じている。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**

@@ -1413,24 +1413,12 @@ static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call,
 }
 
 static int func_has_return_funcptr_sig(const node_func_t *fn) {
-  return fn && (fn->ret_funcptr_param_fp_mask || fn->ret_funcptr_param_int_mask ||
-                fn->ret_funcptr_ret_int_width || fn->ret_funcptr_ret_is_void ||
-                fn->ret_funcptr_ret_is_data_pointer || fn->ret_funcptr_ret_is_complex ||
-                fn->ret_funcptr_is_variadic ||
-                fn->ret_funcptr_pointee_fp_kind != TK_FLOAT_KIND_NONE);
+  return psx_decl_funcptr_sig_has_payload(psx_node_funcdef_ret_funcptr_sig(fn));
 }
 
 static void fill_return_funcptr_sig(node_mem_t *m, const node_func_t *fn) {
   if (!m || !fn) return;
-  m->funcptr_param_fp_mask = fn->ret_funcptr_param_fp_mask;
-  m->funcptr_param_int_mask = fn->ret_funcptr_param_int_mask;
-  m->funcptr_ret_int_width = fn->ret_funcptr_ret_int_width;
-  m->funcptr_ret_is_void = fn->ret_funcptr_ret_is_void ? 1 : 0;
-  m->funcptr_ret_is_data_pointer = fn->ret_funcptr_ret_is_data_pointer ? 1 : 0;
-  m->funcptr_ret_is_complex = fn->ret_funcptr_ret_is_complex ? 1 : 0;
-  m->is_variadic_funcptr = fn->ret_funcptr_is_variadic ? 1 : 0;
-  m->funcptr_nargs_fixed = fn->ret_funcptr_nargs_fixed;
-  m->funcptr_ret_fp_kind = fn->ret_funcptr_pointee_fp_kind;
+  psx_node_store_funcptr_metadata(m, psx_node_funcdef_ret_funcptr_sig(fn));
 }
 
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,

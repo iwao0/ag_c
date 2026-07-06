@@ -102,6 +102,8 @@ struct global_var_t {
   unsigned char pointee_fp_kind;
   // 関数ポインタグローバル `double (*gops)(double)` の戻り型 fp_kind。
   unsigned char funcptr_ret_fp_kind;
+  // 関数ポインタグローバル `double *(*gops)(void)` の戻りポインタ先 fp_kind。
+  unsigned char funcptr_ret_pointee_fp_kind;
   unsigned char funcptr_ret_int_width;
   unsigned char extra_strides_count;
   // 多段ポインタグローバル (`int **gp`) の段数。`*gp` が int* (8B) を返すよう、
