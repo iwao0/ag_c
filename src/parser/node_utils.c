@@ -1187,6 +1187,32 @@ void psx_node_copy_funcptr_metadata(node_mem_t *dst, node_t *src) {
   }
 }
 
+void psx_node_copy_funcptr_metadata_from_lvar(node_mem_t *dst, const lvar_t *src) {
+  if (!dst || !src) return;
+  dst->funcptr_param_fp_mask = src->funcptr_param_fp_mask;
+  dst->funcptr_param_int_mask = src->funcptr_param_int_mask;
+  dst->funcptr_ret_int_width = src->funcptr_ret_int_width;
+  dst->is_variadic_funcptr = src->is_variadic_funcptr ? 1 : 0;
+  dst->funcptr_nargs_fixed = src->funcptr_nargs_fixed;
+  dst->funcptr_ret_is_void = src->funcptr_ret_is_void ? 1 : 0;
+  dst->funcptr_ret_is_data_pointer = src->funcptr_ret_is_data_pointer ? 1 : 0;
+  dst->funcptr_ret_is_complex = src->funcptr_ret_is_complex ? 1 : 0;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(dst, src);
+}
+
+void psx_node_copy_funcptr_metadata_from_gvar(node_mem_t *dst, const global_var_t *src) {
+  if (!dst || !src) return;
+  dst->funcptr_param_fp_mask = src->funcptr_param_fp_mask;
+  dst->funcptr_param_int_mask = src->funcptr_param_int_mask;
+  dst->funcptr_ret_int_width = src->funcptr_ret_int_width;
+  dst->is_variadic_funcptr = src->is_variadic_funcptr ? 1 : 0;
+  dst->funcptr_nargs_fixed = src->funcptr_nargs_fixed;
+  dst->funcptr_ret_is_void = src->funcptr_ret_is_void ? 1 : 0;
+  dst->funcptr_ret_is_data_pointer = src->funcptr_ret_is_data_pointer ? 1 : 0;
+  dst->funcptr_ret_is_complex = src->funcptr_ret_is_complex ? 1 : 0;
+  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(dst, src);
+}
+
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);

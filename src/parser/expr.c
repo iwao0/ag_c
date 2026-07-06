@@ -4919,15 +4919,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       }
       /* unsigned グローバル配列: 要素 subscript 結果を zero-extend load させる。 */
       addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
-      addr->funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
-      addr->funcptr_param_int_mask = gv->funcptr_param_int_mask;
-      addr->funcptr_ret_int_width = gv->funcptr_ret_int_width;
-      addr->is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
-      addr->funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
-      addr->funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
-      addr->funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
-      addr->funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
-      PSX_RET_POINTEE_ARRAY_COPY_FIELDS(addr, gv);
+      psx_node_copy_funcptr_metadata_from_gvar(addr, gv);
       /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
        * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
        * を立てて、struct メンバ char* (commit 6a663ed) と同じく ND_DEREF をそのまま
@@ -5029,15 +5021,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
     /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
      * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
     gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
-    gvar_node->mem.funcptr_param_fp_mask = gv->funcptr_param_fp_mask;
-    gvar_node->mem.funcptr_param_int_mask = gv->funcptr_param_int_mask;
-    gvar_node->mem.funcptr_ret_int_width = gv->funcptr_ret_int_width;
-    gvar_node->mem.is_variadic_funcptr = gv->is_variadic_funcptr ? 1 : 0;
-    gvar_node->mem.funcptr_nargs_fixed = gv->funcptr_nargs_fixed;
-    gvar_node->mem.funcptr_ret_is_void = gv->funcptr_ret_is_void ? 1 : 0;
-    gvar_node->mem.funcptr_ret_is_data_pointer = gv->funcptr_ret_is_data_pointer ? 1 : 0;
-    gvar_node->mem.funcptr_ret_is_complex = gv->funcptr_ret_is_complex ? 1 : 0;
-    PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&gvar_node->mem, gv);
+    psx_node_copy_funcptr_metadata_from_gvar(&gvar_node->mem, gv);
     /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
     gvar_node->mem.is_bool = gv->is_bool;
     /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */
@@ -5151,12 +5135,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   /* `unsigned a[5]` / `unsigned *p`: 要素/pointee が unsigned なら subscript/deref
    * 結果を zero-extend load させるため pointee_is_unsigned を伝播する。 */
   node->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  node->funcptr_param_fp_mask = var->funcptr_param_fp_mask;
-  node->funcptr_param_int_mask = var->funcptr_param_int_mask;
-  node->funcptr_ret_int_width = var->funcptr_ret_int_width;
-  node->funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
-  node->funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
-  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(node, var);
+  psx_node_copy_funcptr_metadata_from_lvar(node, var);
   if (var->outer_stride > 0) {
     // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
     // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
@@ -5225,11 +5204,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
     gv->mem.deref_size = (short)(var->elem_size > 0 ? var->elem_size : sz);
     gv->mem.is_unsigned = var->is_unsigned;
     gv->mem.base.fp_kind = var->fp_kind;
-    gv->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
-    gv->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
-    gv->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
-    gv->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
-    gv->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
+    psx_node_copy_funcptr_metadata_from_lvar(&gv->mem, var);
     gv->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
     gv->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
     /* `static struct S a` の tag 情報を ND_GVAR に伝播して `a.member` の
@@ -5316,15 +5291,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   as_lvar(n)->mem.base_deref_size = var->base_deref_size;
   as_lvar(n)->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
   as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
-  as_lvar(n)->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
-  as_lvar(n)->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
-  as_lvar(n)->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
-  as_lvar(n)->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
-  as_lvar(n)->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
-  as_lvar(n)->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
-  as_lvar(n)->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
-  as_lvar(n)->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
-  PSX_RET_POINTEE_ARRAY_COPY_FIELDS(&as_lvar(n)->mem, var);
+  psx_node_copy_funcptr_metadata_from_lvar(&as_lvar(n)->mem, var);
   as_lvar(n)->mem.is_unsigned = var->is_unsigned;
   /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を
    * 伝播する (var->is_unsigned は基底型 unsigned を表すのでポインタにも乗る)。 */

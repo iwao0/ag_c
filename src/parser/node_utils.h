@@ -25,6 +25,8 @@ int psx_node_funcptr_returns_void(node_t *node);
 int psx_node_funcptr_returns_complex(node_t *node);
 int psx_node_funcptr_returns_pointee_array(node_t *node);
 void psx_node_copy_funcptr_metadata(node_mem_t *dst, node_t *src);
+void psx_node_copy_funcptr_metadata_from_lvar(node_mem_t *dst, const struct lvar_t *src);
+void psx_node_copy_funcptr_metadata_from_gvar(node_mem_t *dst, const struct global_var_t *src);
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);

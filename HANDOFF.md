@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き726: 関数ポインタ metadata 読み取りの型ヘルパー集約）
+最終更新: 2026-07-06（続き727: lvar/gvar 関数ポインタ metadata コピーの集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き727: **lvar/gvar 由来の関数ポインタ metadata コピーを `node_utils` に集約した**。
+  続き726の後も、`build_array_lvar_addr_node()` / `build_lvar_or_vla_node()` /
+  `build_gvar_node()` 系で `lvar_t` / `global_var_t` から `node_mem_t` へ
+  `funcptr_param_*` / `funcptr_ret_*` / ret-pointee-array fields を手でコピーする
+  同型の処理が複数残っていた。
+
+  根本対応として `psx_node_copy_funcptr_metadata_from_lvar()` /
+  `psx_node_copy_funcptr_metadata_from_gvar()` を `node_utils` に追加し、
+  `expr.c` 側の lvar/gvar 由来コピーをこれらに置き換えた。
+  これで `expr.c` が関数ポインタ ABI metadata のフィールド群を個別に知る箇所は
+  tag member 生成の `mem_info` 由来だけになり、lvar/gvar 由来の旧 metadata 形状は
+  `node_utils` 側へ寄った。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `make -j4 build/test_wasm32_e2e` = build pass、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き726: **関数ポインタ metadata の読み取り入口を型ヘルパーへ集約した**。
   続き725の後も、`parse_call_postfix()` は callee が lvar/gvar/deref かを分岐して
   `funcptr_param_fp_mask` / `funcptr_param_int_mask` や戻り値 void/complex を読んでいた。
