@@ -1056,6 +1056,45 @@ int psx_node_base_deref_size(node_t *node) {
   }
 }
 
+int psx_node_ptr_array_pointee_bytes(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *explicit_type = node_explicit_cast_type(node);
+  if (explicit_type && explicit_type->ptr_array_pointee_bytes > 0)
+    return explicit_type->ptr_array_pointee_bytes;
+  switch (node->kind) {
+    case ND_LVAR: return as_lvar(node)->mem.ptr_array_pointee_bytes;
+    case ND_GVAR:
+    case ND_DEREF:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_STRING:
+    case ND_CAST:
+      return as_mem(node)->ptr_array_pointee_bytes;
+    case ND_COMMA:
+    case ND_STMT_EXPR:
+      return psx_node_ptr_array_pointee_bytes(node->rhs);
+    case ND_ADD:
+    case ND_SUB: {
+      int l = psx_node_ptr_array_pointee_bytes(node->lhs);
+      if (l > 0) return l;
+      return psx_node_ptr_array_pointee_bytes(node->rhs);
+    }
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_ptr_array_pointee_bytes(node->lhs);
+    case ND_FUNCALL: {
+      psx_type_t *type = psx_node_get_type(node);
+      if (type && type->ptr_array_pointee_bytes > 0)
+        return type->ptr_array_pointee_bytes;
+      return 0;
+    }
+    default:
+      return 0;
+  }
+}
+
 static node_mem_t *node_mem_view(node_t *node) {
   if (!node) return NULL;
   switch (node->kind) {

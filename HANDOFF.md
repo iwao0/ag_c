@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き724: pointee const/volatile/unsigned 伝播の型ヘルパー集約）
+最終更新: 2026-07-06（続き725: member / pointer-to-array metadata の型ヘルパー集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,28 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き725: **member access と pointer-to-array metadata の読み取り入口を型ヘルパーへ集約した**。
+  続き724の後も、`build_member_deref_node()` には base が lvar/gvar/deref か
+  funcall かで分岐し、`node_mem_t` / 関数戻り値 helper から const/volatile を
+  読む局所処理が残っていた。また `build_unary_deref_node()` と
+  `build_subscript_deref()` には `ptr_array_pointee_bytes` を入力 node から直接読む
+  分岐が残っていた。
+
+  根本対応として、member access の qualifier 伝播を
+  `psx_node_pointee_is_const_qualified()` /
+  `psx_node_pointee_is_volatile_qualified()` に寄せ、関数戻り値専用の
+  `funcall_ret_pointee_const()` / `funcall_ret_pointee_volatile()` を削除した。
+  さらに `psx_node_ptr_array_pointee_bytes()` を `node_utils` に追加し、
+  explicit cast type / `psx_type_t` metadata を優先しつつ、comma / stmt expr /
+  ADD / SUB / incdec を既存の pointer metadata helper と同じ規則で辿る入口にした。
+  単項 deref / subscript はこの helper 経由で pointer-to-array carry を読む。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き724: **単項 deref / subscript の pointee const/volatile/unsigned 伝播を型ヘルパーへ集約した**。
   続き723の後、`build_unary_deref_node()` と `build_subscript_deref()` には
   `node_mem_t` の `is_const_qualified` / `is_volatile_qualified` や

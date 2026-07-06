@@ -1047,26 +1047,6 @@ static node_t *materialize_struct_rvalue_ternary(node_t *base,
   return psx_node_new_binary(ND_COMMA, (node_t *)select, new_typed_lvar_ref(var, 0));
 }
 
-static int funcall_ret_pointee_const(node_func_t *fn) {
-  if (!fn) return 0;
-  psx_type_t *type = psx_node_get_type((node_t *)fn);
-  if (type && type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->is_const_qualified) {
-    return 1;
-  }
-  return 0;
-}
-
-static int funcall_ret_pointee_volatile(node_func_t *fn) {
-  if (!fn) return 0;
-  psx_type_t *type = psx_node_get_type((node_t *)fn);
-  if (type && type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->is_volatile_qualified) {
-    return 1;
-  }
-  return 0;
-}
-
 static int member_ptr_array_pointee_elem_size(const tag_member_info_t *mem_info) {
   if (!mem_info || mem_info->ptr_array_pointee_bytes <= 0 || mem_info->arr_ndim <= 0) return 0;
   int count = 1;
@@ -1201,15 +1181,8 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   deref->tag_name = mem_info->tag_name;
   deref->tag_len = mem_info->tag_len;
   deref->is_tag_pointer = mem_is_ptr;
-  if (base->kind == ND_LVAR || base->kind == ND_GVAR || base->kind == ND_DEREF) {
-    node_mem_t *base_mem = (node_mem_t *)base;
-    if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
-    if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
-  } else if (base->kind == ND_FUNCALL) {
-    node_func_t *fn = (node_func_t *)base;
-    if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
-    if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
-  }
+  if (psx_node_pointee_is_const_qualified(base)) deref->is_const_qualified = 1;
+  if (psx_node_pointee_is_volatile_qualified(base)) deref->is_volatile_qualified = 1;
   deref->bit_width = mem_info->bit_width;
   deref->bit_offset = mem_info->bit_offset;
   deref->bit_is_signed = mem_info->bit_is_signed;
@@ -3499,14 +3472,12 @@ static node_t *build_unary_deref_node(node_t *operand) {
   if (pql <= 1) {
     if (psx_node_pointee_is_unsigned(operand)) node->is_unsigned = 1;
   }
-  if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-                  operand->kind == ND_DEREF || operand->kind == ND_ADDR)) {
-    node_mem_t *operand_mem = (node_mem_t *)operand;
-    if (operand_mem->ptr_array_pointee_bytes > 0) {
-      node->ptr_array_pointee_bytes = operand_mem->ptr_array_pointee_bytes;
-      if (node->base_deref_size == 0 && operand_mem->base_deref_size > 0) {
-        node->base_deref_size = operand_mem->base_deref_size;
-      }
+  int operand_ptr_array_pointee_bytes = psx_node_ptr_array_pointee_bytes(operand);
+  if (operand_ptr_array_pointee_bytes > 0) {
+    node->ptr_array_pointee_bytes = operand_ptr_array_pointee_bytes;
+    int operand_base_deref_size = psx_node_base_deref_size(operand);
+    if (node->base_deref_size == 0 && operand_base_deref_size > 0) {
+      node->base_deref_size = (short)operand_base_deref_size;
     }
   }
   if (psx_node_pointee_is_const_qualified(operand)) node->is_const_qualified = 1;
@@ -4232,20 +4203,16 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
    * 組み直す。2D 以上の `int (*m[A][B])[N]` では 1 段目 `m[a]` はまだ行なので、
    * ptr_array_pointee_bytes / bds を carry し、最終次元で同じ組み直しを行う。 */
   {
-    node_mem_t *base_mem_ptp =
-        (node->kind == ND_ADDR || node->kind == ND_LVAR ||
-         node->kind == ND_GVAR || node->kind == ND_DEREF)
-            ? (node_mem_t *)node
-            : NULL;
-    if (base_mem_ptp && base_mem_ptp->ptr_array_pointee_bytes > 0 && bds > 0) {
+    int base_ptr_array_pointee_bytes = psx_node_ptr_array_pointee_bytes(node);
+    if (base_ptr_array_pointee_bytes > 0 && bds > 0) {
       if (subscript_is_intermediate_row) {
-        deref->ptr_array_pointee_bytes = base_mem_ptp->ptr_array_pointee_bytes;
+        deref->ptr_array_pointee_bytes = base_ptr_array_pointee_bytes;
         deref->base_deref_size = (short)bds;
       } else {
         deref->is_tag_pointer = 1;
         deref->is_pointer = 1;
         deref->type_size = 8;
-        deref->deref_size = (short)base_mem_ptp->ptr_array_pointee_bytes;
+        deref->deref_size = (short)base_ptr_array_pointee_bytes;
         deref->inner_deref_size = (short)bds;
         deref->pointer_qual_levels = 0;
         deref->base_deref_size = 0;
