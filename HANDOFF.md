@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き742: initializer lvar/member metadata constructor 化）
+最終更新: 2026-07-06（続き743: tag member fp metadata constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き743: **tag member lvar の FP metadata 初期化も `tag_member_info_t`
+  constructor に寄せた**。
+  続き742で `psx_node_new_tag_member_lvar_ref_for()` を追加した後も、
+  `decl.c` の member initializer と nested designator は、
+  `tag_member_info_t::fp_kind` を lhs / assign node に後から直接コピーしていた。
+  また `expr.c` の struct/union value cast lowering は、`tag_member_info_t` を持っているのに
+  低レベルの `psx_node_new_member_lvar_ref_for()` を直接呼んでいた。
+
+  根本対応として `psx_node_new_tag_member_lvar_ref_for()` が
+  非 tag pointer かつ FP member の `fp_kind` を constructor 内で設定するようにした。
+  `psx_node_new_assign()` は lhs の `fp_kind` を assign node に伝播するため、
+  呼び出し側の重複代入を削除できた。
+  併せて struct/union value cast lowering も tag-aware constructor に寄せた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き742: **initializer 用 lvar / tag member lvar の metadata 初期化を
   `node_utils` に寄せた**。
   続き741の後も、`decl.c` の array element initializer、struct/union member initializer、

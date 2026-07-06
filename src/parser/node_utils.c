@@ -2234,6 +2234,9 @@ node_t *psx_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
       info ? info->tag_name : NULL,
       info ? info->tag_len : 0,
       info ? info->is_tag_pointer : 0);
+  if (info && !info->is_tag_pointer && info->fp_kind != TK_FLOAT_KIND_NONE) {
+    node->mem.base.fp_kind = info->fp_kind;
+  }
   if (info && info->bit_width > 0) {
     node->mem.bit_width = info->bit_width;
     node->mem.bit_offset = info->bit_offset;

@@ -2170,12 +2170,6 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info->offset, info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
   assign_node->type_size = info->type_size;
-  /* float/double メンバなら lhs と assign に fp_kind を伝播し、
-   * IR が FP store を出すようにする。 */
-  if (!info->is_tag_pointer && info->fp_kind != TK_FLOAT_KIND_NONE) {
-    lhs->fp_kind = info->fp_kind;
-    assign_node->base.fp_kind = info->fp_kind;
-  }
   return (node_t *)assign_node;
 }
 
@@ -2293,10 +2287,6 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
   node_t *rhs_val = parse_scalar_brace_initializer();
   node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
   assign_node->type_size = cur_info.type_size;
-  if (cur_info.fp_kind != TK_FLOAT_KIND_NONE) {
-    lhs->fp_kind = cur_info.fp_kind;
-    assign_node->base.fp_kind = cur_info.fp_kind;
-  }
   return (node_t *)assign_node;
 }
 

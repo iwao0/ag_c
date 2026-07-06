@@ -1941,8 +1941,7 @@ static node_t *lower_union_value_cast(node_t *operand,
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
-  node_t *lhs = psx_node_new_member_lvar_ref_for(var, info.offset, info.type_size,
-                                    info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+  node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
   assign_node->type_size = info.type_size;
 
@@ -1975,8 +1974,7 @@ static node_t *lower_struct_value_cast(node_t *operand,
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
-  node_t *lhs = psx_node_new_member_lvar_ref_for(var, info.offset, info.type_size,
-                                    info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+  node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
   assign_node->type_size = info.type_size;
 
