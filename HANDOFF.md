@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き747: absolute-offset lvar owner constructor 化）
+最終更新: 2026-07-06（続き748: complex FP slot constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き748: **`_Complex` brace initializer の実部/虚部 FP slot metadata を
+  `node_utils` に寄せた**。
+  続き747で absolute offset の owner metadata は constructor 化したが、
+  `_Complex z = {re, im}` の実部/虚部 slot だけは `decl.c` 側で
+  lvar node 生成後に `re_lv->fp_kind = var->fp_kind` /
+  `im_lv->fp_kind = var->fp_kind` を直接設定していた。
+
+  根本対応として `psx_node_new_lvar_fp_slot_for()` を追加し、
+  owner `lvar_t`、absolute offset、slot 幅から FP scalar store 用 lvar を作る入口を
+  `node_utils` 側に置いた。これにより `_Complex` brace initializer は
+  実部/虚部 slot の offset と幅だけを指定し、FP kind の載せ替えは constructor に閉じた。
+  `typed_at_for()` 自体は struct zero-fill などでも使うため、struct/array metadata を
+  広く継承させず、FP scalar slot 専用 constructor として分けている。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き747: **absolute offset の lvar slot owner metadata 初期化を
   `node_utils` に寄せた**。
   続き746の後も、`decl.c` の compound literal array copy、struct zero-fill、

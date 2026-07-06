@@ -75,6 +75,7 @@ node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *psx_node_new_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_typed_at_for(struct lvar_t *owner, int offset, int type_size);
+node_t *psx_node_new_lvar_fp_slot_for(struct lvar_t *owner, int offset, int type_size);
 node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);

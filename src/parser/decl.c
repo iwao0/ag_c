@@ -3202,11 +3202,9 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     node_t *im = NULL;
     if (tk_consume(',') && curtok()->kind != TK_RBRACE) im = psx_expr_assign();
     tk_expect('}');
-    node_t *re_lv = psx_node_new_lvar_typed_for(var, half);
-    re_lv->fp_kind = var->fp_kind;
+    node_t *re_lv = psx_node_new_lvar_fp_slot_for(var, var->offset, half);
     node_mem_t *re_as = psx_node_new_assign(re_lv, re);
-    node_t *im_lv = psx_node_new_lvar_typed_at_for(var, var->offset + half, half);
-    im_lv->fp_kind = var->fp_kind;
+    node_t *im_lv = psx_node_new_lvar_fp_slot_for(var, var->offset + half, half);
     node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
     return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
   }
