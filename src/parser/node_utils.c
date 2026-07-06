@@ -1289,18 +1289,10 @@ int psx_node_i64_widen_source_is_unsigned(node_t *node) {
   return size >= 4 && node_is_unsigned(node);
 }
 
-/* LHS signedness after integer promotions, used by shift operation lowering. */
-int psx_node_shift_lhs_is_unsigned(node_t *node) {
-  if (!node) return 0;
-  int size = psx_type_sizeof(psx_node_get_type(node));
-  if (size <= 0) size = ps_node_type_size(node);
-  return size >= 4 && node_is_unsigned(node);
-}
-
 /* Full shift operation signedness, including explicit cast-lowering overrides. */
 int psx_node_shift_operation_is_unsigned(node_t *node) {
   if (!node || (node->kind != ND_SHL && node->kind != ND_SHR)) return 0;
-  return node_is_unsigned(node) || psx_node_shift_lhs_is_unsigned(node->lhs);
+  return node_is_unsigned(node);
 }
 
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
@@ -1385,6 +1377,14 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
     node->is_complex = 1;
   }
   return node;
+}
+
+node_t *psx_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_unsigned) {
+  node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(left_shift));
+  node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(left_shift));
+  psx_node_set_unsigned(shl, is_unsigned ? 1 : 0);
+  psx_node_set_unsigned(shr, is_unsigned ? 1 : 0);
+  return shr;
 }
 
 node_t *psx_node_new_num(long long val) {

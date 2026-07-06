@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き707: legacy ps_node_is_unsigned API を削除）
+最終更新: 2026-07-06（続き711: shift truncation helper の契約名と公開境界コメントを整理）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,86 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
 	  `git diff --check` = **green**、
 	  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き711: **shift truncation helper の契約名と公開境界コメントを整理**。
+  続き709で追加した shift-based truncation 生成 helper は、単なる truncation ではなく
+  signed target なら符号拡張、unsigned target ならゼロ拡張まで含む AST を作る。
+  そのため `psx_node_new_shift_truncation()` を
+  `psx_node_new_shift_trunc_extend()` に rename し、API 名で契約が分かるようにした。
+  併せて `parser_public.h` の公開シンボルコメントが古く、node_utils 由来の signedness helper を
+  説明していなかったため、公開境界の説明を現状に合わせた。
+  `psx_node_new_shift_trunc_extend()` は parser 内部 (`node_utils.h`) の helper で、
+  IR 向け `parser_public.h` には公開していない。
+  確認は
+  `rg -n "psx_node_new_shift_truncation|psx_node_new_shift_trunc_extend" src test HANDOFF.md -g'*.c' -g'*.h' -g'HANDOFF.md'`、
+  `rg -n "node_t \\*shl = psx_node_new_binary\\(ND_SHL|node_t \\*shr = psx_node_new_binary\\(ND_SHR|psx_node_set_unsigned\\(shl|psx_node_set_unsigned\\(shr" src/parser test/test_parser.c -g'*.c' -g'*.h'`、
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き710: **long cast の到達不能 zero-extend 経路を削除**。
+  `apply_cast()` の `(long)` 経路には、非ポインタ・非定数 operand を
+  `ND_PTR_CAST(type_size=8)` で包み、unsigned sub-8B operand なら `widen_zext_i64` を立てて
+  return する生きた経路がある。その直後に、同じ `(long)unsigned_int` 用の
+  `ND_PTR_CAST(widen_zext_i64)` 生成ブロックが別途残っていたが、上の経路で必ず return するため
+  到達不能になっていた。
+  zero-extend の設計コメントを生きている `(long)` wrap 経路へ移し、到達不能ブロックを削除した。
+  これで `(long)` widening の source of truth は1箇所になり、
+  既存 parser assertion の
+  `(long)(unsigned int/char/short)` は `widen_zext_i64`、
+  `(long)(int/short)` は non-zext、という確認をそのまま通している。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き709: **shift-based truncation 生成を node_utils に集約**。
+  続き708で wide-to-32bit cast lowering の `(x << 32) >> 32` は共通化したが、
+  signed `char` / `short` cast と `char` / `short` 戻り値変換には、
+  まだ個別に `ND_SHL` / `ND_SHR` を組み立てて `psx_node_set_unsigned(shl/shr, 0)` を
+  入れる処理が残っていた。これは shift operation signedness の意味を複数箇所で手合わせする形なので、
+  parser/node_utils に `psx_node_new_shift_trunc_extend()` を追加し、
+  shift で truncation + signed/unsigned extension を表す AST 生成を1箇所へ集約した。
+  `apply_cast()` の i64→i32 truncation、signed sub-int cast、semantic return transform は
+  すべてこの helper を使う。
+  regression として parser test の `char narrow(int x) { return x; }` に、
+  return lowering の SHL/SHR が signed operation である assertion を追加した。
+  検索確認では
+  `rg -n "psx_node_new_shift_trunc_extend|node_t \\*shl = psx_node_new_binary\\(ND_SHL|node_t \\*shr = psx_node_new_binary\\(ND_SHR|psx_node_set_unsigned\\(shl|psx_node_set_unsigned\\(shr" src/parser test/test_parser.c -g'*.c' -g'*.h'`
+  により、手書き forced shift 生成が helper 1箇所に集まっていることを確認した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き708: **cast-lowered 32bit truncation の shift signedness を固定**。
+  `(int)/(signed)/(unsigned)` が 8B 整数を 32bit へ切り詰める lowering は
+  `(x << 32) >> 32` を2箇所で別々に生成しており、`(int)` 側には unsigned funcall だけ
+  operand の unsigned flag を消す局所対処が残っていた。
+  さらに `psx_node_shift_operation_is_unsigned()` が shift 自身の forced flag と lhs の型を
+  OR していたため、cast lowering が `psx_node_set_unsigned(shl, 0)` で明示した signed SHL も
+  lhs が `unsigned long` だと unsigned operation に戻り得た。
+  `psx_node_new_binary()` は通常 shift の unsigned 性を作成時に `node->is_unsigned` へ保存し、
+  cast lowering はその後 `psx_node_set_unsigned()` で明示 override する設計なので、
+  `psx_node_shift_operation_is_unsigned()` は最終 operation flag (`node_is_unsigned`) だけを読むようにした。
+  併せて `apply_cast()` に `wrap_i64_to_i32_trunc_cast()` を追加し、
+  `(int)` と `(signed/unsigned)` の wide-to-32bit truncation 生成を1箇所へ集約した。
+  signed target は SHL/SHR とも signed operation、unsigned target は SHL/SHR とも unsigned operation に固定し、
+  旧 `(int)` 経路の unsigned funcall 個別クリアは不要になった。
+  この整理で production から `psx_node_shift_lhs_is_unsigned()` の利用者が消えたため、
+  公開宣言・実装・テスト assertion も削除し、shift signedness API を operation 用途へ一本化した。
+  regression として parser test に
+  `(int)(unsigned long)a` / `(signed)(unsigned long)a` は SHL/SHR とも signed operation、
+  `(unsigned)(long)a` は SHL/SHR とも unsigned operation、という assertion を追加した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
 - 続き707: **legacy `ps_node_is_unsigned()` API を削除**。
   続き704-706で IR / parser の呼び出し側を用途別 helper
   (`psx_node_integer_value_is_unsigned`,

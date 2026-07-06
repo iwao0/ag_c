@@ -2547,6 +2547,18 @@ static node_t *wrap_to_fp(node_t *operand, tk_float_kind_t target) {
   return annotate_cast_type(cvt, target_type);
 }
 
+static node_t *wrap_i64_to_i32_trunc_cast(node_t *operand, psx_type_t *cast_type,
+                                          int target_unsigned) {
+  node_t *trunc = psx_node_new_shift_trunc_extend(operand, 32, target_unsigned);
+
+  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+  wrap->base.kind = ND_PTR_CAST;
+  wrap->base.lhs = trunc;
+  wrap->type_size = 4;
+  wrap->is_unsigned = target_unsigned ? 1 : 0;
+  return annotate_cast_type((node_t *)wrap, cast_type);
+}
+
 static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operand,
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                           int cast_elem_size, tk_float_kind_t cast_fp_kind,
@@ -2580,6 +2592,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         psx_node_set_unsigned(operand, cast_is_unsigned);
         return annotate_cast_type(operand, cast_type);
       }
+      /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
+       * `(long)` は通常 no-op だが、その場合 `(long)u + (long)u` の二項演算が I32 のまま
+       * 計算され、符号なし 32bit ラップマスクで 2^32 を超える和が切り詰められていた。
+       * ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
+       * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
+       * widen_zext_i64 は立てない。 */
       if (!ps_node_is_pointer(operand)) {
         node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
         wrap->base.kind = ND_PTR_CAST;
@@ -2592,23 +2610,6 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
           wrap->widen_zext_i64 = 1;
         return annotate_cast_type((node_t *)wrap, cast_type);
       }
-    }
-    /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
-     * `(long)` は通常 no-op だが、その場合 `(long)u + (long)u` の二項演算が I32 のまま
-     * 計算され、符号なし 32bit ラップマスクで 2^32 を超える和が切り詰められていた。
-     * ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
-     * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
-     * 対象外。ポインタ・8B 以上・fp は対象外。 */
-    if (!is_pointer && type_kind == TK_LONG && !ps_node_is_pointer(operand) &&
-        operand->fp_kind == TK_FLOAT_KIND_NONE && psx_node_integer_value_is_unsigned(operand) &&
-        ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
-      wrap->base.lhs = operand;
-      wrap->type_size = 8;
-      wrap->is_unsigned = 1;
-      wrap->widen_zext_i64 = 1;
-      return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
      * ND_PTR_CAST でラップする (operand 自体は他から共有される可能性があるので
@@ -2746,22 +2747,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * long 戻り関数は ps_node_type_size(ND_FUNCALL) が 8 を返すためここに入る。 */
     if (ps_node_type_size(operand) > 4 &&
         !ps_node_is_pointer(operand)) {
-      /* operand が unsigned 戻り値の funcall (例 `unsigned f()`) だと、SHL が符号なし
-       * 演算と見なされ ir_builder の 32bit ラップマスク (& 0xffffffff) が入り、
-       * `(getu()<<32)` が 0 に潰れてシフトが壊れる。`(int)` は結果を符号付きにするので
-       * funcall の unsigned ラベルをクリアして算術シフトを保つ。binop ノード (`u>>60`
-       * 等のシフト) は is_unsigned が LSR/ASR を兼ねるため触らない (触ると論理シフトが
-       * 算術シフトに化ける)。 */
-      if (operand->kind == ND_FUNCALL) psx_node_set_unsigned(operand, 0);
-      node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
-      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
-      psx_node_set_unsigned(shl, 0);
-      psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) を強制 */
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
-      wrap->base.lhs = shr;
-      wrap->type_size = 4;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_i64_to_i32_trunc_cast(operand, cast_type, 0);
     }
     /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
      * node_mem_t を持つノードの is_pointer をクリアする。 */
@@ -2807,16 +2793,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * ps_node_type_size(ND_FUNCALL) が 8 を返すため対象になる。 */
     if (ps_node_type_size(operand) > 4 &&
         !ps_node_is_pointer(operand)) {
-      node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(32));
-      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(32));
-      psx_node_set_unsigned(shl, target_unsigned);
-      psx_node_set_unsigned(shr, target_unsigned);
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
-      wrap->base.lhs = shr;
-      wrap->type_size = 4;
-      wrap->is_unsigned = target_unsigned ? 1 : 0;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_i64_to_i32_trunc_cast(operand, cast_type, target_unsigned);
     }
     /* sub-int (char/short) を (unsigned) へ: operand 自身の load 符号性 (ldrsh/ldrh)
      * を保ったまま 32bit unsigned 値へ昇格する必要がある。is_unsigned を直接立てると
@@ -2900,13 +2877,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * ldrsb/ldrsh の reload で偶然符号拡張され合っていた)。`(int)long` の切り詰めと同形。 */
     int src_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
     int sh = src_width - width;
-    node_t *shl = psx_node_new_binary(ND_SHL, operand, psx_node_new_num(sh));
-    node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
-    psx_node_set_unsigned(shl, 0);
-    psx_node_set_unsigned(shr, 0); /* 算術右シフト (符号拡張) を強制 */
+    node_t *trunc = psx_node_new_shift_trunc_extend(operand, sh, 0);
     node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
     wrap->base.kind = ND_PTR_CAST;
-    wrap->base.lhs = shr;
+    wrap->base.lhs = trunc;
     wrap->type_size = (short)(width / 8);
     if (cast_is_plain_char) wrap->is_plain_char = 1;
     return annotate_cast_type((node_t *)wrap, cast_type);

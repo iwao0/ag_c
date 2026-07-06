@@ -124,11 +124,7 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
       node->lhs = masked;
     } else {
       int sh = (ret.token_kind == TK_CHAR) ? 56 : 48;
-      node_t *shl = psx_node_new_binary(ND_SHL, node->lhs, psx_node_new_num(sh));
-      node_t *shr = psx_node_new_binary(ND_SHR, shl, psx_node_new_num(sh));
-      psx_node_set_unsigned(shl, 0);
-      psx_node_set_unsigned(shr, 0);
-      node->lhs = shr;
+      node->lhs = psx_node_new_shift_trunc_extend(node->lhs, sh, 0);
     }
   }
 }

@@ -22,7 +22,6 @@ int psx_node_integer_value_is_unsigned(node_t *node);
 int psx_node_integer_promotion_is_unsigned(node_t *node);
 int psx_node_conversion_value_is_unsigned(node_t *node);
 int psx_node_i64_widen_source_is_unsigned(node_t *node);
-int psx_node_shift_lhs_is_unsigned(node_t *node);
 int psx_node_shift_operation_is_unsigned(node_t *node);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *node);
@@ -35,6 +34,7 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
 int psx_node_get_tag_scope_depth(node_t *node);
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
+node_t *psx_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_unsigned);
 node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *psx_node_new_lvar_typed(int offset, int type_size);

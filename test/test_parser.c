@@ -408,21 +408,36 @@ static void test_expr_shift() {
     node_t *promoted_signed_shift = parse_expr_input("(unsigned char)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
   ASSERT_TRUE(!psx_node_integer_promotion_is_unsigned(promoted_signed_shift->lhs));
-  ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(promoted_signed_shift->lhs));
   ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(promoted_signed_shift));
 
     node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
   ASSERT_TRUE(psx_node_integer_promotion_is_unsigned(promoted_unsigned_shift->lhs));
-  ASSERT_TRUE(psx_node_shift_lhs_is_unsigned(promoted_unsigned_shift->lhs));
   ASSERT_TRUE(psx_node_shift_operation_is_unsigned(promoted_unsigned_shift));
 
     node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
   ASSERT_EQ(ND_PTR_CAST, forced_signed_shift->kind);
   ASSERT_EQ(ND_SHR, forced_signed_shift->lhs->kind);
-  ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(forced_signed_shift->lhs));
+  ASSERT_EQ(ND_SHL, forced_signed_shift->lhs->lhs->kind);
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(forced_signed_shift->lhs->lhs));
   ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(forced_signed_shift->lhs));
   ASSERT_TRUE(!psx_node_conversion_value_is_unsigned(forced_signed_shift));
+
+    node_t *forced_signed_keyword_shift = parse_expr_input("(signed)(unsigned long)a");
+  ASSERT_EQ(ND_PTR_CAST, forced_signed_keyword_shift->kind);
+  ASSERT_EQ(ND_SHR, forced_signed_keyword_shift->lhs->kind);
+  ASSERT_EQ(ND_SHL, forced_signed_keyword_shift->lhs->lhs->kind);
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(forced_signed_keyword_shift->lhs->lhs));
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(forced_signed_keyword_shift->lhs));
+  ASSERT_TRUE(!psx_node_conversion_value_is_unsigned(forced_signed_keyword_shift));
+
+    node_t *forced_unsigned_shift = parse_expr_input("(unsigned)(long)a");
+  ASSERT_EQ(ND_PTR_CAST, forced_unsigned_shift->kind);
+  ASSERT_EQ(ND_SHR, forced_unsigned_shift->lhs->kind);
+  ASSERT_EQ(ND_SHL, forced_unsigned_shift->lhs->lhs->kind);
+  ASSERT_TRUE(psx_node_shift_operation_is_unsigned(forced_unsigned_shift->lhs->lhs));
+  ASSERT_TRUE(psx_node_shift_operation_is_unsigned(forced_unsigned_shift->lhs));
+  ASSERT_TRUE(psx_node_conversion_value_is_unsigned(forced_unsigned_shift));
 }
 
 static void test_expr_ternary() {
@@ -1297,6 +1312,8 @@ static void test_stmt_return() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_SHR, ret->lhs->kind);
   ASSERT_EQ(ND_SHL, ret->lhs->lhs->kind);
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(ret->lhs->lhs));
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(ret->lhs));
 
   parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];

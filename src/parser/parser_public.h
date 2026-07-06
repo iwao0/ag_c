@@ -10,7 +10,9 @@
  * 現状の公開シンボル:
  *   - lvar_t (型のみ。IR 側 find_owning_lvar が offset/size/next_all を
  *     直接読む。将来的に opaque 化を検討するが Phase C2 では据置)
- *   - ps_node_is_pointer / ps_node_deref_size (node_utils 由来)
+ *   - node_utils 由来の型・幅・signedness helper
+ *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
+ *      psx_node_*_is_unsigned など)
  *   - psx_ctx_get_function_is_variadic / _param_fp_kind (semantic_ctx)
  *   - tag_member_info_t + psx_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
@@ -34,7 +36,6 @@ int ps_node_type_size(node_t *n);
 int psx_node_integer_promotion_is_unsigned(node_t *n);
 int psx_node_conversion_value_is_unsigned(node_t *n);
 int psx_node_i64_widen_source_is_unsigned(node_t *n);
-int psx_node_shift_lhs_is_unsigned(node_t *n);
 int psx_node_shift_operation_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
