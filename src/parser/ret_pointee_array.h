@@ -9,49 +9,6 @@ typedef struct {
   int elem_size;
 } psx_ret_pointee_array_t;
 
-#define PSX_RET_POINTEE_ARRAY_COPY_FIELDS(dst, src) do {                       \
-  (dst)->funcptr_ret_pointee_array_first_dim =                                  \
-      (src)->funcptr_ret_pointee_array_first_dim;                               \
-  (dst)->funcptr_ret_pointee_array_second_dim =                                 \
-      (src)->funcptr_ret_pointee_array_second_dim;                              \
-  (dst)->funcptr_ret_pointee_array_elem_size =                                  \
-      (src)->funcptr_ret_pointee_array_elem_size;                               \
-} while (0)
-
-#define PSX_RET_POINTEE_ARRAY_FROM_FIELDS(src)                                 \
-  psx_ret_pointee_array_make((src)->funcptr_ret_pointee_array_first_dim,        \
-                             (src)->funcptr_ret_pointee_array_second_dim,       \
-                             (src)->funcptr_ret_pointee_array_elem_size)
-
-#define PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(src)                              \
-  ((src)->funcptr_ret_pointee_array_first_dim > 0)
-
-#define PSX_RET_POINTEE_ARRAY_FIELDS_EQUAL(a, b)                               \
-  ((a)->funcptr_ret_pointee_array_first_dim ==                                  \
-       (b)->funcptr_ret_pointee_array_first_dim &&                              \
-   (a)->funcptr_ret_pointee_array_second_dim ==                                 \
-       (b)->funcptr_ret_pointee_array_second_dim &&                             \
-   (a)->funcptr_ret_pointee_array_elem_size ==                                  \
-       (b)->funcptr_ret_pointee_array_elem_size)
-
-#define PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(dst, array_desc) do { \
-  psx_ret_pointee_array_t _psx_rpa_a = (array_desc);                            \
-  if (_psx_rpa_a.first_dim > 0) {                                                \
-    (dst)->funcptr_ret_pointee_array_first_dim = (short)_psx_rpa_a.first_dim;    \
-    (dst)->funcptr_ret_pointee_array_second_dim = (short)_psx_rpa_a.second_dim;  \
-    (dst)->funcptr_ret_pointee_array_elem_size = (short)_psx_rpa_a.elem_size;    \
-  }                                                                             \
-} while (0)
-
-#define PSX_RET_POINTEE_ARRAY_STORE_INT_FIELDS_IF_PRESENT(dst, array_desc) do { \
-  psx_ret_pointee_array_t _psx_rpa_a = (array_desc);                            \
-  if (_psx_rpa_a.first_dim > 0) {                                                \
-    (dst)->funcptr_ret_pointee_array_first_dim = _psx_rpa_a.first_dim;           \
-    (dst)->funcptr_ret_pointee_array_second_dim = _psx_rpa_a.second_dim;         \
-    (dst)->funcptr_ret_pointee_array_elem_size = _psx_rpa_a.elem_size;           \
-  }                                                                             \
-} while (0)
-
 #define psx_ret_pointee_array_make(first_dim, second_dim, elem_size)            \
   ((psx_ret_pointee_array_t){(first_dim), (second_dim), (elem_size)})
 

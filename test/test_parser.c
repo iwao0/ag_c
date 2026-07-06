@@ -1975,6 +1975,53 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, psx_type_sizeof(x_lvar->decl_type));
   ASSERT_TRUE(psx_type_is_unsigned(x_lvar->decl_type));
 
+  node_mem_t typed_mem = {0};
+  typed_mem.base.kind = ND_LVAR;
+  typed_mem.type_size = 4;
+  typed_mem.base.type = psx_type_new_integer(TK_LONG, 8, 0);
+  ASSERT_TRUE(psx_node_get_type((node_t *)&typed_mem) == typed_mem.base.type);
+  ASSERT_EQ(8, ps_node_type_size((node_t *)&typed_mem));
+  typed_mem.is_pointer = 1;
+  typed_mem.deref_size = 4;
+  typed_mem.is_unsigned = 1;
+  ASSERT_TRUE(!ps_node_is_pointer((node_t *)&typed_mem));
+  ASSERT_EQ(0, ps_node_deref_size((node_t *)&typed_mem));
+  ASSERT_TRUE(!psx_node_is_unsigned_type((node_t *)&typed_mem));
+
+  node_mem_t typed_ptr_mem = {0};
+  typed_ptr_mem.base.kind = ND_LVAR;
+  typed_ptr_mem.type_size = 4;
+  typed_ptr_mem.pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  psx_type_t *typed_ptr_base = psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  typed_ptr_base->is_const_qualified = 1;
+  typed_ptr_mem.base.type = psx_type_new_pointer(typed_ptr_base, 8);
+  typed_ptr_mem.base.type->pointer_qual_levels = 2;
+  typed_ptr_mem.base.type->pointer_const_qual_mask = 3;
+  ASSERT_TRUE(ps_node_is_pointer((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(8, ps_node_deref_size((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(2, psx_node_pointer_qual_levels((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(3u, psx_node_pointer_const_qual_mask((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind((node_t *)&typed_ptr_mem));
+  ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_ptr_mem));
+
+  node_mem_t typed_tag_mem = {0};
+  typed_tag_mem.base.kind = ND_LVAR;
+  typed_tag_mem.tag_kind = TK_UNION;
+  typed_tag_mem.tag_name = "Old";
+  typed_tag_mem.tag_len = 3;
+  psx_type_t *typed_tag = psx_type_new_tag(TK_STRUCT, "Typed", 5, 1, 4);
+  typed_tag_mem.base.type = psx_type_new_pointer(typed_tag, 4);
+  token_kind_t typed_tag_kind = TK_EOF;
+  char *typed_tag_name = NULL;
+  int typed_tag_len = 0;
+  int typed_is_tag_pointer = 0;
+  psx_node_get_tag_type((node_t *)&typed_tag_mem, &typed_tag_kind, &typed_tag_name,
+                        &typed_tag_len, &typed_is_tag_pointer);
+  ASSERT_EQ(TK_STRUCT, typed_tag_kind);
+  ASSERT_EQ(5, typed_tag_len);
+  ASSERT_TRUE(strncmp(typed_tag_name, "Typed", 5) == 0);
+  ASSERT_EQ(1, typed_is_tag_pointer);
+
   parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
   fn = as_func(parsed_code[0]);
   body = as_block(fn->base.rhs);
@@ -2174,8 +2221,8 @@ static void test_type_metadata_bridge() {
   psx_node_copy_funcptr_metadata_from_lvar(&fp_mem, fp_lvar);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&fp_mem));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_mem.funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_mem.funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_mem.funcptr_sig.ret_pointee_fp_kind);
   global_var_t *gdp = psx_find_global_var("__tm696_gdp", 11);
   ASSERT_TRUE(gdp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gdp->pointee_fp_kind);
@@ -2192,8 +2239,8 @@ static void test_type_metadata_bridge() {
   psx_node_copy_funcptr_metadata_from_gvar(&gfp_mem, gfp);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&gfp_mem));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp_mem.funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp_mem.funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp_mem.funcptr_sig.ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "double __tm697_ret_d(void){ return 1.0; } "
@@ -2329,7 +2376,7 @@ static void test_type_metadata_bridge() {
   node_mem_t go_ret_mem = {0};
   psx_node_store_funcptr_metadata(&go_ret_mem, go_node_sig);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&go_ret_mem));
-  ASSERT_EQ(1, go_ret_mem.funcptr_ret_is_data_pointer);
+  ASSERT_EQ(1, go_ret_mem.funcptr_sig.ret_is_data_pointer);
   fn = as_func(parsed_code[3]);
   body = as_block(fn->base.rhs);
   node_t *funcptr_chain_call = NULL;

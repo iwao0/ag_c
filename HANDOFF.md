@@ -13496,6 +13496,106 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `rg -n -- "funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed" src/parser/semantic_ctx.h src/parser/semantic_ctx.c`
     = **no matches**
 
+### このセッション（続き707）: node_mem_t の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き706までで `psx_type_t` / lvar / gvar / tag member / typedef / IR instruction は
+    `psx_decl_funcptr_sig_t funcptr_sig` に寄ったが、AST 境界の `node_mem_t` にはまだ
+    `funcptr_param_fp_mask` / `funcptr_ret_int_width` / `funcptr_ret_is_data_pointer` /
+    `funcptr_ret_pointee_array_*` / `is_variadic_funcptr` などの split field が残っていた。
+  - `node_utils.c` が split field から signature を再構成し、IR builder や parser accessor が
+    旧 field を読む形だったため、AST node 上で function pointer signature の正本が分散していた。
+- 根本対応:
+  - `node_mem_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 function pointer
+    signature split field 群を削除した。
+  - `funcptr_sig_from_mem()` / `node_mem_store_funcptr_signature()` は `mem->funcptr_sig` の
+    直接読み書きに変更した。
+  - `node_mem_merge_funcptr_signature()` は `psx_decl_funcptr_sig_t` 同士の merge にし、
+    param mask / return metadata / variadic / return pointee array を split field へ戻さないようにした。
+  - `type_from_indirect_funcall()` と `psx_node_funcptr_*` accessor は `node_mem_t.funcptr_sig` を読むようにした。
+  - `ir_builder.c` の indirect function pointer return/variadic 判定も
+    `psx_node_mem_funcptr_sig()` 経由に変更した。
+  - `ret_pointee_array.h` に残っていた旧 node field 用 macro
+    (`PSX_RET_POINTEE_ARRAY_FROM_FIELDS` など) を削除した。
+- 追加/更新テスト:
+  - `test_type_metadata_bridge()` の node_mem function pointer 検査を
+    `mem.funcptr_sig.ret_*` 経由へ更新した。
+- 注意:
+  - `psx_node_funcptr_param_fp_mask()` などの accessor 名は互換 API として残しているが、
+    中身は `psx_decl_funcptr_sig_t` を読む。
+  - `parser.c` / `struct_layout.c` の `funcptr_ret_*` という local 変数名は宣言子解析中の一時 state で、
+    保存先正本の split field ではない。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `rg -n -- "struct node_mem_t \\{[\\s\\S]*(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)|funcptr_ret_pointee_array_first_dim|funcptr_ret_pointee_array_second_dim|funcptr_ret_pointee_array_elem_size" src/parser/ast.h src/parser/node_utils.c src/ir/ir_builder.c test/test_parser.c`
+    = **no matches**
+
+### このセッション（続き708）: typed AST の `node->type` を mem 系でも優先
+- 見つかった浅い箇所:
+  - `node_t` には `psx_type_t *type` があるが、`psx_node_get_type()` は
+    `ND_LVAR` / `ND_GVAR` / `ND_DEREF` / `ND_ASSIGN` / `ND_ADDR` / `ND_STRING` /
+    `ND_CAST` では explicit cast 以外の `node->type` を無視し、
+    毎回 `node_mem_t` の legacy metadata から `psx_type_t` を再構成していた。
+  - `ps_node_type_size()` も explicit cast type だけを優先し、materialized type があっても
+    mem 系では `type_size` などの legacy field を先に読む形だった。
+- 根本対応:
+  - `psx_node_get_type()` は node kind に関係なく、`node->type` が設定済みならそれを返すようにした。
+    早期キャッシュはまだ増やさず、既に materialize 済みの typed AST を正本として読む段階に留めている。
+  - `ps_node_type_size()` も `node->type` がある場合は `psx_type_sizeof(node->type)` を優先するようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に、`node_mem_t.type_size=4` でも
+    `node->type=long(8)` が設定済みなら `psx_node_get_type()` と `ps_node_type_size()` が
+    typed AST 側を優先する regression を追加した。
+- 注意:
+  - `node_mem_t` の scalar/pointer legacy field 自体はまだ残っている。
+    今回は「読み取り API で typed AST を先に信じる」入口を増やした段階。
+  - 次の候補は `ps_node_is_pointer()` / `ps_node_deref_size()` / unsigned・tag 系 accessor の
+    fallback をさらに typed AST 中心へ寄せること。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+
+### このセッション（続き709）: typed accessor 優先を広げ、row-decay の文脈ストライドを保持
+- 見つかった浅い箇所:
+  - 続き708で `psx_node_get_type()` / `ps_node_type_size()` は `node->type` を優先したが、
+    `ps_node_is_pointer()` / `ps_node_deref_size()` / unsigned・tag・pointee 系 accessor は
+    まだ `node_mem_t` split metadata を先に読む箇所が残っていた。
+  - 逆に `ps_node_deref_size()` を単純に `node->type` 優先へ寄せると、
+    `int m[3][4]; *(m[1] + 2)` のような行 decay で、`node_mem_t.deref_size=4`
+    という式文脈のストライドが `m[1]` の行型に隠れてしまい、ポインタ算術/ロード幅が崩れた。
+- 根本対応:
+  - typed AST が設定済みなら、pointer 判定、pointer qualifier mask、pointee qualifier、
+    pointee FP、unsigned/long long/plain char/long double、tag 取得なども原則 `node->type` を読むようにした。
+  - `ps_node_deref_size()` では、配列行の一時ノード (`type_size > deref_size` かつ row/stride 文脈あり)
+    に限り `node_mem_t.deref_size` を優先し、typed AST 優先と row-decay の文脈ストライド保持を両立した。
+  - `add_ctx()` は `m[1] + 2` のような row-decay pointer arithmetic の結果型を、
+    行型そのものではなく「行の要素への pointer」として明示注釈するようにした。
+  - IR builder の `ND_DEREF` load/store 幅は、式型ではなく lvalue 実体幅である
+    `node_mem_t.type_size` / FP kind を優先するようにし、typed AST が行型を持つ場合でも
+    `*(m[1] + 2)` が 4B load になるようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に、typed AST が legacy `node_mem_t` の
+    `is_pointer` / `deref_size` / `is_unsigned` と衝突した場合に typed AST 側を優先する regression を追加。
+  - typed pointer / tag pointer では pointer qualifier、pointee FP、pointee const、tag type が
+    `node->type` から読めることを追加確認した。
+  - 既存 fixture `array_row_decay_pointer_arith.c` / `array_row_decay_3d_pointer_arith.c` が、
+    row-decay 例外の実行回帰として機能している。
+- 注意:
+  - `node_mem_t.type_size` / `deref_size` はまだ完全には消せない。特に row-decay/VLA/多次元配列では
+    宣言型そのものではなく「現在の式が次に進むためのストライド」を持つため、typed AST への単純移行ではなく
+    expression value category/decay type として別正本へ切り出す必要がある。
+- 確認:
+  - `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+
 ### このセッション（続き696）: node/lvar/gvar/type の funcptr 戻り FP を pointee から分離
 - 見つかった浅い箇所:
   - 続き695で tag member は分離したが、`node_mem_t` / `lvar_t` / `global_var_t` /

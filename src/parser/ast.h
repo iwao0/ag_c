@@ -148,13 +148,7 @@ struct node_mem_t {
   // pointee 要素サイズ (例: 1 for char) が異なるケースを表現する。
   unsigned int pointee_is_scalar_ptr : 1;
   unsigned int is_pointer_volatile_qualified : 1;
-  unsigned int funcptr_ret_is_void : 1;
-  unsigned int funcptr_ret_is_data_pointer : 1;
-  unsigned int funcptr_ret_is_complex : 1;
-  unsigned int is_variadic_funcptr : 1;
   unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
-  unsigned int funcptr_ret_fp_kind : 3;     // tk_float_kind_t: 関数ポインタ戻りFP種別
-  unsigned int funcptr_ret_pointee_fp_kind : 3; // tk_float_kind_t: 関数ポインタ戻りポインタ先FP種別
   // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
   // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。
   // subscript_base_address_of がスカラポインタ deref の場合 ND_DEREF を返し
@@ -167,13 +161,7 @@ struct node_mem_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  unsigned char funcptr_ret_int_width;
-  short funcptr_nargs_fixed;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
+  psx_decl_funcptr_sig_t funcptr_sig;
   int pointer_qual_levels;
   // 多次元配列サポート用
   short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）

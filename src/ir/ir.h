@@ -224,7 +224,7 @@ typedef struct ir_inst_t {
     struct {            /* IR_CALL */
       int ret_struct_size;
       /* variadic 呼び出し時の固定引数数。args[nargs_fixed..nargs-1] が stack 行き。
-       * 固定引数数は short に収まる (decl.c の funcptr_nargs_fixed も short)。 */
+       * 固定引数数は declaration signature の nargs_fixed に保持する。 */
       short nargs_fixed;
       /* variadic 呼び出し (Apple ARM64 ABI: 可変部分は全て stack)。
        * 0/1 のみ。1 のとき args[nargs_fixed..nargs-1] は stack。 */

@@ -1336,7 +1336,7 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   }
   /* DEREF の type_size と fp_kind から書き込み幅を決める。 */
   ir_type_t vty = ir_type_from_node(node->lhs);
-  if (vty == IR_TY_I32) {
+  if (!is_fp_type(vty)) {
     vty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
   }
   rhs = coerce_to_type_ex(ctx, rhs, vty, mm->is_unsigned ? 1 : 0,
@@ -1460,7 +1460,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   /* deref 後の型: fp_kind を最優先。それ以外は type_size で判定
    * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
   ir_type_t load_ty = ir_type_from_node(node);
-  if (load_ty == IR_TY_I32) {
+  if (!is_fp_type(load_ty)) {
     load_ty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
   }
   inst->dst = ir_val_vreg(v, load_ty);
@@ -1754,7 +1754,9 @@ static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
   if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
       callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
     node_mem_t *m = (node_mem_t *)callee;
-    return (m->funcptr_ret_is_data_pointer || PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(m)) ? 1 : 0;
+    psx_decl_funcptr_sig_t sig = psx_node_mem_funcptr_sig(m);
+    return (sig.ret_is_data_pointer ||
+            psx_ret_pointee_array_has_dims(sig.ret_pointee_array)) ? 1 : 0;
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;
@@ -1776,7 +1778,7 @@ static int indirect_funcptr_ret_int_width(node_t *callee) {
   if (!callee) return 0;
   if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
       callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    return ((node_mem_t *)callee)->funcptr_ret_int_width;
+    return psx_node_mem_funcptr_sig((node_mem_t *)callee).ret_int_width;
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;
@@ -1831,9 +1833,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     }
   } else if (fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
     node_mem_t *cm = (node_mem_t *)fn->callee;
-    if (cm->is_variadic_funcptr && cm->funcptr_nargs_fixed < fn->nargs) {
+    psx_decl_funcptr_sig_t sig = psx_node_mem_funcptr_sig(cm);
+    if (sig.is_variadic && sig.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
-      nargs_fixed = cm->funcptr_nargs_fixed;
+      nargs_fixed = sig.nargs_fixed;
     }
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは

@@ -9,6 +9,7 @@
 #include "semantic_ctx.h"
 #include "stmt.h"
 #include "config_runtime.h"
+#include "type.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
@@ -2595,6 +2596,29 @@ static int node_is_ptr_for_arith(node_t *n) {
   return is_tp;
 }
 
+static psx_type_t *row_decay_pointer_arith_type(node_t *n) {
+  if (!n || (n->kind != ND_DEREF && n->kind != ND_ADDR)) return NULL;
+  node_mem_t *mem = (node_mem_t *)n;
+  int ds = mem->deref_size;
+  if (ds <= 0 || mem->type_size <= ds) return NULL;
+  psx_type_t *type = psx_node_get_type(n);
+  psx_type_t *base = (type && type->kind == PSX_TYPE_ARRAY && type->base)
+                         ? type->base
+                         : NULL;
+  if (!base) {
+    if (mem->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+      base = psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind, ds);
+    } else {
+      base = psx_type_new_integer(mem->pointee_is_bool ? TK_BOOL : TK_EOF,
+                                  ds, mem->pointee_is_unsigned);
+    }
+  }
+  psx_type_t *ptr = psx_type_new_pointer(base, ds);
+  if (type) psx_type_copy_pointer_metadata(ptr, type);
+  ptr->deref_size = ds;
+  return ptr;
+}
+
 static node_t *add_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = mul_ctx(ctx);
   for (;;) {
@@ -2623,9 +2647,14 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
           }
         }
       }
-      node = node_is_ptr_for_arith(node)
-               ? psx_node_new_binary(ND_ADD, node, rhs)
-               : new_binary_with_source_op(ND_ADD, node, rhs, TK_PLUS);
+      if (node_is_ptr_for_arith(node)) {
+        node_t *sum = psx_node_new_binary(ND_ADD, node, rhs);
+        psx_type_t *type = row_decay_pointer_arith_type(node);
+        if (type) sum->type = type;
+        node = sum;
+      } else {
+        node = new_binary_with_source_op(ND_ADD, node, rhs, TK_PLUS);
+      }
     } else if (curtok()->kind == TK_MINUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul_ctx(ctx);
@@ -2651,9 +2680,14 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
             }
           }
         }
-        node = node_is_ptr_for_arith(node)
-                 ? psx_node_new_binary(ND_SUB, node, rhs)
-                 : new_binary_with_source_op(ND_SUB, node, rhs, TK_MINUS);
+        if (node_is_ptr_for_arith(node)) {
+          node_t *diff = psx_node_new_binary(ND_SUB, node, rhs);
+          psx_type_t *type = row_decay_pointer_arith_type(node);
+          if (type) diff->type = type;
+          node = diff;
+        } else {
+          node = new_binary_with_source_op(ND_SUB, node, rhs, TK_MINUS);
+        }
       }
     }
     else return node;
@@ -3381,7 +3415,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   } else {
     node->callee = callee;
   }
-  /* 間接呼び出しで callee の funcptr_ret_fp_kind (= 関数戻り型の fp_kind) を
+  /* 間接呼び出しで callee の function-pointer signature (= 関数戻り型の fp_kind) を
    * funcall ノードに載せる。これがないと ir_builder が戻り値型を整数
    * (I32) と判定し戻り値を x0 で読んでいた (FP 戻り値は d0 に返るため化けていた)。
    * 以前は `pointee_fp_kind` を流用していたため、データポインタ pointee と function
@@ -3430,7 +3464,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   }
   /* 関数ポインタ経由呼び出し `fp(3)`: fp 仮引数に整数実引数を渡したら昇格する。
    * 直接呼び出しは ir_builder が coerce するが、間接は funcptr 変数が仮引数型を
-   * 持つ必要があるため、宣言時に記録した funcptr_param_fp_mask を見て parser 側で
+   * 持つ必要があるため、宣言時に記録した function-pointer signature を見て parser 側で
    * wrap_to_fp する (既に fp の実引数なら no-op)。 */
   unsigned short fp_param_mask = 0;
   unsigned short int_param_mask = 0;
