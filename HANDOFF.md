@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き731: lvar 配列 address metadata 初期化の集約）
+最終更新: 2026-07-06（続き732: gvar 配列 address metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き732: **gvar 配列の `ND_ADDR` metadata 初期化を `node_utils` に集約した**。
+  続き731の後も、`try_build_global_var_node()` の配列グローバル分岐は
+  `global_var_t` から address node へ tag / qualifier / stride / pointee fp/unsigned /
+  funcptr / pointer-array metadata を手でコピーしていた。
+
+  根本対応として `psx_node_init_gvar_array_addr_metadata()` を `node_utils` に追加し、
+  `ND_ADDR` の `lhs` は呼び出し側で組みつつ、配列グローバル address として必要な
+  metadata 初期化をこの入口へ集約した。
+  関数ポインタ配列の `base_deref_size=8`、ポインタ配列の scalar-ptr carry、
+  struct pointer array の `pointer_qual_levels=1`、多次元 stride carry も既存挙動通り
+  helper 側に移した。
+  これで gvar 配列 address の型 metadata 伝播も `expr.c` 側の個別コピーから外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き731: **lvar 配列の `ND_ADDR` metadata 初期化を `node_utils` に集約した**。
   続き730の後も、`build_static_local_array_addr_node()` と
   `build_array_lvar_addr_node()` は、配列 lvar の address node に

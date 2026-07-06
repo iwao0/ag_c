@@ -1270,6 +1270,54 @@ void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
   addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
 }
 
+void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const global_var_t *gv) {
+  if (!addr || !gv) return;
+  addr->tag_kind = gv->tag_kind;
+  addr->tag_name = gv->tag_name;
+  addr->tag_len = gv->tag_len;
+  addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+  addr->is_const_qualified = gv->is_const_qualified ? 1 : 0;
+  addr->is_volatile_qualified = gv->is_volatile_qualified ? 1 : 0;
+  if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
+  int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
+  addr->type_size = (short)stride;
+  addr->deref_size = (short)stride;
+  addr->is_pointer = 1;
+  if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+    addr->pointee_fp_kind = (unsigned int)gv->fp_kind;
+  } else if (gv->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+    addr->pointee_fp_kind = (unsigned int)gv->pointee_fp_kind;
+    addr->base_deref_size = 8;
+  }
+  addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
+  psx_node_copy_funcptr_metadata_from_gvar(addr, gv);
+  if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
+    addr->pointee_is_scalar_ptr = 1;
+    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
+  }
+  if (gv->tag_kind != TK_EOF && gv->is_tag_pointer) {
+    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->deref_size;
+    if (addr->pointer_qual_levels == 0) addr->pointer_qual_levels = 1;
+  }
+  if (gv->outer_stride > 0) {
+    if (gv->mid_stride > 0) {
+      addr->inner_deref_size = (short)gv->mid_stride;
+      if (gv->extra_strides_count > 0) {
+        addr->next_deref_size = (short)gv->extra_strides[0];
+        for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
+          addr->extra_strides[i - 1] = gv->extra_strides[i];
+        }
+        addr->extra_strides[gv->extra_strides_count - 1] = (short)gv->deref_size;
+        addr->extra_strides_count = gv->extra_strides_count;
+      } else {
+        addr->next_deref_size = (short)gv->deref_size;
+      }
+    } else {
+      addr->inner_deref_size = (short)gv->deref_size;
+    }
+  }
+}
+
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);

@@ -4855,75 +4855,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
       addr->base.kind = ND_ADDR;
       addr->base.lhs = (node_t *)base;
-      addr->tag_kind = gv->tag_kind;
-      addr->tag_name = gv->tag_name;
-      addr->tag_len = gv->tag_len;
-      addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
-      addr->is_const_qualified = gv->is_const_qualified;
-      addr->is_volatile_qualified = gv->is_volatile_qualified;
-      if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
-      // 多次元配列: outer_stride を 1 次サブスクリプトのステップとして使う。
-      // ローカル配列の build_array_lvar_addr_node と同じレイアウト。
-      int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
-      addr->type_size = stride;
-      addr->deref_size = stride;
-      addr->is_pointer = 1;
-      /* `double a[5]` 等: 要素型 fp_kind を pointee_fp_kind に伝播し、
-       * build_subscript_deref が FP load を組み立てられるようにする。
-       * 関数ポインタ配列 `double (*gops[N])(double)` は要素自体がポインタなので gv->fp_kind は
-       * NONE で、戻り型 fp は gv->pointee_fp_kind に入る。これを pointee_fp_kind に伝播し、
-       * かつ base_deref_size=要素ポインタサイズ(8) を立てて build_subscript_deref の
-       * 「不透明な関数ポインタ要素」分岐 (inner_ds==0 && bds>0) に乗せる。`gops[i]()` の戻り値が
-       * d0 で読まれるようになる (ローカル funcptr 配列と同じ表現)。 */
-      if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
-        addr->pointee_fp_kind = gv->fp_kind;
-      } else if (gv->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
-        addr->pointee_fp_kind = (tk_float_kind_t)gv->pointee_fp_kind;
-        addr->base_deref_size = 8;
-      }
-      /* unsigned グローバル配列: 要素 subscript 結果を zero-extend load させる。 */
-      addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
-      psx_node_copy_funcptr_metadata_from_gvar(addr, gv);
-      /* `char *names[N]` 等のグローバルポインタ配列: 各要素 (= スカラポインタ) の
-       * pointee サイズ情報を伝播。subscript の結果 ND_DEREF に is_scalar_ptr_member
-       * を立てて、struct メンバ char* (commit 6a663ed) と同じく ND_DEREF をそのまま
-       * subscript base にしてポインタ値の load を引き起こす。
-       * 関数ポインタ配列 (`int (*ops[N])(int)`) は ops[i](val) で deref→call され、
-       * 2 段 subscript はしない (= pointee_elem_size を見ない) ので影響なし。 */
-      if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
-        addr->pointee_is_scalar_ptr = 1;
-        /* 2D 以上のポインタ配列 (`int *t[2][2]`) では最終 subscript の base が ND_ADDR で
-         * なく中間 ND_DEREF になり gv を引けない。要素ポインタの pointee サイズ
-         * (`int*` なら 4) を base_deref_size に載せて中間次元へ carry する。fp funcptr 配列
-         * (base_deref_size=8 を上で設定) とは排他なので未設定時のみ。 */
-        if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
-      }
-      /* グローバル struct ポインタ配列 (`struct P *parr[3]`): 要素は struct ポインタ。
-       * build_subscript_deref の「要素はポインタ」分岐 (pql>=1 && bds>0) に乗せて
-       * `parr[i]->m` の `->` 解決ができるよう pointer_qual_levels=1 / base_deref_size を立てる。
-       * 既存はメンバ struct ポインタ配列 (db98d34) は対応していたがグローバルは漏れていた。
-       * deref_size には pointee struct のサイズを使う (gv->deref_size に入っている)。 */
-      if (gv->tag_kind != TK_EOF && gv->is_tag_pointer) {
-        if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->deref_size;
-        if (addr->pointer_qual_levels == 0) addr->pointer_qual_levels = 1;
-      }
-      if (gv->outer_stride > 0) {
-        if (gv->mid_stride > 0) {
-          addr->inner_deref_size = (short)gv->mid_stride;
-          if (gv->extra_strides_count > 0) {
-            addr->next_deref_size = (short)gv->extra_strides[0];
-            for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
-              addr->extra_strides[i - 1] = gv->extra_strides[i];
-            }
-            addr->extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
-            addr->extra_strides_count = gv->extra_strides_count;
-          } else {
-            addr->next_deref_size = (short)gv->deref_size;
-          }
-        } else {
-          addr->inner_deref_size = (short)gv->deref_size;
-        }
-      }
+      psx_node_init_gvar_array_addr_metadata(addr, gv);
       return (node_t *)addr;
     }
     node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));

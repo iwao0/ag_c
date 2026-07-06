@@ -32,6 +32,7 @@ void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
                                                     const struct tag_member_info_t *src);
 void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const struct lvar_t *var,
                                             int is_tag_pointer);
+void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const struct global_var_t *gv);
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);
