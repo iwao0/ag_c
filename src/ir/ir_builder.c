@@ -1380,15 +1380,7 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 static void attach_funcptr_sig(ir_inst_t *sym, const node_mem_t *m) {
   if (!sym || !psx_node_mem_has_funcptr_metadata(m)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_ret_fp_kind = (unsigned char)m->funcptr_ret_fp_kind;
-  sym->funcptr_ret_int_width = m->funcptr_ret_int_width;
-  sym->funcptr_ret_is_void = m->funcptr_ret_is_void ? 1 : 0;
-  sym->funcptr_ret_is_data_pointer = m->funcptr_ret_is_data_pointer ? 1 : 0;
-  sym->funcptr_ret_is_complex = m->funcptr_ret_is_complex ? 1 : 0;
-  sym->is_variadic_funcptr = m->is_variadic_funcptr ? 1 : 0;
-  sym->funcptr_param_fp_mask = m->funcptr_param_fp_mask;
-  sym->funcptr_param_int_mask = m->funcptr_param_int_mask;
-  sym->funcptr_nargs_fixed = m->funcptr_nargs_fixed;
+  sym->funcptr_sig = psx_node_mem_funcptr_sig(m);
 }
 
 static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
@@ -1833,9 +1825,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   } else if (fn->callee->kind == ND_GVAR) {
     node_gvar_t *cg = (node_gvar_t *)fn->callee;
     global_var_t *g = psx_find_global_var(cg->name, cg->name_len);
-    if (g && g->is_variadic_funcptr && g->funcptr_nargs_fixed < fn->nargs) {
+    if (g && g->funcptr_sig.is_variadic && g->funcptr_sig.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
-      nargs_fixed = g->funcptr_nargs_fixed;
+      nargs_fixed = g->funcptr_sig.nargs_fixed;
     }
   } else if (fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
     node_mem_t *cm = (node_mem_t *)fn->callee;

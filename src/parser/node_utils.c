@@ -54,19 +54,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_lvar(const lvar_t *src) {
 
 static psx_decl_funcptr_sig_t funcptr_sig_from_gvar(const global_var_t *src) {
   if (!src) return (psx_decl_funcptr_sig_t){0};
-  return (psx_decl_funcptr_sig_t){
-      .param_fp_mask = src->funcptr_param_fp_mask,
-      .param_int_mask = src->funcptr_param_int_mask,
-      .ret_int_width = src->funcptr_ret_int_width,
-      .ret_fp_kind = (tk_float_kind_t)src->funcptr_ret_fp_kind,
-      .ret_pointee_fp_kind = (tk_float_kind_t)src->funcptr_ret_pointee_fp_kind,
-      .ret_pointee_array = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(src),
-      .ret_is_void = src->funcptr_ret_is_void,
-      .ret_is_data_pointer = src->funcptr_ret_is_data_pointer,
-      .ret_is_complex = src->funcptr_ret_is_complex,
-      .is_variadic = src->is_variadic_funcptr,
-      .nargs_fixed = src->funcptr_nargs_fixed,
-  };
+  return src->funcptr_sig;
 }
 
 static psx_decl_funcptr_sig_t funcptr_sig_from_tag_member(const tag_member_info_t *src) {
@@ -136,6 +124,10 @@ int psx_node_mem_has_funcptr_metadata(const node_mem_t *mem) {
   if (!mem) return 0;
   psx_decl_funcptr_sig_t sig = funcptr_sig_from_mem(mem);
   return psx_decl_funcptr_sig_has_payload(sig);
+}
+
+psx_decl_funcptr_sig_t psx_node_mem_funcptr_sig(const node_mem_t *mem) {
+  return funcptr_sig_from_mem(mem);
 }
 
 static psx_type_t *node_explicit_cast_type(node_t *node) {

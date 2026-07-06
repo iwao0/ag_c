@@ -13353,11 +13353,148 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
   - `./build/test_e2e` = **1200/1200 OK**
   - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+
+### このセッション（続き703）: global_var_t の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き701/702で `psx_type_t` / `lvar_t` は `psx_decl_funcptr_sig_t funcptr_sig`
+    に寄ったが、`global_var_t` にはまだ `funcptr_param_fp_mask` /
+    `funcptr_ret_fp_kind` / `is_variadic_funcptr` / `funcptr_nargs_fixed` などの
+    split field が残っていた。
+  - `psx_decl_set_gvar_funcptr_signature()` が signature を split field へ分解し、
+    `node_utils.c` / `ir_builder.c` / `wasm32_obj.c` がそれぞれ別々に再構成していたため、
+    グローバル関数ポインタの型情報の正本が構造体内で二重化して見える状態だった。
+- 根本対応:
+  - `global_var_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 function pointer
+    split field 群を削除した。
+  - `psx_decl_set_gvar_funcptr_signature()` は `gv->funcptr_sig = *sig` の直接代入にした。
+  - `node_utils.c` の `funcptr_sig_from_gvar()` は split field の組み立てではなく
+    `src->funcptr_sig` を返すようにした。
+  - `ir_builder.c` のグローバル関数ポインタ経由 variadic 判定は
+    `g->funcptr_sig.is_variadic` / `nargs_fixed` を読むようにした。
+  - `wasm32_obj.c` の global function pointer import signature 生成は、
+    `global_var_t` の split field ではなく `psx_decl_funcptr_sig_t` の local copy を読むようにした。
+  - `symtab.h` の `global_var_t` layout コメントから古い exact sizeof 記述を外し、
+    signature field 追加後も誤ったサイズ説明にならないようにした。
+- 追加/更新テスト:
+  - `test_type_metadata_bridge()` の global function pointer 検査を
+    `gvar->funcptr_sig.ret_fp_kind` / `ret_pointee_fp_kind` へ更新した。
+  - local/type/typedef/node_mem/tag member/IR inst の split field は今回の対象外で残している。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
   - `git diff --check` = **green**
-  - `rg -n -- "(lvar_t|cl|lv|var|src|td_.*lvar|tm700_fp_lvar|dpa_lvar|fp_lvar|dp_lvar)->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)" src/parser src/ir test/test_parser.c`
-    = **local 由来は no matches。残り match は `funcptr_sig_from_gvar()` の global_var_t `src`**
-  - `rg -n "ret_fp_kind = m->fp_kind|ret_fp_kind = \\(.*\\)m->fp_kind|funcptr_ret_fp_kind|is_funcptr|psx_ctx_set_tag_member_fp_kind\\(.*member_fp_kind|head\\.has_func_suffix.*pointee_fp_kind" src/parser/semantic_ctx.h src/parser/semantic_ctx.c src/parser/struct_layout.c src/parser/parser.c test/test_parser.c`
-    = **旧 `m->fp_kind` 直読 / funcptr member 直接 fp_kind 同期は no matches、追加した専用 field と回帰テストのみ match**
+  - `rg -n -- "(gv|g|gfp|gdp|tm700_gfp|src)->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)" src test/test_parser.c`
+    = **no matches**
+- 次の候補:
+  - `node_mem_t` は AST/IR 境界 carrier なので最後に回すのが安全。
+  - 次に根本寄りで切るなら、`tag_member_info_t` か `ir_inst_t` の function pointer signature
+    split field を `psx_decl_funcptr_sig_t` へ寄せる。ただし wasm lowering と IR dump への影響がある。
+
+### このセッション（続き704）: tag member の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き703で `global_var_t` は `psx_decl_funcptr_sig_t funcptr_sig` に寄ったが、
+    `tag_member_info_t` と内部保存レコード `tag_member_t` にはまだ
+    `funcptr_param_fp_mask` / `funcptr_ret_fp_kind` / `funcptr_ret_is_pointer` /
+    `is_variadic_funcptr` / `funcptr_nargs_fixed` などの split field が残っていた。
+  - 片方だけを helper 化すると、tag member の公開 descriptor と保存 record の間で
+    function pointer signature の正本が二重化したままになるため、両方を同時に移行した。
+- 根本対応:
+  - `tag_member_info_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 split field 群を削除した。
+  - 内部 `tag_member_t` にも `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 split field 群を削除した。
+  - `psx_ctx_tag_member_funcptr_sig()` / `psx_ctx_tag_member_set_funcptr_sig()` は
+    split field の組み立て/分解ではなく、`funcptr_sig` をそのまま読み書きするようにした。
+  - `tag_member_record_funcptr_sig()` / `tag_member_record_set_funcptr_sig()` も
+    内部 record の `funcptr_sig` を直接扱うようにした。
+  - `wasm32_obj.c` の member function pointer import signature 生成は、
+    `tag_member_info_t` の split field ではなく `psx_ctx_tag_member_funcptr_sig()` で得た
+    `psx_decl_funcptr_sig_t` を読むようにした。
+- 追加/更新テスト:
+  - `test_type_metadata_bridge()` に `dp_info.funcptr_sig` が payload なし、
+    `fp_info.funcptr_sig.ret_fp_kind=DOUBLE` / `ret_pointee_fp_kind=NONE` である直接検査を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n -- "tag_member_info_t \\{[\\s\\S]*funcptr_param_|tag_member_t \\{[\\s\\S]*funcptr_param_" src/parser/semantic_ctx.h src/parser/semantic_ctx.c`
+    = **no matches**
+- 次の候補:
+  - `ir_inst_t` の function pointer signature split field は codegen/IR dump/wasm lowering に跨るが、
+    IR 境界上の正本分散として残っている。次に進めるならここを `psx_decl_funcptr_sig_t` へ寄せる。
+  - `node_mem_t` は最後の境界 carrier として残し、IR 側の移行後に扱うのがよい。
+
+### このセッション（続き705）: ir_inst_t の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き704で parser の tag member 側までは `psx_decl_funcptr_sig_t` に寄ったが、
+    IR 境界の `ir_inst_t` にはまだ `funcptr_param_fp_mask` /
+    `funcptr_param_int_mask` / `funcptr_ret_int_width` / `funcptr_ret_is_void` /
+    `funcptr_ret_is_data_pointer` / `is_variadic_funcptr` / `funcptr_nargs_fixed`
+    などの split field が残っていた。
+  - `ir_builder.c` が `node_mem_t` の metadata を IR split field へ分解し、
+    `wasm32_ir.c` / `wasm32_obj.c` / `ir_print.c` がそれぞれ再解釈していたため、
+    AST/IR 境界で signature 正本が再び分散していた。
+- 根本対応:
+  - `ir_inst_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 function pointer
+    signature split field 群を削除した。`has_funcptr_sig` は presence flag として残している。
+  - `ir.h` は `parser/core.h` を include し、IR_CALL の関数ポインタ signature も既存の
+    正本型 `psx_decl_funcptr_sig_t` を使うようにした。
+  - `node_utils` に `psx_node_mem_funcptr_sig()` を公開し、`ir_builder.c` は
+    `node_mem_t` を split field へ分解せず `sym->funcptr_sig = psx_node_mem_funcptr_sig(m)`
+    で渡すようにした。
+  - `wasm32_ir.c` / `wasm32_obj.c` / `ir_print.c` は `ir_inst_t` の旧 split field ではなく
+    `i->funcptr_sig` から param mask / return metadata / variadic flag を読むようにした。
+- 注意:
+  - `node_mem_t` はまだ split field carrier のまま残している。ここは parser AST と IR
+    lowering の境界で広く使われているため、次にまとめて移行する候補。
+  - typedef metadata もまだ split field を持つ。semantic_ctx の保存 record と公開 info を
+    同時に動かす必要がある。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n -- "i->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)|inst->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)|sym->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)|unsigned char funcptr_ret_|unsigned short funcptr_param_|short funcptr_nargs_fixed" src/ir src/arch`
+    = **no matches**
+
+### このセッション（続き706）: typedef metadata の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き705で IR 境界までは `psx_decl_funcptr_sig_t funcptr_sig` に寄ったが、
+    `psx_typedef_info_t` と内部保存レコード `typedef_name_t` にはまだ
+    `funcptr_param_fp_mask` / `funcptr_param_int_mask` / `funcptr_ret_fp_kind` /
+    `funcptr_ret_is_pointer` / `is_variadic_funcptr` / `funcptr_nargs_fixed` などの
+    split field が残っていた。
+  - typedef の公開 info と保存 record の両方で signature を分解保存していたため、
+    typedef 経由の function pointer metadata だけ正本が再分散していた。
+- 根本対応:
+  - `psx_typedef_info_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、
+    旧 function pointer signature split field 群を削除した。
+  - 内部 `typedef_name_t` にも `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、
+    旧 split field 群を削除した。
+  - `psx_ctx_typedef_funcptr_sig()` / `psx_ctx_typedef_set_funcptr_sig()` は
+    split field の組み立て/分解ではなく、`funcptr_sig` をそのまま読み書きするようにした。
+  - `typedef_record_funcptr_sig()` / `typedef_record_set_funcptr_sig()` も内部 record の
+    `funcptr_sig` を直接扱うようにした。
+- 追加/更新テスト:
+  - `test_type_metadata_bridge()` の typedef function pointer 検査を
+    `td_info.funcptr_sig.ret_fp_kind` 経由へ更新した。
+- 注意:
+  - `node_mem_t` はまだ split field carrier のまま残している。parser AST と IR lowering の境界で
+    もっとも広く使われているため、次に扱うならここが大きな本丸。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `rg -n -- "funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed" src/parser/semantic_ctx.h src/parser/semantic_ctx.c`
+    = **no matches**
 
 ### このセッション（続き696）: node/lvar/gvar/type の funcptr 戻り FP を pointee から分離
 - 見つかった浅い箇所:

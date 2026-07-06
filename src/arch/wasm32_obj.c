@@ -1147,22 +1147,23 @@ static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
   if (!gv) return func_sig_from_ctx(name, name_len);
+  psx_decl_funcptr_sig_t fs = gv->funcptr_sig;
   obj_sig_t sig = {0};
-  if (gv->funcptr_ret_is_void) sig.result = IR_TY_VOID;
-  else if (gv->funcptr_ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (gv->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (gv->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = gv->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+  if (fs.ret_is_void) sig.result = IR_TY_VOID;
+  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
+  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
-  int nparams = gv->is_variadic_funcptr
-                  ? gv->funcptr_nargs_fixed
-                  : funcptr_mask_param_count(gv->funcptr_param_fp_mask, gv->funcptr_param_int_mask);
+  int nparams = fs.is_variadic
+                  ? fs.nargs_fixed
+                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      unsigned fp = (gv->funcptr_param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (gv->funcptr_param_int_mask >> (2 * p)) & 3u;
+      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
       sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
@@ -1172,23 +1173,23 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
                                               const char *name, int name_len) {
   if (!mi) return func_sig_from_ctx(name, name_len);
+  psx_decl_funcptr_sig_t fs = psx_ctx_tag_member_funcptr_sig(mi);
   obj_sig_t sig = {0};
-  if (mi->funcptr_ret_is_void) sig.result = IR_TY_VOID;
-  else if (mi->funcptr_ret_is_pointer) sig.result = IR_TY_I32;
-  else if (mi->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (mi->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = mi->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+  if (fs.ret_is_void) sig.result = IR_TY_VOID;
+  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
+  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
-  int nparams = mi->is_variadic_funcptr
-                  ? mi->funcptr_nargs_fixed
-                  : funcptr_mask_param_count(mi->funcptr_param_fp_mask,
-                                             mi->funcptr_param_int_mask);
+  int nparams = fs.is_variadic
+                  ? fs.nargs_fixed
+                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      unsigned fp = (mi->funcptr_param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (mi->funcptr_param_int_mask >> (2 * p)) & 3u;
+      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
       sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
@@ -1197,23 +1198,23 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
 
 static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
   if (!inst || !inst->has_funcptr_sig) return func_sig_from_ctx(name, name_len);
+  psx_decl_funcptr_sig_t fs = inst->funcptr_sig;
   obj_sig_t sig = {0};
-  if (inst->funcptr_ret_is_void) sig.result = IR_TY_VOID;
-  else if (inst->funcptr_ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (inst->funcptr_ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (inst->funcptr_ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = inst->funcptr_ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+  if (fs.ret_is_void) sig.result = IR_TY_VOID;
+  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
+  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
-  int nparams = inst->is_variadic_funcptr
-                  ? inst->funcptr_nargs_fixed
-                  : funcptr_mask_param_count(inst->funcptr_param_fp_mask,
-                                             inst->funcptr_param_int_mask);
+  int nparams = fs.is_variadic
+                  ? fs.nargs_fixed
+                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      unsigned fp = (inst->funcptr_param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (inst->funcptr_param_int_mask >> (2 * p)) & 3u;
+      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
       sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
@@ -1309,9 +1310,10 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       ir_type_t arg_ty = i->args[a].type;
       int null_ptr_pair_arg =
           a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
-      unsigned iw = a < 8 ? ((i->funcptr_param_int_mask >> (2 * a)) & 3u) : 0;
+      psx_decl_funcptr_sig_t fs = i->funcptr_sig;
+      unsigned iw = a < 8 ? ((fs.param_int_mask >> (2 * a)) & 3u) : 0;
       int funcptr_pointer_param = iw == 3;
-      if (!i->is_variadic_funcptr && !i->is_variadic_call &&
+      if (!fs.is_variadic && !i->is_variadic_call &&
           sig.params[a] == IR_TY_I32 && arg_ty != IR_TY_PTR &&
           arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64 && !null_ptr_pair_arg &&
           !funcptr_pointer_param) {
@@ -1323,7 +1325,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
           (i->dst.type == IR_TY_I32 && (sig.result == IR_TY_F32 || sig.result == IR_TY_F64))) {
         sig.result = IR_TY_I32;
       } else if (i->dst.type == IR_TY_I64 && sig.result == IR_TY_I32 &&
-                 !i->funcptr_ret_is_data_pointer) {
+                 !i->funcptr_sig.ret_is_data_pointer) {
         sig.result = IR_TY_I64;
       }
     }

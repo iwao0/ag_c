@@ -3419,17 +3419,7 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!gv || !sig) return;
-  gv->funcptr_param_fp_mask = sig->param_fp_mask;
-  gv->funcptr_param_int_mask = sig->param_int_mask;
-  gv->funcptr_ret_int_width = sig->ret_int_width;
-  gv->funcptr_ret_fp_kind = (unsigned char)sig->ret_fp_kind;
-  gv->funcptr_ret_pointee_fp_kind = (unsigned char)sig->ret_pointee_fp_kind;
-  gv->funcptr_ret_is_void = sig->ret_is_void ? 1 : 0;
-  gv->funcptr_ret_is_data_pointer = sig->ret_is_data_pointer ? 1 : 0;
-  gv->funcptr_ret_is_complex = sig->ret_is_complex ? 1 : 0;
-  gv->is_variadic_funcptr = sig->is_variadic ? 1 : 0;
-  gv->funcptr_nargs_fixed = sig->nargs_fixed;
-  PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(gv, sig->ret_pointee_array);
+  gv->funcptr_sig = *sig;
 }
 
 static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,

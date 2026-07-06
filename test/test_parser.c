@@ -2137,6 +2137,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.fp_kind);
   ASSERT_EQ(0, dp_info.is_funcptr);
+  ASSERT_TRUE(!psx_decl_funcptr_sig_has_payload(dp_info.funcptr_sig));
   psx_decl_funcptr_sig_t dp_sig = psx_ctx_tag_member_funcptr_sig(&dp_info);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.ret_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.ret_pointee_fp_kind);
@@ -2145,6 +2146,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "fp", 2, &fp_info));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.fp_kind);
   ASSERT_EQ(1, fp_info.is_funcptr);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_info.funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.funcptr_sig.ret_pointee_fp_kind);
   psx_decl_funcptr_sig_t fp_sig = psx_ctx_tag_member_funcptr_sig(&fp_info);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_sig.ret_fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_sig.ret_pointee_fp_kind);
@@ -2176,15 +2179,15 @@ static void test_type_metadata_bridge() {
   global_var_t *gdp = psx_find_global_var("__tm696_gdp", 11);
   ASSERT_TRUE(gdp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gdp->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, gdp->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gdp->funcptr_sig.ret_fp_kind);
   node_mem_t gdp_mem = {0};
   psx_node_copy_funcptr_metadata_from_gvar(&gdp_mem, gdp);
   ASSERT_TRUE(!psx_node_mem_has_funcptr_metadata(&gdp_mem));
   global_var_t *gfp = psx_find_global_var("__tm696_gfp", 11);
   ASSERT_TRUE(gfp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gfp->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, gfp->funcptr_sig.ret_pointee_fp_kind);
   node_mem_t gfp_mem = {0};
   psx_node_copy_funcptr_metadata_from_gvar(&gfp_mem, gfp);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&gfp_mem));
@@ -2202,12 +2205,12 @@ static void test_type_metadata_bridge() {
   psx_typedef_info_t td_dp = {0};
   ASSERT_TRUE(psx_ctx_find_typedef_name("TM697_DP", 8, &td_dp));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp.fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp.funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp.funcptr_sig.ret_fp_kind);
   ASSERT_TRUE(!psx_decl_funcptr_sig_has_payload(psx_ctx_typedef_funcptr_sig(&td_dp)));
   psx_typedef_info_t td_fp = {0};
   ASSERT_TRUE(psx_ctx_find_typedef_name("TM697_FP", 8, &td_fp));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp.fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp.funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp.funcptr_sig.ret_fp_kind);
   psx_decl_funcptr_sig_t td_fp_sig = psx_ctx_typedef_funcptr_sig(&td_fp);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp_sig.ret_fp_kind);
   ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(td_fp_sig));
@@ -2238,8 +2241,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_fp_lvar->funcptr_sig.ret_pointee_fp_kind);
   global_var_t *tm700_gfp = psx_find_global_var("__tm700_gfp", 11);
   ASSERT_TRUE(tm700_gfp != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_gfp->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_gfp->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_gfp->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_gfp->funcptr_sig.ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "double __tm_sq(double x){ return x*x; } "

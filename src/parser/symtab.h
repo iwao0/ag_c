@@ -10,8 +10,8 @@
 
 // グローバル変数テーブル（連結リスト）
 //
-// フィールドはアライメント降順 (8→4→2→1 バイト) に並べ、真偽フラグをビットフィールドに
-// 集約してパディングを除いている (sizeof=152B / align 8、パディング 0。並べ替え前は 176B)。
+// フィールドはアライメント降順 (8→4→2→1 バイト) に寄せ、真偽フラグをビットフィールドに
+// 集約してパディングを抑えている。
 // 検索ホットパスである try_build_global_var_node の線形走査は先頭の next/name/name_len
 // のみ読むので、それらを最初のキャッシュラインに置いている。並べ替えはレイアウトのみの
 // 変更で、全確保箇所が calloc + フィールド代入のため挙動には影響しない。
@@ -73,19 +73,8 @@ struct global_var_t {
   unsigned int is_const_qualified : 1;
   unsigned int is_volatile_qualified : 1;
   unsigned int is_long_double : 1; // long double スカラ: _Generic で double と区別
-  // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
-  unsigned int is_variadic_funcptr : 1;
-  unsigned int funcptr_ret_is_void : 1;
-  unsigned int funcptr_ret_is_data_pointer : 1;
-  unsigned int funcptr_ret_is_complex : 1;
 
   // --- 2 バイト (short) ---
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
-  short funcptr_nargs_fixed;  // 可変長関数ポインタの固定引数数 (`...` の前)
   int type_size;      // sizeof（グローバルオブジェクト全体サイズ）
   // --- 2 バイト (short) ---
   short deref_size;   // ポインタ先の要素サイズ
@@ -100,16 +89,12 @@ struct global_var_t {
   unsigned char fp_kind;
   // データポインタ/配列の pointee fp_kind (`double *p`, `double a[N]`)。
   unsigned char pointee_fp_kind;
-  // 関数ポインタグローバル `double (*gops)(double)` の戻り型 fp_kind。
-  unsigned char funcptr_ret_fp_kind;
-  // 関数ポインタグローバル `double *(*gops)(void)` の戻りポインタ先 fp_kind。
-  unsigned char funcptr_ret_pointee_fp_kind;
-  unsigned char funcptr_ret_int_width;
   unsigned char extra_strides_count;
   // 多段ポインタグローバル (`int **gp`) の段数。`*gp` が int* (8B) を返すよう、
   // pql>=2 のとき try_build_global_var_node が node の deref_size=8 /
   // base_deref_size=要素サイズ / pointer_qual_levels を立てる。単段/非ポインタは 0/1。
   unsigned char pointer_qual_levels;
+  psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_t *decl_type;
 };
 extern global_var_t *global_vars;

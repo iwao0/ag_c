@@ -99,51 +99,19 @@ typedef struct tag_member_info_t {
    * build_subscript_deref / build_unary_deref_node に伝える。 */
   int ptr_array_pointee_bytes;
   int is_funcptr;
-  int is_variadic_funcptr;
-  short funcptr_nargs_fixed;
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  unsigned char funcptr_ret_int_width;
-  tk_float_kind_t funcptr_ret_fp_kind;
-  tk_float_kind_t funcptr_ret_pointee_fp_kind;
-  psx_ret_pointee_array_t funcptr_ret_pointee_array;
-  int funcptr_ret_is_void;
-  int funcptr_ret_is_pointer;
-  int funcptr_ret_is_complex;
+  psx_decl_funcptr_sig_t funcptr_sig;
 } tag_member_info_t;
 
 static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(
     const tag_member_info_t *m) {
   if (!m) return (psx_decl_funcptr_sig_t){0};
-  return (psx_decl_funcptr_sig_t){
-      .param_fp_mask = m->funcptr_param_fp_mask,
-      .param_int_mask = m->funcptr_param_int_mask,
-      .ret_int_width = m->funcptr_ret_int_width,
-      .ret_fp_kind = m->is_funcptr ? m->funcptr_ret_fp_kind : TK_FLOAT_KIND_NONE,
-      .ret_pointee_fp_kind = m->is_funcptr ? m->funcptr_ret_pointee_fp_kind : TK_FLOAT_KIND_NONE,
-      .ret_pointee_array = m->funcptr_ret_pointee_array,
-      .ret_is_void = m->funcptr_ret_is_void,
-      .ret_is_data_pointer = m->funcptr_ret_is_pointer,
-      .ret_is_complex = m->funcptr_ret_is_complex,
-      .is_variadic = m->is_variadic_funcptr,
-      .nargs_fixed = m->funcptr_nargs_fixed,
-  };
+  return m->is_funcptr ? m->funcptr_sig : (psx_decl_funcptr_sig_t){0};
 }
 
 static inline void psx_ctx_tag_member_set_funcptr_sig(
     tag_member_info_t *m, psx_decl_funcptr_sig_t sig) {
   if (!m) return;
-  m->funcptr_param_fp_mask = sig.param_fp_mask;
-  m->funcptr_param_int_mask = sig.param_int_mask;
-  m->funcptr_ret_int_width = sig.ret_int_width;
-  m->funcptr_ret_fp_kind = sig.ret_fp_kind;
-  m->funcptr_ret_pointee_fp_kind = sig.ret_pointee_fp_kind;
-  m->funcptr_ret_pointee_array = sig.ret_pointee_array;
-  m->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
-  m->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
-  m->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
-  m->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
-  m->funcptr_nargs_fixed = sig.nargs_fixed;
+  m->funcptr_sig = sig;
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
 }
 
@@ -204,51 +172,20 @@ typedef struct {
   int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
-  int is_variadic_funcptr;      // `typedef int (*vf)(int, ...)` 等の可変長関数ポインタ typedef
-  short funcptr_nargs_fixed;    // 可変長関数ポインタの固定引数数 (`...` の前)
-  int funcptr_ret_is_void;      // 指し示す関数の戻り値が void
-  int funcptr_ret_is_pointer;   // 指し示す関数の戻り値がポインタ (`struct S * (*)()` → 1)
-  int funcptr_ret_is_complex;   // 指し示す関数の戻り値が _Complex
-  unsigned char funcptr_ret_int_width; // 指し示す関数の整数戻り幅 (4/8, 0=非整数/未知)
-  tk_float_kind_t funcptr_ret_fp_kind; // 指し示す関数の FP 戻り種別
-  tk_float_kind_t funcptr_ret_pointee_fp_kind; // 指し示す関数が返すポインタの pointee FP 種別
-  unsigned short funcptr_param_fp_mask; // 関数ポインタ仮引数の fp 種別 (2bit * 最大8)
-  unsigned short funcptr_param_int_mask; // 関数ポインタ仮引数の整数幅/ptr (1=4B, 2=8B, 3=ptr; 2bit * 最大8)
-  psx_ret_pointee_array_t funcptr_ret_pointee_array; // 関数ポインタ戻り値が `T (*)[N][M]` のときの pointee 配列
+  psx_decl_funcptr_sig_t funcptr_sig;
 } psx_typedef_info_t;
 
 static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
     const psx_typedef_info_t *info) {
   if (!info) return (psx_decl_funcptr_sig_t){0};
-  return (psx_decl_funcptr_sig_t){
-      .param_fp_mask = info->funcptr_param_fp_mask,
-      .param_int_mask = info->funcptr_param_int_mask,
-      .ret_int_width = info->funcptr_ret_int_width,
-      .ret_fp_kind = info->is_funcptr ? info->funcptr_ret_fp_kind : TK_FLOAT_KIND_NONE,
-      .ret_pointee_fp_kind = info->is_funcptr ? info->funcptr_ret_pointee_fp_kind : TK_FLOAT_KIND_NONE,
-      .ret_pointee_array = info->funcptr_ret_pointee_array,
-      .ret_is_void = info->funcptr_ret_is_void,
-      .ret_is_data_pointer = info->funcptr_ret_is_pointer,
-      .ret_is_complex = info->funcptr_ret_is_complex,
-      .is_variadic = info->is_variadic_funcptr,
-      .nargs_fixed = info->funcptr_nargs_fixed,
-  };
+  return info->is_funcptr ? info->funcptr_sig : (psx_decl_funcptr_sig_t){0};
 }
 
 static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
                                                    psx_decl_funcptr_sig_t sig) {
   if (!info) return;
-  info->funcptr_param_fp_mask = sig.param_fp_mask;
-  info->funcptr_param_int_mask = sig.param_int_mask;
-  info->funcptr_ret_int_width = sig.ret_int_width;
-  info->funcptr_ret_fp_kind = sig.ret_fp_kind;
-  info->funcptr_ret_pointee_fp_kind = sig.ret_pointee_fp_kind;
-  info->funcptr_ret_pointee_array = sig.ret_pointee_array;
-  info->funcptr_ret_is_void = sig.ret_is_void ? 1 : 0;
-  info->funcptr_ret_is_pointer = sig.ret_is_data_pointer ? 1 : 0;
-  info->funcptr_ret_is_complex = sig.ret_is_complex ? 1 : 0;
-  info->is_variadic_funcptr = sig.is_variadic ? 1 : 0;
-  info->funcptr_nargs_fixed = sig.nargs_fixed;
+  info->funcptr_sig = sig;
+  info->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
 }
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、

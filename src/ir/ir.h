@@ -14,6 +14,7 @@
 #ifndef AG_IR_H
 #define AG_IR_H
 
+#include "../parser/core.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -158,12 +159,9 @@ ir_val_t ir_val_vreg(int id, ir_type_t t);
 /* ------------------------------------------------------------------ */
 
 /*
- * フィールドはアライメント降順 (8→4→1 バイト) に並べてパディングを最小化している
- * (sizeof=144B / align 8。並べ替え前は 224B。ir_val_t の imm/fp_imm union 化で
- * 6 個の ir_val_t が各 8B 縮み 216→168B、nargs_fixed を short・is_variadic_call を
- * 1 バイト化して 168→160B、さらに op 排他なスカラ系メタを匿名 union にまとめて
- * 160→144B)。codegen / regalloc が毎命令で読むホットフィールド (op / dst / src1 /
- * src2) は先頭側に置き、op のあとの 4 バイト穴を nargs で埋めている。
+ * フィールドはアライメント降順に寄せ、パディングを抑えている。codegen / regalloc が
+ * 毎命令で読むホットフィールド (op / dst / src1 / src2) は先頭側に置き、op のあとの
+ * 4 バイト穴を nargs で埋めている。
  *
  * 匿名 union (C11 標準・GNU 拡張ではない) には op ごとに排他的にしか使われないスカラ系
  * メタフィールドだけを入れている。ir_opt / ir_regalloc の汎用オペランド走査が op を
@@ -202,21 +200,13 @@ typedef struct ir_inst_t {
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
    *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
   unsigned char ret_complex_half;
+  psx_decl_funcptr_sig_t funcptr_sig;
   /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
    * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
    * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
    * 有効なので関数アドレスは常に GOT 経由にする。 */
   unsigned char is_got_funcref;
   unsigned char has_funcptr_sig;
-  unsigned char funcptr_ret_fp_kind;
-  unsigned char funcptr_ret_int_width;
-  unsigned char funcptr_ret_is_void;
-  unsigned char funcptr_ret_is_data_pointer;
-  unsigned char funcptr_ret_is_complex;
-  unsigned char is_variadic_funcptr;
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  short funcptr_nargs_fixed;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で
