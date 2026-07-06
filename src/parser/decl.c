@@ -1389,8 +1389,8 @@ static node_t *parse_array_initializer(lvar_t *var) {
     init_chain = rhs->lhs; /* compound literal の init 部分 */
     for (int i = 0; i < array_len; i++) {
       node_t *dst = new_array_elem_lvar_at(var->offset, elem_size, i);
-      node_t *src_node = psx_node_new_lvar_typed(src->offset + i * elem_size, elem_size);
-      ((node_lvar_t *)src_node)->var = src->var;
+      node_t *src_node = psx_node_new_lvar_typed_at_for(src->var, src->offset + i * elem_size,
+                                                        elem_size);
       node_mem_t *assign = psx_node_new_assign(dst, src_node);
       init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     }
@@ -2323,29 +2323,25 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
   int total = var->size > 0 ? var->size : var->elem_size;
   int off = 0;
   while (off + 8 <= total) {
-    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 8);
-    ((node_lvar_t *)lhs)->var = var;
+    node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 8);
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 8;
   }
   while (off + 4 <= total) {
-    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 4);
-    ((node_lvar_t *)lhs)->var = var;
+    node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 4);
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 4;
   }
   while (off + 2 <= total) {
-    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 2);
-    ((node_lvar_t *)lhs)->var = var;
+    node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 2);
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 2;
   }
   while (off + 1 <= total) {
-    node_t *lhs = psx_node_new_lvar_typed(var->offset + off, 1);
-    ((node_lvar_t *)lhs)->var = var;
+    node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 1);
     node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 1;
@@ -3209,8 +3205,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     node_t *re_lv = psx_node_new_lvar_typed_for(var, half);
     re_lv->fp_kind = var->fp_kind;
     node_mem_t *re_as = psx_node_new_assign(re_lv, re);
-    node_t *im_lv = psx_node_new_lvar_typed(var->offset + half, half);
-    ((node_lvar_t *)im_lv)->var = var;
+    node_t *im_lv = psx_node_new_lvar_typed_at_for(var, var->offset + half, half);
     im_lv->fp_kind = var->fp_kind;
     node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
     return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);

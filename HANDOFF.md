@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き746: struct copy object lvar constructor 化）
+最終更新: 2026-07-06（続き747: absolute-offset lvar owner constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き747: **absolute offset の lvar slot owner metadata 初期化を
+  `node_utils` に寄せた**。
+  続き746の後も、`decl.c` の compound literal array copy、struct zero-fill、
+  `_Complex` brace initializer の虚部 slot は、`psx_node_new_lvar_typed()` で
+  raw `ND_LVAR` を作った後に `((node_lvar_t *)node)->var = ...` を直接設定していた。
+
+  根本対応として `psx_node_new_lvar_typed_at_for()` を追加し、
+  absolute offset / type_size / owner `lvar_t` を同じ入口で初期化できるようにした。
+  これにより parser 側の `node_lvar_t::var` 直書き cast は消え、
+  owner metadata は `node_utils` の constructor 内に閉じた。
+  `_Complex` の実部/虚部 FP slot の `fp_kind` は今回の owner metadata 集約とは分け、
+  既存挙動を保つため後続課題として残している。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き746: **struct/union 全体コピー用 lhs lvar の object size 正本を
   `node_utils` に寄せた**。
   続き745の後も、`build_struct_copy_from_value()` の fallback 経路は
