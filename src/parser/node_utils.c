@@ -1882,6 +1882,7 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size) {
 
 node_t *psx_node_new_lvar_for(lvar_t *var) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar(var ? var->offset : 0);
+  if (var) mem_from_lvar(&node->mem, var);
   node->var = var;
   return (node_t *)node;
 }

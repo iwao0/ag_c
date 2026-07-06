@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き728: tag member 関数ポインタ metadata コピーの集約）
+最終更新: 2026-07-06（続き729: lvar node constructor の宣言 metadata hydration）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き729: **`psx_node_new_lvar_for()` が `lvar_t` の宣言 metadata を持つ node を作るようにした**。
+  続き728の後も、`expr.c` の `new_typed_lvar_ref()` は `lvar_t` から
+  `node_mem_t` へ tag / qualifier / pointer-level / funcptr / complex /
+  long-long/plain-char/long-double metadata を手でコピーしていた。
+  一方 `node_utils.c` には `psx_type_t` materialize 用の `mem_from_lvar()` がすでにあり、
+  ここが実質的な lvar 宣言 metadata の正本になっていた。
+
+  根本対応として `psx_node_new_lvar_for()` で `mem_from_lvar()` を呼ぶようにし、
+  lvar node が生成時点で宣言 metadata を持つ形に寄せた。
+  そのうえで `new_typed_lvar_ref()` から同型の手書きコピー列を削除し、
+  個別に必要な `type_size` / `deref_size` / `is_pointer` の調整だけ残した。
+  これにより、今後 `psx_node_new_lvar_for()` / `_typed_for()` 経由で作る lvar node は
+  `expr.c` 側で宣言 metadata を再コピーしなくてもよくなる。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き728: **tag member 由来の関数ポインタ metadata コピーも `node_utils` に集約した**。
   続き727の後、`build_member_deref_node()` だけが `tag_member_info_t` から
   `node_mem_t` へ `funcptr_param_*` / `funcptr_ret_*` /

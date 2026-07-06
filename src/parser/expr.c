@@ -2001,35 +2001,8 @@ static void set_addr_array_strides_from_gvar(node_mem_t *addr, const global_var_
 
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer) {
   node_t *ref = psx_node_new_lvar_typed_for(var, is_pointer ? 8 : var->elem_size);
-  ref->fp_kind = var->fp_kind;
   as_lvar(ref)->mem.deref_size = var->elem_size;
   as_lvar(ref)->mem.is_pointer = is_pointer;
-  as_lvar(ref)->mem.tag_kind = var->tag_kind;
-  as_lvar(ref)->mem.tag_name = var->tag_name;
-  as_lvar(ref)->mem.tag_len = var->tag_len;
-  as_lvar(ref)->mem.is_tag_pointer = var->is_tag_pointer;
-  /* タグ shadow 応用形: 変数宣言時の tag_scope_depth を node にも伝播し、後段の
-   * メンバ参照経路で「最も内側 tag」ではなく「変数が見ていた tag」のメンバを引けるように
-   * する (内側 shadow からの外側変数参照対応)。 */
-  as_lvar(ref)->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
-  as_lvar(ref)->mem.is_const_qualified = var->is_const_qualified;
-  as_lvar(ref)->mem.is_volatile_qualified = var->is_volatile_qualified;
-  as_lvar(ref)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
-  as_lvar(ref)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
-  as_lvar(ref)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
-  as_lvar(ref)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
-  as_lvar(ref)->mem.pointer_qual_levels = var->pointer_qual_levels;
-  as_lvar(ref)->mem.base_deref_size = var->base_deref_size;
-  as_lvar(ref)->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
-  as_lvar(ref)->mem.is_unsigned = var->is_unsigned;
-  /* 複素数 lvar 参照: is_complex を伝播して、代入/算術で複素数として扱われるように
-   * する (compound literal `(double _Complex){re,im}` の値が複素数コピーされる)。 */
-  ref->is_complex = var->is_complex;
-  as_lvar(ref)->mem.is_complex = var->is_complex;
-  /* long long / plain char の型識別を伝播 (_Generic の制御式型判定で使う)。 */
-  as_lvar(ref)->mem.is_long_long = var->is_long_long;
-  as_lvar(ref)->mem.is_plain_char = var->is_plain_char;
-  as_lvar(ref)->mem.is_long_double = var->is_long_double;
   return ref;
 }
 
