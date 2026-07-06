@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き729: lvar node constructor の宣言 metadata hydration）
+最終更新: 2026-07-06（続き730: 通常 lvar 参照の宣言 metadata 再コピー削除）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き730: **`build_lvar_or_vla_node()` の宣言 metadata 再コピーを削除した**。
+  続き729で `psx_node_new_lvar_for()` / `_typed_for()` が `mem_from_lvar()` 経由で
+  `lvar_t` の宣言 metadata を持つようになったため、通常 lvar 参照生成後に
+  `expr.c` 側で tag / qualifier / pointer-level / funcptr / pointee /
+  complex / atomic / long-long/plain-char/long-double metadata を再コピーする必要がなくなった。
+
+  根本対応として `build_lvar_or_vla_node()` から上記の手書きコピー列を削除した。
+  VLA / 多次元配列で node ごとに調整が必要な `deref_size` /
+  `inner_deref_size` / `next_deref_size` と、既存の局所判定に依存する
+  `is_pointer` の上書きだけを残している。
+  これで通常 lvar 参照の宣言 metadata は `node_utils.c` の `mem_from_lvar()` が
+  入口になり、`expr.c` 側の正本重複がさらに減った。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き729: **`psx_node_new_lvar_for()` が `lvar_t` の宣言 metadata を持つ node を作るようにした**。
   続き728の後も、`expr.c` の `new_typed_lvar_ref()` は `lvar_t` から
   `node_mem_t` へ tag / qualifier / pointer-level / funcptr / complex /

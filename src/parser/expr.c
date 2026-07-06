@@ -5237,40 +5237,7 @@ static node_t *build_lvar_or_vla_node(lvar_t *var) {
   } else {
     as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
   }
-  as_lvar(n)->mem.vla_row_stride_frame_off = var->vla_row_stride_frame_off;
-  as_lvar(n)->mem.vla_strides_remaining = var->vla_strides_remaining;
-  as_lvar(n)->mem.tag_kind = var->tag_kind;
-  as_lvar(n)->mem.tag_name = var->tag_name;
-  as_lvar(n)->mem.tag_len = var->tag_len;
-  as_lvar(n)->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
-  as_lvar(n)->mem.is_tag_pointer = var->is_tag_pointer;
   as_lvar(n)->mem.is_pointer = lvar_is_pointer;
-  as_lvar(n)->mem.is_const_qualified = var->is_const_qualified;
-  as_lvar(n)->mem.is_volatile_qualified = var->is_volatile_qualified;
-  as_lvar(n)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
-  as_lvar(n)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
-  as_lvar(n)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
-  as_lvar(n)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
-  as_lvar(n)->mem.pointer_qual_levels = var->pointer_qual_levels;
-  as_lvar(n)->mem.base_deref_size = var->base_deref_size;
-  as_lvar(n)->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
-  as_lvar(n)->mem.pointee_fp_kind = var->pointee_fp_kind;
-  psx_node_copy_funcptr_metadata_from_lvar(&as_lvar(n)->mem, var);
-  as_lvar(n)->mem.is_unsigned = var->is_unsigned;
-  /* `unsigned *p` の `*p` を zero-extend load させるため pointee_is_unsigned を
-   * 伝播する (var->is_unsigned は基底型 unsigned を表すのでポインタにも乗る)。 */
-  as_lvar(n)->mem.pointee_is_unsigned = var->is_unsigned;
-  as_lvar(n)->mem.is_complex = var->is_complex;
-  as_lvar(n)->mem.is_atomic = var->is_atomic;
-  as_lvar(n)->mem.pointee_is_void = var->pointee_is_void;
-  as_lvar(n)->mem.is_bool = var->is_bool;
-  /* _Generic で long/long long, char/signed char を区別するための型識別。 */
-  as_lvar(n)->mem.is_long_long = var->is_long_long;
-  as_lvar(n)->mem.is_plain_char = var->is_plain_char;
-  as_lvar(n)->mem.is_long_double = var->is_long_double;
-  n->is_complex = var->is_complex;
-  n->is_atomic = var->is_atomic;
-  n->fp_kind = var->fp_kind;
   return n;
 }
 
