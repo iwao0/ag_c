@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き740: unsigned lvar constructor 化）
+最終更新: 2026-07-06（続き741: parameter lvar ABI metadata constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -26,7 +26,9 @@
   `make test-wasm-linker-selfhost` = **green**、
   `./build/test_wasm32_object` =
   **pass（内部 e2e scan 1162/1162 pass, fail 0）**、
-  `./build/test_wasm32_backend` = **pass**、
+  `./build/test_wasm32_backend` =
+  **現状 fail（puts/fprintf stub の期待文字列・indirect signature まわり。今回の
+  parameter constructor 化の主検証からは分離）**、
   `make wasm32-object-fixture-scan` =
   **1164/1164 pass, fail 0**、
   `make wasm32-object-link-fixture-scan` =
@@ -39,6 +41,32 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き741: **関数パラメータ `args[]` 用 `ND_LVAR` の ABI metadata 初期化を
+  `node_utils` に寄せた**。
+  続き740の後も、`parser.c` の `parse_param_decl()` は
+  `psx_node_new_lvar_typed_for()` で作った parameter node に対して、
+  unsigned / pointer-like / tag / qualifier / funcptr / variadic metadata を大量に
+  直接コピーしていた。
+  その大半は既に `node_utils` の `mem_from_lvar()` が保持する正本コピーと重複していた。
+
+  根本対応として `psx_node_new_param_lvar_for()` を追加し、`args[]` 用の
+  ABI type size、unsigned、FP レジスタ渡し、complex bit だけを引数で渡す形にした。
+  tag / qualifier / function pointer / pointer-array / VLA 系 metadata は
+  `lvar_t` から `node_utils` 側で初期化されるため、`parser.c` から 40 行以上の
+  metadata 直書きと `param_lvar_is_pointer_like()` の重複判定が消えた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
+  追加で `./build/test_wasm32_backend` も試したが、現状は
+  `puts_stub` / `fprintf_funcptr_stub` で fail。
+  WAT には `$puts` / `$fprintf` stub 自体は出ており、少なくとも一部は
+  named param 付き stub に対する古い固定文字列期待が原因。
+  `fprintf_funcptr_stub` は wasm-interp で indirect call signature mismatch も出るため、
+  別件として wasm backend 側の variadic external funcptr stub 期待を整理する必要がある。
 - 続き740: **sizeof VLA runtime size 用 unsigned lvar metadata を
   `node_utils` の constructor に寄せた**。
   続き739の後も、`sizeof_vla_runtime_size_node()` は

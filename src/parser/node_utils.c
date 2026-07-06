@@ -2174,6 +2174,28 @@ node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
   return (node_t *)node;
 }
 
+node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,
+                                    int is_unsigned, tk_float_kind_t abi_fp_kind,
+                                    int is_complex) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed_for(var, abi_type_size);
+  node->mem.base.is_unsigned = is_unsigned ? 1 : 0;
+  node->mem.is_unsigned = is_unsigned ? 1 : 0;
+
+  if (lvar_is_identifier_pointer_like(var)) {
+    node->mem.is_pointer = 1;
+    node->mem.type_size = 8;
+    node->mem.deref_size = (var->outer_stride > 0) ? (short)var->outer_stride
+                           : (var->vla_row_stride_frame_off ? 0 : (short)var->elem_size);
+  }
+
+  if (abi_fp_kind != TK_FLOAT_KIND_NONE) node->mem.base.fp_kind = abi_fp_kind;
+  if (is_complex) {
+    node->mem.base.is_complex = 1;
+    node->mem.is_complex = 1;
+  }
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,

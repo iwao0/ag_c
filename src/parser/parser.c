@@ -4197,15 +4197,6 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   }
 }
 
-static int param_lvar_is_pointer_like(const lvar_t *var) {
-  if (!var) return 0;
-  return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
-         (var->size > var->elem_size) ||
-         (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
-         var->is_tag_pointer ||
-         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
-}
-
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
   param_decl_spec_t ds = {0};
   parse_param_decl_spec(&ds);
@@ -4298,49 +4289,17 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
   int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0 &&
                        !param_is_array_declarator)
                       ? ds.struct_size : 8;
-  node_t *param_node = psx_node_new_lvar_typed_for(var, abi_type_size);
-  node_lvar_t *param_lv = (node_lvar_t *)param_node;
-  param_node->is_unsigned = ds.is_unsigned ? 1 : 0;
-  param_lv->mem.is_unsigned = ds.is_unsigned ? 1 : 0;
-  int param_is_pointer_like = param_lvar_is_pointer_like(var);
-  if (param_is_pointer_like) {
-    param_lv->mem.is_pointer = 1;
-    param_lv->mem.type_size = 8;
-    param_lv->mem.deref_size = (var->outer_stride > 0) ? (short)var->outer_stride
-                              : (var->vla_row_stride_frame_off ? 0 : (short)var->elem_size);
-  }
-  param_lv->mem.tag_kind = var->tag_kind;
-  param_lv->mem.tag_name = var->tag_name;
-  param_lv->mem.tag_len = var->tag_len;
-  param_lv->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
-  param_lv->mem.is_tag_pointer = var->is_tag_pointer;
-  param_lv->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
-  param_lv->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
-  param_lv->mem.pointer_qual_levels = var->pointer_qual_levels;
-  param_lv->mem.base_deref_size = var->base_deref_size;
-  param_lv->mem.pointee_fp_kind = var->pointee_fp_kind;
-  param_lv->mem.pointee_is_void = var->pointee_is_void;
-  param_lv->mem.pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  param_lv->mem.ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
-  param_lv->mem.funcptr_param_fp_mask = var->funcptr_param_fp_mask;
-  param_lv->mem.funcptr_param_int_mask = var->funcptr_param_int_mask;
-  param_lv->mem.funcptr_ret_int_width = var->funcptr_ret_int_width;
-  param_lv->mem.funcptr_ret_is_void = var->funcptr_ret_is_void ? 1 : 0;
-  param_lv->mem.funcptr_ret_is_data_pointer = var->funcptr_ret_is_data_pointer ? 1 : 0;
-  param_lv->mem.funcptr_ret_is_complex = var->funcptr_ret_is_complex ? 1 : 0;
-  param_lv->mem.is_variadic_funcptr = var->is_variadic_funcptr ? 1 : 0;
-  param_lv->mem.funcptr_nargs_fixed = var->funcptr_nargs_fixed;
   // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
   // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
-  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
-    param_node->fp_kind = ds.fp_kind;
-  }
+  tk_float_kind_t abi_fp_kind =
+      (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator)
+          ? ds.fp_kind : TK_FLOAT_KIND_NONE;
   /* 複素数仮引数: args[] ノードにも is_complex を残す (setup_function_params は
    * owner->is_complex を見るが、念のため両方に伝播)。 */
-  if (ds.is_complex && !param_is_ptr && !param_is_array_declarator) {
-    param_node->is_complex = 1;
-    param_lv->mem.is_complex = 1;
-  }
+  int abi_is_complex = ds.is_complex && !param_is_ptr && !param_is_array_declarator;
+  node_t *param_node = psx_node_new_param_lvar_for(var, abi_type_size,
+                                                   ds.is_unsigned, abi_fp_kind,
+                                                   abi_is_complex);
   node->args[(*nargs)++] = param_node;
   return 0;
 }
