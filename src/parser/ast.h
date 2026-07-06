@@ -2,6 +2,9 @@
 #define AST_H
 
 #include "../tokenizer/token.h"
+#include "type.h"
+struct lvar_t;
+struct psx_lvar_usage_region_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
  * symtab 型を使うファイルは symtab.h を個別に include すること。 */
@@ -75,6 +78,10 @@ struct node_t {
   // ツリー構造用
   node_t *lhs;      // 左辺 / 条件式
   node_t *rhs;      // 右辺 / then節 / ループ本体
+  token_t *tok;     // statement/expression start token for post-parse diagnostics
+  struct psx_lvar_usage_region_t *usage_region;
+  struct lvar_t *usage_lvar;
+  token_kind_t source_op;
 
   // データ型判定用（演算結果の型）
   unsigned int fp_kind : 3;     // tk_float_kind_t (0..2)
@@ -85,9 +92,21 @@ struct node_t {
                                      // (`!p == 0` の precedence-trap 警告に使う)
   unsigned int is_void_call : 1; // ND_FUNCALL: 戻り値が void
   unsigned int is_long_long : 1; // 1: long long 型 (_Generic で long と区別)
+  unsigned int records_lvar_usage : 1;
+  unsigned int lvar_usage_unevaluated : 1;
+  unsigned int is_explicit_addr_expr : 1;
+  unsigned int is_source_assignment : 1;
+  unsigned int is_decl_initializer : 1;
+  unsigned int has_empty_body : 1;
+  unsigned int is_implicit_func_decl : 1;
+  unsigned int is_implicit_int_return : 1;
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
+
+  /* New typed-AST path: legacy fields are still the source of truth while the parser is
+   * migrated, but every node can now carry an explicit semantic type. */
+  psx_type_t *type;
 };
 
 // メモリ参照系ノード（型サイズ情報）
@@ -204,6 +223,7 @@ typedef struct node_lvar_t node_lvar_t;
 struct node_lvar_t {
   node_mem_t mem;
   int offset;       // フレームオフセット
+  struct lvar_t *var; // 宣言元シンボル。semantic pass の symbol identity 判定に使う。
 };
 
 // 文字列リテラルノード

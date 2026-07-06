@@ -18,17 +18,16 @@ void psx_ctx_leave_block_scope(void);
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);
 void psx_ctx_register_label_def(char *name, int len, token_t *tok);
 void psx_ctx_validate_goto_refs(void);
-void psx_ctx_enter_unreachable_diagnostic_suppression(void);
-void psx_ctx_leave_unreachable_diagnostic_suppression(void);
-int psx_ctx_in_unreachable_diagnostic_suppression(void);
+void psx_ctx_record_unsupported_gnu_extension_warning(const token_t *tok, const char *name);
+void psx_ctx_emit_deferred_parser_warnings(void);
 
 bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count);
 int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len);
-void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size);
+void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
+                                         int member_count, int tag_size, int tag_align);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
-void psx_ctx_set_pending_tag_align(int align);
 int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
 /* struct/union メンバの float/double 種別を後付けで設定する。
  * 取得は psx_ctx_get_tag_member_info / _find_tag_member_info 経由。 */
@@ -202,6 +201,22 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
 void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len);
 bool psx_ctx_has_function_name(char *name, int len);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);
+typedef struct {
+  token_kind_t token_kind;
+  tk_float_kind_t fp_kind;
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int struct_size;
+  int is_pointer;
+  int is_unsigned;
+  int is_void;
+  int is_complex;
+  int is_funcptr;
+  int funcptr_ret_is_pointer;
+  int funcptr_ret_int_width;
+} psx_function_ret_info_t;
+psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len);
 // 関数戻り値の浮動小数点種別 (float/double) を取得/設定する。
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
 void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);

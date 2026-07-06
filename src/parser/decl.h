@@ -4,10 +4,12 @@
 /* decl.h は AST node 型 (node_t) と シンボルテーブル (global_var_t) の
  * 両方を使う。Phase C1-2: 両ヘッダを明示的に include する。 */
 #include "ast.h"
+#include "core.h"
 #include "symtab.h"
 #include "semantic_ctx.h"  /* psx_ctx_get_tag_scope_depth (inline setter で使う) */
 
 typedef struct lvar_t lvar_t;
+typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 struct lvar_t {
   lvar_t *next;
   lvar_t *next_all;  // 全スコープの変数リスト（未使用チェック・offset検索用）
@@ -108,6 +110,7 @@ struct lvar_t {
    * vla_row_stride_frame_off は += 8 シフト (remaining が 0 になったときは 0 にクリア)。
    * これにより任意 N-D VLA を 8 バイト/段で連鎖的に解決できる。 */
   int vla_strides_remaining;
+  psx_type_t *decl_type;
   /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に
    *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * vla_row_stride_elem_size
    * を計算する。src は同一関数内で先に登録された別パラメータ (内側 dim 識別子)。
@@ -124,7 +127,15 @@ struct lvar_t {
   short vla_param_inner_dim_consts[7];
   int vla_param_inner_dim_src_offsets[7];
   unsigned char vla_param_inner_dim_count;
+  psx_lvar_usage_region_t *decl_region;
 };
+
+typedef enum {
+  PSX_LVAR_USAGE_EVALUATED,
+  PSX_LVAR_USAGE_UNEVALUATED,
+  PSX_LVAR_USAGE_ADDRESS_TAKEN,
+  PSX_LVAR_USAGE_INITIALIZED,
+} psx_lvar_usage_kind_t;
 
 /* lvar_t / global_var_t の tag 4 フィールド (kind/name/len/is_tag_pointer)
  * を 1 行で設定するヘルパ (Phase A2 リファクタリング)。
@@ -166,21 +177,21 @@ void psx_decl_enter_scope(void);
 void psx_decl_leave_scope(void);
 lvar_t *psx_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
-/* 宣言子 trailing `()` の解析前にリセットし、skip_func_param_list で消費する。
- * 直後に psx_last_funcptr_is_variadic / psx_last_funcptr_nargs_fixed で可変長情報を読む。 */
-void psx_reset_funcptr_signature_state(void);
-void psx_skip_func_param_list(void);
-int psx_last_funcptr_is_variadic(void);
-int psx_last_funcptr_nargs_fixed(void);
-unsigned short psx_last_funcptr_param_fp_mask(void);
-unsigned short psx_last_funcptr_param_int_mask(void);
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
+void psx_decl_replay_lvar_usage_events(lvar_t *all_locals);
+void psx_decl_reset_translation_unit_state(void);
+psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void);
+void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region);
+void psx_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
+void psx_decl_attach_lvar_current_region(lvar_t *var);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
+void psx_decl_set_current_funcname(char *name, int len);
+void psx_decl_get_current_funcname(char **out_name, int *out_len);
 
 node_t *psx_decl_parse_declaration(void);
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
@@ -195,7 +206,20 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int base_is_pointer,
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
+                                                 const psx_type_spec_result_t *type_spec,
                                                  const int *td_array_dims, int td_array_dim_count,
+                                                 int td_array_elem_size, int td_is_array,
+                                                 int td_is_long_double, int base_pointer_levels,
+                                                 unsigned short base_funcptr_param_fp_mask,
+                                                 unsigned short base_funcptr_param_int_mask,
+                                                 unsigned char base_funcptr_ret_int_width,
+                                                 psx_ret_pointee_array_t base_funcptr_ret_pointee_array,
+                                                 int base_funcptr_ret_is_void,
+                                                 int base_funcptr_ret_is_pointer,
+                                                 int base_funcptr_ret_is_complex,
+                                                 int base_is_variadic_funcptr,
+                                                 short base_funcptr_nargs_fixed,
+                                                 token_t *typespec_start,
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
@@ -211,5 +235,8 @@ long long psx_decl_count_brace_init_elements(token_t *brace_tok);
  * init_value_symbols[] / init_value_symbol_lens[] / init_fvalues[] を埋める。
  * static local 配列の lowering (decl.c) からも再利用する。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx);
+
+void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
+                                          psx_lvar_usage_region_t *region);
 
 #endif

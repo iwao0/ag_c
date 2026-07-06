@@ -711,10 +711,11 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
             if (i->dst.id >= 0 && i->dst.id < ntypes) {
               obj_sig_t csig = call_sig_from_inst(i);
               if (csig.result != IR_TY_VOID) {
-                int force_result_i32 =
-                    i->dst.type == IR_TY_PTR ||
-                    (i->sym && (psx_ctx_get_function_ret_is_pointer(i->sym, i->sym_len) ||
-                                psx_ctx_get_function_ret_is_funcptr(i->sym, i->sym_len)));
+                psx_function_ret_info_t ret =
+                    i->sym ? psx_ctx_get_function_ret_info(i->sym, i->sym_len)
+                           : (psx_function_ret_info_t){0};
+                int force_result_i32 = i->dst.type == IR_TY_PTR ||
+                                       ret.is_pointer || ret.is_funcptr;
                 if (force_result_i32 || forced_i32[i->dst.id]) {
                   changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
                 } else if (types[i->dst.id] != csig.result) {
@@ -1068,42 +1069,37 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
 
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
   if (raw == IR_TY_VOID) return IR_TY_VOID;
-  if (psx_ctx_get_function_ret_is_pointer((char *)name, name_len) ||
-      psx_ctx_get_function_ret_is_funcptr((char *)name, name_len)) {
+  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info((char *)name, name_len);
+  if (ret.is_pointer || ret.is_funcptr) {
     return IR_TY_PTR;
   }
-  int ret_struct_size = psx_ctx_get_function_ret_struct_size((char *)name, name_len);
-  if (ret_struct_size > 0) {
-    return ret_struct_size == 8 ? IR_TY_I64 : IR_TY_I32;
+  if (ret.struct_size > 0) {
+    return ret.struct_size == 8 ? IR_TY_I64 : IR_TY_I32;
   }
-  tk_float_kind_t rfp = psx_ctx_get_function_ret_fp_kind((char *)name, name_len);
-  if (rfp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (rfp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  token_kind_t rtk = psx_ctx_get_function_ret_token_kind((char *)name, name_len);
-  if (rtk == TK_VOID) return IR_TY_VOID;
-  if (rtk == TK_LONG) return IR_TY_I64;
-  if (rtk != TK_EOF) return IR_TY_I32;
+  if (ret.fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (ret.fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
+  if (ret.token_kind == TK_VOID) return IR_TY_VOID;
+  if (ret.token_kind == TK_LONG) return IR_TY_I64;
+  if (ret.token_kind != TK_EOF) return IR_TY_I32;
   return raw;
 }
 
 static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
   obj_sig_t sig = {0};
-  tk_float_kind_t rfp = psx_ctx_get_function_ret_fp_kind((char *)name, name_len);
-  token_kind_t rtk = psx_ctx_get_function_ret_token_kind((char *)name, name_len);
-  if (psx_ctx_get_function_ret_is_pointer((char *)name, name_len) ||
-      psx_ctx_get_function_ret_is_funcptr((char *)name, name_len)) {
+  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info((char *)name, name_len);
+  if (ret.is_pointer || ret.is_funcptr) {
     sig.result = IR_TY_I32;
-  } else if (psx_ctx_get_function_ret_struct_size((char *)name, name_len) > 0) {
-    sig.result = psx_ctx_get_function_ret_struct_size((char *)name, name_len) == 8
+  } else if (ret.struct_size > 0) {
+    sig.result = ret.struct_size == 8
                    ? IR_TY_I64
                    : IR_TY_I32;
-  } else if (rfp == TK_FLOAT_KIND_FLOAT) {
+  } else if (ret.fp_kind == TK_FLOAT_KIND_FLOAT) {
     sig.result = IR_TY_F32;
-  } else if (rfp >= TK_FLOAT_KIND_DOUBLE) {
+  } else if (ret.fp_kind >= TK_FLOAT_KIND_DOUBLE) {
     sig.result = IR_TY_F64;
-  } else if (rtk == TK_VOID) {
+  } else if (ret.token_kind == TK_VOID) {
     sig.result = IR_TY_VOID;
-  } else if (rtk == TK_LONG) {
+  } else if (ret.token_kind == TK_LONG) {
     sig.result = IR_TY_I64;
   } else {
     sig.result = IR_TY_I32;

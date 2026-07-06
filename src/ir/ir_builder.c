@@ -1838,10 +1838,10 @@ static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;
-    if (!fn->callee && fn->funcname &&
-        psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len)) {
-      return psx_ctx_get_function_funcptr_ret_is_pointer(fn->funcname,
-                                                         fn->funcname_len);
+    if (!fn->callee && fn->funcname) {
+      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
+                                                                  fn->funcname_len);
+      if (ret.is_funcptr) return ret.funcptr_ret_is_pointer;
     }
   }
   return 0;
@@ -1855,10 +1855,10 @@ static int indirect_funcptr_ret_int_width(node_t *callee) {
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;
-    if (!fn->callee && fn->funcname &&
-        psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len)) {
-      return psx_ctx_get_function_funcptr_ret_int_width(fn->funcname,
-                                                        fn->funcname_len);
+    if (!fn->callee && fn->funcname) {
+      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
+                                                                  fn->funcname_len);
+      if (ret.is_funcptr) return ret.funcptr_ret_int_width;
     }
   }
   return 0;
@@ -2183,10 +2183,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     } else if (fn->callee && indirect_funcptr_ret_int_width(fn->callee) >= 8) {
       ret_ty = IR_TY_I64;
     } else if (!fn->callee && fn->funcname) {
+      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
+                                                                  fn->funcname_len);
       small_struct_value_ret =
           node->ret_struct_size > 0 &&
-          !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
-          !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
+          !ret.is_pointer &&
+          !ret.is_funcptr &&
           !cg_size_needs_indirect_struct(node->ret_struct_size);
     } else if (fn->callee) {
       small_struct_value_ret =
@@ -2196,12 +2198,16 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     }
     if (small_struct_value_ret) {
       ret_ty = (node->ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
-    } else if (!fn->callee && fn->funcname &&
-               psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
-      ret_ty = IR_TY_PTR;
-    } else if (!fn->callee && fn->funcname && node->ret_struct_size <= 0) {
-      token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
-      if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) ret_ty = IR_TY_I64;
+    } else if (!fn->callee && fn->funcname) {
+      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
+                                                                  fn->funcname_len);
+      if (ret.is_pointer) {
+        ret_ty = IR_TY_PTR;
+      } else if (node->ret_struct_size <= 0 &&
+                 ret.token_kind != TK_EOF &&
+                 psx_ctx_scalar_type_size(ret.token_kind) >= 8) {
+        ret_ty = IR_TY_I64;
+      }
     }
   }
   call->dst = ir_val_vreg(v, ret_ty);
@@ -3182,9 +3188,12 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     if (ctx->failed) return;
     /* 戻り値を関数の戻り型へ変換する (C11 6.8.6.4: 代入と同じ変換)。
      * `double f(){ return 7; }` の int→double (I2F) などがここで挟まる。 */
+    psx_function_ret_info_t ret =
+        ctx->cur_fn ? psx_ctx_get_function_ret_info(ctx->cur_fn->funcname,
+                                                    ctx->cur_fn->funcname_len)
+                    : (psx_function_ret_info_t){0};
     v = coerce_to_type_ex(ctx, v, ctx->f->ret_type,
-                          ctx->cur_fn ? psx_ctx_get_function_ret_is_unsigned(
-                                            ctx->cur_fn->funcname, ctx->cur_fn->funcname_len) : 0,
+                          ret.is_unsigned,
                           ps_node_is_unsigned(node->lhs));
   } else {
     v = ir_val_imm(IR_TY_I32, 0);
@@ -3604,15 +3613,16 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
     /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
      * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
     if (!is_main) {
-      bool ret_is_void = psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len);
-      if (!ret_is_void) {
+      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
+                                                                  fn->funcname_len);
+      if (!ret.is_void) {
         diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
                        "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
                        fn->funcname_len, fn->funcname);
       }
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)
+    r->src1 = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len).is_void
                   ? ir_val_none()
                   : ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
@@ -3624,26 +3634,25 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
   ir_type_t ret_ty = ir_type_from_node(&fn->base);
-  if (psx_ctx_is_function_ret_void(fn->funcname, fn->funcname_len)) {
+  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
+  if (ret.is_void) {
     ret_ty = IR_TY_VOID;
   }
-  if (fn->base.ret_struct_size > 0 && !psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len) &&
-      !psx_ctx_get_function_ret_is_funcptr(fn->funcname, fn->funcname_len) &&
+  if (fn->base.ret_struct_size > 0 && !ret.is_pointer &&
+      !ret.is_funcptr &&
       !cg_size_needs_indirect_struct(fn->base.ret_struct_size)) {
     ret_ty = (fn->base.ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
   }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */
-  if (ret_ty == IR_TY_I32 &&
-      psx_ctx_get_function_ret_is_pointer(fn->funcname, fn->funcname_len)) {
+  if (ret_ty == IR_TY_I32 && ret.is_pointer) {
     ret_ty = IR_TY_PTR;
   }
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
   if (ret_ty == IR_TY_I32 && fn->base.ret_struct_size <= 0) {
-    token_kind_t rk = psx_ctx_get_function_ret_token_kind(fn->funcname, fn->funcname_len);
-    if (rk != TK_EOF && psx_ctx_scalar_type_size(rk) >= 8) {
+    if (ret.token_kind != TK_EOF && psx_ctx_scalar_type_size(ret.token_kind) >= 8) {
       ret_ty = IR_TY_I64;
     }
   }

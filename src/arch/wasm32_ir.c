@@ -1159,12 +1159,15 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     }
     int callee_name_len = 0;
     char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
+    psx_function_ret_info_t callee_ret =
+        callee_name ? psx_ctx_get_function_ret_info(callee_name, callee_name_len)
+                    : (psx_function_ret_info_t){0};
     int returns_aggregate = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
     if (returns_aggregate && i->ret_struct_area.id == IR_VAL_NONE) {
       wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
     }
     int returns_void = returns_aggregate || i->is_void_call || i->funcptr_ret_is_void ||
-                       (callee_name && psx_ctx_is_function_ret_void(callee_name, callee_name_len)) ||
+                       callee_ret.is_void ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
     const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
@@ -1230,7 +1233,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   if (!psx_ctx_has_function_name(i->sym, i->sym_len)) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
-  int returns_void = psx_ctx_is_function_ret_void(i->sym, i->sym_len);
+  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(i->sym, i->sym_len);
+  int returns_void = ret.is_void;
   if (i->ret_complex_half > 0) {
     wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
     emit_val_expr_as(ctx, i->dst, IR_TY_PTR);
@@ -2331,16 +2335,14 @@ static void emit_minimal_static_data_if_needed(void) {
 }
 
 static ir_type_t wasm_function_result_type_from_decl(char *name, int name_len) {
-  if (psx_ctx_get_function_ret_is_pointer(name, name_len) ||
-      psx_ctx_get_function_ret_is_funcptr(name, name_len)) {
+  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(name, name_len);
+  if (ret.is_pointer || ret.is_funcptr) {
     return IR_TY_PTR;
   }
-  tk_float_kind_t fp = psx_ctx_get_function_ret_fp_kind(name, name_len);
-  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  token_kind_t kind = psx_ctx_get_function_ret_token_kind(name, name_len);
-  if (kind == TK_LONG) return IR_TY_I64;
-  if (kind == TK_VOID) return IR_TY_VOID;
+  if (ret.fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (ret.fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
+  if (ret.token_kind == TK_LONG) return IR_TY_I64;
+  if (ret.token_kind == TK_VOID) return IR_TY_VOID;
   return IR_TY_I32;
 }
 

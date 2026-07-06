@@ -3,8 +3,8 @@
 // 返していた。caller が `flag * 7` のように整数演算に使うと 200*7=1400 が
 // 返り、(int) 経由で見ると 130 等の garbage 化していた。
 //
-// parse_return で current_func_ret_token_kind == TK_BOOL の場合に
-// `lhs != 0` を被せて 0/1 に正規化する。
+// semantic pass の return 変換で、戻り値型が _Bool の場合に `lhs != 0` を被せて
+// 0/1 に正規化する。
 #include <assert.h>
 _Bool always_big(int x) { (void)x; return 200; }
 _Bool is_pos(int x) { return x > 0; }

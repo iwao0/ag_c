@@ -1,6 +1,7 @@
 #include "array_suffixes.h"
 #include "diag.h"
 #include "enum_const.h"
+#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 
@@ -12,10 +13,7 @@ int psx_parse_array_size_constexpr(void) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   } else if (v == 0) {
-    diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, curtok(),
-                   "%s: %s",
-                   diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
-                   "zero-length array");
+    psx_ctx_record_unsupported_gnu_extension_warning(curtok(), "zero-length array");
   }
   return (int)v;
 }

@@ -178,8 +178,9 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
     wasm32_module_begin();
   }
 
-  ps_stream_begin(tk_ctx, tok);
-  for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
+  ps_stream_t stream = {0};
+  ps_stream_begin(&stream, tk_ctx, tok);
+  for (node_t *fn; (fn = ps_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode)) {
       clear_output_callback();
       gen_set_simple_formatter(0);
@@ -189,6 +190,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
     }
     ps_free_processed_ast();
   }
+  ps_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
   if (object_mode) {
@@ -295,8 +297,9 @@ int main(int argc, char **argv) {
   // 「最大の 1 関数 + 永続テーブル + トークンウィンドウ」になる (8MB 級のタイト環境向け)。
   // 非関数のトップレベル宣言は ps_next_function 内で副作用処理され、データセクションは末尾。
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
-  ps_stream_begin(tk_ctx, tok);
-  for (node_t *fn; (fn = ps_next_function()) != NULL; ) {
+  ps_stream_t stream = {0};
+  ps_stream_begin(&stream, tk_ctx, tok);
+  for (node_t *fn; (fn = ps_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
     if (!wasm_emit_function_direct(fn, wasm_object_mode)) {
 #else
@@ -311,6 +314,7 @@ int main(int argc, char **argv) {
     }
     ps_free_processed_ast();  // この関数の AST (parser arena) を解放
   }
+  ps_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
 #ifdef AGC_TARGET_WASM32

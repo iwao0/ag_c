@@ -1,7 +1,10 @@
 #include "../src/parser/parser.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/expr.h"
+#include "../src/parser/node_utils.h"
 #include "../src/parser/config_runtime.h"
+#include "../src/parser/semantic_ctx.h"
+#include "../src/pragma_pack.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>
 #include <stdbool.h>
@@ -34,7 +37,7 @@ static node_t *parse_expr_input(const char *input) {
   /* 単体式パースは関数本体内のコードを模す (ローカルを登録するのと同様)。
    * 複合リテラル `(int){3}` をローカル実体化経路 (ND_COMMA) で扱わせるため、
    * 現在関数名を非 NULL にしておく (本物のパースでは関数定義時に設定される)。 */
-  psx_expr_set_current_funcname((char *)"__test__", 8);
+  psx_decl_set_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
   return ps_expr_from(head);
 }
@@ -52,6 +55,14 @@ static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
 static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 static node_mem_t *as_mem(node_t *n) { return (node_mem_t *)n; }
+
+static lvar_t *find_func_lvar(node_func_t *fn, const char *name) {
+  int len = (int)strlen(name);
+  for (lvar_t *v = fn ? fn->lvars : NULL; v; v = v->next_all) {
+    if (v->len == len && strncmp(v->name, name, (size_t)len) == 0) return v;
+  }
+  return NULL;
+}
 
 static void expect_parse_fail(const char *input) {
   fflush(NULL);
@@ -1121,6 +1132,26 @@ static void test_stmt_return() {
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_TRUE(ret->lhs == NULL);
+
+  parsed_code = parse_program_input("_Bool flag(void) { return 200; }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NE, ret->lhs->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->rhs->kind);
+  ASSERT_EQ(0, as_num(ret->lhs->rhs)->val);
+
+  parsed_code = parse_program_input("char narrow(int x) { return x; }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_SHR, ret->lhs->kind);
+  ASSERT_EQ(ND_SHL, ret->lhs->lhs->kind);
+
+  parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_BITAND, ret->lhs->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->rhs->kind);
+  ASSERT_EQ(0xff, as_num(ret->lhs->rhs)->val);
 }
 
 static void test_stmt_block() {
@@ -1687,6 +1718,223 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 }
 
+static void test_type_metadata_bridge() {
+  printf("test_type_metadata_bridge...\n");
+
+  parsed_code = parse_program_input("main() { unsigned int x=1; return x; }");
+  node_func_t *fn = as_func(parsed_code[0]);
+  node_block_t *body = as_block(fn->base.rhs);
+  node_t *assign = body->body[0];
+  ASSERT_EQ(ND_ASSIGN, assign->kind);
+  psx_type_t *unsigned_ty = psx_node_get_type(assign->lhs);
+  ASSERT_TRUE(unsigned_ty != NULL);
+  ASSERT_TRUE(assign->lhs->type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, unsigned_ty->kind);
+  ASSERT_EQ(4, psx_type_sizeof(unsigned_ty));
+  ASSERT_TRUE(psx_type_is_unsigned(unsigned_ty));
+  lvar_t *x_lvar = find_func_lvar(fn, "x");
+  ASSERT_TRUE(x_lvar != NULL);
+  ASSERT_TRUE(psx_node_lvar_symbol(assign->lhs) == x_lvar);
+  ASSERT_TRUE(x_lvar->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, x_lvar->decl_type->kind);
+  ASSERT_EQ(4, psx_type_sizeof(x_lvar->decl_type));
+  ASSERT_TRUE(psx_type_is_unsigned(x_lvar->decl_type));
+
+  parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
+  fn = as_func(parsed_code[0]);
+  body = as_block(fn->base.rhs);
+  assign = body->body[1];
+  ASSERT_EQ(ND_ASSIGN, assign->kind);
+  psx_type_t *ptr_ty = psx_node_get_type(assign->lhs);
+  ASSERT_TRUE(ptr_ty != NULL);
+  ASSERT_TRUE(assign->lhs->type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_ty->kind);
+  ASSERT_TRUE(psx_type_is_pointer(ptr_ty));
+  ASSERT_TRUE(ptr_ty->base != NULL);
+  ASSERT_EQ(TK_STRUCT, ptr_ty->base->tag_kind);
+  ASSERT_EQ(1, ptr_ty->base->tag_len);
+  ASSERT_TRUE(strncmp(ptr_ty->base->tag_name, "S", 1) == 0);
+  lvar_t *p_lvar = find_func_lvar(fn, "p");
+  ASSERT_TRUE(p_lvar != NULL);
+  ASSERT_TRUE(psx_node_lvar_symbol(assign->lhs) == p_lvar);
+  ASSERT_TRUE(p_lvar->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, p_lvar->decl_type->kind);
+  ASSERT_TRUE(p_lvar->decl_type->base != NULL);
+  ASSERT_EQ(TK_STRUCT, p_lvar->decl_type->base->tag_kind);
+
+  parsed_code = parse_program_input(
+      "main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
+  fn = as_func(parsed_code[0]);
+  body = as_block(fn->base.rhs);
+  node_t *member = body->body[2];
+  ASSERT_EQ(ND_DEREF, member->kind);
+  psx_type_t *array_ty = psx_node_get_type(member);
+  ASSERT_TRUE(array_ty != NULL);
+  ASSERT_TRUE(member->type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_ty->kind);
+  ASSERT_EQ(16, psx_type_sizeof(array_ty));
+  ASSERT_TRUE(psx_type_is_pointer(array_ty));
+  lvar_t *r1_lvar = find_func_lvar(fn, "r1");
+  ASSERT_TRUE(r1_lvar != NULL);
+  ASSERT_TRUE(r1_lvar->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, r1_lvar->decl_type->kind);
+  ASSERT_EQ(16, psx_type_sizeof(r1_lvar->decl_type));
+
+  parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
+  (void)parsed_code;
+  global_var_t *gu = psx_find_global_var("__tm_gu", 7);
+  ASSERT_TRUE(gu != NULL);
+  ASSERT_TRUE(gu->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, gu->decl_type->kind);
+  ASSERT_EQ(4, psx_type_sizeof(gu->decl_type));
+  ASSERT_TRUE(psx_type_is_unsigned(gu->decl_type));
+  global_var_t *gp = psx_find_global_var("__tm_gp", 7);
+  ASSERT_TRUE(gp != NULL);
+  ASSERT_TRUE(gp->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, gp->decl_type->kind);
+  ASSERT_TRUE(psx_type_is_pointer(gp->decl_type));
+  global_var_t *ga = psx_find_global_var("__tm_ga", 7);
+  ASSERT_TRUE(ga != NULL);
+  ASSERT_TRUE(ga->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ga->decl_type->kind);
+  ASSERT_EQ(12, psx_type_sizeof(ga->decl_type));
+
+  parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
+  (void)parsed_code;
+  global_var_t *gext = psx_find_global_var("__tm_extern_arr", 15);
+  ASSERT_TRUE(gext != NULL);
+  ASSERT_TRUE(gext->decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, gext->decl_type->kind);
+  ASSERT_EQ(12, psx_type_sizeof(gext->decl_type));
+
+  parsed_code = parse_program_input(
+      "long __tm_lf(void); int *__tm_ip(void); "
+      "int main(void){ int x; int *p; x + 1L; p + 1; __tm_lf(); __tm_ip(); return 0; }");
+  fn = as_func(parsed_code[0]);
+  body = as_block(fn->base.rhs);
+  node_t *long_add = NULL;
+  node_t *ptr_add = NULL;
+  node_t *long_call = NULL;
+  node_t *ptr_call = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    node_t *n = body->body[i];
+    if (n->kind == ND_ADD && ps_node_is_pointer(n)) ptr_add = n;
+    if (n->kind == ND_ADD && !ps_node_is_pointer(n) && ps_node_type_size(n) == 8) long_add = n;
+    if (n->kind == ND_FUNCALL) {
+      node_func_t *call = as_func(n);
+      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_lf", 7) == 0) long_call = n;
+      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_ip", 7) == 0) ptr_call = n;
+    }
+  }
+  psx_type_t *long_add_ty = psx_node_get_type(long_add);
+  ASSERT_TRUE(long_add_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, long_add_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(long_add_ty));
+  psx_type_t *ptr_add_ty = psx_node_get_type(ptr_add);
+  ASSERT_TRUE(ptr_add_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_add_ty->kind);
+  ASSERT_EQ(4, psx_type_deref_size(ptr_add_ty));
+  psx_type_t *long_call_ty = psx_node_get_type(long_call);
+  ASSERT_TRUE(long_call_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, long_call_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(long_call_ty));
+  psx_type_t *ptr_call_ty = psx_node_get_type(ptr_call);
+  ASSERT_TRUE(ptr_call_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_call_ty->kind);
+  ASSERT_EQ(4, psx_type_deref_size(ptr_call_ty));
+
+  parsed_code = parse_program_input(
+      "double __tm_sq(double x){ return x*x; } "
+      "int *__tm_makep(void){ static int x=1; return &x; } "
+      "int main(void){ double (*df)(double)=__tm_sq; int *(*pf)(void)=__tm_makep; "
+      "df(2.0); pf(); return 0; }");
+  fn = as_func(parsed_code[2]);
+  body = as_block(fn->base.rhs);
+  node_t *indirect_double_call = NULL;
+  node_t *indirect_ptr_call = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    node_t *n = body->body[i];
+    if (n->kind != ND_FUNCALL) continue;
+    node_func_t *call = as_func(n);
+    if (!call->callee || call->callee->kind != ND_LVAR) continue;
+    lvar_t *callee_lvar = psx_node_lvar_symbol(call->callee);
+    if (callee_lvar && callee_lvar->len == 2 && strncmp(callee_lvar->name, "df", 2) == 0)
+      indirect_double_call = n;
+    if (callee_lvar && callee_lvar->len == 2 && strncmp(callee_lvar->name, "pf", 2) == 0)
+      indirect_ptr_call = n;
+  }
+  psx_type_t *indirect_double_ty = psx_node_get_type(indirect_double_call);
+  ASSERT_TRUE(indirect_double_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, indirect_double_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(indirect_double_ty));
+  psx_type_t *indirect_ptr_ty = psx_node_get_type(indirect_ptr_call);
+  ASSERT_TRUE(indirect_ptr_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, indirect_ptr_ty->kind);
+  ASSERT_EQ(4, psx_type_deref_size(indirect_ptr_ty));
+}
+
+static void test_translation_unit_reset_static_local_state() {
+  printf("test_translation_unit_reset_static_local_state...\n");
+
+  const char *input = "int f(void) { static int x=1; return x; }";
+  ps_reset_translation_unit_state();
+  parsed_code = parse_program_input(input);
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(psx_find_global_var("f.x.0", 5) != NULL);
+  ASSERT_TRUE(psx_find_global_var("f.x.1", 5) == NULL);
+
+  ps_reset_translation_unit_state();
+  parsed_code = parse_program_input(input);
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
+  ASSERT_TRUE(psx_find_global_var("f.x.0", 5) != NULL);
+  ASSERT_TRUE(psx_find_global_var("f.x.1", 5) == NULL);
+  ps_reset_translation_unit_state();
+}
+
+static void test_translation_unit_reset_anonymous_tag_state() {
+  printf("test_translation_unit_reset_anonymous_tag_state...\n");
+
+  const char *input = "struct { int x; } g; int main(void) { return 0; }";
+  ps_reset_translation_unit_state();
+  parsed_code = parse_program_input(input);
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_TRUE(psx_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!psx_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
+
+  ps_reset_translation_unit_state();
+  parsed_code = parse_program_input(input);
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_TRUE(psx_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!psx_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
+  ps_reset_translation_unit_state();
+}
+
+static void test_translation_unit_reset_decl_locals_state() {
+  printf("test_translation_unit_reset_decl_locals_state...\n");
+
+  char name[] = "x";
+  psx_decl_reset_locals();
+  ASSERT_TRUE(psx_decl_register_lvar(name, 1) != NULL);
+  ASSERT_TRUE(psx_decl_find_lvar(name, 1) != NULL);
+  ps_reset_translation_unit_state();
+  ASSERT_TRUE(psx_decl_find_lvar(name, 1) == NULL);
+}
+
+static void test_translation_unit_reset_pragma_pack_state() {
+  printf("test_translation_unit_reset_pragma_pack_state...\n");
+
+  pragma_pack_reset();
+  pragma_pack_set(8);
+  pragma_pack_push(1);
+  ASSERT_EQ(1, pragma_pack_current);
+  ps_reset_translation_unit_state();
+  ASSERT_EQ(0, pragma_pack_current);
+  pragma_pack_pop();
+  ASSERT_EQ(0, pragma_pack_current);
+}
+
 static void test_multiple_funcdefs() {
   printf("test_multiple_funcdefs...\n");
   parsed_code = parse_program_input("foo() { 1; } bar() { 2; }");
@@ -1712,6 +1960,14 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
+
+  parsed_code = parse_program_input("int **sig_proto_pp(void); int main(void) { return 0; }");
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(2, psx_ctx_get_function_ret_pointer_levels("sig_proto_pp", 12));
+
+  parsed_code = parse_program_input("int **sig_def_pp(void) { return 0; }");
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(2, psx_ctx_get_function_ret_pointer_levels("sig_def_pp", 10));
 
   parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
@@ -1807,9 +2063,14 @@ static void test_parse_invalid() {
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { break; }");                // ループ/switch外
   expect_parse_fail("main() { continue; }");             // ループ外
+  expect_parse_fail("int main(void) { int x = ({ continue; 0; }); return x; }");
+  expect_parse_fail("int main(void) { while (({ continue; 1; })) return 0; return 0; }");
+  expect_parse_fail("main() { case 1: return 0; }");     // switch外のcase
+  expect_parse_fail("main() { default: return 0; }");    // switch外のdefault
   expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
   expect_parse_fail("main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
   expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
+  expect_parse_fail("enum E { A = 2147483648 }; int main(void){ return 0; }"); // enum定数はint幅
   expect_parse_fail("main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
   expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
   expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
@@ -1934,10 +2195,23 @@ static void test_parse_evil_edge_cases() {
   // シフトと比較の優先順位: 1<<2<8 → (1<<2)<8
     node_t *sh = parse_expr_input("1<<2<8");
   ASSERT_EQ(ND_LT, sh->kind);
+  ASSERT_EQ(TK_LT, sh->source_op);
   ASSERT_EQ(ND_SHL, sh->lhs->kind);
   ASSERT_EQ(1, as_num(sh->lhs->lhs)->val);
   ASSERT_EQ(2, as_num(sh->lhs->rhs)->val);
   ASSERT_EQ(8, as_num(sh->rhs)->val);
+
+  // `>`/`>=` は AST では `<`/`<=` へ正規化されるが、後段 warning 用に元演算子を保持する。
+  node_t *gt = parse_expr_input("1>2");
+  ASSERT_EQ(ND_LT, gt->kind);
+  ASSERT_EQ(TK_GT, gt->source_op);
+  ASSERT_EQ(2, as_num(gt->lhs)->val);
+  ASSERT_EQ(1, as_num(gt->rhs)->val);
+  node_t *ge = parse_expr_input("1>=2");
+  ASSERT_EQ(ND_LE, ge->kind);
+  ASSERT_EQ(TK_GE, ge->source_op);
+  ASSERT_EQ(2, as_num(ge->lhs)->val);
+  ASSERT_EQ(1, as_num(ge->rhs)->val);
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
   parsed_code = parse_program_input("main() { int a; int b; a=1,b=2; }");
@@ -1957,6 +2231,68 @@ static void test_parse_evil_edge_cases() {
       "W3004");
   expect_parse_ok_without_message("int main(void){ int x; int *p=&x; return p==0; }", "W3004");
   expect_parse_ok_without_message("int main(void){ int x; int *p=&x; return p==0; }", "W3003");
+  expect_parse_ok_without_message("int main(void){ int x; x=1; return 0; }", "W3003");
+  expect_parse_ok_without_message("int main(void){ int x; return &x==0; }", "W3003");
+  expect_parse_ok_without_message("int main(void){ int x; return &x==0; }", "W3004");
+  expect_parse_ok_with_message("int main(void){ int x=1; return 0; }", "W3003");
+  expect_parse_ok_with_message("int main(void){ int x; x=x; return 0; }", "W3012");
+  expect_parse_ok_with_message("int main(void){ int x=1.5; return 0; }", "W3010");
+  expect_parse_ok_with_message("int main(void){ int x; x=1.5; return 0; }", "W3010");
+  expect_parse_ok_with_message("int main(void){ return 1.5; }", "W3010");
+  expect_parse_ok_with_message("int main(void){ int x=1; return x==x; }", "W3013");
+  expect_parse_ok_with_message("int main(void){ int x=1; return x&&x; }", "W3020");
+  expect_parse_ok_with_message("int main(void){ unsigned int u=1; int s=-1; return s<u; }",
+                               "W3018");
+  expect_parse_ok_with_message("int main(void){ unsigned int u=1; return u>=0; }", "W3019");
+  expect_parse_ok_with_message("int main(void){ unsigned int u=1; return 0>u; }", "W3019");
+  expect_parse_ok_with_message("int main(void){ int *p; return p==5; }", "W3022");
+  expect_parse_ok_with_message("int main(void){ int x=1; return !x==0; }", "W3021");
+  expect_parse_ok_with_message("int main(void){ int x=0; if (x=1) return x; return 0; }",
+                               "W3007");
+  expect_parse_ok_with_message("int main(void){ int x=0; while (x=1) return x; return 0; }",
+                               "W3007");
+  expect_parse_ok_with_message("int main(void){ int x=0; if (x,1) return x; return 0; }",
+                               "W3008");
+  expect_parse_ok_with_message("int main(void){ int x=0; if (x); return x; }", "W3009");
+  expect_parse_ok_with_message("int *f(void){ int x=0; return &x; }", "W3006");
+  expect_parse_ok_without_message("int *f(void){ static int x; return &x; }", "W3006");
+  expect_parse_ok_without_message("int g; int *f(void){ return &g; }", "W3006");
+  expect_parse_ok_with_message(
+      "int main(void){ int x=0; switch(x){ case 0: x=1; case 1: return x; } return 0; }",
+      "W3017");
+  expect_parse_ok_without_message(
+      "int main(void){ int x=0; switch(x){ case 0: x=1; break; case 1: return x; } return 0; }",
+      "W3017");
+  expect_parse_ok_without_message(
+      "int main(void){ int x=0; switch(x){ case 0: case 1: return 1; } return x; }",
+      "W3017");
+  expect_parse_ok_with_message("int main(void){ char c=200; return c; }", "W3011");
+  expect_parse_ok_with_message("int main(void){ unsigned char c=300; return c; }", "W3011");
+  expect_parse_ok_without_message("int main(void){ unsigned char c=-1; return c; }", "W3011");
+  expect_parse_ok_without_message("int main(void){ _Bool b=300; return b; }", "W3011");
+  expect_parse_ok_with_message("int main(void){ return 2147483647 + 1; }", "W3023");
+  expect_parse_ok_with_message("int main(void){ return 2147483647 * 2; }", "W3023");
+  expect_parse_ok_without_message("int main(void){ return 2147483647L + 1L; }", "W3023");
+  expect_parse_ok_without_message("int main(void){ int a[4]; int *p=a; return *(p + 2147483647); }",
+                                  "W3023");
+  expect_parse_ok_with_message("int main(void){ return 1 << 32; }", "W3014");
+  expect_parse_ok_with_message("long main(void){ return 1L << 64; }", "W3014");
+  expect_parse_ok_with_message("int main(void){ return 1 / 0; }", "W3015");
+  expect_parse_ok_with_message("int main(void){ return 1 % 0; }", "W3015");
+  expect_parse_ok_with_message("int main(void){ return f(); } int f(void){ return 1; }", "W3016");
+  expect_parse_ok_without_message("int f(void); int main(void){ return f(); }", "W3016");
+  expect_parse_ok_with_message("main(void){ return 0; }", "W3001");
+  expect_parse_ok_without_message("int main(void){ return 0; }", "W3001");
+  expect_parse_ok_without_message("int main(void){ int x=2.0; return 0; }", "W3010");
+  expect_parse_ok_without_message("int main(void){ int x; x=2.0; return 0; }", "W3010");
+  expect_parse_ok_without_message("double main(void){ return 1.5; }", "W3010");
+  expect_parse_ok_without_message("int f(int x){ return x; } int main(void){ return f(3); }", "W3004");
+  expect_parse_ok_without_message("int main(void){ int x=7; return x; }", "W3004");
+  expect_parse_ok_without_message("int main(void){ static int x; return x; }", "W3004");
+  expect_parse_ok("int main(void){ while(1){ ({ continue; 0; }); } return 0; }");
+  expect_parse_ok("int main(void){ int x=0; switch(x){ case 0: ({ break; 0; }); } return 0; }");
+  expect_parse_ok("int main(void){ int x=0; switch(x){ case (0 ? 1 : 2147483648): return 1; } return 0; }");
+  expect_parse_ok("int main(void){ int x=0; switch(x){ case 1: switch(x){ case 1: return 1; } return 0; } return 0; }");
   expect_parse_ok_without_message(
       "int main(void){ struct S { char c; int i; }; struct S s; long o=(char*)&s.i-(char*)&s; return o>0; }",
       "W3004");
@@ -1964,6 +2300,9 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok_with_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3002");
   expect_parse_ok_without_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3004");
   expect_parse_ok_without_message("int main(void){ goto L; int x; return x; L: return 0; }", "W3003");
+  expect_parse_ok_with_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3002");
+  expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3003");
+  expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3004");
   expect_parse_ok("main() { int a; int b; int c; a = b = c = 42; return a; }");
   expect_parse_ok("main() { return 1?2:3?4:5?6:7; }");
   expect_parse_ok("main() { int x=1; return x<<1|x<<2|x<<3; }");
@@ -2269,6 +2608,11 @@ int main() {
   test_expr_compound_literal();
   test_expr_compound_literal_array_subscript();
   test_type_decl();
+  test_type_metadata_bridge();
+  test_translation_unit_reset_static_local_state();
+  test_translation_unit_reset_anonymous_tag_state();
+  test_translation_unit_reset_decl_locals_state();
+  test_translation_unit_reset_pragma_pack_state();
   test_multiple_funcdefs();
   test_parse_invalid();
   test_parse_invalid_diagnostics();

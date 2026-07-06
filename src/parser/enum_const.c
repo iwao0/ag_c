@@ -8,112 +8,113 @@
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
-static long long parse_conditional(void);
-static long long parse_logor(void);
-static long long parse_logand(void);
-static long long parse_bitor(void);
-static long long parse_bitxor(void);
-static long long parse_bitand(void);
-static long long parse_eq(void);
-static long long parse_rel(void);
-static long long parse_shift(void);
-static long long parse_add(void);
-static long long parse_mul(void);
-static long long parse_unary(void);
-static long long parse_primary(void);
+typedef struct {
+  /* case ラベルでは INT_MAX を超える整数リテラルも long long として受理する
+   * (C11 6.8.4.2)。enum 定数・配列次元・_Alignas・ビットフィールド幅の
+   * 経路は従来どおり tk_expect_number() で int に制約する。 */
+  int allow_wide_const;
+} enum_const_eval_ctx_t;
 
-/* case ラベル評価中のみ true。INT_MAX を超える整数リテラルを long long として
- * 受理する (C11 6.8.4.2: case の式は整数定数式でよく int に収まる必要はない)。
- * enum 定数・配列次元・_Alignas・ビットフィールド幅の経路は従来どおり
- * tk_expect_number() で int に制約する (それぞれの文脈では int が正しい)。 */
-static int s_allow_wide_const = 0;
+static long long parse_conditional_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_logor_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_logand_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_bitor_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_bitxor_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_bitand_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_eq_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_rel_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_shift_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_add_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_mul_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx);
+static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx);
 
-long long psx_parse_enum_const_expr(void) { return parse_conditional(); }
-
-long long psx_parse_case_const_expr(void) {
-  int saved = s_allow_wide_const;
-  s_allow_wide_const = 1;
-  long long v = parse_conditional();
-  s_allow_wide_const = saved;
-  return v;
+long long psx_parse_enum_const_expr(void) {
+  enum_const_eval_ctx_t ctx = {0};
+  return parse_conditional_ctx(&ctx);
 }
 
-static long long parse_conditional(void) {
-  long long cond = parse_logor();
+long long psx_parse_case_const_expr(void) {
+  enum_const_eval_ctx_t ctx = {.allow_wide_const = 1};
+  return parse_conditional_ctx(&ctx);
+}
+
+static long long parse_conditional_ctx(enum_const_eval_ctx_t *ctx) {
+  long long cond = parse_logor_ctx(ctx);
   if (!tk_consume('?')) return cond;
-  long long then_v = psx_parse_enum_const_expr();
+  long long then_v = parse_conditional_ctx(ctx);
   tk_expect(':');
-  long long else_v = parse_conditional();
+  long long else_v = parse_conditional_ctx(ctx);
   return cond ? then_v : else_v;
 }
 
-static long long parse_logor(void) {
-  long long v = parse_logand();
+static long long parse_logor_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_logand_ctx(ctx);
   while (curtok()->kind == TK_OROR) {
     set_curtok(curtok()->next);
-    long long r = parse_logand();
+    long long r = parse_logand_ctx(ctx);
     v = (v || r) ? 1 : 0;
   }
   return v;
 }
 
-static long long parse_logand(void) {
-  long long v = parse_bitor();
+static long long parse_logand_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_bitor_ctx(ctx);
   while (curtok()->kind == TK_ANDAND) {
     set_curtok(curtok()->next);
-    long long r = parse_bitor();
+    long long r = parse_bitor_ctx(ctx);
     v = (v && r) ? 1 : 0;
   }
   return v;
 }
 
-static long long parse_bitor(void) {
-  long long v = parse_bitxor();
+static long long parse_bitor_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_bitxor_ctx(ctx);
   while (curtok()->kind == TK_PIPE) {
     set_curtok(curtok()->next);
-    long long r = parse_bitxor();
+    long long r = parse_bitxor_ctx(ctx);
     v |= r;
   }
   return v;
 }
 
-static long long parse_bitxor(void) {
-  long long v = parse_bitand();
+static long long parse_bitxor_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_bitand_ctx(ctx);
   while (curtok()->kind == TK_CARET) {
     set_curtok(curtok()->next);
-    long long r = parse_bitand();
+    long long r = parse_bitand_ctx(ctx);
     v ^= r;
   }
   return v;
 }
 
-static long long parse_bitand(void) {
-  long long v = parse_eq();
+static long long parse_bitand_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_eq_ctx(ctx);
   while (curtok()->kind == TK_AMP) {
     set_curtok(curtok()->next);
-    long long r = parse_eq();
+    long long r = parse_eq_ctx(ctx);
     v &= r;
   }
   return v;
 }
 
-static long long parse_eq(void) {
-  long long v = parse_rel();
+static long long parse_eq_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_rel_ctx(ctx);
   while (curtok()->kind == TK_EQEQ || curtok()->kind == TK_NEQ) {
     token_kind_t op = curtok()->kind;
     set_curtok(curtok()->next);
-    long long r = parse_rel();
+    long long r = parse_rel_ctx(ctx);
     v = (op == TK_EQEQ) ? (v == r) : (v != r);
   }
   return v;
 }
 
-static long long parse_rel(void) {
-  long long v = parse_shift();
+static long long parse_rel_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_shift_ctx(ctx);
   while (curtok()->kind == TK_LT || curtok()->kind == TK_LE || curtok()->kind == TK_GT || curtok()->kind == TK_GE) {
     token_kind_t op = curtok()->kind;
     set_curtok(curtok()->next);
-    long long r = parse_shift();
+    long long r = parse_shift_ctx(ctx);
     switch (op) {
       case TK_LT: v = (v < r); break;
       case TK_LE: v = (v <= r); break;
@@ -124,34 +125,34 @@ static long long parse_rel(void) {
   return v;
 }
 
-static long long parse_shift(void) {
-  long long v = parse_add();
+static long long parse_shift_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_add_ctx(ctx);
   while (curtok()->kind == TK_SHL || curtok()->kind == TK_SHR) {
     token_kind_t op = curtok()->kind;
     set_curtok(curtok()->next);
-    long long r = parse_add();
+    long long r = parse_add_ctx(ctx);
     v = (op == TK_SHL) ? (v << r) : (v >> r);
   }
   return v;
 }
 
-static long long parse_add(void) {
-  long long v = parse_mul();
+static long long parse_add_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_mul_ctx(ctx);
   while (curtok()->kind == TK_PLUS || curtok()->kind == TK_MINUS) {
     token_kind_t op = curtok()->kind;
     set_curtok(curtok()->next);
-    long long r = parse_mul();
+    long long r = parse_mul_ctx(ctx);
     v = (op == TK_PLUS) ? (v + r) : (v - r);
   }
   return v;
 }
 
-static long long parse_mul(void) {
-  long long v = parse_unary();
+static long long parse_mul_ctx(enum_const_eval_ctx_t *ctx) {
+  long long v = parse_unary_ctx(ctx);
   while (curtok()->kind == TK_MUL || curtok()->kind == TK_DIV || curtok()->kind == TK_MOD) {
     token_kind_t op = curtok()->kind;
     set_curtok(curtok()->next);
-    long long r = parse_unary();
+    long long r = parse_unary_ctx(ctx);
     if (op == TK_MUL) v *= r;
     else if (op == TK_DIV) v /= r;
     else v %= r;
@@ -159,22 +160,22 @@ static long long parse_mul(void) {
   return v;
 }
 
-static long long parse_unary(void) {
+static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
   if (curtok()->kind == TK_PLUS) {
     set_curtok(curtok()->next);
-    return parse_unary();
+    return parse_unary_ctx(ctx);
   }
   if (curtok()->kind == TK_MINUS) {
     set_curtok(curtok()->next);
-    return -parse_unary();
+    return -parse_unary_ctx(ctx);
   }
   if (curtok()->kind == TK_TILDE) {
     set_curtok(curtok()->next);
-    return ~parse_unary();
+    return ~parse_unary_ctx(ctx);
   }
   if (curtok()->kind == TK_BANG) {
     set_curtok(curtok()->next);
-    return !parse_unary();
+    return !parse_unary_ctx(ctx);
   }
   // sizeof / _Alignof: ag_c では基本型に対して両者は同じ値を返すので、
   // 定数式評価器ではトークンだけ違う形で共通の処理を通す。
@@ -216,15 +217,15 @@ static long long parse_unary(void) {
       tk_expect(')');
       return sz;
     }
-    return parse_unary();
+    return parse_unary_ctx(ctx);
   }
-  return parse_primary();
+  return parse_primary_ctx(ctx);
 }
 
-static long long parse_primary(void) {
+static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx) {
   if (curtok()->kind == TK_LPAREN) {
     set_curtok(curtok()->next);
-    long long v = psx_parse_enum_const_expr();
+    long long v = parse_conditional_ctx(ctx);
     tk_expect(')');
     return v;
   }
@@ -238,7 +239,7 @@ static long long parse_primary(void) {
     return v;
   }
   /* case ラベル文脈では int 範囲外の整数リテラルも long long として受理する。 */
-  if (s_allow_wide_const && curtok()->kind == TK_NUM &&
+  if (ctx->allow_wide_const && curtok()->kind == TK_NUM &&
       tk_as_num(curtok())->num_kind == TK_NUM_KIND_INT) {
     long long v = tk_as_num_int(curtok())->val;
     set_curtok(curtok()->next);

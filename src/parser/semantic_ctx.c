@@ -24,6 +24,13 @@ struct label_def_t {
   token_t *tok;
 };
 
+typedef struct deferred_parser_warning_t deferred_parser_warning_t;
+struct deferred_parser_warning_t {
+  deferred_parser_warning_t *next_all;
+  const token_t *tok;
+  const char *name;
+};
+
 typedef struct tag_type_t tag_type_t;
 struct tag_type_t {
   tag_type_t *next_hash;
@@ -207,6 +214,7 @@ struct func_name_t {
 
 static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
+static deferred_parser_warning_t *deferred_parser_warnings_all = NULL;
 static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
 static tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
 static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
@@ -214,8 +222,6 @@ static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
 static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
-static int g_pending_tag_align = 0;
-static int g_unreachable_diagnostic_suppression_depth = 0;
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
@@ -243,6 +249,7 @@ void psx_ctx_reset_function_names(void) {
 
 void psx_ctx_reset_translation_unit_scope(void) {
   goto_refs_all = NULL;
+  deferred_parser_warnings_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
   memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
@@ -251,8 +258,35 @@ void psx_ctx_reset_translation_unit_scope(void) {
   memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
   tag_scope_depth = 0;
   tag_member_decl_order = 0;
-  g_pending_tag_align = 0;
-  g_unreachable_diagnostic_suppression_depth = 0;
+}
+
+void psx_ctx_record_unsupported_gnu_extension_warning(const token_t *tok, const char *name) {
+  deferred_parser_warning_t *w = calloc(1, sizeof(deferred_parser_warning_t));
+  if (!w) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  w->tok = tok;
+  w->name = name;
+  w->next_all = deferred_parser_warnings_all;
+  deferred_parser_warnings_all = w;
+}
+
+void psx_ctx_emit_deferred_parser_warnings(void) {
+  deferred_parser_warning_t *rev = NULL;
+  while (deferred_parser_warnings_all) {
+    deferred_parser_warning_t *w = deferred_parser_warnings_all;
+    deferred_parser_warnings_all = w->next_all;
+    w->next_all = rev;
+    rev = w;
+  }
+  while (rev) {
+    deferred_parser_warning_t *w = rev;
+    rev = w->next_all;
+    diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, w->tok,
+                   "%s: %s",
+                   diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                   w->name ? w->name : "");
+  }
 }
 
 /* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。これにより、同一プロセス
@@ -285,7 +319,6 @@ void psx_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   tag_scope_depth = 0;
-  g_unreachable_diagnostic_suppression_depth = 0;
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     tag_type_t **tt = &tag_types_by_bucket[i];
     while (*tt) {
@@ -320,18 +353,6 @@ void psx_ctx_reset_function_scope(void) {
       td = &(*td)->next_hash;
     }
   }
-}
-
-void psx_ctx_enter_unreachable_diagnostic_suppression(void) {
-  g_unreachable_diagnostic_suppression_depth++;
-}
-
-void psx_ctx_leave_unreachable_diagnostic_suppression(void) {
-  if (g_unreachable_diagnostic_suppression_depth > 0) g_unreachable_diagnostic_suppression_depth--;
-}
-
-int psx_ctx_in_unreachable_diagnostic_suppression(void) {
-  return g_unreachable_diagnostic_suppression_depth > 0;
 }
 
 void psx_ctx_enter_block_scope(void) {
@@ -445,21 +466,15 @@ bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
 }
 
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
-  psx_ctx_define_tag_type_with_layout(kind, name, len, 0, 0);
+  psx_ctx_define_tag_type_with_layout(kind, name, len, 0, 0, 0);
 }
 
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count) {
-  psx_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0);
+  psx_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0, 0);
 }
 
-/* struct/union レイアウト計算 (struct_layout.c) が agg_align をここへ預け、直後の
- * psx_ctx_define_tag_type_with_layout が tag に書き込む。tag がテーブルに登録される
- * のは define 時なので、レイアウト中に直接 tag へ書けない。 */
-void psx_ctx_set_pending_tag_align(int align) { g_pending_tag_align = align; }
-
-void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len, int member_count, int tag_size) {
-  int pending_align = g_pending_tag_align;
-  g_pending_tag_align = 0;
+void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
+                                         int member_count, int tag_size, int tag_align) {
   tag_type_t *existing = find_tag_type(kind, name, len);
   /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
    * 内側スコープに同名タグを別レイアウトで宣言した場合 (`struct S{int a;}` 外側 → ブロック内
@@ -481,7 +496,7 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
     }
     if (member_count > existing->member_count) existing->member_count = member_count;
     if (tag_size > existing->size) existing->size = tag_size;
-    if (pending_align > existing->align) existing->align = pending_align;
+    if (tag_align > existing->align) existing->align = tag_align;
     return;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -491,7 +506,7 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
   t->len = len;
   t->member_count = member_count;
   t->size = tag_size;
-  t->align = pending_align;
+  t->align = tag_align;
   t->scope_depth = tag_scope_depth;
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
@@ -1157,6 +1172,29 @@ bool psx_ctx_has_function_name(char *name, int len) {
 int psx_ctx_get_function_ret_struct_size(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->ret_struct_size : 0;
+}
+
+psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  psx_function_ret_info_t info = {0};
+  info.token_kind = TK_EOF;
+  info.fp_kind = TK_FLOAT_KIND_NONE;
+  info.tag_kind = TK_EOF;
+  if (!f) return info;
+  info.token_kind = f->ret_set_once ? f->ret_token_kind : TK_EOF;
+  info.fp_kind = f->ret_fp_kind;
+  info.tag_kind = f->ret_tag_kind;
+  info.tag_name = f->ret_tag_name;
+  info.tag_len = f->ret_tag_len;
+  info.struct_size = f->ret_struct_size;
+  info.is_pointer = f->ret_set_once ? f->ret_is_pointer : 0;
+  info.is_unsigned = f->ret_is_unsigned ? 1 : 0;
+  info.is_void = f->is_ret_void ? 1 : 0;
+  info.is_complex = f->ret_is_complex ? 1 : 0;
+  info.is_funcptr = f->ret_is_funcptr ? 1 : 0;
+  info.funcptr_ret_is_pointer = f->funcptr_ret_is_pointer ? 1 : 0;
+  info.funcptr_ret_int_width = f->funcptr_ret_int_width;
+  return info;
 }
 
 void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind) {

@@ -20,6 +20,7 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
 
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
+                                                       psx_funcptr_signature_t *func_suffix_sig,
                                                        int *out_paren_array_mul,
                                                        int *out_ptr_in_paren,
                                                        int *out_ptr_levels) {
@@ -29,7 +30,8 @@ static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     int ptr_before = *is_ptr;
-    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, &paren_array_mul,
+    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, func_suffix_sig,
+                                            &paren_array_mul,
                                             out_ptr_in_paren, out_ptr_levels);
     /* `(` 通過直後に `*` を消費したか? `int (*p)[N]` 等を `int *p[N]` と区別するためのフラグ。
      * 内側で更に `(` を踏んで設定された結果は維持する。 */
@@ -39,7 +41,7 @@ static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has
   } else {
     name = tk_consume_ident();
   }
-  psx_skip_func_suffix_groups(out_has_func_suffix);
+  psx_skip_func_suffix_groups_ex(out_has_func_suffix, func_suffix_sig);
   if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
   return name;
 }
@@ -48,22 +50,24 @@ member_decl_head_t psx_parse_member_decl_head(void) {
   member_decl_head_t out = {0};
   out.paren_array_mul = 1;
   out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix,
+                                                &out.func_suffix_sig,
                                                 &out.paren_array_mul, &out.ptr_in_paren,
                                                 &out.ptr_levels);
   return out;
 }
 
 int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                  int *out_size) {
+                                  int *out_size, int *out_align) {
   if (tag_kind == TK_ENUM) {
     if (out_size) *out_size = 4;
+    if (out_align) *out_align = 4;
     return psx_parse_enum_members();
   }
-  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size);
+  return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, out_align);
 }
 
 int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                             int *out_size) {
+                                             int *out_size, int *out_align) {
   int member_count = 0;
   int current_off = 0;
   int union_size = 0;
@@ -117,6 +121,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     token_kind_t member_base_kind = TK_EOF;
     int member_is_bool = 0;
     int member_is_unsigned = 0;
+    int member_is_complex = 0;
     int member_base_is_void = 0;
     int member_is_ptr_typedef = 0;
     unsigned short member_typedef_funcptr_param_fp_mask = 0;
@@ -133,28 +138,19 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_typedef_ptr_array_pointee_bytes = 0;
     int member_typedef_ptr_array_dim_count = 0;
     int member_typedef_ptr_array_dims[8] = {0};
-    if (psx_ctx_is_type_token(curtok()->kind)) {
-      is_signed_type = (curtok()->kind != TK_UNSIGNED);
-      member_base_kind = curtok()->kind;
-      psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
-      if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
-      else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
-      else if (curtok()->kind == TK_BOOL) member_is_bool = 1;
-      else if (curtok()->kind == TK_UNSIGNED) member_is_unsigned = 1;
-      else if (curtok()->kind == TK_VOID) member_base_is_void = 1;
-      set_curtok(curtok()->next);
-      while (psx_ctx_is_type_token(curtok()->kind)) {
-        if (curtok()->kind != TK_UNSIGNED && curtok()->kind != TK_SIGNED) {
-          member_base_kind = curtok()->kind;
-          psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
-        }
-        if (curtok()->kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
-        else if (curtok()->kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
-        else if (curtok()->kind == TK_BOOL) member_is_bool = 1;
-        else if (curtok()->kind == TK_UNSIGNED) member_is_unsigned = 1;
-        else if (curtok()->kind == TK_VOID) member_base_is_void = 1;
-        set_curtok(curtok()->next);
-      }
+    psx_type_spec_result_t member_type_spec;
+    token_kind_t builtin_member_kind = psx_consume_type_kind_ex(&member_type_spec);
+    if (builtin_member_kind != TK_EOF) {
+      is_signed_type = member_type_spec.is_unsigned ? 0 : 1;
+      member_base_kind = builtin_member_kind;
+      psx_ctx_get_type_info(builtin_member_kind, NULL, &elem_size);
+      if (builtin_member_kind == TK_FLOAT) member_fp_kind = TK_FLOAT_KIND_FLOAT;
+      else if (builtin_member_kind == TK_DOUBLE) member_fp_kind = TK_FLOAT_KIND_DOUBLE;
+      else if (builtin_member_kind == TK_BOOL) member_is_bool = 1;
+      else if (builtin_member_kind == TK_VOID) member_base_is_void = 1;
+      member_is_unsigned = member_type_spec.is_unsigned ? 1 : 0;
+      member_is_complex = member_type_spec.is_complex ? 1 : 0;
+      if (member_is_complex) elem_size *= 2;
       /* `_Bool b : 1;` の bitfield 抽出は符号拡張せず 0/1 として扱う必要がある
        * (C11 6.7.2.1)。is_signed_type は line 108 で TK_BOOL を見て signed と
        * 判定してしまうため、ここで _Bool / unsigned を明示的に反映し直す。
@@ -180,8 +176,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       if (tk_consume('{')) {
         int nested_n = 0;
         int nested_sz = 0;
-        nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len, &nested_sz);
-        psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len, nested_n, nested_sz);
+        int nested_align = 0;
+        nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len,
+                                                 &nested_sz, &nested_align);
+        psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len,
+                                            nested_n, nested_sz, nested_align);
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         if (curtok()->kind != TK_MUL) {
           psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
@@ -511,10 +510,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
         if (member_is_ptr) {
           _mi.funcptr_param_fp_mask = head.has_func_suffix
-                                          ? psx_last_funcptr_param_fp_mask()
+                                          ? head.func_suffix_sig.param_fp_mask
                                           : member_typedef_funcptr_param_fp_mask;
           _mi.funcptr_param_int_mask = head.has_func_suffix
-                                           ? psx_last_funcptr_param_int_mask()
+                                           ? head.func_suffix_sig.param_int_mask
                                            : member_typedef_funcptr_param_int_mask;
           _mi.funcptr_ret_is_void = head.has_func_suffix
                                         ? (member_base_is_void ? 1 : 0)
@@ -523,10 +522,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                            ? ((member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0)
                                            : member_typedef_funcptr_ret_is_pointer;
           _mi.funcptr_ret_is_complex = head.has_func_suffix
-                                           ? ((psx_last_type_is_complex() &&
-                                               !_mi.funcptr_ret_is_pointer)
-                                                  ? 1
-                                                  : 0)
+                                           ? ((member_is_complex && !_mi.funcptr_ret_is_pointer) ? 1 : 0)
                                            : member_typedef_funcptr_ret_is_complex;
           _mi.funcptr_ret_int_width = head.has_func_suffix
                                           ? psx_funcptr_ret_int_width_from_kind(
@@ -535,10 +531,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                                 member_fp_kind)
                                           : member_typedef_funcptr_ret_int_width;
           _mi.is_variadic_funcptr = head.has_func_suffix
-                                        ? (psx_last_funcptr_is_variadic() ? 1 : 0)
+                                        ? (head.func_suffix_sig.is_variadic ? 1 : 0)
                                         : member_typedef_is_variadic_funcptr;
           _mi.funcptr_nargs_fixed = head.has_func_suffix
-                                        ? (short)psx_last_funcptr_nargs_fixed()
+                                        ? (short)head.func_suffix_sig.nargs_fixed
                                         : member_typedef_funcptr_nargs_fixed;
           psx_ret_pointee_array_t ret_pointee_array = {0};
           PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
@@ -622,10 +618,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         }
         if (has_member_name && member_is_ptr) {
           unsigned short fp_mask = head.has_func_suffix
-                                       ? psx_last_funcptr_param_fp_mask()
+                                       ? head.func_suffix_sig.param_fp_mask
                                        : member_typedef_funcptr_param_fp_mask;
           unsigned short int_mask = head.has_func_suffix
-                                        ? psx_last_funcptr_param_int_mask()
+                                        ? head.func_suffix_sig.param_int_mask
                                         : member_typedef_funcptr_param_int_mask;
           if (fp_mask) {
             psx_ctx_set_tag_member_funcptr_param_fp_mask(tag_kind, tag_name, tag_len,
@@ -735,10 +731,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     tk_expect(';');
   }
   *out_size = (tag_kind == TK_UNION) ? ALIGN_UP(union_size, agg_align) : ALIGN_UP(current_off, agg_align);
-  /* `_Alignof(struct T)` 用にアラインメント (agg_align) を pending に預ける。
-   * 直後の呼び出し元 psx_ctx_define_tag_type_with_layout が tag に書き込む
-   * (size とは異なる: 例 `{char;double}` は size 16 / align 8)。 */
-  psx_ctx_set_pending_tag_align(agg_align);
+  if (out_align) *out_align = agg_align;
   return member_count;
 }
 

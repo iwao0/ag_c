@@ -3,6 +3,16 @@
 
 #include "ast.h"
 
+struct lvar_t;
+struct global_var_t;
+
+psx_type_t *psx_node_get_type(node_t *node);
+psx_type_t *psx_node_materialize_type(node_t *node);
+psx_type_t *psx_lvar_get_decl_type(struct lvar_t *var);
+psx_type_t *psx_lvar_materialize_decl_type(struct lvar_t *var);
+psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
+psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
+
 int ps_node_type_size(node_t *node);
 int ps_node_deref_size(node_t *node);
 int ps_node_is_pointer(node_t *node);
@@ -21,6 +31,9 @@ node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
 node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *psx_node_new_lvar_typed(int offset, int type_size);
+node_t *psx_node_new_lvar_for(struct lvar_t *var);
+node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
+struct lvar_t *psx_node_lvar_symbol(node_t *node);
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
 
 void psx_node_reject_const_assign(node_t *node, const char *op);

@@ -28,4 +28,5 @@ void pragma_pack_set(int alignment) {
 
 void pragma_pack_reset(void) {
   pragma_pack_current = 0;
+  pack_stack_depth = 0;
 }

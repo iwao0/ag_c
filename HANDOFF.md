@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き645: VLA/static array `sizeof` の W3003 と VLA operand 評価を補正）
+最終更新: 2026-07-06（続き692: typed AST の funcptr metadata / indirect call 型投影）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,318 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き668: **stmt typedef state の local 化**。
+  `stmt.c` の関数内 typedef parser に残っていた宣言子単位の global state
+  (`g_stmt_typedef_ptr_in_paren` / `g_stmt_typedef_has_func_suffix`) と、
+  typedef 基底型解析から宣言本体へ渡す global state
+  (`g_stmt_base_ptr_levels` / `g_stmt_base_array_dims` / `g_stmt_base_array_dim_count`) を削除した。
+  `stmt_typedef_declarator_state_t` を typedef 宣言子1個ごとの state として
+  `parse_typedef_name_decl()` / recursive declarator parse へ渡し、pointer-to-array /
+  function-pointer typedef 判定をそこから読むようにした。
+  `stmt_decl_type_state_t` を `parse_decl_type_spec()` の出力 state として追加し、
+  base pointer level と base array dims を `parse_typedef_decl()` へ明示的に返すようにした。
+  ついでに array typedef chain の `static s_merged_dims` も loop-local `merged_dims[8]` にした。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green、
+  `rg -n "g_stmt_typedef|g_stmt_base_|s_merged_dims" src/parser/stmt.c` = no matches。
+- 続き667: **parser declarator state の local 化**。
+  `parser.c` に残っていた関数戻り型 declarator の `g_func_ret_*` / `g_last_ret_ptr_levels` /
+  `g_last_outer_declarator_is_ptr` と、仮引数 VLA/多次元配列 declarator の
+  `g_param_inner_dim_*` / `g_param_pointer_array_outer_dim` を削除した。
+  関数戻り型は `func_ret_parse_state_t` を `funcdef()` のローカル state として
+  `parse_func_decl_spec()` / `parse_func_declarator()` へ渡し、関数ポインタ戻り metadata、
+  pointer level、pointee array dims を同じ state で運ぶようにした。
+  仮引数 declarator は `param_declarator_state_t` を仮引数1個ごとに作り、
+  VLA inner dims と pointer-to-array outer dim を `register_param_lvar()` /
+  `register_vla_array_param()` まで明示的に渡すようにした。
+  これで該当 parser 状態は translation-unit global ではなく parse 呼び出しの局所 state になった。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green、
+  `rg -n "g_func_ret_|g_func_funcptr|g_last_outer_declarator|g_last_ret_ptr_levels|g_func_ret_pointee|g_param_inner_dim|g_param_pointer_array_outer_dim" src/parser/parser.c` = no matches。
+- 続き666: **function return metadata getter の backend 展開**。
+  続き665の `psx_function_ret_info_t` を拡張し、関数ポインタ戻り metadata
+  (`is_funcptr` / `funcptr_ret_is_pointer` / `funcptr_ret_int_width`) も同じ snapshot に含めた。
+  parser 側では `node_utils.c` と `expr.c` の direct funcall / function designator / subscript /
+  return-value assignment check を `psx_ctx_get_function_ret_info()` に寄せ、`node_utils.c` の
+  `ND_FUNCALL` callee tag 推論で `fn->callee` を kind 確認なしに `node_func_t *` として読む箇所も
+  `fn->callee->kind == ND_FUNCALL` のガード付きへ直した。
+  backend 側では `ir_builder.c` の indirect funcptr return 判定、call result type、function return type、
+  missing return の void 判定、`wasm32_obj.c` / `wasm32_ir.c` の function result signature 判定を
+  aggregate getter に寄せた。これで parser/IR/wasm の主要実装側では、関数戻り値 metadata を
+  個別 getter 群で組み立てる箇所がほぼ消え、互換 API 本体と単体 accessor だけが残る。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き665: **function return metadata getter の集約**。
+  続き664で `return` の semantic transform が function signature metadata を読むようになったため、
+  `ret_token_kind` / `ret_fp_kind` / `ret_struct_size` / pointer / unsigned / void / complex / tag を
+  呼び出し側が個別に引き回す箇所が増えかけていた。
+  `semantic_ctx.h/c` に `psx_function_ret_info_t` と `psx_ctx_get_function_ret_info()` を追加し、
+  まず `semantic_pass.c` の return transform / return warning、`expr.c` の `_Generic` 関数 designator 推論、
+  bare function reference call、通常 direct call の戻り値 metadata 設定をこの getter へ寄せた。
+  codegen が即時に必要とする `ND_FUNCALL` metadata の設定タイミングは変えず、読み出し口だけを集約している。
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き664: **return semantic transform の parser 状態依存除去**。
+  `stmt.c` の `parse_stmt_return()` が `psx_expr_current_func_ret_*` に依存して
+  return の型チェック、pointer return の定数拒否、`_Bool` 正規化、char/short narrowing、
+  `ND_RETURN.fp_kind` / `ret_struct_size` 設定をその場で行っていた箇所を外した。
+  return parser は `ND_RETURN` と `return_tok` と optional `lhs` を残すだけにし、
+  新設済み semantic pass の function 単位 transform が `semantic_ctx` の function signature metadata
+  から戻り値情報を取得して同じ検査・変換を行うようにした。
+  併せて `expr.c` / `expr.h` から `psx_expr_current_func_ret_*` / `psx_expr_set_current_func_ret_*`
+  の global state API を削除した。
+  regression として `test/test_parser.c` に `_Bool flag(){return 200;}` が `ND_NE` へ、
+  `char narrow(int x){return x;}` が `ND_SHR(ND_SHL(...))` へ、
+  `unsigned char unarrow(int x){return x;}` が `ND_BITAND(..., 0xff)` へ変換される確認を追加した。
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `rg -n "psx_expr_current_func_ret|psx_expr_set_current_func_ret|current_func_ret" src/parser test` = no matches。
+- 続き663: **function signature 登録の共通 helper 化**。
+  `parser.c` の `register_toplevel_function_prototype()` と `funcdef()` が、
+  function name / return type / variadic / parameter category / function-pointer return metadata を
+  それぞれ別々に `semantic_ctx` へ登録していた重複を整理した。
+  新設 `psx_function_signature_t` と `register_function_signature()` に登録入口を集約し、
+  prototype と definition は同じ helper に signature を渡すだけにした。
+  これにより `psx_ctx_define_function_name_with_ret()` / `psx_ctx_track_function_ret_type()` /
+  `psx_ctx_track_function_nargs()` / parameter category / return pointer metadata / funcptr return metadata の
+  登録箇所は `parser.c` 内で helper 1 箇所になった。
+  併せて、プロトタイプ側が direct declarator の `*` 段数を `ret_pointer_levels` に渡していなかったため、
+  `int **sig_proto_pp(void);` のような多段ポインタ戻り prototype が definition 側より浅い metadata になる問題を修正した。
+  regression として `test/test_parser.c` に prototype / definition 両方の `int **...` が
+  `psx_ctx_get_function_ret_pointer_levels(...) == 2` になる確認を追加した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き662: **parser warning 発火の semantic/deferred 集約完了**。
+  W3024 unsupported GNU extension と W3001 implicit int return も parser-time 即時発火から外した。
+  W3024 は `array range designator` / `zero-length array` のように AST に残らない skipped syntax なので、
+  semantic AST walk へ無理に載せず、`semantic_ctx.c` に deferred parser-warning queue を追加した。
+  parser/decl/array suffix は warning を出さず `psx_ctx_record_unsupported_gnu_extension_warning()` に記録し、
+  full-program parse と streaming parse の終端 (`ps_stream_end()`) で `psx_ctx_emit_deferred_parser_warnings()` が発火する。
+  streaming CLI では当初 flush 位置が不足して W3024 の一部が消えたため、`ps_stream_end()` を追加して
+  `main.c` の native/wasm streaming loop と `ps_program_ctx()` の両方から呼ぶようにした。
+  W3001 は `node_t::is_implicit_int_return` を `ND_FUNCDEF` に保持し、`semantic_warn_funcdef()` が発火する。
+  `rg -n "DIAG_WARN_PARSER_" src/parser` では、通常 warning は `semantic_pass.c`、AST に残らない W3024 だけは
+  `semantic_ctx.c` の deferred flush に集約済み。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `./build/ag_c test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c 2>&1 >/tmp/agc_unsupported_gnu.s | rg "W3024"` =
+  W3024 5 件 (push_macro / pop_macro / global range / zero-length / local range)。
+  現時点で `src/parser/{parser.c,decl.c,expr.c,stmt.c,array_suffixes.c}` に parser warning の直接発火は残っていない。
+- 続き661: **W3016 implicit function declaration の semantic pass 集約**。
+  `expr.c` の unqualified function call parser が W3016 を即時発火していた箇所を、
+  `ND_FUNCALL` の `is_implicit_func_decl` annotation に置き換えた。
+  semantic pass 時点で関数表を再照会すると後方定義で警告が消えるため、呼び出し時点の
+  "未宣言だった" 事実だけを AST に固定してから `semantic_warn_funcall()` が診断する。
+  regression として、`int main(){ return f(); } int f(){...}` は W3016 を維持し、
+  `int f(void); int main(){ return f(); }` は W3016 を出さないことを `test/test_parser.c` に追加した。
+  `rg` では W3016 の `diag_warn_tokf` は `semantic_pass.c` のみ。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+  現在 parser-time warning として残る主なものは
+  `parser.c` / `decl.c` / `array_suffixes.c` の W3024 unsupported GNU extension、
+  `parser.c` の W3001 implicit int。
+- 続き660: **算術 constant warning の semantic pass 集約**。
+  `expr.c` に残っていた W3023 integer overflow / W3014 shift out of range /
+  W3015 divide by zero を parser-time 発火から外し、`semantic_pass.c` の diagnostic walk へ移した。
+  既存の `node_t::source_op` を比較・論理だけでなく `+` / `-` / `*` / `/` / `%` /
+  `<<` / `>>` にも使い、source 由来の算術ノードだけを semantic 側で判定する。
+  これにより pointer scaling や pointer difference lowering が作る合成 `ND_MUL` / `ND_DIV`
+  は `source_op == TK_EOF` のままなので W3023/W3015 の誤発火対象にならない。
+  旧挙動と同じく W3023 は signed int literal 同士の `+`/`-`/`*` に限定し、
+  unsigned/long literal は対象外。W3014 は lhs 型幅から 32/64 bit を選び、literal shift count が
+  負または幅以上なら警告。W3015 は source `/` / `%` の RHS が整数リテラル 0 のときだけ警告する。
+  regression として W3023/W3014/W3015 の発火確認、`2147483647L + 1L` 抑制、
+  `p + 2147483647` の pointer scaling 抑制を `test/test_parser.c` に追加した。
+  `rg -n "DIAG_WARN_PARSER_INTEGER_OVERFLOW|DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE|DIAG_WARN_PARSER_DIVIDE_BY_ZERO" src/parser`
+  では発火元が `semantic_pass.c` のみであることを確認済み。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+  現在 parser-time warning として残る主なものは
+  `expr.c` の W3016 implicit function declaration、
+  `parser.c` / `decl.c` / `array_suffixes.c` の W3024 unsupported GNU extension、
+  `parser.c` の W3001 implicit int。
+- 続き652: **initialized event の semantic pass 集約**。
+  続き651 の symbol identity 足場を使い、`PSX_LVAR_USAGE_INITIALIZED` の発生源を
+  parser から semantic pass へ集約した。
+  具体的には、仮引数は `semantic_record_preinitialized_locals()` が `is_param` を見て
+  initialized event を出し、static local alias は `is_static_local` と `decl_region` から
+  initialized event を出す。通常代入・宣言初期化子・array/aggregate initializer は
+  生成済みの `ND_ASSIGN` を `semantic_collect_lvar_usage_events()` が歩き、
+  `usage_region` を指定して initialized event を記録する。
+  これにより `parser.c` / `decl.c` / `expr.c` から
+  `psx_decl_record_lvar_usage(... PSX_LVAR_USAGE_INITIALIZED)` の直接呼び出しは消えた。
+  `rg -n "psx_decl_record_lvar_usage\\(.*INITIALIZED|PSX_LVAR_USAGE_INITIALIZED|is_initialized\\s*=" src/parser`
+  では replay 本体と `semantic_pass.c` の event 生成だけがヒットする。
+  regression として、仮引数、宣言初期化、static local scalar が W3004 を出さないことを
+  `test/test_parser.c` に追加した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き651: **lvar symbol identity と assignment init を semantic 化**。
+  次の根本対応として、`ND_LVAR` が offset だけでなく宣言元 `lvar_t *` を保持するようにした。
+  `psx_node_new_lvar_for()` / `psx_node_new_lvar_typed_for()` /
+  `psx_node_lvar_symbol()` を追加し、通常 lvar 参照、配列 decay、byref param、
+  struct copy/initializer の主要 lvar ノード生成経路を symbol identity 優先へ寄せた。
+  これにより semantic pass が後から AST を歩いても `psx_decl_find_lvar_by_offset()` の
+  exact offset hash に頼らず元の変数へ戻れる。
+  さらに `psx_decl_record_lvar_usage_in_region()` を追加し、semantic pass が AST の
+  `usage_region` を指定して event を追加できるようにした。その上で通常代入
+  `x = ...` / `*(&x) = ...` / struct member assignment の initialized event は
+  parser の `expr.c` ではなく `semantic_pass.c` の AST walk から出すように変更した。
+  `test_type_metadata_bridge()` には `psx_node_lvar_symbol(assign->lhs) == lvar` の regression を追加。
+  まだ残る parser-side initialized event は、仮引数、static local alias、宣言初期化子
+  (`int x=...`, array/aggregate initializer) で、特に array/member initializer の一部は
+  base offset だけで要素 lvar を作る helper が残っているため、次に owner `lvar_t *`
+  を渡す形へ整理してから event を semantic 側へ寄せるのが安全。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き650: **unreachable 判定を semantic pass 化**。
+  parser/stmt の逐次 W3002 発火と unreachable suppression depth を廃止し、
+  AST の各 statement に `tok` と `usage_region` を保持してから、`semantic_pass.c` の
+  block walk で到達不能 run を判定する形へ移した。W3002 は semantic pass が
+  `node->tok` に対して出し、到達不能文の `usage_region` と子孫 region を
+  `psx_decl_suppress_lvar_usage_region()` で mark してから
+  `psx_decl_replay_lvar_usage_events()` を実行する。
+  これにより、到達不能判定・W3003/W3004 抑制・lvar usage replay の最終状態生成が
+  parser の一時状態ではなく AST/semantic pass 側にまとまった。
+  旧 `psx_ctx_enter_unreachable_diagnostic_suppression()` /
+  `psx_ctx_leave_unreachable_diagnostic_suppression()` /
+  `psx_ctx_in_unreachable_diagnostic_suppression()` と
+  `PSX_LVAR_USAGE_SUPPRESS_UNREACHABLE_WARNINGS` は削除済み。
+  regression として
+  `int main(void){ goto L; { int x; x=1; return x; } L: return 0; }`
+  が W3002 を出しつつ W3003/W3004 を出さないことを `test/test_parser.c` に追加した。
+  `rg -n "psx_ctx_enter_unreachable|psx_ctx_leave_unreachable|psx_ctx_in_unreachable|PSX_LVAR_USAGE_SUPPRESS_UNREACHABLE_WARNINGS" src/parser`
+  はヒット無し、warning final-state の直接更新も replay 実装内だけ。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き649: **lvar warning state を semantic replay 化**。
+  続き648 の usage event 化をさらに進め、`is_initialized` と
+  `suppress_unreachable_warnings` も parser 側の直接 final-state 更新から外した。
+  `PSX_LVAR_USAGE_INITIALIZED` と `PSX_LVAR_USAGE_SUPPRESS_UNREACHABLE_WARNINGS` を追加し、
+  `psx_decl_replay_lvar_usage_events()` が `is_used` / `is_unevaluated_used` /
+  `is_address_taken` / `is_initialized` / `suppress_unreachable_warnings` を一度クリアしてから
+  event 列を replay する。unreachable suppression 中に記録された evaluated/initialized event は
+  event の `suppressed` bit で replay 時に無視し、変数宣言自体の W3003/W3004 抑制は
+  SUPPRESS event で明示する。
+  `rg -n "is_used\\s*=|is_unevaluated_used\\s*=|is_address_taken\\s*=|is_initialized\\s*=|suppress_unreachable_warnings\\s*=|used_count\\+\\+|used_count--" src/parser`
+  では replay 実装内だけがヒットする状態。つまり warning state の最終ビット生成は
+  semantic replay 側に集約された。
+  まだ「どの箇所が unreachable か」の判定自体は parser/stmt の制御フロー処理に残っている。
+  次の根本対応は、unreachable 判定も AST/CFG ベースの semantic pass に移すこと。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き648: **lvar usage state を semantic replay 化**。
+  `is_used` / `is_unevaluated_used` / `is_address_taken` / `used_count` の直接更新を
+  `expr.c` / `decl.c` の parser 経路から外し、`psx_decl_record_lvar_usage()` で usage event を
+  記録する形へ変更した。`semantic_pass.c` の関数解析時に
+  `psx_decl_replay_lvar_usage_events(fn->lvars)` を呼び、event 列を replay して最終 warning state を作る。
+  これにより `&x` が先に通常参照として parse されても、後続の ADDRESS_TAKEN event で
+  1 回分の evaluated use を差し引く既存挙動を semantic replay 側で再現する。
+  `rg -n "is_used\\s*=|is_unevaluated_used\\s*=|is_address_taken\\s*=|used_count\\+\\+|used_count--" src/parser`
+  では replay 実装内だけがヒットする状態。
+  まだ `is_initialized` と unreachable suppression の event 化は残っている。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き647: **semantic pass の責務境界と decl_type materialize を追加**。
+  `parser.c` に残っていた `warn_unused_uninit_locals()` を削除し、未使用/未初期化ローカル診断の発火を
+  `src/parser/semantic_pass.c` 側へ移した。診断対象も `psx_decl_get_locals()` の現グローバル状態ではなく、
+  関数ノードに保存済みの `node_func_t::lvars` を走査する形へ寄せた。
+  さらに semantic pass で `lvar_t::decl_type` と `global_var_t::decl_type` を materialize するようにした。
+  `psx_lvar_materialize_decl_type()` / `psx_gvar_materialize_decl_type()` は、既存の `decl_type` があっても
+  現在フィールドから再投影するため、`extern int a[]; int a[3];` のような後続具体化で
+  不完全型が stale に残らない。
+  `ps_program_ctx()` の終端で `psx_semantic_analyze_program(codes)` を呼び、TU 全体 parse 後に
+  グローバル `decl_type` も固定する。
+  regression は `test_type_metadata_bridge()` に追加し、式 node type に加えて
+  local の `unsigned int` / `struct S *` / `struct R`、global の `unsigned int` / `int *` /
+  `int[3]` / extern incomplete array → definition の `decl_type` を確認している。
+  まだ `is_used` / `is_unevaluated_used` / `is_address_taken` / `is_initialized` / unreachable suppression の
+  state 生成自体は parser/expr 側の副作用に残っている。次の根本対応は、`sizeof` 等で operand AST が
+  捨てられる経路を annotation で残し、semantic pass が usage state を再計算できる形へ移すこと。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き646: **typed AST / semantic pass の足場を追加**。
+  設計見直しの 1 番目 (`Type` と typed AST) から着手し、`src/parser/type.h` /
+  `src/parser/type.c` に `psx_type_t` を追加した。既存の `node_mem_t` / `lvar_t` /
+  `global_var_t` の ad hoc 型フィールドはまだ source of truth のまま残し、`node_t`
+  から `psx_node_get_type()` で `psx_type_t` へ投影できる bridge を入れている。
+  `node_utils.c` では `deref_size` / pointer 判定 / unsigned 判定の一部を Type helper 経由へ寄せた。
+  ただし `ps_node_type_size()` は、C の array-to-pointer decay と `sizeof` の非 decay 例外が
+  旧 `type_size` に同居しているため、現時点では旧フィールドを authoritative として残している。
+  途中で `struct R { int r[4]; }; sizeof(r.r)` が 8 になり e2e 失敗したため、
+  `psx_type_t` 側でも array decay は `PSX_TYPE_ARRAY` として表現する regression を追加した。
+  さらに `src/parser/semantic_pass.h` / `src/parser/semantic_pass.c` を追加し、
+  parse 後 AST を歩く `psx_semantic_analyze_function()` / `psx_semantic_analyze_program()` の入口を作った。
+  現段階では挙動変更を避け、semantic pass は型 materialize のみ行う。
+  次に進めるなら、宣言完了地点で `decl_type` を stale なく埋める設計、
+  その後 evaluated / unevaluated / address-only / unreachable の診断 state を semantic pass 側へ移す。
+  確認は
+  `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
 - 続き645: **VLA/static array `sizeof` の W3003 と VLA operand 評価を補正**。
   `sizeof(vla)` / `sizeof(vla[i])` / `sizeof(static_local_array)` は C の `sizeof`
   として値を読む通常評価ではない一方、VLA 型 operand では添字式などの副作用は実行される。
@@ -10081,3 +10393,1085 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make test-wasm-js-pipeline` = `ag_c wasm JS compile+link pipeline smoke: ok`
   - `./build/test_wasm32_object` = **1160 pass / fail 0 / skip 0**
   - `./build/test_e2e` = **1186/1186 OK**
+
+### このセッション（続き653）: lvar usage event を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `expr.c` が識別子解決時に `EVALUATED` / `UNEVALUATED` を直接 event へ積み、
+    `&x` でも parser-time helper が `ADDRESS_TAKEN` を直接積んでいた。
+  - `sizeof(array)` / VLA sizeof の高速経路は式 AST を返さず、warning usage だけを副作用で
+    記録していた。
+  - 構造体配列メンバコピー初期化でも、互換性チェック前に source array の usage を直接記録していた。
+- 根本対応:
+  - `node_t` に `usage_lvar` / `records_lvar_usage` / `lvar_usage_unevaluated` /
+    `is_explicit_addr_expr` を追加し、source identifier の usage を AST annotation として保持するようにした。
+  - `resolve_identifier()` は直接 event を積まず、生成した source reference node に usage annotation を付けて返す。
+    static local / array decay / byref param も top-level node に同じ annotation を付ける。
+  - `semantic_pass.c` の lvar usage walk が annotation を読んで `EVALUATED` / `UNEVALUATED` を記録し、
+    明示単項 `&` 由来の `ND_ADDR` だけを `ADDRESS_TAKEN` として扱うようにした。
+  - `sizeof` の no-AST 高速経路は、返す size node に unevaluated usage annotation を付ける形に変更した。
+  - 配列メンバコピー初期化は、source expression を捨てず comma prefix として AST に残し、
+    semantic pass が usage を拾えるようにした。互換性がない候補では usage を記録しない。
+  - 未使用になった `psx_decl_record_lvar_usage()` wrapper を削除し、usage event の発生源を
+    `psx_decl_record_lvar_usage_in_region()` を呼ぶ semantic pass 側へ寄せた。
+  - regression guard として、`x=1` の左辺 source reference、`&x` の address-taken、
+    宣言初期化の合成 lvar が unused 扱いのまま残るケースを `test/test_parser.c` に追加した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - lvar usage に続いて、parser-time に残る型・制約チェックのうち semantic pass へ移すべきものを洗い出す。
+  - C runtime 側は `setbuf` / `setvbuf` 後、単一 file-buffer 前提のまま残っている複数 path / unlink semantics が次の大きな未実装。
+
+### このセッション（続き654）: W3010/W3012 warning を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `expr.c` の `assign()` が `x=x` の W3012 と `x=1.5` / `x=d` の W3010 を parser 中に即時発火していた。
+  - `stmt.c` の `return` 経路も `return 1.5` / `return d` の W3010 を parser 中に即時発火していた。
+  - `decl.c` の scalar local initializer も `int x = 1.5` / `int x = d` の W3010 を parser 中に即時発火しており、
+    同じ warning が `expr.c` / `stmt.c` / `decl.c` に分散していた。
+- 根本対応:
+  - `node_t` に `is_source_assignment` と `is_decl_initializer` を追加した。
+    これにより user source の `=`、local declaration initializer、lowering 用 synthetic assignment を
+    semantic pass で区別できるようにした。
+  - `expr.c` / `stmt.c` / `decl.c` から W3010/W3012 の即時発火 helper を削除した。
+  - `semantic_pass.c` に diagnostic walk を追加し、`ND_ASSIGN` / `ND_RETURN` から W3010/W3012 を出すようにした。
+  - W3012 は旧 offset 比較ではなく `node_lvar_t::var` identity で判定するようにした。
+    shadowing や offset 再利用に引っ張られにくい。
+  - W3010 の floating literal fractional check は semantic pass に集約し、selfhost wasm で trap しない
+    i32 範囲内 cast helper を assignment / initializer / return で共用するようにした。
+  - regression guard として、source self-assignment、assignment narrowing、declaration initializer narrowing、
+    return narrowing、整数値 float literal で W3010 が出ないケースを `test/test_parser.c` に追加した。
+  - `rg -n "DIAG_WARN_PARSER_SELF_ASSIGN|DIAG_WARN_PARSER_FLOAT_TO_INT_NARROWING|fp_literal_fractional_part_known" src/parser/expr.c src/parser/stmt.c src/parser/semantic_pass.c src/parser/decl.c`
+    で、対象 warning の発火元が `semantic_pass.c` のみになったことを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - まだ parser-time に残る `diag_warn_tokf(..., NULL, ...)` のうち、AST だけで判定できる比較・条件式 warning
+    (`W3013` / `W3018` / `W3020` / `W3021` / `W3007` など) を semantic pass へ移せるか確認する。
+  - declaration initializer の範囲警告 W3011 も local scalar initializer に密結合しており、
+    同様に AST annotation 化できる可能性がある。
+
+### このセッション（続き655）: 比較・論理 warning を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `expr.c` が `x == x` / `x && x` / signed-unsigned compare / unsigned-zero compare /
+    pointer-integer compare / `!x == y` precedence trap を parser 中に即時発火していた。
+  - `>` / `>=` は AST 上 `ND_LT` / `ND_LE` へ左右反転して lowering されるため、
+    後段へ移すには元演算子情報が必要だった。
+- 根本対応:
+  - `node_t::source_op` を追加し、source の `&&` / `||` / `==` / `!=` / `<` / `<=` / `>` / `>=`
+    を AST に保持するようにした。
+  - `expr.c` の比較・論理演算 warning helper を削除し、`semantic_pass.c` の diagnostic walk へ移した。
+  - `semantic_source_compare_operands()` で `>` / `>=` の source 側 lhs/rhs を復元し、
+    warning 文面や `0 > u` 判定が正規化後 AST に引っ張られないようにした。
+  - self-compare は旧 offset 比較ではなく `psx_node_lvar_symbol()` の identity を使うようにした。
+  - regression guard として、`source_op` の `>` / `>=` 保持、W3013/W3018/W3019/W3020/W3021/W3022 の
+    発火確認を `test/test_parser.c` に追加した。
+  - `rg` で対象 warning symbol / 旧 helper が `expr.c` に残らず、発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+
+### このセッション（続き656）: 条件式・空 body warning を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `stmt.c` が `if/while` 条件の assignment/comma warning (W3007/W3008) と
+    `if (cond);` の empty-body warning (W3009) を parser 中に即時発火していた。
+  - 条件式そのものは AST に残るが、空 body は `;` が `ND_NUM(0)` に潰れるため、
+    source 上の空 body 事実を後段で安定して読む metadata がなかった。
+- 根本対応:
+  - `node_t::has_empty_body` を追加し、`parse_stmt_if()` が `)` 直後の `;` を見た事実だけを
+    `ND_IF` に残すようにした。
+  - `stmt.c` の W3007/W3008/W3009 即時発火 helper を削除し、
+    `semantic_pass.c` の `semantic_warn_condition()` へ集約した。
+  - W3007/W3008 は現行挙動に合わせて `ND_IF` / `ND_WHILE` の条件式 top-level だけを対象にしている。
+  - regression guard として、`if (x=1)` / `while (x=1)` / `if (x,1)` / `if (x);` の
+    W3007/W3008/W3009 発火確認を `test/test_parser.c` に追加した。
+  - `rg` で W3007/W3008/W3009 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `expr.c` の W3023 integer overflow / W3015 divide-by-zero / W3014 shift-out-of-range /
+    W3016 implicit function declaration、
+    `parser.c` / `decl.c` の W3024 unsupported GNU extension、`parser.c` の W3001 implicit int。
+
+### このセッション（続き657）: W3006 return-stack-address を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `stmt.c` の `return` parser が `return &local` / `return local_array` 相当を見た時点で
+    `psx_decl_find_lvar_by_offset()` を呼び、W3006 を即時発火していた。
+  - 既に `node_lvar_t::var` と `ND_RETURN` の semantic walk があるため、offset 再探索を parser に残す必要がなかった。
+- 根本対応:
+  - `stmt.c` から W3006 の即時発火ブロックを削除した。
+  - `semantic_warn_return()` が pointer return のとき `ND_ADDR(ND_LVAR)` を見て、
+    `psx_node_lvar_symbol()` の identity から static local を除外して W3006 を出すようにした。
+  - regression guard として、`return &x` は W3006、`static local` と global address return は
+    W3006 なしの確認を `test/test_parser.c` に追加した。
+  - `rg` で W3006 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `expr.c` の W3023 integer overflow / W3015 divide-by-zero / W3014 shift-out-of-range /
+    W3016 implicit function declaration、
+    `parser.c` / `decl.c` の W3024 unsupported GNU extension、`parser.c` の W3001 implicit int。
+  - expression constant warning (W3023/W3015/W3014) は constant-fold metadata を AST に残せば寄せられるが、
+    codegen 前の式変形と二重診断しない設計が必要。
+
+### このセッション（続き658）: W3017 switch fallthrough を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `stmt.c` の block parser が、次の token が `case/default` かどうかを見て W3017 を即時発火していた。
+  - そのため switch fallthrough だけが statement parser に残り、unreachable などの block-level warning と
+    判定箇所が分かれていた。
+- 根本対応:
+  - `stmt.c` から `stmt_tail_terminates()` と parser-time W3017 発火を削除した。
+  - `semantic_check_unreachable_in_block()` に case/default sibling 監視を追加し、
+    `seen_case_in_block` と `prev_fallthrough_terminates` を AST block body から再構成するようにした。
+  - `break` / `return` / `continue` / `goto`、および case/default body の tail 終端判定は
+    既存の semantic pass 側 `semantic_stmt_direct_terminates()` / `semantic_stmt_tail_terminates()` を再利用した。
+  - regression guard として、fallthrough ありは W3017、`break` ありと `case 0: case 1:` の連続 case は
+    W3017 なしの確認を `test/test_parser.c` に追加した。
+  - `rg` で W3017 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `expr.c` の W3023 integer overflow / W3015 divide-by-zero / W3014 shift-out-of-range /
+    W3016 implicit function declaration、
+    `parser.c` / `decl.c` の W3024 unsupported GNU extension、`parser.c` の W3001 implicit int。
+  - expression constant warning (W3023/W3015/W3014) は constant-fold metadata を AST に残せば寄せられるが、
+    codegen 前の式変形と二重診断しない設計が必要。
+
+### このセッション（続き659）: W3011 constant overflow を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `decl.c` の scalar local initializer が `char c = 200` / `unsigned char c = 300` の
+    W3011 を parser 中に即時発火していた。
+  - declaration initializer は既に `ND_ASSIGN` + `is_decl_initializer` として AST に残り、
+    lhs には型幅・符号、rhs には整数リテラルが残るため parser に置く必要がなかった。
+- 根本対応:
+  - `decl.c` から W3011 の即時発火ブロックを削除した。
+  - `semantic_warn_assignment()` から `semantic_warn_decl_initializer_constant_overflow()` を呼び、
+    `is_decl_initializer` のときだけ lhs の型幅・符号と rhs の整数リテラルで W3011 を判定するようにした。
+  - 旧挙動と同じく 4 バイト未満の非 FP scalar に限定し、`unsigned char c = -1` は意図的な全ビット 1 として抑制する。
+  - `_Bool b = 300` は parser が `(rhs != 0)` に正規化するため W3011 対象外のまま。
+  - regression guard として、signed/unsigned overflow、`unsigned char = -1` 抑制、`_Bool` 抑制を
+    `test/test_parser.c` に追加した。
+  - `rg` で W3011 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `expr.c` の W3023 integer overflow / W3015 divide-by-zero / W3014 shift-out-of-range /
+    W3016 implicit function declaration、
+    `parser.c` / `decl.c` の W3024 unsupported GNU extension、`parser.c` の W3001 implicit int。
+  - expression constant warning (W3023/W3015/W3014) は constant-fold metadata を AST に残せば寄せられるが、
+    codegen 前の式変形と二重診断しない設計が必要。
+
+### このセッション（続き660）: 算術 constant warning を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `expr.c` の `shift()` / `add()` / `mul()` が W3023 integer overflow、
+    W3014 shift-out-of-range、W3015 divide-by-zero を parser 中に即時発火していた。
+  - pointer arithmetic の scaling や pointer difference lowering も `ND_MUL` / `ND_DIV`
+    を作るため、単純に AST node kind だけで後段判定すると合成ノードへ誤発火する危険があった。
+- 根本対応:
+  - 既存の `node_t::source_op` を算術演算子にも拡張し、source 由来の
+    `+` / `-` / `*` / `/` / `%` / `<<` / `>>` だけに token kind を残すようにした。
+  - `expr.c` から `warn_if_int_const_overflow()` / `warn_if_shift_oob()` と
+    `/` / `%` のゼロ除算即時 warning を削除した。
+  - `semantic_pass.c` に `semantic_warn_arithmetic()` を追加し、`source_op != TK_EOF`
+    の算術ノードだけで W3023/W3014/W3015 を判定するようにした。
+  - W3023 は旧条件と同じく signed int literal 同士の `+` / `-` / `*` だけを対象にし、
+    unsigned/long literal は抑制する。
+  - pointer scaling 用の合成 `ND_MUL` と pointer difference 用の合成 `ND_DIV` は
+    `source_op` を持たないため、warning 対象から自然に外れる。
+  - regression guard として、W3023/W3014/W3015 の発火確認、long literal 抑制、
+    `p + 2147483647` で W3023 が出ない確認を `test/test_parser.c` に追加した。
+  - `rg` で W3023/W3014/W3015 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `expr.c` の W3016 implicit function declaration、
+    `parser.c` / `decl.c` / `array_suffixes.c` の W3024 unsupported GNU extension、
+    `parser.c` の W3001 implicit int。
+  - 次は W3016 を「関数呼び出し AST に unresolved/implicit-decl metadata を残して semantic pass で診断」
+    へ寄せるのが順番として自然。ただし function symbol/prototype 登録との境界が絡むため、W3024/W3001 よりリスクは高い。
+
+### このセッション（続き661）: W3016 implicit function declaration を semantic pass へ集約
+- 見つかった浅い箇所:
+  - `expr.c` の `build_unqualified_call()` が、未宣言の通常関数呼び出しを見た時点で W3016 を即時発火していた。
+  - semantic pass 時点で `psx_ctx_has_function_name()` を再照会するだけだと、後方定義
+    (`int main(){ f(); } int f(){...}`) によって「呼び出し時点では未宣言だった」事実が消える危険があった。
+- 根本対応:
+  - `node_t::is_implicit_func_decl` を追加し、parser では W3016 を出さずに
+    `ND_FUNCALL` へ呼び出し時点の implicit-decl 事実と token を記録するようにした。
+  - `semantic_pass.c` に `semantic_warn_funcall()` を追加し、`ND_FUNCALL` の
+    `is_implicit_func_decl` を見て W3016 を発火するようにした。
+  - 既存の未宣言判定条件 (`!psx_ctx_has_function_name()` かつ `!psx_find_global_var()`) は parser 側でそのまま使い、
+    semantic 側で後から関数表を見直して挙動が変わらないようにした。
+  - regression guard として、後方定義でも W3016 が出ること、prototype 宣言済みなら W3016 が出ないことを
+    `test/test_parser.c` に追加した。
+  - `rg` で W3016 の発火元が `semantic_pass.c` のみであることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+- 次の候補:
+  - parser-time warning として残っているもの:
+    `parser.c` / `decl.c` / `array_suffixes.c` の W3024 unsupported GNU extension、
+    `parser.c` の W3001 implicit int。
+  - W3024 は skipped GNU extension の構文処理に密結合しており AST に残らないため、
+    semantic pass へ無理に寄せるより、まず parser diagnostic event queue を導入して
+    「発見時点」と「発火時点」を分離するのが安全。
+
+### このセッション（続き662）: W3024/W3001 を deferred/semantic warning へ集約
+- 見つかった浅い箇所:
+  - `parser.c` / `decl.c` / `array_suffixes.c` が W3024 unsupported GNU extension を
+    skipped syntax の発見時点で即時発火していた。
+  - `parser.c` の `funcdef()` が戻り値型省略 (`main(){...}`) を見た時点で W3001 を即時発火していた。
+  - W3024 は AST に残らない syntax recovery なので、semantic AST walk に無理に載せると
+    「何を skip したか」の情報を失う。
+- 根本対応:
+  - `semantic_ctx.c` に deferred parser-warning queue を追加し、
+    `psx_ctx_record_unsupported_gnu_extension_warning()` / `psx_ctx_emit_deferred_parser_warnings()` を公開した。
+  - W3024 の parser/decl/array suffix 発火箇所は warning を出さず queue に記録するだけにした。
+  - full-program parse は `ps_program_ctx()` 末尾、streaming parse は新設 `ps_stream_end()` で queue を flush するようにした。
+  - CLI / wasm compile-to-memory は streaming parse なので `main.c` の両 loop 後に `ps_stream_end()` を呼ぶようにした。
+  - W3001 は `node_t::is_implicit_int_return` を `ND_FUNCDEF` に追加し、parser は bit と function token を残すだけにした。
+  - `semantic_pass.c` の `semantic_warn_funcdef()` が W3001 を発火するようにした。
+  - regression guard として、implicit int return は W3001、明示 `int main` は W3001 なしを `test/test_parser.c` に追加した。
+  - W3024 は単独 fixture で push_macro / pop_macro / global range / zero-length / local range の 5 件が出ることを確認した。
+  - `rg -n "DIAG_WARN_PARSER_" src/parser` で、通常 warning 発火は `semantic_pass.c`、
+    AST に残らない W3024 のみ `semantic_ctx.c` の deferred flush に集約されていることを確認した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `./build/ag_c test/fixtures/probes_found_bugs/unsupported_gnu_extensions_warn_skip.c 2>&1 >/tmp/agc_unsupported_gnu.s | rg "W3024"` =
+    **5 W3024 diagnostics**
+- 現状:
+  - `src/parser/{parser.c,decl.c,expr.c,stmt.c,array_suffixes.c}` に parser warning の直接発火は残っていない。
+  - 通常 warning は semantic pass、AST に残らない unsupported-extension warning は deferred queue へ分離された。
+  - 次に見るなら warning 以外の parser-time semantic side effect（型/usage/initializer state の取り残し）だが、
+    warning 発火の「その場限り」対応としては一段落。
+
+### このセッション（続き663）: function signature 登録を共通 helper へ集約
+- 見つかった浅い箇所:
+  - `register_toplevel_function_prototype()` と `funcdef()` が、関数名登録、戻り値型、
+    variadic、仮引数カテゴリ、戻り値ポインタ metadata、関数ポインタ戻り metadata を
+    それぞれ別々のブロックで `semantic_ctx` へ登録していた。
+  - そのため prototype と definition の挙動がズレやすく、実際に prototype 側は
+    direct declarator の `*` 段数を `psx_ctx_set_function_ret_pointer_levels()` へ渡していなかった。
+- 根本対応:
+  - `psx_function_signature_t` を追加し、関数 signature の登録入力を 1 つの構造体へまとめた。
+  - `register_function_signature()` を追加し、
+    `psx_ctx_define_function_name_with_ret()` / `psx_ctx_track_function_ret_type()` /
+    `psx_ctx_track_function_nargs()` / parameter category / return tag / return pointer dims /
+    function pointer return metadata の登録入口を 1 箇所にした。
+  - prototype と definition は、それぞれ parse 済み情報を `psx_function_signature_t` に詰めて
+    helper へ渡すだけにした。`rg` では該当 `psx_ctx_*function*` 登録の実体は helper に集約済み。
+  - prototype 側の `ret_pointer_levels` は `g_toplevel_decl_base_pointer_levels + g_toplevel_decl_ptr_levels`
+    を渡すようにし、`int **f(void);` のような宣言だけの関数でも definition 側と同じ metadata になるようにした。
+  - regression guard として、`int **sig_proto_pp(void);` と `int **sig_def_pp(void){...}` の両方が
+    `psx_ctx_get_function_ret_pointer_levels(...) == 2` になることを `test/test_parser.c` に追加した。
+- 確認:
+  - `make -j4 build/test_parser`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+
+### このセッション（続き664）: return semantic transform の parser 状態依存除去
+- 見つかった浅い箇所:
+  - `stmt.c` の `parse_stmt_return()` が `psx_expr_current_func_ret_*` を読んで、
+    parser 中に return の型エラー、pointer return の非ゼロ整数拒否、`_Bool` 正規化、
+    char/short return narrowing、`ND_RETURN` の fp/struct metadata 設定まで行っていた。
+  - function 戻り値 metadata は既に `semantic_ctx` へ登録されているため、
+    `expr.c` 側に「いま parse 中の関数戻り値」を global state として持つ必要がなくなっていた。
+- 根本対応:
+  - `parse_stmt_return()` は `ND_RETURN`、`return_tok`、optional `lhs` を作って `;` を消費するだけにした。
+  - `semantic_pass.c` に return transform を追加し、function 単位の semantic analyze 冒頭で
+    `psx_ctx_get_function_ret_*` metadata から戻り値型を取得して旧 parser-time の検査・変換を再現するようにした。
+  - E3054/E3055、pointer return の非ゼロ整数拒否、`_Bool` return の `lhs != 0` 正規化、
+    signed char/short の shift narrowing、unsigned char/short の mask narrowing、
+    `ND_RETURN.fp_kind` / `ret_struct_size` 設定は semantic pass 側に集約した。
+  - `expr.c` / `expr.h` から `psx_expr_current_func_ret_*` と
+    `psx_expr_set_current_func_ret_*` の global state API を削除し、
+    `parser.c` からそれらの setter 呼び出しを削除した。
+  - regression guard として `_Bool` / signed char / unsigned char return lowering の AST 形状確認を
+    `test/test_parser.c` に追加した。
+- 確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `rg -n "psx_expr_current_func_ret|psx_expr_set_current_func_ret|current_func_ret" src/parser test` =
+    **no matches**
+
+### このセッション（続き665）: function return metadata getter の集約
+- 見つかった浅い箇所:
+  - 続き664で `return` の semantic transform が function signature metadata を読むようになり、
+    `ret_token_kind` / `ret_fp_kind` / `ret_struct_size` / pointer / unsigned / void / complex / tag を
+    複数の getter で同じ関数名から繰り返し取得する箇所が増えかけていた。
+  - このままだと今後 return/call/generic のどこかで戻り値 metadata の一部だけ取り忘れる形に戻りやすい。
+- 根本対応:
+  - `semantic_ctx.h/c` に `psx_function_ret_info_t` と `psx_ctx_get_function_ret_info()` を追加し、
+    function return metadata の読み出し口を 1 つ作った。
+  - `semantic_pass.c` の return transform / return warning は新 getter を使い、
+    `ND_RETURN` の `fp_kind` / `ret_struct_size` 設定、E3054/E3055、pointer return、
+    `_Bool` / char / short return 変換の判定を同じ snapshot から行うようにした。
+  - `expr.c` の `_Generic` function designator 推論、bare function reference call、
+    通常 direct call での `ND_FUNCALL` metadata 設定も同じ getter へ寄せた。
+  - `ND_FUNCALL` metadata は codegen が直後に必要とするため semantic pass へ遅延せず、
+    読み出し口だけを集約して挙動タイミングは維持した。
+- 確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+
+### このセッション（続き666）: function return metadata getter の backend 展開
+- 見つかった浅い箇所:
+  - 続き665で parser 側の戻り値 metadata 読み出し口を作ったが、`ir_builder.c` /
+    `wasm32_obj.c` / `wasm32_ir.c` には pointer / funcptr / struct_size / fp_kind /
+    token_kind / void を個別 getter で組み合わせる箇所が残っていた。
+  - `node_utils.c` の `ND_FUNCALL` tag 推論では、`fn->callee` を `ND_FUNCALL` か確認せず
+    `node_func_t *` として読む既存の危ない形も残っていた。
+- 根本対応:
+  - `psx_function_ret_info_t` に `is_funcptr` / `funcptr_ret_is_pointer` /
+    `funcptr_ret_int_width` を追加し、関数ポインタ戻り metadata も同じ snapshot から読めるようにした。
+  - `expr.c` / `node_utils.c` の direct funcall、function designator、subscript、
+    assign/initializer の void-return check、funcptr-return 判定を `psx_ctx_get_function_ret_info()` に寄せた。
+  - `node_utils.c` の `go()()->m` 系 tag 推論は、`fn->callee->kind == ND_FUNCALL` を確認してから
+    inner funcall として扱うようにし、間接呼び出し fallback と分けた。
+  - `ir_builder.c` の indirect funcptr return 判定、call result type、function return type、
+    missing return の void 判定も aggregate getter に寄せた。
+  - `wasm32_obj.c` / `wasm32_ir.c` の function result signature 判定も aggregate getter に寄せた。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e`
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+
+### このセッション（続き667）: parser declarator state の local 化
+- 見つかった浅い箇所:
+  - 関数戻り型 declarator の一時状態が `g_func_ret_*`、`g_last_ret_ptr_levels`、
+    `g_last_outer_declarator_is_ptr` として `parser.c` の translation-unit global に散っていた。
+    続き663-666で function signature 登録や return metadata 読み出し口を整理しても、
+    parse 中の状態だけは global 依存のままだった。
+  - 仮引数 VLA/多次元配列 declarator でも、`g_param_inner_dim_*` と
+    `g_param_pointer_array_outer_dim` を parse 側がセットし、登録側が後から読む形が残っていた。
+    仮引数1個ごとの状態なのに global に置かれており、入れ子 declarator や将来の再入性で壊れやすい。
+- 根本対応:
+  - `func_ret_parse_state_t` を追加し、`funcdef()` ローカル state として
+    `parse_func_decl_spec()`、`resolve_func_ret_typedef()`、`parse_pointer_suffix_flags()`、
+    `parse_func_declarator()` へ明示的に渡すようにした。
+  - 関数ポインタ戻り metadata、戻り値 pointer level、pointee array dims、
+    outer declarator の `(*` 判定を `func_ret_parse_state_t` に集約した。
+  - `param_declarator_state_t` を追加し、仮引数1個ごとに VLA inner dims と
+    pointer-to-array outer dim を保持して、`register_param_lvar()` /
+    `register_vla_array_param()` へ明示的に渡すようにした。
+  - これにより該当 parser 状態は global 共有ではなく、parse 呼び出し単位の state になった。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_func_ret_|g_func_funcptr|g_last_outer_declarator|g_last_ret_ptr_levels|g_func_ret_pointee|g_param_inner_dim|g_param_pointer_array_outer_dim" src/parser/parser.c` = **no matches**
+
+### このセッション（続き668）: stmt typedef state の local 化
+- 見つかった浅い箇所:
+  - `stmt.c` の関数内 typedef parser で、typedef 宣言子1個の一時状態が
+    `g_stmt_typedef_ptr_in_paren` / `g_stmt_typedef_has_func_suffix` として global に残っていた。
+  - typedef 基底型解析から宣言本体へ渡す情報も
+    `g_stmt_base_ptr_levels` / `g_stmt_base_array_dims` / `g_stmt_base_array_dim_count` として
+    global に置かれていた。これは `parse_decl_type_spec()` の返り値相当であり、文脈に閉じるべき情報。
+  - array typedef chain の merge buffer が `static int s_merged_dims[8]` で、呼び出し単位の一時配列なのに
+    static lifetime を持っていた。
+- 根本対応:
+  - `stmt_typedef_declarator_state_t` を追加し、`parse_typedef_name_decl()` /
+    `parse_typedef_name_decl_recursive()` が pointer-to-array / function-pointer 判定を
+    宣言子1個ごとの state に書くようにした。
+  - `stmt_decl_type_state_t` を追加し、`parse_decl_type_spec()` が base pointer level と
+    base array dims を explicit state として `parse_typedef_decl()` へ返すようにした。
+  - array typedef chain の merge buffer は loop-local `merged_dims[8]` にした。
+  - これにより `stmt.c` の対象 typedef 一時 state は global 共有から外れ、parse 呼び出し内の state になった。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_stmt_typedef|g_stmt_base_|s_merged_dims" src/parser/stmt.c` = **no matches**
+
+### このセッション（続き669）: function pointer suffix signature state の明示化
+- 見つかった浅い箇所:
+  - `skip_func_params()` が直近に読んだ関数ポインタ引数情報を
+    `g_last_funcptr_*` global に保存し、登録側が `psx_last_funcptr_*()` getter で後から読む形だった。
+  - この依存は `decl.c` だけでなく top-level 宣言、仮引数、関数内 typedef、struct member layout にまたがり、
+    「どの宣言子の signature か」が call order に隠れていた。
+  - 続き667/668で declarator state を local 化しても、関数 suffix の ABI metadata だけは
+    hidden global のまま残っていた。
+- 根本対応:
+  - `psx_funcptr_signature_t` を追加し、variadic / fixed arg count / fp mask / int mask を
+    1つの明示 state として扱うようにした。
+  - `psx_skip_func_param_list()` と function suffix group parser は state pointer を受け取り、
+    解析した signature を呼び出し元の declarator state へ直接書くようにした。
+  - top-level 宣言、通常/静的 local 宣言、仮引数、関数内 typedef、struct/union member 登録を
+    `psx_funcptr_signature_t` 参照へ切り替え、`psx_last_funcptr_*()` getter と
+    `g_last_funcptr_*` global を削除した。
+  - 仮引数 declarator の function suffix も単なる balanced skip ではなく同じ suffix parser を通すようにし、
+    関数ポインタ仮引数の metadata が明示的に保持されるようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_skip_func_suffix_groups\\(|psx_reset_funcptr_signature_state|psx_last_funcptr|g_last_funcptr|psx_skip_func_param_list\\(\\)" src/parser src include test` = **no matches**
+
+### このセッション（続き670）: local declarator state の explicit 化
+- 見つかった浅い箇所:
+  - `decl.c` の通常 local 宣言子で、`T (*p)[N][M]` の paren-array 次元、
+    `int (*ops[N])(void)` の inner array 次元、pointer-to-VLA の runtime dim、
+    trailing function suffix / signature / paren group 判定が `g_paren_array_*` /
+    `g_inner_array_*` / `g_decl_trailing_func_suffix` などの file global に残っていた。
+  - これらは宣言子1個に閉じる情報なのに、通常宣言・local extern・local typedef・static local lowering が
+    call order 依存で共有していた。
+- 根本対応:
+  - `decl_declarator_state_t` を追加し、paren-array 次元、inner array dims、VLA dim、
+    function suffix signature、paren group / suffix count を宣言子ごとの explicit state にまとめた。
+  - `consume_decl_name_recursive()` / `consume_decl_name_ex()` / `consume_decl_name()` が
+    `decl_declarator_state_t *` を受け取り、解析結果を global ではなく呼び出し元 state に書くようにした。
+  - 通常 local 宣言、local extern 宣言、local typedef 宣言の各 declarator loop が state を生成して渡すようにした。
+  - static local 多次元配列 lowering も `g_inner_array_*` を読まず、次元配列と次元数を引数で受け取るようにした。
+  - これにより対象の `g_paren_array_*` / `g_inner_array_*` / `g_decl_trailing_func_suffix` /
+    `g_decl_func_suffix_sig` / `g_decl_had_paren_group` / `g_decl_func_suffix_count` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_paren_array_|g_inner_array_|g_decl_trailing_func_suffix|g_decl_func_suffix_sig|g_decl_had_paren_group|g_decl_func_suffix_count" src/parser/decl.c` = **no matches**
+
+### このセッション（続き671）: local type-spec metadata の explicit 化
+- 見つかった浅い箇所:
+  - `decl.c` の type spec 解析で、typedef 由来の配列要素サイズ、配列 typedef 判定、
+    long double 判定、基底ポインタ段数、基底 typedef 関数ポインタ metadata が
+    `g_decl_td_*` / `g_decl_base_*` global に一度転記され、
+    `psx_decl_parse_declaration_after_type_ex()` が read-and-reset する形で残っていた。
+  - これは宣言文全体の state であり、すでに存在する `local_decl_spec_t` と二重管理になっていた。
+- 根本対応:
+  - `local_decl_spec_t` に `td_is_array`、`base_pointer_levels`、
+    `td_funcptr_ret_pointee_array` を追加し、typedef 由来 metadata を spec state に集約した。
+  - `psx_decl_parse_declaration_after_type_ex()` の引数へ typedef metadata を明示追加し、
+    `parse_local_decl_spec_from_typedef()` から `ds` 経由で直接渡すようにした。
+  - 外部向け wrapper `psx_decl_parse_declaration_after_type()` は空 metadata を渡すため、
+    stmt 側の通常 builtin/tag 宣言経路は従来どおり使える。
+  - `g_decl_td_*` / `g_decl_base_*` global と read-and-reset 処理を削除した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_decl_td_|g_decl_base_" src/parser/decl.c` = **no matches**
+
+### このセッション（続き672）: top-level declarator state の head 集約
+- 見つかった浅い箇所:
+  - `parser.c` の top-level 宣言子で、関数 suffix、関数ポインタ signature、
+    pointer level、paren group 内 `*`、paren-array の有無と dims が
+    `g_toplevel_decl_has_func_suffix` / `g_toplevel_decl_ptr_levels` /
+    `g_toplevel_decl_paren_array_*` などの file global に残っていた。
+  - `psx_consume_pointer_prefix_counted()` が top-level 専用 global を副作用で増やしており、
+    呼び出し元の文脈に対して隠れた依存になっていた。
+  - object 登録、typedef 登録、関数プロトタイプ登録が「直近に parser が global へ書いた宣言子 state」を読む形で、
+    複数宣言子や再利用時に state 境界が見えにくかった。
+- 根本対応:
+  - `toplevel_declarator_head_t` に function suffix signature、function-pointer return 判定、
+    pointer level、paren group 判定、paren-array dims を追加し、宣言子単位の state を head に集約した。
+  - top-level declarator 再帰 parser は `toplevel_declarator_head_t *` を受け取り、
+    `psx_consume_pointer_prefix_counted()` の戻り値を `head.ptr_levels` へ加算するようにした。
+  - `psx_consume_pointer_prefix_counted()` から top-level global への副作用を削除した。
+  - object 登録、typedef 登録、関数プロトタイプ登録は `head` を受け取り、宣言子 metadata を
+    hidden global ではなく `head` から読むようにした。
+  - 対象の `g_toplevel_decl_has_func_suffix` / `g_toplevel_decl_func_suffix_sig` /
+    `g_toplevel_decl_funcptr_ret_is_pointer` / `g_toplevel_decl_ptr_levels` /
+    `g_toplevel_decl_ptr_in_paren_group` / `g_toplevel_decl_paren_array_*` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_toplevel_decl_has_func_suffix|g_toplevel_decl_func_suffix_sig|g_toplevel_decl_funcptr_ret_is_pointer|g_toplevel_decl_ptr_levels|g_toplevel_decl_ptr_in_paren_group|g_toplevel_decl_paren_array_present|g_toplevel_decl_paren_array_dims|g_toplevel_decl_paren_array_dim_count" src/parser/parser.c` = **no matches**
+
+### このセッション（続き673）: top-level decl-spec state の explicit 化
+- 見つかった浅い箇所:
+  - 続き672で top-level 宣言子 state は `toplevel_declarator_head_t` に寄せたが、型指定側の
+    elem size / storage class / typedef flag / base kind / fp kind / tag / typedef 由来 array dims /
+    typedef 由来 function pointer metadata は `g_toplevel_decl_*` file global に残っていた。
+  - `parse_toplevel_decl_spec()` が global に書き、object / typedef / prototype 登録が後から読む形だったため、
+    「どの宣言の type spec か」が関数境界に現れず、tag 直開始経路だけ別途 global install する歪みも残っていた。
+  - 多次元 typedef chain の merge buffer も function static `s_merged_dims[8]` で、宣言ごとの state としては不要に広かった。
+- 根本対応:
+  - `toplevel_decl_spec_t` を追加し、top-level decl-spec の storage class、基底型 metadata、
+    tag metadata、typedef 由来 array/function-pointer metadata を 1 つの explicit state に集約した。
+  - `parse_toplevel_decl_spec()` / tag spec / typedef spec / builtin spec は `toplevel_decl_spec_t *` へ書くようにした。
+  - `parse_toplevel_decl_after_type()`、declarator list、object 登録、typedef 登録、関数プロトタイプ登録は
+    `const toplevel_decl_spec_t *` を受け取り、hidden global ではなく spec から読むようにした。
+  - tag から直接始まる top-level 宣言 (`struct S g;` 等) も `install_toplevel_tag_decl_spec()` で local spec を作り、
+    通常の declarator list へ渡すようにした。
+  - 多次元 typedef chain の merge buffer は block-local `merged_dims[8]` に変更し、function static を削除した。
+  - `_Generic` 用の `g_toplevel_typespec_start` は consume-once の型文字列化 hook で性質が違うため、今回の
+    decl-spec state からは分けて残している。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_toplevel_decl_|s_merged_dims|install_toplevel_tag_decl_globals" src/parser/parser.c` = **no matches**
+
+### このセッション（続き674）: type-spec side channel の explicit result 化
+- 見つかった浅い箇所:
+  - `psx_consume_type_kind()` が `g_last_type_*` / qualifier / storage-class / `_Alignas` の
+    file global を更新し、呼び出し側が `psx_last_type_*()` や `psx_take_*()` で後から読む形だった。
+  - top-level、function return、local decl、typedef、struct member、`_Generic` type-name が同じ副作用を共有しており、
+    「どの type spec の属性か」が関数境界に現れなかった。
+  - これを置き換える途中で、既存の nested designator 側が多次元配列 subscript を 1 段で
+    `array_len=0` にしていた弱点も露出した (`.ops[1][0].f[1]`)。
+- 根本対応:
+  - `psx_type_spec_result_t` と `psx_consume_type_kind_ex()` を追加し、builtin type spec の
+    unsigned / complex / long double / qualifier / storage-class / `_Alignas` を明示 result で返すようにした。
+  - 既存 `psx_consume_type_kind()` は一時的に互換 wrapper として残し、旧 global publish は wrapper 側に閉じ込めた
+    (続き675で wrapper/API ごと削除済み)。
+  - top-level decl-spec、function return spec、stmt/local decl spec、typedef spec、
+    struct member spec、`_Generic` type-name の主要経路を `_ex()` と explicit result へ移行した。
+  - `decl.c` の `psx_decl_parse_declaration_after_type_ex()` には `const psx_type_spec_result_t *` を渡し、
+    local tag fast path でも qualifier / extern / static / alignas を explicit に渡すようにした。
+  - struct/union member の関数ポインタ signature も `member_decl_head_t` に保持し、
+    `psx_last_funcptr_*` 依存を外した。
+  - nested designator の多次元配列消費は `arr_dims/arr_ndim` を使って
+    現在段の長さ、stride、残り次元を更新する helper に置き換え、
+    `.ops[1][0].f[1]` のような multi-dim member function pointer designator を正しく処理するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/global_multidim_member_funcptr_designator.c` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_last_type_|psx_consume_type_kind\\(" src/parser` = **definitions/declarations only** (続き674時点)
+
+### このセッション（続き675）: 旧 type-spec API と cast side-channel の削除
+- 見つかった浅い箇所:
+  - 続き674で主要 call site は `psx_consume_type_kind_ex()` に移ったが、互換 wrapper
+    `psx_consume_type_kind()`、`psx_last_type_*()`、`psx_take_*()` / `psx_set_*()` と
+    `g_last_type_*` / `g_last_decl_*` / `g_last_alignas_value` が `core.h` / `parser.c` に残っていた。
+  - top-level/parameter の tag 前置修飾子 (`static struct S` / `_Alignas(...) struct S`) が
+    旧 global publish 前提の `skip_cv_qualifiers()` / post qualifier helper に残っていた。
+  - `expr.c` の cast type parser も `g_last_cast_is_complex` /
+    `g_last_cast_ptr_array_pointee_bytes` を使い、compound literal 側が「直前に読まれた cast 型」を読む形だった。
+- 根本対応:
+  - `core.h` から旧 `psx_consume_type_kind()` / `psx_last_type_*()` /
+    `psx_take_*()` / `psx_set_*()` API を削除し、`psx_consume_type_kind_ex()` に一本化した。
+  - `parser.c` から `g_last_type_*`、`g_last_decl_*`、`g_last_alignas_value` と
+    publish/take/set 実装を削除した。
+  - top-level の tag/typedef prefix と tag 後置 qualifier は `psx_type_spec_result_t` を直接渡す形にし、
+    tag 直接開始経路 (`struct S const g;` 等) も result を spec に反映するようにした。
+  - `_Alignas(...)` を含む prefix lookahead を `skip_decl_prefix_tokens_for_lookahead()` に集約し、
+    top-level と parameter で同じ見方にした。
+  - parameter の tag 前置修飾子は、tag の前に本当に prefix があるときだけ
+    `skip_cv_qualifiers_into()` で消費し、builtin scalar は `_ex()` 側に任せるようにした。
+  - `expr.c` の cast metadata は `parse_cast_type()` の out parameter と
+    `parse_compound_literal_from_type()` の引数に移し、compound literal が global side-channel を読まないようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_take_|psx_set_(extern|static|alignas)_flag|psx_last_type_|psx_consume_type_kind\\(|g_last_" src/parser src/arch src/ir src/main.c` = **no matches**
+
+### このセッション（続き676）: consume-once typespec_start globals の explicit 化
+- 見つかった浅い箇所:
+  - `_Generic` 用の型シグネチャ生成で、top-level は `g_toplevel_typespec_start`、
+    local declaration は `g_decl_typespec_start` に「型指定子の開始トークン」を一時保存し、
+    後段で 1 回だけ読んで clear する consume-once side channel が残っていた。
+  - 続き675で type-spec 属性の hidden global は削除済みだったが、この token 範囲 capture だけ
+    file global に残っており、宣言単位の lifetime が API から見えなかった。
+- 根本対応:
+  - top-level 宣言では `toplevel_decl_spec_t` に `token_t *typespec_start` を追加し、
+    `parse_toplevel_declaration_like()` / tag 直接開始経路で local に捕捉した開始位置を spec 経由で渡すようにした。
+  - global object の `_Generic` 型シグネチャ登録は `g_toplevel_typespec_start` ではなく
+    `spec->typespec_start` を読む形にした。
+  - local declaration では `psx_decl_parse_declaration_after_type_ex()` に
+    `token_t *typespec_start` 引数を追加し、通常の local declaration は local 変数から渡すようにした。
+  - wrapper や stmt の tag fast path など、型開始 token 範囲を持たない経路は `NULL` を明示的に渡すようにした。
+  - `g_toplevel_typespec_start` / `g_decl_typespec_start` は削除され、consume/clear の暗黙 state はなくなった。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_toplevel_typespec_start|g_decl_typespec_start" src/parser` = **no matches**
+
+### このセッション（続き677）: expr の一時 parse mode globals を explicit 引数へ移行
+- 見つかった浅い箇所:
+  - `expr.c` に `_Alignof(type)` 解析中だけ立てる `g_parse_type_alignof_mode` が残っており、
+    `parse_parenthesized_type_size()` / `finish_parenthesized_type_size()` が file global のモードを読む形だった。
+  - file-scope の `&(T){...}` compound literal をアドレス可能な static object にするため、
+    `g_addr_of_compound_pending` を `unary('&')` が立て、`parse_compound_literal_from_type()` が後で読む形だった。
+  - どちらも「今どの文脈で式を読んでいるか」が関数境界に出ず、途中で recursive parse が入ると stale state のリスクがあった。
+- 根本対応:
+  - `parse_parenthesized_type_size(int alignof_mode)` と
+    `finish_parenthesized_type_size(..., int alignof_mode)` に変更し、`sizeof` は `0`、
+    `_Alignof` は `1` を明示的に渡すようにした。
+  - `parse_compound_literal_from_type()` に `compound_addr_context` 引数を追加し、
+    file-scope compound literal の addressable 実体化判定を global ではなく引数で受け取るようにした。
+  - `cast()` / `unary()` は通常 wrapper を残しつつ、内部に
+    `cast_with_compound_addr_context()` / `unary_with_compound_addr_context()` /
+    `primary_with_compound_addr_context()` を追加した。
+  - `unary('&')` は `cast_with_compound_addr_context(1)` を呼ぶようにし、
+    `try_parse_compound_literal()` から compound literal 生成まで context を通すようにした。
+  - `g_parse_type_alignof_mode` / `g_addr_of_compound_pending` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_toplevel_typespec_start|g_decl_typespec_start|g_parse_type_alignof_mode|g_addr_of_compound_pending" src/parser` = **no matches**
+
+### このセッション（続き678）: struct/union tag align の pending global 削除
+- 見つかった浅い箇所:
+  - `struct_layout.c` が struct/union の集約アラインメント `agg_align` を
+    `psx_ctx_set_pending_tag_align()` で `semantic_ctx.c` の `g_pending_tag_align` に預け、
+    直後の `psx_ctx_define_tag_type_with_layout()` が拾って clear する形だった。
+  - size / member_count は戻り値と引数で渡しているのに align だけ pending global で、
+    tag 定義の結果が API 境界に揃っていなかった。
+- 根本対応:
+  - `psx_parse_tag_definition_body()` / `psx_parse_struct_or_union_members_layout()` に
+    `int *out_align` を追加し、size と同時に align を返すようにした。
+  - `psx_ctx_define_tag_type_with_layout()` に `tag_align` 引数を追加し、
+    parser / stmt / nested struct layout の各 call site から明示的に渡すようにした。
+  - enum は size/align ともに 4 を返すようにし、struct/union は computed `agg_align` を返すようにした。
+  - `psx_ctx_set_pending_tag_align()` と `g_pending_tag_align` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_pending_tag_align|psx_ctx_set_pending_tag_align|g_parse_type_alignof_mode|g_addr_of_compound_pending|g_toplevel_typespec_start|g_decl_typespec_start" src/parser` = **no matches**
+
+### このセッション（続き679）: expr unevaluated operand depth の explicit context 化
+- 見つかった浅い箇所:
+  - `expr.c` に `g_unevaluated_operand_depth` が残っており、`sizeof` などの未評価 operand 文脈を
+    file global の parse mode として表していた。
+  - local variable usage annotation は後段でこの global を読み、評価済み使用か未評価使用かを分けていたため、
+    recursive expression parse や compound literal / postfix / call 引数の途中で状態が漏れるリスクがあった。
+- 根本対応:
+  - `expr_parse_ctx_t` を導入し、public entry (`psx_expr_expr()` / `psx_expr_assign()`) は default ctx を作る
+    thin wrapper にした。
+  - expression grammar の内部関数 (`assign_ctx()` / `conditional_ctx()` / `cast_ctx()` /
+    `unary_ctx()` / `primary_with_compound_addr_context()` / `apply_postfix()` など) に
+    `expr_parse_ctx_t *ctx` を通す形に変更した。
+  - `sizeof` の fallback expression parse は `expr_parse_ctx_unevaluated_child()` で子 context を作り、
+    未評価 depth を call stack 上の値として渡すようにした。
+  - `annotate_lvar_usage_node()` / `resolve_identifier()` は global ではなく `ctx` を読んで、
+    local variable usage node に evaluated / unevaluated の区別を記録するようにした。
+  - `g_unevaluated_operand_depth` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_unevaluated_operand_depth|g_pending_tag_align|psx_ctx_set_pending_tag_align|g_parse_type_alignof_mode|g_addr_of_compound_pending|g_toplevel_typespec_start|g_decl_typespec_start" src/parser` = **no matches**
+
+### このセッション（続き680）: current function state の expr/decl 交差依存を削減
+- 見つかった浅い箇所:
+  - `parser.c` が関数開始時に `psx_expr_set_current_funcname()` で current function を `expr.c` に保存し、
+    `decl.c` の static local lowering が `psx_expr_get_current_funcname()` でそれを読む形だった。
+  - `__func__` 用の expression state と、`static int n` / `static int a[]` / `static struct S s`
+    などの static local mangle 用 state が `expr` module に同居しており、decl が expr の隠れ状態へ
+    依存していた。
+- 根本対応:
+  - `decl.c` に current function name state と `psx_decl_set_current_funcname()` を追加し、
+    static local mangle は `decl` 内の `psx_decl_get_current_funcname()` から読むようにした。
+  - `parser.c` の関数 lifecycle で、関数開始時に `expr` と `decl` の current function を両方 set し、
+    プロトタイプ終了時 / 関数本体終了時 / translation-unit reset 時に両方 clear するようにした。
+  - `psx_expr_get_current_funcname()` と `expr.h` の getter 宣言を削除し、decl -> expr の getter 依存をなくした。
+  - `expr.c` の `g_current_funcname` は、現時点では `__func__` と file-scope compound literal 判定用として残る。
+    完全な削除には expression entry API へ function context を通す大きめの後続変更が必要。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_expr_get_current_funcname|g_unevaluated_operand_depth|g_pending_tag_align|psx_ctx_set_pending_tag_align|g_parse_type_alignof_mode|g_addr_of_compound_pending|g_toplevel_typespec_start|g_decl_typespec_start" src/parser` = **no matches**
+
+### このセッション（続き681）: streaming parser ctx の file global 削除
+- 見つかった浅い箇所:
+  - `parser.c` の streaming parser は `ps_stream_begin(tk_ctx, start)` で
+    `g_stream_tk_ctx` に tokenizer context を保存し、無引数 `ps_next_function()` が後でその global を読んで
+    `tk_set_current_token_ctx()` と同期していた。
+  - つまり stream の状態が API 上は見えず、同一プロセス内で複数 stream を扱う設計にできない形だった。
+- 根本対応:
+  - `ps_stream_t` を導入し、`tokenizer_context_t *tk_ctx` を stream state として呼び出し側が保持する形にした。
+  - `ps_stream_begin(ps_stream_t *stream, ...)` / `ps_next_function(ps_stream_t *stream)` /
+    `ps_stream_end(ps_stream_t *stream)` に API を変更し、`parser.c` の `g_stream_tk_ctx` を削除した。
+  - `ps_program_ctx()` と `main.c` の通常/wasm streaming compile 経路は stack 上の `ps_stream_t stream`
+    を渡すように更新した。
+  - `ps_stream_end()` は deferred parser warnings を emit した後、stream の `tk_ctx` を clear する。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_stream_tk_ctx|ps_stream_begin\\([^&]|ps_next_function\\(\\)|ps_stream_end\\(\\)" src test` = **旧 global / 無引数 call は no matches** (宣言/定義のみ)
+
+### このセッション（続き682）: expr/paren nest depth globals の explicit context 化
+- 見つかった浅い箇所:
+  - `expr.c` の再帰制限用 `g_expr_nest_depth` / `g_paren_nest_depth` が file global で、
+    実際には現在の expression parse に属する状態なのに module 全体の隠れ状態として管理されていた。
+  - 続き679で `expr_parse_ctx_t` を導入済みだったため、未評価 operand depth と同じ explicit context に
+    まとめられる状態だった。
+- 根本対応:
+  - `expr_parse_ctx_t` に `expr_nest_depth` / `paren_nest_depth` を追加した。
+  - `enter_expr_nest_or_die()` / `leave_expr_nest()` /
+    `enter_paren_nest_or_die()` / `leave_paren_nest()` は `expr_parse_ctx_t *ctx` を受け取る形にした。
+  - `expr_internal_ctx()` と parenthesized primary の parse は、global ではなく ctx 上の depth を更新するようにした。
+  - `g_expr_nest_depth` / `g_paren_nest_depth` は削除された。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed** (`test_expr_nest_limits` / `test_parser_width_limits` 含む)
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_expr_nest_depth|g_paren_nest_depth|g_stream_tk_ctx|psx_expr_get_current_funcname|g_unevaluated_operand_depth|g_pending_tag_align|psx_ctx_set_pending_tag_align|g_parse_type_alignof_mode|g_addr_of_compound_pending|g_toplevel_typespec_start|g_decl_typespec_start" src/parser` = **no matches**
+
+### このセッション（続き683）: static local mangle / _Generic type signature の TU reset 集約
+- 見つかった浅い箇所:
+  - `decl.c` の static local lowering が、scalar / array / consumed-array / struct /
+    aggregate-array それぞれの helper 内に `static int` 連番を持っていた。
+  - これらは実際には translation unit ごとの mangle state なのに
+    `ps_reset_translation_unit_state()` から reset されず、同一プロセスで複数 TU を parse する
+    parser test / 将来の driver で `f.x.0` が `f.x.1` へ漏れる形だった。
+  - `_Generic` 用の global type signature table count (`g_global_typesig_count`) も decl 側の
+    TU state だが、decl module の reset hook にまとまっていなかった。
+- 根本対応:
+  - `static_local_mangle_state_t` を導入し、static local mangle の 5 系統の連番を
+    `decl.c` の translation-unit state として一箇所に集約した。
+  - `psx_decl_reset_translation_unit_state()` を追加し、current function name / static local mangle state /
+    `_Generic` global type signature count をまとめて reset するようにした。
+  - `parser.c` の `ps_reset_translation_unit_state()` は decl 専用 reset hook を呼ぶ形に変更した。
+  - parser unit に `test_translation_unit_reset_static_local_state()` を追加し、同一プロセス内で
+    reset を挟んで同じ TU を 2 回 parse しても static local global 名が `f.x.0` に戻り、
+    `f.x.1` が残らないことを確認するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "g_static_seq|g_static_arr_seq|g_static_arr_consumed_seq|g_static_struct_seq|g_static_aggregate_arr_seq|psx_decl_reset_translation_unit_state|static_local_mangle_state|g_global_typesig_count" src/parser/decl.c src/parser/decl.h src/parser/parser.c test/test_parser.c` =
+    **旧 `g_static_*` は no matches / 新 reset hook と集約 state のみ match**
+
+### このセッション（続き684）: loop_ctx global の削除と break/continue 検証の semantic pass 化
+- 見つかった浅い箇所:
+  - `loop_ctx.c` が `g_loop_depth` を file global として持ち、`stmt.c` が `while` / `do` / `for`
+    の本体 parse 中だけ `psx_loop_enter()` / `psx_loop_leave()` で増減していた。
+  - これは parse 中の一時状態で、`break` / `continue` の妥当性という AST 上の性質を
+    parser global に閉じ込めていた。
+  - 特に GNU statement expression `({ ... })` は expression parse から statement parser に戻るため、
+    stmt/expr/decl へ loop context を thread するだけだと declaration initializer 内の statement expression などで
+    さらに広い配線が必要になり、浅い対応になりやすかった。
+- 根本対応:
+  - `break` / `continue` の妥当性検証を `semantic_pass.c` の AST traversal に移した。
+  - `semantic_validate_control_flow()` が `loop_depth` / `switch_depth` を引数で持って AST を walk し、
+    `break` は loop または switch 内、`continue` は loop body 内だけ許可する。
+  - `for` の init/cond/inc や `while` / `do while` の条件式は loop body ではないため、旧 parser 挙動と同じく
+    `continue` を許可しない。一方、loop body 内や switch body 内の statement expression は AST 上の depth を継承して正しく扱う。
+  - `stmt.c` から parse-time loop enter/leave と `psx_loop_depth()` check を削除し、
+    `parser.c` の `psx_loop_reset()` 呼び出しも削除した。
+  - `loop_ctx.c` / `loop_ctx.h` を削除し、`Makefile` の parser object list から `loop_ctx.o` を外した。
+  - parser unit に statement expression 境界の regression を追加した:
+    - loop 外の `({ continue; 0; })` は fail
+    - loop 条件式内の `({ continue; 1; })` は fail
+    - loop body 内の `({ continue; 0; })` は ok
+    - switch body 内の `({ break; 0; })` は ok
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "loop_ctx|psx_loop_|g_loop_depth" Makefile src/parser test/test_parser.c` = **no matches**
+
+### このセッション（続き685）: expr current-function state の decl 側統一
+- 見つかった浅い箇所:
+  - 続き680で static local mangle 用の current function state は `decl.c` に移したが、
+    `expr.c` にはまだ `g_current_funcname` / `g_current_funcname_len` が残っていた。
+  - `expr.c` の state は `__func__` 文字列生成と file-scope compound literal 判定に使われ、
+    parser は関数 lifecycle で `expr` と `decl` の両方へ current function を set/clear していた。
+  - 同じ概念の state が 2 箇所に残り、片方だけ clear されると file-scope compound literal が
+    関数内扱いになるなど、再び漏れやすい形だった。
+- 根本対応:
+  - `psx_decl_get_current_funcname()` を公開し、current function の所有元を `decl.c` に一本化した。
+  - `expr.c` の `make_func_name_string_node()` と compound literal の file-scope 判定は
+    `psx_decl_get_current_funcname()` を読むようにした。
+  - `psx_expr_set_current_funcname()` と `expr.c` の `g_current_funcname` / `g_current_funcname_len` を削除した。
+  - `parser.c` の関数 lifecycle は `psx_decl_set_current_funcname()` だけを set/clear する形にした。
+  - parser unit の単体式 helper は、関数内 expression を模すため `psx_decl_set_current_funcname("__test__")`
+    を使うように更新した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_expr_set_current_funcname|g_current_funcname|g_loop_depth|psx_loop_|loop_ctx" Makefile src/parser test/test_parser.c` = **no matches**
+
+### このセッション（続き686）: enum/case 定数式 evaluator の parse-mode global 削除
+- 見つかった浅い箇所:
+  - `enum_const.c` が `s_allow_wide_const` を file global として持ち、
+    `psx_parse_case_const_expr()` の呼び出し中だけ保存/復元で true にしていた。
+  - これは「case ラベルでは int 幅を超える整数リテラルを long long として受理する」という
+    呼び出しモードなのに、再帰下降 evaluator の外側に隠れた mutable state として置かれていた。
+  - `?:` や括弧の内側でも case 文脈を保つ必要があるため、単に入口だけ分けると浅い修正になりやすい箇所だった。
+- 根本対応:
+  - `enum_const_eval_ctx_t` を導入し、`allow_wide_const` を explicit context として
+    `parse_conditional_ctx()` から `parse_primary_ctx()` まで thread した。
+  - `psx_parse_enum_const_expr()` は通常 context、`psx_parse_case_const_expr()` は
+    `allow_wide_const = 1` の context を作るだけにした。
+  - `?:` の then/else と parenthesized primary は `psx_parse_enum_const_expr()` へ戻らず、
+    同じ context の `parse_conditional_ctx(ctx)` を呼ぶようにして、case 文脈が式の内側で途切れないようにした。
+  - `s_allow_wide_const` は削除された。
+- 追加テスト:
+  - `enum E { A = 2147483648 }` は従来どおり fail (enum 定数経路は int 幅)。
+  - `case (0 ? 1 : 2147483648)` は ok (case 文脈が括弧/三項演算子内にも伝播)。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "s_allow_wide_const|parse_conditional\\(|parse_logor\\(|parse_primary\\(|psx_parse_case_const_expr|enum_const_eval_ctx_t" src/parser/enum_const.c test/test_parser.c` =
+    **旧 `s_allow_wide_const` / 無 context 関数名は no matches、新 context と public entry のみ match**
+
+### このセッション（続き687）: switch_ctx global の削除と case/default 検証の semantic pass 化
+- 見つかった浅い箇所:
+  - `switch_ctx.c` が `static switch_ctx_t *switch_ctx` を持ち、`stmt.c` が switch 本体 parse 中だけ
+    push/pop して `case/default` の switch 内判定と重複判定を行っていた。
+  - これは AST 上の `ND_SWITCH` subtree に閉じる性質なのに、parser の一時 global に依存していた。
+  - 続き684で `break/continue` を semantic pass に移した後も、switch 関連の妥当性だけ
+    parse-time global に残っており、責務が分裂していた。
+- 根本対応:
+  - `semantic_pass.c` に `semantic_validate_switch_labels()` を追加し、`ND_SWITCH` 到達時に
+    その switch 本体の `ND_CASE` / `ND_DEFAULT` だけを収集して duplicate case/default を検証するようにした。
+  - nested switch は別 namespace なので、外側 switch の収集では `ND_SWITCH` をスキップし、
+    main semantic walk が nested `ND_SWITCH` に到達した時点で個別に検証する。
+  - switch 外の `case/default` 判定は `semantic_validate_control_flow()` の `switch_depth` で行うようにした。
+  - `stmt.c` は `case/default/switch` の AST と診断 token を作るだけにして、
+    `psx_switch_push_ctx()` / `psx_switch_pop_ctx()` / `psx_switch_register_*()` 呼び出しを削除した。
+  - `src/parser/switch_ctx.c` / `src/parser/switch_ctx.h` を削除し、`Makefile` から `switch_ctx.o` を外した。
+- 追加テスト:
+  - switch 外の `case` / `default` は fail。
+  - nested switch で外側と内側が同じ case 値を持っても ok。
+  - 既存の duplicate case/default fail は semantic pass 側で維持。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "switch_ctx|psx_switch_|g_loop_depth|s_allow_wide_const" Makefile src/parser test/test_parser.c` = **no matches**
+
+### このセッション（続き688）: anonymous tag 連番の TU reset 統合
+- 見つかった浅い箇所:
+  - `anon_tag.c` の `anonymous_tag_seq` は匿名 `struct/union/enum` の内部名 (`__anon_tag_N`)
+    を作る translation-unit state だが、`ps_reset_translation_unit_state()` から reset されていなかった。
+  - 同一プロセス内で複数 TU を parse する unit test / 将来 driver では、次の TU の最初の匿名 tag が
+    `__anon_tag_1` 以降へずれて、内部名が前 TU に依存する状態だった。
+- 根本対応:
+  - `psx_anon_tag_reset_translation_unit_state()` を `anon_tag.c/h` に追加した。
+  - `parser.c` の `ps_reset_translation_unit_state()` から anon-tag reset を呼び、
+    static local / expr / semantic ctx / pragma pack と同じ TU reset 経路へ統合した。
+- 追加テスト:
+  - `test_translation_unit_reset_anonymous_tag_state()` を追加。
+  - `ps_reset_translation_unit_state()` を挟んで同じ anonymous top-level struct TU を 2 回 parse し、
+    どちらも `__anon_tag_0` が登録され、`__anon_tag_1` にずれないことを確認する。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "anonymous_tag_seq|psx_anon_tag_reset_translation_unit_state|test_translation_unit_reset_anonymous_tag_state" src/parser test/test_parser.c` =
+    **連番 state / reset hook / regression test のみ match**
+
+### このセッション（続き689）: decl TU reset 契約に locals state reset を統合
+- 見つかった浅い箇所:
+  - `decl.c` の locals / scope / lvar usage / local `_Generic` type signature state は関数単位 state として
+    `psx_decl_reset_locals()` で reset されていた。
+  - 一方、`psx_decl_reset_translation_unit_state()` は current function / static local mangle /
+    global `_Generic` type signature のみ reset しており、TU reset という名前の契約に対して
+    decl module の関数内 state が残り得る形だった。
+  - 通常 parse は関数開始時に locals reset するため実害は出にくいが、同一プロセス内で
+    explicit TU reset を使うテスト / 将来 driver では、TU reset 後に decl local state が残る余地があった。
+- 根本対応:
+  - `psx_decl_reset_translation_unit_state()` の先頭で `psx_decl_reset_locals()` を呼び、
+    decl module の state は TU reset で完全に閉じるようにした。
+  - 既存の関数開始時 locals reset はそのまま維持し、通常 parse 経路の挙動は変えない。
+- 追加テスト:
+  - `test_translation_unit_reset_decl_locals_state()` を追加。
+  - 手動登録した local `x` が `ps_reset_translation_unit_state()` 後に `psx_decl_find_lvar()` から消えることを確認する。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "psx_decl_reset_translation_unit_state|test_translation_unit_reset_decl_locals_state|psx_decl_reset_locals\\(\\);" src/parser/decl.c test/test_parser.c` =
+    **TU reset hook / regression test / 既存 helper 呼び出しのみ match**
+
+### このセッション（続き690）: pragma pack stack の TU reset 漏れ修正
+- 見つかった浅い箇所:
+  - `pragma_pack_reset()` が `pragma_pack_current` だけを 0 に戻し、`pack_stack_depth` を残していた。
+  - そのため同一プロセス内で TU reset を挟んだ後に `#pragma pack(pop)` 相当が来ると、前 TU の stack から
+    alignment を復元できてしまい、`ps_reset_translation_unit_state()` の契約に穴があった。
+- 根本対応:
+  - `pragma_pack_reset()` で `pack_stack_depth = 0` も行い、pragma pack module の TU state を
+    reset hook で閉じるようにした。
+- 追加テスト:
+  - `test_translation_unit_reset_pragma_pack_state()` を追加。
+  - `pragma_pack_set(8) -> pragma_pack_push(1) -> ps_reset_translation_unit_state() -> pragma_pack_pop()`
+    の順に実行しても、reset 後の alignment が 0 のまま戻らないことを確認する。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+  - `rg -n "pragma_pack_reset|pack_stack_depth|test_translation_unit_reset_pragma_pack_state" src/parser/pragma_pack.c test/test_parser.c` =
+    **reset hook / stack depth / regression test のみ match**
+
+### このセッション（続き691）: typed AST の式ノード materialize 穴埋め
+- 見つかった浅い箇所:
+  - 続き646で `psx_type_t` と `node_t::type` の bridge は入っていたが、
+    `psx_node_get_type()` は主に mem node / literal だけを返し、`ND_ADD` / `ND_TERNARY` /
+    `ND_FUNCALL` など旧 `ps_node_type_size()` では型を推定できる式ノードが NULL のままだった。
+  - semantic pass は全 AST node に `psx_node_materialize_type()` を呼ぶため、typed AST の足場としては
+    式部分だけ型が抜け落ち、後続移行が旧 ad hoc helper へ戻りやすい状態だった。
+- 根本対応:
+  - `node_utils.c` に scalar / direct funcall / binary / ternary の type projection helper を追加した。
+  - `psx_node_get_type()` が arithmetic / comparison / logical / shift / inc-dec /
+    direct `ND_FUNCALL` / fp cast / complex part extraction でも `psx_type_t` を返すようにした。
+  - 既存の authoritative helper (`ps_node_type_size()` / `ps_node_is_pointer()` 等) は残し、
+    挙動変更ではなく typed AST materialize の欠落を先に埋める形にしている。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に、`x + 1L`、`p + 1`、`long` 戻り direct funcall、
+    `int *` 戻り direct funcall の `psx_node_get_type()` regression を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**
+
+### このセッション（続き692）: typed AST の funcptr metadata / indirect call 型投影
+- 見つかった浅い箇所:
+  - 続き691で direct `ND_FUNCALL` まで型投影したが、mem node から `psx_type_t` を作るときに
+    関数ポインタ戻り metadata (`funcptr_ret_*` / variadic / fixed arg count / param masks) が
+    `psx_type_t` 側へ写っていなかった。
+  - その結果、関数ポインタ変数そのものは旧 node_mem_t に metadata を持つ一方、typed AST 側では
+    indirect call (`fp()`) の戻り型を作る材料が抜け、direct call だけ対応した浅い状態だった。
+- 根本対応:
+  - `type_copy_funcptr_metadata()` を追加し、mem node から type を作るすべての経路で
+    funcptr metadata を保持するようにした。
+  - `type_from_indirect_funcall()` を追加し、callee の funcptr metadata から `fp()` の戻り型を
+    `psx_type_t` として投影するようにした。
+  - void / complex / struct/union value return / data-pointer return / integer/fp scalar return を
+    既存 metadata と同じ解釈で扱い、既存 codegen helper はまだ authoritative として残している。
+- 追加テスト:
+  - `test_type_metadata_bridge()` にローカル関数ポインタ経由の `double` 戻り call と
+    `int *` 戻り call の `psx_node_get_type()` regression を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1193/1193 OK**
+  - `./build/test_wasm32_e2e` = **1188 compiled, 1188 executed**
+  - `git diff --check` = **green**

@@ -6,6 +6,7 @@
  * その extern グローバルを集約。AST node 定義は ast.h に残す。 */
 
 #include "../tokenizer/token.h"
+#include "type.h"
 
 // グローバル変数テーブル（連結リスト）
 //
@@ -108,6 +109,7 @@ struct global_var_t {
   // pql>=2 のとき try_build_global_var_node が node の deref_size=8 /
   // base_deref_size=要素サイズ / pointer_qual_levels を立てる。単段/非ポインタは 0/1。
   unsigned char pointer_qual_levels;
+  psx_type_t *decl_type;
 };
 extern global_var_t *global_vars;
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
