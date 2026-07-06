@@ -283,15 +283,12 @@ static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {
 }
 
 psx_type_t *psx_lvar_get_decl_type(lvar_t *var) {
-  if (!var) return NULL;
-  if (var->decl_type) return var->decl_type;
-  node_mem_t mem;
-  mem_from_lvar(&mem, var);
-  return type_from_mem(&mem);
+  return psx_lvar_materialize_decl_type(var);
 }
 
 psx_type_t *psx_lvar_materialize_decl_type(lvar_t *var) {
   if (!var) return NULL;
+  if (var->decl_type) return var->decl_type;
   node_mem_t mem;
   mem_from_lvar(&mem, var);
   var->decl_type = type_from_mem(&mem);
@@ -345,15 +342,12 @@ static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {
 }
 
 psx_type_t *psx_gvar_get_decl_type(global_var_t *gv) {
-  if (!gv) return NULL;
-  if (gv->decl_type) return gv->decl_type;
-  node_mem_t mem;
-  mem_from_gvar(&mem, gv);
-  return type_from_mem(&mem);
+  return psx_gvar_materialize_decl_type(gv);
 }
 
 psx_type_t *psx_gvar_materialize_decl_type(global_var_t *gv) {
   if (!gv) return NULL;
+  if (gv->decl_type) return gv->decl_type;
   node_mem_t mem;
   mem_from_gvar(&mem, gv);
   gv->decl_type = type_from_mem(&mem);

@@ -1974,6 +1974,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, x_lvar->decl_type->kind);
   ASSERT_EQ(4, psx_type_sizeof(x_lvar->decl_type));
   ASSERT_TRUE(psx_type_is_unsigned(x_lvar->decl_type));
+  x_lvar->decl_type = NULL;
+  psx_type_t *x_decl_a = psx_lvar_get_decl_type(x_lvar);
+  psx_type_t *x_decl_b = psx_lvar_get_decl_type(x_lvar);
+  ASSERT_TRUE(x_decl_a != NULL);
+  ASSERT_TRUE(x_decl_a == x_decl_b);
+  ASSERT_TRUE(x_lvar->decl_type == x_decl_a);
 
   node_mem_t typed_mem = {0};
   typed_mem.base.kind = ND_LVAR;
@@ -2070,6 +2076,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, gu->decl_type->kind);
   ASSERT_EQ(4, psx_type_sizeof(gu->decl_type));
   ASSERT_TRUE(psx_type_is_unsigned(gu->decl_type));
+  gu->decl_type = NULL;
+  psx_type_t *gu_decl_a = psx_gvar_get_decl_type(gu);
+  psx_type_t *gu_decl_b = psx_gvar_get_decl_type(gu);
+  ASSERT_TRUE(gu_decl_a != NULL);
+  ASSERT_TRUE(gu_decl_a == gu_decl_b);
+  ASSERT_TRUE(gu->decl_type == gu_decl_a);
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);
   ASSERT_TRUE(gp->decl_type != NULL);

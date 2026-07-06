@@ -13596,6 +13596,33 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = **1200/1200 OK**
   - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
 
+### このセッション（続き710）: lvar/global の decl_type accessor を materialized 正本へ統一
+- 見つかった浅い箇所:
+  - `lvar_t` / `global_var_t` には `psx_type_t *decl_type` があるが、
+    `psx_lvar_get_decl_type()` / `psx_gvar_get_decl_type()` は `decl_type` が未設定だと
+    `node_mem_t` から fresh な `psx_type_t` を返すだけで、正本 field へ保存していなかった。
+  - 一方 `psx_lvar_materialize_decl_type()` / `psx_gvar_materialize_decl_type()` は別経路で
+    同じ再構成を行っており、「読むだけの accessor」と「materialize」が別々の型インスタンスを
+    作り得る状態だった。
+- 根本対応:
+  - `psx_lvar_get_decl_type()` は `psx_lvar_materialize_decl_type()` を呼ぶだけにし、
+    初回取得時から `var->decl_type` を正本として設定・共有するようにした。
+  - `psx_gvar_get_decl_type()` も同様に `psx_gvar_materialize_decl_type()` 経由へ統一した。
+  - materialize 側は既に `decl_type` がある場合に再構成せず、そのポインタを返すようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に、local/global それぞれで `decl_type=NULL` から
+    `psx_*_get_decl_type()` を2回呼んでも同じ `psx_type_t *` が返り、`decl_type` に保存される
+    regression を追加した。
+- 注意:
+  - `decl_type` 自体はまだ `node_mem_t` 由来で materialize している。
+    次の大きな候補は、宣言登録時点で `psx_type_t` を正本として生成し、
+    `lvar_t` / `global_var_t` の scalar split field を派生情報へ落としていくこと。
+- 確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **pass**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e`
+    = **native 1200/1200 OK, wasm32 1195/1195 OK**
+  - `git diff --check` = **green**
+
 ### このセッション（続き696）: node/lvar/gvar/type の funcptr 戻り FP を pointee から分離
 - 見つかった浅い箇所:
   - 続き695で tag member は分離したが、`node_mem_t` / `lvar_t` / `global_var_t` /
