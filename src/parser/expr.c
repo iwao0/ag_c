@@ -781,7 +781,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
            control->kind == ND_ADDR || control->kind == ND_STRING) {
     gt.is_unsigned = ((node_mem_t *)control)->is_unsigned;
   } else {
-    gt.is_unsigned = ps_node_is_unsigned(control);
+    gt.is_unsigned = psx_node_conversion_value_is_unsigned(control);
   }
   gt.scalar_size = ts ? ts : 4;
   /* 変数等の long long / plain char の型識別を制御式型へ反映 (_Generic 用)。

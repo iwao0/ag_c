@@ -3133,11 +3133,11 @@ static void register_function_signature(const psx_function_signature_t *sig) {
       if (sz >= 1 && sz <= 4) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
         psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
-                                                ps_node_is_unsigned(arg));
+                                                psx_node_conversion_value_is_unsigned(arg));
       } else if (sz == 8) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 8);
         psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
-                                                ps_node_is_unsigned(arg));
+                                                psx_node_conversion_value_is_unsigned(arg));
       }
     }
   }

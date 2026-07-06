@@ -222,7 +222,7 @@ static void semantic_warn_decl_initializer_constant_overflow(node_t *lhs, node_t
   long long min_signed = -(1LL << (bits - 1));
   long long max_unsigned = (1LL << bits) - 1;
   int out_of_range;
-  if (ps_node_is_unsigned(lhs)) {
+  if (psx_node_integer_value_is_unsigned(lhs)) {
     out_of_range = (v < 0 || v > max_unsigned);
     if (v < 0 && v >= min_signed) out_of_range = 0;
   } else {
@@ -484,7 +484,7 @@ static void semantic_warn_comparison(node_t *node, const token_t *fallback_diag_
 static int semantic_int_const_overflow_is_int_literal(node_t *node) {
   if (!node || node->kind != ND_NUM) return 0;
   if (node->fp_kind != TK_FLOAT_KIND_NONE) return 0;
-  if (node->is_unsigned) return 0;
+  if (psx_node_integer_value_is_unsigned(node)) return 0;
   node_num_t *num = (node_num_t *)node;
   if (num->int_is_long || num->int_is_long_long) return 0;
   return num->val >= -2147483648LL && num->val <= 2147483647LL;

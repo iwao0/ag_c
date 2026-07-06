@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き703: shift signedness 判定を専用 helper へ分離）
+最終更新: 2026-07-06（続き707: legacy ps_node_is_unsigned API を削除）
 
 ## 現状
 - 直近の部分確認:
@@ -37,8 +37,82 @@
   **1162/1162 pass, fail 0**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
-  `git diff --check` = **green**、
-  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+	  `git diff --check` = **green**、
+	  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き707: **legacy `ps_node_is_unsigned()` API を削除**。
+  続き704-706で IR / parser の呼び出し側を用途別 helper
+  (`psx_node_integer_value_is_unsigned`,
+  `psx_node_conversion_value_is_unsigned`,
+  `psx_node_i64_widen_source_is_unsigned`,
+  `psx_node_shift_operation_is_unsigned`,
+  `psx_node_usual_arith_is_unsigned`) へ寄せた結果、
+  production code の `ps_node_is_unsigned()` 利用者がなくなった。
+  そのため `node_utils.h` / `parser_public.h` から宣言を外し、
+  `node_utils.c` の互換ラッパ実装も削除した。
+  parser test の互換 API assertion も typed 値域 helper assertion へ置き換え、
+  `rg -n "ps_node_is_unsigned" src test tools -g'*.c' -g'*.h'` が no match になることを確認した。
+  これで「値域」「変換元」「i64 widen source」「shift operation」「UAC」の区別を
+  API 境界で強制し、曖昧な単一 helper へ戻りにくくした。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き706: **shift operation signedness を helper 化**。
+  続き703で `build_node_binop()` の shift signedness を UAC から分離したが、
+  IR 側にはまだ `node->is_unsigned || psx_node_shift_lhs_is_unsigned(lhs)` という
+  operation flag 合成が残っていた。これを parser/node_utils の
+  `psx_node_shift_operation_is_unsigned()` に移し、IR は shift 全体の用途 API だけを
+  呼ぶようにした。これで cast lowering が shift に入れる forced signed/unsigned と
+  promoted lhs signedness の合成責務も parser/node_utils 側へ閉じた。
+  併せて int literal overflow warning の unsigned 判定を
+  `node->is_unsigned` 直読みから `psx_node_integer_value_is_unsigned()` へ寄せた。
+  regression として parser test に
+  `(unsigned char)a >> 1` は signed shift operation、
+  `(unsigned int)a >> 1` は unsigned shift operation、
+  `(int)(unsigned long)a` の cast-lowered shift は forced signed operation、を追加した。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き705: **conversion value signedness を helper 化**。
+  `coerce_to_type_ex()` や `IR_I2F` に渡す source signedness から、
+  IR 側の `ps_node_is_unsigned()` 直接参照を排除した。
+  parser/node_utils に `psx_node_conversion_value_is_unsigned()` を追加し、
+  「変換される式の実値が unsigned か」を読む用途 API として公開した。
+  これにより `ps_node_is_unsigned()` が内部で読む legacy operation flag
+  (cast lowering が shift に入れる forced signed/unsigned など) を IR 側へ漏らさず、
+  変換時 signedness の判断点を parser/node_utils に寄せた。
+  併せて parser 内部の `_Generic` fallback は conversion helper、
+  sub-int initializer overflow は typed 値域 helper
+  (`psx_node_integer_value_is_unsigned`) を使うようにした。
+  production code での `ps_node_is_unsigned()` 直接参照は公開ラッパ本体のみ
+  (test は互換確認として残す)。
+  regression として parser test に
+  `(int)(unsigned long)a` の cast-lowered forced signed 値が
+  conversion value として unsigned ではないことを追加した。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き704: **i64 widen source signedness を helper 化**。
+  `ir_builder.c` の `build_node_ptr_cast()` に残っていた
+  `ps_node_type_size(lhs) >= 4 && ps_node_is_unsigned(lhs)` の直接判定を外し、
+  parser/node_utils 側の `psx_node_i64_widen_source_is_unsigned()` に集約した。
+  この helper は typed AST の整数型確認と幅を source of truth にしつつ、最後の
+  operation signedness は既存の `node_is_unsigned()` 経由で読む。これにより
+  `(long)` lowering の I32→I64 widen で `IR_ZEXT` / `IR_SEXT` を選ぶ責務を
+  IR 側の手計算から切り離した。
+  regression として parser test に
+  `(long)(unsigned int)a` は `widen_zext_i64` かつ i64 widen source unsigned、
+  `(long)(int)a` は signed source、という確認を追加した。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
 - 続き703: **shift signedness 判定を専用 helper へ分離**。
   `ir_builder.c` の `build_node_binop()` に残っていた `unsig` 変数を廃止し、
   UAC signedness (`psx_node_usual_arith_is_unsigned`) と shift 動作 signedness を分離した。

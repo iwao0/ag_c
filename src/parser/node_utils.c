@@ -1273,11 +1273,34 @@ int psx_node_integer_value_is_unsigned(node_t *node) {
   return type_is_integer_like(type) && psx_type_is_unsigned(type);
 }
 
+/* Conversion/codegen source signedness. This intentionally preserves legacy
+ * operation overrides such as cast-lowered forced signed shifts. */
+int psx_node_conversion_value_is_unsigned(node_t *node) {
+  return node_is_unsigned(node);
+}
+
+/* Source signedness for widening an integer value to i64. */
+int psx_node_i64_widen_source_is_unsigned(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (!type_is_integer_like(type)) return 0;
+  int size = psx_type_sizeof(type);
+  if (size <= 0) size = ps_node_type_size(node);
+  return size >= 4 && node_is_unsigned(node);
+}
+
+/* LHS signedness after integer promotions, used by shift operation lowering. */
 int psx_node_shift_lhs_is_unsigned(node_t *node) {
   if (!node) return 0;
   int size = psx_type_sizeof(psx_node_get_type(node));
   if (size <= 0) size = ps_node_type_size(node);
   return size >= 4 && node_is_unsigned(node);
+}
+
+/* Full shift operation signedness, including explicit cast-lowering overrides. */
+int psx_node_shift_operation_is_unsigned(node_t *node) {
+  if (!node || (node->kind != ND_SHL && node->kind != ND_SHR)) return 0;
+  return node_is_unsigned(node) || psx_node_shift_lhs_is_unsigned(node->lhs);
 }
 
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
@@ -1308,11 +1331,6 @@ int psx_node_usual_arith_is_unsigned(node_t *node) {
       return type_result_unsigned(psx_node_get_type(node));
   }
 }
-
-/* node_is_unsigned の公開ラッパ。IR builder が比較の符号 (通常算術変換) を
- * 決める際、オペランドの符号を ND_LVAR の mem.is_unsigned まで含めて判定する
- * ために使う。生の node->is_unsigned は LVAR/GVAR では 0 のままなので不可。 */
-int ps_node_is_unsigned(node_t *node) { return node_is_unsigned(node); }
 
 /* node の符号フラグを設定する (node_is_unsigned が読むフィールドに一致させる)。
  * `(int)u` / `(unsigned)i` キャストで結果の符号を確定するのに使う。 */

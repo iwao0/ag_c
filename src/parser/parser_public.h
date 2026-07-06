@@ -30,10 +30,12 @@
 /* node_utils.h からの公開 */
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
-int ps_node_is_unsigned(node_t *n);
 int ps_node_type_size(node_t *n);
 int psx_node_integer_promotion_is_unsigned(node_t *n);
+int psx_node_conversion_value_is_unsigned(node_t *n);
+int psx_node_i64_widen_source_is_unsigned(node_t *n);
 int psx_node_shift_lhs_is_unsigned(node_t *n);
+int psx_node_shift_operation_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
 int psx_node_pointer_qual_levels(node_t *n);

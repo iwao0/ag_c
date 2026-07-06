@@ -409,16 +409,20 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
   ASSERT_TRUE(!psx_node_integer_promotion_is_unsigned(promoted_signed_shift->lhs));
   ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(promoted_signed_shift->lhs));
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(promoted_signed_shift));
 
     node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
   ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
   ASSERT_TRUE(psx_node_integer_promotion_is_unsigned(promoted_unsigned_shift->lhs));
   ASSERT_TRUE(psx_node_shift_lhs_is_unsigned(promoted_unsigned_shift->lhs));
+  ASSERT_TRUE(psx_node_shift_operation_is_unsigned(promoted_unsigned_shift));
 
     node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
   ASSERT_EQ(ND_PTR_CAST, forced_signed_shift->kind);
   ASSERT_EQ(ND_SHR, forced_signed_shift->lhs->kind);
   ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(forced_signed_shift->lhs));
+  ASSERT_TRUE(!psx_node_shift_operation_is_unsigned(forced_signed_shift->lhs));
+  ASSERT_TRUE(!psx_node_conversion_value_is_unsigned(forced_signed_shift));
 }
 
 static void test_expr_ternary() {
@@ -501,6 +505,16 @@ static void test_expr_unary_ops() {
     node_t *unsigned_long_cast = parse_expr_input("(unsigned long)15");
   ASSERT_EQ(ND_NUM, unsigned_long_cast->kind);
   ASSERT_EQ(15, as_num(unsigned_long_cast)->val);
+
+    node_t *long_unsigned_int_cast = parse_expr_input("(long)(unsigned int)a");
+  ASSERT_EQ(ND_PTR_CAST, long_unsigned_int_cast->kind);
+  ASSERT_TRUE(as_mem(long_unsigned_int_cast)->widen_zext_i64);
+  ASSERT_TRUE(psx_node_i64_widen_source_is_unsigned(long_unsigned_int_cast->lhs));
+
+    node_t *long_signed_int_cast = parse_expr_input("(long)(int)a");
+  ASSERT_EQ(ND_PTR_CAST, long_signed_int_cast->kind);
+  ASSERT_TRUE(!as_mem(long_signed_int_cast)->widen_zext_i64);
+  ASSERT_TRUE(!psx_node_i64_widen_source_is_unsigned(long_signed_int_cast->lhs));
 
     // 定数の short/char キャストは目的幅へ切り詰めて ND_NUM へ定数畳み込みする
     // (16/17/18 は範囲内なので値は不変)。
@@ -909,7 +923,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(PSX_TYPE_INTEGER, ci_ty->kind);
   ASSERT_EQ(4, psx_type_sizeof(ci_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(ci_ty));
-  ASSERT_TRUE(!ps_node_is_unsigned(ci));
+  ASSERT_TRUE(!psx_node_integer_value_is_unsigned(ci));
 
     node_t *cus = parse_expr_input("(unsigned short)a");
   psx_type_t *cus_ty = psx_node_get_type(cus);
@@ -918,7 +932,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(2, psx_type_sizeof(cus_ty));
   ASSERT_EQ(2, ps_node_type_size(cus));
   ASSERT_TRUE(psx_type_is_unsigned(cus_ty));
-  ASSERT_TRUE(ps_node_is_unsigned(cus));
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(cus));
 
     node_t *cul = parse_expr_input("(unsigned long)a");
   psx_type_t *cul_ty = psx_node_get_type(cul);
@@ -927,7 +941,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, psx_type_sizeof(cul_ty));
   ASSERT_EQ(8, ps_node_type_size(cul));
   ASSERT_TRUE(psx_type_is_unsigned(cul_ty));
-  ASSERT_TRUE(ps_node_is_unsigned(cul));
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(cul));
 
     node_t *cf = parse_expr_input("(float)a");
   psx_type_t *cf_ty = psx_node_get_type(cf);
@@ -954,7 +968,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(4, psx_type_sizeof(uac_promote_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(uac_promote_ty));
   ASSERT_EQ(4, ps_node_type_size(uac_promote));
-  ASSERT_TRUE(!ps_node_is_unsigned(uac_promote));
+  ASSERT_TRUE(!psx_node_integer_value_is_unsigned(uac_promote));
   ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(uac_promote));
 
     node_t *uac_signed_wider = parse_expr_input("(unsigned int)1 + (long)-1");
@@ -964,7 +978,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, psx_type_sizeof(uac_signed_wider_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(uac_signed_wider_ty));
   ASSERT_EQ(8, ps_node_type_size(uac_signed_wider));
-  ASSERT_TRUE(!ps_node_is_unsigned(uac_signed_wider));
+  ASSERT_TRUE(!psx_node_integer_value_is_unsigned(uac_signed_wider));
   ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(uac_signed_wider));
 
     node_t *uac_unsigned_same_width = parse_expr_input("(unsigned long)1 + (long)-1");
@@ -974,7 +988,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, psx_type_sizeof(uac_unsigned_same_width_ty));
   ASSERT_TRUE(psx_type_is_unsigned(uac_unsigned_same_width_ty));
   ASSERT_EQ(8, ps_node_type_size(uac_unsigned_same_width));
-  ASSERT_TRUE(ps_node_is_unsigned(uac_unsigned_same_width));
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(uac_unsigned_same_width));
   ASSERT_TRUE(psx_node_usual_arith_is_unsigned(uac_unsigned_same_width));
 
     node_t *uac_long_long = parse_expr_input("((unsigned long long)9ULL) ^ ((unsigned short)3)");
@@ -985,7 +999,7 @@ static void test_expr_sizeof() {
   ASSERT_TRUE(psx_type_is_unsigned(uac_long_long_ty));
   ASSERT_TRUE(uac_long_long_ty->is_long_long);
   ASSERT_EQ(8, ps_node_type_size(uac_long_long));
-  ASSERT_TRUE(ps_node_is_unsigned(uac_long_long));
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(uac_long_long));
   ASSERT_TRUE(psx_node_usual_arith_is_unsigned(uac_long_long));
 
     node_t *ternary_uac = parse_expr_input("1 ? (unsigned int)1 : (long)-1");
@@ -995,7 +1009,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, psx_type_sizeof(ternary_uac_ty));
   ASSERT_TRUE(!psx_type_is_unsigned(ternary_uac_ty));
   ASSERT_EQ(8, ps_node_type_size(ternary_uac));
-  ASSERT_TRUE(!ps_node_is_unsigned(ternary_uac));
+  ASSERT_TRUE(!psx_node_integer_value_is_unsigned(ternary_uac));
   ASSERT_TRUE(!psx_node_usual_arith_is_unsigned(ternary_uac));
 
     node_t *cmp_uac = parse_expr_input("(unsigned int)1 < (long)-1");
