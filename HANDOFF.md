@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き737: compound literal array address metadata 初期化の集約）
+最終更新: 2026-07-06（続き738: lvar expression/member ref constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き738: **lvar expression ref と member-offset lvar ref の metadata 初期化を
+  `node_utils` に寄せた**。
+  続き737の後も、`expr.c` には `new_typed_lvar_ref()` と
+  `new_member_lvar_ref()` が残り、`lvar_t` から式用 `ND_LVAR` へ
+  `deref_size` / `is_pointer` / member tag metadata を直接上書きしていた。
+
+  根本対応として `psx_node_new_lvar_expr_ref_for()` と
+  `psx_node_new_member_lvar_ref_for()` を `node_utils` に追加し、
+  struct rvalue materialization、compound literal scalar ref、
+  union/struct value cast、compound assignment lvalue hoist からこの constructor を
+  使うようにした。
+  これで `expr.c` の lvar ref 生成に残っていた型 metadata 直書きがさらに減った。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き737: **compound literal 配列の decay 用 `ND_ADDR` metadata 初期化を
   `node_utils` に集約した**。
   続き736の後も、`parse_compound_literal_from_type()` は file-scope / block-scope の

@@ -2116,6 +2116,28 @@ node_t *psx_node_new_lvar_typed_for(lvar_t *var, int type_size) {
   return (node_t *)node;
 }
 
+node_t *psx_node_new_lvar_expr_ref_for(lvar_t *var, int is_pointer) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed_for(
+      var, is_pointer ? 8 : (var ? var->elem_size : 0));
+  if (var) node->mem.deref_size = var->elem_size;
+  node->mem.is_pointer = is_pointer ? 1 : 0;
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
+                                         int member_type_size, token_kind_t member_tag_kind,
+                                         char *member_tag_name, int member_tag_len,
+                                         int member_is_tag_pointer) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(
+      (owner ? owner->offset : 0) + member_offset, member_type_size);
+  node->var = owner;
+  node->mem.tag_kind = member_tag_kind;
+  node->mem.tag_name = member_tag_name;
+  node->mem.tag_len = member_tag_len;
+  node->mem.is_tag_pointer = member_is_tag_pointer ? 1 : 0;
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_gvar_for(global_var_t *gv) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   psx_node_init_gvar_ref_metadata(&node->mem, gv);
