@@ -1616,16 +1616,12 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t r = build_expr(ctx, node->rhs);
   if (ctx->failed) return ir_val_none();
   int is_fp = is_fp_type(l.type) || is_fp_type(r.type);
-  /* unsigned 演算は SHR→LSR、DIV→UDIV、MOD→UMOD、LT/LE→ULT/ULE に振り分ける。
-   * 結果型の is_unsigned (parser が伝播) と、片側が unsigned LVAR/GVAR/...
-   * の場合の両方を考慮する。 */
-  int shift_unsig = (node->lhs && ps_node_type_size(node->lhs) >= 4 &&
-                     ps_node_is_unsigned(node->lhs));
-  int unsig = (node->kind == ND_SHL || node->kind == ND_SHR)
-                ? (node->is_unsigned || shift_unsig)
-                : (node->is_unsigned ||
-                   (node->lhs && node->lhs->is_unsigned) ||
-                   (node->rhs && node->rhs->is_unsigned));
+  /* Shift signedness is the ASR/LSR and 32-bit-wrap selector for the promoted
+   * lhs, plus explicit overrides inserted by cast lowering. Keep it separate
+   * from UAC signedness used by DIV/MOD/LT/LE. */
+  int is_shift = node->kind == ND_SHL || node->kind == ND_SHR;
+  int shift_uses_unsigned = is_shift &&
+      (node->is_unsigned || psx_node_shift_lhs_is_unsigned(node->lhs));
   /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
    * 従う。UAC 判定は parser/node_utils.c の typed result helper に集約し、
    * IR 側で rank / promotion を再実装しない。 */
@@ -1641,7 +1637,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
     case ND_BITOR:  op = IR_OR;  break;
     case ND_BITXOR: op = IR_XOR; break;
     case ND_SHL:    op = IR_SHL; break;
-    case ND_SHR:    op = unsig ? IR_LSR : IR_SHR; break;
+    case ND_SHR:    op = shift_uses_unsigned ? IR_LSR : IR_SHR; break;
     case ND_LT:  op = is_fp ? IR_FLT : (uac_unsig ? IR_ULT : IR_LT); break;
     case ND_LE:  op = is_fp ? IR_FLE : (uac_unsig ? IR_ULE : IR_LE); break;
     case ND_EQ:  op = is_fp ? IR_FEQ : IR_EQ; break;
@@ -1655,7 +1651,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   } else if (is_fp) {
     result_ty = (l.type == IR_TY_F64 || r.type == IR_TY_F64) ? IR_TY_F64 : IR_TY_F32;
   } else {
-    if (node->kind == ND_SHL || node->kind == ND_SHR) {
+    if (is_shift) {
       result_ty = (ir_type_size(l.type) >= 8) ? IR_TY_I64 : IR_TY_I32;
     } else {
     /* 整数演算: いずれかのオペランドが 64bit (long / long long / pointer) なら
@@ -1715,7 +1711,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
    * 折り返す (C11 6.2.5p9: 符号なしは 2^32 で wrap)。これをしないと `(x+1)==0`
    * (x=0xFFFFFFFF) のように格納/キャストを経ない直接使用で値が壊れる。
    * 符号付きはオーバーフローが UB なので対象外 (符号拡張のまま)。 */
-  int result_unsigned = (node->kind == ND_SHL || node->kind == ND_SHR) ? unsig : uac_unsig;
+  int result_unsigned = is_shift ? shift_uses_unsigned : uac_unsig;
   if (result_ty == IR_TY_I32 && result_unsigned &&
       (node->kind == ND_ADD || node->kind == ND_SUB ||
        node->kind == ND_MUL || node->kind == ND_SHL)) {

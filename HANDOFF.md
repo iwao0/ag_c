@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き700: sign-compare warning を typed UAC helper へ集約）
+最終更新: 2026-07-06（続き703: shift signedness 判定を専用 helper へ分離）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,62 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き703: **shift signedness 判定を専用 helper へ分離**。
+  `ir_builder.c` の `build_node_binop()` に残っていた `unsig` 変数を廃止し、
+  UAC signedness (`psx_node_usual_arith_is_unsigned`) と shift 動作 signedness を分離した。
+  `DIV` / `MOD` / `LT` / `LE` は typed UAC helper を使い、
+  `SHR` の ASR/LSR 選択と 32bit left-shift wrap mask は新設の
+  `psx_node_shift_lhs_is_unsigned()` を使う。
+  いったん `psx_node_integer_promotion_is_unsigned(lhs)` へ寄せたところ、
+  `(int)(unsigned long)` cast lowering が shift ノードに入れる「算術右シフト強制」
+  (`psx_node_set_unsigned(shr, 0)`) を無視して `int_cast_truncates_long` が落ちた。
+  そのため shift 専用 helper は `psx_node_get_type()` の typed result だけでなく
+  `node_is_unsigned()` の legacy operation flag override を読むようにした。
+  これで「型として unsigned か」「integer promotion 後に unsigned か」
+  「shift operation として unsigned か」を別 API に分けた。
+  regression として parser test に
+  `(unsigned char)a >> 1` は promotion 後 signed、
+  `(unsigned int)a >> 1` は promotion 後 unsigned、
+  `(int)(unsigned long)a` の cast-lowered shift は forced signed、を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き702: **long-cast zero-extend 判定を typed 値域 helper へ接続**。
+  `(long)unsigned_int` / `(long)(unsigned char)x` などを I64 へ広げるときの
+  `ND_PTR_CAST(widen_zext_i64)` 判定から、`ps_node_is_unsigned(operand)` の直接参照を外した。
+  続き701で追加した `psx_node_integer_value_is_unsigned()` を使い、
+  cast lowering でも typed AST の「整数型かつ unsigned 値域か」を source of truth にする。
+  これで診断だけでなく、IR に渡す zero-extend ラッパ判定も同じ helper 経由になった。
+  regression として parser test に
+  `(long)(unsigned char)a` / `(long)(unsigned short)a` は `widen_zext_i64`、
+  `(long)(short)a` は `widen_zext_i64` なし、という AST 形の確認を追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
+- 続き701: **unsigned-zero warning を typed 値域 helper へ集約**。
+  W3019 (`unsigned` と 0 の比較が常に同じ結果になる warning) の判定から、
+  `ps_node_type_size(n) >= 4 && ps_node_is_unsigned(n)` という semantic 側の手計算を外した。
+  parser/node_utils に `psx_node_integer_value_is_unsigned()` を追加し、
+  `psx_node_get_type()` の typed AST から「整数型かつ unsigned 値域か」を読む。
+  これで `unsigned int` だけでなく `unsigned char` / `unsigned short` /
+  `unsigned char` 戻り関数 / `(unsigned char)x` cast も、型の値域として 0 未満に
+  ならないものとして W3019 の対象にできる。
+  一方で `signed char` は warning しない regression も追加した。
+  確認は
+  `git diff --check` = green、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`。
 - 続き700: **sign-compare warning を typed UAC helper へ集約**。
   parser/node_utils 側に `psx_node_integer_promotion_is_unsigned()` と
   `psx_node_usual_arith_operands_is_unsigned()` を公開し、

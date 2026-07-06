@@ -1268,6 +1268,18 @@ int psx_node_integer_promotion_is_unsigned(node_t *node) {
   return type_uac_effective_unsigned(psx_node_get_type(node));
 }
 
+int psx_node_integer_value_is_unsigned(node_t *node) {
+  psx_type_t *type = psx_node_get_type(node);
+  return type_is_integer_like(type) && psx_type_is_unsigned(type);
+}
+
+int psx_node_shift_lhs_is_unsigned(node_t *node) {
+  if (!node) return 0;
+  int size = psx_type_sizeof(psx_node_get_type(node));
+  if (size <= 0) size = ps_node_type_size(node);
+  return size >= 4 && node_is_unsigned(node);
+}
+
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
   return binary_usual_arith_unsigned(lhs, rhs);
 }

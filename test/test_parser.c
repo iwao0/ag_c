@@ -404,6 +404,21 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_SHL, node->lhs->kind);
   ASSERT_EQ(ND_ADD, node->lhs->lhs->kind);
   ASSERT_EQ(1, as_num(node->rhs)->val);
+
+    node_t *promoted_signed_shift = parse_expr_input("(unsigned char)a >> 1");
+  ASSERT_EQ(ND_SHR, promoted_signed_shift->kind);
+  ASSERT_TRUE(!psx_node_integer_promotion_is_unsigned(promoted_signed_shift->lhs));
+  ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(promoted_signed_shift->lhs));
+
+    node_t *promoted_unsigned_shift = parse_expr_input("(unsigned int)a >> 1");
+  ASSERT_EQ(ND_SHR, promoted_unsigned_shift->kind);
+  ASSERT_TRUE(psx_node_integer_promotion_is_unsigned(promoted_unsigned_shift->lhs));
+  ASSERT_TRUE(psx_node_shift_lhs_is_unsigned(promoted_unsigned_shift->lhs));
+
+    node_t *forced_signed_shift = parse_expr_input("(int)(unsigned long)a");
+  ASSERT_EQ(ND_PTR_CAST, forced_signed_shift->kind);
+  ASSERT_EQ(ND_SHR, forced_signed_shift->lhs->kind);
+  ASSERT_TRUE(!psx_node_shift_lhs_is_unsigned(forced_signed_shift->lhs));
 }
 
 static void test_expr_ternary() {
@@ -500,6 +515,21 @@ static void test_expr_unary_ops() {
     node_t *unsigned_char_cast = parse_expr_input("(unsigned char)18");
   ASSERT_EQ(ND_NUM, unsigned_char_cast->kind);
   ASSERT_EQ(18, as_num(unsigned_char_cast)->val);
+
+    node_t *long_unsigned_char_cast = parse_expr_input("(long)(unsigned char)a");
+  ASSERT_EQ(ND_PTR_CAST, long_unsigned_char_cast->kind);
+  ASSERT_TRUE(as_mem(long_unsigned_char_cast)->widen_zext_i64);
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(long_unsigned_char_cast->lhs));
+
+    node_t *long_unsigned_short_cast = parse_expr_input("(long)(unsigned short)a");
+  ASSERT_EQ(ND_PTR_CAST, long_unsigned_short_cast->kind);
+  ASSERT_TRUE(as_mem(long_unsigned_short_cast)->widen_zext_i64);
+  ASSERT_TRUE(psx_node_integer_value_is_unsigned(long_unsigned_short_cast->lhs));
+
+    node_t *long_signed_short_cast = parse_expr_input("(long)(short)a");
+  ASSERT_EQ(ND_PTR_CAST, long_signed_short_cast->kind);
+  ASSERT_TRUE(!as_mem(long_signed_short_cast)->widen_zext_i64);
+  ASSERT_TRUE(!psx_node_integer_value_is_unsigned(long_signed_short_cast->lhs));
 
     node_t *restrict_ptr_cast = parse_expr_input("(restrict int*)0");
   ASSERT_EQ(ND_NUM, restrict_ptr_cast->kind);
@@ -2359,6 +2389,13 @@ static void test_parse_evil_edge_cases() {
       "int main(void){ unsigned long u=1; long s=-1; return s<u; }", "W3018");
   expect_parse_ok_with_message("int main(void){ unsigned int u=1; return u>=0; }", "W3019");
   expect_parse_ok_with_message("int main(void){ unsigned int u=1; return 0>u; }", "W3019");
+  expect_parse_ok_with_message("int main(void){ unsigned char u=1; return u<0; }", "W3019");
+  expect_parse_ok_with_message("int main(void){ unsigned short u=1; return 0<=u; }", "W3019");
+  expect_parse_ok_with_message(
+      "unsigned char f(void){ return 1; } int main(void){ return f()<0; }", "W3019");
+  expect_parse_ok_with_message("int main(void){ int x=1; return (unsigned char)x<0; }",
+                               "W3019");
+  expect_parse_ok_without_message("int main(void){ signed char s=1; return s<0; }", "W3019");
   expect_parse_ok_with_message("int main(void){ int *p; return p==5; }", "W3022");
   expect_parse_ok_with_message("int main(void){ int x=1; return !x==0; }", "W3021");
   expect_parse_ok_with_message("int main(void){ int x=0; if (x=1) return x; return 0; }",

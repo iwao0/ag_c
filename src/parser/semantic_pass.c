@@ -391,8 +391,7 @@ static int semantic_tuz_is_zero_literal(node_t *n) {
 }
 
 static int semantic_tuz_is_unsigned_integer(node_t *n) {
-  return n && !ps_node_is_pointer(n) && n->fp_kind == TK_FLOAT_KIND_NONE &&
-         ps_node_type_size(n) >= 4 && ps_node_is_unsigned(n);
+  return psx_node_integer_value_is_unsigned(n);
 }
 
 static void semantic_warn_tautological_unsigned_zero(node_t *lhs, node_t *rhs, const char *op,

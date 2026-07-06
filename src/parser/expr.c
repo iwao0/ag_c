@@ -2587,7 +2587,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         wrap->type_size = 8;
         wrap->is_unsigned = cast_is_unsigned ? 1 : 0;
         wrap->is_long_long = cast_is_long_long ? 1 : 0;
-        if (ps_node_is_unsigned(operand) && ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
+        if (psx_node_integer_value_is_unsigned(operand) &&
+            ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8)
           wrap->widen_zext_i64 = 1;
         return annotate_cast_type((node_t *)wrap, cast_type);
       }
@@ -2599,7 +2600,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
      * 対象外。ポインタ・8B 以上・fp は対象外。 */
     if (!is_pointer && type_kind == TK_LONG && !ps_node_is_pointer(operand) &&
-        operand->fp_kind == TK_FLOAT_KIND_NONE && ps_node_is_unsigned(operand) &&
+        operand->fp_kind == TK_FLOAT_KIND_NONE && psx_node_integer_value_is_unsigned(operand) &&
         ps_node_type_size(operand) >= 1 && ps_node_type_size(operand) < 8) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
       wrap->base.kind = ND_PTR_CAST;

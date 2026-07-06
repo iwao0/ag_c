@@ -33,6 +33,7 @@ int ps_node_deref_size(node_t *n);
 int ps_node_is_unsigned(node_t *n);
 int ps_node_type_size(node_t *n);
 int psx_node_integer_promotion_is_unsigned(node_t *n);
+int psx_node_shift_lhs_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
 int psx_node_pointer_qual_levels(node_t *n);
