@@ -2196,6 +2196,22 @@ node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,
   return (node_t *)node;
 }
 
+node_t *psx_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
+  int elem_size = var ? var->elem_size : 0;
+  int offset = var ? var->offset + idx * elem_size : 0;
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(offset, elem_size);
+  node->var = var;
+  if (var) {
+    node->mem.base.fp_kind = var->fp_kind;
+    node->mem.tag_kind = var->tag_kind;
+    node->mem.tag_name = var->tag_name;
+    node->mem.tag_len = var->tag_len;
+    node->mem.tag_scope_depth_p1 = var->tag_scope_depth_p1;
+    node->mem.is_tag_pointer = var->is_tag_pointer ? 1 : 0;
+  }
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,
@@ -2207,6 +2223,22 @@ node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
   node->mem.tag_name = member_tag_name;
   node->mem.tag_len = member_tag_len;
   node->mem.is_tag_pointer = member_is_tag_pointer ? 1 : 0;
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
+                                             const tag_member_info_t *info) {
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_member_lvar_ref_for(
+      owner, member_offset, info ? info->type_size : 0,
+      info ? info->tag_kind : TK_EOF,
+      info ? info->tag_name : NULL,
+      info ? info->tag_len : 0,
+      info ? info->is_tag_pointer : 0);
+  if (info && info->bit_width > 0) {
+    node->mem.bit_width = info->bit_width;
+    node->mem.bit_offset = info->bit_offset;
+    node->mem.bit_is_signed = info->bit_is_signed;
+  }
   return (node_t *)node;
 }
 

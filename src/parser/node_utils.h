@@ -82,10 +82,13 @@ node_t *psx_node_new_lvar_identifier_ref_for(struct lvar_t *var);
 node_t *psx_node_new_param_lvar_for(struct lvar_t *var, int abi_type_size,
                                     int is_unsigned, tk_float_kind_t abi_fp_kind,
                                     int is_complex);
+node_t *psx_node_new_array_elem_lvar_for(struct lvar_t *var, int idx);
 node_t *psx_node_new_member_lvar_ref_for(struct lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,
                                          int member_is_tag_pointer);
+node_t *psx_node_new_tag_member_lvar_ref_for(struct lvar_t *owner, int member_offset,
+                                             const struct tag_member_info_t *info);
 node_t *psx_node_new_gvar_for(struct global_var_t *gv);
 node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);

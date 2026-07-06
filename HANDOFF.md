@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き741: parameter lvar ABI metadata constructor 化）
+最終更新: 2026-07-06（続き742: initializer lvar/member metadata constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,28 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き742: **initializer 用 lvar / tag member lvar の metadata 初期化を
+  `node_utils` に寄せた**。
+  続き741の後も、`decl.c` の array element initializer、struct/union member initializer、
+  nested designator、通常変数 initializer は、`lvar_t` / `tag_member_info_t` から
+  `ND_LVAR` へ tag / fp / qualifier / bitfield metadata を直接コピーしていた。
+
+  根本対応として `psx_node_new_array_elem_lvar_for()` と
+  `psx_node_new_tag_member_lvar_ref_for()` を追加した。
+  array element は offset だけ要素位置にずらし、fp/tag metadata は `lvar_t` から
+  `node_utils` 側で初期化するようにした。
+  tag member は `tag_member_info_t` をそのまま constructor に渡し、tag metadata と
+  bitfield metadata を同じ入口で初期化するようにした。
+  さらに `psx_decl_parse_initializer_for_var()` の通常 lvar 生成は
+  `psx_node_new_lvar_expr_ref_for()` に置き換え、`decl.c` から initializer 用の
+  重複 metadata コピーを大きく削った。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き741: **関数パラメータ `args[]` 用 `ND_LVAR` の ABI metadata 初期化を
   `node_utils` に寄せた**。
   続き740の後も、`parser.c` の `parse_param_decl()` は

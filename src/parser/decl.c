@@ -153,9 +153,6 @@ static node_t *parse_struct_copy_initializer(lvar_t *var);
 static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value);
 static node_t *parse_struct_member_no_brace(lvar_t *nested);
 static bool elision_consume_separator(void);
-static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member_type_size,
-                                      token_kind_t member_tag_kind, char *member_tag_name,
-                                      int member_tag_len, int member_is_tag_pointer);
 static int parse_nonneg_const_expr_decl(const char *what);
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
 static int is_supported_scalar_store_size(int size);
@@ -832,15 +829,7 @@ static node_t *parse_scalar_brace_initializer(void) {
 }
 
 static node_t *new_array_elem_lvar(lvar_t *var, int idx) {
-  int elem_off = var->offset + idx * var->elem_size;
-  node_t *lvar = psx_node_new_lvar_typed(elem_off, var->elem_size);
-  ((node_lvar_t *)lvar)->var = var;
-  lvar->fp_kind = var->fp_kind;
-  ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
-  ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
-  ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
-  ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
-  return lvar;
+  return psx_node_new_array_elem_lvar_for(var, idx);
 }
 
 static node_t *new_array_elem_lvar_at(int base_offset, int elem_size, int idx) {
@@ -902,10 +891,8 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
      * (配列メンバ・ネスト struct 等) はバイトコピーで全体を複製する。 */
     int full_size = (info.array_len > 0) ? info.type_size * info.array_len : info.type_size;
     if (info.array_len <= 0 && is_supported_scalar_store_size(info.type_size)) {
-      node_t *lhs = new_struct_member_lvar(dst, info.offset, info.type_size,
-                                           info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
-      node_t *rhs_member = new_struct_member_lvar(&src_var, info.offset, info.type_size,
-                                                  info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+      node_t *lhs = psx_node_new_tag_member_lvar_ref_for(dst, info.offset, &info);
+      node_t *rhs_member = psx_node_new_tag_member_lvar_ref_for(&src_var, info.offset, &info);
       node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
       assign_node->type_size = info.type_size;
       node_t *init_node = (node_t *)assign_node;
@@ -1428,18 +1415,6 @@ static node_t *parse_array_initializer(lvar_t *var) {
     return init_chain;
   }
   return psx_node_new_num(0);
-}
-
-static node_t *new_struct_member_lvar(lvar_t *var, int member_offset, int member_type_size,
-                                      token_kind_t member_tag_kind, char *member_tag_name,
-                                      int member_tag_len, int member_is_tag_pointer) {
-  node_t *lvar = psx_node_new_lvar_typed(var->offset + member_offset, member_type_size);
-  ((node_lvar_t *)lvar)->var = var;
-  ((node_lvar_t *)lvar)->mem.tag_kind = member_tag_kind;
-  ((node_lvar_t *)lvar)->mem.tag_name = member_tag_name;
-  ((node_lvar_t *)lvar)->mem.tag_len = member_tag_len;
-  ((node_lvar_t *)lvar)->mem.is_tag_pointer = member_is_tag_pointer;
-  return lvar;
 }
 
 /* _Bool 要素/メンバの初期化子を (v != 0) に正規化 (C11 6.3.1.2)。is_bool=0 なら素通し。 */
@@ -2192,9 +2167,7 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   if (info->is_bool) {
     member_init = psx_node_new_binary(ND_NE, member_init, psx_node_new_num(0));
   }
-  node_t *lhs = new_struct_member_lvar(var, info->offset, info->type_size,
-                                       info->tag_kind, info->tag_name, info->tag_len,
-                                       info->is_tag_pointer);
+  node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info->offset, info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
   assign_node->type_size = info->type_size;
   /* float/double メンバなら lhs と assign に fp_kind を伝播し、
@@ -2202,14 +2175,6 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
   if (!info->is_tag_pointer && info->fp_kind != TK_FLOAT_KIND_NONE) {
     lhs->fp_kind = info->fp_kind;
     assign_node->base.fp_kind = info->fp_kind;
-  }
-  /* bitfield メンバ: lhs lvar に bit_width / bit_offset / bit_is_signed を載せ、
-   * IR builder の ND_ASSIGN(ND_LVAR) で bitfield 書き込み経路 (mask preserve) を
-   * 通す。これがないと storage 全体を上書きして他フィールドを破壊する。 */
-  if (info->bit_width > 0) {
-    ((node_lvar_t *)lhs)->mem.bit_width = info->bit_width;
-    ((node_lvar_t *)lhs)->mem.bit_offset = info->bit_offset;
-    ((node_lvar_t *)lhs)->mem.bit_is_signed = info->bit_is_signed;
   }
   return (node_t *)assign_node;
 }
@@ -2324,17 +2289,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
                ? parse_union_initializer(&nested)
                : parse_struct_initializer(&nested);
   }
-  node_t *lhs = psx_node_new_lvar_typed(var->offset + cumulative_offset, cur_info.type_size);
-  ((node_lvar_t *)lhs)->var = var;
-  ((node_lvar_t *)lhs)->mem.tag_kind = cur_info.tag_kind;
-  ((node_lvar_t *)lhs)->mem.tag_name = cur_info.tag_name;
-  ((node_lvar_t *)lhs)->mem.tag_len = cur_info.tag_len;
-  ((node_lvar_t *)lhs)->mem.is_tag_pointer = cur_info.is_tag_pointer;
-  if (cur_info.bit_width > 0) {
-    ((node_lvar_t *)lhs)->mem.bit_width = cur_info.bit_width;
-    ((node_lvar_t *)lhs)->mem.bit_offset = cur_info.bit_offset;
-    ((node_lvar_t *)lhs)->mem.bit_is_signed = cur_info.bit_is_signed;
-  }
+  node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, cumulative_offset, &cur_info);
   node_t *rhs_val = parse_scalar_brace_initializer();
   node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
   assign_node->type_size = cur_info.type_size;
@@ -2740,9 +2695,7 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
   tag_member_info_t info = {0};
   int ordinal = 0;
   if (!tag_get_next_named_member(nested, &ordinal, &info) || info.len <= 0) return first;
-  node_t *lhs0 = new_struct_member_lvar(nested, info.offset, info.type_size,
-                                        info.tag_kind, info.tag_name, info.tag_len,
-                                        info.is_tag_pointer);
+  node_t *lhs0 = psx_node_new_tag_member_lvar_ref_for(nested, info.offset, &info);
   node_mem_t *a0 = psx_node_new_assign(lhs0, first);
   a0->type_size = info.type_size;
   node_t *chain = prefix ? psx_node_new_binary(ND_COMMA, prefix, (node_t *)a0) : (node_t *)a0;
@@ -2782,8 +2735,7 @@ static node_t *parse_union_initializer_no_brace(lvar_t *var) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
-  node_t *lhs = new_struct_member_lvar(var, info.offset, info.type_size,
-                                       info.tag_kind, info.tag_name, info.tag_len, info.is_tag_pointer);
+  node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
   node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
   assign_node->type_size = info.type_size;
   return (node_t *)assign_node;
@@ -3276,25 +3228,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   if (!is_pointer && var->tag_kind == TK_UNION) {
     return parse_union_initializer(var);
   }
-  node_t *lvar = psx_node_new_lvar_typed_for(var, is_pointer ? 8 : var->elem_size);
-  lvar->fp_kind = var->fp_kind;
-  ((node_lvar_t *)lvar)->mem.tag_kind = var->tag_kind;
-  ((node_lvar_t *)lvar)->mem.tag_name = var->tag_name;
-  ((node_lvar_t *)lvar)->mem.tag_len = var->tag_len;
-  ((node_lvar_t *)lvar)->mem.is_tag_pointer = var->is_tag_pointer;
-  ((node_lvar_t *)lvar)->mem.is_complex = var->is_complex;
-  ((node_lvar_t *)lvar)->mem.is_atomic = var->is_atomic;
-  ((node_lvar_t *)lvar)->mem.is_unsigned = var->is_unsigned ? 1 : 0;
-  ((node_lvar_t *)lvar)->mem.pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  lvar->is_complex = var->is_complex;
-  lvar->is_atomic = var->is_atomic;
-  ((node_lvar_t *)lvar)->mem.is_const_qualified = var->is_const_qualified;
-  ((node_lvar_t *)lvar)->mem.is_volatile_qualified = var->is_volatile_qualified;
-  ((node_lvar_t *)lvar)->mem.is_pointer_const_qualified = var->is_pointer_const_qualified;
-  ((node_lvar_t *)lvar)->mem.is_pointer_volatile_qualified = var->is_pointer_volatile_qualified;
-  ((node_lvar_t *)lvar)->mem.pointer_const_qual_mask = var->pointer_const_qual_mask;
-  ((node_lvar_t *)lvar)->mem.pointer_volatile_qual_mask = var->pointer_volatile_qual_mask;
-  ((node_lvar_t *)lvar)->mem.pointer_qual_levels = var->pointer_qual_levels;
+  node_t *lvar = psx_node_new_lvar_expr_ref_for(var, is_pointer);
   /* `_Complex z = {re, im}` 初期化。複素数は {実部, 虚部} の連続レイアウト
    * (double _Complex は 8+8、float _Complex は 4+4) なので、実部スロット (offset) と
    * 虚部スロット (offset+half) へそれぞれ fp スカラ store を生成する (既存の fp 代入を
