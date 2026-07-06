@@ -2516,14 +2516,14 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     /* グローバル構造体からのコピー初期化 `struct S t = g;`。構造体全体を 1 つの
      * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。node_gvar_t は
      * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
-    node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_DEREF &&
              is_compatible_tag_object_mem((node_mem_t *)value, var)) {
     /* `va_arg(ap, struct S)` expands to `*(struct S *)...`: a same-type
      * struct lvalue that can be copied as a whole. */
-    node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_TERNARY) {
@@ -2539,7 +2539,7 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
        * struct 全体の ND_ASSIGN(var, ternary) にする。<=8B はスカラ選択、>8B は IR の
        * materialize_aggregate_expr_to が各分岐を dst へ materialize する。 */
       if (var->size <= 8 || ps_node_type_size(value) == var->size) {
-        node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+        node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
         node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
         return (node_t *)assign_node;
       }
@@ -2558,7 +2558,7 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
              (value->kind == ND_FUNCALL || value->kind == ND_DEREF)) {
     /* ≤8B struct: 関数呼び出し結果や `*ptr` deref の非 lvar 値を
      * 1 ワード assign でコピー初期化する。 */
-    node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     if (value->kind == ND_DEREF) {
       /* ND_DEREF の type_size を struct サイズに揃えて、codegen が
        * struct 全体を 1 ワードで load するようにする。 */
@@ -2568,12 +2568,12 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     init_chain = (node_t *)assign_node;
   } else if (var->size > 8 && var->size <= 16 && value && value->kind == ND_FUNCALL) {
     // 9-16B struct: 関数呼び出し結果を x0/x1 ペアで受け取り、2ワード代入で初期化
-    node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (var->size > 16 && value && value->kind == ND_FUNCALL) {
     // >16B struct: indirect return (x8) 経由で呼び出し先が直接代入先に書き込む
-    node_t *lhs_var = psx_node_new_lvar_typed_for(var, var->size);
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   }

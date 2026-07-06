@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き745: assign type_size metadata constructor 化）
+最終更新: 2026-07-06（続き746: struct copy object lvar constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -41,6 +41,23 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き746: **struct/union 全体コピー用 lhs lvar の object size 正本を
+  `node_utils` に寄せた**。
+  続き745の後も、`build_struct_copy_from_value()` の fallback 経路は
+  `psx_node_new_lvar_typed_for(var, var->size)` を複数箇所で直接呼び、
+  struct/union object 全体を表す lhs のサイズを `decl.c` 側で都度指定していた。
+
+  根本対応として `psx_node_new_lvar_object_ref_for()` を追加し、
+  object 全体参照の `type_size` は `lvar_t::size` から `node_utils` 側で決まるようにした。
+  `decl.c` の struct/union copy fallback はこの constructor を呼ぶだけになり、
+  object 全体代入 lhs の型サイズ指定が parser 本体から外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き745: **`ND_ASSIGN` の `type_size` metadata 正本も
   `psx_node_new_assign()` に寄せた**。
   続き744の後も、`decl.c` / `expr.c` の initializer、struct/union copy、

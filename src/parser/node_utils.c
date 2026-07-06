@@ -2123,6 +2123,10 @@ node_t *psx_node_new_lvar_typed_for(lvar_t *var, int type_size) {
   return (node_t *)node;
 }
 
+node_t *psx_node_new_lvar_object_ref_for(lvar_t *var) {
+  return psx_node_new_lvar_typed_for(var, var ? var->size : 0);
+}
+
 node_t *psx_node_new_lvar_expr_ref_for(lvar_t *var, int is_pointer) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed_for(
       var, is_pointer ? 8 : (var ? var->elem_size : 0));
