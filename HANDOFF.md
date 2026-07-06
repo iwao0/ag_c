@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き738: lvar expression/member ref constructor 化）
+最終更新: 2026-07-06（続き739: identifier lvar/VLA ref constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き739: **identifier 解決時の lvar/VLA/static-local 参照ノード構築を
+  `node_utils` に寄せた**。
+  続き738の後も、`expr.c` の `build_lvar_or_vla_node()` が
+  `lvar_t` から識別子参照用 `ND_LVAR` / static local 用 `ND_GVAR` を作るときに、
+  pointer-like 判定、VLA effective deref、`inner_deref_size` / `next_deref_size`、
+  `is_pointer` を直接決めていた。
+
+  根本対応として `psx_node_new_lvar_identifier_ref_for()` を追加し、
+  static local lowering と通常 lvar/VLA identifier ref の metadata 初期化を
+  `node_utils` 側の constructor に集約した。
+  `resolve_identifier()` は `annotate_lvar_usage_node()` へ渡す node を作るだけになり、
+  識別子解決本体から lvar/VLA 型 metadata の正本コピーが外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き738: **lvar expression ref と member-offset lvar ref の metadata 初期化を
   `node_utils` に寄せた**。
   続き737の後も、`expr.c` には `new_typed_lvar_ref()` と

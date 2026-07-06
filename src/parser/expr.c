@@ -4807,66 +4807,6 @@ static node_t *build_byref_param_node(lvar_t *var) {
   return (node_t *)deref;
 }
 
-// 通常のローカル変数 / VLA: lvar から型属性をコピーした ND_LVAR ノードを作る。
-// VLA や配列は「ポインタとして扱う」分岐があり、deref_size / inner_deref_size が
-// 多次元 VLA / outer_stride によって変わる。
-static node_t *build_lvar_or_vla_node(lvar_t *var) {
-  /* `static` ローカル: 実体はグローバルに lowering されているので、
-   * ローカル参照ではなく ND_GVAR を返す。 */
-  if (var->is_static_local && var->static_global_name) {
-    int sz = var->size > 0 ? var->size : var->elem_size;
-    return psx_node_new_static_local_gvar_for(var, sz);
-  }
-  int lvar_is_pointer = var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
-                        (var->size > var->elem_size) ||
-                        /* 配列へのポインタ `T (*p)[N]`: size==8、outer_stride>0。
-                         * 要素 struct が 8B のとき `size > elem_size` (8>8) が偽になり
-                         * ポインタと認識されず subscript が E3064 になっていた。 */
-                        (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
-                        /* `struct T *p` 仮引数: size == elem_size == 8 でも
-                         * is_tag_pointer が立つのでこれをポインタとして認識する。 */
-                        var->is_tag_pointer ||
-                        /* `double *p` / `float *p`: size == elem_size == 8 で上の
-                         * size>elem_size 判定に漏れるため、fp ポインタの印である
-                         * pointee_fp_kind でポインタと認識する。 */
-                        var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
-  /* type_size はポインタなら 8。`struct T *p` は elem_size に pointee の struct
-   * サイズ (例 16) が入っているため、is_tag_pointer を見ずに elem_size を使うと
-   * sizeof が誤り、代入が struct コピー扱いされ隣接スタックを破壊する。 */
-  node_t *n = psx_node_new_lvar_typed_for(var,
-      lvar_is_pointer ? 8 : var->elem_size);
-  // 多次元VLA: outer_strideが設定されていれば外側サブスクリプトストライドとして使用
-  // runtime inner (outer_stride=0): deref_sizeは0のまま (vla_row_stride_frame_offで実行時参照)
-  int vla_effective_deref = 0;
-  if (lvar_is_pointer) {
-    vla_effective_deref = (var->outer_stride > 0) ? var->outer_stride
-                            : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
-  }
-  as_lvar(n)->mem.deref_size = vla_effective_deref;
-  // 2D VLA / 多次元配列param: サブスクリプト結果の要素サイズ (次の次元のstride, 0=スカラ)
-  // 3D 配列パラメータ (mid_stride > 0) では inner_deref_size=mid_stride、
-  // next_deref_size=elem_size とすることで 2 段サブスクリプト後の要素アクセスに繋ぐ。
-  int vla_is_multidim = (var->outer_stride != var->elem_size) ||
-                        (var->vla_row_stride_frame_off != 0);
-  if (var->mid_stride > 0) {
-    as_lvar(n)->mem.inner_deref_size = (short)var->mid_stride;
-    as_lvar(n)->mem.next_deref_size = (short)var->elem_size;
-  } else if (var->vla_strides_remaining > 0) {
-    /* N-D VLA (N>=3): 1 段目は vla_row (runtime)、subscript で vla_row が +=8 シフトし
-     * remaining が消費される。各段の result deref に「中間配列である」と知らせるため
-     * inner_deref_size=elem を立てる (2D VLA と同じ。vla_rsf が立つ間は runtime stride が
-     * 優先されるので、inner_deref_size の値そのものは stride 計算に使われない。subscript の
-     * 最終段で vla_row=0 に転じた後は、deref_size=elem として subscript_base_address_of が
-     * 「まだ中間配列」と認識し正しく lhs (address) を返せる)。 */
-    as_lvar(n)->mem.inner_deref_size = (short)var->elem_size;
-    as_lvar(n)->mem.next_deref_size = (short)var->elem_size;
-  } else {
-    as_lvar(n)->mem.inner_deref_size = vla_is_multidim ? var->elem_size : 0;
-  }
-  as_lvar(n)->mem.is_pointer = lvar_is_pointer;
-  return n;
-}
-
 // 識別子トークン tok を解決して node を返す:
 //   1. __func__ → 暗黙文字列リテラル
 //   2. 未定義 + enum const → 定数
@@ -4932,7 +4872,7 @@ static node_t *resolve_identifier(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (var->is_byref_param) {
     return annotate_lvar_usage_node(build_byref_param_node(var), var, ctx);
   }
-  return annotate_lvar_usage_node(build_lvar_or_vla_node(var), var, ctx);
+  return annotate_lvar_usage_node(psx_node_new_lvar_identifier_ref_for(var), var, ctx);
 }
 
 static node_t *primary_with_compound_addr_context(int compound_addr_context, expr_parse_ctx_t *ctx) {

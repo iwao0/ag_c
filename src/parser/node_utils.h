@@ -77,6 +77,7 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
 node_t *psx_node_new_lvar_expr_ref_for(struct lvar_t *var, int is_pointer);
+node_t *psx_node_new_lvar_identifier_ref_for(struct lvar_t *var);
 node_t *psx_node_new_member_lvar_ref_for(struct lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,

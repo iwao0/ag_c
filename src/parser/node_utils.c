@@ -2124,6 +2124,49 @@ node_t *psx_node_new_lvar_expr_ref_for(lvar_t *var, int is_pointer) {
   return (node_t *)node;
 }
 
+static int lvar_is_identifier_pointer_like(const lvar_t *var) {
+  if (!var) return 0;
+  return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
+         (var->size > var->elem_size) ||
+         (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
+         var->is_tag_pointer ||
+         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
+}
+
+node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
+  if (var && var->is_static_local && var->static_global_name) {
+    int sz = var->size > 0 ? var->size : var->elem_size;
+    return psx_node_new_static_local_gvar_for(var, sz);
+  }
+
+  int is_pointer = lvar_is_identifier_pointer_like(var);
+  node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed_for(
+      var, is_pointer ? 8 : (var ? var->elem_size : 0));
+
+  int effective_deref = 0;
+  if (var && is_pointer) {
+    effective_deref = (var->outer_stride > 0) ? var->outer_stride
+                      : (var->vla_row_stride_frame_off ? 0 : var->elem_size);
+  }
+  node->mem.deref_size = (short)effective_deref;
+
+  if (var) {
+    int is_multidim = (var->outer_stride != var->elem_size) ||
+                      (var->vla_row_stride_frame_off != 0);
+    if (var->mid_stride > 0) {
+      node->mem.inner_deref_size = (short)var->mid_stride;
+      node->mem.next_deref_size = (short)var->elem_size;
+    } else if (var->vla_strides_remaining > 0) {
+      node->mem.inner_deref_size = (short)var->elem_size;
+      node->mem.next_deref_size = (short)var->elem_size;
+    } else {
+      node->mem.inner_deref_size = (short)(is_multidim ? var->elem_size : 0);
+    }
+  }
+  node->mem.is_pointer = is_pointer ? 1 : 0;
+  return (node_t *)node;
+}
+
 node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,
