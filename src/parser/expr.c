@@ -4858,75 +4858,7 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
       psx_node_init_gvar_array_addr_metadata(addr, gv);
       return (node_t *)addr;
     }
-    node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
-    gvar_node->mem.base.kind = ND_GVAR;
-    gvar_node->mem.type_size = gv->type_size;
-    gvar_node->mem.deref_size = gv->deref_size;
-    /* 配列へのポインタ `T (*pa)[N]...` グローバル: gv は 8B スカラポインタ (type_size=8) で
-     * outer_stride>0。第1subscript `pa[i]` は pointee 全体 (outer_stride) をステップし、以降
-     * mid_stride / extra_strides / deref_size(=elem) で内側次元をステップする。多次元配列の
-     * 配列分岐 (上の ND_ADDR) と同じ outer/mid/extra マッピングを scalar ND_GVAR に適用する。
-     * pa のポインタ値は type_size=8 でロードされ、それに添字が加算される。 */
-    if (gv->outer_stride > 0 && !gv->is_array) {
-      gvar_node->mem.deref_size = (short)gv->outer_stride;
-      if (gv->mid_stride > 0) {
-        gvar_node->mem.inner_deref_size = (short)gv->mid_stride;
-        if (gv->extra_strides_count > 0) {
-          gvar_node->mem.next_deref_size = (short)gv->extra_strides[0];
-          for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
-            gvar_node->mem.extra_strides[i - 1] = gv->extra_strides[i];
-          }
-          gvar_node->mem.extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
-          gvar_node->mem.extra_strides_count = gv->extra_strides_count;
-        } else {
-          gvar_node->mem.next_deref_size = (short)gv->deref_size;
-        }
-      } else {
-        gvar_node->mem.inner_deref_size = (short)gv->deref_size;
-      }
-    }
-    if (gv->ptr_array_pointee_bytes > 0) {
-      gvar_node->mem.ptr_array_pointee_bytes = gv->ptr_array_pointee_bytes;
-      gvar_node->mem.base_deref_size = gv->pointee_elem_size > 0 ? gv->pointee_elem_size : gv->deref_size;
-      gvar_node->mem.deref_size = 8;
-    }
-    /* タグ情報 (struct / union): build_member_access が `.x` を解決するときに
-     * psx_node_get_tag_type 経由でここを読む。 */
-    gvar_node->mem.tag_kind = gv->tag_kind;
-    gvar_node->mem.tag_name = gv->tag_name;
-    gvar_node->mem.tag_len = gv->tag_len;
-    gvar_node->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
-    gvar_node->mem.is_tag_pointer = gv->is_tag_pointer;
-    gvar_node->mem.is_const_qualified = gv->is_const_qualified;
-    gvar_node->mem.is_volatile_qualified = gv->is_volatile_qualified;
-    if (gv->is_tag_pointer) gvar_node->mem.is_pointer = 1;
-    /* 多段ポインタグローバル (`int **gp`): `*gp` は int* (8B) を返すので、参照ノードの
-     * deref_size を 8 に、base_deref_size を要素サイズ (gv->deref_size) にし、
-     * pointer_qual_levels を立てる。build_unary_deref_node の pql>=2 分岐がこれを見て
-     * 中間 deref を 8B ポインタロードにする (ローカル `int **lp` と同じ表現)。
-     * pointer-to-array (outer_stride>0) は別表現なので除外。 */
-    if (gv->pointer_qual_levels >= 2 && gv->outer_stride == 0) {
-      gvar_node->mem.base_deref_size = gv->deref_size;
-      gvar_node->mem.deref_size = 8;
-      gvar_node->mem.pointer_qual_levels = gv->pointer_qual_levels;
-      gvar_node->mem.is_pointer = 1;
-    }
-    /* 浮動小数スカラのグローバル: fp_kind を node に伝播。IR builder が
-     * これを見て IR_TY_F32/F64 として load を発行する。 */
-    gvar_node->mem.base.fp_kind = gv->fp_kind;
-    /* 関数ポインタグローバル `double (*gops)(double)`: 戻り型 fp_kind を pointee_fp_kind
-     * に伝播。parse_call_postfix がこれを funcall に載せ、戻り値を d0 で読む。 */
-    gvar_node->mem.pointee_fp_kind = gv->pointee_fp_kind;
-    psx_node_copy_funcptr_metadata_from_gvar(&gvar_node->mem, gv);
-    /* _Bool スカラ: 代入/複合代入の正規化 (C11 6.3.1.2) のため is_bool を伝播。 */
-    gvar_node->mem.is_bool = gv->is_bool;
-    /* unsigned スカラ: load を zero-extend するため is_unsigned を伝播。 */
-    gvar_node->mem.is_unsigned = gv->is_unsigned;
-    gvar_node->mem.is_long_double = gv->is_long_double;
-    gvar_node->name = gv->name;
-    gvar_node->name_len = gv->name_len;
-    gvar_node->is_thread_local = gv->is_thread_local;
-    return (node_t *)gvar_node;
+    return psx_node_new_gvar_for(gv);
   }
   return NULL;
 }

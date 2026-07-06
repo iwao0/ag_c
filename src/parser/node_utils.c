@@ -1228,6 +1228,58 @@ void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
       dst, src->funcptr_ret_pointee_array);
 }
 
+void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const global_var_t *gv) {
+  if (!mem) return;
+  *mem = (node_mem_t){0};
+  mem->base.kind = ND_GVAR;
+  if (!gv) return;
+  mem->type_size = (short)gv->type_size;
+  mem->deref_size = gv->deref_size;
+  if (gv->outer_stride > 0 && !gv->is_array) {
+    mem->deref_size = (short)gv->outer_stride;
+    if (gv->mid_stride > 0) {
+      mem->inner_deref_size = (short)gv->mid_stride;
+      if (gv->extra_strides_count > 0) {
+        mem->next_deref_size = (short)gv->extra_strides[0];
+        for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
+          mem->extra_strides[i - 1] = gv->extra_strides[i];
+        }
+        mem->extra_strides[gv->extra_strides_count - 1] = (short)gv->deref_size;
+        mem->extra_strides_count = gv->extra_strides_count;
+      } else {
+        mem->next_deref_size = (short)gv->deref_size;
+      }
+    } else {
+      mem->inner_deref_size = (short)gv->deref_size;
+    }
+  }
+  if (gv->ptr_array_pointee_bytes > 0) {
+    mem->ptr_array_pointee_bytes = gv->ptr_array_pointee_bytes;
+    mem->base_deref_size = gv->pointee_elem_size > 0 ? gv->pointee_elem_size : gv->deref_size;
+    mem->deref_size = 8;
+  }
+  mem->tag_kind = gv->tag_kind;
+  mem->tag_name = gv->tag_name;
+  mem->tag_len = gv->tag_len;
+  mem->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+  mem->is_tag_pointer = gv->is_tag_pointer ? 1 : 0;
+  mem->is_const_qualified = gv->is_const_qualified ? 1 : 0;
+  mem->is_volatile_qualified = gv->is_volatile_qualified ? 1 : 0;
+  if (gv->is_tag_pointer) mem->is_pointer = 1;
+  if (gv->pointer_qual_levels >= 2 && gv->outer_stride == 0) {
+    mem->base_deref_size = gv->deref_size;
+    mem->deref_size = 8;
+    mem->pointer_qual_levels = gv->pointer_qual_levels;
+    mem->is_pointer = 1;
+  }
+  mem->base.fp_kind = gv->fp_kind;
+  mem->pointee_fp_kind = gv->pointee_fp_kind;
+  psx_node_copy_funcptr_metadata_from_gvar(mem, gv);
+  mem->is_bool = gv->is_bool ? 1 : 0;
+  mem->is_unsigned = gv->is_unsigned ? 1 : 0;
+  mem->is_long_double = gv->is_long_double ? 1 : 0;
+}
+
 void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
                                             int is_tag_pointer) {
   if (!addr || !var) return;
@@ -1980,6 +2032,17 @@ node_t *psx_node_new_lvar_for(lvar_t *var) {
 node_t *psx_node_new_lvar_typed_for(lvar_t *var, int type_size) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_for(var);
   node->mem.type_size = type_size;
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_gvar_for(global_var_t *gv) {
+  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+  psx_node_init_gvar_ref_metadata(&node->mem, gv);
+  if (gv) {
+    node->name = gv->name;
+    node->name_len = gv->name_len;
+    node->is_thread_local = gv->is_thread_local ? 1 : 0;
+  }
   return (node_t *)node;
 }
 

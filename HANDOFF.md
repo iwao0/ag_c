@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き732: gvar 配列 address metadata 初期化の集約）
+最終更新: 2026-07-06（続き733: gvar scalar 参照 metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き733: **gvar scalar 参照の `ND_GVAR` metadata 初期化を `node_utils` に集約した**。
+  続き732で配列グローバルの address metadata は helper 化したが、非配列 gvar 参照は
+  `try_build_global_var_node()` 内で type_size / deref_size / tag / qualifier /
+  pointer-to-array stride / pointer-array carry / funcptr / bool / unsigned /
+  long double metadata を手で組み立てていた。
+
+  根本対応として `psx_node_init_gvar_ref_metadata()` と
+  `psx_node_new_gvar_for()` を追加し、scalar gvar 参照 node の構築をこの constructor に寄せた。
+  pointer-to-array の stride mapping、array-of-pointer-to-array の
+  `ptr_array_pointee_bytes` carry、多段 pointer の `pointer_qual_levels` carry は既存挙動を
+  そのまま helper 側に移している。
+  これで `try_build_global_var_node()` の非配列分岐からも `global_var_t` metadata の個別コピーが消え、
+  `expr.c` は gvar の検索と array/scalar の分岐だけを持つ形に近づいた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き732: **gvar 配列の `ND_ADDR` metadata 初期化を `node_utils` に集約した**。
   続き731の後も、`try_build_global_var_node()` の配列グローバル分岐は
   `global_var_t` から address node へ tag / qualifier / stride / pointee fp/unsigned /
