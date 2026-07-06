@@ -1212,8 +1212,24 @@ int psx_node_pointee_is_const_qualified(node_t *node) {
       type->base) {
     return type->base->is_const_qualified ? 1 : 0;
   }
-  node_mem_t *mem = node_mem_view(node);
-  return mem ? mem->is_const_qualified : 0;
+  switch (node->kind) {
+    case ND_COMMA:
+    case ND_STMT_EXPR:
+      return psx_node_pointee_is_const_qualified(node->rhs);
+    case ND_ADD:
+    case ND_SUB:
+      return psx_node_pointee_is_const_qualified(node->lhs) ||
+             psx_node_pointee_is_const_qualified(node->rhs);
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_pointee_is_const_qualified(node->lhs);
+    default: {
+      node_mem_t *mem = node_mem_view(node);
+      return mem ? mem->is_const_qualified : 0;
+    }
+  }
 }
 
 int psx_node_pointee_is_volatile_qualified(node_t *node) {
@@ -1223,8 +1239,24 @@ int psx_node_pointee_is_volatile_qualified(node_t *node) {
       type->base) {
     return type->base->is_volatile_qualified ? 1 : 0;
   }
-  node_mem_t *mem = node_mem_view(node);
-  return mem ? mem->is_volatile_qualified : 0;
+  switch (node->kind) {
+    case ND_COMMA:
+    case ND_STMT_EXPR:
+      return psx_node_pointee_is_volatile_qualified(node->rhs);
+    case ND_ADD:
+    case ND_SUB:
+      return psx_node_pointee_is_volatile_qualified(node->lhs) ||
+             psx_node_pointee_is_volatile_qualified(node->rhs);
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return psx_node_pointee_is_volatile_qualified(node->lhs);
+    default: {
+      node_mem_t *mem = node_mem_view(node);
+      return mem ? mem->is_volatile_qualified : 0;
+    }
+  }
 }
 
 int psx_node_is_unsigned_type(node_t *node) {

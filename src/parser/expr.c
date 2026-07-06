@@ -3502,19 +3502,15 @@ static node_t *build_unary_deref_node(node_t *operand) {
   if (operand && (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
                   operand->kind == ND_DEREF || operand->kind == ND_ADDR)) {
     node_mem_t *operand_mem = (node_mem_t *)operand;
-    if (operand_mem->is_const_qualified) node->is_const_qualified = 1;
-    if (operand_mem->is_volatile_qualified) node->is_volatile_qualified = 1;
     if (operand_mem->ptr_array_pointee_bytes > 0) {
       node->ptr_array_pointee_bytes = operand_mem->ptr_array_pointee_bytes;
       if (node->base_deref_size == 0 && operand_mem->base_deref_size > 0) {
         node->base_deref_size = operand_mem->base_deref_size;
       }
     }
-  } else if (operand && operand->kind == ND_FUNCALL) {
-    node_func_t *fn = (node_func_t *)operand;
-    if (funcall_ret_pointee_const(fn)) node->is_const_qualified = 1;
-    if (funcall_ret_pointee_volatile(fn)) node->is_volatile_qualified = 1;
   }
+  if (psx_node_pointee_is_const_qualified(operand)) node->is_const_qualified = 1;
+  if (psx_node_pointee_is_volatile_qualified(operand)) node->is_volatile_qualified = 1;
   if (pql >= 2) {
     node->is_pointer = 1;
     int new_pql = pql - 1;
@@ -4280,7 +4276,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
      * でない」。旧条件 `pql==0 && inner_ds==0` は `unsigned char *p` のように単段ポインタ
      * で pql=1 / inner_ds=elem(1) になるケースを最終要素と認識できず、`p[i]` が ldrsb で
      * 符号拡張されていた (es>inner_ds 判定は fp の中間行判定と対称)。 */
-    if (base_mem && base_mem->pointee_is_unsigned) {
+    if (psx_node_pointee_is_unsigned(node)) {
       int is_final_scalar = !deref->is_pointer && !(inner_ds > 0 && es > inner_ds);
       if (is_final_scalar) deref->is_unsigned = 1;
       else                 deref->pointee_is_unsigned = 1;
@@ -4307,23 +4303,9 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
         PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
       }
-      if (base_mem->is_const_qualified) deref->is_const_qualified = 1;
-      if (base_mem->is_volatile_qualified) deref->is_volatile_qualified = 1;
     }
-    /* `unsigned char *g(); g()[i]`: 関数のポインタ戻り値の pointee が unsigned なら
-     * zero-extend load させる (base_mem は ND_FUNCALL を拾わないので別途)。 */
-    if (node->kind == ND_FUNCALL) {
-      psx_type_t *func_type = psx_node_get_type(node);
-      if (func_type && func_type->kind == PSX_TYPE_POINTER) {
-        if (func_type->base && func_type->base->is_unsigned) {
-          if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
-          else                           deref->pointee_is_unsigned = 1;
-        }
-        node_func_t *fn = (node_func_t *)node;
-        if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
-        if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
-      }
-    }
+    if (psx_node_pointee_is_const_qualified(node)) deref->is_const_qualified = 1;
+    if (psx_node_pointee_is_volatile_qualified(node)) deref->is_volatile_qualified = 1;
     /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で
      * array_len=0 のスカラに潰れ pointee_is_unsigned を持てない。base 自体が
      * unsigned スカラ (is_unsigned) を最終要素まで添字した場合も zero-extend する。

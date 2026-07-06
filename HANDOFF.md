@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き723: pointee bool/void/unsigned 判定の型ヘルパー集約）
+最終更新: 2026-07-06（続き724: pointee const/volatile/unsigned 伝播の型ヘルパー集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,29 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き724: **単項 deref / subscript の pointee const/volatile/unsigned 伝播を型ヘルパーへ集約した**。
+  続き723の後、`build_unary_deref_node()` と `build_subscript_deref()` には
+  `node_mem_t` の `is_const_qualified` / `is_volatile_qualified` や
+  `pointee_is_unsigned` を直接読む分岐と、`ND_FUNCALL` だけを手で特別扱いする
+  const/volatile 伝播が残っていた。
+
+  根本対応として、単項 deref は `psx_node_pointee_is_const_qualified()` /
+  `psx_node_pointee_is_volatile_qualified()` 経由で qualifier を設定する形に寄せた。
+  subscript も `psx_node_pointee_is_unsigned()` と同じ qualifier helper を使い、
+  呼び出し戻り値だけの局所分岐を削除した。
+  併せて `node_utils` 側の pointee const/volatile helper は
+  pointer/array の `psx_type_t.base` を優先しつつ、comma / stmt expr / ADD / SUB /
+  inc/dec を unsigned/fp kind と同じ規則で辿るようにした。
+  これで expr 側は旧 `node_mem_t` の細部ではなく、型ヘルパーの入口から
+  pointee qualifier を読む。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `make -j4 build/test_wasm32_e2e` = build pass、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き723: **単項 deref / subscript の pointee bool/void/unsigned 判定を型ヘルパーへ集約した**。
   続き722の後、`build_unary_deref_node()` には `node_pointee_is_unsigned()` /
   `node_pointee_is_void()` というローカル helper が残り、`node_mem_t` を直接読んでいた。
