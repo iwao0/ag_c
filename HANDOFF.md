@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き711: shift truncation helper の契約名と公開境界コメントを整理）
+最終更新: 2026-07-06（続き715: AST kind 名を ND_CAST へ改名）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,78 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
 	  `git diff --check` = **green**、
 	  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き715: **AST kind 名を `ND_CAST` へ改名**。
+  続き712-714で `ND_PTR_CAST` は pointer 専用ノードではなく明示 cast wrapper になったが、
+  enum 名そのものが `ND_PTR_CAST` のままだった。コメントだけ直しても、分岐追加時に
+  「これは pointer cast 専用」と誤読される余地が残るため、compiled source / parser unit test /
+  fixture コメント内の `ND_PTR_CAST` を `ND_CAST` へ機械的に rename した。
+  これで AST kind 名、IR helper 名 (`build_node_cast_wrapper()`)、`ast.h` コメントが同じ設計語彙に揃った。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `rg -n "ND_PTR_CAST" src test -g'*.c' -g'*.h'` = no matches、
+  `git diff --check` = green。
+- 続き714: **cast wrapper 化に合わせてコメントとIR関数名を整理**。
+  続き712-713で `ND_CAST` は pointer 専用ではなく、
+  pointer cast の pointee metadata と integer cast の result 幅/signedness を保持する
+  明示 cast wrapper になった。一方で `ast.h` の enum コメントはまだ
+  「`(T*)expr` ポインタキャスト。codegen は lhs をそのまま評価する」と書いており、
+  IR 側の static helper 名も `build_node_ptr_cast()` のままだった。
+  これは将来の修正者が cast wrapper を pointer 専用と誤読し、また operand mutation や
+  個別分岐を増やす原因になるため、`ast.h` のコメントを cast wrapper の契約へ更新し、
+  IR helper を `build_node_cast_wrapper()` に rename した。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き713: **pointer→integer cast も operand mutation から wrapper へ移行**。
+  続き712で 4B scalar cast は wrapper 化したが、`(int)p` / `(long)p` のような
+  pointer→integer cast にはまだ `((node_mem_t *)operand)->is_pointer = 0` で
+  operand 自体の pointer 情報を消す旧経路が残っていた。これは cast 結果を整数にするために
+  元の `p` の型情報まで壊す形で、同じ shared-AST mutation 問題だった。
+  parser regression として
+  `int cast_pointer_int(int *p) { return (int)p; }` と
+  `long cast_pointer_long(int *p) { return (long)p; }` を追加し、
+  cast result は non-pointer の `ND_CAST`、その lhs の `p` は pointer のまま残ることを固定した。
+  実装では `wrap_i32_scalar_cast()` を汎用 `wrap_integer_cast_result()` に置き換え、
+  4B scalar と pointer→integer の両方を同じ scalar result wrapper で表すようにした。
+  併せて `ir_builder.c` の `build_node_cast_wrapper()` は、`ND_CAST` を単なる metadata wrapper として
+  lhs をそのまま返すだけでなく、wrapper が持つ `type_size` / pointer-like metadata から target IR 型を計算し、
+  必要なら `coerce_to_type_ex()` で明示 cast result 型へ正規化するようにした。
+  これで `apply_cast()` 内の operand 直接 signedness/pointer mutation は通常 cast 経路から消え、
+  `psx_node_set_unsigned(operand, ...)` は現状 `(long)` 定数 folding の符号ラベル設定だけに残る。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
+- 続き712: **4B scalar cast の signedness を operand mutation から wrapper へ移行**。
+  続き708-711で shift truncation 側は helper 化したが、`apply_cast()` の `(int)` 経路には
+  まだ `psx_node_set_unsigned(operand, 0)` で operand 自体を書き換える処理が残っていた。
+  これは `(int)u` の cast 結果を signed にするために、元の `unsigned u` の AST ノードまで
+  signed 化してしまう浅い対処だった。実際に parser regression として
+  `int cast_unsigned_local(void) { unsigned u; return (int)u; }` を追加し、
+  旧実装では return の cast wrapper の lhs (`u`) が unsigned 値域でなくなることを確認した。
+  根本対応として `wrap_integer_cast_result()` を追加し、4B scalar の `(int)/(signed)/(unsigned)` は
+  operand を mutation せず、`ND_CAST(type_size=4, is_unsigned=target)` wrapper が
+  cast 結果の signedness を持つ形へ統一した。これにより、元 operand の load/型情報は保持し、
+  比較・除算・conversion helper が読む cast 結果 signedness は wrapper 側で表す。
+  続き713で pointer→integer の旧互換経路も同じ wrapper 方針へ移した。
+  確認は
+  `make -j4 build/test_parser` = pass、
+  `./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e` = pass、
+  `./build/test_e2e` = `1193/1193 pass`、
+  `./build/test_wasm32_e2e` = `1188 compiled, 1188 executed`、
+  `git diff --check` = green。
 - 続き711: **shift truncation helper の契約名と公開境界コメントを整理**。
   続き709で追加した shift-based truncation 生成 helper は、単なる truncation ではなく
   signed target なら符号拡張、unsigned target ならゼロ拡張まで含む AST を作る。

@@ -457,7 +457,7 @@ static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node);
-static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node);
+static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node);
 
 /* build_stmt の case 別ヘルパ群 (build_expr 分割と同パターン)。 */
@@ -765,7 +765,7 @@ static ir_val_t build_expr(ir_build_ctx_t *ctx, node_t *node) {
     case ND_POST_DEC: return build_node_inc_dec(ctx, node);
     case ND_VA_ARG_AREA: return build_node_va_arg_area(ctx, node);
     case ND_COMMA: return build_node_comma(ctx, node);
-    case ND_PTR_CAST: return build_node_ptr_cast(ctx, node);
+    case ND_CAST: return build_node_cast_wrapper(ctx, node);
     case ND_CREAL:
     case ND_CIMAG: return build_node_creal_cimag(ctx, node);
     case ND_VLA_ALLOC: return build_node_vla_alloc(ctx, node);
@@ -799,7 +799,7 @@ static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
   switch (node->kind) {
     case ND_FUNCREF:
       return build_node_funcref_with_sig(ctx, node, expected_sig);
-    case ND_PTR_CAST:
+    case ND_CAST:
       if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
                         node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
         return build_expr_with_funcptr_sig(ctx, node->lhs, expected_sig);
@@ -2658,9 +2658,10 @@ static ir_val_t build_node_va_arg_area(ir_build_ctx_t *ctx, node_t *node) {
   return inst->dst;
 }
 
-static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
-  /* (type *)expr ポインタキャスト。値は変えず、後段の deref 用に
-   * pointee_fp_kind 等を保持するためのラッパ。IR では lhs をそのまま eval。 */
+static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
+  /* Cast wrapper. Pointer casts mainly carry pointee metadata for later deref,
+   * while scalar integer casts use the same node shape to keep the operand's
+   * original type intact and expose the cast result type. */
   if (!node->lhs) return ir_val_none();
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
@@ -2686,6 +2687,13 @@ static ir_val_t build_node_ptr_cast(ir_build_ctx_t *ctx, node_t *node) {
     sx->src1 = v;
     ir_func_append_inst(ctx->f, sx);
     return ir_val_vreg(d, IR_TY_I64);
+  }
+  int target_size = cast->type_size > 0 ? cast->type_size : ps_node_type_size(node);
+  ir_type_t target_ty = scalar_value_type(target_size, mem_is_pointer_like(cast));
+  if (!is_fp_type(v.type) && v.type != target_ty) {
+    return coerce_to_type_ex(ctx, v, target_ty,
+                             psx_node_conversion_value_is_unsigned(node),
+                             psx_node_conversion_value_is_unsigned(node->lhs));
   }
   return v;
 }

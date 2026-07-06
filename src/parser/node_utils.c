@@ -15,11 +15,11 @@ static int node_is_long_long(node_t *node);
 static int is_mem_node_kind(node_kind_t kind) {
   return kind == ND_LVAR || kind == ND_GVAR || kind == ND_DEREF ||
          kind == ND_ASSIGN || kind == ND_ADDR || kind == ND_STRING ||
-         kind == ND_PTR_CAST;
+         kind == ND_CAST;
 }
 
 static int node_kind_has_explicit_cast_type(node_kind_t kind) {
-  return kind == ND_PTR_CAST || kind == ND_FP_TO_INT || kind == ND_INT_TO_FP ||
+  return kind == ND_CAST || kind == ND_FP_TO_INT || kind == ND_INT_TO_FP ||
          kind == ND_FNEG || kind == ND_CREAL || kind == ND_CIMAG;
 }
 
@@ -370,7 +370,7 @@ static node_mem_t *funcall_callee_mem(node_func_t *fn) {
     case ND_GVAR:
     case ND_DEREF:
     case ND_ADDR:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return (node_mem_t *)fn->callee;
     default:
       return NULL;
@@ -556,7 +556,7 @@ psx_type_t *psx_node_get_type(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return type_from_mem(as_mem(node));
     case ND_COMMA:
     case ND_STMT_EXPR:
@@ -663,7 +663,7 @@ int ps_node_type_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return as_mem(node)->type_size;
     case ND_COMMA:
       return ps_node_type_size(node->rhs);
@@ -767,7 +767,7 @@ int ps_node_deref_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
     {
       int s = psx_type_deref_size(psx_node_get_type(node));
       return s > 0 ? s : as_mem(node)->deref_size;
@@ -845,7 +845,7 @@ int ps_node_is_pointer(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return psx_type_is_pointer(psx_node_get_type(node)) || as_mem(node)->is_pointer;
     case ND_COMMA:
       return ps_node_is_pointer(node->rhs);
@@ -897,7 +897,7 @@ int psx_node_pointer_qual_levels(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return as_mem(node)->pointer_qual_levels;
     case ND_COMMA:
       return psx_node_pointer_qual_levels(node->rhs);
@@ -938,7 +938,7 @@ int psx_node_base_deref_size(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return as_mem(node)->base_deref_size;
     case ND_COMMA:
       return psx_node_base_deref_size(node->rhs);
@@ -976,7 +976,7 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return (tk_float_kind_t)as_mem(node)->pointee_fp_kind;
     case ND_COMMA:
       return psx_node_pointee_fp_kind(node->rhs);
@@ -1056,7 +1056,7 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
       case ND_DEREF:
       case ND_ADDR:
       case ND_STRING:
-      case ND_PTR_CAST:
+      case ND_CAST:
         kind = as_mem(node)->tag_kind;
         name = as_mem(node)->tag_name;
         len = as_mem(node)->tag_len;
@@ -1173,7 +1173,7 @@ int psx_node_get_tag_scope_depth(node_t *node) {
     case ND_DEREF:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST:
+    case ND_CAST:
     case ND_ASSIGN:
       p1 = as_mem(node)->tag_scope_depth_p1;
       break;
@@ -1210,7 +1210,7 @@ static int node_is_unsigned(node_t *node) {
     case ND_DEREF:
     case ND_ASSIGN:
       return psx_type_is_unsigned(psx_node_get_type(node)) || as_mem(node)->is_unsigned;
-    case ND_PTR_CAST:
+    case ND_CAST:
       return psx_type_is_unsigned(psx_node_get_type(node)) || as_mem(node)->is_unsigned || node->is_unsigned;
     case ND_TERNARY: {
       psx_type_t *type = psx_node_get_type(node);
@@ -1248,7 +1248,7 @@ static int node_is_long_long(node_t *node) {
     case ND_DEREF:
     case ND_ASSIGN:
     case ND_ADDR:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return (psx_node_get_type(node) && psx_node_get_type(node)->is_long_long) ||
              as_mem(node)->is_long_long ? 1 : 0;
     case ND_TERNARY: {
@@ -1333,7 +1333,7 @@ void psx_node_set_unsigned(node_t *node, int is_unsigned) {
     case ND_LVAR: as_lvar(node)->mem.is_unsigned = u; break;
     case ND_GVAR:
     case ND_DEREF:
-    case ND_PTR_CAST:
+    case ND_CAST:
     case ND_ASSIGN:
       as_mem(node)->is_unsigned = u; break;
     default: node->is_unsigned = u; break;
@@ -1483,7 +1483,7 @@ static int node_pointee_is_const(node_t *node) {
     case ND_ASSIGN:
     case ND_ADDR:
     case ND_STRING:
-    case ND_PTR_CAST: {
+    case ND_CAST: {
       node_mem_t *m = (node_mem_t *)node;
       return m->is_tag_pointer && m->is_const_qualified;
     }

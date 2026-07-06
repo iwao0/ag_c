@@ -2,7 +2,7 @@
 // が、キャストで pointee サイズを更新せず元ポインタの要素サイズでロードしていた。
 // `*(int*)(charptr + 4)` が char サイズ (1 バイト) で読まれて化けていた
 // (一旦 `int *p = (int*)...;` と変数に入れると変数の型で正しく動いていた)。
-// スカラ整数型への単段ポインタキャストを ND_PTR_CAST で deref_size 更新して修正。
+// スカラ整数型への単段ポインタキャストを ND_CAST で deref_size 更新して修正。
 #include <assert.h>
 int main(void) {
   int data[4] = {0x01020304, 0x05060708, 0x090A0B0C, 0x0D0E0F10};

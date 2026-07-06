@@ -2,7 +2,7 @@
 // 32bit で計算されて符号なし 2^32 ラップマスクで切り詰められていた
 // (`3e9 + 3e9` が 6e9 でなく 6e9-2^32 に)。`(long)` キャストは type_size を 8 に
 // 広げない no-op で、二項演算の result_ty が I32 になるのが原因。
-// `(long)unsigned` を ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入して修正
+// `(long)unsigned` を ND_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入して修正
 // (signed の (long) は coerce の SEXT で従来通り正しい)。
 #include <assert.h>
 int main(void) {

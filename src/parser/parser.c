@@ -2168,7 +2168,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         sym = fr->funcname;
         sym_len = fr->funcname_len;
       } else if (e && (e->kind == ND_ADDR || e->kind == ND_ADD || e->kind == ND_SUB ||
-                       e->kind == ND_PTR_CAST)) {
+                       e->kind == ND_CAST)) {
         /* `&g` / `&data[n]` / `data + n` 形式: グローバル変数 (配列要素) のアドレスを
          * 要素に置く。resolve_global_addr_init が (シンボル, バイトオフセット) へ
          * 解決する。オフセットは init_values に格納し、codegen が `_sym+off` を出力する。
@@ -2243,9 +2243,9 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
         return resolve_global_addr_init(e->lhs->lhs, sym, sym_len, off);
       }
       return 0;
-    /* `(char*)&g_arr[N]` のような明示キャストは ND_PTR_CAST にラップされる。
+    /* `(char*)&g_arr[N]` のような明示キャストは ND_CAST にラップされる。
      * シンボル+offset 解決には型変換の有無は無関係なので、operand に再帰する。 */
-    case ND_PTR_CAST:
+    case ND_CAST:
       return resolve_global_addr_init(e->lhs, sym, sym_len, off);
     case ND_FUNCREF: {
       node_funcref_t *fr = (node_funcref_t *)e;
@@ -2463,7 +2463,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   } else if (init_expr &&
              (init_expr->kind == ND_ADDR || init_expr->kind == ND_GVAR ||
               init_expr->kind == ND_ADD || init_expr->kind == ND_SUB ||
-              init_expr->kind == ND_PTR_CAST)) {
+              init_expr->kind == ND_CAST)) {
     /* `int *p = &x;` / `int *p = a + 1;` / `int *p = &a[1];` 等の
      * グローバル/配列アドレス + オフセット初期化。 */
     char *asym = NULL; int asym_len = 0; long long aoff = 0;

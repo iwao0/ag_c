@@ -4,7 +4,7 @@
 // `'->' の左辺は構造体/共用体ポインタである必要があります` (E3005) を出していた。
 //
 // 修正: apply_cast のシグネチャに cast_tag_kind/name/len を追加し、
-// is_pointer + cast_tag_kind が TK_STRUCT/TK_UNION のとき ND_PTR_CAST で
+// is_pointer + cast_tag_kind が TK_STRUCT/TK_UNION のとき ND_CAST で
 // 結果をラップして tag 情報と is_tag_pointer=1 を伝播する。
 // (struct V*)void_ptr のようなパターンも動く。
 #include <assert.h>

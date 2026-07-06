@@ -8,7 +8,7 @@
  * 渡し (各 8B = 16B) で渡されて後続スロットから garbage を拾っていた。中間変数経由
  * (`long s = sizeof(arr); printf("%zu", s)`) は scalar 経路なので壊れない。
  *
- * 修正: VLA 全体サイズ + 行サイズの sizeof 返り値を ND_PTR_CAST でラップし、scalar 8B
+ * 修正: VLA 全体サイズ + 行サイズの sizeof 返り値を ND_CAST でラップし、scalar 8B
  * unsigned long として明示。find_owning_lvar の所属判定を回避して variadic 経路で 8B
  * 1 slot として正しく渡される。 */
 #include <assert.h>

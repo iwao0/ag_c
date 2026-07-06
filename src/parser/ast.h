@@ -63,8 +63,8 @@ typedef enum {
                 // 符号ビット反転 (IR_FNEG)。`0.0 - x` だと -0.0 が +0.0 になるため専用ノード。
   ND_VA_ARG_AREA, // 識別子 `__va_arg_area`: stack 上の variadic 引数領域の先頭アドレス。
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
-  ND_PTR_CAST,    // `(T*)expr` ポインタキャスト。codegen は lhs をそのまま評価する。
-                  // node_mem_t の pointee_fp_kind 等を保持して、後段の deref に伝播させる。
+  ND_CAST,       // 明示 cast wrapper。pointer cast では pointee metadata を保持し、
+                 // integer cast では operand を壊さず result 幅/signedness を保持する。
   ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
   ND_CIMAG,       // GNU __imag__ x: 複素数 lhs の虚部 (実数なら 0)。fp_kind=結果型。
   ND_STMT_EXPR,   // GNU statement expression ({ ...; expr })
@@ -158,7 +158,7 @@ struct node_mem_t {
   // (= ポインタ値 load を引き起こす)、配列メンバの場合 ND_ADD (アドレス計算)
   // を返す挙動を切り替えるために使う。
   unsigned int is_scalar_ptr_member : 1;
-  // 1: ND_PTR_CAST が「lhs を I64 へ zero-extend する」ラッパであることを示す。
+  // 1: ND_CAST が「lhs を I64 へ zero-extend する」ラッパであることを示す。
   // `(long)unsigned_int` の zero-extend を IR_ZEXT で明示挿入するために使う
   // (coerce_to_type は常に SEXT のため unsigned の widen に乗れない)。
   unsigned int widen_zext_i64 : 1;

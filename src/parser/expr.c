@@ -90,7 +90,7 @@ static int expr_node_is_long_long_type(node_t *n) {
     case ND_DEREF:
     case ND_ASSIGN:
     case ND_ADDR:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return ((node_mem_t *)n)->is_long_long ? 1 : 0;
     case ND_TERNARY: {
       node_ctrl_t *t = (node_ctrl_t *)n;
@@ -750,7 +750,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   int is_ptr = 0;
   if (control->kind == ND_LVAR) is_ptr = ((node_lvar_t *)control)->mem.is_pointer;
   else if (control->kind == ND_GVAR || control->kind == ND_DEREF || control->kind == ND_ASSIGN ||
-           control->kind == ND_ADDR || control->kind == ND_STRING || control->kind == ND_PTR_CAST) {
+           control->kind == ND_ADDR || control->kind == ND_STRING || control->kind == ND_CAST) {
     is_ptr = ((node_mem_t *)control)->is_pointer;
   }
   if (is_ptr) {
@@ -791,7 +791,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
     if (as_lvar(control)->mem.is_plain_char) gt.is_plain_char = 1;
   } else if (control->kind == ND_GVAR || control->kind == ND_DEREF ||
              control->kind == ND_ASSIGN || control->kind == ND_ADDR ||
-             control->kind == ND_PTR_CAST) {
+             control->kind == ND_CAST) {
     if (((node_mem_t *)control)->is_long_long) gt.is_long_long = 1;
     if (((node_mem_t *)control)->is_plain_char) gt.is_plain_char = 1;
   } else if (expr_node_is_long_long_type(control)) {
@@ -1110,7 +1110,7 @@ static int funcall_ret_pointee_const(node_func_t *fn) {
   }
   if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                      fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
-                     fn->callee->kind == ND_PTR_CAST)) {
+                     fn->callee->kind == ND_CAST)) {
     return ((node_mem_t *)fn->callee)->is_const_qualified ? 1 : 0;
   }
   return 0;
@@ -1123,7 +1123,7 @@ static int funcall_ret_pointee_volatile(node_func_t *fn) {
   }
   if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
                      fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
-                     fn->callee->kind == ND_PTR_CAST)) {
+                     fn->callee->kind == ND_CAST)) {
     return ((node_mem_t *)fn->callee)->is_volatile_qualified ? 1 : 0;
   }
   return 0;
@@ -2552,10 +2552,22 @@ static node_t *wrap_i64_to_i32_trunc_cast(node_t *operand, psx_type_t *cast_type
   node_t *trunc = psx_node_new_shift_trunc_extend(operand, 32, target_unsigned);
 
   node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-  wrap->base.kind = ND_PTR_CAST;
+  wrap->base.kind = ND_CAST;
   wrap->base.lhs = trunc;
   wrap->type_size = 4;
   wrap->is_unsigned = target_unsigned ? 1 : 0;
+  return annotate_cast_type((node_t *)wrap, cast_type);
+}
+
+static node_t *wrap_integer_cast_result(node_t *operand, psx_type_t *cast_type,
+                                        int type_size, int target_unsigned,
+                                        int target_long_long) {
+  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+  wrap->base.kind = ND_CAST;
+  wrap->base.lhs = operand;
+  wrap->type_size = (short)type_size;
+  wrap->is_unsigned = target_unsigned ? 1 : 0;
+  wrap->is_long_long = target_long_long ? 1 : 0;
   return annotate_cast_type((node_t *)wrap, cast_type);
 }
 
@@ -2595,12 +2607,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       /* `(long)unsigned_int` (int 未満幅の unsigned も含む): I64 へ zero-extend する。
        * `(long)` は通常 no-op だが、その場合 `(long)u + (long)u` の二項演算が I32 のまま
        * 計算され、符号なし 32bit ラップマスクで 2^32 を超える和が切り詰められていた。
-       * ND_PTR_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
+       * ND_CAST(widen_zext_i64) でラップし IR_ZEXT を明示挿入する (coerce は常に SEXT
        * で unsigned widen に乗れない)。signed の `(long)` は coerce の SEXT で正しく動くため
        * widen_zext_i64 は立てない。 */
       if (!ps_node_is_pointer(operand)) {
         node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-        wrap->base.kind = ND_PTR_CAST;
+        wrap->base.kind = ND_CAST;
         wrap->base.lhs = operand;
         wrap->type_size = 8;
         wrap->is_unsigned = cast_is_unsigned ? 1 : 0;
@@ -2612,12 +2624,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       }
     }
     /* `(struct V *)x` / `(union U *)x`: tag 情報を後段の `->` 等が読めるよう
-     * ND_PTR_CAST でラップする (operand 自体は他から共有される可能性があるので
+     * ND_CAST でラップする (operand 自体は他から共有される可能性があるので
      * 直接書き換えない)。これで `((struct V*)0)->b` のような offsetof 風や
      * `((struct V*)void_ptr)->m` が動く。 */
     if (is_pointer && (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION)) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.kind = ND_CAST;
       wrap->base.lhs = operand;
       wrap->tag_kind = cast_tag_kind;
       wrap->tag_name = cast_tag_name;
@@ -2630,10 +2642,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       return annotate_cast_type((node_t *)wrap, cast_type);
     }
     // `(float*)X` / `(double*)X` の場合、後段の `*` deref が FP load を出せる
-    // よう pointee_fp_kind を保持する ND_PTR_CAST でラップする。
+    // よう pointee_fp_kind を保持する ND_CAST でラップする。
     if (is_pointer && (type_kind == TK_FLOAT || type_kind == TK_DOUBLE)) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.kind = ND_CAST;
       wrap->base.lhs = operand;
       wrap->pointee_fp_kind = (type_kind == TK_FLOAT) ? TK_FLOAT_KIND_FLOAT
                                                      : TK_FLOAT_KIND_DOUBLE;
@@ -2648,12 +2660,12 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
-     * が立っている場合、後続 deref エラーを誤発生させないよう ND_PTR_CAST で
+     * が立っている場合、後続 deref エラーを誤発生させないよう ND_CAST で
      * ラップして pointee_is_void をクリアする。 */
     if (is_pointer && operand->kind == ND_LVAR &&
         ((node_lvar_t *)operand)->mem.pointee_is_void) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.kind = ND_CAST;
       wrap->base.lhs = operand;
       wrap->is_pointer = 1;
       wrap->pointer_qual_levels = 1;
@@ -2666,7 +2678,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       return annotate_cast_type((node_t *)wrap, cast_type);
     }
     /* `(int *)x` / `(char *)x` など、スカラ整数型への (単段) ポインタキャスト:
-     * 後段の deref / ポインタ算術が新しい要素サイズを使うよう ND_PTR_CAST で
+     * 後段の deref / ポインタ算術が新しい要素サイズを使うよう ND_CAST で
      * deref_size を更新する。これがないとインライン `*(int*)(cp+4)` が元 operand の
      * char サイズ (1) で 1 バイトしかロードしていなかった (変数に代入した場合は
      * 変数の型で正しく動いていた)。多段ポインタ (`int**`) は operand 側の表現を
@@ -2679,13 +2691,13 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     int operand_is_ptr_or_tag = ps_node_is_pointer(operand) ||
                                 ((operand->kind == ND_ADDR || operand->kind == ND_DEREF ||
                                   operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-                                  operand->kind == ND_PTR_CAST) &&
+                                  operand->kind == ND_CAST) &&
                                  ((node_mem_t *)operand)->is_tag_pointer);
     if (is_pointer && cast_elem_size > 0 &&
         operand_is_ptr_or_tag &&
         psx_node_pointer_qual_levels(operand) <= 1) {
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.kind = ND_CAST;
       wrap->base.lhs = operand;
       wrap->is_pointer = 1;
       wrap->pointer_qual_levels = 1;
@@ -2698,19 +2710,14 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       else if (type_kind == TK_DOUBLE) wrap->pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
       return annotate_cast_type((node_t *)wrap, cast_type);
     }
-    /* (long)ptr のようにポインタ→long の明示キャスト: 結果は整数なので
-     * node_mem_t の is_pointer をクリアし、後段の代入/初期化制約検査が
-     * 誤発火しないようにする。 */
-    if (!is_pointer && type_kind == TK_LONG) {
-      if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-          operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
-          operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
-          operand->kind == ND_ASSIGN) {
-        ((node_mem_t *)operand)->is_pointer = 0;
-      }
+    /* (long)ptr のような pointer→integer cast は、operand の pointer 情報を
+     * 壊さずに scalar 結果 wrapper として表す。 */
+    if (!is_pointer && type_kind == TK_LONG && ps_node_is_pointer(operand)) {
+      return wrap_integer_cast_result(operand, cast_type, 8,
+                                      cast_is_unsigned, cast_is_long_long);
     }
     /* `(void*)0xdeadbeefL` のように整数定数をポインタ型へキャストすると、operand は
-     * folding で ND_NUM のまま返る (ND_PTR_CAST にラップされない経路)。後段の
+     * folding で ND_NUM のまま返る (ND_CAST にラップされない経路)。後段の
      * 「ポインタ変数の非ゼロ整数初期化」検査 (C11 6.5.16.1) が誤発火しないよう、
      * NUM ノードにフラグを立てて「これはキャスト経由」と通知する。 */
     if (is_pointer && operand->kind == ND_NUM) {
@@ -2749,29 +2756,11 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
         !ps_node_is_pointer(operand)) {
       return wrap_i64_to_i32_trunc_cast(operand, cast_type, 0);
     }
-    /* ポインタ→整数の明示キャストでは初期化/代入時の制約違反検査を回避するため、
-     * node_mem_t を持つノードの is_pointer をクリアする。 */
-    if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-        operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
-        operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
-        operand->kind == ND_ASSIGN) {
-      ((node_mem_t *)operand)->is_pointer = 0;
-      /* `(int)u` は符号付き int。終端値ノードでは is_unsigned をクリアして後段の
-       * 比較/除算を signed にする (`i < (int)n` が unsigned 比較になっていた)。
-       * binop ノード (シフト等) は is_unsigned が LSR/ASR など自身の演算も兼ねる
-       * ため触れない (`(int)(u>>60)` の LSR を ASR に変えてしまう)。
-       * ただし char/short など int 未満幅の operand では is_unsigned が load の
-       * 符号拡張 (ldrsh/ldrh) も兼ねるため、ここで書き換えると値そのものが化ける
-       * (`(int)(unsigned short)0xFFFF` が -1 に、`(unsigned)(short)-1` が 65535 に)。
-       * sub-int operand は元の load 符号性を保ち、暗黙変換と同じ正しい昇格に任せる。 */
-      if (ps_node_type_size(operand) >= 4) psx_node_set_unsigned(operand, 0);
-    }
     if (ps_node_type_size(operand) >= 4 && !ps_node_is_pointer(operand)) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
-      wrap->base.lhs = operand;
-      wrap->type_size = 4;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_integer_cast_result(operand, cast_type, 4, 0, 0);
+    }
+    if (ps_node_is_pointer(operand)) {
+      return wrap_integer_cast_result(operand, cast_type, 4, 0, 0);
     }
     return annotate_cast_type(operand, cast_type);
   }
@@ -2811,22 +2800,10 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       return annotate_cast_type(masked, cast_type);
     }
     if (op_sz >= 4 && !ps_node_is_pointer(operand)) {
-      node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
-      wrap->base.lhs = operand;
-      wrap->type_size = 4;
-      wrap->is_unsigned = target_unsigned ? 1 : 0;
-      return annotate_cast_type((node_t *)wrap, cast_type);
+      return wrap_integer_cast_result(operand, cast_type, 4, target_unsigned, 0);
     }
-    if (operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-        operand->kind == ND_DEREF || operand->kind == ND_ADDR ||
-        operand->kind == ND_STRING || operand->kind == ND_PTR_CAST ||
-        operand->kind == ND_ASSIGN) {
-      ((node_mem_t *)operand)->is_pointer = 0;
-      /* sub-int operand では is_unsigned 書き換えが load 拡張を壊すため触れない
-       * (上の TK_INT と同じ理由)。int 幅以上のみ符号ラベルを更新する。 */
-      if (ps_node_type_size(operand) >= 4)
-        psx_node_set_unsigned(operand, target_unsigned);
+    if (ps_node_is_pointer(operand)) {
+      return wrap_integer_cast_result(operand, cast_type, 4, target_unsigned, 0);
     }
     return annotate_cast_type(operand, cast_type);
   }
@@ -2865,7 +2842,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
       node_t *masked = psx_node_new_binary(ND_BITAND, operand, psx_node_new_num(mask));
       psx_node_set_unsigned(masked, 1);
       node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-      wrap->base.kind = ND_PTR_CAST;
+      wrap->base.kind = ND_CAST;
       wrap->base.lhs = masked;
       wrap->type_size = (short)(width / 8);
       wrap->is_unsigned = 1;
@@ -2879,7 +2856,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     int sh = src_width - width;
     node_t *trunc = psx_node_new_shift_trunc_extend(operand, sh, 0);
     node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
-    wrap->base.kind = ND_PTR_CAST;
+    wrap->base.kind = ND_CAST;
     wrap->base.lhs = trunc;
     wrap->type_size = (short)(width / 8);
     if (cast_is_plain_char) wrap->is_plain_char = 1;
@@ -3309,7 +3286,7 @@ static node_t *sizeof_vla_runtime_size_node(int slot_off) {
   node_t *lvar = psx_node_new_lvar_typed(slot_off, 8);
   as_lvar(lvar)->mem.is_unsigned = 1;
   node_mem_t *cast = arena_alloc(sizeof(node_mem_t));
-  cast->base.kind = ND_PTR_CAST;
+  cast->base.kind = ND_CAST;
   cast->base.lhs = lvar;
   cast->type_size = 8;
   cast->is_unsigned = 1;
@@ -3387,7 +3364,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
         /* VLA メタ slot (offset+8 = total size) を 8B scalar として返す。find_owning_lvar
          * が arr_var (size=16 の VLA メタ) を所属判定すると variadic 引数経路で
          * cg_size_needs_indirect_struct(16) が真となり「struct 16B」扱いで 2 slot 渡しに
-         * 化けて garbage が混じる。ND_PTR_CAST でラップして scalar 8B unsigned long として
+         * 化けて garbage が混じる。ND_CAST でラップして scalar 8B unsigned long として
          * 明示し、所属判定を回避する。 */
         return annotate_lvar_sizeof_usage_node(
             sizeof_vla_runtime_size_node(arr_var->offset + 8), arr_var);
@@ -3442,7 +3419,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
         if (t && t->kind == TK_RBRACKET && t->next && t->next->kind == TK_RPAREN) {
           set_curtok(curtok()->next);  /* consume ident */
           node_t *prefix = parse_sizeof_vla_subscript_prefix(1, ctx);
-          /* 2D VLA の行サイズも同様に ND_PTR_CAST でラップして所属判定を回避し、scalar 8B
+          /* 2D VLA の行サイズも同様に ND_CAST でラップして所属判定を回避し、scalar 8B
            * unsigned long として variadic 経路に乗せる。 */
           node_t *size_node = annotate_lvar_sizeof_usage_node(
               sizeof_vla_runtime_size_node(arr_var->vla_row_stride_frame_off), arr_var);
@@ -3525,7 +3502,7 @@ static int node_pointee_is_unsigned(node_t *n) {
     case ND_GVAR:
     case ND_DEREF:
     case ND_ADDR:
-    case ND_PTR_CAST:
+    case ND_CAST:
       return ((node_mem_t *)n)->pointee_is_unsigned;
     case ND_ADD:
     case ND_SUB:
@@ -3792,7 +3769,7 @@ static node_t *build_unary_deref_node(node_t *operand) {
     node_mem_t *pm = NULL;
     if (probe && probe->kind == ND_LVAR) pm = &as_lvar(probe)->mem;
     else if (probe && (probe->kind == ND_ADDR || probe->kind == ND_GVAR ||
-                       probe->kind == ND_DEREF || probe->kind == ND_PTR_CAST ||
+                       probe->kind == ND_DEREF || probe->kind == ND_CAST ||
                        probe->kind == ND_STRING)) pm = (node_mem_t *)probe;
     if (pm && pm->inner_deref_size > 0) {
       node->deref_size = pm->inner_deref_size;
