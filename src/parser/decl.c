@@ -3309,18 +3309,7 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
 void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!var || !sig) return;
-  var->funcptr_param_fp_mask = sig->param_fp_mask;
-  var->funcptr_param_int_mask = sig->param_int_mask;
-  var->funcptr_ret_int_width = sig->ret_int_width;
-  var->funcptr_ret_fp_kind = sig->ret_fp_kind;
-  var->funcptr_ret_pointee_fp_kind = sig->ret_pointee_fp_kind;
-  var->funcptr_ret_is_void = sig->ret_is_void ? 1 : 0;
-  var->funcptr_ret_is_data_pointer = sig->ret_is_data_pointer ? 1 : 0;
-  var->funcptr_ret_is_pointer = sig->ret_is_funcptr ? 1 : 0;
-  var->funcptr_ret_is_complex = sig->ret_is_complex ? 1 : 0;
-  var->is_variadic_funcptr = sig->is_variadic ? 1 : 0;
-  var->funcptr_nargs_fixed = sig->nargs_fixed;
-  PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(var, sig->ret_pointee_array);
+  var->funcptr_sig = *sig;
 }
 
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {

@@ -13321,6 +13321,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = **1200/1200 OK**
   - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
   - `git diff --check` = **green**
+
+### このセッション（続き702）: lvar_t の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き701で `psx_type_t` は `psx_decl_funcptr_sig_t funcptr_sig` に寄ったが、
+    local symbol の `lvar_t` はまだ `funcptr_param_*` / `funcptr_ret_*` /
+    `is_variadic_funcptr` / `funcptr_nargs_fixed` の split field を持っていた。
+  - `psx_decl_set_lvar_funcptr_signature()` が `psx_decl_funcptr_sig_t` を split field へ分解し、
+    `node_utils.c` が再び `psx_decl_funcptr_sig_t` に組み直していたため、local 変数だけ
+    signature 正本が再分散していた。
+- 根本対応:
+  - `lvar_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 function pointer signature
+    split field 群を削除した。
+  - `psx_decl_set_lvar_funcptr_signature()` は `var->funcptr_sig = *sig` に変更した。
+  - `funcptr_sig_from_lvar()` は `src->funcptr_sig` をそのまま返すようにした。
+  - `expr_funcall_returns_funcptr()` と IR の local function pointer variadic 判定は
+    `lvar_t.funcptr_sig` を読むように変更した。
+  - parser unit の local function pointer metadata 検査も `lvar->funcptr_sig` を直接見る形に更新した。
+- 追加/継続テスト:
+  - `test_type_metadata_bridge()` の local function pointer 検査で、
+    scalar return / pointer return / typedef 経由 / block local の signature が
+    `lvar_t.funcptr_sig` に保持されることを確認した。
+- 注意:
+  - `global_var_t` / `node_mem_t` / tag member / typedef / IR instruction はまだ split metadata field を持つ。
+    次の候補は `global_var_t` を `psx_decl_funcptr_sig_t` に寄せること。ただし wasm object linker と
+    IR lowering が global の split field を直接読むため、影響範囲は local より広い。
+  - `node_mem_t` は AST/IR 境界の carrier として大量に使われているので、最後に寄せる方がよさそう。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+  - `rg -n -- "(lvar_t|cl|lv|var|src|td_.*lvar|tm700_fp_lvar|dpa_lvar|fp_lvar|dp_lvar)->(funcptr_param_|funcptr_ret_|is_variadic_funcptr|funcptr_nargs_fixed)" src/parser src/ir test/test_parser.c`
+    = **local 由来は no matches。残り match は `funcptr_sig_from_gvar()` の global_var_t `src`**
   - `rg -n "ret_fp_kind = m->fp_kind|ret_fp_kind = \\(.*\\)m->fp_kind|funcptr_ret_fp_kind|is_funcptr|psx_ctx_set_tag_member_fp_kind\\(.*member_fp_kind|head\\.has_func_suffix.*pointee_fp_kind" src/parser/semantic_ctx.h src/parser/semantic_ctx.c src/parser/struct_layout.c src/parser/parser.c test/test_parser.c`
     = **旧 `m->fp_kind` 直読 / funcptr member 直接 fp_kind 同期は no matches、追加した専用 field と回帰テストのみ match**
 
@@ -13392,6 +13427,41 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
   - `./build/test_e2e` = **1200/1200 OK**
   - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+
+### このセッション（続き701）: psx_type_t の function pointer signature split field を削除
+- 見つかった浅い箇所:
+  - 続き700で `psx_decl_funcptr_sig_t` 自体の意味分割は済んだが、型推論結果の
+    `psx_type_t` はまだ `returns_void` / `returns_data_pointer` / `returns_complex` /
+    `funcptr_param_*` / `funcptr_ret_*` / `funcptr_ret_pointee_array_*` の split field を持っていた。
+  - `node_utils.c` は `psx_type_t` から split field を組み直して `psx_decl_funcptr_sig_t` に戻しており、
+    type 表現の中だけ signature 正本が再分散していた。
+- 根本対応:
+  - `psx_type_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせ、旧 function pointer signature
+    split field 群を削除した。
+  - `funcptr_sig_from_type()` は `type->funcptr_sig` をそのまま返すようにした。
+  - `type_copy_funcptr_metadata()` と direct function call の function pointer return 型生成は、
+    split field 代入ではなく `type->funcptr_sig = sig` に変更した。
+  - function pointer callee type からの戻り型復元、`psx_node_funcptr_*` helper、pointer-to-array
+    戻りの subscript stride 復元は `type->funcptr_sig` を読むように変更した。
+  - `type.c` の pointer metadata copy も `funcptr_sig` ごとコピーするようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` の direct/indirect pointer-to-array call result type に、
+    `funcptr_sig.ret_pointee_array.first_dim == 2` / `elem_size == 8` の検査を追加した。
+  - これにより、`psx_type_t` の旧 split field を削除しても `f()[i][j]` 系の stride 復元に必要な
+    pointer-to-array return metadata が正本 field から取れることを確認した。
+- 注意:
+  - `node_mem_t` / `lvar_t` / `global_var_t` / tag member / typedef はまだ split metadata field を持つ。
+    次の候補は local/global storage 側を `psx_decl_funcptr_sig_t` に寄せること。
+  - `psx_type_t.funcptr_sig.ret_pointee_array` は function pointer 型だけでなく、function call result の
+    pointer-to-array metadata 継承にも使っている。旧 split field よりは正本型に寄っているが、
+    将来 `psx_type_t` 側で pointer-to-array call result metadata の名前を明確にする余地はある。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
   - `git diff --check` = **green**
   - `rg -n "ret_fp_kind = .*fp_kind|funcptr_ret_fp_kind|psx_ctx_typedef_set_funcptr_sig\\(&_ti|_ti\\.fp_kind = TK_FLOAT_KIND_NONE|typedef_record_funcptr_sig|psx_ctx_typedef_funcptr_sig" src/parser test/test_parser.c`
     = **typedef funcptr signature は専用 field 経由。通常関数戻り型生成の `ret_fp_kind = spec/fp_kind` は残る**

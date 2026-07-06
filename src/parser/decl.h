@@ -23,8 +23,7 @@ struct lvar_t {
   int elem_size;
   tk_float_kind_t fp_kind;
   tk_float_kind_t pointee_fp_kind;
-  tk_float_kind_t funcptr_ret_fp_kind;
-  tk_float_kind_t funcptr_ret_pointee_fp_kind;
+  psx_decl_funcptr_sig_t funcptr_sig;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
@@ -50,23 +49,6 @@ struct lvar_t {
   unsigned int is_initialized : 1;   // 1: 初期化済み（宣言初期化子または代入）
   unsigned int is_complex : 1;       // 1: _Complex型
   unsigned int is_atomic : 1;        // 1: _Atomic型
-  // 1: 可変長関数ポインタ (`int (*f)(int, ...)`)。経由呼び出しで variadic ABI を使う。
-  unsigned int is_variadic_funcptr : 1;
-  short funcptr_nargs_fixed;          // 可変長関数ポインタの固定引数数 (`...` の前)
-  // 関数ポインタの各仮引数 fp 種別 (2bit ずつ, 0=非fp/1=float/2=double, 最大8引数)。
-  // 経由呼び出し `fp(3)` で int 実引数を fp 仮引数へ昇格するのに使う。
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  unsigned char funcptr_ret_int_width;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
-  unsigned int funcptr_ret_is_void : 1;
-  unsigned int funcptr_ret_is_data_pointer : 1;
-  unsigned int funcptr_ret_is_complex : 1;
-  // 1: 指す関数の戻り値が関数ポインタ (`int (*(*p)(int))(int,int)` の `p`)。
-  //    `(*p)(...)` の結果を呼ぶとき余分な deref をしないために使う。
-  unsigned int funcptr_ret_is_pointer : 1;
   // 1: _Bool 型。代入/初期化時に rhs を `(rhs != 0) ? 1 : 0` に正規化する (C11 6.3.1.2)
   unsigned int is_bool : 1;
   // _Generic で long と long long、char と signed/unsigned char を別型として扱うため

@@ -2112,6 +2112,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, psx_type_deref_size(double_ptr_to_array_ty));
   ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind(double_ptr_to_array_call));
+  ASSERT_EQ(2, double_ptr_to_array_ty->funcptr_sig.ret_pointee_array.first_dim);
+  ASSERT_EQ(8, double_ptr_to_array_ty->funcptr_sig.ret_pointee_array.elem_size);
   ASSERT_TRUE(indirect_double_ptr_to_array_call->type != NULL);
   psx_type_t *indirect_double_ptr_to_array_ty =
       psx_node_get_type(indirect_double_ptr_to_array_call);
@@ -2121,10 +2123,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, ps_node_deref_size(indirect_double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             psx_node_pointee_fp_kind(indirect_double_ptr_to_array_call));
+  ASSERT_EQ(2, indirect_double_ptr_to_array_ty->funcptr_sig.ret_pointee_array.first_dim);
+  ASSERT_EQ(8, indirect_double_ptr_to_array_ty->funcptr_sig.ret_pointee_array.elem_size);
   lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
   ASSERT_TRUE(dpa_lvar != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, dpa_lvar->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dpa_lvar->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dpa_lvar->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dpa_lvar->funcptr_sig.ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
@@ -2154,15 +2158,15 @@ static void test_type_metadata_bridge() {
   lvar_t *dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(dp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_lvar->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_lvar->funcptr_sig.ret_fp_kind);
   node_mem_t dp_mem = {0};
   psx_node_copy_funcptr_metadata_from_lvar(&dp_mem, dp_lvar);
   ASSERT_TRUE(!psx_node_mem_has_funcptr_metadata(&dp_mem));
   lvar_t *fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(fp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_lvar->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_lvar->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_lvar->funcptr_sig.ret_pointee_fp_kind);
   node_mem_t fp_mem = {0};
   psx_node_copy_funcptr_metadata_from_lvar(&fp_mem, fp_lvar);
   ASSERT_TRUE(psx_node_mem_has_funcptr_metadata(&fp_mem));
@@ -2211,17 +2215,17 @@ static void test_type_metadata_bridge() {
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp_lvar->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp_lvar->funcptr_ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_dp_lvar->funcptr_sig.ret_fp_kind);
   lvar_t *td_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(td_fp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp_lvar->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp_lvar->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp_lvar->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp_lvar->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_fp_lvar->funcptr_sig.ret_pointee_fp_kind);
   lvar_t *td_bfp_lvar = find_func_lvar(fn, "bfp");
   ASSERT_TRUE(td_bfp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->pointee_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_bfp_lvar->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_bfp_lvar->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->funcptr_sig.ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
       "double __tm700_d; double *__tm700_ret_dp(void){ return &__tm700_d; } "
@@ -2230,8 +2234,8 @@ static void test_type_metadata_bridge() {
   fn = as_func(parsed_code[1]);
   lvar_t *tm700_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm700_fp_lvar != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_fp_lvar->funcptr_ret_fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_fp_lvar->funcptr_ret_pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_fp_lvar->funcptr_sig.ret_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tm700_fp_lvar->funcptr_sig.ret_pointee_fp_kind);
   global_var_t *tm700_gfp = psx_find_global_var("__tm700_gfp", 11);
   ASSERT_TRUE(tm700_gfp != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, tm700_gfp->funcptr_ret_fp_kind);

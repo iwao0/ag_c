@@ -3175,15 +3175,17 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     /* 配列へのポインタ戻り `int (*f())[N]`: 第1 subscript `f()[i]` の結果 (行) が第2
      * subscript `f()[i][j]` 用の要素ストライド (base elem) を引き継げるよう inner_ds を立てる
      * (ローカル `int (*p)[N]` の inner_deref_size=elem と同じ。これがないと f()[i][j] が
-     * 行ストライドのまま誤ロード→SIGSEGV)。 */
+    * 行ストライドのまま誤ロード→SIGSEGV)。 */
     psx_type_t *func_type = psx_node_get_type(node);
-    if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
+    psx_ret_pointee_array_t ret_array =
+        func_type ? func_type->funcptr_sig.ret_pointee_array : (psx_ret_pointee_array_t){0};
+    if (func_type && psx_ret_pointee_array_has_dims(ret_array)) {
       inner_ds = func_type->outer_stride;
       next_ds = func_type->mid_stride;
       if (inner_ds <= 0) {
         psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-            func_type->funcptr_ret_pointee_array_first_dim,
-            func_type->funcptr_ret_pointee_array_second_dim,
+            ret_array.first_dim,
+            ret_array.second_dim,
             0);
         psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
       }
@@ -3326,7 +3328,7 @@ static int expr_funcall_returns_funcptr(node_t *fcall) {
   }
   if (fc->callee && fc->callee->kind == ND_LVAR) {
     lvar_t *lv = psx_node_lvar_symbol(fc->callee);
-    return lv && lv->funcptr_ret_is_pointer;
+    return lv && lv->funcptr_sig.ret_is_funcptr;
   }
   return 0;
 }

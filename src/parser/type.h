@@ -1,7 +1,7 @@
 #ifndef PARSER_TYPE_H
 #define PARSER_TYPE_H
 
-#include "../tokenizer/token.h"
+#include "core.h"
 
 typedef enum {
   PSX_TYPE_INVALID = 0,
@@ -42,10 +42,6 @@ struct psx_type_t {
   unsigned int is_plain_char : 1;
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
-  unsigned int is_variadic_func : 1;
-  unsigned int returns_void : 1;
-  unsigned int returns_data_pointer : 1;
-  unsigned int returns_complex : 1;
 
   int deref_size;
   int base_deref_size;
@@ -54,8 +50,7 @@ struct psx_type_t {
   unsigned int pointer_volatile_qual_mask;
 
   tk_float_kind_t pointee_fp_kind;
-  tk_float_kind_t funcptr_ret_fp_kind;
-  tk_float_kind_t funcptr_ret_pointee_fp_kind;
+  psx_decl_funcptr_sig_t funcptr_sig;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   int ptr_array_pointee_bytes;
@@ -64,13 +59,6 @@ struct psx_type_t {
   int extra_strides[5];
   unsigned char extra_strides_count;
 
-  short funcptr_nargs_fixed;
-  unsigned short funcptr_param_fp_mask;
-  unsigned short funcptr_param_int_mask;
-  unsigned char funcptr_ret_int_width;
-  short funcptr_ret_pointee_array_first_dim;
-  short funcptr_ret_pointee_array_second_dim;
-  short funcptr_ret_pointee_array_elem_size;
 };
 
 psx_type_t *psx_type_new(psx_type_kind_t kind);

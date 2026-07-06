@@ -1813,7 +1813,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     if (ctx->failed) return ir_val_none();
   }
   /* callee が variadic か確認。直接呼出は prototype から、間接呼出は関数ポインタ
-   * lvar に記録した is_variadic_funcptr から判定する (Apple ARM64: 可変長引数は
+   * lvar に記録した funcptr_sig.is_variadic から判定する (Apple ARM64: 可変長引数は
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = fn->nargs;
@@ -1826,9 +1826,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     }
   } else if (fn->callee->kind == ND_LVAR) {
     lvar_t *cl = find_owning_lvar(ctx, ((node_lvar_t *)fn->callee)->offset);
-    if (cl && cl->is_variadic_funcptr && cl->funcptr_nargs_fixed < fn->nargs) {
+    if (cl && cl->funcptr_sig.is_variadic && cl->funcptr_sig.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
-      nargs_fixed = cl->funcptr_nargs_fixed;
+      nargs_fixed = cl->funcptr_sig.nargs_fixed;
     }
   } else if (fn->callee->kind == ND_GVAR) {
     node_gvar_t *cg = (node_gvar_t *)fn->callee;
