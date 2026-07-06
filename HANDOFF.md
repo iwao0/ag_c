@@ -1,8 +1,148 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き779: typed node の pointee view 判定 fallback 拡張）
+最終更新: 2026-07-07（続き784: funcptr signature の node view merge helper 化）
 
 ## 現状
+- 続き784: **function pointer signature の type/mem view merge を
+  `node_utils.c` の共通 helper に寄せた**。
+
+  `psx_node_funcptr_param_fp_mask()` /
+  `psx_node_funcptr_param_int_mask()` /
+  `psx_node_funcptr_returns_void()` /
+  `psx_node_funcptr_returns_complex()` /
+  `psx_node_funcptr_returns_pointee_array()` /
+  `psx_node_funcptr_ret_fp_kind()` は、各 helper がそれぞれ
+  `psx_type_t::funcptr_sig` を先に読み、payload がなければ `node_mem_t::funcptr_sig` へ
+  fallback していた。また `psx_node_copy_funcptr_metadata()` も type と mem を個別に
+  merge しており、function pointer signature の node view 規約が複数箇所に分かれていた。
+
+  今回は `funcptr_sig_merge_missing()` を追加して、既存の
+  `node_mem_merge_funcptr_signature()` の field-by-field merge 規約を signature 同士の
+  helper に切り出した。その上で `funcptr_sig_from_node()` を追加し、node からの
+  function pointer signature 取得は type 側 payload を優先し、欠けている field を
+  legacy mem view で補完する形へ集約した。公開 helper 群と
+  `psx_node_copy_funcptr_metadata()` はこの node-level helper 経由になった。
+
+  回帰テストは `test_type_metadata_bridge()` に synthetic typed funcptr node を追加し、
+  type 側の `param_fp_mask` / `ret_fp_kind` と mem 側の `param_int_mask` /
+  `ret_is_complex` / `ret_pointee_array` が node-level helper で一つの signature view として
+  読めることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き783: **`base_deref_size` / `ptr_array_pointee_bytes` も typed pointer metadata を
+  優先して読むようにした**。
+
+  続き782で pointer-derived view の fallback 規約を helper 化したが、
+  `psx_node_base_deref_size()` / `psx_node_ptr_array_pointee_bytes()` はまだ別ルールだった。
+  具体的には、明示 cast の `node->type` だけを特別扱いし、それ以外の typed node では
+  pointer/array 型に `base_deref_size` や `ptr_array_pointee_bytes` が載っていても、
+  legacy `node_mem_t` 側だけを見る構造だった。
+
+  今回は両 helper を、pointer/array の `psx_type_t` に正の payload がある場合はそれを優先し、
+  payload がない場合は既存の legacy view 継承に fallback する形へ寄せた。
+  `0` は mask/flag と違って「否定」ではなく「未設定」の意味になりやすいため、
+  type 側に payload がない場合は mem view を捨てない。あわせて不要になった
+  `node_explicit_cast_type()` / `node_kind_has_explicit_cast_type()` を削除した。
+
+  回帰テストは `test_type_metadata_bridge()` の typed pointer case に
+  `base_deref_size` / `ptr_array_pointee_bytes` の type payload 確認を追加し、
+  typed non-pointer `node_mem_t` synthetic case では explicit `base.type` があっても
+  legacy view payload が読まれることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き782: **typed node と legacy `node_mem_t` view の fallback 規約を
+  `node_utils.c` 内の共通 helper に集約した**。
+
+  続き778〜781で `psx_node_pointer_qual_levels()` /
+  `psx_node_pointer_const_qual_mask()` /
+  `psx_node_pointer_volatile_qual_mask()` /
+  `psx_node_pointee_is_unsigned()` /
+  `psx_node_pointee_is_bool()` /
+  `psx_node_pointee_is_void()` /
+  `psx_node_pointee_is_const_qualified()` /
+  `psx_node_pointee_is_volatile_qualified()` /
+  `psx_node_pointee_fp_kind()` を同じ fallback 規約に寄せたが、各 helper が
+  `type->kind == PSX_TYPE_POINTER || PSX_TYPE_ARRAY` と explicit non-pointer type の
+  `node_mem_view()` fallback をそれぞれ手書きしていた。
+
+  今回は `type_is_pointer_view_type()` と
+  `node_mem_view_for_explicit_non_pointer_type()` を追加し、pointer/array 型は
+  `psx_type_t` を正本にすること、explicit type が非 pointer/array の view node だけ
+  legacy `node_mem_t` を読むことを一箇所に集約した。これにより、typed node 導入範囲を
+  広げる際の規約が helper ごとの浅い分岐に再分散しにくくなった。
+
+  scalar identity helper (`psx_node_is_unsigned_type()` など) は、explicit scalar type を
+  正本にする既存仕様があるため、この fallback helper には乗せていない。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き781: **typed node と legacy `node_mem_t` view の共存を
+  `pointer_qual_levels` / `pointee_fp_kind` にも広げた**。
+
+  続き780で pointer qualifier mask は同じ fallback 規約に揃ったが、隣接する
+  `psx_node_pointer_qual_levels()` はまだ `node->type` があれば
+  `type->pointer_qual_levels` だけを返し、`psx_node_pointee_fp_kind()` も explicit type が
+  あれば非 pointer 型でも `type->pointee_fp_kind` だけを返していた。
+  そのため、将来 `node->type` を参照 node に広げると、pointer-derived view のうち
+  qualifier mask / pointee flags は fallback する一方で、qualifier level と pointee FP だけが
+  legacy view を落とすという分散が残っていた。
+
+  今回は両 helper を、pointer/array の `psx_type_t` がある場合は型を正本として読み、
+  explicit type が非 pointer/array で `node_mem_view()` が取れる場合は legacy view へ
+  fallback する規約に揃えた。scalar identity helper は、既存の typed scalar test どおり
+  explicit scalar type を正本にする必要があるため触っていない。
+
+  回帰テストは `test_type_metadata_bridge()` の typed non-pointer `node_mem_t` synthetic case に
+  `pointer_qual_levels` と `pointee_fp_kind` を追加し、explicit `base.type` があっても
+  pointer-derived view が短絡せず読まれることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
+- 続き780: **typed node と legacy `node_mem_t` view の共存を
+  pointer qualifier mask 判定にも広げた**。
+
+  続き779までで pointee qualifier / unsigned / bool / void は、
+  pointer/array の `psx_type_t` がある場合は型を正本として読み、explicit type が
+  非ポインタ/非配列で `node_mem_view()` が取れる場合は legacy view bit へ fallback する
+  規約に揃った。一方で `psx_node_pointer_const_qual_mask()` /
+  `psx_node_pointer_volatile_qual_mask()` はまだ `node->type` があれば無条件に
+  `type->pointer_*_qual_mask` を返していたため、非 pointer typed node の mem view に残る
+  pointer qualifier mask だけが落ちる構造だった。
+
+  今回は両 helper を同じ規約へ寄せ、pointer/array 型なら `psx_type_t` の mask を正本として返し、
+  explicit type が非ポインタ/非配列なら `node_mem_view()` の
+  `pointer_const_qual_mask` / `pointer_volatile_qual_mask` へ fallback するようにした。
+  これで typed node 導入時に、qualifier の単bit view と pointer-level mask view が
+  別々の扱いになる浅い互換層を減らしている。
+
+  回帰テストは `test_type_metadata_bridge()` の typed pointer case に volatile mask の確認を追加し、
+  typed non-pointer `node_mem_t` synthetic case では explicit `base.type` があっても
+  legacy pointer const/volatile mask が読まれることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**。
+
 - 続き779: **typed node と legacy `node_mem_t` view の共存を
   pointee unsigned/bool/void 判定にも広げた**。
 

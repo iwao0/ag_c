@@ -2047,10 +2047,16 @@ static void test_type_metadata_bridge() {
   typed_ptr_mem.base.type = psx_type_new_pointer(typed_ptr_base, 8);
   typed_ptr_mem.base.type->pointer_qual_levels = 2;
   typed_ptr_mem.base.type->pointer_const_qual_mask = 3;
+  typed_ptr_mem.base.type->pointer_volatile_qual_mask = 1;
+  typed_ptr_mem.base.type->base_deref_size = 4;
+  typed_ptr_mem.base.type->ptr_array_pointee_bytes = 16;
   ASSERT_TRUE(ps_node_is_pointer((node_t *)&typed_ptr_mem));
   ASSERT_EQ(8, ps_node_deref_size((node_t *)&typed_ptr_mem));
   ASSERT_EQ(2, psx_node_pointer_qual_levels((node_t *)&typed_ptr_mem));
   ASSERT_EQ(3u, psx_node_pointer_const_qual_mask((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(1u, psx_node_pointer_volatile_qual_mask((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(4, psx_node_base_deref_size((node_t *)&typed_ptr_mem));
+  ASSERT_EQ(16, psx_node_ptr_array_pointee_bytes((node_t *)&typed_ptr_mem));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind((node_t *)&typed_ptr_mem));
   ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_ptr_mem));
 
@@ -2059,14 +2065,43 @@ static void test_type_metadata_bridge() {
   typed_const_view_mem.base.type = psx_type_new_tag(TK_STRUCT, "TypedView", 9, 1, 4);
   typed_const_view_mem.is_const_qualified = 1;
   typed_const_view_mem.is_volatile_qualified = 1;
+  typed_const_view_mem.pointer_qual_levels = 4;
+  typed_const_view_mem.pointer_const_qual_mask = 5;
+  typed_const_view_mem.pointer_volatile_qual_mask = 6;
+  typed_const_view_mem.base_deref_size = 7;
+  typed_const_view_mem.ptr_array_pointee_bytes = 28;
+  typed_const_view_mem.pointee_fp_kind = TK_FLOAT_KIND_DOUBLE;
   typed_const_view_mem.pointee_is_unsigned = 1;
   typed_const_view_mem.pointee_is_bool = 1;
   typed_const_view_mem.pointee_is_void = 1;
+  ASSERT_EQ(4, psx_node_pointer_qual_levels((node_t *)&typed_const_view_mem));
+  ASSERT_EQ(5u, psx_node_pointer_const_qual_mask((node_t *)&typed_const_view_mem));
+  ASSERT_EQ(6u, psx_node_pointer_volatile_qual_mask((node_t *)&typed_const_view_mem));
+  ASSERT_EQ(7, psx_node_base_deref_size((node_t *)&typed_const_view_mem));
+  ASSERT_EQ(28, psx_node_ptr_array_pointee_bytes((node_t *)&typed_const_view_mem));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind((node_t *)&typed_const_view_mem));
   ASSERT_TRUE(psx_node_pointee_is_const_qualified((node_t *)&typed_const_view_mem));
   ASSERT_TRUE(psx_node_pointee_is_volatile_qualified((node_t *)&typed_const_view_mem));
   ASSERT_TRUE(psx_node_pointee_is_unsigned((node_t *)&typed_const_view_mem));
   ASSERT_TRUE(psx_node_pointee_is_bool((node_t *)&typed_const_view_mem));
   ASSERT_TRUE(psx_node_pointee_is_void((node_t *)&typed_const_view_mem));
+
+  node_mem_t typed_funcptr_view_mem = {0};
+  typed_funcptr_view_mem.base.kind = ND_LVAR;
+  typed_funcptr_view_mem.base.type =
+      psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 0), 8);
+  typed_funcptr_view_mem.base.type->funcptr_sig.param_fp_mask = 1;
+  typed_funcptr_view_mem.base.type->funcptr_sig.ret_fp_kind = TK_FLOAT_KIND_DOUBLE;
+  typed_funcptr_view_mem.funcptr_sig.param_int_mask = 2;
+  typed_funcptr_view_mem.funcptr_sig.ret_is_complex = 1;
+  typed_funcptr_view_mem.funcptr_sig.ret_pointee_array =
+      psx_ret_pointee_array_make(3, 2, 4);
+  ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask((node_t *)&typed_funcptr_view_mem));
+  ASSERT_EQ(2u, psx_node_funcptr_param_int_mask((node_t *)&typed_funcptr_view_mem));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            psx_node_funcptr_ret_fp_kind((node_t *)&typed_funcptr_view_mem));
+  ASSERT_TRUE(psx_node_funcptr_returns_complex((node_t *)&typed_funcptr_view_mem));
+  ASSERT_TRUE(psx_node_funcptr_returns_pointee_array((node_t *)&typed_funcptr_view_mem));
 
   node_mem_t typed_tag_mem = {0};
   typed_tag_mem.base.kind = ND_LVAR;
