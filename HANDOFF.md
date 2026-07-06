@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き733: gvar scalar 参照 metadata 初期化の集約）
+最終更新: 2026-07-06（続き734: ファイルスコープ複合リテラル gvar 参照の constructor 化）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,26 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き734: **ファイルスコープ複合リテラルの匿名 gvar 参照生成も
+  `psx_node_new_gvar_for()` に寄せた**。
+  続き733で通常の global variable 参照は constructor 化したが、
+  `parse_compound_literal_from_type()` のファイルスコープ複合リテラル経路は、
+  登録直後の `global_var_t` から `node_gvar_t` へ type_size / deref_size / tag / name を
+  手でコピーしていた。
+
+  根本対応として、aggregate/scalar の匿名 gvar 参照生成を
+  `psx_node_new_gvar_for(gv)` に置き換えた。
+  配列 compound literal の decay 用 `ND_ADDR` は `compound_literal_array_size` と
+  compound literal 固有の pointer-array carry を持つため、今回は無理に統合せず既存経路を維持した。
+  これで `global_var_t` 由来の `ND_GVAR` 参照 metadata 初期化は、通常 gvar と
+  ファイルスコープ複合リテラルで同じ入口になった。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き733: **gvar scalar 参照の `ND_GVAR` metadata 初期化を `node_utils` に集約した**。
   続き732で配列グローバルの address metadata は helper 化したが、非配列 gvar 参照は
   `try_build_global_var_node()` 内で type_size / deref_size / tag / qualifier /

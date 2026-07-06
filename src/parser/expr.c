@@ -1367,16 +1367,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->init_count = 0;
       psx_parse_global_brace_init_flat(gv, &cap, -1);
       psx_register_global_var(gv);
-      node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
-      gvar_node->mem.base.kind = ND_GVAR;
-      gvar_node->mem.type_size = gv->type_size;
-      gvar_node->mem.deref_size = gv->deref_size;
-      gvar_node->mem.tag_kind = gv->tag_kind;
-      gvar_node->mem.tag_name = gv->tag_name;
-      gvar_node->mem.tag_len = gv->tag_len;
-      gvar_node->name = gv->name;
-      gvar_node->name_len = gv->name_len;
-      gvar_node->is_thread_local = gv->is_thread_local;
+      node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
       if (is_arr) {
         /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
         node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
@@ -1426,13 +1417,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       }
     }
     psx_register_global_var(gv);
-    node_gvar_t *gvar_node = arena_alloc(sizeof(node_gvar_t));
-    gvar_node->mem.base.kind = ND_GVAR;
-    gvar_node->mem.type_size = gv->type_size;
-    gvar_node->mem.deref_size = gv->deref_size;
-    gvar_node->name = gv->name;
-    gvar_node->name_len = gv->name_len;
-    gvar_node->is_thread_local = gv->is_thread_local;
+    node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
     return apply_postfix((node_t *)gvar_node, ctx);
   }
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name),
