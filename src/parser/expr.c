@@ -5030,41 +5030,7 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
   node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
   addr->base.kind = ND_ADDR;
   addr->base.lhs = (node_t *)base;
-  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
-  addr->type_size = stride;
-  addr->deref_size = stride;
-  addr->is_pointer = 1;
-  addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
-                             ? var->pointee_fp_kind
-                             : var->fp_kind;
-  addr->pointee_is_bool = var->is_bool ? 1 : 0;
-  addr->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  addr->pointer_qual_levels = var->pointer_qual_levels;
-  addr->base_deref_size = var->base_deref_size;
-  if (var->outer_stride > 0) {
-    if (var->mid_stride > 0) {
-      addr->inner_deref_size = (short)var->mid_stride;
-      if (var->extra_strides_count > 0) {
-        addr->next_deref_size = (short)var->extra_strides[0];
-        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
-          addr->extra_strides[i - 1] = var->extra_strides[i];
-        }
-        addr->extra_strides[var->extra_strides_count - 1] = var->elem_size;
-        addr->extra_strides_count = var->extra_strides_count;
-      } else {
-        addr->next_deref_size = (short)var->elem_size;
-      }
-    } else {
-      addr->inner_deref_size = (short)var->elem_size;
-    }
-  }
-  addr->tag_kind = var->tag_kind;
-  addr->tag_name = var->tag_name;
-  addr->tag_len = var->tag_len;
-  addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
-  addr->is_tag_pointer = 0;
-  addr->is_const_qualified = var->is_const_qualified;
-  addr->is_volatile_qualified = var->is_volatile_qualified;
+  psx_node_init_lvar_array_addr_metadata(addr, var, 0);
   return (node_t *)addr;
 }
 
@@ -5083,57 +5049,7 @@ static node_t *build_array_lvar_addr_node(lvar_t *var) {
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));
   node->base.kind = ND_ADDR;
   node->base.lhs = psx_node_new_lvar_for(var);
-  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
-  node->type_size = stride;
-  node->deref_size = stride;
-  /* `double a[3]` のような配列は要素型が float/double のとき、
-   * pointee_fp_kind を要素型として伝播する (subscript 結果が FP load になるよう
-   * build_subscript_deref が見る)。配列パラメータでは var->pointee_fp_kind が
-   * 使われるので両方を fall-through する。 */
-  node->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
-                             ? var->pointee_fp_kind
-                             : var->fp_kind;
-  /* `_Bool a[5]` の要素アクセスを正規化するために、配列ベースの ND_ADDR にも
-   * pointee_is_bool を伝播する (build_subscript_deref が deref に引き継ぐ)。 */
-  node->pointee_is_bool = var->is_bool ? 1 : 0;
-  /* `unsigned a[5]` / `unsigned *p`: 要素/pointee が unsigned なら subscript/deref
-   * 結果を zero-extend load させるため pointee_is_unsigned を伝播する。 */
-  node->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  psx_node_copy_funcptr_metadata_from_lvar(node, var);
-  if (var->outer_stride > 0) {
-    // 2D: inner_deref_size = elem_size （1段サブスクリプト後の要素）
-    // 3D: inner_deref_size = mid_stride （1段サブスクリプト後はまだ配列なので、その内側ストライド）
-    //     next_deref_size = elem_size （2段サブスクリプト後の要素）
-    // 4D 以上: 上記に加えて extra_strides を node 側にコピー。
-    //         3 段目で使うストライド = extra_strides[0]、最後が elem_size。
-    if (var->mid_stride > 0) {
-      node->inner_deref_size = (short)var->mid_stride;
-      if (var->extra_strides_count > 0) {
-        // 4D+: 3 段目ストライド = extra_strides[0]、残りは node->extra_strides に
-        node->next_deref_size = (short)var->extra_strides[0];
-        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
-          node->extra_strides[i - 1] = var->extra_strides[i];
-        }
-        node->extra_strides[var->extra_strides_count - 1] = var->elem_size;
-        node->extra_strides_count = var->extra_strides_count;
-      } else {
-        node->next_deref_size = (short)var->elem_size;
-      }
-    } else {
-      node->inner_deref_size = (short)var->elem_size;
-    }
-  }
-  node->tag_kind = var->tag_kind;
-  node->tag_name = var->tag_name;
-  node->tag_len = var->tag_len;
-  node->tag_scope_depth_p1 = var->tag_scope_depth_p1;  /* shadow 対応 */
-  node->is_tag_pointer = (var->tag_kind != TK_EOF) ? 1 : 0;
-  node->is_pointer = 1;
-  node->is_const_qualified = var->is_const_qualified;
-  node->is_volatile_qualified = var->is_volatile_qualified;
-  node->pointer_qual_levels = var->pointer_qual_levels;
-  node->base_deref_size = var->base_deref_size;
-  node->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
+  psx_node_init_lvar_array_addr_metadata(node, var, var->tag_kind != TK_EOF);
   return (node_t *)node;
 }
 

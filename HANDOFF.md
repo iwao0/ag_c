@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き730: 通常 lvar 参照の宣言 metadata 再コピー削除）
+最終更新: 2026-07-06（続き731: lvar 配列 address metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き731: **lvar 配列の `ND_ADDR` metadata 初期化を `node_utils` に集約した**。
+  続き730の後も、`build_static_local_array_addr_node()` と
+  `build_array_lvar_addr_node()` は、配列 lvar の address node に
+  stride / pointee fp/bool/unsigned / function pointer / tag / qualifier /
+  pointer-level metadata を同じ形で手書きコピーしていた。
+
+  根本対応として `psx_node_init_lvar_array_addr_metadata()` を `node_utils` に追加し、
+  `ND_ADDR` の `lhs` は呼び出し側で組みつつ、lvar 配列 address として必要な
+  metadata 初期化はこの入口へ集約した。
+  static local array は tag pointer ではないため `is_tag_pointer=0`、
+  通常 local array は従来通り tag 型配列なら `is_tag_pointer=1` を渡す。
+  これで配列 address 用の lvar metadata 伝播も `expr.c` 側の個別コピーから外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き730: **`build_lvar_or_vla_node()` の宣言 metadata 再コピーを削除した**。
   続き729で `psx_node_new_lvar_for()` / `_typed_for()` が `mem_from_lvar()` 経由で
   `lvar_t` の宣言 metadata を持つようになったため、通常 lvar 参照生成後に

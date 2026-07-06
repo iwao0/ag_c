@@ -1228,6 +1228,48 @@ void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
       dst, src->funcptr_ret_pointee_array);
 }
 
+void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
+                                            int is_tag_pointer) {
+  if (!addr || !var) return;
+  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
+  addr->type_size = (short)stride;
+  addr->deref_size = (short)stride;
+  addr->is_pointer = 1;
+  addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
+                             ? (unsigned int)var->pointee_fp_kind
+                             : (unsigned int)var->fp_kind;
+  addr->pointee_is_bool = var->is_bool ? 1 : 0;
+  addr->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
+  psx_node_copy_funcptr_metadata_from_lvar(addr, var);
+  if (var->outer_stride > 0) {
+    if (var->mid_stride > 0) {
+      addr->inner_deref_size = (short)var->mid_stride;
+      if (var->extra_strides_count > 0) {
+        addr->next_deref_size = (short)var->extra_strides[0];
+        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
+          addr->extra_strides[i - 1] = var->extra_strides[i];
+        }
+        addr->extra_strides[var->extra_strides_count - 1] = (short)var->elem_size;
+        addr->extra_strides_count = var->extra_strides_count;
+      } else {
+        addr->next_deref_size = (short)var->elem_size;
+      }
+    } else {
+      addr->inner_deref_size = (short)var->elem_size;
+    }
+  }
+  addr->tag_kind = var->tag_kind;
+  addr->tag_name = var->tag_name;
+  addr->tag_len = var->tag_len;
+  addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  addr->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  addr->is_const_qualified = var->is_const_qualified ? 1 : 0;
+  addr->is_volatile_qualified = var->is_volatile_qualified ? 1 : 0;
+  addr->pointer_qual_levels = var->pointer_qual_levels;
+  addr->base_deref_size = var->base_deref_size;
+  addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
+}
+
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
