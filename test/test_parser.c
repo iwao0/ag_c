@@ -2043,14 +2043,20 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(12, psx_type_sizeof(gext->decl_type));
 
   parsed_code = parse_program_input(
-      "long __tm_lf(void); int *__tm_ip(void); "
-      "int main(void){ int x; int *p; x + 1L; p + 1; __tm_lf(); __tm_ip(); return 0; }");
+      "long __tm_lf(void); int *__tm_ip(void); int **__tm_pp(void); "
+      "double (*__tm_dp(void))[2]; "
+      "int main(void){ int x; int *p; x + 1L; p + 1; "
+      "double (*(*dpa)(void))[2]=__tm_dp; "
+      "__tm_lf(); __tm_ip(); __tm_pp(); __tm_dp(); dpa(); return 0; }");
   fn = as_func(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *long_add = NULL;
   node_t *ptr_add = NULL;
   node_t *long_call = NULL;
   node_t *ptr_call = NULL;
+  node_t *ptrptr_call = NULL;
+  node_t *double_ptr_to_array_call = NULL;
+  node_t *indirect_double_ptr_to_array_call = NULL;
   for (int i = 0; body->body[i]; i++) {
     node_t *n = body->body[i];
     if (n->kind == ND_ADD && ps_node_is_pointer(n)) ptr_add = n;
@@ -2059,28 +2065,62 @@ static void test_type_metadata_bridge() {
       node_func_t *call = as_func(n);
       if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_lf", 7) == 0) long_call = n;
       if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_ip", 7) == 0) ptr_call = n;
+      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_pp", 7) == 0) ptrptr_call = n;
+      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_dp", 7) == 0)
+        double_ptr_to_array_call = n;
+      if (call->callee && call->callee->kind == ND_LVAR) {
+        lvar_t *callee_lvar = psx_node_lvar_symbol(call->callee);
+        if (callee_lvar && callee_lvar->len == 3 &&
+            strncmp(callee_lvar->name, "dpa", 3) == 0) {
+          indirect_double_ptr_to_array_call = n;
+        }
+      }
     }
   }
   psx_type_t *long_add_ty = psx_node_get_type(long_add);
   ASSERT_TRUE(long_add_ty != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, long_add_ty->kind);
   ASSERT_EQ(8, psx_type_sizeof(long_add_ty));
-	  psx_type_t *ptr_add_ty = psx_node_get_type(ptr_add);
-	  ASSERT_TRUE(ptr_add_ty != NULL);
-	  ASSERT_EQ(PSX_TYPE_POINTER, ptr_add_ty->kind);
-	  ASSERT_EQ(4, psx_type_deref_size(ptr_add_ty));
-	  ASSERT_TRUE(long_call->type != NULL);
-	  psx_type_t *long_call_ty = psx_node_get_type(long_call);
-	  ASSERT_TRUE(long_call_ty != NULL);
-	  ASSERT_EQ(PSX_TYPE_INTEGER, long_call_ty->kind);
-	  ASSERT_EQ(8, psx_type_sizeof(long_call_ty));
-	  ASSERT_EQ(8, ps_node_type_size(long_call));
-	  ASSERT_TRUE(ptr_call->type != NULL);
-	  psx_type_t *ptr_call_ty = psx_node_get_type(ptr_call);
-	  ASSERT_TRUE(ptr_call_ty != NULL);
-	  ASSERT_EQ(PSX_TYPE_POINTER, ptr_call_ty->kind);
-	  ASSERT_EQ(4, psx_type_deref_size(ptr_call_ty));
-	  ASSERT_TRUE(ps_node_is_pointer(ptr_call));
+  psx_type_t *ptr_add_ty = psx_node_get_type(ptr_add);
+  ASSERT_TRUE(ptr_add_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_add_ty->kind);
+  ASSERT_EQ(4, psx_type_deref_size(ptr_add_ty));
+  ASSERT_TRUE(long_call->type != NULL);
+  psx_type_t *long_call_ty = psx_node_get_type(long_call);
+  ASSERT_TRUE(long_call_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, long_call_ty->kind);
+  ASSERT_EQ(8, psx_type_sizeof(long_call_ty));
+  ASSERT_EQ(8, ps_node_type_size(long_call));
+  ASSERT_TRUE(ptr_call->type != NULL);
+  psx_type_t *ptr_call_ty = psx_node_get_type(ptr_call);
+  ASSERT_TRUE(ptr_call_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_call_ty->kind);
+  ASSERT_EQ(4, psx_type_deref_size(ptr_call_ty));
+  ASSERT_TRUE(ps_node_is_pointer(ptr_call));
+  ASSERT_EQ(4, ps_node_deref_size(ptr_call));
+  ASSERT_TRUE(ptrptr_call->type != NULL);
+  psx_type_t *ptrptr_call_ty = psx_node_get_type(ptrptr_call);
+  ASSERT_TRUE(ptrptr_call_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptrptr_call_ty->kind);
+  ASSERT_EQ(8, psx_type_deref_size(ptrptr_call_ty));
+  ASSERT_EQ(8, ps_node_deref_size(ptrptr_call));
+  ASSERT_EQ(2, psx_node_pointer_qual_levels(ptrptr_call));
+  ASSERT_TRUE(double_ptr_to_array_call->type != NULL);
+  psx_type_t *double_ptr_to_array_ty = psx_node_get_type(double_ptr_to_array_call);
+  ASSERT_TRUE(double_ptr_to_array_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, double_ptr_to_array_ty->kind);
+  ASSERT_EQ(16, psx_type_deref_size(double_ptr_to_array_ty));
+  ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind(double_ptr_to_array_call));
+  ASSERT_TRUE(indirect_double_ptr_to_array_call->type != NULL);
+  psx_type_t *indirect_double_ptr_to_array_ty =
+      psx_node_get_type(indirect_double_ptr_to_array_call);
+  ASSERT_TRUE(indirect_double_ptr_to_array_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, indirect_double_ptr_to_array_ty->kind);
+  ASSERT_EQ(16, psx_type_deref_size(indirect_double_ptr_to_array_ty));
+  ASSERT_EQ(16, ps_node_deref_size(indirect_double_ptr_to_array_call));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            psx_node_pointee_fp_kind(indirect_double_ptr_to_array_call));
 
   parsed_code = parse_program_input(
       "double __tm_sq(double x){ return x*x; } "
@@ -2113,6 +2153,39 @@ static void test_type_metadata_bridge() {
 	  ASSERT_EQ(PSX_TYPE_POINTER, indirect_ptr_ty->kind);
 	  ASSERT_EQ(4, psx_type_deref_size(indirect_ptr_ty));
 	  ASSERT_TRUE(ps_node_is_pointer(indirect_ptr_call));
+
+  parsed_code = parse_program_input(
+      "struct CQ { int v; }; const struct CQ *__tm_cq(void){ return 0; } "
+      "int main(void){ __tm_cq(); return 0; }");
+  fn = as_func(parsed_code[1]);
+  body = as_block(fn->base.rhs);
+  node_t *const_struct_ptr_call = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    node_t *n = body->body[i];
+    if (n->kind != ND_FUNCALL) continue;
+    node_func_t *call = as_func(n);
+    if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_cq", 7) == 0) {
+      const_struct_ptr_call = n;
+      break;
+    }
+  }
+  ASSERT_TRUE(const_struct_ptr_call != NULL);
+  psx_type_t *const_struct_ptr_ty = psx_node_get_type(const_struct_ptr_call);
+  ASSERT_TRUE(const_struct_ptr_ty != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, const_struct_ptr_ty->kind);
+  ASSERT_TRUE(const_struct_ptr_ty->base != NULL);
+  ASSERT_EQ(TK_STRUCT, const_struct_ptr_ty->base->tag_kind);
+  ASSERT_TRUE(const_struct_ptr_ty->base->is_const_qualified);
+  token_kind_t call_tag = TK_EOF;
+  char *call_tag_name = NULL;
+  int call_tag_len = 0;
+  int call_is_tag_ptr = 0;
+  psx_node_get_tag_type(const_struct_ptr_call, &call_tag, &call_tag_name,
+                        &call_tag_len, &call_is_tag_ptr);
+  ASSERT_EQ(TK_STRUCT, call_tag);
+  ASSERT_EQ(2, call_tag_len);
+  ASSERT_TRUE(strncmp(call_tag_name, "CQ", 2) == 0);
+  ASSERT_EQ(1, call_is_tag_ptr);
 	}
 
 static void test_translation_unit_reset_static_local_state() {
@@ -2346,6 +2419,10 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
   expect_parse_fail_with_message("main() { int x; int *p=&x; return *(void *)p; }",
                                  "void* の deref はできません");
+  expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
+                                 "void 戻り値関数の結果は代入/初期化に使えません");
+  expect_parse_fail_with_message("void f(void); int main(void){ void (*fp)(void)=f; int x; x=fp(); return 0; }",
+                                 "void 戻り値関数の結果は代入/初期化に使えません");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
   expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");

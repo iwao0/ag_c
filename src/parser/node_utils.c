@@ -339,6 +339,14 @@ static psx_type_t *type_from_scalar_shape(token_kind_t kind, tk_float_kind_t fp_
   return type;
 }
 
+static void type_apply_pointee_qualifiers(psx_type_t *type,
+                                          int is_const_qualified,
+                                          int is_volatile_qualified) {
+  if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return;
+  if (is_const_qualified) type->base->is_const_qualified = 1;
+  if (is_volatile_qualified) type->base->is_volatile_qualified = 1;
+}
+
 static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   if (!fn || fn->callee != NULL || !fn->funcname) return NULL;
   psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
@@ -381,12 +389,41 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   psx_type_t *type = psx_type_new_pointer(base, deref_size);
   type->pointer_qual_levels = levels;
   type->base_deref_size = psx_type_sizeof(base);
+  type_apply_pointee_qualifiers(type, ret.pointee_const_qualified,
+                                ret.pointee_volatile_qualified);
   PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(type, ret_array);
   if (psx_ret_pointee_array_has_dims(ret_array)) {
     type->outer_stride = psx_ret_pointee_array_inner_stride(ret_array);
     type->mid_stride = psx_ret_pointee_array_next_stride(ret_array);
   }
   return type;
+}
+
+static int tag_type_from_type(psx_type_t *type, token_kind_t *tag_kind, char **tag_name,
+                              int *tag_len, int *is_tag_pointer) {
+  if (!type) return 0;
+  psx_type_t *tag_type = NULL;
+  int ptr = 0;
+  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) {
+    if (type->base && (type->base->kind == PSX_TYPE_STRUCT ||
+                       type->base->kind == PSX_TYPE_UNION)) {
+      tag_type = type->base;
+      ptr = 1;
+    }
+  } else if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
+    tag_type = type;
+  }
+  if (!tag_type && (type->tag_kind == TK_STRUCT || type->tag_kind == TK_UNION)) {
+    tag_type = type;
+    ptr = psx_type_is_pointer(type);
+  }
+  if (!tag_type || (tag_type->tag_kind != TK_STRUCT && tag_type->tag_kind != TK_UNION))
+    return 0;
+  if (tag_kind) *tag_kind = tag_type->tag_kind;
+  if (tag_name) *tag_name = tag_type->tag_name;
+  if (tag_len) *tag_len = tag_type->tag_len;
+  if (is_tag_pointer) *is_tag_pointer = ptr;
+  return 1;
 }
 
 static node_mem_t *funcall_callee_mem(node_func_t *fn) {
@@ -429,14 +466,17 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
   int returns_data_pointer =
       cm->funcptr_ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_array);
   if (returns_data_pointer) {
+    tk_float_kind_t ret_pointee_fp = (tk_float_kind_t)fn->base.fp_kind;
+    if (ret_pointee_fp == TK_FLOAT_KIND_NONE && psx_ret_pointee_array_has_dims(ret_array))
+      ret_pointee_fp = (tk_float_kind_t)cm->pointee_fp_kind;
     psx_type_t *base = NULL;
     if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
       int size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
       base = psx_type_new_tag(tag_kind, tag_name, tag_len,
                               psx_node_get_tag_scope_depth(fn->callee) + 1, size);
-    } else if (fn->base.fp_kind != TK_FLOAT_KIND_NONE) {
-      base = psx_type_new_float((tk_float_kind_t)fn->base.fp_kind,
-                                fn->base.fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+    } else if (ret_pointee_fp != TK_FLOAT_KIND_NONE) {
+      base = psx_type_new_float(ret_pointee_fp,
+                                ret_pointee_fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
     } else {
       int base_size = cm->base_deref_size > 0 ? cm->base_deref_size : cm->deref_size;
       if (base_size <= 0 || base_size > 8) base_size = 4;
@@ -448,6 +488,8 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
       if (row > 0) deref_size = row;
     }
     psx_type_t *type = psx_type_new_pointer(base, deref_size);
+    type_apply_pointee_qualifiers(type, cm->is_const_qualified,
+                                  cm->is_volatile_qualified);
     PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(type, ret_array);
     if (psx_ret_pointee_array_has_dims(ret_array)) {
       type->outer_stride = psx_ret_pointee_array_inner_stride(ret_array);
@@ -670,29 +712,6 @@ psx_type_t *psx_node_materialize_type(node_t *node) {
   return type;
 }
 
-/* 関数のポインタ戻り値 (`int *g(); g()[i]` / `g()+i`) の pointee サイズ (= deref_size /
- * subscript・ポインタ算術のスケール)。直接呼び出しのみ。非ポインタ戻り・間接呼び出し・
- * 不明は 0。parser はポインタ戻り値の pointee 型を覚えていないので semantic ctx の
- * 戻り値型 (tag / token_kind) から導出する。多段ポインタ戻り (`int **g()`) は ret が段数を
- * 持たないため基底型サイズになる (既存の制約)。 */
-static int funcall_ret_pointee_size(node_t *node) {
-  node_func_t *fn = (node_func_t *)node;
-  if (fn->callee != NULL || !fn->funcname) return 0;
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
-  if (!ret.is_pointer) return 0;
-  if (ret.tag_kind != TK_EOF) {
-    return ret.struct_size > 0 ? ret.struct_size : 8;
-  }
-  switch (ret.token_kind) {
-    case TK_CHAR: return 1;
-    case TK_SHORT: return 2;
-    case TK_LONG: return 8;
-    case TK_FLOAT: return 4;
-    case TK_DOUBLE: return 8;
-    default: return 4;  /* int / その他 */
-  }
-}
-
 int ps_node_type_size(node_t *node) {
   if (!node) return 0;
   psx_type_t *explicit_type = node_explicit_cast_type(node);
@@ -826,39 +845,7 @@ int ps_node_deref_size(node_t *node) {
      * 配列へのポインタ戻り `int (*f())[N]` では pointee は配列 (N*base) なので行ストライドを返す。 */
     case ND_FUNCALL: {
       psx_type_t *type = psx_node_get_type(node);
-      int typed = psx_type_deref_size(type);
-      if (typed > 0) return typed;
-      int base = funcall_ret_pointee_size(node);
-      node_func_t *fn = (node_func_t *)node;
-      if (base == 0 && fn->callee) {
-        int fd = 0;
-        if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-            fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
-          node_mem_t *cm = (node_mem_t *)fn->callee;
-          psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
-          fd = dims.first_dim;
-          int row = psx_ret_pointee_array_row_stride(dims);
-          if (row > 0) return row;
-        }
-        if (fd > 0) {
-          int elem = ps_node_deref_size(fn->callee);
-          if (elem <= 0) elem = ps_node_type_size(fn->callee);
-          if (elem > 0) return fd * elem;
-        }
-      }
-      if (base > 0 && fn->callee == NULL && fn->funcname) {
-        int fd = psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-        if (fd > 0) {
-          int sd = psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
-          return psx_ret_pointee_array_row_stride(psx_ret_pointee_array_make(fd, sd, base));
-        }
-        /* 多段ポインタ戻り `int **g()`: `*g()` の結果はまだポインタ (8B) なので、
-         * 1 段目 deref のロード幅 / 添字スケールは基底型でなく 8 を返す。最内基底型は
-         * psx_node_base_deref_size が別途返す。 */
-        if (psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len) >= 2)
-          return 8;
-      }
-      return base;
+      return psx_type_deref_size(type);
     }
     default:
       return 0;
@@ -1008,21 +995,6 @@ tk_float_kind_t psx_node_pointee_fp_kind(node_t *node) {
       psx_type_t *type = psx_node_get_type(node);
       if (type && type->pointee_fp_kind != TK_FLOAT_KIND_NONE)
         return type->pointee_fp_kind;
-      node_func_t *fn = (node_func_t *)node;
-      if (fn->callee &&
-          (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-           fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
-        node_mem_t *cm = (node_mem_t *)fn->callee;
-        if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(cm)) {
-          return (tk_float_kind_t)cm->pointee_fp_kind;
-        }
-      }
-      if (fn->callee != NULL || !fn->funcname) return TK_FLOAT_KIND_NONE;
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
-      if (!ret.is_pointer)
-        return TK_FLOAT_KIND_NONE;
-      if (ret.token_kind == TK_FLOAT) return TK_FLOAT_KIND_FLOAT;
-      if (ret.token_kind == TK_DOUBLE) return TK_FLOAT_KIND_DOUBLE;
       return TK_FLOAT_KIND_NONE;
     }
     default:
@@ -1057,6 +1029,10 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
   int len = 0;
   int ptr = 0;
   if (node) {
+    if (node->kind == ND_FUNCALL &&
+        tag_type_from_type(psx_node_get_type(node), &kind, &name, &len, &ptr)) {
+      goto out;
+    }
     switch (node->kind) {
       case ND_LVAR:
         kind = as_lvar(node)->mem.tag_kind;
@@ -1168,6 +1144,7 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
         break;
     }
   }
+out:
   if (tag_kind) *tag_kind = kind;
   if (tag_name) *tag_name = name;
   if (tag_len) *tag_len = len;
@@ -1441,14 +1418,19 @@ lvar_t *psx_node_lvar_symbol(node_t *node) {
 
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   /* C11 6.5.16: 代入の RHS は void 型であってはならない。
-   * 直接呼び出し ND_FUNCALL のみチェック (間接呼び出しは型情報未保持)。 */
+   * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */
   if (rhs && rhs->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)rhs;
-    if (fn->callee == NULL && fn->funcname &&
-        psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len).is_void) {
-      psx_diag_ctx(tk_get_current_token(), "assign",
-                   "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
-                   fn->funcname_len, fn->funcname);
+    psx_type_t *rhs_type = psx_node_get_type(rhs);
+    if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
+      if (fn->callee == NULL && fn->funcname) {
+        psx_diag_ctx(tk_get_current_token(), "assign",
+                     "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
+                     fn->funcname_len, fn->funcname);
+      } else {
+        psx_diag_ctx(tk_get_current_token(), "assign",
+                     "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
+      }
     }
   }
   node_mem_t *node = arena_alloc(sizeof(node_mem_t));

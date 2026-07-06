@@ -1105,26 +1105,20 @@ static node_t *materialize_struct_rvalue_ternary(node_t *base,
 
 static int funcall_ret_pointee_const(node_func_t *fn) {
   if (!fn) return 0;
-  if (fn->callee == NULL && fn->funcname) {
-    return psx_ctx_get_function_ret_pointee_const(fn->funcname, fn->funcname_len);
-  }
-  if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-                     fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
-                     fn->callee->kind == ND_CAST)) {
-    return ((node_mem_t *)fn->callee)->is_const_qualified ? 1 : 0;
+  psx_type_t *type = psx_node_get_type((node_t *)fn);
+  if (type && type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->is_const_qualified) {
+    return 1;
   }
   return 0;
 }
 
 static int funcall_ret_pointee_volatile(node_func_t *fn) {
   if (!fn) return 0;
-  if (fn->callee == NULL && fn->funcname) {
-    return psx_ctx_get_function_ret_pointee_volatile(fn->funcname, fn->funcname_len);
-  }
-  if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-                     fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR ||
-                     fn->callee->kind == ND_CAST)) {
-    return ((node_mem_t *)fn->callee)->is_volatile_qualified ? 1 : 0;
+  psx_type_t *type = psx_node_get_type((node_t *)fn);
+  if (type && type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->is_volatile_qualified) {
+    return 1;
   }
   return 0;
 }
@@ -3687,7 +3681,6 @@ static node_t *build_unary_deref_node(node_t *operand) {
       /* `int (*f())[N]` の `*f()` / `*(f()+k)`: 結果は行 (int[N])。subscript_base_address_of が
        * load を skip し `(*f())[i]` が要素ストライドで添字できるよう、deref_size を要素サイズに
        * する (ローカル `int (*p)[N]` の `*p` と同じ)。 ds=N*elem を first_dim で割って elem を得る。 */
-      node_func_t *fn = (node_func_t *)probe;
       psx_type_t *func_type = psx_node_get_type(probe);
       if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
         int inner = func_type->outer_stride;
@@ -3712,46 +3705,6 @@ static node_t *build_unary_deref_node(node_t *operand) {
           node->tag_len = func_type->base->tag_len;
           node->tag_scope_depth_p1 = func_type->base->tag_scope_depth_p1;
           node->is_tag_pointer = 0;
-        }
-      } else if (fn->callee == NULL && fn->funcname) {
-        psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-            psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
-            psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len),
-            0);
-        int rowstride = ps_node_deref_size(probe);
-        int inner = 0, next = 0;
-        psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, &next);
-        if (inner > 0) {
-          node->deref_size = (short)inner;
-          if (next > 0) node->inner_deref_size = (short)next;
-        }
-      } else if (fn->callee) {
-        if (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-            fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
-          node_mem_t *cm = (node_mem_t *)fn->callee;
-          psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
-          int rowstride = ps_node_deref_size(probe);
-          int inner = psx_ret_pointee_array_inner_stride(dims);
-          int next = psx_ret_pointee_array_next_stride(dims);
-          if (inner > 0) {
-            node->deref_size = (short)inner;
-            if (next > 0) node->inner_deref_size = (short)next;
-          } else {
-            psx_ret_pointee_array_strides_from_row(dims, rowstride, &inner, NULL);
-            if (inner > 0) node->deref_size = (short)inner;
-          }
-        }
-        token_kind_t fk = TK_EOF;
-        char *fname = NULL;
-        int flen = 0;
-        psx_node_get_tag_type(fn->callee, &fk, &fname, &flen, NULL);
-        if (fk != TK_EOF) {
-          node->tag_kind = fk;
-          node->tag_name = fname;
-          node->tag_len = flen;
-          node->is_tag_pointer = 0;
-          int elem = psx_ctx_get_tag_size(fk, fname, flen);
-          if (elem > 0) node->deref_size = (short)elem;
         }
       }
     } else if (probe && probe->kind == ND_DEREF) {
@@ -4099,7 +4052,6 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
      * subscript `f()[i][j]` 用の要素ストライド (base elem) を引き継げるよう inner_ds を立てる
      * (ローカル `int (*p)[N]` の inner_deref_size=elem と同じ。これがないと f()[i][j] が
      * 行ストライドのまま誤ロード→SIGSEGV)。 */
-    node_func_t *fn = (node_func_t *)node;
     psx_type_t *func_type = psx_node_get_type(node);
     if (func_type && func_type->funcptr_ret_pointee_array_first_dim > 0) {
       inner_ds = func_type->outer_stride;
@@ -4110,22 +4062,6 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
             func_type->funcptr_ret_pointee_array_second_dim,
             0);
         psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
-      }
-    } else if (fn->callee == NULL && fn->funcname &&
-        psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len) > 0) {
-      psx_ret_pointee_array_t dims = psx_ret_pointee_array_make(
-          psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len),
-          psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len),
-          0);
-      psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, &next_ds);
-    } else if (fn->callee && (fn->callee->kind == ND_LVAR || fn->callee->kind == ND_GVAR ||
-                              fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR)) {
-      node_mem_t *cm = (node_mem_t *)fn->callee;
-      psx_ret_pointee_array_t dims = PSX_RET_POINTEE_ARRAY_FROM_FIELDS(cm);
-      inner_ds = psx_ret_pointee_array_inner_stride(dims);
-      next_ds = psx_ret_pointee_array_next_stride(dims);
-      if (inner_ds <= 0) {
-        psx_ret_pointee_array_strides_from_row(dims, ds, &inner_ds, NULL);
       }
     }
   }
@@ -4483,19 +4419,13 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
     /* `unsigned char *g(); g()[i]`: 関数のポインタ戻り値の pointee が unsigned なら
      * zero-extend load させる (base_mem は ND_FUNCALL を拾わないので別途)。 */
     if (node->kind == ND_FUNCALL) {
-      node_func_t *fn = (node_func_t *)node;
-      if (fn->callee == NULL && fn->funcname) {
-        psx_function_ret_info_t ret =
-            psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
-        if (ret.is_pointer && ret.is_unsigned) {
+      psx_type_t *func_type = psx_node_get_type(node);
+      if (func_type && func_type->kind == PSX_TYPE_POINTER) {
+        if (func_type->base && func_type->base->is_unsigned) {
           if (pql == 0 && inner_ds == 0) deref->is_unsigned = 1;
           else                           deref->pointee_is_unsigned = 1;
         }
-        if (ret.is_pointer) {
-          if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
-          if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
-        }
-      } else if (fn->callee) {
+        node_func_t *fn = (node_func_t *)node;
         if (funcall_ret_pointee_const(fn)) deref->is_const_qualified = 1;
         if (funcall_ret_pointee_volatile(fn)) deref->is_volatile_qualified = 1;
       }

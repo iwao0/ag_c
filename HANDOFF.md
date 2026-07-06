@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き718: ND_FUNCALL return type materialize と型メタデータ集約）
+最終更新: 2026-07-06（続き720: ND_FUNCALL deref/stride/void 判定の型集約）
 
 ## 現状
 - 直近の部分確認:
@@ -37,8 +37,66 @@
   **1162/1162 pass, fail 0**、
   `make test-wasm-js-pipeline` = **green**、
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
-	  `git diff --check` = **green**、
-	  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+  `git diff --check` = **green**、
+  `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き720: **`ND_FUNCALL` の deref size / pointee FP / pointer-to-array stride / void 代入判定を型情報へ集約した**。
+  続き718-719で funcall ノードに戻り値型を materialize したが、まだ
+  `ps_node_deref_size(ND_FUNCALL)` は `funcall_ret_pointee_size()` で semantic ctx を直接読み、
+  `psx_node_pointee_fp_kind(ND_FUNCALL)` や `*f()` / `f()[i]` の配列戻り値 stride は
+  direct call 用の関数表 lookup と indirect call 用の callee metadata fallback を持っていた。
+  さらに `psx_node_new_assign()` の void 戻り値チェックも「直接呼び出しのみ、間接呼び出しは型情報未保持」
+  という古い前提のままだった。
+
+  根本対応として `funcall_ret_pointee_size()` を削除し、
+  `ps_node_deref_size(ND_FUNCALL)` / `psx_node_pointee_fp_kind(ND_FUNCALL)` は
+  `psx_node_get_type()` の `psx_type_t` だけを見るようにした。
+  `build_unary_deref_node()` と `make_subscript_scaled_offset()` の pointer-to-array return 分岐からも
+  direct semantic ctx fallback / callee metadata fallback を取り除き、materialized type の
+  `funcptr_ret_pointee_array_*` / `outer_stride` / `mid_stride` を source of truth にした。
+  この移行で `double (*(*fp)())[2]` が indirect call では pointer return のため
+  `fn->base.fp_kind == NONE` になり、pointee FP を失う問題が見つかったため、
+  `type_from_indirect_funcall()` は ret-pointee-array metadata がある場合に callee の
+  `pointee_fp_kind` から base float type を復元するようにした。
+  代入の void 戻り値チェックも `ND_FUNCALL` の materialized type が `PSX_TYPE_VOID` かを見る形へ変更し、
+  直接/間接呼び出しを同じ経路で拒否する。
+  併せて indirect funcall の pointee const/volatile も `type_from_indirect_funcall()` で
+  pointer base type に載せるようにし、`funcall_ret_pointee_const()` /
+  `funcall_ret_pointee_volatile()` から semantic ctx / callee metadata fallback を削除した。
+
+  regression は `test_type_metadata_bridge()` に direct/indirect `double (*)[2]` return と
+  `int **` return の deref size / pointee FP / pointer level assertion を追加。
+  さらに `test_parse_invalid_diagnostics()` で direct `x=f()` と indirect `x=fp()` の
+  void 戻り値代入が同じ診断になることを固定した。
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  `1196/1196 pass` / `1191 compiled, 1191 executed`、
+  `git diff --check` = green。
+- 続き719: **`ND_FUNCALL` の tag/qualifier 問い合わせを `psx_type_t` 優先に寄せた**。
+  続き718で funcall ノード自体に戻り値型を materialize するようにしたが、
+  `psx_node_get_tag_type(ND_FUNCALL)` はまだ direct call なら `psx_ctx_get_function_ret_info()`、
+  indirect call なら callee の旧 metadata を手で辿る分岐が主経路のままだった。
+  また `funcall_ret_pointee_const()` / `funcall_ret_pointee_volatile()` も direct call では
+  semantic ctx を直接引き直し、型生成側に集約した pointee qualifier を使っていなかった。
+
+  根本対応として `type_from_direct_funcall()` が pointer return の base type に
+  pointee const/volatile を反映し、`tag_type_from_type()` を追加して
+  `psx_node_get_tag_type(ND_FUNCALL)` はまず `psx_node_get_type()` から struct/union value /
+  struct/union pointer を解決するようにした。既存の direct/indirect の旧分岐は、
+  まだ型生成に乗っていない未移行ケース向け fallback として残している。
+  `expr.c` 側の funcall pointee qualifier 判定も `psx_type_t` の pointer base を先に見て、
+  旧 semantic ctx / callee metadata lookup は保険に下げた。
+
+  regression は `test_type_metadata_bridge()` に
+  `const struct CQ *__tm_cq(void)` の direct funcall を追加し、`psx_node_get_type()` で
+  pointer base の tag/const qualifier が取れることと、`psx_node_get_tag_type()` が
+  `is_tag_pointer=1` を型から返すことを確認している。
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = pass、
+  `make -j4 build/test_parser && ./build/test_parser` = pass、
+  `make -j4 build/test_e2e build/test_wasm32_e2e && ./build/test_e2e && ./build/test_wasm32_e2e` =
+  `1196/1196 pass` / `1191 compiled, 1191 executed`、
+  `git diff --check` = green。
 - 続き718: **`ND_FUNCALL` の戻り値型を construction 時に materialize し、直接/間接呼び出しの
   pointer metadata 参照を型側へ寄せた**。
   続き717後も `ps_node_is_pointer(ND_FUNCALL)` / `ps_node_type_size(ND_FUNCALL)` /
