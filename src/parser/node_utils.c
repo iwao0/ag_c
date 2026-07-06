@@ -1111,6 +1111,82 @@ static node_mem_t *node_mem_view(node_t *node) {
   }
 }
 
+unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && type->funcptr_param_fp_mask) return type->funcptr_param_fp_mask;
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? mem->funcptr_param_fp_mask : 0;
+}
+
+unsigned short psx_node_funcptr_param_int_mask(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && type->funcptr_param_int_mask) return type->funcptr_param_int_mask;
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? mem->funcptr_param_int_mask : 0;
+}
+
+int psx_node_funcptr_returns_void(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && type->returns_void) return 1;
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? mem->funcptr_ret_is_void : 0;
+}
+
+int psx_node_funcptr_returns_complex(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && type->returns_complex) return 1;
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? mem->funcptr_ret_is_complex : 0;
+}
+
+int psx_node_funcptr_returns_pointee_array(node_t *node) {
+  if (!node) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && type->funcptr_ret_pointee_array_first_dim > 0) return 1;
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(mem) : 0;
+}
+
+void psx_node_copy_funcptr_metadata(node_mem_t *dst, node_t *src) {
+  if (!dst || !src) return;
+  psx_type_t *type = psx_node_get_type(src);
+  if (type) {
+    if (type->funcptr_param_fp_mask) dst->funcptr_param_fp_mask = type->funcptr_param_fp_mask;
+    if (type->funcptr_param_int_mask) dst->funcptr_param_int_mask = type->funcptr_param_int_mask;
+    if (type->funcptr_ret_int_width) dst->funcptr_ret_int_width = type->funcptr_ret_int_width;
+    if (type->funcptr_nargs_fixed) dst->funcptr_nargs_fixed = type->funcptr_nargs_fixed;
+    if (type->returns_void) dst->funcptr_ret_is_void = 1;
+    if (type->returns_data_pointer) dst->funcptr_ret_is_data_pointer = 1;
+    if (type->returns_complex) dst->funcptr_ret_is_complex = 1;
+    PSX_RET_POINTEE_ARRAY_STORE_SHORT_FIELDS_IF_PRESENT(dst, psx_ret_pointee_array_make(
+        type->funcptr_ret_pointee_array_first_dim,
+        type->funcptr_ret_pointee_array_second_dim,
+        type->funcptr_ret_pointee_array_elem_size));
+  }
+
+  node_mem_t *mem = node_mem_view(src);
+  if (!mem) return;
+  if (!dst->funcptr_param_fp_mask && mem->funcptr_param_fp_mask)
+    dst->funcptr_param_fp_mask = mem->funcptr_param_fp_mask;
+  if (!dst->funcptr_param_int_mask && mem->funcptr_param_int_mask)
+    dst->funcptr_param_int_mask = mem->funcptr_param_int_mask;
+  if (!dst->funcptr_ret_int_width && mem->funcptr_ret_int_width)
+    dst->funcptr_ret_int_width = mem->funcptr_ret_int_width;
+  if (!dst->funcptr_nargs_fixed && mem->funcptr_nargs_fixed)
+    dst->funcptr_nargs_fixed = mem->funcptr_nargs_fixed;
+  if (mem->funcptr_ret_is_void) dst->funcptr_ret_is_void = 1;
+  if (mem->funcptr_ret_is_data_pointer) dst->funcptr_ret_is_data_pointer = 1;
+  if (mem->funcptr_ret_is_complex) dst->funcptr_ret_is_complex = 1;
+  if (!PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(dst) &&
+      PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(mem)) {
+    PSX_RET_POINTEE_ARRAY_COPY_FIELDS(dst, mem);
+  }
+}
+
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);

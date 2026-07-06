@@ -4248,29 +4248,7 @@ static node_t *build_subscript_deref(node_t *node, node_t *idx) {
       if (is_final_scalar) deref->is_unsigned = 1;
       else                 deref->pointee_is_unsigned = 1;
     }
-    if (base_mem) {
-      if (base_mem->funcptr_param_fp_mask) {
-        deref->funcptr_param_fp_mask = base_mem->funcptr_param_fp_mask;
-      }
-      if (base_mem->funcptr_param_int_mask) {
-        deref->funcptr_param_int_mask = base_mem->funcptr_param_int_mask;
-      }
-      if (base_mem->funcptr_ret_int_width) {
-        deref->funcptr_ret_int_width = base_mem->funcptr_ret_int_width;
-      }
-      if (base_mem->funcptr_ret_is_void) {
-        deref->funcptr_ret_is_void = 1;
-      }
-      if (base_mem->funcptr_ret_is_data_pointer) {
-        deref->funcptr_ret_is_data_pointer = 1;
-      }
-      if (base_mem->funcptr_ret_is_complex) {
-        deref->funcptr_ret_is_complex = 1;
-      }
-      if (PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(base_mem)) {
-        PSX_RET_POINTEE_ARRAY_COPY_FIELDS(deref, base_mem);
-      }
-    }
+    psx_node_copy_funcptr_metadata(deref, node);
     if (psx_node_pointee_is_const_qualified(node)) deref->is_const_qualified = 1;
     if (psx_node_pointee_is_volatile_qualified(node)) deref->is_volatile_qualified = 1;
     /* サイズ1配列メンバ (`struct S { unsigned char x[1]; }`) は struct_layout で
@@ -4441,17 +4419,14 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
    * メンバの戻り fp_kind を pointee_fp_kind として設定済み) も拾う。 */
   if (callee) {
     tk_float_kind_t ret_fp = psx_node_pointee_fp_kind(callee);
-    node_mem_t *cm = (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
-                      callee->kind == ND_DEREF || callee->kind == ND_ADDR)
-                         ? (node_mem_t *)callee : NULL;
     if (ret_fp != TK_FLOAT_KIND_NONE &&
-        !(cm && PSX_RET_POINTEE_ARRAY_FIELDS_PRESENT(cm))) {
+        !psx_node_funcptr_returns_pointee_array(callee)) {
       node->base.fp_kind = ret_fp;
     }
-    if (cm && cm->funcptr_ret_is_void) {
+    if (psx_node_funcptr_returns_void(callee)) {
       node->base.is_void_call = 1;
     }
-    if (cm && cm->funcptr_ret_is_complex) {
+    if (psx_node_funcptr_returns_complex(callee)) {
       node->base.is_complex = 1;
     }
     /* 間接呼び出しで戻り型が struct/union 値 (`struct R (*op)(int)`) なら ret_struct_size を
@@ -4490,22 +4465,9 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
    * wrap_to_fp する (既に fp の実引数なら no-op)。 */
   unsigned short fp_param_mask = 0;
   unsigned short int_param_mask = 0;
-  if (callee && callee->kind == ND_LVAR) {
-    lvar_t *fpv = psx_node_lvar_symbol(callee);
-    if (fpv) {
-      fp_param_mask = fpv->funcptr_param_fp_mask;
-      int_param_mask = fpv->funcptr_param_int_mask;
-    }
-  } else if (callee && callee->kind == ND_GVAR) {
-    node_gvar_t *gvn = (node_gvar_t *)callee;
-    global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
-    if (gv) {
-      fp_param_mask = gv->funcptr_param_fp_mask;
-      int_param_mask = gv->funcptr_param_int_mask;
-    }
-  } else if (callee && callee->kind == ND_DEREF) {
-    fp_param_mask = ((node_mem_t *)callee)->funcptr_param_fp_mask;
-    int_param_mask = ((node_mem_t *)callee)->funcptr_param_int_mask;
+  if (callee) {
+    fp_param_mask = psx_node_funcptr_param_fp_mask(callee);
+    int_param_mask = psx_node_funcptr_param_int_mask(callee);
   }
   if (fp_param_mask) {
     for (int i = 0; i < nargs && i < 8; i++) {

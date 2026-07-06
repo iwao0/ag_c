@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き725: member / pointer-to-array metadata の型ヘルパー集約）
+最終更新: 2026-07-06（続き726: 関数ポインタ metadata 読み取りの型ヘルパー集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,28 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き726: **関数ポインタ metadata の読み取り入口を型ヘルパーへ集約した**。
+  続き725の後も、`parse_call_postfix()` は callee が lvar/gvar/deref かを分岐して
+  `funcptr_param_fp_mask` / `funcptr_param_int_mask` や戻り値 void/complex を読んでいた。
+  また `build_subscript_deref()` も関数ポインタ配列・メンバの metadata を
+  `base_mem` から手でコピーしていた。
+
+  根本対応として `node_utils` に `psx_node_funcptr_param_fp_mask()` /
+  `psx_node_funcptr_param_int_mask()` / `psx_node_funcptr_returns_void()` /
+  `psx_node_funcptr_returns_complex()` /
+  `psx_node_funcptr_returns_pointee_array()` /
+  `psx_node_copy_funcptr_metadata()` を追加した。
+  いずれも `psx_type_t` の function pointer metadata を優先し、足りない場合だけ
+  旧 `node_mem_t` にフォールバックする。
+  `parse_call_postfix()` と `build_subscript_deref()` は callee/base の種類別読み取りをやめ、
+  この入口経由で関数ポインタ ABI metadata を扱うようにした。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き725: **member access と pointer-to-array metadata の読み取り入口を型ヘルパーへ集約した**。
   続き724の後も、`build_member_deref_node()` には base が lvar/gvar/deref か
   funcall かで分岐し、`node_mem_t` / 関数戻り値 helper から const/volatile を
