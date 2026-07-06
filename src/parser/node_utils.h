@@ -31,6 +31,7 @@ void psx_node_copy_funcptr_metadata_from_gvar(node_mem_t *dst, const struct glob
 void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
                                                     const struct tag_member_info_t *src);
 void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const struct global_var_t *gv);
+void psx_node_init_gvar_array_base_metadata(node_mem_t *mem, const struct global_var_t *gv);
 void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const struct lvar_t *var,
                                                   int type_size);
 void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const struct lvar_t *var,
@@ -70,6 +71,7 @@ node_t *psx_node_new_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
 node_t *psx_node_new_gvar_for(struct global_var_t *gv);
+node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);
 struct lvar_t *psx_node_lvar_symbol(node_t *node);
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs);

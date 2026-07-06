@@ -1280,6 +1280,21 @@ void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const global_var_t *gv) {
   mem->is_long_double = gv->is_long_double ? 1 : 0;
 }
 
+void psx_node_init_gvar_array_base_metadata(node_mem_t *mem, const global_var_t *gv) {
+  if (!mem) return;
+  *mem = (node_mem_t){0};
+  mem->base.kind = ND_GVAR;
+  if (!gv) return;
+  mem->type_size = (short)gv->type_size;
+  mem->deref_size = gv->deref_size;
+  mem->tag_kind = gv->tag_kind;
+  mem->tag_name = gv->tag_name;
+  mem->tag_len = gv->tag_len;
+  mem->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+  mem->is_const_qualified = gv->is_const_qualified ? 1 : 0;
+  mem->is_volatile_qualified = gv->is_volatile_qualified ? 1 : 0;
+}
+
 void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const lvar_t *var,
                                                   int type_size) {
   if (!mem) return;
@@ -2064,6 +2079,17 @@ node_t *psx_node_new_lvar_typed_for(lvar_t *var, int type_size) {
 node_t *psx_node_new_gvar_for(global_var_t *gv) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   psx_node_init_gvar_ref_metadata(&node->mem, gv);
+  if (gv) {
+    node->name = gv->name;
+    node->name_len = gv->name_len;
+    node->is_thread_local = gv->is_thread_local ? 1 : 0;
+  }
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_gvar_array_base_for(global_var_t *gv) {
+  node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
+  psx_node_init_gvar_array_base_metadata(&node->mem, gv);
   if (gv) {
     node->name = gv->name;
     node->name_len = gv->name_len;

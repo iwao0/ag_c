@@ -4822,24 +4822,10 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
   for (global_var_t *gv = psx_find_global_var(tok->str, tok->len); gv; gv = NULL) {
     if (gv->name_len != tok->len || memcmp(gv->name, tok->str, (size_t)tok->len) != 0) continue;
     if (gv->is_array) {
-      node_gvar_t *base = arena_alloc(sizeof(node_gvar_t));
-      base->mem.base.kind = ND_GVAR;
-      base->mem.type_size = gv->type_size;
-      base->mem.deref_size = gv->deref_size;
-      /* struct 配列の要素はタグ型なので、ND_GVAR と外側 ND_ADDR の両方に
-       * tag 情報を伝播させて `gpts[i].x` の member access を解決できるようにする。 */
-      base->mem.tag_kind = gv->tag_kind;
-      base->mem.tag_name = gv->tag_name;
-      base->mem.tag_len = gv->tag_len;
-      base->mem.tag_scope_depth_p1 = gv->tag_scope_depth_p1;  /* shadow 対応 */
-      base->mem.is_const_qualified = gv->is_const_qualified;
-      base->mem.is_volatile_qualified = gv->is_volatile_qualified;
-      base->name = gv->name;
-      base->name_len = gv->name_len;
-      base->is_thread_local = gv->is_thread_local;
+      node_t *base = psx_node_new_gvar_array_base_for(gv);
       node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
       addr->base.kind = ND_ADDR;
-      addr->base.lhs = (node_t *)base;
+      addr->base.lhs = base;
       psx_node_init_gvar_array_addr_metadata(addr, gv);
       return (node_t *)addr;
     }

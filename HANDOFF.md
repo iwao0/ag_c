@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き735: static local gvar 参照 metadata 初期化の集約）
+最終更新: 2026-07-06（続き736: global array base gvar metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,25 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き736: **global array の `ND_ADDR` 内側に置く `ND_GVAR` base の
+  metadata 初期化を `node_utils` に集約した**。
+  続き735の後も、`try_build_global_var_node()` の配列グローバル分岐は、
+  outer `ND_ADDR` の metadata は `psx_node_init_gvar_array_addr_metadata()` に寄せていた一方で、
+  inner の array object base `ND_GVAR` は type_size / deref_size / tag / qualifier / name を
+  手でコピーしていた。
+
+  根本対応として `psx_node_init_gvar_array_base_metadata()` と
+  `psx_node_new_gvar_array_base_for()` を追加し、array object base 専用の constructor に寄せた。
+  scalar gvar 参照とは意味が違うため `psx_node_new_gvar_for()` には混ぜず、
+  pointer decay 前の array object base として既存挙動を保つ入口にしている。
+  これで `expr.c` の `ND_GVAR` 直生成は、通常の新規構築ではなく constructor 経由になった。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き735: **static local を global 実体へ lower した後の `ND_GVAR`
   metadata 初期化を `node_utils` に集約した**。
   続き734の後も、`build_static_local_array_addr_node()` と
