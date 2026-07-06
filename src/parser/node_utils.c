@@ -1321,19 +1321,14 @@ void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const lvar_t 
   if (var->size > 0 && sz > var->elem_size && var->elem_size > 0) mem->is_pointer = 1;
 }
 
-void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
-                                            int is_tag_pointer) {
+static void init_lvar_array_addr_strides(node_mem_t *addr, const lvar_t *var) {
   if (!addr || !var) return;
   int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
   addr->type_size = (short)stride;
   addr->deref_size = (short)stride;
-  addr->is_pointer = 1;
-  addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
-                             ? (unsigned int)var->pointee_fp_kind
-                             : (unsigned int)var->fp_kind;
-  addr->pointee_is_bool = var->is_bool ? 1 : 0;
-  addr->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
-  psx_node_copy_funcptr_metadata_from_lvar(addr, var);
+  addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
+  addr->pointer_qual_levels = var->pointer_qual_levels;
+  addr->base_deref_size = var->base_deref_size;
   if (var->outer_stride > 0) {
     if (var->mid_stride > 0) {
       addr->inner_deref_size = (short)var->mid_stride;
@@ -1351,47 +1346,13 @@ void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
       addr->inner_deref_size = (short)var->elem_size;
     }
   }
-  addr->tag_kind = var->tag_kind;
-  addr->tag_name = var->tag_name;
-  addr->tag_len = var->tag_len;
-  addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
-  addr->is_tag_pointer = is_tag_pointer ? 1 : 0;
-  addr->is_const_qualified = var->is_const_qualified ? 1 : 0;
-  addr->is_volatile_qualified = var->is_volatile_qualified ? 1 : 0;
-  addr->pointer_qual_levels = var->pointer_qual_levels;
-  addr->base_deref_size = var->base_deref_size;
-  addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
 }
 
-void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const global_var_t *gv) {
+static void init_gvar_array_addr_strides(node_mem_t *addr, const global_var_t *gv) {
   if (!addr || !gv) return;
-  addr->tag_kind = gv->tag_kind;
-  addr->tag_name = gv->tag_name;
-  addr->tag_len = gv->tag_len;
-  addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
-  addr->is_const_qualified = gv->is_const_qualified ? 1 : 0;
-  addr->is_volatile_qualified = gv->is_volatile_qualified ? 1 : 0;
-  if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
   int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
   addr->type_size = (short)stride;
   addr->deref_size = (short)stride;
-  addr->is_pointer = 1;
-  if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
-    addr->pointee_fp_kind = (unsigned int)gv->fp_kind;
-  } else if (gv->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
-    addr->pointee_fp_kind = (unsigned int)gv->pointee_fp_kind;
-    addr->base_deref_size = 8;
-  }
-  addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
-  psx_node_copy_funcptr_metadata_from_gvar(addr, gv);
-  if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
-    addr->pointee_is_scalar_ptr = 1;
-    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
-  }
-  if (gv->tag_kind != TK_EOF && gv->is_tag_pointer) {
-    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->deref_size;
-    if (addr->pointer_qual_levels == 0) addr->pointer_qual_levels = 1;
-  }
   if (gv->outer_stride > 0) {
     if (gv->mid_stride > 0) {
       addr->inner_deref_size = (short)gv->mid_stride;
@@ -1409,6 +1370,85 @@ void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const global_var_t
       addr->inner_deref_size = (short)gv->deref_size;
     }
   }
+}
+
+void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
+                                            int is_tag_pointer) {
+  if (!addr || !var) return;
+  init_lvar_array_addr_strides(addr, var);
+  addr->is_pointer = 1;
+  addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
+                             ? (unsigned int)var->pointee_fp_kind
+                             : (unsigned int)var->fp_kind;
+  addr->pointee_is_bool = var->is_bool ? 1 : 0;
+  addr->pointee_is_unsigned = var->is_unsigned ? 1 : 0;
+  psx_node_copy_funcptr_metadata_from_lvar(addr, var);
+  addr->tag_kind = var->tag_kind;
+  addr->tag_name = var->tag_name;
+  addr->tag_len = var->tag_len;
+  addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  addr->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  addr->is_const_qualified = var->is_const_qualified ? 1 : 0;
+  addr->is_volatile_qualified = var->is_volatile_qualified ? 1 : 0;
+}
+
+void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const global_var_t *gv) {
+  if (!addr || !gv) return;
+  addr->tag_kind = gv->tag_kind;
+  addr->tag_name = gv->tag_name;
+  addr->tag_len = gv->tag_len;
+  addr->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+  addr->is_const_qualified = gv->is_const_qualified ? 1 : 0;
+  addr->is_volatile_qualified = gv->is_volatile_qualified ? 1 : 0;
+  if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
+  init_gvar_array_addr_strides(addr, gv);
+  addr->is_pointer = 1;
+  if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+    addr->pointee_fp_kind = (unsigned int)gv->fp_kind;
+  } else if (gv->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+    addr->pointee_fp_kind = (unsigned int)gv->pointee_fp_kind;
+    addr->base_deref_size = 8;
+  }
+  addr->pointee_is_unsigned = gv->is_unsigned ? 1 : 0;
+  psx_node_copy_funcptr_metadata_from_gvar(addr, gv);
+  if (gv->pointee_elem_size > 0 && gv->tag_kind == TK_EOF) {
+    addr->pointee_is_scalar_ptr = 1;
+    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->pointee_elem_size;
+  }
+  if (gv->tag_kind != TK_EOF && gv->is_tag_pointer) {
+    if (addr->base_deref_size == 0) addr->base_deref_size = (short)gv->deref_size;
+    if (addr->pointer_qual_levels == 0) addr->pointer_qual_levels = 1;
+  }
+}
+
+void psx_node_init_compound_lvar_array_addr_metadata(node_mem_t *addr, const lvar_t *var,
+                                                     token_kind_t tag_kind, char *tag_name,
+                                                     int tag_len, int array_size) {
+  if (!addr || !var) return;
+  addr->tag_kind = tag_kind;
+  addr->tag_name = tag_name;
+  addr->tag_len = tag_len;
+  init_lvar_array_addr_strides(addr, var);
+  addr->is_pointer = 1;
+  if (addr->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
+  addr->compound_literal_array_size = array_size;
+}
+
+void psx_node_init_compound_gvar_array_addr_metadata(node_mem_t *addr, const global_var_t *gv,
+                                                     int ptr_array_pointee_bytes,
+                                                     int pointer_elem_size, int array_size) {
+  if (!addr || !gv) return;
+  addr->tag_kind = gv->tag_kind;
+  addr->tag_name = gv->tag_name;
+  addr->tag_len = gv->tag_len;
+  init_gvar_array_addr_strides(addr, gv);
+  if (ptr_array_pointee_bytes > 0) {
+    addr->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+    addr->base_deref_size = (short)(pointer_elem_size > 0 ? pointer_elem_size : 8);
+  }
+  addr->is_pointer = 1;
+  if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
+  addr->compound_literal_array_size = array_size;
 }
 
 unsigned int psx_node_pointer_const_qual_mask(node_t *node) {

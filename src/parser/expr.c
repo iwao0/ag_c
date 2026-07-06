@@ -87,8 +87,6 @@ static int is_type_name_start_token(token_t *t);
 static char *new_compound_lit_name(void);
 static void set_lvar_array_strides_from_dims(lvar_t *var, const int *dims, int dim_count, int elem_size);
 static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, int dim_count, int elem_size);
-static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var);
-static void set_addr_array_strides_from_gvar(node_mem_t *addr, const global_var_t *gv);
 static int lvar_is_static_local_array(lvar_t *var);
 static node_t *new_typed_lvar_ref(lvar_t *var, int is_pointer);
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
@@ -1373,17 +1371,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         node_mem_t *addr = arena_alloc(sizeof(node_mem_t));
         addr->base.kind = ND_ADDR;
         addr->base.lhs = (node_t *)gvar_node;
-        addr->tag_kind = gv->tag_kind;
-        addr->tag_name = gv->tag_name;
-        addr->tag_len = gv->tag_len;
-        set_addr_array_strides_from_gvar(addr, gv);
-        if (cl_ptr_array_pointee_bytes > 0) {
-          addr->ptr_array_pointee_bytes = cl_ptr_array_pointee_bytes;
-          addr->base_deref_size = (short)(cast_elem_size > 0 ? cast_elem_size : 8);
-        }
-        addr->is_pointer = 1;
-        if (gv->tag_kind != TK_EOF) addr->is_tag_pointer = 1;
-        addr->compound_literal_array_size = var_size;
+        psx_node_init_compound_gvar_array_addr_metadata(addr, gv, cl_ptr_array_pointee_bytes,
+                                                        cast_elem_size, var_size);
         return apply_postfix((node_t *)addr, ctx);
       }
       return apply_postfix((node_t *)gvar_node, ctx);
@@ -1450,15 +1439,10 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     node_mem_t *addr_node = arena_alloc(sizeof(node_mem_t));
     addr_node->base.kind = ND_ADDR;
     addr_node->base.lhs = psx_node_new_lvar_for(var);
-    addr_node->tag_kind = is_pointer_elem_array ? cast_tag_kind : var->tag_kind;
-    addr_node->tag_name = is_pointer_elem_array ? cast_tag_name : var->tag_name;
-    addr_node->tag_len = is_pointer_elem_array ? cast_tag_len : var->tag_len;
-    set_addr_array_strides_from_lvar(addr_node, var);
-    /* `(int[N]){...}` 複合リテラルは配列名と同じくポインタへ崩壊する。
-     * 後続の `[i]` サブスクリプトを通すために is_pointer を立てる。 */
-    addr_node->is_pointer = 1;
-    if (addr_node->tag_kind != TK_EOF) addr_node->is_tag_pointer = 1;
-    addr_node->compound_literal_array_size = var_size;
+    psx_node_init_compound_lvar_array_addr_metadata(
+        addr_node, var, is_pointer_elem_array ? cast_tag_kind : var->tag_kind,
+        is_pointer_elem_array ? cast_tag_name : var->tag_name,
+        is_pointer_elem_array ? cast_tag_len : var->tag_len, var_size);
     ref = (node_t *)addr_node;
   } else {
     ref = new_typed_lvar_ref(var, cast_is_ptr);
@@ -1930,57 +1914,6 @@ static void set_gvar_array_strides_from_dims(global_var_t *gv, const int *dims, 
       gv->extra_strides[idx++] = rest_mul * elem_size;
     }
     gv->extra_strides_count = (unsigned char)idx;
-  }
-}
-
-static void set_addr_array_strides_from_lvar(node_mem_t *addr, const lvar_t *var) {
-  if (!addr || !var) return;
-  int stride = (var->outer_stride > 0) ? var->outer_stride : var->elem_size;
-  addr->type_size = stride;
-  addr->deref_size = stride;
-  addr->ptr_array_pointee_bytes = var->ptr_array_pointee_bytes;
-  addr->pointer_qual_levels = var->pointer_qual_levels;
-  addr->base_deref_size = var->base_deref_size;
-  if (var->outer_stride > 0) {
-    if (var->mid_stride > 0) {
-      addr->inner_deref_size = (short)var->mid_stride;
-      if (var->extra_strides_count > 0) {
-        addr->next_deref_size = (short)var->extra_strides[0];
-        for (int i = 1; i < var->extra_strides_count && (i - 1) < 5; i++) {
-          addr->extra_strides[i - 1] = var->extra_strides[i];
-        }
-        addr->extra_strides[var->extra_strides_count - 1] = var->elem_size;
-        addr->extra_strides_count = var->extra_strides_count;
-      } else {
-        addr->next_deref_size = (short)var->elem_size;
-      }
-    } else {
-      addr->inner_deref_size = (short)var->elem_size;
-    }
-  }
-}
-
-static void set_addr_array_strides_from_gvar(node_mem_t *addr, const global_var_t *gv) {
-  if (!addr || !gv) return;
-  int stride = (gv->outer_stride > 0) ? gv->outer_stride : gv->deref_size;
-  addr->type_size = stride;
-  addr->deref_size = stride;
-  if (gv->outer_stride > 0) {
-    if (gv->mid_stride > 0) {
-      addr->inner_deref_size = (short)gv->mid_stride;
-      if (gv->extra_strides_count > 0) {
-        addr->next_deref_size = (short)gv->extra_strides[0];
-        for (int i = 1; i < gv->extra_strides_count && (i - 1) < 5; i++) {
-          addr->extra_strides[i - 1] = gv->extra_strides[i];
-        }
-        addr->extra_strides[gv->extra_strides_count - 1] = gv->deref_size;
-        addr->extra_strides_count = gv->extra_strides_count;
-      } else {
-        addr->next_deref_size = (short)gv->deref_size;
-      }
-    } else {
-      addr->inner_deref_size = (short)gv->deref_size;
-    }
   }
 }
 

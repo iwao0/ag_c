@@ -1,6 +1,6 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-06（続き736: global array base gvar metadata 初期化の集約）
+最終更新: 2026-07-06（続き737: compound literal array address metadata 初期化の集約）
 
 ## 現状
 - 直近の部分確認:
@@ -39,6 +39,28 @@
   `make test-wasm-obj-linker` = **ag_wasm_link smoke: ok**、
   `git diff --check` = **green**、
   `wc -c build/wasm_js_e2e_pipeline/failures.txt` = **0**。
+- 続き737: **compound literal 配列の decay 用 `ND_ADDR` metadata 初期化を
+  `node_utils` に集約した**。
+  続き736の後も、`parse_compound_literal_from_type()` は file-scope / block-scope の
+  配列 compound literal で、address node の tag / stride / pointer-array carry /
+  `compound_literal_array_size` を手で設定していた。
+  さらに `expr.c` 内の `set_addr_array_strides_from_lvar()` /
+  `set_addr_array_strides_from_gvar()` は、通常配列 address helper と同じ stride carry を
+  別実装で持っていた。
+
+  根本対応として `node_utils` に内部 stride helper を作り、
+  通常 lvar/gvar 配列 address と compound literal 配列 address が同じ stride 初期化を使うようにした。
+  追加した `psx_node_init_compound_lvar_array_addr_metadata()` /
+  `psx_node_init_compound_gvar_array_addr_metadata()` により、
+  compound literal 固有の `compound_literal_array_size` と pointer-array carry も
+  `expr.c` 側の個別コピーから外れた。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/test_wasm32_e2e` = build pass、
+  `./build/test_parser` = pass、
+  `./build/test_e2e` = **1196/1196 pass**、
+  `./build/test_wasm32_e2e` = **1191 compiled, 1191 executed**、
+  `git diff --check` = green。
 - 続き736: **global array の `ND_ADDR` 内側に置く `ND_GVAR` base の
   metadata 初期化を `node_utils` に集約した**。
   続き735の後も、`try_build_global_var_node()` の配列グローバル分岐は、
