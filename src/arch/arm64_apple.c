@@ -217,9 +217,9 @@ static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {
     .padding = emit_global_walk_padding,
 };
 
-static void emit_global_aggregate_init(global_var_t *gv) {
+static int emit_global_aggregate_init(global_var_t *gv) {
   arm64_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  psx_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
+  return psx_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
 }
 
 typedef struct {
@@ -230,8 +230,7 @@ static int emit_global_initializer_aggregate(void *user,
                                              const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   arm64_global_init_emit_ctx_t *ctx = user;
-  emit_global_aggregate_init(ctx->gv);
-  return 1;
+  return emit_global_aggregate_init(ctx->gv);
 }
 
 static int emit_global_initializer_slots(void *user,
@@ -239,8 +238,10 @@ static int emit_global_initializer_slots(void *user,
                                          const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   arm64_global_init_emit_ctx_t *ctx = user;
-  psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
-                                 emit_global_init_slot_value, NULL);
+  if (!psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
+                                      emit_global_init_slot_value, NULL)) {
+    return 0;
+  }
   int remain = layout->elem_count - layout->init_count;
   if (remain > 0) cg_emitf("  .space %d\n", remain * layout->elem_size);
   return 1;
@@ -274,8 +275,11 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
       arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-      psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
-                                 &init_ctx);
+      if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+                                      &init_ctx)) {
+        diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
+                            "failed to emit arm64 thread-local initializer");
+      }
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
@@ -298,8 +302,11 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
     arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-    psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
-                               &init_ctx);
+    if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+                                    &init_ctx)) {
+      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
+                          "failed to emit arm64 global initializer");
+    }
     return;
   }
   /* 暫定定義: .comm _name,size,log2align。

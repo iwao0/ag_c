@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き901: route arm64 TLS initializers through visitor）
+最終更新: 2026-07-08（続き902: propagate initializer visitor failures）
 
 ## 現状
+- 続き902: **initializer visitor / walker の失敗戻り値を backend 側で握りつぶさないようにした**。
+
+  続き900-901で top-level initializer dispatch は visitor 経由に揃ったが、
+  呼び出し側が `psx_gvar_visit_initializer()` や
+  `psx_gvar_walk_init_slot_values()` の戻り値を捨てている箇所が残っていた。
+  callback が将来 0 を返した場合に、途中まで initializer を emit/write しても
+  backend が正常扱いで進んでしまう浅い契約になっていた。
+
+  今回は arm64 の aggregate/slot visitor callback が walker の戻り値を返すようにし、
+  `_Thread_local` と通常 global の visitor 呼び出し失敗を `DIAG_ERR_INTERNAL_USAGE` で止めるようにした。
+  Wasm IR は slot-array walker と top-level visitor の失敗を `wasm_unsupported_msg()` に接続し、
+  Wasm object は slot-array walker と classified visitor の失敗を `obj_unsupported_msg()` に接続した。
+  正常系の生成内容は変えず、visitor/walker の `int` 戻り値を backend の制御フローまで通した形。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き901: **arm64 `_Thread_local` 初期化も initializer visitor 経由に揃えた**。
 
   続き900で通常の global data 初期化は `psx_gvar_visit_initializer()` に寄ったが、

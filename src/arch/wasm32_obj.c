@@ -2585,9 +2585,9 @@ static int emit_obj_initializer_slots(void *user,
     obj_unsupported_msg("global array element size in Wasm object mode");
   }
   obj_init_slots_data_ctx_t slot_ctx = {.d = ctx->d, .gv = ctx->gv};
-  psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->elem_count,
-                                 write_obj_global_init_slot_value, &slot_ctx);
-  return 1;
+  return psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->elem_count,
+                                        write_obj_global_init_slot_value,
+                                        &slot_ctx);
 }
 
 static int emit_obj_initializer_scalar(void *user,
@@ -2636,9 +2636,11 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   data_note_alloc_size(d, (size_t)size);
 
   obj_global_init_emit_ctx_t emit_ctx = {.d = d, .gv = gv, .size = size};
-  psx_gvar_visit_initializer_classified(gv, &init_class, size,
-                                        &obj_global_initializer_visit_ops,
-                                        &emit_ctx);
+  if (!psx_gvar_visit_initializer_classified(gv, &init_class, size,
+                                             &obj_global_initializer_visit_ops,
+                                             &emit_ctx)) {
+    obj_unsupported_msg("global initializer in Wasm object mode");
+  }
   d->is_emitted = 1;
 }
 
