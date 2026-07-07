@@ -115,8 +115,7 @@ static lvar_t *find_owning_lvar(ir_build_ctx_t *ctx, int offset) {
   return NULL;
 }
 
-/* スカラ要素 (struct member 含む) の「ロード時の値の IR 型」。
- * mem.type_size を見る。配列名は別経路 (ND_ADDR 経由) を通る。 */
+/* スカラ要素 (struct member 含む) の「ロード時の値の IR 型」。 */
 static ir_type_t elem_value_type(int type_size) {
   if (type_size >= 8) return IR_TY_PTR;
   if (type_size == 4) return IR_TY_I32;
@@ -144,7 +143,8 @@ static ir_type_t lvar_value_type(node_lvar_t *lv) {
   unsigned fpk = lv->mem.base.fp_kind;
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
+  int elem = psx_node_storage_type_size((node_t *)lv);
+  if (elem <= 0) elem = 4;
   return scalar_value_type(elem, psx_node_value_is_pointer_like((node_t *)lv));
 }
 
@@ -831,14 +831,15 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   /* load (型は node の fp_kind / type_size から判定) */
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
-    int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+    int sz = psx_node_storage_type_size(node);
+    if (sz <= 0) sz = 4;
     load_ty = scalar_value_type(sz, psx_node_value_is_pointer_like(node));
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
   ld->dst = ir_val_vreg(v, load_ty);
   ld->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
-  ld->is_unsigned = gv->mem.is_unsigned ? 1 : 0;
+  ld->is_unsigned = psx_node_is_unsigned_type(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, ld);
   return ld->dst;
 }
@@ -892,7 +893,7 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *inst = ir_inst_new(IR_LOAD);
   inst->dst = ir_val_vreg(v, vty);
   inst->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-  inst->is_unsigned = lv->mem.is_unsigned ? 1 : 0;
+  inst->is_unsigned = psx_node_is_unsigned_type(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -1120,7 +1121,7 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         if (arg && arg->kind == ND_LVAR) {
           lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
           if (owner) arg_full_size = owner->size;
-          if (arg_full_size == 0) arg_full_size = ((node_lvar_t *)arg)->mem.type_size;
+          if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
         }
         if (cg_size_needs_indirect_struct(arg_full_size) &&
             arg && arg->kind == ND_LVAR) {
@@ -1272,7 +1273,7 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
                                 bw, bo);
   }
   /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
-  rhs = coerce_to_type_ex(ctx, rhs, vty, lv->mem.is_unsigned ? 1 : 0,
+  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
                           psx_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
@@ -1294,13 +1295,14 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   node_gvar_t *gv = (node_gvar_t *)node->lhs;
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
-    int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+    int sz = psx_node_storage_type_size(node->lhs);
+    if (sz <= 0) sz = 4;
     vty = scalar_value_type(sz, psx_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &gv->mem);
   if (ctx->failed) return ir_val_none();
-  rhs = coerce_to_type_ex(ctx, rhs, vty, gv->mem.is_unsigned ? 1 : 0,
+  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
                           psx_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
@@ -1333,7 +1335,7 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(psx_node_storage_type_size(node->lhs),
                             psx_node_value_is_pointer_like(node->lhs));
   }
-  rhs = coerce_to_type_ex(ctx, rhs, vty, mm->is_unsigned ? 1 : 0,
+  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
                           psx_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ptr;
@@ -1918,7 +1920,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
           if (owner) arg_full_size = owner->size;
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
-          if (arg_full_size == 0) arg_full_size = lv->mem.type_size;
+          if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
           if ((!owner || (!owner->is_array && owner->pointer_qual_levels == 0)) &&
@@ -2524,7 +2526,8 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     node_gvar_t *gv = (node_gvar_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
-      int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
+      int sz = psx_node_storage_type_size(target);
+      if (sz <= 0) sz = 4;
       vty = scalar_value_type(sz, psx_node_value_is_pointer_like(target));
     }
     ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
@@ -3329,7 +3332,9 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     }
     node_lvar_t *lv = (node_lvar_t *)arg;
     lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-    int param_full_size = owner && owner->size > 0 ? owner->size : lv->mem.type_size;
+    int param_full_size = owner && owner->size > 0
+                              ? owner->size
+                              : psx_node_storage_type_size(arg);
     /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は
      * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
     int struct_param_needs_ptr =

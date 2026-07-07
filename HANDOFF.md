@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き829: aggregate value metadata reader 化）
+最終更新: 2026-07-07（続き830: IR scalar lvalue metadata reader 化）
 
 ## 現状
+- 続き830: **IR builder の scalar lvalue load/store/coerce に残っていた
+  `node_mem_t` の storage 幅 / signedness 直読を既存 reader 経由へ寄せた**。
+
+  続き829までで aggregate 判定は `psx_node_aggregate_value_size()` へ寄ったが、
+  `build_node_lvar()` / `build_node_gvar()` / `build_assign_to_lvar()` /
+  `build_assign_to_gvar()` / `build_assign_to_deref()` などはまだ
+  `lv->mem.type_size` / `gv->mem.type_size` / `*.mem.is_unsigned` / `mm->is_unsigned`
+  を直接読んで、load/store 幅や `coerce_to_type_ex()` の target unsigned を決めていた。
+
+  今回は storage/load 幅を `psx_node_storage_type_size()`、scalar 符号を
+  `psx_node_is_unsigned_type()` 経由へ移した。`psx_node_storage_type_size()` は
+  続き827で分離した「意味型サイズ」ではなく実 storage/load 幅を見る reader なので、
+  `**pp` など pointer chain の semantic type と実 load 幅を混同しない方針は維持している。
+  `psx_node_is_unsigned_type()` は IR から使う契約になったため `parser_public.h` に公開宣言を追加した。
+
+  この変更により、明示 typed node では scalar signedness の正本を `psx_type_t` 側から読み、
+  legacy node だけ従来の mem fallback を使う。既存の `test_type_metadata_bridge()` は
+  typed scalar node に stale mem `is_unsigned` が残っていても helper が type 側を優先することを
+  すでに固定しており、今回は IR の呼び出し元をその reader へ揃えた。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き829: **IR / semantic 側に残っていた aggregate value 判定の
   `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
 
