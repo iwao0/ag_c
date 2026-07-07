@@ -1,8 +1,22 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き843: shared union init slot member lookup）
+最終更新: 2026-07-07（続き844: use shared union init member lookup for arm64 top-level globals）
 
 ## 現状
+- 続き844: **arm64 のトップレベル union global emission も
+  `psx_tag_union_init_member_for_slot()` 経由へ寄せた**。
+
+  続き843で nested/array union slot の active member lookup は共有 helper 化したが、
+  `emit_global_struct_init()` のトップレベル union fast path にはまだ
+  `gv->union_init_ordinal` と `psx_ctx_get_tag_member_info()` のローカル解釈が残っていた。
+  今回は slot 0 も同じ helper 経由にし、`init_union_ordinals[0]` や fp sentinel の
+  解釈が backend 内で再分散しないようにした。
+
+  確認は
+  `make -j4 build/ag_c` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `git diff --check` = **pass**。
+
 - 続き843: **global union initializer slot から active member を取得する処理を
   `psx_tag_union_init_member_for_slot()` に集約した**。
 

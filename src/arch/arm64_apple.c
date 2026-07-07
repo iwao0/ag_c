@@ -402,9 +402,8 @@ static void emit_global_struct_init(global_var_t *gv) {
    * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
   if (psx_gvar_is_union_aggregate(gv)) {
     tag_member_info_t mi = {0};
-    int ord = gv->union_init_ordinal;
     if (gv->init_count > 0 &&
-        psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, ord, &mi)) {
+        psx_tag_union_init_member_for_slot(gv->tag_kind, gv->tag_name, gv->tag_len, gv, 0, &mi)) {
       char *sym = gv->init_value_symbols ? gv->init_value_symbols[0] : NULL;
       int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[0] : 0;
       double fv = gv->init_fvalues ? gv->init_fvalues[0] : 0.0;
