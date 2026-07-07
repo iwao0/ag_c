@@ -1,8 +1,25 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き847: introduce global init slot view）
+最終更新: 2026-07-07（続き848: remove wasm initializer direct slot reads）
 
 ## 現状
+- 続き848: **wasm32 backend の残りの initializer slot direct read を
+  `psx_gvar_init_slot_view()` 経由に寄せた**。
+
+  続き847で主要な slot emission は view 経由になったが、`wasm32_ir.c` の
+  `global_member_func_ref()` と `wasm32_obj.c` の非 aggregate global initializer 配列出力に、
+  まだ `init_value_symbols` / `init_value_symbol_lens` / `init_values` / `init_fvalues`
+  の直接読みが残っていた。今回はその 2 箇所を `psx_gvar_init_slot_t` に置き換え、
+  wasm32 IR/object から initializer slot parallel array の直接参照を消した。
+
+  確認は
+  `rg "init_value_(symbols|symbol_lens|values|fvalues)" src/arch/wasm32_ir.c src/arch/wasm32_obj.c -n`
+  = **0件**、
+  `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**。
+
 - 続き847: **global initializer slot の parallel array 読み取りを
   `psx_gvar_init_slot_view()` に集約し始めた**。
 

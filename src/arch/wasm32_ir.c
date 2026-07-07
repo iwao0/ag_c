@@ -592,7 +592,7 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offs
 
 static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) {
   if (out_len) *out_len = 0;
-  if (!gv || gv->tag_kind == TK_EOF || gv->is_tag_pointer || gv->is_array || !gv->init_value_symbols) {
+  if (!gv || gv->tag_kind == TK_EOF || gv->is_tag_pointer || gv->is_array || gv->init_count <= 0) {
     return NULL;
   }
   int n = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
@@ -608,22 +608,22 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
     if (mi.array_len > 0) {
       for (int k = 0; k < mi.array_len && init_idx < gv->init_count; k++, init_idx++) {
         if (mi.offset + k * mi.type_size != offset) continue;
-        char *sym = gv->init_value_symbols[init_idx];
-        int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
-        if (sym && sym_len > 0 && psx_ctx_has_function_name(sym, sym_len)) {
-          if (out_len) *out_len = sym_len;
-          return sym;
+        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
+        if (slot.symbol && slot.symbol_len > 0 &&
+            psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
+          if (out_len) *out_len = slot.symbol_len;
+          return slot.symbol;
         }
         return NULL;
       }
       continue;
     }
     if (mi.offset == offset && init_idx < gv->init_count) {
-      char *sym = gv->init_value_symbols[init_idx];
-      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
-      if (sym && sym_len > 0 && psx_ctx_has_function_name(sym, sym_len)) {
-        if (out_len) *out_len = sym_len;
-        return sym;
+      psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
+      if (slot.symbol && slot.symbol_len > 0 &&
+          psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
+        if (out_len) *out_len = slot.symbol_len;
+        return slot.symbol;
       }
       return NULL;
     }

@@ -2727,28 +2727,25 @@ static void emit_obj_global(global_var_t *gv, void *user) {
                       (gv->fp_kind == TK_FLOAT_KIND_FLOAT || gv->fp_kind >= TK_FLOAT_KIND_DOUBLE);
     int total = elem > 0 ? (size + elem - 1) / elem : 0;
     for (int i = 0; i < total; i++) {
-      char *sym = (i < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[i] : NULL;
-      int sym_len = (i < gv->init_count && gv->init_value_symbol_lens)
-                      ? gv->init_value_symbol_lens[i] : 0;
-      if (sym) {
-        long long off = (i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0;
-        if (psx_ctx_has_function_name(sym, sym_len)) {
-          ensure_func_sig_for_address(sym, sym_len,
-                                      func_sig_from_global_funcptr(gv, sym, sym_len));
+      psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
+      if (slot.symbol) {
+        if (psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
+          ensure_func_sig_for_address(slot.symbol, slot.symbol_len,
+                                      func_sig_from_global_funcptr(gv, slot.symbol,
+                                                                   slot.symbol_len));
         }
-        data_write_symbol_addr(d, sym, sym_len, off, elem);
+        data_write_symbol_addr(d, slot.symbol, slot.symbol_len, slot.value, elem);
       } else {
-        uint64_t value = (uint64_t)((i < gv->init_count && gv->init_values) ? gv->init_values[i] : 0);
+        uint64_t value = (uint64_t)slot.value;
         if (is_fp_array) {
-          double fv = (i < gv->init_count) ? gv->init_fvalues[i] : 0.0;
           if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
-            float f = (float)fv;
+            float f = (float)slot.fvalue;
             uint32_t bits;
             memcpy(&bits, &f, sizeof(bits));
             value = bits;
           } else {
             uint64_t bits;
-            memcpy(&bits, &fv, sizeof(bits));
+            memcpy(&bits, &slot.fvalue, sizeof(bits));
             value = bits;
           }
         }
