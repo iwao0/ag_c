@@ -1756,12 +1756,13 @@ static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
   if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
     return data_addr_for_string_label(ref.symbol);
   }
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
-    return function_table_index_or_unsupported(ref.symbol, ref.symbol_len);
+  char *name = NULL;
+  int name_len = 0;
+  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
+    return function_table_index_or_unsupported(name, name_len);
   }
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
-    return data_addr_for_global(ref.symbol, ref.symbol_len);
+  if (psx_gvar_symbol_ref_named(ref, &name, &name_len)) {
+    return data_addr_for_global(name, name_len);
   }
   return -1;
 }

@@ -2347,21 +2347,24 @@ static obj_data_t *data_for_symbol_ref(psx_gvar_symbol_ref_t ref, int *out_adden
   if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
     return data_for_symbol(ref.symbol, -1, out_addend);
   }
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
-    return data_for_symbol(ref.symbol, ref.symbol_len, out_addend);
+  char *name = NULL;
+  int name_len = 0;
+  if (psx_gvar_symbol_ref_named(ref, &name, &name_len)) {
+    return data_for_symbol(name, name_len, out_addend);
   }
   obj_unsupported_msg("missing symbol initializer in Wasm object mode");
   return NULL;
 }
 
 static void data_write_symbol_addr(obj_data_t *d, psx_gvar_symbol_ref_t ref, int size) {
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+  char *name = NULL;
+  int name_len = 0;
+  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
-    obj_func_t *target = find_func(ref.symbol, ref.symbol_len);
+    obj_func_t *target = find_func(name, name_len);
     if (!target) {
-      target = intern_func(ref.symbol, ref.symbol_len);
-      target->sig = func_sig_from_ctx(ref.symbol, ref.symbol_len);
+      target = intern_func(name, name_len);
+      target->sig = func_sig_from_ctx(name, name_len);
     }
     uint32_t off = d->bytes.len;
     wb_int_le(&d->bytes, 0, size);
@@ -2390,13 +2393,14 @@ static void data_write_int_le_at(obj_data_t *d, size_t off, uint64_t value, int 
 
 static void data_write_symbol_addr_at(obj_data_t *d, size_t off, psx_gvar_symbol_ref_t ref,
                                       int size) {
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+  char *name = NULL;
+  int name_len = 0;
+  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
-    obj_func_t *target = find_func(ref.symbol, ref.symbol_len);
+    obj_func_t *target = find_func(name, name_len);
     if (!target) {
-      target = intern_func(ref.symbol, ref.symbol_len);
-      target->sig = func_sig_from_ctx(ref.symbol, ref.symbol_len);
+      target = intern_func(name, name_len);
+      target->sig = func_sig_from_ctx(name, name_len);
     }
     data_write_int_le_at(d, off, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);

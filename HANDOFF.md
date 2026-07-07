@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き904: centralize initializer function symbol checks）
+最終更新: 2026-07-08（続き905: centralize initializer symbol-ref classification）
 
 ## 現状
+- 続き905: **initializer symbol-ref の named / function 判定も parser public helper に寄せた**。
+
+  続き904で `psx_gvar_init_value_t` が既知の関数シンボルを指すかは
+  `psx_gvar_init_value_named_function()` に集約したが、
+  Wasm IR/object の data address / relocation 解決側にはまだ
+  `psx_gvar_symbol_ref_t` を直接見て `PSX_GVAR_SYMBOL_REF_NAMED` と
+  `psx_ctx_has_function_name()` を組み合わせる経路が残っていた。
+  そのため value helper と symbol-ref 直判定が並び、関数シンボル判定の正本がまだ少し分散していた。
+
+  今回は `psx_gvar_symbol_ref_named()` と
+  `psx_gvar_symbol_ref_named_function()` を `gvar_public.h` / `node_utils.c` に追加し、
+  `psx_gvar_init_value_named_function()` も symbol-ref helper にぶら下げた。
+  Wasm IR の `data_addr_for_symbol_ref()` と、Wasm object の
+  `data_for_symbol_ref()` / `data_write_symbol_addr*()` は helper 経由に変更した。
+  string literal と named data symbol の backend 固有の解決先、function table relocation の生成自体は変更していない。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き904: **initializer value の関数シンボル判定を parser public helper に寄せた**。
 
   続き903までで initializer value の形と emission はかなり揃ったが、
