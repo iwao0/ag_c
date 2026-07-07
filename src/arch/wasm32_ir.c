@@ -1753,13 +1753,13 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
   cg_emitf("\")\n");
 }
 
-static void emit_fp_data_bytes(int addr, tk_float_kind_t fp_kind, double value) {
+static psx_gvar_fp_bits_t fp_init_value_bits(tk_float_kind_t fp_kind, double value,
+                                             const char *float_error) {
   psx_gvar_fp_bits_t bits;
-  if (psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
-    emit_i32_data_bytes(addr, (long long)bits.bits, bits.size);
-    return;
+  if (!psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
+    wasm_unsupported_msg(float_error);
   }
-  wasm_unsupported_msg("floating global initializer in Wasm backend");
+  return bits;
 }
 
 static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
@@ -1780,11 +1780,8 @@ static uint64_t global_init_value_bits(psx_gvar_init_value_t value,
                                        const char *symbol_error,
                                        const char *float_error) {
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    psx_gvar_fp_bits_t bits;
-    if (!psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
-      wasm_unsupported_msg(float_error);
-    }
-    return (uint64_t)bits.bits;
+    return (uint64_t)fp_init_value_bits(value.fp_kind, value.fvalue,
+                                        float_error).bits;
   }
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     int sym_addr = data_addr_for_symbol_ref(value.symbol_ref);
@@ -1792,6 +1789,22 @@ static uint64_t global_init_value_bits(psx_gvar_init_value_t value,
     return (uint64_t)((long long)sym_addr + value.symbol_ref.addend);
   }
   return (uint64_t)value.value;
+}
+
+static void emit_global_init_value_data(int addr, psx_gvar_init_value_t value,
+                                        const char *symbol_error,
+                                        const char *float_error) {
+  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
+    psx_gvar_fp_bits_t bits =
+        fp_init_value_bits(value.fp_kind, value.fvalue, float_error);
+    emit_i32_data_bytes(addr, (long long)bits.bits, bits.size);
+    return;
+  }
+  if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
+    wasm_unsupported_msg("global size in Wasm backend");
+  }
+  uint64_t bits = global_init_value_bits(value, symbol_error, float_error);
+  emit_i32_data_bytes(addr, (long long)bits, value.size);
 }
 
 typedef struct {
@@ -1831,14 +1844,9 @@ static void emit_global_init_member_value_data(global_var_t *gv, int idx, int ad
   if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
     wasm_unsupported_msg("global member size in Wasm backend");
   }
-  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
-  } else {
-    uint64_t bits = global_init_value_bits(
-        value, "symbol global struct initializer in Wasm backend",
-        "floating global struct initializer in Wasm backend");
-    emit_i32_data_bytes(addr, (long long)bits, value.size);
-  }
+  emit_global_init_value_data(addr, value,
+                              "symbol global struct initializer in Wasm backend",
+                              "floating global struct initializer in Wasm backend");
 }
 
 static void emit_global_init_member_data(global_var_t *gv, int idx, int addr,
@@ -1922,28 +1930,13 @@ static int emit_global_initializer_scalar_data(void *user,
                                                psx_gvar_init_scalar_value_t value,
                                                const psx_gvar_initializer_class_t *init_class) {
   wasm_global_init_emit_ctx_t *ctx = user;
-  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    emit_fp_data_bytes(ctx->addr, value.fp_kind, value.fvalue);
-    return 1;
-  }
-  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
-      wasm_unsupported_msg("global size in Wasm backend");
-    }
-    uint64_t bits = global_init_value_bits(
-        value, "global symbol initializer in Wasm backend",
-        "floating global initializer in Wasm backend");
-    emit_i32_data_bytes(ctx->addr, (long long)bits, value.size);
-    return 1;
-  }
   if ((!init_class->has_payload || value.value == 0) &&
       ctx->size != 1 && ctx->size != 2 && ctx->size != 4 && ctx->size != 8) {
     return 1;
   }
-  if (ctx->size != 1 && ctx->size != 2 && ctx->size != 4 && ctx->size != 8) {
-    wasm_unsupported_msg("global size in Wasm backend");
-  }
-  emit_i32_data_bytes(ctx->addr, value.value, value.size);
+  emit_global_init_value_data(ctx->addr, value,
+                              "global symbol initializer in Wasm backend",
+                              "floating global initializer in Wasm backend");
   return 1;
 }
 

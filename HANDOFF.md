@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き902: propagate initializer visitor failures）
+最終更新: 2026-07-08（続き903: consolidate Wasm initializer value emission）
 
 ## 現状
+- 続き903: **Wasm の initializer value emission を小さく共通化した**。
+
+  続き900-902で initializer の分類・dispatch・失敗伝播は揃ったが、
+  Wasm IR 側にはまだ aggregate member scalar と top-level scalar で
+  `FLOAT / SYMBOL / INTEGER` の data segment 出力分岐が重複していた。
+  Object backend 側も scalar callback 内で symbol/float/integer を個別に `data_write_init_value()` へ流しており、
+  value shape は共通化済みなのに emission 側の分岐が少し残っていた。
+
+  今回は Wasm IR に `emit_global_init_value_data()` を追加し、
+  `psx_gvar_init_value_t` から data segment bytes へ出す処理を member/scalar で共有した。
+  FP bit pattern 化は `fp_init_value_bits()` に切り出し、slot-array の streaming emit と
+  data segment emit の両方で同じ bits helper を使う。既存の symbol address 解決や unsupported 診断は
+  backend 固有処理としてそのまま残している。
+
+  Wasm object は `emit_obj_initializer_scalar()` を整理し、function signature 補完が必要な symbol だけ先に扱い、
+  BSS-like no-payload と integer zero の特殊扱い以外は `data_write_init_value()` に一本化した。
+  生成フォーマットを変えるのではなく、value kind 分岐を既存 helper に寄せた変更。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き902: **initializer visitor / walker の失敗戻り値を backend 側で握りつぶさないようにした**。
 
   続き900-901で top-level initializer dispatch は visitor 経由に揃ったが、

@@ -2596,12 +2596,10 @@ static int emit_obj_initializer_scalar(void *user,
   obj_global_init_emit_ctx_t *ctx = user;
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     ensure_global_func_sig_for_init_symbol(ctx->gv, value);
-    data_write_init_value(ctx->d, value);
-  } else if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    data_write_init_value(ctx->d, value);
-  } else if (!init_class->has_payload) {
+  }
+  if (value.kind == PSX_GVAR_INIT_VALUE_INTEGER && !init_class->has_payload) {
     /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */
-  } else if (value.value == 0) {
+  } else if (value.kind == PSX_GVAR_INIT_VALUE_INTEGER && value.value == 0) {
     wb_zero(&ctx->d->bytes, ctx->size);
   } else {
     data_write_init_value(ctx->d, value);
