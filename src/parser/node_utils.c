@@ -2155,6 +2155,10 @@ psx_decl_funcptr_sig_t psx_gvar_funcptr_sig(const global_var_t *src) {
   return funcptr_sig_from_gvar(src);
 }
 
+psx_decl_funcptr_sig_t psx_gvar_funcptr_sig_by_name(char *name, int len) {
+  return psx_gvar_funcptr_sig(psx_find_global_var(name, len));
+}
+
 unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
   if (!node) return 0;
   return funcptr_sig_from_node(node, 1).param_fp_mask;

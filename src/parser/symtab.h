@@ -6,6 +6,7 @@
  * その extern グローバルを集約。AST node 定義は ast.h に残す。 */
 
 #include "../tokenizer/token.h"
+#include "gvar_public.h"
 #include "type.h"
 
 // グローバル変数テーブル（連結リスト）
@@ -15,7 +16,6 @@
 // 検索ホットパスである try_build_global_var_node の線形走査は先頭の next/name/name_len
 // のみ読むので、それらを最初のキャッシュラインに置いている。並べ替えはレイアウトのみの
 // 変更で、全確保箇所が calloc + フィールド代入のため挙動には影響しない。
-typedef struct global_var_t global_var_t;
 struct global_var_t {
   // --- 8 バイト (ポインタ / long long / double) ---
   global_var_t *next;
@@ -100,8 +100,6 @@ struct global_var_t {
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
  * 呼び出し前に設定済みであること。各登録経路はこれを通すこと。 */
 void psx_register_global_var(global_var_t *gv);
-/* 名前でグローバル変数を引く (見つからなければ NULL)。global_vars 線形走査の置換。 */
-global_var_t *psx_find_global_var(char *name, int len);
 
 // 文字列リテラルテーブル（連結リスト）
 typedef struct string_lit_t string_lit_t;

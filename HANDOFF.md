@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き875: hide lvar layout from parser public boundary）
+最終更新: 2026-07-08（続き876: expose global-var queries through public accessors）
 
 ## 現状
+- 続き876: **IR 側の `global_var_t` 直接参照を public accessor に寄せた**。
+
+  続き875で `lvar_t` レイアウトを `parser_public.h` から隠した後、次の同種の境界漏れとして
+  IR がグローバル変数の TLS/extern 判定や関数ポインタ署名取得のために `global_var_t` を
+  直接引いていた。今回は `src/parser/gvar_public.h` を追加し、`psx_gvar_is_extern_decl_by_name()` /
+  `psx_gvar_is_thread_local_by_name()` / `psx_gvar_funcptr_sig_by_name()` などの読み取り API を
+  公開側に置いた。`symtab.h` は `gvar_public.h` を include し、`psx_find_global_var()` の宣言正本も
+  public 側へ移した。
+
+  `ir_builder.c` は `global_var_t *` を保持せず、名前ベースの public query だけで
+  `IR_LOAD_TLV_ADDR` / GOT 経由判定 / gvar 関数ポインタ署名を決めるようにした。これは
+  `global_var_t` 完全 opaque 化の前段で、まず IR から symtab レイアウト依存を減らす変更。
+
+  確認は
+  `rg "global_var_t|psx_find_global_var|gv_ent->|gv->" src/ir/ir_builder.c -n`
+  = **IR 側に `global_var_t` 直接依存なし（AST `node_gvar_t` とコメントのみ）**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き875: **`parser_public.h` から `decl.h` を外し、`lvar_t` レイアウトを外部境界から隠した**。
 
   続き874で semantic query を `semantic_public.h` に分けた後も、`parser_public.h` は

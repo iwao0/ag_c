@@ -350,15 +350,16 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
  * IR_LOAD_TLV_ADDR) を発行する共通ヘルパ。extern 宣言のみのグローバル変数 (定義は別 TU、
  * 典型は libc の `__stderrp` 等) は @PAGE/@PAGEOFF 直参照ではリンカに「does not have
  * address」と言われるため、関数アドレスと同じく GOT 経由 (@GOTPAGE/@GOTPAGEOFF) で解決する。
- * 同名の global_var_t を引いて is_extern_decl が立っていれば is_got_funcref を立てる。 */
+ * 同名のグローバル宣言が extern なら is_got_funcref を立てる。 */
 static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   int v_addr = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(gv->is_thread_local ? IR_LOAD_TLV_ADDR : IR_LOAD_SYM);
+  ir_inst_t *sym = ir_inst_new(psx_gvar_is_thread_local_by_name(gv->name, gv->name_len)
+                                   ? IR_LOAD_TLV_ADDR
+                                   : IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
   sym->sym = gv->name;
   sym->sym_len = gv->name_len;
-  global_var_t *gv_ent = psx_find_global_var(gv->name, gv->name_len);
-  if (gv_ent && gv_ent->is_extern_decl) {
+  if (psx_gvar_is_extern_decl_by_name(gv->name, gv->name_len)) {
     sym->is_got_funcref = 1;
   }
   ir_func_append_inst(ctx->f, sym);
@@ -1288,7 +1289,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, psx_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  psx_decl_funcptr_sig_t sig = psx_gvar_funcptr_sig(psx_find_global_var(gv->name, gv->name_len));
+  psx_decl_funcptr_sig_t sig = psx_gvar_funcptr_sig_by_name(gv->name, gv->name_len);
   if (!psx_decl_funcptr_sig_has_payload(sig)) {
     sig = psx_node_funcptr_sig(node->lhs);
   }
@@ -1379,8 +1380,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t
     sig = psx_lvar_funcptr_sig(lv);
   } else if (callee->kind == ND_GVAR) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
-    global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
-    sig = psx_gvar_funcptr_sig(gv);
+    sig = psx_gvar_funcptr_sig_by_name(gvn->name, gvn->name_len);
   }
   if (!psx_decl_funcptr_sig_has_payload(sig)) {
     sig = psx_node_funcptr_sig(callee);

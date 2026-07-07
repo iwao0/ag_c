@@ -71,6 +71,34 @@ global_var_t *psx_find_global_var(char *name, int len) {
   return NULL;
 }
 
+int psx_gvar_is_extern_decl(const global_var_t *gv) {
+  return (gv && gv->is_extern_decl) ? 1 : 0;
+}
+
+int psx_gvar_is_thread_local(const global_var_t *gv) {
+  return (gv && gv->is_thread_local) ? 1 : 0;
+}
+
+int psx_gvar_is_static_storage(const global_var_t *gv) {
+  return (gv && gv->is_static) ? 1 : 0;
+}
+
+int psx_gvar_is_extern_decl_by_name(char *name, int len) {
+  return psx_gvar_is_extern_decl(psx_find_global_var(name, len));
+}
+
+int psx_gvar_is_thread_local_by_name(char *name, int len) {
+  return psx_gvar_is_thread_local(psx_find_global_var(name, len));
+}
+
+char *psx_gvar_name(const global_var_t *gv) {
+  return gv ? gv->name : NULL;
+}
+
+int psx_gvar_name_len(const global_var_t *gv) {
+  return gv ? gv->name_len : 0;
+}
+
 string_lit_t *psx_find_string_lit_by_label(char *label) {
   if (!label) return NULL;
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
