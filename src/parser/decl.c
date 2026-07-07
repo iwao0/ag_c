@@ -9,7 +9,6 @@
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <limits.h>
 #include <stdio.h>
@@ -987,16 +986,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   while (src_pos < lit->len && idx < array_len) {
     /* C11 5.1.1.2: 文字列リテラル中のエスケープシーケンスは
      * 1 文字にデコードしてから配列に格納する。 */
-    uint32_t cp = 0;
-    if (lit->str[src_pos] == '\\') {
-      if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
-        cp = (unsigned char)lit->str[src_pos];
-        src_pos++;
-      }
-    } else {
-      cp = (unsigned char)lit->str[src_pos];
-      src_pos++;
-    }
+    uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &src_pos);
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
     node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)cp));
     node_t *init_node = (node_t *)assign_node;
@@ -1120,16 +1110,7 @@ static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_
   int i = 0;
   int src_pos = 0;
   while (src_pos < lit->len && i < array_len) {
-    uint32_t cp = 0;
-    if (lit->str[src_pos] == '\\') {
-      if (!tk_parse_escape_value(lit->str, lit->len, &src_pos, &cp)) {
-        cp = (unsigned char)lit->str[src_pos];
-        src_pos++;
-      }
-    } else {
-      cp = (unsigned char)lit->str[src_pos];
-      src_pos++;
-    }
+    uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &src_pos);
     init_chain = append_to_init_chain(init_chain,
         build_array_elem_assign(var, i, psx_node_new_num((unsigned char)cp)));
     i++;
@@ -1260,14 +1241,7 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
           int j = 0, sp = 0;
           if (lit) {
             while (sp < lit->len && j < row_len) {
-              uint32_t cp = 0;
-              if (lit->str[sp] == '\\') {
-                if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
-                  cp = (unsigned char)lit->str[sp]; sp++;
-                }
-              } else {
-                cp = (unsigned char)lit->str[sp]; sp++;
-              }
+              uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
               if (base + j < array_len) {
                 init_chain = append_to_init_chain(init_chain,
                     build_array_elem_assign(var, base + j, psx_node_new_num((unsigned char)cp)));
@@ -1639,12 +1613,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           int _j = 0, _sp = 0;                                                                     \
           if (_lit) {                                                                              \
             while (_sp < _lit->len && _j < inner_len && flat + _j < array_len) {                   \
-              uint32_t _cp = 0;                                                                    \
-              if (_lit->str[_sp] == '\\') {                                                        \
-                if (!tk_parse_escape_value(_lit->str, _lit->len, &_sp, &_cp)) {                    \
-                  _cp = (unsigned char)_lit->str[_sp]; _sp++;                                      \
-                }                                                                                  \
-              } else { _cp = (unsigned char)_lit->str[_sp]; _sp++; }                               \
+              uint32_t _cp = tk_next_narrow_string_code_unit(_lit->str, _lit->len, &_sp);          \
               node_mem_t *_an = build_member_array_elem_assign_at(                                 \
                   owner->offset + member_offset, elem_size, flat + _j,                             \
                   psx_node_new_num((int)_cp), member_fp_kind, member_is_bool);                     \
@@ -1897,12 +1866,7 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
   if (!lit) return init_chain;
   int j = 0, sp = 0;
   while (sp < lit->len && j < row_w && *flat + j < array_len) {
-    uint32_t cp = 0;
-    if (lit->str[sp] == '\\') {
-      if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) {
-        cp = (unsigned char)lit->str[sp]; sp++;
-      }
-    } else { cp = (unsigned char)lit->str[sp]; sp++; }
+    uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
     node_mem_t *an = build_member_array_elem_assign_at(
         owner->offset + member_offset, 1, *flat + j, psx_node_new_num((int)cp),
         fp_kind, is_bool);

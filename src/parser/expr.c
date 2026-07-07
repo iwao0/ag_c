@@ -13,7 +13,6 @@
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <limits.h>
 #include <stdio.h>

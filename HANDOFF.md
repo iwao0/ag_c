@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き862: centralize string literal byte emission）
+最終更新: 2026-07-08（続き863: centralize narrow string init decoding）
 
 ## 現状
+- 続き863: **narrow string initializer の 1 要素 decode を
+  tokenizer の `tk_next_narrow_string_code_unit()` に集約した**。
+
+  続き862で backend 側の string literal byte emission は `tk_emit_string_literal_bytes()` に
+  寄せたが、parser 側の char 配列/struct char 配列初期化には、
+  `tk_parse_escape_value()` を直接呼んで escape を 1 要素値へ読む手書き分岐が
+  `decl.c` と `parser.c` に残っていた。今回は既存挙動（escape 値を narrow 配列要素へ
+  cast する）を変えずに、`tk_next_narrow_string_code_unit()` を tokenizer に追加し、
+  parser 側はその helper を呼ぶだけにした。これで parser 層から `escape.h` 直 include と
+  `tk_parse_escape_value()` 直呼びは消えた。
+
+  確認は
+  `rg "tk_parse_escape_value|#include \"../tokenizer/escape.h\"|tk_next_narrow_string_code_unit" src/parser src/tokenizer src/arch -n`
+  = **`tk_parse_escape_value()` は tokenizer 側のみ、parser は
+  `tk_next_narrow_string_code_unit()` 呼び出しのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き862: **文字列リテラルを実データ byte 列へ展開する処理を
   tokenizer の `tk_emit_string_literal_bytes()` に集約した**。
 

@@ -18,7 +18,6 @@
 #include "struct_layout.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
@@ -1760,10 +1759,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       int j = 0, sp = 0;
       if (lit) {
         while (sp < lit->len && j < row_w) {
-          uint32_t cp = 0;
-          if (lit->str[sp] == '\\') {
-            if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
-          } else { cp = (unsigned char)lit->str[sp]; sp++; }
+          uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
           psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
           psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
           j++;
@@ -1801,10 +1797,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       int j = 0, sp = 0;
       if (lit) {
         while (sp < lit->len && j < row_w) {
-          uint32_t cp = 0;
-          if (lit->str[sp] == '\\') {
-            if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
-          } else { cp = (unsigned char)lit->str[sp]; sp++; }
+          uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
           psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
           psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
           j++;

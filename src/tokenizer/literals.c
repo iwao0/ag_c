@@ -137,6 +137,15 @@ int tk_count_string_code_units(const char *s, int len, int char_width) {
   return count;
 }
 
+uint32_t tk_next_narrow_string_code_unit(const char *s, int len, int *pos) {
+  if (!s || !pos || *pos < 0 || *pos >= len) return 0;
+  uint32_t v = 0;
+  if (s[*pos] == '\\' && tk_parse_escape_value(s, len, pos, &v)) {
+    return v;
+  }
+  return (unsigned char)s[(*pos)++];
+}
+
 static void tk_emit_literal_byte(unsigned char byte,
                                  tk_string_literal_byte_emit_fn emit, void *user,
                                  int *count) {
