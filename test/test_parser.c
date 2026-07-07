@@ -2882,6 +2882,19 @@ static void test_type_metadata_bridge() {
   psx_type_t *tmp_invalid_tag_type = psx_type_new_tag(TK_ENUM, "TE", 2, 1, 4);
   ASSERT_TRUE(!psx_type_is_tag_aggregate(tmp_invalid_tag_type));
   ASSERT_EQ(PSX_TYPE_INVALID, tmp_invalid_tag_type->kind);
+  parsed_code = parse_program_input(
+      "struct FlatIn { int a; int b; };"
+      "struct FlatOut { int x; struct FlatIn in; union { int u; int v; }; int y; };"
+      "union FlatU { int i; struct FlatIn in; };"
+      "main(){ return 0; }");
+  (void)parsed_code;
+  ASSERT_EQ(2, psx_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
+  ASSERT_EQ(5, psx_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
+  ASSERT_EQ(2, psx_tag_flat_slot_count(TK_UNION, "FlatU", 5));
+  tag_member_info_t flat_member = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
+  ASSERT_EQ(2, psx_tag_member_flat_slots(&flat_member));
+  ASSERT_EQ(2, psx_tag_member_elem_flat_slots(&flat_member));
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
   (void)parsed_code;

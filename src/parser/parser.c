@@ -1356,66 +1356,7 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
   }
 }
 
-/* struct/union 型のフラット初期化スロット数 (スカラ要素の総数) を再帰的に数える。
- * 入れ子 struct メンバは内側スカラ数だけスロットを占める (`struct In{int p,q;}` は 2)。
- * グローバル designator の slot 計算で先行メンバの正しいスロット数を得るのに使う。 */
-static int global_flat_slot_count(token_kind_t tk, char *tn, int tl);
-
-static int global_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
-                                                         int base_off, int target_off,
-                                                         int *out_off, int *out_size) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (!psx_tag_member_is_unnamed_struct(&mi) &&
-        !psx_tag_member_is_unnamed_union(&mi)) continue;
-    int start = base_off + mi.offset;
-    int end = start + mi.type_size;
-    if (target_off < start || target_off >= end) continue;
-    if (psx_tag_member_is_union_aggregate(&mi)) {
-      if (out_off) *out_off = start;
-      if (out_size) *out_size = mi.type_size;
-      return 1;
-    }
-    if (psx_tag_member_is_struct_aggregate(&mi) &&
-        global_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
-                                                      start, target_off, out_off, out_size)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
-static int global_member_flat_slots(const tag_member_info_t *mi) {
-  if (psx_tag_member_is_unnamed_struct(mi)) return 0;
-  int per = 1;
-  if (psx_tag_member_is_tag_aggregate(mi)) {
-    per = global_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
-  }
-  return (mi->array_len > 0) ? mi->array_len * per : per;
-}
-
-static int global_member_elem_flat_slots(const tag_member_info_t *mi) {
-  if (!mi) return 1;
-  int total = global_member_flat_slots(mi);
-  if (mi->array_len > 0) {
-    int per = total / mi->array_len;
-    return per > 0 ? per : 1;
-  }
-  return total > 0 ? total : 1;
-}
-
-static int global_member_subscript_stride_slots(const tag_member_info_t *mi) {
-  int per = global_member_elem_flat_slots(mi);
-  if (!mi || mi->arr_ndim <= 1) return per;
-  for (int i = 1; i < mi->arr_ndim; i++) {
-    int dim = mi->arr_dims[i];
-    if (dim > 0) per *= dim;
-  }
-  return per > 0 ? per : 1;
-}
-
+/* 多次元 member designator の `[i]` を 1 段消費し、残り次元の要素数へ畳み込む。 */
 static void consume_global_member_array_dim(tag_member_info_t *mi) {
   if (!mi) return;
   if (mi->arr_ndim > 1) {
@@ -1430,50 +1371,6 @@ static void consume_global_member_array_dim(tag_member_info_t *mi) {
   }
   mi->array_len = 0;
   mi->arr_ndim = 0;
-}
-
-static int global_flat_slot_count(token_kind_t tk, char *tn, int tl) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int slots = 0;
-  int union_max_bytes = 0;
-  int covered_union_off = 0;
-  int covered_union_size = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (tk == TK_UNION) {
-      int ms = global_member_flat_slots(&mi);
-      int count = mi.array_len > 0 ? mi.array_len : 1;
-      int bytes = mi.type_size * count;
-      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
-        union_max_bytes = bytes;
-        slots = ms;
-      }
-      continue;
-    }
-    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (psx_tag_member_is_unnamed_union(&mi)) {
-      covered_union_off = mi.offset;
-      covered_union_size = mi.type_size;
-      slots += global_member_flat_slots(&mi);
-      continue;
-    }
-    if (covered_union_size > 0 &&
-        mi.offset >= covered_union_off &&
-        mi.offset < covered_union_off + covered_union_size) {
-      continue;
-    }
-    int cover_off = 0;
-    int cover_size = 0;
-    int has_cover = global_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, mi.offset,
-                                                                  &cover_off, &cover_size);
-    slots += global_member_flat_slots(&mi);
-    if (has_cover) {
-      covered_union_off = cover_off;
-      covered_union_size = cover_size;
-    }
-  }
-  return slots;
 }
 
 /* グローバル struct/union の `.member` designator 解決は resolve_member_designator_tag
@@ -1535,20 +1432,20 @@ static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
       covered_union_slot = slot;
       covered_union_off = mi.offset;
       covered_union_size = mi.type_size;
-      slot += global_member_flat_slots(&mi);
+      slot += psx_tag_member_flat_slots(&mi);
       continue;
     }
     if (in_covered_union) continue;
     int cover_off = 0;
     int cover_size = 0;
-    int has_cover = global_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, mi.offset,
-                                                                  &cover_off, &cover_size);
+    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, mi.offset,
+                                                               &cover_off, &cover_size);
     if (has_cover) {
       covered_union_slot = slot;
       covered_union_off = cover_off;
       covered_union_size = cover_size;
     }
-    slot += global_member_flat_slots(&mi);
+    slot += psx_tag_member_flat_slots(&mi);
   }
   return -1;
 }
@@ -1652,7 +1549,7 @@ static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
           mi.offset < covered_union_off + covered_union_size) {
         continue;
       }
-      int ms = global_member_flat_slots(&mi);
+      int ms = psx_tag_member_flat_slots(&mi);
       if (off < slot + ms) {
         gbrace_ctx_from_member(c, &mi);
         return;
@@ -1665,9 +1562,9 @@ static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
       }
       int cover_off = 0;
       int cover_size = 0;
-      int has_cover = global_find_unnamed_union_covering_offset_rec(ctx->tag_kind, ctx->tag_name,
-                                                                    ctx->tag_len, 0, mi.offset,
-                                                                    &cover_off, &cover_size);
+      int has_cover = psx_tag_find_unnamed_union_covering_offset(ctx->tag_kind, ctx->tag_name,
+                                                                 ctx->tag_len, 0, mi.offset,
+                                                                 &cover_off, &cover_size);
       if (has_cover) {
         covered_union_off = cover_off;
         covered_union_size = cover_size;
@@ -1731,7 +1628,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
        * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
       int es = (psx_ctx_is_tag_aggregate_kind(ctx.tag_kind) && !ctx.is_tag_pointer)
-                   ? global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
+                   ? psx_tag_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
       if (es > 1) {
         int r = (cur_idx - level_start) % es;
         if (r != 0) cur_idx += es - r;  /* 次の要素境界へ切り上げ (隙間は後段で 0 埋め) */
@@ -1777,7 +1674,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         /* タグ値配列 (`struct P arr[3]={[1]={...}}`) は要素 = 内側メンバ数 slot。
          * タグポインタ配列 (`struct P *arr[3]={[1]=&p}`) は要素 = 1 slot (scalar pointer)
          * なので elem_slots=1 のまま (`is_tag_pointer` で除外)。 */
-        elem_slots = global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
+        elem_slots = psx_tag_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
         if (elem_slots < 1) elem_slots = 1;
         /* 多次元 struct タグ配列メンバ (`struct C rows[3][2]`): 1 要素 (rows[i]) は
          * 内側次元 (sub_dims[*]) の積 ぶんだけ struct slot が並ぶ。`[N]=` ジャンプは
@@ -1873,7 +1770,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
           }
-          int per = global_member_subscript_stride_slots(&cmi);
+          int per = psx_tag_member_subscript_stride_slots(&cmi);
           cur_idx += (int)iv * per;
           consume_global_member_array_dim(&cmi); /* 添字を 1 段消費 */
         } else if (curtok()->kind == TK_DOT) {
@@ -1905,11 +1802,11 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
               covered_union_sub_slot = sub_slot;
               covered_union_sub_off = smi.offset;
               covered_union_sub_size = smi.type_size;
-              sub_slot += global_member_flat_slots(&smi);
+              sub_slot += psx_tag_member_flat_slots(&smi);
               continue;
             }
             if (in_covered_union) continue;
-            sub_slot += global_member_flat_slots(&smi);
+            sub_slot += psx_tag_member_flat_slots(&smi);
           }
           if (!found) {
             psx_diag_ctx(curtok(), "decl", "%s",
@@ -2271,7 +2168,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
   if (psx_gvar_is_struct_aggregate(gv)) {
     /* `struct P a[] = {1,2,3,4}`: init_count is flat scalar slots, while
      * type_size must be inferred in struct elements. */
-    int elem_slots = global_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+    int elem_slots = psx_tag_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
     if (elem_slots < 1) elem_slots = 1;
     int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
     int total_slots = outer_dim * elem_slots;

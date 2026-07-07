@@ -64,6 +64,13 @@ int psx_tag_member_is_struct_aggregate(const tag_member_info_t *mi);
 int psx_tag_member_is_union_aggregate(const tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_struct(const tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_union(const tag_member_info_t *mi);
+int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                               int base_off, int target_off,
+                                               int *out_off, int *out_size);
+int psx_tag_member_flat_slots(const tag_member_info_t *mi);
+int psx_tag_member_elem_flat_slots(const tag_member_info_t *mi);
+int psx_tag_member_subscript_stride_slots(const tag_member_info_t *mi);
+int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len);
 int psx_node_aggregate_value_size(node_t *node);
 int psx_node_is_unsigned_type(node_t *node);
 int psx_node_deref_decays_to_address(node_t *node);

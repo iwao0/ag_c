@@ -16101,3 +16101,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き829）: tag flat slot 計算を node_utils / parser_public に集約
+- 見つかった浅い箇所:
+  - global initializer の flat slot 数計算が `parser.c` / `wasm32_ir.c` / `wasm32_obj.c` に
+    それぞれローカル実装として重複していた。
+  - parser 側は unnamed struct/union cover を考慮していた一方、wasm 側は簡略版で、
+    backend と parser が同じ「初期化スロット数」の正本を共有していなかった。
+- 根本対応:
+  - `psx_tag_find_unnamed_union_covering_offset()` /
+    `psx_tag_member_flat_slots()` /
+    `psx_tag_member_elem_flat_slots()` /
+    `psx_tag_member_subscript_stride_slots()` /
+    `psx_tag_flat_slot_count()` を node_utils + parser_public API に追加した。
+  - `parser.c` の global brace designator / inferred array size / member subscript stride を
+    新 helper 経由にし、ローカル `global_*flat_slot*` 実装を削除した。
+  - wasm IR / wasm object の `wasm_flat_slot_count` / `obj_flat_slot_count` 実装を削除し、
+    padding 消費と struct array element 出力の slot 数を同 helper 経由にした。
+  - parser unit に nested struct、unnamed union、union 最大 member の flat slot 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

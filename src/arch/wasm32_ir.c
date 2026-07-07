@@ -1978,7 +1978,6 @@ static void emit_global_union_scalar_data(global_var_t *gv, int *val_idx, int ad
   emit_global_init_member_data(gv, idx, addr, mi);
 }
 
-static int wasm_flat_slot_count(token_kind_t tk, char *tn, int tl);
 static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx, int *val_idx,
                                                 int target_slots);
 
@@ -2016,8 +2015,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
                                                 base_addr + mi.offset + k * mi.type_size);
           }
           consume_trailing_zero_union_padding(gv, elem_start_idx, val_idx,
-                                              wasm_flat_slot_count(mi.tag_kind, mi.tag_name,
-                                                                   mi.tag_len));
+                                              psx_tag_flat_slot_count(mi.tag_kind, mi.tag_name,
+                                                                      mi.tag_len));
         }
       } else {
         for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
@@ -2036,8 +2035,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
       emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
                                           base_addr + mi.offset);
       consume_trailing_zero_union_padding(gv, member_start_idx, val_idx,
-                                          wasm_flat_slot_count(mi.tag_kind, mi.tag_name,
-                                                               mi.tag_len));
+                                          psx_tag_flat_slot_count(mi.tag_kind, mi.tag_name,
+                                                                  mi.tag_len));
       if (has_cover) {
         covered_union_off = cover_off;
         covered_union_size = cover_size;
@@ -2088,36 +2087,6 @@ static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
   return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
 }
 
-static int wasm_member_flat_slots(const tag_member_info_t *mi) {
-  int per = 1;
-  if (psx_tag_member_is_tag_aggregate(mi)) {
-    per = wasm_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
-  }
-  return (mi->array_len > 0) ? mi->array_len * per : per;
-}
-
-static int wasm_flat_slot_count(token_kind_t tk, char *tn, int tl) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int slots = 0;
-  int union_max_bytes = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (tk == TK_UNION) {
-      int ms = wasm_member_flat_slots(&mi);
-      int count = mi.array_len > 0 ? mi.array_len : 1;
-      int bytes = mi.type_size * count;
-      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
-        union_max_bytes = bytes;
-        slots = ms;
-      }
-    } else {
-      slots += wasm_member_flat_slots(&mi);
-    }
-  }
-  return slots > 0 ? slots : 1;
-}
-
 static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx, int *val_idx,
                                                 int target_slots) {
   if (!val_idx || target_slots <= 1) return;
@@ -2166,7 +2135,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   if (mi.bit_width > 0) {
     emit_global_bitfield_member_data(gv, (*val_idx)++, addr, &mi);
     consume_trailing_zero_union_padding(gv, start_idx, val_idx,
-                                        wasm_flat_slot_count(tk, tn, tl));
+                                        psx_tag_flat_slot_count(tk, tn, tl));
     return;
   }
   if (mi.array_len > 0) {
@@ -2195,12 +2164,12 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
       emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx, addr);
     }
     consume_trailing_zero_union_padding(gv, start_idx, val_idx,
-                                        wasm_flat_slot_count(tk, tn, tl));
+                                        psx_tag_flat_slot_count(tk, tn, tl));
     return;
   }
   emit_global_union_scalar_data(gv, val_idx, addr, &mi);
   consume_trailing_zero_union_padding(gv, start_idx, val_idx,
-                                      wasm_flat_slot_count(tk, tn, tl));
+                                      psx_tag_flat_slot_count(tk, tn, tl));
 }
 
 static void emit_global_union_data(global_var_t *gv, int addr) {
@@ -2235,8 +2204,8 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
       emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx,
                                           addr + e * elem_size);
       consume_trailing_zero_union_padding(gv, elem_start_idx, &val_idx,
-                                          wasm_flat_slot_count(gv->tag_kind, gv->tag_name,
-                                                               gv->tag_len));
+                                          psx_tag_flat_slot_count(gv->tag_kind, gv->tag_name,
+                                                                  gv->tag_len));
     }
   } else {
     emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx, addr);

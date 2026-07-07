@@ -2566,38 +2566,6 @@ static int union_init_slot_fp_size(global_var_t *gv, int idx) {
   return 0;
 }
 
-static int obj_flat_slot_count(token_kind_t tk, char *tn, int tl);
-
-static int obj_member_flat_slots(const tag_member_info_t *mi) {
-  int per = 1;
-  if (psx_tag_member_is_tag_aggregate(mi)) {
-    per = obj_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
-  }
-  return (mi->array_len > 0) ? mi->array_len * per : per;
-}
-
-static int obj_flat_slot_count(token_kind_t tk, char *tn, int tl) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int slots = 0;
-  int union_max_bytes = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (tk == TK_UNION) {
-      int ms = obj_member_flat_slots(&mi);
-      int count = mi.array_len > 0 ? mi.array_len : 1;
-      int bytes = mi.type_size * count;
-      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
-        union_max_bytes = bytes;
-        slots = ms;
-      }
-    } else {
-      slots += obj_member_flat_slots(&mi);
-    }
-  }
-  return slots > 0 ? slots : 1;
-}
-
 static int obj_init_slot_is_plain_zero(global_var_t *gv, int idx) {
   if (idx < 0 || idx >= gv->init_count) return 1;
   char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
@@ -2736,7 +2704,8 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (mi.bit_width > 0) {
     emit_obj_global_bitfield_member_data(d, gv, (*val_idx)++, base_off, &mi);
-    consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
+    consume_trailing_zero_union_padding(gv, start_idx, val_idx,
+                                        psx_tag_flat_slot_count(tk, tn, tl));
     return;
   }
   if (mi.array_len > 0) {
@@ -2769,12 +2738,14 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                         val_idx, base_off);
     }
-    consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
+    consume_trailing_zero_union_padding(gv, start_idx, val_idx,
+                                        psx_tag_flat_slot_count(tk, tn, tl));
     return;
   }
   int slot = (*val_idx)++;
   data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind, &mi);
-  consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
+  consume_trailing_zero_union_padding(gv, start_idx, val_idx,
+                                      psx_tag_flat_slot_count(tk, tn, tl));
 }
 
 static int global_has_object_payload(global_var_t *gv) {

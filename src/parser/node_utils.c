@@ -477,6 +477,106 @@ int psx_tag_member_is_unnamed_union(const tag_member_info_t *mi) {
   return mi && mi->len == 0 && psx_tag_member_is_union_aggregate(mi);
 }
 
+int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                               int base_off, int target_off,
+                                               int *out_off, int *out_size) {
+  int n = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
+    if (!psx_tag_member_is_unnamed_struct(&mi) &&
+        !psx_tag_member_is_unnamed_union(&mi)) continue;
+    int start = base_off + mi.offset;
+    int end = start + mi.type_size;
+    if (target_off < start || target_off >= end) continue;
+    if (psx_tag_member_is_union_aggregate(&mi)) {
+      if (out_off) *out_off = start;
+      if (out_size) *out_size = mi.type_size;
+      return 1;
+    }
+    if (psx_tag_member_is_struct_aggregate(&mi) &&
+        psx_tag_find_unnamed_union_covering_offset(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                                   start, target_off, out_off, out_size)) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int psx_tag_member_flat_slots(const tag_member_info_t *mi) {
+  if (psx_tag_member_is_unnamed_struct(mi)) return 0;
+  int per = 1;
+  if (psx_tag_member_is_tag_aggregate(mi)) {
+    per = psx_tag_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
+  }
+  return (mi && mi->array_len > 0) ? mi->array_len * per : per;
+}
+
+int psx_tag_member_elem_flat_slots(const tag_member_info_t *mi) {
+  if (!mi) return 1;
+  int total = psx_tag_member_flat_slots(mi);
+  if (mi->array_len > 0) {
+    int per = total / mi->array_len;
+    return per > 0 ? per : 1;
+  }
+  return total > 0 ? total : 1;
+}
+
+int psx_tag_member_subscript_stride_slots(const tag_member_info_t *mi) {
+  int per = psx_tag_member_elem_flat_slots(mi);
+  if (!mi || mi->arr_ndim <= 1) return per;
+  for (int i = 1; i < mi->arr_ndim; i++) {
+    int dim = mi->arr_dims[i];
+    if (dim > 0) per *= dim;
+  }
+  return per > 0 ? per : 1;
+}
+
+int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len) {
+  int n = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
+  int slots = 0;
+  int union_max_bytes = 0;
+  int covered_union_off = 0;
+  int covered_union_size = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
+    if (tag_kind == TK_UNION) {
+      int ms = psx_tag_member_flat_slots(&mi);
+      int count = mi.array_len > 0 ? mi.array_len : 1;
+      int bytes = mi.type_size * count;
+      if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
+        union_max_bytes = bytes;
+        slots = ms;
+      }
+      continue;
+    }
+    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
+    if (psx_tag_member_is_unnamed_union(&mi)) {
+      covered_union_off = mi.offset;
+      covered_union_size = mi.type_size;
+      slots += psx_tag_member_flat_slots(&mi);
+      continue;
+    }
+    if (covered_union_size > 0 &&
+        mi.offset >= covered_union_off &&
+        mi.offset < covered_union_off + covered_union_size) {
+      continue;
+    }
+    int cover_off = 0;
+    int cover_size = 0;
+    int has_cover = psx_tag_find_unnamed_union_covering_offset(tag_kind, tag_name, tag_len,
+                                                               0, mi.offset,
+                                                               &cover_off, &cover_size);
+    slots += psx_tag_member_flat_slots(&mi);
+    if (has_cover) {
+      covered_union_off = cover_off;
+      covered_union_size = cover_size;
+    }
+  }
+  return slots > 0 ? slots : 1;
+}
+
 static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {
   *mem = (node_mem_t){0};
   if (!gv) return;
