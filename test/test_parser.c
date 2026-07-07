@@ -2446,6 +2446,51 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_row_decay_pointer_arith_type(
                   (node_t *)&typed_nonarray_stale_row) == NULL);
 
+  node_mem_t typed_decay_array = {0};
+  typed_decay_array.base.kind = ND_DEREF;
+  typed_decay_array.type_size = 4;
+  typed_decay_array.deref_size = 0;
+  typed_decay_array.base.type = psx_type_new_array(
+      psx_type_new_integer(TK_INT, 4, 0), 2, 8, 4, 0);
+  ASSERT_TRUE(psx_node_deref_decays_to_address((node_t *)&typed_decay_array));
+
+  node_mem_t typed_ptr_stale_array_decay = {0};
+  typed_ptr_stale_array_decay.base.kind = ND_DEREF;
+  typed_ptr_stale_array_decay.type_size = 16;
+  typed_ptr_stale_array_decay.deref_size = 4;
+  typed_ptr_stale_array_decay.is_array_member = 1;
+  typed_ptr_stale_array_decay.base.type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 0), 8);
+  ASSERT_TRUE(!psx_node_deref_decays_to_address(
+      (node_t *)&typed_ptr_stale_array_decay));
+
+  node_mem_t legacy_decay_array = {0};
+  legacy_decay_array.base.kind = ND_DEREF;
+  legacy_decay_array.type_size = 8;
+  legacy_decay_array.deref_size = 4;
+  ASSERT_TRUE(psx_node_deref_decays_to_address((node_t *)&legacy_decay_array));
+  ASSERT_TRUE(psx_node_get_type((node_t *)&legacy_decay_array) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, psx_node_get_type((node_t *)&legacy_decay_array)->kind);
+
+  node_mem_t legacy_loaded_pointer = {0};
+  legacy_loaded_pointer.base.kind = ND_DEREF;
+  legacy_loaded_pointer.type_size = 8;
+  legacy_loaded_pointer.deref_size = 4;
+  legacy_loaded_pointer.is_pointer = 1;
+  legacy_loaded_pointer.pointer_qual_levels = 1;
+  ASSERT_TRUE(!psx_node_deref_decays_to_address((node_t *)&legacy_loaded_pointer));
+
+  node_mem_t legacy_struct_scalar = {0};
+  legacy_struct_scalar.base.kind = ND_DEREF;
+  legacy_struct_scalar.type_size = 32;
+  legacy_struct_scalar.deref_size = 8;
+  legacy_struct_scalar.tag_kind = TK_STRUCT;
+  legacy_struct_scalar.tag_name = "ScalarStruct";
+  legacy_struct_scalar.tag_len = 12;
+  ASSERT_TRUE(!psx_node_deref_decays_to_address((node_t *)&legacy_struct_scalar));
+  ASSERT_TRUE(psx_node_get_type((node_t *)&legacy_struct_scalar) != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, psx_node_get_type((node_t *)&legacy_struct_scalar)->kind);
+
   node_mem_t compound_lit_addr = {0};
   compound_lit_addr.base.kind = ND_ADDR;
   compound_lit_addr.compound_literal_array_size = 12;

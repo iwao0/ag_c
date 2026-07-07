@@ -1427,32 +1427,14 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t ptr = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   /* bitfield 読み出し: bit_width > 0 のとき struct メンバが bitfield。 */
-  node_mem_t *mm = (node_mem_t *)node;
   int bw = 0;
   int bo = 0;
   int bs = 0;
   if (psx_node_bitfield_info(node, &bw, &bo, &bs)) {
     return emit_bitfield_load(ctx, ptr, bw, bo, bs);
   }
-  /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。
-   *  - struct の配列メンバ `s.v` (is_pointer=1, deref_size>0, type_size>8)
-   *  - 多次元配列の途中次元 `m[i]` / `*m` (例 `int m[3][4]` の行): subscript/
-   *    unary deref が is_pointer を立てないが、type_size>8 (= 配列全体サイズ)
-   *    かつ deref_size>0 (要素ストライドを持つ=配列実体) なら同様に崩壊させる。
-   * これにより `int *q = m[0];` / `*(*(m+1)+2)` / `**m` が正しく動く。struct 値は
-   * deref_size=0 なのでここに該当せず、従来どおり値ロードされる。
-   *  - 行全体が 8 バイト以下の小さい配列の行 (`int m[2][2]` の `m[i]` = 8B、
-   *    `char c[2][3]` の `c[i]` = 3B 等) は type_size>8 から漏れ、行をスカラとして
-   *    load し不正アドレスを deref していた。プレーン配列の行は is_pointer=0 かつ
-   *    type_size (= 行全体) > deref_size (= 要素サイズ) で見分けて崩壊させる
-   *    (loaded ポインタ値 `*pp` は is_pointer=1 なので除外され従来どおり load)。 */
-  if (mm->deref_size > 0 &&
-      (mm->type_size > 8 ||
-       mm->is_array_member ||
-       (mm->is_pointer && mm->pointer_qual_levels == 0 && !mm->is_scalar_ptr_member &&
-        mm->type_size > mm->deref_size &&
-        mm->pointee_fp_kind == TK_FLOAT_KIND_NONE && mm->inner_deref_size == 0) ||
-       (!mm->is_pointer && mm->type_size > mm->deref_size))) {
+  /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。 */
+  if (psx_node_deref_decays_to_address(node)) {
     return ptr;
   }
   int v = ir_func_new_vreg(ctx->f);

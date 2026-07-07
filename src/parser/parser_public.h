@@ -49,6 +49,7 @@ int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
 int psx_node_value_is_pointer_like(node_t *node);
 int psx_node_aggregate_value_size(node_t *node);
 int psx_node_is_unsigned_type(node_t *node);
+int psx_node_deref_decays_to_address(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
                            char **tag_name, int *tag_len, int *is_tag_pointer);
 int psx_node_mem_has_funcptr_metadata(const node_mem_t *mem);

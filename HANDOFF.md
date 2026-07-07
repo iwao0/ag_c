@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き831: IR cast wrapper metadata reader 化）
+最終更新: 2026-07-07（続き832: deref array decay metadata reader 化）
 
 ## 現状
+- 続き832: **IR builder の `build_node_deref()` に残っていた array decay 判定の
+  `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
+
+  続き831までで cast wrapper metadata は helper 経由になったが、`build_node_deref()` はまだ
+  `node_mem_t *mm` へ直接 cast し、`deref_size` / `type_size` / `is_array_member` /
+  `is_pointer` / `pointer_qual_levels` / `is_scalar_ptr_member` / `pointee_fp_kind` /
+  `inner_deref_size` を読んで、`ND_DEREF` が配列式として load せず address を返すべきかを
+  IR 側で判定していた。
+
+  今回は `psx_node_deref_decays_to_address()` を追加し、IR 側は「この deref は array decay として
+  address を返すか」だけを見る形にした。helper はまず `psx_node_get_type()` で型を materialize し、
+  typed node / materializable legacy node では `PSX_TYPE_ARRAY` を正本にする。どうしても型化できない
+  legacy node だけ、従来 metadata を互換 fallback として読む。
+
+  あわせて `type_from_mem()` の legacy array 推定を調整した。`int m[2][2]` の `m[0]` のように
+  行全体が 8 バイト以下の非ポインタ配列行でも `PSX_TYPE_ARRAY` として materialize できるようにしつつ、
+  `typedef struct` の scalar subscript を array と誤分類しないよう、非ポインタ側は
+  `tag_kind == TK_EOF` に限定した。途中でこの境界が甘いと `typedef_struct_pp_subscript` の wasm object
+  linked check が 42 ではなく 11 を返すことを確認しており、struct scalar の回帰テストも追加した。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。typed array では stale mem があっても
+  array decay になること、typed pointer では stale array metadata を無視して decay しないこと、
+  legacy の小さい配列行は `PSX_TYPE_ARRAY` へ materialize されること、loaded pointer は decay しないこと、
+  legacy struct scalar は `PSX_TYPE_STRUCT` として materialize され decay しないことを固定している。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き831: **IR builder の cast wrapper に残っていた `node_mem_t` 直読を
   `node_utils` / `parser_public` helper 境界へ移した**。
 

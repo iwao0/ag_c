@@ -208,10 +208,12 @@ static psx_type_t *type_from_mem(node_mem_t *mem, int force_array, int force_vla
 
   psx_type_t *type = NULL;
   int looks_like_array_decay =
-      mem->is_pointer && !mem->is_tag_pointer && !mem->is_scalar_ptr_member &&
-      (mem->is_array_member || mem->type_size > 8) && mem->deref_size > 0 &&
+      !mem->is_tag_pointer && !mem->is_scalar_ptr_member &&
+      mem->type_size > mem->deref_size && mem->deref_size > 0 &&
       (mem->type_size % mem->deref_size) == 0 &&
-      mem->pointer_qual_levels == 0;
+      ((!mem->is_pointer && mem->tag_kind == TK_EOF) ||
+       (mem->is_pointer && mem->pointer_qual_levels == 0 &&
+        (mem->is_array_member || mem->type_size > 8)));
 
   if (force_array || looks_like_array_decay) {
     int elem_size = mem->deref_size > 0 ? mem->deref_size : mem->base_deref_size;
@@ -3946,6 +3948,26 @@ int psx_node_subscript_deref_uses_base_address(node_t *node) {
   if (!mem) return 0;
   if (mem->deref_size > 0 && !mem->is_pointer) return 1;
   if (mem->vla_row_stride_frame_off > 0 && !mem->is_pointer) return 1;
+  return 0;
+}
+
+int psx_node_deref_decays_to_address(node_t *node) {
+  if (!node || node->kind != ND_DEREF) return 0;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type) return type->kind == PSX_TYPE_ARRAY;
+
+  node_mem_t *mem = node_mem_view(node);
+  if (!mem || mem->deref_size <= 0) return 0;
+  if (mem->type_size > 8 || mem->is_array_member) return 1;
+  if (mem->is_pointer && mem->pointer_qual_levels == 0 &&
+      !mem->is_scalar_ptr_member && mem->type_size > mem->deref_size &&
+      mem->pointee_fp_kind == TK_FLOAT_KIND_NONE && mem->inner_deref_size == 0) {
+    return 1;
+  }
+  if (!mem->is_pointer && mem->tag_kind == TK_EOF &&
+      mem->type_size > mem->deref_size) {
+    return 1;
+  }
   return 0;
 }
 
