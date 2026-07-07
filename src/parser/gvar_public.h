@@ -64,6 +64,14 @@ typedef struct {
   psx_tag_flat_cover_state_t cover_state;
 } psx_gvar_aggregate_member_iter_t;
 
+typedef struct {
+  void (*scalar)(void *user, const tag_member_info_t *mi, int slot, long long offset);
+  void (*bitfield_unit)(void *user, const psx_gvar_bitfield_unit_t *unit,
+                        long long base_offset);
+  void (*bitfield_member)(void *user, const tag_member_info_t *mi, int slot,
+                          long long base_offset);
+} psx_gvar_aggregate_walk_ops_t;
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
@@ -74,6 +82,16 @@ int psx_gvar_aggregate_member_next(psx_gvar_aggregate_member_iter_t *iter,
                                    tag_member_info_t *out, int *out_ordinal);
 void psx_gvar_aggregate_member_iter_set_next(psx_gvar_aggregate_member_iter_t *iter,
                                              int next_ordinal);
+int psx_gvar_walk_struct_initializer(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                     global_var_t *gv, psx_gvar_init_cursor_t *cur,
+                                     long long base_offset,
+                                     const psx_gvar_aggregate_walk_ops_t *ops,
+                                     void *user);
+int psx_gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                    global_var_t *gv, psx_gvar_init_cursor_t *cur,
+                                    long long base_offset,
+                                    const psx_gvar_aggregate_walk_ops_t *ops,
+                                    void *user);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor_at(const global_var_t *gv, int index);
 int psx_gvar_init_cursor_has(const psx_gvar_init_cursor_t *cur);

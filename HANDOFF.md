@@ -1,8 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き884: centralize aggregate member iteration）
+最終更新: 2026-07-08（続き885: move Wasm aggregate recursion into public walker）
 
 ## 現状
+- 続き885: **Wasm IR/object の global aggregate recursion 本体を parser/public walker + callback に寄せた**。
+
+  続き884で member enumeration 規則を iterator に寄せた後も、`wasm32_ir.c` と
+  `wasm32_obj.c` には struct/union recursion の形そのものがほぼ同じまま残っていた。
+  具体的には bitfield unit の cursor 消費、array member の element loop、nested struct/union recursion、
+  union active member の選択、trailing zero padding の cursor 消費が 2 backend に重複し、
+  backend ごとの差は「scalar slot / bitfield unit / union bitfield member をどのバッファへ書くか」
+  だけになっていた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_aggregate_walk_ops_t`、`psx_gvar_walk_struct_initializer()`、
+  `psx_gvar_walk_union_initializer()` を追加した。walker は cursor、member iterator、
+  bitfield packing、union active member selection、nested aggregate recursion、zero-padding cursor 消費を
+  parser/public 側で持ち、backend は callback で scalar / bitfield unit / bitfield member の出力だけを行う。
+  `src/arch/wasm32_ir.c` と `src/arch/wasm32_obj.c` の recursive helper は walker 呼び出しに縮み、
+  IR は data bytes、object は `obj_data_t` への書き込みだけを callback に閉じ込めた。
+
+  `rg "psx_gvar_walk_struct_initializer|psx_gvar_walk_union_initializer|emit_global_struct_members_data_rec|emit_obj_global_struct_members_data_rec" src/parser/gvar_public.h src/parser/node_utils.c src/arch/wasm32_ir.c src/arch/wasm32_obj.c -n`
+  で recursive walk の実体は parser 側へ移り、Wasm 側の `emit_*_struct_members_data_rec` は
+  walker wrapper として残るだけになっている。次の根本対応候補は、top-level aggregate array/union entry も
+  public entry helper に寄せること、または arm64 の asm padding emission 用にも同じ walker を使えるよう
+  padding event を拡張して 3 backend をさらに揃えること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き884: **global aggregate recursion の member enumeration 規則を parser/public iterator に寄せた**。
 
   続き883で union trailing zero padding の tag slot 数計算を parser/public 側へ寄せた後も、
