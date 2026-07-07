@@ -2424,6 +2424,38 @@ static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind,
   data_write_int_le_at(d, off, (uint64_t)bits.bits, bits.size);
 }
 
+static uint64_t data_bits_for_init_value(psx_gvar_init_value_t value) {
+  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+    psx_gvar_fp_bits_t bits;
+    if (!psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
+      obj_unsupported_msg("global floating slot in Wasm object mode");
+    }
+    return (uint64_t)bits.bits;
+  }
+  return (uint64_t)value.value;
+}
+
+static void data_write_init_value(obj_data_t *d, psx_gvar_init_value_t value) {
+  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+    data_write_symbol_addr(d, value.symbol_ref, value.size);
+    return;
+  }
+  data_write_scalar(d, data_bits_for_init_value(value), value.size);
+}
+
+static void data_write_init_value_at(obj_data_t *d, size_t off,
+                                     psx_gvar_init_value_t value) {
+  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+    data_write_symbol_addr_at(d, off, value.symbol_ref, value.size);
+    return;
+  }
+  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+    data_write_fp_at(d, off, value.fp_kind, value.fvalue);
+    return;
+  }
+  data_write_int_le_at(d, off, data_bits_for_init_value(value), value.size);
+}
+
 static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int idx,
                                             size_t off,
                                             const tag_member_info_t *member_info) {
@@ -2439,14 +2471,8 @@ static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int
                                                               sym_ref.symbol,
                                                               sym_ref.symbol_len));
     }
-    data_write_symbol_addr_at(d, off, sym_ref, value.size);
-    return;
   }
-  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
-    data_write_fp_at(d, off, value.fp_kind, value.fvalue);
-    return;
-  }
-  data_write_int_le_at(d, off, (uint64_t)value.value, value.size);
+  data_write_init_value_at(d, off, value);
 }
 
 static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv, int idx,
@@ -2540,26 +2566,15 @@ static void emit_obj_global(global_var_t *gv, void *user) {
       psx_gvar_init_slot_value_t slot_value =
           psx_gvar_init_slot_value(gv, i, &slot_layout);
       if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
-        psx_gvar_symbol_ref_t sym_ref =
-            psx_gvar_init_slot_value_symbol_ref(&slot_value);
+        psx_gvar_symbol_ref_t sym_ref = slot_value.symbol_ref;
         if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
             psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len)) {
           ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
                                       func_sig_from_global_funcptr(gv, sym_ref.symbol,
                                                                    sym_ref.symbol_len));
         }
-        data_write_symbol_addr(d, sym_ref, elem);
-      } else {
-        uint64_t value = (uint64_t)slot_value.value;
-        if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
-          psx_gvar_fp_bits_t bits;
-          if (!psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot_value.fvalue, &bits)) {
-            obj_unsupported_msg("global floating slot in Wasm object mode");
-          }
-          value = (uint64_t)bits.bits;
-        }
-        data_write_scalar(d, value, elem);
       }
+      data_write_init_value(d, slot_value);
     }
   } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
     psx_gvar_fp_bits_t bits;

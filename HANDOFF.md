@@ -1,8 +1,40 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き895: unify initializer value view shape）
+最終更新: 2026-07-08（続き896: consolidate backend initializer value dispatch）
 
 ## 現状
+- 続き896: **initializer value の emit/write dispatch を backend 内 helper に寄せた**。
+
+  続き895で `psx_gvar_init_value_t` に value shape は揃ったが、backend 側にはまだ
+  slot-array route と aggregate member route それぞれで `SYMBOL / FLOAT / INTEGER`
+  の分岐が残っていた。これは shape の正本分散ではなくなった一方、出力側の分岐が局所的に
+  重複しており、次の型/値種別追加時に backend 内で漏れやすい状態だった。
+
+  今回は arm64 に `emit_global_init_value()` を置き、aggregate member と slot-array の
+  `.quad symbol` / FP bit pattern / integer directive 出力を一本化した。Wasm IR では
+  `global_init_value_bits()` を追加し、slot-array と非 FP aggregate member の symbol address 解決、
+  FP bit pattern、integer bits 化を共有した。aggregate member の FP だけは既存の
+  byte-width 出力経路を保つため `emit_fp_data_bytes()` に残している。
+
+  Wasm object では `data_bits_for_init_value()`、`data_write_init_value()`、
+  `data_write_init_value_at()` を追加した。append と at-write の relocation/FP byte handling は
+  object backend 固有なので backend 内 helper に閉じ、関数ポインタ symbol の signature 補完だけは
+  既存どおり呼び出し側に残している。
+
+  これで parser/public 側は initializer value の意味づけ、backend 側は relocation/address 解決と
+  具体的な directive/byte emission という分担に近づいた。残る根本対応候補は、
+  `psx_gvar_init_slot_value_symbol_ref()` のような互換 helper を削れるか確認することと、
+  scalar global initializer（slot-array ではない `PSX_GVAR_INIT_KIND_FLOAT/SYMBOL/...`）にも
+  同じ value view を広げられるかを見ること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き895: **slot-array と aggregate member の initializer value shape を共通化した**。
 
   続き894で aggregate member initializer は `psx_gvar_init_member_value_t` に寄ったが、

@@ -149,7 +149,7 @@ static void emit_global_symbol_ref_quad(psx_gvar_symbol_ref_t ref) {
  * init_values[] を出力。メンバ間の padding は .space で埋める。
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
  * 配列メンバは alen 個連続出力する。 */
-static void emit_global_init_member_scalar(psx_gvar_init_member_value_t value) {
+static void emit_global_init_value(psx_gvar_init_value_t value) {
   if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
     emit_global_symbol_ref_quad(value.symbol_ref);
   } else if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
@@ -179,7 +179,7 @@ static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
                                     int slot_idx, long long offset) {
   (void)offset;
   arm64_global_aggregate_emit_ctx_t *ctx = user;
-  emit_global_init_member_scalar(psx_gvar_init_member_value(ctx->gv, slot_idx, mi));
+  emit_global_init_value(psx_gvar_init_member_value(ctx->gv, slot_idx, mi));
 }
 
 static void emit_global_walk_bitfield_unit(void *user,
@@ -254,22 +254,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       for (int i = 0; i < slot_layout.init_count && i < slot_layout.elem_count; i++) {
         psx_gvar_init_slot_value_t slot_value =
             psx_gvar_init_slot_value(gv, i, &slot_layout);
-        psx_gvar_symbol_ref_t sym_ref =
-            psx_gvar_init_slot_value_symbol_ref(&slot_value);
-        if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
-          emit_global_symbol_ref_quad(sym_ref);
-          continue;
-        }
-        if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
-          /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
-          psx_gvar_fp_bits_t bits;
-          if (psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot_value.fvalue, &bits)) {
-            if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
-            else                cg_emitf("  .quad %llu\n", bits.bits);
-          }
-          continue;
-        }
-        cg_emit_int_directive(slot_value.size, slot_value.value);
+        emit_global_init_value(slot_value);
       }
       int remain = slot_layout.elem_count - slot_layout.init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
