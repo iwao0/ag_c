@@ -2492,14 +2492,6 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                               obj_data_t *d, global_var_t *gv,
                                               int *val_idx, size_t base_off);
 
-static int obj_member_is_unnamed_struct(const tag_member_info_t *mi) {
-  return mi->len == 0 && !mi->is_tag_pointer && mi->tag_kind == TK_STRUCT;
-}
-
-static int obj_member_is_unnamed_union(const tag_member_info_t *mi) {
-  return mi->len == 0 && !mi->is_tag_pointer && mi->tag_kind == TK_UNION;
-}
-
 static int obj_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
                                                       int base_off, int target_off,
                                                       int *out_off, int *out_size) {
@@ -2507,16 +2499,17 @@ static int obj_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn,
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (mi.len != 0 || mi.is_tag_pointer) continue;
+    if (!psx_tag_member_is_unnamed_struct(&mi) &&
+        !psx_tag_member_is_unnamed_union(&mi)) continue;
     int start = base_off + mi.offset;
     int end = start + mi.type_size;
     if (target_off < start || target_off >= end) continue;
-    if (mi.tag_kind == TK_UNION) {
+    if (psx_tag_member_is_union_aggregate(&mi)) {
       if (out_off) *out_off = start;
       if (out_size) *out_size = mi.type_size;
       return 1;
     }
-    if (mi.tag_kind == TK_STRUCT &&
+    if (psx_tag_member_is_struct_aggregate(&mi) &&
         obj_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
                                                    start, target_off, out_off, out_size)) {
       return 1;
@@ -2577,7 +2570,7 @@ static int obj_flat_slot_count(token_kind_t tk, char *tn, int tl);
 
 static int obj_member_flat_slots(const tag_member_info_t *mi) {
   int per = 1;
-  if ((mi->tag_kind == TK_STRUCT || mi->tag_kind == TK_UNION) && !mi->is_tag_pointer) {
+  if (psx_tag_member_is_tag_aggregate(mi)) {
     per = obj_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
   }
   return (mi->array_len > 0) ? mi->array_len * per : per;
@@ -2656,7 +2649,7 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
   for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
-    if (obj_member_is_unnamed_struct(&mi)) continue;
+    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
     if (covered_union_size > 0 &&
         mi.offset >= covered_union_off &&
         mi.offset < covered_union_off + covered_union_size) {
@@ -2671,10 +2664,10 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
       continue;
     }
     if (mi.array_len > 0) {
-      if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+      if (psx_tag_member_is_tag_aggregate(&mi)) {
         for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
           size_t elem_off = base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size;
-          if (mi.tag_kind == TK_UNION) {
+          if (psx_tag_member_is_union_aggregate(&mi)) {
             emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                               val_idx, elem_off);
           } else {
@@ -2696,7 +2689,7 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
       }
       continue;
     }
-    if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+    if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                               val_idx, base_off + (size_t)mi.offset);
       if (has_cover) {
@@ -2705,10 +2698,10 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
       }
       continue;
     }
-    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+    if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv, val_idx,
                                         base_off + (size_t)mi.offset);
-      if (obj_member_is_unnamed_union(&mi)) {
+      if (psx_tag_member_is_unnamed_union(&mi)) {
         covered_union_off = mi.offset;
         covered_union_size = mi.type_size;
       } else if (has_cover) {
@@ -2747,10 +2740,10 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
     return;
   }
   if (mi.array_len > 0) {
-    if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+    if (psx_tag_member_is_tag_aggregate(&mi)) {
       for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
         size_t elem_off = base_off + (size_t)mi.offset + (size_t)k * (size_t)mi.type_size;
-        if (mi.tag_kind == TK_STRUCT) {
+        if (psx_tag_member_is_struct_aggregate(&mi)) {
           emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                                   val_idx, elem_off);
         } else {
@@ -2768,8 +2761,8 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
     }
     return;
   }
-  if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
-    if (mi.tag_kind == TK_STRUCT) {
+  if (psx_tag_member_is_tag_aggregate(&mi)) {
+    if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                               val_idx, base_off);
     } else {

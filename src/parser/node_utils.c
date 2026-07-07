@@ -436,6 +436,27 @@ int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size
   return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
+int psx_tag_member_is_struct_aggregate(const tag_member_info_t *mi) {
+  return mi && !mi->is_tag_pointer && mi->tag_kind == TK_STRUCT;
+}
+
+int psx_tag_member_is_union_aggregate(const tag_member_info_t *mi) {
+  return mi && !mi->is_tag_pointer && mi->tag_kind == TK_UNION;
+}
+
+int psx_tag_member_is_tag_aggregate(const tag_member_info_t *mi) {
+  return psx_tag_member_is_struct_aggregate(mi) ||
+         psx_tag_member_is_union_aggregate(mi);
+}
+
+int psx_tag_member_is_unnamed_struct(const tag_member_info_t *mi) {
+  return mi && mi->len == 0 && psx_tag_member_is_struct_aggregate(mi);
+}
+
+int psx_tag_member_is_unnamed_union(const tag_member_info_t *mi) {
+  return mi && mi->len == 0 && psx_tag_member_is_union_aggregate(mi);
+}
+
 static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {
   *mem = (node_mem_t){0};
   if (!gv) return;

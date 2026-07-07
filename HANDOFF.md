@@ -15770,3 +15770,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き820）: tag member aggregate 判定を parser helper に集約
+- 見つかった浅い箇所:
+  - wasm32 IR / wasm32 object が `tag_member_info_t` の unnamed struct/union 判定を
+    backend 内ローカル helper として重複実装していた。
+  - struct/union aggregate 判定も `tag_kind == TK_STRUCT || TK_UNION` と
+    `!is_tag_pointer` の合成式が wasm32 IR / wasm32 object 内に複数残っていた。
+  - そのため tag member の「aggregate か」「unnamed か」の契約が parser helper ではなく
+    backend 側のフィールド直接参照に分散していた。
+- 根本対応:
+  - `psx_tag_member_is_tag_aggregate()` /
+    `psx_tag_member_is_struct_aggregate()` /
+    `psx_tag_member_is_union_aggregate()` /
+    `psx_tag_member_is_unnamed_struct()` /
+    `psx_tag_member_is_unnamed_union()` を parser 公開 API として追加した。
+  - wasm32 IR / wasm32 object からローカルの unnamed struct/union 判定 helper を削除し、
+    nested struct/union data emit、flat slot count、unnamed union cover 判定を
+    parser helper 経由に置き換えた。
+  - function reference initializer の aggregate member skip も
+    `psx_tag_member_is_tag_aggregate()` に寄せ、tag pointer を aggregate 扱いしない契約に揃えた。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に tag member helper の struct / union /
+    named member / tag pointer ケースを追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

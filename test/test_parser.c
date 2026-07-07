@@ -2952,6 +2952,23 @@ static void test_type_metadata_bridge() {
   tmp_tag_arr_gv.is_tag_pointer = 1;
   ASSERT_TRUE(!psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
 
+  tag_member_info_t tmp_member = {0};
+  tmp_member.tag_kind = TK_STRUCT;
+  ASSERT_TRUE(psx_tag_member_is_tag_aggregate(&tmp_member));
+  ASSERT_TRUE(psx_tag_member_is_struct_aggregate(&tmp_member));
+  ASSERT_TRUE(!psx_tag_member_is_union_aggregate(&tmp_member));
+  ASSERT_TRUE(psx_tag_member_is_unnamed_struct(&tmp_member));
+  ASSERT_TRUE(!psx_tag_member_is_unnamed_union(&tmp_member));
+  tmp_member.len = 1;
+  ASSERT_TRUE(!psx_tag_member_is_unnamed_struct(&tmp_member));
+  tmp_member.len = 0;
+  tmp_member.tag_kind = TK_UNION;
+  ASSERT_TRUE(psx_tag_member_is_union_aggregate(&tmp_member));
+  ASSERT_TRUE(psx_tag_member_is_unnamed_union(&tmp_member));
+  tmp_member.is_tag_pointer = 1;
+  ASSERT_TRUE(!psx_tag_member_is_tag_aggregate(&tmp_member));
+  ASSERT_TRUE(!psx_tag_member_is_unnamed_union(&tmp_member));
+
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;
   global_var_t *gext = psx_find_global_var("__tm_extern_arr", 15);

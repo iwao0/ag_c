@@ -23,6 +23,11 @@ int psx_gvar_array_element_size(const struct global_var_t *gv);
 int psx_gvar_array_element_count(const struct global_var_t *gv);
 int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
+int psx_tag_member_is_tag_aggregate(const struct tag_member_info_t *mi);
+int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
+int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
+int psx_tag_member_is_unnamed_struct(const struct tag_member_info_t *mi);
+int psx_tag_member_is_unnamed_union(const struct tag_member_info_t *mi);
 
 int ps_node_type_size(node_t *node);
 int psx_node_storage_type_size(node_t *node);
