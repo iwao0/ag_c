@@ -1794,21 +1794,32 @@ static uint64_t global_init_value_bits(psx_gvar_init_value_t value,
   return (uint64_t)value.value;
 }
 
+typedef struct {
+  int total_size;
+} wasm_init_slots_data_ctx_t;
+
+static int emit_global_init_slot_value_data(void *user, int index,
+                                            psx_gvar_init_slot_value_t slot_value,
+                                            const psx_gvar_init_slots_layout_t *layout) {
+  wasm_init_slots_data_ctx_t *ctx = user;
+  int elem = layout->elem_size;
+  uint64_t value = global_init_value_bits(
+      slot_value, "symbol array initializer in Wasm backend",
+      "floating global initializer in Wasm backend");
+  int bytes = elem;
+  if ((index + 1) * elem > ctx->total_size) bytes = ctx->total_size - index * elem;
+  for (int b = 0; b < bytes; b++) emit_wat_escaped_byte((unsigned char)(value >> (8 * b)));
+  return 1;
+}
+
 static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
   psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
   int elem = slot_layout.elem_size;
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  for (int i = 0; i < slot_layout.elem_count; i++) {
-    psx_gvar_init_slot_value_t slot_value =
-        psx_gvar_init_slot_value(gv, i, &slot_layout);
-    uint64_t value = global_init_value_bits(
-        slot_value, "symbol array initializer in Wasm backend",
-        "floating global initializer in Wasm backend");
-    int bytes = elem;
-    if ((i + 1) * elem > size) bytes = size - i * elem;
-    for (int b = 0; b < bytes; b++) emit_wat_escaped_byte((unsigned char)(value >> (8 * b)));
-  }
+  wasm_init_slots_data_ctx_t ctx = {.total_size = size};
+  psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.elem_count,
+                                 emit_global_init_slot_value_data, &ctx);
   cg_emitf("\")\n");
 }
 

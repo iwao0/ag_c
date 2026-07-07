@@ -525,6 +525,22 @@ psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
   return value;
 }
 
+int psx_gvar_walk_init_slot_values(const global_var_t *gv,
+                                   const psx_gvar_init_slots_layout_t *layout,
+                                   int value_count,
+                                   psx_gvar_init_slot_value_fn callback,
+                                   void *user) {
+  if (!layout || !callback) return 0;
+  int count = value_count < 0 ? layout->elem_count : value_count;
+  if (count > layout->elem_count) count = layout->elem_count;
+  if (count < 0) count = 0;
+  for (int i = 0; i < count; i++) {
+    psx_gvar_init_slot_value_t value = psx_gvar_init_slot_value(gv, i, layout);
+    if (!callback(user, i, value, layout)) return 0;
+  }
+  return 1;
+}
+
 int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out) {
   if (!out) return 0;

@@ -2545,6 +2545,22 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
   }
 }
 
+typedef struct {
+  obj_data_t *d;
+  global_var_t *gv;
+} obj_init_slots_data_ctx_t;
+
+static int write_obj_global_init_slot_value(void *user, int index,
+                                            psx_gvar_init_slot_value_t slot_value,
+                                            const psx_gvar_init_slots_layout_t *layout) {
+  (void)index;
+  (void)layout;
+  obj_init_slots_data_ctx_t *ctx = user;
+  ensure_global_func_sig_for_init_symbol(ctx->gv, slot_value);
+  data_write_init_value(ctx->d, slot_value);
+  return 1;
+}
+
 static void emit_obj_global(global_var_t *gv, void *user) {
   (void)user;
   psx_gvar_view_t view = psx_gvar_view(gv);
@@ -2577,12 +2593,9 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
       obj_unsupported_msg("global array element size in Wasm object mode");
     }
-    for (int i = 0; i < slot_layout.elem_count; i++) {
-      psx_gvar_init_slot_value_t slot_value =
-          psx_gvar_init_slot_value(gv, i, &slot_layout);
-      ensure_global_func_sig_for_init_symbol(gv, slot_value);
-      data_write_init_value(d, slot_value);
-    }
+    obj_init_slots_data_ctx_t ctx = {.d = d, .gv = gv};
+    psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.elem_count,
+                                   write_obj_global_init_slot_value, &ctx);
   } else if (init_class.kind == PSX_GVAR_INIT_KIND_FLOAT) {
     data_write_init_value(d, psx_gvar_init_scalar_value(gv, size));
   } else {

@@ -133,6 +133,10 @@ typedef struct {
   void (*padding)(void *user, long long offset, int size);
 } psx_gvar_aggregate_walk_ops_t;
 
+typedef int (*psx_gvar_init_slot_value_fn)(
+    void *user, int index, psx_gvar_init_slot_value_t value,
+    const psx_gvar_init_slots_layout_t *layout);
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
@@ -145,6 +149,11 @@ psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
                                                         int fallback_size);
 psx_gvar_init_slot_value_t psx_gvar_init_slot_value(const global_var_t *gv, int idx,
                                                     const psx_gvar_init_slots_layout_t *layout);
+int psx_gvar_walk_init_slot_values(const global_var_t *gv,
+                                   const psx_gvar_init_slots_layout_t *layout,
+                                   int value_count,
+                                   psx_gvar_init_slot_value_fn callback,
+                                   void *user);
 psx_gvar_init_member_value_t
 psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member);

@@ -165,6 +165,16 @@ static void emit_global_init_value(psx_gvar_init_value_t value) {
   }
 }
 
+static int emit_global_init_slot_value(void *user, int index,
+                                       psx_gvar_init_slot_value_t value,
+                                       const psx_gvar_init_slots_layout_t *layout) {
+  (void)user;
+  (void)index;
+  (void)layout;
+  emit_global_init_value(value);
+  return 1;
+}
+
 typedef struct {
   global_var_t *gv;
 } arm64_global_aggregate_emit_ctx_t;
@@ -251,11 +261,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       emit_global_aggregate_init(gv);
     } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
       psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, 4);
-      for (int i = 0; i < slot_layout.init_count && i < slot_layout.elem_count; i++) {
-        psx_gvar_init_slot_value_t slot_value =
-            psx_gvar_init_slot_value(gv, i, &slot_layout);
-        emit_global_init_value(slot_value);
-      }
+      psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.init_count,
+                                     emit_global_init_slot_value, NULL);
       int remain = slot_layout.elem_count - slot_layout.init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
     } else {
