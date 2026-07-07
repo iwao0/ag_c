@@ -170,49 +170,51 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
 /* ネスト union の 1 slot を出力する。union は active メンバだけをその型で emit し、
  * 残りは union 全体サイズまで 0 padding する必要がある。 */
 static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
-                                           int struct_size, global_var_t *gv, int *val_idx);
+                                           int struct_size, global_var_t *gv,
+                                           psx_gvar_init_cursor_t *cur);
 
 static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
-                                   global_var_t *gv, int *val_idx) {
-  if (*val_idx >= psx_gvar_view(gv).init_count) {
+                                   global_var_t *gv, psx_gvar_init_cursor_t *cur) {
+  if (!psx_gvar_init_cursor_has(cur)) {
     cg_emitf("  .space %d\n", union_size);
     return;
   }
-  int start_idx = *val_idx;
+  int start_idx = psx_gvar_init_cursor_index(cur);
   tag_member_info_t mi = {0};
-  if (!psx_tag_union_init_member_for_slot(tk, tn, tl, gv, *val_idx, &mi)) {
+  if (!psx_tag_union_init_member_for_slot(tk, tn, tl, gv,
+                                          psx_gvar_init_cursor_index(cur), &mi)) {
     cg_emitf("  .space %d\n", union_size);
     return;
   }
   if (psx_tag_member_is_tag_aggregate(&mi)) {
     if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
     if (mi.array_len > 0) {
-      for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
+      for (int k = 0; k < mi.array_len && psx_gvar_init_cursor_has(cur); k++) {
         if (psx_tag_member_is_struct_aggregate(&mi)) {
           emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
-                                         gv, val_idx);
+                                         gv, cur);
         } else {
-          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, val_idx);
+          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, cur);
         }
       }
     } else if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
-                                     gv, val_idx);
+                                     gv, cur);
     } else {
-      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, val_idx);
+      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, cur);
     }
     int emitted = mi.offset + (mi.array_len > 0 ? mi.type_size * mi.array_len : mi.type_size);
     if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
-    if (*val_idx == start_idx) (*val_idx)++;
+    if (psx_gvar_init_cursor_index(cur) == start_idx) psx_gvar_init_cursor_advance(cur);
     return;
   }
-  int init_idx = *val_idx;
+  int init_idx = psx_gvar_init_cursor_index(cur);
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
   char *sym = slot.symbol;
   int sym_len = slot.symbol_len;
   double fv = slot.fvalue;
   long long iv = slot.value;
-  (*val_idx)++;
+  psx_gvar_init_cursor_advance(cur);
   tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
   int use_size = union_size;
   /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
@@ -242,8 +244,8 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     emit_global_init_member_scalar(sym, sym_len, active.fp_kind, elem_size, iv, fv);
     emitted += elem_size;
     for (int k = 1; k < active.array_len && emitted + elem_size <= union_size; k++) {
-      psx_gvar_init_slot_t elem_slot = psx_gvar_init_slot_view(gv, *val_idx);
-      if (elem_slot.in_range) (*val_idx)++;
+      psx_gvar_init_slot_t elem_slot = psx_gvar_init_cursor_slot(cur);
+      if (elem_slot.in_range) psx_gvar_init_cursor_advance(cur);
       emit_global_init_member_scalar(elem_slot.symbol, elem_slot.symbol_len,
                                      active.fp_kind, elem_size,
                                      elem_slot.value, elem_slot.fvalue);
@@ -260,18 +262,19 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
 }
 
-/* struct のメンバを宣言順にフラット出力する (init_values を val_idx から消費)。
+/* struct のメンバを宣言順にフラット出力する (init_values を cursor から消費)。
  * 入れ子 struct メンバ (`struct Out{struct In i; int z;}`) は再帰して内側メンバを
  * 展開する。これをしないと内側 struct を 1 つの .quad として出力し、フラット値が
  * ずれていた (`{1,2,3}` が i.p=1,i.q=0,z=2 になる)。
  * struct_size まで末尾を 0 padding する。 */
 static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
-                                           int struct_size, global_var_t *gv, int *val_idx) {
+                                           int struct_size, global_var_t *gv,
+                                           psx_gvar_init_cursor_t *cur) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   int prev_end = 0;
   psx_tag_flat_cover_state_t cover_state;
   psx_tag_flat_cover_state_init(&cover_state);
-  for (int i = 0; i < n_members && *val_idx < psx_gvar_view(gv).init_count; i++) {
+  for (int i = 0; i < n_members && psx_gvar_init_cursor_has(cur); i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
@@ -285,17 +288,17 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
          * これをしないと要素 1 つを ts バイトのスカラとして出力し、
          * `{{10,20},{30,40}}` が .quad 10/.quad 20 と化けていた。 */
         for (int k = 0; k < alen; k++) {
-          emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+          emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
         }
       } else if (psx_tag_member_is_union_aggregate(&mi)) {
         for (int k = 0; k < alen; k++) {
-          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+          emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
         }
       } else {
-        for (int k = 0; k < alen && *val_idx < psx_gvar_view(gv).init_count; k++) {
-          psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+        for (int k = 0; k < alen && psx_gvar_init_cursor_has(cur); k++) {
+          psx_gvar_init_slot_t slot = psx_gvar_init_cursor_slot(cur);
           long long ev = slot.value;
-          (*val_idx)++;
+          psx_gvar_init_cursor_advance(cur);
           if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
           /* ポインタ配列メンバ (シンボル+オフセット要素や文字列/関数ポインタ要素) も
            * fp 配列メンバ (`struct R{double m[2][2];}`) も emit_global_init_member_scalar
@@ -311,7 +314,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     }
     /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
     if (psx_tag_member_is_struct_aggregate(&mi)) {
-      emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+      emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
       prev_end = off + ts;
       psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
@@ -323,7 +326,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      * フォールバック (sentinel 無し): 旧ヒューリスティック (fv!=0 && iv==0) で内側 fp メンバ
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (psx_tag_member_is_union_aggregate(&mi)) {
-      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
+      emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
       psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       prev_end = off + ts;
       continue;
@@ -338,9 +341,9 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         tag_member_info_t bmi = {0};
         if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &bmi)) break;
         if (bmi.bit_width == 0 || bmi.offset != unit_off) break;
-        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+        psx_gvar_init_slot_t slot = psx_gvar_init_cursor_slot(cur);
         long long v = slot.value;
-        if (*val_idx < psx_gvar_view(gv).init_count) (*val_idx)++;
+        if (psx_gvar_init_cursor_has(cur)) psx_gvar_init_cursor_advance(cur);
         unsigned long long mask = (bmi.bit_width >= 64)
                                     ? ~0ULL : ((1ULL << bmi.bit_width) - 1);
         packed |= ((unsigned long long)v & mask) << bmi.bit_offset;
@@ -352,12 +355,12 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       continue;
     }
     /* スカラ / ポインタ / 関数ポインタメンバ。 */
-    psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+    psx_gvar_init_slot_t slot = psx_gvar_init_cursor_slot(cur);
     long long mv = slot.value;
     if (mi.is_bool) mv = (mv != 0);  /* C11 6.3.1.2: _Bool スカラメンバは 0/1 に正規化 */
     emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
                                    ts, mv, slot.fvalue);
-    (*val_idx)++;
+    psx_gvar_init_cursor_advance(cur);
     prev_end = off + ts;
     psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
@@ -387,9 +390,9 @@ static void emit_global_struct_init(global_var_t *gv) {
     }
     return;
   }
-  int val_idx = 0;
+  psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
   emit_global_struct_members_rec(view.tag_kind, view.tag_name, view.tag_len,
-                                 view.type_size, gv, &val_idx);
+                                 view.type_size, gv, &cur);
 }
 
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
@@ -399,7 +402,7 @@ static void emit_global_struct_array_init(global_var_t *gv) {
   psx_gvar_view_t view = psx_gvar_view(gv);
   int elem_size = psx_gvar_array_element_size(gv);
   int total_elems = psx_gvar_array_element_count(gv);
-  int val_idx = 0;
+  psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
   /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに
    * フラット slot を 1 個だけ消費する単純ループだったため、配列メンバ (`char tag[4]`)・
    * char 配列の文字列展開・入れ子 struct メンバ・bitfield を扱えず、`struct{char tag[4];
@@ -407,7 +410,7 @@ static void emit_global_struct_array_init(global_var_t *gv) {
    * 非配列 struct の出力 (emit_global_struct_init) と同じ機構を要素ごとに適用して統一する。 */
   for (int e = 0; e < total_elems; e++) {
     emit_global_struct_members_rec(view.tag_kind, view.tag_name, view.tag_len, elem_size, gv,
-                                   &val_idx);
+                                   &cur);
   }
 }
 

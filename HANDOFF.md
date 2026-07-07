@@ -1,8 +1,36 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き879: localize public view reads in arch emitters）
+最終更新: 2026-07-08（続き880: introduce public global initializer cursor）
 
 ## 現状
+- 続き880: **global initializer の走査位置と範囲判定を public cursor API に寄せた**。
+
+  続き879で arch emission の view 読み取りを局所化した後も、struct/union global initializer の
+  再帰走査では `int *val_idx` と `psx_gvar_view(gv).init_count` の組が
+  `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` に散っていた。これは
+  `global_var_t` のレイアウトを直接読んでいなくても、「initializer の現在位置・終端判定」という
+  状態の正本が各 backend helper に残る形だった。
+
+  今回は `src/parser/gvar_public.h` に `psx_gvar_init_cursor_t` と
+  `psx_gvar_init_cursor_*()` API を追加し、実装を `src/parser/node_utils.c` の init slot helper 近くへ置いた。
+  3 backend の recursive aggregate emission は `int *val_idx` ではなく cursor を渡し、
+  `psx_gvar_view(gv).init_count` を直接見るループ条件を `psx_gvar_init_cursor_has()` /
+  `psx_gvar_init_cursor_advance()` / `psx_gvar_init_cursor_index()` へ寄せた。
+  trailing zero union padding の消費も `psx_gvar_init_cursor_consume_plain_zero_padding()` にまとめた。
+
+  これで arch 側に残っていた initializer traversal state の小さな正本分散は解消した。
+  まだ traversal の形そのものは backend ごとに残っているため、次の根本対応候補は
+  tag member traversal / union padding / bitfield grouping を callback 型 walker として parser/public 側へ
+  抽出し、backend は scalar/padding/relocation の書き込みだけを担当する形へ進めること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き879: **arch emission 側の public view 読み取りを局所化し、view 経由化後のノイズを減らした**。
 
   続き878で `src/arch` から `symtab.h` レイアウト依存を外した結果、

@@ -473,6 +473,52 @@ psx_gvar_init_slot_t psx_gvar_init_slot_view(const global_var_t *gv, int idx) {
   return slot;
 }
 
+psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv) {
+  return psx_gvar_init_cursor_at(gv, 0);
+}
+
+psx_gvar_init_cursor_t psx_gvar_init_cursor_at(const global_var_t *gv, int index) {
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  if (index < 0) index = 0;
+  if (index > view.init_count) index = view.init_count;
+  return (psx_gvar_init_cursor_t){
+      .gv = gv,
+      .index = index,
+      .count = view.init_count,
+  };
+}
+
+int psx_gvar_init_cursor_has(const psx_gvar_init_cursor_t *cur) {
+  return cur && cur->index < cur->count;
+}
+
+int psx_gvar_init_cursor_index(const psx_gvar_init_cursor_t *cur) {
+  return cur ? cur->index : 0;
+}
+
+int psx_gvar_init_cursor_advance(psx_gvar_init_cursor_t *cur) {
+  if (!psx_gvar_init_cursor_has(cur)) return -1;
+  return cur->index++;
+}
+
+psx_gvar_init_slot_t psx_gvar_init_cursor_slot(const psx_gvar_init_cursor_t *cur) {
+  if (!psx_gvar_init_cursor_has(cur)) return (psx_gvar_init_slot_t){0};
+  return psx_gvar_init_slot_view(cur->gv, cur->index);
+}
+
+int psx_gvar_init_cursor_consume_plain_zero_padding(psx_gvar_init_cursor_t *cur,
+                                                    int start_idx, int target_slots) {
+  if (!cur || target_slots <= 1) return 0;
+  int limit = start_idx + target_slots;
+  int consumed = 0;
+  while (cur->index < limit && psx_gvar_init_cursor_has(cur) &&
+         psx_gvar_init_slot_is_plain_zero(cur->gv, cur->index)) {
+    cur->index++;
+    consumed++;
+  }
+  return consumed;
+}
+
 void psx_gvar_init_slots_alloc(global_var_t *gv, int cap, int with_fvalues) {
   if (!gv || cap <= 0) return;
   gv->init_values = calloc((size_t)cap, sizeof(long long));
