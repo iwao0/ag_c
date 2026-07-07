@@ -269,8 +269,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     for (;;) {
       member_decl_head_t head = psx_parse_member_decl_head();
       int has_member_name = head.member != NULL;
-      if (!has_member_name && !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
-          && curtok()->kind != TK_COLON) {
+      int member_is_tag_aggregate = psx_ctx_is_tag_aggregate_kind(member_tag_kind);
+      if (!has_member_name && !member_is_tag_aggregate && curtok()->kind != TK_COLON) {
         psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       }
       if (head.has_func_suffix && !head.is_ptr) {
@@ -458,8 +458,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * `struct Inner {int a, b;}` (sizeof=8, align=4) を含む `struct Outer
        * {struct Inner i; int trail;}` で agg_align=8 となり sizeof(Outer)=16 と 4 バイト
        * 過剰パディング (clang は 12)。 */
-      if (!member_is_ptr && (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
-          member_tag_name) {
+      if (!member_is_ptr && member_is_tag_aggregate && member_tag_name) {
         int tag_align = psx_ctx_get_tag_align(member_tag_kind, member_tag_name, member_tag_len);
         if (tag_align > 0) member_align = tag_align;
       }
@@ -479,7 +478,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       char *member_name = has_member_name ? head.member->str : "";
       int member_len = has_member_name ? head.member->len : 0;
       int member_array_len = (arr_dim_count > 0 || head.paren_array_mul > 1) ? arr_size : 0;
-      if (has_member_name || (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)) {
+      if (has_member_name || member_is_tag_aggregate) {
         tag_member_info_t _mi = {0};
         _mi.name = member_name;
         _mi.len = member_len;
@@ -618,8 +617,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 内側のメンバを外側 tag に直接見えるように昇格 (promote) する。
        * 外側からは `outer.inner_member` の形でアクセスできる。 */
       if (!has_member_name && !head.is_ptr &&
-          (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
-          member_tag_name) {
+          member_is_tag_aggregate && member_tag_name) {
         int inner_count = psx_ctx_get_tag_member_count(member_tag_kind, member_tag_name, member_tag_len);
         for (int i = 0; i < inner_count; i++) {
           tag_member_info_t im = {0};

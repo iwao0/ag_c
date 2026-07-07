@@ -15712,6 +15712,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
 
+### このセッション（続き827）: struct_layout の member tag aggregate 判定を helper 化
+- 見つかった浅い箇所:
+  - `semantic_ctx` に `psx_ctx_is_tag_aggregate_kind()` を追加した後も、
+    `struct_layout.c` の member layout では `member_tag_kind == TK_STRUCT || TK_UNION`
+    を直接合成する判定が残っていた。
+  - anonymous member name requirement、member alignment、tag member 登録、
+    anonymous struct/union promote の 4 箇所が同じ意味論を別々に持っていた。
+- 根本対応:
+  - member declarator loop 内で `member_is_tag_aggregate =
+    psx_ctx_is_tag_aggregate_kind(member_tag_kind)` を使う形にし、
+    struct/union aggregate 判定を `semantic_ctx` helper 正本へ寄せた。
+  - `tag_kind == TK_UNION` のような union 専用 layout 分岐は別契約なので触らず、
+    struct/union をまとめて扱う判定だけを置き換えた。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
 ### このセッション（続き826）: token_kind_t の tag aggregate 判定を semantic_ctx helper 化
 - 見つかった浅い箇所:
   - `lvar_t` / `global_var_t` / `tag_member_info_t` の aggregate 判定は helper 化したが、
