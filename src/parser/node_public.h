@@ -25,10 +25,6 @@ int psx_node_pointer_qual_levels(node_t *n);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int psx_node_value_is_pointer_like(node_t *node);
-int psx_lvar_value_is_pointer_like(const struct lvar_t *var);
-int psx_lvar_is_tag_aggregate(const struct lvar_t *var);
-int psx_lvar_is_struct_aggregate(const struct lvar_t *var);
-int psx_lvar_is_union_aggregate(const struct lvar_t *var);
 int psx_tag_member_is_tag_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
@@ -68,7 +64,6 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
 int psx_node_mem_has_funcptr_metadata(const node_mem_t *mem);
 psx_decl_funcptr_sig_t psx_node_mem_funcptr_sig(const node_mem_t *mem);
 psx_decl_funcptr_sig_t psx_node_funcptr_sig(node_t *node);
-psx_decl_funcptr_sig_t psx_lvar_funcptr_sig(const struct lvar_t *src);
 void psx_node_store_funcptr_metadata(node_mem_t *dst, psx_decl_funcptr_sig_t sig);
 psx_decl_funcptr_sig_t psx_node_funcdef_ret_funcptr_sig(const node_func_t *fn);
 void psx_node_funcdef_set_ret_funcptr_sig(node_func_t *fn, psx_decl_funcptr_sig_t sig);

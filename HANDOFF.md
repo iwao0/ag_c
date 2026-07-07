@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き913: consolidate gvar size helpers in gvar public API）
+最終更新: 2026-07-08（続き914: consolidate lvar readers in lvar public API）
 
 ## 現状
+- 続き914: **lvar の読み取り helper を `lvar_public.h` へ集約した**。
+
+  続き913で gvar 読み取り API は `gvar_public.h` 側へ寄せたが、
+  `node_public.h` にはまだ `psx_lvar_value_is_pointer_like()`、
+  lvar の tag/struct/union aggregate 判定、
+  `psx_lvar_funcptr_sig()` が残っていた。
+  これらは node API ではなく lvar の読み取り API で、
+  既存の `lvar_public.h` に offset / size / storage / VLA などの lvar accessor が並んでいるため、
+  宣言の正本としては `lvar_public.h` に置く方が自然だった。
+
+  今回は
+  `psx_lvar_value_is_pointer_like()`、
+  `psx_lvar_is_tag_aggregate()` / `psx_lvar_is_struct_aggregate()` /
+  `psx_lvar_is_union_aggregate()`、
+  `psx_lvar_funcptr_sig()`
+  の宣言を `node_public.h` から `lvar_public.h` へ移した。
+  実装と呼び出し経路はそのままで、backend/IR は引き続き `parser_public.h` 経由で参照する。
+
+  確認は
+  `rg "psx_lvar_(value_is_pointer_like|is_tag_aggregate|is_struct_aggregate|is_union_aggregate|funcptr_sig)\\(" src/parser/*.h src/ir src/arch test --glob '!build/**'` で宣言が **`lvar_public.h` にのみ存在**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き913: **gvar の size / aggregate 読み取り helper を `gvar_public.h` へ集約した**。
 
   続き912で raw initializer slot は public API から外れたが、
