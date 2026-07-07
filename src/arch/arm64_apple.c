@@ -329,32 +329,6 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
 }
 
-static int arm_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
-                                                      int base_off, int target_off,
-                                                      int *out_off, int *out_size) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (!psx_tag_member_is_unnamed_struct(&mi) &&
-        !psx_tag_member_is_unnamed_union(&mi)) continue;
-    int start = base_off + mi.offset;
-    int end = start + mi.type_size;
-    if (target_off < start || target_off >= end) continue;
-    if (psx_tag_member_is_union_aggregate(&mi)) {
-      if (out_off) *out_off = start;
-      if (out_size) *out_size = mi.type_size;
-      return 1;
-    }
-    if (psx_tag_member_is_struct_aggregate(&mi) &&
-        arm_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
-                                                   start, target_off, out_off, out_size)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
 /* struct のメンバを宣言順にフラット出力する (init_values を val_idx から消費)。
  * 入れ子 struct メンバ (`struct Out{struct In i; int z;}`) は再帰して内側メンバを
  * 展開する。これをしないと内側 struct を 1 つの .quad として出力し、フラット値が
@@ -378,7 +352,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     }
     int cover_off = 0;
     int cover_size = 0;
-    int has_cover = arm_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, off,
+    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, off,
                                                                &cover_off, &cover_size);
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */

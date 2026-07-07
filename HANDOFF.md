@@ -16126,3 +16126,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き830）: unnamed union cover 判定を node_utils helper に集約
+- 見つかった浅い箇所:
+  - flat slot 計算を helper 化した後も、arm64 / wasm IR / wasm object に
+    同じ unnamed union cover 探索の再帰 helper が残っていた。
+  - parser 側と backend 側が同じ判定規約を別々に持つ形になり、今後の unnamed aggregate
+    初期化規約変更で正本が再び分散する状態だった。
+- 根本対応:
+  - `arm_find_unnamed_union_covering_offset_rec()` /
+    `wasm_find_unnamed_union_covering_offset_rec()` /
+    `obj_find_unnamed_union_covering_offset_rec()` を削除した。
+  - arm64 / wasm IR / wasm object の global struct initializer 出力を
+    `psx_tag_find_unnamed_union_covering_offset()` 経由に統一した。
+  - 検索上、backend-local の `*_find_unnamed_union_covering_offset_rec` は残っていない。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

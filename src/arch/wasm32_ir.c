@@ -1932,32 +1932,6 @@ static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr);
 
-static int wasm_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn, int tl,
-                                                       int base_off, int target_off,
-                                                       int *out_off, int *out_size) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (!psx_tag_member_is_unnamed_struct(&mi) &&
-        !psx_tag_member_is_unnamed_union(&mi)) continue;
-    int start = base_off + mi.offset;
-    int end = start + mi.type_size;
-    if (target_off < start || target_off >= end) continue;
-    if (psx_tag_member_is_union_aggregate(&mi)) {
-      if (out_off) *out_off = start;
-      if (out_size) *out_size = mi.type_size;
-      return 1;
-    }
-    if (psx_tag_member_is_struct_aggregate(&mi) &&
-        wasm_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
-                                                    start, target_off, out_off, out_size)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
 static void emit_global_nested_union_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
   if (*val_idx >= gv->init_count) return;
@@ -1997,8 +1971,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
     }
     int cover_off = 0;
     int cover_size = 0;
-    int has_cover = wasm_find_unnamed_union_covering_offset_rec(tk, tn, tl, 0, mi.offset,
-                                                                &cover_off, &cover_size);
+    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, mi.offset,
+                                                               &cover_off, &cover_size);
     if (mi.bit_width > 0) {
       emit_global_bitfield_unit_data(tk, tn, tl, &m, gv, val_idx, base_addr);
       continue;
