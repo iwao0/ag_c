@@ -12,7 +12,7 @@
  *   - node_utils 由来の型・幅・signedness helper
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
  *      psx_node_*_is_unsigned など)
- *   - psx_ctx_get_function_is_variadic / _param_fp_kind (semantic_ctx)
+ *   - psx_ctx_get_function_is_variadic / _param_fp_kind (function_public)
  *   - global_var_t (opaque pointer) と読み取り helper
  *   - tag_member_info_t + psx_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
@@ -24,6 +24,7 @@
  */
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
+#include "function_public.h"
 #include "gvar_public.h"
 #include "literal_public.h"
 #include "lvar_public.h"
@@ -49,13 +50,12 @@ bool ps_iter_float_literals(float_lit_visitor_t fn, void *user);
 bool ps_has_string_literals(void);
 bool ps_has_float_literals(void);
 
-/* semantic_public.h からの公開:
+/* function_public.h / tag_member_public.h からの公開:
  * - 関数呼出側 IR が必要とする psx_ctx_get_function_is_variadic /
  *   _get_function_param_fp_kind
  * - codegen (arm64_apple.c) が global struct/union 初期化子を展開する
  *   ための tag_member_info_t と psx_ctx_get_tag_member_count /
  *   _get_tag_member_info (Phase A1 統合 API)
  * setter / reset / 登録系は semantic_ctx.h に残し、外部へは出さない。 */
-#include "semantic_public.h"
 
 #endif

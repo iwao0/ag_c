@@ -2,7 +2,7 @@
 #define PARSER_GVAR_PUBLIC_H
 
 #include "core.h"
-#include "semantic_public.h"
+#include "tag_member_public.h"
 
 typedef struct global_var_t global_var_t;
 

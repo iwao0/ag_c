@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き915: split tag helpers out of node public API）
+最終更新: 2026-07-08（続き916: split semantic public API by domain）
 
 ## 現状
+- 続き916: **`semantic_public.h` を tag member API と function API の薄い集約 header に分解した**。
+
+  続き915で tag helper 群は `tag_public.h` へ切り出したが、依存元を見ると
+  `tag_public.h` / `gvar_public.h` が `tag_member_info_t` を使うためだけに
+  `semantic_public.h` を include しており、同時に function return / parameter API まで
+  引き込む状態が残っていた。これは tag member 型情報と function ABI 情報の正本が
+  `semantic_public.h` という雑多な公開 header に同居している状態だった。
+
+  今回は `src/parser/tag_member_public.h` を追加して
+  `tag_member_info_t`、`psx_ctx_tag_member_funcptr_sig()`、
+  `psx_ctx_tag_member_set_funcptr_sig()`、tag member lookup/count/scope query を移し、
+  `src/parser/function_public.h` を追加して
+  `psx_function_ret_info_t`、`PSX_PCAT_*`、function name/definition/return/parameter query、
+  `psx_ctx_scalar_type_size()` を移した。
+  `semantic_public.h` は互換用にこの 2 つを include するだけの薄い header にし、
+  `gvar_public.h` / `tag_public.h` は `tag_member_public.h` を直接 include、
+  `parser_public.h` は外部公開入口として `function_public.h` と tag/gvar 側の
+  tag member API を明示的に束ねる形にした。
+
+  確認は
+  `rg "typedef struct tag_member_info_t|psx_ctx_get_tag_member_info|psx_ctx_find_tag_member_info|psx_ctx_get_tag_member_count|psx_ctx_get_tag_scope_depth|psx_ctx_tag_member_funcptr_sig" src/parser/*.h` で tag member 宣言が **`tag_member_public.h` に集約**、
+  `rg "psx_function_ret_info_t|PSX_PCAT_|psx_ctx_has_function_name|psx_ctx_is_function_defined|psx_ctx_get_function_(ret_info|is_variadic|nargs_fixed|param_fp_kind|param_int_size|param_int_unsigned|param_category)|psx_ctx_scalar_type_size" src/parser/*.h` で function 宣言が **`function_public.h` に集約**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き915: **tag helper 群を `node_public.h` から `tag_public.h` へ切り出した**。
 
   続き914までで gvar / lvar 読み取り API はそれぞれの public header に寄ったが、

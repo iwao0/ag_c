@@ -1,7 +1,7 @@
 #ifndef PARSER_TAG_PUBLIC_H
 #define PARSER_TAG_PUBLIC_H
 
-#include "semantic_public.h"
+#include "tag_member_public.h"
 #include "tag_flat_cover.h"
 
 struct global_var_t;

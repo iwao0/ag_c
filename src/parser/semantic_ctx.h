@@ -2,7 +2,8 @@
 #define PARSER_SEMANTIC_CTX_H
 
 #include "core.h"
-#include "semantic_public.h"
+#include "function_public.h"
+#include "tag_member_public.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
