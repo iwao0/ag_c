@@ -5,6 +5,7 @@
 #include "ast.h"
 #include "init_slot.h"
 #include "gvar_public.h"
+#include "node_funcptr_public.h"
 #include "node_public.h"
 #include "tag_public.h"
 
@@ -39,15 +40,6 @@ void psx_gvar_init_slot_write_fp_sentinel(struct global_var_t *gv, int idx,
 void psx_gvar_init_slot_set_ordinal(struct global_var_t *gv, int idx, int ordinal);
 int psx_node_base_deref_size(node_t *node);
 int psx_node_ptr_array_pointee_bytes(node_t *node);
-unsigned short psx_node_funcptr_param_fp_mask(node_t *node);
-unsigned short psx_node_funcptr_param_int_mask(node_t *node);
-int psx_node_has_funcptr_signature(node_t *node);
-int psx_node_funcptr_returns_void(node_t *node);
-int psx_node_funcptr_returns_complex(node_t *node);
-int psx_node_funcptr_returns_pointee_array(node_t *node);
-tk_float_kind_t psx_node_funcptr_ret_fp_kind(node_t *node);
-void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
-                                                    const struct tag_member_info_t *src);
 void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const struct global_var_t *gv);
 void psx_node_init_gvar_array_base_metadata(node_mem_t *mem, const struct global_var_t *gv);
 void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const struct lvar_t *var,

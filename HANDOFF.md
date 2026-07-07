@@ -1,8 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き916: split semantic public API by domain）
+最終更新: 2026-07-08（続き917: split node funcptr public API）
 
 ## 現状
+- 続き917: **node function pointer metadata API を `node_public.h` から `node_funcptr_public.h` へ切り出した**。
+
+  続き916までで tag member / function / tag / gvar / lvar の public header は分かれたが、
+  `node_public.h` にはまだ `psx_node_mem_funcptr_sig()`、
+  `psx_node_funcptr_sig()`、function definition の戻り function pointer signature getter/setter、
+  node/lvar/gvar/tag member から `node_mem_t` へ function pointer metadata を写す helper が
+  混ざっていた。一方で parser 内部向けの `node_utils.h` にも
+  `psx_node_funcptr_param_*()` や `psx_node_funcptr_returns_*()` が並び、
+  function pointer metadata の API 正本が node 型/幅 helper と node_utils 内部宣言に割れていた。
+
+  今回は `src/parser/node_funcptr_public.h` を追加し、
+  `psx_node_mem_has_funcptr_metadata()`、`psx_node_mem_funcptr_sig()`、
+  `psx_node_funcptr_sig()`、`psx_node_store_funcptr_metadata()`、
+  `psx_node_funcdef_ret_funcptr_sig()` / setter、
+  copy/merge helper、`psx_node_funcptr_param_*()`、
+  `psx_node_has_funcptr_signature()`、`psx_node_funcptr_returns_*()`、
+  `psx_node_funcptr_ret_fp_kind()`、
+  `psx_node_copy_funcptr_metadata_from_tag_member()` を集約した。
+  `parser_public.h` は外部 IR/arch 向け入口として `node_funcptr_public.h` を include し、
+  parser 内部の `node_utils.h` も同 header を include するため、宣言の正本は 1 つになった。
+  `node_public.h` は node の型/幅/signedness/tag/VLA accessor に近い形へ縮めた。
+
+  確認は
+  `rg "psx_node_(mem_has_funcptr_metadata|mem_funcptr_sig|funcptr_sig|store_funcptr_metadata|funcdef_ret_funcptr_sig|funcdef_set_ret_funcptr_sig|copy_funcptr_metadata|merge_funcptr_metadata|funcptr_param|has_funcptr_signature|funcptr_returns|funcptr_ret_fp_kind)" src/parser/*.h` で宣言が **`node_funcptr_public.h` に集約**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き916: **`semantic_public.h` を tag member API と function API の薄い集約 header に分解した**。
 
   続き915で tag helper 群は `tag_public.h` へ切り出したが、依存元を見ると
