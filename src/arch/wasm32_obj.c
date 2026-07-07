@@ -2517,9 +2517,10 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   }
   data_note_alloc_size(d, (size_t)size);
 
-  if (psx_gvar_is_tag_aggregate(gv)) {
+  psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 1);
+  if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_obj_global_aggregate_data(d, gv, size);
-  } else if (view.init_symbol) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
     if (psx_ctx_has_function_name(view.init_symbol, view.init_symbol_len)) {
       ensure_func_sig_for_address(view.init_symbol, view.init_symbol_len,
                                   func_sig_from_global_funcptr(gv, view.init_symbol,
@@ -2527,7 +2528,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     }
     data_write_symbol_addr(d, view.init_symbol, view.init_symbol_len,
                            view.init_symbol_offset, size);
-  } else if (view.init_count > 0) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
     int elem = psx_gvar_initializer_element_size(gv, size);
     if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
       obj_unsupported_msg("global array element size in Wasm object mode");
@@ -2562,12 +2563,14 @@ static void emit_obj_global(global_var_t *gv, void *user) {
         data_write_scalar(d, value, elem);
       }
     }
-  } else if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
+             view.fp_kind == TK_FLOAT_KIND_FLOAT) {
     float f = view.has_init ? (float)view.fval : 0.0f;
     uint32_t bits;
     memcpy(&bits, &f, sizeof(bits));
     data_write_scalar(d, bits, 4);
-  } else if (view.fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
+             view.fp_kind >= TK_FLOAT_KIND_DOUBLE) {
     double f = view.has_init ? view.fval : 0.0;
     uint64_t bits;
     memcpy(&bits, &f, sizeof(bits));

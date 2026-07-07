@@ -432,6 +432,19 @@ int psx_gvar_has_initializer_payload(const global_var_t *gv) {
          view.fp_kind != TK_FLOAT_KIND_NONE || view.has_init;
 }
 
+psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
+                                               int include_empty_aggregate) {
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  if (psx_gvar_is_tag_aggregate(gv) &&
+      (include_empty_aggregate || view.init_count > 0)) {
+    return PSX_GVAR_INIT_KIND_AGGREGATE;
+  }
+  if (view.init_symbol) return PSX_GVAR_INIT_KIND_SYMBOL;
+  if (view.init_count > 0) return PSX_GVAR_INIT_KIND_SLOTS;
+  if (view.fp_kind != TK_FLOAT_KIND_NONE) return PSX_GVAR_INIT_KIND_FLOAT;
+  return PSX_GVAR_INIT_KIND_INTEGER;
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);

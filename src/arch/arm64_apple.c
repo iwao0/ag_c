@@ -260,9 +260,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
-    if (psx_gvar_has_aggregate_initializer(gv)) {
+    psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 0);
+    if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
       emit_global_aggregate_init(gv);
-    } else if (view.init_count > 0) {
+    } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
       int elem = psx_gvar_initializer_element_size(gv, 4);
       int total_elems = psx_gvar_initializer_element_count(gv, 4);
       int is_fp_arr = view.has_init_fvalues &&
@@ -307,7 +308,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       }
       int remain = total_elems - view.init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
-    } else if (view.init_symbol) {
+    } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
       if (view.init_symbol_len < 0) {
         /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。
          * `const char *p = "abc" + 2;` のように +offset がある場合はラベル + offset を出す。 */
@@ -323,14 +324,16 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       } else {
         cg_emitf("  .quad _%.*s\n", view.init_symbol_len, view.init_symbol);
       }
-    } else if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
+    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
+               view.fp_kind == TK_FLOAT_KIND_FLOAT) {
       /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
       float f = (float)view.fval;
       uint32_t bits;
       memcpy(&bits, &f, sizeof(bits));
       cg_emitf("  .long %u\n", (unsigned)bits);
-    } else if (view.fp_kind == TK_FLOAT_KIND_DOUBLE ||
-               view.fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
+    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
+               (view.fp_kind == TK_FLOAT_KIND_DOUBLE ||
+                view.fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)) {
       /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
       double d = view.fval;
       uint64_t bits;

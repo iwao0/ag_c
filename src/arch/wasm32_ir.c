@@ -1903,14 +1903,15 @@ static void emit_global_data(global_var_t *gv, void *user) {
   if (psx_gvar_is_extern_decl(gv)) return;
   int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
   int size = psx_gvar_storage_size(gv, 4);
-  if (psx_gvar_is_tag_aggregate(gv)) {
+  psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 1);
+  if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_global_struct_data(gv, addr);
-  } else if (view.init_symbol) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
     emit_global_symbol_addr_data(gv, addr, size);
-  } else if (view.init_count > 0) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
     emit_global_init_values_data(gv, addr, size);
-  } else if (view.fp_kind != TK_FLOAT_KIND_NONE) {
+  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
     emit_fp_data_bytes(addr, (tk_float_kind_t)view.fp_kind, view.has_init ? view.fval : 0.0);
   } else {
     if ((!view.has_init || view.init_val == 0) &&

@@ -1,8 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き888: centralize global initializer preflight helpers）
+最終更新: 2026-07-08（続き889: classify global initializer kind in parser public）
 
 ## 現状
+- 続き889: **global initializer の branch classification を parser/public helper に寄せた**。
+
+  続き888で aggregate/payload の preflight は public helper に寄ったが、3 backend の global data emission には
+  まだ `aggregate -> symbol -> init slots -> fp -> integer/zero` の branch priority がそれぞれ直書きで残っていた。
+  実際の directive / data segment / object bytes の書き方は backend 固有だが、どの initializer 種類として扱うかは
+  `global_var_t` の読み方なので parser/public 側の分類として持つのが自然だった。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に `psx_gvar_init_kind_t` と
+  `psx_gvar_initializer_kind(gv, include_empty_aggregate)` を追加した。分類は
+  `INTEGER / AGGREGATE / SYMBOL / SLOTS / FLOAT`。Wasm IR/object は未初期化 aggregate でも storage object として
+  aggregate route に入れる必要があるため `include_empty_aggregate=1`、arm64 の `__DATA,__data` emission は
+  既存挙動を保つため initializer slot を持つ aggregate だけを aggregate route にする `include_empty_aggregate=0`
+  で使っている。
+
+  backend 側はこの enum を見て出力 route を選ぶだけになり、`view.init_symbol` / `view.init_count > 0` /
+  `view.fp_kind != TK_FLOAT_KIND_NONE` の branch priority は public helper 側にまとまった。出力本体
+  （symbol の underscore、Wasm data addr 解決、object relocation、fp bit pattern、zero-fill）はまだ backend に残している。
+
+  次の根本対応候補は、`init slots` route の中で 3 backend に残る fp array 判定
+  (`has_init_fvalues` と `fp_kind`) や element size/count の読み方を public helper に寄せること。
+  ただし symbol relocation と FP byte emission は backend 差があるため、まず slot-array metadata の分類だけを
+  parser/public に出すのがよい。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き888: **global initializer の preflight 判定を parser/public helper に寄せた**。
 
   続き887で global aggregate initializer の入口・再帰・padding 規則は public walker にまとまったが、
