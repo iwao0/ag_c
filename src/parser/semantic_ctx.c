@@ -1431,6 +1431,10 @@ bool psx_ctx_is_tag_keyword(token_kind_t kind) {
   return kind == TK_STRUCT || kind == TK_UNION || kind == TK_ENUM;
 }
 
+bool psx_ctx_is_tag_aggregate_kind(token_kind_t kind) {
+  return kind == TK_STRUCT || kind == TK_UNION;
+}
+
 int psx_ctx_scalar_type_size(token_kind_t kind) {
   switch (kind) {
     case TK_CHAR: return 1;

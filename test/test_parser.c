@@ -2867,6 +2867,9 @@ static void test_type_metadata_bridge() {
   tmp_tag_lvar.is_tag_pointer = 1;
   ASSERT_TRUE(!psx_lvar_is_tag_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(!psx_lvar_is_union_aggregate(&tmp_tag_lvar));
+  ASSERT_TRUE(psx_ctx_is_tag_aggregate_kind(TK_STRUCT));
+  ASSERT_TRUE(psx_ctx_is_tag_aggregate_kind(TK_UNION));
+  ASSERT_TRUE(!psx_ctx_is_tag_aggregate_kind(TK_ENUM));
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
   (void)parsed_code;

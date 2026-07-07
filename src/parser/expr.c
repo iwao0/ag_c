@@ -667,7 +667,7 @@ static generic_type_t infer_generic_control_type(node_t *control) {
   if (!control) return gt;
   int is_tag_ptr = 0;
   psx_node_get_tag_type(control, &gt.tag_kind, &gt.tag_name, &gt.tag_len, &is_tag_ptr);
-  if (!is_tag_ptr && (gt.tag_kind == TK_STRUCT || gt.tag_kind == TK_UNION)) {
+  if (!is_tag_ptr && psx_ctx_is_tag_aggregate_kind(gt.tag_kind)) {
     gt.kind = gt.tag_kind;
     return gt;
   }
@@ -1185,7 +1185,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
      * `&(int[3]){1,2,3}[0]`: 単一スカラしか扱えない下の経路では brace の `,` で E2006 に
      * なる。グローバル struct/配列と同じ psx_parse_global_brace_init_flat で gvar 実体へ
      * 展開し、アドレス可能なノードを返す。 */
-    int cl_is_aggregate = is_arr || cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION;
+    int cl_is_aggregate = is_arr || psx_ctx_is_tag_aggregate_kind(cast_tag_kind);
     if (cl_is_aggregate) {
       global_var_t *gv = calloc(1, sizeof(global_var_t));
       gv->name = tmp_name;
@@ -1928,7 +1928,7 @@ static int parse_parenthesized_type_size(int alignof_mode) {
     t = curtok();
     return finish_parenthesized_type_size(t, 4, alignof_mode);
   }
-  if (t->kind == TK_STRUCT || t->kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(t->kind)) {
     token_kind_t tag_kind = t->kind;
     set_curtok(t->next);
     token_ident_t *tag = tk_consume_ident();
@@ -2041,7 +2041,7 @@ static psx_type_t *expr_cast_target_type(token_kind_t type_kind, int is_pointer,
                                          int cast_is_plain_char, int cast_is_complex,
                                          psx_decl_funcptr_sig_t cast_funcptr_sig) {
   psx_type_t *base = NULL;
-  if (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
     base = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len, 0, cast_elem_size);
   } else if (type_kind == TK_VOID) {
     base = expr_type_new_void();
@@ -2205,7 +2205,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * ND_CAST でラップする (operand 自体は他から共有される可能性があるので
      * 直接書き換えない)。これで `((struct V*)0)->b` のような offsetof 風や
      * `((struct V*)void_ptr)->m` が動く。 */
-    if (is_pointer && (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION)) {
+    if (is_pointer && psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
       return wrap_pointer_cast_result(operand, cast_type, type_kind,
                                       cast_tag_kind, cast_tag_name, cast_tag_len,
                                       cast_elem_size, cast_is_unsigned);
@@ -2271,7 +2271,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     }
     return annotate_cast_type(operand, cast_type);
   }
-  if (type_kind == TK_STRUCT || type_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(type_kind)) {
     const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
     psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                  kind);
@@ -2751,7 +2751,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
     }
     set_curtok(after_rparen);
     node_t *operand = cast_with_compound_addr_context(compound_addr_context, ctx);
-    if (!cast_is_ptr && (cast_kind == TK_STRUCT || cast_kind == TK_UNION)) {
+    if (!cast_is_ptr && psx_ctx_is_tag_aggregate_kind(cast_kind)) {
       if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
         // same-tag non-scalar cast: treat as no-op for now
         return apply_postfix(operand, ctx);
@@ -2767,7 +2767,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
         int op_tag_len = 0;
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
-        if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
+        if (!op_is_tag_ptr && psx_ctx_is_tag_aggregate_kind(op_tag_kind)) {
           psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "struct");
         }
@@ -2784,7 +2784,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
         int op_tag_len = 0;
         int op_is_tag_ptr = 0;
         psx_node_get_tag_type(operand, &op_tag_kind, &op_tag_name, &op_tag_len, &op_is_tag_ptr);
-        if (!op_is_tag_ptr && (op_tag_kind == TK_STRUCT || op_tag_kind == TK_UNION)) {
+        if (!op_is_tag_ptr && psx_ctx_is_tag_aggregate_kind(op_tag_kind)) {
           psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
                        "union");
         }
@@ -3169,7 +3169,7 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     if (ds == 0 &&
         !(ps_node_is_pointer(node) && !psx_node_scalar_ptr_member_lvalue(node) &&
           node->lhs && node->lhs->kind == ND_ADD &&
-          (tag_kind == TK_STRUCT || tag_kind == TK_UNION))) {
+          psx_ctx_is_tag_aggregate_kind(tag_kind))) {
       es = psx_node_base_deref_size(node);
     }
   }
@@ -3421,7 +3421,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
      * ポインタ戻り (pql>=2) は struct ポインタ値 (8B) なので ret_struct_size は立てない。 */
     token_kind_t rtk = TK_EOF; char *rtn = NULL; int rtl = 0;
     psx_node_get_tag_type(callee, &rtk, &rtn, &rtl, NULL);
-    if ((rtk == TK_STRUCT || rtk == TK_UNION) &&
+    if (psx_ctx_is_tag_aggregate_kind(rtk) &&
         psx_node_pointer_qual_levels(callee) <= 1) {
       int ss = psx_ctx_get_tag_size(rtk, rtn, rtl);
       if (ss > 0) node->base.ret_struct_size = ss;

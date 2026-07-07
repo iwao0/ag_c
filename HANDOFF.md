@@ -15712,6 +15712,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
 
+### このセッション（続き826）: token_kind_t の tag aggregate 判定を semantic_ctx helper 化
+- 見つかった浅い箇所:
+  - `lvar_t` / `global_var_t` / `tag_member_info_t` の aggregate 判定は helper 化したが、
+    `expr.c` には低レベルの `token_kind_t` に対する
+    `kind == TK_STRUCT || kind == TK_UNION` がまだ複数残っていた。
+  - `psx_ctx_is_tag_keyword()` は enum も含む宣言キーワード判定なので、
+    struct/union aggregate 値の意味を表す正本としては使えなかった。
+- 根本対応:
+  - `semantic_ctx` に `psx_ctx_is_tag_aggregate_kind(token_kind_t)` を追加した。
+  - `_Generic` control 型推論、ファイルスコープ compound literal、
+    `sizeof/_Alignof(struct/union)`, cast target type 構築、tag pointer cast、
+    non-scalar cast、subscript stride、indirect call の struct/union return size 判定を
+    helper 経由に置き換えた。
+  - parser unit の type metadata bridge に `struct` / `union` は true、
+    `enum` は false の helper 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
 ### このセッション（続き825）: lvar_t の struct/union aggregate 判定を helper 化
 - 見つかった浅い箇所:
   - `global_var_t` / `tag_member_info_t` の aggregate 判定は helper 正本へ寄せたが、
