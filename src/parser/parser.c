@@ -146,6 +146,7 @@ typedef struct {
   psx_funcptr_signature_t func_suffix_sig;
   int funcptr_ret_is_pointer;
   int ptr_levels;
+  int funcptr_object_pointer_levels;
   int ptr_in_paren_group;
   int paren_array_present;
   int paren_array_dims[8];
@@ -154,6 +155,8 @@ typedef struct {
 static toplevel_declarator_head_t new_toplevel_declarator_head(int base_is_ptr);
 static toplevel_declarator_head_t parse_toplevel_declarator_head(const toplevel_decl_spec_t *spec,
                                                                  int base_is_ptr, int require_name);
+static int toplevel_funcptr_direct_ret_is_data_pointer(const toplevel_decl_spec_t *spec,
+                                                       const toplevel_declarator_head_t *head);
 static void parse_toplevel_declarator_stmt(const toplevel_decl_spec_t *spec, int base_is_ptr,
                                            void (*apply)(const toplevel_decl_spec_t *,
                                                          toplevel_declarator_head_t));
@@ -205,7 +208,8 @@ static token_ident_t *parse_toplevel_decl_name(const toplevel_decl_spec_t *spec,
 static token_ident_t *consume_decl_ident_or_error(int require_name);
 static void emit_decl_name_required_diag(void);
 static void consume_toplevel_paren_decl_func_suffixes_if_any(toplevel_declarator_head_t *head,
-                                                            int had_parens);
+                                                            int had_parens,
+                                                            int frame_pointer_prefix_levels);
 static token_ident_t *parse_decl_name_recursive(const toplevel_decl_spec_t *spec,
                                                 toplevel_declarator_head_t *head,
                                                 int require_name, int *out_paren_array_mul);
@@ -218,6 +222,7 @@ typedef struct {
   int inner_dim_count;
   int pointer_array_outer_dim;
   psx_funcptr_signature_t func_suffix_sig;
+  int funcptr_object_pointer_levels;
 } param_declarator_state_t;
 static token_ident_t *parse_param_declarator_name(param_declarator_state_t *decl_state,
                                                   int *out_is_array_declarator, int *out_is_pointer_declarator,
@@ -1190,7 +1195,7 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
   gv->is_static = is_extern_decl ? 0 : spec->is_static;
   if (is_ptr) {
     int ret_is_data_pointer =
-        (head->has_func_suffix && (head->ptr_levels > 1 || spec->base_is_ptr)) ? 1 : 0;
+        toplevel_funcptr_direct_ret_is_data_pointer(spec, head);
     psx_decl_funcptr_sig_t sig =
         head->has_func_suffix
             ? psx_decl_make_funcptr_sig_from_kind(
@@ -2515,7 +2520,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
    * と違い宣言子に括弧も trailing `[N]` も無いので上の is_ptr_to_array では検出できない。
    * typedef に記録したポインティ dims から同じセットアップを行う (base のポインタ性は
    * head.is_ptr で既に立っている)。 */
-  if (!is_ptr_to_array && head.is_ptr && !arr.is_array &&
+  if (!is_ptr_to_array && head.is_ptr && head.ptr_levels == 0 && !arr.is_array &&
       spec->td_ptr_pointee_dim_count > 0) {
     is_ptr_to_array = 1;
     pointee_dim_count = spec->td_ptr_pointee_dim_count;
@@ -2526,7 +2531,9 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
     }
   }
   int ptr_array_pointee_bytes = 0;
-  if (head.is_ptr && !head.has_func_suffix &&
+  if (is_ptr_to_array && pointee_total > 0) {
+    ptr_array_pointee_bytes = pointee_total * spec->elem_size;
+  } else if (head.is_ptr && !head.has_func_suffix &&
       head.paren_array_present && arr.is_array &&
       arr.arr_total > 0) {
     ptr_array_pointee_bytes = arr.arr_total * spec->elem_size;
@@ -2616,6 +2623,9 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
       int single_pointee_dim = (pointee_dim_count > 0) ? pointee_dims[0] : pointee_total;
       psx_decl_set_gvar_array_strides_from_inner_dims(gv, &single_pointee_dim, 1, elem);
     }
+    if (spec->fp_kind != TK_FLOAT_KIND_NONE) {
+      psx_decl_set_gvar_pointee_fp_kind(gv, spec->fp_kind);
+    }
   }
   if (gv && arr.is_array && arr.dim_count >= 2) {
     /* 多次元配列のストライド設定。ポインタ要素配列 (`int *t[2][2]` / `char *names[2][3]`) は
@@ -2629,8 +2639,8 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   /* スカラデータポインタ `double *dp`: pointee スカラの fp_kind を保存し、`*dp` / `dp[i]`
    * の deref を fp load にする (ローカル `double *a` と同じ)。単段ポインタ (ptr_levels==1)
    * で配列でなく関数ポインタでもない場合に限定する。pointer-to-array `double (*pa)[N]`
-   * (head.paren_array_mul>1) は pointee がスカラ double でないため除外。funcptr は
-   * register_toplevel_global_decl が既に設定済み。 */
+   * の要素 fp 種別は is_ptr_to_array 分岐で保存済み。funcptr は register_toplevel_global_decl
+   * が既に設定済み。 */
   /* データポインタの pointee fp_kind。直書き `double *dp` (ptr_levels==1) に加え、
    * ポインタ typedef `typedef double *PD; PD pd;` (基底がポインタ = base_is_ptr) も対象に
    * する。多段 `double **` でも最内 pointee は double なので同じ印を保存し、
@@ -2643,7 +2653,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   }
   if (gv && head.is_ptr) {
     int ret_is_data_pointer =
-        head.has_func_suffix ? ((head.ptr_levels > 1 || spec->base_is_ptr) ? 1 : 0) : 0;
+        toplevel_funcptr_direct_ret_is_data_pointer(spec, &head);
     psx_ret_pointee_array_t ret_pointee_array = {0};
     PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
                                       &direct_funcptr_ret_pointee_array,
@@ -3101,6 +3111,7 @@ static token_ident_t *parse_decl_name_recursive(const toplevel_decl_spec_t *spec
                                                 int require_name, int *out_paren_array_mul) {
   int ptr_before_prefix = head->is_ptr;
   head->ptr_levels += psx_consume_pointer_prefix_counted(&head->is_ptr);
+  int frame_pointer_prefix_levels = head->ptr_levels;
   if (require_name && !ptr_before_prefix && head->is_ptr && spec->is_typedef &&
       (spec->tag_kind == TK_STRUCT || spec->tag_kind == TK_UNION)) {
     head->funcptr_ret_is_pointer = 1;
@@ -3126,9 +3137,18 @@ static token_ident_t *parse_decl_name_recursive(const toplevel_decl_spec_t *spec
   } else {
     name = consume_decl_ident_or_error(require_name);
   }
-  consume_toplevel_paren_decl_func_suffixes_if_any(head, had_parens);
+  consume_toplevel_paren_decl_func_suffixes_if_any(head, had_parens,
+                                                  frame_pointer_prefix_levels);
   if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
   return name;
+}
+
+static int toplevel_funcptr_direct_ret_is_data_pointer(const toplevel_decl_spec_t *spec,
+                                                       const toplevel_declarator_head_t *head) {
+  if (!spec || !head || !head->has_func_suffix) return 0;
+  int object_pointer_levels = head->funcptr_object_pointer_levels;
+  int ret_pointer_levels = head->ptr_levels - object_pointer_levels;
+  return (ret_pointer_levels > 0 || spec->base_is_ptr) ? 1 : 0;
 }
 
 static token_ident_t *consume_decl_ident_or_error(int require_name) {
@@ -3146,11 +3166,17 @@ static void emit_decl_name_required_diag(void) {
 }
 
 static void consume_toplevel_paren_decl_func_suffixes_if_any(toplevel_declarator_head_t *head,
-                                                            int had_parens) {
+                                                            int had_parens,
+                                                            int frame_pointer_prefix_levels) {
   if (!had_parens) return;
   /* `(*gops)(double)` / `(*fprintfptr)(FILE*, const char*, ...)` の関数サフィックス。
    * signature state は global getter ではなく、現在の top-level declarator state に保持する。 */
+  int had_suffix_before = head->has_func_suffix;
   psx_skip_func_suffix_groups_ex(&head->has_func_suffix, &head->func_suffix_sig);
+  if (!had_suffix_before && head->has_func_suffix) {
+    int object_levels = head->ptr_levels - frame_pointer_prefix_levels;
+    if (object_levels > 0) head->funcptr_object_pointer_levels = object_levels;
+  }
 }
 
 static void parse_toplevel_decl_after_type(const toplevel_decl_spec_t *spec) {
@@ -3564,6 +3590,7 @@ static token_ident_t *parse_param_declarator_name_recursive(param_declarator_sta
     if (out_pointer_levels) (*out_pointer_levels)++;
     skip_ptr_qualifiers();
   }
+  int frame_pointer_prefix_levels = out_pointer_levels ? *out_pointer_levels : 0;
   token_ident_t *name = NULL;
   // 括弧内に *p があるか (= 「ポインタを括弧で覆って配列にする」`(*p)[N]` 形式) を
   // 判定する。recursive 呼び出し前後で pointer level の変化を見れば判別できる。
@@ -3617,6 +3644,11 @@ static token_ident_t *parse_param_declarator_name_recursive(param_declarator_sta
       psx_skip_func_suffix_groups_ex(&has_suffix,
                                      decl_state ? &decl_state->func_suffix_sig : NULL);
       if (out_has_func_suffix && has_suffix) *out_has_func_suffix = 1;
+      if (has_suffix && decl_state && decl_state->funcptr_object_pointer_levels == 0 &&
+          out_pointer_levels) {
+        int object_levels = *out_pointer_levels - frame_pointer_prefix_levels;
+        if (object_levels > 0) decl_state->funcptr_object_pointer_levels = object_levels;
+      }
     } else {
       if (out_is_array_declarator) *out_is_array_declarator = 1;
       // C11 6.7.6.3p7: 通常の仮引数 `int a[N][M]` では最も外側の `[N]` が
@@ -3681,6 +3713,16 @@ static token_ident_t *parse_param_declarator_name_recursive(param_declarator_sta
     }
   }
   return name;
+}
+
+static int param_funcptr_direct_ret_is_data_pointer(const param_decl_spec_t *ds,
+                                                    const param_declarator_state_t *decl_state,
+                                                    int param_ptr_levels,
+                                                    int param_has_func_suffix) {
+  if (!param_has_func_suffix) return 0;
+  int object_pointer_levels = decl_state ? decl_state->funcptr_object_pointer_levels : 0;
+  int ret_pointer_levels = param_ptr_levels - object_pointer_levels;
+  return (ret_pointer_levels > 0 || (ds && ds->base_is_pointer)) ? 1 : 0;
 }
 
 static lvar_t *register_param_stride_slot(token_ident_t *param, int byte_size) {
@@ -3834,9 +3876,8 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
    * の param_decl_spec_t * で受け取るため、内部的にキャストする。値は変更しない。 */
   param_decl_spec_t *ds = (param_decl_spec_t *)ds_in;
   int funcptr_ret_is_data_pointer =
-      param_has_func_suffix
-          ? ((param_ptr_levels > 1 || ds->base_is_pointer) ? 1 : 0)
-          : 0;
+      param_funcptr_direct_ret_is_data_pointer(ds, decl_state, param_ptr_levels,
+                                               param_has_func_suffix);
   psx_decl_funcptr_sig_t param_funcptr_sig =
       param_has_func_suffix
           ? psx_decl_make_funcptr_sig_from_kind(

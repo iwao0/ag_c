@@ -155,6 +155,9 @@ struct node_mem_t {
   // (= ポインタ値 load を引き起こす)、配列メンバの場合 ND_ADD (アドレス計算)
   // を返す挙動を切り替えるために使う。
   unsigned int is_scalar_ptr_member : 1;
+  // 1: struct/union の配列メンバを表す lvalue。`char x[1]` のように
+  // type_size == deref_size になる配列も、値文脈では load せず address へ decay する。
+  unsigned int is_array_member : 1;
   // 1: ND_CAST が「lhs を I64 へ zero-extend する」ラッパであることを示す。
   // `(long)unsigned_int` の zero-extend を IR_ZEXT で明示挿入するために使う
   // (coerce_to_type は常に SEXT のため unsigned の widen に乗れない)。

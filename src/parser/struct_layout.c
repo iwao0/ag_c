@@ -23,16 +23,19 @@ static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has
                                                        psx_funcptr_signature_t *func_suffix_sig,
                                                        int *out_paren_array_mul,
                                                        int *out_ptr_in_paren,
-                                                       int *out_ptr_levels) {
+                                                       int *out_ptr_levels,
+                                                       int *out_funcptr_object_pointer_levels) {
   int stars = psx_consume_pointer_prefix_counted(is_ptr);
   if (out_ptr_levels) *out_ptr_levels += stars;
+  int frame_pointer_prefix_levels = out_ptr_levels ? *out_ptr_levels : 0;
   token_ident_t *name = NULL;
   int paren_array_mul = 1;
   if (tk_consume('(')) {
     int ptr_before = *is_ptr;
     name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, func_suffix_sig,
                                             &paren_array_mul,
-                                            out_ptr_in_paren, out_ptr_levels);
+                                            out_ptr_in_paren, out_ptr_levels,
+                                            out_funcptr_object_pointer_levels);
     /* `(` 通過直後に `*` を消費したか? `int (*p)[N]` 等を `int *p[N]` と区別するためのフラグ。
      * 内側で更に `(` を踏んで設定された結果は維持する。 */
     if (!ptr_before && *is_ptr && out_ptr_in_paren) *out_ptr_in_paren = 1;
@@ -41,7 +44,13 @@ static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has
   } else {
     name = tk_consume_ident();
   }
+  int had_suffix_before = out_has_func_suffix ? *out_has_func_suffix : 0;
   psx_skip_func_suffix_groups_ex(out_has_func_suffix, func_suffix_sig);
+  if (!had_suffix_before && out_has_func_suffix && *out_has_func_suffix &&
+      out_funcptr_object_pointer_levels && out_ptr_levels) {
+    int object_levels = *out_ptr_levels - frame_pointer_prefix_levels;
+    if (object_levels > 0) *out_funcptr_object_pointer_levels = object_levels;
+  }
   if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
   return name;
 }
@@ -52,8 +61,17 @@ member_decl_head_t psx_parse_member_decl_head(void) {
   out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix,
                                                 &out.func_suffix_sig,
                                                 &out.paren_array_mul, &out.ptr_in_paren,
-                                                &out.ptr_levels);
+                                                &out.ptr_levels,
+                                                &out.funcptr_object_pointer_levels);
   return out;
+}
+
+static int member_funcptr_direct_ret_is_data_pointer(const member_decl_head_t *head,
+                                                     int base_is_pointer) {
+  if (!head || !head->has_func_suffix) return 0;
+  int object_pointer_levels = head->funcptr_object_pointer_levels;
+  int ret_pointer_levels = head->ptr_levels - object_pointer_levels;
+  return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
 }
 
 int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -477,7 +495,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         if (member_is_ptr) {
           psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
           if (head.has_func_suffix) {
-            int ret_is_data_pointer = (member_tag_kind != TK_EOF && member_is_ptr) ? 1 : 0;
+            int ret_is_data_pointer =
+                member_funcptr_direct_ret_is_data_pointer(&head, member_is_ptr_typedef);
             member_funcptr_sig = psx_decl_make_funcptr_sig_from_kind(
                 &head.func_suffix_sig, member_base_kind, member_fp_kind,
                 ret_is_data_pointer, 0, member_is_complex,

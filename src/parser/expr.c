@@ -576,7 +576,7 @@ static void consume_local_type_quals(token_t **cur) {
 static void consume_cast_pointer_suffix(token_t **cur, int *is_pointer) {
   consume_local_type_quals(cur);
   while (*cur && (*cur)->kind == TK_MUL) {
-    *is_pointer = 1;
+    (*is_pointer)++;
     *cur = (*cur)->next;
     consume_local_type_quals(cur);
   }
@@ -1587,7 +1587,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   }
 
 cast_parse_postfix:
-  if (*is_pointer != 1) *is_pointer = 0;
+  if (*is_pointer < 0) *is_pointer = 0;
   consume_cast_pointer_suffix(&t, is_pointer);
   parse_funcptr_abstract_decl(&t, is_pointer);
   (void)parse_ptr_to_array_abstract_decl(&t, is_pointer);
@@ -2048,11 +2048,18 @@ static psx_type_t *expr_cast_target_type(token_kind_t type_kind, int is_pointer,
 
   if (!is_pointer) return base;
 
-  int deref_size = cast_elem_size > 0 ? cast_elem_size : psx_type_sizeof(base);
-  psx_type_t *ptr = psx_type_new_pointer(base, deref_size);
-  ptr->pointer_qual_levels = 1;
-  ptr->base_deref_size = psx_type_sizeof(base);
-  return ptr;
+  int levels = is_pointer > 0 ? is_pointer : 1;
+  int deep_base_size = cast_elem_size > 0 ? cast_elem_size : psx_type_sizeof(base);
+  if (deep_base_size <= 0) deep_base_size = 8;
+  psx_type_t *type = base;
+  for (int level = 1; level <= levels; level++) {
+    int deref_size = (level == 1) ? deep_base_size : 8;
+    psx_type_t *ptr = psx_type_new_pointer(type, deref_size);
+    ptr->pointer_qual_levels = level;
+    ptr->base_deref_size = deep_base_size;
+    type = ptr;
+  }
+  return type;
 }
 
 static node_t *annotate_cast_type(node_t *node, psx_type_t *type) {
@@ -2216,11 +2223,9 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
      * ラップする。後者を含めないと `(char*)&s - (char*)&s.c` のような struct ポインタの cast が
      * 元の ND_ADDR をそのまま返し is_pointer=0 のまま残るため、ND_SUB の「ポインタ - ポインタ
      * = ptrdiff_t」分岐が成立せず、long 初期化が「ポインタを scalar に init」と reject される。 */
-    int operand_is_ptr_or_tag = ps_node_is_pointer(operand) ||
-                                ((operand->kind == ND_ADDR || operand->kind == ND_DEREF ||
-                                  operand->kind == ND_LVAR || operand->kind == ND_GVAR ||
-                                  operand->kind == ND_CAST) &&
-                                 ((node_mem_t *)operand)->is_tag_pointer);
+    int operand_is_tag_pointer = 0;
+    psx_node_get_tag_type(operand, NULL, NULL, NULL, &operand_is_tag_pointer);
+    int operand_is_ptr_or_tag = ps_node_is_pointer(operand) || operand_is_tag_pointer;
     if (is_pointer && cast_elem_size > 0 &&
         operand_is_ptr_or_tag &&
         psx_node_pointer_qual_levels(operand) <= 1) {
@@ -3174,6 +3179,25 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   int extras_count = 0;
   vla_rsf = psx_node_vla_row_stride_frame_off(node);
   psx_node_pointer_stride_metadata(node, &inner_ds, &next_ds, extras, &extras_count);
+  int ptr_array_bytes = psx_node_ptr_array_pointee_bytes(node);
+  if (ptr_array_bytes > 0 && node->kind != ND_DEREF) {
+    int bds = psx_node_base_deref_size(node);
+    int has_outer_row_stride = (ds > 8 && inner_ds > 0);
+    if (!has_outer_row_stride) {
+      es = (ds == 8 && ptr_array_bytes > ds) ? ds : ptr_array_bytes;
+      if (bds > 0 && inner_ds == ptr_array_bytes) inner_ds = bds;
+    }
+  }
+  if (node->kind == ND_DEREF && psx_node_pointer_qual_levels(node) == 0 &&
+      inner_ds <= 0 && vla_rsf == 0) {
+    node_mem_t *m = (node_mem_t *)node;
+    int bds = psx_node_base_deref_size(node);
+    if (bds == 0 && node->lhs) bds = psx_node_base_deref_size(node->lhs);
+    int pointer_array_element_row =
+        (ptr_array_bytes > 0 && ds > bds) ||
+        (m->pointee_is_scalar_ptr && ds == 8);
+    if (bds > 0 && ts > bds && !pointer_array_element_row) es = bds;
+  }
   node_t *scaled;
   if (vla_rsf) {
     // 実行時ストライド: フレームスロットから行ストライドをロード

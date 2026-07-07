@@ -9,6 +9,7 @@ typedef struct {
   int ptr_levels;
   int has_func_suffix;
   psx_funcptr_signature_t func_suffix_sig;
+  int funcptr_object_pointer_levels;
   int paren_array_mul;
   /* `*` が `( ... )` の内側で消費されたか (例: `int (*p)[N]` や `int (*p)(...)` の `*`)。
    * 1 のとき、宣言子の trailing `[N]` (parens の外側) はメンバ自体の配列次元ではなく

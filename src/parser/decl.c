@@ -550,6 +550,11 @@ struct decl_declarator_state_t {
   int had_paren_group;
   /* trailing `()` の個数 (pointer-to-function が戻り funcptr を持つとき 2 以上)。 */
   int func_suffix_count;
+  /* Pointer stars consumed inside the paren-grouped declarator (`(*p)` /
+   * `(**pp)`). These build the function-pointer object itself, not the
+   * function return type. */
+  int paren_pointer_levels;
+  int funcptr_object_pointer_levels;
 };
 
 static void reset_decl_declarator_state(decl_declarator_state_t *state) {
@@ -2921,15 +2926,21 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
                                                   int *out_inner_array_mul,
                                                   decl_declarator_state_t *decl_state) {
   consume_pointer_chain_decl(is_pointer, const_mask, volatile_mask, levels);
+  int frame_pointer_prefix_levels = levels ? *levels : 0;
   psx_skip_gnu_attributes();
   token_ident_t *tok = NULL;
   int local_had_parens = 0;
   if (tk_consume('(')) {
     local_had_parens = 1;
     psx_skip_gnu_attributes();
+    int levels_before_paren = levels ? *levels : 0;
     tok = consume_decl_name_recursive(is_pointer, const_mask, volatile_mask, levels,
                                       out_paren_array_mul, NULL, out_inner_array_mul,
                                       decl_state);
+    if (decl_state && levels) {
+      int consumed_in_paren = *levels - levels_before_paren;
+      if (consumed_in_paren > 0) decl_state->paren_pointer_levels += consumed_in_paren;
+    }
     // パレン内の `[N]` を捕捉する: `int (*ops[N])(...)` の N は関数ポインタ配列の要素数。
     // 空 `[]` の場合は -1 を伝え、呼び出し側で初期化子から推定させる。
     while (curtok()->kind == TK_LBRACKET) {
@@ -2968,6 +2979,10 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
      * `int (*(*pa)[N])(args)` で要素が関数ポインタの場合、後段の `(*p)[N]` 登録経路で
      * elem_size を 8 に上書きするのに使う。 */
     if (decl_state) {
+      if (decl_state->func_suffix_count == 0 && levels) {
+        int object_levels = *levels - frame_pointer_prefix_levels;
+        if (object_levels > 0) decl_state->funcptr_object_pointer_levels = object_levels;
+      }
       decl_state->trailing_func_suffix = 1;
       decl_state->func_suffix_count++;
     }
@@ -2994,6 +3009,16 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   }
   if (had_parens) *had_parens = local_had_parens;
   return tok;
+}
+
+static int decl_funcptr_direct_ret_is_data_pointer(const decl_declarator_state_t *decl_state,
+                                                   int ptr_levels,
+                                                   int base_is_pointer) {
+  if (!decl_state || !decl_state->trailing_func_suffix) return 0;
+  int object_pointer_levels = decl_state->funcptr_object_pointer_levels;
+  if (object_pointer_levels <= 0) object_pointer_levels = decl_state->paren_pointer_levels;
+  int ret_pointer_levels = ptr_levels - object_pointer_levels;
+  return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
 }
 
 static token_ident_t *consume_decl_name_ex(int *is_pointer,
@@ -4759,7 +4784,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         inner_array_mul == 0 && paren_array_mul == 0 &&
         curtok()->kind != TK_LBRACKET && td_array_dim_count == 0) {
       int static_ret_is_data_pointer =
-          decl_state.trailing_func_suffix && (ptr_levels > 1 || base_is_pointer);
+          decl_funcptr_direct_ret_is_data_pointer(&decl_state, ptr_levels, base_is_pointer);
       psx_decl_funcptr_sig_t static_funcptr_sig =
           is_pointer
               ? (decl_state.trailing_func_suffix
@@ -5166,7 +5191,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     /* 関数ポインタの仮引数 fp マスク (経由呼び出しの int→fp 昇格用)。 */
     if (is_pointer || is_funcptr_decl) {
       int direct_ret_is_data_pointer =
-          (decl_state.trailing_func_suffix && (ptr_levels > 1 || base_is_pointer)) ? 1 : 0;
+          decl_funcptr_direct_ret_is_data_pointer(&decl_state, ptr_levels, base_is_pointer);
       psx_ret_pointee_array_t direct_ret_pointee_array =
           (decl_state.trailing_func_suffix && paren_array_mul > 0 &&
            decl_state.paren_array_first_dim > 0)

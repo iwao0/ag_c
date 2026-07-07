@@ -125,6 +125,7 @@ static ir_type_t elem_value_type(int type_size) {
 }
 
 static ir_type_t scalar_value_type(int type_size, int is_pointer) {
+  if (is_pointer) return IR_TY_PTR;
   if (type_size >= 8) return is_pointer ? IR_TY_PTR : IR_TY_I64;
   return elem_value_type(type_size);
 }
@@ -1450,7 +1451,9 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    *    (loaded ポインタ値 `*pp` は is_pointer=1 なので除外され従来どおり load)。 */
   if (mm->deref_size > 0 &&
       (mm->type_size > 8 ||
+       mm->is_array_member ||
        (mm->is_pointer && mm->pointer_qual_levels == 0 && !mm->is_scalar_ptr_member &&
+        mm->type_size > mm->deref_size &&
         mm->pointee_fp_kind == TK_FLOAT_KIND_NONE && mm->inner_deref_size == 0) ||
        (!mm->is_pointer && mm->type_size > mm->deref_size))) {
     return ptr;

@@ -1,8 +1,552 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き792: pointer view size metadata の helper 化）
+最終更新: 2026-07-07（続き812: address expression type の operand type 正本化）
 
 ## 現状
+- 続き812: **`ND_ADDR` に operand 由来の pointer `psx_type_t` を持たせ、address expression の型を
+  mem 再構成へ落とさないようにした**。
+
+  `psx_node_new_unary_addr_for()` / `psx_node_new_addr_value_for()` はこれまで `node_mem_t` 側に
+  `type_size = 8` / `deref_size = ps_node_type_size(operand)` / `is_pointer = 1` などを立てるだけで、
+  `ND_ADDR` 自体には明示 `node->type` を持たせていなかった。そのため、operand が explicit
+  `psx_type_t` を持っていても、`&operand` の型は `type_from_mem(as_mem(addr))` で再構成され、
+  pointer level / base deref size / inner pointer qualifier mask が mem payload 依存になる余地があった。
+
+  今回は `type_from_address_operand()` を追加し、operand の `psx_type_t` から
+  `psx_type_new_pointer(base, sizeof(base))` を作るようにした。あわせて
+  `pointer_qual_levels` は operand 側の levels + 1、`base_deref_size` は operand 側の
+  base deref size を優先、`pointer_const_qual_mask` / `pointer_volatile_qual_mask` は operand 側の
+  mask を 1 段シフトして保持する。通常の unary `&` と addr value helper の両方でこの type を
+  `node->base.type` に設定している。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `int *` operand の type 側には
+  `pointer_qual_levels = 1` / `base_deref_size = 4` / `pointer_const_qual_mask = 1` を持たせ、
+  mem 側には stale `type_size = 4` / `deref_size = 0` / `is_pointer = 0` / const mask 0 を残した状態で
+  `psx_node_new_unary_addr_for()` を呼ぶ。生成された `&operand` が pointer type として扱われ、
+  pointer levels 2、base deref size 4、const mask 2 を type 側から返し、`psx_node_get_type(addr)->base`
+  が operand の explicit type と同一であることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き811: **`ND_ASSIGN` 自体にも lhs の `psx_type_t` を持たせ、assignment expression の型を
+  mem 再構成へ落とさないようにした**。
+
+  `psx_node_new_assign()` はこれまで lhs の `type_size` だけを assignment node の
+  `node_mem_t::type_size` に写していた。そのため、lhs が明示 `node->type` を持つ pointer でも、
+  assignment expression 自体は `node->type` を持たず、`psx_node_get_type(ND_ASSIGN)` が
+  `type_from_mem(as_mem(assign))` で型を再構成していた。これは explicit type の正本化から外れており、
+  assignment node の mem payload が足りない/古い場合に、pointer/pointee metadata を失う余地があった。
+
+  今回は `psx_node_new_assign()` で `node->base.type = psx_node_get_type(lhs)` を設定するようにした。
+  assignment expression の型は lhs type を正本として保持され、`ps_node_is_pointer()` /
+  `ps_node_type_size()` / `psx_node_base_deref_size()` なども assignment mem ではなく
+  `psx_type_t` 側を読む。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `int *` lhs の mem 側には
+  stale `type_size = 4` / `deref_size = 0` / `is_pointer = 0` を残し、
+  `psx_node_new_assign()` の結果が pointer として扱われ、type size 8 / deref size 8 /
+  base deref size 4 を返し、`psx_node_get_type(assign)` が lhs の explicit type と同一であることを
+  確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き810: **unary deref 生成時の `ND_DEREF` probe で、stale tag/deref mem を直接読まないようにした**。
+
+  `psx_node_new_unary_deref_for()` は `operand` から `ND_ADD` を剥がした probe が `ND_DEREF` の場合に、
+  `((node_mem_t *)probe)->is_tag_pointer` と `((node_mem_t *)probe)->deref_size` を直接読んでいた。
+  stride 本体は既に `psx_node_pointer_stride_metadata()` 経由で typed-first になっていたが、
+  その分岐へ入る条件だけが legacy mem 直読だったため、明示 `node->type` がある `ND_DEREF` に
+  stale `is_tag_pointer` / `deref_size` が残ると、type 側では tag pointer ではないのに
+  unary deref 結果の `deref_size` を inner stride へ縮める余地があった。
+
+  今回はこの条件を `psx_node_get_tag_type(probe, ..., &probe_is_tag_ptr)` と
+  `ps_node_deref_size(probe)` 経由にした。明示 type 付き probe では tag 判定と deref 幅の両方が
+  `psx_type_t` 側を正本として読まれ、明示 type が無い legacy node では従来どおり mem metadata が
+  reader 経由で使われる。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `ND_DEREF` に type 側の
+  `pointer_qual_levels = 2` / `base_deref_size = 16` / `outer_stride = 4` を持たせ、mem 側には
+  stale `is_tag_pointer = 1` / `deref_size = 32` を残した状態で `psx_node_new_unary_deref_for()` を呼ぶ。
+  生成結果が stale mem 条件で `4` へ縮まず、type 側の deref 幅 `16` を維持することを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き809: **subscript の `pointee_is_scalar_ptr` fallback を、明示 type が無い legacy
+  base に限定した**。
+
+  `psx_node_new_subscript_deref_for()` の末尾には、`base_mem->pointee_is_scalar_ptr` を直接読んで
+  subscript 結果を `is_scalar_ptr_member` / `pointee_is_scalar_ptr` にする互換経路が残っていた。
+  この flag は `node_mem_t` 側の legacy 文脈情報で、現在の `psx_type_t` には同じ正本 field が無い。
+  そのため、明示 `node->type` がある base に stale mem `pointee_is_scalar_ptr = 1` が残っていると、
+  explicit pointer type の subscript 結果が mem 側だけを根拠にポインタ化される余地があった。
+
+  今回は `node_legacy_pointee_scalar_ptr_mem()` を追加し、この fallback が `!node->type` の
+  legacy node だけを読むようにした。明示 type 付き base では `psx_type_t` 側で表現される
+  pointer metadata だけを使い、`node_mem_t::pointee_is_scalar_ptr` では補完しない。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `int *` base に stale
+  `pointee_is_scalar_ptr = 1` / `base_deref_size = 99` を残して
+  `psx_node_new_subscript_deref_for()` を呼び、生成された subscript deref が stale mem によって
+  pointer 化されず、`ps_node_is_pointer()` false / `ps_node_deref_size()` 0 のままになることを
+  確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き808: **subscript の `ND_DEREF` 分岐で、明示 type 付き base が stale
+  `is_scalar_ptr_member` / ptr-array mem に引っ張られないようにした**。
+
+  `psx_node_new_subscript_deref_for()` には、`base->kind == ND_DEREF` の特別扱いで
+  `((node_mem_t *)base)->ptr_array_pointee_bytes` と
+  `((node_mem_t *)base)->is_scalar_ptr_member` を直接読む経路が残っていた。これは legacy
+  `node_mem_t` 用の文脈情報だが、明示 `node->type` がある `ND_DEREF` base でも読めてしまうため、
+  stale mem が残ると subscript 結果の pointer qual level / base deref metadata を type 側と
+  違う形へ縮める余地があった。
+
+  今回は ptr-array bytes を typed-first reader の
+  `psx_node_ptr_array_pointee_bytes(base)` で一度だけ取得し、`is_scalar_ptr_member` は
+  `node_legacy_scalar_ptr_member()` helper に閉じ込めた。この helper は `!node->type` の
+  legacy node だけ mem を読む。明示 type 付き base では `psx_type_t` 側の pointer metadata
+  だけが正本になる。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `ND_DEREF` base を
+  pointer-to-pointer type として持たせ、mem 側には stale `is_scalar_ptr_member = 1` を残した状態で
+  `psx_node_new_subscript_deref_for()` を呼び、生成結果が type 側の `pointer_qual_levels = 2` と
+  `base_deref_size = 4` を維持することを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き807: **subscript deref 生成時の unsigned fallback を、明示 type が無い legacy base に限定した**。
+
+  `psx_node_new_subscript_deref_for()` は subscript 結果の unsigned metadata を
+  `psx_node_pointee_is_unsigned(base)` で typed-first に伝播したあと、最後に
+  `base_mem->is_unsigned` を直接読む fallback を持っていた。この fallback は legacy array/pointer
+  表現の互換用だが、明示 `node->type` がある base でも有効だったため、explicit signed pointer type に
+  stale mem `is_unsigned = 1` が残っていると、subscript 結果が unsigned として扱われる余地があった。
+
+  今回はこの `base_mem->is_unsigned` fallback を `!base->type` の場合だけに限定した。明示 type 付き
+  base では既存の typed-first `psx_node_pointee_is_unsigned(base)` だけが正本になり、明示 type が無い
+  legacy node では従来の mem fallback を維持している。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。explicit `int *` base の mem 側に
+  stale `is_unsigned = 1` を残して `psx_node_new_subscript_deref_for()` を呼び、生成された
+  subscript deref が `psx_node_is_unsigned_type()` で unsigned にならないことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き806: **bool 代入 RHS 正規化の判定も、明示 `node->type` を正本として読むようにした**。
+
+  `psx_node_new_assign()` は lhs が `_Bool` slot の場合に RHS を `rhs != 0` へ正規化するが、
+  その判定を行う `lhs_is_bool_slot()` は `as_mem(lhs)->is_bool` を直接読んでいた。そのため、
+  明示 `psx_type_t` が `_Bool` でも mem 側が stale/未設定なら正規化が抜ける余地があり、
+  逆に明示 type が `int` でも stale mem `is_bool = 1` が残っていると余計な `!= 0` ノードを
+  作る余地があった。
+
+  今回は `lhs_is_bool_slot()` を typed-first にし、明示 `node->type` がある場合は
+  `psx_type_t::kind == PSX_TYPE_BOOL` だけを正本として見るようにした。明示 type が無い
+  legacy node では従来どおり materialized type / `node_mem_t::is_bool` fallback を維持している。
+
+  回帰テストは `test_type_metadata_bridge()` に 2 ケース追加した。explicit `_Bool` lhs では
+  mem 側が未設定でも `psx_node_new_assign()` の RHS が `ND_NE` へ正規化されること、explicit
+  `int` lhs では stale mem `is_bool = 1` が残っていても RHS が元の `ND_NUM` のままになることを
+  確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き805: **const assignment / const qualifier discard 診断も、明示 `node->type` を正本として
+  判定するようにした**。
+
+  続き804までで公開 metadata reader は typed-first に寄っていたが、診断系の
+  `psx_node_reject_const_assign()` と `psx_node_reject_const_qual_discard()` はまだ
+  `node_mem_t` を直接読んでいた。そのため、明示 `psx_type_t` が non-const scalar/pointer を
+  表していても stale mem 側の `is_const_qualified` に引っ張られて const 代入を誤検出したり、
+  逆に lhs mem 側だけが const pointee に見えると qualifier discard を見逃す余地があった。
+
+  今回は `node_self_is_const_qualified()` を追加し、self const 判定を
+  「明示 `node->type` があれば pointer の bit0 は `psx_type_t::pointer_const_qual_mask`、
+  non-pointer は `psx_type_t::is_const_qualified`、明示 type が無い legacy node は従来の
+  `node_mem_t`」に整理した。`node_pointee_is_const()` も既存の typed-first
+  `psx_node_pointee_is_const_qualified()` に委譲し、`psx_node_reject_const_qual_discard()` は
+  lhs pointer 判定と lhs pointee const 判定を typed-first reader 経由にした。
+
+  回帰テストは `test_type_metadata_bridge()` に 2 ケース追加した。1つ目は explicit non-const
+  scalar type に stale mem `is_const_qualified = 1` が残っても `psx_node_reject_const_assign()` が
+  誤診断しないことを確認している。2つ目は explicit non-const pointer lhs の mem 側だけが
+  stale const pointee に見える状態で、rhs が explicit pointer-to-const の場合に
+  qualifier discard を見逃さず診断することを子プロセスで固定している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き804: **間接関数呼び出しの戻り型推定で、明示 `node->type` 付き callee から stale mem
+  funcptr signature へ fallback しないようにした**。
+
+  `type_from_indirect_funcall()` は `type_from_funcptr_callee_type()` で callee の型から戻り型を
+  復元できない場合、`funcall_callee_mem()` 経由で legacy `node_mem_t::funcptr_sig` を読んでいた。
+  そのため、callee に明示 `node->type` があり、`psx_type_t::funcptr_sig` が空または未設定でも、
+  stale な mem 側 funcptr signature が残っていると、それを正本のように使って戻り型を作る余地があった。
+
+  今回は `type_from_funcptr_callee_type()` を、callee が `ND_FUNCALL` の場合だけでなく通常の typed
+  function pointer node からも `psx_type_t::funcptr_sig` を読むようにしつつ、
+  `funcptr_sig_has_return_shape()` で戻り型情報が空なら失敗扱いにした。そのうえで
+  `type_from_indirect_funcall()` は、callee に明示 `node->type` がある場合は legacy mem fallback へ
+  進まず `NULL` を返す。明示 type が無い legacy callee では従来どおり mem fallback を維持している。
+
+  回帰テストは `test_type_metadata_bridge()` に 2 ケース追加した。1つ目は explicit pointer type 側に
+  `funcptr_sig.ret_int_width = 8` を置き、mem 側に stale な data-pointer return を残しても、
+  `psx_node_get_type()` が type 側の integer size 8 を返すことを確認している。2つ目は explicit
+  pointer type 側の funcptr signature が空で、mem 側だけに stale な data-pointer return がある場合、
+  indirect call の型推定が mem 側へ落ちず `NULL` になることを固定している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き803: **`deref_size` reader の contextual row fallback を、明示 pointer/array type に限定した**。
+
+  続き793以降も、`node_value_view_from_node_direct()` は `NODE_VALUE_DEREF_SIZE` だけ
+  `mem_has_contextual_row_deref_size()` に該当すれば、明示 `node->type` があっても
+  legacy `node_mem_t::deref_size` を優先していた。これは VLA/多次元配列行の文脈を残すための
+  互換経路だが、判定が mem だけを見ていたため、明示 scalar type の node に stale な
+  `type_size > deref_size` / `is_pointer` / stride metadata が残ると、scalar なのに row deref 幅を
+  持つように見える余地があった。
+
+  今回は `NODE_VALUE_DEREF_SIZE` の contextual mem fallback を
+  `type_is_pointer_view_type(type)` の場合だけ許可するようにした。明示 scalar/non-pointer type では
+  `psx_type_t` 側の deref size だけを読み、無ければ 0 を返す。明示 pointer/array type の
+  contextual row deref と、明示 type が無い legacy node の mem fallback は維持している。
+
+  回帰テストは `test_type_metadata_bridge()` の typed scalar node で、明示 `long` type は維持したまま
+  mem 側に `type_size = 16` / `deref_size = 4` / pointer/stride metadata を残し、
+  `ps_node_deref_size()` が stale mem の `4` ではなく `0` を返すことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き802: **`type_size` reader で、明示 type の size 欠落を stale mem で補完しないようにした**。
+
+  続き793で `ps_node_type_size()` は `node_value_view_from_node_direct()` 経由に寄せていたが、
+  明示 `node->type` がある node で `psx_type_sizeof(type)` が 0 の場合だけ、
+  legacy `node_mem_t::type_size` へ fallback する経路が残っていた。これは explicit type の
+  payload 欠落を mem 側で埋める形になり、`type_size` の正本が再び分散する余地があった。
+
+  今回は `node_value_view_from_node_direct()` の明示 `node->type` 分岐から、
+  `NODE_VALUE_TYPE_SIZE` の mem fallback を削除した。明示 type がある場合は
+  `psx_type_t` 側の size だけを返し、size が無いなら 0 を返す。明示 type が無い legacy node は
+  従来どおり `type_from_mem()` / `node_mem_t` fallback を維持している。`deref_size` の
+  contextual row deref だけは VLA/多次元配列行の実行時文脈を保持する別用途なので、現時点では残している。
+
+  回帰テストは `test_type_metadata_bridge()` に `typed_missing_size_mem` を追加し、
+  explicit `PSX_TYPE_INTEGER` type 側の size が 0、mem 側の `type_size = 13` の状態でも
+  `ps_node_type_size()` が `13` ではなく `0` を返すことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き801: **pointer/VLA view reader で、明示 pointer/array type の missing payload からも
+  stale mem へ fallback しないようにした**。
+
+  続き800で明示 non-pointer type からの pointer/pointee mem fallback は遮断したが、
+  `pointer_view_from_node_direct()` は明示 `node->type` が pointer/array で、type 側の
+  `base_deref_size` / `ptr_array_pointee_bytes` が 0 の場合に legacy `node_mem_t` へ
+  fallback していた。`vla_view_from_node_direct()` も、明示 pointer/array type 側に
+  `vla_row_stride_frame_off` / `vla_strides_remaining` が無い場合は mem 側へ fallback していた。
+  そのため explicit type 付き node でも、type payload 欠落時に mem 側が正本のように見える余地が残っていた。
+
+  今回は `pointer_view_from_node_direct()` と `vla_view_from_node_direct()` を、
+  明示 `node->type` がある場合は type 側だけを読む規約へ寄せた。type view に値があれば返し、
+  無ければ 0/none とする。明示 type が無い legacy node では従来どおり `type_from_mem()` や
+  `node_mem_t` fallback を残しているため、通常の lvar/gvar 互換経路は維持している。
+
+  回帰テストは `test_type_metadata_bridge()` に `typed_missing_ptr_mem` を追加し、
+  explicit pointer type 側の `base_deref_size` / `ptr_array_pointee_bytes` /
+  VLA row metadata を 0 にした状態で、mem 側に `77` / `66` / `55` / `5` の stale 値を
+  持たせても `psx_node_base_deref_size()` / `psx_node_ptr_array_pointee_bytes()` /
+  `psx_node_vla_row_stride_frame_off()` がすべて `0` を返すことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き800: **pointer/pointee view reader で、明示 non-pointer type から stale mem を
+  読まないようにした**。
+
+  続き792で `pointer_view_from_node_direct()` を追加し、pointer qual levels /
+  `base_deref_size` / `ptr_array_pointee_bytes` / pointer const/volatile mask /
+  pointee fp kind を typed-first helper 経由にしていたが、明示 `node->type` がある場合でも、
+  type が pointer/array view でないと legacy `node_mem_t` へ fallback する互換経路が残っていた。
+  同じく `pointee_flag_from_node_direct()` も、明示 non-pointer type で
+  `pointee_is_unsigned` / `pointee_is_bool` / `pointee_is_void` /
+  const/volatile pointee 判定を mem 側から読める状態だった。
+
+  今回は `node_mem_view_for_explicit_non_pointer_type()` を削除し、明示 `node->type` が
+  pointer/array でない場合は pointer view / pointee view を空として返すようにした。
+  明示 pointer/array type で type 側に有効 payload がある場合は引き続き `psx_type_t` を正本として読む。
+  `base_deref_size` / `ptr_array_pointee_bytes` の typed pointer/array missing payload に対する
+  legacy mem fallback と、明示 type が無い legacy node の mem fallback は今の互換範囲として残している。
+
+  回帰テストは `test_type_metadata_bridge()` の `typed_const_view_mem` に stale mem 側の
+  pointer qual/mask、`base_deref_size`、`ptr_array_pointee_bytes`、pointee fp/flag を持たせたまま、
+  明示 non-pointer `struct TypedView` type では公開 helper がすべて空値
+  (`0` / `TK_FLOAT_KIND_NONE` / false) を返すことを確認している。typed scalar node 側にも
+  stale `base_deref_size = 11` / `ptr_array_pointee_bytes = 22` を追加し、
+  `psx_node_base_deref_size()` / `psx_node_ptr_array_pointee_bytes()` が `0` を返すことを固定した。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き799: **VLA runtime metadata reader で、明示 non-pointer type から stale mem へ
+  fallback しないようにした**。
+
+  続き795で `vla_view_from_node_direct()` を追加し、typed pointer/array の
+  `psx_type_t::vla_row_stride_frame_off` / `vla_strides_remaining` を優先するようにしたが、
+  type 側に VLA metadata が無い場合は常に legacy `node_mem_t` へ fallback していた。そのため、
+  明示 scalar/non-pointer `node->type` を持つ node に stale mem 側の VLA row metadata が残っていると、
+  `psx_node_vla_row_stride_frame_off()` が runtime row stride を持つように見える余地があった。
+
+  今回は `vla_view_from_node_direct()` で、明示 `node->type` があり、その型が pointer/array view でない場合は
+  legacy mem fallback を遮断するようにした。typed pointer/array で type 側に値がある場合は
+  引き続き type を正本として読み、typed pointer/array で互換上必要な missing payload の mem fallback と、
+  明示 type が無い legacy node の mem fallback は残している。
+
+  回帰テストは `test_type_metadata_bridge()` の typed scalar node に stale mem 側の
+  `vla_row_stride_frame_off = 64` / `vla_strides_remaining = 4` を持たせても、
+  `psx_node_vla_row_stride_frame_off()` が `0` を返すことを確認している。typed pointer case では
+  stale mem 側 `48` ではなく type 側 `24` を返す既存確認も継続している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き798: **scalar flag（unsigned / long long / plain char / long double）の
+  direct node reader 規約を `scalar_flag_from_node_direct()` に寄せた**。
+
+  続き789で scalar flag の typed-first helper は入っていたが、公開 reader
+  `psx_node_is_unsigned_type()` / `psx_node_is_long_long_type()` /
+  `psx_node_is_plain_char_type()` / `psx_node_is_long_double_type()` と、conversion/codegen 用の
+  内部 `node_is_unsigned()` はまだ direct node の `psx_type_t` と legacy mem fallback を
+  それぞれ個別に呼んでいた。特に `node_is_unsigned()` は IR/codegen の signedness 判定にも使われるため、
+  公開 scalar reader と conversion reader が同じ typed-first 規約を共有していない状態だった。
+
+  今回は `scalar_flag_from_node_direct()` を追加し、direct node の scalar flag は
+  「明示 `node->type` があれば type 側だけ、明示 type が無い legacy node では type view があれば
+  type、無ければ legacy mem/node fallback」という規約に集約した。公開 scalar reader の default direct
+  読み取りと `node_is_unsigned()` の LVAR/GVAR/DEREF/ASSIGN/CAST direct 読み取りをこの helper 経由にした。
+  ただし `ND_SHL` / `ND_SHR` の forced signedness override と、cast lowering が持つ
+  `node->is_unsigned` override は codegen selector として別用途なので従来どおり残している。
+
+  回帰テストは `test_type_metadata_bridge()` に typed unsigned scalar node を追加し、
+  mem 側に unsigned flag が無くても `psx_node_is_unsigned_type()` と
+  `psx_node_conversion_value_is_unsigned()` が明示 `psx_type_t` 側の unsigned を読むことを確認している。
+  既存の typed signed scalar node では stale mem 側の unsigned/long long/plain char/long double が
+  漏れないことも継続確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き797: **pointer stride metadata（inner/next/extra strides）の direct node reader も
+  typed-first helper に寄せた**。
+
+  `psx_node_pointer_stride_metadata()` は、`psx_type_t::outer_stride` /
+  `mid_stride` / `extra_strides` を先に見たあと、明示 `node->type` がある node でも
+  legacy `node_mem_t::inner_deref_size` / `next_deref_size` / `extra_strides` へ fallback していた。
+  そのため、typed scalar node に stale stride metadata が残っていると、ポインタ/多次元配列ではない
+  型でも stride 情報を持つように見える余地があった。
+
+  今回は `node_pointer_stride_from_funcall_return()` と
+  `node_pointer_stride_from_node_direct()` を追加し、公開 `psx_node_pointer_stride_metadata()` は
+  direct node の読み取りを helper へ委譲し、`ND_ADD` / `ND_SUB` / comma / stmt-expr の traversal だけを
+  持つ形にした。direct `psx_type_t` に stride がある場合は型側を正本として返す。function pointer が
+  pointer-to-array を返す `ND_FUNCALL` は従来どおり `ret_pointee_array` から stride を再構成する。
+  明示 `node->type` がある direct node で type 側に stride が無い場合は、stale mem stride へ
+  fallback しない。明示 type が無い legacy node では mem fallback を残している。
+
+  回帰テストは `test_type_metadata_bridge()` の typed scalar node に stale mem 側の
+  `inner_deref_size` / `next_deref_size` / `extra_strides` を持たせ、`psx_node_pointer_stride_metadata()` が
+  false を返し、出力 stride/count を clear することを確認している。既存の typed pointer case では、
+  stale mem 側 `99` / `88` ではなく type 側 `outer_stride=12` / `mid_stride=6` を返すことも継続確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き796: **tag metadata（tag kind/name/len/is pointer/scope depth）の direct node
+  reader を helper 化し、明示 `node->type` では `psx_type_t` 側を正本にした**。
+
+  `psx_node_get_tag_type()` と `psx_node_get_tag_scope_depth()` は、どちらも
+  `node->type` / funcall type / legacy `node_mem_t` の tag metadata を読むが、
+  kind/name と scope depth の読み取り規則が別々に書かれていた。そのため、明示 typed node でも
+  type 側に tag が無い場合に stale mem tag へ落ちる余地が残り、tag metadata の正本が
+  `psx_type_t` と legacy mem field に分散して見える状態だった。
+
+  今回は `node_tag_view_t` と `tag_view_from_type()` / `tag_view_from_mem()` /
+  `tag_view_from_node_direct()` を追加し、tag kind/name/len/is pointer/scope depth を
+  同じ view helper 経由で読むようにした。明示 `node->type` がある direct node では、
+  その型が struct/union または pointer/array-to-tag でない場合も「tag なし」という typed view を
+  authoritative とし、stale `node_mem_t` tag field へ fallback しない。明示 type が無い legacy node では
+  従来互換として mem fallback を残している。`ND_ASSIGN` / `ND_COMMA` / `ND_ADD` / `ND_SUB` /
+  `ND_TERNARY` / inc-dec の traversal は維持し、scope depth 側も tag type 側と同じ helper view を使う。
+
+  回帰テストは `test_type_metadata_bridge()` の typed scalar node に stale mem 側の
+  `TK_STRUCT "Stale"` / scope depth / tag pointer を持たせ、`psx_node_get_tag_type()` が
+  `TK_EOF` / NULL / pointer false を返し、`psx_node_get_tag_scope_depth()` が `-1` を返すことを
+  追加確認している。既存の typed pointer-to-tag case では stale mem 側の `union Old` ではなく、
+  type 側の `struct Typed` と scope depth `2` が返ることも継続確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き795: **VLA runtime metadata（row stride frame offset / remaining strides）の
+  direct node reader を helper 化した**。
+
+  `psx_node_vla_row_stride_frame_off()` と内部 `node_vla_strides_remaining()` は、
+  typed pointer/array view の `psx_type_t::vla_row_stride_frame_off` /
+  `vla_strides_remaining` と legacy `node_mem_t` fallback をそれぞれ個別に実装していた。
+  ここは VLA/多次元配列の runtime stride に関わるため mem fallback はまだ必要だが、
+  「typed view がある場合は typed 側を先に読む」という規約が関数内に分散していた。
+
+  今回は `node_vla_view_field_t` と `vla_view_from_type()` / `vla_view_from_mem()` /
+  `vla_view_from_node_direct()` を追加し、2つの reader の direct node 読み取りを共通化した。
+  typed pointer/array に有効な VLA metadata がある場合は `psx_type_t` 側を優先し、
+  値が無い場合は従来互換として legacy mem view へ fallback する。`ND_ADD` / `ND_SUB` の
+  traversal は従来どおり残している。
+
+  既存の `test_type_metadata_bridge()` は typed pointer node に stale mem 側の
+  `vla_row_stride_frame_off = 48` / `vla_strides_remaining = 7` と、type 側の
+  `24` / `3` を持たせている。`psx_node_vla_row_stride_frame_off()` が type 側の `24` を返し、
+  subscript deref 生成後の `vla_strides_remaining` が type 側由来で `2` に進むことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き794: **function pointer signature の node reader も、明示 `node->type` では
+  `psx_type_t` 側を正本にした**。
+
+  `psx_node_funcptr_param_fp_mask()` / `psx_node_funcptr_param_int_mask()` /
+  `psx_node_funcptr_returns_void()` / `psx_node_funcptr_returns_complex()` /
+  `psx_node_funcptr_returns_pointee_array()` / `psx_node_funcptr_ret_fp_kind()` は
+  `funcptr_sig_from_node()` 経由で `psx_type_t::funcptr_sig` と legacy
+  `node_mem_t::funcptr_sig` を merge していた。そのため、明示 `node->type` がある typed node でも
+  type 側に無い field が stale mem 側から補完され、型情報の正本が再び分散する余地があった。
+
+  今回は `funcptr_sig_from_node()` で `node->type` が明示されている場合、type 側の
+  `funcptr_sig` だけを返すようにした。明示 type が無い legacy node では、従来互換として
+  type view の不足分を mem view で補完する merge を残している。
+
+  回帰テストは `test_type_metadata_bridge()` の typed funcptr view node に、type 側へ
+  `param_fp_mask` / `ret_fp_kind`、stale mem 側へ `param_int_mask` / `ret_is_complex` /
+  `ret_pointee_array` を別々に持たせ、公開 helper が type 側だけを返して mem 側の
+  stale signature を補完しないことを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
+- 続き793: **`type_size` / `deref_size` / `is_pointer` の direct node reader を
+  typed-first helper に寄せた**。
+
+  続き789-792で scalar/pointee/pointer view の各 metadata reader は helper 経由になったが、
+  `ps_node_type_size()` / `ps_node_deref_size()` / `ps_node_is_pointer()` はまだ direct node
+  (`ND_LVAR` / `ND_GVAR` / `ND_DEREF` / `ND_CAST` など) から `psx_type_t` と
+  legacy `node_mem_t` を個別に読んでいた。今回は `node_value_view_field_t` と
+  `node_value_view_from_type()` / `node_value_view_from_mem()` /
+  `node_value_view_from_node_direct()` を追加し、この3つの公開 reader の direct node 読み取りを
+  同じ helper へ集約した。
+
+  明示 `node->type` がある node では、`type_size` と `is_pointer` は `psx_type_t` 側を正本にする。
+  `deref_size` だけは VLA/多次元配列行の contextual deref 幅を legacy mem が保持しているため、
+  `mem_has_contextual_row_deref_size()` に該当する場合は従来どおり mem 側を優先する。明示 type が無い
+  legacy node では、従来互換として type view の正の値を優先し、不足時に mem view へ fallback する。
+  `is_pointer` も従来どおり、legacy node では type/mem の OR、明示 type 付き node では type のみを読む。
+
+  既存の `test_type_metadata_bridge()` は、明示 typed scalar node で stale mem の
+  `type_size` / `deref_size` / `is_pointer` が漏れないこと、typed pointer node で
+  typed deref size が優先されること、legacy mem fallback が残ることを確認している。
+
+  確認は
+  `make -j4 build/test_parser && ./build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**、
+  `./build/test_e2e` = **1200/1200 pass**、
+  `./build/test_wasm32_e2e` = **1195 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き792: **pointer qual levels / base deref size / ptr-array pointee bytes の
   direct node view も typed-first helper に寄せた**。
 
@@ -14465,3 +15009,166 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `make -j4 build/ag_c build/test_e2e build/test_wasm32_e2e` = **pass**
   - `./build/test_e2e` = **1200/1200 OK**
   - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+
+### このセッション（続き813）: cast の tag pointer 判定を typed-first accessor へ寄せる
+- 見つかった浅い箇所:
+  - `apply_cast()` の pointer cast wrapper 判定で、`ps_node_is_pointer(operand)` は typed-first
+    helper 経由になっていたが、tag pointer 側だけ `((node_mem_t *)operand)->is_tag_pointer`
+    を直接読んでいた。
+  - そのため `operand->type` が明示的に存在しているケースでも、古い `node_mem_t` 側の
+    tag pointer bit が pointer cast wrapper の有無を左右できる状態だった。
+- 根本対応:
+  - `apply_cast()` の tag pointer 判定を `psx_node_get_tag_type(..., &is_tag_pointer)` 経由へ変更した。
+  - これで pointer / tag pointer の両方が typed-first accessor に揃い、明示 type がある場合に
+    legacy mem bit が cast lowering を上書きしにくくなった。
+- 調査メモ:
+  - `psx_node_mem_funcptr_sig()` を typed-first に広げる案も試したが、wasm32 e2e の
+    `funcptr_explicit_deref_call` / `ptr_to_funcptr_direct_deref` が
+    `indirect call signature mismatch` で落ちたため最終差分から外した。
+  - 原因は explicit deref callee で `type->funcptr_sig.ret_int_width=8` だけを拾い、
+    `call_indirect ... (result i64)` になって実関数 `(result i32)` と不一致になること。
+    function pointer signature の storage/type 正本化は、`ret_int_width` 単独を完全な
+    signature と見なさない設計整理を先に入れる必要がある。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+
+### このセッション（続き814）: typed pointer / function pointer signature 復元の浅い境界を修正
+- 見つかった浅い箇所:
+  - `wasm32_obj.c` の function pointer signature decode が global / tag member / IR call で
+    それぞれ同じ mask 展開を持っており、`psx_decl_funcptr_sig_t` を object backend がどう読むかの
+    正本が分散していた。
+  - runtime `format.c` は Wasm runtime の `va_list` slot 表現に対し、一部で
+    `va_arg(ap, void *)` / `va_arg(ap, void **)` を直接使っていた。parser が多段 pointer cast を
+    厳密に扱い始めると、macro 展開側で `void *` deref が露出する浅い依存になっていた。
+  - parser の typed deref/subscript 移行で、`node_mem_t` の stale bit を避けるための typed-first
+    化が進んだ一方、`struct Data { struct Sym *symbols; }` の `g.symbols[0].name` では
+    typed node 側で scalar pointer member lvalue 判定が落ち、`g.symbols[0]` が pointer-like のまま
+    `.` に渡る経路が残っていた。
+  - cast parser は pointer 段数を bool 的に畳んでおり、`(char **)` が `char *` 相当に縮退していた。
+    そのため stdarg の `va_arg(ap, char *)` macro が `*(char **)<slot>` として表す pointer load を、
+    Wasm object で 1 byte load として出す危険があった。
+  - さらに `int (**pp)(int)` と `int *(*fp)(void)` の宣言 metadata が、
+    pointer 段数の合計だけで return-data-pointer 判定していたため、
+    `(*pp)(7)` の explicit deref callee が `ret_int_width=8` へ誤復元され、
+    `call_indirect ... (result i64)` になって実関数 `(result i32)` と不一致になっていた。
+- 根本対応:
+  - `src/arch/wasm32_obj.c` に `func_sig_from_funcptr_sig()` を追加し、
+    global / tag member / IR call の object signature decode を 1 箇所に集約した。
+  - `tools/wasm_obj_linker/runtime/parts/format.c` の `%p` printf / scanf 系を
+    runtime の `ag_rt_format_read_ptr()` / `ag_rt_scan_va_arg_ptr()` 経由へ統一し、
+    `ag_rt_vscan_consumed()` の scan pointer も const 化した。
+  - `psx_node_new_subscript_deref_for()` の scalar pointer member 判定に
+    typed node 用の `node_scalar_ptr_member_lvalue()` を追加し、typed node でも
+    `is_scalar_ptr_member` を正しく見るようにした。
+  - cast type construction を多段 pointer 対応にし、`expr_cast_target_type()` /
+    `psx_node_new_pointer_cast_result()` / unary deref sync が
+    `pointer_qual_levels` / `base_deref_size` / `deref_size` を潰さず運ぶようにした。
+  - `decl_declarator_state_t` に function pointer object を作る pointer 段数を記録し、
+    return-data-pointer 判定を「全 pointer 段数」ではなく「object pointer 段数を除いた戻り値側の段数」
+    で行うようにした。これで `int (**pp)(int)` は pointer-to-funcptr、
+    `int *(*fp)(void)` / `const struct S (*(*fp)(void))[1]` は pointer return として分離される。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `int (**pp)(int)` regression を追加し、
+    lvar と `*pp` の両方で `ret_is_data_pointer=0` / `ret_int_width=4` / `param_int_mask=1`
+    が維持されることを確認した。
+  - `test_parse_evil_edge_cases()` に scalar pointer member subscript regression
+    (`g.symbols[0].name`) を追加した。
+  - 既存 wasm32 e2e の `funcptr_explicit_deref_call` /
+    `ptr_to_funcptr_direct_deref` / `funcptr_return_const_pointee` が再度通ることを確認した。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_object build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_object` = **wasm32 object tests passed**
+  - `./build/test_e2e` = **1200/1200 OK**
+  - `./build/test_wasm32_e2e` = **1195 compiled, 1195 executed**
+  - `git diff --check` = **green**
+- 注意:
+  - `node_mem_t` / `lvar_t` / `global_var_t` / `psx_type_t` に function pointer metadata の
+    compatibility field はまだ残る。今回の修正は、その場しのぎではなく
+    「宣言子の pointer 段数の意味」と「typed deref の metadata 同期」を分ける根本対応だが、
+    storage 構造体自体の `psx_decl_funcptr_sig_t` 直接保持への集約は次の候補。
+
+### このセッション（続き815）: global / param declarator の function pointer object 段数を正規化
+- 見つかった浅い箇所:
+  - 前回 `decl_declarator_state_t` 側では `int (**pp)(int)` と `int *(*fp)(void)` を
+    「function pointer object を作る pointer 段数」と「戻り値側 pointer 段数」に分けたが、
+    top-level global 宣言と parameter 宣言には同じ分類が残っていた。
+  - そのため `int (**gpp)(int)` や `int apply(int (**pp)(int))` で、
+    function pointer の戻り値を pointer return と誤分類し、
+    wasm32 direct deref call が `call_indirect ... (result i64)` になり得た。
+- 根本対応:
+  - `toplevel_declarator_head_t` / `param_declarator_state_t` に
+    `funcptr_object_pointer_levels` を追加した。
+  - parenthesized declarator の function suffix を消費する時点で、
+    suffix 手前の pointer prefix と suffix で作られた object pointer 段数を分けて記録するようにした。
+  - `toplevel_funcptr_direct_ret_is_data_pointer()` /
+    `param_funcptr_direct_ret_is_data_pointer()` を追加し、
+    global / param の return-data-pointer 判定を
+    「全 pointer 段数」ではなく「object pointer 段数を除いた戻り値側 pointer 段数」から導くようにした。
+  - これで local / global / parameter の 3 経路が同じ意味論で
+    `int (**pp)(int)` は pointer-to-funcptr、`int *(*fp)(void)` は pointer return として分離される。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に global `int (**__tm815_gpp)(int)` と
+    parameter `int (**pp)(int)` の metadata regression を追加し、
+    `ret_is_data_pointer=0` / `ret_int_width=4` / `param_int_mask=1` を確認するようにした。
+  - `test/fixtures/probes_found_bugs/funcptr_ptrptr_global_param.c` を追加し、
+    global pointer-to-function-pointer と parameter pointer-to-function-pointer の indirect call を
+    native e2e / wasm32 e2e の両方で実行するようにした。
+- 手元再現:
+  - 修正前:
+    - `/tmp/agc_global_fp2.c`: `int (**gpp)(int)` の `(*gpp)(41)` が
+      `call_indirect (param i64) (result i64)` になった。
+    - `/tmp/agc_param_fp2.c`: `int apply(int (**pp)(int))` の `(*pp)(41)` が
+      `call_indirect (param i64) (result i64)` になった。
+  - 修正後:
+    - どちらも `call_indirect (param i64) (result i32)` に戻った。
+    - `int *(*gfp)(void)` の pointer return は引き続き `(result i32)` のまま。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_object build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_object` = **wasm32 object tests passed**
+  - `./build/test_e2e` = **1201/1201 OK**
+  - `./build/test_wasm32_e2e` = **1196 compiled, 1196 executed**
+  - `git diff --check` = **green**
+
+### このセッション（続き816）: function pointer object 段数の基準を戻り値 pointer と分離
+- 見つかった浅い箇所:
+  - 続き815で global / param に `funcptr_object_pointer_levels` を入れたが、
+    object 段数を数える基準が prefix `*` 消費前になっていた。
+  - そのため `int (**pp)(int)` は正しく直る一方で、
+    `int *(*fp)(void)` の戻り値側 `*` まで function-pointer object 側の pointer 段数に
+    含め得る状態だった。
+  - さらに struct member 宣言子は別実装の `struct_layout.c` にあり、
+    `ret_is_data_pointer` を tag pointer かどうかで決める浅い判定が残っていた。
+- 根本対応:
+  - top-level / parameter の declarator parser で、
+    function suffix を読むフレームの prefix `*` を消費した後の pointer level を基準に
+    object pointer 段数を計算するよう修正した。
+  - `member_decl_head_t` に `funcptr_object_pointer_levels` を追加し、
+    struct member 宣言子でも同じ基準で object pointer 段数を保持するようにした。
+  - `member_funcptr_direct_ret_is_data_pointer()` を追加し、struct member の
+    return-data-pointer 判定も top-level / parameter / local と同じ
+    「全 pointer 段数 - object pointer 段数 + typedef base pointer」から導くようにした。
+- 追加テスト:
+  - `test_type_metadata_bridge()` で既存 `double *(*fp)(void)` の local/global に
+    `ret_is_data_pointer=1` を明示 assert した。
+  - 同テストに `__tm816` ケースを追加し、global `int *(*gfp)(void)`、
+    parameter `int *(*fp)(void)`、struct member `int *(*fp)(void)`、
+    struct member `int (**pp)(int)` の metadata を直接確認した。
+  - `test/fixtures/probes_found_bugs/funcptr_retptr_global_param_struct.c` を追加し、
+    global / parameter / struct member の pointer-return function pointer を
+    native e2e / wasm32 e2e / wasm32 object scan に入れた。
+- 手元確認:
+  - `./build/ag_c_wasm test/fixtures/probes_found_bugs/funcptr_retptr_global_param_struct.c | rg "call_indirect|result"`
+    で global / parameter / struct member の indirect call がすべて `(result i32)`。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_object build/test_e2e build/test_wasm32_e2e` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_object` = **1176/1176 scan pass**
+  - `./build/test_e2e` = **1202/1202 OK**
+  - `./build/test_wasm32_e2e` = **1197 compiled, 1197 executed**
+  - `git diff --check` = **green**

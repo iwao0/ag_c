@@ -576,6 +576,8 @@ probes_found_bugs/wasm_nonvoid_indirect_unused_result.c
 probes_found_bugs/anon_global_array_member_designator.c
 probes_found_bugs/anon_ptr_to_array_member_designator.c
 probes_found_bugs/anon_union_promoted_array_designator.c
+probes_found_bugs/funcptr_ptrptr_global_param.c
+probes_found_bugs/funcptr_retptr_global_param_struct.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

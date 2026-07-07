@@ -1145,9 +1145,7 @@ static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
   return IR_TY_I64;
 }
 
-static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
-  if (!gv) return func_sig_from_ctx(name, name_len);
-  psx_decl_funcptr_sig_t fs = gv->funcptr_sig;
+static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
   obj_sig_t sig = {0};
   if (fs.ret_is_void) sig.result = IR_TY_VOID;
   else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
@@ -1156,8 +1154,8 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
   else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
   int nparams = fs.is_variadic
-                  ? fs.nargs_fixed
-                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
+                    ? fs.nargs_fixed
+                    : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
@@ -1168,57 +1166,22 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
     }
   }
   return sig;
+}
+
+static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
+  if (!gv) return func_sig_from_ctx(name, name_len);
+  return func_sig_from_funcptr_sig(gv->funcptr_sig);
 }
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
                                               const char *name, int name_len) {
   if (!mi) return func_sig_from_ctx(name, name_len);
-  psx_decl_funcptr_sig_t fs = psx_ctx_tag_member_funcptr_sig(mi);
-  obj_sig_t sig = {0};
-  if (fs.ret_is_void) sig.result = IR_TY_VOID;
-  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
-
-  int nparams = fs.is_variadic
-                  ? fs.nargs_fixed
-                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
-  sig.nparams = nparams;
-  if (nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
-    for (int p = 0; p < nparams; p++) {
-      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
-      sig.params[p] = funcptr_mask_param_type(fp, iw);
-    }
-  }
-  return sig;
+  return func_sig_from_funcptr_sig(psx_ctx_tag_member_funcptr_sig(mi));
 }
 
 static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
   if (!inst || !inst->has_funcptr_sig) return func_sig_from_ctx(name, name_len);
-  psx_decl_funcptr_sig_t fs = inst->funcptr_sig;
-  obj_sig_t sig = {0};
-  if (fs.ret_is_void) sig.result = IR_TY_VOID;
-  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
-
-  int nparams = fs.is_variadic
-                  ? fs.nargs_fixed
-                  : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
-  sig.nparams = nparams;
-  if (nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
-    for (int p = 0; p < nparams; p++) {
-      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
-      sig.params[p] = funcptr_mask_param_type(fp, iw);
-    }
-  }
-  return sig;
+  return func_sig_from_funcptr_sig(inst->funcptr_sig);
 }
 
 static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {

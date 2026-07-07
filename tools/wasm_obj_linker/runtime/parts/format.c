@@ -723,7 +723,7 @@ static int ag_rt_vformat(char *buf, size_t size, int bounded, const char *fmt, v
       }
       fmt++;
     } else if (*fmt == 'p') {
-      void *p = va_arg(ap, void *);
+      void *p = ag_rt_format_read_ptr(&ap);
       ag_rt_write_pointer(buf, size, bounded, &pos, (unsigned long)(long)p, width, left_align);
       fmt++;
     } else if (*fmt == 's') {
@@ -1201,13 +1201,13 @@ static long ag_rt_vscan_consumed_out;
 static int ag_rt_vscan_input_failure_out;
 
 static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
-  char *s;
-  char *fmt;
-  char *p;
+  const char *s;
+  const char *fmt;
+  const char *p;
   int assigned = 0;
   int input_failure = 0;
-  s = ag_rt_ptr(s_addr);
-  fmt = ag_rt_ptr(fmt_addr);
+  s = (const char *)ag_rt_ptr(s_addr);
+  fmt = (const char *)ag_rt_ptr(fmt_addr);
   p = s;
   while (*fmt) {
     if (ag_rt_scan_is_space(*fmt)) {
@@ -1326,7 +1326,7 @@ static int ag_rt_vscan_consumed(long s_addr, long fmt_addr, long ap) {
         break;
       }
       if (!suppress) {
-        void **out = va_arg(ap, void **);
+        void **out = (void **)ag_rt_scan_va_arg_ptr(&ap);
         *out = (void *)(long)(negative ? (unsigned long)(-(long)value) : value);
         assigned++;
       }
@@ -1773,7 +1773,7 @@ static int ag_rt_vwscan(int *s, int *fmt, va_list ap) {
         break;
       }
       if (!suppress) {
-        void **out = va_arg(ap, void **);
+        void **out = (void **)ag_rt_scan_va_arg_ptr(&ap);
         *out = (void *)(long)(negative ? (unsigned long)(-(long)value) : value);
         assigned++;
       }
