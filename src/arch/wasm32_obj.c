@@ -2466,14 +2466,11 @@ static void data_write_init_value_at(obj_data_t *d, size_t off,
 
 static void ensure_global_func_sig_for_init_symbol(global_var_t *gv,
                                                    psx_gvar_init_value_t value) {
-  if (value.kind != PSX_GVAR_INIT_VALUE_SYMBOL) return;
-  psx_gvar_symbol_ref_t sym_ref = value.symbol_ref;
-  if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-      psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len)) {
-    ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
-                                func_sig_from_global_funcptr(gv, sym_ref.symbol,
-                                                             sym_ref.symbol_len));
-  }
+  char *sym = NULL;
+  int sym_len = 0;
+  if (!psx_gvar_init_value_named_function(value, &sym, &sym_len)) return;
+  ensure_func_sig_for_address(sym, sym_len,
+                              func_sig_from_global_funcptr(gv, sym, sym_len));
 }
 
 static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int idx,
@@ -2482,15 +2479,12 @@ static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int
   if (idx < 0) return;
   psx_gvar_init_member_value_t value =
       psx_gvar_init_member_value(gv, idx, member_info);
-  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    psx_gvar_symbol_ref_t sym_ref = value.symbol_ref;
-    if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-        psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len) && member_info) {
-      ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
-                                  func_sig_from_member_funcptr(member_info,
-                                                              sym_ref.symbol,
-                                                              sym_ref.symbol_len));
-    }
+  char *sym = NULL;
+  int sym_len = 0;
+  if (member_info && psx_gvar_init_value_named_function(value, &sym, &sym_len)) {
+    ensure_func_sig_for_address(sym, sym_len,
+                                func_sig_from_member_funcptr(member_info, sym,
+                                                             sym_len));
   }
   data_write_init_value_at(d, off, value);
 }

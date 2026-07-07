@@ -576,6 +576,19 @@ psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *
   return gvar_make_symbol_ref(slot->symbol, slot->symbol_len, slot->value);
 }
 
+int psx_gvar_init_value_named_function(psx_gvar_init_value_t value,
+                                        char **out_name, int *out_len) {
+  if (out_name) *out_name = NULL;
+  if (out_len) *out_len = 0;
+  if (value.kind != PSX_GVAR_INIT_VALUE_SYMBOL) return 0;
+  psx_gvar_symbol_ref_t ref = value.symbol_ref;
+  if (ref.kind != PSX_GVAR_SYMBOL_REF_NAMED) return 0;
+  if (!psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) return 0;
+  if (out_name) *out_name = ref.symbol;
+  if (out_len) *out_len = ref.symbol_len;
+  return 1;
+}
+
 psx_gvar_init_member_value_t
 psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member) {

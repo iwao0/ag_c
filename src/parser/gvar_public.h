@@ -178,6 +178,8 @@ int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
 psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv);
 psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot);
+int psx_gvar_init_value_named_function(psx_gvar_init_value_t value,
+                                        char **out_name, int *out_len);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,

@@ -537,11 +537,9 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   if (out_len) *out_len = 0;
   psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, 4);
-  psx_gvar_symbol_ref_t ref = value.symbol_ref;
-  if (ref.kind != PSX_GVAR_SYMBOL_REF_NAMED) return NULL;
-  if (!psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) return NULL;
-  if (out_len) *out_len = ref.symbol_len;
-  return ref.symbol;
+  char *name = NULL;
+  if (!psx_gvar_init_value_named_function(value, &name, out_len)) return NULL;
+  return name;
 }
 
 static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv,
@@ -599,12 +597,8 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
         if (mi.offset + k * mi.type_size != offset) continue;
         psx_gvar_init_member_value_t value =
             psx_gvar_init_member_value(gv, init_idx, &mi);
-        psx_gvar_symbol_ref_t ref = value.symbol_ref;
-        if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-            psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
-          if (out_len) *out_len = ref.symbol_len;
-          return ref.symbol;
-        }
+        char *name = NULL;
+        if (psx_gvar_init_value_named_function(value, &name, out_len)) return name;
         return NULL;
       }
       continue;
@@ -612,12 +606,8 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
     if (mi.offset == offset && init_idx < view.init_count) {
       psx_gvar_init_member_value_t value =
           psx_gvar_init_member_value(gv, init_idx, &mi);
-      psx_gvar_symbol_ref_t ref = value.symbol_ref;
-      if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
-          psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
-        if (out_len) *out_len = ref.symbol_len;
-        return ref.symbol;
-      }
+      char *name = NULL;
+      if (psx_gvar_init_value_named_function(value, &name, out_len)) return name;
       return NULL;
     }
     init_idx++;

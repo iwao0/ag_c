@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き903: consolidate Wasm initializer value emission）
+最終更新: 2026-07-08（続き904: centralize initializer function symbol checks）
 
 ## 現状
+- 続き904: **initializer value の関数シンボル判定を parser public helper に寄せた**。
+
+  続き903までで initializer value の形と emission はかなり揃ったが、
+  Wasm IR/object 側にはまだ `value.symbol_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED` と
+  `psx_ctx_has_function_name()` の組み合わせが、global scalar / aggregate member /
+  object function signature 補完の各所に散っていた。
+  value shape の正本は `psx_gvar_init_value_t` に寄っているのに、
+  「この initializer value が既知の関数名を指すか」の判定だけ backend が直接覗く状態だった。
+
+  今回は `psx_gvar_init_value_named_function()` を `gvar_public.h` / `node_utils.c` に追加し、
+  symbol kind と function-name 判定を parser 側の public helper に集約した。
+  Wasm IR の global function reference 推論と、Wasm object の function signature 補完はこの helper を使う。
+  ただし `func_sig_from_global_funcptr()` / `func_sig_from_member_funcptr()` の選択は
+  backend 固有の責務として残しており、生成フォーマットや signature の決め方は変えていない。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き903: **Wasm の initializer value emission を小さく共通化した**。
 
   続き900-902で initializer の分類・dispatch・失敗伝播は揃ったが、
