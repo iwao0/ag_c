@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き881: centralize global bitfield initializer packing）
+最終更新: 2026-07-08（続き882: centralize global aggregate layout metadata）
 
 ## 現状
+- 続き882: **global aggregate emission の layout metadata 取得を public helper に寄せた**。
+
+  続き881で bitfield storage-unit packing を parser/public 側へ寄せた後も、
+  aggregate emission の entry 部分では `arm64_apple.c` / `wasm32_ir.c` /
+  `wasm32_obj.c` がそれぞれ `psx_gvar_array_element_size()` /
+  `psx_gvar_array_element_count()` / `psx_gvar_is_union_aggregate()` /
+  `view.tag_*` を組み合わせ、同じ aggregate layout metadata を組み立てていた。
+  特に array aggregate は backend ごとに「要素サイズ」「要素数」「union/struct 判定」を
+  別々に取得しており、walker 化前の entry-state 正本分散として残っていた。
+
+  今回は `src/parser/gvar_public.h` に `psx_gvar_aggregate_layout_t` と
+  `psx_gvar_aggregate_layout()` を追加し、実装を `src/parser/node_utils.c` に置いた。
+  3 backend の aggregate entry はこの layout から `tag_kind/tag_name/tag_len`、
+  `type_size`、`elem_size`、`elem_count`、`is_array`、`is_union` を読むようにした。
+  Wasm 側は従来どおり初期化 slot がある要素だけ書き込み、arm64 側は asm data として
+  配列全体の要素出力/padding を維持しているため、出力ポリシーの違いは保持している。
+
+  これで aggregate entry metadata の正本は parser/public helper 側へ寄った。
+  次の根本対応候補は、struct/union recursion 本体を event/callback walker に分け、
+  backend 側の責務を scalar/padding/relocation の出力にさらに絞ること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き881: **global bitfield initializer の storage-unit packing を public helper に寄せた**。
 
   続き880で initializer cursor を入れた後も、連続 bitfield メンバを同一 storage unit に詰める処理は

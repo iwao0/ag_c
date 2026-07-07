@@ -2017,16 +2017,15 @@ static void emit_global_union_data(global_var_t *gv, int addr) {
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
   psx_gvar_view_t view = psx_gvar_view(gv);
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
   if (view.is_tag_pointer) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
   }
-  if (psx_gvar_is_union_aggregate(gv)) {
-    if (view.is_array) {
-      int elem_size = psx_gvar_array_element_size(gv);
-      int total = psx_gvar_array_element_count(gv);
+  if (layout.is_union) {
+    if (layout.is_array) {
       psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-      for (int e = 0; e < total && psx_gvar_init_cursor_has(&cur); e++) {
-        emit_global_union_element_data(gv, &cur, addr + e * elem_size);
+      for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
+        emit_global_union_element_data(gv, &cur, addr + e * layout.elem_size);
       }
     } else {
       emit_global_union_data(gv, addr);
@@ -2034,20 +2033,18 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
     return;
   }
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-  if (view.is_array) {
-    int elem_size = psx_gvar_array_element_size(gv);
-    int total = psx_gvar_array_element_count(gv);
-    for (int e = 0; e < total && psx_gvar_init_cursor_has(&cur); e++) {
+  if (layout.is_array) {
+    for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
       int elem_start_idx = psx_gvar_init_cursor_index(&cur);
-      emit_global_struct_members_data_rec(view.tag_kind, view.tag_name, view.tag_len, gv, &cur,
-                                          addr + e * elem_size);
+      emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                          gv, &cur, addr + e * layout.elem_size);
       consume_trailing_zero_union_padding(&cur, elem_start_idx,
-                                          psx_tag_flat_slot_count(view.tag_kind, view.tag_name,
-                                                                  view.tag_len));
+                                          psx_tag_flat_slot_count(layout.tag_kind, layout.tag_name,
+                                                                  layout.tag_len));
     }
   } else {
-    emit_global_struct_members_data_rec(view.tag_kind, view.tag_name, view.tag_len, gv, &cur,
-                                        addr);
+    emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                        gv, &cur, addr);
   }
 }
 

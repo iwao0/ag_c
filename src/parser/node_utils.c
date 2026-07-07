@@ -447,6 +447,25 @@ int psx_gvar_array_element_count(const global_var_t *gv) {
   return gv->type_size / elem;
 }
 
+psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv) {
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  psx_gvar_aggregate_layout_t layout = {
+      .tag_kind = view.tag_kind,
+      .tag_name = view.tag_name,
+      .tag_len = view.tag_len,
+      .type_size = view.type_size,
+      .elem_size = view.type_size,
+      .elem_count = 1,
+      .is_array = view.is_array,
+      .is_union = psx_gvar_is_union_aggregate(gv),
+  };
+  if (view.is_array) {
+    layout.elem_size = psx_gvar_array_element_size(gv);
+    layout.elem_count = psx_gvar_array_element_count(gv);
+  }
+  return layout;
+}
+
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
   if (gv && gv->is_array && gv->deref_size > 0) return gv->deref_size;
   return fallback_size;

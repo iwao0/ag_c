@@ -42,8 +42,20 @@ typedef struct {
   unsigned long long packed;
 } psx_gvar_bitfield_unit_t;
 
+typedef struct {
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int type_size;
+  int elem_size;
+  int elem_count;
+  int is_array;
+  int is_union;
+} psx_gvar_aggregate_layout_t;
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
+psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor_at(const global_var_t *gv, int index);
 int psx_gvar_init_cursor_has(const psx_gvar_init_cursor_t *cur);

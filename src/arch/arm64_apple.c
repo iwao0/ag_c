@@ -357,12 +357,14 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
 
 static void emit_global_struct_init(global_var_t *gv) {
   psx_gvar_view_t view = psx_gvar_view(gv);
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
   /* union: 活性メンバ (union_init_ordinal, 既定 0=先頭) だけをその型で出力し、
    * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
-  if (psx_gvar_is_union_aggregate(gv)) {
+  if (layout.is_union) {
     tag_member_info_t mi = {0};
     if (view.init_count > 0 &&
-        psx_tag_union_init_member_for_slot(view.tag_kind, view.tag_name, view.tag_len, gv, 0, &mi)) {
+        psx_tag_union_init_member_for_slot(layout.tag_kind, layout.tag_name,
+                                           layout.tag_len, gv, 0, &mi)) {
       psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, 0);
       emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
                                      mi.type_size, slot.value, slot.fvalue);
@@ -370,35 +372,33 @@ static void emit_global_struct_init(global_var_t *gv) {
                         : (mi.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4
                         : (mi.fp_kind >= TK_FLOAT_KIND_DOUBLE) ? 8
                         : mi.type_size;
-      if (emitted < view.type_size) {
-        cg_emitf("  .space %d\n", view.type_size - emitted);
+      if (emitted < layout.type_size) {
+        cg_emitf("  .space %d\n", layout.type_size - emitted);
       }
     } else {
-      cg_emitf("  .space %d\n", view.type_size);
+      cg_emitf("  .space %d\n", layout.type_size);
     }
     return;
   }
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-  emit_global_struct_members_rec(view.tag_kind, view.tag_name, view.tag_len,
-                                 view.type_size, gv, &cur);
+  emit_global_struct_members_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                 layout.type_size, gv, &cur);
 }
 
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
  * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
  * は .long 1; .long 2; .long 3; ... と展開する。 */
 static void emit_global_struct_array_init(global_var_t *gv) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  int elem_size = psx_gvar_array_element_size(gv);
-  int total_elems = psx_gvar_array_element_count(gv);
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
   /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに
    * フラット slot を 1 個だけ消費する単純ループだったため、配列メンバ (`char tag[4]`)・
    * char 配列の文字列展開・入れ子 struct メンバ・bitfield を扱えず、`struct{char tag[4];
    * int n;} g[2]={{"aa",1},...}` の tag が 1 バイトしか出ず後続メンバがずれていた。
    * 非配列 struct の出力 (emit_global_struct_init) と同じ機構を要素ごとに適用して統一する。 */
-  for (int e = 0; e < total_elems; e++) {
-    emit_global_struct_members_rec(view.tag_kind, view.tag_name, view.tag_len, elem_size, gv,
-                                   &cur);
+  for (int e = 0; e < layout.elem_count; e++) {
+    emit_global_struct_members_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                   layout.elem_size, gv, &cur);
   }
 }
 

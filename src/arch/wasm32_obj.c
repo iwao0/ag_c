@@ -2603,36 +2603,34 @@ static int global_has_object_payload(global_var_t *gv) {
 
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
   psx_gvar_view_t view = psx_gvar_view(gv);
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
   wb_zero(&d->bytes, size);
   if (view.init_count <= 0) return;
   if (!psx_gvar_is_tag_aggregate(gv)) {
     obj_unsupported_msg("global aggregate initializer in Wasm object mode");
   }
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-  if (psx_gvar_is_union_aggregate(gv)) {
-    if (view.is_array) {
-      int elem_size = psx_gvar_array_element_size(gv);
-      int total = psx_gvar_array_element_count(gv);
-      for (int e = 0; e < total && psx_gvar_init_cursor_has(&cur); e++) {
-        emit_obj_global_union_member_data(view.tag_kind, view.tag_name, view.tag_len, d, gv,
-                                          &cur, (size_t)e * (size_t)elem_size);
+  if (layout.is_union) {
+    if (layout.is_array) {
+      for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
+        emit_obj_global_union_member_data(layout.tag_kind, layout.tag_name, layout.tag_len, d, gv,
+                                          &cur, (size_t)e * (size_t)layout.elem_size);
       }
     } else {
-      emit_obj_global_union_member_data(view.tag_kind, view.tag_name, view.tag_len, d, gv,
+      emit_obj_global_union_member_data(layout.tag_kind, layout.tag_name, layout.tag_len, d, gv,
                                         &cur, 0);
     }
     return;
   }
-  if (view.is_array) {
-    int elem_size = psx_gvar_array_element_size(gv);
-    int total = psx_gvar_array_element_count(gv);
-    for (int e = 0; e < total && psx_gvar_init_cursor_has(&cur); e++) {
-      emit_obj_global_struct_members_data_rec(view.tag_kind, view.tag_name, view.tag_len, d, gv,
-                                              &cur, (size_t)e * (size_t)elem_size);
+  if (layout.is_array) {
+    for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
+      emit_obj_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                              d, gv, &cur,
+                                              (size_t)e * (size_t)layout.elem_size);
     }
   } else {
-    emit_obj_global_struct_members_data_rec(view.tag_kind, view.tag_name, view.tag_len, d, gv,
-                                            &cur, 0);
+    emit_obj_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
+                                            d, gv, &cur, 0);
   }
 }
 
