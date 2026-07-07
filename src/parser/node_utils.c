@@ -466,6 +466,15 @@ tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {
   return TK_FLOAT_KIND_NONE;
 }
 
+int psx_gvar_init_slot_is_plain_zero(const global_var_t *gv, int idx) {
+  if (!gv || idx < 0 || idx >= gv->init_count) return 1;
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
+  long long value = gv->init_values ? gv->init_values[idx] : 0;
+  double fv = gv->init_fvalues ? gv->init_fvalues[idx] : 0.0;
+  return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
+}
+
 int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {
   tk_float_kind_t fp_kind = psx_gvar_init_slot_fp_kind(gv, idx);
   if (fp_kind == TK_FLOAT_KIND_FLOAT) return 4;

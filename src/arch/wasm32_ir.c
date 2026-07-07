@@ -2017,21 +2017,12 @@ static void emit_global_union_element_data(global_var_t *gv, int *val_idx, int a
   emit_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, gv, val_idx, addr);
 }
 
-static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
-  if (idx < 0 || idx >= gv->init_count) return 1;
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
-  long long value = gv->init_values ? gv->init_values[idx] : 0;
-  double fv = gv->init_fvalues ? gv->init_fvalues[idx] : 0.0;
-  return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
-}
-
 static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx, int *val_idx,
                                                 int target_slots) {
   if (!val_idx || target_slots <= 1) return;
   int limit = start_idx + target_slots;
   while (*val_idx < limit && *val_idx < gv->init_count &&
-         global_init_slot_is_plain_zero(gv, *val_idx)) {
+         psx_gvar_init_slot_is_plain_zero(gv, *val_idx)) {
     (*val_idx)++;
   }
 }

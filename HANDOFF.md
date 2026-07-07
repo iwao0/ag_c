@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き845: centralize global init fp sentinel decoding）
+最終更新: 2026-07-07（続き846: centralize global init plain-zero slot check）
 
 ## 現状
+- 続き846: **global initializer slot の plain-zero 判定を
+  `psx_gvar_init_slot_is_plain_zero()` に集約した**。
+
+  wasm32 IR と wasm32 object の trailing zero union padding 消費に、
+  `init_value_symbols` / `init_value_symbol_lens` / `init_values` / `init_fvalues`
+  を直接読んで「未指定 padding として読み飛ばせる 0 slot か」を判定する
+  同形 helper が残っていた。これは global initializer の parallel array 解釈が
+  backend ごとに分散する構造だったため、`node_utils` / `parser_public` に
+  `psx_gvar_init_slot_is_plain_zero()` を追加し、両 backend は同じ helper を呼ぶ形にした。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。fp sentinel slot は plain zero ではなく、
+  値配列を持たない通常 slot は plain zero として読めることを固定している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `make -j4 build/ag_c` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `git diff --check` = **pass**。
+
 - 続き845: **global initializer slot の fp sentinel (`-2/-3`) 解釈を
   `psx_gvar_init_slot_fp_kind()` に集約した**。
 
