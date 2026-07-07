@@ -1,8 +1,40 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き889: classify global initializer kind in parser public）
+最終更新: 2026-07-08（続き890: centralize slot initializer layout metadata）
 
 ## 現状
+- 続き890: **slot initializer の element/fp-array metadata を parser/public helper に寄せた**。
+
+  続き889で global initializer の branch priority は `psx_gvar_initializer_kind()` に寄ったが、
+  `SLOTS` route の中にはまだ 3 backend それぞれに `psx_gvar_initializer_element_size()`、
+  element count 計算、`view.has_init_fvalues && fp_kind...` の判定が残っていた。
+  実際の symbol relocation / data bytes / asm directive emission は backend 差が大きい一方、
+  slot initializer を何バイト単位・何要素・FP 配列として読むかは parser/public 側の `global_var_t`
+  metadata 解釈なので、ここを次に寄せた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_init_slots_layout_t` と `psx_gvar_init_slots_layout(gv, fallback_size)` を追加した。
+  layout は `elem_size`、`elem_count`、`init_count`、`is_fp_array`、`fp_kind` を持つ。
+  arm64 は既存どおり fallback `4`、Wasm IR/object は storage size を fallback として渡し、
+  各 backend の slot route はこの layout を見て loop と FP bit-pattern 分岐を行うようになった。
+
+  これで backend 側の slot route から `has_init_fvalues` 直接参照と element count 手計算は消えた。
+  arm64 に残る `psx_gvar_initializer_element_size(gv, storage_size)` は data alignment 用であり、
+  slot initializer 走査とは別目的なので今回は残している。
+
+  次の根本対応候補は、slot route 内の「slot が symbol か、FP bit pattern か、整数か」という per-slot
+  classification を public helper に寄せること。特に `slot.symbol` と `slot.fp_sentinel_kind` /
+  `slot_layout.is_fp_array` の優先順位は backend 間で似ているため、値の種類だけ public に出し、
+  relocation や byte/directive 出力は backend に残す形がよい。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き889: **global initializer の branch classification を parser/public helper に寄せた**。
 
   続き888で aggregate/payload の preflight は public helper に寄ったが、3 backend の global data emission には

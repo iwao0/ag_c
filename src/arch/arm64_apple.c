@@ -264,13 +264,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
       emit_global_aggregate_init(gv);
     } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
-      int elem = psx_gvar_initializer_element_size(gv, 4);
-      int total_elems = psx_gvar_initializer_element_count(gv, 4);
-      int is_fp_arr = view.has_init_fvalues &&
-                      (view.fp_kind == TK_FLOAT_KIND_FLOAT ||
-                       view.fp_kind == TK_FLOAT_KIND_DOUBLE ||
-                       view.fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
-      for (int i = 0; i < view.init_count && i < total_elems; i++) {
+      psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, 4);
+      for (int i = 0; i < slot_layout.init_count && i < slot_layout.elem_count; i++) {
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
         if (slot.symbol && slot.symbol_len < 0) {
           /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
@@ -289,10 +284,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           }
           continue;
         }
-        if (is_fp_arr) {
+        if (slot_layout.is_fp_array) {
           /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
           double d = slot.fvalue;
-          if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
+          if (slot_layout.fp_kind == TK_FLOAT_KIND_FLOAT) {
             float f = (float)d;
             uint32_t bits;
             memcpy(&bits, &f, sizeof(bits));
@@ -304,10 +299,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           }
           continue;
         }
-        cg_emit_int_directive(elem, slot.value);
+        cg_emit_int_directive(slot_layout.elem_size, slot.value);
       }
-      int remain = total_elems - view.init_count;
-      if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
+      int remain = slot_layout.elem_count - slot_layout.init_count;
+      if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
     } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
       if (view.init_symbol_len < 0) {
         /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。

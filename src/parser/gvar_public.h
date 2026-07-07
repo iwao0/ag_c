@@ -40,6 +40,14 @@ typedef enum {
 } psx_gvar_init_kind_t;
 
 typedef struct {
+  int elem_size;
+  int elem_count;
+  int init_count;
+  int is_fp_array;
+  tk_float_kind_t fp_kind;
+} psx_gvar_init_slots_layout_t;
+
+typedef struct {
   const global_var_t *gv;
   int index;
   int count;
@@ -87,6 +95,8 @@ int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
 int psx_gvar_has_initializer_payload(const global_var_t *gv);
 psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
                                                int include_empty_aggregate);
+psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
+                                                        int fallback_size);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,

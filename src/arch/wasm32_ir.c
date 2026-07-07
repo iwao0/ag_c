@@ -1775,19 +1775,15 @@ static int data_addr_for_init_symbol(char *sym, int sym_len) {
 }
 
 static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  int elem = psx_gvar_initializer_element_size(gv, size);
+  psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
+  int elem = slot_layout.elem_size;
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
-  int total_elems = elem > 0 ? (size + elem - 1) / elem : 0;
-  int is_fp_array = view.has_init_fvalues &&
-                    (view.fp_kind == TK_FLOAT_KIND_FLOAT ||
-                     view.fp_kind >= TK_FLOAT_KIND_DOUBLE);
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  for (int i = 0; i < total_elems; i++) {
+  for (int i = 0; i < slot_layout.elem_count; i++) {
     psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
     uint64_t value = (uint64_t)slot.value;
-    if (is_fp_array && !slot.symbol) {
-      if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
+    if (slot_layout.is_fp_array && !slot.symbol) {
+      if (slot_layout.fp_kind == TK_FLOAT_KIND_FLOAT) {
         float f = (float)slot.fvalue;
         uint32_t bits;
         memcpy(&bits, &f, sizeof(bits));
