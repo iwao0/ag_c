@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き906: route global member func-ref inference through aggregate walker）
+最終更新: 2026-07-08（続き907: separate explicit initializer from payload）
 
 ## 現状
+- 続き907: **global initializer の「明示あり」と payload 有無を分離した**。
+
+  続き900以降で global initializer の分類は `psx_gvar_initializer_class()` に寄せてきたが、
+  その分類結果には `has_payload` しかなく、「`= ...` が明示されているか」と
+  「実際に出力すべき initializer payload があるか」を backend が区別しづらい状態だった。
+  特に empty aggregate initializer は明示 initializer ではあるが payload を持たないため、
+  section 選択のような構文上の initializer 有無を見たい箇所がまだ `psx_gvar_view().has_init` を直接参照していた。
+
+  今回は `psx_gvar_initializer_class_t` に `has_explicit_initializer` を追加し、
+  `psx_gvar_has_explicit_initializer()` を `gvar_public.h` / `node_utils.c` に公開した。
+  arm64 Apple backend の `_Thread_local` と通常 global の section 選択はこの helper 経由に変更し、
+  `has_payload` は引き続き「実際に出力する initializer 内容があるか」の契約として残している。
+
+  parser unit では no initializer、explicit scalar zero initializer、empty aggregate initializer の3ケースを追加し、
+  explicit initializer と payload の境界を固定した。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き906: **Wasm IR の global member function pointer 初期値推論を aggregate walker 経由にした**。
 
   続き900以降で global initializer の emission は visitor / walker 経由に寄せてきたが、

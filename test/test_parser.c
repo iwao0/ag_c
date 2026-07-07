@@ -2898,6 +2898,25 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!psx_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "missing", 7,
                                          &named_member, &named_ordinal));
   ASSERT_EQ(-1, named_ordinal);
+  global_var_t tmp_no_init = {0};
+  psx_gvar_initializer_class_t no_init_cls =
+      psx_gvar_initializer_class(&tmp_no_init, 0);
+  ASSERT_TRUE(!no_init_cls.has_explicit_initializer);
+  ASSERT_TRUE(!no_init_cls.has_payload);
+  global_var_t tmp_zero_init = {0};
+  tmp_zero_init.has_init = 1;
+  psx_gvar_initializer_class_t zero_init_cls =
+      psx_gvar_initializer_class(&tmp_zero_init, 0);
+  ASSERT_TRUE(zero_init_cls.has_explicit_initializer);
+  ASSERT_TRUE(zero_init_cls.has_payload);
+  global_var_t tmp_empty_aggregate_init = {0};
+  tmp_empty_aggregate_init.has_init = 1;
+  tmp_empty_aggregate_init.tag_kind = TK_STRUCT;
+  psx_gvar_initializer_class_t empty_aggregate_cls =
+      psx_gvar_initializer_class(&tmp_empty_aggregate_init, 1);
+  ASSERT_TRUE(empty_aggregate_cls.has_explicit_initializer);
+  ASSERT_TRUE(!empty_aggregate_cls.has_payload);
+  ASSERT_EQ(PSX_GVAR_INIT_KIND_AGGREGATE, empty_aggregate_cls.kind);
   char *init_syms[1] = {NULL};
   int init_sym_lens[1] = {-2};
   global_var_t tmp_union_init = {0};

@@ -269,9 +269,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
   psx_gvar_view_t view = psx_gvar_view(gv);
   if (view.is_extern_decl) return;
   int storage_size = psx_gvar_storage_size(gv, 4);
+  int has_explicit_initializer = psx_gvar_has_explicit_initializer(gv);
   if (view.is_thread_local) {
     /* _Thread_local: TLV descriptor + thread data/bss */
-    if (view.has_init) {
+    if (has_explicit_initializer) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
       arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
@@ -293,7 +294,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     cg_emitf("  .quad _%.*s$tlv$init\n", view.name_len, view.name);
     return;
   }
-  if (view.has_init) {
+  if (has_explicit_initializer) {
     cg_emitf(".section __DATA,__data\n");
     /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
     if (!view.is_static) cg_emitf(".global _%.*s\n", view.name_len, view.name);

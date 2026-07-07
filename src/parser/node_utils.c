@@ -425,6 +425,7 @@ psx_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate) 
       .kind = PSX_GVAR_INIT_KIND_INTEGER,
       .is_tag_aggregate = is_tag_aggregate,
       .has_aggregate_initializer = is_tag_aggregate && view.init_count > 0,
+      .has_explicit_initializer = view.has_init,
       .has_payload = 0,
   };
   if (is_tag_aggregate) {
@@ -455,6 +456,10 @@ psx_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate) 
 
 int psx_gvar_has_aggregate_initializer(const global_var_t *gv) {
   return psx_gvar_initializer_class(gv, 0).has_aggregate_initializer;
+}
+
+int psx_gvar_has_explicit_initializer(const global_var_t *gv) {
+  return psx_gvar_initializer_class(gv, 0).has_explicit_initializer;
 }
 
 int psx_gvar_has_initializer_payload(const global_var_t *gv) {
