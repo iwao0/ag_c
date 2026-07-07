@@ -2036,6 +2036,42 @@ struct pp_stream {
 
 static token_t *pps_pull_raw(pp_stream_t *s);
 static void pps_pushback_one(pp_stream_t *s, token_t *t);
+static void pps_on_advance(token_t *cursor);
+static void pps_ensure_lookahead(void);
+
+typedef void (*pps_cursor_hook_t)(token_t *);
+
+static pp_stream_t *g_active_pps = NULL;
+
+static pps_cursor_hook_t pps_suspend_cursor_hook(void) {
+  pps_cursor_hook_t saved_hook = tk_get_cursor_hook();
+  tk_set_cursor_hook(NULL);
+  return saved_hook;
+}
+
+static void pps_restore_cursor_hook(pps_cursor_hook_t hook) {
+  tk_set_cursor_hook(hook);
+}
+
+static void pps_install_tokenizer_hooks(void) {
+  tk_set_cursor_hook(pps_on_advance);
+  tk_set_ensure_lookahead_hook(pps_ensure_lookahead);
+}
+
+static void pps_clear_tokenizer_hooks(void) {
+  tk_set_cursor_hook(NULL);
+  tk_set_ensure_lookahead_hook(NULL);
+}
+
+static void pps_activate(pp_stream_t *s) {
+  g_active_pps = s;
+  pps_install_tokenizer_hooks();
+}
+
+static void pps_deactivate(pp_stream_t *s) {
+  pps_clear_tokenizer_hooks();
+  if (!s || g_active_pps == s) g_active_pps = NULL;
+}
 
 static void pps_update_stream_pin(pp_stream_t *s) {
   if (!s) {
@@ -2065,10 +2101,9 @@ static void pps_append(pp_stream_t *s, token_t *t) {
  * 復元する (無条件で pps_on_advance に戻すと dispatch 中にフックを誤って再有効化してしまう)。 */
 static void pps_pop_frame(pp_stream_t *s) {
   pp_include_frame_t *f = s->frames;
-  void (*saved_hook)(token_t *) = tk_get_cursor_hook();
-  tk_set_cursor_hook(NULL);
+  pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
   tk_stream_delete(s->lex);          // EOF に達した被 include の lexer
-  tk_set_cursor_hook(saved_hook);
+  pps_restore_cursor_hook(saved_hook);
   tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
   tk_set_user_input_ctx(g_preprocess_tk_ctx, f->saved_input);
   s->pb_head           = f->saved_pb_head;  // 親の pushback 列 (被 include 後に続く)
@@ -2190,8 +2225,6 @@ static void pps_pushback_list(pp_stream_t *s, token_t *head) {
   s->pb_head = head;
   pps_update_stream_pin(s);
 }
-
-static void pps_on_advance(token_t *cursor);  // 前方宣言 (指令 dispatch でフック復帰に使う)
 
 /* 指令行/マクロ引数バッファの終端用に合成 EOF (at_bol) を作る。recyclable 側に確保。 */
 static token_t *pps_make_eof(token_t *ref) {
@@ -2469,9 +2502,9 @@ static int pps_step(pp_stream_t *s) {
    * カーソルフックを発火させるので一時的に外す。 */
   if (tok->at_bol && tok->kind == TK_HASH) {
     token_t *line = pps_materialize_line(s, tok);
-    tk_set_cursor_hook(NULL);
+    pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
     pps_dispatch_directive(s, line);
-    tk_set_cursor_hook(pps_on_advance);
+    pps_restore_cursor_hook(saved_hook);
     return 0;
   }
 
@@ -2501,7 +2534,7 @@ static int pps_step(pp_stream_t *s) {
           token_t *grp = pps_materialize_balanced(s, nx);
           token_t *rparen = NULL;
           token_t **args = pp_collect_args(m, grp, &rparen);
-          tk_set_cursor_hook(NULL);
+          pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
           token_t *body = pp_expand_funclike(m, tok, args, name);
           free(args);
           if (body) {
@@ -2512,10 +2545,8 @@ static int pps_step(pp_stream_t *s) {
             body = pp_stream_splice_paren_suffix_and_rescan(s, body);
             if (s->pb_head) s->ooo_active = 1;
             pps_pushback_list(s, body);
-            tk_set_cursor_hook(pps_on_advance);
-          } else {
-            tk_set_cursor_hook(pps_on_advance);
           }
+          pps_restore_cursor_hook(saved_hook);
           free(name);
           return 0;
         }
@@ -2525,9 +2556,9 @@ static int pps_step(pp_stream_t *s) {
         free(name);
         return 1;
       } else {
-        tk_set_cursor_hook(NULL);
+        pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
         token_t *body = pp_expand_objlike(m, tok, name);  // ## 展開で tk_tokenize_ctx 経由あり
-        tk_set_cursor_hook(pps_on_advance);
+        pps_restore_cursor_hook(saved_hook);
         if (body) {
           if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 = out-of-order
           pps_pushback_list(s, body);
@@ -2573,8 +2604,6 @@ static void pps_refill(pp_stream_t *s) {
   s->refill_at = mark;
 }
 
-static pp_stream_t *g_active_pps = NULL;
-
 /* カーソル前進フック: 必要時のみ補充 (refill_at に到達 or 先が尽きた) + 通過チャンク解放。
  * 大半の前進では補充判定が O(1) ですぐ抜ける。 */
 static void pps_on_advance(token_t *cursor) {
@@ -2614,17 +2643,13 @@ token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const 
   while (!s->out_head && !s->eof_done) pps_step(s);
   s->cursor = s->out_head;
   pps_refill(s);
-  g_active_pps = s;
-  tk_set_cursor_hook(pps_on_advance);
-  tk_set_ensure_lookahead_hook(pps_ensure_lookahead);
+  pps_activate(s);
   *out_s = s;
   return s->out_head;
 }
 
 void pp_stream_close(pp_stream_t *s) {
-  tk_set_cursor_hook(NULL);
-  tk_set_ensure_lookahead_hook(NULL);
-  g_active_pps = NULL;
+  pps_deactivate(s);
   tk_allocator_set_recyclable(0);
   tk_allocator_recyc_stream_unpin();
   tk_allocator_recyc_reset();

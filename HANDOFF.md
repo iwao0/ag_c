@@ -1,8 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き869: declare global address initializer resolver in header）
+最終更新: 2026-07-08（続き870: centralize preprocess stream hooks）
 
 ## 現状
+- 続き870: **preprocess stream の tokenizer hook 操作を helper に集約した**。
+
+  続き869までで `.c` 内局所 extern / 外部公開 state をさらに閉じた後、streaming
+  preprocessor には `g_active_pps` の active 化、cursor hook / lookahead hook の
+  install/clear、directive/macro 展開中の hook 一時停止が `pps_step()` / `pp_stream_open()` /
+  `pp_stream_close()` に散っていた。今回は `pps_activate()` / `pps_deactivate()` と
+  `pps_suspend_cursor_hook()` / `pps_restore_cursor_hook()` に寄せ、hook の直接操作を
+  preprocessor stream helper 内に閉じた。あわせて directive/macro 展開後は固定で
+  `pps_on_advance` に戻すのではなく、呼び出し時の hook を復元する形にしたため、
+  初期 materialize やネスト処理時の状態復元も一貫する。
+
+  確認は
+  `rg "g_active_pps|tk_set_cursor_hook|tk_set_ensure_lookahead_hook|tk_get_cursor_hook" src/preprocess/preprocess.c -n`
+  = **直接 hook 操作は stream helper 内のみ**、
+  `make -j4 build/test_preprocess build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_preprocess` = **OK: Preprocessor tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き869: **`psx_resolve_global_addr_init()` の局所 extern をやめ、`decl.h` の内部契約へ移した**。
 
   続き868までで外部公開 state を閉じた後、`decl.c` に
