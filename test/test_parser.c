@@ -2491,6 +2491,17 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_get_type((node_t *)&legacy_struct_scalar) != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, psx_node_get_type((node_t *)&legacy_struct_scalar)->kind);
 
+  node_t *vla_alloc = psx_node_new_vla_alloc(64, 80, psx_node_new_num(3), psx_node_new_num(12));
+  int vla_desc_off = 0;
+  int vla_row_off = 0;
+  ASSERT_TRUE(psx_node_vla_alloc_descriptor_info(vla_alloc, &vla_desc_off, &vla_row_off));
+  ASSERT_EQ(64, vla_desc_off);
+  ASSERT_EQ(80, vla_row_off);
+  ASSERT_TRUE(!psx_node_vla_alloc_descriptor_info((node_t *)&legacy_struct_scalar,
+                                                  &vla_desc_off, &vla_row_off));
+  ASSERT_EQ(0, vla_desc_off);
+  ASSERT_EQ(0, vla_row_off);
+
   node_mem_t compound_lit_addr = {0};
   compound_lit_addr.base.kind = ND_ADDR;
   compound_lit_addr.compound_literal_array_size = 12;

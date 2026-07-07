@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き832: deref array decay metadata reader 化）
+最終更新: 2026-07-07（続き833: VLA alloc descriptor metadata reader 化）
 
 ## 現状
+- 続き833: **`ND_VLA_ALLOC` の descriptor frame offset / row stride offset の
+  `node_mem_t` field 詰めを `node_utils` helper 境界へ移した**。
+
+  続き832までで IR 側の deref array decay 判定は helper 経由になったが、
+  `build_node_vla_alloc()` はまだ `node_mem_t *am = (node_mem_t *)node` として
+  `type_size` を「descriptor lvar の frame offset」、`vla_row_stride_frame_off` を
+  row stride slot として直接読んでいた。また `decl.c` の VLA 宣言登録側も
+  `ND_VLA_ALLOC` 用 `node_mem_t` を直接確保し、同じ field に意味の異なる値を詰めていた。
+
+  今回は `psx_node_new_vla_alloc()` と `psx_node_vla_alloc_descriptor_info()` を追加した。
+  `decl.c` は VLA alloc node を専用 constructor 経由で作り、IR は専用 reader から
+  `descriptor_frame_off` / `row_stride_frame_off` という意味名で受け取る。内部互換として
+  既存 payload は残しているが、`type_size` に frame offset を詰めるという実装詳細は
+  `node_utils` 内に閉じ込めた。`node_mem_view()` も `ND_VLA_ALLOC` を正規の `node_mem_t`
+  実体として扱うようにした。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。専用 constructor で作った
+  `ND_VLA_ALLOC` から descriptor / row stride offset が reader 経由で取れること、
+  非 `ND_VLA_ALLOC` では reader が 0 に初期化して false を返すことを固定している。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き832: **IR builder の `build_node_deref()` に残っていた array decay 判定の
   `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
 

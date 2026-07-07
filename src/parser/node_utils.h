@@ -79,6 +79,8 @@ int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *node);
 void psx_node_set_unsigned(node_t *node, int is_unsigned);
 tk_float_kind_t psx_node_pointee_fp_kind(node_t *node);
+int psx_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
+                                       int *row_stride_frame_off);
 int psx_node_vla_row_stride_frame_off(node_t *node);
 int psx_node_pointer_stride_metadata(node_t *node, int *inner_stride,
                                      int *next_stride, int *extra_strides,
@@ -100,6 +102,9 @@ void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name
 int psx_node_get_tag_scope_depth(node_t *node);
 
 node_t *psx_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
+node_t *psx_node_new_vla_alloc(int descriptor_frame_off,
+                               int row_stride_frame_off,
+                               node_t *lhs, node_t *rhs);
 node_t *psx_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_unsigned);
 node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);

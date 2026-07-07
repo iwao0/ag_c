@@ -4518,21 +4518,19 @@ static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_s
                                    0, 0);
 
   /* VLA_ALLOC 確保ノード */
-  node_mem_t *alloc_node = arena_alloc(sizeof(node_mem_t));
-  alloc_node->base.kind = ND_VLA_ALLOC;
-  alloc_node->type_size = var->offset;
-  alloc_node->vla_row_stride_frame_off = vla_row_stride_frame_off;
+  node_t *alloc_lhs = NULL;
+  node_t *alloc_rhs = NULL;
   if (dim_count == 1) {
     /* 1D: byte_size = n * elem */
-    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(elem_size));
+    alloc_lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(elem_size));
   } else if (dim_count == 2 && dim_is_const[1]) {
     /* 2D const-inner: byte_size = n * outer_stride (const) */
-    alloc_node->base.lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(outer_stride));
+    alloc_lhs = psx_node_new_binary(ND_MUL, dim_nodes[0], psx_node_new_num(outer_stride));
   } else if (dim_count == 2) {
     /* 2D runtime-inner: lhs=n, rhs=m*elem。VLA_ALLOC が n*rhs=total を計算し
      * rhs を slot+16 (vla_row) に store する。 */
-    alloc_node->base.lhs = dim_nodes[0];
-    alloc_node->base.rhs = psx_node_new_binary(ND_MUL, dim_nodes[1], psx_node_new_num(elem_size));
+    alloc_lhs = dim_nodes[0];
+    alloc_rhs = psx_node_new_binary(ND_MUL, dim_nodes[1], psx_node_new_num(elem_size));
   } else {
     /* N-D (N>=3): lhs = dim[0], rhs = outer_stride_expr = dim[1]*dim[2]*...*dim[N-1]*elem。
      * VLA_ALLOC が lhs*rhs=total を計算し rhs を slot+16 (= 最外 stride) に store。
@@ -4542,11 +4540,13 @@ static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_s
     for (int i = dim_count - 1; i >= 1; i--) {
       outer_stride_expr = psx_node_new_binary(ND_MUL, outer_stride_expr, dim_nodes[i]);
     }
-    alloc_node->base.lhs = dim_nodes[0];
-    alloc_node->base.rhs = outer_stride_expr;
+    alloc_lhs = dim_nodes[0];
+    alloc_rhs = outer_stride_expr;
   }
-  if (!*init_chain_inout) *init_chain_inout = (node_t *)alloc_node;
-  else *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, (node_t *)alloc_node);
+  node_t *alloc_node = psx_node_new_vla_alloc(var->offset, vla_row_stride_frame_off,
+                                              alloc_lhs, alloc_rhs);
+  if (!*init_chain_inout) *init_chain_inout = alloc_node;
+  else *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, alloc_node);
 
   /* N>=3: stride[1..N-2] を slot+24, slot+32, ... に store する STORE 列を注入する。
    * stride[k] = dim[k+1] * dim[k+2] * ... * dim[N-1] * elem。stride[0] は VLA_ALLOC の rhs と

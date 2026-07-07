@@ -57,7 +57,7 @@ typedef enum {
   ND_STRING,  // 文字列リテラル
   ND_NUM,     // 整数
   ND_GVAR,    // グローバル変数参照
-  ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト), type_size=フレームオフセット
+  ND_VLA_ALLOC, // VLA動的スタック確保: lhs=サイズ式(バイト)。descriptor 情報は node_utils 経由で読む。
   ND_FP_TO_INT, // 浮動小数点 → 整数キャスト: lhs=FP式 (fp_kind が float/double を保持)
   ND_INT_TO_FP, // 整数/別幅FP → 浮動小数点キャスト: lhs=式、fp_kind が変換先(float/double)を保持
   ND_FNEG,      // 浮動小数点の単項マイナス (-x): lhs=FP式、fp_kind が float/double を保持。

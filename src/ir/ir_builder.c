@@ -2625,16 +2625,19 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
   /* VLA 動的確保: parser は ND_VLA_ALLOC を init_chain (comma) の一部として
-   * 配置する。type_size = descriptor lvar の frame offset。
+   * 配置する。
    *   slot[0] = base pointer
    *   slot[8] = byte size  (sizeof(vla) で読まれる)
    *   slot[16]= row stride (2D runtime inner のみ。rsf != 0)
    *   1D     : lhs = total bytes (n * elem_size)
    *   2D const: lhs = total bytes (n * outer_stride)
    *   2D rt  : lhs = outer_count(n), rhs = row_stride(m * elem) */
-  node_mem_t *am = (node_mem_t *)node;
-  int desc_offset = am->type_size;
-  int rsf = am->vla_row_stride_frame_off;
+  int desc_offset = 0;
+  int rsf = 0;
+  if (!psx_node_vla_alloc_descriptor_info(node, &desc_offset, &rsf)) {
+    fail(ctx, "invalid VLA allocation descriptor");
+    return ir_val_none();
+  }
   int desc_ptr = address_of_lvar(ctx, desc_offset);
   if (desc_ptr < 0) return ir_val_none();
   ir_val_t total_size;

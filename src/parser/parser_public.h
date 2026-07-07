@@ -62,6 +62,8 @@ void psx_node_copy_funcptr_metadata_from_lvar(node_mem_t *dst, const lvar_t *src
 void psx_node_copy_funcptr_metadata_from_gvar(node_mem_t *dst, const global_var_t *src);
 void psx_node_merge_funcptr_metadata_from_lvar(node_mem_t *dst, const lvar_t *src);
 void psx_node_merge_funcptr_metadata_from_gvar(node_mem_t *dst, const global_var_t *src);
+int psx_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
+                                       int *row_stride_frame_off);
 /* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロットのフレームオフセット (0=なし)。
  * IR builder が `p++` / inc/dec のステップに実行時ストライドを使うために参照する。 */
 int psx_node_vla_row_stride_frame_off(node_t *n);

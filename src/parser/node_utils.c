@@ -1315,6 +1315,7 @@ static node_mem_t *node_mem_view(node_t *node) {
     case ND_ADDR:
     case ND_STRING:
     case ND_CAST:
+    case ND_VLA_ALLOC:
       return as_mem(node);
     default:
       return NULL;
@@ -4044,6 +4045,30 @@ int psx_node_aggregate_value_size(node_t *node) {
   int size = ps_node_type_size(node);
   if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
   return size > 0 ? size : 0;
+}
+
+int psx_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
+                                       int *row_stride_frame_off) {
+  if (descriptor_frame_off) *descriptor_frame_off = 0;
+  if (row_stride_frame_off) *row_stride_frame_off = 0;
+  if (!node || node->kind != ND_VLA_ALLOC) return 0;
+  node_mem_t *mem = node_mem_view(node);
+  if (!mem) return 0;
+  if (descriptor_frame_off) *descriptor_frame_off = mem->type_size;
+  if (row_stride_frame_off) *row_stride_frame_off = mem->vla_row_stride_frame_off;
+  return mem->type_size > 0;
+}
+
+node_t *psx_node_new_vla_alloc(int descriptor_frame_off,
+                               int row_stride_frame_off,
+                               node_t *lhs, node_t *rhs) {
+  node_mem_t *node = arena_alloc(sizeof(node_mem_t));
+  node->base.kind = ND_VLA_ALLOC;
+  node->base.lhs = lhs;
+  node->base.rhs = rhs;
+  node->type_size = descriptor_frame_off;
+  node->vla_row_stride_frame_off = row_stride_frame_off;
+  return (node_t *)node;
 }
 
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
