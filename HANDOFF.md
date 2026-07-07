@@ -1,8 +1,27 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き872: remove preprocess local entry prototypes）
+最終更新: 2026-07-08（続き873: centralize public node utility declarations）
 
 ## 現状
+- 続き873: **外部公開する node utility 宣言を `node_public.h` に集約した**。
+
+  続き872までで局所 forward 宣言や duplicated typedef を減らした後、`parser_public.h` には
+  `node_utils.h` 由来の外部公開 API 宣言が手書きで 90 行以上複製されていた。今回は
+  `src/parser/node_public.h` を追加し、arch/IR に公開してよい node/type/tag/gvar query
+  宣言をそこへ移した。`parser_public.h` はこの共有ヘッダを include し、`node_utils.h` も
+  同じヘッダを include したうえで、内部用の生成/slot 書き込み/metadata 初期化 API だけを
+  追加宣言する形にした。これで node utility 公開 API の宣言正本は `node_public.h` になる。
+
+  確認は
+  `rg "int ps_node_is_pointer|int psx_gvar_storage_size|psx_decl_funcptr_sig_t psx_node_funcptr_sig|int psx_tag_member_at_flat_slot|int psx_node_vla_row_stride_frame_off" src/parser/node_public.h src/parser/node_utils.h src/parser/parser_public.h -n`
+  = **代表的な公開宣言は `node_public.h` のみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き872: **`preprocess()` / `preprocess_ctx()` の `.c` 内 forward 宣言を削除した**。
 
   続き871で tag flat cover state の宣言正本を 1 箇所に寄せた後、`preprocess.c` にも
