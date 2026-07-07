@@ -1,8 +1,39 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き896: consolidate backend initializer value dispatch）
+最終更新: 2026-07-08（続き897: extend initializer value view to scalar globals）
 
 ## 現状
+- 続き897: **scalar global initializer も `psx_gvar_init_value_t` view に寄せた**。
+
+  続き896で slot-array / aggregate member の emit/write dispatch は backend 内 helper に寄ったが、
+  slot-array ではない scalar global initializer はまだ backend 側で `view.init_val`、`view.fval`、
+  `psx_gvar_initializer_symbol_ref()` を個別に組み合わせていた。つまり value shape の正本は
+  揃いつつあったが、scalar 経路だけ parser/public の value view から外れていた。
+
+  今回は `psx_gvar_init_scalar_value()` を追加し、scalar の `INTEGER / SYMBOL / FLOAT`、
+  `symbol_ref`、integer value、fvalue、fp_kind、size を `psx_gvar_init_value_t` で返すようにした。
+  これに合わせて kind 名も slot 専用に見える `PSX_GVAR_INIT_SLOT_*` から
+  `PSX_GVAR_INIT_VALUE_*` に rename し、もう使われていなかった
+  `psx_gvar_init_slot_value_symbol_ref()` は削除した。
+
+  arm64 は通常 scalar global と `_Thread_local` 初期化を `emit_global_init_value()` 経由にした。
+  Wasm IR は scalar symbol/float/integer data emission と function-ref 探索を scalar value view 経由にした。
+  Wasm object は scalar symbol/float/integer data emission を `data_write_init_value()` に寄せ、
+  global/slot の function signature 補完だけ `ensure_global_func_sig_for_init_symbol()` に切り出した。
+  member function pointer の補完は `func_sig_from_member_funcptr()` を使う必要があるため、既存の member 経路に残している。
+
+  これで parser/public 側の initializer value 正本は scalar / slot-array / aggregate member で同じ形になった。
+  次の根本対応候補は、`psx_gvar_initializer_kind()` と `psx_gvar_has_initializer_payload()` がまだ
+  view 内部の優先順位を持っている点を、value/cursor helper 群と整合する小さな分類 API に寄せること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き896: **initializer value の emit/write dispatch を backend 内 helper に寄せた**。
 
   続き895で `psx_gvar_init_value_t` に value shape は揃ったが、backend 側にはまだ

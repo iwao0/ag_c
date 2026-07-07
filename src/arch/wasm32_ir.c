@@ -536,7 +536,8 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   if (out_len) *out_len = 0;
-  psx_gvar_symbol_ref_t ref = psx_gvar_initializer_symbol_ref(gv);
+  psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, 4);
+  psx_gvar_symbol_ref_t ref = value.symbol_ref;
   if (ref.kind != PSX_GVAR_SYMBOL_REF_NAMED) return NULL;
   if (!psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) return NULL;
   if (out_len) *out_len = ref.symbol_len;
@@ -1778,14 +1779,14 @@ static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
 static uint64_t global_init_value_bits(psx_gvar_init_value_t value,
                                        const char *symbol_error,
                                        const char *float_error) {
-  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
     if (!psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       wasm_unsupported_msg(float_error);
     }
     return (uint64_t)bits.bits;
   }
-  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     int sym_addr = data_addr_for_symbol_ref(value.symbol_ref);
     if (sym_addr < 0) wasm_unsupported_msg(symbol_error);
     return (uint64_t)((long long)sym_addr + value.symbol_ref.addend);
@@ -1811,20 +1812,13 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
   cg_emitf("\")\n");
 }
 
-static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
-  psx_gvar_symbol_ref_t ref = psx_gvar_initializer_symbol_ref(gv);
-  int sym_addr = data_addr_for_symbol_ref(ref);
-  if (sym_addr < 0) wasm_unsupported_msg("global symbol initializer in Wasm backend");
-  emit_i32_data_bytes(addr, (long long)sym_addr + ref.addend, size);
-}
-
 static void emit_global_init_member_value_data(global_var_t *gv, int idx, int addr,
                                                const tag_member_info_t *mi) {
   psx_gvar_init_member_value_t value = psx_gvar_init_member_value(gv, idx, mi);
   if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
     wasm_unsupported_msg("global member size in Wasm backend");
   }
-  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
   } else {
     uint64_t bits = global_init_value_bits(
@@ -1898,17 +1892,25 @@ static void emit_global_data(global_var_t *gv, void *user) {
   if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_global_struct_data(gv, addr);
   } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-    if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
-    emit_global_symbol_addr_data(gv, addr, size);
+    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
+    if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
+      wasm_unsupported_msg("global size in Wasm backend");
+    }
+    uint64_t bits = global_init_value_bits(
+        value, "global symbol initializer in Wasm backend",
+        "floating global initializer in Wasm backend");
+    emit_i32_data_bytes(addr, (long long)bits, value.size);
   } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
     emit_global_init_values_data(gv, addr, size);
   } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
-    emit_fp_data_bytes(addr, (tk_float_kind_t)view.fp_kind, view.has_init ? view.fval : 0.0);
+    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
+    emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
   } else {
-    if ((!view.has_init || view.init_val == 0) &&
+    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
+    if ((!view.has_init || value.value == 0) &&
         size != 1 && size != 2 && size != 4 && size != 8) return;
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
-    emit_i32_data_bytes(addr, view.has_init ? view.init_val : 0, size);
+    emit_i32_data_bytes(addr, value.value, value.size);
   }
 }
 

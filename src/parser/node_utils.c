@@ -487,7 +487,7 @@ psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
     const global_var_t *gv, int idx, const psx_gvar_init_slots_layout_t *layout) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
   psx_gvar_init_slot_value_t value = {
-      .kind = PSX_GVAR_INIT_SLOT_INTEGER,
+      .kind = PSX_GVAR_INIT_VALUE_INTEGER,
       .symbol_ref = psx_gvar_init_slot_symbol_ref(&slot),
       .value = slot.value,
       .fvalue = slot.fvalue,
@@ -495,11 +495,11 @@ psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
       .size = layout ? layout->elem_size : 0,
   };
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
-    value.kind = PSX_GVAR_INIT_SLOT_SYMBOL;
+    value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
     return value;
   }
   if (layout && layout->is_fp_array) {
-    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.kind = PSX_GVAR_INIT_VALUE_FLOAT;
     value.fp_kind = layout->fp_kind;
   }
   return value;
@@ -540,20 +540,12 @@ psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *
   return gvar_make_symbol_ref(slot->symbol, slot->symbol_len, slot->value);
 }
 
-psx_gvar_symbol_ref_t
-psx_gvar_init_slot_value_symbol_ref(const psx_gvar_init_slot_value_t *value) {
-  if (!value || value->kind != PSX_GVAR_INIT_SLOT_SYMBOL) {
-    return gvar_make_symbol_ref(NULL, 0, 0);
-  }
-  return value->symbol_ref;
-}
-
 psx_gvar_init_member_value_t
 psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
   psx_gvar_init_member_value_t value = {
-      .kind = PSX_GVAR_INIT_SLOT_INTEGER,
+      .kind = PSX_GVAR_INIT_VALUE_INTEGER,
       .symbol_ref = psx_gvar_init_slot_symbol_ref(&slot),
       .value = slot.value,
       .fvalue = slot.fvalue,
@@ -562,18 +554,40 @@ psx_gvar_init_member_value(const global_var_t *gv, int idx,
   };
   if (member && member->is_bool) value.value = value.value != 0;
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
-    value.kind = PSX_GVAR_INIT_SLOT_SYMBOL;
+    value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
     return value;
   }
   if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
-    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.kind = PSX_GVAR_INIT_VALUE_FLOAT;
     value.fp_kind = slot.fp_sentinel_kind;
     value.size = value.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
     return value;
   }
   if (member && member->fp_kind != TK_FLOAT_KIND_NONE) {
-    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.kind = PSX_GVAR_INIT_VALUE_FLOAT;
     value.fp_kind = member->fp_kind;
+  }
+  return value;
+}
+
+psx_gvar_init_scalar_value_t
+psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  psx_gvar_init_scalar_value_t value = {
+      .kind = PSX_GVAR_INIT_VALUE_INTEGER,
+      .symbol_ref = psx_gvar_initializer_symbol_ref(gv),
+      .value = view.has_init ? view.init_val : 0,
+      .fvalue = view.has_init ? view.fval : 0.0,
+      .fp_kind = TK_FLOAT_KIND_NONE,
+      .size = psx_gvar_storage_size(gv, fallback_size),
+  };
+  if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+    value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
+    return value;
+  }
+  if (view.fp_kind != TK_FLOAT_KIND_NONE) {
+    value.kind = PSX_GVAR_INIT_VALUE_FLOAT;
+    value.fp_kind = view.fp_kind;
   }
   return value;
 }

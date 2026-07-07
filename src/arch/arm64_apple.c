@@ -150,9 +150,9 @@ static void emit_global_symbol_ref_quad(psx_gvar_symbol_ref_t ref) {
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
  * 配列メンバは alen 個連続出力する。 */
 static void emit_global_init_value(psx_gvar_init_value_t value) {
-  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     emit_global_symbol_ref_quad(value.symbol_ref);
-  } else if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+  } else if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
     if (psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
@@ -224,7 +224,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     if (view.has_init) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
-      cg_emit_int_directive(storage_size, view.init_val);
+      emit_global_init_value(psx_gvar_init_scalar_value(gv, storage_size));
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
@@ -258,18 +258,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       }
       int remain = slot_layout.elem_count - slot_layout.init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
-    } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-      emit_global_symbol_ref_quad(psx_gvar_initializer_symbol_ref(gv));
-    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
-      psx_gvar_fp_bits_t bits;
-      if (psx_gvar_fp_bit_pattern(view.fp_kind, view.fval, &bits)) {
-        if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
-        else                cg_emitf("  .quad %llu\n", bits.bits);
-      } else {
-        cg_emit_int_directive(storage_size, view.init_val);
-      }
     } else {
-      cg_emit_int_directive(storage_size, view.init_val);
+      emit_global_init_value(psx_gvar_init_scalar_value(gv, storage_size));
     }
     return;
   }

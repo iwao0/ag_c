@@ -48,10 +48,10 @@ typedef struct {
 } psx_gvar_init_slots_layout_t;
 
 typedef enum {
-  PSX_GVAR_INIT_SLOT_INTEGER = 0,
-  PSX_GVAR_INIT_SLOT_SYMBOL,
-  PSX_GVAR_INIT_SLOT_FLOAT,
-} psx_gvar_init_slot_kind_t;
+  PSX_GVAR_INIT_VALUE_INTEGER = 0,
+  PSX_GVAR_INIT_VALUE_SYMBOL,
+  PSX_GVAR_INIT_VALUE_FLOAT,
+} psx_gvar_init_value_kind_t;
 
 typedef struct {
   unsigned long long bits;
@@ -72,7 +72,7 @@ typedef struct {
 } psx_gvar_symbol_ref_t;
 
 typedef struct {
-  psx_gvar_init_slot_kind_t kind;
+  psx_gvar_init_value_kind_t kind;
   psx_gvar_symbol_ref_t symbol_ref;
   long long value;
   double fvalue;
@@ -82,6 +82,7 @@ typedef struct {
 
 typedef psx_gvar_init_value_t psx_gvar_init_slot_value_t;
 typedef psx_gvar_init_value_t psx_gvar_init_member_value_t;
+typedef psx_gvar_init_value_t psx_gvar_init_scalar_value_t;
 
 typedef struct {
   const global_var_t *gv;
@@ -138,12 +139,12 @@ psx_gvar_init_slot_value_t psx_gvar_init_slot_value(const global_var_t *gv, int 
 psx_gvar_init_member_value_t
 psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member);
+psx_gvar_init_scalar_value_t
+psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
 int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
 psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv);
 psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot);
-psx_gvar_symbol_ref_t
-psx_gvar_init_slot_value_symbol_ref(const psx_gvar_init_slot_value_t *value);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,
