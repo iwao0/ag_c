@@ -2148,13 +2148,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
           /* lit->str はソースのまま (raw)。エスケープシーケンスをデコードして
            * 各コード単位を格納する (ローカル `a[]=".."` と同じ処理)。これがないと
            * グローバル `char g[]="a\tb"` が `\` と `t` をそのまま書いて壊れていた。 */
-          int idx = 0, sp = 0;
-          while (sp < lit->len && idx < s->byte_len) {
-            uint32_t units[2];
-            int nu = tk_next_string_code_units(lit->str, lit->len, &sp, elem, units);
-            for (int k = 0; k < nu && idx < s->byte_len; k++)
-              psx_gvar_init_slot_write(gv, idx++, units[k], 0.0, NULL, 0);
-          }
+          psx_gvar_init_slots_write_string_units(gv, 0, lit->str, lit->len,
+                                                 elem, s->byte_len);
         }
         psx_gvar_init_slot_write(gv, s->byte_len, 0, 0.0, NULL, 0);
         gv->init_count = total;

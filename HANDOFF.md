@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き858: centralize global init slot zero padding）
+最終更新: 2026-07-08（続き859: share string literal slot writes）
 
 ## 現状
+- 続き859: **文字列リテラルを global initializer slot へ展開する処理を
+  `node_utils` に共有化した**。
+
+  続き855-858で initializer slot の allocation/grow/padding は `node_utils` に寄ったが、
+  `decl.c` の static local array lowering 2 経路と `parser.c` の top-level string array
+  initializer には、`tk_next_string_code_units()` で raw string literal をデコードしながら
+  `psx_gvar_init_slot_write()` する同種のループが残っていた。今回は
+  `psx_gvar_init_slots_write_string_units()` を追加し、allocation や `init_count` の既存方針は
+  呼び出し元に残したまま、slot への連続書き込みだけを共有化した。
+
+  確認は
+  `rg "psx_gvar_init_slots_write_string_units|tk_next_string_code_units" src/parser/decl.c src/parser/parser.c src/parser/node_utils.c src/parser/node_utils.h -n`
+  = **slot 書き込み helper 本体 + 呼び出し、残りの `tk_next_string_code_units` は要素数カウント等の別用途**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き858: **global initializer slot の zero padding も
   `node_utils` に集約した**。
 

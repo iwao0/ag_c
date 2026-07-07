@@ -3895,15 +3895,8 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     }
     gv->has_init = 1;
     psx_gvar_init_slots_alloc(gv, (int)arr_count, fp_kind != TK_FLOAT_KIND_NONE);
-    int idx = 0;
-    int src_pos = 0;
-    while (src_pos < lit->len && idx < arr_count) {
-      uint32_t units[2];
-      int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, elem_size, units);
-      for (int k = 0; k < nu && idx < arr_count; k++) {
-        psx_gvar_init_slot_write(gv, idx++, (long long)units[k], 0.0, NULL, 0);
-      }
-    }
+    int idx = psx_gvar_init_slots_write_string_units(gv, 0, lit->str, lit->len,
+                                                     elem_size, (int)arr_count);
     if (idx < arr_count) psx_gvar_init_slot_write(gv, idx++, 0, 0.0, NULL, 0);
     gv->init_count = idx;
   } else if (has_init) {
@@ -4025,15 +4018,8 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
     }
     gv->has_init = 1;
     psx_gvar_init_slots_alloc(gv, (int)arr_count, fp_kind != TK_FLOAT_KIND_NONE);
-    int idx = 0;
-    int src_pos = 0;
-    while (src_pos < lit->len && idx < arr_count) {
-      uint32_t units[2];
-      int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, elem_size, units);
-      for (int k = 0; k < nu && idx < arr_count; k++) {
-        psx_gvar_init_slot_write(gv, idx++, (long long)units[k], 0.0, NULL, 0);
-      }
-    }
+    int idx = psx_gvar_init_slots_write_string_units(gv, 0, lit->str, lit->len,
+                                                     elem_size, (int)arr_count);
     if (idx < arr_count) psx_gvar_init_slot_write(gv, idx++, 0, 0.0, NULL, 0);
     gv->init_count = idx;
   } else if (has_init) {
