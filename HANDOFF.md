@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き878: remove symtab layout dependency from arch）
+最終更新: 2026-07-08（続き879: localize public view reads in arch emitters）
 
 ## 現状
+- 続き879: **arch emission 側の public view 読み取りを局所化し、view 経由化後のノイズを減らした**。
+
+  続き878で `src/arch` から `symtab.h` レイアウト依存を外した結果、
+  `psx_gvar_view(gv)` / `psx_string_lit_view(lit)` / `psx_float_lit_view(lit)` の呼び出しが
+  emission helper 内に細かく散り、境界はきれいになった一方で読み取り箇所の把握が少し難しくなっていた。
+  今回は `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` の高密度な emit entry/helper で
+  `psx_*_view_t view` をローカルに保持し、その関数内の参照を `view.*` に寄せた。
+
+  public view 境界は維持したまま、各 emit 関数で「この global/literal から何を読むか」が
+  1つの snapshot にまとまるようになった。残っている `psx_gvar_view(gv).init_count` などの直接呼び出しは、
+  主に再帰的な initializer traversal のループガードに限られている。次の根本対応候補は、
+  arm64 / wasm32 IR / wasm32 object にまだ重複している global initializer traversal を
+  parser/public utility 側の walker へ寄せ、arch 側を payload emission に集中させること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き878: **arch から `symtab.h` 直 include を外し、global/literal data emit を public view 経由にした**。
 
   続き877で `parser_public.h` から `symtab.h` を外した後も、`arm64_apple.c` /
