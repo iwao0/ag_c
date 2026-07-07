@@ -15712,6 +15712,29 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
 
+### このセッション（続き829）: decl.c の token tag aggregate 判定を helper 化
+- 見つかった浅い箇所:
+  - `decl.c` の typedef 由来 tag size 調整、function pointer return width、
+    member array initializer、missing scalar zero-fill、lvar/gvar storage 初期化、
+    scalar init 診断、static local aggregate lowering に
+    `TK_STRUCT || TK_UNION` の直書きが残っていた。
+  - member initializer は `member_is_tag_pointer` と組み合わせる箇所が多く、
+    struct/union 判定と object aggregate 判定がその場で合成されていた。
+- 根本対応:
+  - token-kind の struct/union aggregate 判定を `psx_ctx_is_tag_aggregate_kind()` に寄せた。
+  - `parse_member_initializer()` では
+    `member_is_tag_aggregate` / `member_is_object_aggregate` を明示し、
+    tag pointer を除外する契約を各分岐の直書きから外した。
+  - struct 専用 / union 専用の initializer dispatch と診断文言分岐は別契約なので残した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
 ### このセッション（続き828）: node_utils の token tag aggregate 判定を helper 化
 - 見つかった浅い箇所:
   - `node_utils.c` の typed AST materialize / function call return type /

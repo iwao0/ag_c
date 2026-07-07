@@ -281,7 +281,7 @@ static void take_local_decl_prefix_flags(local_decl_spec_t *out) {
 }
 
 static void adjust_local_decl_spec_from_typedef(local_decl_spec_t *out, token_kind_t base_kind) {
-  if ((out->tag_kind == TK_STRUCT || out->tag_kind == TK_UNION) &&
+  if (psx_ctx_is_tag_aggregate_kind(out->tag_kind) &&
       out->tag_name && out->tag_len > 0 &&
       psx_ctx_has_tag_type(out->tag_kind, out->tag_name, out->tag_len)) {
     int tag_sz = psx_ctx_get_tag_size(out->tag_kind, out->tag_name, out->tag_len);
@@ -570,7 +570,7 @@ static void reset_decl_declarator_state(decl_declarator_state_t *state) {
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind) {
   if (is_pointer || fp_kind != TK_FLOAT_KIND_NONE || kind == TK_VOID ||
-      kind == TK_STRUCT || kind == TK_UNION || kind == TK_EOF) {
+      psx_ctx_is_tag_aggregate_kind(kind) || kind == TK_EOF) {
     return 0;
   }
   return psx_ctx_scalar_type_size(kind) >= 8 ? 8 : 4;
@@ -1580,14 +1580,15 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
   if (member_is_tag_pointer) {
     member_fp_kind = TK_FLOAT_KIND_NONE;
   }
+  int member_is_tag_aggregate = psx_ctx_is_tag_aggregate_kind(member_tag_kind);
+  int member_is_object_aggregate = member_is_tag_aggregate && !member_is_tag_pointer;
   if (member_array_len > 0) {
     int array_len = member_array_len;
     int elem_size = member_type_size;
     node_t *init_chain = NULL;
     if (tk_consume('{')) {
       if (member_outer_stride <= 0 && member_arr_ndim < 2 &&
-          !(member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
-          brace_starts_whole_array_initializer(curtok())) {
+          !member_is_tag_aggregate && brace_starts_whole_array_initializer(curtok())) {
         node_t *chain = parse_scalar_array_member_brace_body(owner, member_offset, elem_size,
                                                             array_len, member_fp_kind,
                                                             member_is_bool);
@@ -1607,8 +1608,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
         return chain ? chain : psx_node_new_num(0);
       }
       if (member_arr_ndim >= 3 && member_arr_dims &&
-          (member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
-          !member_is_tag_pointer) {
+          member_is_object_aggregate) {
         int flat = 0;
         node_t *chain = parse_multidim_tag_member_brace(
             owner, member_offset, elem_size, array_len,
@@ -1657,8 +1657,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
         /* 多次元 struct タグ配列メンバ (`struct C rows[3][2]`): 1 要素は struct 値で
          * parse_struct_initializer 経由で初期化する必要がある。スカラ要素 (int 等) は
          * 従来どおり parse_scalar_brace_initializer + flat slot に書き込む。 */
-        int is_struct_tag_elem = ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION)
-                                   && !member_is_tag_pointer);
+        int is_struct_tag_elem = member_is_object_aggregate;
         if (!tk_consume('}')) {
           for (;;) {
             /* 外側 `[N]=` designator (C11 6.7.9p6): 行 N へジャンプ。 */
@@ -1778,8 +1777,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
           }
           /* C11 6.7.9p19: 同一要素への複数指定初期化子は後勝ち (エラーではない)。 */
           node_t *init_node;
-          if ((member_tag_kind == TK_STRUCT || member_tag_kind == TK_UNION) &&
-              !member_is_tag_pointer) {
+          if (member_is_object_aggregate) {
             if (consume_terminal_zero_initializer()) {
               init_node = psx_node_new_num(0);
             } else {
@@ -2343,7 +2341,7 @@ static node_t *append_unassigned_scalar_zero_fills(lvar_t *var, int member_count
     }
     if (already) continue;
     if (!is_supported_scalar_store_size(info.type_size)) continue;
-    if (info.array_len > 0 || info.tag_kind == TK_STRUCT || info.tag_kind == TK_UNION) continue;
+    if (info.array_len > 0 || psx_ctx_is_tag_aggregate_kind(info.tag_kind)) continue;
     node_t *zero = psx_node_new_num(0);
     init_chain = append_to_init_chain(init_chain,
         wrap_member_init_as_assign(var, &info, zero));
@@ -3206,7 +3204,7 @@ void psx_decl_init_lvar_storage_type(lvar_t *var, int size,
   var->is_array = is_array ? 1 : 0;
   var->fp_kind = fp_kind;
   var->is_unsigned = is_unsigned ? 1 : 0;
-  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, is_tag_pointer);
   } else {
     var->tag_kind = TK_EOF;
@@ -3432,7 +3430,7 @@ void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
   gv->is_array = is_array ? 1 : 0;
   gv->fp_kind = (unsigned char)fp_kind;
   gv->is_unsigned = is_unsigned ? 1 : 0;
-  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, is_tag_pointer);
   } else {
     gv->tag_kind = TK_EOF;
@@ -3645,8 +3643,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
          init_expr->kind == ND_DEREF || init_expr->kind == ND_FUNCALL) &&
         (init_expr->kind != ND_FUNCALL)) {
       node_mem_t *m = (node_mem_t *)init_expr;
-      if ((m->tag_kind == TK_STRUCT || m->tag_kind == TK_UNION) &&
-          !m->is_tag_pointer && !m->is_pointer) {
+      if (psx_ctx_is_tag_aggregate_kind(m->tag_kind) && !m->is_tag_pointer && !m->is_pointer) {
         psx_diag_ctx(curtok(), "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
                      m->tag_kind == TK_STRUCT ? "struct" : "union");
@@ -4872,7 +4869,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     /* `static struct S a[N] = {...};` / `static union U a[] = {...};` の 1D aggregate
      * static local をグローバル化する。 */
-    if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
+    if (decl_is_static && psx_ctx_is_tag_aggregate_kind(tag_kind) &&
         !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 && curtok()->kind == TK_LBRACKET) {
       if (try_lower_static_local_aggregate_array(tok, tag_kind, tag_name, tag_len)) {
@@ -4883,7 +4880,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     /* `static struct S a = {...};` / `static union U u = {...};` の struct/union
      * static local をグローバル化。ポインタ (`static struct S *p`、上の scalar 経路で
      * 処理) と、上の aggregate array 経路に入らない配列形は除外する。 */
-    if (decl_is_static && (tag_kind == TK_STRUCT || tag_kind == TK_UNION) &&
+    if (decl_is_static && psx_ctx_is_tag_aggregate_kind(tag_kind) &&
         !is_pointer && inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 && curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_struct(tok, tag_kind, tag_name, tag_len)) {
