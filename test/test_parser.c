@@ -2895,6 +2895,31 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
   ASSERT_EQ(2, psx_tag_member_flat_slots(&flat_member));
   ASSERT_EQ(2, psx_tag_member_elem_flat_slots(&flat_member));
+  int flat_slot_ordinal = -1;
+  tag_member_info_t flat_slot_member = {0};
+  ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 0,
+                                          &flat_slot_member, &flat_slot_ordinal));
+  ASSERT_EQ(0, flat_slot_ordinal);
+  ASSERT_TRUE(flat_slot_member.name != NULL);
+  ASSERT_EQ(0, strncmp(flat_slot_member.name, "x", (size_t)flat_slot_member.len));
+  ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 1,
+                                          &flat_slot_member, &flat_slot_ordinal));
+  ASSERT_EQ(1, flat_slot_ordinal);
+  ASSERT_TRUE(flat_slot_member.name != NULL);
+  ASSERT_EQ(0, strncmp(flat_slot_member.name, "in", (size_t)flat_slot_member.len));
+  ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 2,
+                                          &flat_slot_member, &flat_slot_ordinal));
+  ASSERT_EQ(1, flat_slot_ordinal);
+  ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 3,
+                                          &flat_slot_member, &flat_slot_ordinal));
+  ASSERT_EQ(TK_UNION, flat_slot_member.tag_kind);
+  ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 4,
+                                          &flat_slot_member, &flat_slot_ordinal));
+  ASSERT_EQ(5, flat_slot_ordinal);
+  ASSERT_TRUE(flat_slot_member.name != NULL);
+  ASSERT_EQ(0, strncmp(flat_slot_member.name, "y", (size_t)flat_slot_member.len));
+  ASSERT_TRUE(!psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 5,
+                                           &flat_slot_member, &flat_slot_ordinal));
   int flat_ordinal = -1;
   ASSERT_EQ(4, psx_tag_member_designator_slot(TK_STRUCT, "FlatOut", 7, "y", 1,
                                               &flat_ordinal));

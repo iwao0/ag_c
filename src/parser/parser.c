@@ -1493,40 +1493,10 @@ static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
     return;
   }
   if (psx_ctx_is_tag_aggregate_kind(ctx->tag_kind)) {
-    int n = psx_ctx_get_tag_member_count(ctx->tag_kind, ctx->tag_name, ctx->tag_len);
-    int slot = 0;
-    int covered_union_off = 0;
-    int covered_union_size = 0;
-    for (int i = 0; i < n; i++) {
-      tag_member_info_t mi = {0};
-      if (!psx_ctx_get_tag_member_info(ctx->tag_kind, ctx->tag_name, ctx->tag_len, i, &mi)) break;
-      if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-      if (covered_union_size > 0 &&
-          mi.offset >= covered_union_off &&
-          mi.offset < covered_union_off + covered_union_size) {
-        continue;
-      }
-      int ms = psx_tag_member_flat_slots(&mi);
-      if (off < slot + ms) {
-        gbrace_ctx_from_member(c, &mi);
-        return;
-      }
-      if (psx_tag_member_is_unnamed_union(&mi)) {
-        covered_union_off = mi.offset;
-        covered_union_size = mi.type_size;
-        slot += ms;
-        continue;
-      }
-      int cover_off = 0;
-      int cover_size = 0;
-      int has_cover = psx_tag_find_unnamed_union_covering_offset(ctx->tag_kind, ctx->tag_name,
-                                                                 ctx->tag_len, 0, mi.offset,
-                                                                 &cover_off, &cover_size);
-      if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
-      slot += ms;
+    tag_member_info_t mi = {0};
+    if (psx_tag_member_at_flat_slot(ctx->tag_kind, ctx->tag_name, ctx->tag_len,
+                                    off, &mi, NULL)) {
+      gbrace_ctx_from_member(c, &mi);
     }
   }
 }

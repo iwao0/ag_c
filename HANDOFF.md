@@ -1,16 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き834: nested member designator slot helper 化）
+最終更新: 2026-07-07（続き835: tag flat slot member 逆引き helper 化）
 
 ## 現状
-- 続き834: **nested `.member.sub` designator の slot 解決も
-  `psx_tag_member_designator_slot()` へ統一した**。
+- 続き835: **global brace の flat slot -> tag member 復元を
+  `psx_tag_member_at_flat_slot()` へ統一した**。
 
-  続き833で top-level `.member` の member designator slot 探索を helper 化したが、
-  nested `.sub` 側には同型のローカルループが残っていた。今回は nested 側も同じ
-  helper を使うようにし、unnamed union cover と union container は slot を進めないという
-  規約を 1 箇所へ寄せた。container が union かどうかだけは helper 呼び出し前に保存し、
-  `active_union_ordinal` の更新規則は従来どおり維持している。
+  続き834までで designator 名から flat slot を引く経路は helper 化されたが、
+  positional global initializer が brace child context を作る `gbrace_child_at()` には、
+  flat slot から member を逆引きする同型の unnamed union cover / flat slot 走査が残っていた。
+  今回は `psx_tag_member_at_flat_slot()` を node_utils + parser_public API に追加し、
+  `gbrace_child_at()` はこの helper 経由で tag member context を作る形にした。
+  parser unit には `FlatOut` の slot 0/1/2/3/4 と out-of-range の契約を追加している。
 
   確認は
   `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
@@ -16207,6 +16208,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
 - 確認:
   - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
   - `./build/test_parser` = **pass**
+  - `./build/test_e2e` = **1204/1204 pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
+### このセッション（続き835）: tag flat slot member 逆引きを共有 helper に統一
+- 見つかった浅い箇所:
+  - global brace positional initializer の `gbrace_child_at()` が、flat slot から
+    tag member context を復元するために unnamed union cover / flat slot 走査を
+    parser.c 内でローカル実装していた。
+  - 続き833/834で member 名 -> flat slot は共有 helper 化されたが、
+    逆方向の flat slot -> member は同じ規約を別実装として抱えていた。
+- 根本対応:
+  - `psx_tag_member_at_flat_slot()` を node_utils + parser_public API に追加した。
+  - `gbrace_child_at()` は helper から返った `tag_member_info_t` を
+    `gbrace_ctx_from_member()` に渡すだけにし、cover / slot 規約を parser 本体から外した。
+  - parser unit の type metadata bridge に FlatOut の slot 逆引き契約を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
   - `./build/test_e2e` = **1204/1204 pass**
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
