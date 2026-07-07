@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き914: consolidate lvar readers in lvar public API）
+最終更新: 2026-07-08（続き915: split tag helpers out of node public API）
 
 ## 現状
+- 続き915: **tag helper 群を `node_public.h` から `tag_public.h` へ切り出した**。
+
+  続き914までで gvar / lvar 読み取り API はそれぞれの public header に寄ったが、
+  `node_public.h` にはまだ `psx_tag_*` helper 群と `tag_flat_cover.h` 依存が残っていた。
+  これらは node の値/型 helper ではなく、`tag_member_info_t` と flat slot / unnamed
+  aggregate / union initializer selection を扱う tag API で、node public API の正本を濁していた。
+
+  今回は新しく `src/parser/tag_public.h` を追加し、
+  `psx_tag_member_is_*()`、`psx_tag_find_unnamed_union_covering_offset()`、
+  flat slot helper、named member iterator、union initializer member selection、
+  `psx_tag_member_designator_slot()` の宣言を `node_public.h` から移した。
+  `parser_public.h` は `tag_public.h` を include するため、IR / arch / test の入口は
+  これまで通り `parser_public.h` で足りる。parser 内部の前方参照は `node_utils.h` から
+  `tag_public.h` を明示 include して保っている。
+
+  確認は
+  `rg "psx_tag_(member_is|find_unnamed|member_flat|member_elem|member_subscript|flat_slot|member_at|next_named|first_named|find_named|select_union|union_init|member_designator)" src/parser/*.h src/parser/*.c src/arch src/ir test --glob '!build/**'` で宣言が **`tag_public.h` にのみ存在**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き914: **lvar の読み取り helper を `lvar_public.h` へ集約した**。
 
   続き913で gvar 読み取り API は `gvar_public.h` 側へ寄せたが、

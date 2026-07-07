@@ -2,11 +2,9 @@
 #define PARSER_NODE_PUBLIC_H
 
 #include "ast.h"
-#include "tag_flat_cover.h"
 
 struct global_var_t;
 struct lvar_t;
-struct tag_member_info_t;
 
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
@@ -25,37 +23,6 @@ int psx_node_pointer_qual_levels(node_t *n);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int psx_node_value_is_pointer_like(node_t *node);
-int psx_tag_member_is_tag_aggregate(const struct tag_member_info_t *mi);
-int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
-int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
-int psx_tag_member_is_unnamed_struct(const struct tag_member_info_t *mi);
-int psx_tag_member_is_unnamed_union(const struct tag_member_info_t *mi);
-int psx_tag_member_is_unnamed_aggregate(const struct tag_member_info_t *mi);
-int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                               int base_off, int target_off,
-                                               int *out_off, int *out_size);
-int psx_tag_member_flat_slots(const struct tag_member_info_t *mi);
-int psx_tag_member_elem_flat_slots(const struct tag_member_info_t *mi);
-int psx_tag_member_subscript_stride_slots(const struct tag_member_info_t *mi);
-int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len);
-int psx_tag_member_at_flat_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                int flat_slot, struct tag_member_info_t *out,
-                                int *out_ordinal);
-int psx_tag_next_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                              int *ordinal_inout, struct tag_member_info_t *out);
-int psx_tag_first_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               struct tag_member_info_t *out, int *out_ordinal);
-int psx_tag_find_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                              char *member_name, int member_len,
-                              struct tag_member_info_t *out, int *out_ordinal);
-int psx_tag_select_union_member_for_init_slot(token_kind_t tag_kind, char *tag_name,
-                                              int tag_len, const struct global_var_t *gv,
-                                              int idx, struct tag_member_info_t *mi);
-int psx_tag_union_init_member_for_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                       const struct global_var_t *gv, int idx,
-                                       struct tag_member_info_t *out);
-int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                   char *member_name, int member_len, int *out_ordinal);
 int psx_node_aggregate_value_size(node_t *node);
 int psx_node_is_unsigned_type(node_t *node);
 int psx_node_deref_decays_to_address(node_t *node);

@@ -28,6 +28,7 @@
 #include "literal_public.h"
 #include "lvar_public.h"
 #include "node_public.h"
+#include "tag_public.h"
 #include <stdbool.h>
 
 /* グローバル変数リスト走査 (Phase C3)。

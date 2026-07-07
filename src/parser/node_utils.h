@@ -6,6 +6,7 @@
 #include "init_slot.h"
 #include "gvar_public.h"
 #include "node_public.h"
+#include "tag_public.h"
 
 struct lvar_t;
 struct global_var_t;
