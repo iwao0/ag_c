@@ -1,8 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き864: centralize string code unit emission）
+最終更新: 2026-07-08（続き865: centralize literal table registration）
 
 ## 現状
+- 続き865: **文字列/浮動小数点リテラル表の登録経路を parser.c の API に集約した**。
+
+  続き864までで string literal の decode/emission は tokenizer API に寄ったが、
+  `expr.c` はまだ `string_literals` / `float_literals` の連結リスト本体へ
+  `lit->next = ...; ... = lit;` で直接 prepend していた。今回は
+  `psx_register_string_lit()` / `psx_register_float_lit()` を追加し、
+  リテラル表の実体を `parser.c` の `static` にした。テスト側も
+  `extern string_literals` や `float_literals` の直接走査をやめ、
+  `psx_find_string_lit_by_label()` と `ps_iter_float_literals()` 経由の観測へ寄せた。
+  これでリテラル表の正本更新は parser.c の登録/リセット/iterator 実装に閉じる。
+
+  確認は
+  `rg "extern (string_lit_t|float_lit_t)|string_literals|float_literals" src test -n`
+  = **直接 extern はなし、正本操作は `parser.c` 内のみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き864: **文字列リテラルの code unit 展開ループを
   tokenizer の `tk_emit_string_code_units()` に集約した**。
 

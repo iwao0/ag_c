@@ -3597,7 +3597,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
   return selected;
 }
 
-// TK_NUM を node_num_t に変換。浮動小数点なら float_literals テーブルにも登録。
+// TK_NUM を node_num_t に変換。浮動小数点ならリテラルテーブルにも登録。
 static node_t *parse_num_literal(void) {
   token_t *tok = curtok();
   token_num_t *num = (token_num_t *)tok;
@@ -3624,8 +3624,7 @@ static node_t *parse_num_literal(void) {
     lit->fval = node->fval;
     lit->fp_kind = node->base.fp_kind;
     lit->float_suffix_kind = node->float_suffix_kind;
-    lit->next = float_literals;
-    float_literals = lit;
+    psx_register_float_lit(lit);
     node->fval_id = lit->id;
   }
   set_curtok(curtok()->next);
@@ -3649,8 +3648,7 @@ static node_string_t *make_string_lit_node(char *str, int len,
   lit->len = len;
   lit->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   lit->str_prefix_kind = prefix_kind;
-  lit->next = string_literals;
-  string_literals = lit;
+  psx_register_string_lit(lit);
   snode->mem.type_size = 8;
   snode->mem.deref_size = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   /* 文字列リテラルは char (または wchar) 配列で、式中ではポインタに decay する。

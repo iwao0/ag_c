@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/parser/parser_public.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/expr.h"
 #include "../src/parser/node_utils.h"
@@ -16,10 +17,12 @@
 
 #include "test_common.h"
 
-// 文字列テーブル (parser.c で定義)
-extern string_lit_t *string_literals;
-
 static node_t **parsed_code;
+
+static void find_long_double_float_literal(float_lit_t *lit, void *user) {
+  bool *found = user;
+  if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) *found = true;
+}
 
 /* parse_expr_input は単体式パースのため、main 関数の宣言ブロックを通らない。
  * ag_c は未宣言識別子をエラー扱いするので、テストで多用する短い名前を
@@ -298,12 +301,7 @@ static void test_expr_long_double_suffix_metadata() {
   ASSERT_TRUE(as_num(node)->fval > 3.9 && as_num(node)->fval < 4.1);
 
   bool found = false;
-  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) {
-      found = true;
-      break;
-    }
-  }
+  ps_iter_float_literals(find_long_double_float_literal, &found);
   ASSERT_TRUE(found);
 }
 
@@ -1564,26 +1562,26 @@ static void test_expr_member_access() {
 
 static void test_expr_string() {
   printf("test_expr_string...\n");
-  string_literals = NULL; // リセット
     node_t *node = parse_expr_input("\"hello\"");
 
   ASSERT_EQ(ND_STRING, node->kind);
   ASSERT_TRUE(as_string(node)->string_label != NULL);
   // 文字列テーブルに登録されている
-  ASSERT_TRUE(string_literals != NULL);
-  ASSERT_EQ(5, string_literals->len);
-  ASSERT_TRUE(strncmp(string_literals->str, "hello", 5) == 0);
+  string_lit_t *lit = psx_find_string_lit_by_label(as_string(node)->string_label);
+  ASSERT_TRUE(lit != NULL);
+  ASSERT_EQ(5, lit->len);
+  ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
 }
 
 static void test_expr_concat_string() {
   printf("test_expr_concat_string...\n");
-  string_literals = NULL;
     node_t *node = parse_expr_input("\"he\" \"llo\"");
 
   ASSERT_EQ(ND_STRING, node->kind);
-  ASSERT_TRUE(string_literals != NULL);
-  ASSERT_EQ(5, string_literals->len);
-  ASSERT_TRUE(strncmp(string_literals->str, "hello", 5) == 0);
+  string_lit_t *lit = psx_find_string_lit_by_label(as_string(node)->string_label);
+  ASSERT_TRUE(lit != NULL);
+  ASSERT_EQ(5, lit->len);
+  ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
 }
 
 static void test_type_decl() {

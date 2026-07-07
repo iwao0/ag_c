@@ -24,8 +24,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-string_lit_t *string_literals = NULL;
-float_lit_t *float_literals = NULL;
+static string_lit_t *string_literals = NULL;
+static float_lit_t *float_literals = NULL;
 global_var_t *global_vars = NULL;
 
 /* グローバル変数の名前ハッシュ索引。グローバル参照の解決 (try_build_global_var_node)
@@ -47,6 +47,16 @@ void psx_register_global_var(global_var_t *gv) {
   unsigned h = gvar_name_hash(gv->name, gv->name_len);
   gv->next_hash = gvars_by_bucket[h];
   gvars_by_bucket[h] = gv;
+}
+
+void psx_register_string_lit(string_lit_t *lit) {
+  lit->next = string_literals;
+  string_literals = lit;
+}
+
+void psx_register_float_lit(float_lit_t *lit) {
+  lit->next = float_literals;
+  float_literals = lit;
 }
 
 global_var_t *psx_find_global_var(char *name, int len) {
@@ -96,6 +106,12 @@ bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
 
 bool ps_has_string_literals(void) { return string_literals != NULL; }
 bool ps_has_float_literals(void) { return float_literals != NULL; }
+
+static void reset_literal_tables(void) {
+  string_literals = NULL;
+  float_literals = NULL;
+}
+
 typedef struct {
   /* funcdef の外側 declarator (`int (*f(...))(...)`) で `(*` を見たら 1。
    * 戻り値型を関数ポインタ (= ポインタ) として扱うため、declarator parse から
@@ -453,8 +469,7 @@ static void reset_toplevel_decl_spec_state(toplevel_decl_spec_t *spec) {
 
 void ps_reset_translation_unit_state(void) {
   global_vars = NULL;
-  string_literals = NULL;
-  float_literals = NULL;
+  reset_literal_tables();
   memset(gvars_by_bucket, 0, sizeof(gvars_by_bucket));
   toplevel_decl_spec_t spec;
   reset_toplevel_decl_spec_state(&spec);

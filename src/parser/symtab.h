@@ -114,7 +114,7 @@ struct string_lit_t {
   tk_char_width_t char_width;
   tk_string_prefix_kind_t str_prefix_kind;
 };
-extern string_lit_t *string_literals;
+void psx_register_string_lit(string_lit_t *lit);
 string_lit_t *psx_find_string_lit_by_label(char *label);
 
 // 浮動小数点リテラルテーブル（連結リスト）
@@ -127,6 +127,6 @@ struct float_lit_t {
   tk_float_kind_t fp_kind;
   tk_float_suffix_kind_t float_suffix_kind;
 };
-extern float_lit_t *float_literals;
+void psx_register_float_lit(float_lit_t *lit);
 
 #endif
