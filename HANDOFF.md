@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き839: expr cast first named tag member lookup）
+最終更新: 2026-07-07（続き840: shared next named tag member lookup）
 
 ## 現状
+- 続き840: **名前付きタグメンバを ordinal 順に進める走査を
+  `psx_tag_next_named_member()` に集約した**。
+
+  続き839で first named member lookup は共有化したが、`decl.c` にはまだ
+  `tag_get_next_named_member()` が同じ `psx_ctx_get_tag_member_count()` /
+  `psx_ctx_get_tag_member_info()` 走査仕様をローカル実装として持っていた。
+  今回は `node_utils` / `parser_public` に `psx_tag_next_named_member()` を追加し、
+  `psx_tag_first_named_member()` もこの helper の wrapper にした。
+  `decl.c` のローカル関数は lvar から tag 情報を渡すだけにし、
+  struct copy initializer の直接ループも helper 経由へ寄せた。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。`FlatOut` で
+  `x` → `in` の順に ordinal が進むことを固定している。
+
+  確認は
+  `make -j4 build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き839: **`expr.c` の cast 用 first named member lookup を
   `psx_tag_first_named_member()` に集約した**。
 

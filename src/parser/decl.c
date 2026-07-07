@@ -935,12 +935,12 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
   src_var.tag_len = src->mem.tag_len;
   src_var.is_tag_pointer = src->mem.is_tag_pointer;
 
-  int member_count = psx_ctx_get_tag_member_count(dst->tag_kind, dst->tag_name, dst->tag_len);
   node_t *init_chain = NULL;
-  for (int ordinal = 0; ordinal < member_count; ordinal++) {
+  int ordinal = 0;
+  for (;;) {
     tag_member_info_t info = {0};
-    bool found = psx_ctx_get_tag_member_info(dst->tag_kind, dst->tag_name, dst->tag_len, ordinal, &info);
-    if (!found || info.len <= 0) continue;
+    if (!psx_tag_next_named_member(dst->tag_kind, dst->tag_name, dst->tag_len,
+                                   &ordinal, &info)) break;
     /* 配列メンバは type_size が要素サイズなので全体サイズへ換算する。
      * スカラ(非配列)で 1/2/4/8B のときだけ 1 ワード assign、それ以外
      * (配列メンバ・ネスト struct 等) はバイトコピーで全体を複製する。 */
@@ -2090,16 +2090,8 @@ static bool tag_get_member_at(lvar_t *var, int ordinal, tag_member_info_t *out) 
 // 見つからなかった場合の最終 ordinal は member_count（または途中で「found=false」になった値）。
 static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
                                       tag_member_info_t *out) {
-  int ordinal = *ordinal_inout;
-  int member_count = psx_ctx_get_tag_member_count(var->tag_kind, var->tag_name, var->tag_len);
-  while (ordinal < member_count) {
-    bool found = tag_get_member_at(var, ordinal, out);
-    ordinal++;
-    if (!found) { *ordinal_inout = ordinal; return false; }
-    if (out->len > 0) { *ordinal_inout = ordinal; return true; }
-  }
-  *ordinal_inout = ordinal;
-  return false;
+  return psx_tag_next_named_member(var->tag_kind, var->tag_name, var->tag_len,
+                                   ordinal_inout, out);
 }
 
 // チェーン末尾に init_node を追加する。先頭時は init_node 自身が新しい先頭。

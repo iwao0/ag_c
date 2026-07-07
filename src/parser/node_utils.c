@@ -619,18 +619,33 @@ int psx_tag_member_at_flat_slot(token_kind_t tag_kind, char *tag_name, int tag_l
   return 0;
 }
 
-int psx_tag_first_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                               tag_member_info_t *out, int *out_ordinal) {
+int psx_tag_next_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                              int *ordinal_inout, tag_member_info_t *out) {
+  if (!ordinal_inout) return 0;
+  int ordinal = *ordinal_inout;
   int n = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
-  for (int i = 0; i < n; i++) {
+  while (ordinal < n) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
+    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, ordinal, &mi)) {
+      *ordinal_inout = ordinal + 1;
+      return 0;
+    }
+    ordinal++;
     if (mi.len <= 0) continue;
     if (out) *out = mi;
-    if (out_ordinal) *out_ordinal = i;
+    *ordinal_inout = ordinal;
     return 1;
   }
+  *ordinal_inout = ordinal;
   return 0;
+}
+
+int psx_tag_first_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               tag_member_info_t *out, int *out_ordinal) {
+  int ordinal = 0;
+  if (!psx_tag_next_named_member(tag_kind, tag_name, tag_len, &ordinal, out)) return 0;
+  if (out_ordinal) *out_ordinal = ordinal - 1;
+  return 1;
 }
 
 int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,

@@ -2908,6 +2908,18 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, first_named_ordinal);
   ASSERT_TRUE(first_named_member.name != NULL);
   ASSERT_EQ(0, strncmp(first_named_member.name, "i", (size_t)first_named_member.len));
+  int next_named_ordinal = 0;
+  tag_member_info_t next_named_member = {0};
+  ASSERT_TRUE(psx_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
+                                        &next_named_ordinal, &next_named_member));
+  ASSERT_EQ(1, next_named_ordinal);
+  ASSERT_TRUE(next_named_member.name != NULL);
+  ASSERT_EQ(0, strncmp(next_named_member.name, "x", (size_t)next_named_member.len));
+  ASSERT_TRUE(psx_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
+                                        &next_named_ordinal, &next_named_member));
+  ASSERT_EQ(2, next_named_ordinal);
+  ASSERT_TRUE(next_named_member.name != NULL);
+  ASSERT_EQ(0, strncmp(next_named_member.name, "in", (size_t)next_named_member.len));
   int flat_slot_ordinal = -1;
   tag_member_info_t flat_slot_member = {0};
   ASSERT_TRUE(psx_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 0,
