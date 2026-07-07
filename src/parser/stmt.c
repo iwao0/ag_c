@@ -38,6 +38,8 @@ typedef struct {
 typedef struct {
   int ptr_in_paren;
   int has_func_suffix;
+  int ptr_levels;
+  int funcptr_object_pointer_levels;
   psx_funcptr_signature_t func_suffix_sig;
 } stmt_typedef_declarator_state_t;
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
@@ -66,7 +68,9 @@ static node_t *parse_decl_like_stmt(void);
 
 static token_ident_t *parse_typedef_name_decl_recursive(stmt_typedef_declarator_state_t *decl_state,
                                                         int *is_ptr) {
-  psx_consume_pointer_prefix(is_ptr);
+  int stars = psx_consume_pointer_prefix_counted(is_ptr);
+  if (decl_state) decl_state->ptr_levels += stars;
+  int frame_pointer_prefix_levels = decl_state ? decl_state->ptr_levels : 0;
   token_ident_t *name = NULL;
   if (tk_consume('(')) {
     int ptr_before = *is_ptr;
@@ -78,8 +82,13 @@ static token_ident_t *parse_typedef_name_decl_recursive(stmt_typedef_declarator_
     name = tk_consume_ident();
   }
   if (decl_state) {
+    int had_suffix_before = decl_state->has_func_suffix;
     psx_skip_func_suffix_groups_ex(&decl_state->has_func_suffix,
                                    &decl_state->func_suffix_sig);
+    if (!had_suffix_before && decl_state->has_func_suffix) {
+      int object_levels = decl_state->ptr_levels - frame_pointer_prefix_levels;
+      if (object_levels > 0) decl_state->funcptr_object_pointer_levels = object_levels;
+    }
   }
   else {
     int discard_func_suffix = 0;
@@ -89,9 +98,21 @@ static token_ident_t *parse_typedef_name_decl_recursive(stmt_typedef_declarator_
   return name;
 }
 
+static int stmt_funcptr_direct_ret_is_data_pointer(const stmt_typedef_declarator_state_t *decl_state,
+                                                   int base_is_pointer) {
+  if (!decl_state || !decl_state->has_func_suffix) return 0;
+  int object_pointer_levels = decl_state->funcptr_object_pointer_levels;
+  int ret_pointer_levels = decl_state->ptr_levels - object_pointer_levels;
+  return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
+}
+
 static token_ident_t *parse_typedef_name_decl(stmt_typedef_declarator_state_t *decl_state,
                                               int *is_ptr) {
-  if (decl_state) memset(decl_state, 0, sizeof(*decl_state));
+  int initial_ptr_levels = decl_state ? decl_state->ptr_levels : 0;
+  if (decl_state) {
+    memset(decl_state, 0, sizeof(*decl_state));
+    decl_state->ptr_levels = initial_ptr_levels;
+  }
   token_ident_t *name = parse_typedef_name_decl_recursive(decl_state, is_ptr);
   if (!name) {
     diag_emit_tokf(DIAG_ERR_PARSER_TYPEDEF_NAME_REQUIRED, curtok(), "%s",
@@ -240,6 +261,7 @@ static void parse_typedef_decl(void) {
     int is_ptr = is_pointer_base;
     int decl_stars = psx_consume_pointer_prefix_counted(&is_ptr);
     stmt_typedef_declarator_state_t decl_state = {0};
+    decl_state.ptr_levels = decl_stars;
     token_ident_t *name = parse_typedef_name_decl(&decl_state, &is_ptr);
     /* pointer-element 配列 typedef (`typedef BinOp OpArr3[3]` / `typedef ScorePtr SPA[3]`):
      * base が pointer typedef かつ declarator に prefix `*` 追加なし (decl_stars==0) かつ
@@ -312,17 +334,20 @@ static void parse_typedef_decl(void) {
       _ti.is_funcptr = 1;
       _ti.fp_kind = TK_FLOAT_KIND_NONE;
       psx_decl_funcptr_sig_t sig = psx_decl_make_funcptr_sig_from_kind(
-          &decl_state.func_suffix_sig, base_kind, fp_kind, 0, 0,
+          &decl_state.func_suffix_sig, base_kind, fp_kind,
+          stmt_funcptr_direct_ret_is_data_pointer(&decl_state, is_pointer_base), 0,
           type_state.type_spec.is_complex, (psx_ret_pointee_array_t){0});
       psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
     }
     if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
       psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
     }
-    /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
-     * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存して退行を避ける。
-     * 段数 = 基底ポインタ typedef の段数 + 宣言子の prefix `*` 数。 */
-    int td_ptr_levels = base_ptr_levels + decl_stars;
+    /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。関数ポインタ
+     * typedef では戻り値ポインタの `*` を除き、関数ポインタオブジェクトを指す段数だけを
+     * 保存する (`int *(*G)(void)` は 1、`int (**PP)(int)` は 2)。 */
+    int td_ptr_levels = decl_state.has_func_suffix
+                            ? decl_state.funcptr_object_pointer_levels
+                            : base_ptr_levels + decl_state.ptr_levels;
     if (is_ptr && td_ptr_levels >= 2) {
       psx_ctx_set_typedef_pointer_levels(name->str, name->len, td_ptr_levels);
     }

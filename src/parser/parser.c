@@ -144,7 +144,6 @@ typedef struct {
   int paren_array_mul;
   int has_func_suffix;
   psx_funcptr_signature_t func_suffix_sig;
-  int funcptr_ret_is_pointer;
   int ptr_levels;
   int funcptr_object_pointer_levels;
   int ptr_in_paren_group;
@@ -2676,9 +2675,6 @@ static toplevel_declarator_head_t parse_toplevel_declarator_head(const toplevel_
                                                                  int base_is_ptr, int require_name) {
   toplevel_declarator_head_t out = new_toplevel_declarator_head(base_is_ptr);
   out.ptr_levels += psx_consume_pointer_prefix_counted(&out.is_ptr);
-  if (spec->is_typedef && out.is_ptr) {
-    out.funcptr_ret_is_pointer = 1;
-  }
   out.name = parse_toplevel_decl_name(spec, &out);
   if (!out.name && require_name) emit_decl_name_required_diag();
   return out;
@@ -2803,10 +2799,12 @@ static void define_toplevel_typedef_from_declarator(const toplevel_decl_spec_t *
   register_toplevel_typedef_name(head.name, stored_base_kind, spec, head, typedef_sizeof, td_is_array,
                                  td_first_dim, td_dims, td_dim_count,
                                  funcptr_ret_pointee_array);
-  /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。単段や pointer-to-array
-   * は getter のデフォルト (is_pointer→1) に任せ、2 段以上だけ明示保存。段数 = 基底ポインタ
-   * typedef の段数 + 宣言子の prefix `*` 数 (head.ptr_levels)。 */
-  int td_ptr_levels = spec->base_pointer_levels + head.ptr_levels;
+  /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。関数ポインタ
+   * typedef では戻り値ポインタの `*` を除き、関数ポインタオブジェクトを指す段数だけを
+   * 保存する (`int *(*G)(void)` は 1、`int (**PP)(int)` は 2)。 */
+  int td_ptr_levels = head.has_func_suffix
+                          ? head.funcptr_object_pointer_levels
+                          : spec->base_pointer_levels + head.ptr_levels;
   if (effective_is_ptr && td_ptr_levels >= 2) {
     psx_ctx_set_typedef_pointer_levels(head.name->str, head.name->len, td_ptr_levels);
   }
@@ -2842,7 +2840,7 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
     psx_decl_funcptr_sig_t sig =
         psx_decl_make_funcptr_sig_from_kind(
             &head.func_suffix_sig, spec->base_kind, spec->fp_kind,
-            head.funcptr_ret_is_pointer, 0, spec->is_complex,
+            toplevel_funcptr_direct_ret_is_data_pointer(spec, &head), 0, spec->is_complex,
             funcptr_ret_pointee_array);
     psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
   }
@@ -3109,13 +3107,8 @@ static void register_toplevel_function_prototype(const toplevel_decl_spec_t *spe
 static token_ident_t *parse_decl_name_recursive(const toplevel_decl_spec_t *spec,
                                                 toplevel_declarator_head_t *head,
                                                 int require_name, int *out_paren_array_mul) {
-  int ptr_before_prefix = head->is_ptr;
   head->ptr_levels += psx_consume_pointer_prefix_counted(&head->is_ptr);
   int frame_pointer_prefix_levels = head->ptr_levels;
-  if (require_name && !ptr_before_prefix && head->is_ptr && spec->is_typedef &&
-      (spec->tag_kind == TK_STRUCT || spec->tag_kind == TK_UNION)) {
-    head->funcptr_ret_is_pointer = 1;
-  }
   psx_skip_gnu_attributes();
   token_ident_t *name = NULL;
   int had_parens = 0;

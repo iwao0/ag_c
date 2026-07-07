@@ -2906,6 +2906,63 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_NONE, td_bfp_lvar->funcptr_sig.ret_pointee_fp_kind);
 
   parsed_code = parse_program_input(
+      "int __tm817_i; int *__tm817_retp(void){ return &__tm817_i; } "
+      "int __tm817_inc(int x){ return x + 1; } "
+      "typedef int *TM817_IP; typedef int *(*TM817_GET)(void); "
+      "typedef TM817_IP (*TM817_GET2)(void); typedef int (**TM817_PP)(int); "
+      "int main(void){ int (*p)(int)=__tm817_inc; TM817_GET get=__tm817_retp; "
+      "TM817_GET2 get2=__tm817_retp; "
+      "TM817_PP pp=&p; { typedef int *(*TM817_LOCAL_GET)(void); "
+      "typedef int (**TM817_LOCAL_PP)(int); TM817_LOCAL_GET lget=__tm817_retp; "
+      "TM817_LOCAL_PP lpp=&p; lget(); (*lpp)(1); } return *get()+*get2()+(*pp)(1); }");
+  psx_typedef_info_t tm817_get_td = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TM817_GET", 9, &tm817_get_td));
+  ASSERT_EQ(1, tm817_get_td.funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(0, tm817_get_td.funcptr_sig.ret_int_width);
+  ASSERT_EQ(0u, tm817_get_td.funcptr_sig.param_int_mask);
+  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels("TM817_GET", 9));
+  psx_typedef_info_t tm817_get2_td = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TM817_GET2", 10, &tm817_get2_td));
+  ASSERT_EQ(1, tm817_get2_td.funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(0, tm817_get2_td.funcptr_sig.ret_int_width);
+  ASSERT_EQ(0u, tm817_get2_td.funcptr_sig.param_int_mask);
+  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels("TM817_GET2", 10));
+  psx_typedef_info_t tm817_pp_td = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TM817_PP", 8, &tm817_pp_td));
+  ASSERT_EQ(0, tm817_pp_td.funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(4, tm817_pp_td.funcptr_sig.ret_int_width);
+  ASSERT_EQ(1u, tm817_pp_td.funcptr_sig.param_int_mask);
+  ASSERT_EQ(2, psx_ctx_get_typedef_pointer_levels("TM817_PP", 8));
+  fn = as_func(parsed_code[2]);
+  lvar_t *tm817_get_lvar = find_func_lvar(fn, "get");
+  ASSERT_TRUE(tm817_get_lvar != NULL);
+  ASSERT_EQ(1, tm817_get_lvar->pointer_qual_levels);
+  ASSERT_EQ(1, tm817_get_lvar->funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(0, tm817_get_lvar->funcptr_sig.ret_int_width);
+  lvar_t *tm817_get2_lvar = find_func_lvar(fn, "get2");
+  ASSERT_TRUE(tm817_get2_lvar != NULL);
+  ASSERT_EQ(1, tm817_get2_lvar->pointer_qual_levels);
+  ASSERT_EQ(1, tm817_get2_lvar->funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(0, tm817_get2_lvar->funcptr_sig.ret_int_width);
+  lvar_t *tm817_pp_lvar = find_func_lvar(fn, "pp");
+  ASSERT_TRUE(tm817_pp_lvar != NULL);
+  ASSERT_EQ(2, tm817_pp_lvar->pointer_qual_levels);
+  ASSERT_EQ(0, tm817_pp_lvar->funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(4, tm817_pp_lvar->funcptr_sig.ret_int_width);
+  ASSERT_EQ(1u, tm817_pp_lvar->funcptr_sig.param_int_mask);
+  lvar_t *tm817_lget_lvar = find_func_lvar(fn, "lget");
+  ASSERT_TRUE(tm817_lget_lvar != NULL);
+  ASSERT_EQ(1, tm817_lget_lvar->pointer_qual_levels);
+  ASSERT_EQ(1, tm817_lget_lvar->funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(0, tm817_lget_lvar->funcptr_sig.ret_int_width);
+  lvar_t *tm817_lpp_lvar = find_func_lvar(fn, "lpp");
+  ASSERT_TRUE(tm817_lpp_lvar != NULL);
+  ASSERT_EQ(2, tm817_lpp_lvar->pointer_qual_levels);
+  ASSERT_EQ(0, tm817_lpp_lvar->funcptr_sig.ret_is_data_pointer);
+  ASSERT_EQ(4, tm817_lpp_lvar->funcptr_sig.ret_int_width);
+  ASSERT_EQ(1u, tm817_lpp_lvar->funcptr_sig.param_int_mask);
+
+  parsed_code = parse_program_input(
       "double __tm700_d; double *__tm700_ret_dp(void){ return &__tm700_d; } "
       "double *(*__tm700_gfp)(void)=__tm700_ret_dp; "
       "int main(void){ double *(*fp)(void)=__tm700_ret_dp; fp(); __tm700_gfp(); return 0; }");
