@@ -2870,6 +2870,18 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_is_tag_aggregate_kind(TK_STRUCT));
   ASSERT_TRUE(psx_ctx_is_tag_aggregate_kind(TK_UNION));
   ASSERT_TRUE(!psx_ctx_is_tag_aggregate_kind(TK_ENUM));
+  ASSERT_EQ(PSX_TYPE_STRUCT, psx_type_kind_from_tag_kind(TK_STRUCT));
+  ASSERT_EQ(PSX_TYPE_UNION, psx_type_kind_from_tag_kind(TK_UNION));
+  ASSERT_EQ(PSX_TYPE_INVALID, psx_type_kind_from_tag_kind(TK_ENUM));
+  psx_type_t *tmp_struct_type = psx_type_new_tag(TK_STRUCT, "TS", 2, 1, 4);
+  ASSERT_TRUE(psx_type_is_tag_aggregate(tmp_struct_type));
+  ASSERT_EQ(PSX_TYPE_STRUCT, tmp_struct_type->kind);
+  psx_type_t *tmp_union_type = psx_type_new_tag(TK_UNION, "TU", 2, 1, 4);
+  ASSERT_TRUE(psx_type_is_tag_aggregate(tmp_union_type));
+  ASSERT_EQ(PSX_TYPE_UNION, tmp_union_type->kind);
+  psx_type_t *tmp_invalid_tag_type = psx_type_new_tag(TK_ENUM, "TE", 2, 1, 4);
+  ASSERT_TRUE(!psx_type_is_tag_aggregate(tmp_invalid_tag_type));
+  ASSERT_EQ(PSX_TYPE_INVALID, tmp_invalid_tag_type->kind);
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
   (void)parsed_code;

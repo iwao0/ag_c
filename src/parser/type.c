@@ -57,9 +57,17 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
   return type;
 }
 
+psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind) {
+  switch (tag_kind) {
+    case TK_STRUCT: return PSX_TYPE_STRUCT;
+    case TK_UNION: return PSX_TYPE_UNION;
+    default: return PSX_TYPE_INVALID;
+  }
+}
+
 psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size) {
-  psx_type_t *type = psx_type_new(tag_kind == TK_UNION ? PSX_TYPE_UNION : PSX_TYPE_STRUCT);
+  psx_type_t *type = psx_type_new(psx_type_kind_from_tag_kind(tag_kind));
   type->tag_kind = tag_kind;
   type->tag_name = tag_name;
   type->tag_len = tag_len;
@@ -107,6 +115,11 @@ int psx_type_is_scalar(const psx_type_t *type) {
     default:
       return 0;
   }
+}
+
+int psx_type_is_tag_aggregate(const psx_type_t *type) {
+  if (!type) return 0;
+  return type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION;
 }
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {

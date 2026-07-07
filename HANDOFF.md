@@ -16034,3 +16034,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き826）: psx_type_t の tag aggregate 判定を type helper に集約
+- 見つかった浅い箇所:
+  - token 側の `TK_STRUCT || TK_UNION` は helper 化できていたが、
+    `psx_type_t` 側では `PSX_TYPE_STRUCT || PSX_TYPE_UNION` が
+    `node_utils.c` の tag type 復元、三項演算子型、関数戻り値 deref metadata に残っていた。
+  - `psx_type_new_tag()` も `tag_kind == TK_UNION ? PSX_TYPE_UNION : PSX_TYPE_STRUCT`
+    という形で、誤った tag kind が来た場合に struct 扱いへ倒れる暗黙フォールバックを持っていた。
+- 根本対応:
+  - `psx_type_kind_from_tag_kind()` と `psx_type_is_tag_aggregate()` を type API に追加した。
+  - `psx_type_new_tag()` は token tag kind から type kind への変換を helper 経由にし、
+    struct/union 以外は `PSX_TYPE_INVALID` として保持するようにした。
+  - `node_utils.c` の `PSX_TYPE_STRUCT || PSX_TYPE_UNION` 直接判定を
+    `psx_type_is_tag_aggregate()` に置き換え、type-level aggregate の正本を type 層に寄せた。
+  - parser unit の type metadata bridge に helper 契約と invalid tag kind の期待値を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

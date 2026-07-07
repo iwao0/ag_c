@@ -651,12 +651,12 @@ static int tag_type_from_type(psx_type_t *type, token_kind_t *tag_kind, char **t
   while (cur && (cur->kind == PSX_TYPE_POINTER || cur->kind == PSX_TYPE_ARRAY)) {
     ptr = 1;
     cur = cur->base;
-    if (cur && (cur->kind == PSX_TYPE_STRUCT || cur->kind == PSX_TYPE_UNION)) {
+    if (psx_type_is_tag_aggregate(cur)) {
       tag_type = cur;
       break;
     }
   }
-  if (!tag_type && (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION)) {
+  if (!tag_type && psx_type_is_tag_aggregate(type)) {
     tag_type = type;
   }
   if (!tag_type && psx_ctx_is_tag_aggregate_kind(type->tag_kind)) {
@@ -1011,7 +1011,7 @@ static psx_type_t *type_from_ternary_expr(node_t *node) {
   psx_type_t *else_type = psx_node_get_type(ctrl->els);
   if (then_type && else_type &&
       then_type->kind == else_type->kind &&
-      (then_type->kind == PSX_TYPE_STRUCT || then_type->kind == PSX_TYPE_UNION)) {
+      psx_type_is_tag_aggregate(then_type)) {
     return then_type;
   }
   return type_usual_arith_result(then_type, else_type, (tk_float_kind_t)node->fp_kind,
@@ -3571,9 +3571,7 @@ node_t *psx_node_new_unary_deref_for(node_t *operand) {
           node->deref_size = (short)inner;
           if (next > 0) node->inner_deref_size = (short)next;
         }
-        if (func_type->base &&
-            (func_type->base->kind == PSX_TYPE_STRUCT ||
-             func_type->base->kind == PSX_TYPE_UNION)) {
+        if (psx_type_is_tag_aggregate(func_type->base)) {
           node->tag_kind = func_type->base->tag_kind;
           node->tag_name = func_type->base->tag_name;
           node->tag_len = func_type->base->tag_len;

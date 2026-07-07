@@ -69,11 +69,14 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
 psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size);
 
+psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind);
+
 int psx_type_sizeof(const psx_type_t *type);
 int psx_type_deref_size(const psx_type_t *type);
 int psx_type_is_pointer(const psx_type_t *type);
 int psx_type_is_unsigned(const psx_type_t *type);
 int psx_type_is_scalar(const psx_type_t *type);
+int psx_type_is_tag_aggregate(const psx_type_t *type);
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
 void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src);
