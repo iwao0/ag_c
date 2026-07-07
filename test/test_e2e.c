@@ -484,6 +484,7 @@ static const test_case_t test_cases[] = {
     {"type_decl", "atomic_type_qual_postfix_ptr", CASE_ASSERT_FILE, "test/fixtures/type_decl/atomic_type_qual_postfix_ptr.c", 0, 0},
     {"type_decl", "atomic_load_store", CASE_ASSERT_FILE, "test/fixtures/type_decl/atomic_load_store.c", 0, 0},
     {"type_decl", "thread_local_init", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_init.c", 0, 0},
+    {"type_decl", "thread_local_aggregate_init", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_aggregate_init.c", 0, 0},
     {"type_decl", "thread_local_store", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_store.c", 0, 0},
     {"type_decl", "thread_local_arith", CASE_ASSERT_FILE, "test/fixtures/type_decl/thread_local_arith.c", 0, 0},
     {"type_decl", "tl_multi_var_expr", CASE_ASSERT_FILE, "test/fixtures/type_decl/tl_multi_var_expr.c", 0, 0},

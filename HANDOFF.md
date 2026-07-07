@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き900: add top-level initializer visitor）
+最終更新: 2026-07-08（続き901: route arm64 TLS initializers through visitor）
 
 ## 現状
+- 続き901: **arm64 `_Thread_local` 初期化も initializer visitor 経由に揃えた**。
+
+  続き900で通常の global data 初期化は `psx_gvar_visit_initializer()` に寄ったが、
+  arm64 の `_Thread_local` 初期化だけは `psx_gvar_init_scalar_value()` を直接呼ぶ古い経路が残っていた。
+  そのため `_Thread_local int x = 7` のような scalar は動いても、
+  `_Thread_local int a[4] = {3, 5}` や `_Thread_local struct pair p = {7, 11}` のような
+  slot/aggregate 初期化が visitor/classifier の正本経路から外れていた。
+
+  今回は `__thread_data` の `$tlv$init` emit でも
+  `psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops, ...)` を使うようにした。
+  既存の arm64 callback をそのまま共有するので、scalar / slots / aggregate の扱いは通常 global と同じ
+  classifier → visitor → backend callback の流れになる。
+
+  回帰テストとして `test/fixtures/type_decl/thread_local_aggregate_init.c` を追加し、
+  `_Thread_local` 配列の部分初期化と `_Thread_local` struct 初期化を通常 e2e と Wasm e2e extra list に登録した。
+  Wasm object scan も e2e fixture scan 対象が 1179 件に増えた状態で通っている。
+
+  確認は
+  `make -j4 build/test_parser build/test_e2e build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き900: **top-level global initializer 分岐を public visitor に寄せた**。
 
   続き899で slot-array の値列挙は `psx_gvar_walk_init_slot_values()` に集まったが、

@@ -273,7 +273,9 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     if (view.has_init) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
-      emit_global_init_value(psx_gvar_init_scalar_value(gv, storage_size));
+      arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
+      psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+                                 &init_ctx);
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
       cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
