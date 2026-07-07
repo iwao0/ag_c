@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き917: split node funcptr public API）
+最終更新: 2026-07-08（続き918: split node VLA public API）
 
 ## 現状
+- 続き918: **node VLA metadata API を `node_public.h` から `node_vla_public.h` へ切り出した**。
+
+  続き917で function pointer metadata は `node_funcptr_public.h` に分けたが、
+  `node_public.h` にはまだ `psx_node_vla_alloc_descriptor_info()` と
+  `psx_node_vla_row_stride_frame_off()` が残っていた。これは node の一般的な
+  型/幅/signedness/tag helper ではなく、VLA lowering が使う descriptor / runtime row
+  stride の metadata query で、IR builder と parser 内部の VLA 実装に閉じた独立領域だった。
+
+  今回は `src/parser/node_vla_public.h` を追加し、この 2 つの宣言を移した。
+  `parser_public.h` は IR/arch 向け公開入口として `node_vla_public.h` を include し、
+  parser 内部の `node_utils.h` も同 header を include するため、VLA node metadata query の
+  宣言正本は 1 つになった。VLA ノード生成用の `psx_node_new_vla_alloc()` は parser 内部の
+  constructor なので `node_utils.h` に残している。
+
+  確認は
+  `rg "psx_node_vla_(alloc_descriptor_info|row_stride_frame_off)" src/parser/*.h src/ir src/arch test --glob '!build/**'` で宣言が **`node_vla_public.h` にのみ存在**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き917: **node function pointer metadata API を `node_public.h` から `node_funcptr_public.h` へ切り出した**。
 
   続き916までで tag member / function / tag / gvar / lvar の public header は分かれたが、

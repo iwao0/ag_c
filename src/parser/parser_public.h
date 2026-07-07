@@ -30,6 +30,7 @@
 #include "lvar_public.h"
 #include "node_funcptr_public.h"
 #include "node_public.h"
+#include "node_vla_public.h"
 #include "tag_public.h"
 #include <stdbool.h>
 

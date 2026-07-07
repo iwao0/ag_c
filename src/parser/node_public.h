@@ -28,8 +28,5 @@ int psx_node_is_unsigned_type(node_t *node);
 int psx_node_deref_decays_to_address(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
                            char **tag_name, int *tag_len, int *is_tag_pointer);
-int psx_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
-                                       int *row_stride_frame_off);
-int psx_node_vla_row_stride_frame_off(node_t *n);
 
 #endif
