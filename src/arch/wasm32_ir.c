@@ -1903,7 +1903,8 @@ static void emit_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
     if (mi.bit_width <= 0 || mi.offset != unit_off) break;
     uint64_t mask = mi.bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi.bit_width) - 1);
-    uint64_t value = (uint64_t)gv->init_values[*val_idx];
+    psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+    uint64_t value = (uint64_t)slot.value;
     packed |= (value & mask) << mi.bit_offset;
     (*val_idx)++;
     m++;
@@ -1918,7 +1919,8 @@ static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr
     wasm_unsupported_msg("global bitfield initializer in Wasm backend");
   }
   uint64_t mask = mi->bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi->bit_width) - 1);
-  uint64_t value = (uint64_t)((idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0);
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  uint64_t value = (uint64_t)slot.value;
   uint64_t packed = (value & mask) << mi->bit_offset;
   emit_i32_data_bytes(addr + mi->offset, (long long)packed, mi->type_size);
 }

@@ -1,8 +1,25 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き853: share global init slot write helpers）
+最終更新: 2026-07-07（続き854: use slot view for wasm bitfield init values）
 
 ## 現状
+- 続き854: **wasm32 bitfield initializer の `init_values` direct read も
+  `psx_gvar_init_slot_view()` 経由にした**。
+
+  続き848/850では `init_value_*` 系の direct read を消していたが、検索パターンが
+  `init_values` 単体を拾えておらず、wasm32 IR/object の bitfield packing に値だけの
+  direct read が残っていた。今回は `emit_global_bitfield_unit_data()` /
+  `emit_global_bitfield_member_data()` と object mode 側の同等関数を slot view 経由にし、
+  `src/arch` の initializer slot array direct access はコメントを除いて消した。
+
+  確認は
+  `rg "init_values\\[|init_value_symbols\\[|init_value_symbol_lens\\[|init_fvalues\\[|init_union_ordinals\\[" src/arch -n`
+  = **コメントのみ**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き853: **global initializer slot の write helper を `node_utils` に共有化し、
   `decl.c` の static local lowering も同じ入口へ寄せた**。
 
