@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き859: share string literal slot writes）
+最終更新: 2026-07-08（続き860: centralize string literal lookup）
 
 ## 現状
+- 続き860: **文字列リテラルテーブルの label 検索を
+  `psx_find_string_lit_by_label()` に集約した**。
+
+  続き859で string literal の slot 書き込みは helper 化したが、検索側は
+  `decl.c` の private `find_string_lit_by_label()` と `parser.c` 内の手書き
+  `string_literals` 線形走査に分かれていた。今回は `symtab.h` に
+  `psx_find_string_lit_by_label()` を公開し、`parser.c` に実装を置いて、`decl.c` と
+  `parser.c` の利用箇所を同じ入口へ寄せた。これで `string_literals` の直接走査は
+  所有側の lookup/visitor 実装だけに残る。
+
+  確認は
+  `rg "for \\(string_lit_t \\*l = string_literals|for \\(string_lit_t \\*lit = string_literals|psx_find_string_lit_by_label|find_string_lit_by_label|string_literals" src/parser/parser.c src/parser/decl.c src/parser/symtab.h -n`
+  = **lookup/visitor 本体 + `psx_find_string_lit_by_label()` 呼び出しのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き859: **文字列リテラルを global initializer slot へ展開する処理を
   `node_utils` に共有化した**。
 

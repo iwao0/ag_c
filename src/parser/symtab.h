@@ -115,6 +115,7 @@ struct string_lit_t {
   tk_string_prefix_kind_t str_prefix_kind;
 };
 extern string_lit_t *string_literals;
+string_lit_t *psx_find_string_lit_by_label(char *label);
 
 // 浮動小数点リテラルテーブル（連結リスト）
 // フィールドはアライメント降順 (8→4) に並べて内部パディングを除いている。

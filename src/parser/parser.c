@@ -62,6 +62,14 @@ global_var_t *psx_find_global_var(char *name, int len) {
   return NULL;
 }
 
+string_lit_t *psx_find_string_lit_by_label(char *label) {
+  if (!label) return NULL;
+  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
+    if (strcmp(lit->label, label) == 0) return lit;
+  }
+  return NULL;
+}
+
 /* parser_public.h で宣言した visitor の実装 (Phase C3-1)。
  * codegen 側が global_vars / string_literals / float_literals リストを
  * 直接舐めるのを廃して、走査経路を 1 箇所にまとめる。 */
@@ -1747,9 +1755,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
-        for (string_lit_t *l = string_literals; l; l = l->next) {
-          if (strcmp(l->label, ((node_string_t *)e)->string_label) == 0) { lit = l; break; }
-        }
+        lit = psx_find_string_lit_by_label(((node_string_t *)e)->string_label);
       }
       int j = 0, sp = 0;
       if (lit) {
@@ -1790,9 +1796,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
-        for (string_lit_t *l = string_literals; l; l = l->next) {
-          if (strcmp(l->label, ((node_string_t *)e)->string_label) == 0) { lit = l; break; }
-        }
+        lit = psx_find_string_lit_by_label(((node_string_t *)e)->string_label);
       }
       int j = 0, sp = 0;
       if (lit) {
@@ -2140,10 +2144,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
         int total = s->byte_len + 1; /* null 終端を含む (要素数) */
         gv->has_init = 1;
         psx_gvar_init_slots_alloc(gv, total, 0);
-        string_lit_t *lit = NULL;
-        for (string_lit_t *l = string_literals; l; l = l->next) {
-          if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
-        }
+        string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
         if (lit) {
           /* lit->str はソースのまま (raw)。エスケープシーケンスをデコードして
            * 各コード単位を格納する (ローカル `a[]=".."` と同じ処理)。これがないと

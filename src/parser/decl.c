@@ -162,7 +162,6 @@ static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var);
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
 static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len);
-static string_lit_t *find_string_lit_by_label(char *label);
 typedef struct {
   psx_type_spec_result_t type_spec;
   token_kind_t type_kind;
@@ -991,7 +990,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   if (!rhs || rhs->kind != ND_STRING) return NULL;
 
   node_string_t *s = (node_string_t *)rhs;
-  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
   if (!lit) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
@@ -1042,13 +1041,6 @@ static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar
   if (out_prefix) *out_prefix = prefix;
   if (out_src) *out_src = (node_lvar_t *)value;
   return 1;
-}
-
-static string_lit_t *find_string_lit_by_label(char *label) {
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    if (strcmp(lit->label, label) == 0) return lit;
-  }
-  return NULL;
 }
 
 static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node);
@@ -1134,7 +1126,7 @@ static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_
   tk_expect('}');
   if (!str_node || str_node->kind != ND_STRING) return NULL;
   node_string_t *s = (node_string_t *)str_node;
-  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
   if (!lit) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
@@ -1278,7 +1270,7 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
         node_t *str_node = psx_expr_assign();  /* 隣接文字列の連結も 1 ノードに */
         if (str_node && str_node->kind == ND_STRING) {
           node_string_t *s = (node_string_t *)str_node;
-          string_lit_t *lit = find_string_lit_by_label(s->string_label);
+          string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
           int base = target_idx;  /* 行先頭の平坦要素インデックス */
           int j = 0, sp = 0;
           if (lit) {
@@ -1394,7 +1386,7 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
  * 残りを 0 で埋める (p21)。 */
 static node_t *build_array_string_initializer(lvar_t *var, node_string_t *s, int array_len) {
   node_t *init_chain = NULL;
-  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
   if (!lit) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
@@ -1657,7 +1649,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
 #define EMIT_ROW_FROM_STRING(VAL)                                                                  \
         do {                                                                                       \
           node_string_t *_s = (node_string_t *)(VAL);                                              \
-          string_lit_t *_lit = find_string_lit_by_label(_s->string_label);                         \
+          string_lit_t *_lit = psx_find_string_lit_by_label(_s->string_label);                     \
           int _row = flat / inner_len; flat = _row * inner_len; /* 行頭スナップ */                  \
           int _j = 0, _sp = 0;                                                                     \
           if (_lit) {                                                                              \
@@ -1916,7 +1908,7 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
                                        int array_len, int *flat, node_string_t *s,
                                        node_t *init_chain,
                                        tk_float_kind_t fp_kind, int is_bool) {
-  string_lit_t *lit = find_string_lit_by_label(s->string_label);
+  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
   if (!lit) return init_chain;
   int j = 0, sp = 0;
   while (sp < lit->len && j < row_w && *flat + j < array_len) {
@@ -3888,7 +3880,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     node_t *rhs = psx_expr_assign();
     if (!rhs || rhs->kind != ND_STRING) return 0;
     node_string_t *s = (node_string_t *)rhs;
-    string_lit_t *lit = find_string_lit_by_label(s->string_label);
+    string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
     if (!lit) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
@@ -4011,7 +4003,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
     node_t *rhs = psx_expr_assign();
     if (!rhs || rhs->kind != ND_STRING) return 0;
     node_string_t *s = (node_string_t *)rhs;
-    string_lit_t *lit = find_string_lit_by_label(s->string_label);
+    string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
     if (!lit) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
