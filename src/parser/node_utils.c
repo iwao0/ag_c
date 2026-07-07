@@ -386,6 +386,42 @@ static int gvar_is_pointer_like_for_type(const global_var_t *gv) {
          (gv->type_size == 8 && gv->deref_size > 0 && gv->deref_size < gv->type_size);
 }
 
+static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
+  if (fallback > 0) return fallback;
+  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
+  int max_end = 0;
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int count = mi.array_len > 0 ? mi.array_len : 1;
+    int end = mi.offset + mi.type_size * count;
+    if (end > max_end) max_end = end;
+  }
+  int align = psx_ctx_get_tag_align(tk, tn, tl);
+  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
+  return max_end > 0 ? max_end : fallback;
+}
+
+int psx_gvar_array_element_size(const global_var_t *gv) {
+  if (!gv || !gv->is_array) return 0;
+  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+    return tag_aggregate_size(gv->tag_kind, gv->tag_name, gv->tag_len,
+                              gv->deref_size > 0 ? gv->deref_size : 0);
+  }
+  return gv->deref_size > 0 ? gv->deref_size : 0;
+}
+
+int psx_gvar_array_element_count(const global_var_t *gv) {
+  int elem = psx_gvar_array_element_size(gv);
+  if (!gv || elem <= 0 || gv->type_size <= 0) return 0;
+  return gv->type_size / elem;
+}
+
+int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
+  if (gv && gv->is_array && gv->deref_size > 0) return gv->deref_size;
+  return fallback_size;
+}
+
 static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {
   *mem = (node_mem_t){0};
   if (!gv) return;

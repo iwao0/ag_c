@@ -513,29 +513,12 @@ static void emit_global_struct_init(global_var_t *gv) {
                                  (int)gv->type_size, gv, &val_idx);
 }
 
-static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {
-  if (fallback > 0) return fallback;
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int max_end = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    int count = mi.array_len > 0 ? mi.array_len : 1;
-    int end = mi.offset + mi.type_size * count;
-    if (end > max_end) max_end = end;
-  }
-  int align = psx_ctx_get_tag_align(tk, tn, tl);
-  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
-  return max_end > 0 ? max_end : fallback;
-}
-
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
  * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
  * は .long 1; .long 2; .long 3; ... と展開する。 */
 static void emit_global_struct_array_init(global_var_t *gv) {
-  int elem_size = effective_tag_array_elem_size(gv->tag_kind, gv->tag_name, gv->tag_len,
-                                                gv->deref_size);
-  int total_elems = elem_size > 0 ? gv->type_size / elem_size : 0;
+  int elem_size = psx_gvar_array_element_size(gv);
+  int total_elems = psx_gvar_array_element_count(gv);
   int val_idx = 0;
   /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに
    * フラット slot を 1 個だけ消費する単純ループだったため、配列メンバ (`char tag[4]`)・
@@ -587,7 +570,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
                !gv->is_tag_pointer) {
       emit_global_struct_array_init(gv);
     } else if (gv->init_count > 0) {
-      int elem = gv->deref_size > 0 ? gv->deref_size : 4;
+      int elem = psx_gvar_initializer_element_size(gv, 4);
       int total_elems = gv->type_size / elem;
       int is_fp_arr = (gv->init_fvalues != NULL) &&
                       (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||

@@ -2908,6 +2908,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tmp_arr_sized != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_sized->kind);
   ASSERT_EQ(12, psx_type_sizeof(tmp_arr_sized));
+  ASSERT_EQ(4, psx_gvar_array_element_size(&tmp_arr_gv));
+  ASSERT_EQ(3, psx_gvar_array_element_count(&tmp_arr_gv));
+  ASSERT_EQ(4, psx_gvar_initializer_element_size(&tmp_arr_gv, 12));
+  ASSERT_EQ(12, psx_gvar_initializer_element_size(gu, 12));
 
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);
@@ -2919,6 +2923,26 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ga->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, ga->decl_type->kind);
   ASSERT_EQ(12, psx_type_sizeof(ga->decl_type));
+  ASSERT_EQ(4, psx_gvar_array_element_size(ga));
+  ASSERT_EQ(3, psx_gvar_array_element_count(ga));
+
+  parsed_code = parse_program_input(
+      "struct __tm817_S { char tag[3]; int n; }; "
+      "struct __tm817_S __tm817_gs[2] = {{{1,2,3},4},{{5,6,7},8}}; "
+      "int main(void){ return 0; }");
+  (void)parsed_code;
+  global_var_t *tm817_gs = psx_find_global_var("__tm817_gs", 10);
+  ASSERT_TRUE(tm817_gs != NULL);
+  ASSERT_EQ(8, psx_gvar_array_element_size(tm817_gs));
+  ASSERT_EQ(2, psx_gvar_array_element_count(tm817_gs));
+  global_var_t tmp_tag_arr_gv = {0};
+  tmp_tag_arr_gv.is_array = 1;
+  tmp_tag_arr_gv.type_size = 16;
+  tmp_tag_arr_gv.tag_kind = TK_STRUCT;
+  tmp_tag_arr_gv.tag_name = "__tm817_S";
+  tmp_tag_arr_gv.tag_len = 9;
+  ASSERT_EQ(8, psx_gvar_array_element_size(&tmp_tag_arr_gv));
+  ASSERT_EQ(2, psx_gvar_array_element_count(&tmp_tag_arr_gv));
 
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;

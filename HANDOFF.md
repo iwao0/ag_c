@@ -15711,3 +15711,32 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き818）: global array element metadata を parser helper に集約
+- 見つかった浅い箇所:
+  - arm64 / wasm32 IR / wasm32 object の 3 backend に
+    `effective_tag_array_elem_size()` が重複していた。
+  - いずれも `global_var_t` の `tag_kind` / `tag_name` / `tag_len` /
+    `deref_size` / `type_size` を直接合成し、struct/union 配列の要素サイズと要素数を
+    backend ごとに再計算していた。
+  - flat initializer 側にも `gv->is_array && gv->deref_size > 0 ? ...` が複数残っており、
+    global array の要素幅の正本が parser helper と backend に分散していた。
+- 根本対応:
+  - `psx_gvar_array_element_size()` / `psx_gvar_array_element_count()` /
+    `psx_gvar_initializer_element_size()` を parser 公開 API として追加した。
+  - tag aggregate の fallback element size 計算を `node_utils.c` に移し、
+    arm64 / wasm32 IR / wasm32 object から重複した `effective_tag_array_elem_size()` を削除した。
+  - backend の struct/union 配列出力と flat initializer の要素幅取得を helper 経由に置き換えた。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に通常 global array の element size/count と
+    initializer element size の assert を追加した。
+  - `struct __tm817_S { char tag[3]; int n; }` の global array と、
+    `deref_size=0` の仮 `global_var_t` で tag 情報から 8 byte 要素サイズを復元できることを確認した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

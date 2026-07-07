@@ -2784,22 +2784,6 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   consume_trailing_zero_union_padding(gv, start_idx, val_idx, obj_flat_slot_count(tk, tn, tl));
 }
 
-static int effective_tag_array_elem_size(token_kind_t tk, char *tn, int tl, int fallback) {
-  if (fallback > 0) return fallback;
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int max_end = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    int count = mi.array_len > 0 ? mi.array_len : 1;
-    int end = mi.offset + mi.type_size * count;
-    if (end > max_end) max_end = end;
-  }
-  int align = psx_ctx_get_tag_align(tk, tn, tl);
-  if (align > 1 && max_end > 0) max_end = (max_end + align - 1) / align * align;
-  return max_end > 0 ? max_end : fallback;
-}
-
 static int global_has_object_payload(global_var_t *gv) {
   if (!gv) return 0;
   if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
@@ -2818,8 +2802,8 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
   int val_idx = 0;
   if (gv->tag_kind == TK_UNION) {
     if (gv->is_array) {
-      int elem_size = gv->deref_size > 0 ? gv->deref_size : 0;
-      int total = elem_size > 0 ? size / elem_size : 0;
+      int elem_size = psx_gvar_array_element_size(gv);
+      int total = psx_gvar_array_element_count(gv);
       for (int e = 0; e < total && val_idx < gv->init_count; e++) {
         emit_obj_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
                                           &val_idx, (size_t)e * (size_t)elem_size);
@@ -2831,9 +2815,8 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
     return;
   }
   if (gv->is_array) {
-    int elem_size = effective_tag_array_elem_size(gv->tag_kind, gv->tag_name, gv->tag_len,
-                                                  gv->deref_size > 0 ? gv->deref_size : 0);
-    int total = elem_size > 0 ? size / elem_size : 0;
+    int elem_size = psx_gvar_array_element_size(gv);
+    int total = psx_gvar_array_element_count(gv);
     for (int e = 0; e < total && val_idx < gv->init_count; e++) {
       emit_obj_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, d, gv,
                                               &val_idx, (size_t)e * (size_t)elem_size);
@@ -2871,7 +2854,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     }
     data_write_symbol_addr(d, gv->init_symbol, gv->init_symbol_len, gv->init_symbol_offset, size);
   } else if (gv->init_count > 0) {
-    int elem = gv->is_array && gv->deref_size > 0 ? gv->deref_size : size;
+    int elem = psx_gvar_initializer_element_size(gv, size);
     if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
       obj_unsupported_msg("global array element size in Wasm object mode");
     }
