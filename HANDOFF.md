@@ -1,8 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き850: use global init slot view in arm64 emitter）
+最終更新: 2026-07-07（続き851: centralize global init capacity growth）
 
 ## 現状
+- 続き851: **global brace initializer の capacity grow を
+  `ensure_global_init_capacity()` に集約した**。
+
+  `psx_gbrace_flat()` 内には、designator 書き込み位置の確保、多次元 char 配列行の確保、
+  struct char 配列メンバ行の確保で、同じ `init_values` / `init_value_symbols` /
+  `init_value_symbol_lens` / `init_union_ordinals` / `init_fvalues` の realloc と初期化が
+  3 回重複していた。既存の `ensure_global_init_capacity()` を前方宣言し、この 3 経路から
+  呼ぶ形に寄せた。これで parser 側の initializer slot 配列 grow の正本は helper 本体に近づいた。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `git diff --check` = **pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**。
+
 - 続き850: **arm64 backend の global initializer slot 読み取りも
   `psx_gvar_init_slot_view()` 経由に寄せた**。
 

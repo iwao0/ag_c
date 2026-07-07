@@ -1377,6 +1377,7 @@ static void consume_global_member_array_dim(tag_member_info_t *mi) {
  * 解決する必要があるため gv 固定版は使わない。 */
 
 static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
+static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap);
 
 /* ネスト brace 内の designator (`.member` / `[N]`) を解決するための「現在の brace level が
  * 初期化している集約型」コンテキスト。これがないと `.s={.a=7}` や `.items={[2]={.a=7}}` の
@@ -1725,19 +1726,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gbrace_ctx_from_member(&child, &cmi);
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
-    while (*cap <= cur_idx) {
-      int new_cap = *cap * 2;
-      gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-      gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-      gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-      gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
-      if (gv->init_fvalues) {
-        gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-        for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
-      }
-      for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
-      *cap = new_cap;
-    }
+    ensure_global_init_capacity(gv, cap, cur_idx + 1);
     /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
      * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
     while (gv->init_count < cur_idx) {
@@ -1763,20 +1752,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * .LC ポインタにしない)。残りは 0 埋め。 */
       node_t *e = psx_expr_assign();
       int row_w = gv->outer_stride;
-      while (*cap < cur_idx + row_w) {
-        int new_cap = *cap * 2;
-        if (new_cap < cur_idx + row_w) new_cap = cur_idx + row_w;
-        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-        gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
-        if (gv->init_fvalues) {
-          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
-        }
-        for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
-        *cap = new_cap;
-      }
+      ensure_global_init_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
         for (string_lit_t *l = string_literals; l; l = l->next) {
@@ -1826,20 +1802,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       node_t *e = psx_expr_assign();
       int row_w = child.sub_ndim > 0 ? child.sub_dims[child.sub_ndim - 1] : child.array_len;
       if (row_w <= 0) row_w = child.array_len;
-      while (*cap < cur_idx + row_w) {
-        int new_cap = *cap * 2;
-        if (new_cap < cur_idx + row_w) new_cap = cur_idx + row_w;
-        gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-        gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-        gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-        gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
-        if (gv->init_fvalues) {
-          gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-          for (int i = *cap; i < new_cap; i++) gv->init_fvalues[i] = 0.0;
-        }
-        for (int i = *cap; i < new_cap; i++) gv->init_union_ordinals[i] = -1;
-        *cap = new_cap;
-      }
+      ensure_global_init_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
         for (string_lit_t *l = string_literals; l; l = l->next) {
