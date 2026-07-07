@@ -189,7 +189,7 @@ static psx_type_t *type_new_pointee_base_from_mem(const node_mem_t *mem) {
     return ptr;
   }
   if (mem->pointee_is_void) return type_new_void();
-  if (mem->tag_kind == TK_STRUCT || mem->tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) {
     return psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                             mem->tag_scope_depth_p1, mem->deref_size);
   }
@@ -261,7 +261,7 @@ static psx_type_t *type_from_mem(node_mem_t *mem, int force_array, int force_vla
                           mem->extra_strides[3], mem->extra_strides[4]},
       }
     });
-  } else if (mem->tag_kind == TK_STRUCT || mem->tag_kind == TK_UNION) {
+  } else if (psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) {
     type = psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                             mem->tag_scope_depth_p1, mem->type_size);
   } else if (mem->is_complex) {
@@ -595,14 +595,14 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   int size = ret.struct_size > 0 ? ret.struct_size : integer_token_size(ret.token_kind, 4);
 
   if (!ret.is_pointer) {
-    if (ret.tag_kind == TK_STRUCT || ret.tag_kind == TK_UNION)
+    if (psx_ctx_is_tag_aggregate_kind(ret.tag_kind))
       return psx_type_new_tag(ret.tag_kind, ret.tag_name, ret.tag_len, 0, ret.struct_size);
     return type_from_scalar_shape(ret.token_kind, ret_fp_kind, size,
                                   ret.is_unsigned, ret.is_complex, 0);
   }
 
   psx_type_t *base = NULL;
-  if (ret.tag_kind == TK_STRUCT || ret.tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(ret.tag_kind)) {
     base = psx_type_new_tag(ret.tag_kind, ret.tag_name, ret.tag_len, 0, ret.struct_size);
   } else {
     base = type_from_scalar_shape(ret.token_kind, ret_fp_kind, size,
@@ -659,11 +659,11 @@ static int tag_type_from_type(psx_type_t *type, token_kind_t *tag_kind, char **t
   if (!tag_type && (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION)) {
     tag_type = type;
   }
-  if (!tag_type && (type->tag_kind == TK_STRUCT || type->tag_kind == TK_UNION)) {
+  if (!tag_type && psx_ctx_is_tag_aggregate_kind(type->tag_kind)) {
     tag_type = type;
     ptr = psx_type_is_pointer(type);
   }
-  if (!tag_type || (tag_type->tag_kind != TK_STRUCT && tag_type->tag_kind != TK_UNION))
+  if (!tag_type || !psx_ctx_is_tag_aggregate_kind(tag_type->tag_kind))
     return 0;
   if (tag_kind) *tag_kind = tag_type->tag_kind;
   if (tag_name) *tag_name = tag_type->tag_name;
@@ -752,7 +752,7 @@ static psx_type_t *type_from_funcptr_callee_type(node_func_t *fn) {
   int ignored_ptr = 0;
   tag_type_from_type(callee_type, &tag_kind, &tag_name, &tag_len, &ignored_ptr, NULL);
   if (!callee_sig.ret_is_data_pointer &&
-      (tag_kind == TK_STRUCT || tag_kind == TK_UNION)) {
+      psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     int size = callee_type->base ? psx_type_sizeof(callee_type->base) : 0;
     if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_type_new_tag(tag_kind, tag_name, tag_len,
@@ -762,7 +762,7 @@ static psx_type_t *type_from_funcptr_callee_type(node_func_t *fn) {
 
   if (callee_sig.ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_array)) {
     psx_type_t *base = NULL;
-    if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+    if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
       int size = callee_type->base ? psx_type_sizeof(callee_type->base) : 0;
       if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
       base = psx_type_new_tag(tag_kind, tag_name, tag_len,
@@ -836,7 +836,7 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
   int tag_len = 0;
   psx_node_get_tag_type(fn->callee, &tag_kind, &tag_name, &tag_len, NULL);
   if (!callee_sig.ret_is_data_pointer &&
-      (tag_kind == TK_STRUCT || tag_kind == TK_UNION)) {
+      psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     int size = fn->base.ret_struct_size;
     if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
     return psx_type_new_tag(tag_kind, tag_name, tag_len,
@@ -851,7 +851,7 @@ static psx_type_t *type_from_indirect_funcall(node_func_t *fn) {
     if (ret_pointee_fp == TK_FLOAT_KIND_NONE)
       ret_pointee_fp = callee_sig.ret_pointee_fp_kind;
     psx_type_t *base = NULL;
-    if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+    if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
       int size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
       base = psx_type_new_tag(tag_kind, tag_name, tag_len,
                               psx_node_get_tag_scope_depth(fn->callee) + 1, size);
@@ -3066,7 +3066,7 @@ node_t *psx_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
   wrap->pointer_qual_levels = (unsigned char)pointer_levels;
   if (type_kind == TK_VOID) {
     wrap->pointee_is_void = 1;
-  } else if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+  } else if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     wrap->tag_kind = tag_kind;
     wrap->tag_name = tag_name;
     wrap->tag_len = tag_len;
@@ -3400,8 +3400,7 @@ node_t *psx_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
   } else if (mem_is_ptr && mem_size > 0) {
     deref->is_pointer = 1;
     deref->is_scalar_ptr_member = 1;
-    if ((info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION) &&
-        info->tag_name) {
+    if (psx_ctx_is_tag_aggregate_kind(info->tag_kind) && info->tag_name) {
       int pointee_size = psx_ctx_get_tag_size(info->tag_kind, info->tag_name,
                                               info->tag_len);
       deref->pointer_qual_levels = info->pointer_qual_levels > 0
@@ -4147,7 +4146,7 @@ int psx_node_aggregate_value_size(node_t *node) {
   int tag_len = 0;
   int is_tag_pointer = 0;
   psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
-  if (is_tag_pointer || (tag_kind != TK_STRUCT && tag_kind != TK_UNION)) return 0;
+  if (is_tag_pointer || !psx_ctx_is_tag_aggregate_kind(tag_kind)) return 0;
   if (psx_node_value_is_pointer_like(node)) return 0;
   int size = ps_node_type_size(node);
   if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
