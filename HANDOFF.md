@@ -1,8 +1,36 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き873: centralize public node utility declarations）
+最終更新: 2026-07-08（続き874: split semantic public query header）
 
 ## 現状
+- 続き874: **semantic query の公開 API を `semantic_public.h` に切り出した**。
+
+  続き873で node utility の公開宣言を `node_public.h` に集約した後も、
+  `parser_public.h` は `semantic_ctx.h` を transitive include しており、IR/arch が必要とする
+  読み取り系 query と、parser 内部だけが使う setter/reset/登録系が同じ公開境界に混ざっていた。
+  今回は `src/parser/semantic_public.h` を追加し、`tag_member_info_t`、関数戻り値/引数 query、
+  `psx_ctx_scalar_type_size()`、`psx_ctx_is_function_defined()` をそこへ移した。
+  `semantic_ctx.h` は `semantic_public.h` を include した上で内部 setter/reset/track 系だけを
+  追加宣言する形にした。
+
+  さらに `decl.h` の tag setter inline が `psx_ctx_get_tag_scope_depth()` へ依存していたため、
+  `psx_decl_set_var_tag()` / `psx_decl_set_gvar_tag()` を `decl.c` の通常関数へ移し、
+  `decl.h` から `semantic_ctx.h` include を外した。`wasm32_ir.c` / `wasm32_obj.c` も
+  semantic query だけのために `semantic_ctx.h` を直 include していたので、`parser_public.h`
+  経由へ寄せた。
+
+  確認は
+  `rg "semantic_ctx.h" src/ir src/arch src/parser/parser_public.h src/parser/decl.h -n`
+  = **外部/公開ヘッダからの semantic_ctx.h 直参照なし（コメントのみ）**、
+  `rg "psx_ctx_is_function_defined|psx_ctx_scalar_type_size|psx_function_ret_info_t|PSX_PCAT_|psx_ctx_get_function|psx_ctx_has_function_name|psx_ctx_get_tag_member|tag_member_info_t" src/parser/semantic_ctx.h src/parser/semantic_public.h -n`
+  = **公開 query の宣言正本は `semantic_public.h`**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き873: **外部公開する node utility 宣言を `node_public.h` に集約した**。
 
   続き872までで局所 forward 宣言や duplicated typedef を減らした後、`parser_public.h` には

@@ -49,14 +49,13 @@ bool ps_iter_float_literals(float_lit_visitor_t fn, void *user);
 bool ps_has_string_literals(void);
 bool ps_has_float_literals(void);
 
-/* semantic_ctx.h からの公開:
+/* semantic_public.h からの公開:
  * - 関数呼出側 IR が必要とする psx_ctx_get_function_is_variadic /
  *   _get_function_param_fp_kind
  * - codegen (arm64_apple.c) が global struct/union 初期化子を展開する
  *   ための tag_member_info_t と psx_ctx_get_tag_member_count /
  *   _get_tag_member_info (Phase A1 統合 API)
- * 重複定義回避のため internal/semantic_ctx.h を transitive include して
- * これらシンボルを取り込む。 */
-#include "semantic_ctx.h"
+ * setter / reset / 登録系は semantic_ctx.h に残し、外部へは出さない。 */
+#include "semantic_public.h"
 
 #endif

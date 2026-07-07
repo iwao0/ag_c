@@ -1,7 +1,6 @@
 #include "wasm32_obj.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
-#include "../parser/semantic_ctx.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>

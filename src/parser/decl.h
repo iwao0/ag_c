@@ -6,7 +6,6 @@
 #include "ast.h"
 #include "core.h"
 #include "symtab.h"
-#include "semantic_ctx.h"  /* psx_ctx_get_tag_scope_depth (inline setter で使う) */
 
 typedef struct lvar_t lvar_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
@@ -132,39 +131,10 @@ static inline void psx_decl_invalidate_gvar_decl_type(global_var_t *gv) {
 /* lvar_t / global_var_t の tag 4 フィールド (kind/name/len/is_tag_pointer)
  * を 1 行で設定するヘルパ (Phase A2 リファクタリング)。
  * decl.c / parser.c で 4 行のパターンが 9 箇所重複していたのを集約する。 */
-static inline void psx_decl_set_var_tag(lvar_t *var,
-                                         token_kind_t tag_kind, char *tag_name, int tag_len,
-                                         int is_tag_pointer) {
-  psx_decl_invalidate_lvar_decl_type(var);
-  var->tag_kind = tag_kind;
-  var->tag_name = tag_name;
-  var->tag_len = tag_len;
-  var->is_tag_pointer = is_tag_pointer ? 1 : 0;
-  /* 宣言時に見えているタグの scope_depth を +1 して保存 (0=未設定の規約)。
-   * 後段でメンバ参照経路が「変数宣言時に見えていた tag」のメンバを引けるようにする
-   * (内側 shadow からの外側変数参照対応)。タグ無しは 0 のまま (未設定)。 */
-  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
-    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
-    var->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
-  } else {
-    var->tag_scope_depth_p1 = 0;
-  }
-}
-static inline void psx_decl_set_gvar_tag(global_var_t *gv,
-                                          token_kind_t tag_kind, char *tag_name, int tag_len,
-                                          int is_tag_pointer) {
-  psx_decl_invalidate_gvar_decl_type(gv);
-  gv->tag_kind = tag_kind;
-  gv->tag_name = tag_name;
-  gv->tag_len = tag_len;
-  gv->is_tag_pointer = is_tag_pointer ? 1 : 0;
-  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
-    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
-    gv->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
-  } else {
-    gv->tag_scope_depth_p1 = 0;
-  }
-}
+void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, int tag_len,
+                          int is_tag_pointer);
+void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_name, int tag_len,
+                           int is_tag_pointer);
 
 void psx_decl_reset_locals(void);
 void psx_decl_enter_scope(void);

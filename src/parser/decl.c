@@ -109,6 +109,36 @@ void psx_decl_get_current_funcname(char **out_name, int *out_len) {
   if (out_len) *out_len = current_funcname_len;
 }
 
+void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, int tag_len,
+                          int is_tag_pointer) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->tag_kind = tag_kind;
+  var->tag_name = tag_name;
+  var->tag_len = tag_len;
+  var->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
+    var->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
+  } else {
+    var->tag_scope_depth_p1 = 0;
+  }
+}
+
+void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_name, int tag_len,
+                           int is_tag_pointer) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->tag_kind = tag_kind;
+  gv->tag_name = tag_name;
+  gv->tag_len = tag_len;
+  gv->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+    int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
+    gv->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
+  } else {
+    gv->tag_scope_depth_p1 = 0;
+  }
+}
+
 void psx_decl_reset_translation_unit_state(void) {
   psx_decl_reset_locals();
   current_funcname = NULL;

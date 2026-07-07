@@ -2,7 +2,7 @@
 #define PARSER_SEMANTIC_CTX_H
 
 #include "core.h"
-#include "ret_pointee_array.h"
+#include "semantic_public.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -25,7 +25,6 @@ void psx_ctx_emit_deferred_parser_warnings(void);
 bool psx_ctx_has_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count);
-int psx_ctx_get_tag_member_count(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
@@ -55,89 +54,6 @@ void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int 
  * 全バイト数 (= N * elem) を保存する。 */
 void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                      char *member_name, int member_len, int bytes);
-/* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
- * (docs/code_refactoring_2026 Phase A1)。
- *
- * 既存の 5 つに分散した getter (`_at` / `_bf` / `_fp_kind` / `_is_bool` / `_count`)
- * の wrapper として実装され、呼び出し側で `(tag_kind, tag_name, tag_len)` の
- * 3-tuple を毎回繰り返し渡す冗長性を解消する。
- *
- * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
- * 初期化されるので、struct メンバが bitfield でないとき bit_width=0 等を返す。 */
-typedef struct tag_member_info_t {
-  char *name;
-  int len;
-  int offset;
-  int type_size;
-  int deref_size;
-  int array_len;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int is_tag_pointer;
-  int pointer_qual_levels;
-  int bit_width;
-  int bit_offset;
-  int bit_is_signed;
-  tk_float_kind_t fp_kind;
-  int is_bool;
-  int is_unsigned;
-  int outer_stride;
-  /* 3 次元以上の配列メンバ (`char c[2][2][3]` / `int t[2][2][2]`) の中間段ストライド
-   * (1 段目 subscript 後の要素サイズ = 残り次元の総バイト数 / arr_dims[1])。
-   * 2D は 0 (outer_stride / elem_size の 2 段で済む)。3D 以上で inner_deref_size に
-   * 載せて多段 subscript を正しくスケールする。 */
-  int mid_stride;
-  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズ。arr_ndim 段だけ
-   * 有効。グローバル brace init の再帰展開で 1 段ずつ消費する。0 = 非多次元 char
-   * (従来通り outer_stride のみで運用)。 */
-  int arr_dims[8];
-  int arr_ndim;
-  /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
-   * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。`s.p[i]` の subscript 結果に
-   * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
-   * build_subscript_deref / build_unary_deref_node に伝える。 */
-  int ptr_array_pointee_bytes;
-  int is_funcptr;
-  psx_decl_funcptr_sig_t funcptr_sig;
-} tag_member_info_t;
-
-static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(
-    const tag_member_info_t *m) {
-  if (!m) return (psx_decl_funcptr_sig_t){0};
-  return m->is_funcptr ? m->funcptr_sig : (psx_decl_funcptr_sig_t){0};
-}
-
-static inline void psx_ctx_tag_member_set_funcptr_sig(
-    tag_member_info_t *m, psx_decl_funcptr_sig_t sig) {
-  if (!m) return;
-  m->funcptr_sig = sig;
-  m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
-}
-
-bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
-                                  tag_member_info_t *out);
-/* 名前検索版の統合 API。`psx_ctx_get_tag_member_info` と対になる。
- * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
- * 初期化される。 */
-bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
-                                   char *member_name, int member_len,
-                                   tag_member_info_t *out);
-/* 上記 2 つの「特定スコープ深度に固定」版。タグ shadowing の応用形 (内側スコープでの
- * 外側変数メンバ参照、ネスト 2 段 shadow) で、変数の宣言時 tag_scope_depth を渡して
- * 最も内側ではなく「変数が見ていたタグの scope」のメンバを引くのに使う。scope_depth<0
- * のときは既存挙動 (最も内側を使う) と等価。 */
-bool psx_ctx_get_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                          int scope_depth, int index,
-                                          tag_member_info_t *out);
-bool psx_ctx_find_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                           int scope_depth,
-                                           char *member_name, int member_len,
-                                           tag_member_info_t *out);
-/* (kind, name, len) のタグが現在見えているスコープ深度を返す。タグが無ければ -1。
- * 変数宣言時に呼んで lvar/global_var の tag_scope_depth に保存するのに使う。 */
-int psx_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len);
-int psx_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth);
 /* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を
  * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
 void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
@@ -204,27 +120,7 @@ bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
 void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len);
-bool psx_ctx_has_function_name(char *name, int len);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);
-typedef struct {
-  token_kind_t token_kind;
-  tk_float_kind_t fp_kind;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int struct_size;
-  int is_pointer;
-  int is_unsigned;
-  int is_void;
-  int is_complex;
-  int is_funcptr;
-  psx_decl_funcptr_sig_t funcptr_sig;
-  int pointer_levels;
-  int pointee_const_qualified;
-  int pointee_volatile_qualified;
-  psx_ret_pointee_array_t pointee_array;
-} psx_function_ret_info_t;
-psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len);
 // 関数戻り値の浮動小数点種別 (float/double) を取得/設定する。
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
 void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);
@@ -240,42 +136,23 @@ int psx_ctx_get_function_ret_is_complex(char *name, int len);
  * の暗黙変換に I2F キャストを挿入するために使う。track は最初の 16 引数まで。 */
 void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
                                          tk_float_kind_t fp_kind);
-tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
 /* 仮引数 i が整数スカラのときの幅 (4/8、0 = 非整数) を記録/取得。呼び出し側 IR が
  * fp 実引数→整数仮引数の暗黙変換に F2I キャストを挿入するために使う。 */
 void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx, int size);
-int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx);
 void psx_ctx_set_function_param_int_unsigned(char *name, int len, int param_idx, int is_unsigned);
-int psx_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx);
 void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
 /* 同名関数の再宣言で引数数 / 可変長性が一致するかを track する (C11 6.7p4)。
  * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。 */
 int psx_ctx_track_function_nargs(char *name, int len, int nargs, int is_variadic);
 
-/* 引数 i の型カテゴリ (粗粒度)。同名関数の再宣言での型一致照合に使う。 */
-enum {
-  PSX_PCAT_UNSET = 0,
-  PSX_PCAT_INT4  = 1,  /* char/short/int / _Bool */
-  PSX_PCAT_INT8  = 2,  /* long / long long */
-  PSX_PCAT_FLOAT = 3,
-  PSX_PCAT_DOUBLE = 4,
-  PSX_PCAT_PTR   = 5,
-  PSX_PCAT_STRUCT = 6, /* struct/union 値 */
-  PSX_PCAT_OTHER  = 7,
-};
-
 /* 同名関数の再宣言で引数 i のカテゴリが一致するかを track する (C11 6.7p4)。
  * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。
  * カテゴリは粗粒度 (int width / fp / pointer / struct) で K&R 互換のため厳密型は照合しない。 */
 int psx_ctx_track_function_param_category(char *name, int len, int idx, int category);
-int psx_ctx_get_function_param_category(char *name, int len, int idx);
 
 /* 同名関数の本体定義が初回かどうかを track する (C11 6.9p3)。
  * 初回なら 1 を返して定義済みフラグを立てる、すでに定義済みなら 0。 */
 int psx_ctx_track_function_defined(char *name, int len);
-int psx_ctx_is_function_defined(char *name, int len);
-bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
-int psx_ctx_get_function_nargs_fixed(char *name, int len);
 /* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
 void psx_ctx_set_function_ret_void(char *name, int len, int is_void);
@@ -316,7 +193,6 @@ bool psx_ctx_is_type_token(token_kind_t kind);
 bool psx_ctx_is_tag_keyword(token_kind_t kind);
 bool psx_ctx_is_tag_aggregate_kind(token_kind_t kind);
 const char *psx_ctx_tag_kind_spelling(token_kind_t kind);
-int psx_ctx_scalar_type_size(token_kind_t kind);
 void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size);
 
 #endif
