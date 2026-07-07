@@ -2021,6 +2021,27 @@ int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned) 
   return ptr_arg != NULL;
 }
 
+int psx_node_cast_i64_extension_info(node_t *node, int *target_size,
+                                     int *widen_zext_i64, int *needs_i64_extend) {
+  if (target_size) *target_size = 0;
+  if (widen_zext_i64) *widen_zext_i64 = 0;
+  if (needs_i64_extend) *needs_i64_extend = 0;
+  if (!node) return 0;
+
+  int sz = 0;
+  if (node->type) sz = psx_type_sizeof(psx_node_get_type(node));
+  node_mem_t *mem = node_mem_view(node);
+  if (sz <= 0 && mem && mem->type_size > 0) sz = mem->type_size;
+  if (sz <= 0) sz = ps_node_type_size(node);
+
+  int zext = mem && mem->widen_zext_i64 ? 1 : 0;
+  int extend = (!psx_node_value_is_pointer_like(node) && sz >= 8) ? 1 : 0;
+  if (target_size) *target_size = sz;
+  if (widen_zext_i64) *widen_zext_i64 = zext;
+  if (needs_i64_extend) *needs_i64_extend = extend;
+  return 1;
+}
+
 int psx_node_pointee_is_bool(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {

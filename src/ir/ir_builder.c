@@ -2603,13 +2603,17 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   if (!node->lhs) return ir_val_none();
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
-  node_mem_t *cast = (node_mem_t *)node;
   if (node->type && node->type->kind == PSX_TYPE_VOID) return ir_val_none();
+  int target_size = 0;
+  int widen_zext_i64 = 0;
+  int needs_i64_extend = 0;
+  psx_node_cast_i64_extension_info(node, &target_size, &widen_zext_i64,
+                                   &needs_i64_extend);
   /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。
    * coerce_to_type は常に SEXT なので unsigned widen には使えず、ここで明示挿入する。
    * これにより `(long)u + (long)u` の二項演算が I64 で計算され (I32 ラップマスク回避)、
    * 2^32 を超える和が正しくなる。 */
-  if (cast->widen_zext_i64 && v.type != IR_TY_I64 && !is_fp_type(v.type)) {
+  if (widen_zext_i64 && v.type != IR_TY_I64 && !is_fp_type(v.type)) {
     int d = ir_func_new_vreg(ctx->f);
     ir_inst_t *zx = ir_inst_new(IR_ZEXT);
     zx->dst = ir_val_vreg(d, IR_TY_I64);
@@ -2617,7 +2621,7 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, zx);
     return ir_val_vreg(d, IR_TY_I64);
   }
-  if (!cast->is_pointer && !cast->is_tag_pointer && cast->type_size >= 8 &&
+  if (needs_i64_extend &&
       v.type != IR_TY_I64 && v.type != IR_TY_PTR && !is_fp_type(v.type)) {
     int d = ir_func_new_vreg(ctx->f);
     int src_unsigned = psx_node_i64_widen_source_is_unsigned(node->lhs);
@@ -2627,7 +2631,6 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, sx);
     return ir_val_vreg(d, IR_TY_I64);
   }
-  int target_size = cast->type_size > 0 ? cast->type_size : ps_node_type_size(node);
   ir_type_t target_ty = scalar_value_type(target_size,
                                           psx_node_value_is_pointer_like(node));
   if (!is_fp_type(v.type) && v.type != target_ty) {

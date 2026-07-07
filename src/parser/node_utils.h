@@ -60,6 +60,8 @@ unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);
 int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned);
+int psx_node_cast_i64_extension_info(node_t *node, int *target_size,
+                                     int *widen_zext_i64, int *needs_i64_extend);
 int psx_node_pointee_is_bool(node_t *node);
 int psx_node_pointee_is_void(node_t *node);
 int psx_node_pointee_is_const_qualified(node_t *node);

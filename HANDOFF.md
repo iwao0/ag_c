@@ -1,8 +1,38 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き830: IR scalar lvalue metadata reader 化）
+最終更新: 2026-07-07（続き831: IR cast wrapper metadata reader 化）
 
 ## 現状
+- 続き831: **IR builder の cast wrapper に残っていた `node_mem_t` 直読を
+  `node_utils` / `parser_public` helper 境界へ移した**。
+
+  続き830までで scalar lvalue load/store/coerce は helper 経由になったが、
+  `build_node_cast_wrapper()` はまだ `node_mem_t *cast` へ直接 cast し、
+  `widen_zext_i64` / `is_pointer` / `is_tag_pointer` / `type_size` を読んで
+  `(long)unsigned_int` の明示 ZEXT、I64 への SEXT/ZEXT、最終 `coerce_to_type_ex()` の
+  target size を決めていた。
+
+  今回は `psx_node_cast_i64_extension_info()` を追加し、IR 側は
+  `target_size` / `widen_zext_i64` / `needs_i64_extend` だけを見る形にした。
+  typed node では target size と pointer-like 判定を `psx_type_t` 側から優先し、
+  legacy cast wrapper の `widen_zext_i64` marker は helper 内に閉じ込めて互換 fallback として残している。
+  これにより、typed cast node に stale な `is_pointer` / `is_tag_pointer` / `type_size`
+  が残っていても IR が古い payload を正本として読まない。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。typed long cast では stale
+  pointer metadata があっても i64 extension が必要と判定されること、typed pointer cast では
+  target size が 8 でも i64 scalar extension にならないこと、legacy cast wrapper では
+  `widen_zext_i64` marker が従来どおり見えることを固定している。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き830: **IR builder の scalar lvalue load/store/coerce に残っていた
   `node_mem_t` の storage 幅 / signedness 直読を既存 reader 経由へ寄せた**。
 

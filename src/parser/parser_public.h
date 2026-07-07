@@ -41,6 +41,8 @@ int psx_node_shift_operation_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
 int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned);
+int psx_node_cast_i64_extension_info(node_t *node, int *target_size,
+                                     int *widen_zext_i64, int *needs_i64_extend);
 int psx_node_pointer_qual_levels(node_t *n);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);

@@ -2689,6 +2689,45 @@ static void test_type_metadata_bridge() {
   legacy_aggregate_mem.type_size = 6;
   ASSERT_EQ(6, psx_node_aggregate_value_size((node_t *)&legacy_aggregate_mem));
 
+  node_mem_t typed_cast_long = {0};
+  typed_cast_long.base.kind = ND_CAST;
+  typed_cast_long.type_size = 4;
+  typed_cast_long.is_pointer = 1;
+  typed_cast_long.is_tag_pointer = 1;
+  typed_cast_long.base.type = psx_type_new_integer(TK_LONG, 8, 0);
+  int cast_target_size = 0;
+  int cast_widen_zext = 0;
+  int cast_needs_i64 = 0;
+  ASSERT_TRUE(psx_node_cast_i64_extension_info(
+      (node_t *)&typed_cast_long, &cast_target_size, &cast_widen_zext,
+      &cast_needs_i64));
+  ASSERT_EQ(8, cast_target_size);
+  ASSERT_EQ(0, cast_widen_zext);
+  ASSERT_EQ(1, cast_needs_i64);
+
+  node_mem_t typed_cast_ptr = {0};
+  typed_cast_ptr.base.kind = ND_CAST;
+  typed_cast_ptr.type_size = 8;
+  typed_cast_ptr.base.type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 0), 8);
+  ASSERT_TRUE(psx_node_cast_i64_extension_info(
+      (node_t *)&typed_cast_ptr, &cast_target_size, &cast_widen_zext,
+      &cast_needs_i64));
+  ASSERT_EQ(8, cast_target_size);
+  ASSERT_EQ(0, cast_widen_zext);
+  ASSERT_EQ(0, cast_needs_i64);
+
+  node_mem_t legacy_cast = {0};
+  legacy_cast.base.kind = ND_CAST;
+  legacy_cast.type_size = 8;
+  legacy_cast.widen_zext_i64 = 1;
+  ASSERT_TRUE(psx_node_cast_i64_extension_info(
+      (node_t *)&legacy_cast, &cast_target_size, &cast_widen_zext,
+      &cast_needs_i64));
+  ASSERT_EQ(8, cast_target_size);
+  ASSERT_EQ(1, cast_widen_zext);
+  ASSERT_EQ(1, cast_needs_i64);
+
   parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
   fn = as_func(parsed_code[0]);
   body = as_block(fn->base.rhs);
