@@ -15712,6 +15712,31 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
 
+### このセッション（続き825）: lvar_t の struct/union aggregate 判定を helper 化
+- 見つかった浅い箇所:
+  - `global_var_t` / `tag_member_info_t` の aggregate 判定は helper 正本へ寄せたが、
+    local initializer 側にはまだ `lvar_t` の `tag_kind == TK_STRUCT/TK_UNION` と
+    `!is_tag_pointer` を直接合成する分岐が残っていた。
+  - local struct/union 配列の zero prefill、brace 付き要素初期化、member array の
+    brace elision、local 変数初期化 dispatch がそれぞれ独自に aggregate 判定していた。
+- 根本対応:
+  - `psx_lvar_is_tag_aggregate()` /
+    `psx_lvar_is_struct_aggregate()` /
+    `psx_lvar_is_union_aggregate()` を parser 公開 API として追加した。
+  - `decl.c` の local array initializer / member initializer /
+    `psx_decl_parse_initializer_for_var()` を helper 経由に置き換え、
+    tag pointer を aggregate 扱いしない契約を `lvar_t` でも 1 箇所に寄せた。
+  - `test_type_metadata_bridge()` に実際の local struct symbol と一時 union/tag pointer
+    `lvar_t` の helper 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
 ### このセッション（続き819）: global storage/aggregate 判定を parser helper に集約
 - 見つかった浅い箇所:
   - wasm32 IR / wasm32 object が `gv->type_size > 0 ? gv->type_size : ...` を直接持ち、

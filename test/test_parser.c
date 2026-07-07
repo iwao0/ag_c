@@ -2855,6 +2855,18 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(r1_lvar->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, r1_lvar->decl_type->kind);
   ASSERT_EQ(16, psx_type_sizeof(r1_lvar->decl_type));
+  ASSERT_TRUE(psx_lvar_is_tag_aggregate(r1_lvar));
+  ASSERT_TRUE(psx_lvar_is_struct_aggregate(r1_lvar));
+  ASSERT_TRUE(!psx_lvar_is_union_aggregate(r1_lvar));
+
+  lvar_t tmp_tag_lvar = {0};
+  tmp_tag_lvar.tag_kind = TK_UNION;
+  ASSERT_TRUE(psx_lvar_is_tag_aggregate(&tmp_tag_lvar));
+  ASSERT_TRUE(!psx_lvar_is_struct_aggregate(&tmp_tag_lvar));
+  ASSERT_TRUE(psx_lvar_is_union_aggregate(&tmp_tag_lvar));
+  tmp_tag_lvar.is_tag_pointer = 1;
+  ASSERT_TRUE(!psx_lvar_is_tag_aggregate(&tmp_tag_lvar));
+  ASSERT_TRUE(!psx_lvar_is_union_aggregate(&tmp_tag_lvar));
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
   (void)parsed_code;

@@ -48,6 +48,9 @@ int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int psx_node_value_is_pointer_like(node_t *node);
 int psx_lvar_value_is_pointer_like(const lvar_t *var);
+int psx_lvar_is_tag_aggregate(const lvar_t *var);
+int psx_lvar_is_struct_aggregate(const lvar_t *var);
+int psx_lvar_is_union_aggregate(const lvar_t *var);
 int psx_gvar_storage_size(const global_var_t *gv, int fallback_size);
 int psx_gvar_is_tag_aggregate(const global_var_t *gv);
 int psx_gvar_is_struct_aggregate(const global_var_t *gv);

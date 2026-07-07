@@ -1081,7 +1081,7 @@ static node_t *parse_array_elem_struct_brace_init(lvar_t *var, int idx) {
    * メンバ designator を struct レイアウトで誤解決し、値が格納されず 0 になる
    * (`union U a[2]={[1]={.n=5}}` で a[1].n が 0 に化けていた)。配列全体は呼び出し側で
    * zero_prefill 済みなので、ここはメンバ代入を出すだけでよい。 */
-  if (var->tag_kind == TK_UNION) return parse_union_initializer(&nested);
+  if (psx_lvar_is_union_aggregate(var)) return parse_union_initializer(&nested);
   return parse_struct_initializer(&nested);
 }
 
@@ -1189,8 +1189,7 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
    * C11 6.7.9p21 に従い、先に配列全体を 0 埋めしてから明示初期化子で上書きする。
    * scalar 要素配列は末尾の per-index 0-fill で足りるので対象外。 */
   node_t *zero_prefill = NULL;
-  int elem_is_aggregate = (!var->is_tag_pointer &&
-                           (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION));
+  int elem_is_aggregate = psx_lvar_is_tag_aggregate(var);
   if (elem_is_aggregate) {
     zero_prefill = append_struct_zero_fill_chain(var, NULL);
   }
@@ -1325,11 +1324,10 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
         /* 配列要素が struct/union で初期化子が `{...}` (`struct P a[3] = {{1, 2}, ...}`):
          * 要素単位の代入式チェーンに展開する。 */
         if (curtok() && curtok()->kind == TK_LBRACE &&
-            !var->is_tag_pointer &&
-            (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
+            psx_lvar_is_tag_aggregate(var)) {
           init_chain = append_to_init_chain(init_chain,
               parse_array_elem_struct_brace_init(var, target_idx));
-        } else if (!var->is_tag_pointer && var->tag_kind == TK_STRUCT) {
+        } else if (psx_lvar_is_struct_aggregate(var)) {
           /* struct 配列要素の brace 省略 (`struct P a[2] = {1, 2, 3, 4}` で
            * a[0]={1,2}, a[1]={3,4})。要素を nested struct とみなし、scalar 始まりなら
            * 内側メンバを取り込み、互換 struct 式ならコピー初期化する。 */
@@ -1816,8 +1814,9 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       free(assigned);
       return init_chain ? init_chain : psx_node_new_num(0);
     }
-    if (owner->tag_kind == TK_STRUCT ||
-        (owner->tag_kind == TK_UNION && ps_get_enable_union_array_member_nonbrace_init())) {
+    if (psx_lvar_is_struct_aggregate(owner) ||
+        (psx_lvar_is_union_aggregate(owner) &&
+         ps_get_enable_union_array_member_nonbrace_init())) {
       /* 多次元 char 配列メンバへの brace elision (C11 6.7.9p20):
        *   struct B{char rows[2][4];}; struct B b = {"ab","cd"};
        * 外側 brace 内に文字列が直接並ぶ形は、try_parse_array_member_string_initializer
@@ -1873,7 +1872,7 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
       }
       return init_chain;
     }
-    if (owner->tag_kind == TK_UNION) {
+    if (psx_lvar_is_union_aggregate(owner)) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
     } else {
@@ -2148,8 +2147,7 @@ static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *a
          * `struct P g[2][2] = {{{1,2},{3,4}}, ...}` の `{1,2}` をパースする。
          * 通常の psx_expr_assign では `{` を数値として読もうとして失敗する。 */
         if (curtok() && curtok()->kind == TK_LBRACE &&
-            !var->is_tag_pointer &&
-            (var->tag_kind == TK_STRUCT || var->tag_kind == TK_UNION)) {
+            psx_lvar_is_tag_aggregate(var)) {
           init_chain = append_to_init_chain(init_chain,
               parse_array_elem_struct_brace_init(var, flat_idx));
         } else {
@@ -3589,13 +3587,13 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   if (var->is_array) {
     return parse_array_initializer(var);
   }
-  if (!is_pointer && var->tag_kind == TK_STRUCT) {
+  if (!is_pointer && psx_lvar_is_struct_aggregate(var)) {
     if (curtok()->kind != TK_LBRACE) {
       return parse_struct_copy_initializer(var);
     }
     return parse_struct_initializer(var);
   }
-  if (!is_pointer && var->tag_kind == TK_UNION) {
+  if (!is_pointer && psx_lvar_is_union_aggregate(var)) {
     return parse_union_initializer(var);
   }
   node_t *lvar = psx_node_new_lvar_expr_ref_for(var, is_pointer);

@@ -310,6 +310,18 @@ int psx_lvar_value_is_pointer_like(const lvar_t *var) {
   return lvar_is_pointer_like_for_type(var);
 }
 
+int psx_lvar_is_struct_aggregate(const lvar_t *var) {
+  return var && var->tag_kind == TK_STRUCT && !var->is_tag_pointer;
+}
+
+int psx_lvar_is_union_aggregate(const lvar_t *var) {
+  return var && var->tag_kind == TK_UNION && !var->is_tag_pointer;
+}
+
+int psx_lvar_is_tag_aggregate(const lvar_t *var) {
+  return psx_lvar_is_struct_aggregate(var) || psx_lvar_is_union_aggregate(var);
+}
+
 static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {
   *mem = (node_mem_t){0};
   if (!var) return;
