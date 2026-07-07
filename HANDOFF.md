@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き861: centralize string literal unit counting）
+最終更新: 2026-07-08（続き862: centralize string literal byte emission）
 
 ## 現状
+- 続き862: **文字列リテラルを実データ byte 列へ展開する処理を
+  tokenizer の `tk_emit_string_literal_bytes()` に集約した**。
+
+  続き861で decode 後 unit 数カウントは `tk_count_string_code_units()` に寄せたが、
+  backend 側にはまだ arm64 / wasm32 IR / wasm32 object それぞれに、
+  escape decode、UTF-8 encode、wide string の little-endian byte 化、NUL 付加の
+  手書き処理が残っていた。今回は `tk_emit_string_literal_bytes()` を追加し、
+  emit callback があれば byte を流し、NULL なら byte 数だけ数える API にした。
+  これにより wasm32 の string literal data size 計算と、3 backend の実データ emission が
+  同じ tokenizer 側の規則を使う。backend から `tk_parse_escape_value()` の直接依存も外れた。
+
+  確認は
+  `rg "tk_next_string_code_units|tk_emit_string_literal_bytes|tk_parse_escape_value|wb_utf8_codepoint" src/arch src/parser src/tokenizer -n`
+  = **backend は `tk_emit_string_literal_bytes()` 呼び出しのみ、decode/escape の正本は
+  tokenizer 側**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き861: **文字列リテラルの decode 後 unit 数カウントを
   tokenizer の `tk_count_string_code_units()` に集約した**。
 

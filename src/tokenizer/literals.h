@@ -24,6 +24,11 @@ uint32_t tk_decode_utf8(const char *s, int len, int *pos);
 int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, uint32_t out[2]);
 /** @brief 文字列を char_width のコードユニット列へ変換したときの総ユニット数を返す。 */
 int tk_count_string_code_units(const char *s, int len, int char_width);
+typedef void (*tk_string_literal_byte_emit_fn)(unsigned char byte, void *user);
+/** @brief 文字列リテラルを実データ byte 列へ展開する。emit==NULL なら byte 数だけ数える。 */
+int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
+                                 bool include_nul,
+                                 tk_string_literal_byte_emit_fn emit, void *user);
 
 /** @brief 文字列/文字定数中の1つのエスケープを読み取って値を返す。 */
 int tk_read_escape_char(char **pp);

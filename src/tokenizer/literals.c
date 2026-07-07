@@ -137,6 +137,61 @@ int tk_count_string_code_units(const char *s, int len, int char_width) {
   return count;
 }
 
+static void tk_emit_literal_byte(unsigned char byte,
+                                 tk_string_literal_byte_emit_fn emit, void *user,
+                                 int *count) {
+  if (emit) emit(byte, user);
+  if (count) (*count)++;
+}
+
+static void tk_emit_literal_utf8_codepoint(uint32_t v,
+                                           tk_string_literal_byte_emit_fn emit,
+                                           void *user, int *count) {
+  char bytes[4];
+  int n = tk_encode_utf8(v, bytes);
+  for (int i = 0; i < n; i++) {
+    tk_emit_literal_byte((unsigned char)bytes[i], emit, user, count);
+  }
+}
+
+int tk_emit_string_literal_bytes(const char *s, int len, int char_width,
+                                 bool include_nul,
+                                 tk_string_literal_byte_emit_fn emit, void *user) {
+  if (!s || len < 0) return 0;
+  int count = 0;
+  int cw = char_width > 0 ? char_width : TK_CHAR_WIDTH_CHAR;
+  if (cw == TK_CHAR_WIDTH_CHAR) {
+    int pos = 0;
+    while (pos < len) {
+      if (s[pos] == '\\') {
+        uint32_t v = 0;
+        if (tk_parse_escape_value(s, len, &pos, &v)) {
+          tk_emit_literal_utf8_codepoint(v, emit, user, &count);
+        } else {
+          tk_emit_literal_byte((unsigned char)s[pos++], emit, user, &count);
+        }
+      } else {
+        tk_emit_literal_byte((unsigned char)s[pos++], emit, user, &count);
+      }
+    }
+  } else {
+    int pos = 0;
+    while (pos < len) {
+      uint32_t units[2];
+      int nu = tk_next_string_code_units(s, len, &pos, cw, units);
+      for (int u = 0; u < nu; u++) {
+        for (int b = 0; b < cw; b++) {
+          tk_emit_literal_byte((unsigned char)(units[u] >> (8 * b)), emit, user, &count);
+        }
+      }
+    }
+  }
+  if (include_nul) {
+    for (int b = 0; b < cw; b++) tk_emit_literal_byte(0, emit, user, &count);
+  }
+  return count;
+}
+
 /** @brief リテラル中のエスケープ1個を値にデコードする。 */
 int tk_read_escape_char(char **pp) {
   char *p = *pp;

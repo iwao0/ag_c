@@ -19,7 +19,6 @@
  * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由に切替。 */
 #include "../parser/symtab.h"
 #include "../parser/parser_public.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -66,55 +65,25 @@ static void scan_string_lit_kinds(string_lit_t *lit, void *user) {
   else s->has_wide = 1;
 }
 
+static void emit_string_literal_asm_byte(unsigned char byte, void *user) {
+  (void)user;
+  cg_emitf("  .byte %u\n", (unsigned)byte);
+}
+
 static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
   (void)user;
   if (lit->char_width != TK_CHAR_WIDTH_CHAR) return;
   cg_emitf("%s:\n", lit->label);
-  int i = 0;
-  while (i < lit->len) {
-    uint32_t v = 0;
-    if (lit->str[i] == '\\') {
-      tk_parse_escape_value(lit->str, lit->len, &i, &v);
-    } else {
-      v = (unsigned char)lit->str[i];
-      i++;
-    }
-    /* codepoint を UTF-8 エンコード。 */
-    if (v < 0x80) {
-      cg_emitf("  .byte %u\n", (unsigned)v);
-    } else if (v < 0x800) {
-      cg_emitf("  .byte %u\n", (unsigned)(0xC0 | (v >> 6)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-    } else if (v < 0x10000) {
-      cg_emitf("  .byte %u\n", (unsigned)(0xE0 | (v >> 12)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-    } else {
-      cg_emitf("  .byte %u\n", (unsigned)(0xF0 | (v >> 18)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 12) & 0x3F)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | ((v >> 6) & 0x3F)));
-      cg_emitf("  .byte %u\n", (unsigned)(0x80 | (v & 0x3F)));
-    }
-  }
-  cg_emitf("  .byte 0\n");
+  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+                               emit_string_literal_asm_byte, NULL);
 }
 
 static void emit_wide_string_literal(string_lit_t *lit, void *user) {
   (void)user;
   if (lit->char_width == TK_CHAR_WIDTH_CHAR) return;
   cg_emitf("%s:\n", lit->label);
-  int i = 0;
-  int cw = (int)lit->char_width;
-  while (i < lit->len) {
-    uint32_t units[2];
-    int nu = tk_next_string_code_units(lit->str, lit->len, &i, cw, units);
-    for (int k = 0; k < nu; k++) {
-      if (cw == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword %u\n", (unsigned)units[k]);
-      else cg_emitf("  .word %u\n", (unsigned)units[k]);
-    }
-  }
-  if (cw == TK_CHAR_WIDTH_CHAR16) cg_emitf("  .hword 0\n");
-  else cg_emitf("  .word 0\n");
+  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+                               emit_string_literal_asm_byte, NULL);
 }
 
 void gen_string_literals(void) {

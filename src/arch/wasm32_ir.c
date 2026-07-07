@@ -3,7 +3,6 @@
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
 #include "../parser/semantic_ctx.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -208,26 +207,8 @@ static void find_string_lit_cb(string_lit_t *lit, void *user) {
 
 static int narrow_string_encoded_size(string_lit_t *lit) {
   if (!lit) return 1;
-  int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
-  if (cw != TK_CHAR_WIDTH_CHAR) {
-    int bytes = cw;  /* trailing NUL code unit */
-    int i = 0;
-    while (i < lit->len) {
-      uint32_t units[2];
-      int nu = tk_next_string_code_units(lit->str, lit->len, &i, cw, units);
-      bytes += nu * cw;
-    }
-    return bytes;
-  }
-  int bytes = 1;  /* trailing NUL */
-  int i = 0;
-  while (i < lit->len) {
-    uint32_t v = 0;
-    if (lit->str[i] == '\\') tk_parse_escape_value(lit->str, lit->len, &i, &v);
-    else v = (unsigned char)lit->str[i++];
-    bytes += (v < 0x80) ? 1 : (v < 0x800) ? 2 : (v < 0x10000) ? 3 : 4;
-  }
-  return bytes;
+  return tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width,
+                                      true, NULL, NULL);
 }
 
 static int data_addr_for_string_label(const char *sym) {
@@ -1738,52 +1719,19 @@ static void emit_wat_escaped_byte(unsigned char c) {
   }
 }
 
+static void emit_string_literal_wat_byte(unsigned char byte, void *user) {
+  (void)user;
+  emit_wat_escaped_byte(byte);
+}
+
 static void emit_string_literal_data(string_lit_t *lit, void *user) {
   (void)user;
   int addr = data_addr_for_string_label(lit->label);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
-  if (cw != TK_CHAR_WIDTH_CHAR) {
-    int sp = 0;
-    while (sp < lit->len) {
-      uint32_t units[2];
-      int nu = tk_next_string_code_units(lit->str, lit->len, &sp, cw, units);
-      for (int u = 0; u < nu; u++) {
-        for (int b = 0; b < cw; b++) {
-          emit_wat_escaped_byte((unsigned char)(units[u] >> (8 * b)));
-        }
-      }
-    }
-    for (int b = 0; b < cw; b++) emit_wat_escaped_byte(0);
-    cg_emitf("\")\n");
-    return;
-  }
-  int i = 0;
-  while (i < lit->len) {
-    uint32_t v = 0;
-    if (lit->str[i] == '\\') {
-      tk_parse_escape_value(lit->str, lit->len, &i, &v);
-      if (v < 0x80) {
-        emit_wat_escaped_byte((unsigned char)v);
-      } else if (v < 0x800) {
-        emit_wat_escaped_byte((unsigned char)(0xC0 | (v >> 6)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
-      } else if (v < 0x10000) {
-        emit_wat_escaped_byte((unsigned char)(0xE0 | (v >> 12)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
-      } else {
-        emit_wat_escaped_byte((unsigned char)(0xF0 | (v >> 18)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 12) & 0x3F)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | ((v >> 6) & 0x3F)));
-        emit_wat_escaped_byte((unsigned char)(0x80 | (v & 0x3F)));
-      }
-    } else {
-      emit_wat_escaped_byte((unsigned char)lit->str[i++]);
-    }
-  }
-  cg_emitf("\\00\")\n");
+  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+                               emit_string_literal_wat_byte, NULL);
+  cg_emitf("\")\n");
 }
 
 static void emit_i32_data_bytes(int addr, long long value, int size) {

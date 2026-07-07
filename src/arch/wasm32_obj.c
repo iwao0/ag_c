@@ -2,7 +2,6 @@
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
 #include "../parser/semantic_ctx.h"
-#include "../tokenizer/escape.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -171,6 +170,10 @@ static void wb_reserve(wb_t *b, size_t add) {
 static void wb_u8(wb_t *b, unsigned v) {
   wb_reserve(b, 1);
   b->data[b->len++] = (unsigned char)v;
+}
+
+static void obj_emit_string_literal_byte(unsigned char byte, void *user) {
+  wb_u8((wb_t *)user, byte);
 }
 
 static void wb_bytes(wb_t *b, const void *p, size_t n) {
@@ -881,24 +884,6 @@ static void emit_fp_const(wb_t *b, ir_type_t type, double value) {
 
 static unsigned i2f_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
 static unsigned f2i_opcode(ir_type_t dst, ir_type_t src, int is_unsigned);
-
-static void wb_utf8_codepoint(wb_t *b, uint32_t v) {
-  if (v < 0x80) {
-    wb_u8(b, v);
-  } else if (v < 0x800) {
-    wb_u8(b, 0xc0 | (v >> 6));
-    wb_u8(b, 0x80 | (v & 0x3f));
-  } else if (v < 0x10000) {
-    wb_u8(b, 0xe0 | (v >> 12));
-    wb_u8(b, 0x80 | ((v >> 6) & 0x3f));
-    wb_u8(b, 0x80 | (v & 0x3f));
-  } else {
-    wb_u8(b, 0xf0 | (v >> 18));
-    wb_u8(b, 0x80 | ((v >> 12) & 0x3f));
-    wb_u8(b, 0x80 | ((v >> 6) & 0x3f));
-    wb_u8(b, 0x80 | (v & 0x3f));
-  }
-}
 
 static void emit_val(wb_t *b, ir_val_t v, ir_type_t want, int param_count) {
   want = wasm_ir_type(want);
@@ -2351,33 +2336,10 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
   (void)user;
   int name_len = lit->label ? (int)strlen(lit->label) : 0;
   if (!lit->label || name_len == 0) obj_unsupported_msg("string literal label in Wasm object mode");
-  int cw = lit->char_width > 0 ? (int)lit->char_width : TK_CHAR_WIDTH_CHAR;
   obj_data_t *d = intern_data(lit->label, name_len, 0, 1, 0);
   if (d->is_emitted) return;
-  if (cw != TK_CHAR_WIDTH_CHAR) {
-    int sp = 0;
-    while (sp < lit->len) {
-      uint32_t units[2];
-      int nu = tk_next_string_code_units(lit->str, lit->len, &sp, cw, units);
-      for (int u = 0; u < nu; u++) {
-        for (int b = 0; b < cw; b++) wb_u8(&d->bytes, (unsigned char)(units[u] >> (8 * b)));
-      }
-    }
-    for (int b = 0; b < cw; b++) wb_u8(&d->bytes, 0);
-    d->is_emitted = 1;
-    return;
-  }
-  int i = 0;
-  while (i < lit->len) {
-    uint32_t v = 0;
-    if (lit->str[i] == '\\') {
-      tk_parse_escape_value(lit->str, lit->len, &i, &v);
-      wb_utf8_codepoint(&d->bytes, v);
-    } else {
-      wb_u8(&d->bytes, (unsigned char)lit->str[i++]);
-    }
-  }
-  wb_u8(&d->bytes, 0);
+  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+                               obj_emit_string_literal_byte, &d->bytes);
   d->is_emitted = 1;
 }
 
