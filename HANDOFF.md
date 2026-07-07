@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き822: sub-int cast operand signedness 正本化）
+最終更新: 2026-07-07（続き823: signed cast sub-int operand signedness 正本化）
 
 ## 現状
+- 続き823: **`(signed)` cast でも sub-int operand の unsigned 正本を破壊しないようにした**。
+
+  続き822で `(int)s.a` は `wrap_integer_cast_result()` 経由にしたが、同じ
+  `apply_cast()` 内の `TK_SIGNED` / `TK_UNSIGNED` 分岐には、4 バイト未満の非定数
+  operand に対して `annotate_cast_type(operand, cast_type)` を返す fallback が残っていた。
+  そのため `typedef unsigned char u8; struct S { u8 a; }; ((signed)s.a)==200`
+  が、cast 前の `s.a` 自体を signed int 型へ塗り替え、native asm で `ldrsb` になって
+  `RC:1` になることを確認した。
+
+  今回は `TK_SIGNED` / `TK_UNSIGNED` 分岐の fallback も
+  `wrap_integer_cast_result()` に寄せ、operand 側の型・signedness 正本を保持したまま、
+  cast result 側へ 4 バイト整数型を持たせる形にした。修正後の同じ再現コードは
+  `RC:0` になり、load も `ldrb` へ戻る。
+
+  回帰テストは `test_expr_member_access()` に `(signed)s.a` の signedness reader 確認を追加し、
+  `test/fixtures/probes_found_bugs/typedef_unsigned_struct_member.c` に
+  `(signed)s.a == 200` / `(signed)s.b == 50000` の実行確認を追加した。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser build/test_e2e` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き822: **`(int)` cast が sub-int operand の unsigned 正本を破壊しないようにした**。
 
   IR builder 側で `ND_DEREF` load の signedness を `node_mem_t::is_unsigned` 直読ではなく

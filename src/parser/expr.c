@@ -2356,7 +2356,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (ps_node_is_pointer(operand)) {
       return wrap_integer_cast_result(operand, cast_type, 4, target_unsigned, 0);
     }
-    return annotate_cast_type(operand, cast_type);
+    return wrap_integer_cast_result(operand, cast_type, 4, target_unsigned, 0);
   }
   if (type_kind == TK_BOOL) {
     return annotate_cast_type(psx_node_new_binary(ND_NE, operand, psx_node_new_num(0)),
