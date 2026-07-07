@@ -16184,3 +16184,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き833）: member designator slot 解決を node_utils helper に集約
+- 見つかった浅い箇所:
+  - global initializer の `.member` designator が、flat slot / unnamed union cover /
+    union は slot 0 という規約を `parser.c` のローカル
+    `resolve_member_designator_tag()` に抱えていた。
+  - 同じ意味領域の flat slot / cover 判定は node_utils に寄ってきている一方、
+    member 名から slot/ordinal を引く規約だけ parser 本体に残っていた。
+- 根本対応:
+  - `psx_tag_member_designator_slot()` を node_utils + parser_public API に追加した。
+  - `parser.c` の `resolve_member_designator_tag()` を削除し、
+    global brace designator 解決は同 helper 経由に統一した。
+  - parser unit の type metadata bridge に struct/union designator slot 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

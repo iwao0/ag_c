@@ -1372,8 +1372,8 @@ static void consume_global_member_array_dim(tag_member_info_t *mi) {
   mi->arr_ndim = 0;
 }
 
-/* グローバル struct/union の `.member` designator 解決は resolve_member_designator_tag
- * (tag 直接指定版) に統合した。本体 psx_gbrace_flat はネスト時の型コンテキスト ctx に対して
+/* グローバル struct/union の `.member` designator 解決は
+ * psx_tag_member_designator_slot() に統合した。本体 psx_gbrace_flat はネスト時の型コンテキスト ctx に対して
  * 解決する必要があるため gv 固定版は使わない。 */
 
 static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
@@ -1406,48 +1406,6 @@ typedef struct {
   tk_float_kind_t pending_fp_kind;
   int pending_fp_size;  /* float=4, double=8 (sentinel decode 用) */
 } gbrace_ctx_t;
-
-/* tag 直接指定版の `.member` designator 解決 (resolve_global_member_designator の gv 非依存版)。 */
-static int resolve_member_designator_tag(token_kind_t tk, char *tn, int tl,
-                                         char *mname, int mlen, int *out_ordinal) {
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int slot = 0;
-  int covered_union_slot = -1;
-  int covered_union_off = 0;
-  int covered_union_size = 0;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    int in_covered_union = covered_union_slot >= 0 &&
-                           mi.offset >= covered_union_off &&
-                           mi.offset < covered_union_off + covered_union_size;
-    if (mi.len == mlen && mi.name && strncmp(mi.name, mname, (size_t)mlen) == 0) {
-      if (out_ordinal) *out_ordinal = i;
-      if (in_covered_union) return covered_union_slot;
-      return (tk == TK_UNION) ? 0 : slot;
-    }
-    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (psx_tag_member_is_unnamed_union(&mi)) {
-      covered_union_slot = slot;
-      covered_union_off = mi.offset;
-      covered_union_size = mi.type_size;
-      slot += psx_tag_member_flat_slots(&mi);
-      continue;
-    }
-    if (in_covered_union) continue;
-    int cover_off = 0;
-    int cover_size = 0;
-    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, mi.offset,
-                                                               &cover_off, &cover_size);
-    if (has_cover) {
-      covered_union_slot = slot;
-      covered_union_off = cover_off;
-      covered_union_size = cover_size;
-    }
-    slot += psx_tag_member_flat_slots(&mi);
-  }
-  return -1;
-}
 
 /* tag_member_info_t (designator の葉メンバ型) から子 brace のコンテキストを作る。 */
 static void gbrace_ctx_clear(gbrace_ctx_t *c) {
@@ -1734,8 +1692,8 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* designator は最外 gv ではなく「現在の brace level の型」ctx に対して解決する。
        * これがないと `.s={.a=7}` / `.items={[2]={.a=7}}` の内側 `.a` を gv の型に
        * 探して E3064 になっていた。level_start を足して絶対 slot にする。 */
-      int slot = resolve_member_designator_tag(ctx.tag_kind, ctx.tag_name, ctx.tag_len,
-                                               m->str, m->len, &ordinal);
+      int slot = psx_tag_member_designator_slot(ctx.tag_kind, ctx.tag_name, ctx.tag_len,
+                                                m->str, m->len, &ordinal);
       if (slot < 0) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));

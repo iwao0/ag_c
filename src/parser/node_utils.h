@@ -41,6 +41,8 @@ int psx_tag_member_flat_slots(const struct tag_member_info_t *mi);
 int psx_tag_member_elem_flat_slots(const struct tag_member_info_t *mi);
 int psx_tag_member_subscript_stride_slots(const struct tag_member_info_t *mi);
 int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len);
+int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                   char *member_name, int member_len, int *out_ordinal);
 
 int ps_node_type_size(node_t *node);
 int psx_node_storage_type_size(node_t *node);

@@ -2895,6 +2895,14 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
   ASSERT_EQ(2, psx_tag_member_flat_slots(&flat_member));
   ASSERT_EQ(2, psx_tag_member_elem_flat_slots(&flat_member));
+  int flat_ordinal = -1;
+  ASSERT_EQ(4, psx_tag_member_designator_slot(TK_STRUCT, "FlatOut", 7, "y", 1,
+                                              &flat_ordinal));
+  ASSERT_EQ(5, flat_ordinal);
+  flat_ordinal = -1;
+  ASSERT_EQ(0, psx_tag_member_designator_slot(TK_UNION, "FlatU", 5, "in", 2,
+                                              &flat_ordinal));
+  ASSERT_EQ(1, flat_ordinal);
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
   (void)parsed_code;
