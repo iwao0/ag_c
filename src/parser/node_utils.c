@@ -628,6 +628,33 @@ psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
   return value;
 }
 
+int psx_gvar_visit_initializer_classified(
+    const global_var_t *gv, const psx_gvar_initializer_class_t *init_class,
+    int fallback_size, const psx_gvar_initializer_visit_ops_t *ops, void *user) {
+  if (!init_class || !ops) return 0;
+  if (init_class->kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
+    return ops->aggregate ? ops->aggregate(user, init_class) : 0;
+  }
+  if (init_class->kind == PSX_GVAR_INIT_KIND_SLOTS) {
+    psx_gvar_init_slots_layout_t layout =
+        psx_gvar_init_slots_layout(gv, fallback_size);
+    return ops->slots ? ops->slots(user, &layout, init_class) : 0;
+  }
+  psx_gvar_init_scalar_value_t value =
+      psx_gvar_init_scalar_value(gv, fallback_size);
+  return ops->scalar ? ops->scalar(user, value, init_class) : 0;
+}
+
+int psx_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
+                               int fallback_size,
+                               const psx_gvar_initializer_visit_ops_t *ops,
+                               void *user) {
+  psx_gvar_initializer_class_t init_class =
+      psx_gvar_initializer_class(gv, include_empty_aggregate);
+  return psx_gvar_visit_initializer_classified(gv, &init_class, fallback_size,
+                                               ops, user);
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);

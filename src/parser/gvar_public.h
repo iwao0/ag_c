@@ -137,6 +137,14 @@ typedef int (*psx_gvar_init_slot_value_fn)(
     void *user, int index, psx_gvar_init_slot_value_t value,
     const psx_gvar_init_slots_layout_t *layout);
 
+typedef struct {
+  int (*aggregate)(void *user, const psx_gvar_initializer_class_t *init_class);
+  int (*slots)(void *user, const psx_gvar_init_slots_layout_t *layout,
+               const psx_gvar_initializer_class_t *init_class);
+  int (*scalar)(void *user, psx_gvar_init_scalar_value_t value,
+                const psx_gvar_initializer_class_t *init_class);
+} psx_gvar_initializer_visit_ops_t;
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
@@ -159,6 +167,13 @@ psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member);
 psx_gvar_init_scalar_value_t
 psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
+int psx_gvar_visit_initializer_classified(
+    const global_var_t *gv, const psx_gvar_initializer_class_t *init_class,
+    int fallback_size, const psx_gvar_initializer_visit_ops_t *ops, void *user);
+int psx_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
+                               int fallback_size,
+                               const psx_gvar_initializer_visit_ops_t *ops,
+                               void *user);
 int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
 psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv);

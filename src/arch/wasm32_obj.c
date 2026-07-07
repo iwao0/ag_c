@@ -2561,6 +2561,60 @@ static int write_obj_global_init_slot_value(void *user, int index,
   return 1;
 }
 
+typedef struct {
+  obj_data_t *d;
+  global_var_t *gv;
+  int size;
+} obj_global_init_emit_ctx_t;
+
+static int emit_obj_initializer_aggregate(void *user,
+                                          const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  obj_global_init_emit_ctx_t *ctx = user;
+  emit_obj_global_aggregate_data(ctx->d, ctx->gv, ctx->size);
+  return 1;
+}
+
+static int emit_obj_initializer_slots(void *user,
+                                      const psx_gvar_init_slots_layout_t *layout,
+                                      const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  obj_global_init_emit_ctx_t *ctx = user;
+  int elem = layout->elem_size;
+  if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
+    obj_unsupported_msg("global array element size in Wasm object mode");
+  }
+  obj_init_slots_data_ctx_t slot_ctx = {.d = ctx->d, .gv = ctx->gv};
+  psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->elem_count,
+                                 write_obj_global_init_slot_value, &slot_ctx);
+  return 1;
+}
+
+static int emit_obj_initializer_scalar(void *user,
+                                       psx_gvar_init_scalar_value_t value,
+                                       const psx_gvar_initializer_class_t *init_class) {
+  obj_global_init_emit_ctx_t *ctx = user;
+  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
+    ensure_global_func_sig_for_init_symbol(ctx->gv, value);
+    data_write_init_value(ctx->d, value);
+  } else if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
+    data_write_init_value(ctx->d, value);
+  } else if (!init_class->has_payload) {
+    /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */
+  } else if (value.value == 0) {
+    wb_zero(&ctx->d->bytes, ctx->size);
+  } else {
+    data_write_init_value(ctx->d, value);
+  }
+  return 1;
+}
+
+static const psx_gvar_initializer_visit_ops_t obj_global_initializer_visit_ops = {
+    .aggregate = emit_obj_initializer_aggregate,
+    .slots = emit_obj_initializer_slots,
+    .scalar = emit_obj_initializer_scalar,
+};
+
 static void emit_obj_global(global_var_t *gv, void *user) {
   (void)user;
   psx_gvar_view_t view = psx_gvar_view(gv);
@@ -2581,33 +2635,10 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   }
   data_note_alloc_size(d, (size_t)size);
 
-  if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
-    emit_obj_global_aggregate_data(d, gv, size);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    ensure_global_func_sig_for_init_symbol(gv, value);
-    data_write_init_value(d, value);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
-    psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
-    int elem = slot_layout.elem_size;
-    if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
-      obj_unsupported_msg("global array element size in Wasm object mode");
-    }
-    obj_init_slots_data_ctx_t ctx = {.d = d, .gv = gv};
-    psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.elem_count,
-                                   write_obj_global_init_slot_value, &ctx);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_FLOAT) {
-    data_write_init_value(d, psx_gvar_init_scalar_value(gv, size));
-  } else {
-    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    if (!init_class.has_payload) {
-      /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */
-    } else if (value.value == 0) {
-      wb_zero(&d->bytes, size);
-    } else {
-      data_write_init_value(d, value);
-    }
-  }
+  obj_global_init_emit_ctx_t emit_ctx = {.d = d, .gv = gv, .size = size};
+  psx_gvar_visit_initializer_classified(gv, &init_class, size,
+                                        &obj_global_initializer_visit_ops,
+                                        &emit_ctx);
   d->is_emitted = 1;
 }
 

@@ -1812,13 +1812,13 @@ static int emit_global_init_slot_value_data(void *user, int index,
   return 1;
 }
 
-static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
-  psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
-  int elem = slot_layout.elem_size;
+static void emit_global_init_values_data(global_var_t *gv, int addr, int size,
+                                         const psx_gvar_init_slots_layout_t *slot_layout) {
+  int elem = slot_layout->elem_size;
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   wasm_init_slots_data_ctx_t ctx = {.total_size = size};
-  psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.elem_count,
+  psx_gvar_walk_init_slot_values(gv, slot_layout, slot_layout->elem_count,
                                  emit_global_init_slot_value_data, &ctx);
   cg_emitf("\")\n");
 }
@@ -1893,35 +1893,71 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
   }
 }
 
-static void emit_global_data(global_var_t *gv, void *user) {
-  (void)user;
-  if (psx_gvar_is_extern_decl(gv)) return;
-  int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
-  int size = psx_gvar_storage_size(gv, 4);
-  psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 1);
-  if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
-    emit_global_struct_data(gv, addr);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
+typedef struct {
+  global_var_t *gv;
+  int addr;
+  int size;
+} wasm_global_init_emit_ctx_t;
+
+static int emit_global_initializer_aggregate_data(void *user,
+                                                  const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  wasm_global_init_emit_ctx_t *ctx = user;
+  emit_global_struct_data(ctx->gv, ctx->addr);
+  return 1;
+}
+
+static int emit_global_initializer_slots_data(void *user,
+                                              const psx_gvar_init_slots_layout_t *layout,
+                                              const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  wasm_global_init_emit_ctx_t *ctx = user;
+  emit_global_init_values_data(ctx->gv, ctx->addr, ctx->size, layout);
+  return 1;
+}
+
+static int emit_global_initializer_scalar_data(void *user,
+                                               psx_gvar_init_scalar_value_t value,
+                                               const psx_gvar_initializer_class_t *init_class) {
+  wasm_global_init_emit_ctx_t *ctx = user;
+  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
+    emit_fp_data_bytes(ctx->addr, value.fp_kind, value.fvalue);
+    return 1;
+  }
+  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
       wasm_unsupported_msg("global size in Wasm backend");
     }
     uint64_t bits = global_init_value_bits(
         value, "global symbol initializer in Wasm backend",
         "floating global initializer in Wasm backend");
-    emit_i32_data_bytes(addr, (long long)bits, value.size);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
-    emit_global_init_values_data(gv, addr, size);
-  } else if (init_class.kind == PSX_GVAR_INIT_KIND_FLOAT) {
-    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
-  } else {
-    psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    if ((!init_class.has_payload || value.value == 0) &&
-        size != 1 && size != 2 && size != 4 && size != 8) return;
-    if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
-    emit_i32_data_bytes(addr, value.value, value.size);
+    emit_i32_data_bytes(ctx->addr, (long long)bits, value.size);
+    return 1;
   }
+  if ((!init_class->has_payload || value.value == 0) &&
+      ctx->size != 1 && ctx->size != 2 && ctx->size != 4 && ctx->size != 8) {
+    return 1;
+  }
+  if (ctx->size != 1 && ctx->size != 2 && ctx->size != 4 && ctx->size != 8) {
+    wasm_unsupported_msg("global size in Wasm backend");
+  }
+  emit_i32_data_bytes(ctx->addr, value.value, value.size);
+  return 1;
+}
+
+static const psx_gvar_initializer_visit_ops_t wasm_global_initializer_visit_ops = {
+    .aggregate = emit_global_initializer_aggregate_data,
+    .slots = emit_global_initializer_slots_data,
+    .scalar = emit_global_initializer_scalar_data,
+};
+
+static void emit_global_data(global_var_t *gv, void *user) {
+  (void)user;
+  if (psx_gvar_is_extern_decl(gv)) return;
+  int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
+  int size = psx_gvar_storage_size(gv, 4);
+  wasm_global_init_emit_ctx_t ctx = {.gv = gv, .addr = addr, .size = size};
+  psx_gvar_visit_initializer(gv, 1, size, &wasm_global_initializer_visit_ops, &ctx);
 }
 
 void wasm32_emit_data_segments(void) {

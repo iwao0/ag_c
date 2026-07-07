@@ -222,6 +222,45 @@ static void emit_global_aggregate_init(global_var_t *gv) {
   psx_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
 }
 
+typedef struct {
+  global_var_t *gv;
+} arm64_global_init_emit_ctx_t;
+
+static int emit_global_initializer_aggregate(void *user,
+                                             const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  arm64_global_init_emit_ctx_t *ctx = user;
+  emit_global_aggregate_init(ctx->gv);
+  return 1;
+}
+
+static int emit_global_initializer_slots(void *user,
+                                         const psx_gvar_init_slots_layout_t *layout,
+                                         const psx_gvar_initializer_class_t *init_class) {
+  (void)init_class;
+  arm64_global_init_emit_ctx_t *ctx = user;
+  psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
+                                 emit_global_init_slot_value, NULL);
+  int remain = layout->elem_count - layout->init_count;
+  if (remain > 0) cg_emitf("  .space %d\n", remain * layout->elem_size);
+  return 1;
+}
+
+static int emit_global_initializer_scalar(void *user,
+                                          psx_gvar_init_scalar_value_t value,
+                                          const psx_gvar_initializer_class_t *init_class) {
+  (void)user;
+  (void)init_class;
+  emit_global_init_value(value);
+  return 1;
+}
+
+static const psx_gvar_initializer_visit_ops_t arm64_global_initializer_visit_ops = {
+    .aggregate = emit_global_initializer_aggregate,
+    .slots = emit_global_initializer_slots,
+    .scalar = emit_global_initializer_scalar,
+};
+
 /* gen_global_vars の本体: 1 つの global_var_t を assembly directive に
  * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
 static void emit_one_global_var(global_var_t *gv, void *user) {
@@ -256,18 +295,9 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
-    psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 0);
-    if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
-      emit_global_aggregate_init(gv);
-    } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
-      psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, 4);
-      psx_gvar_walk_init_slot_values(gv, &slot_layout, slot_layout.init_count,
-                                     emit_global_init_slot_value, NULL);
-      int remain = slot_layout.elem_count - slot_layout.init_count;
-      if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
-    } else {
-      emit_global_init_value(psx_gvar_init_scalar_value(gv, storage_size));
-    }
+    arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
+    psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+                               &init_ctx);
     return;
   }
   /* 暫定定義: .comm _name,size,log2align。

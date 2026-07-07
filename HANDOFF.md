@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き899: add slot initializer value walker）
+最終更新: 2026-07-08（続き900: add top-level initializer visitor）
 
 ## 現状
+- 続き900: **top-level global initializer 分岐を public visitor に寄せた**。
+
+  続き899で slot-array の値列挙は `psx_gvar_walk_init_slot_values()` に集まったが、
+  arm64 / Wasm IR / Wasm object にはまだ `AGGREGATE / SLOTS / SYMBOL / FLOAT / INTEGER`
+  の top-level 分岐がそれぞれ残っていた。値の shape と slot 列挙は parser/public に寄った一方、
+  「初期化子の形に応じてどの経路に入るか」の dispatch が backend ごとに複製されていた。
+
+  今回は `psx_gvar_initializer_visit_ops_t`、
+  `psx_gvar_visit_initializer()`、
+  `psx_gvar_visit_initializer_classified()` を追加した。visitor は
+  `psx_gvar_initializer_class()` の分類結果を正本として使い、aggregate / slots / scalar の
+  callback へ渡す。slots では layout を public 側で作り、scalar では
+  `psx_gvar_init_scalar_value()` まで public 側で作って渡す。
+
+  arm64 は `.data` の aggregate/slot/scalar emit を visitor callback 化した。
+  Wasm IR は data segment の aggregate/slot/scalar emit を callback 化し、object backend は
+  再 emit 判定で既に使っている分類結果を `psx_gvar_visit_initializer_classified()` に渡して再利用する。
+  relocation、function signature 補完、具体的な byte/directive 出力は backend callback に残している。
+
+  これで backend 側に残る initializer kind の直接 switch はほぼなくなり、
+  classifier → visitor → backend 固有 callback という流れになった。次の根本対応候補は、
+  visitor callback の失敗戻り値を backend 側で明示的に扱うか、
+  scalar callback 内の Wasm IR/object でまだ似ている symbol/float/integer emission をさらに小さく
+  共通化できるかを見ること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き899: **slot-array initializer value の列挙を public walker に寄せた**。
 
   続き898で initializer の分類正本は `psx_gvar_initializer_class()` に寄ったが、
