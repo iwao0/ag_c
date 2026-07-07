@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き846: centralize global init plain-zero slot check）
+最終更新: 2026-07-07（続き847: introduce global init slot view）
 
 ## 現状
+- 続き847: **global initializer slot の parallel array 読み取りを
+  `psx_gvar_init_slot_view()` に集約し始めた**。
+
+  続き845/846で fp sentinel と plain-zero 判定は helper 化したが、helper 本体や
+  wasm32 IR / wasm32 object の emission にはまだ
+  `init_value_symbols` / `init_value_symbol_lens` / `init_values` / `init_fvalues`
+  を別々に読む同形コードが残っていた。今回は `psx_gvar_init_slot_t` と
+  `psx_gvar_init_slot_view()` を `node_utils` / `parser_public` に追加し、
+  1 slot の symbol/value/fvalue/fp sentinel を一つの view として読む入口を作った。
+  既存の `psx_gvar_init_slot_fp_kind()` / `_is_plain_zero()` はこの view 経由にし、
+  wasm32 IR/object の主要な slot emission も view を読む形へ寄せた。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。sentinel slot の
+  `symbol_len` / `fp_sentinel_kind` と、通常 zero slot の view が helper 経由で取れることを
+  固定している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**、
+  `make -j4 build/ag_c` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**。
+
 - 続き846: **global initializer slot の plain-zero 判定を
   `psx_gvar_init_slot_is_plain_zero()` に集約した**。
 

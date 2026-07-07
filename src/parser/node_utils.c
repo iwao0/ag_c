@@ -456,23 +456,31 @@ int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size
   return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
+psx_gvar_init_slot_t psx_gvar_init_slot_view(const global_var_t *gv, int idx) {
+  psx_gvar_init_slot_t slot = {0};
+  if (!gv || idx < 0 || idx >= gv->init_count) return slot;
+  slot.in_range = 1;
+  slot.symbol = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
+  slot.symbol_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
+  slot.value = gv->init_values ? gv->init_values[idx] : 0;
+  slot.fvalue = gv->init_fvalues ? gv->init_fvalues[idx] : 0.0;
+  if (!slot.symbol) {
+    if (slot.symbol_len == -2) slot.fp_sentinel_kind = TK_FLOAT_KIND_FLOAT;
+    else if (slot.symbol_len == -3) slot.fp_sentinel_kind = TK_FLOAT_KIND_DOUBLE;
+  }
+  return slot;
+}
+
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {
-  if (!gv || idx < 0 || idx >= gv->init_count) return TK_FLOAT_KIND_NONE;
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
-  if (sym) return TK_FLOAT_KIND_NONE;
-  if (sym_len == -2) return TK_FLOAT_KIND_FLOAT;
-  if (sym_len == -3) return TK_FLOAT_KIND_DOUBLE;
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) return slot.fp_sentinel_kind;
   return TK_FLOAT_KIND_NONE;
 }
 
 int psx_gvar_init_slot_is_plain_zero(const global_var_t *gv, int idx) {
-  if (!gv || idx < 0 || idx >= gv->init_count) return 1;
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
-  long long value = gv->init_values ? gv->init_values[idx] : 0;
-  double fv = gv->init_fvalues ? gv->init_fvalues[idx] : 0.0;
-  return sym == NULL && sym_len == 0 && value == 0 && fv == 0.0;
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  if (!slot.in_range) return 1;
+  return slot.symbol == NULL && slot.symbol_len == 0 && slot.value == 0 && slot.fvalue == 0.0;
 }
 
 int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {

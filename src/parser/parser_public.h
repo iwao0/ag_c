@@ -29,6 +29,18 @@
                               本ヘッダ越しにしか触らない契約とする */
 #include <stdbool.h>
 
+#ifndef PSX_GVAR_INIT_SLOT_T_DEFINED
+#define PSX_GVAR_INIT_SLOT_T_DEFINED
+typedef struct psx_gvar_init_slot_t {
+  int in_range;
+  char *symbol;
+  int symbol_len;
+  long long value;
+  double fvalue;
+  tk_float_kind_t fp_sentinel_kind;
+} psx_gvar_init_slot_t;
+#endif
+
 /* node_utils.h からの公開 */
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
@@ -59,6 +71,7 @@ int psx_gvar_array_element_size(const global_var_t *gv);
 int psx_gvar_array_element_count(const global_var_t *gv);
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size);
+psx_gvar_init_slot_t psx_gvar_init_slot_view(const global_var_t *gv, int idx);
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx);
 int psx_gvar_init_slot_is_plain_zero(const global_var_t *gv, int idx);
 int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx);

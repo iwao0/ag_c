@@ -2913,6 +2913,11 @@ static void test_type_metadata_bridge() {
   tmp_union_init.init_count = 1;
   tmp_union_init.init_value_symbols = init_syms;
   tmp_union_init.init_value_symbol_lens = init_sym_lens;
+  psx_gvar_init_slot_t sentinel_slot = psx_gvar_init_slot_view(&tmp_union_init, 0);
+  ASSERT_TRUE(sentinel_slot.in_range);
+  ASSERT_TRUE(sentinel_slot.symbol == NULL);
+  ASSERT_EQ(-2, sentinel_slot.symbol_len);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, sentinel_slot.fp_sentinel_kind);
   ASSERT_EQ(0, psx_gvar_union_init_slot_ordinal(&tmp_union_init, 0));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, psx_gvar_init_slot_fp_kind(&tmp_union_init, 0));
   ASSERT_TRUE(!psx_gvar_init_slot_is_plain_zero(&tmp_union_init, 0));
@@ -2938,6 +2943,11 @@ static void test_type_metadata_bridge() {
   global_var_t tmp_union_ord = {0};
   tmp_union_ord.init_count = 1;
   tmp_union_ord.init_union_ordinals = init_ordinals;
+  psx_gvar_init_slot_t zero_slot = psx_gvar_init_slot_view(&tmp_union_ord, 0);
+  ASSERT_TRUE(zero_slot.in_range);
+  ASSERT_EQ(0, zero_slot.symbol_len);
+  ASSERT_EQ(0, zero_slot.value);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, zero_slot.fp_sentinel_kind);
   ASSERT_EQ(flatu_in_ordinal, psx_gvar_union_init_slot_ordinal(&tmp_union_ord, 0));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, psx_gvar_init_slot_fp_kind(&tmp_union_ord, 0));
   ASSERT_TRUE(psx_gvar_init_slot_is_plain_zero(&tmp_union_ord, 0));

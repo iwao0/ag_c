@@ -2462,29 +2462,25 @@ static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
                                     tk_float_kind_t fp_kind,
                                     const tag_member_info_t *member_info) {
   if (idx < 0) return;
-  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
-                  ? gv->init_value_symbol_lens[idx] : 0;
-  long long value = (idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0;
-  if (sym) {
-    if (psx_ctx_has_function_name(sym, sym_len) && member_info) {
-      ensure_func_sig_for_address(sym, sym_len,
-                                  func_sig_from_member_funcptr(member_info, sym, sym_len));
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  if (slot.symbol) {
+    if (psx_ctx_has_function_name(slot.symbol, slot.symbol_len) && member_info) {
+      ensure_func_sig_for_address(slot.symbol, slot.symbol_len,
+                                  func_sig_from_member_funcptr(member_info, slot.symbol,
+                                                              slot.symbol_len));
     }
-    data_write_symbol_addr_at(d, off, sym, sym_len, value, size);
+    data_write_symbol_addr_at(d, off, slot.symbol, slot.symbol_len, slot.value, size);
     return;
   }
-  tk_float_kind_t sentinel_fp_kind = psx_gvar_init_slot_fp_kind(gv, idx);
-  if (sentinel_fp_kind != TK_FLOAT_KIND_NONE) {
-    double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
-    data_write_fp_at(d, off, sentinel_fp_kind, fv);
+  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
+    data_write_fp_at(d, off, slot.fp_sentinel_kind, slot.fvalue);
     return;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {
-    double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
-    data_write_fp_at(d, off, fp_kind, fv);
+    data_write_fp_at(d, off, fp_kind, slot.fvalue);
     return;
   }
+  long long value = slot.value;
   if (normalize_bool) value = value != 0;
   data_write_int_le_at(d, off, (uint64_t)value, size);
 }

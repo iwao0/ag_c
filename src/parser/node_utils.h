@@ -8,6 +8,18 @@ struct lvar_t;
 struct global_var_t;
 struct tag_member_info_t;
 
+#ifndef PSX_GVAR_INIT_SLOT_T_DEFINED
+#define PSX_GVAR_INIT_SLOT_T_DEFINED
+typedef struct psx_gvar_init_slot_t {
+  int in_range;
+  char *symbol;
+  int symbol_len;
+  long long value;
+  double fvalue;
+  tk_float_kind_t fp_sentinel_kind;
+} psx_gvar_init_slot_t;
+#endif
+
 psx_type_t *psx_node_get_type(node_t *node);
 psx_type_t *psx_node_materialize_type(node_t *node);
 psx_type_t *psx_lvar_get_decl_type(struct lvar_t *var);
@@ -28,6 +40,7 @@ int psx_gvar_array_element_size(const struct global_var_t *gv);
 int psx_gvar_array_element_count(const struct global_var_t *gv);
 int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
+psx_gvar_init_slot_t psx_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
 int psx_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);
 int psx_gvar_union_init_slot_fp_size(const struct global_var_t *gv, int idx);
