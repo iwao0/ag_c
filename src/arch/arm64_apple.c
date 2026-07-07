@@ -266,15 +266,16 @@ static const psx_gvar_initializer_visit_ops_t arm64_global_initializer_visit_ops
  * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
 static void emit_one_global_var(global_var_t *gv, void *user) {
   (void)user;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (view.is_extern_decl) return;
+  if (psx_gvar_is_extern_decl(gv)) return;
+  char *name = psx_gvar_name(gv);
+  int name_len = psx_gvar_name_len(gv);
   int storage_size = psx_gvar_storage_size(gv, 4);
   int has_explicit_initializer = psx_gvar_has_explicit_initializer(gv);
-  if (view.is_thread_local) {
+  if (psx_gvar_is_thread_local(gv)) {
     /* _Thread_local: TLV descriptor + thread data/bss */
     if (has_explicit_initializer) {
       cg_emitf(".section __DATA,__thread_data\n");
-      cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
+      cg_emitf("_%.*s$tlv$init:\n", name_len, name);
       arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
       if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
                                       &init_ctx)) {
@@ -283,25 +284,25 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       }
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
-      cg_emitf("_%.*s$tlv$init:\n", view.name_len, view.name);
+      cg_emitf("_%.*s$tlv$init:\n", name_len, name);
       cg_emitf("  .space %d\n", storage_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-    if (!view.is_static) cg_emitf(".global _%.*s\n", view.name_len, view.name);
-    cg_emitf("_%.*s:\n", view.name_len, view.name);
+    if (!psx_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
+    cg_emitf("_%.*s:\n", name_len, name);
     cg_emitf("  .quad __tlv_bootstrap\n");
     cg_emitf("  .quad 0\n");
-    cg_emitf("  .quad _%.*s$tlv$init\n", view.name_len, view.name);
+    cg_emitf("  .quad _%.*s$tlv$init\n", name_len, name);
     return;
   }
   if (has_explicit_initializer) {
     cg_emitf(".section __DATA,__data\n");
     /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
-    if (!view.is_static) cg_emitf(".global _%.*s\n", view.name_len, view.name);
+    if (!psx_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
     int align_size = psx_gvar_initializer_element_size(gv, storage_size);
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
-    cg_emitf("_%.*s:\n", view.name_len, view.name);
+    cg_emitf("_%.*s:\n", name_len, name);
     arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
     if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
                                     &init_ctx)) {
@@ -314,11 +315,11 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
    * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
   int log2align = (storage_size >= 8) ? 3 : (storage_size >= 4) ? 2 : (storage_size >= 2) ? 1 : 0;
-  if (view.is_static) {
-    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", view.name_len, view.name, storage_size,
+  if (psx_gvar_is_static_storage(gv)) {
+    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", name_len, name, storage_size,
              log2align);
   } else {
-    cg_emitf(".comm _%.*s,%d,%d\n", view.name_len, view.name, storage_size, log2align);
+    cg_emitf(".comm _%.*s,%d,%d\n", name_len, name, storage_size, log2align);
   }
 }
 

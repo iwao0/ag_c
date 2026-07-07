@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き907: separate explicit initializer from payload）
+最終更新: 2026-07-08（続き908: make gvar view parser-internal）
 
 ## 現状
+- 続き908: **backend から `psx_gvar_view()` を外し、parser 内部 API に閉じた**。
+
+  続き907までで global initializer の分類と明示 initializer 判定は helper 化したが、
+  arm64 Apple backend と Wasm object backend にはまだ `psx_gvar_view()` を丸ごと受け取り、
+  name / storage class / extern / thread-local といった global metadata を広い view 経由で読む箇所が残っていた。
+  initializer 中身だけでなく global metadata の読み口も backend ごとに広がると、
+  型・宣言情報の正本を parser public view に戻してしまう余地が残る。
+
+  今回は arm64 Apple backend と Wasm object backend を
+  `psx_gvar_name()` / `psx_gvar_name_len()` /
+  `psx_gvar_is_extern_decl()` / `psx_gvar_is_static_storage()` /
+  `psx_gvar_is_thread_local()` の narrow helper 経由に変更した。
+  そのうえで `psx_gvar_view()` の宣言を `gvar_public.h` から外し、
+  parser 内部の `decl.h` に移した。これにより外部 backend は広い gvar view API を直接使えず、
+  parser 内の分類・initializer helper だけが必要な材料として view を使う形になった。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き907: **global initializer の「明示あり」と payload 有無を分離した**。
 
   続き900以降で global initializer の分類は `psx_gvar_initializer_class()` に寄せてきたが、

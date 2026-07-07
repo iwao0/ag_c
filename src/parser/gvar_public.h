@@ -147,7 +147,6 @@ typedef struct {
 } psx_gvar_initializer_visit_ops_t;
 
 global_var_t *psx_find_global_var(char *name, int len);
-psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
 int psx_gvar_has_explicit_initializer(const global_var_t *gv);
 int psx_gvar_has_initializer_payload(const global_var_t *gv);

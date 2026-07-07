@@ -2613,15 +2613,17 @@ static const psx_gvar_initializer_visit_ops_t obj_global_initializer_visit_ops =
 
 static void emit_obj_global(global_var_t *gv, void *user) {
   (void)user;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (view.is_extern_decl) {
-    intern_data(view.name, view.name_len, 2, view.is_static, 1);
+  char *name = psx_gvar_name(gv);
+  int name_len = psx_gvar_name_len(gv);
+  int is_static = psx_gvar_is_static_storage(gv);
+  if (psx_gvar_is_extern_decl(gv)) {
+    intern_data(name, name_len, 2, is_static, 1);
     return;
   }
 
   int size = psx_gvar_storage_size(gv, 4);
-  obj_data_t *d = intern_data(view.name, view.name_len, align_log2_for_size(size),
-                              view.is_static, 0);
+  obj_data_t *d = intern_data(name, name_len, align_log2_for_size(size),
+                              is_static, 0);
   psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 1);
   if (d->is_emitted) {
     if (!init_class.has_payload || d->bytes.len != 0) return;

@@ -8,6 +8,8 @@
 #include "lvar_public.h"
 #include "symtab.h"
 
+psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
+
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 struct lvar_t {
   lvar_t *next;
