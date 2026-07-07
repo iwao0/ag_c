@@ -3844,11 +3844,11 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
 /* static local 配列のベースアドレスを ND_ADDR(ND_GVAR) として返す。
  * 配列は decl.c の try_lower_static_local_array でグローバルにリダイレクトされ、
  * alias lvar (is_static_local=1, static_global_name=mangled) を持つ。
- * alias は size=0 で frame 割当を抑制しているため、サイズ情報は global_vars
- * から名前で引く。多次元配列は alias lvar に保存した stride 情報を
+ * alias は size=0 で frame 割当を抑制しているため、サイズ情報はグローバル変数表
+ * から名前検索で引く。多次元配列は alias lvar に保存した stride 情報を
  * ND_ADDR(ND_GVAR) へ伝播し、通常のローカル/グローバル配列と同じ subscript 経路に乗せる。 */
 static node_t *build_static_local_array_addr_node(lvar_t *var) {
-  /* global_vars リストから名前で引いて type_size を取る。 */
+  /* グローバル変数表から名前で引いて type_size を取る。 */
   short gv_type_size = (short)var->elem_size;
   for (global_var_t *gv = psx_find_global_var(var->static_global_name, var->static_global_name_len); gv; gv = NULL) {
     if (gv->name_len == var->static_global_name_len &&

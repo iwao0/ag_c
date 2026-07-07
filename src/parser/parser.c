@@ -26,7 +26,7 @@
 
 static string_lit_t *string_literals = NULL;
 static float_lit_t *float_literals = NULL;
-global_var_t *global_vars = NULL;
+static global_var_t *global_vars = NULL;
 
 /* グローバル変数の名前ハッシュ索引。グローバル参照の解決 (try_build_global_var_node)
  * や登録時の重複チェックが global_vars を線形走査しており、グローバル N 個・参照 M 回で
@@ -106,6 +106,12 @@ bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
 
 bool ps_has_string_literals(void) { return string_literals != NULL; }
 bool ps_has_float_literals(void) { return float_literals != NULL; }
+
+static void reset_global_var_diag_state(void) {
+  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
+    gv->has_init = 0;
+  }
+}
 
 static void reset_literal_tables(void) {
   string_literals = NULL;
@@ -962,9 +968,7 @@ node_t **ps_program_from(token_t *start) {
    * (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パースの
    * `int g=1;` の has_init=1 や前回 funcdef の is_defined=1 が次回パースに漏れて、
    * 重複定義チェック等が誤って発火する。 */
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    gv->has_init = 0;
-  }
+  reset_global_var_diag_state();
   psx_ctx_reset_function_diag_state();
   psx_ctx_reset_tag_diag_state();
   return ps_program_ctx(NULL, start);

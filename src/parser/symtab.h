@@ -97,7 +97,6 @@ struct global_var_t {
   psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_t *decl_type;
 };
-extern global_var_t *global_vars;
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
  * 呼び出し前に設定済みであること。各登録経路はこれを通すこと。 */
 void psx_register_global_var(global_var_t *gv);

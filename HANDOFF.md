@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き865: centralize literal table registration）
+最終更新: 2026-07-08（続き866: hide global variable table state）
 
 ## 現状
+- 続き866: **グローバル変数表の実体も parser.c に閉じた**。
+
+  続き865で string/float literal 表を `static` 化したが、`global_vars` はまだ
+  `symtab.h` から `extern` 公開されていた。codegen はすでに `ps_iter_globals()`、
+  参照解決は `psx_find_global_var()` に寄っているため、今回は `global_vars` を
+  `parser.c` の `static` にし、ヘッダから extern を削除した。`test_parser` の
+  extern array 宣言確認も `global_vars` 直接走査から `psx_find_global_var("a", 1)` へ
+  変更した。複数回 `ps_program_from()` 用の診断フラグ掃除は
+  `reset_global_var_diag_state()` に切り出し、正本リスト走査は parser.c 内に閉じている。
+
+  確認は
+  `rg "extern global_var_t \\*global_vars|global_vars" src/parser src/arch test -n`
+  = **extern/外部直接参照なし、実体操作は `parser.c` 内のみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き865: **文字列/浮動小数点リテラル表の登録経路を parser.c の API に集約した**。
 
   続き864までで string literal の decode/emission は tokenizer API に寄ったが、
