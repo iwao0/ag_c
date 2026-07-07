@@ -129,15 +129,6 @@ static ir_type_t scalar_value_type(int type_size, int is_pointer) {
   return elem_value_type(type_size);
 }
 
-static int lvar_is_pointer_like(const lvar_t *var) {
-  if (!var) return 0;
-  return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
-         (var->size > var->elem_size) ||
-         (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
-         var->is_tag_pointer ||
-         var->pointee_fp_kind != TK_FLOAT_KIND_NONE;
-}
-
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
   /* float/double 変数は base.fp_kind で判定 */
   unsigned fpk = lv->mem.base.fp_kind;
@@ -3377,7 +3368,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     if (abi_idx < 32) {
       ctx->f->param_abi_types[abi_idx++] =
           (ps_node_is_pointer(arg) || psx_node_value_is_pointer_like((node_t *)lv) ||
-           lvar_is_pointer_like(owner)) ? IR_TY_PTR : vty;
+           psx_lvar_value_is_pointer_like(owner)) ? IR_TY_PTR : vty;
     }
     int ptr_vreg = address_of_lvar(ctx, lv->offset);
     if (ptr_vreg < 0) return 0;

@@ -296,7 +296,7 @@ static psx_type_t *type_from_mem(node_mem_t *mem, int force_array, int force_vla
   return type;
 }
 
-static int lvar_is_pointer_like_for_type(lvar_t *var) {
+static int lvar_is_pointer_like_for_type(const lvar_t *var) {
   if (!var) return 0;
   return var->is_array || var->is_vla || var->is_tag_pointer ||
          var->pointer_qual_levels > 0 ||
@@ -304,6 +304,10 @@ static int lvar_is_pointer_like_for_type(lvar_t *var) {
          (var->outer_stride > 0 && var->size == 8 && !var->is_array && !var->is_vla) ||
          var->pointee_fp_kind != TK_FLOAT_KIND_NONE ||
          var->pointee_is_void;
+}
+
+int psx_lvar_value_is_pointer_like(const lvar_t *var) {
+  return lvar_is_pointer_like_for_type(var);
 }
 
 static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {

@@ -9,7 +9,7 @@
  *
  * 現状の公開シンボル:
  *   - lvar_t (型のみ。IR 側 find_owning_lvar が offset/size/next_all を
- *     直接読む。将来的に opaque 化を検討するが Phase C2 では据置)
+ *     直接読む。型・ポインタ性などの意味論は helper 経由に寄せる)
  *   - node_utils 由来の型・幅・signedness helper
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
  *      psx_node_*_is_unsigned など)
@@ -47,6 +47,7 @@ int psx_node_pointer_qual_levels(node_t *n);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int psx_node_value_is_pointer_like(node_t *node);
+int psx_lvar_value_is_pointer_like(const lvar_t *var);
 int psx_node_aggregate_value_size(node_t *node);
 int psx_node_is_unsigned_type(node_t *node);
 int psx_node_deref_decays_to_address(node_t *node);

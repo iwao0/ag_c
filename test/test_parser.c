@@ -2105,9 +2105,11 @@ static void test_type_metadata_bridge() {
   psx_type_t *tmp_lvar_int = psx_lvar_get_decl_type(&tmp_lvar);
   ASSERT_TRUE(tmp_lvar_int != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_lvar_int->kind);
+  ASSERT_TRUE(!psx_lvar_value_is_pointer_like(&tmp_lvar));
   psx_decl_set_lvar_pointer_derived_type(&tmp_lvar, 1, 4, 0);
   tmp_lvar.size = 8;
   tmp_lvar.elem_size = 4;
+  ASSERT_TRUE(psx_lvar_value_is_pointer_like(&tmp_lvar));
   ASSERT_TRUE(tmp_lvar.decl_type == NULL);
   psx_type_t *tmp_lvar_ptr = psx_lvar_refresh_decl_type(&tmp_lvar);
   ASSERT_TRUE(tmp_lvar_ptr != NULL);
@@ -2130,6 +2132,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tmp_fp_ptr_double->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, tmp_fp_ptr_double->base->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_fp_ptr_double->base->fp_kind);
+  ASSERT_TRUE(psx_lvar_value_is_pointer_like(&tmp_fp_ptr_lvar));
+
+  lvar_t tmp_void_ptr_lvar = {0};
+  psx_decl_init_lvar_storage_type(&tmp_void_ptr_lvar, 8, 8, 0,
+                                  TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  tmp_void_ptr_lvar.pointee_is_void = 1;
+  ASSERT_TRUE(psx_lvar_value_is_pointer_like(&tmp_void_ptr_lvar));
 
   lvar_t tmp_complex_lvar = {0};
   psx_decl_init_lvar_storage_type(&tmp_complex_lvar, 16, 16, 0,

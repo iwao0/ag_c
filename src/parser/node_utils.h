@@ -16,6 +16,7 @@ psx_type_t *psx_lvar_refresh_decl_type(struct lvar_t *var);
 psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_refresh_decl_type(struct global_var_t *gv);
+int psx_lvar_value_is_pointer_like(const struct lvar_t *var);
 
 int ps_node_type_size(node_t *node);
 int psx_node_storage_type_size(node_t *node);

@@ -15684,3 +15684,30 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = **1202/1202 OK**
   - `./build/test_wasm32_e2e` = **1197 compiled, 1197 executed**
   - `git diff --check` = **green**
+
+### このセッション（続き817）: lvar pointer-like 判定を parser helper に集約
+- 見つかった浅い箇所:
+  - IR builder の `lvar_is_pointer_like()` が `lvar_t` の
+    `is_array` / `is_vla` / `pointer_qual_levels` / `size` / `elem_size` /
+    `outer_stride` / `is_tag_pointer` / `pointee_fp_kind` を直接合成していた。
+  - 同等の意味論は `node_utils.c` の `lvar_is_pointer_like_for_type()` にもあり、
+    型情報の正本を helper 側に寄せる方針に対して IR 側に重複判定が残っていた。
+  - さらに IR 側の複製には `pointee_is_void` が入っておらず、今後の void pointer 系で
+    parser 側と IR 側の pointer-like 判定がずれる余地があった。
+- 根本対応:
+  - `psx_lvar_value_is_pointer_like(const lvar_t *)` を parser 公開 API として追加し、
+    `node_utils.c` 内の既存判定を外部境界から使えるようにした。
+  - IR builder からローカルな `lvar_is_pointer_like()` 複製を削除し、
+    parameter ABI type 判定を `psx_lvar_value_is_pointer_like(owner)` に置き換えた。
+  - `parser_public.h` の境界コメントも、`lvar_t` の意味論は helper 経由に寄せる現状へ更新した。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に `psx_lvar_value_is_pointer_like()` の
+    scalar / pointer-derived / pointee-fp / pointee-void ケースを追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
