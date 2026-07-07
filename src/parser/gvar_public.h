@@ -99,15 +99,8 @@ typedef struct {
 global_var_t *psx_find_global_var(char *name, int len);
 int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
 int psx_gvar_has_explicit_initializer(const global_var_t *gv);
-int psx_gvar_has_initializer_payload(const global_var_t *gv);
 psx_gvar_initializer_class_t
 psx_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate);
-psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
-                                               int include_empty_aggregate);
-psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
-                                                        int fallback_size);
-psx_gvar_init_slot_value_t psx_gvar_init_slot_value(const global_var_t *gv, int idx,
-                                                    const psx_gvar_init_slots_layout_t *layout);
 int psx_gvar_walk_init_slot_values(const global_var_t *gv,
                                    const psx_gvar_init_slots_layout_t *layout,
                                    int value_count,
@@ -127,8 +120,6 @@ int psx_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggrega
                                void *user);
 int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
-psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv);
-psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot);
 int psx_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,
                               char **out_name, int *out_len);
 int psx_gvar_symbol_ref_named_function(psx_gvar_symbol_ref_t ref,

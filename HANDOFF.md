@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き910: hide aggregate walker internals）
+最終更新: 2026-07-08（続き911: internalize initializer construction helpers）
 
 ## 現状
+- 続き911: **initializer construction helper を parser 内部へ閉じた**。
+
+  続き910までで gvar view と aggregate walker の内部状態は public API から外したが、
+  `gvar_public.h` にはまだ initializer slot layout / slot value / symbol ref を組み立てる
+  helper 関数と、使われていない分類補助関数が残っていた。
+  backend が必要としている契約は walker / visitor の callback に渡される値であり、
+  個別 helper を直接呼ぶ外部利用はなかったため、公開境界としてはまだ少し広かった。
+
+  今回は未使用だった `psx_gvar_has_initializer_payload()` と
+  `psx_gvar_initializer_kind()` を削除し、
+  `psx_gvar_init_slots_layout()` / `psx_gvar_init_slot_value()` /
+  `psx_gvar_initializer_symbol_ref()` / `psx_gvar_init_slot_symbol_ref()` を
+  `node_utils.c` 内の `static gvar_*` helper に変更した。
+  public header には backend が実際に消費する callback/value 型と
+  `psx_gvar_walk_init_slot_values()` / visitor / named symbol accessor だけを残している。
+
+  確認は
+  `rg "psx_gvar_has_initializer_payload\\s*\\(|psx_gvar_initializer_kind\\s*\\(|psx_gvar_init_slots_layout\\s*\\(|psx_gvar_init_slot_value\\s*\\(|psx_gvar_initializer_symbol_ref\\s*\\(|psx_gvar_init_slot_symbol_ref\\s*\\(" src test tools --glob '!build/**'` = **no hits**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き910: **aggregate walker の内部 cursor / iterator を public API から外した**。
 
   続き909までで gvar view は parser 内部に閉じたが、`gvar_public.h` にはまだ

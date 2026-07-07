@@ -462,17 +462,8 @@ int psx_gvar_has_explicit_initializer(const global_var_t *gv) {
   return psx_gvar_initializer_class(gv, 0).has_explicit_initializer;
 }
 
-int psx_gvar_has_initializer_payload(const global_var_t *gv) {
-  return psx_gvar_initializer_class(gv, 0).has_payload;
-}
-
-psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
-                                               int include_empty_aggregate) {
-  return psx_gvar_initializer_class(gv, include_empty_aggregate).kind;
-}
-
-psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
-                                                        int fallback_size) {
+static psx_gvar_init_slots_layout_t gvar_init_slots_layout(const global_var_t *gv,
+                                                           int fallback_size) {
   psx_gvar_view_t view = psx_gvar_view(gv);
   psx_gvar_init_slots_layout_t layout = {
       .elem_size = psx_gvar_initializer_element_size(gv, fallback_size),
@@ -508,12 +499,24 @@ static psx_gvar_symbol_ref_t gvar_make_symbol_ref(char *symbol, int symbol_len,
   return ref;
 }
 
-psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
+static psx_gvar_symbol_ref_t gvar_initializer_symbol_ref(const global_var_t *gv) {
+  if (!gv) return gvar_make_symbol_ref(NULL, 0, 0);
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  return gvar_make_symbol_ref(view.init_symbol, view.init_symbol_len,
+                              view.init_symbol_offset);
+}
+
+static psx_gvar_symbol_ref_t gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot) {
+  if (!slot) return gvar_make_symbol_ref(NULL, 0, 0);
+  return gvar_make_symbol_ref(slot->symbol, slot->symbol_len, slot->value);
+}
+
+static psx_gvar_init_slot_value_t gvar_init_slot_value(
     const global_var_t *gv, int idx, const psx_gvar_init_slots_layout_t *layout) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
   psx_gvar_init_slot_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
-      .symbol_ref = psx_gvar_init_slot_symbol_ref(&slot),
+      .symbol_ref = gvar_init_slot_symbol_ref(&slot),
       .value = slot.value,
       .fvalue = slot.fvalue,
       .fp_kind = TK_FLOAT_KIND_NONE,
@@ -540,7 +543,7 @@ int psx_gvar_walk_init_slot_values(const global_var_t *gv,
   if (count > layout->elem_count) count = layout->elem_count;
   if (count < 0) count = 0;
   for (int i = 0; i < count; i++) {
-    psx_gvar_init_slot_value_t value = psx_gvar_init_slot_value(gv, i, layout);
+    psx_gvar_init_slot_value_t value = gvar_init_slot_value(gv, i, layout);
     if (!callback(user, i, value, layout)) return 0;
   }
   return 1;
@@ -567,18 +570,6 @@ int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
     return 1;
   }
   return 0;
-}
-
-psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv) {
-  if (!gv) return gvar_make_symbol_ref(NULL, 0, 0);
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  return gvar_make_symbol_ref(view.init_symbol, view.init_symbol_len,
-                              view.init_symbol_offset);
-}
-
-psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot) {
-  if (!slot) return gvar_make_symbol_ref(NULL, 0, 0);
-  return gvar_make_symbol_ref(slot->symbol, slot->symbol_len, slot->value);
 }
 
 int psx_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,
@@ -624,7 +615,7 @@ psx_gvar_init_member_value(const global_var_t *gv, int idx,
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
   psx_gvar_init_member_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
-      .symbol_ref = psx_gvar_init_slot_symbol_ref(&slot),
+      .symbol_ref = gvar_init_slot_symbol_ref(&slot),
       .value = slot.value,
       .fvalue = slot.fvalue,
       .fp_kind = TK_FLOAT_KIND_NONE,
@@ -653,7 +644,7 @@ psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
   psx_gvar_view_t view = psx_gvar_view(gv);
   psx_gvar_init_scalar_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
-      .symbol_ref = psx_gvar_initializer_symbol_ref(gv),
+      .symbol_ref = gvar_initializer_symbol_ref(gv),
       .value = view.has_init ? view.init_val : 0,
       .fvalue = view.has_init ? view.fval : 0.0,
       .fp_kind = TK_FLOAT_KIND_NONE,
@@ -679,7 +670,7 @@ int psx_gvar_visit_initializer_classified(
   }
   if (init_class->kind == PSX_GVAR_INIT_KIND_SLOTS) {
     psx_gvar_init_slots_layout_t layout =
-        psx_gvar_init_slots_layout(gv, fallback_size);
+        gvar_init_slots_layout(gv, fallback_size);
     return ops->slots ? ops->slots(user, &layout, init_class) : 0;
   }
   psx_gvar_init_scalar_value_t value =
