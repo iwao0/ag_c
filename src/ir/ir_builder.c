@@ -1676,8 +1676,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
 /* -------- Phase B1: build_expr の制御系 case ヘルパ -------- */
 
 /* `__ag_atomic_*(...)` 組込みを IR_ATOMIC に下ろす (stdatomic.h が使う)。
- * 幅と pointee の符号は第 1 引数 (obj ポインタ) の deref_size / pointee_is_unsigned
- * から取る。全操作 seq_cst 強度。 */
+ * 幅と pointee の符号は parser の node metadata reader から取る。全操作 seq_cst 強度。 */
 static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn) {
   const char *suf = fn->funcname + 12;          /* "__ag_atomic_" の後ろ */
   int sl = fn->funcname_len - 12;
@@ -1691,14 +1690,9 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   if (fn->nargs < 1) { fail(ctx, "__ag_atomic intrinsic missing pointer arg"); return ir_val_none(); }
 
   node_t *parg = fn->args[0];
-  int width = ((node_mem_t *)parg)->deref_size;
-  if (width != 1 && width != 2 && width != 4 && width != 8) width = 4;
-  /* 符号: `&var` (ND_ADDR) なら被参照変数の値の符号、ポインタ式ならその
-   * pointee_is_unsigned。1/2 バイト atomic の load 旧値の符号拡張に使う。 */
-  int unsigned_p = ((node_mem_t *)parg)->pointee_is_unsigned ? 1 : 0;
-  if (parg->kind == ND_ADDR && parg->lhs) {
-    unsigned_p = ((node_mem_t *)parg->lhs)->is_unsigned ? 1 : 0;
-  }
+  int width = 4;
+  int unsigned_p = 0;
+  psx_node_atomic_pointer_info(parg, &width, &unsigned_p);
   ir_type_t rty = (width == 8) ? IR_TY_I64 : IR_TY_I32;
   ir_val_t ptr = build_expr(ctx, parg);
   if (ctx->failed) return ir_val_none();

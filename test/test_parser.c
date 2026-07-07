@@ -2530,6 +2530,33 @@ static void test_type_metadata_bridge() {
   typed_unsigned_ptr_mem.base.type =
       psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 1), 8);
   ASSERT_TRUE(psx_node_pointee_is_unsigned((node_t *)&typed_unsigned_ptr_mem));
+  int atomic_width = 0;
+  int atomic_is_unsigned = 0;
+  ASSERT_TRUE(psx_node_atomic_pointer_info((node_t *)&typed_unsigned_ptr_mem,
+                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_EQ(8, atomic_width);
+  ASSERT_EQ(1, atomic_is_unsigned);
+
+  node_mem_t stale_atomic_ptr_mem = {0};
+  stale_atomic_ptr_mem.base.kind = ND_LVAR;
+  stale_atomic_ptr_mem.deref_size = 3;
+  stale_atomic_ptr_mem.pointee_is_unsigned = 1;
+  ASSERT_TRUE(psx_node_atomic_pointer_info((node_t *)&stale_atomic_ptr_mem,
+                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_EQ(4, atomic_width);
+  ASSERT_EQ(1, atomic_is_unsigned);
+
+  node_mem_t unsigned_atomic_target_mem = {0};
+  unsigned_atomic_target_mem.base.kind = ND_LVAR;
+  unsigned_atomic_target_mem.is_unsigned = 1;
+  unsigned_atomic_target_mem.base.type =
+      psx_type_new_integer(TK_UNSIGNED, 1, 1);
+  node_t *unsigned_atomic_addr =
+      psx_node_new_unary_addr_for((node_t *)&unsigned_atomic_target_mem);
+  ASSERT_TRUE(psx_node_atomic_pointer_info(unsigned_atomic_addr,
+                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_EQ(1, atomic_width);
+  ASSERT_EQ(1, atomic_is_unsigned);
 
   node_mem_t typed_bool_ptr_mem = {0};
   typed_bool_ptr_mem.base.kind = ND_LVAR;

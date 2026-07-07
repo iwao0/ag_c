@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き827: IR pointer-like / storage width reader 化）
+最終更新: 2026-07-07（続き828: atomic pointer metadata reader 化）
 
 ## 現状
+- 続き828: **IR builder の atomic intrinsic に残っていた `node_mem_t` 直読を
+  `node_utils` / `parser_public` helper 境界へ移した**。
+
+  `build_node_atomic_intrinsic()` は第 1 引数の `deref_size` / `pointee_is_unsigned` と、
+  `&var` のときの `lhs->is_unsigned` を IR 側で直接 cast して読んでいた。
+  これは型情報の正本を parser 側に寄せる流れから外れており、typed node と legacy
+  `node_mem_t` が衝突したときに IR が古い payload を見てしまう余地があった。
+
+  今回は `psx_node_atomic_pointer_info()` を追加し、atomic 対象幅は
+  `ps_node_deref_size()` 経由で取得、不正幅は従来どおり 4 に丸める形にした。
+  符号は `&var` では対象 lvalue の `psx_node_is_unsigned_type()`、ポインタ式では
+  `psx_node_pointee_is_unsigned()` を使う。これにより IR は「atomic に必要な幅と
+  unsigned 情報」だけを受け取り、`node_mem_t` の field layout を知らない形になった。
+
+  回帰テストは `test_type_metadata_bridge()` に、typed unsigned pointer の atomic 情報、
+  invalid legacy width の 4-byte fallback、`&unsigned char` の lhs typed unsigned 優先を追加した。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き827: **IR builder に残っていた pointer-like 判定と bitfield metadata の
   `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
 

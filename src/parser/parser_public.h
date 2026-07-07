@@ -40,6 +40,7 @@ int psx_node_i64_widen_source_is_unsigned(node_t *n);
 int psx_node_shift_operation_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
+int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned);
 int psx_node_pointer_qual_levels(node_t *n);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);

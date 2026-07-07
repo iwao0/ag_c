@@ -2006,6 +2006,21 @@ int psx_node_pointee_is_unsigned(node_t *node) {
   }
 }
 
+int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned) {
+  int w = ps_node_deref_size(ptr_arg);
+  if (w != 1 && w != 2 && w != 4 && w != 8) w = 4;
+  if (width) *width = w;
+
+  int u = 0;
+  if (ptr_arg && ptr_arg->kind == ND_ADDR && ptr_arg->lhs) {
+    u = psx_node_is_unsigned_type(ptr_arg->lhs) ? 1 : 0;
+  } else {
+    u = psx_node_pointee_is_unsigned(ptr_arg) ? 1 : 0;
+  }
+  if (is_unsigned) *is_unsigned = u;
+  return ptr_arg != NULL;
+}
+
 int psx_node_pointee_is_bool(node_t *node) {
   if (!node) return 0;
   switch (node->kind) {

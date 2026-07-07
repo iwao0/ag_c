@@ -59,6 +59,7 @@ void psx_node_init_compound_gvar_array_addr_metadata(node_mem_t *addr, const str
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);
+int psx_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned);
 int psx_node_pointee_is_bool(node_t *node);
 int psx_node_pointee_is_void(node_t *node);
 int psx_node_pointee_is_const_qualified(node_t *node);
