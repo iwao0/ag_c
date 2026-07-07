@@ -1913,8 +1913,6 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
  *   a + n / &a[n]              → (a, n*sizeof(elem))
  *   &a[n] (= &*(a+n))          → DEREF を剥がして再帰
  * 解決できれば 1 を返し sym・sym_len・off を設定する。 */
-int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
-
 int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
   return resolve_global_addr_init(e, sym, sym_len, off);
 }

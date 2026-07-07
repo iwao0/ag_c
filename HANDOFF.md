@@ -1,8 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き868: hide pragma pack state）
+最終更新: 2026-07-08（続き869: declare global address initializer resolver in header）
 
 ## 現状
+- 続き869: **`psx_resolve_global_addr_init()` の局所 extern をやめ、`decl.h` の内部契約へ移した**。
+
+  続き868までで外部公開 state を閉じた後、`decl.c` に
+  `extern int psx_resolve_global_addr_init(...)` という `.c` 内だけの手書き forward 宣言が
+  残っていた。これは parser.c 側のグローバル初期化アドレス解決を decl.c が再利用する
+  実際のモジュール間契約なので、`decl.h` へ宣言を移し、`decl.c` の局所 extern と
+  `parser.c` の定義直前プロトタイプを削除した。
+
+  確認は
+  `rg "^extern .*|psx_resolve_global_addr_init" src/parser src -n`
+  = **`.c` 内局所 extern はなし、宣言は `decl.h`、定義は `parser.c`**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き868: **`#pragma pack` の現在値 state を accessor 経由にして実体を閉じた**。
 
   続き867で tokenizer runtime state を閉じた後、残っていた明示 extern として

@@ -349,9 +349,6 @@ static int resolve_typedef_array_element_size(token_ident_t *id) {
 
 static long long eval_const_expr_decl(node_t *n, int *ok);
 
-/* parser.c で定義された forward 宣言。グローバル初期化のシンボル+offset 解決を再利用する。 */
-extern int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
-
 long long psx_decl_eval_const_int(node_t *n, int *ok) {
   return eval_const_expr_decl(n, ok);
 }

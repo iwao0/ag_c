@@ -302,6 +302,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
 /* AST 上の式ノードを定数畳み込みして long long を返す。
  * ok=1 を返した時のみ結果は有効。ND_NUM, ND_ADD/SUB/..., 三項などを扱う。 */
 long long psx_decl_eval_const_int(node_t *n, int *ok);
+int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
 
 // `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。
 // 推定不可なら 0。指定初期化子 `[N]=` で位置がジャンプする場合は最大位置+1 を返す。
