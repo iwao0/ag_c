@@ -2019,16 +2019,6 @@ static void emit_global_union_element_data(global_var_t *gv, int *val_idx, int a
   emit_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, gv, val_idx, addr);
 }
 
-static int union_init_slot_fp_size(global_var_t *gv, int idx) {
-  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
-                    ? gv->init_value_symbol_lens[idx] : 0;
-  if (sym) return 0;
-  if (sym_len == -2) return 4;
-  if (sym_len == -3) return 8;
-  return 0;
-}
-
 static int global_init_slot_is_plain_zero(global_var_t *gv, int idx) {
   if (idx < 0 || idx >= gv->init_count) return 1;
   char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
@@ -2048,29 +2038,6 @@ static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx,
   }
 }
 
-static void select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
-                                              global_var_t *gv, int idx,
-                                              tag_member_info_t *mi) {
-  int init_fp_size = union_init_slot_fp_size(gv, idx);
-  int selected_fp_size = mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
-                       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
-  if (init_fp_size == selected_fp_size) return;
-  if (init_fp_size == 0 && selected_fp_size == 0) return;
-
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t cand = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &cand)) break;
-    int cand_fp_size = cand.fp_kind == TK_FLOAT_KIND_FLOAT ? 4
-                       : cand.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
-    if ((init_fp_size > 0 && cand_fp_size == init_fp_size) ||
-        (init_fp_size == 0 && cand_fp_size == 0)) {
-      *mi = cand;
-      return;
-    }
-  }
-}
-
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
   if (*val_idx >= gv->init_count) return;
@@ -2082,7 +2049,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
-  select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
+  psx_tag_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (mi.bit_width > 0) {
     emit_global_bitfield_member_data(gv, (*val_idx)++, addr, &mi);
     consume_trailing_zero_union_padding(gv, start_idx, val_idx,

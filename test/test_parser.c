@@ -2886,6 +2886,7 @@ static void test_type_metadata_bridge() {
       "struct FlatIn { int a; int b; };"
       "struct FlatOut { int x; struct FlatIn in; union { int u; int v; }; int y; };"
       "union FlatU { int i; struct FlatIn in; };"
+      "union FlatFpU { int i; float f; double d; };"
       "main(){ return 0; }");
   (void)parsed_code;
   ASSERT_EQ(2, psx_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
@@ -2906,6 +2907,21 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!psx_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "missing", 7,
                                          &named_member, &named_ordinal));
   ASSERT_EQ(-1, named_ordinal);
+  char *init_syms[1] = {NULL};
+  int init_sym_lens[1] = {-2};
+  global_var_t tmp_union_init = {0};
+  tmp_union_init.init_count = 1;
+  tmp_union_init.init_value_symbols = init_syms;
+  tmp_union_init.init_value_symbol_lens = init_sym_lens;
+  ASSERT_EQ(4, psx_gvar_union_init_slot_fp_size(&tmp_union_init, 0));
+  tag_member_info_t selected_union_member = {0};
+  ASSERT_TRUE(psx_ctx_get_tag_member_info(TK_UNION, "FlatFpU", 7, 0,
+                                          &selected_union_member));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, selected_union_member.fp_kind);
+  ASSERT_TRUE(psx_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
+                                                        &tmp_union_init, 0,
+                                                        &selected_union_member));
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, selected_union_member.fp_kind);
   int first_named_ordinal = -1;
   tag_member_info_t first_named_member = {0};
   ASSERT_TRUE(psx_tag_first_named_member(TK_STRUCT, "FlatOut", 7,

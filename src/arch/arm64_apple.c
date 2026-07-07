@@ -201,38 +201,6 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
 static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
                                            int struct_size, global_var_t *gv, int *val_idx);
 
-static int arm_union_init_slot_fp_size(global_var_t *gv, int idx) {
-  if (idx < 0 || idx >= gv->init_count) return 0;
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
-  if (sym == NULL && sym_len == -2) return 4;
-  if (sym == NULL && sym_len == -3) return 8;
-  return 0;
-}
-
-static void arm_select_union_member_for_init_slot(token_kind_t tk, char *tn, int tl,
-                                                  global_var_t *gv, int idx,
-                                                  tag_member_info_t *mi) {
-  int init_fp_size = arm_union_init_slot_fp_size(gv, idx);
-  int selected_fp_size = mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
-                       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
-  if (init_fp_size == selected_fp_size) return;
-  if (init_fp_size == 0 && selected_fp_size == 0) return;
-
-  int n = psx_ctx_get_tag_member_count(tk, tn, tl);
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t cand = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &cand)) break;
-    int cand_fp_size = cand.fp_kind == TK_FLOAT_KIND_FLOAT ? 4
-                       : cand.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
-    if ((init_fp_size > 0 && cand_fp_size == init_fp_size) ||
-        (init_fp_size == 0 && cand_fp_size == 0)) {
-      *mi = cand;
-      return;
-    }
-  }
-}
-
 static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
                                    global_var_t *gv, int *val_idx) {
   if (*val_idx >= gv->init_count) {
@@ -249,7 +217,7 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     cg_emitf("  .space %d\n", union_size);
     return;
   }
-  arm_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
+  psx_tag_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (psx_tag_member_is_tag_aggregate(&mi)) {
     if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
     if (mi.array_len > 0) {

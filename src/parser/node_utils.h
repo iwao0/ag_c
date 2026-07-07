@@ -28,6 +28,7 @@ int psx_gvar_array_element_size(const struct global_var_t *gv);
 int psx_gvar_array_element_count(const struct global_var_t *gv);
 int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
+int psx_gvar_union_init_slot_fp_size(const struct global_var_t *gv, int idx);
 int psx_tag_member_is_tag_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
@@ -64,6 +65,9 @@ int psx_tag_first_named_member(token_kind_t tag_kind, char *tag_name, int tag_le
 int psx_tag_find_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                               char *member_name, int member_len,
                               struct tag_member_info_t *out, int *out_ordinal);
+int psx_tag_select_union_member_for_init_slot(token_kind_t tag_kind, char *tag_name,
+                                              int tag_len, const struct global_var_t *gv,
+                                              int idx, struct tag_member_info_t *mi);
 int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
                                    char *member_name, int member_len, int *out_ordinal);
 

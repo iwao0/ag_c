@@ -456,6 +456,22 @@ int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size
   return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
+int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {
+  if (!gv || idx < 0 || idx >= gv->init_count) return 0;
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
+  if (sym) return 0;
+  if (sym_len == -2) return 4;
+  if (sym_len == -3) return 8;
+  return 0;
+}
+
+static int tag_member_fp_size(const tag_member_info_t *mi) {
+  if (!mi) return 0;
+  return mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+}
+
 int psx_tag_member_is_struct_aggregate(const tag_member_info_t *mi) {
   return mi && !mi->is_tag_pointer && mi->tag_kind == TK_STRUCT;
 }
@@ -659,6 +675,29 @@ int psx_tag_find_named_member(token_kind_t tag_kind, char *tag_name, int tag_len
         strncmp(mi.name, member_name, (size_t)member_len) == 0) {
       if (out) *out = mi;
       if (out_ordinal) *out_ordinal = i;
+      return 1;
+    }
+  }
+  return 0;
+}
+
+int psx_tag_select_union_member_for_init_slot(token_kind_t tag_kind, char *tag_name,
+                                              int tag_len, const global_var_t *gv,
+                                              int idx, tag_member_info_t *mi) {
+  if (!mi) return 0;
+  int init_fp_size = psx_gvar_union_init_slot_fp_size(gv, idx);
+  int selected_fp_size = tag_member_fp_size(mi);
+  if (init_fp_size == selected_fp_size) return 0;
+  if (init_fp_size == 0 && selected_fp_size == 0) return 0;
+
+  int n = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
+  for (int i = 0; i < n; i++) {
+    tag_member_info_t cand = {0};
+    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &cand)) break;
+    int cand_fp_size = tag_member_fp_size(&cand);
+    if ((init_fp_size > 0 && cand_fp_size == init_fp_size) ||
+        (init_fp_size == 0 && cand_fp_size == 0)) {
+      *mi = cand;
       return 1;
     }
   }

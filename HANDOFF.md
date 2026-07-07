@@ -1,8 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き841: named tag member lookup with ordinal）
+最終更新: 2026-07-07（続き842: shared union init member selection）
 
 ## 現状
+- 続き842: **global union initializer の fp sentinel による active member 選択を
+  `node_utils` に集約した**。
+
+  arm64 / wasm32 IR / wasm32 object の 3 backend に、`init_value_symbol_lens == -2/-3`
+  を見て union の float/double member を選び直す同一処理があった。これは backend 固有の
+  emit ではなく、`global_var_t` の initializer slot と `tag_member_info_t` の対応付けなので、
+  `psx_gvar_union_init_slot_fp_size()` と
+  `psx_tag_select_union_member_for_init_slot()` を `node_utils` / `parser_public` に追加し、
+  3 backend は同じ helper を呼ぶ形にした。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。`union FlatFpU { int i; float f; double d; }`
+  で `-2` sentinel が float member 選択へ反映されることを固定している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き841: **名前付きタグメンバ検索と ordinal 取得を
   `psx_tag_find_named_member()` に集約した**。
 
