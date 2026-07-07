@@ -1,17 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き837: arm64 global init unnamed union cover state helper 化）
+最終更新: 2026-07-07（続き838: node_utils flat slot cover state self-use）
 
 ## 現状
-- 続き837: **arm64 global initializer emitter の unnamed union cover state も
-  `psx_tag_flat_cover_state_*()` helper へ寄せた**。
+- 続き838: **node_utils 内の flat slot count / member 逆引きも
+  `psx_tag_flat_cover_state_*()` helper を使う形にした**。
 
-  続き836で wasm32 IR/object の cover state は helper 化されたが、arm64 の
-  `emit_global_struct_members_rec()` には同じ `covered_union_off/size` と
-  `psx_tag_find_unnamed_union_covering_offset()` のローカル管理が残っていた。
-  今回は arm64 側も `psx_tag_flat_cover_state_t` 経由にし、
-  array / nested struct / nested union / scalar の既存更新地点だけ helper 呼び出しへ置き換えた。
-  bitfield 分岐は従来どおり cover state を進めないままにして、出力順の挙動を維持している。
+  続き836/837で backend 側は cover state helper を使うようになったが、
+  helper を提供している `node_utils.c` 内の `psx_tag_flat_slot_count()` と
+  `psx_tag_member_at_flat_slot()` にはまだ `covered_union_off/size` のローカル管理が残っていた。
+  今回はこの 2 経路も `psx_tag_flat_cover_state_covers()` / `_note()` に寄せた。
+  `psx_tag_member_designator_slot()` は covered union の開始 slot 番号も返す必要があるため、
+  今回は挙動を保って残している。
 
   確認は
   `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
@@ -16274,4 +16274,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_parser` = **OK: All unit tests passed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `git diff --check` = **green**
+
+### このセッション（続き838）: node_utils flat slot 系も cover state helper を self-use
+- 見つかった浅い箇所:
+  - backend 側を `psx_tag_flat_cover_state_*()` に寄せた一方で、
+    helper の提供元である `node_utils.c` の `psx_tag_flat_slot_count()` と
+    `psx_tag_member_at_flat_slot()` がまだ `covered_union_off` / `covered_union_size` を直接持っていた。
+  - cover state の進め方の正本が helper と node_utils 内ローカル実装に分かれていた。
+- 根本対応:
+  - `psx_tag_flat_slot_count()` と `psx_tag_member_at_flat_slot()` を
+    `psx_tag_flat_cover_state_covers()` / `_note()` 経由にした。
+  - `psx_tag_member_designator_slot()` は covered union の開始 slot 番号も必要なため、
+    今回は既存ロジックを維持した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
