@@ -1736,39 +1736,18 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           if (!sm || cmi.tag_kind == TK_EOF)
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
-          int sub_n = psx_ctx_get_tag_member_count(cmi.tag_kind, cmi.tag_name, cmi.tag_len);
-          int sub_slot = 0, found = 0;
-          int covered_union_sub_slot = -1;
-          int covered_union_sub_off = 0;
-          int covered_union_sub_size = 0;
-          for (int si = 0; si < sub_n; si++) {
-            tag_member_info_t smi = {0};
-            if (!psx_ctx_get_tag_member_info(cmi.tag_kind, cmi.tag_name, cmi.tag_len, si, &smi)) break;
-            int in_covered_union = covered_union_sub_slot >= 0 &&
-                                   smi.offset >= covered_union_sub_off &&
-                                   smi.offset < covered_union_sub_off + covered_union_sub_size;
-            if (smi.len == sm->len && smi.name &&
-                strncmp(smi.name, sm->str, (size_t)sm->len) == 0) {
-              int effective_slot = in_covered_union ? covered_union_sub_slot : sub_slot;
-              cur_idx += (cmi.tag_kind == TK_UNION) ? 0 : effective_slot;
-              if (cmi.tag_kind == TK_UNION) active_union_ordinal = si;
-              cmi = smi; found = 1; break;
-            }
-            if (psx_tag_member_is_unnamed_struct(&smi)) continue;
-            if (psx_tag_member_is_unnamed_union(&smi)) {
-              covered_union_sub_slot = sub_slot;
-              covered_union_sub_off = smi.offset;
-              covered_union_sub_size = smi.type_size;
-              sub_slot += psx_tag_member_flat_slots(&smi);
-              continue;
-            }
-            if (in_covered_union) continue;
-            sub_slot += psx_tag_member_flat_slots(&smi);
-          }
-          if (!found) {
+          int container_is_union = (cmi.tag_kind == TK_UNION);
+          int sub_ordinal = -1;
+          int sub_slot = psx_tag_member_designator_slot(cmi.tag_kind, cmi.tag_name, cmi.tag_len,
+                                                        sm->str, sm->len, &sub_ordinal);
+          if (sub_slot < 0 ||
+              !psx_ctx_get_tag_member_info(cmi.tag_kind, cmi.tag_name, cmi.tag_len,
+                                           sub_ordinal, &cmi)) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
           }
+          if (container_is_union) active_union_ordinal = sub_ordinal;
+          else cur_idx += sub_slot;
         } else break;
       }
       tk_expect('=');
