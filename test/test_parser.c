@@ -3787,11 +3787,11 @@ static void test_translation_unit_reset_pragma_pack_state() {
   pragma_pack_reset();
   pragma_pack_set(8);
   pragma_pack_push(1);
-  ASSERT_EQ(1, pragma_pack_current);
+  ASSERT_EQ(1, pragma_pack_current_alignment());
   ps_reset_translation_unit_state();
-  ASSERT_EQ(0, pragma_pack_current);
+  ASSERT_EQ(0, pragma_pack_current_alignment());
   pragma_pack_pop();
-  ASSERT_EQ(0, pragma_pack_current);
+  ASSERT_EQ(0, pragma_pack_current_alignment());
 }
 
 static void test_multiple_funcdefs() {

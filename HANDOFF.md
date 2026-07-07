@@ -1,8 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き867: hide tokenizer runtime state）
+最終更新: 2026-07-08（続き868: hide pragma pack state）
 
 ## 現状
+- 続き868: **`#pragma pack` の現在値 state を accessor 経由にして実体を閉じた**。
+
+  続き867で tokenizer runtime state を閉じた後、残っていた明示 extern として
+  `pragma_pack_current` が `pragma_pack.h` から公開され、`struct_layout.c` と
+  `test_parser` が直接参照していた。今回は実体を `src/parser/pragma_pack.c` の
+  `static` にし、読み取りは `pragma_pack_current_alignment()` に寄せた。
+  これで pack stack / current alignment の正本更新は `pragma_pack.c` 内に閉じる。
+
+  確認は
+  `rg "pragma_pack_current|pragma_pack_current_alignment" src test -n`
+  = **`pragma_pack_current` の実体/更新は `pragma_pack.c` 内のみ、外部は accessor 経由**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き867: **tokenizer 実行時 state (`tk_active_ctx` / `tk_cursor_hook`) の実体を tokenizer.c に閉じた**。
 
   続き865/866で parser 側の literal/global 表は `parser.c` の正本に寄ったが、

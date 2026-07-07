@@ -2,7 +2,7 @@
 
 #define PACK_STACK_MAX 16
 
-int pragma_pack_current = 0;
+static int pragma_pack_current = 0;
 
 static int pack_stack[PACK_STACK_MAX];
 static int pack_stack_depth = 0;
@@ -29,4 +29,8 @@ void pragma_pack_set(int alignment) {
 void pragma_pack_reset(void) {
   pragma_pack_current = 0;
   pack_stack_depth = 0;
+}
+
+int pragma_pack_current_alignment(void) {
+  return pragma_pack_current;
 }

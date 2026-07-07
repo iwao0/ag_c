@@ -464,7 +464,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
       if (member_align <= 0) member_align = 1;
       if (member_align > 8) member_align = 8;
-      int pack_align = pragma_pack_current;
+      int pack_align = pragma_pack_current_alignment();
       if (pack_align > 0 && pack_align < member_align) member_align = pack_align;
       if (member_alignas > member_align) member_align = member_alignas;
       if (member_align > agg_align) agg_align = member_align;
