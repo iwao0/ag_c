@@ -466,6 +466,15 @@ int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {
   return 0;
 }
 
+int psx_gvar_union_init_slot_ordinal(const global_var_t *gv, int idx) {
+  if (!gv) return -1;
+  if (idx >= 0 && idx < gv->init_count &&
+      gv->init_union_ordinals && gv->init_union_ordinals[idx] >= 0) {
+    return gv->init_union_ordinals[idx];
+  }
+  return gv->union_init_ordinal;
+}
+
 static int tag_member_fp_size(const tag_member_info_t *mi) {
   if (!mi) return 0;
   return mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
@@ -702,6 +711,16 @@ int psx_tag_select_union_member_for_init_slot(token_kind_t tag_kind, char *tag_n
     }
   }
   return 0;
+}
+
+int psx_tag_union_init_member_for_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                       const global_var_t *gv, int idx,
+                                       tag_member_info_t *out) {
+  if (!out) return 0;
+  int ordinal = psx_gvar_union_init_slot_ordinal(gv, idx);
+  if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, ordinal, out)) return 0;
+  psx_tag_select_union_member_for_init_slot(tag_kind, tag_name, tag_len, gv, idx, out);
+  return 1;
 }
 
 int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,

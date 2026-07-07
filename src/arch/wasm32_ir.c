@@ -2043,13 +2043,9 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   if (*val_idx >= gv->init_count) return;
   int start_idx = *val_idx;
   tag_member_info_t mi = {0};
-  int ord = gv->union_init_ordinal;
-  if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0)
-    ord = gv->init_union_ordinals[*val_idx];
-  if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
+  if (!psx_tag_union_init_member_for_slot(tk, tn, tl, gv, *val_idx, &mi)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
-  psx_tag_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (mi.bit_width > 0) {
     emit_global_bitfield_member_data(gv, (*val_idx)++, addr, &mi);
     consume_trailing_zero_union_padding(gv, start_idx, val_idx,

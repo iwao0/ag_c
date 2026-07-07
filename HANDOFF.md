@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き842: shared union init member selection）
+最終更新: 2026-07-07（続き843: shared union init slot member lookup）
 
 ## 現状
+- 続き843: **global union initializer slot から active member を取得する処理を
+  `psx_tag_union_init_member_for_slot()` に集約した**。
+
+  続き842で fp sentinel による member 選び直しは共有化したが、arm64 / wasm32 IR /
+  wasm32 object の 3 backend にはまだ、`union_init_ordinal` と
+  `init_union_ordinals[idx]` から ordinal を決め、`psx_ctx_get_tag_member_info()` で
+  active member を取ってから helper を呼ぶ同一手順が残っていた。
+  今回は `psx_gvar_union_init_slot_ordinal()` と
+  `psx_tag_union_init_member_for_slot()` を追加し、backend 側は取得失敗時の
+  backend 固有処理だけを残した。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。slot ordinal の fallback /
+  override と、`FlatFpU` の fp sentinel 経由 member 選択を固定している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き842: **global union initializer の fp sentinel による active member 選択を
   `node_utils` に集約した**。
 

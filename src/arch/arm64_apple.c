@@ -209,15 +209,10 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   }
   int start_idx = *val_idx;
   tag_member_info_t mi = {0};
-  int ord = gv->union_init_ordinal;
-  if (gv->init_union_ordinals && gv->init_union_ordinals[*val_idx] >= 0) {
-    ord = gv->init_union_ordinals[*val_idx];
-  }
-  if (!psx_ctx_get_tag_member_info(tk, tn, tl, ord, &mi)) {
+  if (!psx_tag_union_init_member_for_slot(tk, tn, tl, gv, *val_idx, &mi)) {
     cg_emitf("  .space %d\n", union_size);
     return;
   }
-  psx_tag_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
   if (psx_tag_member_is_tag_aggregate(&mi)) {
     if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
     if (mi.array_len > 0) {

@@ -2913,6 +2913,7 @@ static void test_type_metadata_bridge() {
   tmp_union_init.init_count = 1;
   tmp_union_init.init_value_symbols = init_syms;
   tmp_union_init.init_value_symbol_lens = init_sym_lens;
+  ASSERT_EQ(0, psx_gvar_union_init_slot_ordinal(&tmp_union_init, 0));
   ASSERT_EQ(4, psx_gvar_union_init_slot_fp_size(&tmp_union_init, 0));
   tag_member_info_t selected_union_member = {0};
   ASSERT_TRUE(psx_ctx_get_tag_member_info(TK_UNION, "FlatFpU", 7, 0,
@@ -2922,6 +2923,27 @@ static void test_type_metadata_bridge() {
                                                         &tmp_union_init, 0,
                                                         &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, selected_union_member.fp_kind);
+  selected_union_member = (tag_member_info_t){0};
+  ASSERT_TRUE(psx_tag_union_init_member_for_slot(TK_UNION, "FlatFpU", 7,
+                                                 &tmp_union_init, 0,
+                                                 &selected_union_member));
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, selected_union_member.fp_kind);
+  int flatu_in_ordinal = -1;
+  tag_member_info_t flatu_in_member = {0};
+  ASSERT_TRUE(psx_tag_find_named_member(TK_UNION, "FlatU", 5, "in", 2,
+                                        &flatu_in_member, &flatu_in_ordinal));
+  int init_ordinals[1] = {flatu_in_ordinal};
+  global_var_t tmp_union_ord = {0};
+  tmp_union_ord.init_count = 1;
+  tmp_union_ord.init_union_ordinals = init_ordinals;
+  ASSERT_EQ(flatu_in_ordinal, psx_gvar_union_init_slot_ordinal(&tmp_union_ord, 0));
+  tag_member_info_t overridden_union_member = {0};
+  ASSERT_TRUE(psx_tag_union_init_member_for_slot(TK_UNION, "FlatU", 5,
+                                                 &tmp_union_ord, 0,
+                                                 &overridden_union_member));
+  ASSERT_TRUE(overridden_union_member.name != NULL);
+  ASSERT_EQ(0, strncmp(overridden_union_member.name, "in",
+                       (size_t)overridden_union_member.len));
   int first_named_ordinal = -1;
   tag_member_info_t first_named_member = {0};
   ASSERT_TRUE(psx_tag_first_named_member(TK_STRUCT, "FlatOut", 7,
