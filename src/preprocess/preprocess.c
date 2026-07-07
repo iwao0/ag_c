@@ -1010,8 +1010,6 @@ static void skip_const_expr(token_t **rest, token_t *tok) {
   g_if_expr_eval = saved;
 }
 
-token_t *preprocess(token_t *tok); // front declaration
-token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok); // front declaration
 static tokenizer_context_t *g_preprocess_tk_ctx;
 
 /* 関数マクロの実引数を、代入前に独立して完全マクロ展開する (C11 6.10.3.1)。

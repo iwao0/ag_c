@@ -1,8 +1,24 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き871: centralize tag flat cover state declaration）
+最終更新: 2026-07-08（続き872: remove preprocess local entry prototypes）
 
 ## 現状
+- 続き872: **`preprocess()` / `preprocess_ctx()` の `.c` 内 forward 宣言を削除した**。
+
+  続き871で tag flat cover state の宣言正本を 1 箇所に寄せた後、`preprocess.c` にも
+  `preprocess.h` で既に公開されている `preprocess()` / `preprocess_ctx()` の手書き
+  forward 宣言が残っていた。`preprocess.c` は先頭で `preprocess.h` を include しているため、
+  入口 API の契約はヘッダ側だけに置き、`.c` 内の重複宣言を削除した。
+
+  確認は
+  `rg "token_t \\*preprocess\\(|token_t \\*preprocess_ctx\\(" src/preprocess -n`
+  = **宣言は `preprocess.h`、定義は `preprocess.c` のみ**、
+  `make -j4 build/test_preprocess build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_preprocess` = **OK: Preprocessor tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**。
+
 - 続き871: **`psx_tag_flat_cover_state_t` の型定義と操作宣言を単一ヘッダに集約した**。
 
   続き870で preprocessor stream hook state を局所 helper に寄せた後、parser/arch 境界では
