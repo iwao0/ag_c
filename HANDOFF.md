@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き912: move raw init slot accessors behind parser internals）
+最終更新: 2026-07-08（続き913: consolidate gvar size helpers in gvar public API）
 
 ## 現状
+- 続き913: **gvar の size / aggregate 読み取り helper を `gvar_public.h` へ集約した**。
+
+  続き912で raw initializer slot は public API から外れたが、
+  `psx_gvar_storage_size()`、gvar の struct/union/aggregate 判定、
+  array element size/count、initializer element size/count の宣言はまだ
+  `node_public.h` に残っていた。これらは node API ではなく global var の読み取り API で、
+  `gvar_public.h` 側の initializer / storage class helper と正本が割れている状態だった。
+
+  今回は
+  `psx_gvar_storage_size()`、
+  `psx_gvar_is_tag_aggregate()` / `psx_gvar_is_struct_aggregate()` /
+  `psx_gvar_is_union_aggregate()`、
+  `psx_gvar_array_element_size()` / `psx_gvar_array_element_count()`、
+  `psx_gvar_initializer_element_size()` / `psx_gvar_initializer_element_count()`
+  の宣言を `node_public.h` から `gvar_public.h` へ移した。
+  parser 内部の `node_utils.h` は `gvar_public.h` を明示 include し、
+  backend は `parser_public.h` 経由で同じ宣言を受け取る形のままにしている。
+
+  確認は
+  `rg "psx_gvar_(storage_size|is_tag_aggregate|is_struct_aggregate|is_union_aggregate|array_element_size|array_element_count|initializer_element_size|initializer_element_count)\\(" src/parser/*.h src/arch src/ir test --glob '!build/**'` で宣言が **`gvar_public.h` にのみ存在**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き912: **raw initializer slot accessor を public API から外した**。
 
   続き911までで global initializer の公開 helper は walker / visitor 契約へ寄せたが、
