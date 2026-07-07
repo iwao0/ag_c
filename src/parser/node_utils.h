@@ -6,7 +6,7 @@
 #include "init_slot.h"
 #include "gvar_public.h"
 #include "node_funcptr_public.h"
-#include "node_public.h"
+#include "node_type_public.h"
 #include "node_vla_public.h"
 #include "tag_public.h"
 

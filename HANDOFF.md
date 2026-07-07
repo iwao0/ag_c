@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き918: split node VLA public API）
+最終更新: 2026-07-08（続き919: split node type public API）
 
 ## 現状
+- 続き919: **node type view API を `node_type_public.h` へ切り出し、`node_public.h` を薄い互換 wrapper にした**。
+
+  続き917/918で function pointer metadata と VLA metadata はそれぞれ
+  `node_funcptr_public.h` / `node_vla_public.h` へ分かれたが、
+  `node_public.h` には node の pointer/type size/signedness/bitfield/tag type view だけが残っていた。
+  実体としては node の型 view API なのに、名前だけが広い `node_public.h` のままだと
+  公開 API の正本がまだ曖昧に見える状態だった。
+
+  今回は `src/parser/node_type_public.h` を追加し、残っていた `ps_node_*` と
+  `psx_node_*` の node type view 宣言をすべて移した。
+  `node_public.h` は既存 include 向けに `node_type_public.h` を include するだけの
+  薄い互換 wrapper に縮め、`parser_public.h` と parser 内部の `node_utils.h` は
+  `node_type_public.h` を直接 include するようにした。これで node 型/幅/signedness/tag view の
+  宣言正本は `node_type_public.h` に集約された。
+
+  確認は
+  `rg "ps_node_is_pointer|ps_node_deref_size|ps_node_type_size|psx_node_storage_type_size|psx_node_integer_promotion|psx_node_conversion|psx_node_i64|psx_node_shift|psx_node_usual_arith|psx_node_atomic_pointer_info|psx_node_cast_i64|psx_node_pointer_qual_levels|psx_node_bitfield_info|psx_node_value_is_pointer_like|psx_node_aggregate_value_size|psx_node_is_unsigned_type|psx_node_deref_decays_to_address|psx_node_get_tag_type" src/parser/*.h` で宣言が **`node_type_public.h` にのみ存在**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き918: **node VLA metadata API を `node_public.h` から `node_vla_public.h` へ切り出した**。
 
   続き917で function pointer metadata は `node_funcptr_public.h` に分けたが、
