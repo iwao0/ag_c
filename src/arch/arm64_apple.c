@@ -250,18 +250,18 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     return;
   }
   arm_select_union_member_for_init_slot(tk, tn, tl, gv, *val_idx, &mi);
-  if ((mi.tag_kind == TK_STRUCT || mi.tag_kind == TK_UNION) && !mi.is_tag_pointer) {
+  if (psx_tag_member_is_tag_aggregate(&mi)) {
     if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
     if (mi.array_len > 0) {
       for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
-        if (mi.tag_kind == TK_STRUCT) {
+        if (psx_tag_member_is_struct_aggregate(&mi)) {
           emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
                                          gv, val_idx);
         } else {
           emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size, gv, val_idx);
         }
       }
-    } else if (mi.tag_kind == TK_STRUCT) {
+    } else if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
                                      gv, val_idx);
     } else {
@@ -300,8 +300,7 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   if (use_fp == TK_FLOAT_KIND_NONE &&
       psx_ctx_get_tag_member_info(tk, tn, tl, 0, &active) &&
       active.array_len > 0 &&
-      !(active.tag_kind == TK_STRUCT && !active.is_tag_pointer) &&
-      !(active.tag_kind == TK_UNION && !active.is_tag_pointer)) {
+      !psx_tag_member_is_tag_aggregate(&active)) {
     int emitted = 0;
     int elem_size = active.type_size;
     emit_global_init_member_scalar(sym, sym_len, active.fp_kind, elem_size, iv, fv);
@@ -337,16 +336,17 @@ static int arm_find_unnamed_union_covering_offset_rec(token_kind_t tk, char *tn,
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
-    if (mi.len != 0 || mi.is_tag_pointer) continue;
+    if (!psx_tag_member_is_unnamed_struct(&mi) &&
+        !psx_tag_member_is_unnamed_union(&mi)) continue;
     int start = base_off + mi.offset;
     int end = start + mi.type_size;
     if (target_off < start || target_off >= end) continue;
-    if (mi.tag_kind == TK_UNION) {
+    if (psx_tag_member_is_union_aggregate(&mi)) {
       if (out_off) *out_off = start;
       if (out_size) *out_size = mi.type_size;
       return 1;
     }
-    if (mi.tag_kind == TK_STRUCT &&
+    if (psx_tag_member_is_struct_aggregate(&mi) &&
         arm_find_unnamed_union_covering_offset_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
                                                    start, target_off, out_off, out_size)) {
       return 1;
@@ -370,7 +370,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
-    if (mi.len == 0 && mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) continue;
+    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
     if (covered_union_size > 0 &&
         off >= covered_union_off &&
         off < covered_union_off + covered_union_size) {
@@ -383,14 +383,14 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
-      if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+      if (psx_tag_member_is_struct_aggregate(&mi)) {
         /* struct 配列メンバ (`struct P pts[2]`): 各要素を再帰してメンバ単位で出力する。
          * これをしないと要素 1 つを ts バイトのスカラとして出力し、
          * `{{10,20},{30,40}}` が .quad 10/.quad 20 と化けていた。 */
         for (int k = 0; k < alen; k++) {
           emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
         }
-      } else if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+      } else if (psx_tag_member_is_union_aggregate(&mi)) {
         for (int k = 0; k < alen; k++) {
           emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
         }
@@ -417,7 +417,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       continue;
     }
     /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
-    if (mi.tag_kind == TK_STRUCT && !mi.is_tag_pointer) {
+    if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
       prev_end = off + ts;
       if (has_cover) {
@@ -432,9 +432,9 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      *   `.f = 0.0f` でも明示通知されるため、ヒューリスティックの曖昧さがない。
      * フォールバック (sentinel 無し): 旧ヒューリスティック (fv!=0 && iv==0) で内側 fp メンバ
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
-    if (mi.tag_kind == TK_UNION && !mi.is_tag_pointer) {
+    if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
-      if (mi.len == 0) {
+      if (psx_tag_member_is_unnamed_union(&mi)) {
         covered_union_off = off;
         covered_union_size = ts;
       } else if (has_cover) {

@@ -15801,3 +15801,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き821）: arm64 tag member aggregate 判定も helper に集約
+- 見つかった浅い箇所:
+  - 直前に wasm32 側で parser helper に寄せた `tag_member_info_t` の
+    aggregate / unnamed 判定が、arm64 global initializer 側にはまだ直接式として残っていた。
+  - nested struct/union 出力、unnamed union cover 判定、union 内 array member 判定が
+    `tag_kind` / `is_tag_pointer` / `len` をそれぞれ直接合成していた。
+- 根本対応:
+  - `emit_global_union_slot()` / `emit_global_struct_members_rec()` /
+    `arm_find_unnamed_union_covering_offset_rec()` の判定を
+    `psx_tag_member_is_tag_aggregate()` /
+    `psx_tag_member_is_struct_aggregate()` /
+    `psx_tag_member_is_union_aggregate()` /
+    `psx_tag_member_is_unnamed_struct()` /
+    `psx_tag_member_is_unnamed_union()` に置き換えた。
+  - これで arm64 / wasm32 IR / wasm32 object の tag member aggregate 契約は同じ
+    parser helper を正本にする形になった。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `git diff --check` = **green**
