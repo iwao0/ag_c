@@ -5,9 +5,9 @@
  * 両方を使う。Phase C1-2: 両ヘッダを明示的に include する。 */
 #include "ast.h"
 #include "core.h"
+#include "lvar_public.h"
 #include "symtab.h"
 
-typedef struct lvar_t lvar_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 struct lvar_t {
   lvar_t *next;

@@ -8,8 +8,7 @@
  * 再構成 (関数名変更、ヘッダ統廃合) を IR 側に波及させずに済む。
  *
  * 現状の公開シンボル:
- *   - lvar_t (型のみ。IR 側 find_owning_lvar が offset/size/next_all を
- *     直接読む。型・ポインタ性などの意味論は helper 経由に寄せる)
+ *   - lvar_t (opaque pointer) と読み取り/走査 helper
  *   - node_utils 由来の型・幅・signedness helper
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
  *      psx_node_*_is_unsigned など)
@@ -26,9 +25,8 @@
 #include "ast.h"        /* node_t, node_lvar_t 等 */
 #include "init_slot.h"  /* psx_gvar_init_slot_t */
 #include "symtab.h"     /* global_var_t */
+#include "lvar_public.h"
 #include "node_public.h"
-#include "decl.h"  /* lvar_t — Phase C2 では内部含むが、IR からは
-                              本ヘッダ越しにしか触らない契約とする */
 #include <stdbool.h>
 
 /* グローバル変数リスト走査 (Phase C3)。

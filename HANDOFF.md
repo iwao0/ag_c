@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き874: split semantic public query header）
+最終更新: 2026-07-08（続き875: hide lvar layout from parser public boundary）
 
 ## 現状
+- 続き875: **`parser_public.h` から `decl.h` を外し、`lvar_t` レイアウトを外部境界から隠した**。
+
+  続き874で semantic query を `semantic_public.h` に分けた後も、`parser_public.h` は
+  `decl.h` を include しており、IR 側が `lvar_t` の `next_all` / `offset` / `size` /
+  VLA stride 情報などを直接読める状態だった。今回は `src/parser/lvar_public.h` を追加し、
+  外部が必要とする `lvar_t` の走査・owner 検索・属性読み取りを public accessor に切り出した。
+  実体は `decl.c` に置き、`decl.h` は parser 内部の登録/setter API と構造体定義を持つ内部寄り
+  ヘッダとして残した。
+
+  `ir_builder.c` は `psx_lvar_find_owner()` / `psx_lvar_next_all()` / `psx_lvar_storage_size()` /
+  `psx_lvar_vla_*()` などを使う形へ変更し、`parser_public.h` は `lvar_public.h` を include
+  するだけになった。これで外部公開境界から `lvar_t` のフィールドレイアウトが漏れなくなり、
+  今後 `lvar_t` の内部配置や索引構造を変えるときの IR への波及を減らせる。
+
+  確認は
+  `rg "decl.h|lvar_public.h" src/parser/parser_public.h src/ir src/arch -n`
+  = **外部側は `parser_public.h` 経由の `lvar_public.h` のみ**、
+  `rg "(var|owner|owner_cl)->" src/ir/ir_builder.c -n`
+  = **`lvar_t` field 直読みなし（コメントのみ）**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き874: **semantic query の公開 API を `semantic_public.h` に切り出した**。
 
   続き873で node utility の公開宣言を `node_public.h` に集約した後も、

@@ -103,16 +103,7 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
  * 現在処理中の関数の lvars リスト (parser が保存) を walk する。 */
 static lvar_t *find_owning_lvar(ir_build_ctx_t *ctx, int offset) {
   lvar_t *head = ctx && ctx->cur_fn ? ctx->cur_fn->lvars : NULL;
-  for (lvar_t *var = head; var; var = var->next_all) {
-    /* static local alias (try_lower_static_local_*) はグローバルへ lowering 済みで実体は
-     * stack に無く、offset=0 / size=0 のダミー。これを所有者として返すと、本物の
-     * 同 offset 仮引数 (例 `int *out`) より先に拾われて param のスロットを 4 バイト alias 用に
-     * alloca してしまい、後続ローカルとフレームが重なって SIGSEGV になっていた。 */
-    if (var->is_static_local) continue;
-    int sz = var->size > 0 ? var->size : 1;
-    if (var->offset <= offset && offset < var->offset + sz) return var;
-  }
-  return NULL;
+  return psx_lvar_find_owner(head, offset);
 }
 
 /* スカラ要素 (struct member 含む) の「ロード時の値の IR 型」。 */
@@ -159,24 +150,26 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     fail(ctx, "owning lvar not found");
     return -1;
   }
-  int existing = find_alloca_vreg(ctx, var->offset);
+  int var_offset = psx_lvar_offset(var);
+  int existing = find_alloca_vreg(ctx, var_offset);
   if (existing >= 0) return existing;
   if (ctx->lvar_count >= MAX_LVARS) {
     fail(ctx, "too many local variables");
     return -1;
   }
-  int size = var->size > 0 ? var->size : 4;
-  int elem = var->elem_size > 0 ? var->elem_size : 4;
+  int size = psx_lvar_storage_size(var, 4);
+  int elem = psx_lvar_elem_size(var, 4);
+  int align_bytes = psx_lvar_align_bytes(var);
   int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
   /* struct のような複合型は 8B align を優先 (簡略化) */
   if (size >= 8 && align < 8) align = 8;
   /* _Alignas(N) で明示指定された align は natural より強い (大きい) ものを尊重。 */
-  if (var->align_bytes > align) align = var->align_bytes;
+  if (align_bytes > align) align = align_bytes;
   /* 過剰整列ローカル (_Alignas(>16))。x29 は 16 整列のみで `x29 + 固定オフセット`
    * では >16 整列にできない。予備領域 (size + A) を確保し、実行時にアドレスを A へ
    * 丸めた vreg を base にする (IR_ALIGN_PTR)。16 以下は従来どおり。 */
-  int over_aligned = (var->align_bytes > 16);
-  int alloc_size = over_aligned ? size + var->align_bytes : size;
+  int over_aligned = (align_bytes > 16);
+  int alloc_size = over_aligned ? size + align_bytes : size;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_ALLOCA);
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -189,11 +182,11 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     ir_inst_t *ap = ir_inst_new(IR_ALIGN_PTR);
     ap->dst = ir_val_vreg(av, IR_TY_PTR);
     ap->src1 = ir_val_vreg(v, IR_TY_PTR);
-    ap->alloca_align = var->align_bytes;  /* 丸め先アライメント A */
+    ap->alloca_align = align_bytes;  /* 丸め先アライメント A */
     ir_func_append_inst(ctx->f, ap);
     base = av;  /* lvar の base は丸め後アドレス */
   }
-  ctx->lvar_offset[ctx->lvar_count] = var->offset;
+  ctx->lvar_offset[ctx->lvar_count] = var_offset;
   ctx->lvar_vreg[ctx->lvar_count] = base;
   ctx->lvar_count++;
   return base;
@@ -341,7 +334,7 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   }
   int base_vreg = alloca_for_owner(ctx, owner);
   if (base_vreg < 0) return -1;
-  int delta = offset - owner->offset;
+  int delta = offset - psx_lvar_offset(owner);
   if (delta == 0) return base_vreg;
   /* base + delta */
   int v = ir_func_new_vreg(ctx->f);
@@ -1101,7 +1094,8 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
           node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
           lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-          int cl_sz = owner_cl ? owner_cl->size : psx_node_storage_type_size(arg->rhs);
+          int cl_sz = owner_cl ? psx_lvar_storage_size(owner_cl, 0)
+                               : psx_node_storage_type_size(arg->rhs);
           if (aggregate_size_from_node(arg->rhs) > 0 &&
               (cl_sz > 8 || cg_size_needs_indirect_struct(cl_sz))) {
             (void)build_expr(ctx, arg->lhs);
@@ -1112,7 +1106,7 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         int arg_full_size = 0;
         if (arg && arg->kind == ND_LVAR) {
           lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
-          if (owner) arg_full_size = owner->size;
+          if (owner) arg_full_size = psx_lvar_storage_size(owner, 0);
           if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
         }
         if (cg_size_needs_indirect_struct(arg_full_size) &&
@@ -1819,7 +1813,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-        int cl_sz = owner_cl ? owner_cl->size : psx_node_storage_type_size(arg->rhs);
+        int cl_sz = owner_cl ? psx_lvar_storage_size(owner_cl, 0)
+                             : psx_node_storage_type_size(arg->rhs);
         if (aggregate_size_from_node(arg->rhs) > 0 &&
             (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
           (void)build_expr(ctx, arg->lhs);
@@ -1880,12 +1875,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
         if (!psx_node_value_is_pointer_like(arg)) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-          if (owner) arg_full_size = owner->size;
+          if (owner) arg_full_size = psx_lvar_storage_size(owner, 0);
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
           if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
-          if ((!owner || (!owner->is_array && owner->pointer_qual_levels == 0)) &&
+          if ((!owner || (!psx_lvar_is_array(owner) &&
+                          psx_lvar_pointer_qual_levels(owner) == 0)) &&
               cg_size_needs_indirect_struct(arg_full_size) && arg_full_size <= 8) {
             struct_needs_ptr = 1;
           }
@@ -3299,17 +3295,18 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     }
     node_lvar_t *lv = (node_lvar_t *)arg;
     lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-    int param_full_size = owner && owner->size > 0
-                              ? owner->size
+    int param_full_size = owner
+                              ? psx_lvar_storage_size(owner, psx_node_storage_type_size(arg))
                               : psx_node_storage_type_size(arg);
     /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は
      * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
     int struct_param_needs_ptr =
-        owner && owner->tag_kind != TK_EOF && !owner->is_tag_pointer &&
-        !owner->is_array && owner->pointer_qual_levels == 0 &&
+        owner && psx_lvar_tag_kind(owner) != TK_EOF && !psx_lvar_is_tag_pointer(owner) &&
+        !psx_lvar_is_array(owner) && psx_lvar_pointer_qual_levels(owner) == 0 &&
         param_full_size != 1 && param_full_size != 2 &&
         param_full_size != 4 && param_full_size != 8;
-    if ((param_full_size > 8 || struct_param_needs_ptr) && !(owner && owner->is_complex)) {
+    if ((param_full_size > 8 || struct_param_needs_ptr) &&
+        !(owner && psx_lvar_is_complex(owner))) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
        * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
@@ -3327,10 +3324,10 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       ir_func_append_inst(ctx->f, cp);
       continue;
     }
-    if (owner && owner->is_complex) {
+    if (owner && psx_lvar_is_complex(owner)) {
       /* _Complex 引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1} の 2 FP レジスタで
        * 受け取り、slot+0 / slot+half に格納する (AAPCS64)。 */
-      ir_type_t pty = (owner->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      ir_type_t pty = (psx_lvar_fp_kind(owner) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
       int half = (pty == IR_TY_F32) ? 4 : 8;
       int base_ptr = address_of_lvar(ctx, lv->offset);
       if (base_ptr < 0) return 0;
@@ -3386,27 +3383,29 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
  * src は先行パラメータ (例 m) で、既に setup_function_params で frame slot に
  * 格納済み。subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
 static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) {
-  for (lvar_t *var = fn->lvars; var; var = var->next_all) {
-    if (!var->is_param) continue;
-    if (!var->is_vla) continue;
-    if (var->vla_row_stride_frame_off == 0) continue;
-    int elem = var->vla_row_stride_elem_size;
+  for (lvar_t *var = fn->lvars; var; var = psx_lvar_next_all(var)) {
+    if (!psx_lvar_is_param(var)) continue;
+    if (!psx_lvar_is_vla(var)) continue;
+    int row_stride_frame_off = psx_lvar_vla_row_stride_frame_off(var);
+    if (row_stride_frame_off == 0) continue;
+    int elem = psx_lvar_vla_row_stride_elem_size(var);
     if (elem <= 0) continue;
     /* N-D VLA 仮引数 (vla_param_inner_dim_count >= 1): 各 stride level を
      *   stride[k] = (dim[k] * dim[k+1] * ... * dim[n_inner-1]) * elem
      * で計算し slot+8*k に store する。後ろから掛けていけば各 level 1 回の MUL で済む。 */
-    if (var->vla_param_inner_dim_count >= 1) {
-      int n_inner = var->vla_param_inner_dim_count;
+    int n_inner = psx_lvar_vla_param_inner_dim_count(var);
+    if (n_inner >= 1) {
       int v_prev = -1;
       for (int level = n_inner - 1; level >= 0; level--) {
         /* dim_value (i32) を vreg に取り出す。const dim は最内 level だけ immediate * elem
          * で済むが、構造を統一するため load 経路と同様に MUL の左辺に渡す。 */
         ir_val_t dim_val;
-        int dim_const = var->vla_param_inner_dim_consts[level];
+        int dim_const = psx_lvar_vla_param_inner_dim_const(var, level);
         if (dim_const > 0) {
           dim_val = ir_val_imm(IR_TY_I32, dim_const);
         } else {
-          int src_ptr = address_of_lvar(ctx, var->vla_param_inner_dim_src_offsets[level]);
+          int src_ptr = address_of_lvar(ctx,
+                                        psx_lvar_vla_param_inner_dim_src_offset(var, level));
           if (src_ptr < 0) return 0;
           int v_loaded = ir_func_new_vreg(ctx->f);
           ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -3428,7 +3427,7 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
         zx->dst = ir_val_vreg(v_64, IR_TY_I64);
         zx->src1 = ir_val_vreg(v_cur, IR_TY_I32);
         ir_func_append_inst(ctx->f, zx);
-        int slot_off = var->vla_row_stride_frame_off + 8 * level;
+        int slot_off = row_stride_frame_off + 8 * level;
         int slot_ptr = address_of_lvar(ctx, slot_off);
         if (slot_ptr < 0) return 0;
         ir_inst_t *st = ir_inst_new(IR_STORE);
@@ -3441,7 +3440,7 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
     }
     /* 旧 1D 経路: vla_param_inner_dim_count == 0 だが vla_row_stride_frame_off != 0
      * (古い経路。N-D 経路に移行後は通常到達しないが、互換のため残す)。 */
-    int src_ptr = address_of_lvar(ctx, var->vla_row_stride_src_offset);
+    int src_ptr = address_of_lvar(ctx, psx_lvar_vla_row_stride_src_offset(var));
     if (src_ptr < 0) return 0;
     int v_m = ir_func_new_vreg(ctx->f);
     ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -3457,7 +3456,7 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
     zx->dst = ir_val_vreg(v_s64, IR_TY_I64);
     zx->src1 = ir_val_vreg(v_stride, IR_TY_I32);
     ir_func_append_inst(ctx->f, zx);
-    int rs_ptr = address_of_lvar(ctx, var->vla_row_stride_frame_off);
+    int rs_ptr = address_of_lvar(ctx, row_stride_frame_off);
     if (rs_ptr < 0) return 0;
     ir_inst_t *st2 = ir_inst_new(IR_STORE);
     st2->src1 = ir_val_vreg(rs_ptr, IR_TY_PTR);
@@ -3567,9 +3566,9 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * lvar (`int y;` 等で同 offset を持つもの) が find_alloca_vreg で alias のスロットを
    * 再利用させられ、サイズが alias のもの (`size=4` 等) に縮んで上位バイトが他のローカル
    * と重なる (SIGSEGV)。alias は alloca 対象から除外する。 */
-  for (lvar_t *var = fn->lvars; var; var = var->next_all) {
-    if (var->is_param) continue;  /* parameter は既に param/alloca/store した */
-    if (var->is_static_local) continue;
+  for (lvar_t *var = fn->lvars; var; var = psx_lvar_next_all(var)) {
+    if (psx_lvar_is_param(var)) continue;  /* parameter は既に param/alloca/store した */
+    if (psx_lvar_is_static_local(var)) continue;
     (void)alloca_for_owner(ctx, var);
     if (ctx->failed) return 0;
   }

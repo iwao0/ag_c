@@ -109,6 +109,103 @@ void psx_decl_get_current_funcname(char **out_name, int *out_len) {
   if (out_len) *out_len = current_funcname_len;
 }
 
+lvar_t *psx_lvar_next_all(const lvar_t *var) {
+  return var ? var->next_all : NULL;
+}
+
+lvar_t *psx_lvar_find_owner(lvar_t *head, int offset) {
+  for (lvar_t *var = head; var; var = var->next_all) {
+    if (var->is_static_local) continue;
+    int sz = var->size > 0 ? var->size : 1;
+    if (var->offset <= offset && offset < var->offset + sz) return var;
+  }
+  return NULL;
+}
+
+int psx_lvar_offset(const lvar_t *var) {
+  return var ? var->offset : 0;
+}
+
+int psx_lvar_storage_size(const lvar_t *var, int fallback_size) {
+  return (var && var->size > 0) ? var->size : fallback_size;
+}
+
+int psx_lvar_elem_size(const lvar_t *var, int fallback_size) {
+  return (var && var->elem_size > 0) ? var->elem_size : fallback_size;
+}
+
+int psx_lvar_align_bytes(const lvar_t *var) {
+  return var ? var->align_bytes : 0;
+}
+
+int psx_lvar_is_param(const lvar_t *var) {
+  return (var && var->is_param) ? 1 : 0;
+}
+
+int psx_lvar_is_static_local(const lvar_t *var) {
+  return (var && var->is_static_local) ? 1 : 0;
+}
+
+int psx_lvar_is_vla(const lvar_t *var) {
+  return (var && var->is_vla) ? 1 : 0;
+}
+
+int psx_lvar_is_array(const lvar_t *var) {
+  return (var && var->is_array) ? 1 : 0;
+}
+
+int psx_lvar_is_complex(const lvar_t *var) {
+  return (var && var->is_complex) ? 1 : 0;
+}
+
+int psx_lvar_is_tag_pointer(const lvar_t *var) {
+  return (var && var->is_tag_pointer) ? 1 : 0;
+}
+
+int psx_lvar_pointer_qual_levels(const lvar_t *var) {
+  return var ? var->pointer_qual_levels : 0;
+}
+
+token_kind_t psx_lvar_tag_kind(const lvar_t *var) {
+  return var ? var->tag_kind : TK_EOF;
+}
+
+tk_float_kind_t psx_lvar_fp_kind(const lvar_t *var) {
+  return var ? var->fp_kind : TK_FLOAT_KIND_NONE;
+}
+
+int psx_lvar_vla_row_stride_frame_off(const lvar_t *var) {
+  return var ? var->vla_row_stride_frame_off : 0;
+}
+
+int psx_lvar_vla_row_stride_elem_size(const lvar_t *var) {
+  return var ? var->vla_row_stride_elem_size : 0;
+}
+
+int psx_lvar_vla_row_stride_src_offset(const lvar_t *var) {
+  return var ? var->vla_row_stride_src_offset : 0;
+}
+
+int psx_lvar_vla_param_inner_dim_count(const lvar_t *var) {
+  return var ? var->vla_param_inner_dim_count : 0;
+}
+
+int psx_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx) {
+  if (!var || idx < 0 || idx >= (int)(sizeof(var->vla_param_inner_dim_consts) /
+                                      sizeof(var->vla_param_inner_dim_consts[0]))) {
+    return 0;
+  }
+  return var->vla_param_inner_dim_consts[idx];
+}
+
+int psx_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
+  if (!var || idx < 0 || idx >= (int)(sizeof(var->vla_param_inner_dim_src_offsets) /
+                                      sizeof(var->vla_param_inner_dim_src_offsets[0]))) {
+    return 0;
+  }
+  return var->vla_param_inner_dim_src_offsets[idx];
+}
+
 void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, int tag_len,
                           int is_tag_pointer) {
   psx_decl_invalidate_lvar_decl_type(var);
