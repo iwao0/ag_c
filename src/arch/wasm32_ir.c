@@ -2,7 +2,6 @@
 #include "../codegen_emit.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
-#include "../parser/symtab.h"  /* temporary: global data emission still reads global_var_t layout */
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -199,15 +198,15 @@ typedef struct {
 
 static void find_string_lit_cb(string_lit_t *lit, void *user) {
   string_find_ctx_t *ctx = user;
-  if (!ctx->found && lit->label &&
-      name_eq(lit->label, (int)strlen(lit->label), ctx->label, ctx->label_len)) {
+  if (!ctx->found && psx_string_lit_view(lit).label &&
+      name_eq(psx_string_lit_view(lit).label, (int)strlen(psx_string_lit_view(lit).label), ctx->label, ctx->label_len)) {
     ctx->found = lit;
   }
 }
 
 static int narrow_string_encoded_size(string_lit_t *lit) {
   if (!lit) return 1;
-  return tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width,
+  return tk_emit_string_literal_bytes(psx_string_lit_view(lit).str, psx_string_lit_view(lit).len, (int)psx_string_lit_view(lit).char_width,
                                       true, NULL, NULL);
 }
 
@@ -535,10 +534,10 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   if (out_len) *out_len = 0;
-  if (!gv || !gv->init_symbol || gv->init_symbol_len <= 0) return NULL;
-  if (!psx_ctx_has_function_name(gv->init_symbol, gv->init_symbol_len)) return NULL;
-  if (out_len) *out_len = gv->init_symbol_len;
-  return gv->init_symbol;
+  if (!gv || !psx_gvar_view(gv).init_symbol || psx_gvar_view(gv).init_symbol_len <= 0) return NULL;
+  if (!psx_ctx_has_function_name(psx_gvar_view(gv).init_symbol, psx_gvar_view(gv).init_symbol_len)) return NULL;
+  if (out_len) *out_len = psx_gvar_view(gv).init_symbol_len;
+  return psx_gvar_view(gv).init_symbol;
 }
 
 static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv,
@@ -576,21 +575,21 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offs
 
 static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) {
   if (out_len) *out_len = 0;
-  if (!gv || gv->tag_kind == TK_EOF || gv->is_tag_pointer || gv->is_array || gv->init_count <= 0) {
+  if (!gv || psx_gvar_view(gv).tag_kind == TK_EOF || psx_gvar_view(gv).is_tag_pointer || psx_gvar_view(gv).is_array || psx_gvar_view(gv).init_count <= 0) {
     return NULL;
   }
-  int n = psx_ctx_get_tag_member_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+  int n = psx_ctx_get_tag_member_count(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len);
   int init_idx = 0;
   for (int m = 0; m < n; m++) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(gv->tag_kind, gv->tag_name, gv->tag_len, m, &mi)) break;
+    if (!psx_ctx_get_tag_member_info(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len, m, &mi)) break;
     if (mi.bit_width > 0) {
       init_idx++;
       continue;
     }
     if (psx_tag_member_is_tag_aggregate(&mi)) return NULL;
     if (mi.array_len > 0) {
-      for (int k = 0; k < mi.array_len && init_idx < gv->init_count; k++, init_idx++) {
+      for (int k = 0; k < mi.array_len && init_idx < psx_gvar_view(gv).init_count; k++, init_idx++) {
         if (mi.offset + k * mi.type_size != offset) continue;
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
         if (slot.symbol && slot.symbol_len > 0 &&
@@ -602,7 +601,7 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
       }
       continue;
     }
-    if (mi.offset == offset && init_idx < gv->init_count) {
+    if (mi.offset == offset && init_idx < psx_gvar_view(gv).init_count) {
       psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
       if (slot.symbol && slot.symbol_len > 0 &&
           psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
@@ -1729,10 +1728,10 @@ static void emit_string_literal_wat_byte(unsigned char byte, void *user) {
 
 static void emit_string_literal_data(string_lit_t *lit, void *user) {
   (void)user;
-  int addr = data_addr_for_string_label(lit->label);
+  int addr = data_addr_for_string_label(psx_string_lit_view(lit).label);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+  tk_emit_string_literal_bytes(psx_string_lit_view(lit).str, psx_string_lit_view(lit).len, (int)psx_string_lit_view(lit).char_width, true,
                                emit_string_literal_wat_byte, NULL);
   cg_emitf("\")\n");
 }
@@ -1773,14 +1772,14 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
   int elem = psx_gvar_initializer_element_size(gv, size);
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   int total_elems = elem > 0 ? (size + elem - 1) / elem : 0;
-  int is_fp_array = gv->init_fvalues &&
-                    (gv->fp_kind == TK_FLOAT_KIND_FLOAT || gv->fp_kind >= TK_FLOAT_KIND_DOUBLE);
+  int is_fp_array = psx_gvar_view(gv).has_init_fvalues &&
+                    (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_FLOAT || psx_gvar_view(gv).fp_kind >= TK_FLOAT_KIND_DOUBLE);
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < total_elems; i++) {
     psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
     uint64_t value = (uint64_t)slot.value;
     if (is_fp_array && !slot.symbol) {
-      if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+      if (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_FLOAT) {
         float f = (float)slot.fvalue;
         uint32_t bits;
         memcpy(&bits, &f, sizeof(bits));
@@ -1804,9 +1803,9 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
 }
 
 static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
-  int sym_addr = data_addr_for_init_symbol(gv->init_symbol, gv->init_symbol_len);
+  int sym_addr = data_addr_for_init_symbol(psx_gvar_view(gv).init_symbol, psx_gvar_view(gv).init_symbol_len);
   if (sym_addr < 0) wasm_unsupported_msg("global symbol initializer in Wasm backend");
-  emit_i32_data_bytes(addr, (long long)sym_addr + gv->init_symbol_offset, size);
+  emit_i32_data_bytes(addr, (long long)sym_addr + psx_gvar_view(gv).init_symbol_offset, size);
 }
 
 static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int size, int normalize_bool) {
@@ -1849,7 +1848,7 @@ static void emit_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   uint64_t packed = 0;
   int m = *member_idx;
-  while (m < n_members && *val_idx < gv->init_count) {
+  while (m < n_members && *val_idx < psx_gvar_view(gv).init_count) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
     if (mi.bit_width <= 0 || mi.offset != unit_off) break;
@@ -1881,7 +1880,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
 
 static void emit_global_nested_union_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
-  if (*val_idx >= gv->init_count) return;
+  if (*val_idx >= psx_gvar_view(gv).init_count) return;
   emit_global_union_member_data(tk, tn, tl, gv, val_idx, addr);
 }
 
@@ -1904,7 +1903,7 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   psx_tag_flat_cover_state_t cover_state;
   psx_tag_flat_cover_state_init(&cover_state);
-  for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
+  for (int m = 0; m < n_members && *val_idx < psx_gvar_view(gv).init_count; m++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
     if (psx_tag_member_is_unnamed_struct(&mi)) continue;
@@ -1915,7 +1914,7 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
     }
     if (mi.array_len > 0) {
       if (psx_tag_member_is_tag_aggregate(&mi)) {
-        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+        for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
           int elem_start_idx = *val_idx;
           if (psx_tag_member_is_union_aggregate(&mi)) {
             emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
@@ -1929,7 +1928,7 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
                                                                       mi.tag_len));
         }
       } else {
-        for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+        for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
           int slot = (*val_idx)++;
           emit_global_init_member_data(gv, slot, base_addr + mi.offset + k * mi.type_size, &mi);
         }
@@ -1960,14 +1959,14 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
 }
 
 static void emit_global_union_element_data(global_var_t *gv, int *val_idx, int addr) {
-  emit_global_union_member_data(gv->tag_kind, gv->tag_name, gv->tag_len, gv, val_idx, addr);
+  emit_global_union_member_data(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len, gv, val_idx, addr);
 }
 
 static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx, int *val_idx,
                                                 int target_slots) {
   if (!val_idx || target_slots <= 1) return;
   int limit = start_idx + target_slots;
-  while (*val_idx < limit && *val_idx < gv->init_count &&
+  while (*val_idx < limit && *val_idx < psx_gvar_view(gv).init_count &&
          psx_gvar_init_slot_is_plain_zero(gv, *val_idx)) {
     (*val_idx)++;
   }
@@ -1975,7 +1974,7 @@ static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx,
 
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv, int *val_idx, int addr) {
-  if (*val_idx >= gv->init_count) return;
+  if (*val_idx >= psx_gvar_view(gv).init_count) return;
   int start_idx = *val_idx;
   tag_member_info_t mi = {0};
   if (!psx_tag_union_init_member_for_slot(tk, tn, tl, gv, *val_idx, &mi)) {
@@ -1989,7 +1988,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   }
   if (mi.array_len > 0) {
     if (psx_tag_member_is_tag_aggregate(&mi)) {
-      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+      for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
         int elem_addr = addr + mi.offset + k * mi.type_size;
         if (psx_tag_member_is_struct_aggregate(&mi)) {
           emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
@@ -2000,7 +1999,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
         }
       }
     } else {
-      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+      for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
         emit_global_union_scalar_data(gv, val_idx, addr + mi.offset + k * mi.type_size, &mi);
       }
     }
@@ -2022,21 +2021,21 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
 }
 
 static void emit_global_union_data(global_var_t *gv, int addr) {
-  if (gv->init_count <= 0) return;
+  if (psx_gvar_view(gv).init_count <= 0) return;
   int val_idx = 0;
   emit_global_union_element_data(gv, &val_idx, addr);
 }
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
-  if (gv->is_tag_pointer) {
+  if (psx_gvar_view(gv).is_tag_pointer) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
   }
   if (psx_gvar_is_union_aggregate(gv)) {
-    if (gv->is_array) {
+    if (psx_gvar_view(gv).is_array) {
       int elem_size = psx_gvar_array_element_size(gv);
       int total = psx_gvar_array_element_count(gv);
       int val_idx = 0;
-      for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+      for (int e = 0; e < total && val_idx < psx_gvar_view(gv).init_count; e++) {
         emit_global_union_element_data(gv, &val_idx, addr + e * elem_size);
       }
     } else {
@@ -2045,19 +2044,19 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
     return;
   }
   int val_idx = 0;
-  if (gv->is_array) {
+  if (psx_gvar_view(gv).is_array) {
     int elem_size = psx_gvar_array_element_size(gv);
     int total = psx_gvar_array_element_count(gv);
-    for (int e = 0; e < total && val_idx < gv->init_count; e++) {
+    for (int e = 0; e < total && val_idx < psx_gvar_view(gv).init_count; e++) {
       int elem_start_idx = val_idx;
-      emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx,
+      emit_global_struct_members_data_rec(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len, gv, &val_idx,
                                           addr + e * elem_size);
       consume_trailing_zero_union_padding(gv, elem_start_idx, &val_idx,
-                                          psx_tag_flat_slot_count(gv->tag_kind, gv->tag_name,
-                                                                  gv->tag_len));
+                                          psx_tag_flat_slot_count(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name,
+                                                                  psx_gvar_view(gv).tag_len));
     }
   } else {
-    emit_global_struct_members_data_rec(gv->tag_kind, gv->tag_name, gv->tag_len, gv, &val_idx, addr);
+    emit_global_struct_members_data_rec(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len, gv, &val_idx, addr);
   }
 }
 
@@ -2068,18 +2067,18 @@ static void emit_global_data(global_var_t *gv, void *user) {
   int size = psx_gvar_storage_size(gv, 4);
   if (psx_gvar_is_tag_aggregate(gv)) {
     emit_global_struct_data(gv, addr);
-  } else if (gv->init_symbol) {
+  } else if (psx_gvar_view(gv).init_symbol) {
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
     emit_global_symbol_addr_data(gv, addr, size);
-  } else if (gv->init_count > 0) {
+  } else if (psx_gvar_view(gv).init_count > 0) {
     emit_global_init_values_data(gv, addr, size);
-  } else if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
-    emit_fp_data_bytes(addr, (tk_float_kind_t)gv->fp_kind, gv->has_init ? gv->fval : 0.0);
+  } else if (psx_gvar_view(gv).fp_kind != TK_FLOAT_KIND_NONE) {
+    emit_fp_data_bytes(addr, (tk_float_kind_t)psx_gvar_view(gv).fp_kind, psx_gvar_view(gv).has_init ? psx_gvar_view(gv).fval : 0.0);
   } else {
-    if ((!gv->has_init || gv->init_val == 0) &&
+    if ((!psx_gvar_view(gv).has_init || psx_gvar_view(gv).init_val == 0) &&
         size != 1 && size != 2 && size != 4 && size != 8) return;
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
-    emit_i32_data_bytes(addr, gv->has_init ? gv->init_val : 0, size);
+    emit_i32_data_bytes(addr, psx_gvar_view(gv).has_init ? psx_gvar_view(gv).init_val : 0, size);
   }
 }
 

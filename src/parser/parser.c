@@ -75,6 +75,32 @@ int psx_gvar_is_extern_decl(const global_var_t *gv) {
   return (gv && gv->is_extern_decl) ? 1 : 0;
 }
 
+psx_gvar_view_t psx_gvar_view(const global_var_t *gv) {
+  if (!gv) return (psx_gvar_view_t){.tag_kind = TK_EOF, .fp_kind = TK_FLOAT_KIND_NONE};
+  return (psx_gvar_view_t){
+      .name = gv->name,
+      .name_len = gv->name_len,
+      .tag_kind = gv->tag_kind,
+      .tag_name = gv->tag_name,
+      .tag_len = gv->tag_len,
+      .type_size = gv->type_size,
+      .init_count = gv->init_count,
+      .has_init = gv->has_init,
+      .init_val = gv->init_val,
+      .init_symbol = gv->init_symbol,
+      .init_symbol_len = gv->init_symbol_len,
+      .init_symbol_offset = gv->init_symbol_offset,
+      .fval = gv->fval,
+      .fp_kind = (tk_float_kind_t)gv->fp_kind,
+      .is_array = gv->is_array ? 1 : 0,
+      .is_extern_decl = gv->is_extern_decl ? 1 : 0,
+      .is_static = gv->is_static ? 1 : 0,
+      .is_thread_local = gv->is_thread_local ? 1 : 0,
+      .is_tag_pointer = gv->is_tag_pointer ? 1 : 0,
+      .has_init_fvalues = gv->init_fvalues ? 1 : 0,
+  };
+}
+
 int psx_gvar_is_thread_local(const global_var_t *gv) {
   return (gv && gv->is_thread_local) ? 1 : 0;
 }
@@ -109,6 +135,25 @@ string_lit_t *psx_find_string_lit_by_label(char *label) {
     if (strcmp(lit->label, label) == 0) return lit;
   }
   return NULL;
+}
+
+psx_string_lit_view_t psx_string_lit_view(const string_lit_t *lit) {
+  if (!lit) return (psx_string_lit_view_t){0};
+  return (psx_string_lit_view_t){
+      .label = lit->label,
+      .str = lit->str,
+      .len = lit->len,
+      .char_width = lit->char_width,
+  };
+}
+
+psx_float_lit_view_t psx_float_lit_view(const float_lit_t *lit) {
+  if (!lit) return (psx_float_lit_view_t){.fp_kind = TK_FLOAT_KIND_NONE};
+  return (psx_float_lit_view_t){
+      .fval = lit->fval,
+      .id = lit->id,
+      .fp_kind = lit->fp_kind,
+  };
 }
 
 /* parser_public.h で宣言した visitor の実装 (Phase C3-1)。

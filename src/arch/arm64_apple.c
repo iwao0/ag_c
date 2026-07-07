@@ -15,10 +15,7 @@
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
 /* arm64_apple.c は AST node 型を使わない。
- * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。
- * TODO: global init emission still reads global_var_t layout directly, so symtab.h remains
- * explicit here until the global data view is split from parser internals. */
-#include "../parser/symtab.h"
+ * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。 */
 #include "../parser/parser_public.h"
 #include "../tokenizer/literals.h"
 #include <stdbool.h>
@@ -62,7 +59,7 @@ typedef struct {
 
 static void scan_string_lit_kinds(string_lit_t *lit, void *user) {
   string_lit_kind_scan_t *s = user;
-  if (lit->char_width == TK_CHAR_WIDTH_CHAR) s->has_narrow = 1;
+  if (psx_string_lit_view(lit).char_width == TK_CHAR_WIDTH_CHAR) s->has_narrow = 1;
   else s->has_wide = 1;
 }
 
@@ -73,17 +70,17 @@ static void emit_string_literal_asm_byte(unsigned char byte, void *user) {
 
 static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
   (void)user;
-  if (lit->char_width != TK_CHAR_WIDTH_CHAR) return;
-  cg_emitf("%s:\n", lit->label);
-  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+  if (psx_string_lit_view(lit).char_width != TK_CHAR_WIDTH_CHAR) return;
+  cg_emitf("%s:\n", psx_string_lit_view(lit).label);
+  tk_emit_string_literal_bytes(psx_string_lit_view(lit).str, psx_string_lit_view(lit).len, (int)psx_string_lit_view(lit).char_width, true,
                                emit_string_literal_asm_byte, NULL);
 }
 
 static void emit_wide_string_literal(string_lit_t *lit, void *user) {
   (void)user;
-  if (lit->char_width == TK_CHAR_WIDTH_CHAR) return;
-  cg_emitf("%s:\n", lit->label);
-  tk_emit_string_literal_bytes(lit->str, lit->len, (int)lit->char_width, true,
+  if (psx_string_lit_view(lit).char_width == TK_CHAR_WIDTH_CHAR) return;
+  cg_emitf("%s:\n", psx_string_lit_view(lit).label);
+  tk_emit_string_literal_bytes(psx_string_lit_view(lit).str, psx_string_lit_view(lit).len, (int)psx_string_lit_view(lit).char_width, true,
                                emit_string_literal_asm_byte, NULL);
 }
 
@@ -104,13 +101,13 @@ void gen_string_literals(void) {
 
 static void emit_one_float_literal(float_lit_t *lit, void *user) {
   (void)user;
-  cg_emitf(".LCF%d:\n", lit->id);
-  if (lit->fp_kind == TK_FLOAT_KIND_FLOAT) {
-    union { float f; uint32_t i; } u = { .f = (float)lit->fval };
+  cg_emitf(".LCF%d:\n", psx_float_lit_view(lit).id);
+  if (psx_float_lit_view(lit).fp_kind == TK_FLOAT_KIND_FLOAT) {
+    union { float f; uint32_t i; } u = { .f = (float)psx_float_lit_view(lit).fval };
     cg_emitf("  .word %u\n", u.i);
   } else {
     /* note: long double is currently lowered to double. */
-    union { double d; uint64_t i; } u = { .d = lit->fval };
+    union { double d; uint64_t i; } u = { .d = psx_float_lit_view(lit).fval };
     cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
   }
 }
@@ -173,7 +170,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
 
 static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
                                    global_var_t *gv, int *val_idx) {
-  if (*val_idx >= gv->init_count) {
+  if (*val_idx >= psx_gvar_view(gv).init_count) {
     cg_emitf("  .space %d\n", union_size);
     return;
   }
@@ -186,7 +183,7 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
   if (psx_tag_member_is_tag_aggregate(&mi)) {
     if (mi.offset > 0) cg_emitf("  .space %d\n", mi.offset);
     if (mi.array_len > 0) {
-      for (int k = 0; k < mi.array_len && *val_idx < gv->init_count; k++) {
+      for (int k = 0; k < mi.array_len && *val_idx < psx_gvar_view(gv).init_count; k++) {
         if (psx_tag_member_is_struct_aggregate(&mi)) {
           emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, mi.type_size,
                                          gv, val_idx);
@@ -270,7 +267,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
   int prev_end = 0;
   psx_tag_flat_cover_state_t cover_state;
   psx_tag_flat_cover_state_init(&cover_state);
-  for (int i = 0; i < n_members && *val_idx < gv->init_count; i++) {
+  for (int i = 0; i < n_members && *val_idx < psx_gvar_view(gv).init_count; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
@@ -291,7 +288,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
           emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
         }
       } else {
-        for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
+        for (int k = 0; k < alen && *val_idx < psx_gvar_view(gv).init_count; k++) {
           psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
           long long ev = slot.value;
           (*val_idx)++;
@@ -339,7 +336,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         if (bmi.bit_width == 0 || bmi.offset != unit_off) break;
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
         long long v = slot.value;
-        if (*val_idx < gv->init_count) (*val_idx)++;
+        if (*val_idx < psx_gvar_view(gv).init_count) (*val_idx)++;
         unsigned long long mask = (bmi.bit_width >= 64)
                                     ? ~0ULL : ((1ULL << bmi.bit_width) - 1);
         packed |= ((unsigned long long)v & mask) << bmi.bit_offset;
@@ -368,8 +365,8 @@ static void emit_global_struct_init(global_var_t *gv) {
    * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
   if (psx_gvar_is_union_aggregate(gv)) {
     tag_member_info_t mi = {0};
-    if (gv->init_count > 0 &&
-        psx_tag_union_init_member_for_slot(gv->tag_kind, gv->tag_name, gv->tag_len, gv, 0, &mi)) {
+    if (psx_gvar_view(gv).init_count > 0 &&
+        psx_tag_union_init_member_for_slot(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len, gv, 0, &mi)) {
       psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, 0);
       emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
                                      mi.type_size, slot.value, slot.fvalue);
@@ -377,17 +374,17 @@ static void emit_global_struct_init(global_var_t *gv) {
                         : (mi.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4
                         : (mi.fp_kind >= TK_FLOAT_KIND_DOUBLE) ? 8
                         : mi.type_size;
-      if (emitted < (int)gv->type_size) {
-        cg_emitf("  .space %d\n", (int)gv->type_size - emitted);
+      if (emitted < (int)psx_gvar_view(gv).type_size) {
+        cg_emitf("  .space %d\n", (int)psx_gvar_view(gv).type_size - emitted);
       }
     } else {
-      cg_emitf("  .space %d\n", (int)gv->type_size);
+      cg_emitf("  .space %d\n", (int)psx_gvar_view(gv).type_size);
     }
     return;
   }
   int val_idx = 0;
-  emit_global_struct_members_rec(gv->tag_kind, gv->tag_name, gv->tag_len,
-                                 (int)gv->type_size, gv, &val_idx);
+  emit_global_struct_members_rec(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len,
+                                 (int)psx_gvar_view(gv).type_size, gv, &val_idx);
 }
 
 /* struct/union 配列のグローバル brace init: 各要素を member 毎に
@@ -403,7 +400,7 @@ static void emit_global_struct_array_init(global_var_t *gv) {
    * int n;} g[2]={{"aa",1},...}` の tag が 1 バイトしか出ず後続メンバがずれていた。
    * 非配列 struct の出力 (emit_global_struct_init) と同じ機構を要素ごとに適用して統一する。 */
   for (int e = 0; e < total_elems; e++) {
-    emit_global_struct_members_rec(gv->tag_kind, gv->tag_name, gv->tag_len,
+    emit_global_struct_members_rec(psx_gvar_view(gv).tag_kind, psx_gvar_view(gv).tag_name, psx_gvar_view(gv).tag_len,
                                    elem_size, gv, &val_idx);
   }
 }
@@ -412,47 +409,47 @@ static void emit_global_struct_array_init(global_var_t *gv) {
  * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
 static void emit_one_global_var(global_var_t *gv, void *user) {
   (void)user;
-  if (gv->is_extern_decl) return;
+  if (psx_gvar_view(gv).is_extern_decl) return;
   int storage_size = psx_gvar_storage_size(gv, 4);
-  if (gv->is_thread_local) {
+  if (psx_gvar_view(gv).is_thread_local) {
     /* _Thread_local: TLV descriptor + thread data/bss */
-    if (gv->has_init) {
+    if (psx_gvar_view(gv).has_init) {
       cg_emitf(".section __DATA,__thread_data\n");
-      cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-      cg_emit_int_directive(storage_size, gv->init_val);
+      cg_emitf("_%.*s$tlv$init:\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
+      cg_emit_int_directive(storage_size, psx_gvar_view(gv).init_val);
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
-      cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
+      cg_emitf("_%.*s$tlv$init:\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
       cg_emitf("  .space %d\n", storage_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-    if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-    cg_emitf("_%.*s:\n", gv->name_len, gv->name);
+    if (!psx_gvar_view(gv).is_static) cg_emitf(".global _%.*s\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
+    cg_emitf("_%.*s:\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
     cg_emitf("  .quad __tlv_bootstrap\n");
     cg_emitf("  .quad 0\n");
-    cg_emitf("  .quad _%.*s$tlv$init\n", gv->name_len, gv->name);
+    cg_emitf("  .quad _%.*s$tlv$init\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
     return;
   }
-  if (gv->has_init) {
+  if (psx_gvar_view(gv).has_init) {
     cg_emitf(".section __DATA,__data\n");
     /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
-    if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
+    if (!psx_gvar_view(gv).is_static) cg_emitf(".global _%.*s\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
     int align_size = psx_gvar_initializer_element_size(gv, storage_size);
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
-    cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-    if (gv->init_count > 0 && psx_gvar_is_tag_aggregate(gv) && !gv->is_array) {
+    cg_emitf("_%.*s:\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name);
+    if (psx_gvar_view(gv).init_count > 0 && psx_gvar_is_tag_aggregate(gv) && !psx_gvar_view(gv).is_array) {
       emit_global_struct_init(gv);
-    } else if (gv->init_count > 0 && gv->is_array && psx_gvar_is_tag_aggregate(gv)) {
+    } else if (psx_gvar_view(gv).init_count > 0 && psx_gvar_view(gv).is_array && psx_gvar_is_tag_aggregate(gv)) {
       emit_global_struct_array_init(gv);
-    } else if (gv->init_count > 0) {
+    } else if (psx_gvar_view(gv).init_count > 0) {
       int elem = psx_gvar_initializer_element_size(gv, 4);
       int total_elems = psx_gvar_initializer_element_count(gv, 4);
-      int is_fp_arr = (gv->init_fvalues != NULL) &&
-                      (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||
-                       gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
-                       gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
-      for (int i = 0; i < gv->init_count && i < total_elems; i++) {
+      int is_fp_arr = psx_gvar_view(gv).has_init_fvalues &&
+                      (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_FLOAT ||
+                       psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_DOUBLE ||
+                       psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
+      for (int i = 0; i < psx_gvar_view(gv).init_count && i < total_elems; i++) {
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
         if (slot.symbol && slot.symbol_len < 0) {
           /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
@@ -474,7 +471,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
         if (is_fp_arr) {
           /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
           double d = slot.fvalue;
-          if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+          if (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_FLOAT) {
             float f = (float)d;
             uint32_t bits;
             memcpy(&bits, &f, sizeof(bits));
@@ -488,39 +485,39 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
         }
         cg_emit_int_directive(elem, slot.value);
       }
-      int remain = total_elems - gv->init_count;
+      int remain = total_elems - psx_gvar_view(gv).init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
-    } else if (gv->init_symbol) {
-      if (gv->init_symbol_len < 0) {
+    } else if (psx_gvar_view(gv).init_symbol) {
+      if (psx_gvar_view(gv).init_symbol_len < 0) {
         /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。
          * `const char *p = "abc" + 2;` のように +offset がある場合はラベル + offset を出す。 */
-        if (gv->init_symbol_offset != 0) {
-          cg_emitf("  .quad %s + %lld\n", gv->init_symbol, gv->init_symbol_offset);
+        if (psx_gvar_view(gv).init_symbol_offset != 0) {
+          cg_emitf("  .quad %s + %lld\n", psx_gvar_view(gv).init_symbol, psx_gvar_view(gv).init_symbol_offset);
         } else {
-          cg_emitf("  .quad %s\n", gv->init_symbol);
+          cg_emitf("  .quad %s\n", psx_gvar_view(gv).init_symbol);
         }
-      } else if (gv->init_symbol_offset != 0) {
+      } else if (psx_gvar_view(gv).init_symbol_offset != 0) {
         /* `&a[1]` / `a+1`: シンボル + バイトオフセット。 */
-        cg_emitf("  .quad _%.*s + %lld\n", gv->init_symbol_len, gv->init_symbol,
-                 gv->init_symbol_offset);
+        cg_emitf("  .quad _%.*s + %lld\n", psx_gvar_view(gv).init_symbol_len, psx_gvar_view(gv).init_symbol,
+                 psx_gvar_view(gv).init_symbol_offset);
       } else {
-        cg_emitf("  .quad _%.*s\n", gv->init_symbol_len, gv->init_symbol);
+        cg_emitf("  .quad _%.*s\n", psx_gvar_view(gv).init_symbol_len, psx_gvar_view(gv).init_symbol);
       }
-    } else if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
+    } else if (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_FLOAT) {
       /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
-      float f = (float)gv->fval;
+      float f = (float)psx_gvar_view(gv).fval;
       uint32_t bits;
       memcpy(&bits, &f, sizeof(bits));
       cg_emitf("  .long %u\n", (unsigned)bits);
-    } else if (gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
-               gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
+    } else if (psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_DOUBLE ||
+               psx_gvar_view(gv).fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
       /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
-      double d = gv->fval;
+      double d = psx_gvar_view(gv).fval;
       uint64_t bits;
       memcpy(&bits, &d, sizeof(bits));
       cg_emitf("  .quad %llu\n", (unsigned long long)bits);
     } else {
-      cg_emit_int_directive(storage_size, gv->init_val);
+      cg_emit_int_directive(storage_size, psx_gvar_view(gv).init_val);
     }
     return;
   }
@@ -528,10 +525,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
    * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
   int log2align = (storage_size >= 8) ? 3 : (storage_size >= 4) ? 2 : (storage_size >= 2) ? 1 : 0;
-  if (gv->is_static) {
-    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", gv->name_len, gv->name, storage_size, log2align);
+  if (psx_gvar_view(gv).is_static) {
+    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name, storage_size, log2align);
   } else {
-    cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, storage_size, log2align);
+    cg_emitf(".comm _%.*s,%d,%d\n", psx_gvar_view(gv).name_len, psx_gvar_view(gv).name, storage_size, log2align);
   }
 }
 

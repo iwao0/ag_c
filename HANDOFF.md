@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き877: stop exposing symtab layout through parser_public）
+最終更新: 2026-07-08（続き878: remove symtab layout dependency from arch）
 
 ## 現状
+- 続き878: **arch から `symtab.h` 直 include を外し、global/literal data emit を public view 経由にした**。
+
+  続き877で `parser_public.h` から `symtab.h` を外した後も、`arm64_apple.c` /
+  `wasm32_ir.c` / `wasm32_obj.c` は global/literal data emission のために `symtab.h` を
+  直接 include し、`global_var_t` / `string_lit_t` / `float_lit_t` のフィールドを読んでいた。
+  今回は `src/parser/gvar_public.h` に `psx_gvar_view_t` / `psx_gvar_view()`、
+  `src/parser/literal_public.h` に `psx_string_lit_view_t` / `psx_float_lit_view_t` と view 関数を追加し、
+  arch 側の読み取りをすべて public view 経由へ移した。
+
+  これで `src/arch` / `src/ir` / `parser_public.h` から `symtab.h` 直 include は消えた。
+  arch 側はまだ `global_var_t *` を visitor/handle として受け取るが、実レイアウトは読まない。
+  `rg "#include \"\\.\\./parser/symtab.h\"|#include \"symtab.h\"|gv->|lit->" src/arch src/ir src/parser/parser_public.h -n`
+  で出る `gv->name` / `gv->name_len` は IR の AST `node_gvar_t` 参照だけで、`global_var_t` ではない。
+  次の根本対応候補は、view 呼び出しを重複させている emission helper を整理し、
+  global initializer traversal 自体を parser/public utility 側へ寄せて arch 間重複を減らすこと。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き877: **`parser_public.h` から `symtab.h` を外し、公開境界での `global_var_t` レイアウト露出を止めた**。
 
   続き876で IR 側の単純な `global_var_t` 参照を public accessor に寄せた後も、
