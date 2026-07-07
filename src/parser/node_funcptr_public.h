@@ -1,7 +1,8 @@
 #ifndef PARSER_NODE_FUNCPTR_PUBLIC_H
 #define PARSER_NODE_FUNCPTR_PUBLIC_H
 
-#include "ast.h"
+#include "core.h"
+#include "node_fwd.h"
 
 struct global_var_t;
 struct lvar_t;

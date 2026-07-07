@@ -1,7 +1,8 @@
 #ifndef PARSER_NODE_TYPE_PUBLIC_H
 #define PARSER_NODE_TYPE_PUBLIC_H
 
-#include "ast.h"
+#include "../tokenizer/token.h"
+#include "node_fwd.h"
 
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);

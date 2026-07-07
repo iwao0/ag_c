@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き920: remove obsolete public wrapper headers）
+最終更新: 2026-07-08（続き921: forward declare node public types）
 
 ## 現状
+- 続き921: **node 系 public header から `ast.h` の完全定義依存を外した**。
+
+  続き919/920で node 系 public API は `node_type_public.h` /
+  `node_funcptr_public.h` / `node_vla_public.h` に分かれたが、各 header は
+  `node_t *` / `node_mem_t *` / `node_func_t *` のポインタを宣言するだけなのに
+  `ast.h` を include していた。これは public API の利用者に巨大な AST 完全定義を
+  余分に公開し、将来 `parser_public.h` から AST 直アクセスを剥がす作業の足場を悪くする。
+
+  今回は `src/parser/node_fwd.h` を追加し、`node_t` / `node_mem_t` / `node_func_t` の
+  前方宣言を集約した。`node_type_public.h` は `token_kind_t` のために tokenizer の
+  `token.h` と `node_fwd.h` を include し、`node_vla_public.h` は `node_fwd.h` のみ、
+  `node_funcptr_public.h` は `psx_decl_funcptr_sig_t` / `tk_float_kind_t` のために
+  `core.h` と `node_fwd.h` を include する形にした。
+  これで node 個別 public header は AST 完全定義を要求しなくなった。
+  なお `parser_public.h` は `ir_builder.c` がまだ AST フィールドを直接読むため
+  現時点では `ast.h` を include したまま。ここを外すには AST accessor 化が次の大きな対象。
+
+  確認は
+  `rg "#include \"ast\\.h\"" src/parser/*public.h src/parser/node_fwd.h` = **`parser_public.h` のみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き920: **未使用になった `node_public.h` / `semantic_public.h` wrapper を削除した**。
 
   続き916で `semantic_public.h` は `function_public.h` と
