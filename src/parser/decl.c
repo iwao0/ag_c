@@ -783,26 +783,11 @@ static bool init_first_element_is_brace(void) {
 // 文字列リテラル列の合計内容長 + 1 (NUL) を返す。t は文字列開始トークン。
 // 文字列の終端後のトークンが終端記号 (`}` または NULL ライク) でなければ
 // 単純な文字列初期化と見なせないので 0 を返す。
-/* C11 5.1.1.2: 文字列中のエスケープシーケンス (`\t` `\xNN` `\NNN` 等) は
- * 1 文字にデコードされるので、配列要素数は decode 後の文字数で数える。
- * 生バイト長 (raw len) を返してしまうと `char s[] = "\t"` で要素数が 3 (raw '\','t',NUL)
- * になり過剰確保 + 値もズレる。 */
-static long long count_decoded_chars_in_string(const char *s, int len, int char_width) {
-  long long n = 0;
-  int i = 0;
-  int cw = char_width > 0 ? char_width : 1;
-  while (i < len) {
-    uint32_t units[2];
-    n += tk_next_string_code_units(s, len, &i, cw, units);  /* 幅に応じたコードユニット数 */
-  }
-  return n;
-}
-
 static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace_terminator) {
   long long total = 0;
   while (t && t->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)t;
-    total += count_decoded_chars_in_string(st->str, st->len, (int)st->char_width);
+    total += tk_count_string_code_units(st->str, st->len, (int)st->char_width);
     t = t->next;
   }
   if (require_rbrace_terminator) {

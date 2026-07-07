@@ -22,6 +22,8 @@ uint32_t tk_decode_utf8(const char *s, int len, int *pos);
 /** @brief 文字列の次の1文字を char_width のコードユニット列 out[] に変換し個数(1/2)を返す。
  * *pos を消費分進める。emit / 配列初期化 / 要素数カウントで共通利用する。 */
 int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, uint32_t out[2]);
+/** @brief 文字列を char_width のコードユニット列へ変換したときの総ユニット数を返す。 */
+int tk_count_string_code_units(const char *s, int len, int char_width);
 
 /** @brief 文字列/文字定数中の1つのエスケープを読み取って値を返す。 */
 int tk_read_escape_char(char **pp);

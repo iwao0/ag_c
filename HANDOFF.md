@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き860: centralize string literal lookup）
+最終更新: 2026-07-08（続き861: centralize string literal unit counting）
 
 ## 現状
+- 続き861: **文字列リテラルの decode 後 unit 数カウントを
+  tokenizer の `tk_count_string_code_units()` に集約した**。
+
+  続き859/860で string literal の slot 書き込みと label lookup は共通化したが、
+  decode 後の要素数カウントは `expr.c` の string literal node 作成と `decl.c` の
+  配列サイズ推定で、それぞれ `tk_next_string_code_units()` を手書きループしていた。
+  今回は `src/tokenizer/literals.c` に `tk_count_string_code_units()` を追加し、
+  `expr.c` と `decl.c` のカウント側を同じ tokenizer API へ寄せた。これで
+  「エスケープ/UTF-8/UTF-16 surrogate を何 unit と数えるか」の正本は tokenizer 側に
+  まとまる。
+
+  確認は
+  `rg "count_decoded_chars_in_string|tk_count_string_code_units|tk_next_string_code_units" src/parser src/tokenizer src/arch -n`
+  = **count は tokenizer helper + expr/decl 呼び出しのみ、残りの `tk_next_string_code_units`
+  は emission/write 側**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き860: **文字列リテラルテーブルの label 検索を
   `psx_find_string_lit_by_label()` に集約した**。
 

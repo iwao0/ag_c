@@ -3663,13 +3663,9 @@ static node_string_t *make_string_lit_node(char *str, int len,
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */
-  int decoded = 0;
-  int cw_count = char_width ? (int)char_width : TK_CHAR_WIDTH_CHAR;
-  for (int sp = 0; sp < len; ) {
-    uint32_t units[2];
-    decoded += tk_next_string_code_units(str, len, &sp, cw_count, units);
-  }
-  snode->byte_len = decoded;
+  snode->byte_len = tk_count_string_code_units(str, len,
+                                               char_width ? (int)char_width
+                                                          : TK_CHAR_WIDTH_CHAR);
   return snode;
 }
 

@@ -125,6 +125,18 @@ int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, 
   return 1;
 }
 
+int tk_count_string_code_units(const char *s, int len, int char_width) {
+  if (!s || len <= 0) return 0;
+  int count = 0;
+  int pos = 0;
+  int cw = char_width > 0 ? char_width : TK_CHAR_WIDTH_CHAR;
+  while (pos < len) {
+    uint32_t units[2];
+    count += tk_next_string_code_units(s, len, &pos, cw, units);
+  }
+  return count;
+}
+
 /** @brief リテラル中のエスケープ1個を値にデコードする。 */
 int tk_read_escape_char(char **pp) {
   char *p = *pp;
