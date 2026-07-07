@@ -1377,7 +1377,6 @@ static void consume_global_member_array_dim(tag_member_info_t *mi) {
  * 解決する必要があるため gv 固定版は使わない。 */
 
 static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
-static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap);
 
 /* ネスト brace 内の designator (`.member` / `[N]`) を解決するための「現在の brace level が
  * 初期化している集約型」コンテキスト。これがないと `.s={.a=7}` や `.items={[2]={.a=7}}` の
@@ -1726,7 +1725,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       gbrace_ctx_from_member(&child, &cmi);
     }
     /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
-    ensure_global_init_capacity(gv, cap, cur_idx + 1);
+    psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + 1);
     /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
      * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
     while (gv->init_count < cur_idx) {
@@ -1748,7 +1747,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
        * .LC ポインタにしない)。残りは 0 埋め。 */
       node_t *e = psx_expr_assign();
       int row_w = gv->outer_stride;
-      ensure_global_init_capacity(gv, cap, cur_idx + row_w);
+      psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
         for (string_lit_t *l = string_literals; l; l = l->next) {
@@ -1791,7 +1790,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       node_t *e = psx_expr_assign();
       int row_w = child.sub_ndim > 0 ? child.sub_dims[child.sub_ndim - 1] : child.array_len;
       if (row_w <= 0) row_w = child.array_len;
-      ensure_global_init_capacity(gv, cap, cur_idx + row_w);
+      psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
         for (string_lit_t *l = string_literals; l; l = l->next) {
@@ -1972,27 +1971,8 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
   }
 }
 
-static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap) {
-  while (*cap < min_cap) {
-    int old_cap = *cap;
-    int new_cap = old_cap * 2;
-    if (new_cap < min_cap) new_cap = min_cap;
-    gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
-    gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
-    gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
-    gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
-    if (gv->init_fvalues) {
-      gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
-    }
-    for (int i = old_cap; i < new_cap; i++) {
-      psx_gvar_init_slot_clear(gv, i);
-    }
-    *cap = new_cap;
-  }
-}
-
 static void pad_global_init_zeros(global_var_t *gv, int *cap, int total_slots) {
-  ensure_global_init_capacity(gv, cap, total_slots);
+  psx_gvar_init_slots_ensure_capacity(gv, cap, total_slots);
   while (gv->init_count < total_slots) {
     psx_gvar_init_slot_clear(gv, gv->init_count);
     gv->init_count++;

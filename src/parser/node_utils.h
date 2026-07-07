@@ -31,6 +31,7 @@ int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallbac
 int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
 psx_gvar_init_slot_t psx_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 void psx_gvar_init_slots_alloc(struct global_var_t *gv, int cap, int with_fvalues);
+void psx_gvar_init_slots_ensure_capacity(struct global_var_t *gv, int *cap, int min_cap);
 void psx_gvar_init_slot_clear(struct global_var_t *gv, int idx);
 void psx_gvar_init_slot_write(struct global_var_t *gv, int idx, long long value,
                               double fvalue, char *symbol, int symbol_len);

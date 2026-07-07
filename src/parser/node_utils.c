@@ -482,6 +482,26 @@ void psx_gvar_init_slots_alloc(global_var_t *gv, int cap, int with_fvalues) {
   for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
 }
 
+void psx_gvar_init_slots_ensure_capacity(global_var_t *gv, int *cap, int min_cap) {
+  if (!gv || !cap) return;
+  while (*cap < min_cap) {
+    int old_cap = *cap;
+    int new_cap = old_cap > 0 ? old_cap * 2 : 1;
+    if (new_cap < min_cap) new_cap = min_cap;
+    gv->init_values = realloc(gv->init_values, (size_t)new_cap * sizeof(long long));
+    gv->init_value_symbols = realloc(gv->init_value_symbols, (size_t)new_cap * sizeof(char *));
+    gv->init_value_symbol_lens = realloc(gv->init_value_symbol_lens, (size_t)new_cap * sizeof(int));
+    gv->init_union_ordinals = realloc(gv->init_union_ordinals, (size_t)new_cap * sizeof(int));
+    if (gv->init_fvalues) {
+      gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
+    }
+    for (int i = old_cap; i < new_cap; i++) {
+      psx_gvar_init_slot_clear(gv, i);
+    }
+    *cap = new_cap;
+  }
+}
+
 void psx_gvar_init_slot_clear(global_var_t *gv, int idx) {
   if (!gv || idx < 0) return;
   if (gv->init_values) gv->init_values[idx] = 0;

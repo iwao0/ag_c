@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き856: guard IR global init value reads）
+最終更新: 2026-07-07（続き857: centralize global init slot growth）
 
 ## 現状
+- 続き857: **global initializer slot の capacity grow も
+  `node_utils` に集約した**。
+
+  続き855で初期 allocation は `psx_gvar_init_slots_alloc()` に寄せたが、
+  designator の後方/前方ジャンプや char 配列行展開で使う capacity grow は
+  `parser.c` の `ensure_global_init_capacity()` に残り、同じ parallel slot array の
+  `realloc` と新規 slot 初期化を parser が直接持っていた。今回は
+  `psx_gvar_init_slots_ensure_capacity()` を `node_utils` に追加し、`parser.c` は
+  brace initializer の構文位置計算だけを担当する形にした。
+
+  確認は
+  `rg "ensure_global_init_capacity|psx_gvar_init_slots_ensure_capacity|init_values = realloc|init_value_symbols = realloc|init_value_symbol_lens = realloc|init_union_ordinals = realloc|init_fvalues = realloc" src/parser -n`
+  = **grow helper 本体 + 呼び出しのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き856: **IR printer の global initializer value 読み取りを helper 経由にした**。
 
   parser/backend 側の initializer slot direct access は view/helper へ寄せてきたが、
