@@ -1,8 +1,27 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き857: centralize global init slot growth）
+最終更新: 2026-07-07（続き858: centralize global init slot zero padding）
 
 ## 現状
+- 続き858: **global initializer slot の zero padding も
+  `node_utils` に集約した**。
+
+  続き857で capacity grow は `psx_gvar_init_slots_ensure_capacity()` に寄せたが、
+  designator の前方ジャンプ gap と inferred array size の丸め処理には、
+  `gv->init_count` を進めながら `psx_gvar_init_slot_clear()` するループが
+  `parser.c` に残っていた。今回は `psx_gvar_init_slots_pad_zeros()` を追加し、
+  slot lifecycle（capacity 確保・zero clear・init_count 前進）を `node_utils` に寄せた。
+
+  確認は
+  `rg "pad_global_init_zeros|psx_gvar_init_slots_pad_zeros|gv->init_count\\+\\+|psx_gvar_init_slot_clear\\(gv, gv->init_count\\)" src/parser -n`
+  = **zero padding helper 本体 + 呼び出しのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き857: **global initializer slot の capacity grow も
   `node_utils` に集約した**。
 

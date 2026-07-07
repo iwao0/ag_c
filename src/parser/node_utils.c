@@ -502,6 +502,15 @@ void psx_gvar_init_slots_ensure_capacity(global_var_t *gv, int *cap, int min_cap
   }
 }
 
+void psx_gvar_init_slots_pad_zeros(global_var_t *gv, int *cap, int total_slots) {
+  if (!gv || !cap) return;
+  psx_gvar_init_slots_ensure_capacity(gv, cap, total_slots);
+  while (gv->init_count < total_slots) {
+    psx_gvar_init_slot_clear(gv, gv->init_count);
+    gv->init_count++;
+  }
+}
+
 void psx_gvar_init_slot_clear(global_var_t *gv, int idx) {
   if (!gv || idx < 0) return;
   if (gv->init_values) gv->init_values[idx] = 0;

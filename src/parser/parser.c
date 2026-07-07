@@ -1728,10 +1728,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
     psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + 1);
     /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
      * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
-    while (gv->init_count < cur_idx) {
-      psx_gvar_init_slot_clear(gv, gv->init_count);
-      gv->init_count++;
-    }
+    psx_gvar_init_slots_pad_zeros(gv, cap, cur_idx);
     if (active_union_ordinal >= 0)
       psx_gvar_init_slot_set_ordinal(gv, cur_idx, active_union_ordinal);
     if (curtok()->kind == TK_LBRACE) {
@@ -1971,14 +1968,6 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
   }
 }
 
-static void pad_global_init_zeros(global_var_t *gv, int *cap, int total_slots) {
-  psx_gvar_init_slots_ensure_capacity(gv, cap, total_slots);
-  while (gv->init_count < total_slots) {
-    psx_gvar_init_slot_clear(gv, gv->init_count);
-    gv->init_count++;
-  }
-}
-
 /* C11 6.7.6.2p1: `T a[] = {...}` の要素数を初期化子から確定する。
  * init_count は flat scalar slots なので、struct 配列と多次元配列では要素境界へ丸める。 */
 void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
@@ -1993,7 +1982,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
     if (elem_slots < 1) elem_slots = 1;
     int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
     int total_slots = outer_dim * elem_slots;
-    pad_global_init_zeros(gv, cap, total_slots);
+    psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
     psx_decl_set_gvar_type_size(gv, outer_dim * gv->deref_size);
   } else if (gv->outer_stride > gv->deref_size) {
     /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
@@ -2001,7 +1990,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
     if (inner_slots > 0) {
       int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
       int total_slots = outer_dim * inner_slots;
-      pad_global_init_zeros(gv, cap, total_slots);
+      psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
       psx_decl_set_gvar_type_size(gv, total_slots * gv->deref_size);
     } else {
       psx_decl_set_gvar_type_size(gv, gv->init_count * gv->deref_size);
