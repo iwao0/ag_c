@@ -6,12 +6,13 @@
 // (pointer_qual_levels<=1)」なら全段剥がして lvar を直接 callee にする。subscript
 // (`ops[i]`) やポインタ→fp (`(*pp)`, pql>=2) の実体 deref は除外。
 // 追加修正: cast された function pointer value (`(*(int (*)(...))fp)(...)`) の
-// 外側 `*` も同じく no-op decay として剥がす。
+// 外側 `*` も同じく no-op decay として剥がす。typedef 経由 cast でも同じ。
 // 修正前: garbage (関数コードを呼ぶ)
 // 期待: exit=42
 #include <assert.h>
 int sub(int a, int b) { return a - b; }
 int add(int a, int b) { return a + b; }
+typedef int (*BinOp)(int, int);
 int main(void) {
     int (*fp)(int, int) = sub;
     int (*ops[2])(int, int) = {add, sub};
@@ -21,10 +22,12 @@ int main(void) {
     int r3 = ops[0](40, 2);       // add(40,2) = 42 (subscript は据え置き)
     int r4 = (*pp)(50, 8);        // *pp = fp -> sub(50,8) = 42
     int r5 = (*(int (*)(int, int))fp)(50, 8); // cast 後の * も no-op decay
+    int r6 = (*(BinOp)fp)(50, 8); // typedef cast 後も no-op decay
     assert(r1 == 42);
     assert(r2 == 42);
     assert(r3 == 42);
     assert(r4 == 42);
     assert(r5 == 42);
+    assert(r6 == 42);
     return 0;
 }

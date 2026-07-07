@@ -1442,6 +1442,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
         td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
         td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
         td_ptr = _ti.is_pointer;
+        if (out_funcptr_sig) *out_funcptr_sig = psx_ctx_typedef_funcptr_sig(&_ti);
       }
       inner_kind = (td_tag != TK_EOF) ? td_tag : td_base;
       inner_tag_kind = td_tag;
@@ -1573,6 +1574,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
       td_base = _ti.base_kind; td_elem = _ti.elem_size; td_fp = _ti.fp_kind;
       td_tag = _ti.tag_kind; td_tag_name = _ti.tag_name; td_tag_len = _ti.tag_len;
       td_ptr = _ti.is_pointer;
+      if (out_funcptr_sig) *out_funcptr_sig = psx_ctx_typedef_funcptr_sig(&_ti);
       if (out_is_unsigned) *out_is_unsigned = _ti.is_unsigned;
       if (_ti.is_array && _ti.array_dim_count > 0) {
         int total = 1;

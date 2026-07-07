@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き820: cast function pointer signature 正本化）
+最終更新: 2026-07-07（続き821: typedef cast function pointer signature 正本化）
 
 ## 現状
+- 続き821: **typedef function pointer への cast でも、cast target type に
+  function pointer signature を保持するようにした**。
+
+  続き820で raw cast (`(*(int (*)(int))fp)(41)`) は `ND_CAST` / cast target
+  `psx_type_t` に function pointer signature を載せるようにしたが、
+  `typedef int (*Fn)(int); (*(Fn)fp)(41)` の typedef 経路では
+  `parse_cast_type()` が typedef の base/pointer 情報だけを戻し、
+  `psx_ctx_typedef_funcptr_sig()` を `out_funcptr_sig` へ渡していなかった。
+  そのため typedef cast 後の `ND_CAST` は function pointer value と判定されず、
+  外側 `*` が実体 deref として残り、関数コード先頭をロードして exit 138 していた。
+
+  今回は `parse_cast_type()` の typedef 分岐を `_Atomic(typedef)` 側と通常 typedef 側の
+  両方で `psx_ctx_typedef_funcptr_sig(&_ti)` を返すようにした。これにより
+  `expr_cast_target_type()` が typedef cast の target `psx_type_t` にも同じ signature を保存し、
+  `parse_call_postfix()` の `ND_CAST` decay 判定が raw cast と typedef cast で同じ正本を読む。
+
+  回帰テストは `test_funcall()` に `typedef int (*Fn)(int); (*(Fn)fp)(1)` の AST 確認を追加し、
+  `test/fixtures/probes_found_bugs/funcptr_explicit_deref_call.c` に
+  `(*(BinOp)fp)(50, 8)` の実行確認を追加した。
+
+  確認は
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き820: **function pointer への cast でも、cast type の `psx_type_t` に
   function pointer signature を保持するようにした**。
 
