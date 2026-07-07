@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き866: hide global variable table state）
+最終更新: 2026-07-08（続き867: hide tokenizer runtime state）
 
 ## 現状
+- 続き867: **tokenizer 実行時 state (`tk_active_ctx` / `tk_cursor_hook`) の実体を tokenizer.c に閉じた**。
+
+  続き865/866で parser 側の literal/global 表は `parser.c` の正本に寄ったが、
+  tokenizer では `context.h` が `tk_active_ctx` と `tk_cursor_hook` を `extern` 公開し、
+  `static inline` の `tk_runtime_ctx()` / `tk_effective_ctx()` /
+  `tk_advance_current_token()` がその実体へ直接触っていた。今回はこれらを通常の
+  内部API宣言に変え、実装を `tokenizer.c` に置いたうえで、state 実体を `static` にした。
+  これで tokenizer の実行中 context / cursor hook の正本は `tokenizer.c` 内だけに閉じる。
+
+  確認は
+  `rg "tk_active_ctx|tk_cursor_hook" src/tokenizer src/parser src/arch test -n`
+  = **実体/参照は `tokenizer.c` 内のみ**、
+  `make -j4 build/test_tokenizer build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_tokenizer` = **OK: All unit tests passed**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き866: **グローバル変数表の実体も parser.c に閉じた**。
 
   続き865で string/float literal 表を `static` 化したが、`global_vars` はまだ

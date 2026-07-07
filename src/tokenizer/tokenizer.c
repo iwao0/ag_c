@@ -26,17 +26,31 @@ static size_t stats_base_chunks = 0;
 static size_t stats_base_reserved_bytes = 0;
 static size_t max_token_len_for_test = (size_t)INT_MAX;
 
-/* 実行中セッションの active context。context.h の tk_runtime_ctx / tk_effective_ctx
- * (inline) が参照する。実体はここ。 */
-tokenizer_context_t *tk_active_ctx = NULL;
+/* 実行中セッションの active context。未設定 (非トークナイズ中) では既定 context。 */
+static tokenizer_context_t *tk_active_ctx = NULL;
 
 /* トークンストリーム経路で、パーサがカーソルを前進させるたびに呼ばれるフック。
  * 先読み分を materialize し、通り過ぎたトークンを解放する (driver が登録/解除)。
- * 非ストリーム経路では NULL なので無影響。カーソル更新の 2 経路 (逐次前進 context.h の
- * tk_advance_current_token と明示ジャンプ tk_set_current_token_ctx) の両方で呼ぶ。実体はここ。 */
-void (*tk_cursor_hook)(token_t *) = NULL;
+ * 非ストリーム経路では NULL なので無影響。カーソル更新の 2 経路
+ * (逐次前進 tk_advance_current_token と明示ジャンプ tk_set_current_token_ctx)
+ * の両方で呼ぶ。 */
+static void (*tk_cursor_hook)(token_t *) = NULL;
 void tk_set_cursor_hook(void (*fn)(token_t *)) { tk_cursor_hook = fn; }
 void (*tk_get_cursor_hook(void))(token_t *) { return tk_cursor_hook; }
+
+tokenizer_context_t *tk_runtime_ctx(void) {
+  return tk_active_ctx ? tk_active_ctx : tk_get_default_context();
+}
+
+tokenizer_context_t *tk_effective_ctx(tokenizer_context_t *ctx) {
+  return ctx ? ctx : tk_runtime_ctx();
+}
+
+void tk_advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
+  token_t *nx = cur ? cur->next : NULL;
+  ctx->current_token = nx;
+  if (tk_cursor_hook && nx) tk_cursor_hook(nx);
+}
 
 /* カーソルを進めない深い前方先読み (パーサの _Generic 型照合等) の直前に呼び、ストリーミング
  * 生成器に前方 lookahead を満たさせるフック。プリプロセッサが登録する。未登録 (非ストリーム
