@@ -3327,15 +3327,18 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
   }
 }
 
-static int expr_funcall_returns_funcptr(node_t *fcall) {
+static int expr_funcall_returns_decayable_funcptr(node_t *fcall) {
   if (!fcall || fcall->kind != ND_FUNCALL) return 0;
   node_func_t *fc = (node_func_t *)fcall;
   if (!fc->callee && fc->funcname) {
-    return psx_ctx_get_function_ret_info(fc->funcname, fc->funcname_len).is_funcptr;
+    psx_function_ret_info_t ret =
+        psx_ctx_get_function_ret_info(fc->funcname, fc->funcname_len);
+    return ret.is_funcptr && ret.pointer_levels <= 1;
   }
   if (fc->callee && fc->callee->kind == ND_LVAR) {
     lvar_t *lv = psx_node_lvar_symbol(fc->callee);
-    return lv && lv->funcptr_sig.ret_is_funcptr;
+    if (!lv || !lv->funcptr_sig.ret_is_funcptr) return 0;
+    return psx_node_pointer_qual_levels(fcall) <= 1;
   }
   return 0;
 }
@@ -3347,12 +3350,14 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   /* `(*fp)(args)` / `(**fp)(args)`: 関数ポインタの「単項 deref」は関数へ戻り即座に
    * 関数ポインタへ減衰するので `fp(args)` と等価。単項 deref を辿って最下層が関数
    * ポインタ lvar (pointer_qual_levels<=1) なら全段剥がす。
-   * `(*call())(args)` も同様: 戻り値が関数ポインタなら `*result` は減衰のみ。
+   * `(*call())(args)` も同様: 戻り値そのものが 1 段の関数ポインタなら `*result` は減衰のみ。
+   * `int (**getpp(void))(int); (*getpp())(args)` のような 2 段返しでは、この `*` は
+   * function pointer object をロードする実体 deref なので剥がさない。
    * subscript の結果 (`ops[i]`, lhs=ND_ADD で最下層が lvar にならない) や、
    * ポインタ→関数ポインタ (`int(**pp)(); (*pp)()`, pql>=2) は実体 deref なので除外。 */
   if (callee && callee->kind == ND_DEREF) {
     node_t *lhs = callee->lhs;
-    if (lhs && lhs->kind == ND_FUNCALL && expr_funcall_returns_funcptr(lhs)) {
+    if (lhs && lhs->kind == ND_FUNCALL && expr_funcall_returns_decayable_funcptr(lhs)) {
       callee = lhs;
     } else {
       node_t *base = callee;

@@ -1,8 +1,53 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き812: address expression type の operand type 正本化）
+最終更新: 2026-07-07（続き818: function-return funcptr pointer level 正本化）
 
 ## 現状
+- 続き818: **function pointer を返す関数で、関数自身の戻り値 pointer 段数と、
+  返された関数ポインタの戻り値側 pointer 段数を分離した**。
+
+  `int (**getpp(void))(int)` のような「function pointer へのポインタを返す関数」で、
+  `func_ret_parse_state.ret_pointer_levels` が通常戻り値 `int **f()` の段数と
+  `int *(*f(void))(void)` の返却先 function pointer が返す data pointer 側の `*` を兼ねていた。
+  そのため `getpp()` の direct call type が 2 段 pointer として保存されず、
+  `(*getpp())(41)` が `getpp()` の戻り値 `&fp` をロードせず直接 call して SIGBUS/SIGSEGV していた。
+
+  今回は `func_ret_parse_state_t` に `funcptr_object_pointer_levels` を追加し、
+  function pointer を返す outer declarator の `(*...` 内で消費した `*` 数を関数自身の戻り値段数として
+  `psx_ctx_set_function_ret_pointer_levels()` へ渡すようにした。一方で、返された function pointer の
+  return-data-pointer 判定は従来どおり戻り型 spec 側の `ret_is_ptr` から導く。
+  さらに `parse_call_postfix()` の `(*call())(...)` deref 剥がしを、
+  戻り値そのものが 1 段の function pointer の場合だけに限定した。2 段以上
+  (`int (**getpp(void))(int)`) ではこの `*` は function pointer object をロードする実体 deref なので残す。
+
+  回帰テストは `test_type_metadata_bridge()` に `__tm818_getpp` を追加し、
+  `psx_ctx_get_function_ret_pointer_levels("__tm818_getpp") == 2` と returned funcptr signature
+  (`ret_is_data_pointer=0`, `ret_int_width=4`, `param_int_mask=1`) を確認している。
+  実行 fixture `test/fixtures/probes_found_bugs/func_return_funcptr_ptrptr.c` も追加し、
+  native e2e / wasm32 e2e / wasm32 object scan に入れた。
+
+  確認は
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
+- 続き817: **typedef function pointer の pointer level 保存を、戻り値 pointer ではなく
+  function pointer object 段数へ正規化した**。
+
+  `typedef int *(*Getter)(void)` と `typedef int (**IntFnPtrPtr)(int)` で、
+  typedef record の pointer level が戻り値側 `*` と function pointer object 側 `*` を混ぜる余地があった。
+  top-level / local declaration / block-scope typedef の各経路で、
+  function pointer typedef の保存段数を `funcptr_object_pointer_levels` 由来に統一した。
+  これにより `Getter` は 1 段、`IntFnPtrPtr` は 2 段として扱われる。
+
+  回帰テストは `TM817` と
+  `test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c` を追加済み。
+  確認は
+  `./build/test_parser`、`./build/test_e2e`、`./build/test_wasm32_e2e`、
+  `./build/test_wasm32_object`、`git diff --check` がすべて pass。
+
 - 続き812: **`ND_ADDR` に operand 由来の pointer `psx_type_t` を持たせ、address expression の型を
   mem 再構成へ落とさないようにした**。
 

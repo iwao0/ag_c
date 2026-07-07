@@ -929,6 +929,7 @@ static const test_case_t test_cases[] = {
     {"probes", "funcptr_ptrptr_global_param", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_ptrptr_global_param.c", 0, 0},
     {"probes", "funcptr_retptr_global_param_struct", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/funcptr_retptr_global_param_struct.c", 0, 0},
     {"probes", "typedef_funcptr_retptr_global_local", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c", 0, 0},
+    {"probes", "func_return_funcptr_ptrptr", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/func_return_funcptr_ptrptr.c", 0, 0},
     {"probes", "global_char_array_string_size", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_char_array_string_size.c", 0, 0},
     {"probes", "global_designator", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_designator.c", 0, 0},
     {"probes", "global_const_int_expr_init", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_const_int_expr_init.c", 0, 0},

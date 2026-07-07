@@ -94,8 +94,13 @@ typedef struct {
    * 戻り値型を関数ポインタ (= ポインタ) として扱うため、declarator parse から
    * funcdef へ明示的に渡す。 */
   int outer_declarator_is_ptr;
-  /* 戻り値型基底の `*` 段数 (`int **g()` で 2)。 */
+  /* 通常の関数戻り値型基底の `*` 段数 (`int **g()` で 2)。
+   * `int *(*f(void))(void)` のように関数ポインタを返す関数では、
+   * この段数は「返された関数ポインタの戻り値側」に属する。 */
   int ret_pointer_levels;
+  /* 関数ポインタを返す関数の outer declarator object 段数:
+   * `int (*f(void))(int)` は 1、`int (**f(void))(int)` は 2。 */
+  int funcptr_object_pointer_levels;
   int is_funcptr;
   psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_spec_result_t type_spec;
@@ -4458,13 +4463,19 @@ static token_ident_t *parse_func_declarator(func_ret_parse_state_t *ret_state,
       /* `int (*choose(...))(int)` のように外側 declarator が `(*` を含むとき、
        * 戻り値型は宣言子としてはポインタ (関数ポインタ) になる。
        * funcdef 側に戻り値ポインタを伝える。 */
-      if (ret_state) ret_state->outer_declarator_is_ptr = 1;
+      if (ret_state) {
+        ret_state->outer_declarator_is_ptr = 1;
+        ret_state->funcptr_object_pointer_levels++;
+      }
     }
     if (curtok()->kind == TK_LPAREN && curtok()->next && curtok()->next->kind == TK_MUL) {
       // nested pointer declarator: (*(*f(void))(int))
       tk_expect('(');
       while (tk_consume('*')) {
-        if (ret_state) ret_state->outer_declarator_is_ptr = 1;
+        if (ret_state) {
+          ret_state->outer_declarator_is_ptr = 1;
+          ret_state->funcptr_object_pointer_levels++;
+        }
       }
       tok = tk_consume_ident();
       if (!tok) {
@@ -4701,8 +4712,12 @@ static node_t *funcdef(void) {
   node->funcname_len = tok->len;
   int ret_is_funcptr = ret_state.is_funcptr;
   psx_decl_funcptr_sig_t funcptr_sig = ret_state.funcptr_sig;
+  int function_ret_pointer_levels = ret_state.ret_pointer_levels;
   if (ret_state.outer_declarator_is_ptr) {
     ret_is_funcptr = 1;
+    function_ret_pointer_levels = ret_state.funcptr_object_pointer_levels > 0
+                                      ? ret_state.funcptr_object_pointer_levels
+                                      : 1;
     funcptr_sig.ret_is_data_pointer = returned_funcptr_returns_data_pointer ? 1 : 0;
     funcptr_sig.ret_is_void =
         (ret_kind == TK_VOID && !funcptr_sig.ret_is_data_pointer) ? 1 : 0;
@@ -4724,7 +4739,7 @@ static node_t *funcdef(void) {
   sig.ret_tag_kind = ret_kind;
   sig.ret_tag_name = ret_tag ? ret_tag->str : NULL;
   sig.ret_tag_len = ret_tag ? ret_tag->len : 0;
-  sig.ret_pointer_levels = ret_state.ret_pointer_levels;
+  sig.ret_pointer_levels = function_ret_pointer_levels;
   sig.ret_pointee_first_dim = ret_state.pointee_first_dim;
   sig.ret_pointee_second_dim = ret_state.pointee_second_dim;
   sig.ret_pointee_dim_count = ret_state.pointee_dim_count;

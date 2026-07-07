@@ -3177,7 +3177,21 @@ static void test_type_metadata_bridge() {
       psx_ctx_get_function_ret_funcptr_sig("__tm698_pick", 12);
   ASSERT_EQ(pick_ctx_sig.ret_fp_kind, pick_node_sig.ret_fp_kind);
   ASSERT_EQ(pick_ctx_sig.param_fp_mask, pick_node_sig.param_fp_mask);
-	}
+
+  parsed_code = parse_program_input(
+      "int __tm818_inc(int x){ return x + 1; } "
+      "int (*__tm818_fp)(int)=__tm818_inc; "
+      "int (**__tm818_getpp(void))(int){ return &__tm818_fp; } "
+      "int main(void){ return (*__tm818_getpp())(41); }");
+  node_func_t *tm818_getpp_def = as_func(parsed_code[1]);
+  psx_decl_funcptr_sig_t tm818_getpp_sig =
+      psx_node_funcdef_ret_funcptr_sig(tm818_getpp_def);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(tm818_getpp_sig));
+  ASSERT_EQ(0, tm818_getpp_sig.ret_is_data_pointer);
+  ASSERT_EQ(4, tm818_getpp_sig.ret_int_width);
+  ASSERT_EQ(1u, tm818_getpp_sig.param_int_mask);
+  ASSERT_EQ(2, psx_ctx_get_function_ret_pointer_levels("__tm818_getpp", 13));
+}
 
 static void test_translation_unit_reset_static_local_state() {
   printf("test_translation_unit_reset_static_local_state...\n");
