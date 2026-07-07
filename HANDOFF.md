@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き905: centralize initializer symbol-ref classification）
+最終更新: 2026-07-08（続き906: route global member func-ref inference through aggregate walker）
 
 ## 現状
+- 続き906: **Wasm IR の global member function pointer 初期値推論を aggregate walker 経由にした**。
+
+  続き900以降で global initializer の emission は visitor / walker 経由に寄せてきたが、
+  Wasm IR の `global_member_func_ref()` だけは、global struct member の function pointer 初期値を推論するために
+  `psx_gvar_view()`、tag member count、init index を backend 側で直接歩いていた。
+  これは `psx_gvar_walk_aggregate_initializer()` が持つ struct / union / array / nested aggregate の cursor 進行と
+  別の正本になっており、nested aggregate では浅い扱いになっていた。
+
+  今回は `global_member_func_ref()` を aggregate walker callback 化し、
+  対象 offset の scalar initializer value だけを `psx_gvar_init_member_value()` で取り出して
+  `psx_gvar_init_value_named_function()` に渡す形に変更した。
+  bitfield は function pointer ではないため探索 callback では無視しつつ、walker の契約は満たしている。
+  これにより member offset と init cursor の対応は parser public walker 側へ集約される。
+
+  既存 fixture の `global_multidim_member_funcptr_designator.c` と
+  `global_struct_with_funcptr.c` は通常 e2e / Wasm e2e extra に入っており、今回の経路を含む回帰として継続利用している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き905: **initializer symbol-ref の named / function 判定も parser public helper に寄せた**。
 
   続き904で `psx_gvar_init_value_t` が既知の関数シンボルを指すかは

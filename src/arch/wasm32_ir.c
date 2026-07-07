@@ -575,44 +575,58 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offs
   s->is_set = 1;
 }
 
+typedef struct {
+  global_var_t *gv;
+  int target_offset;
+  char *name;
+  int name_len;
+} wasm_global_member_func_ref_ctx_t;
+
+static void find_global_member_func_ref_scalar(void *user,
+                                               const tag_member_info_t *mi,
+                                               int idx, long long offset) {
+  wasm_global_member_func_ref_ctx_t *ctx = user;
+  if (!ctx || ctx->name || offset != ctx->target_offset) return;
+  psx_gvar_init_member_value_t value = psx_gvar_init_member_value(ctx->gv, idx, mi);
+  psx_gvar_init_value_named_function(value, &ctx->name, &ctx->name_len);
+}
+
+static void find_global_member_func_ref_bitfield_unit(
+    void *user, const psx_gvar_bitfield_unit_t *unit, long long base_offset) {
+  (void)user;
+  (void)unit;
+  (void)base_offset;
+}
+
+static void find_global_member_func_ref_bitfield_member(
+    void *user, const tag_member_info_t *mi, int idx, long long base_offset) {
+  (void)user;
+  (void)mi;
+  (void)idx;
+  (void)base_offset;
+}
+
+static const psx_gvar_aggregate_walk_ops_t global_member_func_ref_walk_ops = {
+    .scalar = find_global_member_func_ref_scalar,
+    .bitfield_unit = find_global_member_func_ref_bitfield_unit,
+    .bitfield_member = find_global_member_func_ref_bitfield_member,
+};
+
 static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) {
   if (out_len) *out_len = 0;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (!gv || view.tag_kind == TK_EOF || view.is_tag_pointer || view.is_array ||
-      view.init_count <= 0) {
+  if (!gv) return NULL;
+  wasm_global_member_func_ref_ctx_t ctx = {
+      .gv = gv,
+      .target_offset = offset,
+      .name = NULL,
+      .name_len = 0,
+  };
+  if (!psx_gvar_walk_aggregate_initializer(gv, 0, &global_member_func_ref_walk_ops,
+                                           &ctx)) {
     return NULL;
   }
-  int n = psx_ctx_get_tag_member_count(view.tag_kind, view.tag_name, view.tag_len);
-  int init_idx = 0;
-  for (int m = 0; m < n; m++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(view.tag_kind, view.tag_name, view.tag_len, m, &mi)) break;
-    if (mi.bit_width > 0) {
-      init_idx++;
-      continue;
-    }
-    if (psx_tag_member_is_tag_aggregate(&mi)) return NULL;
-    if (mi.array_len > 0) {
-      for (int k = 0; k < mi.array_len && init_idx < view.init_count; k++, init_idx++) {
-        if (mi.offset + k * mi.type_size != offset) continue;
-        psx_gvar_init_member_value_t value =
-            psx_gvar_init_member_value(gv, init_idx, &mi);
-        char *name = NULL;
-        if (psx_gvar_init_value_named_function(value, &name, out_len)) return name;
-        return NULL;
-      }
-      continue;
-    }
-    if (mi.offset == offset && init_idx < view.init_count) {
-      psx_gvar_init_member_value_t value =
-          psx_gvar_init_member_value(gv, init_idx, &mi);
-      char *name = NULL;
-      if (psx_gvar_init_value_named_function(value, &name, out_len)) return name;
-      return NULL;
-    }
-    init_idx++;
-  }
-  return NULL;
+  if (out_len) *out_len = ctx.name_len;
+  return ctx.name;
 }
 
 static char *current_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offset,
