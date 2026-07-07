@@ -15870,3 +15870,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き824）: decl.c の tag member aggregate/unnamed 判定を helper に集約
+- 見つかった浅い箇所:
+  - `decl.c` の local struct/union initializer と nested designator 周辺に、
+    `tag_member_info_t` の aggregate / unnamed union 判定が直接式として残っていた。
+  - `wrap_member_init_as_assign()`、`.a.b` nested designator、unnamed union cover 判定が
+    `tag_kind` / `is_tag_pointer` / `len` をそれぞれ直接合成していた。
+- 根本対応:
+  - `wrap_member_init_as_assign()` と `consume_nested_designator_and_build_assign()` の
+    aggregate 判定を `psx_tag_member_is_tag_aggregate()` /
+    `psx_tag_member_is_union_aggregate()` に置き換えた。
+  - `offset_is_covered_by_unnamed_union_rec()` の unnamed struct/union 判定を
+    `psx_tag_member_is_unnamed_struct()` /
+    `psx_tag_member_is_unnamed_union()` に置き換えた。
+  - tag pointer も含めて `tag_kind != EOF` を見る意図の箇所は今回触らず、
+    aggregate/unnamed の意味論だけを helper 正本へ寄せた。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

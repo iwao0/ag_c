@@ -2192,7 +2192,7 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
    * 以前は `!is_tag_pointer` を要求しており、ポインタ配列メンバで init_chain の
    * 最終値を member スロットへ余分に代入し先頭要素を破壊していた。 */
   if (info->array_len > 0 ||
-      (!info->is_tag_pointer && (info->tag_kind == TK_STRUCT || info->tag_kind == TK_UNION))) {
+      psx_tag_member_is_tag_aggregate(info)) {
     return member_init;
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info->offset, info);
@@ -2246,8 +2246,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
    * 降りて累積 offset を更新し、`=` に達するまで辿る。 */
   while (curtok()->kind == TK_DOT || curtok()->kind == TK_LBRACKET) {
     if (curtok()->kind == TK_DOT) {
-      if (!((cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
-            !cur_info.is_tag_pointer)) {
+      if (!psx_tag_member_is_tag_aggregate(&cur_info)) {
         /* `.member` の左辺が struct/union でない (スカラ/ポインタ/未降下の配列)。 */
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
@@ -2297,8 +2296,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
    * これがないと parse_scalar_brace_initializer がスカラ扱いし、内側 designator を
    * E3064 で拒否していた。 */
   if (curtok()->kind == TK_LBRACE &&
-      (cur_info.tag_kind == TK_STRUCT || cur_info.tag_kind == TK_UNION) &&
-      !cur_info.is_tag_pointer) {
+      psx_tag_member_is_tag_aggregate(&cur_info)) {
     lvar_t nested = {0};
     nested.offset = var->offset + cumulative_offset;
     nested.size = cur_info.type_size;
@@ -2306,7 +2304,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
     nested.tag_kind = cur_info.tag_kind;
     nested.tag_name = cur_info.tag_name;
     nested.tag_len = cur_info.tag_len;
-    return (cur_info.tag_kind == TK_UNION)
+    return psx_tag_member_is_union_aggregate(&cur_info)
                ? parse_union_initializer(&nested)
                : parse_struct_initializer(&nested);
   }
@@ -2415,14 +2413,15 @@ static bool offset_is_covered_by_unnamed_union_rec(token_kind_t tag_kind, char *
   for (int o = 0; o < member_count; o++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, o, &mi)) break;
-    if (mi.len != 0 || mi.is_tag_pointer) continue;
+    if (!psx_tag_member_is_unnamed_struct(&mi) &&
+        !psx_tag_member_is_unnamed_union(&mi)) continue;
     int start = base_offset + mi.offset;
     int end = start + mi.type_size;
-    if (mi.len == 0 && mi.tag_kind == TK_UNION && !mi.is_tag_pointer &&
+    if (psx_tag_member_is_unnamed_union(&mi) &&
         target_offset >= start && target_offset < end) {
       return true;
     }
-    if (mi.tag_kind == TK_STRUCT &&
+    if (psx_tag_member_is_unnamed_struct(&mi) &&
         target_offset >= start && target_offset < end &&
         offset_is_covered_by_unnamed_union_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
                                                start, target_offset)) {
