@@ -1,8 +1,36 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き882: centralize global aggregate layout metadata）
+最終更新: 2026-07-08（続き883: centralize tag zero-padding consumption）
 
 ## 現状
+- 続き883: **trailing zero union padding の tag slot 数計算を parser/public helper に寄せた**。
+
+  続き882で aggregate emission の layout metadata 取得を public helper に寄せた後も、
+  Wasm IR/object の union trailing zero padding では backend 側に
+  `psx_tag_flat_slot_count(...)` と cursor の zero padding 消費をつなぐ小さな wrapper が残っていた。
+  これは出力そのものではなく「tag が initializer slot として何個分に flatten されるか」という
+  parser 側の知識を backend がまだ直接持っている状態だった。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_init_cursor_consume_tag_zero_padding()` を追加し、
+  `psx_tag_flat_slot_count(...)` と `psx_gvar_init_cursor_consume_plain_zero_padding()` の接続を
+  parser/public 側へ移した。`src/arch/wasm32_ir.c` と `src/arch/wasm32_obj.c` の
+  local `consume_trailing_zero_union_padding()` wrapper は削除し、backend は
+  tag kind/name/len と cursor/start index を public helper に渡すだけになった。
+
+  `rg "consume_trailing_zero_union_padding|psx_tag_flat_slot_count" src/arch/wasm32_ir.c src/arch/wasm32_obj.c src/arch/arm64_apple.c src/parser/gvar_public.h src/parser/node_utils.c -n`
+  で backend 側の `psx_tag_flat_slot_count` 直接参照は消えており、flat slot count の正本は
+  parser 側に残っている。次の根本対応候補は、struct/union recursion 本体を
+  event/callback walker に分け、backend 側の責務を scalar/padding/relocation の出力へさらに絞ること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き882: **global aggregate emission の layout metadata 取得を public helper に寄せた**。
 
   続き881で bitfield storage-unit packing を parser/public 側へ寄せた後も、

@@ -1885,9 +1885,6 @@ static void emit_global_union_scalar_data(global_var_t *gv, psx_gvar_init_cursor
   emit_global_init_member_data(gv, idx, addr, mi);
 }
 
-static void consume_trailing_zero_union_padding(psx_gvar_init_cursor_t *cur, int start_idx,
-                                                int target_slots);
-
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv,
                                                 psx_gvar_init_cursor_t *cur, int base_addr) {
@@ -1914,9 +1911,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
             emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, cur,
                                                 base_addr + mi.offset + k * mi.type_size);
           }
-          consume_trailing_zero_union_padding(cur, elem_start_idx,
-                                              psx_tag_flat_slot_count(mi.tag_kind, mi.tag_name,
-                                                                      mi.tag_len));
+          psx_gvar_init_cursor_consume_tag_zero_padding(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                                        cur, elem_start_idx);
         }
       } else {
         for (int k = 0; k < mi.array_len && psx_gvar_init_cursor_has(cur); k++) {
@@ -1931,9 +1927,8 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
       int member_start_idx = psx_gvar_init_cursor_index(cur);
       emit_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, gv, cur,
                                           base_addr + mi.offset);
-      consume_trailing_zero_union_padding(cur, member_start_idx,
-                                          psx_tag_flat_slot_count(mi.tag_kind, mi.tag_name,
-                                                                  mi.tag_len));
+      psx_gvar_init_cursor_consume_tag_zero_padding(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                                    cur, member_start_idx);
       psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
@@ -1954,11 +1949,6 @@ static void emit_global_union_element_data(global_var_t *gv, psx_gvar_init_curso
   emit_global_union_member_data(view.tag_kind, view.tag_name, view.tag_len, gv, cur, addr);
 }
 
-static void consume_trailing_zero_union_padding(psx_gvar_init_cursor_t *cur, int start_idx,
-                                                int target_slots) {
-  psx_gvar_init_cursor_consume_plain_zero_padding(cur, start_idx, target_slots);
-}
-
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv,
                                           psx_gvar_init_cursor_t *cur, int addr) {
@@ -1971,8 +1961,7 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
   }
   if (mi.bit_width > 0) {
     emit_global_bitfield_member_data(gv, psx_gvar_init_cursor_advance(cur), addr, &mi);
-    consume_trailing_zero_union_padding(cur, start_idx,
-                                        psx_tag_flat_slot_count(tk, tn, tl));
+    psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
     return;
   }
   if (mi.array_len > 0) {
@@ -2000,13 +1989,11 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
     } else {
       emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, cur, addr);
     }
-    consume_trailing_zero_union_padding(cur, start_idx,
-                                        psx_tag_flat_slot_count(tk, tn, tl));
+    psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
     return;
   }
   emit_global_union_scalar_data(gv, cur, addr, &mi);
-  consume_trailing_zero_union_padding(cur, start_idx,
-                                      psx_tag_flat_slot_count(tk, tn, tl));
+  psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
 }
 
 static void emit_global_union_data(global_var_t *gv, int addr) {
@@ -2038,9 +2025,8 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
       int elem_start_idx = psx_gvar_init_cursor_index(&cur);
       emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
                                           gv, &cur, addr + e * layout.elem_size);
-      consume_trailing_zero_union_padding(&cur, elem_start_idx,
-                                          psx_tag_flat_slot_count(layout.tag_kind, layout.tag_name,
-                                                                  layout.tag_len));
+      psx_gvar_init_cursor_consume_tag_zero_padding(layout.tag_kind, layout.tag_name,
+                                                    layout.tag_len, &cur, elem_start_idx);
     }
   } else {
     emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,

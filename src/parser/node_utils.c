@@ -538,6 +538,14 @@ int psx_gvar_init_cursor_consume_plain_zero_padding(psx_gvar_init_cursor_t *cur,
   return consumed;
 }
 
+int psx_gvar_init_cursor_consume_tag_zero_padding(token_kind_t tag_kind, char *tag_name,
+                                                  int tag_len,
+                                                  psx_gvar_init_cursor_t *cur,
+                                                  int start_idx) {
+  return psx_gvar_init_cursor_consume_plain_zero_padding(
+      cur, start_idx, psx_tag_flat_slot_count(tag_kind, tag_name, tag_len));
+}
+
 unsigned long long psx_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
                                                     int bit_width, int bit_offset) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);

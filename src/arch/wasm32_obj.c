@@ -2472,11 +2472,6 @@ static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv
   data_write_int_le_at(d, base_off + (size_t)mi->offset, packed, mi->type_size);
 }
 
-static void consume_trailing_zero_union_padding(psx_gvar_init_cursor_t *cur, int start_idx,
-                                                int target_slots) {
-  psx_gvar_init_cursor_consume_plain_zero_padding(cur, start_idx, target_slots);
-}
-
 static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                     obj_data_t *d, global_var_t *gv,
                                                     psx_gvar_init_cursor_t *cur,
@@ -2547,8 +2542,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
   }
   if (mi.bit_width > 0) {
     emit_obj_global_bitfield_member_data(d, gv, psx_gvar_init_cursor_advance(cur), base_off, &mi);
-    consume_trailing_zero_union_padding(cur, start_idx,
-                                        psx_tag_flat_slot_count(tk, tn, tl));
+    psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
     return;
   }
   if (mi.array_len > 0) {
@@ -2581,14 +2575,12 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                         cur, base_off);
     }
-    consume_trailing_zero_union_padding(cur, start_idx,
-                                        psx_tag_flat_slot_count(tk, tn, tl));
+    psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
     return;
   }
   int slot = psx_gvar_init_cursor_advance(cur);
   data_write_init_slot_at(d, gv, slot, base_off, mi.type_size, mi.is_bool, mi.fp_kind, &mi);
-  consume_trailing_zero_union_padding(cur, start_idx,
-                                      psx_tag_flat_slot_count(tk, tn, tl));
+  psx_gvar_init_cursor_consume_tag_zero_padding(tk, tn, tl, cur, start_idx);
 }
 
 static int global_has_object_payload(global_var_t *gv) {

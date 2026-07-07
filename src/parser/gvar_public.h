@@ -64,6 +64,10 @@ int psx_gvar_init_cursor_advance(psx_gvar_init_cursor_t *cur);
 psx_gvar_init_slot_t psx_gvar_init_cursor_slot(const psx_gvar_init_cursor_t *cur);
 int psx_gvar_init_cursor_consume_plain_zero_padding(psx_gvar_init_cursor_t *cur,
                                                     int start_idx, int target_slots);
+int psx_gvar_init_cursor_consume_tag_zero_padding(token_kind_t tag_kind, char *tag_name,
+                                                  int tag_len,
+                                                  psx_gvar_init_cursor_t *cur,
+                                                  int start_idx);
 unsigned long long psx_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
                                                     int bit_width, int bit_offset);
 int psx_gvar_init_cursor_pack_bitfield_unit(token_kind_t tag_kind, char *tag_name, int tag_len,
