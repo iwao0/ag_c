@@ -2535,8 +2535,10 @@ static void emit_obj_global(global_var_t *gv, void *user) {
       obj_unsupported_msg("global array element size in Wasm object mode");
     }
     for (int i = 0; i < slot_layout.elem_count; i++) {
-      psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
-      if (slot.symbol) {
+      psx_gvar_init_slot_value_t slot_value =
+          psx_gvar_init_slot_value(gv, i, &slot_layout);
+      psx_gvar_init_slot_t slot = slot_value.slot;
+      if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
         if (psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
           ensure_func_sig_for_address(slot.symbol, slot.symbol_len,
                                       func_sig_from_global_funcptr(gv, slot.symbol,
@@ -2545,8 +2547,8 @@ static void emit_obj_global(global_var_t *gv, void *user) {
         data_write_symbol_addr(d, slot.symbol, slot.symbol_len, slot.value, elem);
       } else {
         uint64_t value = (uint64_t)slot.value;
-        if (slot_layout.is_fp_array) {
-          if (slot_layout.fp_kind == TK_FLOAT_KIND_FLOAT) {
+        if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+          if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
             float f = (float)slot.fvalue;
             uint32_t bits;
             memcpy(&bits, &f, sizeof(bits));

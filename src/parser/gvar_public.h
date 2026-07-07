@@ -47,6 +47,18 @@ typedef struct {
   tk_float_kind_t fp_kind;
 } psx_gvar_init_slots_layout_t;
 
+typedef enum {
+  PSX_GVAR_INIT_SLOT_INTEGER = 0,
+  PSX_GVAR_INIT_SLOT_SYMBOL,
+  PSX_GVAR_INIT_SLOT_FLOAT,
+} psx_gvar_init_slot_kind_t;
+
+typedef struct {
+  psx_gvar_init_slot_kind_t kind;
+  psx_gvar_init_slot_t slot;
+  tk_float_kind_t fp_kind;
+} psx_gvar_init_slot_value_t;
+
 typedef struct {
   const global_var_t *gv;
   int index;
@@ -97,6 +109,8 @@ psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
                                                int include_empty_aggregate);
 psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
                                                         int fallback_size);
+psx_gvar_init_slot_value_t psx_gvar_init_slot_value(const global_var_t *gv, int idx,
+                                                    const psx_gvar_init_slots_layout_t *layout);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,

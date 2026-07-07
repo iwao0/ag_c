@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き890: centralize slot initializer layout metadata）
+最終更新: 2026-07-08（続き891: classify slot initializer values in parser public）
 
 ## 現状
+- 続き891: **slot initializer の per-slot value classification を parser/public helper に寄せた**。
+
+  続き890で `SLOTS` route の element size/count/fp-array metadata は
+  `psx_gvar_init_slots_layout()` にまとまったが、各 backend の loop 内にはまだ
+  `slot.symbol`、`slot_layout.is_fp_array`、`slot_layout.fp_kind` を直接見て
+  「この slot は symbol relocation か、FP bit pattern か、整数値か」を決める分岐が残っていた。
+  relocation の出し方や data/directive の書き方は backend 固有だが、slot の値種別と優先順位は
+  `global_var_t` / initializer slot の読み方なので parser/public 側へ寄せた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_init_slot_kind_t`、`psx_gvar_init_slot_value_t`、
+  `psx_gvar_init_slot_value(gv, idx, layout)` を追加した。helper は既存挙動に合わせて
+  `symbol -> fp-array -> integer` の順で分類し、FP slot では `fp_kind` も返す。
+  arm64 / Wasm IR / Wasm object の global `SLOTS` route はこの分類 enum を見て分岐する形になった。
+
+  これで backend 側の global slot route から、値分類の優先順位を直接組み立てる重複は消えた。
+  一方で symbol label の整形、Wasm data address 解決、object relocation、scalar byte/directive emission は
+  backend 固有処理なので残している。また aggregate walker/member slot 経路の `slot.symbol` 参照は
+  別の文脈なので今回は触っていない。
+
+  次の根本対応候補は、slot route 内にまだ 3 backend で残る FP bit-pattern 変換
+  （`float/double -> uint32_t/uint64_t` + `memcpy`）を public helper に寄せること。
+  もう一つは symbol initializer を `symbol pointer + len + addend` の小さな public shape として扱い、
+  backend は relocation/address 解決だけを担当する境界にすること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き890: **slot initializer の element/fp-array metadata を parser/public helper に寄せた**。
 
   続き889で global initializer の branch priority は `psx_gvar_initializer_kind()` に寄ったが、

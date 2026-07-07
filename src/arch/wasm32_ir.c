@@ -1780,10 +1780,12 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < slot_layout.elem_count; i++) {
-    psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
+    psx_gvar_init_slot_value_t slot_value =
+        psx_gvar_init_slot_value(gv, i, &slot_layout);
+    psx_gvar_init_slot_t slot = slot_value.slot;
     uint64_t value = (uint64_t)slot.value;
-    if (slot_layout.is_fp_array && !slot.symbol) {
-      if (slot_layout.fp_kind == TK_FLOAT_KIND_FLOAT) {
+    if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+      if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
         float f = (float)slot.fvalue;
         uint32_t bits;
         memcpy(&bits, &f, sizeof(bits));
@@ -1794,7 +1796,7 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
         value = bits;
       }
     }
-    if (slot.symbol) {
+    if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
       int sym_addr = data_addr_for_init_symbol(slot.symbol, slot.symbol_len);
       if (sym_addr < 0) wasm_unsupported_msg("symbol array initializer in Wasm backend");
       value += (uint64_t)sym_addr;

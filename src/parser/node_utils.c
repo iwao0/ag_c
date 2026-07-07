@@ -460,6 +460,25 @@ psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
   return layout;
 }
 
+psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
+    const global_var_t *gv, int idx, const psx_gvar_init_slots_layout_t *layout) {
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  psx_gvar_init_slot_value_t value = {
+      .kind = PSX_GVAR_INIT_SLOT_INTEGER,
+      .slot = slot,
+      .fp_kind = TK_FLOAT_KIND_NONE,
+  };
+  if (slot.symbol) {
+    value.kind = PSX_GVAR_INIT_SLOT_SYMBOL;
+    return value;
+  }
+  if (layout && layout->is_fp_array) {
+    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.fp_kind = layout->fp_kind;
+  }
+  return value;
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);

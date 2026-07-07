@@ -266,8 +266,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
       psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, 4);
       for (int i = 0; i < slot_layout.init_count && i < slot_layout.elem_count; i++) {
-        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
-        if (slot.symbol && slot.symbol_len < 0) {
+        psx_gvar_init_slot_value_t slot_value =
+            psx_gvar_init_slot_value(gv, i, &slot_layout);
+        psx_gvar_init_slot_t slot = slot_value.slot;
+        if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL && slot.symbol_len < 0) {
           /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
            * `const char *arr[] = {"abc" + 2, ...}` のような +offset は init_values[i] に
            * バイトオフセットが入っているので併記する。 */
@@ -275,7 +277,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           else                 cg_emitf("  .quad %s\n", slot.symbol);
           continue;
         }
-        if (slot.symbol && slot.symbol_len > 0) {
+        if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL && slot.symbol_len > 0) {
           /* `&data[n]` 由来のシンボル+オフセット。init_values[i] にバイトオフセット。 */
           if (slot.value != 0) {
             cg_emitf("  .quad _%.*s+%lld\n", slot.symbol_len, slot.symbol, slot.value);
@@ -284,10 +286,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           }
           continue;
         }
-        if (slot_layout.is_fp_array) {
+        if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
           /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
           double d = slot.fvalue;
-          if (slot_layout.fp_kind == TK_FLOAT_KIND_FLOAT) {
+          if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
             float f = (float)d;
             uint32_t bits;
             memcpy(&bits, &f, sizeof(bits));
