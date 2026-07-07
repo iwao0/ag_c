@@ -1,8 +1,38 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き824: subscript scalar pointer metadata helper 正本化）
+最終更新: 2026-07-07（続き825: row decay pointer arithmetic type helper 正本化）
 
 ## 現状
+- 続き825: **row decay の pointer arithmetic 用 type 再構成を
+  `node_utils` helper 境界へ移した**。
+
+  `expr.c` の `row_decay_pointer_arith_type()` は `node_mem_t` を直接 cast し、
+  `deref_size` / `type_size` / `pointee_fp_kind` / `pointee_is_bool` /
+  `pointee_is_unsigned` から pointer arithmetic 用の `psx_type_t` をローカル再構成していた。
+  これは続き824で subscript 側の metadata 直読を helper 化したあとに残っていた、
+  型情報の正本境界が parser 本体へ漏れる経路だった。
+
+  今回は `psx_node_row_decay_pointer_arith_type()` を `node_utils` に追加し、
+  `add_ctx()` はこの helper だけを見る形にした。direct typed node では
+  `psx_type_t` の array base を正本として使い、明示 `node->type` があるのに array でない場合は
+  stale な legacy mem へ fallback しない。direct type を持たない legacy node だけ、
+  既存互換のため `node_mem_t` metadata から base 型を再構成する。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。typed array row では
+  stale mem 側の unsigned hint より `psx_type_t` の signed array base が勝つこと、
+  typed non-array では row 風の stale mem が残っていても helper が `NULL` を返すことを確認している。
+  追加の実行確認として
+  `int a[2][3]; int *p = a[1] + 1; assert(*p == 5);` が **RC:0**。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き824: **subscript 側に残っていた scalar pointer / row lvalue の `node_mem_t`
   直読を `node_utils` helper 境界へ移した**。
 

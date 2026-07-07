@@ -2631,29 +2631,6 @@ static int node_is_ptr_for_arith(node_t *n) {
   return is_tp;
 }
 
-static psx_type_t *row_decay_pointer_arith_type(node_t *n) {
-  if (!n || (n->kind != ND_DEREF && n->kind != ND_ADDR)) return NULL;
-  node_mem_t *mem = (node_mem_t *)n;
-  int ds = mem->deref_size;
-  if (ds <= 0 || mem->type_size <= ds) return NULL;
-  psx_type_t *type = psx_node_get_type(n);
-  psx_type_t *base = (type && type->kind == PSX_TYPE_ARRAY && type->base)
-                         ? type->base
-                         : NULL;
-  if (!base) {
-    if (mem->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
-      base = psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind, ds);
-    } else {
-      base = psx_type_new_integer(mem->pointee_is_bool ? TK_BOOL : TK_EOF,
-                                  ds, mem->pointee_is_unsigned);
-    }
-  }
-  psx_type_t *ptr = psx_type_new_pointer(base, ds);
-  if (type) psx_type_copy_pointer_metadata(ptr, type);
-  ptr->deref_size = ds;
-  return ptr;
-}
-
 static node_t *add_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = mul_ctx(ctx);
   for (;;) {
@@ -2684,7 +2661,7 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
       }
       if (node_is_ptr_for_arith(node)) {
         node_t *sum = psx_node_new_binary(ND_ADD, node, rhs);
-        psx_type_t *type = row_decay_pointer_arith_type(node);
+        psx_type_t *type = psx_node_row_decay_pointer_arith_type(node);
         if (type) sum->type = type;
         node = sum;
       } else {
@@ -2717,7 +2694,7 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
         }
         if (node_is_ptr_for_arith(node)) {
           node_t *diff = psx_node_new_binary(ND_SUB, node, rhs);
-          psx_type_t *type = row_decay_pointer_arith_type(node);
+          psx_type_t *type = psx_node_row_decay_pointer_arith_type(node);
           if (type) diff->type = type;
           node = diff;
         } else {

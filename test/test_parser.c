@@ -2415,6 +2415,29 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_subscript_deref_uses_base_address(
       (node_t *)&subscript_row_lvalue));
 
+  node_mem_t typed_row_array = {0};
+  typed_row_array.base.kind = ND_DEREF;
+  typed_row_array.type_size = 16;
+  typed_row_array.deref_size = 4;
+  typed_row_array.pointee_is_unsigned = 1;
+  psx_type_t *typed_row_base = psx_type_new_integer(TK_INT, 4, 0);
+  typed_row_array.base.type = psx_type_new_array(typed_row_base, 4, 16, 4, 0);
+  psx_type_t *typed_row_decay =
+      psx_node_row_decay_pointer_arith_type((node_t *)&typed_row_array);
+  ASSERT_TRUE(typed_row_decay != NULL);
+  ASSERT_TRUE(typed_row_decay->kind == PSX_TYPE_POINTER);
+  ASSERT_TRUE(typed_row_decay->base == typed_row_base);
+  ASSERT_TRUE(!psx_type_is_unsigned(typed_row_decay->base));
+
+  node_mem_t typed_nonarray_stale_row = {0};
+  typed_nonarray_stale_row.base.kind = ND_DEREF;
+  typed_nonarray_stale_row.type_size = 16;
+  typed_nonarray_stale_row.deref_size = 4;
+  typed_nonarray_stale_row.pointee_is_unsigned = 1;
+  typed_nonarray_stale_row.base.type = psx_type_new_integer(TK_INT, 16, 0);
+  ASSERT_TRUE(psx_node_row_decay_pointer_arith_type(
+                  (node_t *)&typed_nonarray_stale_row) == NULL);
+
   node_mem_t typed_deref_stale_tag_mem = {0};
   typed_deref_stale_tag_mem.base.kind = ND_DEREF;
   typed_deref_stale_tag_mem.is_tag_pointer = 1;

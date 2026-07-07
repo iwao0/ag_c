@@ -3898,6 +3898,33 @@ int psx_node_subscript_deref_uses_base_address(node_t *node) {
   return 0;
 }
 
+psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node) {
+  if (!node || (node->kind != ND_DEREF && node->kind != ND_ADDR)) return NULL;
+  int ds = ps_node_deref_size(node);
+  if (ds <= 0 || ps_node_type_size(node) <= ds) return NULL;
+
+  psx_type_t *type = psx_node_get_type(node);
+  psx_type_t *base = (type && type->kind == PSX_TYPE_ARRAY && type->base)
+                         ? type->base
+                         : NULL;
+  if (!base) {
+    if (node->type) return NULL;
+    node_mem_t *mem = node_mem_view(node);
+    if (!mem) return NULL;
+    if (mem->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+      base = psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind, ds);
+    } else {
+      base = psx_type_new_integer(mem->pointee_is_bool ? TK_BOOL : TK_EOF,
+                                  ds, mem->pointee_is_unsigned);
+    }
+  }
+
+  psx_type_t *ptr = psx_type_new_pointer(base, ds);
+  if (type) psx_type_copy_pointer_metadata(ptr, type);
+  ptr->deref_size = ds;
+  return ptr;
+}
+
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   /* C11 6.5.16: 代入の RHS は void 型であってはならない。
    * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */
