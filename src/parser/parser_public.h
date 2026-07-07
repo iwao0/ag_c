@@ -24,7 +24,6 @@
  */
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
-#include "init_slot.h"  /* psx_gvar_init_slot_t */
 #include "gvar_public.h"
 #include "literal_public.h"
 #include "lvar_public.h"

@@ -2,7 +2,6 @@
 #define PARSER_GVAR_PUBLIC_H
 
 #include "core.h"
-#include "init_slot.h"
 #include "semantic_public.h"
 
 typedef struct global_var_t global_var_t;

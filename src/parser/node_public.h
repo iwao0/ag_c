@@ -2,7 +2,6 @@
 #define PARSER_NODE_PUBLIC_H
 
 #include "ast.h"
-#include "init_slot.h"
 #include "tag_flat_cover.h"
 
 struct global_var_t;
@@ -38,11 +37,6 @@ int psx_gvar_array_element_size(const struct global_var_t *gv);
 int psx_gvar_array_element_count(const struct global_var_t *gv);
 int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
-psx_gvar_init_slot_t psx_gvar_init_slot_view(const struct global_var_t *gv, int idx);
-tk_float_kind_t psx_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
-int psx_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);
-int psx_gvar_union_init_slot_fp_size(const struct global_var_t *gv, int idx);
-int psx_gvar_union_init_slot_ordinal(const struct global_var_t *gv, int idx);
 int psx_tag_member_is_tag_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);

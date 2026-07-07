@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き911: internalize initializer construction helpers）
+最終更新: 2026-07-08（続き912: move raw init slot accessors behind parser internals）
 
 ## 現状
+- 続き912: **raw initializer slot accessor を public API から外した**。
+
+  続き911までで global initializer の公開 helper は walker / visitor 契約へ寄せたが、
+  `node_public.h` と `parser_public.h` にはまだ raw slot 型 `psx_gvar_init_slot_t` と
+  `psx_gvar_init_slot_view()` / union slot accessor 群を公開するための
+  `init_slot.h` 依存が残っていた。実利用を確認すると、これらは backend では使われず、
+  `parser.c` / `node_utils.c` / parser unit test の内部検査用途だけだった。
+
+  今回は `psx_gvar_init_slot_view()`、
+  `psx_gvar_init_slot_fp_kind()`、
+  `psx_gvar_init_slot_is_plain_zero()`、
+  `psx_gvar_union_init_slot_fp_size()`、
+  `psx_gvar_union_init_slot_ordinal()` の宣言を `node_public.h` から `node_utils.h` へ移し、
+  `parser_public.h` / `node_public.h` / `gvar_public.h` の `init_slot.h` include を削除した。
+  外部 backend は raw slot 表現を直接見ず、前段で整えた initializer value / walker / visitor
+  API 経由で消費する形に寄せている。
+
+  確認は
+  `rg "init_slot\\.h|psx_gvar_init_slot_view|psx_gvar_init_slot_fp_kind|psx_gvar_init_slot_is_plain_zero|psx_gvar_union_init_slot_fp_size|psx_gvar_union_init_slot_ordinal|psx_gvar_init_slot_t" src/parser/parser_public.h src/parser/node_public.h src/parser/gvar_public.h src/arch src/ir --glob '!build/**'` = **no hits**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き911: **initializer construction helper を parser 内部へ閉じた**。
 
   続き910までで gvar view と aggregate walker の内部状態は public API から外したが、
