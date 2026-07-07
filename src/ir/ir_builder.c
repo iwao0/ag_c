@@ -1468,7 +1468,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   }
   inst->dst = ir_val_vreg(v, load_ty);
   inst->src1 = ptr;
-  inst->is_unsigned = mm->is_unsigned ? 1 : 0;
+  inst->is_unsigned = psx_node_conversion_value_is_unsigned(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }

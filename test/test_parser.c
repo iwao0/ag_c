@@ -1487,6 +1487,36 @@ static void test_expr_member_access() {
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_DEREF, ret->lhs->kind);
 
+  parsed_code = parse_program_input(
+      "typedef unsigned char u8; "
+      "main() { struct S { u8 a; }; struct S s; return s.a; }");
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ret = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    if (body->body[i]->kind == ND_RETURN) {
+      ret = body->body[i];
+      break;
+    }
+  }
+  ASSERT_TRUE(ret != NULL);
+  ASSERT_EQ(ND_DEREF, ret->lhs->kind);
+  ASSERT_TRUE(psx_node_conversion_value_is_unsigned(ret->lhs));
+
+  parsed_code = parse_program_input(
+      "typedef unsigned char u8; "
+      "main() { struct S { u8 a; }; struct S s; return (int)s.a; }");
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ret = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    if (body->body[i]->kind == ND_RETURN) {
+      ret = body->body[i];
+      break;
+    }
+  }
+  ASSERT_TRUE(ret != NULL);
+  ASSERT_TRUE(psx_node_conversion_value_is_unsigned(
+      ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs));
+
   parsed_code = parse_program_input("main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   assign = body->body[4];

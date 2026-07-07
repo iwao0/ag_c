@@ -2313,7 +2313,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     if (ps_node_is_pointer(operand)) {
       return wrap_integer_cast_result(operand, cast_type, 4, 0, 0);
     }
-    return annotate_cast_type(operand, cast_type);
+    return wrap_integer_cast_result(operand, cast_type, 4, 0, 0);
   }
   if (type_kind == TK_SIGNED || type_kind == TK_UNSIGNED) {
     operand = wrap_fp_to_int_if_needed(operand);

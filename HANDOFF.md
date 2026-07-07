@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き821: typedef cast function pointer signature 正本化）
+最終更新: 2026-07-07（続き822: sub-int cast operand signedness 正本化）
 
 ## 現状
+- 続き822: **`(int)` cast が sub-int operand の unsigned 正本を破壊しないようにした**。
+
+  IR builder 側で `ND_DEREF` load の signedness を `node_mem_t::is_unsigned` 直読ではなく
+  `psx_node_conversion_value_is_unsigned()` 経由へ寄せると、
+  `typedef unsigned char u8; struct S { u8 a; }; int va = (int)s.a;` が
+  `ldrsb` / sign-extend になり、既存 fixture `typedef_unsigned_struct_member` が落ちた。
+
+  原因は IR ではなく parser の `(int)` cast 経路だった。`apply_cast()` の `TK_INT` 分岐が
+  4 バイト未満の非定数 operand に対して `annotate_cast_type(operand, cast_type)` を返しており、
+  operand 自体を signed int 型へ塗り替えていた。その結果、元の `u8` member deref が持つ
+  unsigned 情報が cast 前に消え、typed accessor からは signed に見えていた。
+
+  今回は sub-int の `(int)` cast でも `wrap_integer_cast_result()` を返すようにし、
+  operand の型情報を保持したまま cast result 側に signed int 型を持たせる形にした。
+  そのうえで IR の `build_node_deref()` は load signedness を
+  `psx_node_conversion_value_is_unsigned()` から読む。これで `s.a` の unsigned 正本は parser
+  accessor 側に集まり、IR が legacy mem を直接読んで偶然補正する構造を減らした。
+
+  回帰テストは `test_expr_member_access()` に typedef unsigned member の `s.a` と
+  `(int)s.a` の signedness reader 確認を追加した。手元確認では
+  `typedef_unsigned_struct_member.c` の native asm が `ldrb` / `ldrh` へ戻り、実行 `RC:0`。
+
+  確認は
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き821: **typedef function pointer への cast でも、cast target type に
   function pointer signature を保持するようにした**。
 
