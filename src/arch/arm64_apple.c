@@ -486,7 +486,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
 static void emit_global_struct_init(global_var_t *gv) {
   /* union: 活性メンバ (union_init_ordinal, 既定 0=先頭) だけをその型で出力し、
    * 残りを type_size まで 0 で埋める。`{.f=1.5f}` 等の designated 初期化に対応。 */
-  if (gv->tag_kind == TK_UNION) {
+  if (psx_gvar_is_union_aggregate(gv)) {
     tag_member_info_t mi = {0};
     int ord = gv->union_init_ordinal;
     if (gv->init_count > 0 &&

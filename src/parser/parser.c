@@ -2268,7 +2268,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
       gv->deref_size <= 0 || gv->init_count <= 0) {
     return;
   }
-  if (gv->tag_kind == TK_STRUCT && !gv->is_tag_pointer) {
+  if (psx_gvar_is_struct_aggregate(gv)) {
     /* `struct P a[] = {1,2,3,4}`: init_count is flat scalar slots, while
      * type_size must be inferred in struct elements. */
     int elem_slots = global_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
@@ -2326,7 +2326,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
        * として等価なので strip OK。複数値の `int *p = (int[]){10,20,30}` 形は strip すると先頭
        * 要素値がポインタスロットに書き込まれて SIGBUS なので skip し、式経路で compound literal
        * を hidden gvar に materialize させる。 */
-      int gv_is_aggregate = gv->is_array || (gv->tag_kind != TK_EOF && !gv->is_tag_pointer);
+      int gv_is_aggregate = gv->is_array || psx_gvar_is_tag_aggregate(gv);
       int may_strip = gv_is_aggregate;
       if (!may_strip) {
         token_t *brace_open = t->next;            /* '{' */

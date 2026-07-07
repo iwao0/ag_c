@@ -2793,7 +2793,7 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
     obj_unsupported_msg("global aggregate initializer in Wasm object mode");
   }
   int val_idx = 0;
-  if (gv->tag_kind == TK_UNION) {
+  if (psx_gvar_is_union_aggregate(gv)) {
     if (gv->is_array) {
       int elem_size = psx_gvar_array_element_size(gv);
       int total = psx_gvar_array_element_count(gv);

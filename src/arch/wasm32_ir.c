@@ -2213,7 +2213,7 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
   if (gv->is_tag_pointer) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
   }
-  if (gv->tag_kind == TK_UNION) {
+  if (psx_gvar_is_union_aggregate(gv)) {
     if (gv->is_array) {
       int elem_size = psx_gvar_array_element_size(gv);
       int total = psx_gvar_array_element_count(gv);

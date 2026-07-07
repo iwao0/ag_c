@@ -2879,6 +2879,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_gv_int->kind);
   ASSERT_EQ(4, psx_gvar_storage_size(&tmp_gv, 99));
   ASSERT_TRUE(!psx_gvar_is_tag_aggregate(&tmp_gv));
+  ASSERT_TRUE(!psx_gvar_is_struct_aggregate(&tmp_gv));
+  ASSERT_TRUE(!psx_gvar_is_union_aggregate(&tmp_gv));
   psx_decl_init_gvar_storage_type(&tmp_gv, 8, 4, 0,
                                   TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
   psx_decl_set_gvar_pointer_qual_levels(&tmp_gv, 1);
@@ -2938,6 +2940,8 @@ static void test_type_metadata_bridge() {
   global_var_t *tm817_gs = psx_find_global_var("__tm817_gs", 10);
   ASSERT_TRUE(tm817_gs != NULL);
   ASSERT_TRUE(psx_gvar_is_tag_aggregate(tm817_gs));
+  ASSERT_TRUE(psx_gvar_is_struct_aggregate(tm817_gs));
+  ASSERT_TRUE(!psx_gvar_is_union_aggregate(tm817_gs));
   ASSERT_EQ(8, psx_gvar_array_element_size(tm817_gs));
   ASSERT_EQ(2, psx_gvar_array_element_count(tm817_gs));
   global_var_t tmp_tag_arr_gv = {0};
@@ -2947,10 +2951,17 @@ static void test_type_metadata_bridge() {
   tmp_tag_arr_gv.tag_name = "__tm817_S";
   tmp_tag_arr_gv.tag_len = 9;
   ASSERT_TRUE(psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
+  ASSERT_TRUE(psx_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
+  ASSERT_TRUE(!psx_gvar_is_union_aggregate(&tmp_tag_arr_gv));
   ASSERT_EQ(8, psx_gvar_array_element_size(&tmp_tag_arr_gv));
   ASSERT_EQ(2, psx_gvar_array_element_count(&tmp_tag_arr_gv));
+  tmp_tag_arr_gv.tag_kind = TK_UNION;
+  ASSERT_TRUE(psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
+  ASSERT_TRUE(!psx_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
+  ASSERT_TRUE(psx_gvar_is_union_aggregate(&tmp_tag_arr_gv));
   tmp_tag_arr_gv.is_tag_pointer = 1;
   ASSERT_TRUE(!psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
+  ASSERT_TRUE(!psx_gvar_is_union_aggregate(&tmp_tag_arr_gv));
 
   tag_member_info_t tmp_member = {0};
   tmp_member.tag_kind = TK_STRUCT;

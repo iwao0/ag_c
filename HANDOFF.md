@@ -15848,3 +15848,25 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き823）: global_var_t の struct/union aggregate 個別判定を helper 化
+- 見つかった浅い箇所:
+  - `psx_gvar_is_tag_aggregate()` はあったが、struct/union 個別判定が必要な箇所では
+    backend/parser が `gv->tag_kind == TK_STRUCT/TK_UNION` と `!gv->is_tag_pointer` を
+    直接合成していた。
+  - `psx_gvar_array_element_size()` 自体にも同じ aggregate 判定式が残っており、
+    helper 内部でも契約が分散していた。
+- 根本対応:
+  - `psx_gvar_is_struct_aggregate()` /
+    `psx_gvar_is_union_aggregate()` を parser 公開 API として追加した。
+  - `psx_gvar_is_tag_aggregate()` と `psx_gvar_array_element_size()` を新 helper 経由にし、
+    parser の incomplete struct array finalize、compound literal strip 判定、
+    arm64/wasm32 の union global initializer 分岐を helper 経由に置き換えた。
+  - parser unit の type metadata bridge に struct/union/tag pointer の helper 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

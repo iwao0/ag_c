@@ -390,8 +390,16 @@ int psx_gvar_storage_size(const global_var_t *gv, int fallback_size) {
   return gv && gv->type_size > 0 ? gv->type_size : fallback_size;
 }
 
+int psx_gvar_is_struct_aggregate(const global_var_t *gv) {
+  return gv && gv->tag_kind == TK_STRUCT && !gv->is_tag_pointer;
+}
+
+int psx_gvar_is_union_aggregate(const global_var_t *gv) {
+  return gv && gv->tag_kind == TK_UNION && !gv->is_tag_pointer;
+}
+
 int psx_gvar_is_tag_aggregate(const global_var_t *gv) {
-  return gv && (gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer;
+  return psx_gvar_is_struct_aggregate(gv) || psx_gvar_is_union_aggregate(gv);
 }
 
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
@@ -412,7 +420,7 @@ static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
 
 int psx_gvar_array_element_size(const global_var_t *gv) {
   if (!gv || !gv->is_array) return 0;
-  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+  if (psx_gvar_is_tag_aggregate(gv)) {
     return tag_aggregate_size(gv->tag_kind, gv->tag_name, gv->tag_len,
                               gv->deref_size > 0 ? gv->deref_size : 0);
   }
