@@ -2391,8 +2391,7 @@ static bool offset_is_covered_by_unnamed_union_rec(token_kind_t tag_kind, char *
   for (int o = 0; o < member_count; o++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, o, &mi)) break;
-    if (!psx_tag_member_is_unnamed_struct(&mi) &&
-        !psx_tag_member_is_unnamed_union(&mi)) continue;
+    if (!psx_tag_member_is_unnamed_aggregate(&mi)) continue;
     int start = base_offset + mi.offset;
     int end = start + mi.type_size;
     if (psx_tag_member_is_unnamed_union(&mi) &&

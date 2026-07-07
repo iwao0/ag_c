@@ -16147,3 +16147,21 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き831）: unnamed aggregate 判定を node_utils helper に集約
+- 見つかった浅い箇所:
+  - unnamed struct と unnamed union をまとめて「匿名 aggregate」として扱う条件が、
+    parser / decl / node_utils に `unnamed_struct || unnamed_union` として残っていた。
+  - 個別処理が必要な箇所と、単に「匿名 aggregate か」を見たい箇所の意図が
+    呼び出し側の boolean 式に埋もれていた。
+- 根本対応:
+  - `psx_tag_member_is_unnamed_aggregate()` を node_utils + parser_public API に追加した。
+  - unnamed aggregate 全体を skip / 探索対象化する箇所を同 helper 経由に置き換えた。
+  - parser unit の type metadata bridge に unnamed aggregate predicate の契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

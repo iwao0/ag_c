@@ -477,6 +477,11 @@ int psx_tag_member_is_unnamed_union(const tag_member_info_t *mi) {
   return mi && mi->len == 0 && psx_tag_member_is_union_aggregate(mi);
 }
 
+int psx_tag_member_is_unnamed_aggregate(const tag_member_info_t *mi) {
+  return psx_tag_member_is_unnamed_struct(mi) ||
+         psx_tag_member_is_unnamed_union(mi);
+}
+
 int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                int base_off, int target_off,
                                                int *out_off, int *out_size) {
@@ -484,8 +489,7 @@ int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
-    if (!psx_tag_member_is_unnamed_struct(&mi) &&
-        !psx_tag_member_is_unnamed_union(&mi)) continue;
+    if (!psx_tag_member_is_unnamed_aggregate(&mi)) continue;
     int start = base_off + mi.offset;
     int end = start + mi.type_size;
     if (target_off < start || target_off >= end) continue;

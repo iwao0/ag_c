@@ -33,6 +33,7 @@ int psx_tag_member_is_struct_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_struct(const struct tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_union(const struct tag_member_info_t *mi);
+int psx_tag_member_is_unnamed_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                int base_off, int target_off,
                                                int *out_off, int *out_size);

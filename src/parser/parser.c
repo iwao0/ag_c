@@ -1091,8 +1091,7 @@ static int effective_toplevel_tag_object_size(token_kind_t kind, char *name, int
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(kind, name, len, i, &mi)) break;
-    if (psx_tag_member_is_unnamed_struct(&mi) ||
-        psx_tag_member_is_unnamed_union(&mi)) {
+    if (psx_tag_member_is_unnamed_aggregate(&mi)) {
       continue;
     }
     int count = mi.array_len > 0 ? mi.array_len : 1;
