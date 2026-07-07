@@ -1435,6 +1435,15 @@ bool psx_ctx_is_tag_aggregate_kind(token_kind_t kind) {
   return kind == TK_STRUCT || kind == TK_UNION;
 }
 
+const char *psx_ctx_tag_kind_spelling(token_kind_t kind) {
+  switch (kind) {
+    case TK_STRUCT: return "struct";
+    case TK_UNION: return "union";
+    case TK_ENUM: return "enum";
+    default: return "tag";
+  }
+}
+
 int psx_ctx_scalar_type_size(token_kind_t kind) {
   switch (kind) {
     case TK_CHAR: return 1;

@@ -3628,7 +3628,7 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
       if (psx_ctx_is_tag_aggregate_kind(m->tag_kind) && !m->is_tag_pointer && !m->is_pointer) {
         psx_diag_ctx(curtok(), "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
-                     m->tag_kind == TK_STRUCT ? "struct" : "union");
+                     psx_ctx_tag_kind_spelling(m->tag_kind));
       }
     }
   }

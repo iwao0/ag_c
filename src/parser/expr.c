@@ -2272,7 +2272,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     return annotate_cast_type(operand, cast_type);
   }
   if (psx_ctx_is_tag_aggregate_kind(type_kind)) {
-    const char *kind = (type_kind == TK_STRUCT) ? "struct" : "union";
+    const char *kind = psx_ctx_tag_kind_spelling(type_kind);
     psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                  kind);
   }
@@ -2797,7 +2797,7 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
         return apply_postfix(lower_union_value_cast(operand, cast_tag_kind, cast_tag_name, cast_tag_len,
                                                     cast_elem_size, cast_fp_kind), ctx);
       }
-      const char *kind = (cast_kind == TK_STRUCT) ? "struct" : "union";
+      const char *kind = psx_ctx_tag_kind_spelling(cast_kind);
       psx_diag_ctx(curtok(), "cast", diag_message_for(DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
                    kind);
     }

@@ -16081,3 +16081,23 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き828）: tag kind 診断表記を semantic_ctx に集約
+- 見つかった浅い箇所:
+  - `expr.c` と `decl.c` の診断で、`TK_STRUCT ? "struct" : "union"` の表記選択が
+    直接書かれていた。
+  - tag kind の意味論 helper は semantic_ctx に集まってきている一方で、
+    ユーザー向け診断表記だけが呼び出し側に残っていた。
+- 根本対応:
+  - `psx_ctx_tag_kind_spelling()` を semantic_ctx API に追加し、
+    `struct` / `union` / `enum` / fallback `tag` の表記を一箇所へ集約した。
+  - cast / initializer の診断文は同 helper 経由に置き換えた。
+  - `TK_STRUCT ? "struct" : "union"` 形式の直書きは parser/arch/test の検索上なくなった。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

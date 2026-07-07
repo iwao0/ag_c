@@ -315,6 +315,7 @@ void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kin
 bool psx_ctx_is_type_token(token_kind_t kind);
 bool psx_ctx_is_tag_keyword(token_kind_t kind);
 bool psx_ctx_is_tag_aggregate_kind(token_kind_t kind);
+const char *psx_ctx_tag_kind_spelling(token_kind_t kind);
 int psx_ctx_scalar_type_size(token_kind_t kind);
 void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size);
 
