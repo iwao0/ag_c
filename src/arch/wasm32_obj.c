@@ -2476,16 +2476,14 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
                                                     obj_data_t *d, global_var_t *gv,
                                                     psx_gvar_init_cursor_t *cur,
                                                     size_t base_off) {
-  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
-  psx_tag_flat_cover_state_t cover_state;
-  psx_tag_flat_cover_state_init(&cover_state);
-  for (int m = 0; m < n_members && psx_gvar_init_cursor_has(cur); m++) {
+  psx_gvar_aggregate_member_iter_t iter = psx_gvar_aggregate_member_iter(tk, tn, tl);
+  while (psx_gvar_init_cursor_has(cur)) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
-    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
+    int m = 0;
+    if (!psx_gvar_aggregate_member_next(&iter, &mi, &m)) break;
     if (mi.bit_width > 0) {
       emit_obj_global_bitfield_unit_data(tk, tn, tl, &m, d, cur, base_off);
+      psx_gvar_aggregate_member_iter_set_next(&iter, m + 1);
       continue;
     }
     if (mi.array_len > 0) {
@@ -2508,25 +2506,21 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
                                   mi.type_size, mi.is_bool, mi.fp_kind, &mi);
         }
       }
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_obj_global_struct_members_data_rec(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv,
                                               cur, base_off + (size_t)mi.offset);
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_obj_global_union_member_data(mi.tag_kind, mi.tag_name, mi.tag_len, d, gv, cur,
                                         base_off + (size_t)mi.offset);
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     int slot = psx_gvar_init_cursor_advance(cur);
     data_write_init_slot_at(d, gv, slot, base_off + (size_t)mi.offset, mi.type_size,
                             mi.is_bool, mi.fp_kind, &mi);
-    psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
 }
 

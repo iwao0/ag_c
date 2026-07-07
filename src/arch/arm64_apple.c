@@ -270,16 +270,13 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
 static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
                                            int struct_size, global_var_t *gv,
                                            psx_gvar_init_cursor_t *cur) {
-  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   int prev_end = 0;
-  psx_tag_flat_cover_state_t cover_state;
-  psx_tag_flat_cover_state_init(&cover_state);
-  for (int i = 0; i < n_members && psx_gvar_init_cursor_has(cur); i++) {
+  psx_gvar_aggregate_member_iter_t iter = psx_gvar_aggregate_member_iter(tk, tn, tl);
+  while (psx_gvar_init_cursor_has(cur)) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
+    int i = 0;
+    if (!psx_gvar_aggregate_member_next(&iter, &mi, &i)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
-    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
@@ -309,14 +306,12 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         }
       }
       prev_end = off + ts * alen;
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
     if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
       prev_end = off + ts;
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     /* ネスト union メンバ: トップレベル global_var_t.union_init_ordinal はネスト union 用では
@@ -327,7 +322,6 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, cur);
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       prev_end = off + ts;
       continue;
     }
@@ -337,7 +331,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     if (mi.bit_width > 0) {
       psx_gvar_bitfield_unit_t unit = {0};
       if (!psx_gvar_init_cursor_pack_bitfield_unit(tk, tn, tl, i, cur, &unit)) break;
-      i = unit.last_member_index;
+      psx_gvar_aggregate_member_iter_set_next(&iter, unit.last_member_index + 1);
       cg_emit_int_directive(unit.size, (long long)unit.packed);
       prev_end = unit.offset + unit.size;
       continue;
@@ -350,7 +344,6 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
                                    ts, mv, slot.fvalue);
     psx_gvar_init_cursor_advance(cur);
     prev_end = off + ts;
-    psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
   if (prev_end < struct_size) cg_emitf("  .space %d\n", struct_size - prev_end);
 }

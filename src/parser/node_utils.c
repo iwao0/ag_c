@@ -466,6 +466,49 @@ psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv) {
   return layout;
 }
 
+psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
+                                                                char *tag_name,
+                                                                int tag_len) {
+  psx_gvar_aggregate_member_iter_t iter = {
+      .tag_kind = tag_kind,
+      .tag_name = tag_name,
+      .tag_len = tag_len,
+      .ordinal = 0,
+      .count = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len),
+  };
+  psx_tag_flat_cover_state_init(&iter.cover_state);
+  return iter;
+}
+
+int psx_gvar_aggregate_member_next(psx_gvar_aggregate_member_iter_t *iter,
+                                   tag_member_info_t *out, int *out_ordinal) {
+  if (!iter || !out) return 0;
+  while (iter->ordinal < iter->count) {
+    int ordinal = iter->ordinal++;
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(iter->tag_kind, iter->tag_name,
+                                     iter->tag_len, ordinal, &mi)) {
+      return 0;
+    }
+    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
+    if (psx_tag_flat_cover_state_covers(&iter->cover_state, &mi)) continue;
+    psx_tag_flat_cover_state_note(&iter->cover_state, iter->tag_kind,
+                                  iter->tag_name, iter->tag_len, &mi);
+    *out = mi;
+    if (out_ordinal) *out_ordinal = ordinal;
+    return 1;
+  }
+  return 0;
+}
+
+void psx_gvar_aggregate_member_iter_set_next(psx_gvar_aggregate_member_iter_t *iter,
+                                             int next_ordinal) {
+  if (!iter) return;
+  if (next_ordinal < 0) next_ordinal = 0;
+  if (next_ordinal > iter->count) next_ordinal = iter->count;
+  iter->ordinal = next_ordinal;
+}
+
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
   if (gv && gv->is_array && gv->deref_size > 0) return gv->deref_size;
   return fallback_size;

@@ -1888,16 +1888,14 @@ static void emit_global_union_scalar_data(global_var_t *gv, psx_gvar_init_cursor
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv,
                                                 psx_gvar_init_cursor_t *cur, int base_addr) {
-  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
-  psx_tag_flat_cover_state_t cover_state;
-  psx_tag_flat_cover_state_init(&cover_state);
-  for (int m = 0; m < n_members && psx_gvar_init_cursor_has(cur); m++) {
+  psx_gvar_aggregate_member_iter_t iter = psx_gvar_aggregate_member_iter(tk, tn, tl);
+  while (psx_gvar_init_cursor_has(cur)) {
     tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
-    if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
+    int m = 0;
+    if (!psx_gvar_aggregate_member_next(&iter, &mi, &m)) break;
     if (mi.bit_width > 0) {
       emit_global_bitfield_unit_data(tk, tn, tl, &m, cur, base_addr);
+      psx_gvar_aggregate_member_iter_set_next(&iter, m + 1);
       continue;
     }
     if (mi.array_len > 0) {
@@ -1920,7 +1918,6 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
           emit_global_init_member_data(gv, slot, base_addr + mi.offset + k * mi.type_size, &mi);
         }
       }
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_struct_aggregate(&mi)) {
@@ -1929,18 +1926,15 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
                                           base_addr + mi.offset);
       psx_gvar_init_cursor_consume_tag_zero_padding(mi.tag_kind, mi.tag_name, mi.tag_len,
                                                     cur, member_start_idx);
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, cur,
                                     base_addr + mi.offset);
-      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     int slot = psx_gvar_init_cursor_advance(cur);
     emit_global_init_member_data(gv, slot, base_addr + mi.offset, &mi);
-    psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
 }
 

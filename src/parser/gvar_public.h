@@ -3,6 +3,8 @@
 
 #include "core.h"
 #include "init_slot.h"
+#include "semantic_public.h"
+#include "tag_flat_cover.h"
 
 typedef struct global_var_t global_var_t;
 
@@ -53,9 +55,25 @@ typedef struct {
   int is_union;
 } psx_gvar_aggregate_layout_t;
 
+typedef struct {
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int ordinal;
+  int count;
+  psx_tag_flat_cover_state_t cover_state;
+} psx_gvar_aggregate_member_iter_t;
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
+psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
+                                                                char *tag_name,
+                                                                int tag_len);
+int psx_gvar_aggregate_member_next(psx_gvar_aggregate_member_iter_t *iter,
+                                   tag_member_info_t *out, int *out_ordinal);
+void psx_gvar_aggregate_member_iter_set_next(psx_gvar_aggregate_member_iter_t *iter,
+                                             int next_ordinal);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor_at(const global_var_t *gv, int index);
 int psx_gvar_init_cursor_has(const psx_gvar_init_cursor_t *cur);

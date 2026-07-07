@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き883: centralize tag zero-padding consumption）
+最終更新: 2026-07-08（続き884: centralize aggregate member iteration）
 
 ## 現状
+- 続き884: **global aggregate recursion の member enumeration 規則を parser/public iterator に寄せた**。
+
+  続き883で union trailing zero padding の tag slot 数計算を parser/public 側へ寄せた後も、
+  `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` の struct member recursion には
+  `psx_ctx_get_tag_member_count()`、`psx_ctx_get_tag_member_info()`、unnamed struct skip、
+  unnamed union cover-state の skip/note が同じ形で残っていた。これは出力処理ではなく
+  「aggregate の初期化対象 member をどの順序・どの除外規則で歩くか」という parser 側の規則で、
+  event/callback walker 化前の大きな正本分散だった。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_aggregate_member_iter_t`、`psx_gvar_aggregate_member_iter()`、
+  `psx_gvar_aggregate_member_next()`、`psx_gvar_aggregate_member_iter_set_next()` を追加した。
+  iterator は tag member count/info、unnamed struct skip、flat cover-state の covers/note を内包する。
+  3 backend の struct recursion はこの iterator から `tag_member_info_t` と ordinal を受け取り、
+  scalar/array/nested aggregate/bitfield の出力だけを選ぶ形になった。bitfield grouping 後の
+  ordinal skip は `psx_gvar_aggregate_member_iter_set_next()` で明示し、backend が loop index を
+  直接操作しないようにした。
+
+  `rg "psx_tag_flat_cover_state|psx_ctx_get_tag_member_count\\(|psx_ctx_get_tag_member_info\\(" src/arch/arm64_apple.c src/arch/wasm32_ir.c src/arch/wasm32_obj.c -n`
+  では aggregate recursion の cover-state 直接管理は消えている。残る direct tag member query は、
+  arm64 の union fp fallback と Wasm IR の別用途の function/global handling で、今回の
+  struct recursion walker 化対象からは外している。次の根本対応候補は、この iterator を土台に
+  scalar/bitfield/nested-aggregate/padding を event 化し、Wasm IR/object の同形 recursion を
+  parser/public walker + backend callback へさらに寄せること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き883: **trailing zero union padding の tag slot 数計算を parser/public helper に寄せた**。
 
   続き882で aggregate emission の layout metadata 取得を public helper に寄せた後も、
