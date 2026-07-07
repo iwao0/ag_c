@@ -3182,7 +3182,7 @@ static void test_type_metadata_bridge() {
       "int __tm818_inc(int x){ return x + 1; } "
       "int (*__tm818_fp)(int)=__tm818_inc; "
       "int (**__tm818_getpp(void))(int){ return &__tm818_fp; } "
-      "int main(void){ return (*__tm818_getpp())(41); }");
+      "int main(void){ return (*__tm818_getpp())(20) + (**__tm818_getpp())(30); }");
   node_func_t *tm818_getpp_def = as_func(parsed_code[1]);
   psx_decl_funcptr_sig_t tm818_getpp_sig =
       psx_node_funcdef_ret_funcptr_sig(tm818_getpp_def);

@@ -3343,21 +3343,26 @@ static int expr_funcall_returns_decayable_funcptr(node_t *fcall) {
   return 0;
 }
 
+static int expr_node_is_decayable_funcptr_value(node_t *node) {
+  if (!node) return 0;
+  if (node->kind != ND_DEREF && node->kind != ND_FUNCALL) return 0;
+  if (psx_node_pointer_qual_levels(node) > 1) return 0;
+  return psx_node_has_funcptr_signature(node);
+}
+
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   tk_expect('(');
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCALL;
-  /* `(*fp)(args)` / `(**fp)(args)`: 関数ポインタの「単項 deref」は関数へ戻り即座に
-   * 関数ポインタへ減衰するので `fp(args)` と等価。単項 deref を辿って最下層が関数
-   * ポインタ lvar (pointer_qual_levels<=1) なら全段剥がす。
-   * `(*call())(args)` も同様: 戻り値そのものが 1 段の関数ポインタなら `*result` は減衰のみ。
-   * `int (**getpp(void))(int); (*getpp())(args)` のような 2 段返しでは、この `*` は
-   * function pointer object をロードする実体 deref なので剥がさない。
-   * subscript の結果 (`ops[i]`, lhs=ND_ADD で最下層が lvar にならない) や、
-   * ポインタ→関数ポインタ (`int(**pp)(); (*pp)()`, pql>=2) は実体 deref なので除外。 */
+  /* `(*fp)(args)` / `(**fp)(args)`: function pointer value に対する単項 `*` は
+   * 関数へ戻って即座に function pointer へ減衰するだけなので、呼び出し callee から剥がす。
+   * 一方 `int (**getpp(void))(int); (*getpp())(args)` の `*` は function pointer
+   * object をロードする実体 deref なので、operand がまだ 2 段以上なら残す。 */
   if (callee && callee->kind == ND_DEREF) {
     node_t *lhs = callee->lhs;
-    if (lhs && lhs->kind == ND_FUNCALL && expr_funcall_returns_decayable_funcptr(lhs)) {
+    if (expr_node_is_decayable_funcptr_value(lhs)) {
+      callee = lhs;
+    } else if (lhs && lhs->kind == ND_FUNCALL && expr_funcall_returns_decayable_funcptr(lhs)) {
       callee = lhs;
     } else {
       node_t *base = callee;

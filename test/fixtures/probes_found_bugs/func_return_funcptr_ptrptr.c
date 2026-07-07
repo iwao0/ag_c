@@ -9,5 +9,7 @@ int (**getpp(void))(int) {
 }
 
 int main(void) {
-  return (*getpp())(41) == 42 ? 0 : 1;
+  int a = (*getpp())(20);
+  int b = (**getpp())(30);
+  return a == 21 && b == 31 ? 0 : 1;
 }

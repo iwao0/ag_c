@@ -1,8 +1,34 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き818: function-return funcptr pointer level 正本化）
+最終更新: 2026-07-07（続き819: function pointer call deref decay 正本化）
 
 ## 現状
+- 続き819: **function pointer 呼び出し callee の unary `*` 剥がしを、typed signature
+  を持つ function pointer value に限定した**。
+
+  続き818では `int (**getpp(void))(int)` の `(*getpp())(41)` を正しく扱うため、
+  `(*call())(...)` の deref 剥がしを「戻り値そのものが 1 段 function pointer」の場合だけに
+  制限した。一方で C の function designator ルール上、`(**getpp())(30)` の外側 `*` は
+  `*getpp()` でロード済みの function pointer value に対する no-op decay なので、そこは剥がす必要があった。
+
+  今回は `psx_node_has_funcptr_signature()` を追加し、`parse_call_postfix()` が
+  `ND_DEREF` callee を剥がす条件を「operand が `ND_DEREF` / `ND_FUNCALL` で、
+  pointer qual level <= 1 かつ function pointer signature を持つ」場合にした。
+  これにより `(**getpp())(...)` の外側 deref は剥がすが、`(*getpp())(...)` の実体ロードは残る。
+  途中で `ops[0](...)` の subscript address (`ND_ADD`) まで function pointer value と誤判定すると、
+  配列スロットのアドレスを直接 `blr` してしまうことも確認したため、`ND_ADD` は対象外にしている。
+
+  回帰テストは `test_type_metadata_bridge()` と
+  `test/fixtures/probes_found_bugs/func_return_funcptr_ptrptr.c` を更新し、
+  `(*getpp())(20)` と `(**getpp())(30)` の両方を実行するようにした。
+
+  確認は
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き818: **function pointer を返す関数で、関数自身の戻り値 pointer 段数と、
   返された関数ポインタの戻り値側 pointer 段数を分離した**。
 

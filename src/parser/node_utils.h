@@ -25,6 +25,7 @@ int psx_node_base_deref_size(node_t *node);
 int psx_node_ptr_array_pointee_bytes(node_t *node);
 unsigned short psx_node_funcptr_param_fp_mask(node_t *node);
 unsigned short psx_node_funcptr_param_int_mask(node_t *node);
+int psx_node_has_funcptr_signature(node_t *node);
 int psx_node_funcptr_returns_void(node_t *node);
 int psx_node_funcptr_returns_complex(node_t *node);
 int psx_node_funcptr_returns_pointee_array(node_t *node);

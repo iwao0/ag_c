@@ -1625,6 +1625,11 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_node(node_t *node, int copy_varia
   return sig;
 }
 
+int psx_node_has_funcptr_signature(node_t *node) {
+  if (!node) return 0;
+  return psx_decl_funcptr_sig_has_payload(funcptr_sig_from_node(node, 1));
+}
+
 unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
   if (!node) return 0;
   return funcptr_sig_from_node(node, 1).param_fp_mask;
