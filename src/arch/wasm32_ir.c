@@ -1958,21 +1958,13 @@ static void consume_trailing_zero_union_padding(global_var_t *gv, int start_idx,
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv, int *val_idx, int base_addr) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
-  int covered_union_off = 0;
-  int covered_union_size = 0;
+  psx_tag_flat_cover_state_t cover_state;
+  psx_tag_flat_cover_state_init(&cover_state);
   for (int m = 0; m < n_members && *val_idx < gv->init_count; m++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
     if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (covered_union_size > 0 &&
-        mi.offset >= covered_union_off &&
-        mi.offset < covered_union_off + covered_union_size) {
-      continue;
-    }
-    int cover_off = 0;
-    int cover_size = 0;
-    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, mi.offset,
-                                                               &cover_off, &cover_size);
+    if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
     if (mi.bit_width > 0) {
       emit_global_bitfield_unit_data(tk, tn, tl, &m, gv, val_idx, base_addr);
       continue;
@@ -1998,10 +1990,7 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
           emit_global_init_member_data(gv, slot, base_addr + mi.offset + k * mi.type_size, &mi);
         }
       }
-      if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_struct_aggregate(&mi)) {
@@ -2011,30 +2000,18 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
       consume_trailing_zero_union_padding(gv, member_start_idx, val_idx,
                                           psx_tag_flat_slot_count(mi.tag_kind, mi.tag_name,
                                                                   mi.tag_len));
-      if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_global_nested_union_data(mi.tag_kind, mi.tag_name, mi.tag_len, gv, val_idx,
                                     base_addr + mi.offset);
-      if (psx_tag_member_is_unnamed_union(&mi)) {
-        covered_union_off = mi.offset;
-        covered_union_size = mi.type_size;
-      } else if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     int slot = (*val_idx)++;
     emit_global_init_member_data(gv, slot, base_addr + mi.offset, &mi);
-    if (has_cover) {
-      covered_union_off = cover_off;
-      covered_union_size = cover_size;
-    }
+    psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
 }
 

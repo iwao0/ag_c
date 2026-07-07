@@ -1,21 +1,22 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き835: tag flat slot member 逆引き helper 化）
+最終更新: 2026-07-07（続き836: wasm global init unnamed union cover state helper 化）
 
 ## 現状
-- 続き835: **global brace の flat slot -> tag member 復元を
-  `psx_tag_member_at_flat_slot()` へ統一した**。
+- 続き836: **wasm32 global initializer emitter の unnamed union cover state を
+  `psx_tag_flat_cover_state_*()` helper へ寄せた**。
 
-  続き834までで designator 名から flat slot を引く経路は helper 化されたが、
-  positional global initializer が brace child context を作る `gbrace_child_at()` には、
-  flat slot から member を逆引きする同型の unnamed union cover / flat slot 走査が残っていた。
-  今回は `psx_tag_member_at_flat_slot()` を node_utils + parser_public API に追加し、
-  `gbrace_child_at()` はこの helper 経由で tag member context を作る形にした。
-  parser unit には `FlatOut` の slot 0/1/2/3/4 と out-of-range の契約を追加している。
+  続き835で parser 側の flat slot 規約は helper に寄ったが、wasm32 IR/object の
+  global initializer emit には `covered_union_off/size` と
+  `psx_tag_find_unnamed_union_covering_offset()` の同型 state 管理が残っていた。
+  今回は cover state の init / covers / note を node_utils + parser_public API に追加し、
+  wasm32 IR/object emitter は同 helper 経由で unnamed union cover を進める形にした。
+  bitfield の出力順に関わる既存挙動は維持し、今回は wasm32 の完全同型部分に限定している。
+  parser unit には cover state が unnamed union で promoted member を cover 扱いする契約を追加した。
 
   確認は
   `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
-  `./build/test_parser` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
   `./build/test_e2e` = **1204/1204 pass**、
   `./build/test_wasm32_e2e` = **1199 compiled/executed**、
   `./build/test_wasm32_object` = **1178/1178 scan pass**、
@@ -16232,4 +16233,26 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_e2e` = **1204/1204 pass**
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
+### このセッション（続き836）: wasm global init unnamed union cover state を共有 helper に統一
+- 見つかった浅い箇所:
+  - wasm32 IR/object の global initializer emitter が、それぞれ
+    `covered_union_off` / `covered_union_size` と
+    `psx_tag_find_unnamed_union_covering_offset()` を直接持っていた。
+  - parser 側では flat slot / designator / member 逆引きが node_utils helper に寄ってきた一方、
+    backend 側には unnamed union cover state の進め方が別実装として残っていた。
+- 根本対応:
+  - `psx_tag_flat_cover_state_t` と
+    `psx_tag_flat_cover_state_init()` / `_covers()` / `_note()` を
+    node_utils + parser_public API に追加した。
+  - `src/arch/wasm32_ir.c` と `src/arch/wasm32_obj.c` の struct member data emit は
+    同 helper 経由で cover 判定/更新する形にした。
+  - parser unit の type metadata bridge に unnamed union cover state 契約を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_e2e` = **1204/1204 pass**
   - `git diff --check` = **green**

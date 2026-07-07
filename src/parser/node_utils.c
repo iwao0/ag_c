@@ -482,6 +482,38 @@ int psx_tag_member_is_unnamed_aggregate(const tag_member_info_t *mi) {
          psx_tag_member_is_unnamed_union(mi);
 }
 
+void psx_tag_flat_cover_state_init(psx_tag_flat_cover_state_t *state) {
+  if (!state) return;
+  state->covered_union_off = 0;
+  state->covered_union_size = 0;
+}
+
+int psx_tag_flat_cover_state_covers(const psx_tag_flat_cover_state_t *state,
+                                    const tag_member_info_t *mi) {
+  if (!state || !mi || state->covered_union_size <= 0) return 0;
+  return mi->offset >= state->covered_union_off &&
+         mi->offset < state->covered_union_off + state->covered_union_size;
+}
+
+void psx_tag_flat_cover_state_note(psx_tag_flat_cover_state_t *state,
+                                   token_kind_t tag_kind, char *tag_name, int tag_len,
+                                   const tag_member_info_t *mi) {
+  if (!state || !mi) return;
+  if (psx_tag_member_is_unnamed_union(mi)) {
+    state->covered_union_off = mi->offset;
+    state->covered_union_size = mi->type_size;
+    return;
+  }
+  int cover_off = 0;
+  int cover_size = 0;
+  if (psx_tag_find_unnamed_union_covering_offset(tag_kind, tag_name, tag_len,
+                                                 0, mi->offset,
+                                                 &cover_off, &cover_size)) {
+    state->covered_union_off = cover_off;
+    state->covered_union_size = cover_size;
+  }
+}
+
 int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                int base_off, int target_off,
                                                int *out_off, int *out_size) {
