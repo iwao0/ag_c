@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き909: move gvar view type behind parser internals）
+最終更新: 2026-07-08（続き910: hide aggregate walker internals）
 
 ## 現状
+- 続き910: **aggregate walker の内部 cursor / iterator を public API から外した**。
+
+  続き909までで gvar view は parser 内部に閉じたが、`gvar_public.h` にはまだ
+  aggregate initializer walker の内部実装詳細である
+  `psx_gvar_init_cursor_t`、`psx_gvar_aggregate_layout_t`、
+  `psx_gvar_aggregate_member_iter_t` と、その cursor / member iterator /
+  struct・union 再帰 walker 用関数群が公開されたままだった。
+  実際の外部利用は `psx_gvar_walk_aggregate_initializer()` だけで、
+  これらは `node_utils.c` 内の実装詳細だったため、公開面としては余計に広かった。
+
+  今回は公開入口 `psx_gvar_walk_aggregate_initializer()` と backend callback 契約だけを残し、
+  内部 cursor / layout / member iterator 型と helper 関数を `node_utils.c` の
+  `static gvar_*` helper に閉じた。未使用だった cursor slot accessor と、
+  外部化時の名残だった cursor-at helper も削除した。
+  `gvar_public.h` から `tag_flat_cover.h` include も不要になったため外している。
+
+  確認は
+  `rg "psx_gvar_(aggregate_layout|aggregate_member_iter|walk_struct_initializer|walk_union_initializer|init_cursor|init_cursor_)" src test tools` = **no hits**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き909: **`psx_gvar_view_t` 型も public header から外した**。
 
   続き908で backend から `psx_gvar_view()` の利用を外し、関数宣言も parser 内部へ移したが、
