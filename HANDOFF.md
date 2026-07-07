@@ -16010,3 +16010,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き825）: parser.c / decl.h の token tag aggregate 判定を helper 化
+- 見つかった浅い箇所:
+  - semantic_ctx / node_utils / decl / struct_layout 側を helper 正本へ寄せた後も、
+    top-level parser と inline decl tag setter が
+    `TK_STRUCT || TK_UNION` を直接合成していた。
+  - typedef tag size、incomplete typedef tag 登録、global brace の子要素/slot 数、
+    関数 signature/prototype/funcdef の戻り値 tag metadata、param typedef tag 伝播で
+    同じ「struct/union tag kind か」の意味が分散していた。
+- 根本対応:
+  - `psx_decl_set_var_tag()` / `psx_decl_set_gvar_tag()` の scope depth 保存条件を
+    `psx_ctx_is_tag_aggregate_kind()` に置き換えた。
+  - `parser.c` の top-level typedef / function signature / parameter propagation /
+    global brace flatten 周辺の aggregate tag kind 判定を同 helper 経由にした。
+  - struct 専用・union 専用・enum も含める `tag_kind != EOF` 系の分岐は、
+    意味が違うため今回の置き換え対象から外して残した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

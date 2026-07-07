@@ -143,7 +143,7 @@ static inline void psx_decl_set_var_tag(lvar_t *var,
   /* 宣言時に見えているタグの scope_depth を +1 して保存 (0=未設定の規約)。
    * 後段でメンバ参照経路が「変数宣言時に見えていた tag」のメンバを引けるようにする
    * (内側 shadow からの外側変数参照対応)。タグ無しは 0 のまま (未設定)。 */
-  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
     var->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
   } else {
@@ -158,7 +158,7 @@ static inline void psx_decl_set_gvar_tag(global_var_t *gv,
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;
   gv->is_tag_pointer = is_tag_pointer ? 1 : 0;
-  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     int sd = psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len);
     gv->tag_scope_depth_p1 = (sd >= 0) ? (sd + 1) : 0;
   } else {

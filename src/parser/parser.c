@@ -421,7 +421,7 @@ static void apply_toplevel_typedef_decl_spec(toplevel_decl_spec_t *spec,
   spec->tag_len = td_tag_len;
   spec->base_is_ptr = td_is_ptr;
   spec->elem_size = td_elem;
-  if ((td_tag == TK_STRUCT || td_tag == TK_UNION) &&
+  if (psx_ctx_is_tag_aggregate_kind(td_tag) &&
       td_tag_name && td_tag_len > 0 &&
       psx_ctx_has_tag_type(td_tag, td_tag_name, td_tag_len)) {
     int tag_sz = psx_ctx_get_tag_size(td_tag, td_tag_name, td_tag_len);
@@ -484,7 +484,7 @@ static void resolve_toplevel_tag_decl_layout_or_ref(toplevel_decl_spec_t *spec) 
   }
   if (psx_ctx_has_tag_type(spec->tag_kind, spec->tag_name, spec->tag_len)) return;
   if (spec->is_typedef &&
-      (spec->tag_kind == TK_STRUCT || spec->tag_kind == TK_UNION)) {
+      psx_ctx_is_tag_aggregate_kind(spec->tag_kind)) {
     psx_ctx_define_tag_type(spec->tag_kind, spec->tag_name, spec->tag_len);
     return;
   }
@@ -1638,7 +1638,7 @@ static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
     }
     return;
   }
-  if (ctx->tag_kind == TK_STRUCT || ctx->tag_kind == TK_UNION) {
+  if (psx_ctx_is_tag_aggregate_kind(ctx->tag_kind)) {
     int n = psx_ctx_get_tag_member_count(ctx->tag_kind, ctx->tag_name, ctx->tag_len);
     int slot = 0;
     int covered_union_off = 0;
@@ -1730,7 +1730,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
       /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
        * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
-      int es = ((ctx.tag_kind == TK_STRUCT || ctx.tag_kind == TK_UNION) && !ctx.is_tag_pointer)
+      int es = (psx_ctx_is_tag_aggregate_kind(ctx.tag_kind) && !ctx.is_tag_pointer)
                    ? global_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
       if (es > 1) {
         int r = (cur_idx - level_start) % es;
@@ -3022,7 +3022,7 @@ static void register_function_signature(const psx_function_signature_t *sig) {
       }
     }
   }
-  if ((sig->ret_tag_kind == TK_STRUCT || sig->ret_tag_kind == TK_UNION) &&
+  if (psx_ctx_is_tag_aggregate_kind(sig->ret_tag_kind) &&
       sig->ret_tag_name) {
     psx_ctx_set_function_ret_tag(tok->str, tok->len, sig->ret_tag_kind,
                                  sig->ret_tag_name, sig->ret_tag_len);
@@ -3064,7 +3064,7 @@ static void register_toplevel_function_prototype(const toplevel_decl_spec_t *spe
   int ret_base_unsigned = spec->is_unsigned;
   int ret_is_complex = !ret_is_ptr && spec->is_complex;
   int ret_struct_size = 0;
-  if ((spec->tag_kind == TK_STRUCT || spec->tag_kind == TK_UNION) &&
+  if (psx_ctx_is_tag_aggregate_kind(spec->tag_kind) &&
       !ret_is_ptr && spec->tag_name &&
       psx_ctx_has_tag_type(spec->tag_kind, spec->tag_name,
                            spec->tag_len)) {
@@ -4260,7 +4260,7 @@ static void parse_param_scalar_decl_spec(param_decl_spec_t *out) {
       if (td_fp_kind != TK_FLOAT_KIND_NONE) out->fp_kind = td_fp_kind;
       /* struct/union typedef (`typedef struct {...} T; T *t`) のタグを伝播し、
        * `t->m` のメンバアクセスと subscript スケーリングを解決できるようにする。 */
-      if (td_tag_kind == TK_STRUCT || td_tag_kind == TK_UNION) {
+      if (psx_ctx_is_tag_aggregate_kind(td_tag_kind)) {
         out->tag_kind = td_tag_kind;
         out->tag_name = td_tag_name;
         out->tag_len = td_tag_len;
@@ -4666,7 +4666,7 @@ static node_t *funcdef(void) {
   int ret_is_complex = !ret_is_ptr && ret_state.type_spec.is_complex;
   // 構造体戻り値の場合、サイズを記録（ポインタ戻り値は除く）
   int ret_struct_size = 0;
-  if ((ret_kind == TK_STRUCT || ret_kind == TK_UNION) && !ret_is_ptr) {
+  if (psx_ctx_is_tag_aggregate_kind(ret_kind) && !ret_is_ptr) {
     if (ret_tag && psx_ctx_has_tag_type(ret_kind, ret_tag->str, ret_tag->len)) {
       ret_struct_size = psx_ctx_get_tag_size(ret_kind, ret_tag->str, ret_tag->len);
     }
