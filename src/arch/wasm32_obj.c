@@ -2343,14 +2343,25 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
   d->is_emitted = 1;
 }
 
-static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
-                                   long long addend, int size) {
-  if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
-    if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
-    obj_func_t *target = find_func(sym, sym_len);
+static obj_data_t *data_for_symbol_ref(psx_gvar_symbol_ref_t ref, int *out_addend) {
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
+    return data_for_symbol(ref.symbol, -1, out_addend);
+  }
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
+    return data_for_symbol(ref.symbol, ref.symbol_len, out_addend);
+  }
+  obj_unsupported_msg("missing symbol initializer in Wasm object mode");
+  return NULL;
+}
+
+static void data_write_symbol_addr(obj_data_t *d, psx_gvar_symbol_ref_t ref, int size) {
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+    if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
+    obj_func_t *target = find_func(ref.symbol, ref.symbol_len);
     if (!target) {
-      target = intern_func(sym, sym_len);
-      target->sig = func_sig_from_ctx(sym, sym_len);
+      target = intern_func(ref.symbol, ref.symbol_len);
+      target->sig = func_sig_from_ctx(ref.symbol, ref.symbol_len);
     }
     uint32_t off = d->bytes.len;
     wb_int_le(&d->bytes, 0, size);
@@ -2358,11 +2369,11 @@ static void data_write_symbol_addr(obj_data_t *d, char *sym, int sym_len,
     return;
   }
   int reloc_addend = 0;
-  obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
+  obj_data_t *target = data_for_symbol_ref(ref, &reloc_addend);
   uint32_t off = d->bytes.len;
   wb_int_le(&d->bytes, 0, size);
   data_add_reloc(d, R_WASM_MEMORY_ADDR_I32, off, data_index(target), 1,
-                 reloc_addend + (int)addend);
+                 reloc_addend + (int)ref.addend);
 }
 
 static void data_write_int_le_at(obj_data_t *d, size_t off, uint64_t value, int size) {
@@ -2377,24 +2388,25 @@ static void data_write_int_le_at(obj_data_t *d, size_t off, uint64_t value, int 
   }
 }
 
-static void data_write_symbol_addr_at(obj_data_t *d, size_t off, char *sym, int sym_len,
-                                      long long addend, int size) {
-  if (sym && sym_len >= 0 && psx_ctx_has_function_name(sym, sym_len)) {
-    if (addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
-    obj_func_t *target = find_func(sym, sym_len);
+static void data_write_symbol_addr_at(obj_data_t *d, size_t off, psx_gvar_symbol_ref_t ref,
+                                      int size) {
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+    if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
+    obj_func_t *target = find_func(ref.symbol, ref.symbol_len);
     if (!target) {
-      target = intern_func(sym, sym_len);
-      target->sig = func_sig_from_ctx(sym, sym_len);
+      target = intern_func(ref.symbol, ref.symbol_len);
+      target->sig = func_sig_from_ctx(ref.symbol, ref.symbol_len);
     }
     data_write_int_le_at(d, off, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);
     return;
   }
   int reloc_addend = 0;
-  obj_data_t *target = data_for_symbol(sym, sym_len, &reloc_addend);
+  obj_data_t *target = data_for_symbol_ref(ref, &reloc_addend);
   data_write_int_le_at(d, off, 0, size);
   data_add_reloc(d, R_WASM_MEMORY_ADDR_I32, off, data_index(target), 1,
-                 reloc_addend + (int)addend);
+                 reloc_addend + (int)ref.addend);
 }
 
 static void data_write_scalar(obj_data_t *d, uint64_t value, int size) {
@@ -2418,13 +2430,16 @@ static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
                                     const tag_member_info_t *member_info) {
   if (idx < 0) return;
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  if (slot.symbol) {
-    if (psx_ctx_has_function_name(slot.symbol, slot.symbol_len) && member_info) {
-      ensure_func_sig_for_address(slot.symbol, slot.symbol_len,
-                                  func_sig_from_member_funcptr(member_info, slot.symbol,
-                                                              slot.symbol_len));
+  psx_gvar_symbol_ref_t sym_ref = psx_gvar_init_slot_symbol_ref(&slot);
+  if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+    if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+        psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len) && member_info) {
+      ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
+                                  func_sig_from_member_funcptr(member_info,
+                                                              sym_ref.symbol,
+                                                              sym_ref.symbol_len));
     }
-    data_write_symbol_addr_at(d, off, slot.symbol, slot.symbol_len, slot.value, size);
+    data_write_symbol_addr_at(d, off, sym_ref, size);
     return;
   }
   if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
@@ -2514,13 +2529,14 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_obj_global_aggregate_data(d, gv, size);
   } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-    if (psx_ctx_has_function_name(view.init_symbol, view.init_symbol_len)) {
-      ensure_func_sig_for_address(view.init_symbol, view.init_symbol_len,
-                                  func_sig_from_global_funcptr(gv, view.init_symbol,
-                                                               view.init_symbol_len));
+    psx_gvar_symbol_ref_t sym_ref = psx_gvar_initializer_symbol_ref(gv);
+    if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+        psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len)) {
+      ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
+                                  func_sig_from_global_funcptr(gv, sym_ref.symbol,
+                                                               sym_ref.symbol_len));
     }
-    data_write_symbol_addr(d, view.init_symbol, view.init_symbol_len,
-                           view.init_symbol_offset, size);
+    data_write_symbol_addr(d, sym_ref, size);
   } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
     psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
     int elem = slot_layout.elem_size;
@@ -2532,12 +2548,15 @@ static void emit_obj_global(global_var_t *gv, void *user) {
           psx_gvar_init_slot_value(gv, i, &slot_layout);
       psx_gvar_init_slot_t slot = slot_value.slot;
       if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
-        if (psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
-          ensure_func_sig_for_address(slot.symbol, slot.symbol_len,
-                                      func_sig_from_global_funcptr(gv, slot.symbol,
-                                                                   slot.symbol_len));
+        psx_gvar_symbol_ref_t sym_ref =
+            psx_gvar_init_slot_value_symbol_ref(&slot_value);
+        if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+            psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len)) {
+          ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
+                                      func_sig_from_global_funcptr(gv, sym_ref.symbol,
+                                                                   sym_ref.symbol_len));
         }
-        data_write_symbol_addr(d, slot.symbol, slot.symbol_len, slot.value, elem);
+        data_write_symbol_addr(d, sym_ref, elem);
       } else {
         uint64_t value = (uint64_t)slot.value;
         if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {

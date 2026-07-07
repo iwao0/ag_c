@@ -503,6 +503,48 @@ int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
   return 0;
 }
 
+static psx_gvar_symbol_ref_t gvar_make_symbol_ref(char *symbol, int symbol_len,
+                                                  long long addend) {
+  psx_gvar_symbol_ref_t ref = {
+      .kind = PSX_GVAR_SYMBOL_REF_NONE,
+      .symbol = NULL,
+      .symbol_len = 0,
+      .addend = 0,
+  };
+  if (!symbol) return ref;
+  ref.symbol = symbol;
+  ref.addend = addend;
+  if (symbol_len < 0) {
+    ref.kind = PSX_GVAR_SYMBOL_REF_STRING_LITERAL;
+    return ref;
+  }
+  if (symbol_len > 0) {
+    ref.kind = PSX_GVAR_SYMBOL_REF_NAMED;
+    ref.symbol_len = symbol_len;
+  }
+  return ref;
+}
+
+psx_gvar_symbol_ref_t psx_gvar_initializer_symbol_ref(const global_var_t *gv) {
+  if (!gv) return gvar_make_symbol_ref(NULL, 0, 0);
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  return gvar_make_symbol_ref(view.init_symbol, view.init_symbol_len,
+                              view.init_symbol_offset);
+}
+
+psx_gvar_symbol_ref_t psx_gvar_init_slot_symbol_ref(const psx_gvar_init_slot_t *slot) {
+  if (!slot) return gvar_make_symbol_ref(NULL, 0, 0);
+  return gvar_make_symbol_ref(slot->symbol, slot->symbol_len, slot->value);
+}
+
+psx_gvar_symbol_ref_t
+psx_gvar_init_slot_value_symbol_ref(const psx_gvar_init_slot_value_t *value) {
+  if (!value || value->kind != PSX_GVAR_INIT_SLOT_SYMBOL) {
+    return gvar_make_symbol_ref(NULL, 0, 0);
+  }
+  return psx_gvar_init_slot_symbol_ref(&value->slot);
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);

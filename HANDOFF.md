@@ -1,8 +1,46 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き892: centralize global initializer FP bit patterns）
+最終更新: 2026-07-08（続き893: centralize global initializer symbol references）
 
 ## 現状
+- 続き893: **global initializer の symbol reference shape を parser/public helper に寄せた**。
+
+  続き892で FP bit-pattern 変換は public helper に寄ったが、symbol initializer にはまだ
+  `symbol_len < 0` を文字列リテラル sentinel、`symbol_len > 0` を通常シンボルとして読む判定が
+  arm64 / Wasm IR / Wasm object に散っていた。これは出力形式ではなく `global_var_t` /
+  init slot の内部表現をどう解釈するかという parser/public 側の知識なので、次に寄せた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_symbol_ref_kind_t`、`psx_gvar_symbol_ref_t`、
+  `psx_gvar_initializer_symbol_ref()`、`psx_gvar_init_slot_symbol_ref()`、
+  `psx_gvar_init_slot_value_symbol_ref()` を追加した。public shape は
+  `NONE / STRING_LITERAL / NAMED` と `{symbol, symbol_len, addend}` を持ち、
+  backend は負の `symbol_len` sentinel を直接読まずに kind を見る。
+
+  arm64 は `.quad` の string literal / named symbol 出力を `psx_gvar_symbol_ref_t`
+  から行うようにした。Wasm IR は string label / function table index / global data address の
+  address 解決入口を `data_addr_for_symbol_ref()` にまとめた。Wasm object は data relocation と
+  table-index relocation 書き込みを symbol ref ベースに変え、function pointer signature 補完も
+  `NAMED` ref のときだけ行うようにした。
+
+  これで global scalar symbol、global slot symbol、aggregate member slot symbol の主要経路では、
+  backend 側から `symbol_len < 0` / `> 0` の意味づけが消えた。parser 内部の
+  `gvar_make_symbol_ref()` と `psx_gvar_init_slot_view()` だけが sentinel を読む正本になる。
+
+  次の根本対応候補は、global initializer の「scalar value emission」全体をもう一段薄くすること。
+  具体的には integer / FP bits / symbol ref を含む `psx_gvar_init_value_t` のような
+  backend 非依存の値 view を作り、backend 側は `.byte/.long/.quad`、WAT bytes、object relocation だけを
+  実行する形に近づけられる。あるいは aggregate member slot でも `psx_gvar_init_slot_value()`
+  相当を使えるようにして、raw `psx_gvar_init_slot_t` 参照を減らすのが次の小さな一手。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き892: **global initializer の FP bit-pattern 変換を parser/public helper に寄せた**。
 
   続き891で slot initializer の値分類は `psx_gvar_init_slot_value()` に寄ったが、

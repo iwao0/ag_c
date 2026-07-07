@@ -536,11 +536,11 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   if (out_len) *out_len = 0;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (!gv || !view.init_symbol || view.init_symbol_len <= 0) return NULL;
-  if (!psx_ctx_has_function_name(view.init_symbol, view.init_symbol_len)) return NULL;
-  if (out_len) *out_len = view.init_symbol_len;
-  return view.init_symbol;
+  psx_gvar_symbol_ref_t ref = psx_gvar_initializer_symbol_ref(gv);
+  if (ref.kind != PSX_GVAR_SYMBOL_REF_NAMED) return NULL;
+  if (!psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) return NULL;
+  if (out_len) *out_len = ref.symbol_len;
+  return ref.symbol;
 }
 
 static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv,
@@ -597,10 +597,11 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
       for (int k = 0; k < mi.array_len && init_idx < view.init_count; k++, init_idx++) {
         if (mi.offset + k * mi.type_size != offset) continue;
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
-        if (slot.symbol && slot.symbol_len > 0 &&
-            psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
-          if (out_len) *out_len = slot.symbol_len;
-          return slot.symbol;
+        psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+        if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+            psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+          if (out_len) *out_len = ref.symbol_len;
+          return ref.symbol;
         }
         return NULL;
       }
@@ -608,10 +609,11 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
     }
     if (mi.offset == offset && init_idx < view.init_count) {
       psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
-      if (slot.symbol && slot.symbol_len > 0 &&
-          psx_ctx_has_function_name(slot.symbol, slot.symbol_len)) {
-        if (out_len) *out_len = slot.symbol_len;
-        return slot.symbol;
+      psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+      if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+          psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+        if (out_len) *out_len = ref.symbol_len;
+        return ref.symbol;
       }
       return NULL;
     }
@@ -1757,13 +1759,18 @@ static void emit_fp_data_bytes(int addr, tk_float_kind_t fp_kind, double value) 
   wasm_unsupported_msg("floating global initializer in Wasm backend");
 }
 
-static int data_addr_for_init_symbol(char *sym, int sym_len) {
-  if (!sym) return -1;
-  if (sym_len < 0) return data_addr_for_string_label(sym);
-  if (psx_ctx_has_function_name(sym, sym_len)) {
-    return function_table_index_or_unsupported(sym, sym_len);
+static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
+    return data_addr_for_string_label(ref.symbol);
   }
-  return data_addr_for_global(sym, sym_len);
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
+      psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
+    return function_table_index_or_unsupported(ref.symbol, ref.symbol_len);
+  }
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
+    return data_addr_for_global(ref.symbol, ref.symbol_len);
+  }
+  return -1;
 }
 
 static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
@@ -1784,9 +1791,10 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
       value = (uint64_t)bits.bits;
     }
     if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
-      int sym_addr = data_addr_for_init_symbol(slot.symbol, slot.symbol_len);
+      psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_value_symbol_ref(&slot_value);
+      int sym_addr = data_addr_for_symbol_ref(ref);
       if (sym_addr < 0) wasm_unsupported_msg("symbol array initializer in Wasm backend");
-      value += (uint64_t)sym_addr;
+      value = (uint64_t)((long long)sym_addr + ref.addend);
     }
     int bytes = elem;
     if ((i + 1) * elem > size) bytes = size - i * elem;
@@ -1796,10 +1804,10 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
 }
 
 static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  int sym_addr = data_addr_for_init_symbol(view.init_symbol, view.init_symbol_len);
+  psx_gvar_symbol_ref_t ref = psx_gvar_initializer_symbol_ref(gv);
+  int sym_addr = data_addr_for_symbol_ref(ref);
   if (sym_addr < 0) wasm_unsupported_msg("global symbol initializer in Wasm backend");
-  emit_i32_data_bytes(addr, (long long)sym_addr + view.init_symbol_offset, size);
+  emit_i32_data_bytes(addr, (long long)sym_addr + ref.addend, size);
 }
 
 static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int size, int normalize_bool) {
@@ -1810,10 +1818,11 @@ static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int 
   }
   long long value = slot.value;
   if (normalize_bool) value = value != 0;
-  if (slot.symbol) {
-    int sym_addr = data_addr_for_init_symbol(slot.symbol, slot.symbol_len);
+  psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+  if (ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+    int sym_addr = data_addr_for_symbol_ref(ref);
     if (sym_addr < 0) wasm_unsupported_msg("symbol global struct initializer in Wasm backend");
-    value += sym_addr;
+    value = (long long)sym_addr + ref.addend;
   }
   emit_i32_data_bytes(addr, value, size);
 }
@@ -1822,7 +1831,9 @@ static void emit_global_init_member_data(global_var_t *gv, int idx, int addr,
                                          const tag_member_info_t *mi) {
   if (!mi) wasm_unsupported_msg("global struct member initializer in Wasm backend");
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  if (mi->fp_kind != TK_FLOAT_KIND_NONE && !slot.symbol) {
+  psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+  if (mi->fp_kind != TK_FLOAT_KIND_NONE &&
+      ref.kind == PSX_GVAR_SYMBOL_REF_NONE) {
     emit_fp_data_bytes(addr, mi->fp_kind, slot.fvalue);
     return;
   }

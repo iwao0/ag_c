@@ -134,25 +134,26 @@ static void cg_emit_int_directive(int size, long long value) {
   else                cg_emitf("  .quad %lld\n", value);
 }
 
+static void emit_global_symbol_ref_quad(psx_gvar_symbol_ref_t ref) {
+  if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
+    if (ref.addend != 0) cg_emitf("  .quad %s+%lld\n", ref.symbol, ref.addend);
+    else                 cg_emitf("  .quad %s\n", ref.symbol);
+  } else if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
+    if (ref.addend != 0) cg_emitf("  .quad _%.*s+%lld\n", ref.symbol_len, ref.symbol,
+                                  ref.addend);
+    else                 cg_emitf("  .quad _%.*s\n", ref.symbol_len, ref.symbol);
+  }
+}
+
 /* struct / union global with brace init: 各メンバの型サイズに合わせて
  * init_values[] を出力。メンバ間の padding は .space で埋める。
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
  * 配列メンバは alen 個連続出力する。 */
-/* グローバル struct/union メンバ 1 個分のスカラ初期値を出力する。
- *   sym_len < 0 : 文字列リテラルラベル (`.quad .LCn`、`_` なし)
- *   sym_len > 0 : グローバル変数/関数シンボル (`.quad _sym`)
- *   float/double: fv を IEEE-754 ビットパターンで出力
- *   それ以外    : 数値 (メンバ型サイズ ts で出力)。 */
-static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind_t fp_kind,
-                                           int ts, long long v, double fv) {
-  if (sym && sym_len < 0) {
-    /* 文字列リテラル要素: `.LC<n>` ラベル参照。`"abc" + 2` 由来の +offset があれば併記。 */
-    if (v != 0) cg_emitf("  .quad %s+%lld\n", sym, v);
-    else        cg_emitf("  .quad %s\n", sym);
-  } else if (sym && sym_len > 0) {
-    /* `&data[n]` 由来は v にバイトオフセットを持つ (`_data+off`)。 */
-    if (v != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_len, sym, v);
-    else        cg_emitf("  .quad _%.*s\n", sym_len, sym);
+static void emit_global_init_member_scalar(psx_gvar_symbol_ref_t sym_ref,
+                                           tk_float_kind_t fp_kind, int ts,
+                                           long long v, double fv) {
+  if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+    emit_global_symbol_ref_quad(sym_ref);
   } else if (fp_kind != TK_FLOAT_KIND_NONE) {
     psx_gvar_fp_bits_t bits;
     if (psx_gvar_fp_bit_pattern(fp_kind, fv, &bits)) {
@@ -185,14 +186,13 @@ static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
   if (mi->is_bool) value = value != 0;
   tk_float_kind_t fp_kind = mi->fp_kind;
   int size = mi->type_size;
-  int sym_len = slot.symbol_len;
-  if (!slot.symbol && slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
+  psx_gvar_symbol_ref_t sym_ref = psx_gvar_init_slot_symbol_ref(&slot);
+  if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NONE &&
+      slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
     fp_kind = slot.fp_sentinel_kind;
     size = fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
-    sym_len = 0;
   }
-  emit_global_init_member_scalar(slot.symbol, sym_len, fp_kind,
-                                 size, value, slot.fvalue);
+  emit_global_init_member_scalar(sym_ref, fp_kind, size, value, slot.fvalue);
 }
 
 static void emit_global_walk_bitfield_unit(void *user,
@@ -268,21 +268,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
         psx_gvar_init_slot_value_t slot_value =
             psx_gvar_init_slot_value(gv, i, &slot_layout);
         psx_gvar_init_slot_t slot = slot_value.slot;
-        if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL && slot.symbol_len < 0) {
-          /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
-           * `const char *arr[] = {"abc" + 2, ...}` のような +offset は init_values[i] に
-           * バイトオフセットが入っているので併記する。 */
-          if (slot.value != 0) cg_emitf("  .quad %s+%lld\n", slot.symbol, slot.value);
-          else                 cg_emitf("  .quad %s\n", slot.symbol);
-          continue;
-        }
-        if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL && slot.symbol_len > 0) {
-          /* `&data[n]` 由来のシンボル+オフセット。init_values[i] にバイトオフセット。 */
-          if (slot.value != 0) {
-            cg_emitf("  .quad _%.*s+%lld\n", slot.symbol_len, slot.symbol, slot.value);
-          } else {
-            cg_emitf("  .quad _%.*s\n", slot.symbol_len, slot.symbol);
-          }
+        psx_gvar_symbol_ref_t sym_ref =
+            psx_gvar_init_slot_value_symbol_ref(&slot_value);
+        if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+          emit_global_symbol_ref_quad(sym_ref);
           continue;
         }
         if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
@@ -299,21 +288,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       int remain = slot_layout.elem_count - slot_layout.init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * slot_layout.elem_size);
     } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
-      if (view.init_symbol_len < 0) {
-        /* sentinel: 文字列リテラル `.LCn` のラベル — `_` プレフィックスなしで出力。
-         * `const char *p = "abc" + 2;` のように +offset がある場合はラベル + offset を出す。 */
-        if (view.init_symbol_offset != 0) {
-          cg_emitf("  .quad %s + %lld\n", view.init_symbol, view.init_symbol_offset);
-        } else {
-          cg_emitf("  .quad %s\n", view.init_symbol);
-        }
-      } else if (view.init_symbol_offset != 0) {
-        /* `&a[1]` / `a+1`: シンボル + バイトオフセット。 */
-        cg_emitf("  .quad _%.*s + %lld\n", view.init_symbol_len, view.init_symbol,
-                 view.init_symbol_offset);
-      } else {
-        cg_emitf("  .quad _%.*s\n", view.init_symbol_len, view.init_symbol);
-      }
+      emit_global_symbol_ref_quad(psx_gvar_initializer_symbol_ref(gv));
     } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
       psx_gvar_fp_bits_t bits;
       if (psx_gvar_fp_bit_pattern(view.fp_kind, view.fval, &bits)) {
