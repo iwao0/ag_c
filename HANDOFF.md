@@ -1,18 +1,17 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き836: wasm global init unnamed union cover state helper 化）
+最終更新: 2026-07-07（続き837: arm64 global init unnamed union cover state helper 化）
 
 ## 現状
-- 続き836: **wasm32 global initializer emitter の unnamed union cover state を
+- 続き837: **arm64 global initializer emitter の unnamed union cover state も
   `psx_tag_flat_cover_state_*()` helper へ寄せた**。
 
-  続き835で parser 側の flat slot 規約は helper に寄ったが、wasm32 IR/object の
-  global initializer emit には `covered_union_off/size` と
-  `psx_tag_find_unnamed_union_covering_offset()` の同型 state 管理が残っていた。
-  今回は cover state の init / covers / note を node_utils + parser_public API に追加し、
-  wasm32 IR/object emitter は同 helper 経由で unnamed union cover を進める形にした。
-  bitfield の出力順に関わる既存挙動は維持し、今回は wasm32 の完全同型部分に限定している。
-  parser unit には cover state が unnamed union で promoted member を cover 扱いする契約を追加した。
+  続き836で wasm32 IR/object の cover state は helper 化されたが、arm64 の
+  `emit_global_struct_members_rec()` には同じ `covered_union_off/size` と
+  `psx_tag_find_unnamed_union_covering_offset()` のローカル管理が残っていた。
+  今回は arm64 側も `psx_tag_flat_cover_state_t` 経由にし、
+  array / nested struct / nested union / scalar の既存更新地点だけ helper 呼び出しへ置き換えた。
+  bitfield 分岐は従来どおり cover state を進めないままにして、出力順の挙動を維持している。
 
   確認は
   `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
@@ -16255,4 +16254,24 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_e2e` = **1204/1204 pass**
+  - `git diff --check` = **green**
+
+### このセッション（続き837）: arm64 global init unnamed union cover state も共有 helper に統一
+- 見つかった浅い箇所:
+  - 続き836で wasm32 backend の unnamed union cover state は helper 化したが、
+    `src/arch/arm64_apple.c` の `emit_global_struct_members_rec()` には
+    同じ `covered_union_off` / `covered_union_size` 管理が残っていた。
+  - arm64 側は padding emission と bitfield packing が絡むため残していたが、
+    bitfield 分岐を避ければ既存更新地点だけ安全に helper 化できる状態だった。
+- 根本対応:
+  - arm64 の struct member emit も `psx_tag_flat_cover_state_t` で cover 判定/更新する形にした。
+  - array / nested struct / nested union / scalar の既存更新地点を
+    `psx_tag_flat_cover_state_note()` に置き換えた。
+  - bitfield 分岐では従来どおり cover state を進めず、packing の出力順を維持した。
+- 確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_e2e` = **1204/1204 pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `git diff --check` = **green**

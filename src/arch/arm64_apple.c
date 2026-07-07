@@ -338,22 +338,14 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
                                            int struct_size, global_var_t *gv, int *val_idx) {
   int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
   int prev_end = 0;
-  int covered_union_off = 0;
-  int covered_union_size = 0;
+  psx_tag_flat_cover_state_t cover_state;
+  psx_tag_flat_cover_state_init(&cover_state);
   for (int i = 0; i < n_members && *val_idx < gv->init_count; i++) {
     tag_member_info_t mi = {0};
     if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &mi)) break;
     int off = mi.offset, ts = mi.type_size, alen = mi.array_len;
     if (psx_tag_member_is_unnamed_struct(&mi)) continue;
-    if (covered_union_size > 0 &&
-        off >= covered_union_off &&
-        off < covered_union_off + covered_union_size) {
-      continue;
-    }
-    int cover_off = 0;
-    int cover_size = 0;
-    int has_cover = psx_tag_find_unnamed_union_covering_offset(tk, tn, tl, 0, off,
-                                                               &cover_off, &cover_size);
+    if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
     if (off > prev_end) cg_emitf("  .space %d\n", off - prev_end);
     /* 配列メンバ (`int values[3]`): alen 個の要素を連続出力。 */
     if (alen > 0) {
@@ -384,20 +376,14 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         }
       }
       prev_end = off + ts * alen;
-      if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     /* 入れ子 struct メンバ: 再帰してフラット展開する。 */
     if (psx_tag_member_is_struct_aggregate(&mi)) {
       emit_global_struct_members_rec(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
       prev_end = off + ts;
-      if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       continue;
     }
     /* ネスト union メンバ: トップレベル global_var_t.union_init_ordinal はネスト union 用では
@@ -408,13 +394,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      *   を探す。これは「sentinel が立たない経路」(parser がまだ対応していない形) 用の保険。 */
     if (psx_tag_member_is_union_aggregate(&mi)) {
       emit_global_union_slot(mi.tag_kind, mi.tag_name, mi.tag_len, ts, gv, val_idx);
-      if (psx_tag_member_is_unnamed_union(&mi)) {
-        covered_union_off = off;
-        covered_union_size = ts;
-      } else if (has_cover) {
-        covered_union_off = cover_off;
-        covered_union_size = cover_size;
-      }
+      psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
       prev_end = off + ts;
       continue;
     }
@@ -449,10 +429,7 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
     emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, mv, fv_i);
     (*val_idx)++;
     prev_end = off + ts;
-    if (has_cover) {
-      covered_union_off = cover_off;
-      covered_union_size = cover_size;
-    }
+    psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
   }
   if (prev_end < struct_size) cg_emitf("  .space %d\n", struct_size - prev_end);
 }
