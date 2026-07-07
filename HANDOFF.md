@@ -1,8 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き838: node_utils flat slot cover state self-use）
+最終更新: 2026-07-07（続き839: expr cast first named tag member lookup）
 
 ## 現状
+- 続き839: **`expr.c` の cast 用 first named member lookup を
+  `psx_tag_first_named_member()` に集約した**。
+
+  `lower_union_value_cast()` と `lower_struct_value_cast()` に、タグメンバ列から
+  `len > 0` の最初のメンバを探す同一ループが重複していた。これは cast lowering 側が
+  tag member table の走査仕様を直接持っている浅い対応だったため、`node_utils` /
+  `parser_public` に `psx_tag_first_named_member()` を追加し、両方の lowering から
+  同じ helper を呼ぶ形にした。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。`FlatOut` / `FlatU` で
+  最初の名前付きメンバと ordinal が helper 経由で取れることを固定している。
+
+  確認は
+  `make -j4 build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き838: **node_utils 内の flat slot count / member 逆引きも
   `psx_tag_flat_cover_state_*()` helper を使う形にした**。
 

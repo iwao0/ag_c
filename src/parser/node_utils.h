@@ -57,6 +57,8 @@ int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len);
 int psx_tag_member_at_flat_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
                                 int flat_slot, struct tag_member_info_t *out,
                                 int *out_ordinal);
+int psx_tag_first_named_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                               struct tag_member_info_t *out, int *out_ordinal);
 int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag_len,
                                    char *member_name, int member_len, int *out_ordinal);
 

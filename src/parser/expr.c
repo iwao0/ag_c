@@ -1737,14 +1737,7 @@ static node_t *lower_union_value_cast(node_t *operand,
   (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
-  int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
-  bool found = false;
-  for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    found = psx_ctx_get_tag_member_info(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal, &info);
-    if (!found) break;
-    if (info.len > 0) break;
-  }
-  if (!found || info.len <= 0) {
+  if (!psx_tag_first_named_member(cast_tag_kind, cast_tag_name, cast_tag_len, &info, NULL)) {
     psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
@@ -1768,14 +1761,7 @@ static node_t *lower_struct_value_cast(node_t *operand,
   (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
-  int member_count = psx_ctx_get_tag_member_count(cast_tag_kind, cast_tag_name, cast_tag_len);
-  bool found = false;
-  for (int ordinal = 0; ordinal < member_count; ordinal++) {
-    found = psx_ctx_get_tag_member_info(cast_tag_kind, cast_tag_name, cast_tag_len, ordinal, &info);
-    if (!found) break;
-    if (info.len > 0) break;
-  }
-  if (!found || info.len <= 0) {
+  if (!psx_tag_first_named_member(cast_tag_kind, cast_tag_name, cast_tag_len, &info, NULL)) {
     psx_diag_ctx(curtok(), "cast", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
