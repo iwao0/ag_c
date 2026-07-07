@@ -512,23 +512,26 @@ void psx_gvar_init_slots_pad_zeros(global_var_t *gv, int *cap, int total_slots) 
   }
 }
 
+typedef struct {
+  global_var_t *gv;
+  int idx;
+} gvar_string_units_write_ctx_t;
+
+static void write_gvar_string_unit(uint32_t unit, void *user) {
+  gvar_string_units_write_ctx_t *ctx = user;
+  psx_gvar_init_slot_write(ctx->gv, ctx->idx++, (long long)unit, 0.0, NULL, 0);
+}
+
 int psx_gvar_init_slots_write_string_units(global_var_t *gv, int start_idx,
                                            const char *str, int len,
                                            int elem_size, int max_slots) {
   if (!gv || !str || start_idx < 0 || len < 0 || elem_size <= 0 || max_slots <= 0) {
     return start_idx;
   }
-  int idx = start_idx;
-  int limit = start_idx + max_slots;
-  int pos = 0;
-  while (pos < len && idx < limit) {
-    uint32_t units[2];
-    int nu = tk_next_string_code_units(str, len, &pos, elem_size, units);
-    for (int k = 0; k < nu && idx < limit; k++) {
-      psx_gvar_init_slot_write(gv, idx++, (long long)units[k], 0.0, NULL, 0);
-    }
-  }
-  return idx;
+  gvar_string_units_write_ctx_t ctx = {gv, start_idx};
+  tk_emit_string_code_units(str, len, elem_size, max_slots,
+                            write_gvar_string_unit, &ctx);
+  return ctx.idx;
 }
 
 void psx_gvar_init_slot_clear(global_var_t *gv, int idx) {

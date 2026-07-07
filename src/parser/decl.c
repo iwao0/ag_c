@@ -1343,35 +1343,40 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
 /* `char a[N] = "hello"` 形の raw 文字列リテラル初期化 (C11 6.7.9p14)。
  * 各文字を psx_node_new_num で elem ごとに assign し、配列長より短ければ
  * 残りを 0 で埋める (p21)。 */
+typedef struct {
+  lvar_t *var;
+  node_t *init_chain;
+  int idx;
+} array_string_init_ctx_t;
+
+static void append_array_string_init_unit(uint32_t unit, void *user) {
+  array_string_init_ctx_t *ctx = user;
+  ctx->init_chain = append_to_init_chain(
+      ctx->init_chain,
+      build_array_elem_assign(ctx->var, ctx->idx, psx_node_new_num((long long)unit)));
+  ctx->idx++;
+}
+
 static node_t *build_array_string_initializer(lvar_t *var, node_string_t *s, int array_len) {
-  node_t *init_chain = NULL;
   string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
   if (!lit) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
-  int idx = 0;
-  int src_pos = 0;
   /* 要素幅 (= var->elem_size) のコードユニットに変換して格納する。char/u8 配列は
    * 1 バイト = 1 ユニット、u/U/L 配列は UTF-8 をデコードしたコードユニット (u は補助面で
    * サロゲート対)。dispatch 側で elem_size == 文字列 char_width を保証済み。 */
   int cw = var->elem_size > 0 ? var->elem_size : 1;
-  while (src_pos < lit->len && idx < array_len) {
-    uint32_t units[2];
-    int nu = tk_next_string_code_units(lit->str, lit->len, &src_pos, cw, units);
-    for (int k = 0; k < nu && idx < array_len; k++) {
-      init_chain = append_to_init_chain(init_chain,
-          build_array_elem_assign(var, idx, psx_node_new_num((long long)units[k])));
-      idx++;
-    }
-  }
+  array_string_init_ctx_t ctx = {var, NULL, 0};
+  tk_emit_string_code_units(lit->str, lit->len, cw, array_len,
+                            append_array_string_init_unit, &ctx);
   /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める。 */
-  while (idx < array_len) {
-    init_chain = append_to_init_chain(init_chain,
-        build_array_elem_assign(var, idx, psx_node_new_num(0)));
-    idx++;
+  while (ctx.idx < array_len) {
+    ctx.init_chain = append_to_init_chain(ctx.init_chain,
+        build_array_elem_assign(var, ctx.idx, psx_node_new_num(0)));
+    ctx.idx++;
   }
-  return init_chain ? init_chain : psx_node_new_num(0);
+  return ctx.init_chain ? ctx.init_chain : psx_node_new_num(0);
 }
 
 static node_t *parse_array_initializer(lvar_t *var) {

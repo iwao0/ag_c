@@ -1,8 +1,30 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き863: centralize narrow string init decoding）
+最終更新: 2026-07-08（続き864: centralize string code unit emission）
 
 ## 現状
+- 続き864: **文字列リテラルの code unit 展開ループを
+  tokenizer の `tk_emit_string_code_units()` に集約した**。
+
+  続き863までで narrow decode と backend byte emission は tokenizer 側に寄ったが、
+  `decl.c` の local array string initializer と `node_utils.c` の global initializer slot
+  writer には、`tk_next_string_code_units()` を回して code unit 列へ展開する同種の
+  ループが残っていた。今回は `tk_emit_string_code_units()` を追加し、最大 unit 数で
+  打ち切りながら callback へ流す API にした。`tk_count_string_code_units()` も同じ API
+  経由にしたため、count / local assign / global slot write の code unit 展開規則は
+  tokenizer 側の同じ入口を使う。
+
+  確認は
+  `rg "tk_next_string_code_units|tk_emit_string_code_units|psx_gvar_init_slots_write_string_units|append_array_string_init_unit" src/parser src/tokenizer src/arch -n`
+  = **`tk_next_string_code_units()` の直ループは tokenizer 側のみ、parser/node_utils は
+  emitter API 経由**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き863: **narrow string initializer の 1 要素 decode を
   tokenizer の `tk_next_narrow_string_code_unit()` に集約した**。
 

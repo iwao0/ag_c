@@ -26,6 +26,10 @@ int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, 
 int tk_count_string_code_units(const char *s, int len, int char_width);
 /** @brief narrow 文字列初期化用に次の raw/escape 1 要素値を返す。 */
 uint32_t tk_next_narrow_string_code_unit(const char *s, int len, int *pos);
+typedef void (*tk_string_code_unit_emit_fn)(uint32_t unit, void *user);
+/** @brief 文字列を char_width のコードユニット列へ展開する。max_units<=0 なら全件。 */
+int tk_emit_string_code_units(const char *s, int len, int char_width, int max_units,
+                              tk_string_code_unit_emit_fn emit, void *user);
 typedef void (*tk_string_literal_byte_emit_fn)(unsigned char byte, void *user);
 /** @brief 文字列リテラルを実データ byte 列へ展開する。emit==NULL なら byte 数だけ数える。 */
 int tk_emit_string_literal_bytes(const char *s, int len, int char_width,

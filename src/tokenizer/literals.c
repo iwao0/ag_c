@@ -126,15 +126,7 @@ int tk_next_string_code_units(const char *s, int len, int *pos, int char_width, 
 }
 
 int tk_count_string_code_units(const char *s, int len, int char_width) {
-  if (!s || len <= 0) return 0;
-  int count = 0;
-  int pos = 0;
-  int cw = char_width > 0 ? char_width : TK_CHAR_WIDTH_CHAR;
-  while (pos < len) {
-    uint32_t units[2];
-    count += tk_next_string_code_units(s, len, &pos, cw, units);
-  }
-  return count;
+  return tk_emit_string_code_units(s, len, char_width, 0, NULL, NULL);
 }
 
 uint32_t tk_next_narrow_string_code_unit(const char *s, int len, int *pos) {
@@ -144,6 +136,23 @@ uint32_t tk_next_narrow_string_code_unit(const char *s, int len, int *pos) {
     return v;
   }
   return (unsigned char)s[(*pos)++];
+}
+
+int tk_emit_string_code_units(const char *s, int len, int char_width, int max_units,
+                              tk_string_code_unit_emit_fn emit, void *user) {
+  if (!s || len <= 0) return 0;
+  int count = 0;
+  int pos = 0;
+  int cw = char_width > 0 ? char_width : TK_CHAR_WIDTH_CHAR;
+  while (pos < len && (max_units <= 0 || count < max_units)) {
+    uint32_t units[2];
+    int nu = tk_next_string_code_units(s, len, &pos, cw, units);
+    for (int i = 0; i < nu && (max_units <= 0 || count < max_units); i++) {
+      if (emit) emit(units[i], user);
+      count++;
+    }
+  }
+  return count;
 }
 
 static void tk_emit_literal_byte(unsigned char byte,
