@@ -3989,6 +3989,20 @@ int psx_node_value_is_pointer_like(node_t *node) {
   return 0;
 }
 
+int psx_node_aggregate_value_size(node_t *node) {
+  if (!node) return 0;
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_pointer = 0;
+  psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
+  if (is_tag_pointer || (tag_kind != TK_STRUCT && tag_kind != TK_UNION)) return 0;
+  if (psx_node_value_is_pointer_like(node)) return 0;
+  int size = ps_node_type_size(node);
+  if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+  return size > 0 ? size : 0;
+}
+
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   /* C11 6.5.16: 代入の RHS は void 型であってはならない。
    * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */

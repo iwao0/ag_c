@@ -207,8 +207,7 @@ static void semantic_warn_decl_initializer_constant_overflow(node_t *lhs, node_t
   if (!lhs || !rhs || lhs->kind != ND_LVAR || rhs->kind != ND_NUM) return;
   if (lhs->fp_kind != TK_FLOAT_KIND_NONE || rhs->fp_kind != TK_FLOAT_KIND_NONE) return;
   if (ps_node_is_pointer(lhs)) return;
-  node_mem_t *mem = (node_mem_t *)lhs;
-  if (mem->tag_kind != TK_EOF) return;
+  if (psx_node_aggregate_value_size(lhs) > 0) return;
   int type_size = ps_node_type_size(lhs);
   if (type_size <= 0 || type_size >= 4) return;
 
@@ -1044,8 +1043,7 @@ static void semantic_check_unreachable_in_node(node_t *node, const token_t *fall
 
 static int semantic_node_is_aggregate_lvar(node_t *node) {
   if (!node || node->kind != ND_LVAR) return 0;
-  node_lvar_t *lv = (node_lvar_t *)node;
-  return lv->mem.tag_kind == TK_STRUCT || lv->mem.tag_kind == TK_UNION;
+  return psx_node_aggregate_value_size(node) > 0;
 }
 
 static node_t *semantic_assigned_aggregate_lvar_from_member_base(node_t *base);

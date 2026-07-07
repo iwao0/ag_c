@@ -90,6 +90,7 @@ int psx_node_bitfield_width(node_t *node);
 int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
                            int *bit_is_signed);
 int psx_node_value_is_pointer_like(node_t *node);
+int psx_node_aggregate_value_size(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 /* タグ shadow 応用形向け: ノードに紐付くタグの宣言時 scope_depth を返す (見つからなければ -1)。
  * build_member_access が「変数が宣言時に見ていた tag」のメンバを引くのに使う。 */

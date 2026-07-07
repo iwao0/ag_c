@@ -2584,6 +2584,7 @@ static void test_type_metadata_bridge() {
   typed_const_view_mem.pointee_is_unsigned = 1;
   typed_const_view_mem.pointee_is_bool = 1;
   typed_const_view_mem.pointee_is_void = 1;
+  ASSERT_EQ(4, psx_node_aggregate_value_size((node_t *)&typed_const_view_mem));
   ASSERT_EQ(0, psx_node_pointer_qual_levels((node_t *)&typed_const_view_mem));
   ASSERT_EQ(0u, psx_node_pointer_const_qual_mask((node_t *)&typed_const_view_mem));
   ASSERT_EQ(0u, psx_node_pointer_volatile_qual_mask((node_t *)&typed_const_view_mem));
@@ -2678,6 +2679,15 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(strncmp(typed_tag_name, "Typed", 5) == 0);
   ASSERT_EQ(1, typed_is_tag_pointer);
   ASSERT_EQ(2, psx_node_get_tag_scope_depth((node_t *)&typed_tag_mem));
+  ASSERT_EQ(0, psx_node_aggregate_value_size((node_t *)&typed_tag_mem));
+
+  node_mem_t legacy_aggregate_mem = {0};
+  legacy_aggregate_mem.base.kind = ND_LVAR;
+  legacy_aggregate_mem.tag_kind = TK_STRUCT;
+  legacy_aggregate_mem.tag_name = "LegacyAgg";
+  legacy_aggregate_mem.tag_len = 9;
+  legacy_aggregate_mem.type_size = 6;
+  ASSERT_EQ(6, psx_node_aggregate_value_size((node_t *)&legacy_aggregate_mem));
 
   parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
   fn = as_func(parsed_code[0]);

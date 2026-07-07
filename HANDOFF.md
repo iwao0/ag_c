@@ -1,8 +1,38 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き828: atomic pointer metadata reader 化）
+最終更新: 2026-07-07（続き829: aggregate value metadata reader 化）
 
 ## 現状
+- 続き829: **IR / semantic 側に残っていた aggregate value 判定の
+  `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
+
+  続き828までで atomic / pointer-like / bitfield などの IR 側 metadata 直読は減っていたが、
+  `ir_builder.c` の struct 代入・関数呼び出し引数処理にはまだ
+  `node_mem_t::tag_kind` / `is_tag_pointer` / `is_pointer` / `type_size` を直接読んで
+  「struct/union 値か」「値ロードではなく address/memcpy 経路に回すべきか」を判定する箇所が残っていた。
+  `semantic_pass.c` の定数 overflow 警告と aggregate lvar 検出にも同じ種類の直読があった。
+
+  今回は `psx_node_aggregate_value_size()` を追加した。これは
+  `psx_node_get_tag_type()` / `psx_node_value_is_pointer_like()` / `ps_node_type_size()` を組み合わせ、
+  typed node では `psx_type_t` 側を正本として struct/union 値サイズを返し、tag pointer / pointer-like
+  value では 0 を返す。IR 側の `aggregate_size_from_node()` はこの helper への薄い wrapper にし、
+  struct 代入、compound literal struct 引数、ND_GVAR / ND_DEREF / 8B aggregate 引数判定を
+  helper 経由へ寄せた。semantic warning 側も同 helper を使う。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。明示 struct type を持つ typed node では
+  stale mem 側の pointer metadata が残っていても aggregate size が type 側から返ること、
+  明示 struct pointer type では aggregate value size が 0 になること、
+  legacy tag node では従来どおり mem 側 type size が使われることを確認している。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き828: **IR builder の atomic intrinsic に残っていた `node_mem_t` 直読を
   `node_utils` / `parser_public` helper 境界へ移した**。
 

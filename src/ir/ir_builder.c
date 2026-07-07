@@ -387,16 +387,7 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
 }
 
 static int aggregate_size_from_node(node_t *node) {
-  if (!node) return 0;
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_pointer = 0;
-  psx_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
-  if (is_tag_pointer || (tag_kind != TK_STRUCT && tag_kind != TK_UNION)) return 0;
-  int size = ps_node_type_size(node);
-  if (size <= 0) size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
-  return size;
+  return psx_node_aggregate_value_size(node);
 }
 
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
@@ -941,7 +932,7 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
   /* struct/union 値代入: 8B でも scalar 式として評価すると先頭メンバだけを
    * store してしまうため、tag 値そのものなら memcpy/materialize 経路に送る。 */
   if ((aggregate_size_from_node(node->lhs) > 0 && aggregate_size_from_node(node->rhs) > 0) ||
-      cg_size_needs_indirect_struct(((node_mem_t *)node)->type_size))
+      cg_size_needs_indirect_struct(aggregate_size_from_node(node)))
     return build_assign_struct(ctx, node);
   switch (node->lhs->kind) {
     case ND_LVAR:  return build_assign_to_lvar(ctx, node);
@@ -1067,7 +1058,9 @@ static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
 /* struct (>8B) 値代入。dst/src アドレスを得て memcpy。
  * rhs が >8B struct 戻り値の関数呼出なら戻り値を dst へ直接書かせる。 */
 static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
-  int assign_size = ((node_mem_t *)node)->type_size;
+  int assign_size = aggregate_size_from_node(node);
+  if (assign_size <= 0) assign_size = aggregate_size_from_node(node->lhs);
+  if (assign_size <= 0) assign_size = aggregate_size_from_node(node->rhs);
   int dst_ptr_vreg = -1;
   if (node->lhs->kind == ND_LVAR) {
     dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
@@ -1115,8 +1108,8 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
           node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
           lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-          int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
-          if (!rlv->mem.is_pointer &&
+          int cl_sz = owner_cl ? owner_cl->size : psx_node_storage_type_size(arg->rhs);
+          if (aggregate_size_from_node(arg->rhs) > 0 &&
               (cl_sz > 8 || cg_size_needs_indirect_struct(cl_sz))) {
             (void)build_expr(ctx, arg->lhs);
             if (ctx->failed) return ir_val_none();
@@ -1862,8 +1855,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-        int cl_sz = owner_cl ? owner_cl->size : rlv->mem.type_size;
-        if (!rlv->mem.is_pointer && rlv->mem.tag_kind != TK_EOF &&
+        int cl_sz = owner_cl ? owner_cl->size : psx_node_storage_type_size(arg->rhs);
+        if (aggregate_size_from_node(arg->rhs) > 0 &&
             (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
           (void)build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
@@ -1921,7 +1914,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         node_lvar_t *lv = (node_lvar_t *)arg;
         /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
-        if (!lv->mem.is_pointer) {
+        if (!psx_node_value_is_pointer_like(arg)) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
           if (owner) arg_full_size = owner->size;
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
@@ -1933,13 +1926,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
             struct_needs_ptr = 1;
           }
         } else {
-          arg_full_size = lv->mem.type_size;
+          arg_full_size = psx_node_storage_type_size(arg);
         }
       } else if (arg && arg->kind == ND_GVAR) {
-        node_gvar_t *gv = (node_gvar_t *)arg;
-        if (gv->mem.tag_kind != TK_EOF && !gv->mem.is_tag_pointer &&
-            !gv->mem.is_pointer) {
-          arg_full_size = gv->mem.type_size;
+        arg_full_size = aggregate_size_from_node(arg);
+        if (arg_full_size > 0) {
           if (cg_size_needs_indirect_struct(arg_full_size)) {
             struct_needs_ptr = 1;
           }
@@ -1947,9 +1938,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       } else if (arg && arg->kind == ND_DEREF) {
         /* struct 値の subscript / メンバアクセス (`arr[i]`, `s.member`) は ND_DEREF。
          * tag を持ち >8B ならアドレス渡しの struct 引数として扱う。 */
-        node_mem_t *m = (node_mem_t *)arg;
-        if (m->tag_kind != TK_EOF && !m->is_tag_pointer && !m->is_pointer) {
-          arg_full_size = m->type_size;
+        arg_full_size = aggregate_size_from_node(arg);
+        if (arg_full_size > 0) {
           if (arg_full_size != 1 && arg_full_size != 2 &&
               arg_full_size != 4 && arg_full_size != 8) {
             struct_needs_ptr = 1;
@@ -1973,13 +1963,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         continue;
       }
       if (arg_full_size == 8 &&
-          ((arg->kind == ND_LVAR && ((node_lvar_t *)arg)->mem.tag_kind != TK_EOF &&
-            !((node_lvar_t *)arg)->mem.is_pointer) ||
-           (arg->kind == ND_GVAR && ((node_gvar_t *)arg)->mem.tag_kind != TK_EOF &&
-            !((node_gvar_t *)arg)->mem.is_pointer && !((node_gvar_t *)arg)->mem.is_tag_pointer) ||
-           (arg->kind == ND_DEREF && ((node_mem_t *)arg)->tag_kind != TK_EOF &&
-            !((node_mem_t *)arg)->is_pointer && !((node_mem_t *)arg)->is_tag_pointer) ||
-           arg->kind == ND_TERNARY)) {
+          aggregate_size_from_node(arg) > 0) {
         int src_ptr;
         if (arg->kind == ND_TERNARY) {
           src_ptr = ir_func_new_vreg(ctx->f);
