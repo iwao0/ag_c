@@ -130,11 +130,6 @@ static ir_type_t scalar_value_type(int type_size, int is_pointer) {
   return elem_value_type(type_size);
 }
 
-static int mem_is_pointer_like(const node_mem_t *mem) {
-  return mem && (mem->is_pointer || mem->is_tag_pointer ||
-                 mem->is_scalar_ptr_member || mem->pointer_qual_levels > 0);
-}
-
 static int lvar_is_pointer_like(const lvar_t *var) {
   if (!var) return 0;
   return var->is_array || var->is_vla || var->pointer_qual_levels > 0 ||
@@ -150,7 +145,7 @@ static ir_type_t lvar_value_type(node_lvar_t *lv) {
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   int elem = lv->mem.type_size > 0 ? lv->mem.type_size : 4;
-  return scalar_value_type(elem, mem_is_pointer_like(&lv->mem));
+  return scalar_value_type(elem, psx_node_value_is_pointer_like((node_t *)lv));
 }
 
 static int is_fp_type(ir_type_t t) {
@@ -846,7 +841,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
     int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-    load_ty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
+    load_ty = scalar_value_type(sz, psx_node_value_is_pointer_like(node));
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -895,10 +890,12 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
    *   v_shr    = v_load >> bit_offset
    *   v_masked = v_shr & ((1<<bw)-1)
    *   signed: さらに sign extend ((v ^ sign_bit) - sign_bit) */
-  int bw = lv->mem.bit_width;
-  if (bw > 0) {
+  int bw = 0;
+  int bo = 0;
+  int bs = 0;
+  if (psx_node_bitfield_info(node, &bw, &bo, &bs)) {
     return emit_bitfield_load(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR),
-                              bw, lv->mem.bit_offset, lv->mem.bit_is_signed);
+                              bw, bo, bs);
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_LOAD);
@@ -1275,10 +1272,11 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, cv);
     rhs = ir_val_vreg(v, vty);
   }
-  int bw = lv->mem.bit_width;
-  if (bw > 0) {
+  int bw = 0;
+  int bo = 0;
+  if (psx_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR), rhs,
-                                bw, lv->mem.bit_offset);
+                                bw, bo);
   }
   /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
   rhs = coerce_to_type_ex(ctx, rhs, vty, lv->mem.is_unsigned ? 1 : 0,
@@ -1304,7 +1302,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
     int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-    vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
+    vty = scalar_value_type(sz, psx_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &gv->mem);
@@ -1327,18 +1325,20 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
   node_mem_t *mm = (node_mem_t *)node->lhs;
-  int bw = mm->bit_width;
+  int bw = 0;
+  int bo = 0;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, mm);
   if (ctx->failed) return ir_val_none();
-  if (bw > 0) {
-    return emit_bitfield_store(ctx, ptr, rhs, bw, mm->bit_offset);
+  if (psx_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
+    return emit_bitfield_store(ctx, ptr, rhs, bw, bo);
   }
   /* DEREF の type_size と fp_kind から書き込み幅を決める。 */
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (!is_fp_type(vty)) {
-    vty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
+    vty = scalar_value_type(psx_node_storage_type_size(node->lhs),
+                            psx_node_value_is_pointer_like(node->lhs));
   }
   rhs = coerce_to_type_ex(ctx, rhs, vty, mm->is_unsigned ? 1 : 0,
                           psx_node_conversion_value_is_unsigned(node->rhs));
@@ -1433,9 +1433,11 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   if (ctx->failed) return ir_val_none();
   /* bitfield 読み出し: bit_width > 0 のとき struct メンバが bitfield。 */
   node_mem_t *mm = (node_mem_t *)node;
-  int bw = mm->bit_width;
-  if (bw > 0) {
-    return emit_bitfield_load(ctx, ptr, bw, mm->bit_offset, mm->bit_is_signed);
+  int bw = 0;
+  int bo = 0;
+  int bs = 0;
+  if (psx_node_bitfield_info(node, &bw, &bo, &bs)) {
+    return emit_bitfield_load(ctx, ptr, bw, bo, bs);
   }
   /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。
    *  - struct の配列メンバ `s.v` (is_pointer=1, deref_size>0, type_size>8)
@@ -1464,7 +1466,8 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
   ir_type_t load_ty = ir_type_from_node(node);
   if (!is_fp_type(load_ty)) {
-    load_ty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
+    load_ty = scalar_value_type(psx_node_storage_type_size(node),
+                                psx_node_value_is_pointer_like(node));
   }
   inst->dst = ir_val_vreg(v, load_ty);
   inst->src1 = ptr;
@@ -2533,18 +2536,18 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     ir_val_t p = build_expr(ctx, target->lhs);
     if (ctx->failed) return ir_val_none();
     ptr_vreg = p.id;
-    /* load/store 幅は DEREF node の mem.type_size と fp_kind から決める。 */
-    node_mem_t *mm = (node_mem_t *)target;
+    /* load/store 幅は DEREF node の type metadata と fp_kind から決める。 */
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
-      vty = scalar_value_type(mm->type_size, mem_is_pointer_like(mm));
+      vty = scalar_value_type(psx_node_storage_type_size(target),
+                              psx_node_value_is_pointer_like(target));
     }
   } else if (target->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
       int sz = gv->mem.type_size > 0 ? gv->mem.type_size : 4;
-      vty = scalar_value_type(sz, mem_is_pointer_like(&gv->mem));
+      vty = scalar_value_type(sz, psx_node_value_is_pointer_like(target));
     }
     ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
   } else {
@@ -2644,7 +2647,8 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_vreg(d, IR_TY_I64);
   }
   int target_size = cast->type_size > 0 ? cast->type_size : ps_node_type_size(node);
-  ir_type_t target_ty = scalar_value_type(target_size, mem_is_pointer_like(cast));
+  ir_type_t target_ty = scalar_value_type(target_size,
+                                          psx_node_value_is_pointer_like(node));
   if (!is_fp_type(v.type) && v.type != target_ty) {
     return coerce_to_type_ex(ctx, v, target_ty,
                              psx_node_conversion_value_is_unsigned(node),
@@ -3413,7 +3417,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
       ctx->f->param_abi_types[abi_idx++] =
-          (ps_node_is_pointer(arg) || mem_is_pointer_like(&lv->mem) ||
+          (ps_node_is_pointer(arg) || psx_node_value_is_pointer_like((node_t *)lv) ||
            lvar_is_pointer_like(owner)) ? IR_TY_PTR : vty;
     }
     int ptr_vreg = address_of_lvar(ctx, lv->offset);

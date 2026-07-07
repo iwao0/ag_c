@@ -1,8 +1,44 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き826: compound literal / bitfield metadata reader 化）
+最終更新: 2026-07-07（続き827: IR pointer-like / storage width reader 化）
 
 ## 現状
+- 続き827: **IR builder に残っていた pointer-like 判定と bitfield metadata の
+  `node_mem_t` 直読を `node_utils` / `parser_public` helper 境界へ移した**。
+
+  続き826までで parser/expr 側の metadata 直読は減っていたが、`ir_builder.c` には
+  local `mem_is_pointer_like()` があり、`is_pointer` / `is_tag_pointer` /
+  `is_scalar_ptr_member` / `pointer_qual_levels` を IR 側で直接解釈していた。
+  また bitfield load/store でも `bit_width` / `bit_offset` / `bit_is_signed` を直接読んでいた。
+
+  今回は `psx_node_value_is_pointer_like()`、`psx_node_bitfield_info()`、
+  `psx_node_storage_type_size()` を追加し、IR 側の scalar load/store type 選択と
+  bitfield load/store を helper 経由へ寄せた。`parser_public.h` にも公開宣言を追加し、
+  IR は parser 内部ヘッダを直接 include しない既存境界を維持している。
+
+  途中で `ps_node_type_size()` を IR load 幅へそのまま使うと `**pp` / `***ppp` が
+  8 バイト load になり、`int x` の上位 4 バイトまで読んで E2E が落ちることを確認した。
+  そのため「意味型のサイズ」と「実際の storage/load 幅」を分け、
+  IR は `psx_node_storage_type_size()` を見る形にした。加えて
+  `type_from_deref_operand()` の array materialization は、実配列/ptr-to-array metadata
+  (`ptr_array_pointee_bytes` / stride metadata 等) がある場合に限定し、普通の
+  pointer chain を array と誤認しないようにした。
+
+  回帰テストは `test_type_decl()` に `**pp` の内側 deref が pointer-like / storage 8、
+  外側 deref が non-pointer / storage 4 であることを追加した。
+  `test_type_metadata_bridge()` には bitfield info reader、typed non-pointer + stale pointer-like
+  metadata の semantic 判定、typed pointer の pointer-like 判定を追加した。
+  追加の実行確認として `test/fixtures/type_decl/ptr_ptr_deref.c` は **RC:0**。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き826: **`expr.c` に残っていた compound literal array size と bitfield width の
   `node_mem_t` 直読を `node_utils` reader 境界へ移した**。
 

@@ -1095,6 +1095,15 @@ int ps_node_type_size(node_t *node) {
   }
 }
 
+int psx_node_storage_type_size(node_t *node) {
+  if (!node) return 0;
+  node_mem_t *mem = node_mem_view(node);
+  if (mem && mem->type_size > 0) return mem->type_size;
+  int s = psx_type_sizeof(psx_node_get_type(node));
+  if (s > 0) return s;
+  return ps_node_type_size(node);
+}
+
 int ps_node_deref_size(node_t *node) {
   if (!node) return 0;
   if (node->type) {
@@ -3008,7 +3017,13 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
   if (!type_is_pointer_view_type(type->base) && type->pointer_qual_levels <= 1) {
     int elem_size = type->base_deref_size > 0 ? type->base_deref_size
                                               : psx_type_sizeof(type->base);
-    if (elem_size > 0 && type->deref_size > elem_size) {
+    int is_array_view = (type->kind == PSX_TYPE_ARRAY &&
+                         type->pointer_qual_levels == 0) ||
+                        type->ptr_array_pointee_bytes > 0 ||
+                        type->outer_stride > 0 ||
+                        type->mid_stride > 0 ||
+                        type->extra_strides_count > 0;
+    if (is_array_view && elem_size > 0 && type->deref_size > elem_size) {
       int array_len = type->deref_size / elem_size;
       psx_type_t *array =
           psx_type_new_array(type->base, array_len, type->deref_size, elem_size, 0);
@@ -3938,6 +3953,25 @@ int psx_node_compound_literal_array_size(node_t *node) {
 int psx_node_bitfield_width(node_t *node) {
   node_mem_t *mem = node_mem_view(node);
   return mem ? mem->bit_width : 0;
+}
+
+int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
+                           int *bit_is_signed) {
+  node_mem_t *mem = node_mem_view(node);
+  if (!mem || mem->bit_width <= 0) return 0;
+  if (bit_width) *bit_width = mem->bit_width;
+  if (bit_offset) *bit_offset = mem->bit_offset;
+  if (bit_is_signed) *bit_is_signed = mem->bit_is_signed;
+  return 1;
+}
+
+int psx_node_value_is_pointer_like(node_t *node) {
+  if (!node) return 0;
+  if (node->type) return ps_node_is_pointer(node);
+  if (ps_node_is_pointer(node)) return 1;
+  if (psx_node_pointer_qual_levels(node) > 0) return 1;
+  if (psx_node_scalar_ptr_member_lvalue(node)) return 1;
+  return 0;
 }
 
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {

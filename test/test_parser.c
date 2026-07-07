@@ -1850,6 +1850,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
+  ASSERT_EQ(ND_DEREF, body->body[3]->lhs->kind);
+  ASSERT_EQ(ND_DEREF, body->body[3]->lhs->lhs->kind);
+  ASSERT_TRUE(psx_node_value_is_pointer_like(body->body[3]->lhs->lhs));
+  ASSERT_TRUE(!psx_node_value_is_pointer_like(body->body[3]->lhs));
+  ASSERT_EQ(8, as_mem(body->body[3]->lhs->lhs)->type_size);
+  ASSERT_EQ(4, as_mem(body->body[3]->lhs)->type_size);
+  ASSERT_EQ(8, psx_node_storage_type_size(body->body[3]->lhs->lhs));
+  ASSERT_EQ(4, psx_node_storage_type_size(body->body[3]->lhs));
 
   parsed_code = parse_program_input("main() { int a[3]={1,2,3}; return a[2]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
@@ -2454,10 +2462,37 @@ static void test_type_metadata_bridge() {
   node_mem_t bitfield_deref = {0};
   bitfield_deref.base.kind = ND_DEREF;
   bitfield_deref.bit_width = 3;
+  bitfield_deref.bit_offset = 5;
+  bitfield_deref.bit_is_signed = 1;
   ASSERT_EQ(3, psx_node_bitfield_width((node_t *)&bitfield_deref));
+  int bf_width = 0;
+  int bf_offset = 0;
+  int bf_is_signed = 0;
+  ASSERT_TRUE(psx_node_bitfield_info((node_t *)&bitfield_deref,
+                                     &bf_width, &bf_offset, &bf_is_signed));
+  ASSERT_EQ(3, bf_width);
+  ASSERT_EQ(5, bf_offset);
+  ASSERT_EQ(1, bf_is_signed);
   node_t non_mem_num = {0};
   non_mem_num.kind = ND_NUM;
   ASSERT_EQ(0, psx_node_bitfield_width(&non_mem_num));
+  ASSERT_TRUE(!psx_node_bitfield_info(&non_mem_num, NULL, NULL, NULL));
+
+  node_mem_t typed_nonptr_stale_pointer_like = {0};
+  typed_nonptr_stale_pointer_like.base.kind = ND_DEREF;
+  typed_nonptr_stale_pointer_like.is_pointer = 1;
+  typed_nonptr_stale_pointer_like.pointer_qual_levels = 1;
+  typed_nonptr_stale_pointer_like.type_size = 13;
+  typed_nonptr_stale_pointer_like.base.type = psx_type_new_integer(TK_INT, 8, 0);
+  ASSERT_TRUE(!psx_node_value_is_pointer_like(
+      (node_t *)&typed_nonptr_stale_pointer_like));
+  ASSERT_EQ(13, psx_node_storage_type_size((node_t *)&typed_nonptr_stale_pointer_like));
+
+  node_mem_t typed_ptr_no_mem_pointer_like = {0};
+  typed_ptr_no_mem_pointer_like.base.kind = ND_DEREF;
+  typed_ptr_no_mem_pointer_like.base.type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 0), 4);
+  ASSERT_TRUE(psx_node_value_is_pointer_like((node_t *)&typed_ptr_no_mem_pointer_like));
 
   node_mem_t typed_deref_stale_tag_mem = {0};
   typed_deref_stale_tag_mem.base.kind = ND_DEREF;

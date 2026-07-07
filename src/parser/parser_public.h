@@ -33,6 +33,7 @@
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
 int ps_node_type_size(node_t *n);
+int psx_node_storage_type_size(node_t *n);
 int psx_node_integer_promotion_is_unsigned(node_t *n);
 int psx_node_conversion_value_is_unsigned(node_t *n);
 int psx_node_i64_widen_source_is_unsigned(node_t *n);
@@ -40,6 +41,9 @@ int psx_node_shift_operation_is_unsigned(node_t *n);
 int psx_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs);
 int psx_node_usual_arith_is_unsigned(node_t *n);
 int psx_node_pointer_qual_levels(node_t *n);
+int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
+                           int *bit_is_signed);
+int psx_node_value_is_pointer_like(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
                            char **tag_name, int *tag_len, int *is_tag_pointer);
 int psx_node_mem_has_funcptr_metadata(const node_mem_t *mem);

@@ -18,6 +18,7 @@ psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_refresh_decl_type(struct global_var_t *gv);
 
 int ps_node_type_size(node_t *node);
+int psx_node_storage_type_size(node_t *node);
 int ps_node_deref_size(node_t *node);
 int ps_node_is_pointer(node_t *node);
 int psx_node_pointer_qual_levels(node_t *node);
@@ -85,6 +86,9 @@ int psx_node_subscript_deref_uses_base_address(node_t *node);
 psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node);
 int psx_node_compound_literal_array_size(node_t *node);
 int psx_node_bitfield_width(node_t *node);
+int psx_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
+                           int *bit_is_signed);
+int psx_node_value_is_pointer_like(node_t *node);
 void psx_node_get_tag_type(node_t *node, token_kind_t *tag_kind, char **tag_name, int *tag_len, int *is_tag_pointer);
 /* タグ shadow 応用形向け: ノードに紐付くタグの宣言時 scope_depth を返す (見つからなければ -1)。
  * build_member_access が「変数が宣言時に見ていた tag」のメンバを引くのに使う。 */
