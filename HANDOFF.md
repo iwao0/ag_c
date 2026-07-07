@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き919: split node type public API）
+最終更新: 2026-07-08（続き920: remove obsolete public wrapper headers）
 
 ## 現状
+- 続き920: **未使用になった `node_public.h` / `semantic_public.h` wrapper を削除した**。
+
+  続き916で `semantic_public.h` は `function_public.h` と
+  `tag_member_public.h` の互換 wrapper になり、続き919で `node_public.h` も
+  `node_type_public.h` の互換 wrapper になった。今回 `rg` で確認すると、
+  どちらも repo 内の実コードからは include されておらず、履歴として `HANDOFF.md` に
+  名前が残っているだけだった。ここで wrapper を残すと、実際の正本が分かれているのに
+  旧名の広い public header がまだ入口に見えるため、API 境界の見通しを悪くする。
+
+  今回は `src/parser/node_public.h` と `src/parser/semantic_public.h` を削除し、
+  parser 外部の入口は `parser_public.h`、個別ドメインの正本は
+  `function_public.h` / `tag_member_public.h` / `node_type_public.h` などに寄せた。
+  これで「互換 wrapper だけが残って正本を曖昧にする」状態を解消した。
+
+  確認は
+  `rg "#include \"(node_public|semantic_public)\\.h\"|node_public\\.h|semantic_public\\.h" . --glob '!build/**' --glob '!.git/**'` = **実コードの参照なし（`HANDOFF.md` の履歴のみ）**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **up to date / pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き919: **node type view API を `node_type_public.h` へ切り出し、`node_public.h` を薄い互換 wrapper にした**。
 
   続き917/918で function pointer metadata と VLA metadata はそれぞれ
