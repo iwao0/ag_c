@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き886: share aggregate walker with arm64 padding）
+最終更新: 2026-07-08（続き887: centralize top-level aggregate entry walking）
 
 ## 現状
+- 続き887: **top-level aggregate entry の layout/cursor dispatch を public helper に寄せた**。
+
+  続き886で aggregate recursion 本体と arm64 padding emission は public walker に寄ったが、
+  `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` にはまだ top-level の
+  `layout.is_union` / `layout.is_array` dispatch、initializer cursor 作成、aggregate array の
+  element loop が残っていた。これは backend 固有の出力規則ではなく、global aggregate initializer を
+  どこからどう歩き始めるかという parser/public 側の規則だった。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_walk_aggregate_initializer()` を追加した。public entry walker は aggregate layout 取得、
+  cursor 作成、array element iteration、struct/union dispatch、top-level struct-array の
+  zero-padding cursor 消費をまとめて担当する。padding callback がある backend では cursor が切れた後の
+  aggregate array 要素も padding event として歩き、Wasm IR/object のように zero-fill 前提の backend では
+  従来どおり必要な slot だけを書き込む。
+
+  3 backend は既存 callback set を渡してこの public entry を呼ぶだけになり、arm64 の
+  `emit_global_struct_init()` / `emit_global_struct_array_init()`、Wasm IR/object の local recursive wrapper と
+  outer loop を削除した。これで global aggregate initializer の「入口」「再帰本体」「padding 規則」が
+  parser/public 側にまとまり、backend は scalar / bitfield / padding の実出力 callback にほぼ絞られた。
+
+  次の根本対応候補は、backend 側に残る `psx_gvar_is_tag_aggregate(gv)` / `view.is_tag_pointer` /
+  `view.init_count` の preflight 判定を public helper に寄せ、aggregate entry 呼び出し前の条件分岐も
+  さらに薄くすること。または callback setup/naming を整理して、3 backend の aggregate emit ctx と
+  callback 群の形をもう一段揃えること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き886: **public aggregate walker に padding event を追加し、arm64 data emission も callback 化した**。
 
   続き885で Wasm IR/object の global aggregate recursion 本体を public walker に寄せた後も、

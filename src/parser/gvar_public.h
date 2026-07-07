@@ -93,6 +93,9 @@ int psx_gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, int t
                                     long long base_offset, int union_size,
                                     const psx_gvar_aggregate_walk_ops_t *ops,
                                     void *user);
+int psx_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
+                                        const psx_gvar_aggregate_walk_ops_t *ops,
+                                        void *user);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor_at(const global_var_t *gv, int index);
 int psx_gvar_init_cursor_has(const psx_gvar_init_cursor_t *cur);

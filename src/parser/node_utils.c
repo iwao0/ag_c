@@ -727,6 +727,43 @@ int psx_gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, int t
   return 1;
 }
 
+int psx_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
+                                        const psx_gvar_aggregate_walk_ops_t *ops,
+                                        void *user) {
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
+  psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
+  if (!layout.is_array) {
+    return layout.is_union
+        ? psx_gvar_walk_union_initializer(layout.tag_kind, layout.tag_name,
+                                          layout.tag_len, gv, &cur, base_offset,
+                                          layout.type_size, ops, user)
+        : psx_gvar_walk_struct_initializer(layout.tag_kind, layout.tag_name,
+                                           layout.tag_len, gv, &cur, base_offset,
+                                           layout.type_size, ops, user);
+  }
+  for (int e = 0; e < layout.elem_count; e++) {
+    if (!psx_gvar_init_cursor_has(&cur) && !gvar_walk_needs_padding(ops)) break;
+    long long elem_off = base_offset + (long long)e * layout.elem_size;
+    if (layout.is_union) {
+      if (!psx_gvar_walk_union_initializer(layout.tag_kind, layout.tag_name,
+                                           layout.tag_len, gv, &cur, elem_off,
+                                           layout.elem_size, ops, user)) {
+        return 0;
+      }
+    } else {
+      int elem_start_idx = psx_gvar_init_cursor_index(&cur);
+      if (!psx_gvar_walk_struct_initializer(layout.tag_kind, layout.tag_name,
+                                            layout.tag_len, gv, &cur, elem_off,
+                                            layout.elem_size, ops, user)) {
+        return 0;
+      }
+      psx_gvar_init_cursor_consume_tag_zero_padding(layout.tag_kind, layout.tag_name,
+                                                    layout.tag_len, &cur, elem_start_idx);
+    }
+  }
+  return 1;
+}
+
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
   if (gv && gv->is_array && gv->deref_size > 0) return gv->deref_size;
   return fallback_size;

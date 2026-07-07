@@ -221,54 +221,9 @@ static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {
     .padding = emit_global_walk_padding,
 };
 
-static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
-                                           int struct_size, global_var_t *gv,
-                                           psx_gvar_init_cursor_t *cur) {
+static void emit_global_aggregate_init(global_var_t *gv) {
   arm64_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  psx_gvar_walk_struct_initializer(tk, tn, tl, gv, cur, 0, struct_size,
-                                   &arm64_global_aggregate_walk_ops, &ctx);
-}
-
-static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_size,
-                                   global_var_t *gv, psx_gvar_init_cursor_t *cur) {
-  arm64_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  psx_gvar_walk_union_initializer(tk, tn, tl, gv, cur, 0, union_size,
-                                  &arm64_global_aggregate_walk_ops, &ctx);
-}
-
-static void emit_global_struct_init(global_var_t *gv) {
-  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
-  if (layout.is_union) {
-    psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-    emit_global_union_slot(layout.tag_kind, layout.tag_name, layout.tag_len,
-                           layout.type_size, gv, &cur);
-    return;
-  }
-  psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-  emit_global_struct_members_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
-                                 layout.type_size, gv, &cur);
-}
-
-/* struct/union 配列のグローバル brace init: 各要素を member 毎に
- * その型サイズで出力する。`struct {int x; int y;} a[3] = {{1,2},...}`
- * は .long 1; .long 2; .long 3; ... と展開する。 */
-static void emit_global_struct_array_init(global_var_t *gv) {
-  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
-  psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
-  /* 各要素を emit_global_struct_members_rec でメンバ単位に展開する。以前はメンバごとに
-   * フラット slot を 1 個だけ消費する単純ループだったため、配列メンバ (`char tag[4]`)・
-   * char 配列の文字列展開・入れ子 struct メンバ・bitfield を扱えず、`struct{char tag[4];
-   * int n;} g[2]={{"aa",1},...}` の tag が 1 バイトしか出ず後続メンバがずれていた。
-   * 非配列 struct の出力 (emit_global_struct_init) と同じ機構を要素ごとに適用して統一する。 */
-  for (int e = 0; e < layout.elem_count; e++) {
-    if (layout.is_union) {
-      emit_global_union_slot(layout.tag_kind, layout.tag_name, layout.tag_len,
-                             layout.elem_size, gv, &cur);
-    } else {
-      emit_global_struct_members_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
-                                     layout.elem_size, gv, &cur);
-    }
-  }
+  psx_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
 }
 
 /* gen_global_vars の本体: 1 つの global_var_t を assembly directive に
@@ -305,10 +260,8 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
-    if (view.init_count > 0 && psx_gvar_is_tag_aggregate(gv) && !view.is_array) {
-      emit_global_struct_init(gv);
-    } else if (view.init_count > 0 && view.is_array && psx_gvar_is_tag_aggregate(gv)) {
-      emit_global_struct_array_init(gv);
+    if (view.init_count > 0 && psx_gvar_is_tag_aggregate(gv)) {
+      emit_global_aggregate_init(gv);
     } else if (view.init_count > 0) {
       int elem = psx_gvar_initializer_element_size(gv, 4);
       int total_elems = psx_gvar_initializer_element_count(gv, 4);
