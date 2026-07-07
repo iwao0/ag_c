@@ -4,6 +4,7 @@
 #include "core.h"
 #include "ast.h"
 #include "init_slot.h"
+#include "tag_flat_cover.h"
 
 struct lvar_t;
 struct global_var_t;
@@ -52,19 +53,6 @@ int psx_tag_member_is_union_aggregate(const struct tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_struct(const struct tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_union(const struct tag_member_info_t *mi);
 int psx_tag_member_is_unnamed_aggregate(const struct tag_member_info_t *mi);
-#ifndef PSX_TAG_FLAT_COVER_STATE_T_DEFINED
-#define PSX_TAG_FLAT_COVER_STATE_T_DEFINED
-typedef struct psx_tag_flat_cover_state_t {
-  int covered_union_off;
-  int covered_union_size;
-} psx_tag_flat_cover_state_t;
-#endif
-void psx_tag_flat_cover_state_init(psx_tag_flat_cover_state_t *state);
-int psx_tag_flat_cover_state_covers(const psx_tag_flat_cover_state_t *state,
-                                    const struct tag_member_info_t *mi);
-void psx_tag_flat_cover_state_note(psx_tag_flat_cover_state_t *state,
-                                   token_kind_t tag_kind, char *tag_name, int tag_len,
-                                   const struct tag_member_info_t *mi);
 int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_name, int tag_len,
                                                int base_off, int target_off,
                                                int *out_off, int *out_size);

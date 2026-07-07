@@ -1,8 +1,26 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き870: centralize preprocess stream hooks）
+最終更新: 2026-07-08（続き871: centralize tag flat cover state declaration）
 
 ## 現状
+- 続き871: **`psx_tag_flat_cover_state_t` の型定義と操作宣言を単一ヘッダに集約した**。
+
+  続き870で preprocessor stream hook state を局所 helper に寄せた後、parser/arch 境界では
+  `psx_tag_flat_cover_state_t` の typedef と `psx_tag_flat_cover_state_*()` 宣言が
+  `node_utils.h` と `parser_public.h` の両方に重複していた。今回は
+  `src/parser/tag_flat_cover.h` を追加し、state 型と init/covers/note 宣言をそこへ移した。
+  `node_utils.h` と `parser_public.h` は同じヘッダを include するだけになったため、
+  flat cover state のレイアウト正本が 1 箇所になる。
+
+  確認は
+  `rg "PSX_TAG_FLAT_COVER_STATE_T_DEFINED|typedef struct psx_tag_flat_cover_state_t|psx_tag_flat_cover_state_init" src/parser -n`
+  = **typedef は `tag_flat_cover.h` の 1 箇所、実装は `node_utils.c`**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**。
+
 - 続き870: **preprocess stream の tokenizer hook 操作を helper に集約した**。
 
   続き869までで `.c` 内局所 extern / 外部公開 state をさらに閉じた後、streaming
