@@ -1866,7 +1866,7 @@ static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int 
   char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
   int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
                     ? gv->init_value_symbol_lens[idx] : 0;
-  if (!sym && (sym_len == -2 || sym_len == -3)) {
+  if (!sym && psx_gvar_init_slot_fp_kind(gv, idx) != TK_FLOAT_KIND_NONE) {
     wasm_unsupported_msg("floating global struct initializer in Wasm backend");
   }
   long long value = (idx < gv->init_count && gv->init_values) ? gv->init_values[idx] : 0;
@@ -1941,12 +1941,10 @@ static void emit_global_nested_union_data(token_kind_t tk, char *tn, int tl,
 static void emit_global_union_scalar_data(global_var_t *gv, int *val_idx, int addr,
                                           const tag_member_info_t *mi) {
   int idx = (*val_idx)++;
-  char *sym = (idx < gv->init_count && gv->init_value_symbols) ? gv->init_value_symbols[idx] : NULL;
-  int sym_len = (idx < gv->init_count && gv->init_value_symbol_lens)
-                    ? gv->init_value_symbol_lens[idx] : 0;
-  if (!sym && (sym_len == -2 || sym_len == -3)) {
+  tk_float_kind_t sentinel_fp_kind = psx_gvar_init_slot_fp_kind(gv, idx);
+  if (sentinel_fp_kind != TK_FLOAT_KIND_NONE) {
     double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
-    emit_fp_data_bytes(addr, sym_len == -2 ? TK_FLOAT_KIND_FLOAT : TK_FLOAT_KIND_DOUBLE, fv);
+    emit_fp_data_bytes(addr, sentinel_fp_kind, fv);
     return;
   }
   emit_global_init_member_data(gv, idx, addr, mi);

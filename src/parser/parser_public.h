@@ -59,6 +59,7 @@ int psx_gvar_array_element_size(const global_var_t *gv);
 int psx_gvar_array_element_count(const global_var_t *gv);
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
 int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size);
+tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx);
 int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx);
 int psx_gvar_union_init_slot_ordinal(const global_var_t *gv, int idx);
 int psx_tag_member_is_tag_aggregate(const tag_member_info_t *mi);

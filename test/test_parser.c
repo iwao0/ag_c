@@ -2914,6 +2914,7 @@ static void test_type_metadata_bridge() {
   tmp_union_init.init_value_symbols = init_syms;
   tmp_union_init.init_value_symbol_lens = init_sym_lens;
   ASSERT_EQ(0, psx_gvar_union_init_slot_ordinal(&tmp_union_init, 0));
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, psx_gvar_init_slot_fp_kind(&tmp_union_init, 0));
   ASSERT_EQ(4, psx_gvar_union_init_slot_fp_size(&tmp_union_init, 0));
   tag_member_info_t selected_union_member = {0};
   ASSERT_TRUE(psx_ctx_get_tag_member_info(TK_UNION, "FlatFpU", 7, 0,
@@ -2937,6 +2938,7 @@ static void test_type_metadata_bridge() {
   tmp_union_ord.init_count = 1;
   tmp_union_ord.init_union_ordinals = init_ordinals;
   ASSERT_EQ(flatu_in_ordinal, psx_gvar_union_init_slot_ordinal(&tmp_union_ord, 0));
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, psx_gvar_init_slot_fp_kind(&tmp_union_ord, 0));
   tag_member_info_t overridden_union_member = {0};
   ASSERT_TRUE(psx_tag_union_init_member_for_slot(TK_UNION, "FlatU", 5,
                                                  &tmp_union_ord, 0,

@@ -2474,9 +2474,10 @@ static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
     data_write_symbol_addr_at(d, off, sym, sym_len, value, size);
     return;
   }
-  if (sym_len == -2 || sym_len == -3) {
+  tk_float_kind_t sentinel_fp_kind = psx_gvar_init_slot_fp_kind(gv, idx);
+  if (sentinel_fp_kind != TK_FLOAT_KIND_NONE) {
     double fv = (idx < gv->init_count && gv->init_fvalues) ? gv->init_fvalues[idx] : 0.0;
-    data_write_fp_at(d, off, sym_len == -2 ? TK_FLOAT_KIND_FLOAT : TK_FLOAT_KIND_DOUBLE, fv);
+    data_write_fp_at(d, off, sentinel_fp_kind, fv);
     return;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {

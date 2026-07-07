@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き844: use shared union init member lookup for arm64 top-level globals）
+最終更新: 2026-07-07（続き845: centralize global init fp sentinel decoding）
 
 ## 現状
+- 続き845: **global initializer slot の fp sentinel (`-2/-3`) 解釈を
+  `psx_gvar_init_slot_fp_kind()` に集約した**。
+
+  続き842/843で union active member selection は helper 化したが、arm64 / wasm32 IR /
+  wasm32 object の backend にはまだ `init_value_symbol_lens == -2/-3` を直接見て
+  float/double を決める経路が残っていた。これは sentinel の意味の正本が backend に
+  再分散する浅い対応だったため、`node_utils` / `parser_public` に
+  `psx_gvar_init_slot_fp_kind()` を追加し、既存の
+  `psx_gvar_union_init_slot_fp_size()` もこの helper 経由にした。
+  backend 側は float kind だけを受け取り、magic number を知らない。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。`FlatFpU` の sentinel slot が
+  `TK_FLOAT_KIND_FLOAT` として読めること、通常 ordinal override slot では
+  `TK_FLOAT_KIND_NONE` になることを固定している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き844: **arm64 のトップレベル union global emission も
   `psx_tag_union_init_member_for_slot()` 経由へ寄せた**。
 

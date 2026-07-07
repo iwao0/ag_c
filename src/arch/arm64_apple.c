@@ -235,17 +235,18 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     if (*val_idx == start_idx) (*val_idx)++;
     return;
   }
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
-  double fv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
-  long long iv = gv->init_values[*val_idx];
+  int init_idx = *val_idx;
+  char *sym = gv->init_value_symbols ? gv->init_value_symbols[init_idx] : NULL;
+  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
+  double fv = gv->init_fvalues ? gv->init_fvalues[init_idx] : 0.0;
+  long long iv = gv->init_values[init_idx];
   (*val_idx)++;
   tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
   int use_size = union_size;
   /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
-  if (sym == NULL && (sym_len == -2 || sym_len == -3)) {
-    use_fp = (sym_len == -3) ? TK_FLOAT_KIND_DOUBLE : TK_FLOAT_KIND_FLOAT;
-    use_size = (sym_len == -3) ? 8 : 4;
+  use_fp = psx_gvar_init_slot_fp_kind(gv, init_idx);
+  if (sym == NULL && use_fp != TK_FLOAT_KIND_NONE) {
+    use_size = use_fp >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
     sym_len = 0;  /* emit_global_init_member_scalar には通常の 0 を渡す */
   } else if (fv != 0.0 && iv == 0) {
     int inner_n = psx_ctx_get_tag_member_count(tk, tn, tl);

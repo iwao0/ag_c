@@ -456,13 +456,20 @@ int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size
   return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
-int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {
-  if (!gv || idx < 0 || idx >= gv->init_count) return 0;
+tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {
+  if (!gv || idx < 0 || idx >= gv->init_count) return TK_FLOAT_KIND_NONE;
   char *sym = gv->init_value_symbols ? gv->init_value_symbols[idx] : NULL;
   int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[idx] : 0;
-  if (sym) return 0;
-  if (sym_len == -2) return 4;
-  if (sym_len == -3) return 8;
+  if (sym) return TK_FLOAT_KIND_NONE;
+  if (sym_len == -2) return TK_FLOAT_KIND_FLOAT;
+  if (sym_len == -3) return TK_FLOAT_KIND_DOUBLE;
+  return TK_FLOAT_KIND_NONE;
+}
+
+int psx_gvar_union_init_slot_fp_size(const global_var_t *gv, int idx) {
+  tk_float_kind_t fp_kind = psx_gvar_init_slot_fp_kind(gv, idx);
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
+  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
   return 0;
 }
 
