@@ -417,33 +417,53 @@ int psx_gvar_is_tag_aggregate(const global_var_t *gv) {
   return psx_gvar_is_struct_aggregate(gv) || psx_gvar_is_union_aggregate(gv);
 }
 
-int psx_gvar_has_aggregate_initializer(const global_var_t *gv) {
-  if (!gv) return 0;
+psx_gvar_initializer_class_t
+psx_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate) {
   psx_gvar_view_t view = psx_gvar_view(gv);
-  return psx_gvar_is_tag_aggregate(gv) && view.init_count > 0;
+  int is_tag_aggregate = psx_gvar_is_tag_aggregate(gv);
+  psx_gvar_initializer_class_t cls = {
+      .kind = PSX_GVAR_INIT_KIND_INTEGER,
+      .is_tag_aggregate = is_tag_aggregate,
+      .has_aggregate_initializer = is_tag_aggregate && view.init_count > 0,
+      .has_payload = 0,
+  };
+  if (is_tag_aggregate) {
+    cls.has_payload = cls.has_aggregate_initializer;
+    if (include_empty_aggregate || cls.has_aggregate_initializer) {
+      cls.kind = PSX_GVAR_INIT_KIND_AGGREGATE;
+    }
+    return cls;
+  }
+  if (view.init_symbol) {
+    cls.kind = PSX_GVAR_INIT_KIND_SYMBOL;
+    cls.has_payload = 1;
+    return cls;
+  }
+  if (view.init_count > 0) {
+    cls.kind = PSX_GVAR_INIT_KIND_SLOTS;
+    cls.has_payload = 1;
+    return cls;
+  }
+  if (view.fp_kind != TK_FLOAT_KIND_NONE) {
+    cls.kind = PSX_GVAR_INIT_KIND_FLOAT;
+    cls.has_payload = 1;
+    return cls;
+  }
+  cls.has_payload = view.has_init;
+  return cls;
+}
+
+int psx_gvar_has_aggregate_initializer(const global_var_t *gv) {
+  return psx_gvar_initializer_class(gv, 0).has_aggregate_initializer;
 }
 
 int psx_gvar_has_initializer_payload(const global_var_t *gv) {
-  if (!gv) return 0;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (psx_gvar_is_tag_aggregate(gv)) {
-    return view.init_count > 0;
-  }
-  return view.init_symbol || view.init_count > 0 ||
-         view.fp_kind != TK_FLOAT_KIND_NONE || view.has_init;
+  return psx_gvar_initializer_class(gv, 0).has_payload;
 }
 
 psx_gvar_init_kind_t psx_gvar_initializer_kind(const global_var_t *gv,
                                                int include_empty_aggregate) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (psx_gvar_is_tag_aggregate(gv) &&
-      (include_empty_aggregate || view.init_count > 0)) {
-    return PSX_GVAR_INIT_KIND_AGGREGATE;
-  }
-  if (view.init_symbol) return PSX_GVAR_INIT_KIND_SYMBOL;
-  if (view.init_count > 0) return PSX_GVAR_INIT_KIND_SLOTS;
-  if (view.fp_kind != TK_FLOAT_KIND_NONE) return PSX_GVAR_INIT_KIND_FLOAT;
-  return PSX_GVAR_INIT_KIND_INTEGER;
+  return psx_gvar_initializer_class(gv, include_empty_aggregate).kind;
 }
 
 psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,

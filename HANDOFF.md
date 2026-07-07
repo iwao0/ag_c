@@ -1,8 +1,38 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き897: extend initializer value view to scalar globals）
+最終更新: 2026-07-08（続き898: centralize initializer classification）
 
 ## 現状
+- 続き898: **initializer kind / payload / aggregate 判定を classification helper に集約した**。
+
+  続き897で scalar / slot-array / aggregate member の value view は揃ったが、
+  `psx_gvar_initializer_kind()`、`psx_gvar_has_initializer_payload()`、
+  `psx_gvar_has_aggregate_initializer()` がそれぞれ view 内部を見て判定する形だと、
+  kind の優先順位と payload 判定の正本がまた分かれる余地があった。
+
+  今回は `psx_gvar_initializer_class_t` と
+  `psx_gvar_initializer_class(gv, include_empty_aggregate)` を追加した。classifier は
+  `kind`、`is_tag_aggregate`、`has_aggregate_initializer`、`has_payload` を同時に返し、
+  既存の `psx_gvar_initializer_kind()` / `psx_gvar_has_initializer_payload()` /
+  `psx_gvar_has_aggregate_initializer()` はこの classifier の wrapper にした。
+
+  arm64 / Wasm IR / Wasm object の global initializer kind 分岐も classifier 経由に変更した。
+  Wasm object の再 emit 判定と Wasm IR/object の未初期化 scalar 判定も `has_payload` を見るようになり、
+  backend が `view.has_init` と kind 判定を別々に組み合わせる箇所を減らした。
+
+  これで parser/public 側では「initializer がどの形か」と「payload を持つか」の分類正本が
+  `psx_gvar_initializer_class()` に集まった。次の根本対応候補は、
+  backend 側にまだ残る aggregate/slot/scalar の大きな分岐を、public 側の visitor/callback に
+  さらに寄せられるかを見ること。ただし relocation や object writer 固有処理は backend に残す。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き897: **scalar global initializer も `psx_gvar_init_value_t` view に寄せた**。
 
   続き896で slot-array / aggregate member の emit/write dispatch は backend 内 helper に寄ったが、

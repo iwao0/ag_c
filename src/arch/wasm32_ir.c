@@ -1884,14 +1884,13 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
 
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
-  psx_gvar_view_t view = psx_gvar_view(gv);
   if (psx_gvar_is_extern_decl(gv)) return;
   int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
   int size = psx_gvar_storage_size(gv, 4);
-  psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 1);
-  if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
+  psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 1);
+  if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_global_struct_data(gv, addr);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SYMBOL) {
     psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
     if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
       wasm_unsupported_msg("global size in Wasm backend");
@@ -1900,14 +1899,14 @@ static void emit_global_data(global_var_t *gv, void *user) {
         value, "global symbol initializer in Wasm backend",
         "floating global initializer in Wasm backend");
     emit_i32_data_bytes(addr, (long long)bits, value.size);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
     emit_global_init_values_data(gv, addr, size);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_FLOAT) {
     psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
     emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
   } else {
     psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    if ((!view.has_init || value.value == 0) &&
+    if ((!init_class.has_payload || value.value == 0) &&
         size != 1 && size != 2 && size != 4 && size != 8) return;
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");
     emit_i32_data_bytes(addr, value.value, value.size);

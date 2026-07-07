@@ -2556,22 +2556,22 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   int size = psx_gvar_storage_size(gv, 4);
   obj_data_t *d = intern_data(view.name, view.name_len, align_log2_for_size(size),
                               view.is_static, 0);
+  psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 1);
   if (d->is_emitted) {
-    if (!psx_gvar_has_initializer_payload(gv) || d->bytes.len != 0) return;
+    if (!init_class.has_payload || d->bytes.len != 0) return;
     d->bytes.len = 0;
     d->reloc_count = 0;
     d->is_emitted = 0;
   }
   data_note_alloc_size(d, (size_t)size);
 
-  psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 1);
-  if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
+  if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     emit_obj_global_aggregate_data(d, gv, size);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_SYMBOL) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SYMBOL) {
     psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
     ensure_global_func_sig_for_init_symbol(gv, value);
     data_write_init_value(d, value);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
     psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, size);
     int elem = slot_layout.elem_size;
     if (elem != 1 && elem != 2 && elem != 4 && elem != 8) {
@@ -2583,11 +2583,11 @@ static void emit_obj_global(global_var_t *gv, void *user) {
       ensure_global_func_sig_for_init_symbol(gv, slot_value);
       data_write_init_value(d, slot_value);
     }
-  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
+  } else if (init_class.kind == PSX_GVAR_INIT_KIND_FLOAT) {
     data_write_init_value(d, psx_gvar_init_scalar_value(gv, size));
   } else {
     psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, size);
-    if (!view.has_init) {
+    if (!init_class.has_payload) {
       /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */
     } else if (value.value == 0) {
       wb_zero(&d->bytes, size);

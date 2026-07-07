@@ -246,10 +246,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
-    psx_gvar_init_kind_t init_kind = psx_gvar_initializer_kind(gv, 0);
-    if (init_kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
+    psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 0);
+    if (init_class.kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
       emit_global_aggregate_init(gv);
-    } else if (init_kind == PSX_GVAR_INIT_KIND_SLOTS) {
+    } else if (init_class.kind == PSX_GVAR_INIT_KIND_SLOTS) {
       psx_gvar_init_slots_layout_t slot_layout = psx_gvar_init_slots_layout(gv, 4);
       for (int i = 0; i < slot_layout.init_count && i < slot_layout.elem_count; i++) {
         psx_gvar_init_slot_value_t slot_value =
