@@ -416,6 +416,22 @@ int psx_gvar_is_tag_aggregate(const global_var_t *gv) {
   return psx_gvar_is_struct_aggregate(gv) || psx_gvar_is_union_aggregate(gv);
 }
 
+int psx_gvar_has_aggregate_initializer(const global_var_t *gv) {
+  if (!gv) return 0;
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  return psx_gvar_is_tag_aggregate(gv) && view.init_count > 0;
+}
+
+int psx_gvar_has_initializer_payload(const global_var_t *gv) {
+  if (!gv) return 0;
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  if (psx_gvar_is_tag_aggregate(gv)) {
+    return view.init_count > 0;
+  }
+  return view.init_symbol || view.init_count > 0 ||
+         view.fp_kind != TK_FLOAT_KIND_NONE || view.has_init;
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);
@@ -730,6 +746,7 @@ int psx_gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, int t
 int psx_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
                                         const psx_gvar_aggregate_walk_ops_t *ops,
                                         void *user) {
+  if (!psx_gvar_is_tag_aggregate(gv)) return 0;
   psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
   if (!layout.is_array) {

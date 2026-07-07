@@ -1890,10 +1890,6 @@ static const psx_gvar_aggregate_walk_ops_t wasm_global_aggregate_walk_ops = {
 };
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (view.is_tag_pointer) {
-    wasm_unsupported_msg("global aggregate initializer in Wasm backend");
-  }
   wasm_global_aggregate_emit_ctx_t ctx = {.gv = gv};
   if (!psx_gvar_walk_aggregate_initializer(gv, addr,
                                            &wasm_global_aggregate_walk_ops, &ctx)) {

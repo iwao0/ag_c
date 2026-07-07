@@ -260,7 +260,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", view.name_len, view.name);
-    if (view.init_count > 0 && psx_gvar_is_tag_aggregate(gv)) {
+    if (psx_gvar_has_aggregate_initializer(gv)) {
       emit_global_aggregate_init(gv);
     } else if (view.init_count > 0) {
       int elem = psx_gvar_initializer_element_size(gv, 4);

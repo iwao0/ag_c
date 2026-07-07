@@ -2488,23 +2488,9 @@ static const psx_gvar_aggregate_walk_ops_t obj_global_aggregate_walk_ops = {
     .bitfield_member = emit_obj_global_walk_bitfield_member,
 };
 
-static int global_has_object_payload(global_var_t *gv) {
-  if (!gv) return 0;
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (psx_gvar_is_tag_aggregate(gv)) {
-    return view.init_count > 0;
-  }
-  return view.init_symbol || view.init_count > 0 ||
-         view.fp_kind != TK_FLOAT_KIND_NONE || view.has_init;
-}
-
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
   wb_zero(&d->bytes, size);
-  if (view.init_count <= 0) return;
-  if (!psx_gvar_is_tag_aggregate(gv)) {
-    obj_unsupported_msg("global aggregate initializer in Wasm object mode");
-  }
+  if (!psx_gvar_has_aggregate_initializer(gv)) return;
   obj_global_aggregate_emit_ctx_t ctx = {.d = d, .gv = gv};
   if (!psx_gvar_walk_aggregate_initializer(gv, 0,
                                            &obj_global_aggregate_walk_ops, &ctx)) {
@@ -2524,7 +2510,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   obj_data_t *d = intern_data(view.name, view.name_len, align_log2_for_size(size),
                               view.is_static, 0);
   if (d->is_emitted) {
-    if (!global_has_object_payload(gv) || d->bytes.len != 0) return;
+    if (!psx_gvar_has_initializer_payload(gv) || d->bytes.len != 0) return;
     d->bytes.len = 0;
     d->reloc_count = 0;
     d->is_emitted = 0;

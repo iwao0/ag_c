@@ -75,6 +75,8 @@ typedef struct {
 
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
+int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
+int psx_gvar_has_initializer_payload(const global_var_t *gv);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,

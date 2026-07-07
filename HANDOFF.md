@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き887: centralize top-level aggregate entry walking）
+最終更新: 2026-07-08（続き888: centralize global initializer preflight helpers）
 
 ## 現状
+- 続き888: **global initializer の preflight 判定を parser/public helper に寄せた**。
+
+  続き887で global aggregate initializer の入口・再帰・padding 規則は public walker にまとまったが、
+  backend 側にはまだ `view.init_count > 0 && psx_gvar_is_tag_aggregate(gv)`、
+  `view.is_tag_pointer`、Wasm object local の `global_has_object_payload()` など、
+  「この global initializer を aggregate として歩くか / data payload を持つか」の判定が残っていた。
+  これは出力形式ではなく `global_var_t` の初期化状態を読む parser/public 側の知識なので、次の境界整理対象にした。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_has_aggregate_initializer()` と `psx_gvar_has_initializer_payload()` を追加した。
+  前者は tag aggregate かつ initializer slot を持つかを返し、arm64 の aggregate data emission と
+  Wasm object aggregate payload 判定で使う。後者は Wasm object の re-emit 判定で使っていた
+  local `global_has_object_payload()` を public helper 化したもので、aggregate は initializer slot 有無、
+  scalar/pointer/fp は symbol/init_count/fp_kind/has_init を見る。
+
+  併せて `psx_gvar_walk_aggregate_initializer()` は非 tag aggregate を受けた場合に `0` を返すようにし、
+  Wasm IR 側の `view.is_tag_pointer` 個別チェックを walker entry の preflight へ寄せた。
+  これで backend 側に残る aggregate 初期化判定は「どの出力ルートへ行くか」に近いものだけになり、
+  initializer payload の読み方は parser/public helper 側に寄った。
+
+  次の根本対応候補は、Wasm IR/object/arm64 にまだ分散している scalar global initializer emission
+  （symbol/fp/init_count/zero-fill の分岐）を `psx_gvar_view` 直読みから小さな public classification helper に
+  寄せること。ただし出力形式差が大きいので、まず classification だけを共有し、directive/data-write 自体は
+  backend callback に残すのが安全。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き887: **top-level aggregate entry の layout/cursor dispatch を public helper に寄せた**。
 
   続き886で aggregate recursion 本体と arm64 padding emission は public walker に寄ったが、
