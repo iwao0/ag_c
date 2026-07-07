@@ -1378,12 +1378,6 @@ static void consume_global_member_array_dim(tag_member_info_t *mi) {
 
 static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
 static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap);
-static void clear_global_init_slot(global_var_t *gv, int idx);
-static void write_global_init_slot(global_var_t *gv, int idx, long long value,
-                                   double fvalue, char *symbol, int symbol_len);
-static void write_global_init_slot_fp_sentinel(global_var_t *gv, int idx,
-                                               tk_float_kind_t fp_kind, int fp_size);
-static void set_global_init_slot_ordinal(global_var_t *gv, int idx, int ordinal);
 
 /* ネスト brace 内の designator (`.member` / `[N]`) を解決するための「現在の brace level が
  * 初期化している集約型」コンテキスト。これがないと `.s={.a=7}` や `.items={[2]={.a=7}}` の
@@ -1736,10 +1730,11 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
     /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
      * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
     while (gv->init_count < cur_idx) {
-      clear_global_init_slot(gv, gv->init_count);
+      psx_gvar_init_slot_clear(gv, gv->init_count);
       gv->init_count++;
     }
-    if (active_union_ordinal >= 0) set_global_init_slot_ordinal(gv, cur_idx, active_union_ordinal);
+    if (active_union_ordinal >= 0)
+      psx_gvar_init_slot_set_ordinal(gv, cur_idx, active_union_ordinal);
     if (curtok()->kind == TK_LBRACE) {
       /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
        * 後方ジャンプ済みのときも正しい slot へ)。child は内側 designator を正しい型で
@@ -1767,13 +1762,13 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           if (lit->str[sp] == '\\') {
             if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
           } else { cp = (unsigned char)lit->str[sp]; sp++; }
-          write_global_init_slot(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
-          set_global_init_slot_ordinal(gv, cur_idx + j, -1);
+          psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
+          psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
           j++;
         }
       }
       while (j < row_w) {  /* 行の残りを 0 埋め */
-        clear_global_init_slot(gv, cur_idx + j);
+        psx_gvar_init_slot_clear(gv, cur_idx + j);
         j++;
       }
       cur_idx += row_w;
@@ -1810,13 +1805,13 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
           if (lit->str[sp] == '\\') {
             if (!tk_parse_escape_value(lit->str, lit->len, &sp, &cp)) { cp = (unsigned char)lit->str[sp]; sp++; }
           } else { cp = (unsigned char)lit->str[sp]; sp++; }
-          write_global_init_slot(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
-          set_global_init_slot_ordinal(gv, cur_idx + j, -1);
+          psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
+          psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
           j++;
         }
       }
       while (j < row_w) {
-        clear_global_init_slot(gv, cur_idx + j);
+        psx_gvar_init_slot_clear(gv, cur_idx + j);
         j++;
       }
       cur_idx += row_w;
@@ -1878,16 +1873,17 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       } else if (e) v = psx_decl_eval_const_int(e, &ok);
       /* 書き込み位置は cur_idx (designator でジャンプ済み)。init_count は
        * 充填済みの最大要素数として追跡する。 */
-      write_global_init_slot(gv, cur_idx, v, fv, sym, sym_len);
-      if (ctx.tag_kind == TK_UNION) set_global_init_slot_ordinal(gv, cur_idx, gv->union_init_ordinal);
+      psx_gvar_init_slot_write(gv, cur_idx, v, fv, sym, sym_len);
+      if (ctx.tag_kind == TK_UNION)
+        psx_gvar_init_slot_set_ordinal(gv, cur_idx, gv->union_init_ordinal);
       /* ネスト union の fp active メンバ sentinel: DOT 経路で pending_fp_kind がセットされて
        * いれば、init_value_symbols=NULL かつ init_value_symbol_lens に sentinel (-2: float,
        * -3: double/long double) を立てる。emit TK_UNION 分岐がこれを読んで fp として出力。
        * sentinel -1 は既存の「文字列リテラル要素」用なので使わない。
        * scalar 書き込み 1 回で消費して clear (`{.f=2.5f,.n=99}` などの後勝ち designator にも対応)。 */
       if (sym == NULL && ctx.pending_fp_kind != TK_FLOAT_KIND_NONE) {
-        write_global_init_slot_fp_sentinel(gv, cur_idx,
-                                           ctx.pending_fp_kind, ctx.pending_fp_size);
+        psx_gvar_init_slot_write_fp_sentinel(gv, cur_idx,
+                                             ctx.pending_fp_kind, ctx.pending_fp_size);
         ctx.pending_fp_kind = TK_FLOAT_KIND_NONE;
         ctx.pending_fp_size = 0;
       }
@@ -1989,46 +1985,16 @@ static void ensure_global_init_capacity(global_var_t *gv, int *cap, int min_cap)
       gv->init_fvalues = realloc(gv->init_fvalues, (size_t)new_cap * sizeof(double));
     }
     for (int i = old_cap; i < new_cap; i++) {
-      clear_global_init_slot(gv, i);
+      psx_gvar_init_slot_clear(gv, i);
     }
     *cap = new_cap;
   }
 }
 
-static void clear_global_init_slot(global_var_t *gv, int idx) {
-  if (!gv || idx < 0) return;
-  if (gv->init_values) gv->init_values[idx] = 0;
-  if (gv->init_value_symbols) gv->init_value_symbols[idx] = NULL;
-  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = 0;
-  if (gv->init_union_ordinals) gv->init_union_ordinals[idx] = -1;
-  if (gv->init_fvalues) gv->init_fvalues[idx] = 0.0;
-}
-
-static void write_global_init_slot(global_var_t *gv, int idx, long long value,
-                                   double fvalue, char *symbol, int symbol_len) {
-  if (!gv || idx < 0) return;
-  if (gv->init_values) gv->init_values[idx] = value;
-  if (gv->init_value_symbols) gv->init_value_symbols[idx] = symbol;
-  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = symbol_len;
-  if (gv->init_fvalues) gv->init_fvalues[idx] = fvalue;
-}
-
-static void write_global_init_slot_fp_sentinel(global_var_t *gv, int idx,
-                                               tk_float_kind_t fp_kind, int fp_size) {
-  if (!gv || idx < 0 || fp_kind == TK_FLOAT_KIND_NONE) return;
-  if (gv->init_value_symbols) gv->init_value_symbols[idx] = NULL;
-  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = (fp_size >= 8) ? -3 : -2;
-}
-
-static void set_global_init_slot_ordinal(global_var_t *gv, int idx, int ordinal) {
-  if (!gv || idx < 0 || !gv->init_union_ordinals) return;
-  gv->init_union_ordinals[idx] = ordinal;
-}
-
 static void pad_global_init_zeros(global_var_t *gv, int *cap, int total_slots) {
   ensure_global_init_capacity(gv, cap, total_slots);
   while (gv->init_count < total_slots) {
-    clear_global_init_slot(gv, gv->init_count);
+    psx_gvar_init_slot_clear(gv, gv->init_count);
     gv->init_count++;
   }
 }
@@ -2122,7 +2088,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
     gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
     gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) set_global_init_slot_ordinal(gv, i, -1);
+    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
     /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
      * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
      * 浮動小数メンバをビットパターンで出力する。 */
@@ -2137,8 +2103,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     if (gv->elem_is_bool && gv->init_values) {
       for (int i = 0; i < gv->init_count; i++) {
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
-        write_global_init_slot(gv, i, slot.value != 0 ? 1 : 0,
-                               slot.fvalue, slot.symbol, slot.symbol_len);
+        psx_gvar_init_slot_write(gv, i, slot.value != 0 ? 1 : 0,
+                                 slot.fvalue, slot.symbol, slot.symbol_len);
       }
     }
     return;
@@ -2212,7 +2178,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
         gv->has_init = 1;
         gv->init_values = calloc((size_t)total, sizeof(long long));
         gv->init_union_ordinals = malloc((size_t)total * sizeof(int));
-        for (int i = 0; i < total; i++) set_global_init_slot_ordinal(gv, i, -1);
+        for (int i = 0; i < total; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
         string_lit_t *lit = NULL;
         for (string_lit_t *l = string_literals; l; l = l->next) {
           if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
@@ -2226,10 +2192,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
             uint32_t units[2];
             int nu = tk_next_string_code_units(lit->str, lit->len, &sp, elem, units);
             for (int k = 0; k < nu && idx < s->byte_len; k++)
-              write_global_init_slot(gv, idx++, units[k], 0.0, NULL, 0);
+              psx_gvar_init_slot_write(gv, idx++, units[k], 0.0, NULL, 0);
           }
         }
-        write_global_init_slot(gv, s->byte_len, 0, 0.0, NULL, 0);
+        psx_gvar_init_slot_write(gv, s->byte_len, 0, 0.0, NULL, 0);
         gv->init_count = total;
         psx_decl_finalize_gvar_inferred_array_size(gv, NULL);
       }

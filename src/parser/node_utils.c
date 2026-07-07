@@ -471,6 +471,36 @@ psx_gvar_init_slot_t psx_gvar_init_slot_view(const global_var_t *gv, int idx) {
   return slot;
 }
 
+void psx_gvar_init_slot_clear(global_var_t *gv, int idx) {
+  if (!gv || idx < 0) return;
+  if (gv->init_values) gv->init_values[idx] = 0;
+  if (gv->init_value_symbols) gv->init_value_symbols[idx] = NULL;
+  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = 0;
+  if (gv->init_union_ordinals) gv->init_union_ordinals[idx] = -1;
+  if (gv->init_fvalues) gv->init_fvalues[idx] = 0.0;
+}
+
+void psx_gvar_init_slot_write(global_var_t *gv, int idx, long long value,
+                              double fvalue, char *symbol, int symbol_len) {
+  if (!gv || idx < 0) return;
+  if (gv->init_values) gv->init_values[idx] = value;
+  if (gv->init_value_symbols) gv->init_value_symbols[idx] = symbol;
+  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = symbol_len;
+  if (gv->init_fvalues) gv->init_fvalues[idx] = fvalue;
+}
+
+void psx_gvar_init_slot_write_fp_sentinel(global_var_t *gv, int idx,
+                                          tk_float_kind_t fp_kind, int fp_size) {
+  if (!gv || idx < 0 || fp_kind == TK_FLOAT_KIND_NONE) return;
+  if (gv->init_value_symbols) gv->init_value_symbols[idx] = NULL;
+  if (gv->init_value_symbol_lens) gv->init_value_symbol_lens[idx] = (fp_size >= 8) ? -3 : -2;
+}
+
+void psx_gvar_init_slot_set_ordinal(global_var_t *gv, int idx, int ordinal) {
+  if (!gv || idx < 0 || !gv->init_union_ordinals) return;
+  gv->init_union_ordinals[idx] = ordinal;
+}
+
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const global_var_t *gv, int idx) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
   if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) return slot.fp_sentinel_kind;

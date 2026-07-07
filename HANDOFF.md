@@ -1,8 +1,29 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き852: centralize parser global init slot writes）
+最終更新: 2026-07-07（続き853: share global init slot write helpers）
 
 ## 現状
+- 続き853: **global initializer slot の write helper を `node_utils` に共有化し、
+  `decl.c` の static local lowering も同じ入口へ寄せた**。
+
+  続き852では `parser.c` 内の書き込みだけ static helper 化していたが、
+  `decl.c` の static local array / aggregate lowering には同じ parallel array への
+  直接書き込みが残っていた。今回は `psx_gvar_init_slot_clear()` /
+  `psx_gvar_init_slot_write()` / `psx_gvar_init_slot_write_fp_sentinel()` /
+  `psx_gvar_init_slot_set_ordinal()` を `node_utils` に追加し、`parser.c` と
+  `decl.c` の両方から使う形にした。これで `src/parser` の initializer slot array 直接操作は
+  `node_utils.c` の低レベル helper 本体に集約された。
+
+  確認は
+  `rg "init_values\\[|init_value_symbols\\[|init_value_symbol_lens\\[|init_fvalues\\[|init_union_ordinals\\[" src/parser -n`
+  = **node_utils helper 本体 + コメントのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き852: **parser 側の global initializer slot 書き込みを helper 経由へ寄せた**。
 
   続き847-851で initializer slot の読み取りと grow は集約したが、`parser.c` の
