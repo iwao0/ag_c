@@ -16057,3 +16057,27 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き827）: decl.c の tag object initializer dispatch を集約
+- 見つかった浅い箇所:
+  - `decl.c` の struct/union 配列要素、配列メンバ、多次元 tag member、
+    nested designator leaf で、同じ nested `lvar_t` 構築と
+    `TK_UNION ? parse_union_initializer : parse_struct_initializer` が重複していた。
+  - union 専用 layout/slot 制御とは別に、「tag object subobject をどの initializer へ渡すか」の
+    ディスパッチ規約が複数箇所へ散っていた。
+- 根本対応:
+  - `nested_tag_lvar_at()` / `tag_array_element_lvar_at()` /
+    `parse_tag_object_initializer()` を追加し、nested tag object の offset/size/tag metadata と
+    struct/union initializer 選択を 1 箇所へ集約した。
+  - struct member の non-brace copy/elision 経路は struct 専用の意味なので残しつつ、
+    brace あり/union 側は `parse_tag_object_initializer()` 経由にした。
+  - `decl.c` 内の initializer dispatch 由来の `TK_UNION ? parse_union_initializer : ...`
+    重複はなくなり、残りの direct union 判定は layout/slot/diagnostic など意味が違う箇所だけになった。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

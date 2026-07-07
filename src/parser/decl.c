@@ -1061,6 +1061,30 @@ static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
   return (node_t *)assign_node;
 }
 
+static lvar_t nested_tag_lvar_at(lvar_t *owner, int offset, int elem_size,
+                                 token_kind_t tag_kind, char *tag_name, int tag_len) {
+  lvar_t nested = {0};
+  nested.offset = (owner ? owner->offset : 0) + offset;
+  nested.size = elem_size;
+  nested.elem_size = elem_size;
+  nested.tag_kind = tag_kind;
+  nested.tag_name = tag_name;
+  nested.tag_len = tag_len;
+  return nested;
+}
+
+static lvar_t tag_array_element_lvar_at(lvar_t *var, int idx) {
+  lvar_t nested = *var;
+  nested.offset = var->offset + idx * var->elem_size;
+  nested.size = var->elem_size;
+  return nested;
+}
+
+static node_t *parse_tag_object_initializer(lvar_t *var) {
+  if (psx_lvar_is_union_aggregate(var)) return parse_union_initializer(var);
+  return parse_struct_initializer(var);
+}
+
 /* `struct P a[3] = {{1, 2}, {3, 4}, {5, 6}};` 中の 1 要素 `{1, 2}` を、
  * 配列要素 idx のメンバ単位代入チェーンに展開する。呼出時に '{' は未消費。
  *
@@ -1074,15 +1098,13 @@ static node_t *parse_array_elem_struct_brace_init(lvar_t *var, int idx) {
    * 自前で member 順次パースしていた旧実装は struct designator (`.a=`) を
    * 受け付けず E3064 を出していた (p280)。parse_struct_initializer に委譲
    * することで designator も positional も両形に対応する。 */
-  lvar_t nested = *var;
-  nested.offset = var->offset + idx * var->elem_size;
-  nested.size = var->elem_size; /* parse_struct_initializer の zero-fill 範囲を要素 1 つに制限 */
+  lvar_t nested = tag_array_element_lvar_at(var, idx);
+  /* nested.size は parse_struct_initializer の zero-fill 範囲を要素 1 つに制限する。 */
   /* 要素が union のときは union 初期化子へ委譲する。struct 用に投げると `.n=5` の
    * メンバ designator を struct レイアウトで誤解決し、値が格納されず 0 になる
    * (`union U a[2]={[1]={.n=5}}` で a[1].n が 0 に化けていた)。配列全体は呼び出し側で
    * zero_prefill 済みなので、ここはメンバ代入を出すだけでよい。 */
-  if (psx_lvar_is_union_aggregate(var)) return parse_union_initializer(&nested);
-  return parse_struct_initializer(&nested);
+  return parse_tag_object_initializer(&nested);
 }
 
 // 初期化子の要素数を 1 増やし、上限を超えていれば診断を出す。
@@ -1691,16 +1713,10 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                     /* struct/union 要素 `{...}`: 1 slot ぶん解釈する。
                      * nested lvar の offset / size / tag を 1 要素に絞ることで designator
                      * (`.val=99`) も positional もそのまま解決できる。 */
-                    lvar_t nested = {0};
-                    nested.offset = owner->offset + member_offset + flat * elem_size;
-                    nested.size = elem_size;
-                    nested.elem_size = elem_size;
-                    nested.tag_kind = member_tag_kind;
-                    nested.tag_name = member_tag_name;
-                    nested.tag_len = member_tag_len;
-                    node_t *snode = (member_tag_kind == TK_UNION)
-                                       ? parse_union_initializer(&nested)
-                                       : parse_struct_initializer(&nested);
+                    lvar_t nested = nested_tag_lvar_at(owner, member_offset + flat * elem_size,
+                                                       elem_size, member_tag_kind,
+                                                       member_tag_name, member_tag_len);
+                    node_t *snode = parse_tag_object_initializer(&nested);
                     if (snode) {
                       if (!init_chain) init_chain = snode;
                       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, snode);
@@ -1783,16 +1799,10 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
             } else {
               /* struct/union 配列メンバの 1 要素 `{...}` を、要素 target_idx を target と
                * して処理する (`.pts={{1,2},{3,4}}` / `[k]={.x=1}`)。 */
-              lvar_t nested = {0};
-              nested.offset = owner->offset + member_offset + target_idx * elem_size;
-              nested.size = elem_size;
-              nested.elem_size = elem_size;
-              nested.tag_kind = member_tag_kind;
-              nested.tag_name = member_tag_name;
-              nested.tag_len = member_tag_len;
-              init_node = (member_tag_kind == TK_UNION)
-                            ? parse_union_initializer(&nested)
-                            : parse_struct_initializer(&nested);
+              lvar_t nested = nested_tag_lvar_at(owner, member_offset + target_idx * elem_size,
+                                                 elem_size, member_tag_kind,
+                                                 member_tag_name, member_tag_len);
+              init_node = parse_tag_object_initializer(&nested);
             }
           } else {
             node_mem_t *assign_node = build_member_array_elem_assign_at(
@@ -1878,31 +1888,17 @@ static node_t *parse_member_initializer(lvar_t *owner, int member_offset, int me
                    diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_UNSUPPORTED_FORM));
     }
   }
-  if (!member_is_tag_pointer && member_tag_kind == TK_STRUCT) {
-    lvar_t nested = {0};
-    nested.offset = owner->offset + member_offset;
-    nested.elem_size = member_type_size;
-    nested.size = member_type_size;
-    nested.tag_kind = TK_STRUCT;
-    nested.tag_name = member_tag_name;
-    nested.tag_len = member_tag_len;
+  if (member_is_object_aggregate) {
+    lvar_t nested = nested_tag_lvar_at(owner, member_offset, member_type_size,
+                                       member_tag_kind, member_tag_name, member_tag_len);
     /* C11 6.7.9: struct メンバの初期化は `{...}`、同型の式 (compound literal や
      * struct lvar) によるコピー、または brace 省略 (`{1,2,3}` の内側展開) で行える。
      * `{` 以外で始まるときは copy か brace 省略かを式の型で判断する。 */
-    if (curtok() && curtok()->kind != TK_LBRACE) {
+    if (psx_lvar_is_struct_aggregate(&nested) &&
+        curtok() && curtok()->kind != TK_LBRACE) {
       return parse_struct_member_no_brace(&nested);
     }
-    return parse_struct_initializer(&nested);
-  }
-  if (!member_is_tag_pointer && member_tag_kind == TK_UNION) {
-    lvar_t nested = {0};
-    nested.offset = owner->offset + member_offset;
-    nested.elem_size = member_type_size;
-    nested.size = member_type_size;
-    nested.tag_kind = TK_UNION;
-    nested.tag_name = member_tag_name;
-    nested.tag_len = member_tag_len;
-    return parse_union_initializer(&nested);
+    return parse_tag_object_initializer(&nested);
   }
   if (!is_supported_scalar_store_size(member_type_size)) {
     psx_diag_ctx(curtok(), "decl", "%s",
@@ -1976,16 +1972,9 @@ static node_t *parse_multidim_tag_member_brace(lvar_t *owner, int member_offset,
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
-      lvar_t nested = {0};
-      nested.offset = owner->offset + member_offset + (*flat) * elem_size;
-      nested.size = elem_size;
-      nested.elem_size = elem_size;
-      nested.tag_kind = tag_kind;
-      nested.tag_name = tag_name;
-      nested.tag_len = tag_len;
-      node_t *snode = (tag_kind == TK_UNION)
-                        ? parse_union_initializer(&nested)
-                        : parse_struct_initializer(&nested);
+      lvar_t nested = nested_tag_lvar_at(owner, member_offset + (*flat) * elem_size,
+                                         elem_size, tag_kind, tag_name, tag_len);
+      node_t *snode = parse_tag_object_initializer(&nested);
       init_chain = init_chain
           ? psx_node_new_binary(ND_COMMA, init_chain, snode)
           : snode;
@@ -2293,16 +2282,9 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
    * E3064 で拒否していた。 */
   if (curtok()->kind == TK_LBRACE &&
       psx_tag_member_is_tag_aggregate(&cur_info)) {
-    lvar_t nested = {0};
-    nested.offset = var->offset + cumulative_offset;
-    nested.size = cur_info.type_size;
-    nested.elem_size = cur_info.type_size;
-    nested.tag_kind = cur_info.tag_kind;
-    nested.tag_name = cur_info.tag_name;
-    nested.tag_len = cur_info.tag_len;
-    return psx_tag_member_is_union_aggregate(&cur_info)
-               ? parse_union_initializer(&nested)
-               : parse_struct_initializer(&nested);
+    lvar_t nested = nested_tag_lvar_at(var, cumulative_offset, cur_info.type_size,
+                                       cur_info.tag_kind, cur_info.tag_name, cur_info.tag_len);
+    return parse_tag_object_initializer(&nested);
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, cumulative_offset, &cur_info);
   node_t *rhs_val = parse_scalar_brace_initializer();
