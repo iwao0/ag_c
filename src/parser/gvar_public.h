@@ -70,6 +70,7 @@ typedef struct {
                         long long base_offset);
   void (*bitfield_member)(void *user, const tag_member_info_t *mi, int slot,
                           long long base_offset);
+  void (*padding)(void *user, long long offset, int size);
 } psx_gvar_aggregate_walk_ops_t;
 
 global_var_t *psx_find_global_var(char *name, int len);
@@ -84,12 +85,12 @@ void psx_gvar_aggregate_member_iter_set_next(psx_gvar_aggregate_member_iter_t *i
                                              int next_ordinal);
 int psx_gvar_walk_struct_initializer(token_kind_t tag_kind, char *tag_name, int tag_len,
                                      global_var_t *gv, psx_gvar_init_cursor_t *cur,
-                                     long long base_offset,
+                                     long long base_offset, int struct_size,
                                      const psx_gvar_aggregate_walk_ops_t *ops,
                                      void *user);
 int psx_gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, int tag_len,
                                     global_var_t *gv, psx_gvar_init_cursor_t *cur,
-                                    long long base_offset,
+                                    long long base_offset, int union_size,
                                     const psx_gvar_aggregate_walk_ops_t *ops,
                                     void *user);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);

@@ -1891,9 +1891,10 @@ static const psx_gvar_aggregate_walk_ops_t wasm_global_aggregate_walk_ops = {
 
 static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                 global_var_t *gv,
-                                                psx_gvar_init_cursor_t *cur, int base_addr) {
+                                                psx_gvar_init_cursor_t *cur,
+                                                int base_addr, int struct_size) {
   wasm_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  if (!psx_gvar_walk_struct_initializer(tk, tn, tl, gv, cur, base_addr,
+  if (!psx_gvar_walk_struct_initializer(tk, tn, tl, gv, cur, base_addr, struct_size,
                                         &wasm_global_aggregate_walk_ops, &ctx)) {
     wasm_unsupported_msg("global struct initializer in Wasm backend");
   }
@@ -1901,18 +1902,22 @@ static void emit_global_struct_members_data_rec(token_kind_t tk, char *tn, int t
 
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv,
-                                          psx_gvar_init_cursor_t *cur, int addr);
+                                          psx_gvar_init_cursor_t *cur,
+                                          int addr, int union_size);
 
-static void emit_global_union_element_data(global_var_t *gv, psx_gvar_init_cursor_t *cur, int addr) {
+static void emit_global_union_element_data(global_var_t *gv, psx_gvar_init_cursor_t *cur,
+                                           int addr, int union_size) {
   psx_gvar_view_t view = psx_gvar_view(gv);
-  emit_global_union_member_data(view.tag_kind, view.tag_name, view.tag_len, gv, cur, addr);
+  emit_global_union_member_data(view.tag_kind, view.tag_name, view.tag_len,
+                                gv, cur, addr, union_size);
 }
 
 static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                           global_var_t *gv,
-                                          psx_gvar_init_cursor_t *cur, int addr) {
+                                          psx_gvar_init_cursor_t *cur,
+                                          int addr, int union_size) {
   wasm_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  if (!psx_gvar_walk_union_initializer(tk, tn, tl, gv, cur, addr,
+  if (!psx_gvar_walk_union_initializer(tk, tn, tl, gv, cur, addr, union_size,
                                        &wasm_global_aggregate_walk_ops, &ctx)) {
     wasm_unsupported_msg("global union initializer in Wasm backend");
   }
@@ -1921,7 +1926,8 @@ static void emit_global_union_member_data(token_kind_t tk, char *tn, int tl,
 static void emit_global_union_data(global_var_t *gv, int addr) {
   psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
   if (!psx_gvar_init_cursor_has(&cur)) return;
-  emit_global_union_element_data(gv, &cur, addr);
+  psx_gvar_aggregate_layout_t layout = psx_gvar_aggregate_layout(gv);
+  emit_global_union_element_data(gv, &cur, addr, layout.type_size);
 }
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
@@ -1934,7 +1940,8 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
     if (layout.is_array) {
       psx_gvar_init_cursor_t cur = psx_gvar_init_cursor(gv);
       for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
-        emit_global_union_element_data(gv, &cur, addr + e * layout.elem_size);
+        emit_global_union_element_data(gv, &cur, addr + e * layout.elem_size,
+                                       layout.elem_size);
       }
     } else {
       emit_global_union_data(gv, addr);
@@ -1946,13 +1953,14 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
     for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
       int elem_start_idx = psx_gvar_init_cursor_index(&cur);
       emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
-                                          gv, &cur, addr + e * layout.elem_size);
+                                          gv, &cur, addr + e * layout.elem_size,
+                                          layout.elem_size);
       psx_gvar_init_cursor_consume_tag_zero_padding(layout.tag_kind, layout.tag_name,
                                                     layout.tag_len, &cur, elem_start_idx);
     }
   } else {
     emit_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
-                                        gv, &cur, addr);
+                                        gv, &cur, addr, layout.type_size);
   }
 }
 

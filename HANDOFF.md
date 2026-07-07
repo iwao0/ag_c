@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き885: move Wasm aggregate recursion into public walker）
+最終更新: 2026-07-08（続き886: share aggregate walker with arm64 padding）
 
 ## 現状
+- 続き886: **public aggregate walker に padding event を追加し、arm64 data emission も callback 化した**。
+
+  続き885で Wasm IR/object の global aggregate recursion 本体を public walker に寄せた後も、
+  `arm64_apple.c` には `.space` を挟みながら struct/union を再帰出力する独自 walker が残っていた。
+  Wasm は data segment を zero-fill して必要な位置だけ書けばよい一方、arm64 assembly は
+  struct hole / struct tail / union active member offset / union tail を明示的に `.space` で出す必要があるため、
+  walker 共有には padding event が足りていなかった。
+
+  今回は `psx_gvar_aggregate_walk_ops_t` に `padding` callback を追加し、
+  `psx_gvar_walk_struct_initializer()` / `psx_gvar_walk_union_initializer()` に container size を渡す形にした。
+  walker 側は padding callback がある場合だけ `.space` 相当の event を出し、Wasm 側は callback を
+  `NULL` のままにして従来どおり zero-fill 前提の書き込みを維持している。arm64 側は
+  scalar / bitfield unit / bitfield member / padding callback を持つ薄い wrapper へ置き換えた。
+
+  途中で `global_struct_member_multidim_nested_designator` が失敗し、
+  未初期化の nested aggregate array 要素が `.space` されないことを検出した。
+  これは public walker の aggregate-array loop が cursor 切れで止まっていたためで、
+  padding callback がある場合は残り要素を padding として出すように修正した。
+  これにより arm64 でも未初期化 nested aggregate array の穴埋めが walker 側の規則になった。
+
+  `rg "psx_gvar_walk_struct_initializer|psx_gvar_walk_union_initializer|emit_global_union_slot|emit_global_struct_members_rec|psx_ctx_get_tag_member_count\\(|psx_ctx_get_tag_member_info\\(" src/arch/arm64_apple.c src/arch/wasm32_ir.c src/arch/wasm32_obj.c src/parser/node_utils.c src/parser/gvar_public.h -n`
+  では arm64 の `emit_global_struct_members_rec` / `emit_global_union_slot` は public walker wrapper として残り、
+  recursion の実体は parser/public 側にある。次の根本対応候補は、top-level aggregate entry の
+  array/union dispatch も public helper に寄せ、backend 側から layout-driven outer loop をさらに減らすこと。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き885: **Wasm IR/object の global aggregate recursion 本体を parser/public walker + callback に寄せた**。
 
   続き884で member enumeration 規則を iterator に寄せた後も、`wasm32_ir.c` と

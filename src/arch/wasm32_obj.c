@@ -2449,7 +2449,8 @@ static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
 
 static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                               obj_data_t *d, global_var_t *gv,
-                                              psx_gvar_init_cursor_t *cur, size_t base_off);
+                                              psx_gvar_init_cursor_t *cur,
+                                              size_t base_off, int union_size);
 
 static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv, int idx,
                                                  size_t base_off,
@@ -2495,9 +2496,10 @@ static const psx_gvar_aggregate_walk_ops_t obj_global_aggregate_walk_ops = {
 static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, int tl,
                                                     obj_data_t *d, global_var_t *gv,
                                                     psx_gvar_init_cursor_t *cur,
-                                                    size_t base_off) {
+                                                    size_t base_off, int struct_size) {
   obj_global_aggregate_emit_ctx_t ctx = {.d = d, .gv = gv};
   if (!psx_gvar_walk_struct_initializer(tk, tn, tl, gv, cur, (long long)base_off,
+                                        struct_size,
                                         &obj_global_aggregate_walk_ops, &ctx)) {
     obj_unsupported_msg("global struct initializer in Wasm object mode");
   }
@@ -2505,9 +2507,11 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
 
 static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
                                               obj_data_t *d, global_var_t *gv,
-                                              psx_gvar_init_cursor_t *cur, size_t base_off) {
+                                              psx_gvar_init_cursor_t *cur,
+                                              size_t base_off, int union_size) {
   obj_global_aggregate_emit_ctx_t ctx = {.d = d, .gv = gv};
   if (!psx_gvar_walk_union_initializer(tk, tn, tl, gv, cur, (long long)base_off,
+                                       union_size,
                                        &obj_global_aggregate_walk_ops, &ctx)) {
     obj_unsupported_msg("global union initializer in Wasm object mode");
   }
@@ -2536,11 +2540,12 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
     if (layout.is_array) {
       for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
         emit_obj_global_union_member_data(layout.tag_kind, layout.tag_name, layout.tag_len, d, gv,
-                                          &cur, (size_t)e * (size_t)layout.elem_size);
+                                          &cur, (size_t)e * (size_t)layout.elem_size,
+                                          layout.elem_size);
       }
     } else {
       emit_obj_global_union_member_data(layout.tag_kind, layout.tag_name, layout.tag_len, d, gv,
-                                        &cur, 0);
+                                        &cur, 0, layout.type_size);
     }
     return;
   }
@@ -2548,11 +2553,12 @@ static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int 
     for (int e = 0; e < layout.elem_count && psx_gvar_init_cursor_has(&cur); e++) {
       emit_obj_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
                                               d, gv, &cur,
-                                              (size_t)e * (size_t)layout.elem_size);
+                                              (size_t)e * (size_t)layout.elem_size,
+                                              layout.elem_size);
     }
   } else {
     emit_obj_global_struct_members_data_rec(layout.tag_kind, layout.tag_name, layout.tag_len,
-                                            d, gv, &cur, 0);
+                                            d, gv, &cur, 0, layout.type_size);
   }
 }
 
