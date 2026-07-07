@@ -1642,6 +1642,18 @@ int psx_node_has_funcptr_signature(node_t *node) {
   return psx_decl_funcptr_sig_has_payload(funcptr_sig_from_node(node, 1));
 }
 
+psx_decl_funcptr_sig_t psx_node_funcptr_sig(node_t *node) {
+  return funcptr_sig_from_node(node, 1);
+}
+
+psx_decl_funcptr_sig_t psx_lvar_funcptr_sig(const lvar_t *src) {
+  return funcptr_sig_from_lvar(src);
+}
+
+psx_decl_funcptr_sig_t psx_gvar_funcptr_sig(const global_var_t *src) {
+  return funcptr_sig_from_gvar(src);
+}
+
 unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
   if (!node) return 0;
   return funcptr_sig_from_node(node, 1).param_fp_mask;

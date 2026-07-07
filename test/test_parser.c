@@ -2502,6 +2502,19 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, vla_desc_off);
   ASSERT_EQ(0, vla_row_off);
 
+  node_mem_t typed_funcptr_sig = {0};
+  typed_funcptr_sig.base.kind = ND_LVAR;
+  typed_funcptr_sig.funcptr_sig.ret_int_width = 4;
+  typed_funcptr_sig.base.type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 0), 8);
+  typed_funcptr_sig.base.type->funcptr_sig.ret_int_width = 8;
+  ASSERT_EQ(8, psx_node_funcptr_sig((node_t *)&typed_funcptr_sig).ret_int_width);
+
+  node_mem_t legacy_funcptr_sig = {0};
+  legacy_funcptr_sig.base.kind = ND_LVAR;
+  legacy_funcptr_sig.funcptr_sig.ret_int_width = 4;
+  ASSERT_EQ(4, psx_node_funcptr_sig((node_t *)&legacy_funcptr_sig).ret_int_width);
+
   node_mem_t compound_lit_addr = {0};
   compound_lit_addr.base.kind = ND_ADDR;
   compound_lit_addr.compound_literal_array_size = 12;

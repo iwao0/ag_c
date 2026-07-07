@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き833: VLA alloc descriptor metadata reader 化）
+最終更新: 2026-07-07（続き834: function pointer signature reader 化）
 
 ## 現状
+- 続き834: **IR builder に残っていた function pointer signature 用の
+  `node_mem_t` 直読/持ち回りを、`psx_decl_funcptr_sig_t` 値 reader 境界へ移した**。
+
+  続き833までで VLA alloc descriptor の field 詰めは helper 化されたが、
+  `ir_builder.c` の function pointer signature 経路はまだ
+  `build_expr_with_funcptr_sig()` / `build_node_funcref_with_sig()` /
+  `build_node_ternary_with_sig()` が `const node_mem_t *expected_sig` を受け取り、
+  `build_assign_to_deref()` や間接呼出の戻り値/variadic 判定では
+  `ND_DEREF` / `ND_ADDR` を `node_mem_t *` に cast して `funcptr_sig` を読んでいた。
+
+  今回は `psx_node_funcptr_sig()`、`psx_lvar_funcptr_sig()`、`psx_gvar_funcptr_sig()` を追加し、
+  IR 側の expected signature は `psx_decl_funcptr_sig_t` 値として扱う形にした。
+  `funcptr_sig_for_callee()` を IR 内に置き、callee が lvar/gvar の場合は宣言シンボル側を優先し、
+  取れなければ node reader に fallback する。`ND_DEREF` / `ND_ADDR` の直接 cast、
+  `node_mem_t` 一時変数への signature 詰め直し、variadic 判定での lvar/gvar field 直読を削った。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。typed node では
+  `node->type->funcptr_sig` が stale な mem payload より優先されること、
+  legacy node では従来どおり mem payload から signature を読めることを固定している。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き833: **`ND_VLA_ALLOC` の descriptor frame offset / row stride offset の
   `node_mem_t` field 詰めを `node_utils` helper 境界へ移した**。
 

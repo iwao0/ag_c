@@ -415,11 +415,11 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig);
+                                            const psx_decl_funcptr_sig_t *expected_sig);
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig);
+                                            const psx_decl_funcptr_sig_t *expected_sig);
 static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig);
+                                            const psx_decl_funcptr_sig_t *expected_sig);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset);
@@ -778,9 +778,10 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
 }
 
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig) {
+                                            const psx_decl_funcptr_sig_t *expected_sig) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!psx_node_mem_has_funcptr_metadata(expected_sig)) return build_expr(ctx, node);
+  if (!expected_sig || !psx_decl_funcptr_sig_has_payload(*expected_sig))
+    return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
       return build_node_funcref_with_sig(ctx, node, expected_sig);
@@ -1253,8 +1254,10 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  node_mem_t sig = lv->mem;
-  psx_node_merge_funcptr_metadata_from_lvar(&sig, find_owning_lvar(ctx, lv->offset));
+  psx_decl_funcptr_sig_t sig = psx_lvar_funcptr_sig(find_owning_lvar(ctx, lv->offset));
+  if (!psx_decl_funcptr_sig_has_payload(sig)) {
+    sig = psx_node_funcptr_sig(node->lhs);
+  }
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
@@ -1300,7 +1303,11 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, psx_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &gv->mem);
+  psx_decl_funcptr_sig_t sig = psx_gvar_funcptr_sig(psx_find_global_var(gv->name, gv->name_len));
+  if (!psx_decl_funcptr_sig_has_payload(sig)) {
+    sig = psx_node_funcptr_sig(node->lhs);
+  }
+  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
                           psx_node_conversion_value_is_unsigned(node->rhs));
@@ -1319,12 +1326,12 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   /* *p = rhs。p が struct メンバアクセス由来なら bit_width が乗る。 */
-  node_mem_t *mm = (node_mem_t *)node->lhs;
   int bw = 0;
   int bo = 0;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, mm);
+  psx_decl_funcptr_sig_t sig = psx_node_funcptr_sig(node->lhs);
+  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   if (psx_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, bo);
@@ -1373,30 +1380,32 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
-static void attach_funcptr_sig(ir_inst_t *sym, const node_mem_t *m) {
-  if (!sym || !psx_node_mem_has_funcptr_metadata(m)) return;
+static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
+  if (!sym || !sig || !psx_decl_funcptr_sig_has_payload(*sig)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_sig = psx_node_mem_funcptr_sig(m);
+  sym->funcptr_sig = *sig;
+}
+
+static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee) {
+  if (!callee) return (psx_decl_funcptr_sig_t){0};
+  psx_decl_funcptr_sig_t sig = {0};
+  if (callee->kind == ND_LVAR) {
+    lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
+    sig = psx_lvar_funcptr_sig(lv);
+  } else if (callee->kind == ND_GVAR) {
+    node_gvar_t *gvn = (node_gvar_t *)callee;
+    global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
+    sig = psx_gvar_funcptr_sig(gv);
+  }
+  if (!psx_decl_funcptr_sig_has_payload(sig)) {
+    sig = psx_node_funcptr_sig(callee);
+  }
+  return sig;
 }
 
 static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  node_mem_t sig = {0};
-  if (callee->kind == ND_LVAR) {
-    lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    psx_node_merge_funcptr_metadata_from_lvar(&sig, lv);
-  } else if (callee->kind == ND_GVAR) {
-    node_gvar_t *gvn = (node_gvar_t *)callee;
-    global_var_t *gv = psx_find_global_var(gvn->name, gvn->name_len);
-    psx_node_merge_funcptr_metadata_from_gvar(&sig, gv);
-  } else if (callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    sig = *(node_mem_t *)callee;
-  }
-  if (!psx_node_mem_has_funcptr_metadata(&sig) &&
-      (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
-       callee->kind == ND_DEREF || callee->kind == ND_ADDR)) {
-    sig = *(node_mem_t *)callee;
-  }
+  psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, callee);
   attach_funcptr_sig(call, &sig);
 }
 
@@ -1404,13 +1413,8 @@ static int func_has_return_funcptr_sig(const node_func_t *fn) {
   return psx_decl_funcptr_sig_has_payload(psx_node_funcdef_ret_funcptr_sig(fn));
 }
 
-static void fill_return_funcptr_sig(node_mem_t *m, const node_func_t *fn) {
-  if (!m || !fn) return;
-  psx_node_store_funcptr_metadata(m, psx_node_funcdef_ret_funcptr_sig(fn));
-}
-
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig) {
+                                            const psx_decl_funcptr_sig_t *expected_sig) {
   node_funcref_t *fr = (node_funcref_t *)node;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
@@ -1726,12 +1730,11 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   return ir_val_none();
 }
 
-static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
+static int indirect_funcptr_ret_is_data_pointer(ir_build_ctx_t *ctx, node_t *callee) {
   if (!callee) return 0;
   if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
       callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    node_mem_t *m = (node_mem_t *)callee;
-    psx_decl_funcptr_sig_t sig = psx_node_mem_funcptr_sig(m);
+    psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, callee);
     return (sig.ret_is_data_pointer ||
             psx_ret_pointee_array_has_dims(sig.ret_pointee_array)) ? 1 : 0;
   }
@@ -1751,11 +1754,11 @@ static int indirect_funcptr_ret_is_data_pointer(node_t *callee) {
   return 0;
 }
 
-static int indirect_funcptr_ret_int_width(node_t *callee) {
+static int indirect_funcptr_ret_int_width(ir_build_ctx_t *ctx, node_t *callee) {
   if (!callee) return 0;
   if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
       callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    return psx_node_mem_funcptr_sig((node_mem_t *)callee).ret_int_width;
+    return funcptr_sig_for_callee(ctx, callee).ret_int_width;
   }
   if (callee->kind == ND_FUNCALL) {
     node_func_t *fn = (node_func_t *)callee;
@@ -1783,8 +1786,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     callee_v = build_expr(ctx, fn->callee);
     if (ctx->failed) return ir_val_none();
   }
-  /* callee が variadic か確認。直接呼出は prototype から、間接呼出は関数ポインタ
-   * lvar に記録した funcptr_sig.is_variadic から判定する (Apple ARM64: 可変長引数は
+  /* callee が variadic か確認。直接呼出は prototype から、間接呼出は callee に
+   * 記録した function pointer signature から判定する (Apple ARM64: 可変長引数は
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = fn->nargs;
@@ -1795,22 +1798,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       is_variadic_call = 1;
       nargs_fixed = fixed;
     }
-  } else if (fn->callee->kind == ND_LVAR) {
-    lvar_t *cl = find_owning_lvar(ctx, ((node_lvar_t *)fn->callee)->offset);
-    if (cl && cl->funcptr_sig.is_variadic && cl->funcptr_sig.nargs_fixed < fn->nargs) {
-      is_variadic_call = 1;
-      nargs_fixed = cl->funcptr_sig.nargs_fixed;
-    }
-  } else if (fn->callee->kind == ND_GVAR) {
-    node_gvar_t *cg = (node_gvar_t *)fn->callee;
-    global_var_t *g = psx_find_global_var(cg->name, cg->name_len);
-    if (g && g->funcptr_sig.is_variadic && g->funcptr_sig.nargs_fixed < fn->nargs) {
-      is_variadic_call = 1;
-      nargs_fixed = g->funcptr_sig.nargs_fixed;
-    }
-  } else if (fn->callee->kind == ND_DEREF || fn->callee->kind == ND_ADDR) {
-    node_mem_t *cm = (node_mem_t *)fn->callee;
-    psx_decl_funcptr_sig_t sig = psx_node_mem_funcptr_sig(cm);
+  } else {
+    psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, fn->callee);
     if (sig.is_variadic && sig.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
       nargs_fixed = sig.nargs_fixed;
@@ -2075,9 +2064,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * 上位ビットが落ちる (h が long を返す場合)。 */
   if (ret_ty == IR_TY_I32) {
     int small_struct_value_ret = 0;
-    if (fn->callee && indirect_funcptr_ret_is_data_pointer(fn->callee)) {
+    if (fn->callee && indirect_funcptr_ret_is_data_pointer(ctx, fn->callee)) {
       ret_ty = IR_TY_PTR;
-    } else if (fn->callee && indirect_funcptr_ret_int_width(fn->callee) >= 8) {
+    } else if (fn->callee && indirect_funcptr_ret_int_width(ctx, fn->callee) >= 8) {
       ret_ty = IR_TY_I64;
     } else if (!fn->callee && fn->funcname) {
       psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
@@ -2276,7 +2265,7 @@ static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const node_mem_t *expected_sig) {
+                                            const psx_decl_funcptr_sig_t *expected_sig) {
   /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
    * 結果型は fp_kind から推定 (整数のみ or float/double)。
    * struct ternary 等は今のところサポート外で fall through する。 */
@@ -3069,8 +3058,7 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   }
   if (node->lhs) {
     if (func_has_return_funcptr_sig(ctx->cur_fn)) {
-      node_mem_t sig = {0};
-      fill_return_funcptr_sig(&sig, ctx->cur_fn);
+      psx_decl_funcptr_sig_t sig = psx_node_funcdef_ret_funcptr_sig(ctx->cur_fn);
       v = build_expr_with_funcptr_sig(ctx, node->lhs, &sig);
     } else {
       v = build_expr(ctx, node->lhs);
