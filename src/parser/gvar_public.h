@@ -8,29 +8,6 @@
 
 typedef struct global_var_t global_var_t;
 
-typedef struct {
-  char *name;
-  int name_len;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int type_size;
-  int init_count;
-  int has_init;
-  long long init_val;
-  char *init_symbol;
-  int init_symbol_len;
-  long long init_symbol_offset;
-  double fval;
-  tk_float_kind_t fp_kind;
-  int is_array;
-  int is_extern_decl;
-  int is_static;
-  int is_thread_local;
-  int is_tag_pointer;
-  int has_init_fvalues;
-} psx_gvar_view_t;
-
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,
   PSX_GVAR_INIT_KIND_AGGREGATE,

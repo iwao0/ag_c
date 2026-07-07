@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き908: make gvar view parser-internal）
+最終更新: 2026-07-08（続き909: move gvar view type behind parser internals）
 
 ## 現状
+- 続き909: **`psx_gvar_view_t` 型も public header から外した**。
+
+  続き908で backend から `psx_gvar_view()` の利用を外し、関数宣言も parser 内部へ移したが、
+  view 型である `psx_gvar_view_t` の typedef はまだ `gvar_public.h` に残っていた。
+  そのままだと外部モジュールから「広い gvar view を使う」設計へ戻る入口が型レベルで残り、
+  narrow helper に寄せた境界が少し浅いままだった。
+
+  今回は `psx_gvar_view_t` の typedef を `gvar_public.h` から `decl.h` に移し、
+  `psx_gvar_view()` と view 型の両方を parser 内部 API として揃えた。
+  `rg "psx_gvar_view_t|psx_gvar_view\\(" src test tools` では利用箇所が
+  `parser.c` / `node_utils.c` / `decl.h` の parser 内に閉じていることを確認している。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1205/1205 pass**、
+  `./build/test_wasm32_object` = **1179/1179 scan pass**、
+  `./build/test_wasm32_e2e` = **1200 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き908: **backend から `psx_gvar_view()` を外し、parser 内部 API に閉じた**。
 
   続き907までで global initializer の分類と明示 initializer 判定は helper 化したが、
