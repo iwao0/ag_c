@@ -7,6 +7,7 @@
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -477,6 +478,29 @@ psx_gvar_init_slot_value_t psx_gvar_init_slot_value(
     value.fp_kind = layout->fp_kind;
   }
   return value;
+}
+
+int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
+                            psx_gvar_fp_bits_t *out) {
+  if (!out) return 0;
+  out->bits = 0;
+  out->size = 0;
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
+    float f = (float)value;
+    uint32_t bits;
+    memcpy(&bits, &f, sizeof(bits));
+    out->bits = bits;
+    out->size = 4;
+    return 1;
+  }
+  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
+    uint64_t bits;
+    memcpy(&bits, &value, sizeof(bits));
+    out->bits = (unsigned long long)bits;
+    out->size = 8;
+    return 1;
+  }
+  return 0;
 }
 
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {

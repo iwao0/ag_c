@@ -1,8 +1,41 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き891: classify slot initializer values in parser public）
+最終更新: 2026-07-08（続き892: centralize global initializer FP bit patterns）
 
 ## 現状
+- 続き892: **global initializer の FP bit-pattern 変換を parser/public helper に寄せた**。
+
+  続き891で slot initializer の値分類は `psx_gvar_init_slot_value()` に寄ったが、
+  各 backend にはまだ `float/double -> IEEE-754 bit pattern` の `memcpy` 変換が残っていた。
+  とくに arm64 / Wasm IR / Wasm object の global `SLOTS` route と scalar FP global initializer、
+  Wasm object の aggregate member FP slot が同じ規則をそれぞれ持っており、
+  「`TK_FLOAT_KIND_FLOAT` は 4 byte、`DOUBLE/LONG_DOUBLE` は現状どおり 8 byte double として出す」
+  という initializer 値の読み方が分散していた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_fp_bits_t` と `psx_gvar_fp_bit_pattern(fp_kind, value, out)` を追加した。
+  helper は FP kind と double 値から `{bits, size}` を返すだけにし、unsupported 診断や
+  実際の directive / WAT bytes / object bytes emission は backend 側に残している。
+
+  arm64 の aggregate member scalar、global FP slots、scalar FP global initializer、
+  Wasm IR の `emit_fp_data_bytes()` と global FP slots、
+  Wasm object の aggregate/global FP data emission がこの helper 経由になった。
+  なお `wasm32_obj.c` の即値命令エンコード用 FP 変換と arm64 の浮動小数リテラル emission は
+  global initializer の正本問題とは別文脈なので今回は残している。
+
+  次の根本対応候補は、symbol initializer を `symbol pointer + len + addend` の小さな public shape として扱い、
+  backend 側を relocation/address 解決と表記差分だけに絞ること。特に global scalar symbol と
+  slot symbol で、文字列リテラル sentinel / 通常シンボル / function pointer table index の扱いが
+  backend ごとに近い形で残っている。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き891: **slot initializer の per-slot value classification を parser/public helper に寄せた**。
 
   続き890で `SLOTS` route の element size/count/fp-array metadata は

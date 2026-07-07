@@ -60,6 +60,11 @@ typedef struct {
 } psx_gvar_init_slot_value_t;
 
 typedef struct {
+  unsigned long long bits;
+  int size;
+} psx_gvar_fp_bits_t;
+
+typedef struct {
   const global_var_t *gv;
   int index;
   int count;
@@ -111,6 +116,8 @@ psx_gvar_init_slots_layout_t psx_gvar_init_slots_layout(const global_var_t *gv,
                                                         int fallback_size);
 psx_gvar_init_slot_value_t psx_gvar_init_slot_value(const global_var_t *gv, int idx,
                                                     const psx_gvar_init_slots_layout_t *layout);
+int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
+                            psx_gvar_fp_bits_t *out);
 psx_gvar_aggregate_layout_t psx_gvar_aggregate_layout(const global_var_t *gv);
 psx_gvar_aggregate_member_iter_t psx_gvar_aggregate_member_iter(token_kind_t tag_kind,
                                                                 char *tag_name,

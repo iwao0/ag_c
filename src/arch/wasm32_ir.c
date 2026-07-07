@@ -1749,17 +1749,9 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
 }
 
 static void emit_fp_data_bytes(int addr, tk_float_kind_t fp_kind, double value) {
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    float f = (float)value;
-    uint32_t bits;
-    memcpy(&bits, &f, sizeof(bits));
-    emit_i32_data_bytes(addr, (long long)bits, 4);
-    return;
-  }
-  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    uint64_t bits;
-    memcpy(&bits, &value, sizeof(bits));
-    emit_i32_data_bytes(addr, (long long)bits, 8);
+  psx_gvar_fp_bits_t bits;
+  if (psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
+    emit_i32_data_bytes(addr, (long long)bits.bits, bits.size);
     return;
   }
   wasm_unsupported_msg("floating global initializer in Wasm backend");
@@ -1785,16 +1777,11 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size) {
     psx_gvar_init_slot_t slot = slot_value.slot;
     uint64_t value = (uint64_t)slot.value;
     if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
-      if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
-        float f = (float)slot.fvalue;
-        uint32_t bits;
-        memcpy(&bits, &f, sizeof(bits));
-        value = bits;
-      } else {
-        uint64_t bits;
-        memcpy(&bits, &slot.fvalue, sizeof(bits));
-        value = bits;
+      psx_gvar_fp_bits_t bits;
+      if (!psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot.fvalue, &bits)) {
+        wasm_unsupported_msg("floating global initializer in Wasm backend");
       }
+      value = (uint64_t)bits.bits;
     }
     if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
       int sym_addr = data_addr_for_init_symbol(slot.symbol, slot.symbol_len);

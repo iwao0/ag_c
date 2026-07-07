@@ -2405,18 +2405,11 @@ static void data_write_scalar(obj_data_t *d, uint64_t value, int size) {
 }
 
 static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind, double value) {
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    float f = (float)value;
-    uint32_t bits;
-    memcpy(&bits, &f, sizeof(bits));
-    data_write_int_le_at(d, off, bits, 4);
-  } else if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    uint64_t bits;
-    memcpy(&bits, &value, sizeof(bits));
-    data_write_int_le_at(d, off, bits, 8);
-  } else {
+  psx_gvar_fp_bits_t bits;
+  if (!psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
     obj_unsupported_msg("global floating slot in Wasm object mode");
   }
+  data_write_int_le_at(d, off, (uint64_t)bits.bits, bits.size);
 }
 
 static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
@@ -2548,32 +2541,22 @@ static void emit_obj_global(global_var_t *gv, void *user) {
       } else {
         uint64_t value = (uint64_t)slot.value;
         if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
-          if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
-            float f = (float)slot.fvalue;
-            uint32_t bits;
-            memcpy(&bits, &f, sizeof(bits));
-            value = bits;
-          } else {
-            uint64_t bits;
-            memcpy(&bits, &slot.fvalue, sizeof(bits));
-            value = bits;
+          psx_gvar_fp_bits_t bits;
+          if (!psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot.fvalue, &bits)) {
+            obj_unsupported_msg("global floating slot in Wasm object mode");
           }
+          value = (uint64_t)bits.bits;
         }
         data_write_scalar(d, value, elem);
       }
     }
-  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
-             view.fp_kind == TK_FLOAT_KIND_FLOAT) {
-    float f = view.has_init ? (float)view.fval : 0.0f;
-    uint32_t bits;
-    memcpy(&bits, &f, sizeof(bits));
-    data_write_scalar(d, bits, 4);
-  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
-             view.fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    double f = view.has_init ? view.fval : 0.0;
-    uint64_t bits;
-    memcpy(&bits, &f, sizeof(bits));
-    data_write_scalar(d, bits, 8);
+  } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
+    psx_gvar_fp_bits_t bits;
+    double value = view.has_init ? view.fval : 0.0;
+    if (!psx_gvar_fp_bit_pattern(view.fp_kind, value, &bits)) {
+      obj_unsupported_msg("global floating initializer in Wasm object mode");
+    }
+    data_write_scalar(d, (uint64_t)bits.bits, bits.size);
   } else {
     if (!view.has_init) {
       /* Leave BSS-like globals out of the object payload; linear memory starts zeroed. */

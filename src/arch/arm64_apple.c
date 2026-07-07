@@ -153,15 +153,14 @@ static void emit_global_init_member_scalar(char *sym, int sym_len, tk_float_kind
     /* `&data[n]` 由来は v にバイトオフセットを持つ (`_data+off`)。 */
     if (v != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_len, sym, v);
     else        cg_emitf("  .quad _%.*s\n", sym_len, sym);
-  } else if (fp_kind == TK_FLOAT_KIND_FLOAT) {
-    float f = (float)fv;
-    uint32_t bits;
-    memcpy(&bits, &f, sizeof(bits));
-    cg_emitf("  .long %u\n", (unsigned)bits);
-  } else if (fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    uint64_t bits;
-    memcpy(&bits, &fv, sizeof(bits));
-    cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+  } else if (fp_kind != TK_FLOAT_KIND_NONE) {
+    psx_gvar_fp_bits_t bits;
+    if (psx_gvar_fp_bit_pattern(fp_kind, fv, &bits)) {
+      if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
+      else                cg_emitf("  .quad %llu\n", bits.bits);
+    } else {
+      cg_emit_int_directive(ts, v);
+    }
   } else {
     cg_emit_int_directive(ts, v);
   }
@@ -288,16 +287,10 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
         }
         if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
           /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
-          double d = slot.fvalue;
-          if (slot_value.fp_kind == TK_FLOAT_KIND_FLOAT) {
-            float f = (float)d;
-            uint32_t bits;
-            memcpy(&bits, &f, sizeof(bits));
-            cg_emitf("  .long %u\n", (unsigned)bits);
-          } else {
-            uint64_t bits;
-            memcpy(&bits, &d, sizeof(bits));
-            cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+          psx_gvar_fp_bits_t bits;
+          if (psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot.fvalue, &bits)) {
+            if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
+            else                cg_emitf("  .quad %llu\n", bits.bits);
           }
           continue;
         }
@@ -321,21 +314,14 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       } else {
         cg_emitf("  .quad _%.*s\n", view.init_symbol_len, view.init_symbol);
       }
-    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
-               view.fp_kind == TK_FLOAT_KIND_FLOAT) {
-      /* float スカラ: fval を 32bit IEEE-754 ビットパターンで出力する。 */
-      float f = (float)view.fval;
-      uint32_t bits;
-      memcpy(&bits, &f, sizeof(bits));
-      cg_emitf("  .long %u\n", (unsigned)bits);
-    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT &&
-               (view.fp_kind == TK_FLOAT_KIND_DOUBLE ||
-                view.fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)) {
-      /* double スカラ: fval を 64bit IEEE-754 ビットパターンで出力する。 */
-      double d = view.fval;
-      uint64_t bits;
-      memcpy(&bits, &d, sizeof(bits));
-      cg_emitf("  .quad %llu\n", (unsigned long long)bits);
+    } else if (init_kind == PSX_GVAR_INIT_KIND_FLOAT) {
+      psx_gvar_fp_bits_t bits;
+      if (psx_gvar_fp_bit_pattern(view.fp_kind, view.fval, &bits)) {
+        if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
+        else                cg_emitf("  .quad %llu\n", bits.bits);
+      } else {
+        cg_emit_int_directive(storage_size, view.init_val);
+      }
     } else {
       cg_emit_int_directive(storage_size, view.init_val);
     }
