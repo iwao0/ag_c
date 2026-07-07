@@ -1,8 +1,43 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き894: centralize aggregate member initializer values）
+最終更新: 2026-07-08（続き895: unify initializer value view shape）
 
 ## 現状
+- 続き895: **slot-array と aggregate member の initializer value shape を共通化した**。
+
+  続き894で aggregate member initializer は `psx_gvar_init_member_value_t` に寄ったが、
+  global slot-array route はまだ `psx_gvar_init_slot_value_t` が raw `psx_gvar_init_slot_t`
+  を保持する別 shape だった。そのため backend 側の slot-array route では `.slot.value` /
+  `.slot.fvalue` を参照し、aggregate member route では `.value` / `.fvalue` を参照するという
+  細かな二重構造が残っていた。
+
+  今回は `src/parser/gvar_public.h` で共通の `psx_gvar_init_value_t` を定義し、
+  `psx_gvar_init_slot_value_t` と `psx_gvar_init_member_value_t` をその alias にした。
+  共通 view は `INTEGER / SYMBOL / FLOAT`、`symbol_ref`、integer value、fvalue、fp_kind、size を持つ。
+  `psx_gvar_init_slot_value()` もこの共通 shape を返すようにし、slot-array route から raw `.slot`
+  参照をなくした。
+
+  arm64 / Wasm IR / Wasm object の global slot-array emission は、
+  `slot_value.value` / `slot_value.fvalue` / `slot_value.size` / `slot_value.symbol_ref`
+  を見る形になった。aggregate member route は既に同じ shape を使っているため、
+  parser/public の initializer value view として一段揃った。
+
+  これで backend 側には「値種別をどう解釈するか」ではなく、symbol relocation/address 解決、
+  FP bit emission、integer bytes/directive emission だけが残る形に近づいた。
+
+  次の根本対応候補は、backend ごとに残っている `SYMBOL / FLOAT / INTEGER` dispatch を
+  小さな emit-side helper にまとめること。特に Wasm IR/object では symbol address 解決、
+  FP bit pattern、integer byte 書き込みの順序が似ているため、まず backend 内 helper を薄くしてから
+  public callback 化できるかを見るのがよい。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き894: **aggregate member initializer の value view を parser/public helper に寄せた**。
 
   続き893で symbol reference shape は public helper に寄ったが、aggregate member initializer の

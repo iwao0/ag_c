@@ -2539,7 +2539,6 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     for (int i = 0; i < slot_layout.elem_count; i++) {
       psx_gvar_init_slot_value_t slot_value =
           psx_gvar_init_slot_value(gv, i, &slot_layout);
-      psx_gvar_init_slot_t slot = slot_value.slot;
       if (slot_value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
         psx_gvar_symbol_ref_t sym_ref =
             psx_gvar_init_slot_value_symbol_ref(&slot_value);
@@ -2551,10 +2550,10 @@ static void emit_obj_global(global_var_t *gv, void *user) {
         }
         data_write_symbol_addr(d, sym_ref, elem);
       } else {
-        uint64_t value = (uint64_t)slot.value;
+        uint64_t value = (uint64_t)slot_value.value;
         if (slot_value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
           psx_gvar_fp_bits_t bits;
-          if (!psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot.fvalue, &bits)) {
+          if (!psx_gvar_fp_bit_pattern(slot_value.fp_kind, slot_value.fvalue, &bits)) {
             obj_unsupported_msg("global floating slot in Wasm object mode");
           }
           value = (uint64_t)bits.bits;

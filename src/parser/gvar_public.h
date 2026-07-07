@@ -54,12 +54,6 @@ typedef enum {
 } psx_gvar_init_slot_kind_t;
 
 typedef struct {
-  psx_gvar_init_slot_kind_t kind;
-  psx_gvar_init_slot_t slot;
-  tk_float_kind_t fp_kind;
-} psx_gvar_init_slot_value_t;
-
-typedef struct {
   unsigned long long bits;
   int size;
 } psx_gvar_fp_bits_t;
@@ -84,7 +78,10 @@ typedef struct {
   double fvalue;
   tk_float_kind_t fp_kind;
   int size;
-} psx_gvar_init_member_value_t;
+} psx_gvar_init_value_t;
+
+typedef psx_gvar_init_value_t psx_gvar_init_slot_value_t;
+typedef psx_gvar_init_value_t psx_gvar_init_member_value_t;
 
 typedef struct {
   const global_var_t *gv;
