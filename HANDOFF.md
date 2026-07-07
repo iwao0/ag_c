@@ -15823,3 +15823,28 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_parser` = **OK: All unit tests passed**
   - `./build/test_e2e` = **1204/1204 OK**
   - `git diff --check` = **green**
+
+### このセッション（続き822）: parser global brace initializer の tag member 判定を helper に集約
+- 見つかった浅い箇所:
+  - `parser.c` の global brace initializer 周辺に、直前の wasm32/arm64 と同じ
+    `tag_member_info_t` の unnamed struct/union 判定がローカル helper として残っていた。
+  - top-level tag object size、flat slot count、member designator 解決、
+    unnamed union cover 判定が `tag_kind` / `is_tag_pointer` / `len` を直接合成していた。
+- 根本対応:
+  - `global_member_is_unnamed_struct()` /
+    `global_member_is_unnamed_union()` を削除し、
+    `psx_tag_member_is_unnamed_struct()` /
+    `psx_tag_member_is_unnamed_union()` に置き換えた。
+  - `global_find_unnamed_union_covering_offset_rec()` と
+    `global_member_flat_slots()` の aggregate 判定も
+    `psx_tag_member_is_*_aggregate()` 経由に置き換えた。
+  - これで parser global initializer / arm64 / wasm32 IR / wasm32 object の
+    `tag_member_info_t` aggregate/unnamed 判定は parser helper を正本に揃った。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
