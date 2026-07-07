@@ -1,8 +1,23 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き849: single home for global init slot view type）
+最終更新: 2026-07-07（続き850: use global init slot view in arm64 emitter）
 
 ## 現状
+- 続き850: **arm64 backend の global initializer slot 読み取りも
+  `psx_gvar_init_slot_view()` 経由に寄せた**。
+
+  続き848で wasm32 backend から direct read は消したが、`src/arch/arm64_apple.c` には
+  `init_value_symbols` / `init_value_symbol_lens` / `init_values` / `init_fvalues`
+  を個別に読む emission 経路が残っていた。今回は union slot、struct member、
+  bitfield packing、トップレベル union、通常配列 initializer の読み取りを
+  `psx_gvar_init_slot_t` 経由に置き換え、`src/arch` 全体から initializer slot parallel
+  array の直接参照を消した。
+
+  確認は
+  `rg "init_value_(symbols|symbol_lens|values|fvalues)" src/arch -n` = **0件**、
+  `make -j4 build/ag_c build/test_e2e` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**。
+
 - 続き849: **`psx_gvar_init_slot_t` の typedef 正本を
   `src/parser/init_slot.h` に一本化した**。
 

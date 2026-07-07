@@ -236,15 +236,16 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     return;
   }
   int init_idx = *val_idx;
-  char *sym = gv->init_value_symbols ? gv->init_value_symbols[init_idx] : NULL;
-  int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[init_idx] : 0;
-  double fv = gv->init_fvalues ? gv->init_fvalues[init_idx] : 0.0;
-  long long iv = gv->init_values[init_idx];
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
+  char *sym = slot.symbol;
+  int sym_len = slot.symbol_len;
+  double fv = slot.fvalue;
+  long long iv = slot.value;
   (*val_idx)++;
   tk_float_kind_t use_fp = TK_FLOAT_KIND_NONE;
   int use_size = union_size;
   /* sentinel チェック (sym==NULL のときのみ意味を持つ; sym!=NULL は文字列/関数ポインタ) */
-  use_fp = psx_gvar_init_slot_fp_kind(gv, init_idx);
+  use_fp = slot.fp_sentinel_kind;
   if (sym == NULL && use_fp != TK_FLOAT_KIND_NONE) {
     use_size = use_fp >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
     sym_len = 0;  /* emit_global_init_member_scalar には通常の 0 を渡す */
@@ -270,16 +271,11 @@ static void emit_global_union_slot(token_kind_t tk, char *tn, int tl, int union_
     emit_global_init_member_scalar(sym, sym_len, active.fp_kind, elem_size, iv, fv);
     emitted += elem_size;
     for (int k = 1; k < active.array_len && emitted + elem_size <= union_size; k++) {
-      char *esym = (*val_idx < gv->init_count && gv->init_value_symbols)
-                       ? gv->init_value_symbols[*val_idx] : NULL;
-      int esym_len = (*val_idx < gv->init_count && gv->init_value_symbol_lens)
-                         ? gv->init_value_symbol_lens[*val_idx] : 0;
-      long long ev = (*val_idx < gv->init_count && gv->init_values)
-                         ? gv->init_values[*val_idx] : 0;
-      double efv = (*val_idx < gv->init_count && gv->init_fvalues)
-                       ? gv->init_fvalues[*val_idx] : 0.0;
-      if (*val_idx < gv->init_count) (*val_idx)++;
-      emit_global_init_member_scalar(esym, esym_len, active.fp_kind, elem_size, ev, efv);
+      psx_gvar_init_slot_t elem_slot = psx_gvar_init_slot_view(gv, *val_idx);
+      if (elem_slot.in_range) (*val_idx)++;
+      emit_global_init_member_scalar(elem_slot.symbol, elem_slot.symbol_len,
+                                     active.fp_kind, elem_size,
+                                     elem_slot.value, elem_slot.fvalue);
       emitted += elem_size;
     }
     if (emitted < union_size) cg_emitf("  .space %d\n", union_size - emitted);
@@ -326,17 +322,16 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         }
       } else {
         for (int k = 0; k < alen && *val_idx < gv->init_count; k++) {
-          char *esym = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
-          int esym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
-          long long ev = gv->init_values[*val_idx];
-          double efv = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
+          psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+          long long ev = slot.value;
           (*val_idx)++;
           if (mi.is_bool) ev = (ev != 0);  /* C11 6.3.1.2: _Bool 配列メンバは 0/1 に正規化 */
           /* ポインタ配列メンバ (シンボル+オフセット要素や文字列/関数ポインタ要素) も
            * fp 配列メンバ (`struct R{double m[2][2];}`) も emit_global_init_member_scalar
            * 経由で統一処理する。直接 cg_emit_int_directive を呼ぶと fp_kind を見落として
            * double 値が `.quad 0` として出力されていた (efv を捨てて ev=0 を整数で書く)。 */
-          emit_global_init_member_scalar(esym, esym_len, mi.fp_kind, ts, ev, efv);
+          emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
+                                         ts, ev, slot.fvalue);
         }
       }
       prev_end = off + ts * alen;
@@ -372,7 +367,8 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
         tag_member_info_t bmi = {0};
         if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &bmi)) break;
         if (bmi.bit_width == 0 || bmi.offset != unit_off) break;
-        long long v = (*val_idx < gv->init_count) ? gv->init_values[*val_idx] : 0;
+        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+        long long v = slot.value;
         if (*val_idx < gv->init_count) (*val_idx)++;
         unsigned long long mask = (bmi.bit_width >= 64)
                                     ? ~0ULL : ((1ULL << bmi.bit_width) - 1);
@@ -385,12 +381,11 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
       continue;
     }
     /* スカラ / ポインタ / 関数ポインタメンバ。 */
-    char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[*val_idx] : NULL;
-    int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[*val_idx] : 0;
-    double fv_i = gv->init_fvalues ? gv->init_fvalues[*val_idx] : 0.0;
-    long long mv = gv->init_values[*val_idx];
+    psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, *val_idx);
+    long long mv = slot.value;
     if (mi.is_bool) mv = (mv != 0);  /* C11 6.3.1.2: _Bool スカラメンバは 0/1 に正規化 */
-    emit_global_init_member_scalar(sym_i, sym_i_len, mi.fp_kind, ts, mv, fv_i);
+    emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
+                                   ts, mv, slot.fvalue);
     (*val_idx)++;
     prev_end = off + ts;
     psx_tag_flat_cover_state_note(&cover_state, tk, tn, tl, &mi);
@@ -405,12 +400,10 @@ static void emit_global_struct_init(global_var_t *gv) {
     tag_member_info_t mi = {0};
     if (gv->init_count > 0 &&
         psx_tag_union_init_member_for_slot(gv->tag_kind, gv->tag_name, gv->tag_len, gv, 0, &mi)) {
-      char *sym = gv->init_value_symbols ? gv->init_value_symbols[0] : NULL;
-      int sym_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[0] : 0;
-      double fv = gv->init_fvalues ? gv->init_fvalues[0] : 0.0;
-      emit_global_init_member_scalar(sym, sym_len, mi.fp_kind, mi.type_size,
-                                     gv->init_values[0], fv);
-      int emitted = sym ? 8
+      psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, 0);
+      emit_global_init_member_scalar(slot.symbol, slot.symbol_len, mi.fp_kind,
+                                     mi.type_size, slot.value, slot.fvalue);
+      int emitted = slot.symbol ? 8
                         : (mi.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4
                         : (mi.fp_kind >= TK_FLOAT_KIND_DOUBLE) ? 8
                         : mi.type_size;
@@ -490,27 +483,27 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
                        gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
                        gv->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE);
       for (int i = 0; i < gv->init_count && i < total_elems; i++) {
-        char *sym_i = gv->init_value_symbols ? gv->init_value_symbols[i] : NULL;
-        int sym_i_len = gv->init_value_symbol_lens ? gv->init_value_symbol_lens[i] : 0;
-        if (sym_i && sym_i_len < 0) {
+        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
+        if (slot.symbol && slot.symbol_len < 0) {
           /* 文字列リテラル要素: `.LC<n>` ラベルをそのまま参照 (アンダースコアなし)。
            * `const char *arr[] = {"abc" + 2, ...}` のような +offset は init_values[i] に
            * バイトオフセットが入っているので併記する。 */
-          long long soff = gv->init_values ? gv->init_values[i] : 0;
-          if (soff != 0) cg_emitf("  .quad %s+%lld\n", sym_i, soff);
-          else           cg_emitf("  .quad %s\n", sym_i);
+          if (slot.value != 0) cg_emitf("  .quad %s+%lld\n", slot.symbol, slot.value);
+          else                 cg_emitf("  .quad %s\n", slot.symbol);
           continue;
         }
-        if (sym_i && sym_i_len > 0) {
+        if (slot.symbol && slot.symbol_len > 0) {
           /* `&data[n]` 由来のシンボル+オフセット。init_values[i] にバイトオフセット。 */
-          long long soff = gv->init_values ? gv->init_values[i] : 0;
-          if (soff != 0) cg_emitf("  .quad _%.*s+%lld\n", sym_i_len, sym_i, soff);
-          else           cg_emitf("  .quad _%.*s\n", sym_i_len, sym_i);
+          if (slot.value != 0) {
+            cg_emitf("  .quad _%.*s+%lld\n", slot.symbol_len, slot.symbol, slot.value);
+          } else {
+            cg_emitf("  .quad _%.*s\n", slot.symbol_len, slot.symbol);
+          }
           continue;
         }
         if (is_fp_arr) {
           /* 浮動小数配列要素: fvalues[i] を IEEE-754 ビットパターンで出力。 */
-          double d = gv->init_fvalues[i];
+          double d = slot.fvalue;
           if (gv->fp_kind == TK_FLOAT_KIND_FLOAT) {
             float f = (float)d;
             uint32_t bits;
@@ -523,8 +516,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
           }
           continue;
         }
-        long long v = gv->init_values[i];
-        cg_emit_int_directive(elem, v);
+        cg_emit_int_directive(elem, slot.value);
       }
       int remain = total_elems - gv->init_count;
       if (remain > 0) cg_emitf("  .space %d\n", remain * elem);
