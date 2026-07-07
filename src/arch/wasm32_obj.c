@@ -2453,40 +2453,22 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
 
 static void emit_obj_global_bitfield_unit_data(token_kind_t tk, char *tn, int tl,
                                                int *member_idx, obj_data_t *d,
-                                               global_var_t *gv, psx_gvar_init_cursor_t *cur,
+                                               psx_gvar_init_cursor_t *cur,
                                                size_t base_off) {
-  tag_member_info_t first = {0};
-  if (!psx_ctx_get_tag_member_info(tk, tn, tl, *member_idx, &first) || first.bit_width <= 0) {
+  psx_gvar_bitfield_unit_t unit = {0};
+  if (!psx_gvar_init_cursor_pack_bitfield_unit(tk, tn, tl, *member_idx, cur, &unit)) {
     obj_unsupported_msg("global bitfield initializer in Wasm object mode");
   }
-  int unit_off = first.offset;
-  int unit_size = first.type_size;
-  int n_members = psx_ctx_get_tag_member_count(tk, tn, tl);
-  uint64_t packed = 0;
-  int m = *member_idx;
-  while (m < n_members && psx_gvar_init_cursor_has(cur)) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tk, tn, tl, m, &mi)) break;
-    if (mi.bit_width <= 0 || mi.offset != unit_off) break;
-    uint64_t mask = mi.bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi.bit_width) - 1);
-    psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, psx_gvar_init_cursor_index(cur));
-    uint64_t value = (uint64_t)slot.value;
-    packed |= (value & mask) << mi.bit_offset;
-    psx_gvar_init_cursor_advance(cur);
-    m++;
-  }
-  data_write_int_le_at(d, base_off + (size_t)unit_off, packed, unit_size);
-  *member_idx = m - 1;
+  data_write_int_le_at(d, base_off + (size_t)unit.offset, unit.packed, unit.size);
+  *member_idx = unit.last_member_index;
 }
 
 static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv, int idx,
                                                  size_t base_off,
                                                  const tag_member_info_t *mi) {
   if (!mi || mi->bit_width <= 0) obj_unsupported_msg("global bitfield initializer in Wasm object mode");
-  uint64_t mask = mi->bit_width >= 64 ? UINT64_MAX : ((UINT64_C(1) << mi->bit_width) - 1);
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  uint64_t value = (uint64_t)slot.value;
-  uint64_t packed = (value & mask) << mi->bit_offset;
+  unsigned long long packed = psx_gvar_init_slot_bitfield_bits(gv, idx,
+                                                               mi->bit_width, mi->bit_offset);
   data_write_int_le_at(d, base_off + (size_t)mi->offset, packed, mi->type_size);
 }
 
@@ -2508,7 +2490,7 @@ static void emit_obj_global_struct_members_data_rec(token_kind_t tk, char *tn, i
     if (psx_tag_member_is_unnamed_struct(&mi)) continue;
     if (psx_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
     if (mi.bit_width > 0) {
-      emit_obj_global_bitfield_unit_data(tk, tn, tl, &m, d, gv, cur, base_off);
+      emit_obj_global_bitfield_unit_data(tk, tn, tl, &m, d, cur, base_off);
       continue;
     }
     if (mi.array_len > 0) {

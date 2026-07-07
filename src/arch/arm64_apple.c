@@ -335,23 +335,11 @@ static void emit_global_struct_members_rec(token_kind_t tk, char *tn, int tl,
      * フィールドを 1 つの整数に詰めて出力する。各メンバを別々の .long で出すと
      * `{3,5}` が `.long 3 / .long 5` (8B) になり値が壊れていた (正しくは 1B 0x53)。 */
     if (mi.bit_width > 0) {
-      int unit_off = off, unit_ts = ts;
-      unsigned long long packed = 0;
-      while (i < n_members) {
-        tag_member_info_t bmi = {0};
-        if (!psx_ctx_get_tag_member_info(tk, tn, tl, i, &bmi)) break;
-        if (bmi.bit_width == 0 || bmi.offset != unit_off) break;
-        psx_gvar_init_slot_t slot = psx_gvar_init_cursor_slot(cur);
-        long long v = slot.value;
-        if (psx_gvar_init_cursor_has(cur)) psx_gvar_init_cursor_advance(cur);
-        unsigned long long mask = (bmi.bit_width >= 64)
-                                    ? ~0ULL : ((1ULL << bmi.bit_width) - 1);
-        packed |= ((unsigned long long)v & mask) << bmi.bit_offset;
-        i++;
-      }
-      i--;  /* for ループの i++ と相殺 */
-      cg_emit_int_directive(unit_ts, (long long)packed);
-      prev_end = unit_off + unit_ts;
+      psx_gvar_bitfield_unit_t unit = {0};
+      if (!psx_gvar_init_cursor_pack_bitfield_unit(tk, tn, tl, i, cur, &unit)) break;
+      i = unit.last_member_index;
+      cg_emit_int_directive(unit.size, (long long)unit.packed);
+      prev_end = unit.offset + unit.size;
       continue;
     }
     /* スカラ / ポインタ / 関数ポインタメンバ。 */

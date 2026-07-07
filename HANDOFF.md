@@ -1,8 +1,33 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き880: introduce public global initializer cursor）
+最終更新: 2026-07-08（続き881: centralize global bitfield initializer packing）
 
 ## 現状
+- 続き881: **global bitfield initializer の storage-unit packing を public helper に寄せた**。
+
+  続き880で initializer cursor を入れた後も、連続 bitfield メンバを同一 storage unit に詰める処理は
+  `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` にそれぞれ残っていた。各 backend は
+  `psx_ctx_get_tag_member_info()` を繰り返し、bit width/offset の mask を作り、cursor を進め、
+  最後に backend ごとの出力だけを行っていたため、walker 化の前段として一番重複が濃い箇所だった。
+
+  今回は `src/parser/gvar_public.h` に `psx_gvar_bitfield_unit_t`、
+  `psx_gvar_init_slot_bitfield_bits()`、
+  `psx_gvar_init_cursor_pack_bitfield_unit()` を追加し、実装を `src/parser/node_utils.c` に置いた。
+  3 backend は bitfield の検出・slot 消費・packed 値生成を public helper に委譲し、
+  arm64 は `cg_emit_int_directive()`、Wasm IR/object は data bytes への書き込みだけを担当する。
+
+  これで initializer traversal のうち、bitfield grouping/padding のうち前者は parser/public 側へ移った。
+  次の根本対応候補は、残っている struct/union recursion と trailing zero union padding のイベント列化で、
+  backend は scalar/padding/relocation の出力 callback だけを持つ形へさらに寄せること。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き880: **global initializer の走査位置と範囲判定を public cursor API に寄せた**。
 
   続き879で arch emission の view 読み取りを局所化した後も、struct/union global initializer の

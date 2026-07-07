@@ -35,6 +35,13 @@ typedef struct {
   int count;
 } psx_gvar_init_cursor_t;
 
+typedef struct {
+  int offset;
+  int size;
+  int last_member_index;
+  unsigned long long packed;
+} psx_gvar_bitfield_unit_t;
+
 global_var_t *psx_find_global_var(char *name, int len);
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
 psx_gvar_init_cursor_t psx_gvar_init_cursor(const global_var_t *gv);
@@ -45,6 +52,11 @@ int psx_gvar_init_cursor_advance(psx_gvar_init_cursor_t *cur);
 psx_gvar_init_slot_t psx_gvar_init_cursor_slot(const psx_gvar_init_cursor_t *cur);
 int psx_gvar_init_cursor_consume_plain_zero_padding(psx_gvar_init_cursor_t *cur,
                                                     int start_idx, int target_slots);
+unsigned long long psx_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
+                                                    int bit_width, int bit_offset);
+int psx_gvar_init_cursor_pack_bitfield_unit(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                            int member_index, psx_gvar_init_cursor_t *cur,
+                                            psx_gvar_bitfield_unit_t *out);
 int psx_gvar_is_extern_decl(const global_var_t *gv);
 int psx_gvar_is_thread_local(const global_var_t *gv);
 int psx_gvar_is_static_storage(const global_var_t *gv);

@@ -519,6 +519,47 @@ int psx_gvar_init_cursor_consume_plain_zero_padding(psx_gvar_init_cursor_t *cur,
   return consumed;
 }
 
+unsigned long long psx_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
+                                                    int bit_width, int bit_offset) {
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  unsigned long long mask = bit_width >= 64 ? ~0ULL : ((1ULL << bit_width) - 1ULL);
+  return ((unsigned long long)slot.value & mask) << bit_offset;
+}
+
+int psx_gvar_init_cursor_pack_bitfield_unit(token_kind_t tag_kind, char *tag_name, int tag_len,
+                                            int member_index, psx_gvar_init_cursor_t *cur,
+                                            psx_gvar_bitfield_unit_t *out) {
+  if (!cur || !out) return 0;
+  tag_member_info_t first = {0};
+  if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, member_index, &first) ||
+      first.bit_width <= 0) {
+    return 0;
+  }
+  int n_members = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
+  int unit_off = first.offset;
+  int unit_size = first.type_size;
+  unsigned long long packed = 0;
+  int m = member_index;
+  int last = member_index;
+  while (m < n_members && psx_gvar_init_cursor_has(cur)) {
+    tag_member_info_t mi = {0};
+    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, m, &mi)) break;
+    if (mi.bit_width <= 0 || mi.offset != unit_off) break;
+    packed |= psx_gvar_init_slot_bitfield_bits(cur->gv, cur->index,
+                                               mi.bit_width, mi.bit_offset);
+    psx_gvar_init_cursor_advance(cur);
+    last = m;
+    m++;
+  }
+  *out = (psx_gvar_bitfield_unit_t){
+      .offset = unit_off,
+      .size = unit_size,
+      .last_member_index = last,
+      .packed = packed,
+  };
+  return 1;
+}
+
 void psx_gvar_init_slots_alloc(global_var_t *gv, int cap, int with_fvalues) {
   if (!gv || cap <= 0) return;
   gv->init_values = calloc((size_t)cap, sizeof(long long));
