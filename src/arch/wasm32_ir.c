@@ -2,6 +2,7 @@
 #include "../codegen_emit.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
+#include "../parser/symtab.h"  /* temporary: global data emission still reads global_var_t layout */
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -226,7 +227,10 @@ typedef struct {
 
 static void find_global_cb(global_var_t *gv, void *user) {
   global_find_ctx_t *ctx = user;
-  if (!ctx->found && name_eq(gv->name, gv->name_len, ctx->name, ctx->name_len)) ctx->found = gv;
+  if (!ctx->found &&
+      name_eq(psx_gvar_name(gv), psx_gvar_name_len(gv), ctx->name, ctx->name_len)) {
+    ctx->found = gv;
+  }
 }
 
 static int data_addr_for_global(const char *sym, int sym_len) {
@@ -2059,8 +2063,8 @@ static void emit_global_struct_data(global_var_t *gv, int addr) {
 
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
-  if (gv->is_extern_decl) return;
-  int addr = data_addr_for_global(gv->name, gv->name_len);
+  if (psx_gvar_is_extern_decl(gv)) return;
+  int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
   int size = psx_gvar_storage_size(gv, 4);
   if (psx_gvar_is_tag_aggregate(gv)) {
     emit_global_struct_data(gv, addr);

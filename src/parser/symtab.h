@@ -7,6 +7,7 @@
 
 #include "../tokenizer/token.h"
 #include "gvar_public.h"
+#include "literal_public.h"
 #include "type.h"
 
 // グローバル変数テーブル（連結リスト）
@@ -102,7 +103,6 @@ struct global_var_t {
 void psx_register_global_var(global_var_t *gv);
 
 // 文字列リテラルテーブル（連結リスト）
-typedef struct string_lit_t string_lit_t;
 struct string_lit_t {
   string_lit_t *next;
   char *label;
@@ -116,7 +116,6 @@ string_lit_t *psx_find_string_lit_by_label(char *label);
 
 // 浮動小数点リテラルテーブル（連結リスト）
 // フィールドはアライメント降順 (8→4) に並べて内部パディングを除いている。
-typedef struct float_lit_t float_lit_t;
 struct float_lit_t {
   float_lit_t *next;
   double fval;

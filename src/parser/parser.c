@@ -91,6 +91,10 @@ int psx_gvar_is_thread_local_by_name(char *name, int len) {
   return psx_gvar_is_thread_local(psx_find_global_var(name, len));
 }
 
+int psx_gvar_is_static_storage_by_name(char *name, int len) {
+  return psx_gvar_is_static_storage(psx_find_global_var(name, len));
+}
+
 char *psx_gvar_name(const global_var_t *gv) {
   return gv ? gv->name : NULL;
 }

@@ -13,6 +13,7 @@
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
  *      psx_node_*_is_unsigned など)
  *   - psx_ctx_get_function_is_variadic / _param_fp_kind (semantic_ctx)
+ *   - global_var_t (opaque pointer) と読み取り helper
  *   - tag_member_info_t + psx_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
  *
@@ -24,7 +25,8 @@
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
 #include "init_slot.h"  /* psx_gvar_init_slot_t */
-#include "symtab.h"     /* global_var_t */
+#include "gvar_public.h"
+#include "literal_public.h"
 #include "lvar_public.h"
 #include "node_public.h"
 #include <stdbool.h>

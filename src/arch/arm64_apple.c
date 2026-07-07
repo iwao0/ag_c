@@ -15,8 +15,9 @@
 #include "../codegen_backend.h"
 #include "../diag/diag.h"
 /* arm64_apple.c は AST node 型を使わない。
- * Phase C1-3: parser.h ではなくシンボルテーブル (symtab.h) を直接 include。
- * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由に切替。 */
+ * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。
+ * TODO: global init emission still reads global_var_t layout directly, so symtab.h remains
+ * explicit here until the global data view is split from parser internals. */
 #include "../parser/symtab.h"
 #include "../parser/parser_public.h"
 #include "../tokenizer/literals.h"

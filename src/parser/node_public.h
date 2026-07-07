@@ -83,7 +83,6 @@ int psx_node_mem_has_funcptr_metadata(const node_mem_t *mem);
 psx_decl_funcptr_sig_t psx_node_mem_funcptr_sig(const node_mem_t *mem);
 psx_decl_funcptr_sig_t psx_node_funcptr_sig(node_t *node);
 psx_decl_funcptr_sig_t psx_lvar_funcptr_sig(const struct lvar_t *src);
-psx_decl_funcptr_sig_t psx_gvar_funcptr_sig(const struct global_var_t *src);
 void psx_node_store_funcptr_metadata(node_mem_t *dst, psx_decl_funcptr_sig_t sig);
 psx_decl_funcptr_sig_t psx_node_funcdef_ret_funcptr_sig(const node_func_t *fn);
 void psx_node_funcdef_set_ret_funcptr_sig(node_func_t *fn, psx_decl_funcptr_sig_t sig);

@@ -1,8 +1,37 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き876: expose global-var queries through public accessors）
+最終更新: 2026-07-08（続き877: stop exposing symtab layout through parser_public）
 
 ## 現状
+- 続き877: **`parser_public.h` から `symtab.h` を外し、公開境界での `global_var_t` レイアウト露出を止めた**。
+
+  続き876で IR 側の単純な `global_var_t` 参照を public accessor に寄せた後も、
+  `parser_public.h` 自体が `symtab.h` を include していたため、`parser_public.h` を読むだけで
+  `global_var_t` / literal table の実レイアウトまで見える状態が残っていた。今回は
+  `parser_public.h` を `gvar_public.h` / `literal_public.h` / `lvar_public.h` / `node_public.h` /
+  `semantic_public.h` の公開 API 群だけへ寄せ、`string_lit_t` / `float_lit_t` の opaque typedef は
+  新規 `src/parser/literal_public.h` に分離した。`symtab.h` はその public typedef を include した上で
+  実レイアウト定義を持つ内部寄りヘッダとして残す。
+
+  その結果、`symtab.h` への直 include は `arm64_apple.c` / `wasm32_ir.c` / `wasm32_obj.c` の
+  global data emission 3 箇所だけになった。これらはまだ初期化子配列・tag 情報・union ordinal など
+  `global_var_t` の深いレイアウトを直接読んでいるため、次の根本対応候補は parser 側に
+  global initializer/data view を作り、この 3 箇所から `symtab.h` を外すこと。
+
+  併せて `psx_gvar_is_static_storage_by_name()` を追加し、Wasm object の reloc data symbol 判定が
+  `psx_find_global_var()` + field read を行わないようにした。`psx_gvar_funcptr_sig()` の公開宣言も
+  `node_public.h` ではなく `gvar_public.h` 側へ移し、gvar query の宣言正本を寄せた。
+
+  確認は
+  `rg "symtab.h|global_var_t|psx_gvar_funcptr_sig\\(" src/parser/parser_public.h src/parser/gvar_public.h src/parser/node_public.h src/ir src/arch -n`
+  = **`parser_public.h` は `global_var_t` opaque pointer のみ、`symtab.h` 直 include は arch の 3 箇所のみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き876: **IR 側の `global_var_t` 直接参照を public accessor に寄せた**。
 
   続き875で `lvar_t` レイアウトを `parser_public.h` から隠した後、次の同種の境界漏れとして

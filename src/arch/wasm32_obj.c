@@ -1,6 +1,7 @@
 #include "wasm32_obj.h"
 #include "../diag/diag.h"
 #include "../parser/parser_public.h"
+#include "../parser/symtab.h"  /* temporary: global init emission still reads global_var_t layout */
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -311,10 +312,10 @@ static obj_data_t *data_for_symbol(char *sym, int sym_len, int *out_addend) {
     obj_unsupported_msg("function address relocation in Wasm object mode");
   }
   int name_len = sym_len >= 0 ? sym_len : (int)strlen(sym);
-  global_var_t *gv = sym_len >= 0 ? psx_find_global_var(sym, sym_len) : NULL;
-  int is_undefined = gv && gv->is_extern_decl;
+  int is_undefined = sym_len >= 0 ? psx_gvar_is_extern_decl_by_name(sym, sym_len) : 0;
+  int is_static = sym_len >= 0 ? psx_gvar_is_static_storage_by_name(sym, sym_len) : 0;
   if (out_addend) *out_addend = 0;
-  return intern_data(sym, name_len, 2, gv ? gv->is_static : 0, is_undefined);
+  return intern_data(sym, name_len, 2, is_static, is_undefined);
 }
 
 static int sig_equal(const obj_sig_t *a, const obj_sig_t *b) {
@@ -1154,7 +1155,7 @@ static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
   if (!gv) return func_sig_from_ctx(name, name_len);
-  return func_sig_from_funcptr_sig(gv->funcptr_sig);
+  return func_sig_from_funcptr_sig(psx_gvar_funcptr_sig(gv));
 }
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
