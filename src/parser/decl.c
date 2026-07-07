@@ -3894,14 +3894,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
     }
     gv->has_init = 1;
-    gv->init_values = calloc((size_t)arr_count, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)arr_count, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
-    for (int i = 0; i < arr_count; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
-      gv->init_fvalues = calloc((size_t)arr_count, sizeof(double));
-    }
+    psx_gvar_init_slots_alloc(gv, (int)arr_count, fp_kind != TK_FLOAT_KIND_NONE);
     int idx = 0;
     int src_pos = 0;
     while (src_pos < lit->len && idx < arr_count) {
@@ -3917,14 +3910,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
     tk_expect('=');
     gv->has_init = 1;
     int cap = 16;
-    gv->init_values = calloc((size_t)cap, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
-      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
-    }
+    psx_gvar_init_slots_alloc(gv, cap, fp_kind != TK_FLOAT_KIND_NONE);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     psx_decl_finalize_gvar_inferred_array_size(gv, &cap);
@@ -4038,14 +4024,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
                    diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
     }
     gv->has_init = 1;
-    gv->init_values = calloc((size_t)arr_count, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)arr_count, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)arr_count, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)arr_count * sizeof(int));
-    for (int i = 0; i < arr_count; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
-      gv->init_fvalues = calloc((size_t)arr_count, sizeof(double));
-    }
+    psx_gvar_init_slots_alloc(gv, (int)arr_count, fp_kind != TK_FLOAT_KIND_NONE);
     int idx = 0;
     int src_pos = 0;
     while (src_pos < lit->len && idx < arr_count) {
@@ -4061,14 +4040,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
     tk_expect('=');
     gv->has_init = 1;
     int cap = 16;
-    gv->init_values = calloc((size_t)cap, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
-      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
-    }
+    psx_gvar_init_slots_alloc(gv, cap, fp_kind != TK_FLOAT_KIND_NONE);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
   }
@@ -4165,14 +4137,9 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
     tk_expect('=');
     gv->has_init = 1;
     int cap = 16;
-    gv->init_values = calloc((size_t)cap, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
     /* struct は float/double メンバを持ち得るので fvalues も並行確保する
      * (トップレベル global struct と同じ。codegen が fp メンバをビット出力)。 */
-    gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    psx_gvar_init_slots_alloc(gv, cap, 1);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
   }
@@ -4275,12 +4242,7 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
     tk_expect('=');
     gv->has_init = 1;
     int cap = 16;
-    gv->init_values = calloc((size_t)cap, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
-    gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+    psx_gvar_init_slots_alloc(gv, cap, 1);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
   }

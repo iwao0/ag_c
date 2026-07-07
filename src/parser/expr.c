@@ -1207,10 +1207,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       gv->is_static = 1;
       gv->has_init = 1;
       int cap = 16;
-      gv->init_values = calloc((size_t)cap, sizeof(long long));
-      gv->init_fvalues = calloc((size_t)cap, sizeof(double));  /* fp 要素 (`(double[]){...}`) 用 */
-      gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-      gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+      psx_gvar_init_slots_alloc(gv, cap, 1);  /* fp 要素 (`(double[]){...}`) 用 */
       gv->init_count = 0;
       psx_parse_global_brace_init_flat(gv, &cap, -1);
       (void)psx_gvar_refresh_decl_type(gv);

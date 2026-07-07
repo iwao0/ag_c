@@ -1,8 +1,28 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き854: use slot view for wasm bitfield init values）
+最終更新: 2026-07-07（続き855: centralize global init slot allocation）
 
 ## 現状
+- 続き855: **global initializer slot の配列確保を
+  `psx_gvar_init_slots_alloc()` に集約した**。
+
+  続き853/854で initializer slot の write/read は helper/view 経由へ寄せたが、
+  `init_values` / `init_value_symbols` / `init_value_symbol_lens` /
+  `init_union_ordinals` / optional `init_fvalues` の初期確保は `parser.c`、
+  `decl.c`、`expr.c` に重複して残っていた。今回は `node_utils` に
+  `psx_gvar_init_slots_alloc()` を追加し、global initializer、static local lowering、
+  compound literal lowering の初期 slot allocation を同じ入口へ寄せた。
+
+  確認は
+  `rg "psx_gvar_init_slots_alloc|init_values = calloc|init_value_symbols = calloc|init_value_symbol_lens = calloc|init_union_ordinals = malloc|init_fvalues = calloc" src/parser -n`
+  = **allocation 本体 + 呼び出しのみ**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き854: **wasm32 bitfield initializer の `init_values` direct read も
   `psx_gvar_init_slot_view()` 経由にした**。
 

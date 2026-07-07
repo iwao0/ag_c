@@ -6,6 +6,7 @@
 #include "diag.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include <stdlib.h>
 #include <string.h>
 
 static node_mem_t *as_mem(node_t *node) { return (node_mem_t *)node; }
@@ -469,6 +470,16 @@ psx_gvar_init_slot_t psx_gvar_init_slot_view(const global_var_t *gv, int idx) {
     else if (slot.symbol_len == -3) slot.fp_sentinel_kind = TK_FLOAT_KIND_DOUBLE;
   }
   return slot;
+}
+
+void psx_gvar_init_slots_alloc(global_var_t *gv, int cap, int with_fvalues) {
+  if (!gv || cap <= 0) return;
+  gv->init_values = calloc((size_t)cap, sizeof(long long));
+  gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
+  gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
+  gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
+  if (with_fvalues) gv->init_fvalues = calloc((size_t)cap, sizeof(double));
+  for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
 }
 
 void psx_gvar_init_slot_clear(global_var_t *gv, int idx) {

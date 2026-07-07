@@ -2084,17 +2084,11 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   if (curtok()->kind == TK_LBRACE) {
     gv->has_init = 1;
     int cap = 16;
-    gv->init_values = calloc((size_t)cap, sizeof(long long));
-    gv->init_value_symbols = calloc((size_t)cap, sizeof(char *));
-    gv->init_value_symbol_lens = calloc((size_t)cap, sizeof(int));
-    gv->init_union_ordinals = malloc((size_t)cap * sizeof(int));
-    for (int i = 0; i < cap; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
     /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
      * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
      * 浮動小数メンバをビットパターンで出力する。 */
-    if (gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF) {
-      gv->init_fvalues = calloc((size_t)cap, sizeof(double));
-    }
+    psx_gvar_init_slots_alloc(gv, cap,
+                              gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     psx_decl_finalize_gvar_inferred_array_size(gv, &cap);
@@ -2176,9 +2170,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       if (elem == cw) {
         int total = s->byte_len + 1; /* null 終端を含む (要素数) */
         gv->has_init = 1;
-        gv->init_values = calloc((size_t)total, sizeof(long long));
-        gv->init_union_ordinals = malloc((size_t)total * sizeof(int));
-        for (int i = 0; i < total; i++) psx_gvar_init_slot_set_ordinal(gv, i, -1);
+        psx_gvar_init_slots_alloc(gv, total, 0);
         string_lit_t *lit = NULL;
         for (string_lit_t *l = string_literals; l; l = l->next) {
           if (strcmp(l->label, s->string_label) == 0) { lit = l; break; }
