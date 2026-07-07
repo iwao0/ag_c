@@ -3,22 +3,11 @@
 
 #include "core.h"
 #include "ast.h"
+#include "init_slot.h"
 
 struct lvar_t;
 struct global_var_t;
 struct tag_member_info_t;
-
-#ifndef PSX_GVAR_INIT_SLOT_T_DEFINED
-#define PSX_GVAR_INIT_SLOT_T_DEFINED
-typedef struct psx_gvar_init_slot_t {
-  int in_range;
-  char *symbol;
-  int symbol_len;
-  long long value;
-  double fvalue;
-  tk_float_kind_t fp_sentinel_kind;
-} psx_gvar_init_slot_t;
-#endif
 
 psx_type_t *psx_node_get_type(node_t *node);
 psx_type_t *psx_node_materialize_type(node_t *node);

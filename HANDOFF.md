@@ -1,8 +1,23 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き848: remove wasm initializer direct slot reads）
+最終更新: 2026-07-07（続き849: single home for global init slot view type）
 
 ## 現状
+- 続き849: **`psx_gvar_init_slot_t` の typedef 正本を
+  `src/parser/init_slot.h` に一本化した**。
+
+  続き847では `node_utils.h` と `parser_public.h` の両方で同じ typedef を
+  guard 付きで持たせていた。これは動作上は問題ないが、型情報の正本分散を減らす方針としては
+  浅い形だったため、`src/parser/init_slot.h` を追加し、内部ヘッダと公開ヘッダはそこを
+  include するだけにした。
+
+  確認は
+  `rg "PSX_GVAR_INIT_SLOT_T_DEFINED|typedef struct psx_gvar_init_slot_t|#include \"init_slot.h\"" src/parser -n`
+  = **typedef 1件 / include 2件**、
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `git diff --check` = **pass**。
+
 - 続き848: **wasm32 backend の残りの initializer slot direct read を
   `psx_gvar_init_slot_view()` 経由に寄せた**。
 

@@ -24,22 +24,11 @@
  */
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
+#include "init_slot.h"  /* psx_gvar_init_slot_t */
 #include "symtab.h"     /* global_var_t */
 #include "decl.h"  /* lvar_t — Phase C2 では内部含むが、IR からは
                               本ヘッダ越しにしか触らない契約とする */
 #include <stdbool.h>
-
-#ifndef PSX_GVAR_INIT_SLOT_T_DEFINED
-#define PSX_GVAR_INIT_SLOT_T_DEFINED
-typedef struct psx_gvar_init_slot_t {
-  int in_range;
-  char *symbol;
-  int symbol_len;
-  long long value;
-  double fvalue;
-  tk_float_kind_t fp_sentinel_kind;
-} psx_gvar_init_slot_t;
-#endif
 
 /* node_utils.h からの公開 */
 int ps_node_is_pointer(node_t *n);
