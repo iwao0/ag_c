@@ -1,8 +1,31 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き840: shared next named tag member lookup）
+最終更新: 2026-07-07（続き841: named tag member lookup with ordinal）
 
 ## 現状
+- 続き841: **名前付きタグメンバ検索と ordinal 取得を
+  `psx_tag_find_named_member()` に集約した**。
+
+  `parse_struct_initializer()` は `.member` designator を名前で引いたあと、
+  C11 6.7.9p17 の positional 継続位置を決めるために、同じ member 名を
+  ordinal 順ループでもう一度探していた。これは「名前検索」と「ordinal 取得」の
+  正本が分かれた浅い対応だったため、`node_utils` / `parser_public` に
+  `psx_tag_find_named_member()` を追加し、`info` と `ordinal` を一回の
+  順序付き走査で返すようにした。`decl.c` の `tag_find_member()` はこの helper へ
+  委譲し、designator 後の `ordinal` 同期も戻り値の ordinal を使う。
+
+  回帰テストは `test_type_metadata_bridge()` に追加した。`FlatOut.y` の ordinal が
+  5 として返ること、存在しない member では ordinal が更新されないことを固定している。
+
+  確認は
+  `make -j4 build/test_parser` = **pass**、
+  `make -j4 build/ag_c build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き840: **名前付きタグメンバを ordinal 順に進める走査を
   `psx_tag_next_named_member()` に集約した**。
 

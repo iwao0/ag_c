@@ -2895,6 +2895,17 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
   ASSERT_EQ(2, psx_tag_member_flat_slots(&flat_member));
   ASSERT_EQ(2, psx_tag_member_elem_flat_slots(&flat_member));
+  int named_ordinal = -1;
+  tag_member_info_t named_member = {0};
+  ASSERT_TRUE(psx_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "y", 1,
+                                        &named_member, &named_ordinal));
+  ASSERT_EQ(5, named_ordinal);
+  ASSERT_TRUE(named_member.name != NULL);
+  ASSERT_EQ(0, strncmp(named_member.name, "y", (size_t)named_member.len));
+  named_ordinal = -1;
+  ASSERT_TRUE(!psx_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "missing", 7,
+                                         &named_member, &named_ordinal));
+  ASSERT_EQ(-1, named_ordinal);
   int first_named_ordinal = -1;
   tag_member_info_t first_named_member = {0};
   ASSERT_TRUE(psx_tag_first_named_member(TK_STRUCT, "FlatOut", 7,

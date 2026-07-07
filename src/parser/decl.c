@@ -142,6 +142,8 @@ static void lvar_index_on_remove(lvar_t *var) {
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
 static bool tag_find_member(lvar_t *var, char *name, int len, tag_member_info_t *out);
+static bool tag_find_member_ordinal(lvar_t *var, char *name, int len,
+                                    tag_member_info_t *out, int *out_ordinal);
 static bool tag_get_member_at(lvar_t *var, int ordinal, tag_member_info_t *out);
 static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
                                       tag_member_info_t *out);
@@ -2078,8 +2080,13 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
 }
 
 static bool tag_find_member(lvar_t *var, char *name, int len, tag_member_info_t *out) {
-  return psx_ctx_find_tag_member_info(var->tag_kind, var->tag_name, var->tag_len,
-                                       name, len, out);
+  return tag_find_member_ordinal(var, name, len, out, NULL);
+}
+
+static bool tag_find_member_ordinal(lvar_t *var, char *name, int len,
+                                    tag_member_info_t *out, int *out_ordinal) {
+  return psx_tag_find_named_member(var->tag_kind, var->tag_name, var->tag_len,
+                                   name, len, out, out_ordinal);
 }
 
 static bool tag_get_member_at(lvar_t *var, int ordinal, tag_member_info_t *out) {
@@ -2414,21 +2421,12 @@ static node_t *parse_struct_initializer(lvar_t *var) {
       if (tk_consume('.')) {
         token_ident_t *id = tk_consume_ident();
         if (!id) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
-        found = tag_find_member(var, id->str, id->len, &info);
+        int found_ordinal = -1;
+        found = tag_find_member_ordinal(var, id->str, id->len, &info, &found_ordinal);
         /* C11 6.7.9p17: designator の後に続く位置指定初期化子は、その designated
          * member の「次」のメンバから継続する。positional 用 ordinal を designated
          * member の index+1 に同期する (`{.b=2, 3, 4}` の 3 は c、4 は d)。 */
-        if (found) {
-          tag_member_info_t probe = {0};
-          for (int o = 0; o < member_count; o++) {
-            if (tag_get_member_at(var, o, &probe) && probe.len == info.len &&
-                probe.len > 0 && info.name &&
-                strncmp(probe.name, info.name, (size_t)info.len) == 0) {
-              ordinal = o + 1;
-              break;
-            }
-          }
-        }
+        if (found) ordinal = found_ordinal + 1;
         /* designator のサブパス (C11 6.7.9p6 + 6.7.9p17): `.member` の後に `.x` や
          * `[i]` が続けば subobject へ降りるパス指定 (`.a.b`, `.a[i]`, `.m.x[1].b`,
          * `.arr[i].f` など)。consume_nested_designator_and_build_assign が `.`/`[` の
