@@ -2438,6 +2438,27 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_row_decay_pointer_arith_type(
                   (node_t *)&typed_nonarray_stale_row) == NULL);
 
+  node_mem_t compound_lit_addr = {0};
+  compound_lit_addr.base.kind = ND_ADDR;
+  compound_lit_addr.compound_literal_array_size = 12;
+  ASSERT_EQ(12, psx_node_compound_literal_array_size((node_t *)&compound_lit_addr));
+  node_t compound_lit_comma = {0};
+  compound_lit_comma.kind = ND_COMMA;
+  compound_lit_comma.rhs = (node_t *)&compound_lit_addr;
+  ASSERT_EQ(12, psx_node_compound_literal_array_size(&compound_lit_comma));
+  node_mem_t compound_lit_nonaddr = {0};
+  compound_lit_nonaddr.base.kind = ND_DEREF;
+  compound_lit_nonaddr.compound_literal_array_size = 12;
+  ASSERT_EQ(0, psx_node_compound_literal_array_size((node_t *)&compound_lit_nonaddr));
+
+  node_mem_t bitfield_deref = {0};
+  bitfield_deref.base.kind = ND_DEREF;
+  bitfield_deref.bit_width = 3;
+  ASSERT_EQ(3, psx_node_bitfield_width((node_t *)&bitfield_deref));
+  node_t non_mem_num = {0};
+  non_mem_num.kind = ND_NUM;
+  ASSERT_EQ(0, psx_node_bitfield_width(&non_mem_num));
+
   node_mem_t typed_deref_stale_tag_mem = {0};
   typed_deref_stale_tag_mem.base.kind = ND_DEREF;
   typed_deref_stale_tag_mem.is_tag_pointer = 1;

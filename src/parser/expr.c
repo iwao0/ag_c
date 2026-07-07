@@ -161,13 +161,8 @@ static int sizeof_expr_node(node_t *node) {
     int elem = s->char_width ? (int)s->char_width : 1;
     return (s->byte_len + 1) * elem;
   }
-  if (node && (node->kind == ND_ADDR || node->kind == ND_COMMA)) {
-    node_t *target = node->kind == ND_COMMA ? node->rhs : node;
-    if (target && target->kind == ND_ADDR) {
-      int cl_array_size = ((node_mem_t *)target)->compound_literal_array_size;
-      if (cl_array_size > 0) return cl_array_size;
-    }
-  }
+  int cl_array_size = psx_node_compound_literal_array_size(node);
+  if (cl_array_size > 0) return cl_array_size;
   int sz = ps_node_type_size(node);
   if (sz) return sz;
   if (node && node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
@@ -3049,8 +3044,7 @@ static node_t *build_unary_addr_node(node_t *operand) {
    * `s.f` (bitfield) は ND_DEREF にラップされて bit_width が立っているので
    * ここで弾く。 */
   if (operand && operand->kind == ND_DEREF) {
-    node_mem_t *mm = (node_mem_t *)operand;
-    if (mm->bit_width > 0) {
+    if (psx_node_bitfield_width(operand) > 0) {
       psx_diag_ctx(curtok(), "addr",
                    "ビットフィールドのアドレスは取得できません (C11 6.5.3.2p1)");
     }

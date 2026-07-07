@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き825: row decay pointer arithmetic type helper 正本化）
+最終更新: 2026-07-07（続き826: compound literal / bitfield metadata reader 化）
 
 ## 現状
+- 続き826: **`expr.c` に残っていた compound literal array size と bitfield width の
+  `node_mem_t` 直読を `node_utils` reader 境界へ移した**。
+
+  続き825までで pointer/row/subscript 系の型 metadata は helper 経由に寄っていたが、
+  `sizeof_expr_node()` は `ND_ADDR` / `ND_COMMA` の rhs を `node_mem_t` へ cast して
+  `compound_literal_array_size` を直接読み、`build_unary_addr_node()` も bitfield address
+  診断のため `bit_width` を直接読んでいた。
+
+  今回は `psx_node_compound_literal_array_size()` と `psx_node_bitfield_width()` を追加し、
+  compound literal 専用 marker と bitfield 幅の読み取りを `node_utils` に閉じ込めた。
+  `psx_node_compound_literal_array_size()` は `ND_COMMA` の rhs 伝播と `ND_ADDR` 限定を helper 側で扱う。
+  これにより `expr.c` は「compound literal 配列サイズがあるか」「bitfield か」という意味だけを見て、
+  `node_mem_t` layout を直接知らない形になった。
+
+  回帰テストは `test_type_metadata_bridge()` に、`ND_ADDR` と `ND_COMMA` 越しの
+  compound literal array size、非 `ND_ADDR` では marker があっても 0 になること、
+  bitfield width reader が non-mem node では 0 になることを追加した。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き825: **row decay の pointer arithmetic 用 type 再構成を
   `node_utils` helper 境界へ移した**。
 

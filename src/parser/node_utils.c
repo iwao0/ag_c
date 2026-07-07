@@ -3925,6 +3925,21 @@ psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node) {
   return ptr;
 }
 
+int psx_node_compound_literal_array_size(node_t *node) {
+  if (!node) return 0;
+  if (node->kind == ND_COMMA) return psx_node_compound_literal_array_size(node->rhs);
+  if (node->kind != ND_ADDR) return 0;
+  node_mem_t *mem = node_mem_view(node);
+  return (mem && mem->compound_literal_array_size > 0)
+             ? mem->compound_literal_array_size
+             : 0;
+}
+
+int psx_node_bitfield_width(node_t *node) {
+  node_mem_t *mem = node_mem_view(node);
+  return mem ? mem->bit_width : 0;
+}
+
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   /* C11 6.5.16: 代入の RHS は void 型であってはならない。
    * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */
