@@ -1,8 +1,35 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き819: function pointer call deref decay 正本化）
+最終更新: 2026-07-07（続き820: cast function pointer signature 正本化）
 
 ## 現状
+- 続き820: **function pointer への cast でも、cast type の `psx_type_t` に
+  function pointer signature を保持するようにした**。
+
+  続き819で `ND_DEREF` / `ND_FUNCALL` の function pointer value に対する unary `*`
+  decay を正規化したが、`(*(int (*)(int))fp)(41)` のように cast を挟むと、
+  `parse_cast_type()` が「pointer である」ことしか返さず、`ND_CAST` / cast target type に
+  function pointer signature が載っていなかった。そのため call 側では `ND_CAST` が
+  function pointer value だと判断できず、外側 `*` が実体 deref として残り、関数コード先頭を
+  整数ロードして exit 138 していた。
+
+  今回は `parse_funcptr_abstract_decl()` が parameter signature を返せるようにし、
+  `parse_cast_type()` から `psx_decl_funcptr_sig_t` を返す経路を追加した。
+  `expr_cast_target_type()` は payload ありの signature を cast target `psx_type_t` に保存し、
+  `parse_call_postfix()` は `ND_CAST` も typed function pointer value として decay 対象に含める。
+  これにより、cast 後の function pointer call も通常の `fp(args)` と同じ signature 正本を読む。
+
+  回帰テストは `test_funcall()` に `(*(int (*)(int))fp)(1)` の AST 確認を追加し、
+  `test/fixtures/probes_found_bugs/funcptr_explicit_deref_call.c` に
+  `(*(int (*)(int, int))fp)(50, 8)` を追加した。
+
+  確認は
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き819: **function pointer 呼び出し callee の unary `*` 剥がしを、typed signature
   を持つ function pointer value に限定した**。
 

@@ -1203,6 +1203,15 @@ static void test_funcall() {
   ASSERT_EQ(ND_FUNCALL, stmt->kind);
   ASSERT_EQ(ND_LVAR, as_func(stmt)->callee->kind);
   ASSERT_EQ(1, as_func(stmt)->nargs);
+
+  parsed_code = parse_program_input(
+      "int inc(int x){ return x + 1; } "
+      "int main(void){ int (*fp)(int)=inc; (*(int (*)(int))fp)(1); }");
+  node_t *cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
+  ASSERT_EQ(ND_CAST, as_func(cast_deref_call)->callee->kind);
+  ASSERT_TRUE(psx_node_has_funcptr_signature(as_func(cast_deref_call)->callee));
+  ASSERT_EQ(1, psx_node_pointer_qual_levels(as_func(cast_deref_call)->callee));
 }
 
 // --- ここから追加テスト ---

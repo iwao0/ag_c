@@ -293,7 +293,8 @@ static bool skip_bracket_sequence(token_t **pt) {
   return true;
 }
 
-static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
+static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer,
+                                       psx_funcptr_signature_t *out_sig) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
   t = t->next;
@@ -308,8 +309,16 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer) {
   if (!t || t->kind != TK_RPAREN) return 0;
   t = t->next;
   if (!t || t->kind != TK_LPAREN) return 0;
+  token_t *param_lparen = t;
   token_t *after_params = skip_balanced_paren_token(t);
   if (!after_params) return 0;
+  if (out_sig) {
+    psx_funcptr_signature_reset(out_sig);
+    token_t *saved = curtok();
+    set_curtok(param_lparen);
+    psx_skip_func_param_list(out_sig);
+    set_curtok(saved);
+  }
   *ptok = after_params;
   *is_pointer = 1;
   return 1;
@@ -939,7 +948,7 @@ static void parse_pointer_levels_with_quals(generic_type_t *out, token_t **pt) {
 // type-name の abstract-declarator のうち、_Generic 関連型で受理する形を順に試す。
 // 例: int (*)(int) / int (*)[3] / int (*[3])(int) など。
 static void try_parse_assoc_abstract_declarators(generic_type_t *out, token_t **pt) {
-  (void)parse_funcptr_abstract_decl(pt, &out->is_pointer);
+  (void)parse_funcptr_abstract_decl(pt, &out->is_pointer, NULL);
   (void)parse_ptr_to_array_abstract_decl(pt, &out->is_pointer);
   (void)parse_array_of_funcptr_abstract_decl(pt, NULL);
   (void)parse_array_of_ptr_to_array_abstract_decl_skip(pt, NULL);
@@ -1334,7 +1343,8 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
                            int *out_elem_size, tk_float_kind_t *out_fp_kind, int *out_array_count,
                            int *out_array_dims, int *out_array_dim_count, int *out_is_unsigned,
                            int *out_is_long_long, int *out_is_plain_char,
-                           int *out_is_complex, int *out_ptr_array_pointee_bytes) {
+                           int *out_is_complex, int *out_ptr_array_pointee_bytes,
+                           psx_decl_funcptr_sig_t *out_funcptr_sig) {
   if (!tok || tok->kind != TK_LPAREN) return 0;
   tk_ensure_lookahead();
   token_t *t = tok->next;
@@ -1352,6 +1362,7 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
   if (out_is_plain_char) *out_is_plain_char = 0;
   if (out_is_complex) *out_is_complex = 0;
   if (out_ptr_array_pointee_bytes) *out_ptr_array_pointee_bytes = 0;
+  if (out_funcptr_sig) *out_funcptr_sig = (psx_decl_funcptr_sig_t){0};
 
   consume_local_type_quals(&t);
   if (t && (t->kind == TK_THREAD_LOCAL || t->kind == TK_EXTERN || t->kind == TK_STATIC ||
@@ -1589,7 +1600,17 @@ static int parse_cast_type(token_t *tok, token_kind_t *type_kind, int *is_pointe
 cast_parse_postfix:
   if (*is_pointer < 0) *is_pointer = 0;
   consume_cast_pointer_suffix(&t, is_pointer);
-  parse_funcptr_abstract_decl(&t, is_pointer);
+  int funcptr_ret_is_data_pointer = *is_pointer > 0;
+  psx_funcptr_signature_t funcptr_suffix_sig = {0};
+  if (parse_funcptr_abstract_decl(&t, is_pointer, &funcptr_suffix_sig) &&
+      out_funcptr_sig) {
+    *out_funcptr_sig = psx_decl_make_funcptr_sig_from_kind(
+        &funcptr_suffix_sig, *type_kind,
+        out_fp_kind ? *out_fp_kind : TK_FLOAT_KIND_NONE,
+        funcptr_ret_is_data_pointer, 0,
+        out_is_complex ? *out_is_complex : 0,
+        (psx_ret_pointee_array_t){0});
+  }
   (void)parse_ptr_to_array_abstract_decl(&t, is_pointer);
   /* `(int (*[N])(args)){...}` のような関数ポインタ配列 compound literal の
    * 配列サイズ N を out_array_count に保存。修正前は NULL で破棄され、
@@ -1802,7 +1823,7 @@ static int finish_parenthesized_type_size(token_t *t, int sz, int alignof_mode) 
   if (parse_ptr_to_func_returning_ptr_to_func_returning_ptr_to_array_abstract_decl(&t)) {
     sz = 8;
   }
-  if (parse_funcptr_abstract_decl(&t, &fp_ptr)) {
+  if (parse_funcptr_abstract_decl(&t, &fp_ptr, NULL)) {
     sz = 8;
   }
   if (parse_ptr_to_array_abstract_decl(&t, &fp_ptr)) {
@@ -2020,7 +2041,8 @@ static psx_type_t *expr_cast_target_type(token_kind_t type_kind, int is_pointer,
                                          int cast_tag_len, int cast_elem_size,
                                          tk_float_kind_t cast_fp_kind,
                                          int cast_is_unsigned, int cast_is_long_long,
-                                         int cast_is_plain_char, int cast_is_complex) {
+                                         int cast_is_plain_char, int cast_is_complex,
+                                         psx_decl_funcptr_sig_t cast_funcptr_sig) {
   psx_type_t *base = NULL;
   if (cast_tag_kind == TK_STRUCT || cast_tag_kind == TK_UNION) {
     base = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len, 0, cast_elem_size);
@@ -2059,6 +2081,8 @@ static psx_type_t *expr_cast_target_type(token_kind_t type_kind, int is_pointer,
     ptr->base_deref_size = deep_base_size;
     type = ptr;
   }
+  if (psx_decl_funcptr_sig_has_payload(cast_funcptr_sig))
+    type->funcptr_sig = cast_funcptr_sig;
   return type;
 }
 
@@ -2136,7 +2160,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
                           token_kind_t cast_tag_kind, char *cast_tag_name, int cast_tag_len,
                           int cast_elem_size, tk_float_kind_t cast_fp_kind,
                           int cast_is_unsigned, int cast_is_long_long, int cast_is_plain_char,
-                          int cast_is_complex) {
+                          int cast_is_complex, psx_decl_funcptr_sig_t cast_funcptr_sig) {
   /* 浮動小数点定数 ND_NUM をスカラ整数型へキャストするのは定数畳み込みできる。
    * wrap_fp_to_int_if_needed 経由で ND_FP_TO_INT に変換してしまうと「定数」ではなく
    * なり、グローバル初期化 (`int g = (int)3.7;`) の has_init が立たず `.comm` に
@@ -2154,7 +2178,8 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
                                                 cast_tag_kind, cast_tag_name, cast_tag_len,
                                                 cast_elem_size, cast_fp_kind,
                                                 cast_is_unsigned, cast_is_long_long,
-                                                cast_is_plain_char, cast_is_complex);
+                                                cast_is_plain_char, cast_is_complex,
+                                                cast_funcptr_sig);
   if (is_pointer || type_kind == TK_LONG) {
     operand = wrap_fp_to_int_if_needed(operand);
     operand->fp_kind = TK_FLOAT_KIND_NONE;
@@ -2740,11 +2765,12 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
   int cast_is_long_long = 0;
   int cast_is_plain_char = 0;
   int cast_is_complex = 0;
+  psx_decl_funcptr_sig_t cast_funcptr_sig = {0};
   if (parse_cast_type(curtok(), &cast_kind, &cast_is_ptr, &after_rparen,
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count, NULL, NULL,
                       &cast_is_unsigned, &cast_is_long_long, &cast_is_plain_char,
-                      &cast_is_complex, NULL)) {
+                      &cast_is_complex, NULL, &cast_funcptr_sig)) {
     if (after_rparen && after_rparen->kind == TK_LBRACE) {
       // compound literal は primary/postfix 側で処理する
       return unary_with_compound_addr_context(compound_addr_context, ctx);
@@ -2802,10 +2828,11 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
                    kind);
     }
     return apply_postfix(apply_cast(cast_kind, cast_is_ptr, operand,
-                                     cast_tag_kind, cast_tag_name, cast_tag_len,
-                                     cast_elem_size, cast_fp_kind,
-                                     cast_is_unsigned, cast_is_long_long,
-                                     cast_is_plain_char, cast_is_complex), ctx);
+                                    cast_tag_kind, cast_tag_name, cast_tag_len,
+                                    cast_elem_size, cast_fp_kind,
+                                    cast_is_unsigned, cast_is_long_long,
+                                    cast_is_plain_char, cast_is_complex,
+                                    cast_funcptr_sig), ctx);
   }
   return unary_ctx(ctx);
 }
@@ -2855,7 +2882,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
                         &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                         &cast_elem_size, &cast_fp_kind, &cast_array_count,
                         cast_array_dims, &cast_array_dim_count, NULL, NULL, NULL,
-                        &cast_is_complex, &cast_ptr_array_pointee_bytes) &&
+                        &cast_is_complex, &cast_ptr_array_pointee_bytes, NULL) &&
         after_rparen && after_rparen->kind == TK_LBRACE) {
       expr_parse_ctx_t child_ctx = expr_parse_ctx_unevaluated_child(ctx);
       node_t *node = parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
@@ -3345,7 +3372,7 @@ static int expr_funcall_returns_decayable_funcptr(node_t *fcall) {
 
 static int expr_node_is_decayable_funcptr_value(node_t *node) {
   if (!node) return 0;
-  if (node->kind != ND_DEREF && node->kind != ND_FUNCALL) return 0;
+  if (node->kind != ND_DEREF && node->kind != ND_FUNCALL && node->kind != ND_CAST) return 0;
   if (psx_node_pointer_qual_levels(node) > 1) return 0;
   return psx_node_has_funcptr_signature(node);
 }
@@ -3354,8 +3381,9 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   tk_expect('(');
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCALL;
-  /* `(*fp)(args)` / `(**fp)(args)`: function pointer value に対する単項 `*` は
-   * 関数へ戻って即座に function pointer へ減衰するだけなので、呼び出し callee から剥がす。
+  /* `(*fp)(args)` / `(**fp)(args)` / `(*(T)fp)(args)`:
+   * function pointer value に対する単項 `*` は関数へ戻って即座に function pointer
+   * へ減衰するだけなので、呼び出し callee から剥がす。
    * 一方 `int (**getpp(void))(int); (*getpp())(args)` の `*` は function pointer
    * object をロードする実体 deref なので、operand がまだ 2 段以上なら残す。 */
   if (callee && callee->kind == ND_DEREF) {
@@ -3494,7 +3522,7 @@ static node_t *try_parse_compound_literal(int compound_addr_context, expr_parse_
                       &cast_tag_kind, &cast_tag_name, &cast_tag_len,
                       &cast_elem_size, &cast_fp_kind, &cast_array_count,
                       cast_array_dims, &cast_array_dim_count, NULL, NULL, NULL,
-                      &cast_is_complex, &cast_ptr_array_pointee_bytes) &&
+                      &cast_is_complex, &cast_ptr_array_pointee_bytes, NULL) &&
       after_rparen && after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(cast_kind, cast_is_ptr, after_rparen,
                                             cast_tag_kind, cast_tag_name, cast_tag_len,
