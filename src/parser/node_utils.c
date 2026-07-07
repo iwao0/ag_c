@@ -3881,6 +3881,23 @@ static node_mem_t *node_legacy_pointee_scalar_ptr_mem(node_t *node) {
   return mem;
 }
 
+int psx_node_scalar_ptr_member_lvalue(node_t *node) {
+  return node_scalar_ptr_member_lvalue(node);
+}
+
+int psx_node_legacy_pointee_scalar_ptr(node_t *node) {
+  return node_legacy_pointee_scalar_ptr_mem(node) != NULL;
+}
+
+int psx_node_subscript_deref_uses_base_address(node_t *node) {
+  if (!node || node->kind != ND_DEREF) return 0;
+  node_mem_t *mem = node_mem_view(node);
+  if (!mem) return 0;
+  if (mem->deref_size > 0 && !mem->is_pointer) return 1;
+  if (mem->vla_row_stride_frame_off > 0 && !mem->is_pointer) return 1;
+  return 0;
+}
+
 node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
   /* C11 6.5.16: 代入の RHS は void 型であってはならない。
    * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */

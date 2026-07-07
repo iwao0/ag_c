@@ -3193,11 +3193,12 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   if (node->kind == ND_DEREF &&
       psx_node_pointer_qual_levels(node) == 1 &&
       psx_node_base_deref_size(node) > 0) {
-    node_mem_t *m = (node_mem_t *)node;
-    if (m->deref_size == 0 &&
-        !(m->is_pointer && !m->is_scalar_ptr_member &&
+    token_kind_t tag_kind = TK_EOF;
+    psx_node_get_tag_type(node, &tag_kind, NULL, NULL, NULL);
+    if (ds == 0 &&
+        !(ps_node_is_pointer(node) && !psx_node_scalar_ptr_member_lvalue(node) &&
           node->lhs && node->lhs->kind == ND_ADD &&
-          (m->tag_kind == TK_STRUCT || m->tag_kind == TK_UNION))) {
+          (tag_kind == TK_STRUCT || tag_kind == TK_UNION))) {
       es = psx_node_base_deref_size(node);
     }
   }
@@ -3219,12 +3220,11 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   }
   if (node->kind == ND_DEREF && psx_node_pointer_qual_levels(node) == 0 &&
       inner_ds <= 0 && vla_rsf == 0) {
-    node_mem_t *m = (node_mem_t *)node;
     int bds = psx_node_base_deref_size(node);
     if (bds == 0 && node->lhs) bds = psx_node_base_deref_size(node->lhs);
     int pointer_array_element_row =
         (ptr_array_bytes > 0 && ds > bds) ||
-        (m->pointee_is_scalar_ptr && ds == 8);
+        (psx_node_legacy_pointee_scalar_ptr(node) && ds == 8);
     if (bds > 0 && ts > bds && !pointer_array_element_row) es = bds;
   }
   node_t *scaled;
@@ -3250,19 +3250,17 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
 // 「base + offset」 (lhs) を使う方が効率的かつ正しい。
 static node_t *subscript_base_address_of(node_t *node) {
   if (node->kind != ND_DEREF) return node;
-  node_mem_t *mem = (node_mem_t *)node;
-  if (mem->deref_size > 0 && !mem->is_pointer) return node->lhs;
+  if (psx_node_subscript_deref_uses_base_address(node)) return node->lhs;
   /* 3D VLA `int t[n][m][k]` の最初の subscript結果 t[i] は deref_size=0 (次 stride は
    * runtime, vla_row_stride_frame_off=mid_slot 経由) だが、配列の中間「2D サブ配列」を
    * 表すため subscript chain では address (lhs) を返す。これがないと t[i][j] が ND_DEREF
    * を 1 バイト整数として load してしまい SIGSEGV。 */
-  if (mem->vla_row_stride_frame_off > 0 && !mem->is_pointer) return node->lhs;
   /* スカラポインタメンバ (`struct S { char *name; }; s.name[0]`) を subscript
    * する場合、base は「ポインタ値の load」(= ND_DEREF をそのまま使う) でなければ
    * いけない。配列メンバとは違って ND_ADD (= メンバスロットのアドレス) を base に
    * 使うと、ポインタ値ではなくスロット自身のアドレスから byte を読んでしまう。
    * 配列メンバの decay 表現とは is_scalar_ptr_member で区別する。 */
-  if (mem->is_scalar_ptr_member) return node;
+  if (psx_node_scalar_ptr_member_lvalue(node)) return node;
   if (node->lhs && node->lhs->kind == ND_ADD &&
       node->lhs->rhs && node->lhs->rhs->kind == ND_NUM) {
     // Member lvalue (`s.m`) is represented as `*(base + off)`.

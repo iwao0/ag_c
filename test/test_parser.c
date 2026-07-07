@@ -2382,6 +2382,8 @@ static void test_type_metadata_bridge() {
   typed_ptr_stale_pointee_scalar_ptr_mem.base_deref_size = 99;
   typed_ptr_stale_pointee_scalar_ptr_mem.base.type =
       psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 0), 8);
+  ASSERT_TRUE(!psx_node_legacy_pointee_scalar_ptr(
+      (node_t *)&typed_ptr_stale_pointee_scalar_ptr_mem));
   node_mem_t *typed_ptr_stale_pointee_scalar_sub =
       (node_mem_t *)psx_node_new_subscript_deref_for(
           (node_t *)&typed_ptr_stale_pointee_scalar_ptr_mem, psx_node_new_num(0),
@@ -2396,11 +2398,22 @@ static void test_type_metadata_bridge() {
       psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 0), 8), 8);
   typed_deref_stale_scalar_ptr_member.base.type->pointer_qual_levels = 2;
   typed_deref_stale_scalar_ptr_member.base.type->base_deref_size = 4;
+  ASSERT_TRUE(psx_node_scalar_ptr_member_lvalue(
+      (node_t *)&typed_deref_stale_scalar_ptr_member));
   node_mem_t *typed_deref_sub = (node_mem_t *)psx_node_new_subscript_deref_for(
       (node_t *)&typed_deref_stale_scalar_ptr_member, psx_node_new_num(0),
       psx_node_new_num(0), 8, 0, 0, NULL, 0);
   ASSERT_EQ(2, psx_node_pointer_qual_levels((node_t *)typed_deref_sub));
   ASSERT_EQ(4, psx_node_base_deref_size((node_t *)typed_deref_sub));
+
+  node_mem_t subscript_row_lvalue = {0};
+  subscript_row_lvalue.base.kind = ND_DEREF;
+  subscript_row_lvalue.deref_size = 4;
+  subscript_row_lvalue.is_pointer = 0;
+  subscript_row_lvalue.base.type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 0), 4);
+  ASSERT_TRUE(psx_node_subscript_deref_uses_base_address(
+      (node_t *)&subscript_row_lvalue));
 
   node_mem_t typed_deref_stale_tag_mem = {0};
   typed_deref_stale_tag_mem.base.kind = ND_DEREF;

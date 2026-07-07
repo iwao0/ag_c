@@ -1,8 +1,40 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き823: signed cast sub-int operand signedness 正本化）
+最終更新: 2026-07-07（続き824: subscript scalar pointer metadata helper 正本化）
 
 ## 現状
+- 続き824: **subscript 側に残っていた scalar pointer / row lvalue の `node_mem_t`
+  直読を `node_utils` helper 境界へ移した**。
+
+  続き807-809で `psx_node_new_subscript_deref_for()` 内の stale mem fallback は
+  typed node と legacy node の境界を整理していたが、parser の
+  `make_subscript_scaled_offset()` / `subscript_base_address_of()` 側にはまだ
+  `ND_DEREF` の `is_scalar_ptr_member` / `pointee_is_scalar_ptr` / row lvalue 用
+  `deref_size` / `vla_row_stride_frame_off` を直接読む経路が残っていた。
+
+  今回は `psx_node_scalar_ptr_member_lvalue()`、
+  `psx_node_legacy_pointee_scalar_ptr()`、
+  `psx_node_subscript_deref_uses_base_address()` を `node_utils` に追加し、
+  `expr.c` の subscript 計算は公開 accessor/helper だけを読む形にした。
+  `pointee_is_scalar_ptr` は legacy node 限定の hint として閉じ込め、
+  scalar pointer member lvalue と pointer-to-array/VLA row lvalue の文脈判定は
+  明示 helper で表す。途中で `ps_node_is_pointer()` だけへ置き換えると
+  `const struct S (*p)[1]; (*p)[0].x = 2;` の compile-fail が通ってしまうことを確認したため、
+  row lvalue は subscript 専用 helper に分離している。
+
+  回帰テストは `test_type_metadata_bridge()` に、typed node の stale
+  `pointee_is_scalar_ptr` が legacy hint として見えないこと、scalar pointer member lvalue と
+  subscript row lvalue がそれぞれ専用 helper で見えることを追加した。
+
+  確認は
+  `make -j4 build/ag_c build/test_parser build/test_e2e` = **pass**、
+  `./build/test_parser` = **pass**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `git diff --check` = **pass**。
+
 - 続き823: **`(signed)` cast でも sub-int operand の unsigned 正本を破壊しないようにした**。
 
   続き822で `(int)s.a` は `wrap_integer_cast_result()` 経由にしたが、同じ
