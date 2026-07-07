@@ -17,9 +17,12 @@ psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_refresh_decl_type(struct global_var_t *gv);
 int psx_lvar_value_is_pointer_like(const struct lvar_t *var);
+int psx_gvar_storage_size(const struct global_var_t *gv, int fallback_size);
+int psx_gvar_is_tag_aggregate(const struct global_var_t *gv);
 int psx_gvar_array_element_size(const struct global_var_t *gv);
 int psx_gvar_array_element_count(const struct global_var_t *gv);
 int psx_gvar_initializer_element_size(const struct global_var_t *gv, int fallback_size);
+int psx_gvar_initializer_element_count(const struct global_var_t *gv, int fallback_size);
 
 int ps_node_type_size(node_t *node);
 int psx_node_storage_type_size(node_t *node);

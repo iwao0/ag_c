@@ -15712,6 +15712,36 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
 
+### このセッション（続き819）: global storage/aggregate 判定を parser helper に集約
+- 見つかった浅い箇所:
+  - wasm32 IR / wasm32 object が `gv->type_size > 0 ? gv->type_size : ...` を直接持ち、
+    data symbol size と object data size を backend 側で決めていた。
+  - arm64 も thread-local / initialized / bss の各経路で `gv->type_size` と
+    `gv->deref_size` を直接組み合わせて storage size / initializer element count /
+    align を計算していた。
+  - tag aggregate 判定も `tag_kind == TK_STRUCT || TK_UNION` と `!is_tag_pointer` の式が
+    wasm32 IR / wasm32 object / arm64 に散っていた。
+- 根本対応:
+  - `psx_gvar_storage_size()` / `psx_gvar_is_tag_aggregate()` /
+    `psx_gvar_initializer_element_count()` を parser 公開 API として追加した。
+  - wasm32 IR の data symbol size と global data emit、wasm32 object の payload/aggregate/data size 判定を
+    helper 経由に置き換えた。
+  - arm64 の thread-local data/bss、initialized global alignment、flat initializer count、
+    scalar init 出力、bss/common size/alignment を helper 経由に置き換えた。
+  - arm64 の scalar tag pointer が tag aggregate と誤認され得る分岐も
+    `psx_gvar_is_tag_aggregate()` に寄せ、tag pointer は aggregate 扱いしない契約に揃えた。
+- 追加テスト:
+  - `test_type_metadata_bridge()` に storage fallback、tag aggregate true/false、
+    initializer element count の assert を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**
+
 ### このセッション（続き818）: global array element metadata を parser helper に集約
 - 見つかった浅い箇所:
   - arm64 / wasm32 IR / wasm32 object の 3 backend に

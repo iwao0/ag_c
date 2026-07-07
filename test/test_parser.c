@@ -2877,6 +2877,8 @@ static void test_type_metadata_bridge() {
   psx_type_t *tmp_gv_int = psx_gvar_get_decl_type(&tmp_gv);
   ASSERT_TRUE(tmp_gv_int != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_gv_int->kind);
+  ASSERT_EQ(4, psx_gvar_storage_size(&tmp_gv, 99));
+  ASSERT_TRUE(!psx_gvar_is_tag_aggregate(&tmp_gv));
   psx_decl_init_gvar_storage_type(&tmp_gv, 8, 4, 0,
                                   TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
   psx_decl_set_gvar_pointer_qual_levels(&tmp_gv, 1);
@@ -2899,6 +2901,7 @@ static void test_type_metadata_bridge() {
   global_var_t tmp_arr_gv = {0};
   psx_decl_init_gvar_storage_type(&tmp_arr_gv, 0, 4, 1,
                                   TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  ASSERT_EQ(99, psx_gvar_storage_size(&tmp_arr_gv, 99));
   psx_type_t *tmp_arr_empty = psx_gvar_get_decl_type(&tmp_arr_gv);
   ASSERT_TRUE(tmp_arr_empty != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_empty->kind);
@@ -2911,6 +2914,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, psx_gvar_array_element_size(&tmp_arr_gv));
   ASSERT_EQ(3, psx_gvar_array_element_count(&tmp_arr_gv));
   ASSERT_EQ(4, psx_gvar_initializer_element_size(&tmp_arr_gv, 12));
+  ASSERT_EQ(3, psx_gvar_initializer_element_count(&tmp_arr_gv, 12));
   ASSERT_EQ(12, psx_gvar_initializer_element_size(gu, 12));
 
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
@@ -2933,6 +2937,7 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   global_var_t *tm817_gs = psx_find_global_var("__tm817_gs", 10);
   ASSERT_TRUE(tm817_gs != NULL);
+  ASSERT_TRUE(psx_gvar_is_tag_aggregate(tm817_gs));
   ASSERT_EQ(8, psx_gvar_array_element_size(tm817_gs));
   ASSERT_EQ(2, psx_gvar_array_element_count(tm817_gs));
   global_var_t tmp_tag_arr_gv = {0};
@@ -2941,8 +2946,11 @@ static void test_type_metadata_bridge() {
   tmp_tag_arr_gv.tag_kind = TK_STRUCT;
   tmp_tag_arr_gv.tag_name = "__tm817_S";
   tmp_tag_arr_gv.tag_len = 9;
+  ASSERT_TRUE(psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
   ASSERT_EQ(8, psx_gvar_array_element_size(&tmp_tag_arr_gv));
   ASSERT_EQ(2, psx_gvar_array_element_count(&tmp_tag_arr_gv));
+  tmp_tag_arr_gv.is_tag_pointer = 1;
+  ASSERT_TRUE(!psx_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
 
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;

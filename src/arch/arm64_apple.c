@@ -536,16 +536,17 @@ static void emit_global_struct_array_init(global_var_t *gv) {
 static void emit_one_global_var(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
+  int storage_size = psx_gvar_storage_size(gv, 4);
   if (gv->is_thread_local) {
     /* _Thread_local: TLV descriptor + thread data/bss */
     if (gv->has_init) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-      cg_emit_int_directive(gv->type_size, gv->init_val);
+      cg_emit_int_directive(storage_size, gv->init_val);
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
       cg_emitf("_%.*s$tlv$init:\n", gv->name_len, gv->name);
-      cg_emitf("  .space %d\n", gv->type_size);
+      cg_emitf("  .space %d\n", storage_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
     if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
@@ -559,19 +560,17 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
     cg_emitf(".section __DATA,__data\n");
     /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
     if (!gv->is_static) cg_emitf(".global _%.*s\n", gv->name_len, gv->name);
-    int align_size = (gv->init_count > 0 && gv->deref_size > 0)
-                        ? gv->deref_size : (int)gv->type_size;
+    int align_size = psx_gvar_initializer_element_size(gv, storage_size);
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", gv->name_len, gv->name);
-    if (gv->init_count > 0 && gv->tag_kind != TK_EOF && !gv->is_array) {
+    if (gv->init_count > 0 && psx_gvar_is_tag_aggregate(gv) && !gv->is_array) {
       emit_global_struct_init(gv);
-    } else if (gv->init_count > 0 && gv->is_array && gv->tag_kind != TK_EOF &&
-               !gv->is_tag_pointer) {
+    } else if (gv->init_count > 0 && gv->is_array && psx_gvar_is_tag_aggregate(gv)) {
       emit_global_struct_array_init(gv);
     } else if (gv->init_count > 0) {
       int elem = psx_gvar_initializer_element_size(gv, 4);
-      int total_elems = gv->type_size / elem;
+      int total_elems = psx_gvar_initializer_element_count(gv, 4);
       int is_fp_arr = (gv->init_fvalues != NULL) &&
                       (gv->fp_kind == TK_FLOAT_KIND_FLOAT ||
                        gv->fp_kind == TK_FLOAT_KIND_DOUBLE ||
@@ -645,18 +644,18 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       memcpy(&bits, &d, sizeof(bits));
       cg_emitf("  .quad %llu\n", (unsigned long long)bits);
     } else {
-      cg_emit_int_directive(gv->type_size, gv->init_val);
+      cg_emit_int_directive(storage_size, gv->init_val);
     }
     return;
   }
   /* 暫定定義: .comm _name,size,log2align。
    * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
-  int log2align = (gv->type_size >= 8) ? 3 : (gv->type_size >= 4) ? 2 : (gv->type_size >= 2) ? 1 : 0;
+  int log2align = (storage_size >= 8) ? 3 : (storage_size >= 4) ? 2 : (storage_size >= 2) ? 1 : 0;
   if (gv->is_static) {
-    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", gv->name_len, gv->name, storage_size, log2align);
   } else {
-    cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, gv->type_size, log2align);
+    cg_emitf(".comm _%.*s,%d,%d\n", gv->name_len, gv->name, storage_size, log2align);
   }
 }
 

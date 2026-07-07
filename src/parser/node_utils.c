@@ -386,6 +386,14 @@ static int gvar_is_pointer_like_for_type(const global_var_t *gv) {
          (gv->type_size == 8 && gv->deref_size > 0 && gv->deref_size < gv->type_size);
 }
 
+int psx_gvar_storage_size(const global_var_t *gv, int fallback_size) {
+  return gv && gv->type_size > 0 ? gv->type_size : fallback_size;
+}
+
+int psx_gvar_is_tag_aggregate(const global_var_t *gv) {
+  return gv && (gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer;
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);
@@ -420,6 +428,12 @@ int psx_gvar_array_element_count(const global_var_t *gv) {
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
   if (gv && gv->is_array && gv->deref_size > 0) return gv->deref_size;
   return fallback_size;
+}
+
+int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size) {
+  int elem = psx_gvar_initializer_element_size(gv, fallback_size);
+  int size = psx_gvar_storage_size(gv, fallback_size);
+  return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
 static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {

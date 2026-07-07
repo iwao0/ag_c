@@ -252,7 +252,7 @@ static void find_global_cb(global_var_t *gv, void *user) {
 static int data_addr_for_global(const char *sym, int sym_len) {
   global_find_ctx_t ctx = {sym, sym_len, NULL};
   ps_iter_globals(find_global_cb, &ctx);
-  int size = (ctx.found && ctx.found->type_size > 0) ? ctx.found->type_size : 8;
+  int size = psx_gvar_storage_size(ctx.found, 8);
   int align = size >= 8 ? 8 : size >= 4 ? 4 : size >= 2 ? 2 : 1;
   return intern_data_symbol(sym, sym_len, size, align)->addr;
 }
@@ -2254,8 +2254,8 @@ static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
   if (gv->is_extern_decl) return;
   int addr = data_addr_for_global(gv->name, gv->name_len);
-  int size = gv->type_size > 0 ? gv->type_size : 4;
-  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+  int size = psx_gvar_storage_size(gv, 4);
+  if (psx_gvar_is_tag_aggregate(gv)) {
     emit_global_struct_data(gv, addr);
   } else if (gv->init_symbol) {
     if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global size in Wasm backend");

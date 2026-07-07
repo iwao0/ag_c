@@ -2786,7 +2786,7 @@ static void emit_obj_global_union_member_data(token_kind_t tk, char *tn, int tl,
 
 static int global_has_object_payload(global_var_t *gv) {
   if (!gv) return 0;
-  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+  if (psx_gvar_is_tag_aggregate(gv)) {
     return gv->init_count > 0;
   }
   return gv->init_symbol || gv->init_count > 0 ||
@@ -2796,7 +2796,7 @@ static int global_has_object_payload(global_var_t *gv) {
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
   wb_zero(&d->bytes, size);
   if (gv->init_count <= 0) return;
-  if (gv->is_tag_pointer || (gv->tag_kind != TK_STRUCT && gv->tag_kind != TK_UNION)) {
+  if (!psx_gvar_is_tag_aggregate(gv)) {
     obj_unsupported_msg("global aggregate initializer in Wasm object mode");
   }
   int val_idx = 0;
@@ -2834,7 +2834,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
     return;
   }
 
-  int size = gv->type_size > 0 ? gv->type_size : 4;
+  int size = psx_gvar_storage_size(gv, 4);
   obj_data_t *d = intern_data(gv->name, gv->name_len, align_log2_for_size(size), gv->is_static, 0);
   if (d->is_emitted) {
     if (!global_has_object_payload(gv) || d->bytes.len != 0) return;
@@ -2844,7 +2844,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   }
   data_note_alloc_size(d, (size_t)size);
 
-  if ((gv->tag_kind == TK_STRUCT || gv->tag_kind == TK_UNION) && !gv->is_tag_pointer) {
+  if (psx_gvar_is_tag_aggregate(gv)) {
     emit_obj_global_aggregate_data(d, gv, size);
   } else if (gv->init_symbol) {
     if (psx_ctx_has_function_name(gv->init_symbol, gv->init_symbol_len)) {
