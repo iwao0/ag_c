@@ -16165,3 +16165,22 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き832）: decl.c の unnamed union cover 再帰を共有 helper に集約
+- 見つかった浅い箇所:
+  - `decl.c` の designator 補完/skip 用に、unnamed union が offset を覆うか調べる
+    ローカル再帰 `offset_is_covered_by_unnamed_union_rec()` が残っていた。
+  - node_utils 側には同じ探索規約の `psx_tag_find_unnamed_union_covering_offset()` があり、
+    parser 本体、backend、decl で cover 判定の正本がまだ完全には揃っていなかった。
+- 根本対応:
+  - `offset_is_covered_by_unnamed_union_rec()` とその forward 宣言を削除した。
+  - `member_is_covered_by_unnamed_union()` は
+    `psx_tag_find_unnamed_union_covering_offset()` を呼ぶ薄い用途別 wrapper にした。
+  - 検索上、`offset_is_covered_by_unnamed_union_rec` は残っていない。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser build/ag_c_wasm build/test_wasm32_e2e build/test_wasm32_object` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_e2e` = **1204/1204 OK**
+  - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
+  - `./build/test_wasm32_object` = **1178/1178 scan pass**
+  - `git diff --check` = **green**

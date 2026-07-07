@@ -2295,9 +2295,6 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
 static bool member_is_covered_by_unnamed_union(lvar_t *var, const tag_member_info_t *info);
 static void skip_remaining_unnamed_union_members(lvar_t *var, const tag_member_info_t *info,
                                                  int *ordinal_inout);
-static bool offset_is_covered_by_unnamed_union_rec(token_kind_t tag_kind, char *tag_name,
-                                                   int tag_len, int base_offset,
-                                                   int target_offset);
 
 /* parse_struct_initializer 末尾の未割当スカラメンバ補完。
  * assigned_names/assigned_lens に登録済みでなく、is_supported_scalar_store_size を
@@ -2380,32 +2377,8 @@ static void record_assigned_member(char **names, int *lens, int *kinds, int *n,
 
 static bool member_is_covered_by_unnamed_union(lvar_t *var, const tag_member_info_t *info) {
   if (!info || info->len <= 0) return false;
-  return offset_is_covered_by_unnamed_union_rec(var->tag_kind, var->tag_name, var->tag_len,
-                                                0, info->offset);
-}
-
-static bool offset_is_covered_by_unnamed_union_rec(token_kind_t tag_kind, char *tag_name,
-                                                   int tag_len, int base_offset,
-                                                   int target_offset) {
-  int member_count = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
-  for (int o = 0; o < member_count; o++) {
-    tag_member_info_t mi = {0};
-    if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, o, &mi)) break;
-    if (!psx_tag_member_is_unnamed_aggregate(&mi)) continue;
-    int start = base_offset + mi.offset;
-    int end = start + mi.type_size;
-    if (psx_tag_member_is_unnamed_union(&mi) &&
-        target_offset >= start && target_offset < end) {
-      return true;
-    }
-    if (psx_tag_member_is_unnamed_struct(&mi) &&
-        target_offset >= start && target_offset < end &&
-        offset_is_covered_by_unnamed_union_rec(mi.tag_kind, mi.tag_name, mi.tag_len,
-                                               start, target_offset)) {
-      return true;
-    }
-  }
-  return false;
+  return psx_tag_find_unnamed_union_covering_offset(var->tag_kind, var->tag_name, var->tag_len,
+                                                    0, info->offset, NULL, NULL);
 }
 
 static void skip_remaining_unnamed_union_members(lvar_t *var, const tag_member_info_t *info,
