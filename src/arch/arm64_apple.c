@@ -149,21 +149,19 @@ static void emit_global_symbol_ref_quad(psx_gvar_symbol_ref_t ref) {
  * init_values[] を出力。メンバ間の padding は .space で埋める。
  * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
  * 配列メンバは alen 個連続出力する。 */
-static void emit_global_init_member_scalar(psx_gvar_symbol_ref_t sym_ref,
-                                           tk_float_kind_t fp_kind, int ts,
-                                           long long v, double fv) {
-  if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
-    emit_global_symbol_ref_quad(sym_ref);
-  } else if (fp_kind != TK_FLOAT_KIND_NONE) {
+static void emit_global_init_member_scalar(psx_gvar_init_member_value_t value) {
+  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+    emit_global_symbol_ref_quad(value.symbol_ref);
+  } else if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
     psx_gvar_fp_bits_t bits;
-    if (psx_gvar_fp_bit_pattern(fp_kind, fv, &bits)) {
+    if (psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
       else                cg_emitf("  .quad %llu\n", bits.bits);
     } else {
-      cg_emit_int_directive(ts, v);
+      cg_emit_int_directive(value.size, value.value);
     }
   } else {
-    cg_emit_int_directive(ts, v);
+    cg_emit_int_directive(value.size, value.value);
   }
 }
 
@@ -181,18 +179,7 @@ static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
                                     int slot_idx, long long offset) {
   (void)offset;
   arm64_global_aggregate_emit_ctx_t *ctx = user;
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(ctx->gv, slot_idx);
-  long long value = slot.value;
-  if (mi->is_bool) value = value != 0;
-  tk_float_kind_t fp_kind = mi->fp_kind;
-  int size = mi->type_size;
-  psx_gvar_symbol_ref_t sym_ref = psx_gvar_init_slot_symbol_ref(&slot);
-  if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NONE &&
-      slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
-    fp_kind = slot.fp_sentinel_kind;
-    size = fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
-  }
-  emit_global_init_member_scalar(sym_ref, fp_kind, size, value, slot.fvalue);
+  emit_global_init_member_scalar(psx_gvar_init_member_value(ctx->gv, slot_idx, mi));
 }
 
 static void emit_global_walk_bitfield_unit(void *user,

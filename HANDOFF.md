@@ -1,8 +1,46 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き893: centralize global initializer symbol references）
+最終更新: 2026-07-08（続き894: centralize aggregate member initializer values）
 
 ## 現状
+- 続き894: **aggregate member initializer の value view を parser/public helper に寄せた**。
+
+  続き893で symbol reference shape は public helper に寄ったが、aggregate member initializer の
+  scalar callback にはまだ raw `psx_gvar_init_slot_t` 直読みが残っていた。具体的には
+  arm64 / Wasm IR / Wasm object で、slot symbol、FP sentinel、member の `fp_kind`、
+  `_Bool` normalization、member size を backend 側で組み合わせていた。これは出力形式ではなく
+  「init slot と member type からどの値種別として読むか」という parser/public 側の知識なので、
+  小さな value view にまとめた。
+
+  今回は `src/parser/gvar_public.h` / `src/parser/node_utils.c` に
+  `psx_gvar_init_member_value_t` と
+  `psx_gvar_init_member_value(gv, idx, member)` を追加した。public view は
+  `INTEGER / SYMBOL / FLOAT`、`symbol_ref`、integer value、fvalue、fp_kind、size を持つ。
+  優先順位は既存挙動に合わせて `symbol -> FP sentinel -> member FP -> integer` とし、
+  `_Bool` は integer value 側で normalize する。
+
+  arm64 の aggregate scalar callback は `psx_gvar_init_member_value()` の結果だけを emit するようになった。
+  Wasm IR は aggregate member data emission と member function-ref 探索を member value view 経由にした。
+  Wasm object は `data_write_init_slot_at()` を `data_write_init_member_value_at()` に置き換え、
+  symbol relocation / FP bytes / integer bytes の実出力だけを backend に残した。
+
+  これで backend 側の aggregate member 経路から raw `psx_gvar_init_slot_view()` と
+  `fp_sentinel_kind` 直接参照は消えた。残る raw slot 参照は parser/public 内の正本側と、
+  global slot-array route の既に分類済み `psx_gvar_init_slot_value()` 経路だけ。
+
+  次の根本対応候補は、global slot-array route と aggregate member route の value view をさらに統合し、
+  `psx_gvar_init_value_t` のような backend 非依存の共通 view に近づけること。ただし slot-array は
+  layout 由来の FP array 判定を持ち、aggregate member は member type 由来の FP 判定を持つため、
+  まずは共通の emit-side helper（integer/symbol/fp の dispatch）から薄くするのがよい。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/test_e2e` = **1204/1204 pass**、
+  `./build/test_wasm32_object` = **1178/1178 scan pass**、
+  `./build/test_wasm32_e2e` = **1199 compiled/executed**、
+  `git diff --check` = **pass**。
+
 - 続き893: **global initializer の symbol reference shape を parser/public helper に寄せた**。
 
   続き892で FP bit-pattern 変換は public helper に寄ったが、symbol initializer にはまだ

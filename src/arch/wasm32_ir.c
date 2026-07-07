@@ -596,8 +596,9 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
     if (mi.array_len > 0) {
       for (int k = 0; k < mi.array_len && init_idx < view.init_count; k++, init_idx++) {
         if (mi.offset + k * mi.type_size != offset) continue;
-        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
-        psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+        psx_gvar_init_member_value_t value =
+            psx_gvar_init_member_value(gv, init_idx, &mi);
+        psx_gvar_symbol_ref_t ref = value.symbol_ref;
         if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
             psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
           if (out_len) *out_len = ref.symbol_len;
@@ -608,8 +609,9 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
       continue;
     }
     if (mi.offset == offset && init_idx < view.init_count) {
-      psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, init_idx);
-      psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
+      psx_gvar_init_member_value_t value =
+          psx_gvar_init_member_value(gv, init_idx, &mi);
+      psx_gvar_symbol_ref_t ref = value.symbol_ref;
       if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
           psx_ctx_has_function_name(ref.symbol, ref.symbol_len)) {
         if (out_len) *out_len = ref.symbol_len;
@@ -1810,34 +1812,30 @@ static void emit_global_symbol_addr_data(global_var_t *gv, int addr, int size) {
   emit_i32_data_bytes(addr, (long long)sym_addr + ref.addend, size);
 }
 
-static void emit_global_init_slot_data(global_var_t *gv, int idx, int addr, int size, int normalize_bool) {
-  if (size != 1 && size != 2 && size != 4 && size != 8) wasm_unsupported_msg("global member size in Wasm backend");
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
-    wasm_unsupported_msg("floating global struct initializer in Wasm backend");
+static void emit_global_init_member_value_data(global_var_t *gv, int idx, int addr,
+                                               const tag_member_info_t *mi) {
+  psx_gvar_init_member_value_t value = psx_gvar_init_member_value(gv, idx, mi);
+  if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
+    wasm_unsupported_msg("global member size in Wasm backend");
   }
-  long long value = slot.value;
-  if (normalize_bool) value = value != 0;
-  psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
-  if (ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+    emit_fp_data_bytes(addr, value.fp_kind, value.fvalue);
+    return;
+  }
+  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+    psx_gvar_symbol_ref_t ref = value.symbol_ref;
     int sym_addr = data_addr_for_symbol_ref(ref);
     if (sym_addr < 0) wasm_unsupported_msg("symbol global struct initializer in Wasm backend");
-    value = (long long)sym_addr + ref.addend;
+    emit_i32_data_bytes(addr, (long long)sym_addr + ref.addend, value.size);
+    return;
   }
-  emit_i32_data_bytes(addr, value, size);
+  emit_i32_data_bytes(addr, value.value, value.size);
 }
 
 static void emit_global_init_member_data(global_var_t *gv, int idx, int addr,
                                          const tag_member_info_t *mi) {
   if (!mi) wasm_unsupported_msg("global struct member initializer in Wasm backend");
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  psx_gvar_symbol_ref_t ref = psx_gvar_init_slot_symbol_ref(&slot);
-  if (mi->fp_kind != TK_FLOAT_KIND_NONE &&
-      ref.kind == PSX_GVAR_SYMBOL_REF_NONE) {
-    emit_fp_data_bytes(addr, mi->fp_kind, slot.fvalue);
-    return;
-  }
-  emit_global_init_slot_data(gv, idx, addr, mi->type_size, mi->is_bool);
+  emit_global_init_member_value_data(gv, idx, addr, mi);
 }
 
 static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr,
@@ -1857,11 +1855,6 @@ typedef struct {
 static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
                                     int idx, long long offset) {
   wasm_global_aggregate_emit_ctx_t *ctx = user;
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(ctx->gv, idx);
-  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
-    emit_fp_data_bytes((int)offset, slot.fp_sentinel_kind, slot.fvalue);
-    return;
-  }
   emit_global_init_member_data(ctx->gv, idx, (int)offset, mi);
 }
 

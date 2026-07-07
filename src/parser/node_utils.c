@@ -545,6 +545,36 @@ psx_gvar_init_slot_value_symbol_ref(const psx_gvar_init_slot_value_t *value) {
   return psx_gvar_init_slot_symbol_ref(&value->slot);
 }
 
+psx_gvar_init_member_value_t
+psx_gvar_init_member_value(const global_var_t *gv, int idx,
+                           const tag_member_info_t *member) {
+  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  psx_gvar_init_member_value_t value = {
+      .kind = PSX_GVAR_INIT_SLOT_INTEGER,
+      .symbol_ref = psx_gvar_init_slot_symbol_ref(&slot),
+      .value = slot.value,
+      .fvalue = slot.fvalue,
+      .fp_kind = TK_FLOAT_KIND_NONE,
+      .size = member ? member->type_size : 0,
+  };
+  if (member && member->is_bool) value.value = value.value != 0;
+  if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+    value.kind = PSX_GVAR_INIT_SLOT_SYMBOL;
+    return value;
+  }
+  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
+    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.fp_kind = slot.fp_sentinel_kind;
+    value.size = value.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
+    return value;
+  }
+  if (member && member->fp_kind != TK_FLOAT_KIND_NONE) {
+    value.kind = PSX_GVAR_INIT_SLOT_FLOAT;
+    value.fp_kind = member->fp_kind;
+  }
+  return value;
+}
+
 static int tag_aggregate_size(token_kind_t tk, char *tn, int tl, int fallback) {
   if (fallback > 0) return fallback;
   int n = psx_ctx_get_tag_member_count(tk, tn, tl);

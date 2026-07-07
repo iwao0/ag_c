@@ -2424,14 +2424,14 @@ static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind,
   data_write_int_le_at(d, off, (uint64_t)bits.bits, bits.size);
 }
 
-static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
-                                    size_t off, int size, int normalize_bool,
-                                    tk_float_kind_t fp_kind,
-                                    const tag_member_info_t *member_info) {
+static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int idx,
+                                            size_t off,
+                                            const tag_member_info_t *member_info) {
   if (idx < 0) return;
-  psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
-  psx_gvar_symbol_ref_t sym_ref = psx_gvar_init_slot_symbol_ref(&slot);
-  if (sym_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
+  psx_gvar_init_member_value_t value =
+      psx_gvar_init_member_value(gv, idx, member_info);
+  if (value.kind == PSX_GVAR_INIT_SLOT_SYMBOL) {
+    psx_gvar_symbol_ref_t sym_ref = value.symbol_ref;
     if (sym_ref.kind == PSX_GVAR_SYMBOL_REF_NAMED &&
         psx_ctx_has_function_name(sym_ref.symbol, sym_ref.symbol_len) && member_info) {
       ensure_func_sig_for_address(sym_ref.symbol, sym_ref.symbol_len,
@@ -2439,20 +2439,14 @@ static void data_write_init_slot_at(obj_data_t *d, global_var_t *gv, int idx,
                                                               sym_ref.symbol,
                                                               sym_ref.symbol_len));
     }
-    data_write_symbol_addr_at(d, off, sym_ref, size);
+    data_write_symbol_addr_at(d, off, sym_ref, value.size);
     return;
   }
-  if (slot.fp_sentinel_kind != TK_FLOAT_KIND_NONE) {
-    data_write_fp_at(d, off, slot.fp_sentinel_kind, slot.fvalue);
+  if (value.kind == PSX_GVAR_INIT_SLOT_FLOAT) {
+    data_write_fp_at(d, off, value.fp_kind, value.fvalue);
     return;
   }
-  if (fp_kind != TK_FLOAT_KIND_NONE) {
-    data_write_fp_at(d, off, fp_kind, slot.fvalue);
-    return;
-  }
-  long long value = slot.value;
-  if (normalize_bool) value = value != 0;
-  data_write_int_le_at(d, off, (uint64_t)value, size);
+  data_write_int_le_at(d, off, (uint64_t)value.value, value.size);
 }
 
 static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv, int idx,
@@ -2472,8 +2466,7 @@ typedef struct {
 static void emit_obj_global_walk_scalar(void *user, const tag_member_info_t *mi,
                                         int slot, long long offset) {
   obj_global_aggregate_emit_ctx_t *ctx = user;
-  data_write_init_slot_at(ctx->d, ctx->gv, slot, (size_t)offset,
-                          mi->type_size, mi->is_bool, mi->fp_kind, mi);
+  data_write_init_member_value_at(ctx->d, ctx->gv, slot, (size_t)offset, mi);
 }
 
 static void emit_obj_global_walk_bitfield_unit(void *user,
