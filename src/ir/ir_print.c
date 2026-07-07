@@ -179,6 +179,11 @@ static void print_func(ir_print_sink_t *s, ir_func_t *f) {
   sink_printf(s, "}\n");
 }
 
+static long long ir_global_init_value_at(const ir_global_t *g, int idx) {
+  if (!g || idx < 0 || idx >= g->init_count || !g->init_values) return 0;
+  return g->init_values[idx];
+}
+
 static void print_global(ir_print_sink_t *s, ir_global_t *g) {
   sink_printf(s, "global @%.*s", g->name_len, g->name ? g->name : "");
   if (g->is_array) {
@@ -188,7 +193,7 @@ static void print_global(ir_print_sink_t *s, ir_global_t *g) {
     sink_printf(s, " = {");
     for (int i = 0; i < g->init_count; i++) {
       if (i > 0) sink_printf(s, ", ");
-      sink_printf(s, "%lld", g->init_values[i]);
+      sink_printf(s, "%lld", ir_global_init_value_at(g, i));
     }
     sink_printf(s, "}");
   } else if (g->init_symbol) {

@@ -1,8 +1,21 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-07（続き855: centralize global init slot allocation）
+最終更新: 2026-07-07（続き856: guard IR global init value reads）
 
 ## 現状
+- 続き856: **IR printer の global initializer value 読み取りを helper 経由にした**。
+
+  parser/backend 側の initializer slot direct access は view/helper へ寄せてきたが、
+  `src/ir/ir_print.c` には `ir_global_t.init_values[i]` の直接読みが残っていた。
+  `ir_global_t` は `global_var_t` より単純な IR 表示用構造体なので parser の slot view は
+  そのまま使わず、printer 内に `ir_global_init_value_at()` を追加して読み取り口を集約した。
+  `init_count > 0` かつ `init_values == NULL` の malformed/sparse dump でも 0 表示に倒れる。
+
+  確認は
+  `make build/test_ir` = **pass**、
+  `./build/test_ir` = **OK: All IR Phase 1 tests passed**、
+  `git diff --check` = **pass**。
+
 - 続き855: **global initializer slot の配列確保を
   `psx_gvar_init_slots_alloc()` に集約した**。
 

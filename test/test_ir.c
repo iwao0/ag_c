@@ -83,12 +83,20 @@ static void test_globals(void) {
   g1->next = g2;
   m->globals_tail = g2;
 
+  ir_global_t *g3 = calloc(1, sizeof(ir_global_t));
+  g3->name = "zeroes"; g3->name_len = 6;
+  g3->byte_size = 8; g3->elem_size = 4; g3->is_array = 1;
+  g3->init_count = 2;
+  g2->next = g3;
+  m->globals_tail = g3;
+
   char buf[1024];
   ir_print_module_to_buf(m, buf, sizeof(buf));
 
   const char *expected =
     "global @x = 42\n"
     "global @arr [3] = {10, 20, 30}\n"
+    "global @zeroes [2] = {0, 0}\n"
     "\n";
   check_str_eq("globals", buf, expected);
 }
