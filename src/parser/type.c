@@ -36,6 +36,7 @@ psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size) {
   type->size = 8;
   type->align = 8;
   type->deref_size = deref_size;
+  type->pointer_qual_levels = 1;
   if (base) {
     type->base_deref_size = psx_type_deref_size(base);
     if (type->base_deref_size <= 0) type->base_deref_size = psx_type_sizeof(base);

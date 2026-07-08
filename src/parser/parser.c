@@ -1963,7 +1963,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* 書き込み位置は cur_idx (designator でジャンプ済み)。init_count は
        * 充填済みの最大要素数として追跡する。 */
       psx_gvar_init_slot_write(gv, cur_idx, v, fv, sym, sym_len);
-      if (ctx.tag_kind == TK_UNION)
+      if (ctx.tag_kind == TK_UNION && active_union_ordinal < 0)
         psx_gvar_init_slot_set_ordinal(gv, cur_idx, gv->union_init_ordinal);
       /* ネスト union の fp active メンバ sentinel: DOT 経路で pending_fp_kind がセットされて
        * いれば、init_value_symbols=NULL かつ init_value_symbol_lens に sentinel (-2: float,
@@ -2312,6 +2312,15 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   int ptr_array_pointee_bytes = 0;
   if (is_ptr_to_array && pointee_total > 0) {
     ptr_array_pointee_bytes = pointee_total * spec->elem_size;
+  } else if (head.is_ptr && head.ptr_levels == 0 && arr.is_array &&
+             spec->td_ptr_pointee_dim_count > 0) {
+    int td_pointee_total = 1;
+    for (int i = 0; i < spec->td_ptr_pointee_dim_count && i < 8; i++) {
+      int dim = spec->td_array_dims[i];
+      if (dim > 0) td_pointee_total *= dim;
+    }
+    if (td_pointee_total > 0)
+      ptr_array_pointee_bytes = td_pointee_total * spec->elem_size;
   } else if (head.is_ptr && !head.has_func_suffix &&
       head.paren_array_present && arr.is_array &&
       arr.arr_total > 0) {
@@ -3742,17 +3751,22 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   }
   if (param_is_ptr && ds->tag_kind == TK_EOF) {
     int pointer_array_outer_dim = decl_state ? decl_state->pointer_array_outer_dim : 0;
-    if (param_is_array_declarator && pointer_array_outer_dim > 0 &&
-        param_inner_first_dim > 0 && !param_has_func_suffix) {
-      lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, 8, 0);
-      psx_decl_set_lvar_pointer_derived_type(var, 1, ds->elem_size,
-                                             param_inner_first_dim * ds->elem_size);
-      if (param_ptr_levels >= 2) {
-        int pointer_array_dims[1] = {pointer_array_outer_dim};
-        psx_decl_set_lvar_array_strides_from_inner_dims(var, pointer_array_dims, 1, 8);
-      }
-      return var;
-    }
+	    if (param_is_array_declarator && pointer_array_outer_dim > 0 &&
+	        param_inner_first_dim > 0 && !param_has_func_suffix) {
+	      lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, 8, 0);
+	      int adjusted_pointer_levels = param_ptr_levels >= 2
+	                                        ? param_ptr_levels
+	                                        : (param_ptr_levels > 0 ? param_ptr_levels + 1 : 1);
+	      psx_decl_set_lvar_pointer_derived_type(var,
+	                                             adjusted_pointer_levels,
+	                                             ds->elem_size,
+	                                             param_inner_first_dim * ds->elem_size);
+	      if (param_ptr_levels >= 2) {
+	        int pointer_array_dims[1] = {pointer_array_outer_dim};
+	        psx_decl_set_lvar_array_strides_from_inner_dims(var, pointer_array_dims, 1, 8);
+	      }
+	      return var;
+	    }
     /* スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）。
      * typedef struct のように typedef 実体サイズがある場合は、最内 pointee
      * サイズとしてそれを使う。これがないと `T **pp; (*pp)[i]` のスケールが

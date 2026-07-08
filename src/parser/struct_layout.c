@@ -10,6 +10,7 @@
 #include "config_runtime.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
+#include "type.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../pragma_pack.h"
@@ -18,6 +19,67 @@ static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 #define ALIGN_UP(v, a) (((v) + ((a) - 1)) / (a) * (a))
+
+static psx_type_t *member_scalar_type(token_kind_t base_kind, tk_float_kind_t fp_kind,
+                                      token_kind_t tag_kind, char *tag_name, int tag_len,
+                                      int elem_size, int is_unsigned, int is_bool,
+                                      int is_complex) {
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+    int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+    return psx_type_new_tag(tag_kind, tag_name, tag_len, 0,
+                            tag_size > 0 ? tag_size : elem_size);
+  }
+  if (is_complex) {
+    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
+    type->fp_kind = fp_kind;
+    type->size = elem_size > 0 ? elem_size : 16;
+    type->align = type->size >= 8 ? 8 : 4;
+    return type;
+  }
+  if (fp_kind != TK_FLOAT_KIND_NONE) {
+    return psx_type_new_float(fp_kind, elem_size > 0 ? elem_size : 8);
+  }
+  token_kind_t scalar_kind = is_bool ? TK_BOOL : (base_kind != TK_EOF ? base_kind : TK_INT);
+  return psx_type_new_integer(scalar_kind, elem_size > 0 ? elem_size : 4, is_unsigned);
+}
+
+static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
+                                                tk_float_kind_t fp_kind,
+                                                token_kind_t tag_kind,
+                                                char *tag_name, int tag_len,
+                                                int elem_size, int is_unsigned,
+                                                int is_bool, int is_complex,
+                                                int is_pointer, int pointer_levels,
+                                                int array_len, int total_size,
+                                                int elem_storage_size,
+                                                psx_decl_funcptr_sig_t funcptr_sig) {
+  psx_type_t *type = member_scalar_type(base_kind, fp_kind, tag_kind, tag_name,
+                                        tag_len, elem_size, is_unsigned,
+                                        is_bool, is_complex);
+  if (is_pointer) {
+    int levels = pointer_levels > 0 ? pointer_levels : 1;
+    for (int i = 0; i < levels; i++) {
+      int deref_size = (i == 0) ? elem_size : 8;
+      if (deref_size <= 0) deref_size = 8;
+      type = psx_type_new_pointer(type, deref_size);
+      type->pointer_qual_levels = i + 1;
+    }
+    if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
+      type->funcptr_sig = funcptr_sig;
+    }
+  }
+  if (array_len > 0) {
+    int elem_size_for_array = elem_storage_size > 0 ? elem_storage_size : psx_type_sizeof(type);
+    int array_size = total_size > 0 ? total_size : elem_size_for_array * array_len;
+    psx_type_t *array_type = psx_type_new_array(type, array_len, array_size,
+                                                elem_size_for_array, 0);
+    if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
+      array_type->funcptr_sig = funcptr_sig;
+    }
+    return array_type;
+  }
+  return type;
+}
 
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
                                                        psx_funcptr_signature_t *func_suffix_sig,
@@ -70,6 +132,7 @@ static int member_funcptr_direct_ret_is_data_pointer(const member_decl_head_t *h
                                                      int base_is_pointer) {
   if (!head || !head->has_func_suffix) return 0;
   int object_pointer_levels = head->funcptr_object_pointer_levels;
+  if (object_pointer_levels <= 0 && head->ptr_in_paren) object_pointer_levels = 1;
   int ret_pointer_levels = head->ptr_levels - object_pointer_levels;
   return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
 }
@@ -489,10 +552,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.tag_kind = member_tag_kind;
         _mi.tag_name = member_tag_name;
         _mi.tag_len = member_tag_len;
+        _mi.fp_kind = member_fp_kind;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
+        psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
         if (member_is_ptr) {
-          psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
           if (head.has_func_suffix) {
             int ret_is_data_pointer =
                 member_funcptr_direct_ret_is_data_pointer(&head, member_is_ptr_typedef);
@@ -510,6 +574,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           }
           psx_ctx_tag_member_set_funcptr_sig(&_mi, member_funcptr_sig);
         }
+        _mi.decl_type = member_decl_type_from_layout(
+            member_base_kind, member_fp_kind, member_tag_kind, member_tag_name,
+            member_tag_len, elem_size, member_is_unsigned, member_is_bool,
+            member_is_complex, member_is_ptr, total_pointer_levels,
+            member_array_len, total_size, member_elem_size, member_funcptr_sig);
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
@@ -545,6 +614,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
                                               member_typedef_ptr_array_dim_count);
             }
           } else if (member_is_ptr_typedef) {
+            psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
+                                                            member_name, member_len,
+                                                            member_typedef_ptr_array_pointee_bytes);
+            if (member_typedef_ptr_array_dim_count > 0) {
+              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
+                                              member_name, member_len,
+                                              member_typedef_ptr_array_dims,
+                                              member_typedef_ptr_array_dim_count);
+            }
             psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
                                                 member_name, member_len,
                                                 member_typedef_ptr_array_pointee_bytes);

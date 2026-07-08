@@ -1,6 +1,7 @@
 #include "semantic_ctx.h"
 #include "ret_pointee_array.h"
 #include "diag.h"
+#include "type.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
@@ -78,6 +79,7 @@ struct tag_member_t {
   int ptr_array_pointee_bytes;
   int is_funcptr;
   psx_decl_funcptr_sig_t funcptr_sig;
+  psx_type_t *decl_type;
   int decl_order;
   int scope_depth;
 };
@@ -138,6 +140,149 @@ static void tag_member_record_set_funcptr_sig(tag_member_t *m,
   if (!m) return;
   m->funcptr_sig = sig;
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
+}
+
+static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
+  if (!src) return NULL;
+  psx_type_t *dst = calloc(1, sizeof(psx_type_t));
+  if (!dst) return NULL;
+  *dst = *src;
+  dst->base = ctx_type_clone_persistent(src->base);
+  return dst;
+}
+
+static int ctx_type_leaf_elem_size(const psx_type_t *type) {
+  if (!type) return 0;
+  if (type->kind == PSX_TYPE_ARRAY && type->base) {
+    int elem = psx_type_deref_size(type);
+    if (elem > 0) return elem;
+    return ctx_type_leaf_elem_size(type->base);
+  }
+  if (type->kind == PSX_TYPE_POINTER && type->base) {
+    return ctx_type_leaf_elem_size(type->base);
+  }
+  return psx_type_sizeof(type);
+}
+
+static psx_type_t *ctx_type_new_array_persistent(psx_type_t *base, int len,
+                                                 int size, int elem_size) {
+  psx_type_t *type = calloc(1, sizeof(psx_type_t));
+  if (!type) return NULL;
+  type->kind = PSX_TYPE_ARRAY;
+  type->base = base;
+  type->array_len = len;
+  type->size = size;
+  type->elem_size = elem_size;
+  type->deref_size = elem_size;
+  type->align = base && base->align > 0 ? base->align : 1;
+  if (base) type->pointee_fp_kind = base->fp_kind;
+  return type;
+}
+
+static void ctx_type_set_ptr_array_pointee_bytes(psx_type_t *type, int bytes) {
+  if (!type || bytes <= 0) return;
+  if (type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->kind == PSX_TYPE_POINTER &&
+      (!type->base->base || type->base->base->kind != PSX_TYPE_ARRAY)) {
+    ctx_type_set_ptr_array_pointee_bytes(type->base, bytes);
+    return;
+  }
+  type->ptr_array_pointee_bytes = bytes;
+  if (type->outer_stride <= 0) type->outer_stride = bytes;
+  int elem = ctx_type_leaf_elem_size(type);
+  if (elem > 0 && type->base_deref_size <= 0) type->base_deref_size = elem;
+  if (type->kind == PSX_TYPE_POINTER) {
+    type->deref_size = bytes;
+  }
+  if (type->kind == PSX_TYPE_ARRAY && type->base) {
+    ctx_type_set_ptr_array_pointee_bytes(type->base, bytes);
+  }
+}
+
+static void ctx_type_apply_ptr_array_dims(psx_type_t *type, const int *dims, int ndim) {
+  if (!type || !dims || ndim <= 0) return;
+  if (type->kind == PSX_TYPE_ARRAY && type->base) {
+    ctx_type_apply_ptr_array_dims(type->base, dims, ndim);
+    return;
+  }
+  if (type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->kind == PSX_TYPE_POINTER &&
+      (!type->base->base || type->base->base->kind != PSX_TYPE_ARRAY)) {
+    ctx_type_apply_ptr_array_dims(type->base, dims, ndim);
+    return;
+  }
+  if (type->kind != PSX_TYPE_POINTER || !type->base) return;
+  if (type->base->kind == PSX_TYPE_ARRAY) return;
+  int elem_size = ctx_type_leaf_elem_size(type->base);
+  if (elem_size <= 0) elem_size = psx_type_sizeof(type->base);
+  if (elem_size <= 0 || dims[0] <= 0) return;
+  int total = elem_size;
+  for (int i = 0; i < ndim; i++) {
+    if (dims[i] <= 0) return;
+    total *= dims[i];
+  }
+  psx_type_t *array = type->base;
+  int suffix_size = elem_size;
+  for (int i = ndim - 1; i >= 0; i--) {
+    int len = dims[i];
+    int size = suffix_size * len;
+    array = ctx_type_new_array_persistent(array, len, size, suffix_size);
+    suffix_size = size;
+  }
+  if (!array) return;
+  type->base = array;
+  type->deref_size = total;
+  type->outer_stride = total;
+  type->base_deref_size = elem_size;
+}
+
+static psx_type_t *ctx_type_array_leaf(psx_type_t *type) {
+  if (!type) return NULL;
+  while (type->kind == PSX_TYPE_ARRAY && type->base) type = type->base;
+  return type;
+}
+
+static psx_type_t *ctx_type_build_array_dims(psx_type_t *leaf,
+                                             const int *dims, int ndim,
+                                             int elem_size) {
+  if (!leaf || !dims || ndim <= 0 || elem_size <= 0) return NULL;
+  int suffix_size = elem_size;
+  psx_type_t *array = leaf;
+  for (int i = ndim - 1; i >= 0; i--) {
+    if (dims[i] <= 0) return NULL;
+    int size = suffix_size * dims[i];
+    array = ctx_type_new_array_persistent(array, dims[i], size, suffix_size);
+    if (!array) return NULL;
+    suffix_size = size;
+  }
+  return array;
+}
+
+static void ctx_type_set_array_strides(psx_type_t *type, int outer_stride,
+                                       int mid_stride) {
+  if (!type) return;
+  if (outer_stride > 0) type->outer_stride = outer_stride;
+  if (mid_stride > 0) type->mid_stride = mid_stride;
+}
+
+static void ctx_type_apply_regular_array_dims(psx_type_t **typep,
+                                              const int *dims, int ndim,
+                                              int outer_stride,
+                                              int mid_stride) {
+  if (!typep || !*typep || !dims || ndim <= 1) return;
+  psx_type_t *type = *typep;
+  if (type->kind != PSX_TYPE_ARRAY) return;
+  psx_type_t *leaf = ctx_type_array_leaf(type);
+  if (!leaf) return;
+  int elem_size = psx_type_sizeof(leaf);
+  if (elem_size <= 0) elem_size = type->elem_size;
+  if (elem_size <= 0) elem_size = type->deref_size;
+  if (elem_size <= 0) return;
+  psx_type_t *nested =
+      ctx_type_build_array_dims(ctx_type_clone_persistent(leaf), dims, ndim, elem_size);
+  if (!nested) return;
+  ctx_type_set_array_strides(nested, outer_stride, mid_stride);
+  *typep = nested;
 }
 
 static psx_decl_funcptr_sig_t typedef_record_funcptr_sig(const typedef_name_t *t) {
@@ -558,6 +703,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       m->bit_offset = desc->bit_offset;
       m->bit_is_signed = desc->bit_is_signed;
       tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
+      m->decl_type = ctx_type_clone_persistent(desc->decl_type);
       return;
     }
   }
@@ -580,6 +726,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->bit_offset = desc->bit_offset;
   m->bit_is_signed = desc->bit_is_signed;
   tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
+  m->decl_type = ctx_type_clone_persistent(desc->decl_type);
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -627,6 +774,7 @@ void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, 
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
         strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
       m->outer_stride = outer_stride;
+      ctx_type_set_array_strides(m->decl_type, m->outer_stride, m->mid_stride);
       return;
     }
   }
@@ -642,6 +790,7 @@ void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, in
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
         strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
       m->mid_stride = mid_stride;
+      ctx_type_set_array_strides(m->decl_type, m->outer_stride, m->mid_stride);
       return;
     }
   }
@@ -662,6 +811,12 @@ void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int 
       for (int i = 0; i < 8; i++) m->arr_dims[i] = 0;
       for (int i = 0; i < ndim; i++) m->arr_dims[i] = dims[i];
       m->arr_ndim = ndim;
+      if (m->ptr_array_pointee_bytes > 0) {
+        ctx_type_apply_ptr_array_dims(m->decl_type, dims, ndim);
+      } else {
+        ctx_type_apply_regular_array_dims(&m->decl_type, dims, ndim,
+                                          m->outer_stride, m->mid_stride);
+      }
       return;
     }
   }
@@ -677,6 +832,7 @@ void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char 
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
         strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
       m->ptr_array_pointee_bytes = bytes;
+      ctx_type_set_ptr_array_pointee_bytes(m->decl_type, bytes);
       return;
     }
   }
@@ -731,6 +887,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->arr_ndim = m->arr_ndim;
   out->ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
   psx_ctx_tag_member_set_funcptr_sig(out, tag_member_record_funcptr_sig(m));
+  out->decl_type = m->decl_type;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の

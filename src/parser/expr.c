@@ -96,6 +96,15 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 int compound_addr_context,
                                                 expr_parse_ctx_t *ctx);
 
+static psx_type_t *compound_pointer_elem_array_decay_type(token_kind_t cast_kind,
+                                                          token_kind_t cast_tag_kind,
+                                                          char *cast_tag_name,
+                                                          int cast_tag_len,
+                                                          int cast_elem_size,
+                                                          tk_float_kind_t cast_fp_kind,
+                                                          int cast_array_count,
+                                                          int cast_ptr_array_pointee_bytes);
+
 static void enter_expr_nest_or_die(expr_parse_ctx_t *ctx) {
   if (!ctx) return;
   ctx->expr_nest_depth++;
@@ -1062,6 +1071,13 @@ static node_t *build_member_deref_node(node_t *base, int from_ptr,
   return psx_node_new_tag_member_deref_for(addr_base, base, mem_info);
 }
 
+static int node_is_single_tag_array_view(node_t *node) {
+  psx_type_t *type = psx_node_get_type(node);
+  return node && node->kind == ND_DEREF &&
+         type && type->kind == PSX_TYPE_ARRAY &&
+         type->base && psx_type_is_tag_aggregate(type->base);
+}
+
 static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
@@ -1073,6 +1089,10 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
   int base_tag_len = 0;
   int base_is_ptr = 0;
   psx_node_get_tag_type(base, &base_tag_kind, &base_tag_name, &base_tag_len, &base_is_ptr);
+  if (!from_ptr && base_is_ptr &&
+      (node_is_single_tag_array_view(base) || base->kind == ND_DEREF)) {
+    base_is_ptr = 0;
+  }
   if (base_tag_kind == TK_EOF || (!from_ptr && base_is_ptr) || (from_ptr && !base_is_ptr)) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, op_tok,
                    "%s",
@@ -1106,6 +1126,44 @@ static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) 
                  member->len, member->str);
   }
   return build_member_deref_node(base, from_ptr, &mem_info);
+}
+
+static psx_type_t *compound_pointer_elem_array_decay_type(token_kind_t cast_kind,
+                                                          token_kind_t cast_tag_kind,
+                                                          char *cast_tag_name,
+                                                          int cast_tag_len,
+                                                          int cast_elem_size,
+                                                          tk_float_kind_t cast_fp_kind,
+                                                          int cast_array_count,
+                                                          int cast_ptr_array_pointee_bytes) {
+  if (cast_array_count <= 0) return NULL;
+  if (!psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
+    (void)cast_kind;
+    (void)cast_fp_kind;
+    (void)cast_ptr_array_pointee_bytes;
+    return NULL;
+  }
+  int pointee_size = cast_elem_size > 0 ? cast_elem_size : 8;
+  psx_type_t *pointee = NULL;
+  int tag_size = psx_ctx_get_tag_size(cast_tag_kind, cast_tag_name, cast_tag_len);
+  if (tag_size <= 0) tag_size = pointee_size;
+  pointee = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len, 0, tag_size);
+  pointee_size = tag_size;
+  if (!pointee) return NULL;
+
+  psx_type_t *elem_ptr = psx_type_new_pointer(pointee, pointee_size);
+  elem_ptr->pointer_qual_levels = 1;
+  elem_ptr->base_deref_size = pointee_size;
+  elem_ptr->pointee_fp_kind = cast_fp_kind;
+  elem_ptr->ptr_array_pointee_bytes = cast_ptr_array_pointee_bytes;
+  if (cast_ptr_array_pointee_bytes > 0)
+    elem_ptr->outer_stride = cast_ptr_array_pointee_bytes;
+
+  psx_type_t *decayed = psx_type_new_pointer(elem_ptr, 8);
+  decayed->pointer_qual_levels = 2;
+  decayed->base_deref_size = pointee_size;
+  decayed->ptr_array_pointee_bytes = cast_ptr_array_pointee_bytes;
+  return decayed;
 }
 
 static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast_is_ptr,
@@ -1168,6 +1226,14 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
   if (is_pointer_elem_array) base_elem = 8;
   int var_size = is_pointer_elem_array ? (8 * cast_array_count)
                 : (cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem));
+  psx_type_t *compound_array_decay_type =
+      is_pointer_elem_array
+          ? compound_pointer_elem_array_decay_type(cast_kind, cast_tag_kind,
+                                                   cast_tag_name, cast_tag_len,
+                                                   cast_elem_size, cast_fp_kind,
+                                                   cast_array_count,
+                                                   cast_ptr_array_pointee_bytes)
+          : NULL;
   /* `(double _Complex){re, im}` 等の複素数 compound literal: {実部, 虚部} で
    * base_elem*2 バイト。is_complex を立てて psx_decl_parse_initializer_for_var の
    * 複素数 brace 経路に乗せる。 */
@@ -1214,7 +1280,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       if (is_arr) {
         /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
         return apply_postfix(psx_node_new_compound_gvar_array_addr_for(
-            gv, cl_ptr_array_pointee_bytes, cast_elem_size, var_size), ctx);
+            gv, cl_ptr_array_pointee_bytes, cast_elem_size, var_size,
+            compound_array_decay_type), ctx);
       }
       node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
       return apply_postfix((node_t *)gvar_node, ctx);
@@ -1288,7 +1355,8 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     ref = psx_node_new_compound_lvar_array_addr_for(
         var, is_pointer_elem_array ? cast_tag_kind : var->tag_kind,
         is_pointer_elem_array ? cast_tag_name : var->tag_name,
-        is_pointer_elem_array ? cast_tag_len : var->tag_len, var_size);
+        is_pointer_elem_array ? cast_tag_len : var->tag_len, var_size,
+        compound_array_decay_type);
   } else {
     ref = psx_node_new_lvar_expr_ref_for(var, cast_is_ptr);
   }
@@ -2935,11 +3003,14 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
        * の decay は起きないので、配列の合計サイズ (var->size) を返す。
        * 通常の式解析では `arr` が ND_ADDR(int) (= 4 バイト) になってしまうので
        * ここで先回りする。 */
-      if (arr_var && arr_var->is_array) {
+      if (arr_var && psx_lvar_is_array(arr_var)) {
         token_t *peek = curtok()->next;
         if (peek && peek->kind == TK_RPAREN) {
-          set_curtok(peek->next);
-          return annotate_lvar_sizeof_usage_node(psx_node_new_num(arr_var->size), arr_var);
+          int array_size = psx_lvar_decl_sizeof(arr_var, 0);
+          if (array_size > 0) {
+            set_curtok(peek->next);
+            return annotate_lvar_sizeof_usage_node(psx_node_new_num(array_size), arr_var);
+          }
         }
       }
       /* static local 配列はグローバルへ lowering され alias lvar は is_array=0 /
@@ -2950,9 +3021,10 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
         if (peek && peek->kind == TK_RPAREN) {
           global_var_t *sgv = psx_find_global_var(arr_var->static_global_name,
                                                   arr_var->static_global_name_len);
-          if (sgv && sgv->type_size > 0) {
+          int static_array_size = psx_gvar_decl_sizeof(sgv, 0);
+          if (static_array_size > 0) {
             set_curtok(peek->next);
-            return annotate_lvar_sizeof_usage_node(psx_node_new_num(sgv->type_size), arr_var);
+            return annotate_lvar_sizeof_usage_node(psx_node_new_num(static_array_size), arr_var);
           }
         }
       }
@@ -2963,11 +3035,12 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx) {
         for (global_var_t *gv = psx_find_global_var(id->str, id->len); gv; gv = NULL) {
           if (gv->name_len != id->len ||
               memcmp(gv->name, id->str, (size_t)id->len) != 0) continue;
-          if (gv->is_array && gv->type_size > 0) {
+          int global_array_size = psx_gvar_decl_sizeof(gv, 0);
+          if (psx_gvar_is_array(gv) && global_array_size > 0) {
             token_t *peek = curtok()->next;
             if (peek && peek->kind == TK_RPAREN) {
               set_curtok(peek->next);
-              return psx_node_new_num(gv->type_size);
+              return psx_node_new_num(global_array_size);
             }
           }
           break;
@@ -3162,8 +3235,48 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
   int extras_count = 0;
   vla_rsf = psx_node_vla_row_stride_frame_off(node);
   psx_node_pointer_stride_metadata(node, &inner_ds, &next_ds, extras, &extras_count);
+  psx_type_t *node_type = psx_node_get_type(node);
+  int stride_from_canonical_type = 0;
+  if (node_type && node_type->kind == PSX_TYPE_POINTER &&
+      node_type->base && node_type->base->kind == PSX_TYPE_POINTER &&
+      node_type->base->base && node_type->base->base->kind == PSX_TYPE_ARRAY) {
+    es = 8;
+    inner_ds = 0;
+    next_ds = 0;
+    extras_count = 0;
+    stride_from_canonical_type = 1;
+  }
+  if (node_type && node_type->kind == PSX_TYPE_POINTER &&
+      node_type->base && node_type->base->kind == PSX_TYPE_ARRAY) {
+    int array_size = psx_type_sizeof(node_type->base);
+    int elem_stride = psx_type_deref_size(node_type->base);
+    if (array_size > 0) es = array_size;
+    inner_ds = elem_stride > 0 ? elem_stride : 0;
+    next_ds = node_type->base->outer_stride;
+    extras_count = node_type->base->extra_strides_count;
+    for (int i = 0; i < extras_count && i < 5; i++) {
+      extras[i] = node_type->base->extra_strides[i];
+    }
+    stride_from_canonical_type = 1;
+  }
+  if (node_type && node_type->kind == PSX_TYPE_ARRAY &&
+      node_type->base && node_type->base->kind == PSX_TYPE_POINTER) {
+    int pointer_elem_size = psx_type_sizeof(node_type->base);
+    if (pointer_elem_size > 0) es = pointer_elem_size;
+    inner_ds = 0;
+    next_ds = 0;
+    extras_count = 0;
+    stride_from_canonical_type = 1;
+  }
   int ptr_array_bytes = psx_node_ptr_array_pointee_bytes(node);
-  if (ptr_array_bytes > 0 && node->kind != ND_DEREF) {
+  if (!stride_from_canonical_type && ptr_array_bytes > 0 && node->kind == ND_DEREF) {
+    if (node_type && node_type->kind == PSX_TYPE_ARRAY && node_type->base &&
+        psx_type_is_pointer(node_type->base)) {
+      int pointer_elem_size = psx_type_sizeof(node_type->base);
+      if (pointer_elem_size > 0) es = pointer_elem_size;
+    }
+  }
+  if (!stride_from_canonical_type && ptr_array_bytes > 0 && node->kind != ND_DEREF) {
     int bds = psx_node_base_deref_size(node);
     int has_outer_row_stride = (ds > 8 && inner_ds > 0);
     if (!has_outer_row_stride) {
@@ -3386,6 +3499,16 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
    * pointer return FP の正本が混ざっていた。 */
   if (callee) {
     tk_float_kind_t ret_fp = psx_node_funcptr_ret_fp_kind(callee);
+    if (ret_fp == TK_FLOAT_KIND_NONE) {
+      ret_fp = psx_node_pointee_fp_kind(callee);
+    }
+    if (ret_fp == TK_FLOAT_KIND_NONE) {
+      psx_type_t *callee_type = psx_node_get_type(callee);
+      if (callee_type && callee_type->kind == PSX_TYPE_POINTER &&
+          callee_type->base && callee_type->base->kind == PSX_TYPE_FLOAT) {
+        ret_fp = callee_type->base->fp_kind;
+      }
+    }
     if (ret_fp != TK_FLOAT_KIND_NONE &&
         !psx_node_funcptr_returns_pointee_array(callee)) {
       node->base.fp_kind = ret_fp;
@@ -3833,7 +3956,7 @@ static node_t *build_funcref_node(token_ident_t *tok) {
 static node_t *try_build_global_var_node(token_ident_t *tok) {
   for (global_var_t *gv = psx_find_global_var(tok->str, tok->len); gv; gv = NULL) {
     if (gv->name_len != tok->len || memcmp(gv->name, tok->str, (size_t)tok->len) != 0) continue;
-    if (gv->is_array) {
+    if (psx_gvar_is_array(gv)) {
       return psx_node_new_gvar_array_addr_for(gv);
     }
     return psx_node_new_gvar_for(gv);
@@ -3848,12 +3971,15 @@ static node_t *try_build_global_var_node(token_ident_t *tok) {
  * から名前検索で引く。多次元配列は alias lvar に保存した stride 情報を
  * ND_ADDR(ND_GVAR) へ伝播し、通常のローカル/グローバル配列と同じ subscript 経路に乗せる。 */
 static node_t *build_static_local_array_addr_node(lvar_t *var) {
-  /* グローバル変数表から名前で引いて type_size を取る。 */
+  /* static-local array aliases are lowering metadata; do not materialize
+   * var->decl_type while recognizing them, because the alias intentionally has
+   * size=0/is_array=0 and carries its array shape in stride fields. */
   short gv_type_size = (short)var->elem_size;
   for (global_var_t *gv = psx_find_global_var(var->static_global_name, var->static_global_name_len); gv; gv = NULL) {
     if (gv->name_len == var->static_global_name_len &&
         memcmp(gv->name, var->static_global_name, (size_t)gv->name_len) == 0) {
-      gv_type_size = gv->type_size;
+      int storage_size = psx_gvar_storage_size(gv, 0);
+      if (storage_size > 0) gv_type_size = (short)storage_size;
       break;
     }
   }
@@ -3865,14 +3991,14 @@ static node_t *build_static_local_array_addr_node(lvar_t *var) {
  * elem_size>0 + size=0 + is_array=0 の組合せで登録する。スカラ static_local
  * (try_lower_static_local_scalar) は size>0 / fp_kind / pointer 等で別経路。 */
 static int lvar_is_static_local_array(lvar_t *var) {
-  return var->is_static_local && var->static_global_name &&
+  return var && var->is_static_local && var->static_global_name &&
          var->elem_size > 0 && var->size == 0 && !var->is_vla &&
          !var->is_param;
 }
 
 // 配列ローカル変数（非 VLA）: ベースアドレスを ND_ADDR(ND_LVAR) として返す。
 static node_t *build_array_lvar_addr_node(lvar_t *var) {
-  return psx_node_new_lvar_array_addr_for(var, var->tag_kind != TK_EOF);
+  return psx_node_new_lvar_array_addr_for(var, psx_lvar_tag_kind(var) != TK_EOF);
 }
 
 // byref 仮引数 (>16バイト構造体の値渡し): フレームスロットからポインタを読み込み、
@@ -3942,7 +4068,7 @@ static node_t *resolve_identifier(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (lvar_is_static_local_array(var)) {
     return annotate_lvar_usage_node(build_static_local_array_addr_node(var), var, ctx);
   }
-  if (var->is_array && !var->is_vla) {
+  if (psx_lvar_is_array(var) && !psx_lvar_is_vla(var)) {
     return annotate_lvar_usage_node(build_array_lvar_addr_node(var), var, ctx);
   }
   if (var->is_byref_param) {

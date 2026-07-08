@@ -1423,7 +1423,9 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
     return emit_bitfield_load(ctx, ptr, bw, bo, bs);
   }
   /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。 */
-  if (psx_node_deref_decays_to_address(node)) {
+  psx_type_t *deref_type = psx_node_materialize_type(node);
+  if (psx_node_deref_decays_to_address(node) ||
+      (deref_type && deref_type->kind == PSX_TYPE_ARRAY)) {
     return ptr;
   }
   int v = ir_func_new_vreg(ctx->f);
@@ -2274,7 +2276,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     res_ty = IR_TY_PTR;
     slot_size = 8;
   }
-  if (res_ty == IR_TY_I32 && ps_node_type_size(node) >= 8) {
+  if (res_ty == IR_TY_I32 && psx_node_storage_type_size(node) >= 8) {
     res_ty = IR_TY_I64;
     slot_size = 8;
   }
@@ -2376,7 +2378,7 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   if (ctx->failed) return ir_val_none();
   int dst = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_F2I);
-  inst->dst = ir_val_vreg(dst, ps_node_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
+  inst->dst = ir_val_vreg(dst, psx_node_storage_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
   inst->src1 = v;
   inst->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node);
   ir_func_append_inst(ctx->f, inst);

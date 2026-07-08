@@ -128,11 +128,13 @@ node_t *psx_node_new_lvar_array_addr_for(struct lvar_t *var, int is_tag_pointer)
 node_t *psx_node_new_compound_gvar_array_addr_for(struct global_var_t *gv,
                                                   int ptr_array_pointee_bytes,
                                                   int pointer_elem_size,
-                                                  int array_size);
+                                                  int array_size,
+                                                  psx_type_t *canonical_type);
 node_t *psx_node_new_compound_lvar_array_addr_for(struct lvar_t *var,
                                                   token_kind_t tag_kind,
                                                   char *tag_name, int tag_len,
-                                                  int array_size);
+                                                  int array_size,
+                                                  psx_type_t *canonical_type);
 node_t *psx_node_new_addr_value_for(node_t *operand);
 node_t *psx_node_new_explicit_addr_value_for(node_t *operand);
 node_t *psx_node_new_unary_addr_for(node_t *operand);

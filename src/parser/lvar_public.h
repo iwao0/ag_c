@@ -9,6 +9,7 @@ lvar_t *psx_lvar_next_all(const lvar_t *var);
 lvar_t *psx_lvar_find_owner(lvar_t *head, int offset);
 
 int psx_lvar_offset(const lvar_t *var);
+int psx_lvar_decl_sizeof(const lvar_t *var, int fallback_size);
 int psx_lvar_storage_size(const lvar_t *var, int fallback_size);
 int psx_lvar_elem_size(const lvar_t *var, int fallback_size);
 int psx_lvar_align_bytes(const lvar_t *var);

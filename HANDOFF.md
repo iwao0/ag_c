@@ -1,8 +1,127 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き921: forward declare node public types）
+最終更新: 2026-07-08（続き925: node size API と IR storage width の正本境界整理）
 
 ## 現状
+- 続き925: **IR lowering の幅決定を storage reader に寄せ、`ps_node_type_size()` の入口を canonical type 優先にした**。
+
+  `src/ir/ir_builder.c` に残っていた `ps_node_type_size()` 直接参照をなくし、ternary result width と
+  `FP_TO_INT` の出力レジスタ幅決定を `psx_node_storage_type_size()` 経由へ寄せた。
+  これで IR lowering 側は「C 型としてのサイズ」ではなく「実際にレジスタ/slot に載せる幅」を
+  明示的に読むようになり、`ps_node_type_size()` と lowering storage width の役割分担が少し明確になった。
+
+  併せて `ps_node_type_size()` 自体も、入口で `psx_node_get_type()` の `sizeof` を先に返す形にした。
+  `node_value_view_from_node_direct()` は既に canonical type 優先だったが、公開サイズ API の入口でも
+  canonical を明示的に先に見るようにして、legacy `node_mem_t.type_size` は fallback として扱う契約を
+  固定した。回帰として、legacy `type_size=8` でも canonical type が `unsigned char` なら
+  `ps_node_type_size()` / `psx_node_storage_type_size()` が 1 を返すことを追加した。
+
+  なお全 e2e は今回まだ回していない。ユーザー方針どおり、小変更ごとに全通しせず parser と
+  影響の狭い fixture で確認している。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/type_decl/cast_double_to_int.c`
+    - `test/fixtures/probes_found_bugs/ternary_usual_arith_size_signedness.c`
+    - `test/fixtures/probes_found_bugs/ternary_address_pointer_truncation.c`
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+  - 直前の IR 変更確認として以下も compile/assemble/run **pass**
+    - `test/fixtures/probes_found_bugs/ternary_long_branch.c`
+    - `test/fixtures/probes_found_bugs/nested_ternary_long.c`
+    - `test/fixtures/probes_found_bugs/funcptr_fp_to_int_arg.c`
+    - `test/fixtures/probes_found_bugs/ternary_pointer_null_branch.c`
+  - `git diff --check` = **green**
+
+- 続き924: **lvar object reference のサイズ取得を `psx_lvar_storage_size()` 経由に寄せた**。
+
+  続き923で `decl_sizeof` と `storage_size` を分けたあと、`node_utils.c` の
+  `psx_node_new_lvar_object_ref_for()` がまだ `var->size` を直接 node の `type_size` に
+  使っていた。ここを `psx_lvar_storage_size(var, psx_lvar_elem_size(var, 0))` 経由へ変え、
+  object reference が `decl_type` 由来のサイズ補正を拾えるようにした。
+
+  回帰テストとして、raw field は 4 byte scalar に見えるが `decl_type` は pointer の
+  lvar を作り、`psx_node_new_lvar_object_ref_for()` が 8 byte を返すことを追加した。
+
+  なお同時に `psx_node_new_lvar_identifier_ref_for()` も `decl_type` reader へ寄せる案を
+  試したが、`const struct S (*p)[1]` のような pointer-to-array で、まだ raw
+  `outer_stride` / `ptr_array_pointee_bytes` 系の lowering metadata が必要なため
+  `E3064 [deref]` に退行した。identifier 経路は戻し、次に進めるなら pointer-to-array の
+  shape/stride を `decl_type` 側へ完全に載せてから移す必要がある。
+
+  確認:
+  - `make -j4 build/test_parser build/ag_c` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `TMPDIR=/private/tmp/agc-e2e-tmp ./build/test_e2e` = **OK: All 1205 E2E tests passed**
+
+- 続き923: **型情報の正本化は、違う対応ではなく `decl_type` 正本へ寄せる本筋を継続中**。
+
+  続き922で lvar/gvar の public reader を `psx_type_t` / `decl_type` 優先へ寄せたが、
+  `psx_lvar_storage_size()` / `psx_gvar_storage_size()` が `sizeof` 的な宣言サイズと
+  lowering 用の実保存領域サイズを兼ねていたため、pointer-to-VLA のような値で
+  「宣言上は pointer なので 8 byte」「実装上は stride sidecar を持つので 16 byte」
+  という差を表現しづらかった。
+
+  今回は `psx_lvar_decl_sizeof()` / `psx_gvar_decl_sizeof()` を追加し、
+  `sizeof(array)` など宣言型を見るべき経路は decl-size reader を使うようにした。
+  一方で `psx_lvar_storage_size()` / `psx_gvar_storage_size()` は、`decl_type` 由来の
+  サイズと旧 storage field の大きい方を返す storage/lowering 用 reader として残した。
+  これにより、型情報の正本は `decl_type`、sidecar や lowering 都合の領域情報は storage
+  reader という境界が明確になった。
+
+  回帰テストでは `int (*p)[m]` の pointer-to-VLA について
+  `psx_lvar_decl_sizeof(p)==8` かつ `psx_lvar_storage_size(p)==16` を確認し、
+  global pointer initializer でも `psx_gvar_decl_sizeof()` と storage size が
+  pointer size のままになることを確認している。
+
+  確認:
+  - `make -j4 build/test_parser build/ag_c` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `TMPDIR=/private/tmp/agc-e2e-tmp ./build/test_e2e` = **OK: All 1205 E2E tests passed**
+  - `git diff --check` = **green**
+
+- 続き922: **型情報の正本分散を `psx_type_t` / `decl_type` 側へ寄せる作業に着手した**。
+
+  直前までの node/public header 整理は API 境界の整備であり、型情報の正本統一そのものでは
+  なかった。今回は軸を戻し、`lvar_t` / `global_var_t` の raw field を public reader が
+  直接読む経路を減らし、materialized `psx_type_t` / `decl_type` を優先する形へ移している。
+
+  具体的には `src/parser/decl.c` の lvar public reader
+  (`psx_lvar_storage_size()` / `psx_lvar_elem_size()` / `psx_lvar_is_array()` /
+  `psx_lvar_is_vla()` / `psx_lvar_is_complex()` / `psx_lvar_is_tag_pointer()` /
+  `psx_lvar_pointer_qual_levels()` / `psx_lvar_tag_kind()` / `psx_lvar_fp_kind()`) を
+  `psx_lvar_get_decl_type()` 優先にした。
+
+  `src/parser/node_utils.c` では `psx_lvar_value_is_pointer_like()`、
+  lvar/gvar tag aggregate reader、`psx_gvar_storage_size()`、
+  `psx_gvar_array_element_size()` / count、initializer element size/count、
+  lvar/gvar function pointer signature reader を `decl_type` 優先に寄せた。
+  また `psx_gvar_is_array()` を追加し、`expr.c` の `sizeof(array)`、
+  global array 識別子解決、local array 識別子解決を public reader 経由へ移した。
+
+  この移行で古い raw-field heuristic の浅さも露出したため、根本側を補強した。
+  具体的には 8 byte の struct/union object を pointer-like と誤認しないようにし、
+  `type_from_mem()` が tag aggregate の要素サイズを tag context から復元できるようにした。
+  さらに `ARRAY<tag>` と `ARRAY<POINTER<tag>>` を混同しないよう、
+  array base type 構築を分けた。これにより gvar/lvar reader が raw field fallback ではなく
+  materialized type から同じ答えを返しやすくなっている。
+
+  注意点: static local array の alias (`is_static_local + static_global_name + size=0`) は
+  lowering 用メタデータであり、ここで `decl_type` を materialize すると typedef 多次元配列の
+  stride metadata と衝突する。そのため alias 判定だけは raw lowering state を見る形に戻した。
+  これは型正本化の逃げではなく、宣言型の正本と lowering state を混同しないための分離。
+
+  確認は
+  `make -j4 build/test_parser build/ag_c build/ag_c_wasm build/test_e2e` = **pass**、
+  `./build/test_parser` = **OK: All unit tests passed**、
+  `./build/ag_c test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c >/private/tmp/agc-static-local.s` = **pass**。
+  `TMPDIR=/private/tmp/agc-e2e-tmp ./build/test_e2e` は
+  `build/e2e/probes/static_tag_return_function.renamed.s:893:9: error: out of range literal value`
+  で **probes build が fail**。今回途中で出た `static_local_typedef_multidim_array` の
+  `E3064 [subscript]` は修正済みで直接コンパイル pass。現時点では E2E 全体は未完了。
+
 - 続き921: **node 系 public header から `ast.h` の完全定義依存を外した**。
 
   続き919/920で node 系 public API は `node_type_public.h` /
@@ -18324,3 +18443,34 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `./build/test_wasm32_e2e` = **1199 compiled, 1199 executed**
   - `./build/test_wasm32_object` = **1178/1178 scan pass**
   - `git diff --check` = **green**
+
+### このセッション（続き839）: lvar/gvar 型情報の正本を decl_type に寄せる
+- 見つかった浅い箇所:
+  - `lvar_t` / `global_var_t` の public reader が、`decl_type` と旧フィールド
+    (`size`, `elem_size`, `is_array`, `tag_kind`, pointer metadata) を混在して読んでいた。
+  - global initializer / tag aggregate / static local array / pointer-to-VLA の経路で、
+    宣言型の正本と lowering 用メタデータの境界が曖昧だった。
+- 根本対応:
+  - lvar/gvar の public reader を `psx_*_get_decl_type()` 優先に寄せた。
+  - tag aggregate の member/size lookup は scope-aware helper に寄せ、
+    shadowed tag の誤参照を避けるようにした。
+  - gvar の `decl_type` は parser arena 由来だと関数解析後に dangling になるため、
+    persistent clone を保持する形にした。
+  - non-array global initializer の要素数は storage/elem 除算ではなく、
+    `has_init ? 1 : 0` を返すようにして pointer initializer の巨大 `.space` を防いだ。
+  - pointer-to-VLA は宣言型としては pointer (`sizeof(p)==8`) のままにしつつ、
+    stride sidecar を含む実保存領域は `psx_lvar_storage_size()` が落とさないよう分離した。
+  - `psx_lvar_decl_sizeof()` / `psx_gvar_decl_sizeof()` を追加し、`sizeof` が見る宣言サイズと
+    lowering が使う storage size を API として分けた。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/pointer_to_vla.c > /private/tmp/agc_pointer_to_vla.s`
+    + `cc /private/tmp/agc_pointer_to_vla.s -o /private/tmp/agc_pointer_to_vla_new`
+    + `/private/tmp/agc_pointer_to_vla_new` = **pass**
+  - `TMPDIR=/private/tmp/agc-e2e-tmp ./build/test_e2e` = **OK: All 1205 E2E tests passed**
+- 現状:
+  - 型正本化は「reader 移行 + 主要な lifetime/sidecar 混線の修正」まで進んだ。
+  - まだ完全な一本化ではなく、旧フィールドは parser/lowering の構築・補助メタデータとして残っている。
+  - `size` / `elem_size` のうち、宣言型由来の読み出しは `decl_type` reader へ寄せ始めた。
+    次に進めるなら、構築側の旧フィールド名も storage/lowering metadata として整理するのが高優先。

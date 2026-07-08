@@ -4,6 +4,8 @@
 #include "core.h"
 #include <stdbool.h>
 
+typedef struct psx_type_t psx_type_t;
+
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
  *
@@ -49,6 +51,7 @@ typedef struct tag_member_info_t {
   int ptr_array_pointee_bytes;
   int is_funcptr;
   psx_decl_funcptr_sig_t funcptr_sig;
+  psx_type_t *decl_type;
 } tag_member_info_t;
 
 static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(

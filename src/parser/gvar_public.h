@@ -96,7 +96,9 @@ typedef struct {
 } psx_gvar_initializer_visit_ops_t;
 
 global_var_t *psx_find_global_var(char *name, int len);
+int psx_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
 int psx_gvar_storage_size(const global_var_t *gv, int fallback_size);
+int psx_gvar_is_array(const global_var_t *gv);
 int psx_gvar_is_tag_aggregate(const global_var_t *gv);
 int psx_gvar_is_struct_aggregate(const global_var_t *gv);
 int psx_gvar_is_union_aggregate(const global_var_t *gv);

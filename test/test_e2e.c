@@ -2230,7 +2230,7 @@ static int build_category(const char *category) {
 
   fprintf(drv, "#include <math.h>\n#include <stdio.h>\n\n");
   fprintf(drv, "static int agc_nearly(double a, double b) { return fabs(a - b) < 0.001; }\n\n");
-  fprintf(drv, "int main(void) {\n  int failed = 0;\n");
+  fprintf(drv, "int main(void) {\n  setvbuf(stdout, NULL, _IONBF, 0);\n  int failed = 0;\n");
 
   size_t input_count = 0;
   for (size_t i = 0; i < max_cases; i++) {
