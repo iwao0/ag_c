@@ -1,8 +1,912 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-08（続き925: node size API と IR storage width の正本境界整理）
+最終更新: 2026-07-09（続き956: FP_TO_INT cast metadata も `cast_type` 正本へ寄せた）
 
 ## 現状
+- 続き956: **FP_TO_INT cast metadata も `cast_type` 正本へ寄せた**。
+
+  続き955で integer/pointer cast result constructor は `cast_type` 正本を優先するようにしたが、
+  `psx_node_new_fp_to_int_cast()` はまだ `width` だけから default int metadata を作っており、
+  `(unsigned)d` のような実 parse 経路でも `ND_FP_TO_INT` 自体の raw mirror が
+  cast target type とズレる余地が残っていた。
+
+  修正として、`psx_node_new_fp_to_int_cast()` でも `cast_type` が無い場合だけ default int type を作り、
+  その後は `sync_scalar_mem_from_decl_type()` で unsigned / `_Bool` / `_Atomic` などの
+  raw mirror を `cast_type` から復元するようにした。
+  `expr.c` 側の `wrap_fp_to_int_if_needed()` / `wrap_fp_to_int_width()` は `cast_type` を受け取るようにし、
+  C cast の scalar integer 経路では canonical target type を渡すようにした。
+  ABI argument conversion の幅合わせは型が ABI code 由来なので、従来どおり default int type fallback にしている。
+
+  追加で、`psx_node_new_pointer_cast_result()` の legacy fallback 判定を整理した。
+  `cast_type` が pointer view として存在する場合は、`sync_pointer_cast_mem_from_type()` 後に即 return し、
+  `type_kind/is_unsigned/tag_kind` 由来の fallback は `cast_type` が無い旧経路だけに閉じ込めた。
+  挙動変更というより、「canonical pointer type があるならそれが正本」という境界をコード上でも明示した整理。
+
+  追加確認:
+  - `test/test_parser.c` に `psx_node_new_fp_to_int_cast()` 直呼び regression を追加。
+    unsigned / `_Bool` / `_Atomic` の `cast_type` から raw mirror が復元されることを確認。
+  - 実 parse 経路として `unsigned __tm_fp_to_unsigned_expr(double d){ return (unsigned)d; }` を追加。
+    return 内の `ND_FP_TO_INT` が `cast_type` 由来で unsigned metadata を持つことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
+- 続き955: **cast result metadata も `cast_type` 正本を優先するようにした**。
+
+  続き954までで lvar/gvar/tag member/array addr の `decl_type` 同期を進めたが、
+  cast result constructor にはまだ同じ分散が残っていた。
+  `psx_node_new_integer_cast_result_ex()` は `cast_type` を受け取っているのに、
+  raw mirror は呼び出し側から渡る `is_unsigned/is_long_long/is_plain_char` だけで埋めていた。
+  また `psx_node_new_pointer_cast_result()` は `cast_type` から pointee flag を同期した後に、
+  legacy の `type_kind/is_unsigned/tag_kind` 引数で raw mirror を再上書きできた。
+
+  修正として、integer cast result は `sync_scalar_mem_from_decl_type()` を通し、
+  unsigned / `_Bool` / `_Atomic` などの raw mirror を `cast_type` から復元するようにした。
+  pointer cast result は `sync_pointer_cast_mem_from_type()` 側で pointee tag metadata も復元し、
+  `cast_type` が pointer view として存在する場合は legacy 引数による pointee flag/tag の fallback を
+  走らせないようにした。`cast_type` が無い旧経路では従来の fallback を残している。
+
+  追加確認:
+  - `test/test_parser.c` に integer cast constructor regression を追加。
+    `is_unsigned=0` などの旧引数が stale でも、`cast_type` が unsigned / `_Bool` / `_Atomic` なら
+    raw mirror が `cast_type` から復元されることを確認。
+  - pointer cast constructor regression を追加。
+    `cast_type` が signed pointer / bool pointer / struct pointer を示しているとき、
+    stale な `type_kind/is_unsigned/tag_kind` 引数が canonical type を上書きしないことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き954: **array base / compound array addr init も `decl_type` 同期へ寄せた**。
+
+  続き953までで local/global/tag member の通常参照は `decl_type` 由来の raw mirror 同期へ寄ってきたが、
+  array 系の public init helper にまだ constructor 後段だけで同期している箇所が残っていた。
+  特に `psx_node_init_compound_lvar_array_addr_metadata()` /
+  `psx_node_init_compound_gvar_array_addr_metadata()` は legacy sidecar から stride/tag 情報を詰めるだけで、
+  `decl_type` から pointee scalar flag を復元する責務が constructor 側に分散していた。
+  また `psx_node_init_gvar_array_base_metadata()` も `base.type` だけ設定して raw mirror 同期を持っていなかった。
+
+  修正として、compound lvar/gvar array addr init helper 内でも fallback の
+  `psx_lvar_get_decl_type()` / `psx_gvar_get_decl_type()` を `apply_array_addr_decl_type()` に通すようにした。
+  constructor 側の explicit `canonical_type` 指定は残し、必要ならその後で再同期する。
+  さらに global array base init は `sync_gvar_ref_mem_from_decl_type()` を通し、
+  array object 側の raw mirror も global `decl_type` から復元するようにした。
+
+  追加確認:
+  - `test/test_parser.c` の compound literal array regression に、constructor ではなく
+    `psx_node_init_compound_lvar_array_addr_metadata()` /
+    `psx_node_init_compound_gvar_array_addr_metadata()` を直接呼ぶ検査を追加。
+    legacy sidecar の unsigned/bool flag を消しても、`decl_type` から pointee flag が復元されることを確認。
+  - global `unsigned char[]` / `_Bool[]` で `psx_node_init_gvar_array_base_metadata()` を直接呼び、
+    array base metadata が `decl_type` から pointee unsigned/bool を復元することを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き953: **tag member scalar mirror も `decl_type` 正本へ寄せた**。
+
+  続き952までで local/global/unary deref の scalar mirror は共通 helper へ寄ってきたが、
+  `psx_node_new_tag_member_lvar_ref_for()` は `info->decl_type` を持つ member でも、
+  後段で `tag_member_info_t::fp_kind/is_bool/is_unsigned` を raw node に再コピーしていた。
+  また `sync_tag_member_mem_from_decl_type()` 自体が pointer/array 以外を早期 return しており、
+  scalar member は canonical type から mirror を復元できていなかった。
+
+  修正として、`sync_tag_member_mem_from_decl_type()` が scalar type でも
+  `sync_scalar_mem_from_decl_type()` を呼ぶようにし、member lvar-ref 側の legacy scalar copy は
+  `decl_type` がない場合の fallback に下げた。member deref 側は既存の `decl_type` sync を活かし、
+  scalar member でも最後に canonical type で raw mirror を上書きする。
+
+  追加で、struct/union member の `decl_type` 生成元である `struct_layout.c` が `_Atomic` を
+  `member_decl_type_from_layout()` に渡しておらず、member `decl_type` 自体から atomic が落ちていた。
+  `member_scalar_type()` / `member_decl_type_from_layout()` に `is_atomic` を通し、
+  `_Atomic` member の正本にも `is_atomic` が載るようにした。
+
+  追加確認:
+  - `test/test_parser.c` に `struct __tm_member_scalar` regression を追加。
+    `unsigned int` / `_Bool` / `_Atomic int` / `double _Complex` member について、
+    `tag_member_info_t` 側の旧 scalar mirror を壊しても、lvar-ref / deref の raw mirror が
+    `decl_type` から復元されることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
+- 続き952: **unary deref scalar mirror も共通 helper 同期へ寄せた**。
+
+  続き951で scalar mirror 同期 helper を `_Complex` / `_Atomic` まで広げたが、
+  `sync_unary_deref_mem_from_scalar_type()` はまだ deref 結果の scalar raw mirror を
+  手で部分的に復元していた。ここが別実装のままだと、`*p` の結果だけ
+  `decl_type` / canonical type からの同期対象が狭くなり、また正本が分散する。
+
+  修正として、unary deref の scalar 結果でも pointer 状態のクリアや `type_size` 設定は
+  deref 固有処理に残し、scalar flag 自体は `sync_scalar_mem_from_decl_type()` へ寄せた。
+  これで pointer deref 後の `_Atomic` / `_Complex` も、direct lvar node と同じ helper で
+  raw mirror を復元する。
+
+  追加確認:
+  - `test/test_parser.c` に typed pointer -> `_Atomic int` deref regression を追加。
+    synthetic operand 側の raw mirror に頼らず、canonical pointee type から
+    `is_atomic` / `base.is_atomic` が復元されることを確認。
+  - typed pointer -> `double _Complex` deref regression を追加し、
+    `is_complex` / `base.is_complex` / `base.fp_kind` が canonical pointee type から復元されることを確認。
+  - synthetic deref operand は実体が `node_mem_t` なので、既存の stack deref tests と同じく
+    `ND_DEREF` として作り、`ND_LVAR` 専用 symbol 補正が構造体外を読まないようにした。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き951: **scalar mirror 同期 helper を `_Complex` / `_Atomic` まで広げた**。
+
+  続き950で `psx_node_new_lvar_for()` も `decl_type` 同期に寄せたが、
+  同期先の `sync_scalar_mem_from_decl_type()` 自体が integer / bool / float の一部 field だけを
+  raw mirror へ戻していた。`decl_type` には `_Complex` / `_Atomic` / scalar const-volatile も載るため、
+  helper がそこを落とすと「type が正本」になり切らず、旧 `lvar_t` field に依存する抜けが残る。
+
+  修正として、`sync_scalar_mem_from_decl_type()` で `_Complex` の `is_complex` / `base.is_complex` /
+  `fp_kind`、`_Atomic` の `is_atomic` / `base.is_atomic`、scalar const/volatile mirror も
+  `decl_type` から同期するようにした。
+
+  追加確認:
+  - `test/test_parser.c` に local `_Atomic int` direct lvar regression を追加。
+    旧 `lvar_t.is_atomic` を消しても、`decl_type` から raw atomic mirror が復元されることを確認。
+  - synthetic local `double _Complex` で旧 `is_complex` / `fp_kind` を消しても、
+    direct lvar node が `decl_type` から complex mirror と fp kind を復元できることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き950: **low-level local var constructor も `decl_type` 同期へ寄せた**。
+
+  続き949で通常 identifier / element / typed slot は `decl_type` から raw scalar mirror を同期するようにしたが、
+  それらより低レベルの `psx_node_new_lvar_for()` はまだ `mem_from_lvar()` で旧 `lvar_t` field を丸写しし、
+  `base.type` だけ `psx_lvar_get_decl_type()` に置き換える形だった。つまり `decl_type` はあるのに、
+  direct lvar node の `is_unsigned` / `is_bool` / pointer raw mirror は旧 field に残る余地があった。
+
+  修正として、`psx_node_new_lvar_for()` でも `base.type` 設定後に
+  `sync_scalar_mem_from_decl_type()` と `sync_pointer_cast_mem_from_type()` を通すようにした。
+  これで `psx_node_new_lvar_object_ref_for()` や address helper の土台になる direct lvar node も、
+  canonical type から互換 raw mirror を復元する。
+
+  追加確認:
+  - `test/test_parser.c` に `psx_node_new_lvar_for()` 直呼びの regression を追加。
+    local `unsigned int` / `_Bool` の旧 `lvar_t` scalar flag を消しても、
+    direct lvar node が `decl_type` から raw scalar mirror を復元できることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き949: **local identifier / element / typed slot の raw scalar mirror も `decl_type` 同期へ寄せた**。
+
+  続き948までで address-of / global array address / compound literal array address は
+  canonical type から raw mirror を同期するようになったが、local の部分スロット生成
+  (`psx_node_new_lvar_typed_at_for()`)、array element 生成
+  (`psx_node_new_array_elem_lvar_for()`)、通常 identifier 参照
+  (`psx_node_new_lvar_identifier_ref_for()`) にはまだ旧 mirror 依存が残っていた。
+  `base.type` は `decl_type` から導出しているのに、`is_unsigned` / `is_bool` /
+  `fp_kind` などは `lvar_t` の raw field からコピーしていたため、型情報の正本が
+  `decl_type` と lvar mirror に分散していた。
+
+  修正として、scalar mirror 同期を `sync_scalar_mem_from_decl_type()` に抽出し、
+  `sync_gvar_ref_mem_from_decl_type()`、local identifier 参照、local element / typed slot constructor から
+  同じ helper を使うようにした。さらに pointer-view type を持つ local element / typed slot は
+  既存の `sync_pointer_cast_mem_from_type()` に通し、pointer 側の raw mirror も type 側から同期する。
+
+  追加確認:
+  - `test/test_parser.c` に local `unsigned int` / `_Bool` identifier regression を追加。
+    `lvar_t` 側の旧 scalar flag を消しても、通常 identifier node が `decl_type` から
+    raw scalar mirror を復元できることを確認。
+  - `test/test_parser.c` に local `unsigned char[]` / `_Bool[]` の element と typed slot regression を追加。
+    `lvar_t` 側の旧 `is_unsigned` / `is_bool` / pointee mirror を消しても、
+    constructor が `decl_type` から raw scalar mirror を復元できることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き948: **address-of node の raw pointer mirror も canonical type 同期へ寄せた**。
+
+  続き947で compound literal array address は canonical type から raw mirror を同期するようにしたが、
+  通常の `&expr` 生成 (`psx_node_new_addr_value_for()` / `psx_node_new_unary_addr_for()`) には
+  まだ同じズレが残っていた。`type_from_address_operand()` で pointer type は作るが、
+  raw `node_mem_t` の `pointee_is_bool` / `pointee_is_unsigned` / pointer depth / base-deref などは
+  type から同期していなかった。
+
+  修正として、address-of node 生成直後に既存の `sync_pointer_cast_mem_from_type()` を通し、
+  pointer cast と同じ canonical type -> raw mirror 経路へ揃えた。
+
+  追加確認:
+  - typed unsigned scalar operand への `&` で、raw `pointee_is_unsigned` が canonical pointer type から
+    復元される regression を追加。
+  - typed `_Bool` scalar operand への address value で、raw `pointee_is_bool` が canonical pointer type から
+    復元される regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き947: **compound literal array address も canonical type 同期へ寄せた**。
+
+  続き946で global array address は `decl_type` から raw mirror を同期するようになったが、
+  compound literal array address (`psx_node_new_compound_lvar_array_addr_for()` /
+  `psx_node_new_compound_gvar_array_addr_for()`) はまだ `canonical_type` を
+  `addr->base.type` に置くだけだった。つまり pointee bool/unsigned/fp などの raw mirror は
+  compound literal 用 lvar/gvar の旧 field に依存していた。
+
+  修正として、`apply_array_addr_decl_type()` が array 型だけでなく decay 済み pointer-view 型も
+  受け取れるようにし、compound literal array address も canonical type があればそれを、
+  無ければ lvar/gvar の `decl_type` を使って raw mirror を同期するようにした。
+  その過程で、compound literal 生成側にも保存漏れが見つかったため、
+  `parse_compound_literal_from_type()` で non-pointer array/scalar の unsigned と `_Bool` を
+  lvar/gvar の `decl_type` materialize 材料へ保存するようにした。
+
+  追加確認:
+  - local compound literal `(unsigned char[2]){...}` / `(_Bool[2]){...}` で、
+    compound literal lvar の旧 flag を消しても constructor が `decl_type` から
+    pointee flag を復元できる regression を追加。
+  - file-scope compound literal `(unsigned char[]){...}` / `(_Bool[]){...}` で、
+    backing compound gvar の旧 flag を消しても constructor が `decl_type` から
+    pointee flag を復元できる regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き946: **global array address の leaf flag mirror も `decl_type` 同期へ寄せた**。
+
+  続き944/945で static local の通常参照と array address は backing `decl_type` 正本へ寄ったが、
+  global array address (`psx_node_init_gvar_array_addr_metadata()`) にはまだ同型のズレが残っていた。
+  `addr->base.type` は `psx_gvar_get_decl_type()` を decay した canonical type なのに、
+  `pointee_is_bool` / `pointee_is_unsigned` / `pointee_fp_kind` は `global_var_t` の旧 field から
+  直接埋めていたため、raw mirror が `decl_type` ではなく storage metadata 側に依存していた。
+
+  修正として、global array address でも `apply_array_addr_decl_type()` を通し、
+  decayed pointer type から leaf bool/unsigned/fp/base-deref metadata を同期するようにした。
+  既存の stride / tag / funcptr / scalar-pointer 補助 metadata は維持しつつ、
+  leaf scalar flags は canonical type から上書きされる。
+
+  追加確認:
+  - `test/test_parser.c` に global `unsigned char[]` / `_Bool[]` の array address regression を追加。
+    `global_var_t` 側の旧 `is_unsigned` / `elem_is_bool` / pointee mirror を消しても、
+    `psx_node_new_gvar_array_addr_for()` が `decl_type` から pointee flag を復元できることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き945: **static local 通常参照 node の raw mirror も backing `decl_type` 同期へ寄せた**。
+
+  続き944で static local lowering は backing `global_var_t->decl_type` に
+  `_Bool` / unsigned / pointee flag を保存するようになったが、
+  `psx_node_init_static_local_gvar_ref_metadata()` はまだ `base.type` だけ backing
+  `decl_type` を使い、`is_bool` / `is_unsigned` / `fp_kind` などの raw mirror は
+  alias `lvar_t` から直接コピーしていた。つまり正本は backing `decl_type` に寄ったのに、
+  参照 node の互換 field は alias mirror に依存する二重正本が残っていた。
+
+  修正として、`sync_gvar_ref_mem_from_decl_type()` に scalar mirror 同期
+  (`fp_kind`, `is_unsigned`, `is_bool`, integer identity, long double) を追加し、
+  static local 通常参照でも backing global が引ける場合は同 helper を通すようにした。
+  これで `psx_node_new_static_local_gvar_for()` は array address 以外の通常参照でも
+  backing `decl_type` を正本として raw `node_mem_t` を同期する。
+
+  追加確認:
+  - `test/test_parser.c` で static local `double` の alias `fp_kind` を消しても
+    backing `decl_type` から `base.fp_kind` が復元されることを確認。
+  - static local `_Bool` scalar / `unsigned int` scalar で alias 側の旧 flag を消しても、
+    `psx_node_new_static_local_gvar_for()` の raw mirror と public scalar 判定が
+    backing `decl_type` から復元される regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き944: **static local lowering の `_Bool` / unsigned metadata も backing `decl_type` 正本へ寄せた**。
+
+  続き943までで scalar/pointee/array leaf の bool/unsigned 分離は通常 local/global と
+  raw `node_mem_t` 復元まで進んだが、static local lowering にはまだ抜けがあった。
+  `static _Bool a[N]` は backing global を作る経路で `elem_is_bool` を保存しておらず、
+  `psx_node_new_static_local_array_addr_for()` を backing `gvar->decl_type` 優先にすると
+  `_Bool` array leaf が復元できない状態だった。さらに `static unsigned int *p` /
+  `static _Bool *p` は、pointee の unsigned/bool をポインタ object 自身の scalar flag と
+  混ぜ得る構造が残っていた。
+
+  修正として、static local scalar / array / typedef-array lowering に `is_bool` を通し、
+  backing `global_var_t` へ通常 global と同じ意味で保存するようにした。
+  - scalar `_Bool` object: `psx_decl_set_gvar_bool(gv, 1, 0)`
+  - `_Bool` array leaf: `psx_decl_set_gvar_bool(gv, 0, 1)`
+  - data pointer pointee: `psx_decl_set_gvar_pointee_scalar_flags()`
+
+  alias `lvar_t` 側も mirror として scalar object / pointee scalar を分けて保存し、
+  `psx_node_new_static_local_array_addr_for()` は backing `decl_type` を decay した型を
+  raw metadata へ同期する既存方針のままにした。これで static local も
+  「backing global の `decl_type` が正本、旧 field は mirror/補助」という境界に揃った。
+
+  追加確認:
+  - `test/test_parser.c` に static local `_Bool` array / unsigned array の backing
+    `decl_type` leaf flag regression を追加。alias 側の旧 flag を消しても
+    `psx_node_new_static_local_array_addr_for()` が backing type から復元できることを確認。
+  - `test/test_parser.c` に static local `_Bool *` / `unsigned int *` の pointee flag
+    regression を追加。alias 側の pointee flag を消しても
+    `psx_node_new_static_local_gvar_for()` が backing `decl_type` から判定できることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
+- 続き943: **raw array leaf の `_Bool` / unsigned 復元も pointee 復元から分離した**。
+
+  続き942で pointer/pointee 型復元から scalar `_Bool` flag の混入は消したが、
+  array leaf の legacy 互換が bool 寄りの helper だけで、unsigned 配列や多次元
+  array-shape fallback を明示的に固定できていなかった。ここを放置すると、
+  「pointer pointee では scalar flag を読まない」と「古い array mirror では element flag として読む」
+  という例外境界がまた曖昧になる。
+
+  修正として、legacy array element 判定を `mem_legacy_array_element_flag()` に切り出し、
+  `mem_array_leaf_is_bool()` / `mem_array_leaf_is_unsigned()` の両方から使うようにした。
+  `type_new_array_base_from_mem()` と `type_array_shape_base_from_mem()` は array leaf
+  専用 helper だけを見て leaf 型を復元し、pointer/pointee 復元は引き続き
+  `pointee_is_*` 専用 helper のままにしている。
+
+  追加確認:
+  - `test/test_parser.c` に legacy raw `node_mem_t` の unsigned 1D array、
+    `_Bool` 2D array、unsigned 2D array の復元 regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `rg "pointee_is_bool || mem->is_bool|pointee_is_unsigned || mem->is_unsigned" src/parser/node_utils.c`
+    = **no matches**
+
+- 続き942: **raw `node_mem_t` から型を復元する経路でも scalar `_Bool` と pointee `_Bool` を分離した**。
+
+  続き941で local/global の保存元は `is_bool` / `is_unsigned` と
+  `pointee_is_bool` / `pointee_is_unsigned` に分かれたが、`node_utils.c` の
+  raw type 復元 helper にはまだ `(mem->pointee_is_bool || mem->is_bool)` が残っていた。
+  ここは explicit `base.type` が無い legacy node を `psx_node_get_type()` で復元する最後の逃げ道なので、
+  保存元を分けても fallback 側で scalar flag を pointee 型に戻してしまう可能性があった。
+
+  修正として、pointee 型の復元は `mem_pointee_scalar_is_bool()` で
+  `pointee_is_bool` のみを見るようにし、array leaf の legacy 互換だけ
+  `mem_array_leaf_is_bool()` に閉じ込めた。これで pointer/pointee 復元では scalar
+  `_Bool` flag を読まず、古い `_Bool` 配列 mirror だけは array element として復元できる。
+  `rg "pointee_is_bool || mem->is_bool|pointee_is_unsigned || mem->is_unsigned" src/parser/node_utils.c`
+  は該当なし。
+
+  追加確認:
+  - `test/test_parser.c` に local/global scalar `_Bool` が raw mirror fallback で
+    `psx_node_pointee_is_bool()` にならない regression を追加。
+  - `node_mem_t` 直接の境界テストで、stale `is_bool=1` の pointer が
+    pointer-to-bool に復元されないこと、legacy bool array は bool array として復元されることを固定。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - targeted fixture asm smoke (`./build/ag_c <fixture>`) = **pass**
+    - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c`
+    - `test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c`
+    - `test/fixtures/probes_found_bugs/bool_2d_array_normalize.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+
+- 続き941: **`lvar_t.is_unsigned` / `is_bool` の scalar/pointee 兼用も分離した**。
+
+  続き940で global 側を分離した後、local 側にも同じ構造が残っていた。
+  `unsigned char *p` / `_Bool (*p)[N]` のような data pointer 宣言で `lvar_t.is_unsigned` /
+  `is_bool` を pointee metadata の材料にも使っており、local pointer 自身を scalar
+  unsigned/bool と見なす raw mirror が残り得た。
+
+  修正として、`lvar_t` に `pointee_is_unsigned` / `pointee_is_bool` を追加し、
+  通常 local data pointer 宣言、scalar pointer 仮引数、compound literal の pointer-element array は
+  `psx_decl_set_lvar_pointee_scalar_flags()` に保存するようにした。`is_unsigned` / `is_bool` は
+  scalar と scalar array element 用に戻し、`mem_from_lvar()` / local array address metadata は
+  helper から pointee raw mirror を作る。
+
+  追加確認:
+  - `test/test_parser.c` で local `unsigned char (*up)[3]` が
+    `node_mem_t.is_unsigned == 0` かつ `pointee_is_unsigned == 1`、
+    local `_Bool (*bp)[2]` が `is_bool == 0` かつ `pointee_is_bool == 1` になることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - targeted fixture run (`ag_c -> .s -> cc -> 実行`) = **pass**
+    - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c`
+    - `test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c`
+    - `test/fixtures/probes_found_bugs/bool_2d_array_normalize.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+  - `git diff --check` = **green**
+
+- 続き940: **`global_var_t.is_unsigned` の scalar/pointee 兼用をやめ、pointee 専用 field に分けた**。
+
+  続き939では global data pointer の leaf unsigned/bool を `decl_type` materialize の材料に入れたが、
+  その時点では `global_var_t.is_unsigned` と `elem_is_bool` を pointee mirror にも使う形だった。
+  これは `is_unsigned` の「unsigned スカラ」コメントと実態がズレ、`_Bool *arr[N]` のような
+  pointer array に広げると array element bool と pointee bool が混ざる構造だった。
+
+  修正として、`global_var_t` に `pointee_is_unsigned` / `pointee_is_bool` を追加し、
+  `register_toplevel_global_decl()` は data pointer object の pointee scalar flags を
+  `psx_decl_set_gvar_pointee_scalar_flags()` で保存するようにした。`is_unsigned` は
+  scalar/global array element 側の意味に戻し、`mem_from_gvar()` / gvar ref / gvar array address
+  metadata は pointee 専用 helper から raw mirror を作る。
+
+  追加確認:
+  - `test/test_parser.c` で global `unsigned char (*g)[3]` と `unsigned char *g` の
+    `node_mem_t.is_unsigned == 0` かつ `pointee_is_unsigned == 1` を確認し、
+    pointer value 自身と pointee flag が混ざらないことを固定。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - targeted fixture run (`ag_c -> .s -> cc -> 実行`) = **pass**
+    - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c`
+    - `test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c`
+    - `test/fixtures/probes_found_bugs/bool_2d_array_normalize.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+  - `git diff --check` = **green**
+
+- 続き939: **global data pointer でも leaf pointee unsigned/bool を `decl_type` materialize の材料に入れた**。
+
+  続き938で `type_pointee_value_type()` と raw mirror sync は揃えたが、global 宣言側では
+  `unsigned char (*g)[N]` / `_Bool (*g)[N]` の base unsigned/bool 情報が
+  `global_var_t` に保存されていなかった。そのため `psx_gvar_materialize_decl_type()` が
+  `mem_from_gvar()` から型を作る時点で leaf の unsigned/bool が失われ、reader/sync を直しても
+  `psx_node_new_gvar_for()` の legacy metadata が false になる穴が残っていた。
+
+  修正として、`register_toplevel_global_decl()` で scalar data pointer / pointer-to-array global
+  (`is_ptr && !is_array && !has_func_suffix`) に限り、local pointer 宣言と同じく pointee の
+  unsigned/bool を保存するようにした。`_Bool *arr[N]` のようなポインタ配列では
+  `elem_is_bool` を「配列要素そのものが `_Bool`」と読む経路があるため、そこには広げていない。
+
+  追加確認:
+  - `test/test_parser.c` に global `unsigned char (*g)[3]` / `_Bool (*g)[2]` と、
+    global `unsigned char *` / `_Bool *` の regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - targeted fixture run (`ag_c -> .s -> cc -> 実行`) = **pass**
+    - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c`
+    - `test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c`
+    - `test/fixtures/probes_found_bugs/bool_2d_array_normalize.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+  - `git diff --check` = **green**
+
+- 続き938: **pointer-to-array の leaf pointee unsigned/bool を type helper 正本へ寄せた**。
+
+  続き937で pointer-to-array cast の `decl_type` は `pointer -> array -> scalar` を表すように
+  なったが、pointee flag reader は immediate base だけを見ていた。つまり
+  `double (*)[N]` の FP 種別は deep helper で取れる一方、`unsigned char (*)[N]` や
+  `_Bool (*)[N]` は base が array なので unsigned/bool が落ちる、という浅い対応の残りがあった。
+
+  修正として、`type_pointee_value_type()` を追加し、pointee flag は「ポインタは潜らず、
+  配列だけ剥がして leaf scalar を見る」ルールに統一した。これにより
+  `unsigned char (*)[N]` は unsigned pointee、`_Bool (*)[N]` は bool pointee と判定しつつ、
+  `unsigned char **` のような pointer-to-pointer は immediate pointee が pointer のままなので
+  leaf unsigned 扱いしない。
+
+  あわせて `sync_pointer_cast_mem_from_type()` も同じ helper から raw mirror を同期し、
+  `_Bool (*bp)[N]` の宣言では local `decl_type` materialize に必要な bool base 情報を落とさないよう、
+  `decl_base_is_bool` を pointer 宣言でも `lvar_t` に保持するようにした。pointer lvalue 自体の
+  代入は typed guard で pointer と判定されるため、ポインタ変数代入を bool 正規化しない境界は保つ。
+
+  追加確認:
+  - `test/test_parser.c` に `(unsigned char (*)[3])0` と `(_Bool (*)[2])0` の regression を追加。
+    type API と raw `node_mem_t` の leaf unsigned/bool metadata が一致することを確認。
+  - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c` を追加し、
+    cast/declaration 経由の pointer-to-array で unsigned char の zero-extend と `_Bool` 代入正規化を確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - targeted fixture run (`ag_c -> .s -> cc -> 実行`) = **pass**
+    - `test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c`
+    - `test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c`
+    - `test/fixtures/probes_found_bugs/bool_2d_array_normalize.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+  - `git diff --check` = **green**
+
+- 続き937: **pointer-to-array cast でも `decl_type` が `pointer -> array -> scalar` を表すようにした**。
+
+  `psx_node_new_pointer_cast_result()` は `cast_type` を持っていたが、raw `node_mem_t` へ
+  `deref_size` / `base_deref_size` / pointee flags を手で補完する経路が残っていた。
+  さらに `(double (*)[2])0` のような pointer-to-array cast では、
+  `parse_cast_type()` が `[]` を「ポインタである」情報に潰し、`expr_cast_target_type()` が
+  `double *` 相当の型を作っていたため、type API 側の `ps_node_deref_size()` が
+  row size 16 ではなく leaf size 8 を返していた。
+
+  修正として、cast type parser が pointer-to-array の定数次元を保持し、
+  `expr_cast_target_type()` が `PSX_TYPE_POINTER` の base に `PSX_TYPE_ARRAY` を持つ型を
+  構築するようにした。あわせて `psx_node_new_pointer_cast_result()` に
+  `sync_pointer_cast_mem_from_type()` を追加し、legacy raw metadata は `cast_type` から同期する。
+  これにより pointer cast node でも `decl_type` が正本になり、raw field は互換用 mirror になる。
+
+  追加確認:
+  - `test/test_parser.c` に `(double (*)[2])0` と `(_Bool *)0` の regression を追加。
+    type API と raw `node_mem_t` の `deref_size` / `base_deref_size` /
+    pointee fp/bool metadata が一致することを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture run (`ag_c -> .s -> cc -> 実行`) = **pass**
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref_fp.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_deref.c`
+    - `test/fixtures/probes_found_bugs/fp_pointer_cast_deref.c`
+    - `test/fixtures/probes_found_bugs/cast_voidptr_subscript.c`
+    - `test/fixtures/probes_found_bugs/int_expr_pointer_cast_deref.c`
+  - `git diff --check` = **green**
+
+- 続き936: **`decl_type` から pointer-view `base_deref_size` を導出する処理を共通 helper に寄せた**。
+
+  続き934/935で array `base_deref_size` の正本化を進めた結果、
+  `pointer_view_from_type()` / `sync_gvar_ref_mem_from_decl_type()` /
+  `sync_lvar_identifier_mem_from_decl_type()` / `sync_tag_member_mem_from_decl_type()` に
+  似た base deref 導出ロジックが分散していた。ここが再びズレると、reader では 0、
+  constructor raw metadata では leaf size、のような二重正本に戻りやすい。
+
+  `type_pointer_view_base_deref_size()` を追加し、array 型では `psx_type_deref_size(type)` を
+  leaf element size として返すルールを一箇所に集約した。public reader では既存契約を守るため
+  pointer 型の `sizeof(base)` fallback は無効、constructor sync 側では従来通り補完ありにしている。
+  これにより、typed pointer の payload 欠落時は 0 のまま、array 型は canonical type から
+  leaf size を導出、という境界を helper の引数で明示できる。
+
+  追加確認:
+  - 既存の typed missing payload 系 regression が通ることを `./build/test_parser` で確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture diff = **pass**
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/struct_array_param.c`
+    - `test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c`
+  - `git diff --check` = **green**
+
+- 続き935: **`args[]` 用 parameter node も pointer-like 仮引数では `decl_type` metadata 同期を通すようにした**。
+
+  関数定義の `node_func_t.args[]` に入る `psx_node_new_param_lvar_for()` は、
+  `psx_node_new_lvar_typed_for()` 経由で `mem.base.type` 自体は持つようになっていたが、
+  その後に ABI 受け渡し用の `type_size=8` / `deref_size` を raw field へ手で再設定していた。
+  そのため array declarator parameter / pointer-to-array parameter では、identifier node 側の
+  `sync_lvar_identifier_mem_from_decl_type()` と違う metadata 経路が残っていた。
+
+  修正として、parameter node でも `decl_type` から pointer-like と判定できる場合は
+  `sync_lvar_identifier_mem_from_decl_type()` を通し、その後 `args[]` の責務である ABI 幅
+  (`type_size=8`) だけを再固定するようにした。scalar / struct value parameter の ABI 幅は
+  既存のまま触っていない。
+
+  追加確認:
+  - `test/test_parser.c` に、`typedef int M[3][4]; M *a` parameter の raw
+    `lvar.base_deref_size` を 0 にしても、`psx_node_new_param_lvar_for()` が
+    pointer node / ABI size 8 / deref size 48 を保ち、`psx_node_base_deref_size()` は
+    node の `decl_type` payload と一致することを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture diff = **pass**
+    - `test/fixtures/probes_found_bugs/struct_array_param.c`
+    - `test/fixtures/probes_found_bugs/pointer_typedef_param_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+    - `test/fixtures/probes_found_bugs/vla_2d_param_and_row_sizeof.c`
+
+- 続き934: **array の `base_deref_size` reader / sync も `decl_type` から導出するように揃えた**。
+
+  続き933の後、同じ pointer 前提の穴を横展開して確認したところ、
+  `sync_lvar_identifier_mem_from_decl_type()` と `sync_gvar_ref_mem_from_decl_type()` にも
+  array `decl_type` の `base_deref_size` を `psx_type_deref_size(type->base)` で求める箇所が残っていた。
+  1次元 `int a[2]` の `type->base` は scalar なので、この計算は 0 になり得る。
+
+  さらに public reader の `pointer_view_from_type(NODE_POINTER_BASE_DEREF_SIZE)` も、
+  `base.type` がある node では type 側を優先するため、constructor が raw `base_deref_size` を
+  正しく同期していても、array type 自体の `base_deref_size` が 0 なら reader が 0 を返していた。
+  ここを array 型に限って `psx_type_deref_size(type)` (= leaf element size) へ fallback するよう修正した。
+  pointer 型には既存の「type に base_deref_size がなければ 0」期待があるため、fallback は広げていない。
+
+  追加確認:
+  - `test/test_parser.c` に、global `double[2][3]` の raw `pointee_elem_size` を 0 にしても
+    `psx_node_base_deref_size()` が `decl_type` から 8 を返すことを追加。
+  - local `int a[2]` の raw `base_deref_size` を 0 にしても、identifier node の
+    `psx_node_base_deref_size()` が `decl_type` から 4 を返すことを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture diff = **pass**
+    - `test/fixtures/probes_found_bugs/global_struct_with_array_member.c`
+    - `test/fixtures/probes_found_bugs/local_struct_2d_char_array_member.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+
+- 続き933: **array member も `decl_type` から raw `node_mem_t` metadata を同期するようにした**。
+
+  続き932で tag member deref の pointer-to-array / funcptr member は `decl_type` 同期に寄せたが、
+  `struct { int a[2]; }` のような array member 自体はまだ微妙に穴が残っていた。`info->decl_type` は
+  `PSX_TYPE_ARRAY` として node に張れる一方、raw `node_mem_t` の `type_size` / `base_deref_size` /
+  `inner_deref_size` は旧 field のままになりやすく、低層 reader から見ると正本が分散したままだった。
+
+  根本対応として `sync_tag_member_mem_from_decl_type()` の対象を `PSX_TYPE_POINTER` だけでなく
+  `PSX_TYPE_ARRAY` にも広げた。array 型では `psx_type_sizeof(type)` を full object size、
+  `psx_type_deref_size(type)` を leaf element size として raw metadata へ投影し、
+  1次元 array のように stride metadata が明示されていない場合でも `inner_deref_size` と
+  `base_deref_size` を leaf element size で埋める。pointer-to-array 用の
+  `tag_member_info_t` 補正は pointer 型に限定し、array member には不要な補正が混ざらないようにした。
+
+  追加確認:
+  - `test/test_parser.c` に `struct { int a[2]; }` の member lvar ref / member deref node が
+    `PSX_TYPE_ARRAY`、raw `type_size=8`、`deref_size=4`、`base_deref_size=4`、
+    `inner_deref_size=4`、`is_array_member=1` になることを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture diff = **pass**
+    - `test/fixtures/probes_found_bugs/global_struct_with_array_member.c`
+    - `test/fixtures/probes_found_bugs/global_struct_char_array_member.c`
+    - `test/fixtures/probes_found_bugs/local_struct_2d_char_array_member.c`
+    - `test/fixtures/probes_found_bugs/multidim_char_member_brace_elision.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/struct_fp_pointer_member_subscript.c`
+    - `test/fixtures/probes_found_bugs/struct_double_ptr_deref_arrow.c`
+  - `git diff --check` = **green**
+
+- 続き932: **`psx_node_new_tag_member_deref_for()` も member `decl_type` から raw metadata を同期した**。
+
+  続き931で member lvar ref 側を同期した後、実際の `.` / `->` メンバアクセスで使う
+  `psx_node_new_tag_member_deref_for()` を確認した。ここも `info->decl_type` を
+  `deref->base.type` に張ってはいたが、pointer-to-array / funcptr member の raw `node_mem_t`
+  metadata は手書き初期化のままだった。
+
+  続き931の helper を `node_lvar_t *` 専用から `node_mem_t *` 汎用へ変え、
+  `sync_tag_member_mem_from_decl_type()` として member lvar ref と member deref の両方から
+  呼ぶようにした。これにより member deref node でも type size / pointer flag /
+  deref size / base deref / stride / pointer qualifier / deep pointee fp が `decl_type` 由来に揃う。
+
+  追加確認:
+  - `test/test_parser.c` に、`struct { int (*p)[3]; }` の member deref node も
+    deref size 12、base deref 4、inner stride 4 を raw metadata 側に持つことを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/struct_fp_pointer_member_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_of_funcptrs.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_int_to_fp_arg.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_fp_return.c`
+    - `test/fixtures/probes_found_bugs/struct_double_ptr_deref_arrow.c`
+
+- 続き931: **`psx_node_new_tag_member_lvar_ref_for()` の raw metadata も `decl_type` から同期した**。
+
+  struct/union member 側を確認したところ、`psx_node_new_tag_member_lvar_ref_for()` は
+  `info->decl_type` を `mem.base.type` に張っていたが、pointer-to-array member の
+  `deref_size` / `base_deref_size` / stride / funcptr signature などの raw `node_mem_t` 側は
+  古い field コピーのままだった。公開 reader は型から読めても、低層 metadata を見る経路では
+  正本が分散したままになる。
+
+  根本対応として `sync_tag_member_lvar_mem_from_decl_type()` を追加し、member の `decl_type` が
+  pointer 型のときだけ、type size / pointer flag / deref size / base deref / pointer qualifier /
+  pointer stride / deep pointee fp を `decl_type` から `node_mem_t` へ同期するようにした。
+  funcptr signature も `type_with_funcptr_sig_merged()` と
+  `psx_node_copy_funcptr_metadata_from_tag_member()` で lvar ref 側へ載せる。
+
+  途中で `int (*p)[3]` member の `decl_type` が flatten された pointer-to-array 表現を持つ場合、
+  `node_pointer_stride_from_type()` の raw projection が `inner_deref_size=12` になった。
+  `tag_member_info_t` 側には `outer_stride=12, deref_size=4` が残っているため、1D pointer-to-array
+  member では sync 時に `inner_deref_size` を member `deref_size` へ補正するようにした。
+
+  追加確認:
+  - `test/test_parser.c` に、`struct { int (*p)[3]; }` の member lvar ref が
+    `PSX_TYPE_POINTER`、deref size 12、base deref 4、inner stride 4 を raw metadata 側にも
+    持つことを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_of_funcptrs.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_int_to_fp_arg.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_fp_return.c`
+    - `test/fixtures/probes_found_bugs/struct_funcptr_zero_init.c`
+    - `test/fixtures/probes_found_bugs/struct_funcptr_designated_zero_init.c`
+    - `test/fixtures/probes_found_bugs/nested_struct_funcptr_designated_zero_init.c`
+
+- 続き930: **大型 struct byref 仮引数の `decl_type` を frame slot 幅ではなく C の値型へ戻した**。
+
+  続き929の後、まだ `base.type` が空の手作り node として
+  `psx_node_new_byref_param_deref_for()` を確認した。これは >16B struct の値渡し仮引数を
+  ABI 上は frame slot 内の 8B pointer として受け、式上は `ND_DEREF(pointer slot)` の
+  struct 値として見せる経路。
+
+  ここで test を追加したところ、`psx_lvar_get_decl_type()` 自体が `mem->type_size` (= frame slot 8B)
+  を使って 8B struct として materialize されていた。これは storage 幅と C の値型が混ざっている
+  根本問題だったため、`psx_lvar_materialize_decl_type()` で `is_byref_param` かつ tag aggregate の
+  場合だけ `mem.type_size = var->elem_size` に差し替え、`decl_type` は実 struct サイズを正本にした。
+
+  そのうえで `psx_node_new_byref_param_deref_for()` は、
+  - frame slot の `ND_LVAR` 側: `pointer-to-decl_type` を `mem.base.type` に張る
+  - deref 後の `ND_DEREF` 側: struct の `decl_type` を `mem.base.type` に張る
+
+  形に修正した。これで byref parameter でも「storage slot は pointer」「式の値型は struct」という
+  役割分担を型正本で表現できる。
+
+  追加確認:
+  - `test/test_parser.c` に、24B struct byref parameter の `decl_type` が 24B struct で、
+    frame slot node が pointer-to-struct、`ND_DEREF` node が struct 値になることを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/struct_arg/large_sum.c`
+    - `test/fixtures/probes_found_bugs/indirect_aggregate_return.c`
+    - `test/fixtures/probes_found_bugs/funcptr_return_large_struct.c`
+    - `test/fixtures/probes_found_bugs/arm64_aggregate_varargs.c`
+    - `test/fixtures/probes_found_bugs/struct_array_param.c`
+    - `test/fixtures/struct_arg/small_sum.c`
+    - `test/fixtures/struct_arg/small_member.c`
+    - `test/fixtures/struct_arg/mid_sum.c`
+
+- 続き929: **owner 付き partial/element lvar slot も安全な範囲で `decl_type` へ接続した**。
+
+  続き928で通常 `psx_node_new_lvar_for()` と `psx_node_new_array_elem_lvar_for()` を
+  `decl_type` に接続した後、まだ owner を持つのに `mem.base.type` が空になりやすい経路として
+  `psx_node_new_lvar_typed_at_for()` / `psx_node_new_lvar_fp_slot_for()` を確認した。
+
+  ただし `psx_node_new_lvar_typed_at_for()` は struct zero-fill の 8/4/2/1 byte chunk にも使われるため、
+  親の struct 型を雑に張ると逆に壊れる。そこで `type_array_element_type_for_size()` を追加し、
+  `offset` が owner 内の要素境界で、`type_size` が `decl_type` 上の array 階層の要素サイズと
+  一致する場合だけ、その要素型を `mem.base.type` に張るようにした。offset 0 かつ
+  `type_size == sizeof(owner decl_type)` の全体 object 参照では owner type を張る。
+
+  `psx_node_new_lvar_fp_slot_for()` は `_Complex` brace initializer の実部/虚部 slot で使うため、
+  親の complex 型ではなく、owner の `fp_kind` と slot 幅から作った float type を
+  `mem.base.type` に張るようにした。
+
+  追加確認:
+  - `test/test_parser.c` に、local array of pointer-to-array の `psx_node_new_lvar_typed_at_for()`
+    経路が `PSX_TYPE_POINTER` と deref size 12 を返すことを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+    - `test/fixtures/probes_found_bugs/compound_literal_array_size_and_decay.c`
+    - `test/fixtures/probes_found_bugs/compound_literal_inferred_array_sizeof.c`
+    - `test/fixtures/probes_found_bugs/complex_brace_init.c`
+    - `test/fixtures/probes_found_bugs/pointer_to_vla.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+
+- 続き928: **通常 `ND_LVAR` と配列 leaf 要素 node も `decl_type` 正本へ接続した**。
+
+  続き927の gvar/static-local/array-address 側に続けて、local variable node の残り経路を確認した。
+  `psx_node_new_lvar_for()` は以前から `mem_from_lvar()` で raw field をコピーしていたが、
+  `mem.base.type` までは張っていなかったため、呼び出し側によっては canonical type reader へ
+  到達せず、古い field 群が実質正本になる余地が残っていた。
+
+  根本対応として `psx_node_new_lvar_for()` が `psx_lvar_get_decl_type()` を materialize し、
+  作成した `ND_LVAR` の `mem.base.type` に張るようにした。`mem_from_lvar()` 内で直接呼ばず、
+  constructor 側で張ることで `psx_lvar_materialize_decl_type()` からの再帰を避けている。
+
+  さらに `psx_node_new_array_elem_lvar_for()` は親配列の raw metadata を手で一部コピーするだけで、
+  `int (*a[2])[3]` のような「配列の leaf 要素が pointer-to-array」の型を node に保持できなかった。
+  そこで `type_array_leaf_element_type()` を追加し、親 `decl_type` から leaf 要素型を取り出して
+  array element lvar の `mem.base.type` に張るようにした。
+
+  追加確認:
+  - `test/test_parser.c` に、stale scalar field を持つ lvar でも `decl_type` pointer が勝ち、
+    `ps_node_is_pointer()` / deref size が canonical type 由来になることを追加。
+  - local array of pointer-to-array の leaf element node が `PSX_TYPE_POINTER` を返し、
+    deref size 12 を保持することを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+    - `test/fixtures/probes_found_bugs/pointer_to_vla.c`
+    - `test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/static_local_multidim_array.c`
+    - `test/fixtures/probes_found_bugs/static_local_int_array.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/funcptr_return_pointer_to_2d_array.c`
+
+- 続き927: **global variable ref node も `decl_type` 正本から metadata を同期するように進めた**。
+
+  `src/parser/node_utils.c` の `psx_node_init_gvar_ref_metadata()` に
+  `sync_gvar_ref_mem_from_decl_type()` を追加し、`mem.base.type` / pointer 判定 /
+  deref size / stride metadata / pointer qualifier / pointer-to-array bytes / deep pointee fp を
+  `psx_gvar_get_decl_type()` 由来で上書き同期するようにした。raw `global_var_t` の値は
+  既存初期化として残し、canonical type に値があるものだけ overlay する形なので、
+  decl_type 正本化を進めつつ未移行 sidecar の fallback も維持している。
+
+  この確認中に `ptr_to_array_struct_member.c` の `struct S g2[2][3]` が data emission で
+  `1,2,.space 16,3,4,.space 16` のように壊れる regression を発見した。原因は続き926の
+  多段 array tag 判定で、global aggregate walker が `decl_type` の top-level array element
+  size (= 行サイズ 24B) を struct 1 個の emission 単位として使っていたこと。そこで
+  `gvar_aggregate_layout()` を `psx_gvar_initializer_element_size/count()` 経由にし、
+  tag aggregate array の walker も leaf struct size/count を正本として使うよう修正した。
+
+  その後、近接する raw metadata 経路として `psx_node_init_gvar_array_base_metadata()` と
+  `psx_node_init_static_local_gvar_ref_metadata()` も整理した。global array-base node は
+  `psx_gvar_get_decl_type()` を `mem.base.type` に張り、static local の hidden global 参照は
+  alias `lvar` ではなく backing `global_var_t` の `decl_type` を正本として張るようにした。
+  static local の alias 側 `decl_type` は array で decay/pointer 的な表現になる場合があるため、
+  `ND_GVAR` として参照する node では backing global を優先するのが正しい。
+
+  続けて `ND_ADDR` の array address metadata も整理した。通常の lvar/gvar array address は
+  init metadata 側で `decl_type` を decay した pointer type を張るようにし、constructor 側に
+  散っていた重複代入を減らした。static local array address は hidden global の address として
+  扱うため、ここでも backing global の `decl_type` を優先して decay する。
+
+  追加確認:
+  - `test/test_parser.c` に global double 2D array の deep pointee fp と、
+    global 2D struct array の initializer leaf element size/count を追加。
+  - global array-base node が `psx_gvar_get_decl_type()` と同一 type を返すこと、
+    static local hidden global ref node が backing global の `decl_type` を返すことを追加。
+  - static local 1D/2D array address node が backing global の array type から decay した
+    pointer type を返すことを追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/pointer_to_vla.c`
+    - `test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+    - `test/fixtures/probes_found_bugs/static_local_multidim_array.c`
+    - `test/fixtures/probes_found_bugs/static_local_int_array.c`
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/global_struct_ptr_array_subscript.c`
+    - `test/fixtures/probes_found_bugs/ptr_to_array_struct_member.c`
+    - `test/fixtures/probes_found_bugs/funcptr_return_pointer_to_2d_array.c`
+
+- 続き926: **`psx_node_new_lvar_identifier_ref_for()` を `decl_type` 正本優先へ進め、pointer-to-array / VLA / fp 多段配列の穴を塞いだ**。
+
+  続き924で一度戻した identifier 経路を再開し、`src/parser/node_utils.c` に
+  `sync_lvar_identifier_mem_from_decl_type()` を追加した。`mem.base.type` / pointer 判定 /
+  deref size / stride metadata は `decl_type` を先に見て同期し、runtime VLA sidecar など
+  まだ型側だけでは値が無い metadata は raw `lvar_t` から fallback するようにした。
+  これにより `int (*p)[3]`、ネスト pointer-to-array、3D pointer-to-array、pointer-to-VLA の
+  identifier node が旧 raw field 直読みではなく canonical type reader 経由に寄った。
+
+  途中で `pointer_to_vla.c` が `struct S sa[2][2] = ...` の brace initializer で
+  `E3064 [primary]` になったため、原因を追ったところ `array -> array -> struct` の
+  aggregate 判定が 1 段 array しか剥がしていなかった。`type_tag_aggregate_kind()` と
+  `lvar_public_tag_kind_from_type()` を多段 array 対応にし、2D 以上の struct 配列も
+  `decl_type` 経由で aggregate と判定できるようにした。
+
+  さらに `pointer_to_vla.c` 実行時に `double[2][3]` の direct read が整数 load になったため、
+  local 配列から `decl_type` を作る材料として `var->fp_kind` を pointee fp に反映し、
+  `psx_type_new_array()` も多段 array の deep pointee fp を引き継ぐよう修正した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - targeted fixture compile/assemble/run = **pass**
+    - `test/fixtures/probes_found_bugs/pointer_to_vla.c`
+    - `test/fixtures/probes_found_bugs/static_local_typedef_multidim_array.c`
+    - `test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c`
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+  - `git diff --check` = **green**
+
 - 続き925: **IR lowering の幅決定を storage reader に寄せ、`ps_node_type_size()` の入口を canonical type 優先にした**。
 
   `src/ir/ir_builder.c` に残っていた `ps_node_type_size()` 直接参照をなくし、ternary result width と

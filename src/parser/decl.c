@@ -140,7 +140,9 @@ static const psx_type_t *lvar_public_pointee_type(const psx_type_t *type) {
 
 static token_kind_t lvar_public_tag_kind_from_type(const psx_type_t *type) {
   if (!type) return TK_EOF;
-  if (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER) type = type->base;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  if (type && type->kind == PSX_TYPE_POINTER) type = type->base;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
   if (!type) return TK_EOF;
   if (type->kind == PSX_TYPE_STRUCT) return TK_STRUCT;
   if (type->kind == PSX_TYPE_UNION) return TK_UNION;
@@ -3309,6 +3311,13 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
   var->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
 }
 
+void psx_decl_set_lvar_pointee_scalar_flags(lvar_t *var,
+                                            int is_unsigned, int is_bool) {
+  psx_decl_invalidate_lvar_decl_type(var);
+  var->pointee_is_unsigned = is_unsigned ? 1 : 0;
+  var->pointee_is_bool = is_bool ? 1 : 0;
+}
+
 void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind) {
   psx_decl_invalidate_lvar_decl_type(var);
   var->pointee_fp_kind = fp_kind;
@@ -3608,6 +3617,13 @@ void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind
   gv->pointee_fp_kind = (unsigned char)fp_kind;
 }
 
+void psx_decl_set_gvar_pointee_scalar_flags(global_var_t *gv,
+                                            int is_unsigned, int is_bool) {
+  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->pointee_is_unsigned = is_unsigned ? 1 : 0;
+  gv->pointee_is_bool = is_bool ? 1 : 0;
+}
+
 void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool) {
   psx_decl_invalidate_gvar_decl_type(gv);
   gv->is_bool = is_bool ? 1 : 0;
@@ -3638,7 +3654,7 @@ static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,
                                            int mangled_len, int size,
                                            int elem_size, int is_array,
                                            tk_float_kind_t fp_kind,
-                                           int is_unsigned,
+                                           int is_unsigned, int is_bool,
                                            token_kind_t tag_kind,
                                            char *tag_name, int tag_len) {
   lvar_t *var = calloc(1, sizeof(lvar_t));
@@ -3652,6 +3668,7 @@ static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,
   psx_decl_init_lvar_storage_type(var, size, elem_size, is_array,
                                   fp_kind, is_unsigned,
                                   tag_kind, tag_name, tag_len, 0);
+  if (is_bool) psx_decl_set_lvar_bool(var, 1);
   var->is_static_local = 1;
   var->static_global_name = mangled;
   var->static_global_name_len = mangled_len;
@@ -3766,6 +3783,7 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
  * 配列・struct・union・複合型は未対応。 */
 static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int deref_size,
                                           tk_float_kind_t fp_kind, int is_unsigned,
+                                          int is_bool,
                                           int is_pointer,
                                           psx_decl_funcptr_sig_t funcptr_sig) {
   if (var_size <= 0) return 0;
@@ -3868,7 +3886,12 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   gv->name = mangled;
   gv->name_len = total_len;
   psx_decl_init_gvar_storage_type(gv, var_size, deref_size, 0, fp_kind,
-                                  is_unsigned, TK_EOF, NULL, 0, 0);
+                                  is_pointer ? 0 : is_unsigned,
+                                  TK_EOF, NULL, 0, 0);
+  psx_decl_set_gvar_pointee_scalar_flags(gv,
+                                         is_pointer && is_unsigned,
+                                         is_pointer && is_bool);
+  psx_decl_set_gvar_bool(gv, !is_pointer && is_bool, 0);
   gv->has_init = has_init;
   gv->init_val = init_val;
   gv->init_symbol = init_symbol;
@@ -3885,8 +3908,12 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
    * 切り替える。size=0、offset は意味を持たない (=0)。 */
   lvar_t *var = register_static_local_alias(tok, mangled, total_len,
                                             var_size, deref_size, 0,
-                                            fp_kind, is_unsigned,
+                                            fp_kind, is_pointer ? 0 : is_unsigned,
+                                            !is_pointer && is_bool,
                                             TK_EOF, NULL, 0);
+  if (is_pointer) {
+    psx_decl_set_lvar_pointee_scalar_flags(var, is_unsigned, is_bool);
+  }
   if (is_pointer) {
     psx_decl_set_lvar_funcptr_signature(var, &funcptr_sig);
   }
@@ -3897,6 +3924,7 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
                                                  tk_float_kind_t fp_kind,
                                                  int array_count, int is_unsigned,
+                                                 int is_bool,
                                                  int pointer_elem_pointee_size,
                                                  const int *inner_array_dims,
                                                  int inner_array_dim_count);
@@ -3913,7 +3941,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
  *   - 多次元・struct 等は呼び出し側ゲートで除外済み */
 static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
                                          tk_float_kind_t fp_kind,
-                                         int is_unsigned,
+                                         int is_unsigned, int is_bool,
                                          int pointer_elem_pointee_size) {
   if (elem_size <= 0) return 0;
   /* --- peek フェーズ: curtok 不変で scope 内/外を判定する。--- */
@@ -3977,7 +4005,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
       tk_expect(']');
     }
     return try_lower_static_local_array_consumed(tok, elem_size, fp_kind,
-                                                 (int)total_count, is_unsigned,
+                                                 (int)total_count, is_unsigned, is_bool,
                                                  pointer_elem_pointee_size,
                                                  dims, dim_count);
   }
@@ -4022,6 +4050,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   }
   psx_decl_init_gvar_storage_type(gv, initial_type_size, elem_size, 1,
                                   fp_kind, is_unsigned, TK_EOF, NULL, 0, 0);
+  psx_decl_set_gvar_bool(gv, 0, is_bool);
 
   if (has_init && has_string_init) {
     tk_expect('=');
@@ -4089,8 +4118,9 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
    * 名前で gv を引いて size 等を取得する。 */
   lvar_t *var = register_static_local_alias(tok, mangled, total_len,
                                             0, elem_size, 0,
-                                            fp_kind, is_unsigned,
+                                            fp_kind, is_unsigned, 0,
                                             TK_EOF, NULL, 0);
+  psx_decl_set_lvar_pointee_scalar_flags(var, is_unsigned, is_bool);
   if (pointer_elem_pointee_size > 0) {
     psx_decl_set_lvar_pointer_derived_type(var, 1, pointer_elem_pointee_size,
                                            var->ptr_array_pointee_bytes);
@@ -4102,6 +4132,7 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
                                                  tk_float_kind_t fp_kind,
                                                  int array_count, int is_unsigned,
+                                                 int is_bool,
                                                  int pointer_elem_pointee_size,
                                                  const int *inner_array_dims,
                                                  int inner_array_dim_count) {
@@ -4143,6 +4174,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   psx_decl_init_gvar_storage_type(gv, (int)arr_count * elem_size,
                                   elem_size, 1, fp_kind, is_unsigned,
                                   TK_EOF, NULL, 0, 0);
+  psx_decl_set_gvar_bool(gv, 0, is_bool);
   psx_decl_set_gvar_array_strides_from_dims(gv, inner_array_dims,
                                             inner_array_dim_count, elem_size);
 
@@ -4195,8 +4227,9 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
 
   lvar_t *var = register_static_local_alias(tok, mangled, total_len,
                                             0, elem_size, 0,
-                                            fp_kind, is_unsigned,
+                                            fp_kind, is_unsigned, 0,
                                             TK_EOF, NULL, 0);
+  psx_decl_set_lvar_pointee_scalar_flags(var, is_unsigned, is_bool);
   if (pointer_elem_pointee_size > 0) {
     psx_decl_set_lvar_pointer_derived_type(var, 1, pointer_elem_pointee_size,
                                            var->ptr_array_pointee_bytes);
@@ -4209,6 +4242,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
 
 static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_size,
                                                 tk_float_kind_t fp_kind, int is_unsigned,
+                                                int is_bool,
                                                 const int *td_array_dims, int td_array_dim_count,
                                                 int td_array_elem_size) {
   if (elem_size <= 0 || !td_array_dims || td_array_dim_count <= 0 || td_array_dim_count > 8) {
@@ -4229,7 +4263,7 @@ static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_siz
   }
   int pointer_elem_pointee_size = eff_elem > elem_size ? elem_size : 0;
   return try_lower_static_local_array_consumed(tok, eff_elem, fp_kind,
-                                               (int)total_count, is_unsigned,
+                                               (int)total_count, is_unsigned, is_bool,
                                                pointer_elem_pointee_size,
                                                td_array_dims, td_array_dim_count);
 }
@@ -4303,7 +4337,7 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
    * build_lvar_or_vla_node の static_local 分岐で ND_GVAR (tag 付き) を返す。 */
   lvar_t *var = register_static_local_alias(tok, mangled, total_len,
                                             struct_size, struct_size, 0,
-                                            TK_FLOAT_KIND_NONE, 0,
+                                            TK_FLOAT_KIND_NONE, 0, 0,
                                             tag_kind, tag_name, tag_len);
   refresh_static_local_decl_types(gv, var);
   return 1;
@@ -4397,7 +4431,7 @@ static int try_lower_static_local_aggregate_array(token_ident_t *tok, token_kind
 
   lvar_t *var = register_static_local_alias(tok, mangled, total_len,
                                             0, elem_size, 0,
-                                            TK_FLOAT_KIND_NONE, 0,
+                                            TK_FLOAT_KIND_NONE, 0, 0,
                                             tag_kind, tag_name, tag_len);
   refresh_static_local_decl_types(gv, var);
   return 1;
@@ -4831,7 +4865,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       if (try_lower_static_local_scalar(tok, var_size,
                                          is_pointer ? pointer_deref_size : var_size,
                                          is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind,
-                                         decl_is_unsigned,
+                                         decl_is_unsigned, decl_base_is_bool,
                                          is_pointer,
                                          static_funcptr_sig)) {
         if (!tk_consume(',')) break;
@@ -4846,7 +4880,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
         curtok()->kind == TK_LBRACKET) {
-      if (try_lower_static_local_array(tok, elem_size, decl_fp_kind, decl_is_unsigned, 0)) {
+      if (try_lower_static_local_array(tok, elem_size, decl_fp_kind,
+                                       decl_is_unsigned, decl_base_is_bool, 0)) {
         if (!tk_consume(',')) break;
         continue;
       }
@@ -4856,7 +4891,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count == 0 &&
         curtok()->kind == TK_LBRACKET) {
-      if (try_lower_static_local_array(tok, 8, TK_FLOAT_KIND_NONE, 0, elem_size)) {
+      if (try_lower_static_local_array(tok, 8, TK_FLOAT_KIND_NONE, 0, 0,
+                                       elem_size)) {
         if (!tk_consume(',')) break;
         continue;
       }
@@ -4867,7 +4903,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         td_array_dim_count == 0 &&
         curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_array_consumed(tok, elem_size, decl_fp_kind,
-                                                inner_array_mul, decl_is_unsigned, 0,
+                                                inner_array_mul, decl_is_unsigned,
+                                                decl_base_is_bool, 0,
                                                 decl_state.inner_array_dims,
                                                 decl_state.inner_array_dim_count)) {
         if (!tk_consume(',')) break;
@@ -4881,7 +4918,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         td_array_dim_count == 0 &&
         curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_array_consumed(tok, 8, TK_FLOAT_KIND_NONE,
-                                                inner_array_mul, 0, elem_size,
+                                                inner_array_mul, 0, 0, elem_size,
                                                 decl_state.inner_array_dims,
                                                 decl_state.inner_array_dim_count)) {
         if (!tk_consume(',')) break;
@@ -4892,7 +4929,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         inner_array_mul == 0 && paren_array_mul == 0 &&
         td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
       if (try_lower_static_local_typedef_array(tok, elem_size, decl_fp_kind,
-                                                decl_is_unsigned, td_array_dims,
+                                                decl_is_unsigned, decl_base_is_bool,
+                                                td_array_dims,
                                                 td_array_dim_count,
                                                 td_array_elem_size_for_this_decl)) {
         if (!tk_consume(',')) break;
@@ -5202,9 +5240,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     int is_funcptr_decl = decl_state.trailing_func_suffix || has_base_funcptr_sig;
     tk_float_kind_t storage_fp_kind = is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind;
     psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
-                                    storage_fp_kind, decl_is_unsigned,
+                                    storage_fp_kind, is_pointer ? 0 : decl_is_unsigned,
                                     var->tag_kind, var->tag_name, var->tag_len,
                                     var->is_tag_pointer);
+    psx_decl_set_lvar_pointee_scalar_flags(
+        var, is_pointer && !is_funcptr_decl && decl_is_unsigned,
+        is_pointer && !is_funcptr_decl && decl_base_is_bool);
 	    if (!is_pointer || is_funcptr_decl) {
 	      psx_decl_set_lvar_pointee_fp_kind(var, TK_FLOAT_KIND_NONE);
 	    } else {
@@ -5274,7 +5315,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       }
       psx_decl_set_lvar_funcptr_signature(var, &sig);
     }
-    /* `_Bool b = expr;` 代入/初期化時に rhs を 0/1 に正規化するため。 */
+    /* `_Bool b = expr;` / `_Bool a[N]` の正規化用。data pointer の pointee bool は
+     * `pointee_is_bool` に分けて保持する。 */
     if (decl_base_is_bool && !is_pointer) psx_decl_set_lvar_bool(var, 1);
     /* `void *p` (基底型 void + ポインタ宣言): pointee_is_void を立てる。
      * deref のエラー検出 (C11 6.5.3.2) で必要。 */

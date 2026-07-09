@@ -54,7 +54,11 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
   type->elem_size = elem_size;
   type->deref_size = elem_size;
   type->is_vla = is_vla ? 1 : 0;
-  if (base) type->pointee_fp_kind = base->fp_kind;
+  if (base) {
+    type->pointee_fp_kind = base->pointee_fp_kind != TK_FLOAT_KIND_NONE
+                                ? base->pointee_fp_kind
+                                : base->fp_kind;
+  }
   return type;
 }
 

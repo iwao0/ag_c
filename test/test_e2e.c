@@ -1257,6 +1257,7 @@ static const test_case_t test_cases[] = {
     {"probes", "local_extern_tag_decl", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_extern_tag_decl.c", 0, 0},
     {"probes", "pointer_typedef_param_subscript", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/pointer_typedef_param_subscript.c", 0, 0},
     {"probes", "unsigned_char_pointer_zero_extend", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/unsigned_char_pointer_zero_extend.c", 0, 0},
+    {"probes", "cast_ptr_to_array_leaf_flags", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/cast_ptr_to_array_leaf_flags.c", 0, 0},
     {"probes", "global_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/global_2d_pointer_array.c", 0, 0},
     {"probes", "local_array_of_ptr_to_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_array_of_ptr_to_array.c", 0, 0},
     {"probes", "local_2d_pointer_array", CASE_ASSERT_FILE, "test/fixtures/probes_found_bugs/local_2d_pointer_array.c", 0, 0},

@@ -65,6 +65,8 @@ struct lvar_t {
   unsigned int is_pointer_const_qualified : 1;
   unsigned int is_pointer_volatile_qualified : 1;
   unsigned int is_unsigned : 1;       // 1: unsigned type
+  unsigned int pointee_is_unsigned : 1; // 1: data pointer の pointee が unsigned
+  unsigned int pointee_is_bool : 1;     // 1: data pointer の pointee が _Bool
   unsigned int is_used : 1;           // 1: 参照された
   unsigned int is_unevaluated_used : 1; // 1: sizeof 等の未評価オペランドで参照された
   unsigned int is_address_taken : 1;  // 1: & 等でアドレスだけ参照された
@@ -202,6 +204,8 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
                                             int pointer_qual_levels,
                                             int base_deref_size,
                                             int ptr_array_pointee_bytes);
+void psx_decl_set_lvar_pointee_scalar_flags(lvar_t *var,
+                                            int is_unsigned, int is_bool);
 void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind);
 void psx_decl_set_lvar_bool(lvar_t *var, int is_bool);
 void psx_decl_set_lvar_complex(lvar_t *var, int is_complex);
@@ -262,6 +266,8 @@ void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size
 void psx_decl_set_gvar_ptr_array_pointee_bytes(global_var_t *gv,
                                                int ptr_array_pointee_bytes);
 void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind);
+void psx_decl_set_gvar_pointee_scalar_flags(global_var_t *gv,
+                                            int is_unsigned, int is_bool);
 void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool);
 void psx_decl_set_gvar_long_double(global_var_t *gv, int is_long_double);
 void psx_decl_set_gvar_qualifiers(global_var_t *gv,

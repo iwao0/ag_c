@@ -71,6 +71,8 @@ struct global_var_t {
   unsigned int elem_is_bool : 1;    // 1: 要素型が _Bool (`_Bool a[N]`)。init_values を 0/1 に正規化。
   unsigned int is_bool : 1;     // _Bool スカラ: 代入/初期化を 0/1 に正規化する
   unsigned int is_unsigned : 1; // unsigned スカラ: load を zero-extend (符号拡張しない)
+  unsigned int pointee_is_bool : 1;     // 1: data pointer の pointee が _Bool
+  unsigned int pointee_is_unsigned : 1; // 1: data pointer の pointee が unsigned
   unsigned int is_const_qualified : 1;
   unsigned int is_volatile_qualified : 1;
   unsigned int is_long_double : 1; // long double スカラ: _Generic で double と区別

@@ -1286,6 +1286,7 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
    * `char *p` なら 1、`int *p` なら 4。subscript / `p[i]` のステップに使う。
    * 配列 (`int arr[N]`) の場合は要素サイズ (elem_store_size) を保持する。 */
   int storage_deref_size = (is_ptr && !is_array) ? spec->elem_size : elem_store_size;
+  int is_data_pointer_object = is_ptr && !is_array && !head->has_func_suffix;
   psx_decl_init_gvar_storage_type(gv, new_type_size, storage_deref_size, is_array,
                                   is_ptr ? TK_FLOAT_KIND_NONE : spec->fp_kind,
                                   (!is_ptr && spec->is_unsigned),
@@ -1311,6 +1312,11 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
             : spec->base_funcptr_sig;
     psx_decl_set_gvar_funcptr_signature(gv, &sig);
   }
+  /* data pointer object の pointee scalar flags は、オブジェクト自身の
+   * unsigned/_Bool と混ぜずに専用 field に保持する。 */
+  psx_decl_set_gvar_pointee_scalar_flags(
+      gv, is_data_pointer_object && spec->is_unsigned,
+      is_data_pointer_object && spec->base_kind == TK_BOOL);
   /* _Bool スカラ: 代入/初期化を 0/1 に正規化するため記録する。 */
   psx_decl_set_gvar_bool(gv,
                          (!is_ptr && !is_array && spec->base_kind == TK_BOOL),
@@ -3781,12 +3787,14 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                              : pointee_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, lvar_elem_size, 0);
     psx_decl_set_lvar_pointer_derived_type(var, 0, base_pointee_size, 0);
-    /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら is_unsigned を
-     * 立てる。build_lvar_or_vla_node が pointee_is_unsigned へ伝播し、`*p` / `p[i]` が
+    /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら
+     * pointee_is_unsigned を立てる。build_lvar_or_vla_node が伝播し、`*p` / `p[i]` が
      * zero-extend load (ldrb/ldrh) になる。未設定だと符号拡張で値が化けていた。 */
     psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
-                                    var->fp_kind, ds->is_unsigned,
+                                    var->fp_kind, 0,
                                     TK_EOF, NULL, 0, 0);
+    psx_decl_set_lvar_pointee_scalar_flags(
+        var, ds->is_unsigned, ds->base_type_kind == TK_BOOL);
     /* `long *a` / `unsigned long *a` / scalar `T **a` のように pointee が 8 バイトの
      * ポインタ仮引数は size==elem_size==8 となり、lvar_is_pointer の size>elem_size
      * 判定に漏れる。pointer_qual_levels を立ててポインタと認識させ subscript `a[i]`

@@ -23,24 +23,32 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 static psx_type_t *member_scalar_type(token_kind_t base_kind, tk_float_kind_t fp_kind,
                                       token_kind_t tag_kind, char *tag_name, int tag_len,
                                       int elem_size, int is_unsigned, int is_bool,
-                                      int is_complex) {
+                                      int is_complex, int is_atomic) {
+  psx_type_t *type = NULL;
   if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
     int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
-    return psx_type_new_tag(tag_kind, tag_name, tag_len, 0,
+    type = psx_type_new_tag(tag_kind, tag_name, tag_len, 0,
                             tag_size > 0 ? tag_size : elem_size);
+    type->is_atomic = is_atomic ? 1 : 0;
+    return type;
   }
   if (is_complex) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
+    type = psx_type_new(PSX_TYPE_COMPLEX);
     type->fp_kind = fp_kind;
     type->size = elem_size > 0 ? elem_size : 16;
     type->align = type->size >= 8 ? 8 : 4;
+    type->is_atomic = is_atomic ? 1 : 0;
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {
-    return psx_type_new_float(fp_kind, elem_size > 0 ? elem_size : 8);
+    type = psx_type_new_float(fp_kind, elem_size > 0 ? elem_size : 8);
+    type->is_atomic = is_atomic ? 1 : 0;
+    return type;
   }
   token_kind_t scalar_kind = is_bool ? TK_BOOL : (base_kind != TK_EOF ? base_kind : TK_INT);
-  return psx_type_new_integer(scalar_kind, elem_size > 0 ? elem_size : 4, is_unsigned);
+  type = psx_type_new_integer(scalar_kind, elem_size > 0 ? elem_size : 4, is_unsigned);
+  type->is_atomic = is_atomic ? 1 : 0;
+  return type;
 }
 
 static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
@@ -49,13 +57,14 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
                                                 char *tag_name, int tag_len,
                                                 int elem_size, int is_unsigned,
                                                 int is_bool, int is_complex,
+                                                int is_atomic,
                                                 int is_pointer, int pointer_levels,
                                                 int array_len, int total_size,
                                                 int elem_storage_size,
                                                 psx_decl_funcptr_sig_t funcptr_sig) {
   psx_type_t *type = member_scalar_type(base_kind, fp_kind, tag_kind, tag_name,
                                         tag_len, elem_size, is_unsigned,
-                                        is_bool, is_complex);
+                                        is_bool, is_complex, is_atomic);
   if (is_pointer) {
     int levels = pointer_levels > 0 ? pointer_levels : 1;
     for (int i = 0; i < levels; i++) {
@@ -203,6 +212,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_bool = 0;
     int member_is_unsigned = 0;
     int member_is_complex = 0;
+    int member_is_atomic = 0;
     int member_is_ptr_typedef = 0;
     psx_decl_funcptr_sig_t member_typedef_funcptr_sig = {0};
     int member_typedef_array_dim_count = 0;
@@ -221,6 +231,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       else if (builtin_member_kind == TK_BOOL) member_is_bool = 1;
       member_is_unsigned = member_type_spec.is_unsigned ? 1 : 0;
       member_is_complex = member_type_spec.is_complex ? 1 : 0;
+      member_is_atomic = member_type_spec.is_atomic ? 1 : 0;
       if (member_is_complex) elem_size *= 2;
       /* `_Bool b : 1;` の bitfield 抽出は符号拡張せず 0/1 として扱う必要がある
        * (C11 6.7.2.1)。is_signed_type は line 108 で TK_BOOL を見て signed と
@@ -577,7 +588,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.decl_type = member_decl_type_from_layout(
             member_base_kind, member_fp_kind, member_tag_kind, member_tag_name,
             member_tag_len, elem_size, member_is_unsigned, member_is_bool,
-            member_is_complex, member_is_ptr, total_pointer_levels,
+            member_is_complex, member_is_atomic, member_is_ptr, total_pointer_levels,
             member_array_len, total_size, member_elem_size, member_funcptr_sig);
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
