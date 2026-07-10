@@ -20934,3 +20934,179 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - raw field は `psx_ctx_set_function_ret_type()` 後に同期される互換 mirror として残るが、外部から直接書き換える API は削った。
   - 次にさらに根本化するなら、`func_name_t` 内の raw mirror を `psx_function_ret_info_t` cache へ畳むか、
     getter fallback から raw field 参照をさらに減らして、未宣言関数/implicit int 用の既定値処理を明示的な別経路に分離する。
+
+### このセッション（続き865）: raw mirror から ret_type を復元する逆流経路を削除
+- 見つかった浅い箇所:
+  - `semantic_ctx.c` に `ctx_function_build_ret_type()` とその補助 helper 群が残っており、
+    `func_name_t` の raw mirror から `ret_type` descriptor を組み直せる状態だった。
+  - `psx_ctx_define_function_name_with_ret()` は既存関数名に `ret_type` がない場合、
+    raw mirror から `ret_type` を復元する fallback を持っていた。
+  - `psx_ctx_get_function_ret_info()` は `ret_type` がある場合でも、まず raw mirror で
+    `psx_function_ret_info_t` を埋めてから descriptor を重ねていたため、
+    raw mirror がまだ情報源として混ざる形だった。
+- 根本対応:
+  - `ctx_function_build_ret_type()` / `ctx_function_refresh_ret_type()` と、そのためだけに残っていた
+    raw-to-type helper 群を削除した。
+  - `psx_ctx_define_function_name_with_ret()` から raw mirror 由来の `ret_type` 復元 fallback を削除した。
+    function return descriptor は parser の `function_signature_ret_type()` から登録する経路に一本化する。
+  - `psx_ctx_get_function_ret_info()` は `ret_type` がある場合、ゼロ初期化した `psx_function_ret_info_t` に
+    descriptor だけを適用して返すようにした。raw mirror は `ret_type` 未登録の互換 fallback に限定した。
+  - `psx_ctx_track_function_ret_type_descriptor()` の初回 track では `ret_set_once` だけを立て、
+    descriptor 保存前に `ret_token_kind` / `ret_is_pointer` を raw mirror へ仮書きしないようにした。
+  - 旧 track API の説明が getter 直前に残っていたコメントを、descriptor 優先の getter 説明へ修正した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/function_redecl_signature.c > /tmp/ag_c_function_redecl_signature.s`
+    + `cc /tmp/ag_c_function_redecl_signature.s -o /tmp/ag_c_function_redecl_signature`
+    + `/tmp/ag_c_function_redecl_signature` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_return_pointer_to_array.c > /tmp/ag_c_func_return_pointer_to_array.s`
+    + `cc /tmp/ag_c_func_return_pointer_to_array.s -o /tmp/ag_c_func_return_pointer_to_array`
+    + `/tmp/ag_c_func_return_pointer_to_array` = **pass**
+- 現状:
+  - function return は、登録時に `psx_type_t` descriptor を保存し、問い合わせ時も descriptor から
+    `psx_function_ret_info_t` を導出する向きへさらに寄った。
+  - raw mirror はまだ `func_name_t` 内に残るが、descriptor ありの通常経路では `ret_info` の正本にならない。
+  - 次は raw mirror field 自体を `psx_function_ret_info_t` cache に畳むか、未宣言/implicit int 用 fallback を
+    function return descriptor 経路から明示的に分離するのが候補。
+
+### このセッション（続き866）: function return の個別 raw field を ret_info cache へ畳む
+- 見つかった浅い箇所:
+  - 続き865で descriptor ありの通常経路は `ret_type` 正本になったが、`func_name_t` 内には
+    `ret_token_kind` / `ret_fp_kind` / `ret_is_pointer` / `ret_pointer_levels` /
+    `ret_pointee_array_*` / `ret_is_funcptr` などの個別 mirror field がまだ残っていた。
+  - 個別 getter もそれぞれ descriptor を解釈したり fallback field を読んだりしており、
+    `psx_function_ret_info_t` という集約 view があるのに読み取り口が分散していた。
+- 根本対応:
+  - `func_name_t` の戻り値 mirror 個別 field 群を削除し、
+    `psx_function_ret_info_t ret_info_cache` に畳んだ。
+  - cache 初期化は `ctx_function_ret_info_default()`、descriptor 由来の導出は
+    `ctx_function_ret_info_from_type()` に集約した。
+  - `psx_ctx_set_function_ret_type()` は保存済み `ret_type` から `ret_info_cache` を同期する。
+    通常の問い合わせでは `ret_type` から都度 `psx_function_ret_info_t` を導出し、cache は
+    descriptor 未登録 fallback と互換用に限定する。
+  - `psx_ctx_get_function_ret_fp_kind()` / `psx_ctx_get_function_ret_is_complex()` /
+    `psx_ctx_get_function_ret_is_pointer()` / `psx_ctx_get_function_ret_token_kind()` /
+    pointee array getter などの個別 getter は、`psx_ctx_get_function_ret_info()` を読むだけにした。
+  - `psx_ctx_get_function_ret_tag()` も `psx_ctx_get_function_ret_info()` 経由に揃えた。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/function_redecl_signature.c > /tmp/ag_c_function_redecl_signature.s`
+    + `cc /tmp/ag_c_function_redecl_signature.s -o /tmp/ag_c_function_redecl_signature`
+    + `/tmp/ag_c_function_redecl_signature` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_return_pointer_to_array.c > /tmp/ag_c_func_return_pointer_to_array.s`
+    + `cc /tmp/ag_c_func_return_pointer_to_array.s -o /tmp/ag_c_func_return_pointer_to_array`
+    + `/tmp/ag_c_func_return_pointer_to_array` = **pass**
+- 現状:
+  - function return の正本は `func_name_t.ret_type` descriptor。外向きの互換 view は
+    `psx_ctx_get_function_ret_info()` に集約され、個別 getter はその view の thin wrapper になった。
+  - `ret_info_cache` は残るが、個別 field 群ではなく 1 つの derived cache になったため、
+    field ごとに別正本化する余地は減った。
+  - 次に進めるなら、同じパターンを typedef / tag member / lvar/gvar の `decl_type` + legacy scalar/funcptr mirror に広げ、
+    public getter を canonical type view へさらに集約するのが候補。
+
+### このセッション（続き867）: typedef/tag member の find 出力を decl_type 優先 view へ寄せる
+- 見つかった浅い箇所:
+  - `psx_ctx_find_typedef_name()` は `out->decl_type` を返している一方で、
+    `base_kind` / `elem_size` / `fp_kind` / `is_pointer` / `is_unsigned` などは
+    `typedef_name_t` の legacy field から先に詰めていた。
+  - `fill_tag_member_info()` も `out->decl_type` を返すが、`fp_kind` / `is_bool` /
+    `is_unsigned` / pointer qualifier / function pointer signature などは個別 mirror を
+    正本として読める形だった。
+- 根本対応:
+  - `ctx_typedef_info_apply_type()` を追加し、`psx_ctx_find_typedef_name()` の出力に
+    `decl_type` 由来の scalar/tag/pointer/array/function-pointer view を最後に適用するようにした。
+  - `ctx_tag_member_info_apply_type()` を追加し、`fill_tag_member_info()` の出力に
+    `decl_type` 由来の scalar/tag/pointer/function-pointer view を最後に適用するようにした。
+  - function pointer 型の `decl_type->base` は「指す関数の戻り値型」補助なので、
+    typedef/tag member 自体の `fp_kind` へは流さず、signature (`funcptr_sig`) だけを正本として反映するようにした。
+  - tag member の `type_size` / `deref_size` / `array_len` は struct layout 用の storage metadata として
+    legacy field を維持した。`decl_type` の `sizeof` で上書きすると array member の layout 計算が壊れるため。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- メモ:
+  - 途中で `ctx_tag_member_info_apply_type()` が `type_size` を `psx_type_sizeof(decl_type)` で上書きして、
+    `struct { char tag[3]; int n; }` の layout が 8 ではなく 12 扱いになり parser unit が失敗した。
+    `type_size` / `deref_size` / `array_len` は正本化対象ではなく layout storage metadata と判断し、上書きから外した。
+  - 途中で function pointer member `double (*fp)(void)` の `fp_kind` が `DOUBLE` になったが、
+    これは function pointer の戻り FP が member scalar FP に漏れたもの。function pointer signature がある場合は
+    `base` scalar view を適用しないようにして修正した。
+- 現状:
+  - typedef/tag member の public find 出力は `decl_type` がある場合、legacy field ではなく
+    canonical type view を最後に反映するようになった。
+  - ただし登録時の比較や一部 setter はまだ legacy field を保持している。次は typedef/tag member record 自体を
+    function return と同じように derived cache へ畳むか、比較を `decl_type` shape ベースへ寄せるのが候補。
+
+### このセッション（続き868）: typedef 再宣言比較を decl_type shape 優先へ寄せる
+- 見つかった浅い箇所:
+  - `psx_ctx_define_typedef_name()` の同名再宣言チェックは、`decl_type` がある場合でも
+    `base_kind` / `elem_size` / `fp_kind` / `is_pointer` / `is_unsigned` / array dims /
+    function pointer signature などの legacy field 群を直接比較していた。
+  - そのため、保存・取得の正本を `decl_type` に寄せても、typedef の互換判定だけ legacy field の
+    食い違いに引きずられる状態だった。
+- 根本対応:
+  - `ctx_type_shape_matches()` を追加し、`psx_type_t` の kind / qualifier / scalar / fp /
+    pointer / array / tag / function pointer signature shape を再帰的に比較できるようにした。
+  - `ctx_funcptr_sig_shape_matches()` を追加し、`psx_decl_funcptr_sig_t` の payload 有無と
+    `psx_funcptr_type_shape_matches()` を型比較から使えるようにした。
+  - `psx_ctx_define_typedef_name()` は、既存 typedef と新規 typedef の両方に `decl_type` がある場合、
+    legacy field 比較ではなく `ctx_type_shape_matches(existing->decl_type, info->decl_type)` を優先するようにした。
+    `decl_type` が片方でも欠ける場合だけ既存の legacy field 比較に fallback する。
+  - `test_type_metadata_bridge()` に手動 typedef 再宣言テストを追加した。
+    `decl_type` が同じなら legacy field が stale でも OK、`decl_type` が違えば NG になることを確認している。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c > /tmp/ag_c_typedef_funcptr_retptr_global_local.s`
+    + `cc /tmp/ag_c_typedef_funcptr_retptr_global_local.s -o /tmp/ag_c_typedef_funcptr_retptr_global_local`
+    + `/tmp/ag_c_typedef_funcptr_retptr_global_local` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_return_pointer_to_array.c > /tmp/ag_c_func_return_pointer_to_array.s`
+    + `cc /tmp/ag_c_func_return_pointer_to_array.s -o /tmp/ag_c_func_return_pointer_to_array`
+    + `/tmp/ag_c_func_return_pointer_to_array` = **pass**
+- 現状:
+  - typedef の登録済み型互換判定は、`decl_type` がある限り canonical shape 比較になった。
+  - legacy field は `decl_type` 欠落時の fallback と一部 storage/view cache として残る。
+  - 次は `tag_member_t` / `typedef_name_t` の legacy field 群を、保存 record 側でも
+    derived cache と明示 storage metadata に分離するのが候補。
+
+### このセッション（続き869）: typedef 保存 record の legacy cache を decl_type 由来へ同期
+- 見つかった浅い箇所:
+  - 続き868で typedef 再宣言比較は `decl_type` shape 優先になったが、
+    新規登録時の `assign_typedef_fields()` はまだ入力 `psx_typedef_info_t` の legacy field を
+    そのまま `typedef_name_t` へ保存していた。
+  - そのため、`decl_type` が canonical でも、record 内の `base_kind` / `elem_size` /
+    `fp_kind` / `is_pointer` / array dims などは stale なまま残れる状態だった。
+- 根本対応:
+  - `assign_typedef_fields()` は先に `decl_type` を persistent clone し、clone 済み `decl_type` から
+    `ctx_typedef_info_apply_type()` で canonical view を作ってから `typedef_name_t` の legacy cache を埋めるようにした。
+  - function pointer typedef で `decl_type` がない場合は従来通り signature から `decl_type` を構築し、
+    その後に同じ canonical view 同期へ流す。
+  - 旧実装で `assign_typedef_fields()` 後に `array_dim_count` / `array_dims` を入力値で再上書きしていた処理を削除した。
+    array dims も `decl_type` view 由来の cache に寄せた。
+  - `decl_type` が pointer の場合、record の `pointer_levels` も `ctx_type_pointer_levels(decl_type)` から同期するようにした。
+  - `test_type_metadata_bridge()` に、legacy field が `double`/非 pointer でも `decl_type` が `int *` なら
+    保存 record / find output は `int *` として見える確認を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/multilevel_pointer_typedef.c > /tmp/ag_c_multilevel_pointer_typedef.s`
+    + 既存 warning `W3013` は出るが asm 生成は成功
+    + `cc /tmp/ag_c_multilevel_pointer_typedef.s -o /tmp/ag_c_multilevel_pointer_typedef`
+    + `/tmp/ag_c_multilevel_pointer_typedef` = **pass**
+- 現状:
+  - typedef は登録比較だけでなく、保存 record の互換 cache も `decl_type` 由来へ寄った。
+  - `typedef_name_t` の legacy fields 自体はまだ存在するが、`decl_type` がある通常経路では
+    入力値ではなく canonical view から同期される。
+  - 次は `tag_member_t` 側の保存 record についても、layout storage metadata と type-derived cache を
+    より明確に分離するのが候補。

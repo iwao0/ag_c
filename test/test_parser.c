@@ -5874,6 +5874,52 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_DOUBLE, manual_ret_info.token_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, manual_ret_info.fp_kind);
   ASSERT_EQ(1, manual_ret_info.pointer_levels);
+
+  const char typedef_shape_name[] = "__tm_typedef_shape_cmp";
+  psx_type_t *typedef_shape_int_ptr =
+      psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 0), 4);
+  psx_typedef_info_t typedef_shape_a = {0};
+  typedef_shape_a.base_kind = TK_INT;
+  typedef_shape_a.elem_size = 4;
+  typedef_shape_a.is_pointer = 1;
+  typedef_shape_a.sizeof_size = 8;
+  typedef_shape_a.decl_type = typedef_shape_int_ptr;
+  ASSERT_TRUE(psx_ctx_define_typedef_name((char *)typedef_shape_name,
+                                          (int)sizeof(typedef_shape_name) - 1,
+                                          &typedef_shape_a));
+  psx_typedef_info_t typedef_shape_same_type_stale_legacy = typedef_shape_a;
+  typedef_shape_same_type_stale_legacy.base_kind = TK_DOUBLE;
+  typedef_shape_same_type_stale_legacy.elem_size = 8;
+  typedef_shape_same_type_stale_legacy.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  ASSERT_TRUE(psx_ctx_define_typedef_name(
+      (char *)typedef_shape_name, (int)sizeof(typedef_shape_name) - 1,
+      &typedef_shape_same_type_stale_legacy));
+  psx_typedef_info_t typedef_shape_different = typedef_shape_a;
+  typedef_shape_different.decl_type =
+      psx_type_new_pointer(psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 8);
+  ASSERT_TRUE(!psx_ctx_define_typedef_name((char *)typedef_shape_name,
+                                           (int)sizeof(typedef_shape_name) - 1,
+                                           &typedef_shape_different));
+  const char typedef_sync_name[] = "__tm_typedef_sync_from_type";
+  psx_typedef_info_t typedef_sync = {0};
+  typedef_sync.base_kind = TK_DOUBLE;
+  typedef_sync.elem_size = 8;
+  typedef_sync.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  typedef_sync.is_pointer = 0;
+  typedef_sync.decl_type =
+      psx_type_new_pointer(psx_type_new_integer(TK_INT, 4, 0), 4);
+  ASSERT_TRUE(psx_ctx_define_typedef_name((char *)typedef_sync_name,
+                                          (int)sizeof(typedef_sync_name) - 1,
+                                          &typedef_sync));
+  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels(
+                   (char *)typedef_sync_name, (int)sizeof(typedef_sync_name) - 1));
+  psx_typedef_info_t typedef_sync_out = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name((char *)typedef_sync_name,
+                                        (int)sizeof(typedef_sync_name) - 1,
+                                        &typedef_sync_out));
+  ASSERT_EQ(TK_INT, typedef_sync_out.base_kind);
+  ASSERT_TRUE(typedef_sync_out.is_pointer);
+
   ASSERT_TRUE(indirect_double_ptr_to_array_call->type != NULL);
   psx_type_t *indirect_double_ptr_to_array_ty =
       psx_node_get_type(indirect_double_ptr_to_array_call);
