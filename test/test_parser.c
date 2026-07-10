@@ -74,6 +74,37 @@ static lvar_t *find_func_lvar(node_func_t *fn, const char *name) {
   return NULL;
 }
 
+typedef struct {
+  global_var_t *gv;
+  int scalar_count;
+  long long scalar_offsets[16];
+  long long scalar_values[16];
+  int scalar_sizes[16];
+  int padding_count;
+  long long padding_offsets[16];
+  int padding_sizes[16];
+} aggregate_walk_trace_t;
+
+static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
+                                        int slot, long long offset) {
+  aggregate_walk_trace_t *trace = user;
+  if (!trace || trace->scalar_count >= 16) return;
+  int idx = trace->scalar_count++;
+  psx_gvar_init_member_value_t value =
+      psx_gvar_init_member_value(trace->gv, slot, mi);
+  trace->scalar_offsets[idx] = offset;
+  trace->scalar_values[idx] = value.value;
+  trace->scalar_sizes[idx] = value.size;
+}
+
+static void aggregate_walk_trace_padding(void *user, long long offset, int size) {
+  aggregate_walk_trace_t *trace = user;
+  if (!trace || trace->padding_count >= 16) return;
+  int idx = trace->padding_count++;
+  trace->padding_offsets[idx] = offset;
+  trace->padding_sizes[idx] = size;
+}
+
 static void expect_parse_fail(const char *input) {
   fflush(NULL);
   pid_t pid = fork();
@@ -5601,6 +5632,131 @@ static void test_type_metadata_bridge() {
                          &flat_decl_array_member);
   ASSERT_EQ(6, psx_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
                                        (int)sizeof(flat_decl_union_tag) - 1));
+
+  parsed_code = parse_program_input(
+      "struct __tm_bf_decl_type { unsigned long wide:40; _Bool flag:1; }; "
+      "int main(void){ return 0; }");
+  (void)parsed_code;
+  tag_member_info_t bf_wide_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "__tm_bf_decl_type", 17,
+                                           "wide", 4, &bf_wide_info));
+  ASSERT_TRUE(bf_wide_info.decl_type != NULL);
+  ASSERT_EQ(40, bf_wide_info.bit_width);
+  ASSERT_EQ(8, psx_tag_member_decl_value_size(&bf_wide_info));
+  ASSERT_EQ(8, psx_tag_member_decl_storage_size(&bf_wide_info));
+  tag_member_info_t bf_bool_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, "__tm_bf_decl_type", 17,
+                                           "flag", 4, &bf_bool_info));
+  ASSERT_TRUE(bf_bool_info.decl_type != NULL);
+  ASSERT_EQ(1, bf_bool_info.bit_width);
+  ASSERT_TRUE(psx_tag_member_decl_is_bool(&bf_bool_info));
+  ASSERT_EQ(1, psx_tag_member_decl_value_size(&bf_bool_info));
+
+  const char member_sync_tag[] = "__tm_member_sync_clean";
+  int member_sync_len = (int)sizeof(member_sync_tag) - 1;
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)member_sync_tag,
+                                      member_sync_len, 1, 4, 4);
+  tag_member_info_t member_sync_stale = {0};
+  member_sync_stale.name = "x";
+  member_sync_stale.len = 1;
+  member_sync_stale.type_size = 99;
+  member_sync_stale.tag_kind = TK_UNION;
+  member_sync_stale.tag_name = "Stale";
+  member_sync_stale.tag_len = 5;
+  member_sync_stale.is_tag_pointer = 1;
+  member_sync_stale.pointer_qual_levels = 2;
+  member_sync_stale.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  member_sync_stale.is_bool = 1;
+  member_sync_stale.is_unsigned = 1;
+  member_sync_stale.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)member_sync_tag, member_sync_len,
+                         &member_sync_stale);
+  tag_member_info_t member_sync_out = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT, (char *)member_sync_tag,
+                                           member_sync_len, "x", 1,
+                                           &member_sync_out));
+  ASSERT_TRUE(member_sync_out.decl_type != NULL);
+  ASSERT_EQ(TK_EOF, member_sync_out.tag_kind);
+  ASSERT_TRUE(member_sync_out.tag_name == NULL);
+  ASSERT_EQ(0, member_sync_out.tag_len);
+  ASSERT_EQ(0, member_sync_out.is_tag_pointer);
+  ASSERT_EQ(0, member_sync_out.pointer_qual_levels);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, member_sync_out.fp_kind);
+  ASSERT_EQ(0, member_sync_out.is_bool);
+  ASSERT_EQ(0, member_sync_out.is_unsigned);
+  ASSERT_EQ(4, psx_tag_member_decl_value_size(&member_sync_out));
+
+  const char walk_inner_tag[] = "__tm_walk_inner";
+  int walk_inner_len = (int)sizeof(walk_inner_tag) - 1;
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)walk_inner_tag,
+                                      walk_inner_len, 2, 8, 4);
+  tag_member_info_t walk_inner_a = {0};
+  walk_inner_a.name = "a";
+  walk_inner_a.len = 1;
+  walk_inner_a.type_size = 4;
+  walk_inner_a.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len,
+                         &walk_inner_a);
+  tag_member_info_t walk_inner_b = {0};
+  walk_inner_b.name = "b";
+  walk_inner_b.len = 1;
+  walk_inner_b.offset = 4;
+  walk_inner_b.type_size = 4;
+  walk_inner_b.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len,
+                         &walk_inner_b);
+
+  const char walk_outer_tag[] = "__tm_walk_outer";
+  int walk_outer_len = (int)sizeof(walk_outer_tag) - 1;
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)walk_outer_tag,
+                                      walk_outer_len, 2, 20, 4);
+  tag_member_info_t walk_outer_arr = {0};
+  walk_outer_arr.name = "arr";
+  walk_outer_arr.len = 3;
+  walk_outer_arr.type_size = 4;
+  walk_outer_arr.array_len = 0;
+  walk_outer_arr.tag_kind = TK_EOF;
+  walk_outer_arr.decl_type = psx_type_new_array(
+      psx_type_new_tag(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len, 0, 8),
+      2, 16, 8, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
+                         &walk_outer_arr);
+  tag_member_info_t walk_outer_tail = {0};
+  walk_outer_tail.name = "tail";
+  walk_outer_tail.len = 4;
+  walk_outer_tail.offset = 16;
+  walk_outer_tail.type_size = 4;
+  walk_outer_tail.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
+                         &walk_outer_tail);
+
+  global_var_t walk_gv = {0};
+  walk_gv.type_size = 4;
+  walk_gv.tag_kind = TK_EOF;
+  walk_gv.decl_type =
+      psx_type_new_tag(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, 0, 20);
+  psx_gvar_init_slots_alloc(&walk_gv, 5, 0);
+  walk_gv.init_count = 5;
+  for (int i = 0; i < 5; i++)
+    psx_gvar_init_slot_write(&walk_gv, i, i + 1, 0.0, NULL, 0);
+  aggregate_walk_trace_t walk_trace = {.gv = &walk_gv};
+  const psx_gvar_aggregate_walk_ops_t walk_ops = {
+      .scalar = aggregate_walk_trace_scalar,
+      .padding = aggregate_walk_trace_padding,
+  };
+  ASSERT_TRUE(psx_gvar_walk_aggregate_initializer(&walk_gv, 0, &walk_ops,
+                                                  &walk_trace));
+  ASSERT_EQ(5, walk_trace.scalar_count);
+  ASSERT_EQ(0, walk_trace.scalar_offsets[0]);
+  ASSERT_EQ(4, walk_trace.scalar_offsets[1]);
+  ASSERT_EQ(8, walk_trace.scalar_offsets[2]);
+  ASSERT_EQ(12, walk_trace.scalar_offsets[3]);
+  ASSERT_EQ(16, walk_trace.scalar_offsets[4]);
+  for (int i = 0; i < 5; i++) {
+    ASSERT_EQ(i + 1, walk_trace.scalar_values[i]);
+    ASSERT_EQ(4, walk_trace.scalar_sizes[i]);
+  }
+  ASSERT_EQ(0, walk_trace.padding_count);
 
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;

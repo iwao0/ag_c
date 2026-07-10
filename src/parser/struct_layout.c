@@ -90,6 +90,29 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
   return type;
 }
 
+static void tag_member_info_init_layout_cache(tag_member_info_t *mi,
+                                              int type_size, int deref_size,
+                                              int array_len,
+                                              token_kind_t tag_kind,
+                                              char *tag_name, int tag_len,
+                                              tk_float_kind_t fp_kind,
+                                              int is_bool, int is_unsigned,
+                                              int is_tag_pointer,
+                                              int pointer_qual_levels) {
+  if (!mi) return;
+  mi->type_size = type_size;
+  mi->deref_size = deref_size;
+  mi->array_len = array_len;
+  mi->tag_kind = tag_kind;
+  mi->tag_name = tag_name;
+  mi->tag_len = tag_len;
+  mi->fp_kind = fp_kind;
+  mi->is_bool = is_bool ? 1 : 0;
+  mi->is_unsigned = is_unsigned ? 1 : 0;
+  mi->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  mi->pointer_qual_levels = pointer_qual_levels;
+}
+
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
                                                        psx_funcptr_signature_t *func_suffix_sig,
                                                        int *out_paren_array_mul,
@@ -415,11 +438,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           _mi.name = head.member->str;
           _mi.len = head.member->len;
           _mi.offset = (tag_kind == TK_UNION) ? 0 : bf_storage_offset;
-          _mi.type_size = storage_type_size;
-          _mi.tag_kind = TK_EOF;
+          tag_member_info_init_layout_cache(
+              &_mi, storage_type_size, 0, 0, TK_EOF, NULL, 0,
+              member_fp_kind, member_is_bool, member_is_unsigned, 0, 0);
           _mi.bit_width = bit_width;
           _mi.bit_offset = bit_field_offset_in_storage;
           _mi.bit_is_signed = is_signed_type;
+          _mi.decl_type = member_decl_type_from_layout(
+              member_base_kind, member_fp_kind, TK_EOF, NULL, 0,
+              storage_type_size, member_is_unsigned, member_is_bool,
+              member_is_complex, member_is_atomic, 0, 0, 0, 0,
+              storage_type_size, (psx_decl_funcptr_sig_t){0});
           psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
           member_count++;
         }
@@ -557,17 +586,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.name = member_name;
         _mi.len = member_len;
         _mi.offset = off;
-        _mi.type_size = member_is_ptr ? ptr_size : elem_size;
-        _mi.deref_size = deref_size;
-        _mi.array_len = member_array_len;
-        _mi.tag_kind = member_tag_kind;
-        _mi.tag_name = member_tag_name;
-        _mi.tag_len = member_tag_len;
-        _mi.fp_kind = member_fp_kind;
-        _mi.is_bool = member_is_bool ? 1 : 0;
-        _mi.is_unsigned = member_is_unsigned ? 1 : 0;
-        _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
-        _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
+        tag_member_info_init_layout_cache(
+            &_mi, member_is_ptr ? ptr_size : elem_size, deref_size,
+            member_array_len, member_tag_kind, member_tag_name, member_tag_len,
+            member_fp_kind, member_is_bool, member_is_unsigned,
+            member_is_ptr, member_is_ptr ? total_pointer_levels : 0);
         psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
         if (member_is_ptr) {
           if (head.has_func_suffix) {

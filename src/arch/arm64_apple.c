@@ -207,7 +207,7 @@ static void emit_global_walk_bitfield_member(void *user, const tag_member_info_t
   unsigned long long packed = psx_gvar_init_slot_bitfield_bits(ctx->gv, slot_idx,
                                                                mi->bit_width,
                                                                mi->bit_offset);
-  cg_emit_int_directive(mi->type_size, (long long)packed);
+  cg_emit_int_directive(psx_tag_member_decl_value_size(mi), (long long)packed);
 }
 
 static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {

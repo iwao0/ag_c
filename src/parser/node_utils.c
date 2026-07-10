@@ -225,8 +225,7 @@ static int tag_aggregate_size_from_ctx(token_kind_t tk, char *tn, int tl,
   for (int i = 0; i < n; i++) {
     tag_member_info_t mi = {0};
     if (!ctx_get_tag_member_info_scoped(tk, tn, tl, scope_depth_p1, i, &mi)) break;
-    int count = mi.array_len > 0 ? mi.array_len : 1;
-    int end = mi.offset + mi.type_size * count;
+    int end = mi.offset + psx_tag_member_decl_storage_size(&mi);
     if (end > max_end) max_end = end;
   }
   int align = psx_ctx_get_tag_align(tk, tn, tl);
@@ -1637,34 +1636,41 @@ static int gvar_walk_struct_initializer(token_kind_t tag_kind, char *tag_name, i
       prev_end = unit.offset + unit.size;
       continue;
     }
-    if (mi.array_len > 0) {
-      int span = mi.type_size * mi.array_len;
+    int member_value_size = psx_tag_member_decl_value_size(&mi);
+    int member_storage_size = psx_tag_member_decl_storage_size(&mi);
+    int member_array_count = psx_tag_member_decl_array_count(&mi);
+    token_kind_t member_tag_kind = TK_EOF;
+    char *member_tag_name = NULL;
+    int member_tag_len = 0;
+    psx_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
+                                     &member_tag_len, NULL);
+    if (member_array_count > 0) {
       if (psx_tag_member_is_tag_aggregate(&mi)) {
-        for (int k = 0; k < mi.array_len; k++) {
+        for (int k = 0; k < member_array_count; k++) {
           if (!gvar_init_cursor_has(cur) && !gvar_walk_needs_padding(ops)) break;
           int elem_start_idx = gvar_init_cursor_index(cur);
-          long long elem_off = base_offset + mi.offset + (long long)k * mi.type_size;
+          long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
           int ok = psx_tag_member_is_union_aggregate(&mi)
-              ? gvar_walk_union_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+              ? gvar_walk_union_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                             0,
-                                            gv, cur, elem_off, mi.type_size,
+                                            gv, cur, elem_off, member_value_size,
                                             ops, user)
-              : gvar_walk_struct_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+              : gvar_walk_struct_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                              0,
-                                             gv, cur, elem_off, mi.type_size,
+                                             gv, cur, elem_off, member_value_size,
                                              ops, user);
           if (!ok) return 0;
-          gvar_init_cursor_consume_tag_zero_padding(mi.tag_kind, mi.tag_name,
-                                                    mi.tag_len, cur,
+          gvar_init_cursor_consume_tag_zero_padding(member_tag_kind, member_tag_name,
+                                                    member_tag_len, cur,
                                                     elem_start_idx);
         }
       } else {
         if (!gvar_walk_require_scalar(ops)) return 0;
-        for (int k = 0; k < mi.array_len; k++) {
-          long long elem_off = base_offset + mi.offset + (long long)k * mi.type_size;
+        for (int k = 0; k < member_array_count; k++) {
+          long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
           if (!gvar_init_cursor_has(cur)) {
             if (gvar_walk_needs_padding(ops)) {
-              gvar_walk_emit_padding(ops, user, elem_off, mi.type_size);
+              gvar_walk_emit_padding(ops, user, elem_off, member_value_size);
               continue;
             }
             break;
@@ -1673,37 +1679,37 @@ static int gvar_walk_struct_initializer(token_kind_t tag_kind, char *tag_name, i
           ops->scalar(user, &mi, slot, elem_off);
         }
       }
-      prev_end = mi.offset + span;
+      prev_end = mi.offset + member_storage_size;
       continue;
     }
     if (psx_tag_member_is_struct_aggregate(&mi)) {
       int member_start_idx = gvar_init_cursor_index(cur);
-      if (!gvar_walk_struct_initializer(mi.tag_kind, mi.tag_name, mi.tag_len, 0,
+      if (!gvar_walk_struct_initializer(member_tag_kind, member_tag_name, member_tag_len, 0,
                                         gv, cur, base_offset + mi.offset,
-                                        mi.type_size,
+                                        member_value_size,
                                         ops, user)) {
         return 0;
       }
-      gvar_init_cursor_consume_tag_zero_padding(mi.tag_kind, mi.tag_name,
-                                                mi.tag_len, cur,
+      gvar_init_cursor_consume_tag_zero_padding(member_tag_kind, member_tag_name,
+                                                member_tag_len, cur,
                                                 member_start_idx);
-      prev_end = mi.offset + mi.type_size;
+      prev_end = mi.offset + member_value_size;
       continue;
     }
     if (psx_tag_member_is_union_aggregate(&mi)) {
-      if (!gvar_walk_union_initializer(mi.tag_kind, mi.tag_name, mi.tag_len, 0,
+      if (!gvar_walk_union_initializer(member_tag_kind, member_tag_name, member_tag_len, 0,
                                        gv, cur, base_offset + mi.offset,
-                                       mi.type_size,
+                                       member_value_size,
                                        ops, user)) {
         return 0;
       }
-      prev_end = mi.offset + mi.type_size;
+      prev_end = mi.offset + member_value_size;
       continue;
     }
     if (!gvar_walk_require_scalar(ops)) return 0;
     int slot = gvar_init_cursor_advance(cur);
     ops->scalar(user, &mi, slot, base_offset + mi.offset);
-    prev_end = mi.offset + mi.type_size;
+    prev_end = mi.offset + member_value_size;
   }
   if (prev_end < struct_size) {
     gvar_walk_emit_padding(ops, user, base_offset + prev_end, struct_size - prev_end);
@@ -1732,7 +1738,15 @@ static int gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, in
     }
     return 0;
   }
-  int emitted = mi.array_len > 0 ? mi.type_size * mi.array_len : mi.type_size;
+  int member_value_size = psx_tag_member_decl_value_size(&mi);
+  int member_storage_size = psx_tag_member_decl_storage_size(&mi);
+  int member_array_count = psx_tag_member_decl_array_count(&mi);
+  int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
+  token_kind_t member_tag_kind = TK_EOF;
+  char *member_tag_name = NULL;
+  int member_tag_len = 0;
+  psx_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
+                                   &member_tag_len, NULL);
   if (mi.offset > 0) gvar_walk_emit_padding(ops, user, base_offset, mi.offset);
   if (mi.bit_width > 0) {
     if (!gvar_walk_require_bitfield_member(ops)) return 0;
@@ -1740,35 +1754,35 @@ static int gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, in
     ops->bitfield_member(user, &mi, slot, base_offset + mi.offset);
     gvar_init_cursor_consume_tag_zero_padding(tag_kind, tag_name, tag_len,
                                               cur, start_idx);
-    if (mi.offset + mi.type_size < union_size) {
-      gvar_walk_emit_padding(ops, user, base_offset + mi.offset + mi.type_size,
-                             union_size - (mi.offset + mi.type_size));
+    if (mi.offset + member_value_size < union_size) {
+      gvar_walk_emit_padding(ops, user, base_offset + mi.offset + member_value_size,
+                             union_size - (mi.offset + member_value_size));
     }
     return 1;
   }
-  if (mi.array_len > 0) {
+  if (member_array_count > 0) {
     if (psx_tag_member_is_tag_aggregate(&mi)) {
-      for (int k = 0; k < mi.array_len; k++) {
+      for (int k = 0; k < member_array_count; k++) {
         if (!gvar_init_cursor_has(cur) && !gvar_walk_needs_padding(ops)) break;
-        long long elem_off = base_offset + mi.offset + (long long)k * mi.type_size;
+        long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
         int ok = psx_tag_member_is_struct_aggregate(&mi)
-            ? gvar_walk_struct_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+            ? gvar_walk_struct_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                            0,
-                                           gv, cur, elem_off, mi.type_size,
+                                           gv, cur, elem_off, member_value_size,
                                            ops, user)
-            : gvar_walk_union_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+            : gvar_walk_union_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                           0,
-                                          gv, cur, elem_off, mi.type_size,
+                                          gv, cur, elem_off, member_value_size,
                                           ops, user);
         if (!ok) return 0;
       }
     } else {
       if (!gvar_walk_require_scalar(ops)) return 0;
-      for (int k = 0; k < mi.array_len; k++) {
-        long long elem_off = base_offset + mi.offset + (long long)k * mi.type_size;
+      for (int k = 0; k < member_array_count; k++) {
+        long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
         if (!gvar_init_cursor_has(cur)) {
           if (gvar_walk_needs_padding(ops)) {
-            gvar_walk_emit_padding(ops, user, elem_off, mi.type_size);
+            gvar_walk_emit_padding(ops, user, elem_off, member_value_size);
             continue;
           }
           break;
@@ -1785,14 +1799,14 @@ static int gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, in
   }
   if (psx_tag_member_is_tag_aggregate(&mi)) {
     int ok = psx_tag_member_is_struct_aggregate(&mi)
-        ? gvar_walk_struct_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+        ? gvar_walk_struct_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                        0,
                                        gv, cur, base_offset + mi.offset,
-                                       mi.type_size, ops, user)
-        : gvar_walk_union_initializer(mi.tag_kind, mi.tag_name, mi.tag_len,
+                                       member_value_size, ops, user)
+        : gvar_walk_union_initializer(member_tag_kind, member_tag_name, member_tag_len,
                                       0,
                                       gv, cur, base_offset + mi.offset,
-                                      mi.type_size, ops, user);
+                                      member_value_size, ops, user);
     if (!ok) return 0;
     gvar_init_cursor_consume_tag_zero_padding(tag_kind, tag_name, tag_len,
                                               cur, start_idx);
@@ -1807,9 +1821,9 @@ static int gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, in
   ops->scalar(user, &mi, slot, base_offset + mi.offset);
   gvar_init_cursor_consume_tag_zero_padding(tag_kind, tag_name, tag_len,
                                             cur, start_idx);
-  if (mi.offset + mi.type_size < union_size) {
-    gvar_walk_emit_padding(ops, user, base_offset + mi.offset + mi.type_size,
-                           union_size - (mi.offset + mi.type_size));
+  if (mi.offset + member_value_size < union_size) {
+    gvar_walk_emit_padding(ops, user, base_offset + mi.offset + member_value_size,
+                           union_size - (mi.offset + member_value_size));
   }
   return 1;
 }
@@ -1953,7 +1967,7 @@ static int gvar_init_cursor_pack_bitfield_unit(token_kind_t tag_kind, char *tag_
   }
   int n_members = psx_ctx_get_tag_member_count(tag_kind, tag_name, tag_len);
   int unit_off = first.offset;
-  int unit_size = first.type_size;
+  int unit_size = psx_tag_member_decl_value_size(&first);
   unsigned long long packed = 0;
   int m = member_index;
   int last = member_index;
@@ -2190,10 +2204,10 @@ int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_
       return 1;
     }
     if (psx_tag_member_is_struct_aggregate(&mi)) {
-      const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(&mi);
-      token_kind_t child_kind = leaf ? leaf->tag_kind : mi.tag_kind;
-      char *child_name = leaf ? leaf->tag_name : mi.tag_name;
-      int child_len = leaf ? leaf->tag_len : mi.tag_len;
+      token_kind_t child_kind = TK_EOF;
+      char *child_name = NULL;
+      int child_len = 0;
+      psx_tag_member_decl_tag_identity(&mi, &child_kind, &child_name, &child_len, NULL);
       if (psx_tag_find_unnamed_union_covering_offset(child_kind, child_name, child_len,
                                                      start, target_off, out_off, out_size)) {
         return 1;

@@ -2499,7 +2499,8 @@ static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv
   if (!mi || mi->bit_width <= 0) obj_unsupported_msg("global bitfield initializer in Wasm object mode");
   unsigned long long packed = psx_gvar_init_slot_bitfield_bits(gv, idx,
                                                                mi->bit_width, mi->bit_offset);
-  data_write_int_le_at(d, base_off + (size_t)mi->offset, packed, mi->type_size);
+  data_write_int_le_at(d, base_off + (size_t)mi->offset, packed,
+                       psx_tag_member_decl_value_size(mi));
 }
 
 typedef struct {

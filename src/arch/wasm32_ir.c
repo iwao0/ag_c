@@ -1867,7 +1867,8 @@ static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr
   }
   unsigned long long packed = psx_gvar_init_slot_bitfield_bits(gv, idx,
                                                                mi->bit_width, mi->bit_offset);
-  emit_i32_data_bytes(addr + mi->offset, (long long)packed, mi->type_size);
+  emit_i32_data_bytes(addr + mi->offset, (long long)packed,
+                      psx_tag_member_decl_value_size(mi));
 }
 
 typedef struct {

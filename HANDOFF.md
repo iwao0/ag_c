@@ -21594,3 +21594,95 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - まだ repo 全体では `tag_member_info_t` raw field の reader が残っている可能性があるため、
     次は `semantic_ctx.c` の cache sync や `struct_layout.c` の construction 側など、
     「raw cache を作る/同期する境界」と「canonical view を読む境界」を分けて監査するのが候補。
+
+### このセッション（続き887）: global initializer / brace / backend bitfield の tag member 読みを canonical helper へ寄せる
+- 見つかった浅い箇所:
+  - `node_utils.c` の `psx_gvar_walk_aggregate_initializer()` 系 walker が、
+    struct/union member の進行幅・padding・aggregate 再帰先を raw `mi.type_size` /
+    `mi.array_len` / `mi.tag_kind` から決めていた。
+  - `parser.c` の global brace context 生成も raw `mi->type_size` /
+    `mi->array_len` / `cmi.tag_kind` を読んでおり、helper 化すると配列 subscript 後に
+    `decl_type` を 1 段降ろす処理も必要だった。
+  - Wasm/arm64 backend の global bitfield member emission が raw `mi->type_size` を
+    出力幅として使っていた。
+- 根本対応:
+  - `tag_aggregate_size_from_ctx()` と global aggregate walker の value size /
+    storage size / array count / tag identity を `psx_tag_member_decl_*` helper 経由にした。
+  - union/struct aggregate initializer の element offset、zero padding、再帰サイズを
+    canonical value/storage size で進めるようにした。
+  - `parser.c` の `gbrace_ctx_from_member()` と top-level struct size 補正も common helper を使うようにし、
+    `consume_global_member_array_dim()` では `decl_type` が array の場合に base へ 1 段 peel するようにした。
+  - Wasm IR / Wasm object / arm64 の bitfield member 出力幅を
+    `psx_tag_member_decl_value_size(mi)` に寄せた。
+  - `test_type_metadata_bridge()` に global aggregate walker の直接テストを追加し、
+    raw `type_size=4` / `array_len=0` / `tag_kind=EOF` でも
+    `decl_type=struct Inner[2]` なら scalar offset が `0,4,8,12,16` と
+    canonical struct array 幅で進むことを確認するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `rg -n "mi->type_size|member_info->type_size|first\\.type_size|mi\\.(type_size|array_len|tag_kind|tag_name|tag_len)|cmi\\.(type_size|fp_kind|tag_kind|tag_name|tag_len)" src/parser src/arch`
+    の残りは `struct_layout.c` の `_mi` 構築代入だけになった。
+- 現状:
+  - global initializer の読む側は、tag member raw cache ではなく `decl_type` canonical view を
+    使う範囲がさらに広がった。
+  - `struct_layout.c` は tag member info を作る境界として raw field 代入が残っている。
+    次はここを「構築境界」として明示するか、可能なら type construction を先に作って
+    cache を同期する形へ寄せられるかを見るのが候補。
+
+### このセッション（続き888）: struct_layout の tag member 構築境界を明示し bitfield に decl_type を持たせる
+- 見つかった浅い箇所:
+  - `struct_layout.c` の通常メンバ構築では `decl_type` を作っていたが、fallback cache field
+    (`type_size` / `array_len` / `tag_kind` / `fp_kind` など) の代入は個別に散らばっていた。
+  - bitfield メンバは `type_size` / `bit_width` だけを持ち、`decl_type` を持たないため、
+    読む側が `psx_tag_member_decl_*` helper に寄った後も bitfield だけ raw cache が実質的な正本として残っていた。
+- 根本対応:
+  - `tag_member_info_init_layout_cache()` を追加し、`tag_member_info_t` の fallback cache 初期化を
+    struct layout の構築境界 1 箇所に集約した。
+  - 通常メンバの raw fallback cache 代入を helper 呼び出しに置き換えた。
+  - bitfield メンバにも `member_decl_type_from_layout()` で作った `decl_type` を設定し、
+    `unsigned long wide:40` や `_Bool flag:1` でも canonical helper が value size / bool を
+    型から読めるようにした。
+  - `test_type_metadata_bridge()` に bitfield の直接テストを追加し、
+    bitfield info が `decl_type` を持ち、`psx_tag_member_decl_value_size()` /
+    `psx_tag_member_decl_is_bool()` が期待値を返すことを確認するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `rg -n "mi->type_size|member_info->type_size|first\\.type_size|mi\\.(type_size|array_len|tag_kind|tag_name|tag_len)|cmi\\.(type_size|fp_kind|tag_kind|tag_name|tag_len)|_mi\\.(type_size|array_len|tag_kind|tag_name|tag_len|fp_kind|is_bool|is_unsigned|is_tag_pointer|pointer_qual_levels)" src/parser src/arch`
+    の残りは `src/parser/struct_layout.c` の `tag_member_info_init_layout_cache()` 内だけになった。
+- 現状:
+  - tag member の読む側は canonical helper に寄り、構築側の fallback cache 代入も helper に集約された。
+  - まだ `semantic_ctx.c` には `tag_member_t` record と `tag_member_info_t` view の同期ロジックが残るため、
+    次は record/view の二重保持そのものをさらに薄くできるかを監査するのが候補。
+
+### このセッション（続き889）: semantic_ctx の tag member record/view 同期を型由来でクリーン化
+- 見つかった浅い箇所:
+  - `tag_member_record_sync_cache_from_type()` は既存 record cache を `tag_member_info_t view` にコピーしてから
+    `decl_type` を重ねていたため、`decl_type=int` でも古い raw `tag_kind` / `fp_kind` /
+    `is_bool` / pointer cache が残る余地があった。
+  - pointer-to-array などの補助情報は top-level type ではなく内側 type に載るケースがあり、
+    単純に `type->outer_stride` だけを見ると metadata を落とす可能性があった。
+- 根本対応:
+  - `ctx_tag_member_info_apply_type()` が `decl_type` 適用時に tag/fp/bool/unsigned/pointer identity を
+    一度クリアし、型から再構成するようにした。
+  - array dims は `decl_type` の array chain から再構成し、stride / pointer-to-array bytes は
+    type chain を再帰して最初の正値を拾うようにした。
+  - `tag_member_record_sync_cache_from_type()` は、互換用の `type_size` / `deref_size` /
+    `array_len` は保持しつつ、tag/fp/bool/pointer/dims/stride 系 cache を canonical view から
+    record へ戻す形にした。
+  - `test_type_metadata_bridge()` に stale raw metadata の直接テストを追加し、
+    raw `tag_kind=UNION` / `fp_kind=DOUBLE` / `is_bool=1` / pointer cache ありでも
+    `decl_type=int` が正本として取得 view をクリーン化することを確認するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+- 現状:
+  - record/view 同期でも、型がある場合の tag/fp/bool/pointer identity は `decl_type` 由来へ寄った。
+  - `tag_member_info_t.type_size` / `deref_size` / `array_len` は既存 public view 互換のため保持しており、
+    正本として読む経路は `psx_tag_member_decl_*` helper 側に寄せている。
+  - 次は raw field を直接読む残りを repo 全体で再検索し、`tag_member_info_t` 以外の
+    lvar/gvar/node_mem でも同じ型正本化の残りがないか確認するのが候補。

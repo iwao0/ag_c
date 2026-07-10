@@ -1369,12 +1369,17 @@ static int effective_toplevel_tag_object_size(token_kind_t kind, char *name, int
     if (psx_tag_member_is_unnamed_aggregate(&mi)) {
       continue;
     }
-    int count = mi.array_len > 0 ? mi.array_len : 1;
-    int end = mi.offset + mi.type_size * count;
+    int end = mi.offset + psx_tag_member_decl_storage_size(&mi);
     if (end > max_end) max_end = end;
-    int member_align = mi.type_size;
+    int member_align = psx_tag_member_decl_value_size(&mi);
     if (psx_tag_member_is_tag_aggregate(&mi)) {
-      int tag_align = psx_ctx_get_tag_align(mi.tag_kind, mi.tag_name, mi.tag_len);
+      token_kind_t member_tag_kind = TK_EOF;
+      char *member_tag_name = NULL;
+      int member_tag_len = 0;
+      psx_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
+                                       &member_tag_len, NULL);
+      int tag_align = psx_ctx_get_tag_align(member_tag_kind, member_tag_name,
+                                            member_tag_len);
       if (tag_align > 0) member_align = tag_align;
     }
     if (member_align > 8) member_align = 8;
@@ -1666,6 +1671,9 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
 /* 多次元 member designator の `[i]` を 1 段消費し、残り次元の要素数へ畳み込む。 */
 static void consume_global_member_array_dim(tag_member_info_t *mi) {
   if (!mi) return;
+  if (mi->decl_type && mi->decl_type->kind == PSX_TYPE_ARRAY && mi->decl_type->base) {
+    mi->decl_type = mi->decl_type->base;
+  }
   if (mi->arr_ndim > 1) {
     int remaining = 1;
     for (int i = 1; i < mi->arr_ndim; i++) {
@@ -1723,17 +1731,21 @@ static void gbrace_ctx_clear(gbrace_ctx_t *c) {
 }
 
 static void gbrace_ctx_from_member(gbrace_ctx_t *c, const tag_member_info_t *mi) {
-  /* 非タグ配列メンバの要素サイズ。char 配列 (`char name[8]`) のメンバは deref_size=0 で
-   * type_size に要素サイズ (char=1) が入るため、deref_size が無ければ type_size を使う。 */
-  int elem = mi->deref_size > 0 ? mi->deref_size : mi->type_size;
+  int elem = psx_tag_member_decl_value_size(mi);
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  int is_tag_pointer = 0;
+  psx_tag_member_decl_tag_identity(mi, &tag_kind, &tag_name, &tag_len,
+                                   &is_tag_pointer);
   gbrace_ctx_clear(c);
-  c->tag_kind = mi->tag_kind;
-  c->tag_name = mi->tag_name;
-  c->tag_len = mi->tag_len;
-  c->is_array = (mi->array_len > 0);
-  c->is_tag_pointer = mi->is_tag_pointer ? 1 : 0;
+  c->tag_kind = tag_kind;
+  c->tag_name = tag_name;
+  c->tag_len = tag_len;
+  c->is_array = (psx_tag_member_decl_array_count(mi) > 0);
+  c->is_tag_pointer = is_tag_pointer ? 1 : 0;
   c->elem_size = elem;
-  c->array_len = mi->array_len;
+  c->array_len = psx_tag_member_decl_array_count(mi);
   /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
    * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
    * 最外側から並べてコピー。child_at が 1 段ずつ消費する。
@@ -1990,9 +2002,10 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       /* ネスト union の fp メンバ designator (`.f = 2.5f`): 次の scalar 書き込みで sentinel
        * を立てて emit にネスト union active メンバが fp であることを伝える。0.0f と .n=0 を
        * 判別可能にするため、ヒューリスティック (fv!=0) ではなく明示的に通知する。 */
-      if (ctx.tag_kind == TK_UNION && cmi.fp_kind != TK_FLOAT_KIND_NONE) {
-        ctx.pending_fp_kind = cmi.fp_kind;
-        ctx.pending_fp_size = cmi.type_size;
+      tk_float_kind_t cmi_fp_kind = psx_tag_member_decl_fp_kind(&cmi);
+      if (ctx.tag_kind == TK_UNION && cmi_fp_kind != TK_FLOAT_KIND_NONE) {
+        ctx.pending_fp_kind = cmi_fp_kind;
+        ctx.pending_fp_size = psx_tag_member_decl_value_size(&cmi);
       }
       for (;;) {
         if (curtok()->kind == TK_LBRACKET) {
@@ -2011,15 +2024,20 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
         } else if (curtok()->kind == TK_DOT) {
           set_curtok(curtok()->next);
           token_ident_t *sm = tk_consume_ident();
-          if (!sm || cmi.tag_kind == TK_EOF)
+          token_kind_t cmi_tag_kind = TK_EOF;
+          char *cmi_tag_name = NULL;
+          int cmi_tag_len = 0;
+          psx_tag_member_decl_tag_identity(&cmi, &cmi_tag_kind, &cmi_tag_name,
+                                           &cmi_tag_len, NULL);
+          if (!sm || cmi_tag_kind == TK_EOF)
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
-          int container_is_union = (cmi.tag_kind == TK_UNION);
+          int container_is_union = (cmi_tag_kind == TK_UNION);
           int sub_ordinal = -1;
-          int sub_slot = psx_tag_member_designator_slot(cmi.tag_kind, cmi.tag_name, cmi.tag_len,
+          int sub_slot = psx_tag_member_designator_slot(cmi_tag_kind, cmi_tag_name, cmi_tag_len,
                                                         sm->str, sm->len, &sub_ordinal);
           if (sub_slot < 0 ||
-              !psx_ctx_get_tag_member_info(cmi.tag_kind, cmi.tag_name, cmi.tag_len,
+              !psx_ctx_get_tag_member_info(cmi_tag_kind, cmi_tag_name, cmi_tag_len,
                                            sub_ordinal, &cmi)) {
             psx_diag_ctx(curtok(), "decl", "%s",
                          diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));

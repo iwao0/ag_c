@@ -355,6 +355,37 @@ static void ctx_type_apply_regular_array_dims(psx_type_t **typep,
   *typep = nested;
 }
 
+static int ctx_type_collect_array_dims(const psx_type_t *type, int *dims, int max_dims) {
+  int n = 0;
+  for (const psx_type_t *cur = type;
+       cur && cur->kind == PSX_TYPE_ARRAY && n < max_dims;
+       cur = cur->base) {
+    dims[n++] = cur->array_len;
+  }
+  return n;
+}
+
+static int ctx_type_first_positive_field(const psx_type_t *type,
+                                         int (*field)(const psx_type_t *)) {
+  if (!type || !field) return 0;
+  int value = field(type);
+  if (value > 0) return value;
+  if (type->base) return ctx_type_first_positive_field(type->base, field);
+  return 0;
+}
+
+static int ctx_type_outer_stride_field(const psx_type_t *type) {
+  return type ? type->outer_stride : 0;
+}
+
+static int ctx_type_mid_stride_field(const psx_type_t *type) {
+  return type ? type->mid_stride : 0;
+}
+
+static int ctx_type_ptr_array_pointee_bytes_field(const psx_type_t *type) {
+  return type ? type->ptr_array_pointee_bytes : 0;
+}
+
 static psx_decl_funcptr_sig_t typedef_record_funcptr_sig(const typedef_name_t *t) {
   if (!t) return (psx_decl_funcptr_sig_t){0};
   if (t->decl_type && psx_decl_funcptr_sig_has_payload(t->decl_type->funcptr_sig))
@@ -662,13 +693,31 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
   if (!out || !type) return;
   out->decl_type = (psx_type_t *)type;
   int has_funcptr_sig = psx_decl_funcptr_sig_has_payload(type->funcptr_sig);
+  out->tag_kind = TK_EOF;
+  out->tag_name = NULL;
+  out->tag_len = 0;
+  out->is_tag_pointer = 0;
+  out->pointer_qual_levels = 0;
+  out->fp_kind = TK_FLOAT_KIND_NONE;
+  out->is_bool = 0;
+  out->is_unsigned = 0;
+  out->outer_stride =
+      ctx_type_first_positive_field(type, ctx_type_outer_stride_field);
+  out->mid_stride =
+      ctx_type_first_positive_field(type, ctx_type_mid_stride_field);
+  out->ptr_array_pointee_bytes =
+      ctx_type_first_positive_field(type, ctx_type_ptr_array_pointee_bytes_field);
+  if (type->kind == PSX_TYPE_ARRAY) {
+    int dims[8] = {0};
+    int n = ctx_type_collect_array_dims(type, dims, 8);
+    out->arr_ndim = n;
+    for (int i = 0; i < 8; i++) out->arr_dims[i] = i < n ? dims[i] : 0;
+  }
+  psx_tag_member_decl_tag_identity(out, &out->tag_kind, &out->tag_name,
+                                   &out->tag_len, &out->is_tag_pointer);
   if (type->kind == PSX_TYPE_POINTER) {
     out->pointer_qual_levels = ctx_type_pointer_levels(type);
   }
-  if (type->outer_stride > 0) out->outer_stride = type->outer_stride;
-  if (type->mid_stride > 0) out->mid_stride = type->mid_stride;
-  if (type->ptr_array_pointee_bytes > 0)
-    out->ptr_array_pointee_bytes = type->ptr_array_pointee_bytes;
 
   if (!has_funcptr_sig) {
     const psx_type_t *base = type;
@@ -701,17 +750,14 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
 static void tag_member_record_sync_cache_from_type(tag_member_t *m) {
   if (!m || !m->decl_type) return;
   tag_member_info_t view = {0};
-  view.tag_kind = m->member_tag_kind;
-  view.tag_name = m->member_tag_name;
-  view.tag_len = m->member_tag_len;
-  view.is_tag_pointer = m->member_is_tag_pointer;
-  view.pointer_qual_levels = m->pointer_qual_levels;
-  view.fp_kind = m->fp_kind;
-  view.is_bool = m->is_bool;
-  view.is_unsigned = m->is_unsigned;
+  view.type_size = m->type_size;
+  view.deref_size = m->deref_size;
+  view.array_len = m->array_len;
   view.outer_stride = m->outer_stride;
   view.mid_stride = m->mid_stride;
   view.ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
+  for (int i = 0; i < 8; i++) view.arr_dims[i] = m->arr_dims[i];
+  view.arr_ndim = m->arr_ndim;
   psx_ctx_tag_member_set_funcptr_sig(&view, tag_member_record_funcptr_sig(m));
   ctx_tag_member_info_apply_type(&view, m->decl_type);
 
@@ -725,6 +771,8 @@ static void tag_member_record_sync_cache_from_type(tag_member_t *m) {
   m->is_unsigned = view.is_unsigned;
   m->outer_stride = view.outer_stride;
   m->mid_stride = view.mid_stride;
+  for (int i = 0; i < 8; i++) m->arr_dims[i] = view.arr_dims[i];
+  m->arr_ndim = view.arr_ndim;
   m->ptr_array_pointee_bytes = view.ptr_array_pointee_bytes;
   tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(&view));
 }
