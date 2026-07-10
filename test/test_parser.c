@@ -5189,6 +5189,44 @@ static void test_type_metadata_bridge() {
                                                         &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, selected_union_member.fp_kind);
   selected_union_member = (tag_member_info_t){0};
+  selected_union_member.fp_kind = TK_FLOAT_KIND_FLOAT;
+  selected_union_member.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  ASSERT_TRUE(psx_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
+                                                        &tmp_union_init, 0,
+                                                        &selected_union_member));
+  ASSERT_TRUE(selected_union_member.name != NULL);
+  ASSERT_EQ(0, strncmp(selected_union_member.name, "f",
+                       (size_t)selected_union_member.len));
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, selected_union_member.fp_kind);
+  global_var_t tmp_member_value_gv = {0};
+  psx_gvar_init_slots_alloc(&tmp_member_value_gv, 1, 1);
+  tmp_member_value_gv.init_count = 1;
+  psx_gvar_init_slot_write(&tmp_member_value_gv, 0, 42, 3.5, NULL, 0);
+  tag_member_info_t tmp_member_value_double = {0};
+  tmp_member_value_double.type_size = 4;
+  tmp_member_value_double.fp_kind = TK_FLOAT_KIND_NONE;
+  tmp_member_value_double.decl_type =
+      psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  psx_gvar_init_member_value_t tmp_member_value =
+      psx_gvar_init_member_value(&tmp_member_value_gv, 0,
+                                 &tmp_member_value_double);
+  ASSERT_EQ(PSX_GVAR_INIT_VALUE_FLOAT, tmp_member_value.kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_member_value.fp_kind);
+  ASSERT_EQ(8, tmp_member_value.size);
+  global_var_t tmp_member_bool_gv = {0};
+  psx_gvar_init_slots_alloc(&tmp_member_bool_gv, 1, 0);
+  tmp_member_bool_gv.init_count = 1;
+  psx_gvar_init_slot_write(&tmp_member_bool_gv, 0, 7, 0.0, NULL, 0);
+  tag_member_info_t tmp_member_value_bool = {0};
+  tmp_member_value_bool.type_size = 4;
+  tmp_member_value_bool.is_bool = 0;
+  tmp_member_value_bool.decl_type = psx_type_new_integer(TK_BOOL, 1, 1);
+  tmp_member_value = psx_gvar_init_member_value(&tmp_member_bool_gv, 0,
+                                                &tmp_member_value_bool);
+  ASSERT_EQ(PSX_GVAR_INIT_VALUE_INTEGER, tmp_member_value.kind);
+  ASSERT_EQ(1, tmp_member_value.value);
+  ASSERT_EQ(1, tmp_member_value.size);
+  selected_union_member = (tag_member_info_t){0};
   ASSERT_TRUE(psx_tag_union_init_member_for_slot(TK_UNION, "FlatFpU", 7,
                                                  &tmp_union_init, 0,
                                                  &selected_union_member));
@@ -5507,6 +5545,62 @@ static void test_type_metadata_bridge() {
       psx_type_new_tag(TK_STRUCT, "__tm_member_decl_ptr_tag", 24, 0, 8), 8);
   ASSERT_TRUE(!psx_tag_member_is_tag_aggregate(&tmp_member_decl_ptr));
   ASSERT_TRUE(!psx_tag_member_is_unnamed_aggregate(&tmp_member_decl_ptr));
+  const char flat_decl_inner_tag[] = "__tm_flat_decl_inner";
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)flat_decl_inner_tag,
+                                      (int)sizeof(flat_decl_inner_tag) - 1,
+                                      2, 8, 4);
+  tag_member_info_t flat_decl_inner_a = {0};
+  flat_decl_inner_a.name = "a";
+  flat_decl_inner_a.len = 1;
+  flat_decl_inner_a.type_size = 4;
+  flat_decl_inner_a.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)flat_decl_inner_tag,
+                         (int)sizeof(flat_decl_inner_tag) - 1,
+                         &flat_decl_inner_a);
+  tag_member_info_t flat_decl_inner_b = {0};
+  flat_decl_inner_b.name = "b";
+  flat_decl_inner_b.len = 1;
+  flat_decl_inner_b.offset = 4;
+  flat_decl_inner_b.type_size = 4;
+  flat_decl_inner_b.decl_type = psx_type_new_integer(TK_INT, 4, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)flat_decl_inner_tag,
+                         (int)sizeof(flat_decl_inner_tag) - 1,
+                         &flat_decl_inner_b);
+  tag_member_info_t flat_decl_array_member = {0};
+  flat_decl_array_member.name = "arr";
+  flat_decl_array_member.len = 3;
+  flat_decl_array_member.type_size = 4;
+  flat_decl_array_member.array_len = 0;
+  flat_decl_array_member.tag_kind = TK_EOF;
+  flat_decl_array_member.decl_type = psx_type_new_array(
+      psx_type_new_tag(TK_STRUCT, (char *)flat_decl_inner_tag,
+                       (int)sizeof(flat_decl_inner_tag) - 1, 0, 8),
+      3, 24, 8, 0);
+  ASSERT_EQ(24, psx_type_sizeof(flat_decl_array_member.decl_type));
+  ASSERT_EQ(8, psx_type_sizeof(flat_decl_array_member.decl_type->base));
+  ASSERT_EQ(2, psx_tag_flat_slot_count(TK_STRUCT, (char *)flat_decl_inner_tag,
+                                       (int)sizeof(flat_decl_inner_tag) - 1));
+  ASSERT_EQ(6, psx_tag_member_flat_slots(&flat_decl_array_member));
+  ASSERT_EQ(2, psx_tag_member_elem_flat_slots(&flat_decl_array_member));
+  const char flat_decl_union_tag[] = "__tm_flat_decl_union";
+  psx_ctx_define_tag_type_with_layout(TK_UNION, (char *)flat_decl_union_tag,
+                                      (int)sizeof(flat_decl_union_tag) - 1,
+                                      2, 24, 8);
+  tag_member_info_t flat_decl_union_large = {0};
+  flat_decl_union_large.name = "large";
+  flat_decl_union_large.len = 5;
+  flat_decl_union_large.type_size = 20;
+  flat_decl_union_large.decl_type =
+      psx_type_new_array(psx_type_new_integer(TK_CHAR, 1, 0),
+                         20, 20, 1, 0);
+  psx_ctx_add_tag_member(TK_UNION, (char *)flat_decl_union_tag,
+                         (int)sizeof(flat_decl_union_tag) - 1,
+                         &flat_decl_union_large);
+  psx_ctx_add_tag_member(TK_UNION, (char *)flat_decl_union_tag,
+                         (int)sizeof(flat_decl_union_tag) - 1,
+                         &flat_decl_array_member);
+  ASSERT_EQ(6, psx_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
+                                       (int)sizeof(flat_decl_union_tag) - 1));
 
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;
@@ -6310,6 +6404,24 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, as_mem(member_arr_a_deref)->is_array_member);
   ASSERT_TRUE(psx_node_get_type(member_arr_a_deref) != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, psx_node_get_type(member_arr_a_deref)->kind);
+  tag_member_info_t member_arr_a_stale_info = member_arr_a_info;
+  member_arr_a_stale_info.type_size = 1;
+  member_arr_a_stale_info.deref_size = 1;
+  member_arr_a_stale_info.array_len = 0;
+  member_arr_a_stale_info.outer_stride = 0;
+  node_t *member_arr_a_stale_node = psx_node_new_tag_member_lvar_ref_for(
+      member_arr_h, member_arr_a_stale_info.offset, &member_arr_a_stale_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_arr_a_stale_node));
+  ASSERT_EQ(8, as_mem(member_arr_a_stale_node)->type_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_node)->deref_size);
+  ASSERT_EQ(1, as_mem(member_arr_a_stale_node)->is_array_member);
+  node_t *member_arr_a_stale_deref = psx_node_new_tag_member_deref_for(
+      psx_node_new_num(0), psx_node_new_lvar_for(member_arr_h),
+      &member_arr_a_stale_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_arr_a_stale_deref));
+  ASSERT_EQ(8, as_mem(member_arr_a_stale_deref)->type_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_deref)->deref_size);
+  ASSERT_EQ(1, as_mem(member_arr_a_stale_deref)->is_array_member);
 
   parsed_code = parse_program_input(
       "struct __tm_member_scalar { unsigned int u; _Bool b; _Atomic int a; "

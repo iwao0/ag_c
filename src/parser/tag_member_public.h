@@ -69,6 +69,105 @@ static inline void psx_ctx_tag_member_set_funcptr_sig(
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
 }
 
+static inline const psx_type_t *psx_tag_member_decl_value_type(
+    const tag_member_info_t *m) {
+  if (!m || !m->decl_type) return NULL;
+  const psx_type_t *type = m->decl_type;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  return type;
+}
+
+static inline int psx_tag_member_decl_value_size(const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type) {
+    int size = psx_type_sizeof(type);
+    if (size > 0) return size;
+  }
+  return m ? m->type_size : 0;
+}
+
+static inline int psx_tag_member_decl_storage_size(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type) {
+    int size = psx_type_sizeof(m->decl_type);
+    if (size > 0) return size;
+  }
+  int count = m->array_len > 0 ? m->array_len : 1;
+  return m->type_size * count;
+}
+
+static inline int psx_tag_member_decl_array_count(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type && m->decl_type->kind == PSX_TYPE_ARRAY) {
+    int elem_size = psx_tag_member_decl_value_size(m);
+    int total_size = psx_tag_member_decl_storage_size(m);
+    if (elem_size > 0 && total_size > 0 && total_size % elem_size == 0)
+      return total_size / elem_size;
+    if (m->decl_type->array_len > 0) return m->decl_type->array_len;
+  }
+  return m->array_len;
+}
+
+static inline tk_float_kind_t psx_tag_member_decl_fp_kind(
+    const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type) {
+    return (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)
+               ? type->fp_kind
+               : TK_FLOAT_KIND_NONE;
+  }
+  return m ? m->fp_kind : TK_FLOAT_KIND_NONE;
+}
+
+static inline int psx_tag_member_decl_is_bool(const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type) return type->kind == PSX_TYPE_BOOL;
+  return m && m->is_bool;
+}
+
+static inline int psx_tag_member_decl_is_pointer(const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type) return type->kind == PSX_TYPE_POINTER;
+  return m && m->is_tag_pointer;
+}
+
+static inline int psx_tag_member_decl_outer_stride(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type && m->decl_type->outer_stride > 0)
+    return m->decl_type->outer_stride;
+  if (m->decl_type && m->decl_type->kind == PSX_TYPE_ARRAY)
+    return psx_type_deref_size(m->decl_type);
+  return m->outer_stride;
+}
+
+static inline void psx_tag_member_decl_tag_identity(
+    const tag_member_info_t *m, token_kind_t *out_kind, char **out_name,
+    int *out_len, int *out_is_pointer) {
+  token_kind_t kind = m ? m->tag_kind : TK_EOF;
+  char *name = m ? m->tag_name : NULL;
+  int len = m ? m->tag_len : 0;
+  int is_pointer = m && m->is_tag_pointer;
+  if (m && m->decl_type) {
+    const psx_type_t *type = m->decl_type;
+    while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+    is_pointer = type && type->kind == PSX_TYPE_POINTER ? 1 : 0;
+    if (type && type->kind == PSX_TYPE_POINTER && type->base) type = type->base;
+    if (psx_type_is_tag_aggregate(type)) {
+      kind = type->tag_kind;
+      name = type->tag_name;
+      len = type->tag_len;
+    } else {
+      kind = TK_EOF;
+      name = NULL;
+      len = 0;
+    }
+  }
+  if (out_kind) *out_kind = kind;
+  if (out_name) *out_name = name;
+  if (out_len) *out_len = len;
+  if (out_is_pointer) *out_is_pointer = is_pointer;
+}
+
 bool psx_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
                                   tag_member_info_t *out);
 bool psx_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,

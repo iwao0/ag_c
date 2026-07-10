@@ -1271,15 +1271,16 @@ psx_gvar_init_member_value_t
 psx_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member) {
   psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, idx);
+  tk_float_kind_t member_fp_kind = psx_tag_member_decl_fp_kind(member);
   psx_gvar_init_member_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
       .symbol_ref = gvar_init_slot_symbol_ref(&slot),
       .value = slot.value,
       .fvalue = slot.fvalue,
       .fp_kind = TK_FLOAT_KIND_NONE,
-      .size = member ? member->type_size : 0,
+      .size = psx_tag_member_decl_value_size(member),
   };
-  if (member && member->is_bool) value.value = value.value != 0;
+  if (psx_tag_member_decl_is_bool(member)) value.value = value.value != 0;
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
     value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
     return value;
@@ -1290,9 +1291,9 @@ psx_gvar_init_member_value(const global_var_t *gv, int idx,
     value.size = value.fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 4;
     return value;
   }
-  if (member && member->fp_kind != TK_FLOAT_KIND_NONE) {
+  if (member_fp_kind != TK_FLOAT_KIND_NONE) {
     value.kind = PSX_GVAR_INIT_VALUE_FLOAT;
-    value.fp_kind = member->fp_kind;
+    value.fp_kind = member_fp_kind;
   }
   return value;
 }
@@ -2095,9 +2096,9 @@ int psx_gvar_union_init_slot_ordinal(const global_var_t *gv, int idx) {
 }
 
 static int tag_member_fp_size(const tag_member_info_t *mi) {
-  if (!mi) return 0;
-  return mi->fp_kind == TK_FLOAT_KIND_FLOAT ? 4
-       : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
+  tk_float_kind_t fp_kind = psx_tag_member_decl_fp_kind(mi);
+  return fp_kind == TK_FLOAT_KIND_FLOAT ? 4
+       : fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
 }
 
 static const psx_type_t *tag_member_direct_tag_leaf_from_type(const tag_member_info_t *mi) {
@@ -2158,7 +2159,7 @@ void psx_tag_flat_cover_state_note(psx_tag_flat_cover_state_t *state,
   if (!state || !mi) return;
   if (psx_tag_member_is_unnamed_union(mi)) {
     state->covered_union_off = mi->offset;
-    state->covered_union_size = mi->type_size;
+    state->covered_union_size = psx_tag_member_decl_storage_size(mi);
     return;
   }
   int cover_off = 0;
@@ -2180,17 +2181,23 @@ int psx_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_
     if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
     if (!psx_tag_member_is_unnamed_aggregate(&mi)) continue;
     int start = base_off + mi.offset;
-    int end = start + mi.type_size;
+    int member_storage_size = psx_tag_member_decl_storage_size(&mi);
+    int end = start + member_storage_size;
     if (target_off < start || target_off >= end) continue;
     if (psx_tag_member_is_union_aggregate(&mi)) {
       if (out_off) *out_off = start;
-      if (out_size) *out_size = mi.type_size;
+      if (out_size) *out_size = member_storage_size;
       return 1;
     }
-    if (psx_tag_member_is_struct_aggregate(&mi) &&
-        psx_tag_find_unnamed_union_covering_offset(mi.tag_kind, mi.tag_name, mi.tag_len,
-                                                   start, target_off, out_off, out_size)) {
-      return 1;
+    if (psx_tag_member_is_struct_aggregate(&mi)) {
+      const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(&mi);
+      token_kind_t child_kind = leaf ? leaf->tag_kind : mi.tag_kind;
+      char *child_name = leaf ? leaf->tag_name : mi.tag_name;
+      int child_len = leaf ? leaf->tag_len : mi.tag_len;
+      if (psx_tag_find_unnamed_union_covering_offset(child_kind, child_name, child_len,
+                                                     start, target_off, out_off, out_size)) {
+        return 1;
+      }
     }
   }
   return 0;
@@ -2200,16 +2207,22 @@ int psx_tag_member_flat_slots(const tag_member_info_t *mi) {
   if (psx_tag_member_is_unnamed_struct(mi)) return 0;
   int per = 1;
   if (psx_tag_member_is_tag_aggregate(mi)) {
-    per = psx_tag_flat_slot_count(mi->tag_kind, mi->tag_name, mi->tag_len);
+    const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(mi);
+    token_kind_t tag_kind = leaf ? leaf->tag_kind : mi->tag_kind;
+    char *tag_name = leaf ? leaf->tag_name : mi->tag_name;
+    int tag_len = leaf ? leaf->tag_len : mi->tag_len;
+    per = psx_tag_flat_slot_count(tag_kind, tag_name, tag_len);
   }
-  return (mi && mi->array_len > 0) ? mi->array_len * per : per;
+  int count = psx_tag_member_decl_array_count(mi);
+  return count > 0 ? count * per : per;
 }
 
 int psx_tag_member_elem_flat_slots(const tag_member_info_t *mi) {
   if (!mi) return 1;
   int total = psx_tag_member_flat_slots(mi);
-  if (mi->array_len > 0) {
-    int per = total / mi->array_len;
+  int count = psx_tag_member_decl_array_count(mi);
+  if (count > 0) {
+    int per = total / count;
     return per > 0 ? per : 1;
   }
   return total > 0 ? total : 1;
@@ -2236,8 +2249,7 @@ int psx_tag_flat_slot_count(token_kind_t tag_kind, char *tag_name, int tag_len) 
     if (!psx_ctx_get_tag_member_info(tag_kind, tag_name, tag_len, i, &mi)) break;
     if (tag_kind == TK_UNION) {
       int ms = psx_tag_member_flat_slots(&mi);
-      int count = mi.array_len > 0 ? mi.array_len : 1;
-      int bytes = mi.type_size * count;
+      int bytes = psx_tag_member_decl_storage_size(&mi);
       if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
         union_max_bytes = bytes;
         slots = ms;
@@ -2387,7 +2399,7 @@ int psx_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int ta
     if (psx_tag_member_is_unnamed_union(&mi)) {
       covered_union_slot = slot;
       covered_union_off = mi.offset;
-      covered_union_size = mi.type_size;
+      covered_union_size = psx_tag_member_decl_storage_size(&mi);
       slot += psx_tag_member_flat_slots(&mi);
       continue;
     }
@@ -6403,13 +6415,14 @@ node_t *psx_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
   node_mem_t *deref = arena_alloc(sizeof(node_mem_t));
   deref->base.kind = ND_DEREF;
   deref->base.lhs = addr;
-  int mem_size = info->type_size;
-  int mem_array_len = info->array_len;
-  int mem_is_ptr = info->is_tag_pointer;
-  deref->type_size = mem_size ? mem_size : 8;
+  int mem_size = psx_tag_member_decl_value_size(info);
+  int mem_array_len = psx_tag_member_decl_array_count(info);
+  int mem_storage_size = psx_tag_member_decl_storage_size(info);
+  int mem_is_ptr = psx_tag_member_decl_is_pointer(info);
+  deref->type_size = mem_storage_size ? mem_storage_size : (mem_size ? mem_size : 8);
   deref->deref_size = info->deref_size;
   if (mem_array_len > 0 && mem_size > 0) {
-    deref->type_size = mem_size * mem_array_len;
+    deref->type_size = mem_storage_size > 0 ? mem_storage_size : mem_size * mem_array_len;
     deref->deref_size = mem_size;
     deref->is_pointer = 1;
     deref->is_array_member = 1;

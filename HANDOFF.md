@@ -21418,3 +21418,179 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     raw cache ではなく canonical type を正本として使うようになった。
   - 次は `tag_member_fp_size()` など、union member selection に残る scalar raw cache 優先経路を
     `decl_type` leaf 判定へ寄せられるか確認するのが候補。
+
+### このセッション（続き881）: tag member scalar/initializer view を decl_type leaf 判定へ補正
+- 見つかった浅い箇所:
+  - `tag_member_fp_size()` は raw `tag_member_info_t.fp_kind` だけを見ており、
+    union initializer の member selection が stale raw FP metadata に引きずられる余地があった。
+  - `psx_gvar_init_member_value()` も raw `type_size` / `is_bool` / `fp_kind` を直接読み、
+    backend へ渡す初期化値 view が `decl_type` canonical view とズレる可能性が残っていた。
+- 根本対応:
+  - `tag_member_decl_value_type()` / `tag_member_value_size()` /
+    `tag_member_value_fp_kind()` / `tag_member_value_is_bool()` を追加し、
+    tag member の scalar value view は `decl_type` があれば配列を剥がした leaf type を正本として使うようにした。
+  - `tag_member_fp_size()` と `psx_gvar_init_member_value()` の両方をこの helper 経由にし、
+    selection と backend-facing initializer view で正本が再分散しないようにした。
+  - `test_type_metadata_bridge()` に、raw `fp_kind=FLOAT` だが `decl_type=int` の初期候補では
+    union FP member selection がそこで止まらず canonical candidate を選び直す確認を追加した。
+  - さらに raw `type_size=4` / `fp_kind=NONE` でも `decl_type=double` なら initializer value が
+    FLOAT/DOUBLE/size 8 になり、raw `is_bool=0` でも `decl_type=_Bool` なら value が 0/1 正規化され
+    size 1 になる直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - tag member の aggregate 判定、union FP member selection、global aggregate initializer の
+    member value view は `decl_type` がある場合 canonical type を正本にするようになった。
+  - 次は `psx_tag_member_flat_slots()` / `psx_tag_flat_cover_state_note()` など、
+    aggregate flattening に残る `type_size` / `array_len` raw storage 依存を、`decl_type` から
+    element count/size を補える形にできるか確認するのが候補。
+
+### このセッション（続き882）: tag member flat layout を decl_type storage/tag identity 優先へ補正
+- 見つかった浅い箇所:
+  - `psx_tag_member_flat_slots()` は `decl_type` で direct tag aggregate と判定できても、
+    inner tag の slot count を取るときは raw `tag_kind` / `tag_name` / `tag_len` を使っていた。
+  - `psx_tag_flat_slot_count()` の union 最大 member 判定や anonymous union cover 判定は
+    raw `type_size * array_len` / raw `type_size` を使っており、`decl_type` に正しい array size や
+    aggregate storage size があっても flattening layout が raw cache に引きずられる余地があった。
+- 根本対応:
+  - `tag_member_storage_size()` / `tag_member_array_count()` を追加し、
+    `decl_type` がある場合は `psx_type_sizeof(decl_type)` と leaf value size から
+    storage bytes / element count を算出するようにした。
+  - `psx_tag_member_flat_slots()` / `psx_tag_member_elem_flat_slots()` /
+    `psx_tag_flat_slot_count()` / `psx_tag_flat_cover_state_note()` /
+    `psx_tag_find_unnamed_union_covering_offset()` / `psx_tag_member_designator_slot()` を
+    helper 経由へ寄せた。
+  - `psx_tag_member_flat_slots()` と unnamed struct recursion は、`decl_type` の direct tag leaf があれば
+    leaf の `tag_kind` / `tag_name` / `tag_len` を使うようにした。
+  - `test_type_metadata_bridge()` に、raw `array_len=0` / `type_size=4` / `tag_kind=EOF` でも
+    `decl_type=struct Inner[3]` なら flat slots が 6、element flat slots が 2 になる直接テストを追加した。
+  - さらに union 内で raw storage では小さい member が、`decl_type` storage では最大になる場合に
+    `psx_tag_flat_slot_count()` が canonical member の slot count を選ぶ確認を追加した。
+- 確認:
+  - `make -j4 build/test_parser` の後に `./build/test_parser` = **OK: All unit tests passed**
+  - 注意: 一度 `make` と `./build/test_parser` を並列に走らせて古い test binary を読んだため失敗したが、
+    依存関係どおり直列に回し直して pass を確認済み。
+- 現状:
+  - tag member の aggregate 判定、scalar value view、initializer member value、flat layout/count は、
+    `decl_type` がある場合 canonical type を正本として使う範囲が広がった。
+  - 次は `psx_node_new_tag_member_deref_for()` の先頭初期化や `parse_member_initializer()` 呼び出し側など、
+    tag member の `type_size` / `array_len` raw 引数を渡している構築経路が
+    `decl_type` 同期で十分閉じているか確認するのが候補。
+
+### このセッション（続き883）: tag member deref node の初期 layout を decl_type helper へ寄せる
+- 見つかった浅い箇所:
+  - `psx_node_new_tag_member_deref_for()` は後段で `decl_type` 同期を行っていたが、
+    関数先頭の `mem_size` / `mem_array_len` / `mem_is_ptr` は raw
+    `tag_member_info_t.type_size` / `array_len` / `is_tag_pointer` から作っていた。
+  - 現状は後段同期で多くの値が上書きされるが、途中分岐や将来追加される metadata が
+    raw 初期値に引きずられる余地が残り、node 構築経路内で正本が分散していた。
+- 根本対応:
+  - `tag_member_value_is_pointer()` を追加し、`decl_type` があれば配列を剥がした value type が
+    pointer かどうかを canonical に判定するようにした。
+  - `psx_node_new_tag_member_deref_for()` の初期 `mem_size` / `mem_array_len` /
+    storage size / pointer 判定を、既存の `tag_member_value_size()` /
+    `tag_member_array_count()` / `tag_member_storage_size()` /
+    `tag_member_value_is_pointer()` 経由に変更した。
+  - `test_type_metadata_bridge()` に、raw `type_size=1` / `deref_size=1` /
+    `array_len=0` / `outer_stride=0` でも `decl_type=int[2]` を持つ tag member なら、
+    lvar ref と deref node の `type_size=8` / `deref_size=4` /
+    `is_array_member=1` が復元される直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - tag member の node 構築経路でも、`decl_type` がある場合の array/pointer/value layout は
+    raw cache ではなく canonical helper から初期化される。
+  - 次は `decl.c` の `parse_member_initializer()` 呼び出し側に残る
+    `info.type_size` / `info.array_len` / `info.fp_kind` raw 引数を、
+    tag member info 全体または canonical view helper 経由にできるか確認するのが候補。
+
+### このセッション（続き884）: parse_member_initializer の入口を tag_member_info_t canonical view に集約
+- 見つかった浅い箇所:
+  - `parse_member_initializer()` は `tag_member_info_t` を呼び出し側で
+    `offset` / `type_size` / `tag_kind` / `tag_name` / `tag_len` /
+    `is_tag_pointer` / `array_len` / `outer_stride` / `is_bool` /
+    `fp_kind` / `arr_dims` / `arr_ndim` に分解して受け取っていた。
+  - そのため呼び出し側が raw cache field を並べる形になり、`decl_type` からの canonical view を
+    どこで作るべきかが分散していた。
+- 根本対応:
+  - 既存本体を `parse_member_initializer_raw()` として残し、外向き入口を
+    `parse_member_initializer(lvar_t *owner, const tag_member_info_t *info)` に変更した。
+  - `tag_member_decl_leaf_type()` / `tag_member_decl_value_size()` /
+    `tag_member_decl_storage_size()` / `tag_member_decl_array_count()` /
+    `tag_member_decl_tag_identity()` / `tag_member_decl_fp_kind()` /
+    `tag_member_decl_is_bool()` / `tag_member_decl_outer_stride()` を追加し、
+    `decl_type` がある場合は initializer 用の size/count/tag/scalar view を入口で canonical 化するようにした。
+  - `parse_struct_initializer()` / `struct_member_elision()` /
+    `parse_struct_member_no_brace()` / `parse_union_initializer()` からの 5 箇所の呼び出しを
+    `parse_member_initializer(owner, &info)` へ置き換え、呼び出し側の raw 分解引数を削除した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - この変更は static な decl.c 内部経路の構造集約なので、直接 stale raw unit test は追加せず、
+    既存 parser initializer ケース全体を `test_parser` で通して回帰確認した。
+- 現状:
+  - tag member initializer の入口は `tag_member_info_t` 全体を受け取り、
+    `decl_type` canonical view を 1 箇所で作る構造になった。
+  - まだ `decl.c` には `append_unassigned_scalar_zero_fills()` や nested designator 周辺で
+    `info.type_size` / `info.array_len` を直接読む箇所が残っているため、
+    次はそこを同じ canonical helper へ寄せるのが候補。
+
+### このセッション（続き885）: decl.c の zero-fill / nested designator / copy 経路を canonical helper へ寄せる
+- 見つかった浅い箇所:
+  - `build_struct_copy_chain_from_source()` は raw `info.array_len` / `info.type_size` で
+    member 全体サイズと scalar assign 可否を決めていた。
+  - `append_unassigned_scalar_zero_fills()` は raw `info.type_size` / `info.array_len` /
+    `info.tag_kind` で zero-fill 対象を判定していた。
+  - nested designator は raw `cur_info.tag_kind` / `tag_name` / `tag_len` から
+    内側 owner を作り、subscript stride も raw `type_size` / `arr_dims` に寄っていた。
+  - union initializer の `.member[idx]` も raw `info.array_len` / `is_tag_pointer` で
+    array designator 可否と bounds を判定していた。
+- 根本対応:
+  - `tag_member_decl_*` helper の forward declaration を追加し、`build_struct_copy_chain_from_source()` でも
+    `tag_member_decl_storage_size()` / `tag_member_decl_value_size()` /
+    `tag_member_decl_array_count()` を使うようにした。
+  - `append_unassigned_scalar_zero_fills()` は canonical value size / array count /
+    `psx_tag_member_is_tag_aggregate()` で対象を判定するようにした。
+  - nested designator の current dim / stride / 内側 owner tag identity / aggregate leaf size を
+    `tag_member_decl_*` helper 経由にした。
+  - union initializer の `.member[idx]` は canonical array count と canonical pointer 判定で
+    array designator 可否・bounds を見るようにした。
+  - `build_nested_array_designator_assign()` と `wrap_member_init_as_assign()` も
+    canonical value size / FP kind / bool / array count を使うようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `rg -n "info\\.(type_size|array_len|outer_stride|fp_kind|is_bool|is_tag_pointer|tag_kind)|cur_info\\.(type_size|tag_kind|array_len)" src/parser/decl.c`
+    で、実質的な raw metadata 直読みは消え、残りは `{info,sub_info}.tag_kind = TK_EOF` の初期化だけになった。
+- 現状:
+  - `decl.c` の tag member initializer / nested designator / copy / zero-fill 周辺は、
+    `decl_type` がある場合 canonical helper を正本にする構造へかなり寄った。
+  - 次は `node_utils.c` と `decl.c` に似た `tag_member_*` helper が重複し始めているため、
+    helper を public/internal utility として集約できるか、または先に commit してから整理するのが候補。
+
+### このセッション（続き886）: tag member canonical helper を tag_member_public.h に集約
+- 見つかった浅い箇所:
+  - `decl.c` と `node_utils.c` に、`decl_type` から value size / storage size /
+    array count / fp kind / bool / pointer / tag identity を読む helper が別々に増え始めていた。
+  - 正本を `decl_type` に寄せる途中で helper 実装まで分散すると、次に raw cache field へ戻る経路や、
+    片方だけ修正される保守リスクが残る。
+- 根本対応:
+  - `src/parser/tag_member_public.h` に `psx_tag_member_decl_*` static inline helper を追加し、
+    tag member の canonical view を 1 箇所にまとめた。
+  - `decl.c` 側の local helper 定義と forward declaration を削除し、initializer /
+    zero-fill / nested designator / copy 経路は共通 helper を使うようにした。
+  - `node_utils.c` 側の local helper 定義も削除し、flat layout / union cover /
+    member deref node / global initializer value 経路を同じ共通 helper に寄せた。
+- 確認:
+  - `rg -n "tag_member_(decl_value_type|value_size|storage_size|array_count|value_fp_kind|value_is_bool|value_is_pointer)|static .*psx_tag_member_decl" src/parser/decl.c src/parser/node_utils.c src/parser/tag_member_public.h`
+    で、共通 helper 以外の重複定義が残っていないことを確認した。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - tag member の canonical metadata helper は `tag_member_public.h` が正本になり、
+    `decl.c` と `node_utils.c` の両方が同じ helper を使う構造になった。
+  - まだ repo 全体では `tag_member_info_t` raw field の reader が残っている可能性があるため、
+    次は `semantic_ctx.c` の cache sync や `struct_layout.c` の construction 側など、
+    「raw cache を作る/同期する境界」と「canonical view を読む境界」を分けて監査するのが候補。
