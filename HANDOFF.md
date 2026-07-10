@@ -21833,3 +21833,99 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     stale tag-pointer cache が scalar 型を direct tag aggregate に変える経路を塞いだ。
   - 次は lvar/gvar の unsigned/bool/fp/pointee flags について、同じく
     materialize/refresh 境界で raw cache 単独に依存している箇所を監査するのが候補。
+
+### このセッション（続き894）: decl_type 同期で stale pointee fp/bool/unsigned を明示クリア
+- 見つかった浅い箇所:
+  - `sync_pointee_flags_mem_from_type()` は `decl_type` に pointee がない場合に何もせず戻るため、
+    先に raw `lvar_t` / `global_var_t` から入れた `pointee_is_bool` /
+    `pointee_is_unsigned` / `pointee_is_void` が scalar node に残る余地があった。
+  - `sync_gvar_ref_mem_from_decl_type()` / `sync_lvar_identifier_mem_from_decl_type()` /
+    `sync_pointer_cast_mem_from_type()` / `sync_tag_member_mem_from_decl_type()` は、
+    `type_deep_pointee_fp_kind()` が none のとき raw `pointee_fp_kind` や tag member fp に
+    fallback していた。`decl_type` がある場合は「pointee fp なし」も正本なので、
+    stale raw fp が残る原因になる。
+  - `type_deep_pointee_fp_kind()` は scalar float 自体にも fp kind を返しており、
+    scalar `double` の node に `pointee_fp_kind=double` が再注入される状態だった。
+- 根本対応:
+  - `sync_pointee_flags_mem_from_type()` は最初に pointee bool/unsigned/void を 0 に戻し、
+    pointer/array の pointee がある場合だけ `psx_type_t` から再設定するようにした。
+  - `sync_scalar_mem_from_decl_type()` は scalar 型同期時に `pointee_fp_kind` と
+    pointee flags を明示クリアするようにした。
+  - `type_deep_pointee_fp_kind()` を pointer/array view 入力専用に狭め、
+    scalar float 自体を pointee fp として返さないようにした。
+  - `decl_type` がある同期境界では raw pointee fp fallback をやめ、
+    `type_deep_pointee_fp_kind(decl_type)` の結果をそのまま正本として入れるようにした。
+  - `test_type_metadata_bridge()` では gvar/lvar の scalar `decl_type=double` と
+    pointer-to-int `decl_type` に stale raw pointee fp/bool/unsigned を混ぜ、
+    node 生成後にすべて clear されることを確認するケースを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass / up to date**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar/gvar/tag-member から node_mem へ同期する主要経路で、
+    `decl_type` がある場合の pointee fp/bool/unsigned は raw cache ではなく
+    `psx_type_t` 側の有無を正本として扱うようになった。
+  - 次は array address metadata (`psx_node_init_lvar_array_addr_metadata` /
+    `psx_node_init_gvar_array_addr_metadata`) に残る raw fallback を、`decl_type` 由来の
+    decay pointer view へさらに寄せられるか監査するのが候補。
+
+### このセッション（続き895）: array address metadata を decay pointer view から上書き同期
+- 見つかった浅い箇所:
+  - `psx_node_init_gvar_array_addr_metadata()` は raw `gv->fp_kind` /
+    `gv->pointee_fp_kind` / `gv->pointee_is_bool` / `gv->pointee_is_unsigned` を入れたあと、
+    最後に `apply_array_addr_decl_type()` を呼んでいたが、helper 側は fp kind が none の場合に
+    明示クリアしていなかった。
+  - `psx_node_init_lvar_array_addr_metadata()` も `decl_type` 由来の decay pointer view を作ったあとに
+    raw tag metadata を再注入しており、型がある場合でも raw tag identity が勝つ余地があった。
+  - つまり array address node では、`decl_type` があるのに stale raw cache が
+    pointer pointee metadata に残る経路がまだあった。
+- 根本対応:
+  - `apply_array_addr_decl_type()` は `type_deep_pointee_fp_kind(view)` の結果を none 含めて
+    `addr->pointee_fp_kind` へ常に代入するようにした。
+  - 同 helper で `sync_pointee_flags_mem_from_type()` と `sync_tag_mem_from_decl_type()` を呼び、
+    decay pointer view から pointee flags と tag identity をまとめて同期するようにした。
+  - lvar array address 初期化では raw tag metadata を入れたあと、`base.type` がある場合に
+    `sync_tag_mem_from_decl_type()` で型正本へ戻すようにした。
+  - `test_type_metadata_bridge()` に global/local/static-local の `int[]` array address ケースを追加し、
+    raw fp/bool/unsigned cache を stale にしても address node の pointee metadata が
+    `decl_type` 由来の non-fp/signed-int に戻ることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar/gvar/tag-member の通常 node 生成だけでなく、array address node でも
+    `decl_type` がある場合は raw cache より decay pointer view を正本として扱う範囲が広がった。
+  - 次は compound gvar/lvar array address の tag/pointee metadata と、
+    `node_mem_t` 内の cached `base.type` なし経路を分けて監査するのが候補。
+
+### このセッション（続き896）: compound array address でも canonical decay view を確認
+- 見つかった浅い箇所:
+  - 続き895で `apply_array_addr_decl_type()` を decay pointer view 同期の正本へ寄せたが、
+    compound literal の lvar/gvar array address 経路では、初期化関数に raw tag metadata や
+    raw pointee cache を入れてから helper を呼ぶ形が残っていた。
+  - `psx_node_new_compound_lvar_array_addr_for()` /
+    `psx_node_new_compound_gvar_array_addr_for()` は wrapper 側でも canonical type を再適用するため、
+    実動作上は型正本へ戻るはずだが、stale raw tag/fp/bool/unsigned が負けることを直接押さえる
+    テストがなかった。
+- 根本対応:
+  - `test_type_metadata_bridge()` の compound literal array section に `int[3]` の local/global
+    compound array address ケースを追加した。
+  - lvar 側は wrapper に stale `TK_STRUCT` tag identity を渡し、さらに raw fp/bool/unsigned
+    pointee cache を汚したうえで、address node の tag identity と pointee metadata が
+    `decl_type` 由来の non-tag / non-fp / signed int に戻ることを確認した。
+  - gvar 側も compound literal backing global の raw tag/fp/bool/unsigned cache を汚し、
+    compound gvar array address が canonical array type から decay した pointer view を正本にすることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass / up to date**
+  - `git diff --check` = **pass**
+- 現状:
+  - 通常 lvar/gvar/static-local array address に加え、compound literal の lvar/gvar array address でも
+    `decl_type` / canonical type がある場合は raw cache より decay pointer view が勝つことを確認済み。
+  - 次は `base.type` がない fallback 専用経路を、型正本が本当に存在しない場合だけに限定できているか
+    監査するのが候補。

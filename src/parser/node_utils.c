@@ -1416,6 +1416,9 @@ static const psx_type_t *type_pointee_value_type(const psx_type_t *type) {
 static void sync_pointee_flags_mem_from_type(node_mem_t *mem,
                                              const psx_type_t *type) {
   if (!mem) return;
+  mem->pointee_is_unsigned = 0;
+  mem->pointee_is_bool = 0;
+  mem->pointee_is_void = 0;
   const psx_type_t *pointee_value_type = type_pointee_value_type(type);
   if (!pointee_value_type) return;
   mem->pointee_is_unsigned = psx_type_is_unsigned(pointee_value_type) ? 1 : 0;
@@ -1435,6 +1438,10 @@ static void sync_scalar_mem_from_decl_type(node_mem_t *mem,
   mem->base.is_unsigned = psx_type_is_unsigned(type) ? 1 : 0;
   mem->base.is_complex = type->kind == PSX_TYPE_COMPLEX ? 1 : 0;
   mem->base.is_atomic = type->is_atomic ? 1 : 0;
+  mem->pointee_fp_kind = TK_FLOAT_KIND_NONE;
+  mem->pointee_is_unsigned = 0;
+  mem->pointee_is_bool = 0;
+  mem->pointee_is_void = 0;
   mem->is_unsigned = psx_type_is_unsigned(type) ? 1 : 0;
   mem->is_bool = type->kind == PSX_TYPE_BOOL ? 1 : 0;
   mem->is_complex = type->kind == PSX_TYPE_COMPLEX ? 1 : 0;
@@ -3700,6 +3707,7 @@ static int type_carries_ptr_array_pointee_after_deref(const psx_type_t *type) {
 }
 
 static tk_float_kind_t type_deep_pointee_fp_kind(const psx_type_t *type) {
+  if (!type_is_pointer_view_type(type)) return TK_FLOAT_KIND_NONE;
   const psx_type_t *cur = type;
   while (type_is_pointer_view_type(cur)) {
     if (cur->pointee_fp_kind != TK_FLOAT_KIND_NONE) return cur->pointee_fp_kind;
@@ -4197,11 +4205,7 @@ static void sync_gvar_ref_mem_from_decl_type(node_mem_t *mem,
   if (decl_type->ptr_array_pointee_bytes > 0)
     mem->ptr_array_pointee_bytes = decl_type->ptr_array_pointee_bytes;
 
-  tk_float_kind_t pointee_fp_kind = type_deep_pointee_fp_kind(decl_type);
-  if (pointee_fp_kind == TK_FLOAT_KIND_NONE && gv)
-    pointee_fp_kind = gv->pointee_fp_kind;
-  if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
-    mem->pointee_fp_kind = (unsigned int)pointee_fp_kind;
+  mem->pointee_fp_kind = (unsigned int)type_deep_pointee_fp_kind(decl_type);
   sync_pointee_flags_mem_from_type(mem, decl_type);
   if (psx_decl_funcptr_sig_has_payload(decl_type->funcptr_sig))
     node_mem_store_funcptr_signature(mem, &decl_type->funcptr_sig);
@@ -4395,10 +4399,9 @@ static void apply_array_addr_decl_type(node_mem_t *addr, psx_type_t *array_type)
   }
   if (!view) return;
   addr->base.type = view;
-  tk_float_kind_t pointee_fp_kind = type_deep_pointee_fp_kind(view);
-  if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
-    addr->pointee_fp_kind = (unsigned int)pointee_fp_kind;
+  addr->pointee_fp_kind = (unsigned int)type_deep_pointee_fp_kind(view);
   sync_pointee_flags_mem_from_type(addr, view);
+  sync_tag_mem_from_decl_type(addr, view);
   if (view->ptr_array_pointee_bytes > 0)
     addr->ptr_array_pointee_bytes = view->ptr_array_pointee_bytes;
   int base_deref_size = type_pointer_view_base_deref_size(view, 1);
@@ -4433,6 +4436,8 @@ static void init_lvar_array_addr_metadata_with_decl_type(node_mem_t *addr,
   addr->tag_len = var->tag_len;
   addr->tag_scope_depth_p1 = var->tag_scope_depth_p1;
   addr->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  if (addr->base.type)
+    sync_tag_mem_from_decl_type(addr, addr->base.type);
   addr->is_const_qualified = var->is_const_qualified ? 1 : 0;
   addr->is_volatile_qualified = var->is_volatile_qualified ? 1 : 0;
 }
@@ -5715,11 +5720,8 @@ static void sync_lvar_identifier_mem_from_decl_type(node_lvar_t *node,
   int type_size = is_pointer ? 8 : psx_type_sizeof(decl_type);
   if (type_size > 0) node->mem.type_size = (short)type_size;
   node->mem.is_pointer = is_pointer ? 1 : 0;
-  tk_float_kind_t pointee_fp_kind = type_deep_pointee_fp_kind(decl_type);
-  if (pointee_fp_kind == TK_FLOAT_KIND_NONE && var)
-    pointee_fp_kind = var->pointee_fp_kind;
-  if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
-    node->mem.pointee_fp_kind = (unsigned int)pointee_fp_kind;
+  node->mem.pointee_fp_kind =
+      (unsigned int)type_deep_pointee_fp_kind(decl_type);
   sync_pointee_flags_mem_from_type(&node->mem, decl_type);
   sync_scalar_mem_from_decl_type(&node->mem, decl_type);
   if (!is_pointer) return;
@@ -5951,9 +5953,7 @@ static void sync_pointer_cast_mem_from_type(node_mem_t *mem, psx_type_t *type) {
     for (int i = extra_count; i < 5; i++) mem->extra_strides[i] = 0;
   }
 
-  tk_float_kind_t pointee_fp_kind = type_deep_pointee_fp_kind(type);
-  if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
-    mem->pointee_fp_kind = (unsigned int)pointee_fp_kind;
+  mem->pointee_fp_kind = (unsigned int)type_deep_pointee_fp_kind(type);
   sync_pointee_flags_mem_from_type(mem, type);
   sync_tag_mem_from_decl_type(mem, type);
 }
@@ -7307,11 +7307,7 @@ static void sync_tag_member_mem_from_decl_type(node_mem_t *mem,
   if (type->ptr_array_pointee_bytes > 0)
     mem->ptr_array_pointee_bytes = type->ptr_array_pointee_bytes;
 
-  tk_float_kind_t pointee_fp_kind = type_deep_pointee_fp_kind(type);
-  if (pointee_fp_kind == TK_FLOAT_KIND_NONE && info)
-    pointee_fp_kind = psx_tag_member_decl_fp_kind(info);
-  if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
-    mem->pointee_fp_kind = (unsigned int)pointee_fp_kind;
+  mem->pointee_fp_kind = (unsigned int)type_deep_pointee_fp_kind(type);
   sync_pointee_flags_mem_from_type(mem, type);
   sync_tag_mem_from_decl_type(mem, type);
 }
