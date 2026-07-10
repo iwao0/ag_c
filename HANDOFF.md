@@ -22248,3 +22248,65 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     正本として残す経路を閉じた。
   - 次は `psx_node_new_param_lvar_for()` の ABI slot size と canonical mirror の境界が妥当か、
     もしくは `ND_ADDR` / call argument まわりで raw mirror を正本化後に再適用していないかを見るのが候補。
+
+### このセッション（続き908）: scalar parameter の ABI size と canonical type_size の混在を閉じた
+- 見つかった浅い箇所:
+  - `psx_node_new_param_lvar_for()` は `decl_type` がある scalar parameter でも、
+    `psx_node_new_lvar_typed_for(var, abi_type_size)` により mirror `type_size` に ABI slot size (=8) を
+    残していた。
+  - さらに通常 scalar parameter の登録が `psx_decl_register_lvar()` 経由だったため、
+    `unsigned char u` のような parameter の `lvar_t.decl_type` 自体も 8 byte scalar として作られる余地があった。
+  - parser 側コメントも「args[] には ABI サイズを type_size に持つ」となっており、
+    型正本と ABI 受け渡しサイズの責務が混ざっていた。
+- 根本対応:
+  - 通常 scalar parameter は `ds->elem_size` で `lvar_t` を登録し、`decl_type` 自体が宣言型サイズを
+    正本として持つようにした。
+  - `psx_node_new_param_lvar_for()` は `decl_type` がある非 pointer parameter では
+    `psx_type_sizeof(decl_type)` で mirror `type_size` を再同期するようにした。
+  - parser コメントを、AST の `args[]` は宣言型を正本にし、ABI 受け渡しサイズは IR 生成時に
+    owner/param metadata から判断する、という責務分離に更新した。
+  - regression として、synthetic stale pointer cache parameter、実 parse 由来の `unsigned char` / `int`
+    parameter が ABI 8 ではなく canonical `type_size` (1/4) を持つことを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_e2e` = **pass**
+  - `git diff --check` = **pass**
+  - 局所 e2e:
+    - `test/fixtures/type_decl/double_param_int_param_mix.c` を `./build/ag_c` -> `clang` -> 実行 = **pass**
+    - `test/fixtures/probes_found_bugs/fp_arg_to_int_param.c` を `./build/ag_c` -> `clang` -> 実行 = **pass**
+  - `./build/test_e2e` 全件は `probes/nested_struct_brace_elision.c` の既存 compile failure
+    (`E3064: スカラ初期化子の波括弧内は1要素のみ対応`) で停止。今回の parameter 正本化とは別件に見える。
+- 現状:
+  - scalar parameter では、`decl_type` / `lvar_t` / `node_mem_t.type_size` に ABI slot size が
+    正本として混入する経路を一段閉じた。
+  - 次は `ND_ADDR` / call argument / `psx_node_storage_type_size()` 周辺で、canonical type があるのに
+    raw mirror `type_size` / storage fallback を正本として扱う経路が残っていないかを見るのが候補。
+
+### このセッション（続き909）: storage type size でも canonical type を正本にした
+- 見つかった浅い箇所:
+  - `ps_node_type_size()` は canonical type を優先していたが、`psx_node_storage_type_size()` は
+    `mem->type_size == 8` かつ canonical scalar が小さい場合だけ補正し、それ以外は raw `mem->type_size` を
+    先に返していた。
+  - そのため `base.type=int64` が正本として存在しても、stale raw `mem->type_size=13` のような値が
+    storage helper から復活できた。
+- 根本対応:
+  - `psx_node_storage_type_size()` は `psx_node_get_type()` から得た canonical type の `psx_type_sizeof()` を
+    先に返し、canonical size が取れない legacy node の場合だけ raw `mem->type_size` へ fallback するようにした。
+  - 既存 regression の `typed_nonptr_stale_pointer_like` を、raw 13 ではなく canonical 8 を返す期待値へ更新した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_e2e` = **pass**
+  - `git diff --check` = **pass**
+  - 局所 e2e:
+    - `test/fixtures/type_decl/double_param_int_param_mix.c` を `./build/ag_c` -> `clang` -> 実行 = **pass**
+    - `test/fixtures/probes_found_bugs/fp_arg_to_int_param.c` を `./build/ag_c` -> `clang` -> 実行 = **pass**
+- 現状:
+  - value size だけでなく storage size helper でも、canonical type がある node では raw mirror size を
+    正本として扱う経路を閉じた。
+  - 次は `ND_ADDR` 生成直後に raw stride/type_size を入れてから canonical sync する箇所で、
+    canonical type がない場合だけ raw fallback できているか、また `call argument` で
+    `psx_node_storage_type_size()` の意味を ABI size として使っていないかを確認するのが候補。

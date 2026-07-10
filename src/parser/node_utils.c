@@ -3459,13 +3459,9 @@ int psx_node_storage_type_size(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = psx_node_get_type(node);
   node_mem_t *mem = node_mem_view(node);
-  if (type && !psx_type_is_pointer(type) && mem && mem->type_size == 8) {
-    int s = psx_type_sizeof(type);
-    if (s > 0 && s < mem->type_size) return s;
-  }
-  if (mem && mem->type_size > 0) return mem->type_size;
   int s = psx_type_sizeof(type);
   if (s > 0) return s;
+  if (mem && mem->type_size > 0) return mem->type_size;
   return ps_node_type_size(node);
 }
 
@@ -5837,6 +5833,11 @@ node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,
     node->mem.base.type = decl_type;
     sync_scalar_mem_from_decl_type(&node->mem, decl_type);
     sync_pointer_cast_mem_from_type(&node->mem, decl_type);
+    if (!lvar_identifier_is_pointer_like(var, decl_type)) {
+      int canonical_type_size = psx_type_sizeof(decl_type);
+      if (canonical_type_size > 0)
+        node->mem.type_size = (short)canonical_type_size;
+    }
   } else {
     node->mem.base.is_unsigned = is_unsigned ? 1 : 0;
     node->mem.is_unsigned = is_unsigned ? 1 : 0;

@@ -4098,7 +4098,8 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   }
   // スカラー型仮引数（既存の動作）
   {
-    lvar_t *var = psx_decl_register_lvar(param->str, param->len);
+    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len,
+                                               ds->elem_size, ds->elem_size, 0);
     psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                     ds->fp_kind, ds->is_unsigned,
                                     TK_EOF, NULL, 0, 0);
@@ -4189,8 +4190,8 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                                     var->is_tag_pointer);
   }
   (void)psx_lvar_refresh_decl_type(var);
-  // args[] には「ABIサイズ」を type_size に持つ ND_LVAR を格納
-  // codegen がレジスタ数（1 or 2）を判断するため
+  // args[] には宣言型を正本にした ND_LVAR を格納する。
+  // ABI の受け渡しサイズは IR 生成時に owner/param metadata から判断する。
   // 配列宣言子の struct パラメータ (`struct V arr[]`) はポインタに adjust される
   // ので、ABI サイズは 8 (pointer) であり struct_size ではない。
   int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0 &&
