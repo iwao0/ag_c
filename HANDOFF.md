@@ -22024,3 +22024,149 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     pointer-to-array/VLA payload 混入経路を塞いだ。
   - 次は tag member の `decl_type` 同期で `info` 側 raw outer_stride をまだ deref-size/stride に
     補っている箇所を、型正本へ移せるか監査するのが候補。
+
+### このセッション（続き900）: tag member stride 同期から raw info fallback を外した
+- 見つかった浅い箇所:
+  - `sync_tag_member_mem_from_decl_type()` は member `decl_type` がある場合でも、
+    `info` 側 raw `outer_stride` / `mid_stride` / `deref_size` を使って
+    pointer-to-array の inner stride を後から補正していた。
+  - `tag_member_ref_deref_size_from_type()` も canonical type の deref size より
+    `psx_tag_member_decl_outer_stride(info)` を優先でき、`decl_type` 同期経路に raw
+    member cache が混ざる余地が残っていた。
+  - raw fallback を外すと `int (*p)[3]` member の inner stride が 12 になり、
+    これまで raw `info->deref_size=4` が canonical type 解釈の穴を隠していたことが分かった。
+- 根本対応:
+  - `sync_tag_member_mem_from_decl_type()` の pointer/array branch でも
+    `clear_pointer_payload_mem()` を通し、raw pointer-to-array/VLA payload を明示クリアしてから
+    `psx_type_t` 由来の metadata だけを再設定するようにした。
+  - `tag_member_ref_deref_size_from_type()` から raw `info` outer-stride fallback を外し、
+    deref size は canonical type (`ptr_array_pointee_bytes` / `outer_stride` /
+    `psx_type_deref_size`) だけで決めるようにした。
+  - `node_pointer_stride_from_type()` に flattened pointer-to-array view
+    (`kind=POINTER`, `outer_stride > deref_size`, `mid_stride=0`) を型由来で解釈する分岐を追加し、
+    inner stride を raw `info->deref_size` ではなく `type->deref_size` から復元するようにした。
+  - array base を持つ pointer-to-array view では、array 全体の deref size ではなく
+    `sizeof(array) / array_len` を外側 1 要素 stride として使う helper に寄せた。
+    `psx_tag_member_decl_ptr_array_pointee_elem_size()` も同じ計算へ揃えた。
+  - `test_type_metadata_bridge()` に tag member pointer-to-array / array member へ
+    stale high raw `outer_stride=96` / `mid_stride=48` / `ptr_array_pointee_bytes=96` を混ぜ、
+    node の deref/base/inner stride と pointer payload が canonical `decl_type` view へ戻ることを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member node 同期でも、`decl_type` がある場合に raw `info` stride/pointer payload が
+    canonical type を補完・上書きする経路を塞いだ。
+  - 次は `node_pointer_stride_from_type()` / public helper 以外に、型があるのに raw storage cache を
+    後注入している reader が残っていないかを `psx_*_decl_*` helper と node sync の境界で確認するのが候補。
+
+### このセッション（続き901）: tag member array dim helper も decl_type 優先へ寄せた
+- 見つかった浅い箇所:
+  - `psx_tag_member_decl_array_dim_count()` / `psx_tag_member_decl_array_dim()` は
+    `decl_type` がある場合でも、raw `arr_ndim > 1` を先に見ていた。
+  - これだと続き886以降で tag member reader を public helper へ集約しても、
+    helper 自体が stale raw `arr_dims[]` を正本として返せる。
+  - index が `decl_type` の array chain 範囲外のときも raw `arr_dims[index]` へ落ちるため、
+    余分な stale 次元が復活する抜けがあった。
+- 根本対応:
+  - `psx_tag_member_decl_array_dim_count()` は `decl_type` の array chain から取れる次元数を
+    raw `arr_ndim` より優先するようにした。
+  - `psx_tag_member_decl_array_dim()` も `decl_type` の array chain を先に読み、
+    chain が存在していて index が範囲外なら raw fallback せず 0 を返すようにした。
+  - `test_type_metadata_bridge()` に、2D member の raw `arr_ndim/arr_dims` を
+    `3 / {9,8,7}` へ壊しても helper が `decl_type` 由来の `{2,3}` と範囲外 0 を返す確認を追加した。
+  - array member node の stale-high ケースにも raw `arr_ndim=2` / `arr_dims={9,8}` を混ぜ、
+    helper と node sync が canonical `decl_type` の 1D `{2}` を優先することを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member public helper の array dim 読みでも、`decl_type` がある場合に raw shape cache が
+    正本として復活する経路を塞いだ。
+  - 次は `psx_tag_member_decl_outer_stride()` / `psx_tag_member_decl_mid_stride()` /
+    `psx_tag_member_decl_ptr_array_pointee_bytes()` の fallback が、本当に `decl_type` なし専用に
+    なっているかを同じ方針で確認するのが候補。
+
+### このセッション（続き902）: tag member stride/ptr-array helper の raw fallback を decl_type なし専用へ閉じた
+- 見つかった浅い箇所:
+  - `psx_tag_member_decl_outer_stride()` / `psx_tag_member_decl_mid_stride()` /
+    `psx_tag_member_decl_ptr_array_pointee_bytes()` は、`decl_type` がある場合でも
+    canonical type から値が取れないと raw `outer_stride` / `mid_stride` /
+    `ptr_array_pointee_bytes` へ fallback していた。
+  - そのため plain `int *` member の `decl_type` が正本として存在していても、
+    stale raw pointer-to-array shape が helper 経由で復活できた。
+  - さらに `psx_tag_member_decl_array_dim_count()` は `decl_type` が array でない場合に
+    raw `arr_ndim` へ fallback でき、plain pointer が stale raw dims で配列扱いされる余地があった。
+- 根本対応:
+  - 上記 stride/ptr-array helper は、`decl_type` が存在する場合は canonical type から読める値だけを返し、
+    読めない場合は raw fallback せず 0 を返すようにした。
+  - flattened pointer-to-array view (`kind=POINTER`, `outer_stride > 0`) は型側の payload なので、
+    `psx_tag_member_decl_ptr_array_pointee_bytes()` では従来通り `decl_type` の `outer_stride` を返す。
+  - `psx_tag_member_decl_array_dim_count()` は `decl_type` があり array chain がない場合も raw fallback せず
+    0 を返すようにした。
+  - `test_type_metadata_bridge()` に `struct { int *p; }` の member `decl_type` へ stale raw
+    `outer_stride=96` / `mid_stride=48` / `ptr_array_pointee_bytes=96` / `arr_dims={9,8}` を混ぜ、
+    helper が 0 を返し、lvar-ref/deref node も plain pointer metadata に戻ることを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member public helper は、`decl_type` がある場合に raw shape cache を補完正本として読む経路を
+    かなり閉じた。
+  - 次は node/subscript/deref 側で `base.type` が canonical なときに、child node の raw
+    `ptr_array_pointee_bytes` / stride を後注入していないかを確認するのが候補。
+
+### このセッション（続き903）: unary deref pointer sync が raw ptr-array payload を type へ戻さないようにした
+- 見つかった浅い箇所:
+  - `sync_unary_deref_mem_from_pointer_type()` は `node->base.type` が canonical pointer type の場合でも、
+    `type->ptr_array_pointee_bytes` が 0 だと raw `node->ptr_array_pointee_bytes` を fallback として読み、
+    さらに `type->ptr_array_pointee_bytes` へ書き戻していた。
+  - これは `psx_type_t` を正本にする同期 helper が、逆に stale raw mirror を型正本へ注入できる構造だった。
+- 根本対応:
+  - `sync_unary_deref_mem_from_pointer_type()` では `ptr_array_pointee_bytes` を canonical type 由来の値だけで
+    mirror するようにし、type 側に値がない場合は node 側も 0 に戻すようにした。
+  - raw node mirror から `psx_type_t` へ `ptr_array_pointee_bytes` を書き戻す処理を撤去した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member helper に続き、unary deref の pointer type 同期でも raw pointer-to-array payload が
+    canonical type へ逆流する経路を塞いだ。
+  - 次は `psx_node_new_unary_deref_for()` 内に残る `lvar_t` raw `outer_stride` /
+    `ptr_array_pointee_bytes` 後注入ブロックを、`decl_type` がある場合に型由来へ寄せられるか確認するのが候補。
+
+### このセッション（続き904）: unary deref の lvar raw 後注入を decl_type なし専用へ閉じた
+- 見つかった浅い箇所:
+  - `psx_node_new_unary_deref_for()` には、operand/probe が `ND_LVAR` のときに
+    `lvar_t` 側 raw `outer_stride` / `mid_stride` / `ptr_array_pointee_bytes` を deref node へ
+    後注入するブロックが残っていた。
+  - そのため `decl_type=int *` が canonical 正本として存在していても、stale raw
+    pointer-to-array/VLA payload を deref 結果へ再混入できた。
+  - 単純に raw 後注入を止めると、`typedef int M[2][3][4]; M *p; *p` の末尾 stride `4` を
+    これまで raw `lvar->elem_size` で補っていたことも見えた。
+- 根本対応:
+  - `psx_node_new_unary_deref_for()` の raw `lvar_t` 後注入ブロックは、
+    operand/probe に canonical `base.type` がない場合だけ使うようにした。
+  - pointer-to-array の deref で追加 stride が尽きた場合は、raw lvar ではなく
+    canonical result array type の末端要素サイズから tail stride を補うようにした。
+  - `test_type_metadata_bridge()` に、`decl_type=int *` の lvar へ stale raw
+    `outer_stride=32` / `mid_stride=16` / `ptr_array_pointee_bytes=32` / VLA payload を混ぜても、
+    lvar ref と deref が canonical scalar/pointer view へ戻る確認を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - unary deref でも、canonical `decl_type` がある node に対して raw `lvar_t` mirror を
+    補完正本として後注入する経路を閉じた。
+  - 次は `psx_tag_member_decl_array_dim()` の `decl_type` 非 array 時の raw `arr_dims[index]` fallback や、
+    `ND_ADDR` / subscript 周辺で canonical type があるのに raw mirror を読む経路が残っていないかを確認するのが候補。

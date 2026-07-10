@@ -2521,6 +2521,16 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_ref)->next_deref_size);
   ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_ref)->vla_row_stride_frame_off);
   ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_ref)->vla_strides_remaining);
+  node_t *tmp_lvar_ptr_decl_type_deref =
+      psx_node_new_unary_deref_for(tmp_lvar_ptr_decl_type_ref);
+  ASSERT_TRUE(psx_node_get_type(tmp_lvar_ptr_decl_type_deref) ==
+              tmp_lvar_ptr_decl_type_wins.decl_type->base);
+  ASSERT_TRUE(!ps_node_is_pointer(tmp_lvar_ptr_decl_type_deref));
+  ASSERT_EQ(4, ps_node_type_size(tmp_lvar_ptr_decl_type_deref));
+  ASSERT_EQ(0, ps_node_deref_size(tmp_lvar_ptr_decl_type_deref));
+  ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_deref)->ptr_array_pointee_bytes);
+  ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_deref)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(tmp_lvar_ptr_decl_type_deref)->next_deref_size);
 
   parsed_code = parse_program_input(
       "int __tm_sig_f(int x){ return x; } "
@@ -6510,6 +6520,16 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, tag_member_desc_out.arr_dims[0]);
   ASSERT_EQ(3, tag_member_desc_out.arr_dims[1]);
   ASSERT_TRUE(tag_member_desc_out.is_unsigned);
+  tag_member_info_t tag_member_desc_stale_dims = tag_member_desc_out;
+  tag_member_desc_stale_dims.arr_ndim = 3;
+  tag_member_desc_stale_dims.arr_dims[0] = 9;
+  tag_member_desc_stale_dims.arr_dims[1] = 8;
+  tag_member_desc_stale_dims.arr_dims[2] = 7;
+  ASSERT_EQ(2, psx_tag_member_decl_array_dim_count(
+                   &tag_member_desc_stale_dims));
+  ASSERT_EQ(2, psx_tag_member_decl_array_dim(&tag_member_desc_stale_dims, 0));
+  ASSERT_EQ(3, psx_tag_member_decl_array_dim(&tag_member_desc_stale_dims, 1));
+  ASSERT_EQ(0, psx_tag_member_decl_array_dim(&tag_member_desc_stale_dims, 2));
 
   global_var_t gvar_view_sync = {0};
   gvar_view_sync.name = "__tm_gvar_view_sync";
@@ -6907,6 +6927,30 @@ static void test_type_metadata_bridge() {
       &member_ptrarr_p_stale_info);
   ASSERT_EQ(12, as_mem(member_ptrarr_p_stale_deref)->deref_size);
   ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_deref)->base_deref_size);
+  tag_member_info_t member_ptrarr_p_stale_hi_info = member_ptrarr_p_info;
+  member_ptrarr_p_stale_hi_info.deref_size = 1;
+  member_ptrarr_p_stale_hi_info.outer_stride = 96;
+  member_ptrarr_p_stale_hi_info.mid_stride = 48;
+  member_ptrarr_p_stale_hi_info.ptr_array_pointee_bytes = 96;
+  member_ptrarr_p_stale_hi_info.arr_ndim = 0;
+  for (int i = 0; i < 8; i++) member_ptrarr_p_stale_hi_info.arr_dims[i] = 0;
+  node_t *member_ptrarr_p_stale_hi_node = psx_node_new_tag_member_lvar_ref_for(
+      member_ptrarr_h, member_ptrarr_p_stale_hi_info.offset,
+      &member_ptrarr_p_stale_hi_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_ptrarr_p_stale_hi_node));
+  ASSERT_EQ(12, as_mem(member_ptrarr_p_stale_hi_node)->deref_size);
+  ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_hi_node)->base_deref_size);
+  ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_hi_node)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(member_ptrarr_p_stale_hi_node)->ptr_array_pointee_bytes);
+  node_t *member_ptrarr_p_stale_hi_deref = psx_node_new_tag_member_deref_for(
+      psx_node_new_num(0), psx_node_new_lvar_for(member_ptrarr_h),
+      &member_ptrarr_p_stale_hi_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_ptrarr_p_stale_hi_deref));
+  ASSERT_EQ(12, as_mem(member_ptrarr_p_stale_hi_deref)->deref_size);
+  ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_hi_deref)->base_deref_size);
+  ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_hi_deref)->inner_deref_size);
+  ASSERT_EQ(0,
+            as_mem(member_ptrarr_p_stale_hi_deref)->ptr_array_pointee_bytes);
 
   parsed_code = parse_program_input(
       "struct __tm_member_arr { int a[2]; }; "
@@ -6963,6 +7007,88 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, as_mem(member_arr_a_stale_deref)->type_size);
   ASSERT_EQ(4, as_mem(member_arr_a_stale_deref)->deref_size);
   ASSERT_EQ(1, as_mem(member_arr_a_stale_deref)->is_array_member);
+  tag_member_info_t member_arr_a_stale_hi_info = member_arr_a_info;
+  member_arr_a_stale_hi_info.type_size = 1;
+  member_arr_a_stale_hi_info.deref_size = 1;
+  member_arr_a_stale_hi_info.array_len = 0;
+  member_arr_a_stale_hi_info.outer_stride = 96;
+  member_arr_a_stale_hi_info.mid_stride = 48;
+  member_arr_a_stale_hi_info.ptr_array_pointee_bytes = 96;
+  member_arr_a_stale_hi_info.arr_ndim = 2;
+  for (int i = 0; i < 8; i++) member_arr_a_stale_hi_info.arr_dims[i] = 0;
+  member_arr_a_stale_hi_info.arr_dims[0] = 9;
+  member_arr_a_stale_hi_info.arr_dims[1] = 8;
+  ASSERT_EQ(1, psx_tag_member_decl_array_dim_count(
+                   &member_arr_a_stale_hi_info));
+  ASSERT_EQ(2, psx_tag_member_decl_array_dim(&member_arr_a_stale_hi_info, 0));
+  ASSERT_EQ(0, psx_tag_member_decl_array_dim(&member_arr_a_stale_hi_info, 1));
+  node_t *member_arr_a_stale_hi_node = psx_node_new_tag_member_lvar_ref_for(
+      member_arr_h, member_arr_a_stale_hi_info.offset,
+      &member_arr_a_stale_hi_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_arr_a_stale_hi_node));
+  ASSERT_EQ(8, as_mem(member_arr_a_stale_hi_node)->type_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_node)->deref_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_node)->base_deref_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_node)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(member_arr_a_stale_hi_node)->ptr_array_pointee_bytes);
+  ASSERT_EQ(1, as_mem(member_arr_a_stale_hi_node)->is_array_member);
+  node_t *member_arr_a_stale_hi_deref = psx_node_new_tag_member_deref_for(
+      psx_node_new_num(0), psx_node_new_lvar_for(member_arr_h),
+      &member_arr_a_stale_hi_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_arr_a_stale_hi_deref));
+  ASSERT_EQ(8, as_mem(member_arr_a_stale_hi_deref)->type_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_deref)->deref_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_deref)->base_deref_size);
+  ASSERT_EQ(4, as_mem(member_arr_a_stale_hi_deref)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(member_arr_a_stale_hi_deref)->ptr_array_pointee_bytes);
+  ASSERT_EQ(1, as_mem(member_arr_a_stale_hi_deref)->is_array_member);
+
+  parsed_code = parse_program_input(
+      "struct __tm_member_plain_ptr { int *p; }; "
+      "int main(void){ struct __tm_member_plain_ptr h; return 0; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *member_plain_ptr_h = find_func_lvar(fn, "h");
+  ASSERT_TRUE(member_plain_ptr_h != NULL);
+  tag_member_info_t member_plain_ptr_p_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(TK_STRUCT,
+                                           "__tm_member_plain_ptr", 21,
+                                           "p", 1,
+                                           &member_plain_ptr_p_info));
+  ASSERT_TRUE(member_plain_ptr_p_info.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, member_plain_ptr_p_info.decl_type->kind);
+  tag_member_info_t member_plain_ptr_p_stale_info = member_plain_ptr_p_info;
+  member_plain_ptr_p_stale_info.outer_stride = 96;
+  member_plain_ptr_p_stale_info.mid_stride = 48;
+  member_plain_ptr_p_stale_info.ptr_array_pointee_bytes = 96;
+  member_plain_ptr_p_stale_info.arr_ndim = 2;
+  member_plain_ptr_p_stale_info.arr_dims[0] = 9;
+  member_plain_ptr_p_stale_info.arr_dims[1] = 8;
+  ASSERT_EQ(0, psx_tag_member_decl_outer_stride(
+                   &member_plain_ptr_p_stale_info));
+  ASSERT_EQ(0, psx_tag_member_decl_mid_stride(
+                   &member_plain_ptr_p_stale_info));
+  ASSERT_EQ(0, psx_tag_member_decl_ptr_array_pointee_bytes(
+                   &member_plain_ptr_p_stale_info));
+  ASSERT_EQ(0, psx_tag_member_decl_array_dim_count(
+                   &member_plain_ptr_p_stale_info));
+  node_t *member_plain_ptr_p_node = psx_node_new_tag_member_lvar_ref_for(
+      member_plain_ptr_h, member_plain_ptr_p_stale_info.offset,
+      &member_plain_ptr_p_stale_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_plain_ptr_p_node));
+  ASSERT_EQ(4, as_mem(member_plain_ptr_p_node)->deref_size);
+  ASSERT_EQ(4, as_mem(member_plain_ptr_p_node)->base_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_node)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_node)->next_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_node)->ptr_array_pointee_bytes);
+  node_t *member_plain_ptr_p_deref = psx_node_new_tag_member_deref_for(
+      psx_node_new_num(0), psx_node_new_lvar_for(member_plain_ptr_h),
+      &member_plain_ptr_p_stale_info);
+  ASSERT_TRUE(ps_node_is_pointer(member_plain_ptr_p_deref));
+  ASSERT_EQ(4, as_mem(member_plain_ptr_p_deref)->deref_size);
+  ASSERT_EQ(4, as_mem(member_plain_ptr_p_deref)->base_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_deref)->inner_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_deref)->next_deref_size);
+  ASSERT_EQ(0, as_mem(member_plain_ptr_p_deref)->ptr_array_pointee_bytes);
 
   parsed_code = parse_program_input(
       "struct __tm_member_scalar { unsigned int u; _Bool b; _Atomic int a; "

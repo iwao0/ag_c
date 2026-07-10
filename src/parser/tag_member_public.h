@@ -110,7 +110,6 @@ static inline int psx_tag_member_decl_array_count(const tag_member_info_t *m) {
 
 static inline int psx_tag_member_decl_array_dim_count(const tag_member_info_t *m) {
   if (!m) return 0;
-  if (m->arr_ndim > 1) return m->arr_ndim;
   if (m->decl_type) {
     const psx_type_t *type = m->decl_type;
     int count = 0;
@@ -120,14 +119,15 @@ static inline int psx_tag_member_decl_array_dim_count(const tag_member_info_t *m
       type = type->base;
     }
     if (count > 0) return count;
+    return 0;
   }
+  if (m->arr_ndim > 1) return m->arr_ndim;
   return m->arr_ndim;
 }
 
 static inline int psx_tag_member_decl_array_dim(const tag_member_info_t *m,
                                                 int index) {
   if (!m || index < 0 || index >= 8) return 0;
-  if (m->arr_ndim > 1) return m->arr_dims[index];
   if (m->decl_type) {
     const psx_type_t *type = m->decl_type;
     int cur = 0;
@@ -137,7 +137,9 @@ static inline int psx_tag_member_decl_array_dim(const tag_member_info_t *m,
       cur++;
       type = type->base;
     }
+    if (cur > 0) return 0;
   }
+  if (m->arr_ndim > 1) return m->arr_dims[index];
   return m->arr_dims[index];
 }
 
@@ -201,10 +203,13 @@ static inline int psx_tag_member_decl_pointer_qual_levels(
 
 static inline int psx_tag_member_decl_outer_stride(const tag_member_info_t *m) {
   if (!m) return 0;
-  if (m->decl_type && m->decl_type->outer_stride > 0)
-    return m->decl_type->outer_stride;
-  if (m->decl_type && m->decl_type->kind == PSX_TYPE_ARRAY)
-    return psx_type_deref_size(m->decl_type);
+  if (m->decl_type) {
+    if (m->decl_type->outer_stride > 0)
+      return m->decl_type->outer_stride;
+    if (m->decl_type->kind == PSX_TYPE_ARRAY)
+      return psx_type_deref_size(m->decl_type);
+    return 0;
+  }
   return m->outer_stride;
 }
 
@@ -216,6 +221,7 @@ static inline int psx_tag_member_decl_mid_stride(const tag_member_info_t *m) {
       if (type->mid_stride > 0) return type->mid_stride;
       type = type->base;
     }
+    return 0;
   }
   return m->mid_stride;
 }
@@ -232,6 +238,7 @@ static inline int psx_tag_member_decl_ptr_array_pointee_bytes(
         return type->outer_stride;
       type = type->base;
     }
+    return 0;
   }
   return m->ptr_array_pointee_bytes;
 }
@@ -242,7 +249,12 @@ static inline int psx_tag_member_decl_ptr_array_pointee_elem_size(
   const psx_type_t *type = psx_tag_member_decl_value_type(m);
   if (type && type->kind == PSX_TYPE_POINTER &&
       type->base && type->base->kind == PSX_TYPE_ARRAY) {
-    int elem = psx_type_deref_size(type->base);
+    int elem = 0;
+    int total_size = psx_type_sizeof(type->base);
+    if (total_size > 0 && type->base->array_len > 0 &&
+        (total_size % type->base->array_len) == 0)
+      elem = total_size / type->base->array_len;
+    if (elem <= 0) elem = psx_type_deref_size(type->base);
     if (elem > 0) return elem;
   }
   int bytes = psx_tag_member_decl_ptr_array_pointee_bytes(m);
