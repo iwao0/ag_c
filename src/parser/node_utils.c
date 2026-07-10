@@ -819,6 +819,11 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
   return TK_EOF;
 }
 
+static const psx_type_t *type_tag_aggregate_leaf(const psx_type_t *type) {
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  return psx_type_is_tag_aggregate(type) ? type : NULL;
+}
+
 static int lvar_decl_type_stale_for_fields(const lvar_t *var, const psx_type_t *type) {
   if (!var || !type) return 0;
   if (psx_ctx_is_tag_aggregate_kind(var->tag_kind) && !var->is_tag_pointer &&
@@ -930,7 +935,8 @@ static int lvar_pointee_is_unsigned(const lvar_t *var) {
   return var && (var->pointee_is_unsigned || (var->is_array && var->is_unsigned)) ? 1 : 0;
 }
 
-static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {
+static void init_lvar_mem_from_legacy_fields(node_mem_t *mem,
+                                             const lvar_t *var) {
   *mem = (node_mem_t){0};
   if (!var) return;
   mem->base.kind = ND_LVAR;
@@ -985,6 +991,14 @@ static void mem_from_lvar(node_mem_t *mem, lvar_t *var) {
   }
 }
 
+static void init_lvar_decl_source_mem(node_mem_t *mem, lvar_t *var) {
+  init_lvar_mem_from_legacy_fields(mem, var);
+}
+
+static void init_lvar_ref_mem_from_var(node_mem_t *mem, const lvar_t *var) {
+  init_lvar_mem_from_legacy_fields(mem, var);
+}
+
 psx_type_t *psx_lvar_get_decl_type(lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
@@ -993,7 +1007,7 @@ psx_type_t *psx_lvar_materialize_decl_type(lvar_t *var) {
   if (!var) return NULL;
   if (var->decl_type) return var->decl_type;
   node_mem_t mem;
-  mem_from_lvar(&mem, var);
+  init_lvar_decl_source_mem(&mem, var);
   if (var->is_byref_param && psx_ctx_is_tag_aggregate_kind(var->tag_kind) &&
       !var->is_tag_pointer && var->elem_size > 0) {
     mem.type_size = (short)var->elem_size;
@@ -1352,8 +1366,10 @@ int psx_gvar_array_element_count(const global_var_t *gv) {
   if (type && type->kind == PSX_TYPE_ARRAY && type->array_len > 0)
     return type->array_len;
   int elem = psx_gvar_array_element_size(gv);
-  if (!gv || elem <= 0 || gv->type_size <= 0) return 0;
-  return gv->type_size / elem;
+  int size = psx_type_sizeof(type);
+  if (size <= 0 && gv) size = gv->type_size;
+  if (elem <= 0 || size <= 0) return 0;
+  return size / elem;
 }
 
 static int type_array_leaf_element_size(const psx_type_t *type) {
@@ -1853,7 +1869,9 @@ int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size)
 int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size) {
   if (gv && !psx_gvar_is_array(gv)) return gv->has_init ? 1 : 0;
   int elem = psx_gvar_initializer_element_size(gv, fallback_size);
-  int size = psx_gvar_storage_size(gv, fallback_size);
+  psx_type_t *type = gvar_decl_type_view(gv);
+  int size = psx_type_sizeof(type);
+  if (size <= 0) size = psx_gvar_storage_size(gv, fallback_size);
   return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
@@ -2082,11 +2100,24 @@ static int tag_member_fp_size(const tag_member_info_t *mi) {
        : mi->fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
 }
 
+static const psx_type_t *tag_member_direct_tag_leaf_from_type(const tag_member_info_t *mi) {
+  if (!mi || !mi->decl_type || mi->decl_type->kind == PSX_TYPE_POINTER) return NULL;
+  const psx_type_t *type = mi->decl_type;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  return psx_type_is_tag_aggregate(type) ? type : NULL;
+}
+
 int psx_tag_member_is_struct_aggregate(const tag_member_info_t *mi) {
+  const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(mi);
+  if (leaf) return leaf->kind == PSX_TYPE_STRUCT;
+  if (mi && mi->decl_type) return 0;
   return mi && !mi->is_tag_pointer && mi->tag_kind == TK_STRUCT;
 }
 
 int psx_tag_member_is_union_aggregate(const tag_member_info_t *mi) {
+  const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(mi);
+  if (leaf) return leaf->kind == PSX_TYPE_UNION;
+  if (mi && mi->decl_type) return 0;
   return mi && !mi->is_tag_pointer && mi->tag_kind == TK_UNION;
 }
 
@@ -2384,7 +2415,7 @@ static int gvar_pointee_is_unsigned(const global_var_t *gv) {
   return gv && (gv->pointee_is_unsigned || (gv->is_array && gv->is_unsigned)) ? 1 : 0;
 }
 
-static void mem_from_gvar(node_mem_t *mem, global_var_t *gv) {
+static void init_gvar_decl_source_mem(node_mem_t *mem, global_var_t *gv) {
   *mem = (node_mem_t){0};
   if (!gv) return;
   mem->base.kind = ND_GVAR;
@@ -2433,7 +2464,7 @@ psx_type_t *psx_gvar_materialize_decl_type(global_var_t *gv) {
   if (!gv) return NULL;
   if (gv->decl_type) return gv->decl_type;
   node_mem_t mem;
-  mem_from_gvar(&mem, gv);
+  init_gvar_decl_source_mem(&mem, gv);
   psx_type_t *arena_type = type_from_mem(&mem, gv->is_array, 0);
   gv->decl_type = type_clone_persistent(arena_type);
   if (gv->decl_type) gv->decl_type->type_sig = gv->type_sig;
@@ -4100,6 +4131,17 @@ static void sync_gvar_ref_mem_from_decl_type(node_mem_t *mem,
   if (pointee_fp_kind != TK_FLOAT_KIND_NONE)
     mem->pointee_fp_kind = (unsigned int)pointee_fp_kind;
   sync_pointee_flags_mem_from_type(mem, decl_type);
+  if (psx_decl_funcptr_sig_has_payload(decl_type->funcptr_sig))
+    node_mem_store_funcptr_signature(mem, &decl_type->funcptr_sig);
+
+  const psx_type_t *tag_leaf = type_tag_aggregate_leaf(decl_type);
+  if (tag_leaf && !type_is_pointer_view_type(decl_type)) {
+    mem->tag_kind = tag_leaf->tag_kind;
+    mem->tag_name = tag_leaf->tag_name;
+    mem->tag_len = tag_leaf->tag_len;
+    mem->tag_scope_depth_p1 = tag_leaf->tag_scope_depth_p1;
+    mem->is_tag_pointer = 0;
+  }
 }
 
 void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const global_var_t *gv) {
@@ -5488,13 +5530,33 @@ node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size) {
   return (node_t *)node;
 }
 
+static void sync_lvar_ref_mem_from_decl_type(node_mem_t *mem,
+                                             psx_type_t *decl_type) {
+  if (!mem || !decl_type) return;
+  mem->base.type = decl_type;
+  int type_size = psx_type_sizeof(decl_type);
+  if (type_size > 0) mem->type_size = (short)type_size;
+  mem->is_pointer = psx_type_is_pointer(decl_type) ? 1 : 0;
+  sync_scalar_mem_from_decl_type(mem, decl_type);
+  sync_pointer_cast_mem_from_type(mem, decl_type);
+  if (psx_decl_funcptr_sig_has_payload(decl_type->funcptr_sig))
+    node_mem_store_funcptr_signature(mem, &decl_type->funcptr_sig);
+
+  const psx_type_t *tag_leaf = type_tag_aggregate_leaf(decl_type);
+  if (tag_leaf && !type_is_pointer_view_type(decl_type)) {
+    mem->tag_kind = tag_leaf->tag_kind;
+    mem->tag_name = tag_leaf->tag_name;
+    mem->tag_len = tag_leaf->tag_len;
+    mem->tag_scope_depth_p1 = tag_leaf->tag_scope_depth_p1;
+    mem->is_tag_pointer = 0;
+  }
+}
+
 node_t *psx_node_new_lvar_for(lvar_t *var) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar(var ? var->offset : 0);
   if (var) {
-    mem_from_lvar(&node->mem, var);
-    node->mem.base.type = psx_lvar_get_decl_type(var);
-    sync_scalar_mem_from_decl_type(&node->mem, node->mem.base.type);
-    sync_pointer_cast_mem_from_type(&node->mem, node->mem.base.type);
+    init_lvar_ref_mem_from_var(&node->mem, var);
+    sync_lvar_ref_mem_from_decl_type(&node->mem, psx_lvar_get_decl_type(var));
   }
   node->var = var;
   return (node_t *)node;

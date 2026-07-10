@@ -113,8 +113,9 @@ static psx_type_t *lvar_public_decl_type(const lvar_t *var) {
   return var ? psx_lvar_get_decl_type((lvar_t *)var) : NULL;
 }
 
-static const psx_type_t *lvar_public_array_base_type(const psx_type_t *type) {
-  return type && type->kind == PSX_TYPE_ARRAY ? type->base : NULL;
+static const psx_type_t *lvar_public_skip_arrays(const psx_type_t *type) {
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  return type;
 }
 
 static const psx_type_t *lvar_public_pointee_type(const psx_type_t *type) {
@@ -180,14 +181,15 @@ int psx_lvar_is_array(const lvar_t *var) {
 
 int psx_lvar_is_complex(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
-  if (type) return type->kind == PSX_TYPE_COMPLEX ? 1 : 0;
+  const psx_type_t *leaf = lvar_public_skip_arrays(type);
+  if (leaf) return leaf->kind == PSX_TYPE_COMPLEX ? 1 : 0;
   return (var && var->is_complex) ? 1 : 0;
 }
 
 int psx_lvar_is_tag_pointer(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *base = lvar_public_pointee_type(type);
-  if (base) return psx_type_is_tag_aggregate(base);
+  if (base) return psx_type_is_tag_aggregate(lvar_public_skip_arrays(base));
   return (var && var->is_tag_pointer) ? 1 : 0;
 }
 
@@ -206,10 +208,9 @@ token_kind_t psx_lvar_tag_kind(const lvar_t *var) {
 
 tk_float_kind_t psx_lvar_fp_kind(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *array_base = lvar_public_array_base_type(type);
-  if (array_base && array_base->kind == PSX_TYPE_FLOAT) return array_base->fp_kind;
-  if (type && (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX))
-    return type->fp_kind;
+  const psx_type_t *leaf = lvar_public_skip_arrays(type);
+  if (leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX))
+    return leaf->fp_kind;
   return var ? var->fp_kind : TK_FLOAT_KIND_NONE;
 }
 

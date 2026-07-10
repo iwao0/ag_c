@@ -2453,6 +2453,8 @@ static void test_type_metadata_bridge() {
   node_mem_t sig_nested_lvar_mem = {0};
   psx_node_copy_funcptr_metadata_from_lvar(&sig_nested_lvar_mem, sig_nested_lvar);
   ASSERT_EQ(4, sig_nested_lvar_mem.funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
+  node_lvar_t *sig_nested_lvar_node = as_lvar(psx_node_new_lvar_for(sig_nested_lvar));
+  ASSERT_EQ(4, sig_nested_lvar_node->mem.funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
 
   parsed_code = parse_program_input(
       "int __tm_sig_nested_param(int (*(*q)(void))(double)) { return 0; }");
@@ -2506,6 +2508,8 @@ static void test_type_metadata_bridge() {
   node_mem_t sig_nested_gvar_mem = {0};
   psx_node_copy_funcptr_metadata_from_gvar(&sig_nested_gvar_mem, sig_nested_gvar);
   ASSERT_EQ(4, sig_nested_gvar_mem.funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
+  node_gvar_t *sig_nested_gvar_node = (node_gvar_t *)psx_node_new_gvar_for(sig_nested_gvar);
+  ASSERT_EQ(4, sig_nested_gvar_node->mem.funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
 
   parsed_code = parse_program_input(
       "int **__tm_gpp; int *__tm_gptrs[2]; "
@@ -5398,6 +5402,18 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(3, psx_gvar_initializer_element_count(&tmp_arr_gv, 12));
   ASSERT_EQ(12, psx_gvar_initializer_element_size(gu, 12));
 
+  global_var_t tmp_arr_stale_size_gv = {0};
+  tmp_arr_stale_size_gv.type_size = 4;
+  tmp_arr_stale_size_gv.deref_size = 4;
+  tmp_arr_stale_size_gv.is_array = 0;
+  tmp_arr_stale_size_gv.decl_type =
+      psx_type_new_array(psx_type_new_integer(TK_INT, 4, 0), 0, 16, 4, 0);
+  ASSERT_TRUE(psx_gvar_is_array(&tmp_arr_stale_size_gv));
+  ASSERT_EQ(4, psx_gvar_array_element_size(&tmp_arr_stale_size_gv));
+  ASSERT_EQ(4, psx_gvar_array_element_count(&tmp_arr_stale_size_gv));
+  ASSERT_EQ(4, psx_gvar_initializer_element_size(&tmp_arr_stale_size_gv, 4));
+  ASSERT_EQ(4, psx_gvar_initializer_element_count(&tmp_arr_stale_size_gv, 4));
+
   global_var_t *gp = psx_find_global_var("__tm_gp", 7);
   ASSERT_TRUE(gp != NULL);
   ASSERT_TRUE(gp->decl_type != NULL);
@@ -5476,6 +5492,21 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!psx_tag_member_is_tag_aggregate(&tmp_member));
   ASSERT_TRUE(!psx_tag_member_is_unnamed_union(&tmp_member));
   ASSERT_TRUE(!psx_tag_member_is_unnamed_aggregate(&tmp_member));
+  tag_member_info_t tmp_member_decl_array = {0};
+  tmp_member_decl_array.decl_type = psx_type_new_array(
+      psx_type_new_tag(TK_STRUCT, "__tm_member_decl_tag", 20, 0, 8),
+      2, 16, 8, 0);
+  ASSERT_TRUE(psx_tag_member_is_tag_aggregate(&tmp_member_decl_array));
+  ASSERT_TRUE(psx_tag_member_is_struct_aggregate(&tmp_member_decl_array));
+  ASSERT_TRUE(!psx_tag_member_is_union_aggregate(&tmp_member_decl_array));
+  ASSERT_TRUE(psx_tag_member_is_unnamed_struct(&tmp_member_decl_array));
+  tag_member_info_t tmp_member_decl_ptr = {0};
+  tmp_member_decl_ptr.tag_kind = TK_STRUCT;
+  tmp_member_decl_ptr.is_tag_pointer = 0;
+  tmp_member_decl_ptr.decl_type = psx_type_new_pointer(
+      psx_type_new_tag(TK_STRUCT, "__tm_member_decl_ptr_tag", 24, 0, 8), 8);
+  ASSERT_TRUE(!psx_tag_member_is_tag_aggregate(&tmp_member_decl_ptr));
+  ASSERT_TRUE(!psx_tag_member_is_unnamed_aggregate(&tmp_member_decl_ptr));
 
   parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
   (void)parsed_code;
@@ -5985,6 +6016,91 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_STRUCT, gvar_view_tag_ptr_out.tag_kind);
   ASSERT_EQ((int)sizeof(gvar_view_tag_name) - 1, gvar_view_tag_ptr_out.tag_len);
   ASSERT_TRUE(gvar_view_tag_ptr_out.is_tag_pointer);
+
+  global_var_t gvar_node_scalar_sync = {0};
+  gvar_node_scalar_sync.name = "__tm_gvar_node_scalar";
+  gvar_node_scalar_sync.name_len = (int)strlen(gvar_node_scalar_sync.name);
+  gvar_node_scalar_sync.type_size = 4;
+  gvar_node_scalar_sync.deref_size = 4;
+  gvar_node_scalar_sync.fp_kind = TK_FLOAT_KIND_NONE;
+  gvar_node_scalar_sync.decl_type =
+      psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  node_gvar_t *gvar_node_scalar_sync_node =
+      (node_gvar_t *)psx_node_new_gvar_for(&gvar_node_scalar_sync);
+  ASSERT_EQ(8, gvar_node_scalar_sync_node->mem.type_size);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            gvar_node_scalar_sync_node->mem.base.fp_kind);
+
+  const char gvar_node_tag_name[] = "__tm_gvar_node_tag";
+  global_var_t gvar_node_tag_sync = {0};
+  gvar_node_tag_sync.name = "__tm_gvar_node_tag_obj";
+  gvar_node_tag_sync.name_len = (int)strlen(gvar_node_tag_sync.name);
+  gvar_node_tag_sync.type_size = 4;
+  gvar_node_tag_sync.deref_size = 4;
+  gvar_node_tag_sync.tag_kind = TK_EOF;
+  gvar_node_tag_sync.decl_type =
+      psx_type_new_tag(TK_STRUCT, (char *)gvar_node_tag_name,
+                       (int)sizeof(gvar_node_tag_name) - 1, 0, 12);
+  node_gvar_t *gvar_node_tag_sync_node =
+      (node_gvar_t *)psx_node_new_gvar_for(&gvar_node_tag_sync);
+  ASSERT_EQ(12, gvar_node_tag_sync_node->mem.type_size);
+  ASSERT_EQ(TK_STRUCT, gvar_node_tag_sync_node->mem.tag_kind);
+  ASSERT_TRUE(!gvar_node_tag_sync_node->mem.is_tag_pointer);
+
+  lvar_t lvar_view_fp_array = {0};
+  lvar_view_fp_array.fp_kind = TK_FLOAT_KIND_NONE;
+  lvar_view_fp_array.decl_type = psx_type_new_array(
+      psx_type_new_array(psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 3, 24, 8, 0),
+      2, 48, 24, 0);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_lvar_fp_kind(&lvar_view_fp_array));
+
+  lvar_t lvar_view_complex_array = {0};
+  psx_type_t *lvar_view_complex_leaf = psx_type_new(PSX_TYPE_COMPLEX);
+  lvar_view_complex_leaf->size = 16;
+  lvar_view_complex_leaf->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  lvar_view_complex_array.is_complex = 0;
+  lvar_view_complex_array.decl_type =
+      psx_type_new_array(lvar_view_complex_leaf, 2, 32, 16, 0);
+  ASSERT_TRUE(psx_lvar_is_complex(&lvar_view_complex_array));
+
+  const char lvar_view_tag_name[] = "__tm_lvar_view_tag";
+  lvar_t lvar_view_tag_ptr = {0};
+  lvar_view_tag_ptr.is_tag_pointer = 0;
+  lvar_view_tag_ptr.tag_kind = TK_EOF;
+  lvar_view_tag_ptr.decl_type = psx_type_new_pointer(
+      psx_type_new_array(
+          psx_type_new_tag(TK_STRUCT, (char *)lvar_view_tag_name,
+                           (int)sizeof(lvar_view_tag_name) - 1, 0, 12),
+          2, 24, 12, 0),
+      24);
+  ASSERT_TRUE(psx_lvar_is_tag_pointer(&lvar_view_tag_ptr));
+  ASSERT_EQ(TK_STRUCT, psx_lvar_tag_kind(&lvar_view_tag_ptr));
+
+  lvar_t lvar_node_scalar_sync = {0};
+  lvar_node_scalar_sync.size = 4;
+  lvar_node_scalar_sync.elem_size = 4;
+  lvar_node_scalar_sync.fp_kind = TK_FLOAT_KIND_NONE;
+  lvar_node_scalar_sync.decl_type =
+      psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  node_lvar_t *lvar_node_scalar_sync_node =
+      as_lvar(psx_node_new_lvar_for(&lvar_node_scalar_sync));
+  ASSERT_EQ(8, lvar_node_scalar_sync_node->mem.type_size);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            lvar_node_scalar_sync_node->mem.base.fp_kind);
+
+  const char lvar_node_tag_name[] = "__tm_lvar_node_tag";
+  lvar_t lvar_node_tag_sync = {0};
+  lvar_node_tag_sync.size = 4;
+  lvar_node_tag_sync.elem_size = 4;
+  lvar_node_tag_sync.tag_kind = TK_EOF;
+  lvar_node_tag_sync.decl_type =
+      psx_type_new_tag(TK_STRUCT, (char *)lvar_node_tag_name,
+                       (int)sizeof(lvar_node_tag_name) - 1, 0, 12);
+  node_lvar_t *lvar_node_tag_sync_node =
+      as_lvar(psx_node_new_lvar_for(&lvar_node_tag_sync));
+  ASSERT_EQ(12, lvar_node_tag_sync_node->mem.type_size);
+  ASSERT_EQ(TK_STRUCT, lvar_node_tag_sync_node->mem.tag_kind);
+  ASSERT_TRUE(!lvar_node_tag_sync_node->mem.is_tag_pointer);
 
   ASSERT_TRUE(indirect_double_ptr_to_array_call->type != NULL);
   psx_type_t *indirect_double_ptr_to_array_ty =

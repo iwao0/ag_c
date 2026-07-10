@@ -21220,3 +21220,201 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - ただし `global_var_t` の raw cache fields 自体はまだ多く残っており、
     次は `mem_from_gvar()` / `mem_from_lvar()` の raw-to-type builder を
     保存時同期 cache と明示 storage metadata に分けるのが候補。
+
+### このセッション（続き873）: lvar public accessor の配列 leaf 判定を decl_type 優先へ補正
+- 見つかった浅い箇所:
+  - `lvar_t` の public accessor は `psx_lvar_get_decl_type()` を経由する形へかなり寄っていたが、
+    `psx_lvar_fp_kind()` は配列を 1 段だけ剥がしていた。
+    そのため `double a[2][3]` のような多次元配列で raw `fp_kind` が stale だと、
+    `decl_type` に正しい leaf FP 情報があっても `TK_FLOAT_KIND_NONE` へ落ちる余地があった。
+  - `psx_lvar_is_tag_pointer()` は pointer の base をそのまま `psx_type_is_tag_aggregate()` へ渡していた。
+    `psx_type_is_tag_aggregate()` は配列を剥がさないため、
+    `struct S (*p)[2]` のような「tag 配列へのポインタ」を `decl_type` から tag pointer と判定できなかった。
+- 根本対応:
+  - `lvar_public_skip_arrays()` を追加し、public accessor の leaf 判定を
+    `decl_type` の配列 nest を剥がした型に対して行うようにした。
+  - `psx_lvar_fp_kind()` は多次元配列でも leaf が FP/complex なら `decl_type` 由来の `fp_kind` を返す。
+  - `psx_lvar_is_tag_pointer()` は pointer base の配列 nest を剥がしてから struct/union 判定する。
+  - `test_type_metadata_bridge()` に、raw field が stale でも `decl_type` が
+    `double[2][3]` / `struct S (*)[2]` なら lvar accessor が canonical view を返す直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - lvar public accessor のうち、FP 配列 leaf と tag pointer 配列 leaf は
+    raw cache ではなく `decl_type` を正本として読む形になった。
+  - `mem_from_lvar()` / `mem_from_gvar()` は `decl_type` materialize 用の raw builder なので、
+    ここを単純に `decl_type` 参照へ変えると再帰する。次に進めるなら、
+    raw builder を「materialize 専用」として名前/責務を明確化し、外向き view から直接使われない構造を
+    さらに分離するのが候補。
+
+### このセッション（続き874）: lvar node metadata を decl_type 由来で最終同期
+- 見つかった浅い箇所:
+  - `mem_from_lvar()` は `decl_type` materialize のために raw field から `node_mem_t` を作る必要がある。
+    ただし `psx_node_new_lvar_for()` はその raw builder で作った `node_mem_t` に
+    `base.type = psx_lvar_get_decl_type(var)` だけを載せ、scalar/pointer の一部だけを後補正していた。
+  - そのため、`decl_type` は正しいのに `node_mem_t.type_size` / `tag_kind` /
+    direct scalar FP cache などが stale raw field のまま残り、node 側で再び型情報の正本が分散していた。
+- 根本対応:
+  - `type_tag_aggregate_leaf()` を追加し、配列 nest を剥がした struct/union leaf を取れるようにした。
+  - `sync_lvar_ref_mem_from_decl_type()` を追加し、`psx_node_new_lvar_for()` が
+    raw builder の後に `decl_type` から `type_size` / pointer 性 / scalar cache /
+    pointer metadata / direct tag aggregate metadata を同期するようにした。
+  - `psx_node_new_lvar_for()` の後補正をこの集約関数に置き換え、`base.type` だけ正しいが
+    互換 cache が stale という状態を減らした。
+  - `test_type_metadata_bridge()` に、raw `size` / `fp_kind` / `tag_kind` が stale でも
+    lvar node の `node_mem_t` が `decl_type` 由来の `double` / `struct` view へ補正される直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - lvar の外向き accessor と lvar node metadata は、主要な scalar/tag/array leaf 情報を
+    `decl_type` から読む形へ寄った。
+  - `mem_from_lvar()` / `mem_from_gvar()` はまだ raw-to-type builder として残るが、
+    少なくとも `psx_node_new_lvar_for()` の公開 node view では `decl_type` による最終同期が入る。
+  - 次は global 側で `psx_node_init_gvar_ref_metadata()` の raw 初期化と
+    `sync_gvar_ref_mem_from_decl_type()` の役割をさらに分け、直接 tag aggregate や scalar cache の
+    stale raw field が残らないかを確認するのが候補。
+
+### このセッション（続き875）: global node metadata の direct tag cache を decl_type 由来へ補正
+- 見つかった浅い箇所:
+  - `psx_node_init_gvar_ref_metadata()` は `sync_gvar_ref_mem_from_decl_type()` を通して
+    `type_size` / scalar FP / pointer metadata を `decl_type` から補正していた。
+  - ただし direct `struct` / `union` global の `tag_kind` / `tag_name` / `tag_len` /
+    `is_tag_pointer` は raw field 初期化のまま残り、`decl_type` が正しくても node 側 cache が
+    stale raw field に引きずられる余地があった。
+- 根本対応:
+  - `sync_gvar_ref_mem_from_decl_type()` に direct tag aggregate leaf の同期を追加した。
+  - `decl_type` が pointer/array view ではない direct struct/union の場合、
+    tag cache と `is_tag_pointer=0` を `decl_type` 由来へ補正するようにした。
+  - `test_type_metadata_bridge()` に、raw `type_size` / `fp_kind` / `tag_kind` が stale でも
+    global node の `node_mem_t` が `decl_type` 由来の `double` / direct `struct` view へ補正される
+    直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - global var の public view と global node metadata は、主要な scalar/tag 情報を
+    `decl_type` から読む形へ寄った。
+  - raw builder (`mem_from_lvar()` / `mem_from_gvar()`) は materialize 専用としてまだ残る。
+    次はこの raw builder の用途を名前・責務で明確化し、外向き生成経路で直接使われていないかを
+    `rg` ベースでさらに潰すのが候補。
+
+### このセッション（続き876）: raw-to-type builder と外向き lvar node init の責務を分離
+- 見つかった浅い箇所:
+  - 続き874/875で lvar/global node metadata の最終同期は `decl_type` へ寄せたが、
+    `mem_from_lvar()` は `psx_lvar_materialize_decl_type()` だけでなく
+    `psx_node_new_lvar_for()` からも直接呼ばれていた。
+  - そのため「raw field から `decl_type` を materialize するための builder」と
+    「外向き lvar node の初期値を作るための legacy field copy」が同じ関数名/責務に見えており、
+    後から外向き経路へ raw-to-type builder を再利用しやすい構造が残っていた。
+- 根本対応:
+  - `mem_from_lvar()` を `init_lvar_mem_from_legacy_fields()` に改名し、
+    その上に `init_lvar_decl_source_mem()` と `init_lvar_ref_mem_from_var()` を分けた。
+  - `psx_lvar_materialize_decl_type()` は `init_lvar_decl_source_mem()` を使い、
+    `psx_node_new_lvar_for()` は `init_lvar_ref_mem_from_var()` の後に
+    `sync_lvar_ref_mem_from_decl_type()` で canonical view へ最終同期する形にした。
+  - `mem_from_gvar()` も `init_gvar_decl_source_mem()` に改名し、global 側は
+    `decl_type` materialize 専用であることを名前で明示した。
+  - `rg -n "mem_from_lvar|mem_from_gvar|init_lvar_decl_source_mem|init_lvar_ref_mem_from_var|init_gvar_decl_source_mem" src/parser/node_utils.c`
+    で、旧 `mem_from_*` 名が残っていないことを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - lvar は materialize source と外向き node init が関数名レベルで分かれ、
+    外向き node init は `decl_type` 同期を通る構造になった。
+  - global の raw field builder は `init_gvar_decl_source_mem()` として materialize 用に閉じている。
+  - 次は `funcptr_sig_from_lvar_raw()` / `funcptr_sig_from_gvar_raw()` など、
+    raw signature cache を直接読む経路が `decl_type` canonical signature より優先されていないかを確認するのが候補。
+
+### このセッション（続き877）: lvar/global node の funcptr signature cache を decl_type 由来へ同期
+- 見つかった浅い箇所:
+  - 公開 API の `psx_lvar_funcptr_sig()` / `psx_gvar_funcptr_sig()` は
+    `decl_type` に function pointer signature があればそれを優先していた。
+  - 一方で lvar/global node の初期化では legacy raw signature を一度 `node_mem_t.funcptr_sig` に載せた後、
+    `decl_type` 由来 signature で `node_mem_t.funcptr_sig` 自体を置き換えていなかった。
+  - `node->type` を見る経路は canonical signature に到達できるが、互換 cache である
+    `node_mem_t.funcptr_sig` には stale raw signature が残り、node metadata 内で正本が分散していた。
+- 根本対応:
+  - `sync_lvar_ref_mem_from_decl_type()` と `sync_gvar_ref_mem_from_decl_type()` で、
+    `decl_type->funcptr_sig` に payload がある場合は `node_mem_t.funcptr_sig` を
+    canonical signature で置き換えるようにした。
+  - `test_type_metadata_bridge()` の既存 nested funcptr stale raw test に、
+    `psx_node_new_lvar_for()` / `psx_node_new_gvar_for()` が作る `node_mem_t.funcptr_sig` も
+    `decl_type` 由来の戻り値幅を保持する直接確認を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - lvar/global の public signature API だけでなく、node metadata 互換 cache も
+    `decl_type` canonical signature に寄った。
+  - 次は tag member / typedef / lvar / global に残る raw cache field のうち、
+    書き込み時同期で十分か、読み取り側でまだ raw 優先の accessor があるかを `rg` で洗うのが候補。
+
+### このセッション（続き878）: lvar complex accessor を decl_type leaf 判定へ補正
+- 見つかった浅い箇所:
+  - lvar の public accessor は `decl_type` 優先へ寄せていたが、
+    `psx_lvar_is_complex()` は `decl_type->kind == PSX_TYPE_COMPLEX` だけを見ていた。
+  - そのため `double _Complex z[2]` のような complex 配列では、`decl_type` leaf が complex でも
+    top-level が array なので false になり、raw `is_complex` が stale だと正しい型情報を返せなかった。
+- 根本対応:
+  - `psx_lvar_is_complex()` を `lvar_public_skip_arrays()` 経由の leaf 判定へ変更した。
+  - `test_type_metadata_bridge()` に、raw `is_complex=0` でも `decl_type` が
+    complex array なら `psx_lvar_is_complex()` が true を返す直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - lvar public accessor の array leaf 系は、FP / tag pointer / complex について
+    `decl_type` を正本として見るようになった。
+  - 次は global initializer element count/size や tag member helper など、storage metadata と
+    type-derived metadata が混ざりやすい accessor を個別に見ていくのが候補。
+
+### このセッション（続き879）: global array/initializer element count を decl_type size 優先へ補正
+- 見つかった浅い箇所:
+  - `psx_gvar_array_element_count()` は `decl_type->array_len` が取れない場合、
+    fallback として raw `gv->type_size / elem_size` を使っていた。
+  - `psx_gvar_initializer_element_count()` も配列 count 算出に `psx_gvar_storage_size()` を使っており、
+    raw `type_size` が stale に大きい/小さい場合、`decl_type` に正しい array size があっても
+    initializer layout count が raw storage cache に引きずられる余地があった。
+- 根本対応:
+  - `psx_gvar_array_element_count()` は `array_len` がない場合でも、
+    `psx_type_sizeof(decl_type) / elem_size` を raw `gv->type_size` より優先するようにした。
+  - `psx_gvar_initializer_element_count()` も、配列の場合は `decl_type` の `sizeof` を優先し、
+    取れない場合だけ storage fallback を使うようにした。
+  - `test_type_metadata_bridge()` に、raw `type_size=4` / `is_array=0` でも
+    `decl_type=int[?]` 相当 (`size=16`, `elem=4`) なら array/initializer count が 4 になる
+    直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - global array の element size/count と initializer element count は、
+    array length が明示されていない canonical type でも raw `type_size` より `decl_type` size を優先する。
+  - 次は tag member helper の `is_tag_aggregate` / fp/bool/unsigned 判定が
+    `tag_member_info_t.decl_type` の canonical view と矛盾しないかを重点的に見るのが候補。
+
+### このセッション（続き880）: tag member aggregate helper を decl_type canonical 判定へ補正
+- 見つかった浅い箇所:
+  - `psx_tag_member_is_struct_aggregate()` / `psx_tag_member_is_union_aggregate()` は
+    `tag_member_info_t` の raw `tag_kind` / `is_tag_pointer` を直接見ていた。
+  - `decl_type` に canonical な tag aggregate 情報がある場合でも raw cache が stale だと、
+    配列要素が struct/union である member を見落としたり、逆に pointer-to-struct を
+    direct aggregate と誤判定する余地があった。
+- 根本対応:
+  - `tag_member_direct_tag_leaf_from_type()` を追加し、`decl_type` がある場合は配列だけを skip して
+    direct tag leaf を判定するようにした。
+  - `decl_type` が pointer の場合は direct tag aggregate と扱わず、`decl_type` がない場合だけ
+    legacy raw field 判定へ fallback する構造にした。
+  - `test_type_metadata_bridge()` に、`decl_type=struct[2]` は aggregate と判定され、
+    `decl_type=pointer-to-struct` は raw `tag_kind=STRUCT` が残っていても aggregate と判定されない
+    直接テストを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - tag member の direct struct/union aggregate 判定は `decl_type` がある場合、
+    raw cache ではなく canonical type を正本として使うようになった。
+  - 次は `tag_member_fp_size()` など、union member selection に残る scalar raw cache 優先経路を
+    `decl_type` leaf 判定へ寄せられるか確認するのが候補。
