@@ -2,9 +2,8 @@
 #define PARSER_TAG_MEMBER_PUBLIC_H
 
 #include "core.h"
+#include "type.h"
 #include <stdbool.h>
-
-typedef struct psx_type_t psx_type_t;
 
 /* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
  * (docs/code_refactoring_2026 Phase A1)。
@@ -57,13 +56,16 @@ typedef struct tag_member_info_t {
 static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(
     const tag_member_info_t *m) {
   if (!m) return (psx_decl_funcptr_sig_t){0};
-  return m->is_funcptr ? m->funcptr_sig : (psx_decl_funcptr_sig_t){0};
+  if (m->decl_type && psx_decl_funcptr_sig_has_payload(m->decl_type->funcptr_sig))
+    return psx_decl_funcptr_sig_clone(m->decl_type->funcptr_sig);
+  return m->is_funcptr ? psx_decl_funcptr_sig_clone(m->funcptr_sig)
+                       : (psx_decl_funcptr_sig_t){0};
 }
 
 static inline void psx_ctx_tag_member_set_funcptr_sig(
     tag_member_info_t *m, psx_decl_funcptr_sig_t sig) {
   if (!m) return;
-  m->funcptr_sig = sig;
+  m->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
 }
 

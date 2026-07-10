@@ -74,7 +74,7 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
       type->pointer_qual_levels = i + 1;
     }
     if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
-      type->funcptr_sig = funcptr_sig;
+      type->funcptr_sig = psx_decl_funcptr_sig_clone(funcptr_sig);
     }
   }
   if (array_len > 0) {
@@ -83,7 +83,7 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
     psx_type_t *array_type = psx_type_new_array(type, array_len, array_size,
                                                 elem_size_for_array, 0);
     if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
-      array_type->funcptr_sig = funcptr_sig;
+      array_type->funcptr_sig = psx_decl_funcptr_sig_clone(funcptr_sig);
     }
     return array_type;
   }
@@ -574,14 +574,14 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             member_funcptr_sig = psx_decl_make_funcptr_sig_from_kind(
                 &head.func_suffix_sig, member_base_kind, member_fp_kind,
                 ret_is_data_pointer, 0, member_is_complex,
-                member_typedef_funcptr_sig.ret_pointee_array);
+                member_typedef_funcptr_sig.function.callable.return_shape.pointee_array);
           }
           psx_ret_pointee_array_t ret_pointee_array = {0};
           PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
-                                            &member_typedef_funcptr_sig.ret_pointee_array,
+                                            &member_typedef_funcptr_sig.function.callable.return_shape.pointee_array,
                                             &direct_funcptr_ret_pointee_array);
-          if (!psx_ret_pointee_array_has_dims(member_funcptr_sig.ret_pointee_array)) {
-            member_funcptr_sig.ret_pointee_array = ret_pointee_array;
+          if (!psx_ret_pointee_array_has_dims(member_funcptr_sig.function.callable.return_shape.pointee_array)) {
+            member_funcptr_sig.function.callable.return_shape.pointee_array = ret_pointee_array;
           }
           psx_ctx_tag_member_set_funcptr_sig(&_mi, member_funcptr_sig);
         }

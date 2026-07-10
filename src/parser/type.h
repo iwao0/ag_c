@@ -51,6 +51,7 @@ struct psx_type_t {
 
   tk_float_kind_t pointee_fp_kind;
   psx_decl_funcptr_sig_t funcptr_sig;
+  char *type_sig;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   int ptr_array_pointee_bytes;

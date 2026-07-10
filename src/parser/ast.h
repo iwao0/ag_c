@@ -105,8 +105,8 @@ struct node_t {
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
 
-  /* New typed-AST path: legacy fields are still the source of truth while the parser is
-   * migrated, but every node can now carry an explicit semantic type. */
+  /* Typed-AST path: when present, this semantic type is canonical; legacy fields
+   * remain as mirrors for ABI/codegen paths during migration. */
   psx_type_t *type;
 };
 

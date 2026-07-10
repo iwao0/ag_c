@@ -1131,21 +1131,21 @@ static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
 
 static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
   obj_sig_t sig = {0};
-  if (fs.ret_is_void) sig.result = IR_TY_VOID;
-  else if (fs.ret_is_data_pointer) sig.result = IR_TY_I32;
-  else if (fs.ret_fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (fs.ret_fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = fs.ret_int_width == 8 ? IR_TY_I64 : IR_TY_I32;
+  if (fs.function.callable.return_shape.is_void) sig.result = IR_TY_VOID;
+  else if (fs.function.callable.return_shape.is_data_pointer) sig.result = IR_TY_I32;
+  else if (fs.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
+  else if (fs.function.callable.return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
+  else sig.result = fs.function.callable.return_shape.int_width == 8 ? IR_TY_I64 : IR_TY_I32;
 
-  int nparams = fs.is_variadic
-                    ? fs.nargs_fixed
-                    : funcptr_mask_param_count(fs.param_fp_mask, fs.param_int_mask);
+  int nparams = fs.function.callable.signature.is_variadic
+                    ? fs.function.callable.signature.nargs_fixed
+                    : funcptr_mask_param_count(fs.function.callable.signature.param_fp_mask, fs.function.callable.signature.param_int_mask);
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      unsigned fp = (fs.param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (fs.param_int_mask >> (2 * p)) & 3u;
+      unsigned fp = (fs.function.callable.signature.param_fp_mask >> (2 * p)) & 3u;
+      unsigned iw = (fs.function.callable.signature.param_int_mask >> (2 * p)) & 3u;
       sig.params[p] = funcptr_mask_param_type(fp, iw);
     }
   }
@@ -1258,9 +1258,9 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       int null_ptr_pair_arg =
           a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       psx_decl_funcptr_sig_t fs = i->funcptr_sig;
-      unsigned iw = a < 8 ? ((fs.param_int_mask >> (2 * a)) & 3u) : 0;
+      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
       int funcptr_pointer_param = iw == 3;
-      if (!fs.is_variadic && !i->is_variadic_call &&
+      if (!fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
           sig.params[a] == IR_TY_I32 && arg_ty != IR_TY_PTR &&
           arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64 && !null_ptr_pair_arg &&
           !funcptr_pointer_param) {
@@ -1272,7 +1272,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
           (i->dst.type == IR_TY_I32 && (sig.result == IR_TY_F32 || sig.result == IR_TY_F64))) {
         sig.result = IR_TY_I32;
       } else if (i->dst.type == IR_TY_I64 && sig.result == IR_TY_I32 &&
-                 !i->funcptr_sig.ret_is_data_pointer) {
+                 !i->funcptr_sig.function.callable.return_shape.is_data_pointer) {
         sig.result = IR_TY_I64;
       }
     }

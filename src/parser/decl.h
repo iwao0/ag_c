@@ -120,6 +120,7 @@ struct lvar_t {
    * vla_row_stride_frame_off は += 8 シフト (remaining が 0 になったときは 0 にクリア)。
    * これにより任意 N-D VLA を 8 バイト/段で連鎖的に解決できる。 */
   int vla_strides_remaining;
+  char *type_sig;
   psx_type_t *decl_type;
   /* 2D VLA 関数パラメータ (`int g[n][m]`): 関数 entry 時に
    *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * vla_row_stride_elem_size
@@ -182,6 +183,8 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
     const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
     tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
     int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array);
+void psx_decl_funcptr_sig_promote_return_to_funcptr(
+    psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig);
 lvar_t *psx_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 void psx_decl_replay_lvar_usage_events(lvar_t *all_locals);

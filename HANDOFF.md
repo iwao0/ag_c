@@ -1,8 +1,617 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-09（続き956: FP_TO_INT cast metadata も `cast_type` 正本へ寄せた）
+最終更新: 2026-07-10（続き981: function-pointer return call の decay 判定を canonical funcall type に寄せた）
 
 ## 現状
+- 続き981: **function-pointer return call の decay 判定を canonical funcall type に寄せた**。
+
+  続き980までで式の FP/complex 入力は canonical helper に寄ったが、
+  `src/parser/expr.c` の `expr_funcall_returns_decayable_funcptr()` には direct funcall の戻り型を
+  `psx_ctx_get_function_ret_info()` で再取得する分岐が残っていた。
+  direct function が function pointer を返す場合、`type_from_direct_funcall()` がすでに
+  `ND_FUNCALL` の canonical pointer type に `funcptr_sig` を載せているので、
+  expr 側で別正本を読む必要はない。
+
+  修正として、`expr_funcall_returns_decayable_funcptr()` を
+  `psx_node_funcptr_sig(fcall)` と `psx_node_pointer_qual_levels(fcall)` から判定する形にした。
+  pointer-to-array metadata だけの payload を function pointer value と誤判定しないよう、
+  callable signature payload（param mask / return width / FP / void / pointer / complex / variadic 等）が
+  ある場合だけ decayable function pointer とみなす。
+
+  追加確認:
+  - direct function returning function pointer の `ND_FUNCALL` synthetic node から
+    canonical type 経由で `funcptr_sig` が読める regression を追加。
+  - `expr.c` の direct funcall function-pointer return 判定から
+    `psx_ctx_get_function_ret_info()` 直接参照が消えたことを確認。
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き980: **usual arithmetic conversion と binary constructor の FP/complex 入力を canonical helper に寄せた**。
+
+  続き979までで return / funcall / funcdef 周辺は canonical type に寄ったが、
+  `src/parser/node_utils.c` の usual arithmetic conversion 入口にはまだ
+  operand の raw `lhs->fp_kind` / `rhs->fp_kind` / `is_complex` を直接読む箇所が残っていた。
+  cached canonical integer type を持つ operand に stale raw FP/complex mirror が残っていると、
+  binary / ternary の結果型へ誤って混ざれる構造だった。
+
+  修正として、`type_from_operand_usual_arith()` と `type_from_binary_expr()` を
+  `psx_node_value_fp_kind()` / `psx_node_value_is_complex()` 経由にした。
+  `type_from_ternary_expr()` も then/else operand の canonical value helper から FP/complex を決め、
+  どちらの operand type も取れない legacy path のときだけ node 自身の raw mirror へ fallback するようにした。
+
+  さらに `psx_node_new_binary()` の初期 mirror 設定も、子 node の raw `fp_kind/is_complex` 直接参照ではなく
+  canonical value helper 経由に変更した。生成直後に canonical type sync が走る構造は維持している。
+
+  追加確認:
+  - cached canonical integer type を持つ operand に stale `fp_kind/is_complex` が残っていても、
+    synthetic binary / constructor binary / uncached ternary の結果が integer になり、
+    result mirror も FP/complex に戻らない regression を追加。
+  - `rg` で `node_utils.c` の usual arithmetic / binary constructor まわりから
+    `lhs->fp_kind` / `rhs->fp_kind` / raw child `is_complex` 参照が消えたことを確認。
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き979: **semantic return の戻り型判定を canonical funcdef type に寄せた**。
+
+  続き978で IR builder の関数定義戻り型判定は canonical `ND_FUNCDEF` type に寄せたが、
+  `semantic_transform_return()` / `semantic_warn_return()` にはまだ
+  `psx_ctx_get_function_ret_info(current_func...)` を直接読み、return node の
+  `fp_kind` / `ret_struct_size` mirror を埋める経路が残っていた。
+
+  修正として、`src/parser/semantic_pass.c` にファイル内限定の
+  `semantic_return_type_view_t` を追加した。これは新しい正本ではなく、
+  `psx_node_get_type((node_t *)current_func)` と public helper から作る一時 view。
+  void / pointer / bool / narrow integer / unsigned / aggregate size / FP kind の判定を
+  この view 経由にして、return 文の値必須/禁止、NULL pointer constant、bool 化、
+  char/short の mask/sign-extend、float-to-int warning、stack address warning を
+  canonical function type から判断するようにした。
+
+  併せて `src/ir/ir_builder.c` の numeric literal path に残っていた
+  `n->base.fp_kind` 直接判定を `psx_node_value_fp_kind()` に変更した。
+
+  追加確認:
+  - parse 後に `ND_FUNCDEF` の raw `ret_struct_size` / `fp_kind` / `is_complex` を壊し、
+    `psx_semantic_analyze_function()` を再実行して、return node mirror が cached canonical type から
+    復元される regression を追加。
+  - `semantic_pass.c` から current function 戻り型用の
+    `psx_ctx_get_function_ret_info(current_func...)` 直接参照が消えたことを確認。
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き978: **関数定義の戻り型判定も canonical node type に一本化した**。
+
+  続き977で `build_node_funcall()` の戻り IR 型判定は canonical node view に寄せたが、
+  関数定義側の `build_function()` / 暗黙 return / return 文の変換ではまだ
+  `psx_ctx_get_function_ret_info()` や `fn->base.ret_struct_size` を直接読んでいた。
+  これは `ND_FUNCALL` と `ND_FUNCDEF` で戻り型の正本が分かれる構造だった。
+
+  修正として、`psx_node_get_type()` が `ND_FUNCDEF` に対しても direct function return info から
+  canonical `psx_type_t` を materialize するようにした。cached type がある場合の raw mirror sync も
+  `ND_FUNCDEF` を `ND_FUNCALL` と同じ `sync_funcall_result_metadata_from_type()` 経由にした。
+
+  IR builder 側では、`build_function()` の戻り IR 型、small struct value return、
+  pointer return、8B scalar return、complex return half、indirect ret_area サイズを
+  `psx_node_get_type()` / `psx_node_value_is_void()` / `psx_node_value_is_pointer_like()` /
+  `psx_node_value_is_complex()` / `psx_node_value_fp_kind()` /
+  `psx_node_aggregate_value_size()` / `ps_node_type_size()` から読むようにした。
+  `emit_implicit_return_if_missing()` の void 判定と、return 文の target unsigned 判定も
+  関数定義 node の canonical view 経由に寄せた。
+
+  追加確認:
+  - parse 済み `ND_FUNCDEF` から long / pointer / void / struct / `_Complex double` 戻り型を
+    `psx_node_get_type()` と public helper で読める regression を追加。
+  - `src/ir/ir_builder.c` の関数戻り型判定まわりから `psx_ctx_get_function_ret_info()` /
+    `fn->base.ret_struct_size` 直接参照が消えたことを `rg` で確認。
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き977: **build_node_funcall の戻り IR 型判定を canonical node view に一本化した**。
+
+  続き976で funcall の struct/void 戻り判定は public helper 経由にしたが、
+  `build_node_funcall()` の戻り IR 型決定にはまだ direct call なら
+  `psx_ctx_get_function_ret_info()`、indirect call なら callee の function-pointer signature を
+  個別に読む分岐が残っていた。これは parser/node_utils 側で direct/indirect の戻り型を
+  `ND_FUNCALL` node の canonical type へ materialize した後に、IR builder 側で別の正本を
+  再構築する形だった。
+
+  修正として、`build_node_funcall()` の戻り IR 型判定を node 自身の public view に寄せた。
+  具体的には、まず `ir_type_from_node()` / `aggregate_size_from_node()` を見て、
+  small struct value return、pointer-like return、8B 以上の scalar return の順で決める。
+  direct/indirect 専用だった `indirect_funcptr_ret_is_data_pointer()` /
+  `indirect_funcptr_ret_int_width()` は不要になったため削除した。
+
+  これで `build_node_funcall()` 内では、戻り値型を決めるために `psx_ctx_get_function_ret_info()`
+  や callee signature を直接読まなくなった。残っている `psx_ctx_get_function_ret_info()` は
+  関数定義 ABI / 暗黙 return 診断側で、式 node の戻り型正本化とは別責務。
+
+  追加確認:
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass / up to date**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き976: **IR builder の funcall struct/void 戻り判定を canonical helper 経由に寄せた**。
+
+  続き975で IR builder の `node->fp_kind` / `node->is_complex` 直接参照は消したが、
+  `ND_FUNCALL` の struct/void 戻り値まわりにはまだ `node->ret_struct_size` /
+  `node->is_void_call` を直接読む箇所が残っていた。parser/node_utils 側で
+  canonical type から mirror を同期していても、IR builder が raw field を直接見ると
+  stale metadata に戻れる。
+
+  修正として、`node_type_public.h` / `node_utils.c` に `psx_node_value_is_void()` を追加した。
+  `psx_node_get_type()` の canonical `PSX_TYPE_VOID` を正本として扱い、型がない場合だけ
+  legacy `is_void_call` fallback を使う。
+
+  IR builder 側では、funcall の struct 戻り値サイズを `node->ret_struct_size` ではなく
+  既存 public helper `psx_node_aggregate_value_size()`（`aggregate_size_from_node()`）経由で
+  読むようにした。対象は struct 代入の direct-ret-area 最適化、aggregate materialize、
+  struct 引数化、funcall return type 判定、ret_area 確保。`call->is_void_call` も
+  `psx_node_value_is_void()` 経由にした。関数定義 ABI 用の `fn->base.ret_struct_size` /
+  `ctx->f->ret_struct_size` は別責務なのでそのまま残している。
+
+  追加確認:
+  - cached pointer-return funcall では stale `ret_struct_size/is_void_call` が canonical pointer type で
+    aggregate/void と見なされないことを確認。
+  - cached struct-return funcall では `psx_node_aggregate_value_size()` が canonical tag type から
+    サイズを返すことを確認。
+  - cached void-return funcall では `psx_node_value_is_void()` が canonical void type から mirror を復元することを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き975: **IR builder の FP/complex 判定を canonical value helper 経由に寄せた**。
+
+  続き974までで parser/node_utils 側の型正本化は進んだが、IR builder にはまだ
+  `node->fp_kind` / `node->is_complex` を直接読む経路があり、canonical `psx_type_t` が
+  正しく materialize されていても codegen が stale raw metadata に戻れる構造だった。
+
+  修正として、`node_type_public.h` / `node_utils.c` に
+  `psx_node_value_fp_kind()` と `psx_node_value_is_complex()` を追加した。
+  どちらもまず `psx_node_get_type()` で canonical type を見て、非ポインタの
+  `PSX_TYPE_FLOAT` / `PSX_TYPE_COMPLEX` を正本として扱い、node に cached type がある場合は
+  raw fallback へ落ちない。cached pointer type に stale `fp_kind/is_complex` が残っていても
+  FP/complex と誤判定しない。
+
+  そのうえで `src/ir/ir_builder.c` の FP/complex lowering を helper 経由に変更した。
+  対象は `ir_type_from_node()`、lvar value type、complex materialization/comparison、
+  complex assignment、complex argument/return、`__real__` / `__imag__`、`FNEG`、`INT_TO_FP`。
+  これで IR builder 内の `node->fp_kind` / `node->is_complex` 直接参照は消えた。
+
+  追加確認:
+  - cached complex funcall が canonical type から `psx_node_value_fp_kind()` /
+    `psx_node_value_is_complex()` で判定されることを確認。
+  - cached pointer node に stale `fp_kind/is_complex` が残っていても、value helper が
+    FP/complex と見なさないことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き974: **funcall 戻り値 mirror を canonical type 同期へ寄せ、直接呼び出し生成の raw 重複セットを削った**。
+
+  続き973までで expression 側の result metadata はかなり canonical type 優先になったが、
+  `ND_FUNCALL` にはまだ戻り値の `fp_kind/is_complex/is_void_call/ret_struct_size` を生成時に raw へ詰め、
+  その後 `psx_node_materialize_type()` で同じ意味の型を作る二重管理が残っていた。
+  特に `is_unsigned/is_long_long` は `sync_funcall_result_metadata_from_type()` の責任範囲外で、
+  `node_is_unsigned()` の `ND_FUNCALL` 経路も default raw fallback に落ちていたため、
+  canonical type があっても符号性の正本が raw に残る構造だった。
+
+  修正として、`sync_funcall_result_metadata_from_type()` が integer/bool 戻り値の
+  `is_unsigned/is_long_long/is_atomic` も canonical type から同期するようにした。
+  `node_is_unsigned()` も `ND_FUNCALL` ではまず `psx_node_get_type()` を見て、
+  型があればその符号性を使うようにした。これにより
+  `psx_node_conversion_value_is_unsigned()` / `psx_node_i64_widen_source_is_unsigned()` も
+  funcall の cached type を正本として扱える。
+
+  そのうえで、`parse_call_postfix()` の `ND_FUNCREF` 直接呼び出し化経路と
+  `build_unqualified_call()` から、戻り値 raw metadata を `psx_ctx_get_function_ret_info()` で
+  手詰めする処理を削除した。直接呼び出しの戻り値情報は `psx_node_materialize_type()` →
+  `type_from_direct_funcall()` → `sync_funcall_result_metadata_from_type()` に一本化した。
+  間接呼び出し側の raw セットは、legacy funcptr metadata から canonical type を復元するための
+  fallback 入力としてまだ残している。
+
+  追加確認:
+  - cached pointer-return funcall が stale `fp_kind/is_complex/is_void_call/ret_struct_size/is_unsigned/is_long_long`
+    を canonical pointer type でクリアすることを確認。
+  - cached unsigned long long-return funcall が canonical type から
+    `is_unsigned/is_long_long` を復元し、conversion/i64-widen 判定にも反映されることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass（compile-only）**
+  - `git diff --check` = **green**
+
+- 続き973: **expr 側の comma/ternary/FP unary raw metadata 上書きを canonical type 優先に寄せた**。
+
+  続き972で `psx_node_new_binary()` は result type を materialize/sync するようになったが、
+  `expr.c` 側にはまだ constructor 後に raw metadata を直接上書きする箇所が残っていた。
+  特に comma expression は `psx_node_new_binary(ND_COMMA, ...)` の直後に
+  `comma->fp_kind = rhs->fp_kind` を代入しており、rhs に canonical type があるのに raw `fp_kind` が stale な場合、
+  正本化した mirror を再び壊せた。
+
+  修正として、comma expression は raw `rhs->fp_kind` 上書きをやめて
+  `psx_node_materialize_type(comma)` へ寄せた。ternary も branch の raw `fp_kind` 合成ではなく、
+  rhs/else 決定後に `psx_node_materialize_type()` で result type/mirror を同期する。
+  また GNU `__real__` / `__imag__` と unary `-` の FP 判定は、raw `operand->fp_kind` 直接参照から
+  canonical-aware `expr_node_fp_kind()` 経由にした。
+
+  追加確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き972: **binary constructor でも result canonical type を materialize/sync するようにした**。
+
+  続き971までで public helper の読み取り側はかなり canonical type 優先になったが、
+  `psx_node_new_binary()` はまだ作成時に operand の raw `fp_kind/is_complex/is_unsigned` を見て
+  result raw metadata を組み立て、canonical result type への同期は後段の `psx_node_get_type()` 任せだった。
+  そのため、作成直後の binary node を見る経路では raw mirror が stale なまま残れる。
+
+  修正として、`psx_node_new_binary()` の最後で `type_from_binary_expr()` により result type を
+  materialize し、`node->type` に cache したうえで `sync_plain_scalar_result_metadata_from_type()` を通すようにした。
+  ただし `ND_SHL` / `ND_SHR` の `node->is_unsigned` は result type ではなく codegen の ASR/LSR selector も兼ねるため、
+  plain scalar result metadata sync の対象から外して既存の operation signedness を保持した。
+
+  追加確認:
+  - stale raw `fp_kind` を持つ cached `double` operand から作った `ND_ADD` が、
+    作成直後に `PSX_TYPE_FLOAT` / `DOUBLE` の `node->type` と mirror を持つことを確認。
+  - stale raw `is_unsigned/is_long_long` を持つ cached unsigned long long operand から作った `ND_MUL` が、
+    作成直後に canonical unsigned long long result metadata を持つことを確認。
+  - 既存 shift regression で、signed shift の operation signedness が canonical sync に潰されないことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **green**
+
+- 続き971: **stride/VLA/ptr-array metadata helper も node 自身の canonical type 優先に寄せた**。
+
+  続き970で scalar/pointer/tag 系 helper は node 自身の canonical type を優先するようにしたが、
+  `psx_node_ptr_array_pointee_bytes()` / `psx_node_vla_row_stride_frame_off()` /
+  `node_vla_strides_remaining()` / `psx_node_pointer_stride_metadata()` はまだ
+  `ND_ADD` などの特殊分岐で先に子 node をたどる余地が残っていた。
+  これだと親 node の `psx_type_t` 正本に stride/VLA/ptr-array metadata がある場合でも、
+  stale な子 metadata に戻れる。
+
+  修正として、これらの helper でも最初に node 自身の canonical type 由来 view を確認し、
+  そこで答えられるなら子 node へ委譲しないようにした。materialized type があるのに
+  type から答えられない場合は raw fallback に落とさず 0 を返す方針も他 helper と揃えている。
+
+  追加確認:
+  - cached `ND_ADD` に canonical pointer type を置き、子 node が stale でも
+    `ptr_array_pointee_bytes` / VLA row-stride frame offset / pointer stride metadata が
+    node 自身の type から読まれることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **green**
+
+- 続き970: **public metadata helper を node 自身の canonical type 優先に寄せた**。
+
+  続き969で `ND_STMT_EXPR` の委譲漏れは塞いだが、まだ helper 側に
+  「node 自身に materialized `psx_type_t` があるのに、先に `ND_COMMA` / `ND_ADD` /
+  `ND_TERNARY` などの kind 分岐で子 node をたどる」形が残っていた。
+  これは正本が node 側に存在する場合でも、子の stale raw metadata へ戻れる構造だった。
+
+  修正として、pointer view / pointee flag / scalar flag / tag view 系の public helper で、
+  特殊 node の子をたどる前に node 自身の canonical type から答えられる場合はそれを優先するようにした。
+  対象は `psx_node_pointer_qual_levels()` / `psx_node_base_deref_size()` /
+  `psx_node_pointer_const_qual_mask()` / `psx_node_pointer_volatile_qual_mask()` /
+  `psx_node_pointee_is_*()` / `psx_node_is_*_type()` /
+  `psx_node_pointee_fp_kind()` / `psx_node_get_tag_type()` /
+  `psx_node_get_tag_scope_depth()`。
+
+  追加確認:
+  - cached `ND_COMMA` / `ND_STMT_EXPR` / `ND_ADD` に canonical scalar/pointer/tag type を置き、
+    子 node が stale でも unsigned/long long/plain char/long double、pointer qual/base deref/qual masks、
+    pointee unsigned、tag kind/name/scope が node 自身の type から読まれることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **green**
+
+- 続き969: **statement expression の delegated pointer/tag metadata helper 漏れを塞いだ**。
+
+  続き968で `ND_STMT_EXPR` の result type cache/sync は `ND_COMMA` と揃えたが、
+  周辺の public helper にはまだ `ND_COMMA` だけ rhs へ委譲し、`ND_STMT_EXPR` を扱わない箇所が残っていた。
+  具体的には `ps_node_deref_size()` / `ps_node_is_pointer()` /
+  `psx_node_pointer_qual_levels()` / `psx_node_base_deref_size()` /
+  `psx_node_pointee_fp_kind()` / `psx_node_get_tag_type()` /
+  `psx_node_get_tag_scope_depth()`。
+
+  これらは statement expression の結果型を読む口なので、rhs の canonical metadata へ
+  一貫して委譲するようにした。これで `({ ...; ptr; })` のような値が、呼び出し順によって
+  raw sidecar 欠落扱いになる余地を減らした。
+
+  追加確認:
+  - synthetic `ND_STMT_EXPR` の rhs に cached pointer-to-struct canonical type を置き、
+    pointer 判定、deref size、pointer qual levels、base deref size、tag kind/name/scope が
+    statement expression 越しに読めることを確認。
+  - synthetic `ND_STMT_EXPR` の rhs に cached `double *` canonical type を置き、
+    `psx_node_pointee_fp_kind()` が `DOUBLE` を返すことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only / up to date）
+  - `git diff --check` = **green**
+
+- 続き968: **comma/statement expression の delegated result type も node 側へ cache/sync するようにした**。
+
+  続き967までで cast helper の FP 判定も canonical type 優先になったが、
+  `psx_node_get_type()` の `ND_COMMA` / `ND_STMT_EXPR` は rhs の canonical type を
+  そのまま返すだけで、委譲元 node 自身の `node->type` cache と raw scalar mirror へ同期していなかった。
+  そのため、後段が同じ node を見た時に `psx_type_t` 正本を materialize 済みとして扱えず、
+  `fp_kind/is_complex/is_unsigned/is_long_long` などの stale raw metadata に戻る余地があった。
+
+  修正として、plain scalar result metadata の同期対象に `ND_COMMA` / `ND_STMT_EXPR` を加え、
+  `psx_node_get_type()` では rhs の type を取得した後に `sync_plain_scalar_result_metadata_from_type()` を通し、
+  委譲元 node の `node->type` にも cache するようにした。
+
+  追加確認:
+  - synthetic `ND_COMMA` / `ND_STMT_EXPR` の rhs に cached `double` canonical type を置き、
+    委譲元 node の `type` cache と `fp_kind` raw mirror が復元されることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き967: **cast helper の FP operand 判定も canonical type 優先にした**。
+
+  続き966までで semantic warning 側の FP 判定は canonical type を優先するようになったが、
+  `expr.c` の cast helper にはまだ `operand->fp_kind` を直接読んで
+  FP→int / int→FP 変換の要否を決める経路が残っていた。
+  ここは codegen 用 raw mirror が stale だと、`psx_type_t` 正本では FP 型なのに
+  `ND_FP_TO_INT` 変換を挿入しない余地がある。
+
+  修正として `expr_node_fp_kind()` を追加し、非ポインタの `PSX_TYPE_FLOAT` /
+  `PSX_TYPE_COMPLEX` が materialized できる場合は canonical type から FP kind を読むようにした。
+  canonical type が無い legacy node は従来どおり raw `node->fp_kind` fallback。
+  適用範囲は `sizeof` fallback、`wrap_fp_to_int_if_needed()` /
+  `wrap_fp_to_int_width()`、`wrap_to_fp()`、FP 定数 cast の入口判定、
+  sub-int unsigned cast の「operand が FP ではない」判定。
+
+  追加確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き966: **semantic warning の FP 判定も canonical type 優先にした**。
+
+  `semantic_pass.c` の warning 判定には、`value->fp_kind` / `lhs->fp_kind` /
+  `rhs->fp_kind` を直接読んで「浮動小数点かどうか」を見る箇所が残っていた。
+  semantic pass は `semantic_visit_node()` で各 node の type を materialize した後に
+  warning walk へ進むため、ここも canonical type を正本として読むのが自然。
+
+  修正として `semantic_node_fp_kind()` を追加し、非ポインタの `PSX_TYPE_FLOAT` /
+  `PSX_TYPE_COMPLEX` が materialized 済みならそこから FP kind を読むようにした。
+  canonical type が無い legacy node は従来どおり raw `node->fp_kind` に fallback する。
+  適用範囲は float-to-int narrowing、定数 overflow 除外、return narrowing、同一数値比較、
+  unsigned-zero / int-const-overflow / divide-by-zero の「整数リテラルかどうか」判定。
+
+  追加確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き965: **関数 signature 登録の FP 引数分類も canonical type 優先にした**。
+
+  `register_function_signature()` / `function_param_category_for_node()` は、引数 node の
+  `arg->fp_kind` を直接読んで FP 引数カテゴリと `param_fp_kind` を登録していた。
+  プロトタイプ用 placeholder には canonical type が無いので raw fallback は必要だが、
+  定義側などで `psx_type_t` 正本が materialize 済みの node まで raw metadata に依存する必要はない。
+
+  修正として `function_param_fp_kind_for_node()` を追加し、非ポインタ `PSX_TYPE_FLOAT` の
+  canonical type がある場合はそこから FP kind を読むようにした。canonical type が無い
+  placeholder / legacy node は従来どおり raw `fp_kind` fallback を使う。
+
+  追加確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き964: **`_Generic` の FP/complex control 型も canonical type 優先にした**。
+
+  続き963までで cast / ternary / compound literal の long double identity は canonical type /
+  decl_type に載るようになったが、`_Generic` の通常 control 推論にはまだ raw
+  `control->fp_kind` を直接読む経路が残っていた。これだと node に `psx_type_t` 正本があるのに
+  raw FP metadata が stale な場合、`float` / `double` / `long double` の判定が正本を迂回する。
+
+  修正として、`infer_generic_control_type()` は先に `psx_node_get_type(control)` を取得し、
+  非ポインタの `PSX_TYPE_FLOAT` / `PSX_TYPE_COMPLEX` は canonical type から
+  `_Generic` control 型を作るようにした。あわせて `generic_type_t` に `is_complex` を追加し、
+  association 型の `double _Complex` / `_Complex double` が通常の `double` と混ざらないよう
+  `generic_type_matches()` で比較するようにした。
+
+  追加確認:
+  - `_Generic((_Complex double)1, double:5, _Complex double:4, default:6)` が complex 側を選ぶことを確認。
+  - `_Generic(z, double:5, _Complex double:4, default:6)` で `_Complex double z` が complex 側を選ぶことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き963: **compound literal の long double identity も canonical decl type に載せるようにした**。
+
+  続き962で cast target type に `is_long_double` を通したが、同じ `parse_cast_type()` を使う
+  compound literal 経路はまだ `is_long_double` を受け取っていなかった。
+  そのため `(long double){1.0}` の temporary lvar/gvar は FP kind とサイズは double 相当でも、
+  C の型 identity としての long double bit を `decl_type` に載せられず、`_Generic` などで
+  double と区別できない余地が残っていた。
+
+  修正として、`parse_compound_literal_from_type()` に `cast_is_long_double` を通し、
+  global / local compound literal temporary の storage type 初期化後に
+  `psx_decl_set_gvar_long_double()` / `psx_decl_set_lvar_long_double()` を呼ぶようにした。
+  これで compound literal も decl_type 正本に long double identity を保持する。
+
+  追加確認:
+  - `_Generic((long double){1.0}, long double:4, double:5, default:6)` が long double を選ぶことを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き962: **ternary scalar identity も canonical result type から読むようにした**。
+
+  続き961までで constructor 側の raw metadata 依存をさらに削ったが、
+  reader 側にまだ「型正本を持っているのに子 node の raw scalar flag を OR する」箇所が残っていた。
+  `psx_node_is_long_long_type()` / `psx_node_is_plain_char_type()` /
+  `psx_node_is_long_double_type()` の `ND_TERNARY` 分岐がそれで、
+  条件演算子の結果型は usual arithmetic conversion 後の canonical result type が正本なのに、
+  分岐の `plain_char` / `long_double` などをそのまま結果型扱いできた。
+
+  修正として、これらの `ND_TERNARY` 判定を `scalar_flag_from_node_direct()` に寄せ、
+  materialized result type を正本として読むようにした。
+  さらに `type_usual_arith_result()` の FP result が `is_long_double` を落としていたため、
+  operand canonical type に `is_long_double` があれば result type にも引き継ぐようにした。
+
+  追加で、cast target type の正本にも `long double` bit が載るよう、
+  `parse_cast_type()` -> `apply_cast()` -> `expr_cast_target_type()` に `is_long_double` を通した。
+  これにより `(long double)1.0` のような cast type が単なる double として materialize される穴も塞いだ。
+
+  追加確認:
+  - `_Generic((1 ? (char)1 : (char)2), char:1, int:2, default:3)` が int を選ぶことを確認。
+    以前の OR 判定だと branch の plain char が結果型へ漏れる余地があった。
+  - `_Generic((1 ? (long double)1.0 : (double)2.0), long double:4, double:5, default:6)` が
+    long double を選ぶことを確認。
+  - cached typed ternary に stale branch `long_long/plain_char/long_double` flag を入れても、
+    canonical int result type が勝つ regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き961: **complex initializer FP slot も owner `decl_type` 由来の FP kind を使うようにした**。
+
+  続き960までで param lvar node の scalar metadata も `decl_type` 正本へ寄せたが、
+  `_Complex z = {re, im}` 初期化用の `psx_node_new_lvar_fp_slot_for()` はまだ
+  owner lvar の raw `fp_kind` だけを見て、実部/虚部 slot の `base.type` を作っていた。
+  owner 側に canonical `_Complex double` / `_Complex float` の `decl_type` があるのに
+  raw `fp_kind` が stale だと、slot node だけ FP 型を失う余地があった。
+
+  修正として、slot constructor は既存の public helper `psx_lvar_fp_kind()` を使うようにした。
+  この helper は `decl_type` があれば `PSX_TYPE_FLOAT` / `PSX_TYPE_COMPLEX` の `fp_kind` を正本として返すため、
+  raw `owner->fp_kind` に直接依存しない。
+
+  追加確認:
+  - `test/test_parser.c` の typed complex lvar regression に FP slot 検査を追加。
+    owner の raw `is_complex/fp_kind` を消しても、cached `_Complex double` `decl_type` から
+    slot node が `double` の `PSX_TYPE_FLOAT` を materialize することを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き960: **param lvar node の scalar metadata も `decl_type` 正本を優先するようにした**。
+
+  続き959までで expression result 側の raw metadata は canonical type から同期するようにしたが、
+  `psx_node_new_param_lvar_for()` はまだ `var->decl_type` を持つ param node に対しても、
+  呼び出し引数の `is_unsigned/abi_fp_kind/is_complex` で raw mirror を上書きできた。
+  そのため、関数定義の `args[]` node で宣言型の正本と ABI 受け渡し用 metadata が同じ field に混ざり、
+  stale ABI 引数が型メタデータを壊す余地が残っていた。
+
+  修正として、`decl_type` がある param lvar node では `sync_scalar_mem_from_decl_type()` /
+  `sync_pointer_cast_mem_from_type()` を優先し、ABI 引数由来の raw fallback は `decl_type` がない旧経路だけに下げた。
+  pointer param の stride / deref metadata 同期は既存の `sync_lvar_identifier_mem_from_decl_type()` に残している。
+  これで unsigned char / double / int param などで、stale な `is_unsigned/abi_fp_kind/is_complex` が
+  宣言型正本を上書きしない。
+
+  追加で、`ast.h` の `node_t::type` コメントを現状に合わせて更新した。
+  現在は `psx_type_t` が存在する場合は semantic type が正本で、legacy field は ABI/codegen 移行中の mirror という扱い。
+
+  追加確認:
+  - `test/test_parser.c` に param lvar constructor regression を追加。
+    `unsigned char` param に stale `abi_fp_kind/is_complex` を渡しても unsigned scalar として残ること、
+    `double` param に stale `FLOAT` ABI kind を渡しても canonical `DOUBLE` が勝つこと、
+    `int` param に stale FP/complex を渡しても scalar int として残ることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+  - `git diff --check` = **green**
+
+- 続き959: **assignment result metadata も lhs canonical type から同期するようにした**。
+
+  続き958までで funcall / binary / ternary の result raw metadata は canonical type から同期するようにしたが、
+  `psx_node_new_assign()` はまだ assignment expression の `node->base.type` に lhs の canonical type を持つ一方で、
+  raw `fp_kind/is_complex/is_atomic` は lhs node の raw mirror を直接コピーしていた。
+  lhs 側に canonical type があって raw mirror が stale の場合、assignment node の raw metadata だけがズレる余地があった。
+
+  修正として、`psx_node_new_assign()` では `node->base.type = psx_node_get_type(lhs)` を設定した後、
+  `sync_scalar_mem_from_decl_type()` と `sync_pointer_cast_mem_from_type()` を通すようにした。
+  これで assignment expression の scalar / pointer raw mirror は lhs canonical type を正本に復元される。
+  `_Bool` lhs の RHS 正規化は既に `lhs_is_bool_slot()` が canonical type を見るため、挙動は維持している。
+
+  追加確認:
+  - `test/test_parser.c` の typed assignment regression に pointer raw mirror 同期確認を追加。
+    lhs raw が non-pointer stale でも assignment node の raw `is_pointer` が canonical pointer type から復元されることを確認。
+  - canonical `_Complex double` lhs / `_Atomic int` lhs に対して、lhs raw mirror が stale でも
+    assignment node の `fp_kind/is_complex/is_atomic` が canonical lhs type から復元されることを確認。
+  - `make -j4 build/test_parser && ./build/test_parser` = **pass**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
+- 続き958: **binary/ternary scalar result metadata も canonical type から同期するようにした**。
+
+  続き957で `ND_FUNCALL` の result raw metadata は materialized type から同期するようにしたが、
+  binary / ternary にはまだ同じ型の分散が残っていた。
+  `psx_node_get_type()` は canonical result type を materialize する一方で、
+  `fp_kind/is_complex/is_unsigned/is_long_long` は constructor 時点の raw 合成に残り、
+  特に `_Complex` は `type_usual_arith_result()` が operand canonical type ではなく
+  raw `is_complex` に依存して結果型を決める穴があった。
+
+  修正として、plain scalar result node 用の
+  `sync_plain_scalar_result_metadata_from_type()` を追加し、binary / ternary /
+  FP scalar helper node の cached `node->type` early return と新規 materialize 後に通すようにした。
+  また `type_usual_arith_result()` は operand canonical type が `PSX_TYPE_COMPLEX` なら
+  raw `is_complex` が stale でも complex result type を返すようにした。
+  pointer / aggregate / void は scalar mirror を clear するだけで、mem 系 node には適用していない。
+
+  追加確認:
+  - `test/test_parser.c` に typed complex operand + stale binary raw metadata の regression を追加。
+    operand canonical type から binary result が `_Complex float` になり、raw `fp_kind/is_complex` も復元されることを確認。
+  - cached ternary canonical unsigned long long type から stale raw `fp_kind/is_complex/is_unsigned/is_long_long` が
+    scalar result metadata として復元/クリアされることを確認。
+  - `make -j4 build/test_parser && ./build/test_parser` = **pass**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
+- 続き957: **funcall result metadata も materialized type から同期するようにした**。
+
+  続き956までで lvar/gvar/tag member/cast などの raw mirror は `decl_type` / `cast_type` に
+  寄ってきたが、`ND_FUNCALL` はまだ `expr.c` 側で `fp_kind/is_complex/is_void_call/ret_struct_size` を
+  直接埋める経路が残っていた。IR builder は call node の raw `fp_kind/is_complex/ret_struct_size` を
+  読むため、`psx_node_get_type()` で canonical type が正しく materialize されても、raw metadata が
+  古いままだと戻り値 ABI 判定がズレる余地があった。
+
+  修正として、`psx_node_get_type(ND_FUNCALL)` と既に `node->type` が materialized 済みの early return で、
+  `sync_funcall_result_metadata_from_type()` を通すようにした。
+  同期対象は FP / `_Complex` / `void` / struct-union value return / pointer-vs-FP 境界に限定し、
+  unsigned char/short 戻り値の整数昇格まわりを壊さないよう、unsigned raw mirror はここでは触っていない。
+
+  追加確認:
+  - `test/test_parser.c` に stale raw metadata 付きの cached `ND_FUNCALL.type` regression を追加。
+    canonical type が pointer なら古い FP/complex/void/struct raw metadata が落ちることを確認。
+  - cached complex / struct return type から call node の `fp_kind/is_complex/ret_struct_size` が復元されることを確認。
+  - canonical funcptr signature の `ret_fp_kind` だけを持つ indirect call で、
+    materialized return type と call raw `fp_kind` が同期されることを確認。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make build/test_e2e` = **pass**（compile only）
+
 - 続き956: **FP_TO_INT cast metadata も `cast_type` 正本へ寄せた**。
 
   続き955で integer/pointer cast result constructor は `cast_type` 正本を優先するようにしたが、
@@ -19378,3 +19987,869 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - まだ完全な一本化ではなく、旧フィールドは parser/lowering の構築・補助メタデータとして残っている。
   - `size` / `elem_size` のうち、宣言型由来の読み出しは `decl_type` reader へ寄せ始めた。
     次に進めるなら、構築側の旧フィールド名も storage/lowering metadata として整理するのが高優先。
+
+### このセッション（続き840）: ND_FUNCREF の型情報を canonical node type に寄せる
+- 見つかった浅い箇所:
+  - `_Generic` の `ND_FUNCREF` 制御式だけが `expr.c` から
+    `psx_ctx_get_function_ret_info()` を直接呼び、関数参照の戻り値形状をその場で再構築していた。
+  - `ND_FUNCREF` は `ps_node_is_pointer()` では pointer 扱いだったが、
+    `psx_node_get_type()` から型を返せず、型情報の入口が分散していた。
+- 根本対応:
+  - `node_utils.c` に `type_from_funcref()` を追加し、関数 designator を
+    既存表現に合わせた「署名付き pointer type」として materialize するようにした。
+  - 関数参照の callable signature は function context の引数数 / variadic /
+    FP・整数引数 metadata から復元し、戻り値 shape は既存の direct funcall materializer と
+    同じ ret info から canonical type に載せる形にした。
+  - `psx_node_get_type(ND_FUNCREF)` が pointer type を返し、
+    `psx_node_funcptr_sig()` も同じ canonical type から署名を読めるようにした。
+  - `_Generic` の `ND_FUNCREF` branch は `psx_ctx_get_function_ret_info()` 直読みをやめ、
+    `psx_node_get_type()` / `psx_node_pointer_qual_levels()` /
+    `psx_node_pointee_fp_kind()` など既存 public helper 経由に寄せた。
+  - parser unit の type metadata bridge に、synthetic `ND_FUNCREF` が
+    `double (double)` の戻り値・引数 signature を canonical type から返す回帰を追加した。
+- 確認:
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `git diff --check` = **green**
+- 現状:
+  - `ND_FUNCREF` の型取得入口は canonical node type に寄った。
+  - ただし `_Generic(fd, double (*)(double): ...)` のような bare function designator と
+    複雑な association type signature の完全照合は、既存の `type_sig` 設計上まだ別課題。
+    今回は挙動を広げず、direct context lookup 排除に絞った。
+
+### このセッション（続き841）: _Generic の関数ポインタ照合を構造化 signature へ寄せる
+- 見つかった浅い箇所:
+  - 続き840で `ND_FUNCREF` の canonical type に `psx_decl_funcptr_sig_t` を載せたが、
+    `_Generic` の association 側は `type_sig` 文字列だけで複雑な関数ポインタ型を照合していた。
+  - そのため bare function designator (`fd`) は canonical type/signature を持っていても、
+    `double (*)(double)` association とは構造的に照合できず default に落ちていた。
+  - さらに続き840で追加した `ND_FUNCREF` の引数 mask 復元が 1bit mask になっており、
+    既存の `psx_funcptr_signature_t` / `psx_decl_funcptr_sig_t` の 2bit packed mask と形式がずれていた。
+- 根本対応:
+  - `node_utils.c` の `funcptr_signature_from_function_name()` を既存仕様に合わせ、
+    FP 引数は `1=float / 2=double`、整数・ポインタ引数は `1=4B / 2=8B / 3=ptr` を
+    2bit ごとに pack する形へ修正した。
+  - `generic_type_t` に `psx_decl_funcptr_sig_t funcptr_sig` を持たせた。
+  - `_Generic` control 側は `ND_FUNCREF` と通常 pointer expression のどちらも
+    `psx_node_funcptr_sig()` から canonical signature を拾い、payload があれば `is_funcptr` として扱う。
+  - association 側は `parse_funcptr_abstract_decl()` から `psx_funcptr_signature_t` を受け取り、
+    `psx_decl_make_funcptr_sig_from_kind()` で同じ構造化 signature に変換する。
+  - `generic_type_matches()` は両側に `funcptr_sig` payload がある場合、
+    `type_sig` 文字列より先に return shape / param mask / variadic / pointee array を構造比較する。
+    非 variadic の `nargs_fixed` は association parser が保持していない既存仕様があるため、
+    双方が値を持つ場合だけ厳密比較する。
+  - parser unit に bare function designator の `_Generic(fd, double (*)(double): ...)` regression を追加した。
+- 確認:
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `git diff --check` = **green**
+- 現状:
+  - `_Generic` の通常関数ポインタ変数と bare function designator は、
+    `type_sig` 文字列だけでなく canonical `psx_decl_funcptr_sig_t` で照合できるようになった。
+  - `type_sig` は array-of-funcptr や nested declarator など、まだ構造化しきれていない派生型の保険として残っている。
+
+### このセッション（続き842）: _Generic 用 type_sig の正本を decl_type 側へ寄せる
+- 見つかった浅い箇所:
+  - `_Generic(var, ...)` の複雑な派生型照合は、宣言時に `record_var_type_sig()` /
+    `psx_record_global_type_sig()` へ名前キーで保存した `type_sig` を、制御式が単一識別子のときだけ
+    `psx_lookup_var_type_sig()` で引いていた。
+  - これは `decl_type` / `psx_node_get_type()` へ型正本を寄せる流れから外れており、
+    `(p)` のように単一識別子扱いされない制御式では名前表経路に頼れない構造だった。
+- 根本対応:
+  - `psx_type_t` に `type_sig` を追加し、複雑な派生型の正規化トークン文字列を型側の付帯情報として保持できるようにした。
+  - `lvar_t` / `global_var_t` にも `type_sig` sidecar を追加し、`decl_type` invalidation / refresh 後でも
+    `psx_lvar_materialize_decl_type()` / `psx_gvar_materialize_decl_type()` が型へ戻せるようにした。
+  - ローカル宣言は `psx_serialize_decl_type_tokens()` の結果を `var->type_sig` と `var->decl_type->type_sig` に保存する。
+  - グローバル宣言は `finalize_toplevel_object_declarator()` 後に `gv->type_sig` と materialized `gv->decl_type->type_sig` へ保存する。
+  - `_Generic` control inference は `psx_node_get_type(control)->type_sig` を先に読み、
+    名前表 lookup は `control_ty.type_sig` がまだ無い場合だけのフォールバックに落とした。
+  - parser unit に、ローカル/グローバル関数ポインタ宣言の `type_sig` が
+    `lvar/global_var` と再 materialize 後の `decl_type` の両方へ残る直接回帰を追加した。
+  - `_Generic((p), int (*)(int): ...)` の回帰を追加し、単一識別子 lookup に寄らない制御式でも
+    canonical type 側の情報で関数ポインタ照合できることを確認した。
+- 確認:
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `git diff --check` = **green**
+- 現状:
+  - `type_sig` の主な読み取り経路は `decl_type` / `psx_node_get_type()` 側へ移った。
+  - 名前表 (`record_var_type_sig` / `psx_record_global_type_sig` / `psx_lookup_var_type_sig`) はまだフォールバックとして残している。
+    完全削除するには、nested declarator / array-of-funcptr を含む既存 `_Generic` 回帰をもう一段増やしてから、
+    fallback lookup を外して壊れ方を確認するのが次の高優先。
+
+### このセッション（続き843）: _Generic 用 type_sig の名前表フォールバックを削除
+- 見つかった浅い箇所:
+  - 続き842で `type_sig` の読み取り主経路は `decl_type` 側へ寄ったが、
+    `record_var_type_sig` / `psx_record_global_type_sig` / `psx_lookup_var_type_sig` の名前キー副テーブルが残っていた。
+  - これは「単一識別子だけ名前で補完する」旧構造を温存しており、型情報の正本が
+    `decl_type` と名前表へ分散したままだった。
+- 根本対応:
+  - `decl.c` 先頭の local/global `type_sig` 副テーブル、reset 時の count 初期化、
+    `record_var_type_sig()` / `psx_record_global_type_sig()` / `psx_lookup_var_type_sig()` を削除した。
+  - `core.h` から名前表 API の宣言を削除した。
+  - ローカル宣言は `var->type_sig` / `var->decl_type->type_sig` だけへ保存し、
+    グローバル宣言は `finalize_toplevel_object_declarator()` 後に `gv->type_sig` /
+    `gv->decl_type->type_sig` だけへ保存するようにした。
+  - `_Generic` control inference は `psx_node_get_type(control)->type_sig` のみを見るようにし、
+    単一識別子の名前 lookup 分岐を削除した。
+  - 名前表削除で `generic_complex_derived_type.c` の local `double (*g1)(int)` が
+    `int (*)(int)` へ誤マッチする崩れ方が出たため、`generic_type_matches()` の優先順を修正した。
+    双方が `type_sig` を持つ場合は正規化文字列を最優先し、構造化 `funcptr_sig` は
+    bare function designator など `type_sig` を持てない経路の補完として使う。
+  - parser unit に、local/global の nested function-pointer declarator を
+    `_Generic((p), int (*(*)(void))[3]: ...)` で照合する回帰を追加した。
+  - `generic_complex_derived_type_global.c` のコメントを、名前表ではなく `decl_type` 側へ載せる説明に更新した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `_Generic` 用 `type_sig` の名前表フォールバックは削除済み。
+  - `type_sig` 自体はまだ残っているが、保持先は `decl_type` と、その再生成用 sidecar (`lvar_t` /
+    `global_var_t`) に限定された。
+  - 次に進めるなら、`type_sig` 文字列が担っている nested declarator / array-of-funcptr の情報を
+    `psx_type_t` の構造化フィールドへさらに移せるかを洗うのが高優先。
+
+### このセッション（続き844）: pointer-to-array return の nested function pointer を構造照合へ寄せる
+- 見つかった浅い箇所:
+  - `_Generic` association 側の `parse_ptr_to_func_returning_ptr_to_array_abstract_decl()`
+    (`int (*(*)(void))[3]`) は、これまでトークンを読み飛ばすだけだった。
+  - そのためこの形は `type_sig` 文字列が無いと association 側の構造化 `funcptr_sig` では照合できず、
+    `type_sig` 文字列への依存が残っていた。
+- 根本対応:
+  - `parse_ptr_to_func_returning_ptr_to_array_abstract_decl()` が、関数パラメータを
+    `psx_funcptr_signature_t` として復元し、戻り値の pointer-to-array を
+    `psx_ret_pointee_array_t` として返せるようにした。
+  - `_Generic` association builder は `int (*(*)(void))[3]` を見たとき、
+    `out->is_funcptr` / `ret_is_data_pointer` / `funcptr_sig.ret_pointee_array` を設定するようにした。
+  - `generic_type_matches()` は、control/association の双方に `funcptr_sig` があり、
+    どちらかが `ret_pointee_array` を持つ場合は、`type_sig` より先に構造化 signature を比較するようにした。
+    単純関数ポインタは引き続き `type_sig` 優先で、続き843で見つけた粗い signature 誤マッチを避ける。
+  - parser unit に synthetic local `p` を追加し、`p->type_sig = NULL` の状態でも
+    `_Generic(p, int (*(*)(void))[3]: 31, default: 7)` が `funcptr_sig.ret_pointee_array` だけで
+    match する回帰を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `int (*(*)(void))[N]` の `_Generic` 照合は、`type_sig` なしでも構造化 `funcptr_sig.ret_pointee_array`
+    で判定できるようになった。
+  - `type_sig` はまだ association 全般の保険として残るが、担っていた nested declarator 情報の一部を
+    `psx_type_t` / `psx_decl_funcptr_sig_t` 側へ移せた。
+  - 次に進めるなら、`parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl()` や
+    `parse_ptr_to_func_returning_ptr_to_func*` 系も同じように構造化できるか確認する。
+
+### このセッション（続き845）: function-pointer return の nested function pointer を ret_is_funcptr 構造照合へ寄せる
+- 見つかった浅い箇所:
+  - `_Generic` association 側の `parse_ptr_to_func_returning_ptr_to_func_abstract_decl()`
+    (`int (*(*)(void))(int)`) は、これまで外側/内側のパラメータ列を読み飛ばすだけだった。
+  - そのため戻り値が function pointer であることを association 側の `funcptr_sig` に載せられず、
+    この形は `type_sig` 文字列が無いと `_Generic` で照合できなかった。
+  - さらに `funcptr_sig_merge_missing()` と node 側の戻り値形状判定が `ret_is_funcptr` を落としており、
+    canonical lvar type には情報があっても node helper 経由で消える経路が残っていた。
+- 根本対応:
+  - `parse_ptr_to_func_returning_ptr_to_func_abstract_decl()` が、外側のパラメータ列を
+    `psx_funcptr_signature_t` として復元できるようにした。
+  - `_Generic` association builder は `int (*(*)(void))(int)` を見たとき、
+    `out->is_funcptr` と `funcptr_sig.ret_is_funcptr` を設定するようにした。
+  - `generic_funcptr_sig_matches()` は `ret_is_funcptr` も構造比較対象にしているため、
+    control/association の双方に `funcptr_sig` がある経路では `type_sig` なしでも戻り function-pointer 形状を見られる。
+  - `funcptr_sig_merge_missing()` と `funcptr_sig_has_return_shape()` に `ret_is_funcptr` を追加し、
+    lvar/global/type/node 間の bridge でこのビットだけ落ちる穴を塞いだ。
+  - parser unit に synthetic local `q` を追加し、`q->type_sig = NULL` の状態でも
+    `_Generic(q, int (*(*)(void))(int): 37, default: 7)` が `funcptr_sig.ret_is_funcptr` だけで
+    match する回帰を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `int (*(*)(void))(...)` の `_Generic` 照合は、戻り値が function pointer であることまでは
+    `type_sig` なしの構造情報で判定できるようになった。
+  - まだ「返された function pointer 自体の内側 signature」は構造化していないため、
+    その内側引数/戻り値まで区別する必要がある通常ソースでは `type_sig` が保険として残る。
+  - 次に進めるなら、`psx_decl_funcptr_sig_t` に returned-function-pointer の signature を入れられる形へ拡張し、
+    `int (*(*)(void))(int)` と `int (*(*)(void))(double)` を文字列なしで区別するところが高優先。
+
+### このセッション（続き846）: returned function-pointer の inner signature を正本型へ載せる
+- 見つかった浅い箇所:
+  - 続き845では `ret_is_funcptr` で「戻り値が function pointer」までは構造化したが、
+    返された function pointer 自体の引数 signature を保存する場所が無かった。
+  - local / global / typedef / parameter declarator は、複数の trailing `(...)` を読むと
+    最後の suffix で `func_suffix_sig` を上書きしていた。
+    `int (*(*q)(void))(int)` では q 自身の `(void)` と、返された function pointer の `(int)` が
+    同じフィールドへ潰れていた。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t` に `ret_funcptr_sig` を追加し、戻り値が function pointer のときの
+    inner function signature を正本型に持てるようにした。
+  - `psx_decl_funcptr_sig_has_payload()` / `funcptr_sig_merge_missing()` /
+    `funcptr_sig_has_return_shape()` / `_Generic` の `generic_funcptr_sig_matches()` が
+    `ret_funcptr_sig` を扱うようにした。
+  - `_Generic` association parser は `int (*(*)(void))(int)` の外側 `(void)` を
+    `funcptr_sig`、内側 `(int)` を `ret_funcptr_sig` として分離して復元するようにした。
+  - local declarator / top-level declarator / parameter declarator の state に
+    `returned_funcptr_suffix_sig` と suffix count を追加し、1 個目の function suffix と
+    2 個目の returned-function-pointer suffix を上書きせず分けて保存するようにした。
+  - parser unit に、`type_sig = NULL` の synthetic local `q` で
+    `_Generic(q, int (*(*)(void))(int): 37, default: 7)` は match し、
+    `_Generic(q, int (*(*)(void))(double): 41, default: 7)` は default へ落ちる回帰を追加した。
+  - parser unit に、実際に parse した local / global / parameter 宣言でも
+    `decl_type->funcptr_sig.ret_funcptr_sig` が残る直接回帰を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `int (*(*)(void))(int)` と `int (*(*)(void))(double)` の内側引数は、
+    `type_sig` なしでも `ret_funcptr_sig` の構造情報で区別できるようになった。
+  - `type_sig` はまだ複雑な宣言子全般の保険として残るが、function-pointer-returning-function-pointer の
+    inner parameter signature は `psx_type_t` / `psx_decl_funcptr_sig_t` 側へ移せた。
+  - 次に進めるなら、returned function pointer の「内側戻り値型」も dedicated field に分けるか、
+    `psx_decl_funcptr_sig_t` 自体を再帰的/階層的な型表現へ置き換えるかを検討する。
+
+### このセッション（続き847）: returned function-pointer の inner return type を正本型へ載せる
+- 見つかった浅い箇所:
+  - 続き846で `ret_funcptr_sig` に inner parameter signature は載せたが、
+    inner function の戻り値型はまだ既存の `ret_int_width` / `ret_fp_kind` 等に混ざっていた。
+  - `_Generic` control 側の pointer inference は `kind = TK_INT` 固定のため、
+    `double (*(*q)(void))(int)` のような型を `type_sig` なしで構造照合しようとすると、
+    汎用 `kind` / `ptr_pointee_fp_kind` 比較が正本になってしまう穴が残っていた。
+  - local / top-level / parameter declarator の data-pointer 判定は、suffix が 2 個以上ある
+    returned-function-pointer 形でも「返された function pointer 自身の `*`」を data pointer 段数に数えていた。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t` に `ret_funcptr_ret_int_width` /
+    `ret_funcptr_ret_fp_kind` / `ret_funcptr_ret_pointee_fp_kind` /
+    `ret_funcptr_ret_pointee_array` / `ret_funcptr_ret_is_*` を追加した。
+  - `psx_decl_funcptr_sig_promote_return_to_funcptr()` を追加し、既存の direct return metadata を
+    returned-function-pointer の inner return metadata へ移した上で、外側 direct return fields を空にするようにした。
+  - local / global / typedef / parameter declarator と `_Generic` association parser は、
+    suffix が 2 個以上ある形で手動 bit 設定せず、この helper を通すようにした。
+  - `psx_decl_funcptr_sig_has_payload()` / `funcptr_sig_merge_missing()` /
+    `funcptr_sig_has_return_shape()` / `_Generic` の `generic_funcptr_sig_matches()` が
+    inner return metadata を扱うようにした。
+  - `_Generic` の関数ポインタ構造比較では、inner return metadata がある場合、
+    古い汎用 `kind` / `ptr_pointee_fp_kind` / `ptr_pointee_unsigned` を正本にしないようにした。
+  - `decl_funcptr_direct_ret_is_data_pointer()` / top-level / parameter 版は、
+    suffix が 2 個以上あるときに returned function pointer 自身の 1 段を data pointer 判定から除外するようにした。
+  - parser unit に、`type_sig = NULL` の synthetic local `r` で
+    `double (*(*)(void))(int)` は match し、`int (*(*)(void))(int)` は default へ落ちる回帰を追加した。
+  - parser unit の実宣言 local / parameter / global 回帰で、
+    `ret_funcptr_ret_int_width` が残り、外側 `ret_int_width` は 0 に移されることを確認した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `int (*(*)(void))(int)` / `double (*(*)(void))(int)` の inner return type は、
+    `type_sig` なしでも `ret_funcptr_ret_*` の構造情報で区別できるようになった。
+  - まだ `psx_decl_funcptr_sig_t` は flat field が増えており、完全な再帰型表現ではない。
+    次に根本化するなら、`psx_decl_funcptr_sig_t` を入れ子可能な function type descriptor へ置き換えるか、
+    少なくとも returned-function-pointer がさらに function pointer を返すケースの表現を追加するのが候補。
+
+### このセッション（続き848）: returned function-pointer inner return shape を構造体/helper へ束ねる
+- 見つかった浅い箇所:
+  - 続き847で追加した `ret_funcptr_ret_*` は機能上は正本型へ寄せる前進だったが、
+    field 群としては `ret_int_width` / `ret_fp_kind` などの direct return metadata を
+    もう一段コピーした形で、payload 判定・merge・比較も `decl.c` / `node_utils.c` /
+    `expr.c` に散っていた。
+- 根本対応:
+  - `psx_funcptr_return_shape_t` を追加し、`psx_decl_funcptr_sig_t` の
+    returned-function-pointer inner return metadata を `ret_funcptr_ret` へ束ねた。
+  - `psx_funcptr_return_shape_has_payload()` /
+    `psx_funcptr_return_shape_matches()` /
+    `psx_funcptr_return_shape_merge_missing()` /
+    `psx_decl_funcptr_direct_return_shape()` を共通 helper として追加した。
+  - `psx_decl_funcptr_sig_promote_return_to_funcptr()` は、direct return fields を個別コピーせず
+    `psx_decl_funcptr_direct_return_shape()` から inner return shape を作るようにした。
+  - `funcptr_sig_has_return_shape()` / `funcptr_sig_merge_missing()` /
+    `_Generic` の `generic_funcptr_sig_matches()` は、各ファイル内の個別判定ではなく
+    共通 shape helper を使うようにした。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - returned function-pointer の inner return は flat field 群ではなく、
+    `psx_funcptr_return_shape_t` で payload/merge/compare されるようになった。
+  - ただし direct return metadata 自体はまだ `psx_decl_funcptr_sig_t` の flat fields に残っている。
+    次の大きい根本化候補は、direct return も `psx_funcptr_return_shape_t` へ寄せ、
+    その後に function type descriptor を再帰構造へ近づけること。
+
+### このセッション（続き849）: direct return metadata も `return_shape` に一本化
+- 見つかった浅い箇所:
+  - 続き848で returned-function-pointer の inner return は `psx_funcptr_return_shape_t` に束ねたが、
+    `psx_decl_funcptr_sig_t` の direct return はまだ `ret_int_width` / `ret_fp_kind` /
+    `ret_pointee_fp_kind` / `ret_pointee_array` / `ret_is_void` /
+    `ret_is_data_pointer` / `ret_is_complex` の flat fields として残っていた。
+  - そのため direct return と inner return が同じ意味の shape を別表現で持つ状態で、
+    正本の表現がまだ割れていた。
+- 根本対応:
+  - `psx_decl_funcptr_sig_t` から direct return の flat fields を外し、
+    `psx_funcptr_return_shape_t return_shape` に置き換えた。
+  - `psx_decl_make_funcptr_sig()` は direct return metadata を `return_shape` に構築するようにした。
+  - `psx_decl_funcptr_sig_promote_return_to_funcptr()` は `return_shape` を
+    `ret_funcptr_ret` に移し、direct return を `(psx_funcptr_return_shape_t){0}` で空にするようにした。
+  - `funcptr_sig_merge_missing()` は direct return も
+    `psx_funcptr_return_shape_merge_missing()` で扱うようにした。
+  - `expr_funcall_returns_decayable_funcptr()` の独自 payload 判定を
+    `psx_decl_funcptr_sig_has_payload()` に置き換え、payload 判定の正本をさらに寄せた。
+  - arch / IR / semantic / parser / test の既存参照は `return_shape.*` 経由へ移し、
+    `psx_function_signature_t` の別用途 `ret_*` は対象外として維持した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `psx_decl_funcptr_sig_t` の direct return と returned-function-pointer inner return は、
+    どちらも `psx_funcptr_return_shape_t` で表現されるようになった。
+  - まだ function pointer type 全体は `param_*` / `return_shape` /
+    `ret_is_funcptr` / `ret_funcptr_sig` / `ret_funcptr_ret` の並列構造で、
+    完全な再帰的 function type descriptor にはなっていない。
+    次に根本化するなら、`ret_is_funcptr + ret_funcptr_sig + ret_funcptr_ret` を
+    1つの returned-function descriptor に束ねるのが自然。
+
+### このセッション（続き850）: returned-function pointer metadata を descriptor に束ねる
+- 見つかった浅い箇所:
+  - 続き849で direct return / inner return shape は共通化したが、
+    returned-function pointer そのものは `ret_is_funcptr` /
+    `ret_funcptr_sig` / `ret_funcptr_ret` の3フィールドに分散していた。
+  - そのため「戻り値が function pointer か」「その function pointer の引数 signature」
+    「その function pointer の戻り値 shape」が、同じ概念なのに並列 field として扱われていた。
+- 根本対応:
+  - `psx_funcptr_returned_func_t` を追加し、
+    `is_funcptr` / `signature` / `return_shape` を1つの descriptor に束ねた。
+  - `psx_decl_funcptr_sig_t` から `ret_is_funcptr` /
+    `ret_funcptr_sig` / `ret_funcptr_ret` を外し、
+    `returned_funcptr` に置き換えた。
+  - `psx_funcptr_signature_has_payload()` /
+    `psx_funcptr_returned_func_has_payload()` /
+    `psx_funcptr_returned_func_matches()` /
+    `psx_funcptr_returned_func_merge_missing()` を追加した。
+  - `psx_decl_funcptr_sig_has_payload()` / `funcptr_sig_has_return_shape()` /
+    `funcptr_sig_merge_missing()` / `_Generic` の `generic_funcptr_sig_matches()` は、
+    returned-function pointer を個別フィールドではなく descriptor helper 経由で扱うようにした。
+  - `psx_decl_funcptr_sig_promote_return_to_funcptr()` は、direct `return_shape` を
+    `returned_funcptr.return_shape` へ移し、inner suffix を
+    `returned_funcptr.signature` へ保存するようにした。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `psx_decl_funcptr_sig_t` 内の returned-function pointer は、
+    1つの `returned_funcptr` descriptor として扱えるようになった。
+  - まだ外側 function pointer 自体の `param_fp_mask` / `param_int_mask` /
+    `return_shape` / `returned_funcptr` は flat に並んでいる。
+    次に根本化するなら、外側 function type 全体を `psx_function_type_shape_t` のような
+    descriptor に束ね、`psx_decl_funcptr_sig_t` をその薄い wrapper に近づけるのが候補。
+
+### このセッション（続き851）: 外側 function pointer type を descriptor 化
+- 見つかった浅い箇所:
+  - 続き850で returned-function pointer は descriptor 化したが、外側 function pointer 自体は
+    `param_fp_mask` / `param_int_mask` / `is_variadic` / `nargs_fixed` /
+    `return_shape` / `returned_funcptr` が `psx_decl_funcptr_sig_t` 直下に並んでいた。
+  - そのため function type 全体の payload / match / merge が、まだ外側 signature と
+    return shape を個別 field として扱う構造に残っていた。
+- 根本対応:
+  - `psx_funcptr_type_shape_t` を追加し、外側 function pointer の
+    `signature` / `return_shape` / `returned_funcptr` を1つの descriptor に束ねた。
+  - `psx_decl_funcptr_sig_t` は `psx_funcptr_type_shape_t function` を持つ薄い wrapper に近づけた。
+  - `psx_funcptr_type_shape_has_payload()` /
+    `psx_funcptr_type_shape_matches()` /
+    `psx_funcptr_type_shape_merge_missing()` を追加した。
+  - `psx_decl_funcptr_sig_has_payload()` / `funcptr_sig_merge_missing()` /
+    `_Generic` の `generic_funcptr_sig_matches()` / typedef 再宣言の function pointer identity 比較は、
+    外側 function descriptor helper 経由で扱うようにした。
+  - `psx_decl_make_funcptr_sig()` は suffix を `function.signature` に、
+    direct return を `function.return_shape` に、returned function pointer を
+    `function.returned_funcptr` に構築するようにした。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **green**
+- 現状:
+  - `psx_decl_funcptr_sig_t` は外側 function pointer type を
+    `function` descriptor として保持する形になり、payload / match / merge の正本も
+    `psx_funcptr_type_shape_*` helper へ寄った。
+  - まだ「再帰的な function type descriptor」そのものではなく、
+    returned function pointer は `psx_funcptr_returned_func_t` の中に
+    `signature` / `return_shape` を持つ1段表現。次の候補は、この returned 側も
+    `psx_funcptr_type_shape_t` と同じ形へ近づけ、最終的に再帰構造へ寄せること。
+
+### このセッション（続き852）: signature + return_shape を callable descriptor に正本化
+- 見つかった浅い箇所:
+  - 続き851で外側 function pointer type は `psx_funcptr_type_shape_t` に束ねたが、
+    外側 descriptor と returned-function descriptor がそれぞれ独自に
+    `signature` / `return_shape` を持っていた。
+  - payload / match / merge の処理も、外側 function と returned function で
+    同じ `signature + return_shape` 比較を別々に書く余地が残っていた。
+- 根本対応:
+  - `psx_funcptr_callable_shape_t` を追加し、
+    `psx_funcptr_signature_t signature` と `psx_funcptr_return_shape_t return_shape` を
+    1つの callable descriptor に束ねた。
+  - `psx_funcptr_type_shape_t` は `callable + returned_funcptr` を持つ構造に変更した。
+  - `psx_funcptr_returned_func_t` も `is_funcptr + callable` に変更し、
+    returned 側の function signature / return shape が外側と同じ descriptor を使うようにした。
+  - `psx_funcptr_callable_shape_has_payload()` /
+    `psx_funcptr_callable_shape_matches()` /
+    `psx_funcptr_callable_shape_merge_missing()` を追加した。
+  - `psx_funcptr_type_shape_*` と `psx_funcptr_returned_func_*` は、
+    それぞれ個別 field 比較ではなく callable helper を呼ぶ形に寄せた。
+  - コード全体の参照は `function.callable.*` と
+    `function.returned_funcptr.callable.*` へ移行した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+- 現状:
+  - function pointer の「呼び出し可能部分」は外側/returned 側とも
+    `psx_funcptr_callable_shape_t` が正本になった。
+  - まだ完全な再帰 descriptor ではない。次にさらに根本化するなら、
+    `psx_funcptr_returned_func_t` を「optional function type」だけに薄くし、
+    returned function pointer の nested returned-function も同じ descriptor で表せる形に寄せる。
+
+### このセッション（続き853）: returned function pointer を type descriptor helper 経由へ寄せる
+- 見つかった浅い箇所:
+  - 続き852で callable descriptor は共通化したが、実装コード側にはまだ
+    `returned_funcptr.is_funcptr` や `returned_funcptr.callable.*` を直接読む/立てる箇所が残っていた。
+  - そのため returned function pointer は storage としては descriptor 化されていても、
+    利用側は optional returned-function の内部レイアウトを知っている状態だった。
+- 根本対応:
+  - `psx_funcptr_returned_func_as_type_shape()` /
+    `psx_funcptr_returned_func_from_type_shape()` を追加した。
+    returned function pointer を `psx_funcptr_type_shape_t` と相互変換できる境界を作った。
+  - `psx_funcptr_returned_func_mark()` を追加し、`is_funcptr` flag の直接操作を source 側から外した。
+  - `psx_funcptr_returned_func_matches()` /
+    `psx_funcptr_returned_func_merge_missing()` は、内部 callable field を直接比較/merge せず、
+    `psx_funcptr_type_shape_t` へ変換して共通 descriptor helper を通るようにした。
+  - `psx_funcptr_type_shape_matches()` /
+    `psx_funcptr_type_shape_merge_missing()` は、空の returned payload では returned helper に降りない
+    再帰境界を持つようにした。これにより次の pointer/arena 化でも無限再帰を避ける形になる。
+  - `_Generic` の nested returned shape 判定と funcref の returned funcptr 補完も
+    returned descriptor helper 経由へ変更した。
+  - source 側では `rg "returned_funcptr\\.callable|returned_funcptr\\.is_funcptr" src/parser src/ir src/arch`
+    が一致なしになった（テストの内部構造 assertion は残している）。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+- 現状:
+  - returned function pointer は storage としてはまだ `psx_funcptr_returned_func_t` だが、
+    source の利用側は `psx_funcptr_type_shape_t` 変換 helper を通る形に寄った。
+  - 次に根本化するなら、`psx_funcptr_returned_func_t` の中身を pointer/arena backed な
+    optional `psx_funcptr_type_shape_t` に変え、bounded 1段表現から実際の再帰 descriptor に移す。
+
+### このセッション（続き854）: returned function pointer storage を optional descriptor 化
+- 見つかった浅い箇所:
+  - 続き853で利用側は helper 経由になったが、`psx_funcptr_returned_func_t` の storage 自体は
+    まだ `is_funcptr + callable` で、外側 function type descriptor と別形状だった。
+  - そのため「returned function pointer は function type descriptor である」という正本化が、
+    API 境界では表現できていても、データ構造としてはまだ 1段専用表現に残っていた。
+- 根本対応:
+  - `psx_funcptr_type_shape_t` を forward-declare し、
+    `psx_funcptr_returned_func_t` を `is_funcptr + psx_funcptr_type_shape_t *type` に変更した。
+  - `psx_funcptr_returned_func_from_type_shape()` は heap clone を作り、
+    `psx_funcptr_returned_func_as_type_shape()` は optional descriptor を値として返すようにした。
+  - nested returned descriptor も clone/merge できるよう、
+    `psx_funcptr_type_shape_clone_heap()` を追加し、`psx_funcptr_returned_func_merge_missing()` は
+    `psx_funcptr_type_shape_merge_missing()` を通してから optional descriptor を作り直す形にした。
+  - テストの内部構造 assertion は `returned_funcptr.type->callable.*` へ更新した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+- 現状:
+  - returned function pointer は実際に optional `psx_funcptr_type_shape_t *` を持つ形になり、
+    bounded 1段表現から再帰 descriptor に一段近づいた。
+  - まだ heap clone の lifetime/free 方針は暫定。現状の semantic/type metadata は
+    翻訳単位や IR まで値コピーで流れるため、parser arena には載せていない。
+    次に根本化するなら、type metadata 全体の lifetime owner を決め、
+    `psx_decl_funcptr_sig_t` / `psx_type_t` / lvar/gvar/tag member 間のコピーを
+    clone API または canonical type object 参照に寄せる。
+
+### このセッション（続き855）: function pointer metadata の deep clone 境界を追加
+- 見つかった浅い箇所:
+  - 続き854で `returned_funcptr.type` が pointer-backed になったが、
+    `funcptr_sig` の保存先には `dst->funcptr_sig = src` / `= *sig` の浅い値コピーが多く残っていた。
+  - そのため returned descriptor の pointer が lvar/gvar/type/node/semantic record/IR 間で共有され、
+    「保存先ごとに独立した型 metadata」と「正本 descriptor」の境界が曖昧だった。
+  - `funcptr_sig_equal()` が `memcmp` に残っており、pointer-backed descriptor 化後は
+    pointer address 差分で同一型を誤判定するリスクがあった。
+- 根本対応:
+  - `psx_funcptr_returned_func_clone()` /
+    `psx_funcptr_type_shape_clone()` /
+    `psx_decl_funcptr_sig_clone()` を追加した。
+  - `psx_funcptr_type_shape_clone_heap()` は手組み merge ではなく、
+    `psx_funcptr_type_shape_clone()` を使って nested returned descriptor も deep clone するようにした。
+  - lvar/gvar setter、typedef/tag-member inline setter/getter、semantic record getter/setter、
+    function return metadata、type metadata copy、node metadata store、IR attach などの保存境界を
+    `psx_decl_funcptr_sig_clone()` 経由に寄せた。
+  - `funcptr_sig_equal()` は `memcmp` をやめ、`psx_funcptr_type_shape_matches()` を使うようにした。
+  - `test_expr_generic` 周辺に、lvar へ保存した後に元の returned descriptor を変更しても
+    保存済み metadata が変わらない clone independence の assertion を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+- 現状:
+  - pointer-backed returned descriptor は主要な保存境界で deep clone されるようになり、
+    shallow pointer sharing はかなり減った。
+  - まだ free/lifetime owner は明示されていない。現状は既存の永続 metadata と同じく
+    翻訳単位中に保持される前提で heap clone している。
+    次に根本化するなら、`psx_type_t` を canonical owner に寄せ、
+    lvar/gvar/tag member/node/IR の `funcptr_sig` を値保持から canonical type reference へ段階的に薄くする。
+
+### このセッション（続き856）: semantic/type persistent clone 境界まで deep clone を拡張
+- 見つかった浅い箇所:
+  - 続き855で主要な保存境界は clone になったが、semantic context の persistent type clone
+    (`ctx_type_clone_persistent`) と node 側の `type_clone_persistent` は `*dst = *src` の後に
+    `funcptr_sig` を浅く残していた。
+  - `psx_node_funcdef_ret_funcptr_sig()` は function definition node の保存済み
+    `ret_funcptr_sig` をそのまま返しており、呼び出し側が加工すると保存元と pointer-backed
+    returned descriptor を共有する余地が残っていた。
+  - `type_with_self_qualifiers()` も `*copy = *type` 後に `funcptr_sig` を上書きしておらず、
+    qualifier view が元 type の returned descriptor pointer を共有していた。
+- 根本対応:
+  - `ctx_type_clone_persistent()` / `type_clone_persistent()` は、
+    base の再帰 clone に加えて `funcptr_sig` も `psx_decl_funcptr_sig_clone()` で deep clone するようにした。
+  - semantic context の persistent array type builder は、base の `funcptr_sig` を引き継ぐ場合も
+    deep clone するようにした。
+  - `type_with_self_qualifiers()` は type view を作る際に `funcptr_sig` を deep clone するようにした。
+  - `psx_node_funcdef_ret_funcptr_sig()` は保存済み metadata を clone して返すようにした。
+  - 残っている `*copy = *type` 系は、直後に `funcptr_sig` を clone で上書きする形に整理した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type.c > /private/tmp/agc_generic_complex_derived_type.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type.s -o /private/tmp/agc_generic_complex_derived_type`
+    + `/private/tmp/agc_generic_complex_derived_type` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /private/tmp/agc_generic_complex_derived_type_global.s`
+    + `cc /private/tmp/agc_generic_complex_derived_type_global.s -o /private/tmp/agc_generic_complex_derived_type_global`
+    + `/private/tmp/agc_generic_complex_derived_type_global` = **pass**
+- 現状:
+  - pointer-backed function pointer metadata の浅い共有は、主要な persistent/type/node getter 境界では
+    deep clone されるようになった。
+  - まだ `psx_type_t` 自体を canonical owner とする設計には到達していない。
+    次に根本化するなら、`funcptr_sig_from_lvar/gvar` の raw fallback を段階的に減らし、
+    decl_type がある場合は `psx_type_t` 側を唯一の正本として扱う方向へ進める。
+
+### このセッション（続き857）: lvar/gvar function pointer metadata getter を decl_type 優先へ変更
+- 見つかった浅い箇所:
+  - `psx_lvar_funcptr_sig()` / `psx_gvar_funcptr_sig()` は `decl_type` 側を見た後も raw
+    `lvar_t.funcptr_sig` / `global_var_t.funcptr_sig` を merge していた。
+  - そのため `decl_type` が materialize 済みでも、古い raw metadata が不足分として戻り、
+    「型情報の正本は `psx_type_t`」という方向にまだ寄り切っていなかった。
+- 根本対応:
+  - `funcptr_sig_from_lvar_raw()` / `funcptr_sig_from_gvar_raw()` を追加し、
+    `decl_type` materialize 中の `mem_from_lvar()` / `mem_from_gvar()` だけは raw を読むように分離した。
+    これにより canonical getter が materialize に再帰する問題を避けている。
+  - 外部向けの `funcptr_sig_from_lvar()` / `funcptr_sig_from_gvar()` は、
+    `decl_type` があり function pointer payload を持つ場合は `psx_type_t.funcptr_sig` を clone して返し、
+    `decl_type` に payload がない場合だけ raw field に fallback する形にした。
+  - `psx_lvar_funcptr_sig()` / `psx_gvar_funcptr_sig()` は raw merge をやめ、
+    canonical helper をそのまま返すようにした。
+  - `psx_node_copy_funcptr_metadata_from_lvar/gvar()` と merge 系は既存の helper 経由なので、
+    `decl_type` 優先の挙動に自然に切り替わった。
+  - `test_type_metadata_bridge()` に、`decl_type` materialize 後に raw `returned_funcptr.type` を壊しても
+    `psx_lvar_funcptr_sig()` / `psx_gvar_funcptr_sig()` と node copy が `decl_type` 側の値を返す assertion を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/test_e2e` = **fail**:
+    + `array`: `param_2d_array_subscript.c` の assert failure
+    + `struct_arg`: `large_sum.c` の assert failure
+    + `probes`: `compound_literal_struct_arg expected 0 got 3`
+    + いずれも今回変更した function pointer metadata getter とは直接関係しないカテゴリに見えるため、今回の検証では既存/別系統の未解消として記録した。
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar/gvar の function pointer metadata 読み出しは、`decl_type` がある限り `psx_type_t` を正本として扱うようになった。
+  - raw `funcptr_sig` はまだ宣言型 materialize の入力として残っているが、外部 getter/copy/merge の正本にはしない段階まで進んだ。
+  - 次に進めるなら、tag member / typedef / function return metadata でも同じく
+    「type があるなら type を正本、raw は materialize 入力だけ」に寄せられる箇所を洗う。
+
+### このセッション（続き858）: tag member function pointer metadata getter を decl_type 優先へ変更
+- 見つかった浅い箇所:
+  - `psx_ctx_tag_member_funcptr_sig()` は `tag_member_info_t.is_funcptr` と raw
+    `tag_member_info_t.funcptr_sig` だけを見ていた。
+  - semantic context 内部の `tag_member_record_funcptr_sig()` も raw record 側だけを返していたため、
+    `tag_member_info_t.decl_type` に canonical type metadata がある場合でも、取得境界では raw field が正本として残っていた。
+  - 手書きの synthetic test も `decl_type->funcptr_sig` に param だけを載せ、戻り値だけ raw
+    `funcptr_sig` に置く形になっており、分散した正本を前提にしていた。
+- 根本対応:
+  - `tag_member_public.h` で `type.h` を include し、
+    `psx_ctx_tag_member_funcptr_sig()` は `decl_type` が function pointer payload を持つ場合に
+    `decl_type->funcptr_sig` を clone して返すようにした。
+  - semantic context 内部の `tag_member_record_funcptr_sig()` も `decl_type` 優先に変更した。
+    これにより `psx_ctx_find_tag_member_info()` で取得した `info.funcptr_sig` 自体も canonical type 側に寄る。
+  - `test_type_metadata_bridge()` に、取得済み `tag_member_info_t` の raw `funcptr_sig` を壊しても
+    `psx_ctx_tag_member_funcptr_sig()` と `psx_node_copy_funcptr_metadata_from_tag_member()` が
+    `decl_type` 側の metadata を返す assertion を追加した。
+  - 既存 synthetic test は、function pointer 戻り値 metadata を raw だけでなく
+    `partial_sig_member.decl_type->funcptr_sig` にも載せる形へ修正した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar/gvar に続いて tag member も、`decl_type` がある場合は `psx_type_t` を function pointer metadata の正本として扱うようになった。
+  - typedef と function return metadata はまだ public/record 側に canonical `psx_type_t` を保持していないため、
+    raw `funcptr_sig` が正本として残っている。次に根本化するなら、ここへ `decl_type` / return type descriptor を導入し、
+    raw field を materialize 入力または互換 shim に薄くする。
+
+### このセッション（続き859）: typedef function pointer metadata に canonical decl_type を追加
+- 見つかった浅い箇所:
+  - `psx_typedef_info_t` / `typedef_name_t` は `funcptr_sig` だけを持ち、canonical `psx_type_t` を持っていなかった。
+  - そのため lvar/gvar/tag member は `decl_type` を正本に寄った一方で、typedef は raw
+    `funcptr_sig` が唯一の正本として残っていた。
+- 根本対応:
+  - `psx_typedef_info_t` と semantic context 内部の `typedef_name_t` に `psx_type_t *decl_type` を追加した。
+  - `psx_ctx_typedef_funcptr_sig()` / `typedef_record_funcptr_sig()` は、`decl_type` が function pointer payload を持つ場合に
+    `decl_type->funcptr_sig` を clone して返すようにした。
+  - `assign_typedef_fields()` は `info->decl_type` を persistent clone して保存するようにした。
+    さらに、既存 parser/decl 経路がまだ `decl_type` を渡さない場合でも、function pointer payload があれば
+    semantic context 側で pointer type を作り、その `funcptr_sig` を canonical metadata として保存するようにした。
+  - `psx_ctx_find_typedef_name()` は `out->decl_type` に保存済み type を返すようにした。
+  - `test_type_metadata_bridge()` に、取得済み `psx_typedef_info_t` の raw `funcptr_sig` を壊しても
+    `psx_ctx_typedef_funcptr_sig()` が `decl_type` 側の metadata を返す assertion を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c > /tmp/ag_c_typedef_funcptr_retptr_global_local.s`
+    + `cc /tmp/ag_c_typedef_funcptr_retptr_global_local.s -o /tmp/ag_c_typedef_funcptr_retptr_global_local`
+    + `/tmp/ag_c_typedef_funcptr_retptr_global_local` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - function pointer typedef は `decl_type` がある場合に `psx_type_t` を正本として扱うようになった。
+  - 今回 semantic context 側で作る typedef `decl_type` は function pointer metadata の canonical owner としての最小 type で、
+    typedef の全派生型形状を完全に表す汎用 descriptor ではまだない。
+  - 次に根本化するなら、function return metadata に return type descriptor を導入し、
+    `func_name_t.funcptr_sig` / `node_func_t.ret_funcptr_sig` も raw 正本から type-backed metadata へ寄せる。
+
+### このセッション（続き860）: function return metadata を return type descriptor 優先へ変更
+- 見つかった浅い箇所:
+  - `func_name_t.funcptr_sig` と `node_func_t.ret_funcptr_sig` が function pointer return metadata の正本として残っていた。
+  - lvar/gvar/tag member/typedef は `psx_type_t` を優先するようになったが、関数戻り値だけは
+    context record と AST node の raw field を直接 getter が返していた。
+- 根本対応:
+  - semantic context 内部の `func_name_t` に `psx_type_t *ret_type` を追加した。
+  - `psx_ctx_set_function_ret_funcptr_sig()` は raw mirror だけでなく、function pointer metadata の owner として
+    最小 pointer type (`ret_type`) を作り、`ret_type->funcptr_sig` に clone して保存するようにした。
+  - `psx_ctx_get_function_ret_funcptr_sig()` は `ret_type->funcptr_sig` を優先して返すようにした。
+  - `psx_node_funcdef_set_ret_funcptr_sig()` は `node_func_t.ret_funcptr_sig` の raw mirror に加えて、
+    `fn->base.type` に function pointer metadata owner の pointer type を置くようにした。
+  - `psx_node_funcdef_ret_funcptr_sig()` は `fn->base.type->funcptr_sig` を優先して返すようにした。
+  - `test_type_metadata_bridge()` で、`node_func_t.ret_funcptr_sig` を壊しても
+    `psx_node_funcdef_ret_funcptr_sig()` が `base.type` 側の metadata を返すことを確認した。
+    context getter についても返却 clone を変更して再取得しても保存元が変わらないことを確認した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c > /tmp/ag_c_typedef_funcptr_retptr_global_local.s`
+    + `cc /tmp/ag_c_typedef_funcptr_retptr_global_local.s -o /tmp/ag_c_typedef_funcptr_retptr_global_local`
+    + `/tmp/ag_c_typedef_funcptr_retptr_global_local` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - function pointer return metadata も、ctx と function definition node の getter 境界では type-backed metadata が正本になった。
+  - まだ `ret_type` / `base.type` は function pointer metadata owner としての最小 pointer type で、戻り値型全体の完全な descriptor ではない。
+  - 次にさらに根本化するなら、関数戻り値の scalar/tag/pointer/array 情報も同じ return type descriptor へ集約し、
+    `func_name_t` の `ret_token_kind` / `ret_is_pointer` / `ret_pointer_levels` / `ret_pointee_array_*` などを
+    raw 正本ではなく descriptor 由来の互換 mirror に落としていく。
+
+### このセッション（続き861）: function return の scalar/tag/pointer/array 情報を ret_type descriptor へ集約
+- 見つかった浅い箇所:
+  - `func_name_t.ret_type` は前回時点では function pointer metadata の最小 owner で、通常の戻り値型
+    (`long`, `int **`, `double (*)[N]`, tag aggregate など) は依然として
+    `ret_token_kind` / `ret_is_pointer` / `ret_pointer_levels` / `ret_pointee_array_*` の raw field が正本だった。
+  - `psx_ctx_get_function_ret_info()` は raw field を集約して返しており、`node_utils` 側の direct funcall 型復元も
+    raw metadata を再構成していた。
+- 根本対応:
+  - semantic context 内部に persistent な `psx_type_t` constructor 群を追加し、context table が arena 由来の
+    type pointer を長期保持しないようにした。
+  - typedef/function pointer metadata owner の内部生成も persistent type へ寄せた。
+  - `ctx_function_build_ret_type()` / `ctx_function_refresh_ret_type()` を追加し、function return の scalar/tag/void/complex、
+    pointer levels、pointee qualifiers、pointer-to-array dimensions を `func_name_t.ret_type` に反映するようにした。
+  - function return の setter 群は raw mirror 更新後に `ret_type` を再構築するようにした。
+  - `psx_ctx_get_function_ret_info()` と個別 getter は、読める範囲で `ret_type` を優先し、raw field は互換 mirror/fallback にした。
+  - `test_type_metadata_bridge()` に、`__tm_pp` の pointer levels と `__tm_dp` の pointer-to-array dimensions / FP pointee 情報が
+    `psx_ctx_get_function_ret_info()` から取れる assertion を追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c > /tmp/ag_c_typedef_funcptr_retptr_global_local.s`
+    + `cc /tmp/ag_c_typedef_funcptr_retptr_global_local.s -o /tmp/ag_c_typedef_funcptr_retptr_global_local`
+    + `/tmp/ag_c_typedef_funcptr_retptr_global_local` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + 既存 warning `W3013` は出るが asm 生成は成功
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - function return は、getter 境界では `ret_type` が scalar/tag/pointer/array 形状の正本に近づいた。
+  - raw field はまだ setter 入力・再宣言照合・互換 fallback として残っている。
+  - 次にさらに根本化するなら、parser から `psx_type_t *ret_type` を直接登録する API に進める。
+    そうすると setter 群で raw field を集め直して type を再構築する必要が薄くなり、`double *f()` などの pointee FP 情報も
+    token/raw 経由ではなく宣言型 descriptor から一貫して供給できる。
+
+### このセッション（続き862）: parser から function return ret_type を直接 semantic_ctx へ登録
+- 見つかった浅い箇所:
+  - `register_function_signature()` は `ret_token_kind` / `ret_is_ptr` / `ret_pointer_levels` /
+    `ret_pointee_array_*` などの raw field を setter 群で semantic context へ順次渡していた。
+  - semantic context 側でそれらを集め直して `ret_type` を再構築しており、parser がすでに持っている宣言型の形を
+    type descriptor として直接渡せていなかった。
+  - `double (*f())[N]` のような pointer-to-array return が、declarator に `(*` を含むだけで
+    function pointer return と誤認される浅い判定も残っていた。
+- 根本対応:
+  - `psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_type)` を追加した。
+    semantic context 内部では persistent clone して保持するため、parser 側の arena type を安全に渡せる。
+  - parser 側に `function_signature_ret_type()` と補助 helper を追加し、function signature から
+    scalar/tag/void/complex/pointer/pointer-to-array/function pointer metadata つきの `psx_type_t` を組むようにした。
+  - `register_function_signature()` は既存 raw setter/再宣言チェックを維持しつつ、最後に補完済み function pointer signature を含む
+    `ret_type` を `psx_ctx_set_function_ret_type()` で登録するようにした。
+  - `psx_ctx_get_function_ret_info()` の type 由来 funcptr 判定を調整し、data pointer の pointer-to-array metadata を
+    function pointer と誤認しないようにした。
+  - funcdef の `outer_declarator_is_ptr` 判定を修正した。
+    `(*...)` は pointer return の印だが、function pointer かどうかは後続の function suffix を実際に見た
+    `ret_state.is_funcptr` だけで判断する。
+  - `test_type_metadata_bridge()` に以下を追加:
+    + `double (*__tm_dp(void))[2]` の `psx_ctx_get_function_ret_info()` が `is_funcptr == 0` を返すこと。
+    + raw では `int` として登録した関数に `psx_ctx_set_function_ret_type()` で `double *` descriptor を渡すと、
+      getter が pointer / `TK_DOUBLE` / `TK_FLOAT_KIND_DOUBLE` / pointer level を type 由来で返すこと。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make build/test_e2e` = **pass** (compile-only)
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/typedef_funcptr_retptr_global_local.c > /tmp/ag_c_typedef_funcptr_retptr_global_local.s`
+    + `cc /tmp/ag_c_typedef_funcptr_retptr_global_local.s -o /tmp/ag_c_typedef_funcptr_retptr_global_local`
+    + `/tmp/ag_c_typedef_funcptr_retptr_global_local` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/generic_complex_derived_type_global.c > /tmp/ag_c_generic_complex_derived_type_global.s`
+    + 既存 warning `W3013` は出るが asm 生成は成功
+    + `cc /tmp/ag_c_generic_complex_derived_type_global.s -o /tmp/ag_c_generic_complex_derived_type_global`
+    + `/tmp/ag_c_generic_complex_derived_type_global` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - function return は parser から `ret_type` descriptor を直接登録する経路ができ、getter 境界の正本はさらに
+    `psx_type_t` 側へ寄った。
+  - raw field はまだ再宣言照合・既存 codegen の互換 mirror として残っている。
+  - 次にさらに根本化するなら、`node_utils.c::type_from_direct_funcall()` / `type_from_funcref()` が
+    `psx_ctx_get_function_ret_info()` から型を再構成するのではなく、semantic context の `ret_type` clone/view を直接使うようにする。

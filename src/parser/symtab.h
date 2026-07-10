@@ -98,6 +98,7 @@ struct global_var_t {
   // base_deref_size=要素サイズ / pointer_qual_levels を立てる。単段/非ポインタは 0/1。
   unsigned char pointer_qual_levels;
   psx_decl_funcptr_sig_t funcptr_sig;
+  char *type_sig;
   psx_type_t *decl_type;
 };
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は

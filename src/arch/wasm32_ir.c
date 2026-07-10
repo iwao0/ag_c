@@ -272,8 +272,8 @@ static ir_type_t funcptr_int_mask_type(unsigned iw) {
 static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_type_t fallback) {
   if (!i || !i->has_funcptr_sig || idx < 0 || idx >= 8) return fallback;
   psx_decl_funcptr_sig_t fs = i->funcptr_sig;
-  unsigned fp = (fs.param_fp_mask >> (2 * idx)) & 3u;
-  unsigned iw = (fs.param_int_mask >> (2 * idx)) & 3u;
+  unsigned fp = (fs.function.callable.signature.param_fp_mask >> (2 * idx)) & 3u;
+  unsigned iw = (fs.function.callable.signature.param_int_mask >> (2 * idx)) & 3u;
   if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   if (iw != 0) {
@@ -1165,7 +1165,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
     }
     psx_decl_funcptr_sig_t fs = i->funcptr_sig;
-    int returns_void = returns_aggregate || i->is_void_call || fs.ret_is_void ||
+    int returns_void = returns_aggregate || i->is_void_call || fs.function.callable.return_shape.is_void ||
                        callee_ret.is_void ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
@@ -1184,8 +1184,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
-      unsigned iw = a < 8 ? ((fs.param_int_mask >> (2 * a)) & 3u) : 0;
-      if (from_funcptr_sig && !fs.is_variadic && !i->is_variadic_call &&
+      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
+      if (from_funcptr_sig && !fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
           arg_ty == IR_TY_I32 &&
           raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
           iw != 3) {
@@ -1208,8 +1208,8 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
-      unsigned iw = a < 8 ? ((fs.param_int_mask >> (2 * a)) & 3u) : 0;
-      if (from_funcptr_sig && !fs.is_variadic && !i->is_variadic_call &&
+      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
+      if (from_funcptr_sig && !fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
           arg_ty == IR_TY_I32 &&
           raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
           iw != 3) {

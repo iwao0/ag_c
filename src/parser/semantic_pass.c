@@ -19,6 +19,39 @@ static void semantic_check_unreachable_in_node(node_t *node, const token_t *fall
 static void semantic_collect_lvar_usage_events(node_t *node,
                                                psx_lvar_usage_region_t *inherited_region);
 
+typedef struct {
+  psx_type_t *type;
+  tk_float_kind_t fp_kind;
+  int is_void;
+  int is_pointer;
+  int is_bool;
+  int is_narrow_integer;
+  int narrow_size;
+  int is_unsigned;
+  int aggregate_size;
+} semantic_return_type_view_t;
+
+static semantic_return_type_view_t semantic_return_type_view(node_func_t *fn) {
+  semantic_return_type_view_t view = {0};
+  view.type = psx_node_get_type((node_t *)fn);
+  psx_type_t *type = view.type;
+  if (!type) return view;
+  view.fp_kind = psx_node_value_fp_kind((node_t *)fn);
+  view.is_void = type->kind == PSX_TYPE_VOID;
+  view.is_pointer = psx_type_is_pointer(type);
+  view.is_bool = type->kind == PSX_TYPE_BOOL;
+  view.is_unsigned = psx_type_is_unsigned(type);
+  view.aggregate_size = psx_node_aggregate_value_size((node_t *)fn);
+  if (!view.is_pointer && type->kind == PSX_TYPE_INTEGER) {
+    int size = psx_type_sizeof(type);
+    if (size == 1 || size == 2) {
+      view.is_narrow_integer = 1;
+      view.narrow_size = size;
+    }
+  }
+  return view;
+}
+
 static void semantic_visit_node_array(node_t **nodes) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++) {
@@ -79,14 +112,13 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
                                       const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
-  psx_function_ret_info_t ret =
-      psx_ctx_get_function_ret_info(current_func->funcname, current_func->funcname_len);
+  semantic_return_type_view_t ret = semantic_return_type_view(current_func);
 
   node->fp_kind = ret.fp_kind;
-  node->ret_struct_size = ret.struct_size;
+  node->ret_struct_size = ret.aggregate_size;
 
   if (!node->lhs) {
-    if (ret.token_kind != TK_VOID || ret.is_pointer) {
+    if (!ret.is_void) {
       diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                      "%s",
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
@@ -94,7 +126,7 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
     return;
   }
 
-  if (ret.token_kind == TK_VOID && !ret.is_pointer) {
+  if (ret.is_void) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                    "%s",
                    diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
@@ -111,19 +143,19 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
     }
   }
 
-  if (ret.token_kind == TK_BOOL && !ret.is_pointer) {
+  if (ret.is_bool) {
     node->lhs = psx_node_new_binary(ND_NE, node->lhs, psx_node_new_num(0));
     return;
   }
 
-  if (!ret.is_pointer && (ret.token_kind == TK_CHAR || ret.token_kind == TK_SHORT)) {
+  if (ret.is_narrow_integer) {
     if (ret.is_unsigned) {
-      long long mask = (ret.token_kind == TK_CHAR) ? 0xffLL : 0xffffLL;
+      long long mask = (ret.narrow_size == 1) ? 0xffLL : 0xffffLL;
       node_t *masked = psx_node_new_binary(ND_BITAND, node->lhs, psx_node_new_num(mask));
       psx_node_set_unsigned(masked, 1);
       node->lhs = masked;
     } else {
-      int sh = (ret.token_kind == TK_CHAR) ? 56 : 48;
+      int sh = (ret.narrow_size == 1) ? 56 : 48;
       node->lhs = psx_node_new_shift_trunc_extend(node->lhs, sh, 0);
     }
   }
@@ -188,10 +220,20 @@ static int semantic_fp_literal_fractional_part_known(double f) {
   return f != (double)(long long)f;
 }
 
+static tk_float_kind_t semantic_node_fp_kind(node_t *node) {
+  if (!node) return TK_FLOAT_KIND_NONE;
+  psx_type_t *type = psx_node_get_type(node);
+  if (type && !psx_type_is_pointer(type) &&
+      (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
+    return type->fp_kind != TK_FLOAT_KIND_NONE ? type->fp_kind : TK_FLOAT_KIND_DOUBLE;
+  }
+  return (tk_float_kind_t)node->fp_kind;
+}
+
 static void semantic_warn_float_to_int_expr(node_t *value, const token_t *tok,
                                             const char *literal_fmt,
                                             const char *value_msg) {
-  if (!value || value->fp_kind == TK_FLOAT_KIND_NONE) return;
+  if (!value || semantic_node_fp_kind(value) == TK_FLOAT_KIND_NONE) return;
   if (value->kind == ND_NUM) {
     double f = ((node_num_t *)value)->fval;
     if (semantic_fp_literal_fractional_part_known(f)) {
@@ -205,7 +247,10 @@ static void semantic_warn_float_to_int_expr(node_t *value, const token_t *tok,
 static void semantic_warn_decl_initializer_constant_overflow(node_t *lhs, node_t *rhs,
                                                             const token_t *tok) {
   if (!lhs || !rhs || lhs->kind != ND_LVAR || rhs->kind != ND_NUM) return;
-  if (lhs->fp_kind != TK_FLOAT_KIND_NONE || rhs->fp_kind != TK_FLOAT_KIND_NONE) return;
+  if (semantic_node_fp_kind(lhs) != TK_FLOAT_KIND_NONE ||
+      semantic_node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
+    return;
+  }
   if (ps_node_is_pointer(lhs)) return;
   if (psx_node_aggregate_value_size(lhs) > 0) return;
   int type_size = ps_node_type_size(lhs);
@@ -250,8 +295,8 @@ static void semantic_warn_assignment(node_t *node, const token_t *fallback_diag_
   /* 浮動小数点 -> 整数の縮小変換警告。source assignment だけを対象にし、
    * 宣言初期化や lowering 用の合成 assignment は既存の専用経路に任せる。 */
   if (lhs && rhs && !ps_node_is_pointer(lhs) &&
-      lhs->fp_kind == TK_FLOAT_KIND_NONE &&
-      rhs->fp_kind != TK_FLOAT_KIND_NONE) {
+      semantic_node_fp_kind(lhs) == TK_FLOAT_KIND_NONE &&
+      semantic_node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
     if (node->is_decl_initializer) {
       semantic_warn_float_to_int_expr(
           rhs, tok,
@@ -273,12 +318,11 @@ static void semantic_warn_assignment(node_t *node, const token_t *fallback_diag_
 static void semantic_warn_return(node_t *node, node_func_t *current_func,
                                  const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !node->lhs || !current_func) return;
-  psx_function_ret_info_t ret =
-      psx_ctx_get_function_ret_info(current_func->funcname, current_func->funcname_len);
-  if (node->lhs->fp_kind != TK_FLOAT_KIND_NONE &&
+  semantic_return_type_view_t ret = semantic_return_type_view(current_func);
+  if (semantic_node_fp_kind(node->lhs) != TK_FLOAT_KIND_NONE &&
       ret.fp_kind == TK_FLOAT_KIND_NONE &&
       !ret.is_pointer &&
-      ret.token_kind != TK_VOID) {
+      !ret.is_void) {
     const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
     semantic_warn_float_to_int_expr(
         node->lhs, tok,
@@ -348,7 +392,7 @@ static int semantic_nodes_identity_equal(node_t *lhs, node_t *rhs) {
   }
   if (lhs->kind == ND_NUM) {
     return ((node_num_t *)lhs)->val == ((node_num_t *)rhs)->val &&
-           lhs->fp_kind == rhs->fp_kind;
+           semantic_node_fp_kind(lhs) == semantic_node_fp_kind(rhs);
   }
   return 0;
 }
@@ -381,7 +425,7 @@ static void semantic_warn_sign_compare(node_t *lhs, node_t *rhs, const char *op,
 }
 
 static int semantic_tuz_is_zero_literal(node_t *n) {
-  return n && n->kind == ND_NUM && n->fp_kind == TK_FLOAT_KIND_NONE &&
+  return n && n->kind == ND_NUM && semantic_node_fp_kind(n) == TK_FLOAT_KIND_NONE &&
          ((node_num_t *)n)->val == 0;
 }
 
@@ -477,7 +521,7 @@ static void semantic_warn_comparison(node_t *node, const token_t *fallback_diag_
  * source_op == TK_EOF and are ignored here. */
 static int semantic_int_const_overflow_is_int_literal(node_t *node) {
   if (!node || node->kind != ND_NUM) return 0;
-  if (node->fp_kind != TK_FLOAT_KIND_NONE) return 0;
+  if (semantic_node_fp_kind(node) != TK_FLOAT_KIND_NONE) return 0;
   if (psx_node_integer_value_is_unsigned(node)) return 0;
   node_num_t *num = (node_num_t *)node;
   if (num->int_is_long || num->int_is_long_long) return 0;
@@ -521,7 +565,10 @@ static void semantic_warn_shift_out_of_range(node_t *node, const token_t *tok) {
 static void semantic_warn_divide_by_zero(node_t *node, const token_t *tok) {
   if (!node || (node->source_op != TK_DIV && node->source_op != TK_MOD)) return;
   node_t *rhs = node->rhs;
-  if (!rhs || rhs->kind != ND_NUM || rhs->fp_kind != TK_FLOAT_KIND_NONE) return;
+  if (!rhs || rhs->kind != ND_NUM ||
+      semantic_node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
+    return;
+  }
   if (((node_num_t *)rhs)->val != 0) return;
   if (node->source_op == TK_DIV) {
     diag_warn_tokf(DIAG_WARN_PARSER_DIVIDE_BY_ZERO, tok,

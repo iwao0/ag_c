@@ -42,23 +42,6 @@ struct lvar_usage_event_t {
 static lvar_usage_event_t *lvar_usage_events_head;
 static lvar_usage_event_t *lvar_usage_events_tail;
 static psx_lvar_usage_region_t *current_lvar_usage_region;
-/* _Generic 用: 局所変数の型を正規化トークン文字列で記録する副テーブル
- * (詳細は下の psx_serialize_decl_type_tokens 付近)。 */
-#define VAR_TYPESIG_MAX 256
-/* 局所変数: 関数ごとにリセットする。 */
-static struct {
-  char *name;
-  int len;
-  char *sig;
-} g_var_typesigs[VAR_TYPESIG_MAX];
-static int g_var_typesig_count = 0;
-/* グローバル変数: 翻訳単位を通じて永続 (関数境界でリセットしない)。 */
-static struct {
-  char *name;
-  int len;
-  char *sig;
-} g_global_typesigs[VAR_TYPESIG_MAX];
-static int g_global_typesig_count = 0;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
@@ -297,7 +280,6 @@ void psx_decl_reset_translation_unit_state(void) {
   current_funcname = NULL;
   current_funcname_len = 0;
   memset(&static_local_mangle_state, 0, sizeof(static_local_mangle_state));
-  g_global_typesig_count = 0;
 }
 
 /* add 後に呼ぶ: スコープ連番を刻み、名前 bucket とオフセット bucket の先頭へ挿入する。 */
@@ -732,6 +714,7 @@ struct decl_declarator_state_t {
   /* 宣言子の trailing 部に関数シグネチャ `(args...)` があれば 1。 */
   int trailing_func_suffix;
   psx_funcptr_signature_t func_suffix_sig;
+  psx_funcptr_signature_t returned_funcptr_suffix_sig;
   /* 宣言子に paren グループ `(*...)` があれば 1。 */
   int had_paren_group;
   /* trailing `()` の個数 (pointer-to-function が戻り funcptr を持つとき 2 以上)。 */
@@ -760,13 +743,202 @@ unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_poin
   return psx_ctx_scalar_type_size(kind) >= 8 ? 8 : 4;
 }
 
+int psx_funcptr_signature_has_payload(psx_funcptr_signature_t sig) {
+  return sig.param_fp_mask || sig.param_int_mask || sig.is_variadic ||
+         sig.nargs_fixed;
+}
+
+int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret) {
+  return ret.int_width ||
+         ret.fp_kind != TK_FLOAT_KIND_NONE ||
+         ret.pointee_fp_kind != TK_FLOAT_KIND_NONE ||
+         ret.is_void || ret.is_data_pointer || ret.is_complex ||
+         psx_ret_pointee_array_has_dims(ret.pointee_array);
+}
+
+int psx_funcptr_return_shape_matches(psx_funcptr_return_shape_t a,
+                                     psx_funcptr_return_shape_t b) {
+  return a.int_width == b.int_width &&
+         a.fp_kind == b.fp_kind &&
+         a.pointee_fp_kind == b.pointee_fp_kind &&
+         a.is_void == b.is_void &&
+         a.is_data_pointer == b.is_data_pointer &&
+         a.is_complex == b.is_complex &&
+         psx_ret_pointee_array_equal(a.pointee_array, b.pointee_array);
+}
+
+psx_funcptr_return_shape_t psx_decl_funcptr_direct_return_shape(
+    psx_decl_funcptr_sig_t sig) {
+  return sig.function.callable.return_shape;
+}
+
+psx_funcptr_return_shape_t psx_funcptr_return_shape_merge_missing(
+    psx_funcptr_return_shape_t merged, psx_funcptr_return_shape_t src) {
+  if (!merged.int_width && src.int_width) merged.int_width = src.int_width;
+  if (merged.fp_kind == TK_FLOAT_KIND_NONE &&
+      src.fp_kind != TK_FLOAT_KIND_NONE) {
+    merged.fp_kind = src.fp_kind;
+  }
+  if (merged.pointee_fp_kind == TK_FLOAT_KIND_NONE &&
+      src.pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+    merged.pointee_fp_kind = src.pointee_fp_kind;
+  }
+  if (src.is_void) merged.is_void = 1;
+  if (src.is_data_pointer) merged.is_data_pointer = 1;
+  if (src.is_complex) merged.is_complex = 1;
+  if (!psx_ret_pointee_array_has_dims(merged.pointee_array) &&
+      psx_ret_pointee_array_has_dims(src.pointee_array)) {
+    merged.pointee_array = src.pointee_array;
+  }
+  return merged;
+}
+
+int psx_funcptr_callable_shape_has_payload(psx_funcptr_callable_shape_t fn) {
+  return psx_funcptr_signature_has_payload(fn.signature) ||
+         psx_funcptr_return_shape_has_payload(fn.return_shape);
+}
+
+int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
+                                       psx_funcptr_callable_shape_t b) {
+  return a.signature.param_fp_mask == b.signature.param_fp_mask &&
+         a.signature.param_int_mask == b.signature.param_int_mask &&
+         a.signature.is_variadic == b.signature.is_variadic &&
+         (!a.signature.is_variadic ||
+          a.signature.nargs_fixed == b.signature.nargs_fixed) &&
+         (a.signature.nargs_fixed <= 0 || b.signature.nargs_fixed <= 0 ||
+          a.signature.nargs_fixed == b.signature.nargs_fixed) &&
+         psx_funcptr_return_shape_matches(a.return_shape, b.return_shape);
+}
+
+psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
+    psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
+    int copy_variadic) {
+  if (!merged.signature.param_fp_mask && src.signature.param_fp_mask)
+    merged.signature.param_fp_mask = src.signature.param_fp_mask;
+  if (!merged.signature.param_int_mask && src.signature.param_int_mask)
+    merged.signature.param_int_mask = src.signature.param_int_mask;
+  if (copy_variadic && src.signature.is_variadic)
+    merged.signature.is_variadic = 1;
+  if (!merged.signature.nargs_fixed && src.signature.nargs_fixed)
+    merged.signature.nargs_fixed = src.signature.nargs_fixed;
+  merged.return_shape =
+      psx_funcptr_return_shape_merge_missing(merged.return_shape,
+                                             src.return_shape);
+  return merged;
+}
+
+int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
+  return ret.is_funcptr ||
+         (ret.type && psx_funcptr_type_shape_has_payload(*ret.type));
+}
+
+static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
+    psx_funcptr_type_shape_t fn);
+
+psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
+    psx_funcptr_returned_func_t ret) {
+  return ret.type ? *ret.type : (psx_funcptr_type_shape_t){0};
+}
+
+psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
+    psx_funcptr_type_shape_t fn) {
+  psx_funcptr_returned_func_t ret = {0};
+  ret.is_funcptr = psx_funcptr_type_shape_has_payload(fn) ? 1 : 0;
+  if (ret.is_funcptr) ret.type = psx_funcptr_type_shape_clone_heap(fn);
+  return ret;
+}
+
+psx_funcptr_returned_func_t psx_funcptr_returned_func_mark(
+    psx_funcptr_returned_func_t ret) {
+  ret.is_funcptr = 1;
+  return ret;
+}
+
+psx_funcptr_returned_func_t psx_funcptr_returned_func_clone(
+    psx_funcptr_returned_func_t ret) {
+  psx_funcptr_returned_func_t copy = {0};
+  copy.is_funcptr = ret.is_funcptr;
+  if (ret.type) copy.type = psx_funcptr_type_shape_clone_heap(*ret.type);
+  return copy;
+}
+
+int psx_funcptr_returned_func_matches(psx_funcptr_returned_func_t a,
+                                      psx_funcptr_returned_func_t b) {
+  psx_funcptr_type_shape_t a_fn = psx_funcptr_returned_func_as_type_shape(a);
+  psx_funcptr_type_shape_t b_fn = psx_funcptr_returned_func_as_type_shape(b);
+  return a.is_funcptr == b.is_funcptr &&
+         psx_funcptr_type_shape_matches(a_fn, b_fn);
+}
+
+psx_funcptr_returned_func_t psx_funcptr_returned_func_merge_missing(
+    psx_funcptr_returned_func_t merged, psx_funcptr_returned_func_t src,
+    int copy_variadic) {
+  int merged_is_funcptr = merged.is_funcptr || src.is_funcptr;
+  psx_funcptr_type_shape_t merged_fn =
+      psx_funcptr_returned_func_as_type_shape(merged);
+  psx_funcptr_type_shape_t src_fn =
+      psx_funcptr_returned_func_as_type_shape(src);
+  merged_fn = psx_funcptr_type_shape_merge_missing(
+      merged_fn, src_fn, copy_variadic);
+  merged = psx_funcptr_returned_func_from_type_shape(merged_fn);
+  if (merged_is_funcptr) merged = psx_funcptr_returned_func_mark(merged);
+  return merged;
+}
+
+static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
+    psx_funcptr_type_shape_t fn) {
+  psx_funcptr_type_shape_t *copy = calloc(1, sizeof(*copy));
+  if (!copy) return NULL;
+  *copy = psx_funcptr_type_shape_clone(fn);
+  return copy;
+}
+
+int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn) {
+  return psx_funcptr_callable_shape_has_payload(fn.callable) ||
+         psx_funcptr_returned_func_has_payload(fn.returned_funcptr);
+}
+
+int psx_funcptr_type_shape_matches(psx_funcptr_type_shape_t a,
+                                   psx_funcptr_type_shape_t b) {
+  int has_returned =
+      psx_funcptr_returned_func_has_payload(a.returned_funcptr) ||
+      psx_funcptr_returned_func_has_payload(b.returned_funcptr);
+  return psx_funcptr_callable_shape_matches(a.callable, b.callable) &&
+         (!has_returned ||
+          psx_funcptr_returned_func_matches(a.returned_funcptr,
+                                            b.returned_funcptr));
+}
+
+psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
+    psx_funcptr_type_shape_t merged, psx_funcptr_type_shape_t src,
+    int copy_variadic) {
+  merged.callable = psx_funcptr_callable_shape_merge_missing(
+      merged.callable, src.callable, copy_variadic);
+  if (psx_funcptr_returned_func_has_payload(merged.returned_funcptr) ||
+      psx_funcptr_returned_func_has_payload(src.returned_funcptr)) {
+    merged.returned_funcptr = psx_funcptr_returned_func_merge_missing(
+        merged.returned_funcptr, src.returned_funcptr, copy_variadic);
+  }
+  return merged;
+}
+
+psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
+    psx_funcptr_type_shape_t fn) {
+  psx_funcptr_type_shape_t copy = {0};
+  copy.callable = fn.callable;
+  copy.returned_funcptr =
+      psx_funcptr_returned_func_clone(fn.returned_funcptr);
+  return copy;
+}
+
+psx_decl_funcptr_sig_t psx_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig) {
+  psx_decl_funcptr_sig_t copy = {0};
+  copy.function = psx_funcptr_type_shape_clone(sig.function);
+  return copy;
+}
+
 int psx_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig) {
-  return sig.param_fp_mask || sig.param_int_mask || sig.ret_int_width ||
-         sig.ret_fp_kind != TK_FLOAT_KIND_NONE ||
-         sig.ret_pointee_fp_kind != TK_FLOAT_KIND_NONE ||
-         sig.ret_is_void || sig.ret_is_data_pointer || sig.ret_is_funcptr ||
-         sig.ret_is_complex || sig.is_variadic ||
-         psx_ret_pointee_array_has_dims(sig.ret_pointee_array);
+  return psx_funcptr_type_shape_has_payload(sig.function);
 }
 
 psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *suffix_sig,
@@ -779,21 +951,25 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *
                                                  int ret_is_complex) {
   psx_decl_funcptr_sig_t sig = {0};
   if (suffix_sig) {
-    sig.param_fp_mask = suffix_sig->param_fp_mask;
-    sig.param_int_mask = suffix_sig->param_int_mask;
-    sig.is_variadic = suffix_sig->is_variadic ? 1 : 0;
-    sig.nargs_fixed = (short)suffix_sig->nargs_fixed;
+    sig.function.callable.signature = *suffix_sig;
   }
-  sig.ret_int_width = ret_int_width;
-  sig.ret_pointee_array = ret_pointee_array;
+  sig.function.callable.return_shape.int_width = ret_int_width;
+  sig.function.callable.return_shape.pointee_array = ret_pointee_array;
   int ret_is_pointer_like =
       ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_pointee_array);
-  sig.ret_fp_kind = ret_is_pointer_like ? TK_FLOAT_KIND_NONE : ret_fp_kind;
-  sig.ret_pointee_fp_kind = ret_is_pointer_like ? ret_fp_kind : TK_FLOAT_KIND_NONE;
-  sig.ret_is_void = (ret_is_void && !ret_is_data_pointer) ? 1 : 0;
-  sig.ret_is_data_pointer = ret_is_data_pointer ? 1 : 0;
-  sig.ret_is_funcptr = ret_is_funcptr ? 1 : 0;
-  sig.ret_is_complex = (ret_is_complex && !ret_is_data_pointer) ? 1 : 0;
+  sig.function.callable.return_shape.fp_kind =
+      ret_is_pointer_like ? TK_FLOAT_KIND_NONE : ret_fp_kind;
+  sig.function.callable.return_shape.pointee_fp_kind =
+      ret_is_pointer_like ? ret_fp_kind : TK_FLOAT_KIND_NONE;
+  sig.function.callable.return_shape.is_void =
+      (ret_is_void && !ret_is_data_pointer) ? 1 : 0;
+  sig.function.callable.return_shape.is_data_pointer = ret_is_data_pointer ? 1 : 0;
+  if (ret_is_funcptr) {
+    sig.function.returned_funcptr =
+        psx_funcptr_returned_func_mark(sig.function.returned_funcptr);
+  }
+  sig.function.callable.return_shape.is_complex =
+      (ret_is_complex && !ret_is_data_pointer) ? 1 : 0;
   return sig;
 }
 
@@ -806,6 +982,19 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
       psx_funcptr_ret_int_width_from_kind(ret_kind, ret_is_data_pointer, fp_kind),
       fp_kind, ret_pointee_array, ret_kind == TK_VOID, ret_is_data_pointer,
       ret_is_funcptr, ret_is_complex);
+}
+
+void psx_decl_funcptr_sig_promote_return_to_funcptr(
+    psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig) {
+  if (!sig) return;
+  psx_funcptr_type_shape_t returned_fn = {0};
+  if (returned_sig) returned_fn.callable.signature = *returned_sig;
+  returned_fn.callable.return_shape = psx_decl_funcptr_direct_return_shape(*sig);
+  sig->function.returned_funcptr =
+      psx_funcptr_returned_func_from_type_shape(returned_fn);
+  sig->function.returned_funcptr =
+      psx_funcptr_returned_func_mark(sig->function.returned_funcptr);
+  sig->function.callable.return_shape = (psx_funcptr_return_shape_t){0};
 }
 
 /* curtok から後続の `[...]` 列を peek し、いずれかの次元式が非定数 (= VLA 候補) なら 1 を返す。
@@ -3049,9 +3238,13 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
   }
   /* この宣言子の trailing `()` を解析する前にリセット。最外フレームの本ループが
    * シグネチャ `(int, ...)` を最後に解析するので、その結果が登録側に届く。 */
-  if (decl_state) psx_funcptr_signature_reset(&decl_state->func_suffix_sig);
+  if (decl_state && decl_state->func_suffix_count == 0) {
+    psx_funcptr_signature_reset(&decl_state->func_suffix_sig);
+    psx_funcptr_signature_reset(&decl_state->returned_funcptr_suffix_sig);
+  }
   while (curtok()->kind == TK_LPAREN) {
-    psx_skip_func_param_list(decl_state ? &decl_state->func_suffix_sig : NULL);
+    psx_funcptr_signature_t parsed_suffix = {0};
+    psx_skip_func_param_list(decl_state ? &parsed_suffix : NULL);
     /* 関数シグネチャを 1 つでも消費したら trailing-func-suffix を立てる。
      * `int (*(*pa)[N])(args)` で要素が関数ポインタの場合、後段の `(*p)[N]` 登録経路で
      * elem_size を 8 に上書きするのに使う。 */
@@ -3059,6 +3252,11 @@ static token_ident_t *consume_decl_name_recursive(int *is_pointer,
       if (decl_state->func_suffix_count == 0 && levels) {
         int object_levels = *levels - frame_pointer_prefix_levels;
         if (object_levels > 0) decl_state->funcptr_object_pointer_levels = object_levels;
+      }
+      if (decl_state->func_suffix_count == 0) {
+        decl_state->func_suffix_sig = parsed_suffix;
+      } else if (decl_state->func_suffix_count == 1) {
+        decl_state->returned_funcptr_suffix_sig = parsed_suffix;
       }
       decl_state->trailing_func_suffix = 1;
       decl_state->func_suffix_count++;
@@ -3101,6 +3299,7 @@ static int decl_funcptr_direct_ret_is_data_pointer(const decl_declarator_state_t
   int object_pointer_levels = decl_state->funcptr_object_pointer_levels;
   if (object_pointer_levels <= 0) object_pointer_levels = decl_state->paren_pointer_levels;
   int ret_pointer_levels = ptr_levels - object_pointer_levels;
+  if (decl_state->func_suffix_count >= 2 && ret_pointer_levels > 0) ret_pointer_levels--;
   return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
 }
 
@@ -3144,7 +3343,6 @@ void psx_decl_reset_locals(void) {
   }
   g_lvar_scope_seq = 0;
   cur_lvar_scope_seq = 0;
-  g_var_typesig_count = 0;   /* _Generic 用の型シグネチャ表も関数境界でリセット */
   lvar_usage_events_head = NULL;
   lvar_usage_events_tail = NULL;
   current_lvar_usage_region = NULL;
@@ -3469,7 +3667,7 @@ void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!var || !sig) return;
   psx_decl_invalidate_lvar_decl_type(var);
-  var->funcptr_sig = *sig;
+  var->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
 }
 
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array) {
@@ -3647,7 +3845,7 @@ void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!gv || !sig) return;
   psx_decl_invalidate_gvar_decl_type(gv);
-  gv->funcptr_sig = *sig;
+  gv->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
 }
 
 static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,
@@ -4627,12 +4825,11 @@ static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_s
   return var;
 }
 
-/* ---- _Generic 用: 局所変数の型を正規化トークン文字列で記録する ----
+/* ---- _Generic 用: 複雑な派生型の正規化トークン文字列を作る ----
  * 関数ポインタ (`int(*)(int,int)`) や深いネスト型 (`int(*(*)(void))[3]`) は
  * generic_type_t の構造的フィールドでは区別できないため、宣言子を「型をそのまま
- * トークン列で書き起こした正規化文字列」にして _Generic の照合で比較する。
- * 制御式が単一の局所変数のときに名前で引く。関数ごとにリセットする。
- * (g_var_typesigs はファイル先頭で宣言。) */
+ * トークン列で書き起こした正規化文字列」にして decl_type の付帯情報へ載せ、
+ * _Generic の照合で比較する。 */
 
 /* [start, end) のトークン綴りを単一スペースで連結する。skip のトークンは除外。
  * '(' を含まない単純型 (scalar / `int*` / `int[3]`) は NULL を返し、従来の構造的照合に
@@ -4667,41 +4864,6 @@ char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip
     buf[len] = '\0';
   }
   return buf;
-}
-
-static void record_var_type_sig(char *name, int len, char *sig) {
-  if (!sig || g_var_typesig_count >= VAR_TYPESIG_MAX) return;
-  g_var_typesigs[g_var_typesig_count].name = name;
-  g_var_typesigs[g_var_typesig_count].len = len;
-  g_var_typesigs[g_var_typesig_count].sig = sig;
-  g_var_typesig_count++;
-}
-
-/* グローバル変数の型シグネチャを記録する (トップレベル宣言から呼ぶ。翻訳単位を通じて永続)。 */
-void psx_record_global_type_sig(char *name, int len, char *sig) {
-  if (!sig || g_global_typesig_count >= VAR_TYPESIG_MAX) return;
-  g_global_typesigs[g_global_typesig_count].name = name;
-  g_global_typesigs[g_global_typesig_count].len = len;
-  g_global_typesigs[g_global_typesig_count].sig = sig;
-  g_global_typesig_count++;
-}
-
-/* 単一識別子の制御式 `_Generic(var, ...)` から var の型シグネチャを引く。局所を優先し、
- * 無ければグローバルを引く。どちらにも無ければ NULL。 */
-char *psx_lookup_var_type_sig(char *name, int len) {
-  for (int i = g_var_typesig_count - 1; i >= 0; i--) {
-    if (g_var_typesigs[i].len == len &&
-        memcmp(g_var_typesigs[i].name, name, (size_t)len) == 0) {
-      return g_var_typesigs[i].sig;
-    }
-  }
-  for (int i = g_global_typesig_count - 1; i >= 0; i--) {
-    if (g_global_typesigs[i].len == len &&
-        memcmp(g_global_typesigs[i].name, name, (size_t)len) == 0) {
-      return g_global_typesigs[i].sig;
-    }
-  }
-  return NULL;
 }
 
 node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t decl_fp_kind,
@@ -5291,10 +5453,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       psx_ret_pointee_array_t ret_pointee_array = {0};
       PSX_RET_POINTEE_ARRAY_SELECT_INTO(&ret_pointee_array,
                                         &direct_ret_pointee_array,
-                                        &base_funcptr_sig.ret_pointee_array);
+                                        &base_funcptr_sig.function.callable.return_shape.pointee_array);
       int ret_is_data_pointer =
           decl_state.trailing_func_suffix ? direct_ret_is_data_pointer
-                                          : base_funcptr_sig.ret_is_data_pointer;
+                                          : base_funcptr_sig.function.callable.return_shape.is_data_pointer;
       psx_decl_funcptr_sig_t sig =
           decl_state.trailing_func_suffix
               ? psx_decl_make_funcptr_sig(
@@ -5307,11 +5469,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                     ret_pointee_array, decl_base_is_void, ret_is_data_pointer, 0,
                     decl_is_complex)
               : base_funcptr_sig;
-      if (!psx_ret_pointee_array_has_dims(sig.ret_pointee_array)) {
-        sig.ret_pointee_array = ret_pointee_array;
+      if (!psx_ret_pointee_array_has_dims(sig.function.callable.return_shape.pointee_array)) {
+        sig.function.callable.return_shape.pointee_array = ret_pointee_array;
       }
       if (is_pointer && decl_state.had_paren_group && decl_state.func_suffix_count >= 2) {
-        sig.ret_is_funcptr = 1;
+        psx_decl_funcptr_sig_promote_return_to_funcptr(
+            &sig, &decl_state.returned_funcptr_suffix_sig);
       }
       psx_decl_set_lvar_funcptr_signature(var, &sig);
     }
@@ -5325,12 +5488,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     }
     (void)psx_lvar_refresh_decl_type(var);
 
-    /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化して名前で記録する。
-     * 複雑な派生型 (関数ポインタ / ネスト宣言子, '(' を含む) のみ非 NULL。型開始トークン
-     * を含むのは先頭宣言子だけなので declarator_count==1 に限定する。 */
+    /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化し、decl_type の付帯情報へ
+     * 寄せる。 */
     if (declarator_count == 1 && ts_start && var && tok) {
       char *sig = psx_serialize_decl_type_tokens(ts_start, curtok(), (token_t *)tok);
-      if (sig) record_var_type_sig(tok->str, tok->len, sig);
+      if (sig) {
+        var->type_sig = sig;
+        if (var->decl_type) var->decl_type->type_sig = sig;
+      }
     }
 
     if (tk_consume('=')) {

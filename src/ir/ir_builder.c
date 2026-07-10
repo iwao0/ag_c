@@ -121,8 +121,7 @@ static ir_type_t scalar_value_type(int type_size, int is_pointer) {
 }
 
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
-  /* float/double 変数は base.fp_kind で判定 */
-  unsigned fpk = lv->mem.base.fp_kind;
+  tk_float_kind_t fpk = psx_node_value_fp_kind((node_t *)lv);
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   int elem = psx_node_storage_type_size((node_t *)lv);
@@ -134,12 +133,13 @@ static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
-/* node->fp_kind から IR の浮動小数型を返すヘルパ (Phase A3 リファクタリング)。
+/* node の値型から IR の浮動小数型を返すヘルパ。
  * 非浮動小数 (TK_FLOAT_KIND_NONE) なら IR_TY_I32 を返す。
  * 呼び出し側で type_size に応じた整数型 (I8/I16/I32/PTR) に上書きすること。 */
 static ir_type_t ir_type_from_node(node_t *node) {
-  if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
+  tk_float_kind_t fp_kind = psx_node_value_fp_kind(node);
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
+  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   return IR_TY_I32;
 }
 
@@ -455,14 +455,15 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
   /* 複素数 compound literal `(double _Complex){re,im}` は COMMA(init, ref) 形。
    * init (実部/虚部の store) を評価してから、rhs (複素数 lvar 参照) を複素数として
    * dst へコピーする。 */
-  if (node->kind == ND_COMMA && node->rhs && node->rhs->is_complex) {
+  if (node->kind == ND_COMMA && node->rhs &&
+      psx_node_value_is_complex(node->rhs)) {
     build_expr(ctx, node->lhs);
     if (ctx->failed) return;
     build_complex_to(ctx, node->rhs, dst_ptr_vreg, fp_ty, half);
     return;
   }
   /* scalar → complex promotion: re = scalar 値、im = 0.0 */
-  if (!node->is_complex) {
+  if (!psx_node_value_is_complex(node)) {
     ir_val_t v = build_expr(ctx, node);
     if (ctx->failed) return;
     /* 必要なら fp_ty に変換 */
@@ -507,7 +508,8 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
    * まず源の fp 種別で temp slot に materialize し (この再帰呼び出しでは
    * src_fp_ty == fp_ty となり下の通常経路に乗る)、各成分を F2F 変換して dst へ
    * 格納する。これにより memcpy が壊す変換を全ノード種別で正しく扱う。 */
-  ir_type_t src_fp_ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  ir_type_t src_fp_ty =
+      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   if (src_fp_ty != fp_ty) {
     int src_half = (src_fp_ty == IR_TY_F32) ? 4 : 8;
     int slot = ir_func_new_vreg(ctx->f);
@@ -833,7 +835,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node) {
   node_num_t *n = (node_num_t *)node;
   /* float/double リテラル */
-  if (n->base.fp_kind > 0) {
+  if (psx_node_value_fp_kind(&n->base) != TK_FLOAT_KIND_NONE) {
     ir_type_t ty = ir_type_from_node(&n->base);
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *inst = ir_inst_new(IR_LOAD_FP_IMM);
@@ -915,7 +917,7 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
     fail(ctx, "assign without target");
     return ir_val_none();
   }
-  if (node->is_complex) return build_assign_complex(ctx, node);
+  if (psx_node_value_is_complex(node)) return build_assign_complex(ctx, node);
   /* struct/union 値代入: 8B でも scalar 式として評価すると先頭メンバだけを
    * store してしまうため、tag 値そのものなら memcpy/materialize 経路に送る。 */
   if ((aggregate_size_from_node(node->lhs) > 0 && aggregate_size_from_node(node->rhs) > 0) ||
@@ -1064,8 +1066,9 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   if (dst_ptr_vreg < 0) return ir_val_none();
   /* rhs が間接返し (>8B / 3/5/6/7B) struct 戻り値の関数呼び出しなら、戻り値を dst へ
    * 直接書かせる。 */
+  int rhs_ret_struct_size = aggregate_size_from_node(node->rhs);
   if (node->rhs && node->rhs->kind == ND_FUNCALL &&
-      cg_size_needs_indirect_struct(node->rhs->ret_struct_size)) {
+      cg_size_needs_indirect_struct(rhs_ret_struct_size)) {
     node_func_t *callee = (node_func_t *)node->rhs;
     /* 間接呼び出し (関数ポインタ経由) の struct 戻り値: dst へ直接書く下の最適化は
      * direct call 専用 (引数処理が簡略版)。間接は汎用 funcall 経路 (build_node_funcall)
@@ -1077,7 +1080,7 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
       cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
       cp->src2 = srcp;
-      cp->alloca_size = node->rhs->ret_struct_size;
+      cp->alloca_size = rhs_ret_struct_size;
       ir_func_append_inst(ctx->f, cp);
       return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
     }
@@ -1139,7 +1142,7 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
     call->sym_len = callee->funcname_len;
     call->args = cargs;
     call->nargs = callee->nargs;
-    call->ret_struct_size = node->rhs->ret_struct_size;
+    call->ret_struct_size = rhs_ret_struct_size;
     call->ret_struct_area = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
     ir_func_append_inst(ctx->f, call);
     return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
@@ -1208,7 +1211,7 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
     return;
   }
   if (src->kind == ND_FUNCALL) {
-    int ret_size = src->ret_struct_size;
+    int ret_size = aggregate_size_from_node(src);
     if (ret_size == 1 || ret_size == 2 || ret_size == 4 || ret_size == 8) {
       ir_type_t ret_ty = scalar_value_type(ret_size, 0);
       ir_val_t v = build_expr(ctx, src);
@@ -1369,7 +1372,7 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
   if (!sym || !sig || !psx_decl_funcptr_sig_has_payload(*sig)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_sig = *sig;
+  sym->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
 }
 
 static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee) {
@@ -1456,8 +1459,9 @@ static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
  * ND_LT/LE は _Complex に対して未定義なので扱わない (build_node_binop で
  * EQ/NE のときだけ呼ばれる)。 */
 static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
-  unsigned fpk = (node->lhs ? node->lhs->fp_kind : 0);
-  if (node->rhs && node->rhs->fp_kind > fpk) fpk = node->rhs->fp_kind;
+  tk_float_kind_t fpk = psx_node_value_fp_kind(node->lhs);
+  tk_float_kind_t rhs_fpk = psx_node_value_fp_kind(node->rhs);
+  if (rhs_fpk > fpk) fpk = rhs_fpk;
   ir_type_t fp_ty = (fpk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
   int slot_size = 2 * half;
@@ -1524,7 +1528,7 @@ static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   /* _Complex EQ/NE 比較は専用経路 (build_complex_cmp) に分岐。 */
   if ((node->kind == ND_EQ || node->kind == ND_NE) && !node->from_logical_not &&
-      ((node->lhs && node->lhs->is_complex) || (node->rhs && node->rhs->is_complex))) {
+      (psx_node_value_is_complex(node->lhs) || psx_node_value_is_complex(node->rhs))) {
     return build_complex_cmp(ctx, node);
   }
   ir_val_t l = build_expr(ctx, node->lhs);
@@ -1717,47 +1721,6 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   return ir_val_none();
 }
 
-static int indirect_funcptr_ret_is_data_pointer(ir_build_ctx_t *ctx, node_t *callee) {
-  if (!callee) return 0;
-  if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
-      callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, callee);
-    return (sig.ret_is_data_pointer ||
-            psx_ret_pointee_array_has_dims(sig.ret_pointee_array)) ? 1 : 0;
-  }
-  if (callee->kind == ND_FUNCALL) {
-    node_func_t *fn = (node_func_t *)callee;
-    if (!fn->callee && fn->funcname) {
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
-                                                                  fn->funcname_len);
-      if (ret.is_funcptr) {
-        return (ret.funcptr_sig.ret_is_data_pointer ||
-                psx_ret_pointee_array_has_dims(ret.funcptr_sig.ret_pointee_array))
-                   ? 1
-                   : 0;
-      }
-    }
-  }
-  return 0;
-}
-
-static int indirect_funcptr_ret_int_width(ir_build_ctx_t *ctx, node_t *callee) {
-  if (!callee) return 0;
-  if (callee->kind == ND_LVAR || callee->kind == ND_GVAR ||
-      callee->kind == ND_DEREF || callee->kind == ND_ADDR) {
-    return funcptr_sig_for_callee(ctx, callee).ret_int_width;
-  }
-  if (callee->kind == ND_FUNCALL) {
-    node_func_t *fn = (node_func_t *)callee;
-    if (!fn->callee && fn->funcname) {
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
-                                                                  fn->funcname_len);
-      if (ret.is_funcptr) return ret.funcptr_sig.ret_int_width;
-    }
-  }
-  return 0;
-}
-
 static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   node_func_t *fn = (node_func_t *)node;
   if (!fn->callee && fn->funcname && fn->funcname_len > 12 &&
@@ -1787,9 +1750,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     }
   } else {
     psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, fn->callee);
-    if (sig.is_variadic && sig.nargs_fixed < fn->nargs) {
+    if (sig.function.callable.signature.is_variadic && sig.function.callable.signature.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
-      nargs_fixed = sig.nargs_fixed;
+      nargs_fixed = sig.function.callable.signature.nargs_fixed;
     }
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
@@ -1828,8 +1791,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       /* _Complex 値引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1}。一時 slot に
        * {re,im} を materialize し、2 つの FP 値として push する。codegen の fp_idx
        * カウンタが連続 2 レジスタへ割り当てる。 */
-      if (arg && arg->is_complex) {
-        ir_type_t fp_ty = (arg->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      if (arg && psx_node_value_is_complex(arg)) {
+        ir_type_t fp_ty =
+            (psx_node_value_fp_kind(arg) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
         if (!fn->callee && i < nargs_fixed) {
           tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
               fn->funcname, fn->funcname_len, i);
@@ -1912,11 +1876,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         if (arg_full_size > 0 && cg_size_needs_indirect_struct(arg_full_size)) {
           struct_needs_ptr = 1;
         }
-      } else if (arg && arg->kind == ND_FUNCALL && arg->ret_struct_size > 8) {
+      } else if (arg && arg->kind == ND_FUNCALL &&
+                 aggregate_size_from_node(arg) > 8) {
         /* >8B struct を返す関数呼び出しを直接 struct 引数に (`sum(make())`)。
          * build_node_funcall が ret_area を確保しそのアドレスを返すので、それを
          * そのまま渡す (新規 area なので memcpy 不要)。 */
-        arg_full_size = arg->ret_struct_size;
+        arg_full_size = aggregate_size_from_node(arg);
       }
       if (arg->kind == ND_FUNCALL && arg_full_size > 8) {
         ir_val_t a = build_expr(ctx, arg);
@@ -2048,41 +2013,19 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *call = ir_inst_new(IR_CALL);
   /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
   ir_type_t ret_ty = ir_type_from_node(node);
-  /* 直接呼び出しで戻り値が long / pointer のとき、呼び出し側でも 8 バイト値として
-   * 扱う。i32 のままだと `h(x) * 2` のように戻り値を使う演算が 32bit で行われ
-   * 上位ビットが落ちる (h が long を返す場合)。 */
+  int ret_struct_size = aggregate_size_from_node(node);
+  /* 呼び出し結果の IR 型は node 自身の canonical type から読む。direct/indirect
+   * それぞれの prototype / funcptr signature は parser 側で node type へ materialize
+   * されているので、ここで再度 psx_ctx / callee signature を読まない。 */
   if (ret_ty == IR_TY_I32) {
-    int small_struct_value_ret = 0;
-    if (fn->callee && indirect_funcptr_ret_is_data_pointer(ctx, fn->callee)) {
-      ret_ty = IR_TY_PTR;
-    } else if (fn->callee && indirect_funcptr_ret_int_width(ctx, fn->callee) >= 8) {
-      ret_ty = IR_TY_I64;
-    } else if (!fn->callee && fn->funcname) {
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
-                                                                  fn->funcname_len);
-      small_struct_value_ret =
-          node->ret_struct_size > 0 &&
-          !ret.is_pointer &&
-          !ret.is_funcptr &&
-          !cg_size_needs_indirect_struct(node->ret_struct_size);
-    } else if (fn->callee) {
-      small_struct_value_ret =
-          node->ret_struct_size > 0 &&
-          psx_node_pointer_qual_levels(fn->callee) <= 1 &&
-          !cg_size_needs_indirect_struct(node->ret_struct_size);
-    }
+    int small_struct_value_ret =
+        ret_struct_size > 0 && !cg_size_needs_indirect_struct(ret_struct_size);
     if (small_struct_value_ret) {
-      ret_ty = (node->ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
-    } else if (!fn->callee && fn->funcname) {
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
-                                                                  fn->funcname_len);
-      if (ret.is_pointer) {
-        ret_ty = IR_TY_PTR;
-      } else if (node->ret_struct_size <= 0 &&
-                 ret.token_kind != TK_EOF &&
-                 psx_ctx_scalar_type_size(ret.token_kind) >= 8) {
-        ret_ty = IR_TY_I64;
-      }
+      ret_ty = (ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
+    } else if (psx_node_value_is_pointer_like(node)) {
+      ret_ty = IR_TY_PTR;
+    } else if (ret_struct_size <= 0 && ps_node_type_size(node) >= 8) {
+      ret_ty = IR_TY_I64;
     }
   }
   call->dst = ir_val_vreg(v, ret_ty);
@@ -2097,13 +2040,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->args = cargs;
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
-  call->is_void_call = node->is_void_call ? 1 : 0;
+  call->is_void_call = psx_node_value_is_void(node) ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   if (fn->callee) attach_funcptr_sig_from_callee(ctx, call, fn->callee);
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
-  if (node->is_complex) {
+  if (psx_node_value_is_complex(node)) {
     int half = (ir_type_from_node(node) == IR_TY_F32) ? 4 : 8;
     int slot = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
@@ -2123,14 +2066,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * call) は build_assign_struct がインラインで dst へ書くためここには来ないが、
    * 間接呼び出しの代入は build_assign_struct がこの経路へ委譲する。 */
   int struct_ret_area = -1;
-  if (cg_size_needs_indirect_struct(node->ret_struct_size)) {
+  if (cg_size_needs_indirect_struct(ret_struct_size)) {
     struct_ret_area = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
     ia->dst = ir_val_vreg(struct_ret_area, IR_TY_PTR);
-    ia->alloca_size = node->ret_struct_size;
+    ia->alloca_size = ret_struct_size;
     ia->alloca_align = 8;
     ir_func_append_inst(ctx->f, ia);
-    call->ret_struct_size = node->ret_struct_size;
+    call->ret_struct_size = ret_struct_size;
     call->ret_struct_area = ir_val_vreg(struct_ret_area, IR_TY_PTR);
   }
   ir_func_append_inst(ctx->f, call);
@@ -2391,9 +2334,10 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node) {
   int is_real = (node->kind == ND_CREAL);
   node_t *operand = node->lhs;
-  ir_type_t fp_ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  ir_type_t fp_ty =
+      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
-  if (!operand || !operand->is_complex) {
+  if (!operand || !psx_node_value_is_complex(operand)) {
     /* 実数オペランド: __real__ は値そのもの、__imag__ は 0.0。 */
     if (is_real) return build_expr(ctx, operand);
     int z = ir_func_new_vreg(ctx->f);
@@ -2434,7 +2378,8 @@ static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
-  ir_type_t ty = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  ir_type_t ty =
+      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   v = coerce_to_type(ctx, v, ty);
   int dst = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_FNEG);
@@ -2449,7 +2394,8 @@ static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
-  ir_type_t target = (node->fp_kind == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+  ir_type_t target =
+      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   return coerce_to_type_ex(ctx, v, target, 0,
                            psx_node_conversion_value_is_unsigned(node->lhs));
 }
@@ -3004,9 +2950,10 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     ir_func_append_inst(ctx->f, inst);
     return;
   }
-  if (node->lhs && ctx->cur_fn && ctx->cur_fn->base.ret_struct_size == 8 &&
-      ctx->f->ret_type == IR_TY_I64) {
-    ir_val_t sv = build_small_struct_return_value(ctx, node->lhs, ctx->cur_fn->base.ret_struct_size);
+  int cur_ret_struct_size =
+      ctx->cur_fn ? aggregate_size_from_node((node_t *)ctx->cur_fn) : 0;
+  if (node->lhs && cur_ret_struct_size == 8 && ctx->f->ret_type == IR_TY_I64) {
+    ir_val_t sv = build_small_struct_return_value(ctx, node->lhs, cur_ret_struct_size);
     if (ctx->failed) return;
     if (sv.id != IR_VAL_NONE) {
       ir_inst_t *inst = ir_inst_new(IR_RET);
@@ -3055,12 +3002,8 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     if (ctx->failed) return;
     /* 戻り値を関数の戻り型へ変換する (C11 6.8.6.4: 代入と同じ変換)。
      * `double f(){ return 7; }` の int→double (I2F) などがここで挟まる。 */
-    psx_function_ret_info_t ret =
-        ctx->cur_fn ? psx_ctx_get_function_ret_info(ctx->cur_fn->funcname,
-                                                    ctx->cur_fn->funcname_len)
-                    : (psx_function_ret_info_t){0};
     v = coerce_to_type_ex(ctx, v, ctx->f->ret_type,
-                          ret.is_unsigned,
+                          ctx->cur_fn ? psx_node_is_unsigned_type((node_t *)ctx->cur_fn) : 0,
                           psx_node_conversion_value_is_unsigned(node->lhs));
   } else {
     v = ir_val_imm(IR_TY_I32, 0);
@@ -3485,16 +3428,14 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
     /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
      * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
     if (!is_main) {
-      psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname,
-                                                                  fn->funcname_len);
-      if (!ret.is_void) {
+      if (!psx_node_value_is_void((node_t *)fn)) {
         diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
                        "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
                        fn->funcname_len, fn->funcname);
       }
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len).is_void
+    r->src1 = psx_node_value_is_void((node_t *)fn)
                   ? ir_val_none()
                   : ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
@@ -3505,33 +3446,35 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
-  ir_type_t ret_ty = ir_type_from_node(&fn->base);
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
-  if (ret.is_void) {
+  psx_type_t *ret_type = psx_node_get_type((node_t *)fn);
+  (void)ret_type;
+  int ret_struct_size = aggregate_size_from_node((node_t *)fn);
+  ir_type_t ret_ty = ir_type_from_node((node_t *)fn);
+  if (psx_node_value_is_void((node_t *)fn)) {
     ret_ty = IR_TY_VOID;
   }
-  if (fn->base.ret_struct_size > 0 && !ret.is_pointer &&
-      !ret.is_funcptr &&
-      !cg_size_needs_indirect_struct(fn->base.ret_struct_size)) {
-    ret_ty = (fn->base.ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
+  if (ret_struct_size > 0 && !psx_node_value_is_pointer_like((node_t *)fn) &&
+      !cg_size_needs_indirect_struct(ret_struct_size)) {
+    ret_ty = (ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
   }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */
-  if (ret_ty == IR_TY_I32 && ret.is_pointer) {
+  if (ret_ty == IR_TY_I32 && psx_node_value_is_pointer_like((node_t *)fn)) {
     ret_ty = IR_TY_PTR;
   }
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
-  if (ret_ty == IR_TY_I32 && fn->base.ret_struct_size <= 0) {
-    if (ret.token_kind != TK_EOF && psx_ctx_scalar_type_size(ret.token_kind) >= 8) {
+  if (ret_ty == IR_TY_I32 && ret_struct_size <= 0) {
+    if (ps_node_type_size((node_t *)fn) >= 8) {
       ret_ty = IR_TY_I64;
     }
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
-  if (fn->base.is_complex) {
-    ctx->f->ret_complex_half = (fn->base.fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+  if (psx_node_value_is_complex((node_t *)fn)) {
+    ctx->f->ret_complex_half =
+        (psx_node_value_fp_kind((node_t *)fn) == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
   }
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->is_static = fn->is_static;
@@ -3545,7 +3488,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * 非 clean サイズを scalar 返ししていたため `{char;short;uchar}` 戻り値が先頭
    * メンバ幅 (1B) しか復元できず壊れていた。 */
   ctx->f->ret_struct_size =
-      cg_size_needs_indirect_struct(fn->base.ret_struct_size) ? fn->base.ret_struct_size : 0;
+      cg_size_needs_indirect_struct(ret_struct_size) ? ret_struct_size : 0;
   if (ctx->f->ret_struct_size > 0) {
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *p = ir_inst_new(IR_PARAM);

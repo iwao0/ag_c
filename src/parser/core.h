@@ -30,10 +30,6 @@ token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out);
 /* _Generic 用: [start, end) のトークン綴りを単一スペースで連結 (skip は除外)。'(' を
  * 含まない単純型は NULL。複雑な派生型 (関数ポインタ/ネスト宣言子) の型照合に使う。 */
 char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip);
-/* 単一識別子の制御式 `_Generic(var, ...)` の var の型シグネチャを名前で引く (無ければ NULL)。 */
-char *psx_lookup_var_type_sig(char *name, int len);
-/* グローバル変数の型シグネチャを記録する (トップレベル宣言から呼ぶ。翻訳単位を通じて永続)。 */
-void psx_record_global_type_sig(char *name, int len, char *sig);
 void psx_consume_pointer_prefix(int *is_ptr);
 // `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。
 int psx_consume_pointer_prefix_counted(int *is_ptr);
@@ -49,21 +45,74 @@ typedef struct {
 } psx_funcptr_signature_t;
 
 typedef struct {
-  unsigned short param_fp_mask;
-  unsigned short param_int_mask;
-  unsigned char ret_int_width;
-  tk_float_kind_t ret_fp_kind;
-  tk_float_kind_t ret_pointee_fp_kind;
-  psx_ret_pointee_array_t ret_pointee_array;
-  int ret_is_void;
-  int ret_is_data_pointer;
-  int ret_is_funcptr;
-  int ret_is_complex;
-  int is_variadic;
-  short nargs_fixed;
+  unsigned char int_width;
+  tk_float_kind_t fp_kind;
+  tk_float_kind_t pointee_fp_kind;
+  psx_ret_pointee_array_t pointee_array;
+  int is_void;
+  int is_data_pointer;
+  int is_complex;
+} psx_funcptr_return_shape_t;
+
+typedef struct {
+  psx_funcptr_signature_t signature;
+  psx_funcptr_return_shape_t return_shape;
+} psx_funcptr_callable_shape_t;
+
+typedef struct psx_funcptr_type_shape_t psx_funcptr_type_shape_t;
+
+typedef struct {
+  int is_funcptr;
+  psx_funcptr_type_shape_t *type;
+} psx_funcptr_returned_func_t;
+
+struct psx_funcptr_type_shape_t {
+  psx_funcptr_callable_shape_t callable;
+  psx_funcptr_returned_func_t returned_funcptr;
+};
+
+typedef struct {
+  psx_funcptr_type_shape_t function;
 } psx_decl_funcptr_sig_t;
 
 int psx_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig);
+int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret);
+int psx_funcptr_return_shape_matches(psx_funcptr_return_shape_t a,
+                                     psx_funcptr_return_shape_t b);
+psx_funcptr_return_shape_t psx_decl_funcptr_direct_return_shape(
+    psx_decl_funcptr_sig_t sig);
+psx_funcptr_return_shape_t psx_funcptr_return_shape_merge_missing(
+    psx_funcptr_return_shape_t merged, psx_funcptr_return_shape_t src);
+int psx_funcptr_signature_has_payload(psx_funcptr_signature_t sig);
+int psx_funcptr_callable_shape_has_payload(psx_funcptr_callable_shape_t fn);
+int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
+                                       psx_funcptr_callable_shape_t b);
+psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
+    psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
+    int copy_variadic);
+int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
+psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
+    psx_funcptr_returned_func_t ret);
+psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
+    psx_funcptr_type_shape_t fn);
+psx_funcptr_returned_func_t psx_funcptr_returned_func_mark(
+    psx_funcptr_returned_func_t ret);
+psx_funcptr_returned_func_t psx_funcptr_returned_func_clone(
+    psx_funcptr_returned_func_t ret);
+int psx_funcptr_returned_func_matches(psx_funcptr_returned_func_t a,
+                                      psx_funcptr_returned_func_t b);
+psx_funcptr_returned_func_t psx_funcptr_returned_func_merge_missing(
+    psx_funcptr_returned_func_t merged, psx_funcptr_returned_func_t src,
+    int copy_variadic);
+int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn);
+int psx_funcptr_type_shape_matches(psx_funcptr_type_shape_t a,
+                                   psx_funcptr_type_shape_t b);
+psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
+    psx_funcptr_type_shape_t merged, psx_funcptr_type_shape_t src,
+    int copy_variadic);
+psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
+    psx_funcptr_type_shape_t fn);
+psx_decl_funcptr_sig_t psx_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig);
 void psx_funcptr_signature_reset(psx_funcptr_signature_t *sig);
 void psx_skip_func_param_list(psx_funcptr_signature_t *sig);
 void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,

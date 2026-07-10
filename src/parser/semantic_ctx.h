@@ -90,18 +90,22 @@ typedef struct {
   int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
   int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
   psx_decl_funcptr_sig_t funcptr_sig;
+  psx_type_t *decl_type;
 } psx_typedef_info_t;
 
 static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
     const psx_typedef_info_t *info) {
   if (!info) return (psx_decl_funcptr_sig_t){0};
-  return info->is_funcptr ? info->funcptr_sig : (psx_decl_funcptr_sig_t){0};
+  if (info->decl_type && psx_decl_funcptr_sig_has_payload(info->decl_type->funcptr_sig))
+    return psx_decl_funcptr_sig_clone(info->decl_type->funcptr_sig);
+  return info->is_funcptr ? psx_decl_funcptr_sig_clone(info->funcptr_sig)
+                          : (psx_decl_funcptr_sig_t){0};
 }
 
 static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
                                                    psx_decl_funcptr_sig_t sig) {
   if (!info) return;
-  info->funcptr_sig = sig;
+  info->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   info->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
 }
 
@@ -161,6 +165,7 @@ bool psx_ctx_is_function_ret_void(char *name, int len);
 /* 関数の戻り値型を track する。既存と異なる型なら 0 を返す。 */
 int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer);
+void psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_type);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 void psx_ctx_set_function_ret_funcptr_sig(char *name, int len, int is_funcptr,
