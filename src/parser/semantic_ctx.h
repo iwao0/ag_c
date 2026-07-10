@@ -124,15 +124,12 @@ bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
-void psx_ctx_set_function_ret_tag(char *name, int len, token_kind_t tag_kind, char *tag_name, int tag_len);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);
-// 関数戻り値の浮動小数点種別 (float/double) を取得/設定する。
+// 関数戻り値の浮動小数点種別 (float/double) を取得する。
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
-void psx_ctx_set_function_ret_fp_kind(char *name, int len, tk_float_kind_t fp_kind);
 tk_float_kind_t psx_ctx_get_function_ret_fp_kind(char *name, int len);
 // 関数戻り値が _Complex かどうかを保持する。呼び出し側 funcall ノードの is_complex
 // 伝播 (HFA 戻り値 d0/d1 の受け取り) に使う。
-void psx_ctx_set_function_ret_is_complex(char *name, int len, int is_complex);
 int psx_ctx_get_function_ret_is_complex(char *name, int len);
 // 関数が variadic (`...` を持つ) かどうかと固定引数の個数を保持する。
 // Apple ARM64 ABI で variadic 引数を stack に積むため、呼び出し側 codegen が
@@ -158,40 +155,31 @@ int psx_ctx_track_function_param_category(char *name, int len, int idx, int cate
 /* 同名関数の本体定義が初回かどうかを track する (C11 6.9p3)。
  * 初回なら 1 を返して定義済みフラグを立てる、すでに定義済みなら 0。 */
 int psx_ctx_track_function_defined(char *name, int len);
-/* 戻り値型が void かどうかを保持/問い合わせる。代入や初期化での
+/* 戻り値型が void かどうかを問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
-void psx_ctx_set_function_ret_void(char *name, int len, int is_void);
 bool psx_ctx_is_function_ret_void(char *name, int len);
-/* 関数の戻り値型を track する。既存と異なる型なら 0 を返す。 */
-int psx_ctx_track_function_ret_type(char *name, int len,
-                                     token_kind_t ret_token_kind, int ret_is_pointer);
+/* 関数の戻り値型 descriptor を track する。既存と異なる型なら 0 を返す。 */
+int psx_ctx_track_function_ret_type_descriptor(char *name, int len,
+                                               const psx_type_t *ret_type);
 void psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_type);
 const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
-void psx_ctx_set_function_ret_funcptr_sig(char *name, int len, int is_funcptr,
-                                          psx_decl_funcptr_sig_t sig);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
 psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */
-void psx_ctx_set_function_ret_unsigned(char *name, int len, int is_unsigned);
 int psx_ctx_get_function_ret_is_unsigned(char *name, int len);
-/* 戻り値がポインタ型のとき、pointee の const/volatile 修飾を保持する。 */
-void psx_ctx_set_function_ret_pointee_qualifiers(char *name, int len,
-                                                 int is_const, int is_volatile);
+/* 戻り値がポインタ型のとき、pointee の const/volatile 修飾を返す。 */
 int psx_ctx_get_function_ret_pointee_const(char *name, int len);
 int psx_ctx_get_function_ret_pointee_volatile(char *name, int len);
 /* 戻り値型が `int (*f())[N]` (配列へのポインタ) のときの先頭次元 N (それ以外 0)。
  * 呼び出し結果 `f()[i]` の行ストライドを N*elem にするのに使う。 */
-void psx_ctx_set_function_ret_pointee_array_first_dim(char *name, int len, int first_dim);
 int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len);
-void psx_ctx_set_function_ret_pointee_array_second_dim(char *name, int len, int second_dim);
 int psx_ctx_get_function_ret_pointee_array_second_dim(char *name, int len);
 /* 戻り値型のポインタ段数 (`int *g()`=1, `int **g()`=2, 非ポインタ=0)。多段ポインタ戻り
  * `int **g(); **g()` の deref を正しい幅で組むのに使う。 */
-void psx_ctx_set_function_ret_pointer_levels(char *name, int len, int levels);
 int psx_ctx_get_function_ret_pointer_levels(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);

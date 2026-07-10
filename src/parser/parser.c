@@ -2943,39 +2943,36 @@ static void register_function_signature(const psx_function_signature_t *sig) {
                  tok->len, tok->str);
   }
   psx_ctx_define_function_name_with_ret(tok->str, tok->len, sig->ret_struct_size);
-  if (sig->ret_fp_kind != TK_FLOAT_KIND_NONE && !sig->ret_is_ptr) {
-    psx_ctx_set_function_ret_fp_kind(tok->str, tok->len, sig->ret_fp_kind);
+  psx_decl_funcptr_sig_t effective_funcptr_sig = sig->funcptr_sig;
+  if (sig->ret_is_funcptr) {
+    psx_decl_funcptr_sig_t funcptr_sig = sig->funcptr_sig;
+    int funcptr_returns_pointer =
+        funcptr_sig.function.callable.return_shape.is_data_pointer ||
+        psx_ret_pointee_array_has_dims(funcptr_sig.function.callable.return_shape.pointee_array);
+    if (funcptr_returns_pointer &&
+        funcptr_sig.function.callable.return_shape.pointee_fp_kind == TK_FLOAT_KIND_NONE) {
+      funcptr_sig.function.callable.return_shape.pointee_fp_kind = sig->ret_fp_kind;
+    } else if (!funcptr_returns_pointer &&
+               funcptr_sig.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_NONE) {
+      funcptr_sig.function.callable.return_shape.fp_kind = sig->ret_fp_kind;
+    }
+    int funcptr_ret_int_width = funcptr_sig.function.callable.return_shape.int_width
+                                    ? funcptr_sig.function.callable.return_shape.int_width
+                                    : psx_funcptr_ret_int_width_from_kind(
+                                          sig->ret_token_kind, funcptr_sig.function.callable.return_shape.is_data_pointer,
+                                          funcptr_sig.function.callable.return_shape.fp_kind);
+    funcptr_sig.function.callable.return_shape.int_width = (unsigned char)funcptr_ret_int_width;
+    effective_funcptr_sig = funcptr_sig;
+    if (sig->func_node) psx_node_funcdef_set_ret_funcptr_sig(sig->func_node, funcptr_sig);
   }
-  if (sig->ret_is_complex) {
-    psx_ctx_set_function_ret_is_complex(tok->str, tok->len, 1);
-  }
-  if (sig->ret_is_void && !sig->ret_is_ptr) {
-    psx_ctx_set_function_ret_void(tok->str, tok->len, 1);
-  }
-  if (!psx_ctx_track_function_ret_type(tok->str, tok->len,
-                                       sig->ret_token_kind, sig->ret_is_ptr)) {
+  psx_type_t *ret_type = function_signature_ret_type(sig, effective_funcptr_sig);
+  if (ret_type &&
+      !psx_ctx_track_function_ret_type_descriptor(tok->str, tok->len, ret_type)) {
     psx_diag_ctx(curtok(), sig->diag_context,
                  "関数 '%.*s' の戻り値型が以前の宣言と異なります (C11 6.7p3)",
                  tok->len, tok->str);
   }
-  if (sig->ret_base_unsigned) psx_ctx_set_function_ret_unsigned(tok->str, tok->len, 1);
-  if (sig->ret_is_ptr && (sig->ret_pointee_const || sig->ret_pointee_volatile)) {
-    psx_ctx_set_function_ret_pointee_qualifiers(tok->str, tok->len,
-                                                sig->ret_pointee_const,
-                                                sig->ret_pointee_volatile);
-  }
-  if (sig->ret_is_ptr && sig->ret_pointer_levels > 0) {
-    psx_ctx_set_function_ret_pointer_levels(tok->str, tok->len, sig->ret_pointer_levels);
-  }
-  if (sig->ret_is_ptr && sig->ret_pointee_dim_count >= 1 &&
-      sig->ret_pointee_first_dim > 0) {
-    psx_ctx_set_function_ret_pointee_array_first_dim(tok->str, tok->len,
-                                                     sig->ret_pointee_first_dim);
-    if (sig->ret_pointee_dim_count >= 2 && sig->ret_pointee_second_dim > 0) {
-      psx_ctx_set_function_ret_pointee_array_second_dim(tok->str, tok->len,
-                                                        sig->ret_pointee_second_dim);
-    }
-  }
+  if (ret_type) psx_ctx_set_function_ret_type(tok->str, tok->len, ret_type);
   if (!psx_ctx_track_function_nargs(tok->str, tok->len, sig->nargs, sig->is_variadic)) {
     psx_diag_ctx(curtok(), sig->diag_context,
                  "関数 '%.*s' の引数数が以前の宣言と異なります (C11 6.7p4)",
@@ -3006,36 +3003,6 @@ static void register_function_signature(const psx_function_signature_t *sig) {
       }
     }
   }
-  if (psx_ctx_is_tag_aggregate_kind(sig->ret_tag_kind) &&
-      sig->ret_tag_name) {
-    psx_ctx_set_function_ret_tag(tok->str, tok->len, sig->ret_tag_kind,
-                                 sig->ret_tag_name, sig->ret_tag_len);
-  }
-  psx_decl_funcptr_sig_t effective_funcptr_sig = sig->funcptr_sig;
-  if (sig->ret_is_funcptr) {
-    psx_decl_funcptr_sig_t funcptr_sig = sig->funcptr_sig;
-    int funcptr_returns_pointer =
-        funcptr_sig.function.callable.return_shape.is_data_pointer ||
-        psx_ret_pointee_array_has_dims(funcptr_sig.function.callable.return_shape.pointee_array);
-    if (funcptr_returns_pointer &&
-        funcptr_sig.function.callable.return_shape.pointee_fp_kind == TK_FLOAT_KIND_NONE) {
-      funcptr_sig.function.callable.return_shape.pointee_fp_kind = sig->ret_fp_kind;
-    } else if (!funcptr_returns_pointer &&
-               funcptr_sig.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_NONE) {
-      funcptr_sig.function.callable.return_shape.fp_kind = sig->ret_fp_kind;
-    }
-    int funcptr_ret_int_width = funcptr_sig.function.callable.return_shape.int_width
-                                    ? funcptr_sig.function.callable.return_shape.int_width
-                                    : psx_funcptr_ret_int_width_from_kind(
-                                          sig->ret_token_kind, funcptr_sig.function.callable.return_shape.is_data_pointer,
-                                          funcptr_sig.function.callable.return_shape.fp_kind);
-    funcptr_sig.function.callable.return_shape.int_width = (unsigned char)funcptr_ret_int_width;
-    effective_funcptr_sig = funcptr_sig;
-    psx_ctx_set_function_ret_funcptr_sig(tok->str, tok->len, 1, funcptr_sig);
-    if (sig->func_node) psx_node_funcdef_set_ret_funcptr_sig(sig->func_node, funcptr_sig);
-  }
-  psx_type_t *ret_type = function_signature_ret_type(sig, effective_funcptr_sig);
-  if (ret_type) psx_ctx_set_function_ret_type(tok->str, tok->len, ret_type);
 }
 
 /* `int f(int), g(int), a;` の f/g 等: funcdef と同様に関数テーブルへプロトタイプを登録する。 */

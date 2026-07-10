@@ -20853,3 +20853,84 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - raw field はまだ再宣言照合・既存 codegen の互換 mirror として残っている。
   - 次にさらに根本化するなら、`node_utils.c::type_from_direct_funcall()` / `type_from_funcref()` が
     `psx_ctx_get_function_ret_info()` から型を再構成するのではなく、semantic context の `ret_type` clone/view を直接使うようにする。
+
+### このセッション（続き863）: node_utils の function return 型読み取りを ret_type 正本へ寄せる
+- 見つかった浅い箇所:
+  - `type_from_direct_funcall()` は `psx_ctx_get_function_ret_info()` から戻り値型を再構成しており、
+    parser/semantic context が保持している `ret_type` descriptor を直接使えていなかった。
+  - direct call 側で `ret_info` を取ったあとに pointer-to-array dimensions や pointer levels を
+    個別 getter で再取得しており、同じ情報の読み取り口が複数残っていた。
+  - `psx_ctx_set_function_ret_type()` で保存された parser 由来の `ret_type` は、型構造としては
+    pointer-to-array を持っていたが、既存 node metadata が見る `return_shape.pointee_array` / stride 系の補助欄は
+    保存境界で正規化されていなかった。
+- 根本対応:
+  - `psx_ctx_get_function_ret_type()` を追加し、semantic context が保持する function return の
+    canonical descriptor を利用側から参照できるようにした。
+  - `node_utils.c` に arena clone helper を追加し、`type_from_direct_funcall()` はまず
+    `psx_ctx_get_function_ret_type()` の clone を返すようにした。
+  - `type_from_funcref()` も function reference の return base として `ret_type` clone を優先するようにした。
+  - `psx_ctx_set_function_ret_type()` の保存境界で pointer-to-array return metadata を正規化し、
+    `ret_type->funcptr_sig.function.callable.return_shape.pointee_array` / `outer_stride` / `mid_stride` を
+    型構造から導出して埋めるようにした。
+  - function pointer return 判定は `ret_type->funcptr_sig` 全体ではなく
+    function pointer としての callable payload / `returned_funcptr` marker を見るようにし、
+    pointer-to-array の補助 metadata だけを function pointer と誤認しないようにした。
+  - `psx_ctx_set_function_ret_type()` は保存した descriptor から raw mirror
+    (`ret_token_kind`, `ret_is_pointer`, `ret_pointer_levels`, `ret_pointee_array_*`,
+    `ret_is_funcptr`, `funcptr_sig` など) を同期するようにした。
+    これで raw field は parser 入力由来の別正本ではなく、保存済み `ret_type` descriptor 由来の互換 mirror に近づいた。
+  - function pointer return の外向き getter は、`returned_funcptr` 形式なら返される関数ポインタの
+    callable signature へ展開し、従来の direct callable signature 形式も維持するようにした。
+  - `type_from_direct_funcall()` の互換 fallback は残したが、fallback 内の個別 getter 再取得をやめ、
+    `psx_ctx_get_function_ret_info()` の集約結果だけを見るようにした。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - direct function call は、宣言済み関数については semantic context の `ret_type` descriptor を直接 clone して使う。
+  - `node_utils.c` から function return の個別 getter 呼び出しは消え、正本型または `ret_info` 集約 API に寄った。
+  - `psx_ctx_set_function_ret_type()` 後の raw mirror は `ret_type` から同期されるため、保存後の getter/fallback は
+    descriptor 由来の値を見やすくなった。
+  - 未宣言関数の implicit int 経路があるため、`type_from_direct_funcall()` の `ret_info` fallback はまだ互換路として残している。
+  - raw field はまだ再宣言照合・setter 入力・互換 fallback として残っているが、保存後 mirror としての性格が強くなった。
+  - 次にさらに根本化するなら、`register_function_signature()` の raw setter 連打を縮め、
+    `psx_ctx_set_function_ret_type()` を主登録 API にしつつ、再宣言照合用の比較も `psx_type_t` descriptor 比較へ寄せる。
+
+### このセッション（続き864）: function return 登録 API を descriptor 主導へ寄せる
+- 見つかった浅い箇所:
+  - `register_function_signature()` は `ret_type` descriptor を作れる状態になっていたが、
+    その前に `psx_ctx_set_function_ret_fp_kind()` / `psx_ctx_set_function_ret_pointer_levels()` /
+    `psx_ctx_set_function_ret_pointee_array_*()` / `psx_ctx_set_function_ret_funcptr_sig()` などの
+    raw setter を連打していた。
+  - `semantic_ctx.h` には戻り値 raw field を直接書き換える public API が残っており、
+    `ret_type` descriptor を迂回できる入口になっていた。
+  - 既存関数名を `psx_ctx_define_function_name_with_ret()` したとき、すでに `ret_type` がある場合でも
+    raw mirror から `ret_type` を再構築しており、descriptor 正本を上書きし得た。
+- 根本対応:
+  - `psx_ctx_track_function_ret_type_descriptor()` を追加し、再宣言チェックを `psx_type_t` descriptor 由来の
+    `psx_function_ret_info_t` で行うようにした。
+  - `register_function_signature()` は function pointer return signature を補完した後、
+    `function_signature_ret_type()` で `ret_type` を作り、descriptor track + `psx_ctx_set_function_ret_type()` に一本化した。
+  - parser から戻り値 raw setter 群の呼び出しを削除した。
+  - 未使用になった戻り値 raw setter / 旧 `psx_ctx_track_function_ret_type()` を `semantic_ctx.h` と
+    `semantic_ctx.c` から削除した。
+  - `psx_ctx_define_function_name_with_ret()` は既存 `ret_type` がある場合、raw mirror から再構築しないようにした。
+  - `test_type_metadata_bridge()` の手動登録テストも descriptor track を使う形に更新した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/ag_c test/fixtures/probes_found_bugs/function_redecl_signature.c > /tmp/ag_c_function_redecl_signature.s`
+    + `cc /tmp/ag_c_function_redecl_signature.s -o /tmp/ag_c_function_redecl_signature`
+    + `/tmp/ag_c_function_redecl_signature` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_returning_funcptr.c > /tmp/ag_c_func_returning_funcptr.s`
+    + `cc /tmp/ag_c_func_returning_funcptr.s -o /tmp/ag_c_func_returning_funcptr`
+    + `/tmp/ag_c_func_returning_funcptr` = **pass**
+  - `./build/ag_c test/fixtures/probes_found_bugs/func_return_pointer_to_array.c > /tmp/ag_c_func_return_pointer_to_array.s`
+    + `cc /tmp/ag_c_func_return_pointer_to_array.s -o /tmp/ag_c_func_return_pointer_to_array`
+    + `/tmp/ag_c_func_return_pointer_to_array` = **pass**
+- 現状:
+  - function return の登録主経路は `ret_type` descriptor track/set へ寄った。
+  - raw field は `psx_ctx_set_function_ret_type()` 後に同期される互換 mirror として残るが、外部から直接書き換える API は削った。
+  - 次にさらに根本化するなら、`func_name_t` 内の raw mirror を `psx_function_ret_info_t` cache へ畳むか、
+    getter fallback から raw field 参照をさらに減らして、未宣言関数/implicit int 用の既定値処理を明示的な別経路に分離する。

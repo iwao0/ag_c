@@ -5863,9 +5863,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, dpa_ret_info.pointee_array.first_dim);
   ASSERT_EQ(8, dpa_ret_info.pointee_array.elem_size);
   psx_ctx_define_function_name_with_ret("__tm_manual_type", 16, 0);
-  ASSERT_TRUE(psx_ctx_track_function_ret_type("__tm_manual_type", 16, TK_INT, 0));
   psx_type_t *manual_ret_type =
       psx_type_new_pointer(psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 8);
+  ASSERT_TRUE(psx_ctx_track_function_ret_type_descriptor("__tm_manual_type", 16,
+                                                        manual_ret_type));
   psx_ctx_set_function_ret_type("__tm_manual_type", 16, manual_ret_type);
   psx_function_ret_info_t manual_ret_info =
       psx_ctx_get_function_ret_info("__tm_manual_type", 16);

@@ -2526,42 +2526,11 @@ static psx_type_t *type_wrap_ret_pointee_array_base(psx_type_t *base,
   return array;
 }
 
-static psx_ret_pointee_array_t type_ret_pointee_array_view(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_POINTER || !type->base)
-    return (psx_ret_pointee_array_t){0};
-  psx_ret_pointee_array_t from_sig =
-      type->funcptr_sig.function.callable.return_shape.pointee_array;
-  if (psx_ret_pointee_array_has_dims(from_sig)) return from_sig;
-  if (type->base->kind != PSX_TYPE_ARRAY) return (psx_ret_pointee_array_t){0};
-  int first = type->base->array_len;
-  int second = 0;
-  int elem = type->base->elem_size;
-  if (type->base->base && type->base->base->kind == PSX_TYPE_ARRAY) {
-    second = type->base->base->array_len;
-    elem = type->base->base->elem_size;
-  }
-  return psx_ret_pointee_array_make(first, second, elem);
-}
-
-static void normalize_funcall_ret_type_from_context(psx_type_t *type) {
-  if (!type) return;
-  psx_ret_pointee_array_t ret_array = type_ret_pointee_array_view(type);
-  if (!psx_ret_pointee_array_has_dims(ret_array)) return;
-  type->funcptr_sig.function.callable.return_shape.pointee_array = ret_array;
-  type->outer_stride = psx_ret_pointee_array_inner_stride(ret_array);
-  type->mid_stride = psx_ret_pointee_array_next_stride(ret_array);
-  if (type->base_deref_size <= 0 && ret_array.elem_size > 0)
-    type->base_deref_size = ret_array.elem_size;
-}
-
 static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
   if (!fn || fn->callee != NULL || !fn->funcname) return NULL;
   psx_type_t *direct_ret_type =
       type_clone_arena(psx_ctx_get_function_ret_type(fn->funcname, fn->funcname_len));
-  if (direct_ret_type) {
-    normalize_funcall_ret_type_from_context(direct_ret_type);
-    return direct_ret_type;
-  }
+  if (direct_ret_type) return direct_ret_type;
   psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(fn->funcname, fn->funcname_len);
   tk_float_kind_t ret_fp_kind = ret.fp_kind;
   if (ret_fp_kind == TK_FLOAT_KIND_NONE) {
@@ -2585,15 +2554,8 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
                                   ret.is_unsigned, ret.is_complex, 0);
   }
   psx_ret_pointee_array_t ret_array = ret.pointee_array;
-  if (ret_array.first_dim <= 0) {
-    ret_array.first_dim =
-        psx_ctx_get_function_ret_pointee_array_first_dim(fn->funcname, fn->funcname_len);
-    ret_array.second_dim =
-        psx_ctx_get_function_ret_pointee_array_second_dim(fn->funcname, fn->funcname_len);
-  }
   ret_array.elem_size = psx_type_sizeof(base);
   int levels = ret.pointer_levels;
-  if (levels <= 0) levels = psx_ctx_get_function_ret_pointer_levels(fn->funcname, fn->funcname_len);
   psx_type_t *pointee = type_wrap_ret_pointee_array_base(base, ret_array);
   int deref_size = levels >= 2 ? 8 : psx_type_sizeof(pointee);
   if (psx_ret_pointee_array_has_dims(ret_array)) {
