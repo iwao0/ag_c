@@ -21929,3 +21929,98 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     `decl_type` / canonical type がある場合は raw cache より decay pointer view が勝つことを確認済み。
   - 次は `base.type` がない fallback 専用経路を、型正本が本当に存在しない場合だけに限定できているか
     監査するのが候補。
+
+### このセッション（続き897）: raw cache が既存 decl_type を無効化しないように修正
+- 見つかった浅い箇所:
+  - `lvar_decl_type_stale_for_fields()` / `gvar_decl_type_stale_for_fields()` は、
+    既存の `decl_type` がある場合でも raw `tag_kind` や raw `is_array` と合わないと
+    `decl_type` を捨てて raw fields から再 materialize していた。
+  - これは setter が raw fields を変更した時点で `decl_type` を invalidate する設計と衝突しており、
+    stale raw cache が後から `psx_type_t` 正本を上書きできる状態だった。
+  - 同じ stale 判定には pointer-to-array shape repair も残っており、raw
+    `outer_stride` / `ptr_array_pointee_bytes` が既存 scalar `decl_type` を捨てさせる抜け道になっていた。
+  - stale 判定を外すと `decl_type` 自体は保持できたが、node 初期化時に raw
+    `ptr_array_pointee_bytes` が scalar node へ残ることも追加テストで見えた。
+- 根本対応:
+  - `lvar_decl_type_consistent()` / `gvar_decl_type_consistent()` から raw fields による
+    stale 判定と再 materialize を撤去し、`psx_lvar_materialize_decl_type()` /
+    `psx_gvar_materialize_decl_type()` の existing `decl_type` early return を正本として扱う形にした。
+  - `sync_scalar_mem_from_decl_type()` は scalar 型同期時に pointee flags だけでなく、
+    `is_pointer`、pointer qualifier mask、`base_deref_size`、stride、`ptr_array_pointee_bytes`、
+    VLA row-stride payload も明示クリアするようにした。
+  - `test_type_metadata_bridge()` に lvar/gvar の scalar `decl_type=int` へ stale raw
+    `is_array=1` / direct `TK_STRUCT` tag cache / pointer-to-array stride cache を混ぜるケースを追加し、
+    `psx_lvar_get_decl_type()` / `psx_gvar_get_decl_type()` が既存 `decl_type` の pointer identity を保ち、
+    node 生成後も scalar int / non-tag / non-pointer payload として同期されることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - raw tag/array/pointer-to-array cache が正本 `decl_type` を逆に破棄する経路を塞いだ。
+  - 次は `decl_type` がない materialize 専用 fallback と、`decl_type` がある node 同期経路をさらに分離し、
+    raw fields から型を作る箇所が「本当に型正本が存在しない場合」だけになっているかを監査するのが候補。
+
+### このセッション（続き898）: identifier/gvar ref の raw stride fallback を型正本へ移動
+- 見つかった浅い箇所:
+  - `sync_lvar_identifier_mem_from_decl_type()` は `decl_type` がある場合でも、
+    `decl_type->ptr_array_pointee_bytes` や VLA payload が 0 だと raw `lvar_t` 側の
+    `ptr_array_pointee_bytes` / `vla_row_stride_frame_off` / `vla_strides_remaining` へ fallback していた。
+  - `lvar_identifier_deref_size_from_type()` / `gvar_ref_deref_size_from_type()` も、
+    `decl_type` の stride より raw `outer_stride` が大きい場合に raw 値を優先していた。
+  - pointer 型同期 helper は raw pointer payload を明示クリアしていなかったため、
+    plain `int *` の `decl_type` に stale raw pointer-to-array/VLA metadata が残る余地があった。
+  - raw fallback を外すと `int a[n][4]` の VLA row stride が落ちたため、
+    VLA runtime shape が `decl_type` へ十分移されていないことも確認できた。
+- 根本対応:
+  - pointer 型同期 `sync_pointer_cast_mem_from_type()` で pointer qualifier/stride/
+    `ptr_array_pointee_bytes`/VLA payload を一度 clear し、`psx_type_t` 由来の値だけを再設定するようにした。
+  - pointer qualifier は raw `lvar_t` から戻さず、`psx_type_t::pointer_const_qual_mask` /
+    `pointer_volatile_qual_mask` の bit 0 から `is_pointer_const_qualified` /
+    `is_pointer_volatile_qualified` を復元するようにした。
+  - lvar identifier/gvar ref の deref-size 計算から raw `outer_stride` fallback を外し、
+    `decl_type` 側の `outer_stride` / `ptr_array_pointee_bytes` / `base` shape だけを読むようにした。
+  - `sync_lvar_identifier_mem_from_decl_type()` の raw `ptr_array_pointee_bytes` / VLA payload fallback を削除した。
+  - `psx_lvar_materialize_decl_type()` で raw fields から型を作る場合だけ、
+    VLA runtime shape (`is_vla`, row-stride frame offset, strides remaining, outer/mid/extra strides) を
+    materialized `psx_type_t` へ移す `sync_materialized_lvar_runtime_shape()` を追加した。
+  - `test_type_metadata_bridge()` に lvar/gvar の plain pointer `decl_type=int*` へ stale raw
+    pointer-to-array/VLA stride payload を混ぜ、identifier/ref node が `decl_type` 由来の
+    plain pointer として同期されるケースを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - `decl_type` がある identifier/gvar ref では、raw stride / pointer-to-array / VLA payload が
+    型正本を補完する fallback として混入する経路を塞いだ。
+  - VLA のように raw runtime shape が本当に必要な場合は、`decl_type` がない materialize 境界で
+    `psx_type_t` に移してから node 同期が読む形に寄せた。
+
+### このセッション（続き899）: array address の raw pointer payload を decl_type view で明示クリア
+- 見つかった浅い箇所:
+  - `apply_array_addr_decl_type()` は `decl_type` 由来の decay pointer view を適用していたが、
+    view 側に `ptr_array_pointee_bytes` や VLA payload がない場合に、先に raw
+    `lvar_t` / `global_var_t` から入った pointer payload を明示クリアしていなかった。
+  - `init_lvar_array_addr_metadata_with_decl_type()` は raw `is_vla` を見ると
+    `decl_type` 適用自体をスキップしていたため、stale raw VLA flag が型正本同期を避ける抜け道になっていた。
+- 根本対応:
+  - pointer payload クリア処理を `clear_pointer_payload_mem()` にまとめ、
+    scalar 同期・pointer 同期・array address の decay view 適用で共通利用するようにした。
+  - `apply_array_addr_decl_type()` は decay pointer view 適用時に pointer payload を一度 clear し、
+    `psx_type_t` 由来の deref size / base deref / pointer qualifiers / pointer-to-array bytes /
+    stride metadata だけを再設定するようにした。
+  - lvar array address では raw `is_vla` に関係なく、`decl_type` が取れる場合は必ず
+    `apply_array_addr_decl_type()` を通すようにした。
+  - `test_type_metadata_bridge()` の global/local/static-local `int[]` array address ケースに、
+    stale raw pointer-to-array/VLA stride payload を混ぜ、address node が raw `32/16` ではなく
+    canonical decay view の payload (`ptr_array_pointee_bytes=0`, canonical inner stride) に戻ることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - identifier/gvar ref に続き、array address node でも `decl_type` がある場合の raw
+    pointer-to-array/VLA payload 混入経路を塞いだ。
+  - 次は tag member の `decl_type` 同期で `info` 側 raw outer_stride をまだ deref-size/stride に
+    補っている箇所を、型正本へ移せるか監査するのが候補。

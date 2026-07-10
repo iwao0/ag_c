@@ -820,70 +820,12 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
   return TK_EOF;
 }
 
-static int lvar_decl_type_stale_for_fields(const lvar_t *var, const psx_type_t *type) {
-  if (!var || !type) return 0;
-  if (psx_ctx_is_tag_aggregate_kind(var->tag_kind) && !var->is_tag_pointer &&
-      type_tag_aggregate_kind(type) != var->tag_kind) {
-    return 1;
-  }
-  if (var->is_array && type->kind != PSX_TYPE_ARRAY) return 1;
-  if (!var->is_array && var->pointer_qual_levels >= 1 &&
-      var->outer_stride > 0 && var->ptr_array_pointee_bytes > 0 &&
-      (type->kind != PSX_TYPE_POINTER || !type->base ||
-       type->base->kind != PSX_TYPE_ARRAY)) {
-    return 1;
-  }
-  if (!var->is_array && var->pointer_qual_levels >= 1 &&
-      var->ptr_array_pointee_bytes > 0 && var->elem_size == 8 &&
-      var->base_deref_size > 0 && var->base_deref_size < 8 &&
-      (var->ptr_array_pointee_bytes % 8) == 0 &&
-      type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_ARRAY && type->base->elem_size != 8) {
-    return 1;
-  }
-  return 0;
-}
-
-static int gvar_decl_type_stale_for_fields(const global_var_t *gv, const psx_type_t *type) {
-  if (!gv || !type) return 0;
-  if (psx_ctx_is_tag_aggregate_kind(gv->tag_kind) && !gv->is_tag_pointer &&
-      type_tag_aggregate_kind(type) != gv->tag_kind) {
-    return 1;
-  }
-  if (gv->is_array && type->kind != PSX_TYPE_ARRAY) return 1;
-  if (!gv->is_array && gv->pointer_qual_levels >= 1 &&
-      gv->outer_stride > 0 && gv->ptr_array_pointee_bytes > 0 &&
-      (type->kind != PSX_TYPE_POINTER || !type->base ||
-       type->base->kind != PSX_TYPE_ARRAY)) {
-    return 1;
-  }
-  if (!gv->is_array && gv->pointer_qual_levels >= 1 &&
-      gv->ptr_array_pointee_bytes > 0 && gv->deref_size == 8 &&
-      gv->pointee_elem_size > 0 && gv->pointee_elem_size < 8 &&
-      (gv->ptr_array_pointee_bytes % 8) == 0 &&
-      type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_ARRAY && type->base->elem_size != 8) {
-    return 1;
-  }
-  return 0;
-}
-
 static psx_type_t *lvar_decl_type_consistent(lvar_t *var) {
-  psx_type_t *type = psx_lvar_materialize_decl_type(var);
-  if (lvar_decl_type_stale_for_fields(var, type)) {
-    psx_decl_invalidate_lvar_decl_type(var);
-    type = psx_lvar_materialize_decl_type(var);
-  }
-  return type;
+  return psx_lvar_materialize_decl_type(var);
 }
 
 static psx_type_t *gvar_decl_type_consistent(global_var_t *gv) {
-  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
-  if (gvar_decl_type_stale_for_fields(gv, type)) {
-    psx_decl_invalidate_gvar_decl_type(gv);
-    type = psx_gvar_materialize_decl_type(gv);
-  }
-  return type;
+  return psx_gvar_materialize_decl_type(gv);
 }
 
 static int lvar_is_pointer_like_from_fields(const lvar_t *var) {
@@ -1004,6 +946,30 @@ static void init_lvar_ref_mem_from_var(node_mem_t *mem, const lvar_t *var) {
   init_lvar_mem_from_legacy_fields(mem, var);
 }
 
+static void sync_materialized_lvar_runtime_shape(lvar_t *var, psx_type_t *type) {
+  if (!var || !type) return;
+  if (var->is_vla) {
+    type->is_vla = 1;
+    type->vla_row_stride_frame_off = var->vla_row_stride_frame_off;
+    type->vla_strides_remaining = var->vla_strides_remaining;
+  }
+  if ((type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER) &&
+      var->outer_stride > 0) {
+    type->outer_stride = var->outer_stride;
+  }
+  if ((type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER) &&
+      var->mid_stride > 0) {
+    type->mid_stride = var->mid_stride;
+  }
+  if ((type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER) &&
+      var->extra_strides_count > 0) {
+    type->extra_strides_count = var->extra_strides_count;
+    for (int i = 0; i < var->extra_strides_count && i < 5; i++) {
+      type->extra_strides[i] = var->extra_strides ? var->extra_strides[i] : 0;
+    }
+  }
+}
+
 psx_type_t *psx_lvar_get_decl_type(lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
@@ -1019,6 +985,7 @@ psx_type_t *psx_lvar_materialize_decl_type(lvar_t *var) {
   }
   int force_array = var->is_array || (var->is_vla && var->pointer_qual_levels == 0);
   var->decl_type = type_from_mem(&mem, force_array, force_array && var->is_vla);
+  sync_materialized_lvar_runtime_shape(var, var->decl_type);
   if (var->decl_type) var->decl_type->type_sig = var->type_sig;
   return var->decl_type;
 }
@@ -1428,6 +1395,25 @@ static void sync_pointee_flags_mem_from_type(node_mem_t *mem,
   mem->is_volatile_qualified = pointee_value_type->is_volatile_qualified ? 1 : 0;
 }
 
+static void clear_pointer_payload_mem(node_mem_t *mem) {
+  if (!mem) return;
+  mem->is_pointer = 0;
+  mem->is_scalar_ptr_member = 0;
+  mem->is_pointer_const_qualified = 0;
+  mem->is_pointer_volatile_qualified = 0;
+  mem->pointer_const_qual_mask = 0;
+  mem->pointer_volatile_qual_mask = 0;
+  mem->pointer_qual_levels = 0;
+  mem->base_deref_size = 0;
+  mem->inner_deref_size = 0;
+  mem->next_deref_size = 0;
+  mem->extra_strides_count = 0;
+  for (int i = 0; i < 5; i++) mem->extra_strides[i] = 0;
+  mem->ptr_array_pointee_bytes = 0;
+  mem->vla_row_stride_frame_off = 0;
+  mem->vla_strides_remaining = 0;
+}
+
 static void sync_scalar_mem_from_decl_type(node_mem_t *mem,
                                            const psx_type_t *type) {
   if (!mem || !type || type_is_pointer_view_type(type)) return;
@@ -1442,6 +1428,7 @@ static void sync_scalar_mem_from_decl_type(node_mem_t *mem,
   mem->pointee_is_unsigned = 0;
   mem->pointee_is_bool = 0;
   mem->pointee_is_void = 0;
+  clear_pointer_payload_mem(mem);
   mem->is_unsigned = psx_type_is_unsigned(type) ? 1 : 0;
   mem->is_bool = type->kind == PSX_TYPE_BOOL ? 1 : 0;
   mem->is_complex = type->kind == PSX_TYPE_COMPLEX ? 1 : 0;
@@ -4147,6 +4134,7 @@ void psx_node_copy_funcptr_metadata_from_tag_member(node_mem_t *dst,
 
 static int gvar_ref_deref_size_from_type(const global_var_t *gv,
                                          const psx_type_t *decl_type) {
+  (void)gv;
   if (!decl_type || !psx_type_is_pointer(decl_type)) return 0;
   if (decl_type->kind == PSX_TYPE_POINTER &&
       decl_type->ptr_array_pointee_bytes > 0) {
@@ -4158,15 +4146,9 @@ static int gvar_ref_deref_size_from_type(const global_var_t *gv,
     return decl_type->ptr_array_pointee_bytes;
   }
   if (decl_type->kind == PSX_TYPE_POINTER && decl_type->outer_stride > 0) {
-    if (gv && gv->outer_stride > decl_type->outer_stride) return gv->outer_stride;
     return decl_type->outer_stride;
   }
   int deref_size = psx_type_deref_size(decl_type);
-  if (gv && gv->outer_stride > deref_size &&
-      decl_type->kind == PSX_TYPE_POINTER &&
-      (decl_type->mid_stride > 0 || decl_type->extra_strides_count > 0)) {
-    return gv->outer_stride;
-  }
   return deref_size;
 }
 
@@ -4180,6 +4162,7 @@ static void sync_gvar_ref_mem_from_decl_type(node_mem_t *mem,
   mem->is_pointer = psx_type_is_pointer(decl_type) ? 1 : 0;
 
   sync_scalar_mem_from_decl_type(mem, decl_type);
+  sync_pointer_cast_mem_from_type(mem, decl_type);
 
   int deref_size = gvar_ref_deref_size_from_type(gv, decl_type);
   if (deref_size > 0) mem->deref_size = (short)deref_size;
@@ -4399,14 +4382,32 @@ static void apply_array_addr_decl_type(node_mem_t *addr, psx_type_t *array_type)
   }
   if (!view) return;
   addr->base.type = view;
+  clear_pointer_payload_mem(addr);
+  addr->is_pointer = 1;
+  int deref_size = psx_type_deref_size(view);
+  if (deref_size > 0) addr->deref_size = (short)deref_size;
   addr->pointee_fp_kind = (unsigned int)type_deep_pointee_fp_kind(view);
   sync_pointee_flags_mem_from_type(addr, view);
   sync_tag_mem_from_decl_type(addr, view);
+  if (view->pointer_qual_levels > 0)
+    addr->pointer_qual_levels = (unsigned char)view->pointer_qual_levels;
   if (view->ptr_array_pointee_bytes > 0)
     addr->ptr_array_pointee_bytes = view->ptr_array_pointee_bytes;
   int base_deref_size = type_pointer_view_base_deref_size(view, 1);
-  if (base_deref_size > 0 && addr->base_deref_size == 0)
+  if (base_deref_size > 0)
     addr->base_deref_size = (short)base_deref_size;
+  int inner_stride = 0;
+  int next_stride = 0;
+  int extra_strides[5] = {0};
+  int extra_count = 0;
+  if (node_pointer_stride_from_type(view, &inner_stride, &next_stride,
+                                    extra_strides, &extra_count)) {
+    addr->inner_deref_size = (short)inner_stride;
+    addr->next_deref_size = (short)next_stride;
+    addr->extra_strides_count = (unsigned char)extra_count;
+    for (int i = 0; i < extra_count && i < 5; i++)
+      addr->extra_strides[i] = extra_strides[i];
+  }
 }
 
 static void init_lvar_array_addr_metadata_with_decl_type(node_mem_t *addr,
@@ -4415,11 +4416,9 @@ static void init_lvar_array_addr_metadata_with_decl_type(node_mem_t *addr,
                                                          psx_type_t *array_type) {
   if (!addr || !var) return;
   init_lvar_array_addr_strides(addr, var);
-  if (!psx_lvar_is_vla(var)) {
-    psx_type_t *source_type =
-        array_type ? array_type : psx_lvar_get_decl_type((lvar_t *)var);
-    apply_array_addr_decl_type(addr, source_type);
-  }
+  psx_type_t *source_type =
+      array_type ? array_type : psx_lvar_get_decl_type((lvar_t *)var);
+  apply_array_addr_decl_type(addr, source_type);
   addr->is_pointer = 1;
   if (!addr->base.type) {
     addr->pointee_fp_kind = var->pointee_fp_kind != TK_FLOAT_KIND_NONE
@@ -5669,6 +5668,7 @@ static int lvar_identifier_is_pointer_like(lvar_t *var, psx_type_t *decl_type) {
 
 static int lvar_identifier_deref_size_from_type(const lvar_t *var,
                                                 const psx_type_t *decl_type) {
+  (void)var;
   if (!decl_type || !psx_type_is_pointer(decl_type)) return 0;
   if (decl_type->kind == PSX_TYPE_POINTER &&
       decl_type->vla_row_stride_frame_off != 0 &&
@@ -5686,8 +5686,6 @@ static int lvar_identifier_deref_size_from_type(const lvar_t *var,
     return decl_type->ptr_array_pointee_bytes;
   }
   if (decl_type->kind == PSX_TYPE_POINTER && decl_type->outer_stride > 0) {
-    if (var && var->outer_stride > decl_type->outer_stride)
-      return var->outer_stride;
     return decl_type->outer_stride;
   }
   if (decl_type->kind == PSX_TYPE_POINTER && decl_type->base &&
@@ -5697,18 +5695,9 @@ static int lvar_identifier_deref_size_from_type(const lvar_t *var,
     if (decl_type->outer_stride > 0) return decl_type->outer_stride;
   }
   if (decl_type->kind == PSX_TYPE_ARRAY && decl_type->outer_stride > 0) {
-    if (var && var->outer_stride > decl_type->outer_stride)
-      return var->outer_stride;
     return decl_type->outer_stride;
   }
-  int deref_size = psx_type_deref_size(decl_type);
-  if (var && var->outer_stride > deref_size &&
-      (decl_type->kind == PSX_TYPE_ARRAY || decl_type->kind == PSX_TYPE_POINTER) &&
-      (decl_type->is_vla || var->is_vla || decl_type->mid_stride > 0 ||
-       decl_type->extra_strides_count > 0)) {
-    return var->outer_stride;
-  }
-  return deref_size;
+  return psx_type_deref_size(decl_type);
 }
 
 static void sync_lvar_identifier_mem_from_decl_type(node_lvar_t *node,
@@ -5724,6 +5713,7 @@ static void sync_lvar_identifier_mem_from_decl_type(node_lvar_t *node,
       (unsigned int)type_deep_pointee_fp_kind(decl_type);
   sync_pointee_flags_mem_from_type(&node->mem, decl_type);
   sync_scalar_mem_from_decl_type(&node->mem, decl_type);
+  sync_pointer_cast_mem_from_type(&node->mem, decl_type);
   if (!is_pointer) return;
 
   int deref_size = lvar_identifier_deref_size_from_type(var, decl_type);
@@ -5741,34 +5731,19 @@ static void sync_lvar_identifier_mem_from_decl_type(node_lvar_t *node,
       node->mem.extra_strides[i] = extra_strides[i];
     for (int i = extra_count; i < 5; i++)
       node->mem.extra_strides[i] = 0;
-  } else if (var && (var->is_vla || var->outer_stride > 0)) {
-    int is_multidim = (var->outer_stride != var->elem_size) ||
-                      (var->vla_row_stride_frame_off != 0);
-    if (var->mid_stride > 0) {
-      node->mem.inner_deref_size = (short)var->mid_stride;
-      node->mem.next_deref_size = (short)var->elem_size;
-    } else if (var->vla_strides_remaining > 0) {
-      node->mem.inner_deref_size = (short)var->elem_size;
-      node->mem.next_deref_size = (short)var->elem_size;
-    } else {
-      node->mem.inner_deref_size = (short)(is_multidim ? var->elem_size : 0);
-    }
   }
   int base_deref_size = type_pointer_view_base_deref_size(decl_type, 1);
   if (base_deref_size > 0) node->mem.base_deref_size = (short)base_deref_size;
-  node->mem.pointer_qual_levels = (unsigned char)psx_node_pointer_qual_levels((node_t *)node);
+  node->mem.pointer_qual_levels =
+      (unsigned char)(decl_type->pointer_qual_levels > 0
+                          ? decl_type->pointer_qual_levels
+                          : 1);
   node->mem.ptr_array_pointee_bytes =
       decl_type->ptr_array_pointee_bytes > 0
           ? decl_type->ptr_array_pointee_bytes
-          : (var ? var->ptr_array_pointee_bytes : 0);
-  node->mem.vla_row_stride_frame_off =
-      decl_type->vla_row_stride_frame_off != 0
-          ? decl_type->vla_row_stride_frame_off
-          : (var ? var->vla_row_stride_frame_off : 0);
-  node->mem.vla_strides_remaining =
-      decl_type->vla_strides_remaining > 0
-          ? decl_type->vla_strides_remaining
-          : (var ? var->vla_strides_remaining : 0);
+          : 0;
+  node->mem.vla_row_stride_frame_off = decl_type->vla_row_stride_frame_off;
+  node->mem.vla_strides_remaining = decl_type->vla_strides_remaining;
 }
 
 node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
@@ -5919,6 +5894,7 @@ node_t *psx_node_new_i64_to_i32_trunc_cast(node_t *operand, psx_type_t *cast_typ
 
 static void sync_pointer_cast_mem_from_type(node_mem_t *mem, psx_type_t *type) {
   if (!mem || !type_is_pointer_view_type(type)) return;
+  clear_pointer_payload_mem(mem);
   mem->is_pointer = 1;
   int type_size = psx_type_sizeof(type);
   if (type_size > 0) mem->type_size = (short)type_size;
@@ -5934,6 +5910,10 @@ static void sync_pointer_cast_mem_from_type(node_mem_t *mem, psx_type_t *type) {
   }
   mem->pointer_const_qual_mask = type->pointer_const_qual_mask;
   mem->pointer_volatile_qual_mask = type->pointer_volatile_qual_mask;
+  mem->is_pointer_const_qualified =
+      (type->pointer_const_qual_mask & 1u) ? 1 : 0;
+  mem->is_pointer_volatile_qualified =
+      (type->pointer_volatile_qual_mask & 1u) ? 1 : 0;
   if (type->ptr_array_pointee_bytes > 0)
     mem->ptr_array_pointee_bytes = type->ptr_array_pointee_bytes;
   mem->vla_row_stride_frame_off = type->vla_row_stride_frame_off;
