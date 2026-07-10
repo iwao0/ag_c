@@ -1963,6 +1963,11 @@ void psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_ty
   f->ret_type = ctx_type_clone_persistent(ret_type);
 }
 
+const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
+  func_name_t *f = find_function_name(name, len);
+  return f ? f->ret_type : NULL;
+}
+
 bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed) {
   func_name_t *f = find_function_name(name, len);
   if (!f) {

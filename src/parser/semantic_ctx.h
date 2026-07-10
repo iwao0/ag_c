@@ -166,6 +166,7 @@ bool psx_ctx_is_function_ret_void(char *name, int len);
 int psx_ctx_track_function_ret_type(char *name, int len,
                                      token_kind_t ret_token_kind, int ret_is_pointer);
 void psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_type);
+const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 void psx_ctx_set_function_ret_funcptr_sig(char *name, int len, int is_funcptr,
