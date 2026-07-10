@@ -137,7 +137,7 @@ static inline int psx_tag_member_decl_array_dim(const tag_member_info_t *m,
       cur++;
       type = type->base;
     }
-    if (cur > 0) return 0;
+    return 0;
   }
   if (m->arr_ndim > 1) return m->arr_dims[index];
   return m->arr_dims[index];

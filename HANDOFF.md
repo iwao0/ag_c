@@ -22170,3 +22170,81 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     補完正本として後注入する経路を閉じた。
   - 次は `psx_tag_member_decl_array_dim()` の `decl_type` 非 array 時の raw `arr_dims[index]` fallback や、
     `ND_ADDR` / subscript 周辺で canonical type があるのに raw mirror を読む経路が残っていないかを確認するのが候補。
+
+### このセッション（続き905）: tag member dim と subscript pointer-to-array 判定の raw fallback をさらに閉じた
+- 見つかった浅い箇所:
+  - `psx_tag_member_decl_array_dim()` は `decl_type` が存在しても、それが array chain でない場合は
+    raw `arr_dims[index]` へ fallback していた。
+  - そのため続き902で `array_dim_count()` は 0 になっても、個別 dim accessor を直接呼ぶ経路では
+    plain pointer member に stale raw dims が復活できた。
+  - `psx_node_new_subscript_deref_for()` の `deref_from_pointer_to_array` 判定は、
+    `base->lhs` が lvar のとき raw `lvar_t.outer_stride` を直接見ていた。
+- 根本対応:
+  - `psx_tag_member_decl_array_dim()` は `decl_type` がある場合、array chain から取れる dim だけを返し、
+    非 array / 範囲外 / array_len 不明では raw fallback せず 0 を返すようにした。
+  - plain pointer member の stale raw `arr_dims={9,8}` ケースへ `array_dim(0/1)==0` の regression を追加した。
+  - subscript の pointer-to-array 由来判定は、canonical `probe` type がある場合は
+    `type_is_pointer_to_array_type()` または `PSX_TYPE_POINTER + outer_stride` で判断し、
+    type がない legacy lvar の場合だけ raw `lvar_t.outer_stride` を読むようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member dim helper の残り穴と、subscript 側の pointer-to-array 判定で raw lvar mirror を
+    先に正本扱いする箇所を閉じた。
+  - `ND_ADDR` の array address 初期化は raw stride を先に入れるが、その後
+    `apply_array_addr_decl_type()` が `clear_pointer_payload_mem()` して canonical type で上書きしているため、
+    次は `psx_node_init_gvar_ref_metadata()` / `psx_node_init_lvar_identifier_ref_for()` など、
+    ref node 作成時に raw mirror 初期化が canonical sync 前後で残っていないかを監査するのが候補。
+
+### このセッション（続き906）: scalar canonical sync と lvar expr ref の raw 上書きを閉じた
+- 見つかった浅い箇所:
+  - `sync_scalar_mem_from_decl_type()` は pointer payload は `clear_pointer_payload_mem()` で消していたが、
+    raw mirror の `deref_size` は残したままだった。
+  - `psx_node_new_lvar_expr_ref_for()` は `psx_node_new_lvar_typed_for()` による canonical sync の後で、
+    呼び出し側の `is_pointer` と raw `var->elem_size` を `node->mem` へ再設定していた。
+  - そのため scalar canonical `decl_type` がある lvar/gvar でも、mirror 側には stale raw deref/pointer 状態が
+    後から残る余地があった。
+- 根本対応:
+  - scalar canonical type で同期するときは `deref_size=0` も明示するようにした。
+  - `psx_node_new_lvar_expr_ref_for()` は raw 設定後に `decl_type` があれば再度
+    `sync_lvar_identifier_mem_from_decl_type()` を通し、pointer 判定も `psx_type_is_pointer(decl_type)` を
+    正本にした。
+  - stale raw pointer cache を持つ scalar canonical lvar/gvar について、通常 ref / expr ref / gvar ref の
+    mirror `deref_size` と `ptr_array_pointee_bytes` が 0 へ戻る regression を追加した。
+  - gvar plain pointer `decl_type` の deref 結果も、lvar 側と同じく scalar canonical view へ戻ることを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar/gvar ref node の scalar canonical sync でも、raw deref/pointer mirror が残る経路を一段閉じた。
+  - 次は `psx_node_new_param_lvar_for()` や static-local backing 経路で、raw `var` fields を
+    canonical sync 後に再適用していないかを同じ方針で確認するのが候補。
+
+### このセッション（続き907）: static-local fallback の type_size raw 残りを閉じた
+- 見つかった浅い箇所:
+  - `psx_node_init_static_local_gvar_ref_metadata()` は backing gvar が見つからない防御経路でも
+    `decl_type` を `base.type` に入れるようになったが、`type_size` は呼び出し引数 / raw `lvar_t` 由来の値を
+    残したままだった。
+  - そのため `decl_type=int` が正本として存在しても、stale raw pointer/array cache を持つ static local では
+    mirror `type_size` だけ 8 のような古い値に戻る余地があった。
+- 根本対応:
+  - backing gvar がない fallback でも、`base.type` がある場合は scalar/pointer/tag metadata と合わせて
+    `psx_type_sizeof(base.type)` から `type_size` を再同期するようにした。
+  - stale raw pointer cache を持つ synthetic static-local fallback について、`decl_type=int` が
+    `base.type` / `type_size=4` / non-pointer / `deref_size=0` / `ptr_array_pointee_bytes=0` へ戻る
+    regression を追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - static-local の異常系 fallback でも、canonical `decl_type` がある場合に raw size/cache を
+    正本として残す経路を閉じた。
+  - 次は `psx_node_new_param_lvar_for()` の ABI slot size と canonical mirror の境界が妥当か、
+    もしくは `ND_ADDR` / call argument まわりで raw mirror を正本化後に再適用していないかを見るのが候補。
