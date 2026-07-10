@@ -21110,3 +21110,113 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     入力値ではなく canonical view から同期される。
   - 次は `tag_member_t` 側の保存 record についても、layout storage metadata と type-derived cache を
     より明確に分離するのが候補。
+
+### このセッション（続き870）: tag member 保存 record を full descriptor + decl_type 同期へ寄せる
+- 見つかった浅い箇所:
+  - 続き867で `fill_tag_member_info()` の出力は `decl_type` 優先 view になったが、
+    `psx_ctx_add_tag_member()` の保存 record は `offset` / `type_size` / `deref_size` /
+    `array_len` / tag 情報などの一部だけを保存し、`fp_kind` / `_Bool` / unsigned /
+    stride / dims / pointer-to-array metadata は後続 setter で補完していた。
+  - 匿名 struct/union の昇格も、`psx_ctx_add_tag_member()` 後に `fp_kind` / `_Bool` /
+    unsigned / stride / dims を setter で再注入しており、型情報の正本が
+    add descriptor、setter、`decl_type` view に分散していた。
+- 根本対応:
+  - `tag_member_record_apply_desc()` を追加し、`tag_member_info_t` の storage metadata と
+    type-derived cache を一箇所で `tag_member_t` に保存するようにした。
+  - `tag_member_record_sync_cache_from_type()` を追加し、保存後に `decl_type` から
+    tag/pointer/scalar/function-pointer view を record cache へ同期するようにした。
+    ただし `type_size` / `deref_size` / `array_len` は layout storage metadata なので上書きしない。
+  - function pointer member では戻り値の FP 種別を member 本体の `fp_kind` に漏らさないよう、
+    `ctx_tag_member_info_apply_type()` で function pointer signature がある場合は scalar cache を clear するようにした。
+  - `psx_ctx_set_tag_member_fp_kind()` / `psx_ctx_set_tag_member_is_bool()` /
+    `psx_ctx_set_tag_member_is_unsigned()` を削除し、struct layout 側の後付け呼び出しも削除した。
+    通常 member は descriptor に `fp_kind` / `_Bool` / unsigned を載せ、匿名昇格 member は
+    `tag_member_info_t` 全体をそのまま再登録する。
+  - `semantic_ctx.h` の `psx_ctx_add_tag_member()` コメントを更新し、descriptor 全体を保存し
+    `decl_type` から型由来 cache を同期する API として明示した。
+  - `test_type_metadata_bridge()` に、`psx_ctx_add_tag_member()` が setter なしで
+    `outer_stride` / `arr_dims` を保存し、`decl_type` 由来の unsigned view を返す直接テストを追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - 以下 4 probe は asm 生成 + `cc` link + 実行まで **pass**:
+    - `test/fixtures/probes_found_bugs/anon_union_member.c`
+    - `test/fixtures/probes_found_bugs/typedef_unsigned_struct_member.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_int_to_fp_arg.c`
+    - `test/fixtures/probes_found_bugs/anon_ptr_to_array_member_designator.c`
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member の保存処理は「基本属性だけ add、型属性は setter 補完」から、
+    full descriptor 保存 + `decl_type` 由来 cache 同期へ移った。
+  - `outer_stride` / `mid_stride` / `arr_dims` / `ptr_array_pointee_bytes` の setter は残っている。
+    これは struct layout が配列 suffix の後処理で後から確定する storage metadata でもあり、
+    次に触るなら `struct_layout.c` 側で descriptor 完成後に一度だけ add する構造へ寄せるのが候補。
+
+### このセッション（続き871）: tag member stride/dims setter を廃止して descriptor 完成後 add へ寄せる
+- 見つかった浅い箇所:
+  - 続き870で scalar/cache 系の後付け setter は消したが、`outer_stride` /
+    `mid_stride` / `arr_dims` / `ptr_array_pointee_bytes` はまだ
+    `psx_ctx_add_tag_member()` 後に `psx_ctx_set_tag_member_*` で更新していた。
+  - そのため、同一メンバの storage metadata が「最初の descriptor」と「後続 setter」に分かれ、
+    `decl_type` への反映も setter 側に残っていた。
+- 根本対応:
+  - `struct_layout.c` の通常メンバ登録を、`tag_member_info_t _mi` に stride/dims/
+    pointer-to-array metadata をすべて詰めてから `psx_ctx_add_tag_member()` を一度だけ呼ぶ形へ変更した。
+  - `tag_member_record_sync_type_from_storage()` を追加し、保存 record の
+    `outer_stride` / `mid_stride` / `arr_dims` / `ptr_array_pointee_bytes` を clone 済み
+    `decl_type` に反映してから、`decl_type` 由来 cache 同期へ流すようにした。
+  - `psx_ctx_set_tag_member_outer_stride()` / `psx_ctx_set_tag_member_mid_stride()` /
+    `psx_ctx_set_tag_member_arr_dims()` / `psx_ctx_set_tag_member_ptr_array_pointee_bytes()` を削除した。
+  - setter 名が残っていた probe コメントも、descriptor 保存方式の説明に更新した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - 以下 5 probe は asm 生成 + `cc` link + 実行まで **pass**:
+    - `test/fixtures/probes_found_bugs/struct_ptr_to_2d_array_member.c`
+      - 既存 warning `W3013` は出るが実行は pass
+    - `test/fixtures/probes_found_bugs/struct_array_of_ptr_to_array_member.c`
+    - `test/fixtures/probes_found_bugs/anon_ptr_to_array_member_designator.c`
+    - `test/fixtures/probes_found_bugs/anon_union_member.c`
+    - `test/fixtures/probes_found_bugs/funcptr_member_int_to_fp_arg.c`
+  - `rg -n "psx_ctx_set_tag_member_outer_stride|psx_ctx_set_tag_member_mid_stride|psx_ctx_set_tag_member_arr_dims|psx_ctx_set_tag_member_ptr_array_pointee_bytes" src test`
+    = **no matches**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member の public registration path は、後付け setter なしで full descriptor を保存し、
+    storage metadata から `decl_type` を補正してから canonical view を同期する形になった。
+  - まだ残る分散の候補は、`tag_member_t` / `typedef_name_t` / `lvar_t` / `global_var_t` に残る
+    legacy cache field 自体の削減と、node/lvar/global の `decl_type` 優先化。
+
+### このセッション（続き872）: global var 外向き view を decl_type 由来へ補正
+- 見つかった浅い箇所:
+  - `global_var_t` は `decl_type` を持ち、`psx_gvar_get_decl_type()` / `gvar_decl_type_view()`
+    経由の問い合わせはかなり `decl_type` 優先になっていた。
+  - 一方で `psx_gvar_view()` は `tag_kind` / `type_size` / `fp_kind` / `is_array` /
+    `is_tag_pointer` を raw field から返しており、global initializer 分類や layout view が
+    legacy cache に引きずられる余地が残っていた。
+- 根本対応:
+  - `psx_gvar_view_apply_decl_type()` を追加し、`psx_gvar_view()` の返す view を
+    `psx_gvar_get_decl_type()` の canonical type で補正するようにした。
+  - `type_size` は `psx_type_sizeof(decl_type)` が有効な場合に反映し、`is_array` は
+    `decl_type->kind == PSX_TYPE_ARRAY` から決めるようにした。
+  - `fp_kind` は scalar/array の leaf が FP/complex の場合に `decl_type` から反映する。
+    ただし data pointer / function pointer の戻り FP を global 本体の `fp_kind` に漏らさないよう、
+    直接 pointer 型は除外した。
+  - tag view は array/pointer を辿った leaf tag から反映し、pointer 経由なら
+    `is_tag_pointer` を立てるようにした。
+  - `test_type_metadata_bridge()` に、raw field が stale でも `decl_type` が
+    `double[2]` / `struct *` なら `psx_gvar_view()` が canonical view を返す手動テストを追加した。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - 以下 5 probe は asm 生成 + `cc` link + 実行まで **pass**:
+    - `test/fixtures/probes_found_bugs/global_struct_nested_union_fp.c`
+    - `test/fixtures/probes_found_bugs/global_multidim_member_funcptr_designator.c`
+    - `test/fixtures/probes_found_bugs/negative_fp_global_init.c`
+    - `test/fixtures/probes_found_bugs/anon_global_array_member_designator.c`
+    - `test/fixtures/probes_found_bugs/typedef_unsigned_global.c`
+- 現状:
+  - global var の主要 public view も `decl_type` 補正を通るようになった。
+  - ただし `global_var_t` の raw cache fields 自体はまだ多く残っており、
+    次は `mem_from_gvar()` / `mem_from_lvar()` の raw-to-type builder を
+    保存時同期 cache と明示 storage metadata に分けるのが候補。

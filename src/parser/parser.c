@@ -76,9 +76,43 @@ int psx_gvar_is_extern_decl(const global_var_t *gv) {
   return (gv && gv->is_extern_decl) ? 1 : 0;
 }
 
+static const psx_type_t *gvar_view_skip_arrays(const psx_type_t *type) {
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  return type;
+}
+
+static void psx_gvar_view_apply_decl_type(psx_gvar_view_t *view,
+                                          const psx_type_t *type) {
+  if (!view || !type) return;
+  int type_size = psx_type_sizeof(type);
+  if (type_size > 0) view->type_size = type_size;
+  view->is_array = type->kind == PSX_TYPE_ARRAY ? 1 : 0;
+  view->fp_kind = TK_FLOAT_KIND_NONE;
+
+  const psx_type_t *base = gvar_view_skip_arrays(type);
+  int is_tag_pointer = 0;
+  if (base && base->kind == PSX_TYPE_POINTER) {
+    is_tag_pointer = 1;
+    base = base->base;
+    base = gvar_view_skip_arrays(base);
+  }
+  if (!base) return;
+
+  if (base->kind == PSX_TYPE_FLOAT || base->kind == PSX_TYPE_COMPLEX) {
+    if (!is_tag_pointer && type->kind != PSX_TYPE_POINTER) view->fp_kind = base->fp_kind;
+    return;
+  }
+  if (base->kind == PSX_TYPE_STRUCT || base->kind == PSX_TYPE_UNION) {
+    view->tag_kind = base->tag_kind;
+    view->tag_name = base->tag_name;
+    view->tag_len = base->tag_len;
+    view->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  }
+}
+
 psx_gvar_view_t psx_gvar_view(const global_var_t *gv) {
   if (!gv) return (psx_gvar_view_t){.tag_kind = TK_EOF, .fp_kind = TK_FLOAT_KIND_NONE};
-  return (psx_gvar_view_t){
+  psx_gvar_view_t view = {
       .name = gv->name,
       .name_len = gv->name_len,
       .tag_kind = gv->tag_kind,
@@ -100,6 +134,9 @@ psx_gvar_view_t psx_gvar_view(const global_var_t *gv) {
       .is_tag_pointer = gv->is_tag_pointer ? 1 : 0,
       .has_init_fvalues = gv->init_fvalues ? 1 : 0,
   };
+  psx_gvar_view_apply_decl_type(&view,
+                                psx_gvar_get_decl_type((global_var_t *)gv));
+  return view;
 }
 
 int psx_gvar_is_thread_local(const global_var_t *gv) {

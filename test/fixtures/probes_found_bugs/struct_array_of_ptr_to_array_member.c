@@ -9,8 +9,7 @@
 // - struct_layout.c の ptr_in_paren && paren_array_mul > 1 分岐を追加: arr_size = M、
 //   ptr_array_pointee_bytes (= N * elem) を tag_member_info に保存。
 // - tag_member_info_t / tag_member_t / node_mem_t に ptr_array_pointee_bytes を追加。
-//   setter psx_ctx_set_tag_member_ptr_array_pointee_bytes、fill_tag_member_info、匿名 struct
-//   昇格の伝播も追加。
+//   fill_tag_member_info と匿名 struct 昇格の伝播も追加。
 // - build_member_deref_node の array_len>0 && is_tag_pointer 分岐で deref に
 //   ptr_array_pointee_bytes を carry。
 // - build_subscript_deref に base ND_DEREF.ptr_array_pointee_bytes > 0 のとき結果 deref を

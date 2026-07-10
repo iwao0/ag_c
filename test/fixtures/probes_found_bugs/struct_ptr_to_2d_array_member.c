@@ -7,7 +7,7 @@
 //
 // 修正:
 // - struct_layout.c で pointee_arr_dim_count / pointee_arr_first_dim を保存し、2D pointee
-//   のとき mid_stride (= N*elem) も `psx_ctx_set_tag_member_mid_stride` で保存する。
+//   のとき mid_stride (= N*elem) も tag_member_info descriptor に保存する。
 // - build_member_deref_node の pointer-to-array 分岐で mem_info->mid_stride>0 のとき
 //   deref->inner_deref_size に mid_stride を、deref->next_deref_size に elem を置き、
 //   ローカル `int (*p)[M][N]` の lvar 表現と整合させる。

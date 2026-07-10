@@ -30,38 +30,11 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
-/* struct/union メンバの float/double 種別を後付けで設定する。
- * 取得は psx_ctx_get_tag_member_info / _find_tag_member_info 経由。 */
-void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len,
-                                     tk_float_kind_t fp_kind);
-void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len, int is_bool);
-void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                        char *member_name, int member_len, int is_unsigned);
-void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                          char *member_name, int member_len, int outer_stride);
-/* 3 次元以上の配列メンバの中間段ストライド (1 段 subscript 後の要素サイズ) を保存する。
- * 3D `char c[2][2][3]` なら 3 (=arr_dims[1]*arr_dims[2]*elem / arr_dims[1])。 */
-void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                       char *member_name, int member_len, int mid_stride);
-/* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズを保存する。
- * dims[0..ndim) を最外側から並べる。ndim<=8。グローバル brace init の再帰
- * 展開で 1 段ずつ消費する (gbrace_ctx_t.sub_dims を介して)。 */
-void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len,
-                                     const int *dims, int ndim);
-/* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
- * 全バイト数 (= N * elem) を保存する。 */
-void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                     char *member_name, int member_len, int bytes);
 /* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を
  * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
 void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
 /* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
- * m の name/len/offset/type_size/deref_size/array_len/tag_*(メンバのネストタグ)/
- * is_tag_pointer/bit_width/bit_offset/bit_is_signed を読む。fp_kind/is_bool/is_unsigned/
- * outer_stride は add 時には使わず、別 setter (psx_ctx_set_tag_member_*) で後付けする。 */
+ * m のレイアウト属性を保存し、型由来 cache は decl_type から同期する。 */
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             const tag_member_info_t *m);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。

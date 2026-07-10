@@ -5920,6 +5920,72 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_INT, typedef_sync_out.base_kind);
   ASSERT_TRUE(typedef_sync_out.is_pointer);
 
+  const char tag_member_desc_tag[] = "__tm_tag_member_desc_sync";
+  const char tag_member_desc_name[] = "rows";
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)tag_member_desc_tag,
+                                      (int)sizeof(tag_member_desc_tag) - 1,
+                                      1, 6, 1);
+  tag_member_info_t tag_member_desc = {0};
+  tag_member_desc.name = (char *)tag_member_desc_name;
+  tag_member_desc.len = (int)sizeof(tag_member_desc_name) - 1;
+  tag_member_desc.type_size = 6;
+  tag_member_desc.deref_size = 1;
+  tag_member_desc.array_len = 6;
+  tag_member_desc.outer_stride = 3;
+  tag_member_desc.arr_ndim = 2;
+  tag_member_desc.arr_dims[0] = 2;
+  tag_member_desc.arr_dims[1] = 3;
+  psx_type_t *tag_member_desc_leaf =
+      psx_type_new_integer(TK_UNSIGNED, 1, 1);
+  psx_type_t *tag_member_desc_inner =
+      psx_type_new_array(tag_member_desc_leaf, 3, 3, 1, 0);
+  tag_member_desc.decl_type =
+      psx_type_new_array(tag_member_desc_inner, 2, 6, 3, 0);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)tag_member_desc_tag,
+                         (int)sizeof(tag_member_desc_tag) - 1,
+                         &tag_member_desc);
+  tag_member_info_t tag_member_desc_out = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)tag_member_desc_tag,
+      (int)sizeof(tag_member_desc_tag) - 1,
+      (char *)tag_member_desc_name, (int)sizeof(tag_member_desc_name) - 1,
+      &tag_member_desc_out));
+  ASSERT_EQ(6, tag_member_desc_out.type_size);
+  ASSERT_EQ(3, tag_member_desc_out.outer_stride);
+  ASSERT_EQ(2, tag_member_desc_out.arr_ndim);
+  ASSERT_EQ(2, tag_member_desc_out.arr_dims[0]);
+  ASSERT_EQ(3, tag_member_desc_out.arr_dims[1]);
+  ASSERT_TRUE(tag_member_desc_out.is_unsigned);
+
+  global_var_t gvar_view_sync = {0};
+  gvar_view_sync.name = "__tm_gvar_view_sync";
+  gvar_view_sync.name_len = (int)strlen(gvar_view_sync.name);
+  gvar_view_sync.type_size = 4;
+  gvar_view_sync.fp_kind = TK_FLOAT_KIND_NONE;
+  gvar_view_sync.is_array = 0;
+  gvar_view_sync.decl_type =
+      psx_type_new_array(psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 2, 16, 8, 0);
+  psx_gvar_view_t gvar_view_sync_out = psx_gvar_view(&gvar_view_sync);
+  ASSERT_EQ(16, gvar_view_sync_out.type_size);
+  ASSERT_TRUE(gvar_view_sync_out.is_array);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, gvar_view_sync_out.fp_kind);
+
+  const char gvar_view_tag_name[] = "__tm_gvar_view_tag";
+  global_var_t gvar_view_tag_ptr = {0};
+  gvar_view_tag_ptr.name = "__tm_gvar_view_tag_ptr";
+  gvar_view_tag_ptr.name_len = (int)strlen(gvar_view_tag_ptr.name);
+  gvar_view_tag_ptr.tag_kind = TK_EOF;
+  gvar_view_tag_ptr.type_size = 4;
+  gvar_view_tag_ptr.decl_type = psx_type_new_pointer(
+      psx_type_new_tag(TK_STRUCT, (char *)gvar_view_tag_name,
+                       (int)sizeof(gvar_view_tag_name) - 1, 0, 12),
+      12);
+  psx_gvar_view_t gvar_view_tag_ptr_out = psx_gvar_view(&gvar_view_tag_ptr);
+  ASSERT_EQ(8, gvar_view_tag_ptr_out.type_size);
+  ASSERT_EQ(TK_STRUCT, gvar_view_tag_ptr_out.tag_kind);
+  ASSERT_EQ((int)sizeof(gvar_view_tag_name) - 1, gvar_view_tag_ptr_out.tag_len);
+  ASSERT_TRUE(gvar_view_tag_ptr_out.is_tag_pointer);
+
   ASSERT_TRUE(indirect_double_ptr_to_array_call->type != NULL);
   psx_type_t *indirect_double_ptr_to_array_ty =
       psx_node_get_type(indirect_double_ptr_to_array_call);

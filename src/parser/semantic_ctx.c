@@ -690,8 +690,88 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
       }
     }
   }
-  if (has_funcptr_sig)
+  if (has_funcptr_sig) {
+    out->fp_kind = TK_FLOAT_KIND_NONE;
+    out->is_bool = 0;
+    out->is_unsigned = 0;
     psx_ctx_tag_member_set_funcptr_sig(out, type->funcptr_sig);
+  }
+}
+
+static void tag_member_record_sync_cache_from_type(tag_member_t *m) {
+  if (!m || !m->decl_type) return;
+  tag_member_info_t view = {0};
+  view.tag_kind = m->member_tag_kind;
+  view.tag_name = m->member_tag_name;
+  view.tag_len = m->member_tag_len;
+  view.is_tag_pointer = m->member_is_tag_pointer;
+  view.pointer_qual_levels = m->pointer_qual_levels;
+  view.fp_kind = m->fp_kind;
+  view.is_bool = m->is_bool;
+  view.is_unsigned = m->is_unsigned;
+  view.outer_stride = m->outer_stride;
+  view.mid_stride = m->mid_stride;
+  view.ptr_array_pointee_bytes = m->ptr_array_pointee_bytes;
+  psx_ctx_tag_member_set_funcptr_sig(&view, tag_member_record_funcptr_sig(m));
+  ctx_tag_member_info_apply_type(&view, m->decl_type);
+
+  m->member_tag_kind = view.tag_kind;
+  m->member_tag_name = view.tag_name;
+  m->member_tag_len = view.tag_len;
+  m->member_is_tag_pointer = view.is_tag_pointer;
+  m->pointer_qual_levels = view.pointer_qual_levels;
+  m->fp_kind = view.fp_kind;
+  m->is_bool = view.is_bool;
+  m->is_unsigned = view.is_unsigned;
+  m->outer_stride = view.outer_stride;
+  m->mid_stride = view.mid_stride;
+  m->ptr_array_pointee_bytes = view.ptr_array_pointee_bytes;
+  tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(&view));
+}
+
+static void tag_member_record_sync_type_from_storage(tag_member_t *m) {
+  if (!m || !m->decl_type) return;
+  if (m->ptr_array_pointee_bytes > 0)
+    ctx_type_set_ptr_array_pointee_bytes(m->decl_type, m->ptr_array_pointee_bytes);
+  if (m->arr_ndim > 0) {
+    if (m->ptr_array_pointee_bytes > 0) {
+      ctx_type_apply_ptr_array_dims(m->decl_type, m->arr_dims, m->arr_ndim);
+    } else {
+      ctx_type_apply_regular_array_dims(&m->decl_type, m->arr_dims, m->arr_ndim,
+                                        m->outer_stride, m->mid_stride);
+    }
+  } else {
+    ctx_type_set_array_strides(m->decl_type, m->outer_stride, m->mid_stride);
+  }
+}
+
+static void tag_member_record_apply_desc(tag_member_t *m,
+                                         const tag_member_info_t *desc) {
+  if (!m || !desc) return;
+  m->offset = desc->offset;
+  m->type_size = desc->type_size;
+  m->deref_size = desc->deref_size;
+  m->array_len = desc->array_len;
+  m->member_tag_kind = desc->tag_kind;
+  m->member_tag_name = desc->tag_name;
+  m->member_tag_len = desc->tag_len;
+  m->member_is_tag_pointer = desc->is_tag_pointer;
+  m->pointer_qual_levels = desc->pointer_qual_levels;
+  m->bit_width = desc->bit_width;
+  m->bit_offset = desc->bit_offset;
+  m->bit_is_signed = desc->bit_is_signed;
+  m->fp_kind = desc->fp_kind;
+  m->is_bool = desc->is_bool ? 1 : 0;
+  m->is_unsigned = desc->is_unsigned ? 1 : 0;
+  m->outer_stride = desc->outer_stride;
+  m->mid_stride = desc->mid_stride;
+  for (int i = 0; i < 8; i++) m->arr_dims[i] = desc->arr_dims[i];
+  m->arr_ndim = desc->arr_ndim;
+  m->ptr_array_pointee_bytes = desc->ptr_array_pointee_bytes;
+  tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
+  m->decl_type = ctx_type_clone_persistent(desc->decl_type);
+  tag_member_record_sync_type_from_storage(m);
+  tag_member_record_sync_cache_from_type(m);
 }
 
 static int ctx_funcptr_sig_shape_matches(psx_decl_funcptr_sig_t a,
@@ -1087,20 +1167,7 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
         strncmp(m->member_name, desc->name, (size_t)desc->len) == 0 &&
         m->scope_depth == tag_scope_depth) {
-      m->offset = desc->offset;
-      m->type_size = desc->type_size;
-      m->deref_size = desc->deref_size;
-      m->array_len = desc->array_len;
-      m->member_tag_kind = desc->tag_kind;
-      m->member_tag_name = desc->tag_name;
-      m->member_tag_len = desc->tag_len;
-      m->member_is_tag_pointer = desc->is_tag_pointer;
-      m->pointer_qual_levels = desc->pointer_qual_levels;
-      m->bit_width = desc->bit_width;
-      m->bit_offset = desc->bit_offset;
-      m->bit_is_signed = desc->bit_is_signed;
-      tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
-      m->decl_type = ctx_type_clone_persistent(desc->decl_type);
+      tag_member_record_apply_desc(m, desc);
       return;
     }
   }
@@ -1110,144 +1177,11 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->tag_len = tag_len;
   m->member_name = desc->name;
   m->member_len = desc->len;
-  m->offset = desc->offset;
-  m->type_size = desc->type_size;
-  m->deref_size = desc->deref_size;
-  m->array_len = desc->array_len;
-  m->member_tag_kind = desc->tag_kind;
-  m->member_tag_name = desc->tag_name;
-  m->member_tag_len = desc->tag_len;
-  m->member_is_tag_pointer = desc->is_tag_pointer;
-  m->pointer_qual_levels = desc->pointer_qual_levels;
-  m->bit_width = desc->bit_width;
-  m->bit_offset = desc->bit_offset;
-  m->bit_is_signed = desc->bit_is_signed;
-  tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
-  m->decl_type = ctx_type_clone_persistent(desc->decl_type);
+  tag_member_record_apply_desc(m, desc);
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
   tag_members_by_bucket[bucket] = m;
-}
-
-void psx_ctx_set_tag_member_fp_kind(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len,
-                                     tk_float_kind_t fp_kind) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->fp_kind = fp_kind;
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_is_bool(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len, int is_bool) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->is_bool = is_bool ? 1 : 0;
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_outer_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                          char *member_name, int member_len, int outer_stride) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->outer_stride = outer_stride;
-      ctx_type_set_array_strides(m->decl_type, m->outer_stride, m->mid_stride);
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_mid_stride(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                       char *member_name, int member_len, int mid_stride) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->mid_stride = mid_stride;
-      ctx_type_set_array_strides(m->decl_type, m->outer_stride, m->mid_stride);
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_arr_dims(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                     char *member_name, int member_len,
-                                     const int *dims, int ndim) {
-  if (ndim < 0) ndim = 0;
-  if (ndim > 8) ndim = 8;
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      for (int i = 0; i < 8; i++) m->arr_dims[i] = 0;
-      for (int i = 0; i < ndim; i++) m->arr_dims[i] = dims[i];
-      m->arr_ndim = ndim;
-      if (m->ptr_array_pointee_bytes > 0) {
-        ctx_type_apply_ptr_array_dims(m->decl_type, dims, ndim);
-      } else {
-        ctx_type_apply_regular_array_dims(&m->decl_type, dims, ndim,
-                                          m->outer_stride, m->mid_stride);
-      }
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_ptr_array_pointee_bytes(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                                     char *member_name, int member_len, int bytes) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->ptr_array_pointee_bytes = bytes;
-      ctx_type_set_ptr_array_pointee_bytes(m->decl_type, bytes);
-      return;
-    }
-  }
-}
-
-void psx_ctx_set_tag_member_is_unsigned(token_kind_t tag_kind, char *tag_name, int tag_len,
-                                        char *member_name, int member_len, int is_unsigned) {
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(member_name, member_len)) & (PCTX_HASH_BUCKETS - 1u);
-  for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
-    if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == member_len &&
-        strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0) {
-      m->is_unsigned = is_unsigned ? 1 : 0;
-      return;
-    }
-  }
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {

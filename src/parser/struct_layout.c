@@ -564,6 +564,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.tag_name = member_tag_name;
         _mi.tag_len = member_tag_len;
         _mi.fp_kind = member_fp_kind;
+        _mi.is_bool = member_is_bool ? 1 : 0;
+        _mi.is_unsigned = member_is_unsigned ? 1 : 0;
         _mi.is_tag_pointer = member_is_ptr ? 1 : 0;
         _mi.pointer_qual_levels = member_is_ptr ? total_pointer_levels : 0;
         psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
@@ -590,98 +592,62 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             member_tag_len, elem_size, member_is_unsigned, member_is_bool,
             member_is_complex, member_is_atomic, member_is_ptr, total_pointer_levels,
             member_array_len, total_size, member_elem_size, member_funcptr_sig);
-        psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
          * 保存し、build_member_deref_node が deref を multi-dim 配列形に組めるようにする。 */
         if (has_member_name && pointee_arr_size > 0) {
-          psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
-                                              member_name, member_len,
-                                              pointee_arr_size * elem_size);
+          _mi.outer_stride = pointee_arr_size * elem_size;
           if (pointee_arr_dim_count >= 2 && pointee_arr_first_dim > 0) {
             /* 2D pointee (`int (*p)[M][N]`): 1 段目 subscript stride = (M*N*elem)/M = N*elem */
-            int mid = (pointee_arr_size / pointee_arr_first_dim) * elem_size;
-            psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
-                                              member_name, member_len, mid);
+            _mi.mid_stride = (pointee_arr_size / pointee_arr_first_dim) * elem_size;
           }
         }
         /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 各要素ポインタが指す配列の
          * 全バイト数 (= N * elem) を保存する。`s.p[i]` の subscript 結果 deref に carry し、
          * `(*s.p[i])[j]` の build_unary_deref_node 経路で要素ストライドに再設定する。 */
         if (has_member_name && ptr_array_pointee_bytes > 0) {
-          psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
-                                                          member_name, member_len,
-                                                          ptr_array_pointee_bytes);
+          _mi.ptr_array_pointee_bytes = ptr_array_pointee_bytes;
         }
         if (has_member_name && member_typedef_ptr_array_pointee_bytes > 0) {
           if (head.is_ptr || member_array_len > 0) {
-            psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
-                                                            member_name, member_len,
-                                                            member_typedef_ptr_array_pointee_bytes);
+            _mi.ptr_array_pointee_bytes = member_typedef_ptr_array_pointee_bytes;
             if (member_typedef_ptr_array_dim_count > 0) {
-              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
-                                              member_name, member_len,
-                                              member_typedef_ptr_array_dims,
-                                              member_typedef_ptr_array_dim_count);
+              _mi.arr_ndim = member_typedef_ptr_array_dim_count > 8
+                                  ? 8
+                                  : member_typedef_ptr_array_dim_count;
+              for (int i = 0; i < _mi.arr_ndim; i++)
+                _mi.arr_dims[i] = member_typedef_ptr_array_dims[i];
             }
           } else if (member_is_ptr_typedef) {
-            psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
-                                                            member_name, member_len,
-                                                            member_typedef_ptr_array_pointee_bytes);
+            _mi.ptr_array_pointee_bytes = member_typedef_ptr_array_pointee_bytes;
             if (member_typedef_ptr_array_dim_count > 0) {
-              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
-                                              member_name, member_len,
-                                              member_typedef_ptr_array_dims,
-                                              member_typedef_ptr_array_dim_count);
+              _mi.arr_ndim = member_typedef_ptr_array_dim_count > 8
+                                  ? 8
+                                  : member_typedef_ptr_array_dim_count;
+              for (int i = 0; i < _mi.arr_ndim; i++)
+                _mi.arr_dims[i] = member_typedef_ptr_array_dims[i];
             }
-            psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
-                                                member_name, member_len,
-                                                member_typedef_ptr_array_pointee_bytes);
+            _mi.outer_stride = member_typedef_ptr_array_pointee_bytes;
             if (member_typedef_ptr_array_dim_count >= 2 &&
                 member_typedef_ptr_array_dims[0] > 0) {
-              int mid = member_typedef_ptr_array_pointee_bytes / member_typedef_ptr_array_dims[0];
-              psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
-                                                member_name, member_len, mid);
+              _mi.mid_stride =
+                  member_typedef_ptr_array_pointee_bytes / member_typedef_ptr_array_dims[0];
             }
           }
-        }
-        if (has_member_name && !head.is_ptr && member_fp_kind != TK_FLOAT_KIND_NONE) {
-          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
-                                          member_name, member_len, member_fp_kind);
-        }
-        /* データポインタメンバ `double *dp`: pointee の fp_kind を保存する。
-         * build_member_deref_node が pointee_fp_kind として deref に伝播し、
-         * `s.dp[i]` / `p->dp[i]` を fp load/store にできるようにする。 */
-        if (has_member_name && member_is_ptr && !head.has_func_suffix &&
-            member_fp_kind != TK_FLOAT_KIND_NONE) {
-          psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len,
-                                          member_name, member_len, member_fp_kind);
-        }
-        if (has_member_name && !head.is_ptr && member_is_bool) {
-          psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len,
-                                          member_name, member_len, 1);
-        }
-        if (has_member_name && !head.is_ptr && member_is_unsigned) {
-          psx_ctx_set_tag_member_is_unsigned(tag_kind, tag_name, tag_len,
-                                             member_name, member_len, 1);
         }
         /* 多次元配列メンバ (例 int a[2][2]) は最外次元のバイトストライドを保存し、
          * メンバアクセス時に多段 subscript を正しくスケールできるようにする。 */
         if (has_member_name && !head.is_ptr && !is_flex_array &&
             arr_dim_count >= 2 && arr_first_dim > 0) {
           int inner_count = arr_size / arr_first_dim;   /* 第1次元を除く要素数 */
-          psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len,
-                                              member_name, member_len,
-                                              inner_count * member_elem_size);
+          _mi.outer_stride = inner_count * member_elem_size;
           /* 3 次元以上は中間段ストライド (1 段 subscript 後の要素サイズ) も保存。
            * `char c[2][2][3]` なら arr_dims=[2,2,3]、mid_stride = 3*1 = 3。
            * これがないと build_member_deref_node の inner_deref_size が elem_size の
            * ままで 3 段目 subscript が誤スケール (or SIGSEGV) になっていた。 */
           if (arr_dim_count >= 3 && arr_dims_buf[1] > 0) {
             int inner2 = inner_count / arr_dims_buf[1];  /* 第1+第2次元を除く要素数 */
-            psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len,
-                                              member_name, member_len,
-                                              inner2 * member_elem_size);
+            _mi.mid_stride = inner2 * member_elem_size;
           }
           /* 多次元配列メンバの各次元サイズを保存する。
            * (1) char (`char c[2][2][3]`): グローバル brace init `{{{"ab","cd"},...}}` を
@@ -695,11 +661,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
            *     これがないと外側 designator が内側次元を無視して誤ジャンプ。
            * tag ポインタメンバはスカラ単位の slot 計算で対象外 (member_is_ptr で除外)。 */
           if (!member_is_ptr) {
-            psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len,
-                                            member_name, member_len,
-                                            arr_dims_buf, arr_dim_count);
+            _mi.arr_ndim = arr_dim_count > 8 ? 8 : arr_dim_count;
+            for (int i = 0; i < _mi.arr_ndim; i++) _mi.arr_dims[i] = arr_dims_buf[i];
           }
         }
+        psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         member_count++;
       }
       /* C11 6.7.2.1p13: 匿名 struct/union (タグ名なし、メンバ名なし) の場合、
@@ -719,27 +685,6 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
              * 修正前: 旧 non-bf 版の名残でこれらを 0 にクリアしており、`s.lo` (匿名 struct
              * 内 `unsigned lo:16`) が bitfield 抽出を経ず full-width load されて値が化けていた。 */
             psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
-            /* 昇格メンバの fp_kind / is_bool / is_unsigned / outer_stride も伝播する。
-             * add_tag_member は基本属性のみ渡すため、これがないと匿名 union/struct の
-             * float/double メンバ (`struct { union { int n; float f; }; };` の f) が
-             * fp_kind を失い整数 load/store され値が化けていた。 */
-            if (im.fp_kind != TK_FLOAT_KIND_NONE)
-              psx_ctx_set_tag_member_fp_kind(tag_kind, tag_name, tag_len, im.name, im.len, im.fp_kind);
-            if (im.is_bool)
-              psx_ctx_set_tag_member_is_bool(tag_kind, tag_name, tag_len, im.name, im.len, 1);
-            if (im.is_unsigned)
-              psx_ctx_set_tag_member_is_unsigned(tag_kind, tag_name, tag_len, im.name, im.len, 1);
-            if (im.outer_stride > 0)
-              psx_ctx_set_tag_member_outer_stride(tag_kind, tag_name, tag_len, im.name, im.len, im.outer_stride);
-            if (im.mid_stride > 0)
-              psx_ctx_set_tag_member_mid_stride(tag_kind, tag_name, tag_len, im.name, im.len, im.mid_stride);
-            if (im.arr_ndim > 0)
-              psx_ctx_set_tag_member_arr_dims(tag_kind, tag_name, tag_len, im.name, im.len,
-                                              im.arr_dims, im.arr_ndim);
-            if (im.ptr_array_pointee_bytes > 0)
-              psx_ctx_set_tag_member_ptr_array_pointee_bytes(tag_kind, tag_name, tag_len,
-                                                              im.name, im.len,
-                                                              im.ptr_array_pointee_bytes);
             member_count++;
           }
         }
