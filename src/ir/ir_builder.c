@@ -1210,6 +1210,11 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
     switch_to_new_block(ctx, merge_b);
     return;
   }
+  if (src->kind == ND_CAST && src->lhs &&
+      src->type && psx_type_is_tag_aggregate(src->type)) {
+    materialize_aggregate_expr_to(ctx, src->lhs, dst_ptr_vreg, size);
+    return;
+  }
   if (src->kind == ND_FUNCALL) {
     int ret_size = aggregate_size_from_node(src);
     if (ret_size == 1 || ret_size == 2 || ret_size == 4 || ret_size == 8) {
@@ -2510,6 +2515,7 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   if (node->type && node->type->kind == PSX_TYPE_VOID) return ir_val_none();
+  if (node->type && psx_type_is_tag_aggregate(node->type)) return v;
   int target_size = 0;
   int widen_zext_i64 = 0;
   int needs_i64_extend = 0;

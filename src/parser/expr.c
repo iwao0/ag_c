@@ -2012,6 +2012,17 @@ static int is_size_compatible_nonscalar_expr(node_t *expr, token_kind_t cast_kin
   return op_sz > 0 && cast_elem_size > 0 && op_sz == cast_elem_size;
 }
 
+static psx_type_t *aggregate_cast_result_type(token_kind_t cast_kind,
+                                              char *cast_tag_name,
+                                              int cast_tag_len,
+                                              int cast_elem_size) {
+  if (!psx_ctx_is_tag_aggregate_kind(cast_kind)) return NULL;
+  int size = cast_elem_size > 0 ? cast_elem_size
+             : psx_ctx_get_tag_size(cast_kind, cast_tag_name, cast_tag_len);
+  if (size <= 0) size = 8;
+  return psx_type_new_tag(cast_kind, cast_tag_name, cast_tag_len, 0, size);
+}
+
 static char *new_compound_lit_name(void) {
   int n = compound_lit_seq++;
   int len = snprintf(NULL, 0, "__compound_lit_%d", n);
@@ -3073,13 +3084,17 @@ static node_t *cast_with_compound_addr_context(int compound_addr_context, expr_p
     node_t *operand = cast_with_compound_addr_context(compound_addr_context, ctx);
     if (!cast_is_ptr && psx_ctx_is_tag_aggregate_kind(cast_kind)) {
       if (is_same_tag_nonscalar_expr(operand, cast_kind, cast_tag_name, cast_tag_len)) {
-        // same-tag non-scalar cast: treat as no-op for now
-        return apply_postfix(operand, ctx);
+        psx_type_t *cast_type =
+            aggregate_cast_result_type(cast_kind, cast_tag_name, cast_tag_len,
+                                       cast_elem_size);
+        return apply_postfix(psx_node_new_aggregate_cast_result(operand, cast_type), ctx);
       }
       if (ps_get_enable_size_compatible_nonscalar_cast() &&
           is_size_compatible_nonscalar_expr(operand, cast_kind, cast_elem_size)) {
-        // minimal extension: same-kind and same-size non-scalar cast as no-op
-        return apply_postfix(operand, ctx);
+        psx_type_t *cast_type =
+            aggregate_cast_result_type(cast_kind, cast_tag_name, cast_tag_len,
+                                       cast_elem_size);
+        return apply_postfix(psx_node_new_aggregate_cast_result(operand, cast_type), ctx);
       }
       if (cast_kind == TK_STRUCT) {
         token_kind_t op_tag_kind = TK_EOF;

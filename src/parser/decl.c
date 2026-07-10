@@ -1272,18 +1272,102 @@ static int is_supported_scalar_store_size(int size) {
   return size == 1 || size == 2 || size == 4 || size == 8;
 }
 
+typedef struct {
+  token_kind_t kind;
+  char *name;
+  int len;
+  int scope_depth;
+  int size;
+} tag_object_identity_t;
+
+static int tag_object_identity_from_type(psx_type_t *type,
+                                         tag_object_identity_t *out) {
+  if (!type || !out) return 0;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  if (!type || !psx_type_is_tag_aggregate(type)) return 0;
+  int size = psx_type_sizeof(type);
+  if (size <= 0) return 0;
+  out->kind = type->tag_kind;
+  out->name = type->tag_name;
+  out->len = type->tag_len;
+  out->scope_depth = type->tag_scope_depth_p1 > 0 ? type->tag_scope_depth_p1 - 1 : -1;
+  out->size = size;
+  return psx_ctx_is_tag_aggregate_kind(out->kind);
+}
+
+static int tag_object_identity_from_lvar(lvar_t *var,
+                                         tag_object_identity_t *out) {
+  if (!var || !out) return 0;
+  memset(out, 0, sizeof(*out));
+  out->kind = TK_EOF;
+  out->scope_depth = -1;
+  psx_type_t *type = psx_lvar_get_decl_type(var);
+  if (tag_object_identity_from_type(type, out)) return 1;
+  if (var->is_tag_pointer || !psx_ctx_is_tag_aggregate_kind(var->tag_kind))
+    return 0;
+  out->kind = var->tag_kind;
+  out->name = var->tag_name;
+  out->len = var->tag_len;
+  out->size = var->size;
+  return out->size > 0;
+}
+
+static int tag_object_identity_from_node(node_t *node,
+                                         tag_object_identity_t *out) {
+  if (!node || !out) return 0;
+  memset(out, 0, sizeof(*out));
+  out->kind = TK_EOF;
+  out->scope_depth = -1;
+  token_kind_t kind = TK_EOF;
+  char *name = NULL;
+  int len = 0;
+  int is_tag_pointer = 0;
+  psx_node_get_tag_type(node, &kind, &name, &len, &is_tag_pointer);
+  int size = psx_node_aggregate_value_size(node);
+  if (is_tag_pointer || size <= 0 || !psx_ctx_is_tag_aggregate_kind(kind))
+    return 0;
+  out->kind = kind;
+  out->name = name;
+  out->len = len;
+  out->scope_depth = psx_node_get_tag_scope_depth(node);
+  out->size = size;
+  return 1;
+}
+
+static int tag_object_identity_matches(const tag_object_identity_t *a,
+                                       const tag_object_identity_t *b) {
+  if (!a || !b) return 0;
+  if (a->kind != b->kind) return 0;
+  if (a->size <= 0 || b->size <= 0 || a->size != b->size) return 0;
+  if (a->len > 0 || b->len > 0) {
+    if (a->len != b->len) return 0;
+    if (strncmp(a->name ? a->name : "", b->name ? b->name : "",
+                (size_t)a->len) != 0) {
+      return 0;
+    }
+  }
+  if (a->len == 0 && b->len == 0 &&
+      a->scope_depth >= 0 && b->scope_depth >= 0 &&
+      a->scope_depth != b->scope_depth) {
+    return 0;
+  }
+  return 1;
+}
+
+static int is_compatible_tag_object_node(node_t *src, lvar_t *var) {
+  tag_object_identity_t src_id;
+  tag_object_identity_t dst_id;
+  if (!tag_object_identity_from_node(src, &src_id)) return 0;
+  if (!tag_object_identity_from_lvar(var, &dst_id)) return 0;
+  return tag_object_identity_matches(&src_id, &dst_id);
+}
+
 static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
-  if (!src || !var) return 0;
-  if (src->mem.is_tag_pointer || var->is_tag_pointer) return 0;
-  if (src->mem.tag_kind != var->tag_kind) return 0;
-  return src->mem.type_size > 0 && var->size > 0 && src->mem.type_size == var->size;
+  return is_compatible_tag_object_node((node_t *)src, var);
 }
 
 static int is_compatible_tag_object_mem(node_mem_t *src, lvar_t *var) {
-  if (!src || !var) return 0;
-  if (src->is_tag_pointer || var->is_tag_pointer) return 0;
-  if (src->tag_kind != var->tag_kind) return 0;
-  return src->type_size > 0 && var->size > 0 && src->type_size == var->size;
+  return is_compatible_tag_object_node((node_t *)src, var);
 }
 
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
@@ -2870,6 +2954,11 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
+  } else if (value && value->kind == ND_CAST &&
+             is_compatible_tag_object_node(value, var)) {
+    node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
+    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
     node_t *then_prefix = NULL;
@@ -3976,17 +4065,13 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
                    "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
     }
     /* C11 6.5.16.1: struct/union 値をスカラに代入することはできない。
-     * RHS の node_mem_t::tag_kind が TK_STRUCT/TK_UNION かつ is_tag_pointer=0
-     * の場合、構造体実体を整数に変換しようとしているので拒否する。 */
-    if ((init_expr->kind == ND_LVAR || init_expr->kind == ND_GVAR ||
-         init_expr->kind == ND_DEREF || init_expr->kind == ND_FUNCALL) &&
-        (init_expr->kind != ND_FUNCALL)) {
-      node_mem_t *m = (node_mem_t *)init_expr;
-      if (psx_ctx_is_tag_aggregate_kind(m->tag_kind) && !m->is_tag_pointer && !m->is_pointer) {
-        psx_diag_ctx(curtok(), "init",
-                     "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
-                     psx_ctx_tag_kind_spelling(m->tag_kind));
-      }
+     * raw mirror の tag/is_pointer ではなく canonical type accessor で判定する。 */
+    if (psx_node_aggregate_value_size(init_expr) > 0) {
+      token_kind_t init_tag_kind = TK_EOF;
+      psx_node_get_tag_type(init_expr, &init_tag_kind, NULL, NULL, NULL);
+      psx_diag_ctx(curtok(), "init",
+                   "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
+                   psx_ctx_tag_kind_spelling(init_tag_kind));
     }
   }
   node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);

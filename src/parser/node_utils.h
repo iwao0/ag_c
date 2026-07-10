@@ -121,6 +121,7 @@ node_t *psx_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
                                          token_kind_t tag_kind,
                                          char *tag_name, int tag_len,
                                          int elem_size, int is_unsigned);
+node_t *psx_node_new_aggregate_cast_result(node_t *operand, psx_type_t *cast_type);
 node_t *psx_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type);
 node_t *psx_node_new_gvar_array_addr_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_array_addr_for(struct lvar_t *var, int gvar_type_size);

@@ -22310,3 +22310,62 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 次は `ND_ADDR` 生成直後に raw stride/type_size を入れてから canonical sync する箇所で、
     canonical type がない場合だけ raw fallback できているか、また `call argument` で
     `psx_node_storage_type_size()` の意味を ABI size として使っていないかを確認するのが候補。
+
+### このセッション（続き910）: scalar initializer の aggregate 判定を canonical accessor に寄せた
+- 見つかった浅い箇所:
+  - `psx_decl_parse_initializer_for_var()` の scalar initializer 診断で、RHS が struct/union 実体かどうかを
+    `node_mem_t *` へ cast して raw `tag_kind` / `is_tag_pointer` / `is_pointer` から直接判定していた。
+  - これは `psx_node_get_type()` / `psx_node_aggregate_value_size()` で進めている正本化を迂回する経路で、
+    typed scalar に stale tag mirror が残った場合や、`ND_COMMA` などの wrapper の奥に aggregate がある場合に
+    判定が分散する。
+- 根本対応:
+  - scalar initializer の aggregate 拒否判定を `psx_node_aggregate_value_size(init_expr) > 0` に置き換えた。
+  - エラーメッセージ用の tag kind も `psx_node_get_tag_type()` から取得するようにし、raw mirror を直接正本として
+    参照しない形にした。
+  - regression として `int y=(0,(struct S){1});` が canonical aggregate 判定で
+    `スカラ変数を struct 値で初期化できません` と診断されることを追加した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_e2e` = **pass**（binary build）
+  - `git diff --check` = **pass**
+- 現状:
+  - `decl.c` 側の scalar initializer 診断から、raw tag mirror を直接正本として読む経路を一つ閉じた。
+  - 次は `decl.c` / `expr.c` に残る raw `node_mem_t` 直接参照のうち、lvar/gvar の宣言情報ではなく
+    AST expression の型判定に使っている箇所を優先して確認するのが候補。
+
+### このセッション（続き911）: struct copy 互換判定と aggregate cast の型正本化
+- 見つかった浅い箇所:
+  - struct/union copy initializer の互換判定が、source node の raw `tag_kind` / `is_tag_pointer` /
+    `type_size` と destination `lvar_t` の raw field を直接比較していた。
+  - そのため canonical `node->type` があっても raw mirror 側が判定の正本になり、さらに `tag_kind + size`
+    だけで同サイズの別タグ struct も互換扱いできる状態だった。
+  - size-compatible nonscalar cast は parser 拡張として存在するが、実装は no-op で元 node を返していたため、
+    `(struct B)a` の結果 AST に destination tag type が載らず、正本化した copy 判定と噛み合わなかった。
+- 根本対応:
+  - `decl.c` に `tag_object_identity_t` helper を追加し、source は
+    `psx_node_get_tag_type()` / `psx_node_aggregate_value_size()`、destination は `psx_lvar_get_decl_type()`
+    を優先して tag identity を比較するようにした。
+  - 比較は kind/size だけでなく tag name も見るようにし、scope は両方が無名 tag の場合だけ使うようにした
+    （cast type が scope を持てない既存経路を壊さないため）。
+  - aggregate cast 用 `psx_node_new_aggregate_cast_result()` を追加し、same-tag / size-compatible nonscalar cast で
+    destination aggregate type を持つ `ND_CAST` wrapper を返すようにした。
+  - IR 側では aggregate `ND_CAST` を scalar coercion しないようにし、aggregate materialize では `ND_CAST` を剥がして
+    `lhs` を同じ宛先へ materialize できるようにした。
+  - regression として、cast なしの `struct B b=a` は同サイズでも copy initializer として拒否し、
+    既存の `(struct B)a` 拡張は destination type を持つ wrapper 経由で維持するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_e2e` = **pass**（binary build）
+  - `git diff --check` = **pass**
+  - 局所 e2e:
+    - `struct S t=(struct S)(c?a:b); return t.x;` を `./build/ag_c` -> `clang` -> 実行 = **exit 1（期待値）**
+    - `struct B b=(struct B)a; return 0;` を `./build/ag_c` -> `clang` -> 実行 = **exit 0**
+    - `struct S s=(struct S)(struct S){1}; return 0;` を `./build/ag_c` -> `clang` -> 実行 = **exit 0**
+- 現状:
+  - struct copy / aggregate cast の境界でも、raw mirror ではなく canonical type/tag identity を正本として使う方向に進んだ。
+  - 次は `expr.c` / `node_utils.c` の `is_scalar_ptr_member` など、型そのものではなく lvalue 文脈を表す raw flag と
+    本当に型正本へ寄せるべき raw mirror を分離して棚卸しするのが候補。

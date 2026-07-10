@@ -6032,6 +6032,18 @@ node_t *psx_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
   return annotate_explicit_type((node_t *)wrap, cast_type);
 }
 
+node_t *psx_node_new_aggregate_cast_result(node_t *operand, psx_type_t *cast_type) {
+  node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
+  wrap->base.kind = ND_CAST;
+  wrap->base.lhs = operand;
+  if (cast_type) {
+    int size = psx_type_sizeof(cast_type);
+    if (size > 0) wrap->type_size = (short)size;
+    sync_tag_mem_from_decl_type(wrap, cast_type);
+  }
+  return annotate_explicit_type((node_t *)wrap, cast_type);
+}
+
 node_t *psx_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type) {
   node_mem_t *wrap = arena_alloc(sizeof(node_mem_t));
   wrap->base.kind = ND_CAST;
