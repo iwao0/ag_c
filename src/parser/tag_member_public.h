@@ -108,6 +108,60 @@ static inline int psx_tag_member_decl_array_count(const tag_member_info_t *m) {
   return m->array_len;
 }
 
+static inline int psx_tag_member_decl_array_dim_count(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->arr_ndim > 1) return m->arr_ndim;
+  if (m->decl_type) {
+    const psx_type_t *type = m->decl_type;
+    int count = 0;
+    while (type && type->kind == PSX_TYPE_ARRAY && count < 8) {
+      if (type->array_len <= 0) break;
+      count++;
+      type = type->base;
+    }
+    if (count > 0) return count;
+  }
+  return m->arr_ndim;
+}
+
+static inline int psx_tag_member_decl_array_dim(const tag_member_info_t *m,
+                                                int index) {
+  if (!m || index < 0 || index >= 8) return 0;
+  if (m->arr_ndim > 1) return m->arr_dims[index];
+  if (m->decl_type) {
+    const psx_type_t *type = m->decl_type;
+    int cur = 0;
+    while (type && type->kind == PSX_TYPE_ARRAY && cur <= index) {
+      if (type->array_len <= 0) break;
+      if (cur == index) return type->array_len;
+      cur++;
+      type = type->base;
+    }
+  }
+  return m->arr_dims[index];
+}
+
+static inline int psx_tag_member_decl_array_dims(const tag_member_info_t *m,
+                                                 int *dims, int max_dims) {
+  if (!dims || max_dims <= 0) return psx_tag_member_decl_array_dim_count(m);
+  int n = psx_tag_member_decl_array_dim_count(m);
+  if (n > max_dims) n = max_dims;
+  for (int i = 0; i < n; i++)
+    dims[i] = psx_tag_member_decl_array_dim(m, i);
+  for (int i = n; i < max_dims; i++)
+    dims[i] = 0;
+  return n;
+}
+
+static inline int psx_tag_member_decl_deref_size(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type) {
+    int size = psx_type_deref_size(m->decl_type);
+    if (size > 0) return size;
+  }
+  return m->deref_size;
+}
+
 static inline tk_float_kind_t psx_tag_member_decl_fp_kind(
     const tag_member_info_t *m) {
   const psx_type_t *type = psx_tag_member_decl_value_type(m);
@@ -125,10 +179,24 @@ static inline int psx_tag_member_decl_is_bool(const tag_member_info_t *m) {
   return m && m->is_bool;
 }
 
+static inline int psx_tag_member_decl_is_unsigned(const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type) return psx_type_is_unsigned(type);
+  return m && m->is_unsigned;
+}
+
 static inline int psx_tag_member_decl_is_pointer(const tag_member_info_t *m) {
   const psx_type_t *type = psx_tag_member_decl_value_type(m);
   if (type) return type->kind == PSX_TYPE_POINTER;
   return m && m->is_tag_pointer;
+}
+
+static inline int psx_tag_member_decl_pointer_qual_levels(
+    const tag_member_info_t *m) {
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type && type->kind == PSX_TYPE_POINTER)
+    return type->pointer_qual_levels > 0 ? type->pointer_qual_levels : 1;
+  return m ? m->pointer_qual_levels : 0;
 }
 
 static inline int psx_tag_member_decl_outer_stride(const tag_member_info_t *m) {
@@ -138,6 +206,60 @@ static inline int psx_tag_member_decl_outer_stride(const tag_member_info_t *m) {
   if (m->decl_type && m->decl_type->kind == PSX_TYPE_ARRAY)
     return psx_type_deref_size(m->decl_type);
   return m->outer_stride;
+}
+
+static inline int psx_tag_member_decl_mid_stride(const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type) {
+    const psx_type_t *type = m->decl_type;
+    while (type) {
+      if (type->mid_stride > 0) return type->mid_stride;
+      type = type->base;
+    }
+  }
+  return m->mid_stride;
+}
+
+static inline int psx_tag_member_decl_ptr_array_pointee_bytes(
+    const tag_member_info_t *m) {
+  if (!m) return 0;
+  if (m->decl_type) {
+    const psx_type_t *type = m->decl_type;
+    while (type) {
+      if (type->ptr_array_pointee_bytes > 0)
+        return type->ptr_array_pointee_bytes;
+      if (type->kind == PSX_TYPE_POINTER && type->outer_stride > 0)
+        return type->outer_stride;
+      type = type->base;
+    }
+  }
+  return m->ptr_array_pointee_bytes;
+}
+
+static inline int psx_tag_member_decl_ptr_array_pointee_elem_size(
+    const tag_member_info_t *m) {
+  if (!m) return 0;
+  const psx_type_t *type = psx_tag_member_decl_value_type(m);
+  if (type && type->kind == PSX_TYPE_POINTER &&
+      type->base && type->base->kind == PSX_TYPE_ARRAY) {
+    int elem = psx_type_deref_size(type->base);
+    if (elem > 0) return elem;
+  }
+  int bytes = psx_tag_member_decl_ptr_array_pointee_bytes(m);
+  if (type && type->kind == PSX_TYPE_POINTER && type->base && bytes > 0) {
+    int elem = psx_type_sizeof(type->base);
+    if (elem > 0 && (bytes % elem) == 0) return elem;
+  }
+  int ndim = psx_tag_member_decl_array_dim_count(m);
+  if (bytes <= 0 || ndim <= 0) return 0;
+  int count = 1;
+  for (int i = 0; i < ndim && i < 8; i++) {
+    int dim = psx_tag_member_decl_array_dim(m, i);
+    if (dim <= 0) return 0;
+    count *= dim;
+  }
+  if (count <= 0 || (bytes % count) != 0) return 0;
+  return bytes / count;
 }
 
 static inline void psx_tag_member_decl_tag_identity(

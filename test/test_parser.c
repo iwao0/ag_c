@@ -6267,12 +6267,17 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ((int)sizeof(gvar_view_tag_name) - 1, gvar_view_tag_ptr_out.tag_len);
   ASSERT_TRUE(gvar_view_tag_ptr_out.is_tag_pointer);
 
+  const char stale_node_tag_name[] = "__tm_stale_node_tag";
   global_var_t gvar_node_scalar_sync = {0};
   gvar_node_scalar_sync.name = "__tm_gvar_node_scalar";
   gvar_node_scalar_sync.name_len = (int)strlen(gvar_node_scalar_sync.name);
   gvar_node_scalar_sync.type_size = 4;
   gvar_node_scalar_sync.deref_size = 4;
   gvar_node_scalar_sync.fp_kind = TK_FLOAT_KIND_NONE;
+  gvar_node_scalar_sync.tag_kind = TK_STRUCT;
+  gvar_node_scalar_sync.tag_name = (char *)stale_node_tag_name;
+  gvar_node_scalar_sync.tag_len = (int)sizeof(stale_node_tag_name) - 1;
+  gvar_node_scalar_sync.is_tag_pointer = 1;
   gvar_node_scalar_sync.decl_type =
       psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   node_gvar_t *gvar_node_scalar_sync_node =
@@ -6280,6 +6285,19 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, gvar_node_scalar_sync_node->mem.type_size);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             gvar_node_scalar_sync_node->mem.base.fp_kind);
+  ASSERT_EQ(TK_EOF, gvar_node_scalar_sync_node->mem.tag_kind);
+  ASSERT_TRUE(gvar_node_scalar_sync_node->mem.tag_name == NULL);
+  ASSERT_EQ(0, gvar_node_scalar_sync_node->mem.tag_len);
+  ASSERT_EQ(0, gvar_node_scalar_sync_node->mem.is_tag_pointer);
+  global_var_t gvar_materialized_scalar_stale_tag = gvar_node_scalar_sync;
+  gvar_materialized_scalar_stale_tag.decl_type = NULL;
+  psx_type_t *gvar_materialized_scalar_type =
+      psx_gvar_materialize_decl_type(&gvar_materialized_scalar_stale_tag);
+  ASSERT_TRUE(gvar_materialized_scalar_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, gvar_materialized_scalar_type->kind);
+  ASSERT_EQ(TK_EOF, gvar_materialized_scalar_type->tag_kind);
+  ASSERT_TRUE(gvar_materialized_scalar_type->tag_name == NULL);
+  ASSERT_EQ(0, gvar_materialized_scalar_type->tag_len);
 
   const char gvar_node_tag_name[] = "__tm_gvar_node_tag";
   global_var_t gvar_node_tag_sync = {0};
@@ -6330,6 +6348,10 @@ static void test_type_metadata_bridge() {
   lvar_node_scalar_sync.size = 4;
   lvar_node_scalar_sync.elem_size = 4;
   lvar_node_scalar_sync.fp_kind = TK_FLOAT_KIND_NONE;
+  lvar_node_scalar_sync.tag_kind = TK_STRUCT;
+  lvar_node_scalar_sync.tag_name = (char *)stale_node_tag_name;
+  lvar_node_scalar_sync.tag_len = (int)sizeof(stale_node_tag_name) - 1;
+  lvar_node_scalar_sync.is_tag_pointer = 1;
   lvar_node_scalar_sync.decl_type =
       psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   node_lvar_t *lvar_node_scalar_sync_node =
@@ -6337,6 +6359,19 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, lvar_node_scalar_sync_node->mem.type_size);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             lvar_node_scalar_sync_node->mem.base.fp_kind);
+  ASSERT_EQ(TK_EOF, lvar_node_scalar_sync_node->mem.tag_kind);
+  ASSERT_TRUE(lvar_node_scalar_sync_node->mem.tag_name == NULL);
+  ASSERT_EQ(0, lvar_node_scalar_sync_node->mem.tag_len);
+  ASSERT_EQ(0, lvar_node_scalar_sync_node->mem.is_tag_pointer);
+  lvar_t lvar_materialized_scalar_stale_tag = lvar_node_scalar_sync;
+  lvar_materialized_scalar_stale_tag.decl_type = NULL;
+  psx_type_t *lvar_materialized_scalar_type =
+      psx_lvar_materialize_decl_type(&lvar_materialized_scalar_stale_tag);
+  ASSERT_TRUE(lvar_materialized_scalar_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, lvar_materialized_scalar_type->kind);
+  ASSERT_EQ(TK_EOF, lvar_materialized_scalar_type->tag_kind);
+  ASSERT_TRUE(lvar_materialized_scalar_type->tag_name == NULL);
+  ASSERT_EQ(0, lvar_materialized_scalar_type->tag_len);
 
   const char lvar_node_tag_name[] = "__tm_lvar_node_tag";
   lvar_t lvar_node_tag_sync = {0};
@@ -6527,6 +6562,24 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, as_mem(member_ptrarr_p_deref)->inner_deref_size);
   ASSERT_TRUE(psx_node_get_type(member_ptrarr_p_deref) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, psx_node_get_type(member_ptrarr_p_deref)->kind);
+  ASSERT_EQ(12, psx_tag_member_decl_ptr_array_pointee_bytes(&member_ptrarr_p_info));
+  ASSERT_EQ(4, psx_tag_member_decl_ptr_array_pointee_elem_size(&member_ptrarr_p_info));
+  tag_member_info_t member_ptrarr_p_stale_info = member_ptrarr_p_info;
+  member_ptrarr_p_stale_info.deref_size = 1;
+  member_ptrarr_p_stale_info.outer_stride = 0;
+  member_ptrarr_p_stale_info.mid_stride = 0;
+  member_ptrarr_p_stale_info.ptr_array_pointee_bytes = 0;
+  member_ptrarr_p_stale_info.arr_ndim = 0;
+  for (int i = 0; i < 8; i++) member_ptrarr_p_stale_info.arr_dims[i] = 0;
+  ASSERT_EQ(12, psx_tag_member_decl_ptr_array_pointee_bytes(
+                    &member_ptrarr_p_stale_info));
+  ASSERT_EQ(4, psx_tag_member_decl_ptr_array_pointee_elem_size(
+                   &member_ptrarr_p_stale_info));
+  node_t *member_ptrarr_p_stale_deref = psx_node_new_tag_member_deref_for(
+      psx_node_new_num(0), psx_node_new_lvar_for(member_ptrarr_h),
+      &member_ptrarr_p_stale_info);
+  ASSERT_EQ(12, as_mem(member_ptrarr_p_stale_deref)->deref_size);
+  ASSERT_EQ(4, as_mem(member_ptrarr_p_stale_deref)->base_deref_size);
 
   parsed_code = parse_program_input(
       "struct __tm_member_arr { int a[2]; }; "
@@ -6565,6 +6618,11 @@ static void test_type_metadata_bridge() {
   member_arr_a_stale_info.deref_size = 1;
   member_arr_a_stale_info.array_len = 0;
   member_arr_a_stale_info.outer_stride = 0;
+  member_arr_a_stale_info.arr_ndim = 0;
+  for (int i = 0; i < 8; i++) member_arr_a_stale_info.arr_dims[i] = 0;
+  ASSERT_EQ(1, psx_tag_member_decl_array_dim_count(&member_arr_a_stale_info));
+  ASSERT_EQ(2, psx_tag_member_decl_array_dim(&member_arr_a_stale_info, 0));
+  ASSERT_EQ(4, psx_tag_member_decl_deref_size(&member_arr_a_stale_info));
   node_t *member_arr_a_stale_node = psx_node_new_tag_member_lvar_ref_for(
       member_arr_h, member_arr_a_stale_info.offset, &member_arr_a_stale_info);
   ASSERT_TRUE(ps_node_is_pointer(member_arr_a_stale_node));
@@ -6631,15 +6689,41 @@ static void test_type_metadata_bridge() {
       "a", 1, &member_scalar_a_info));
   ASSERT_TRUE(member_scalar_a_info.decl_type != NULL);
   ASSERT_TRUE(member_scalar_a_info.decl_type->is_atomic);
+  member_scalar_a_info.tag_kind = TK_STRUCT;
+  member_scalar_a_info.tag_name = (char *)member_scalar_tag;
+  member_scalar_a_info.tag_len = (int)strlen(member_scalar_tag);
+  member_scalar_a_info.is_tag_pointer = 1;
+  member_scalar_a_info.pointer_qual_levels = 2;
+  member_scalar_a_info.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  member_scalar_a_info.is_bool = 1;
+  member_scalar_a_info.is_unsigned = 1;
   node_t *member_scalar_a_node = psx_node_new_tag_member_lvar_ref_for(
       member_scalar_h, member_scalar_a_info.offset, &member_scalar_a_info);
   ASSERT_EQ(1, as_mem(member_scalar_a_node)->is_atomic);
   ASSERT_EQ(1, as_mem(member_scalar_a_node)->base.is_atomic);
+  ASSERT_EQ(TK_EOF, as_mem(member_scalar_a_node)->tag_kind);
+  ASSERT_TRUE(as_mem(member_scalar_a_node)->tag_name == NULL);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->tag_len);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->is_tag_pointer);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->pointer_qual_levels);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, as_mem(member_scalar_a_node)->base.fp_kind);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->is_bool);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->is_unsigned);
+  ASSERT_EQ(0, as_mem(member_scalar_a_node)->base.is_unsigned);
   node_t *member_scalar_a_deref = psx_node_new_tag_member_deref_for(
       psx_node_new_num(0), psx_node_new_lvar_for(member_scalar_h),
       &member_scalar_a_info);
   ASSERT_EQ(1, as_mem(member_scalar_a_deref)->is_atomic);
   ASSERT_EQ(1, as_mem(member_scalar_a_deref)->base.is_atomic);
+  ASSERT_EQ(TK_EOF, as_mem(member_scalar_a_deref)->tag_kind);
+  ASSERT_TRUE(as_mem(member_scalar_a_deref)->tag_name == NULL);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->tag_len);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->is_tag_pointer);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->pointer_qual_levels);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE, as_mem(member_scalar_a_deref)->base.fp_kind);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->is_bool);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->is_unsigned);
+  ASSERT_EQ(0, as_mem(member_scalar_a_deref)->base.is_unsigned);
 
   tag_member_info_t member_scalar_z_info = {0};
   ASSERT_TRUE(psx_ctx_find_tag_member_info(

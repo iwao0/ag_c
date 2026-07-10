@@ -113,6 +113,27 @@ static void tag_member_info_init_layout_cache(tag_member_info_t *mi,
   mi->pointer_qual_levels = pointer_qual_levels;
 }
 
+static void member_decl_type_apply_shape_cache(psx_type_t *type,
+                                               const tag_member_info_t *mi) {
+  if (!type || !mi) return;
+  if (mi->outer_stride > 0 && type->outer_stride <= 0)
+    type->outer_stride = mi->outer_stride;
+  if (mi->mid_stride > 0 && type->mid_stride <= 0)
+    type->mid_stride = mi->mid_stride;
+  if (mi->ptr_array_pointee_bytes > 0) {
+    type->ptr_array_pointee_bytes = mi->ptr_array_pointee_bytes;
+    if (type->outer_stride <= 0)
+      type->outer_stride = mi->ptr_array_pointee_bytes;
+    if (type->kind == PSX_TYPE_POINTER) {
+      type->deref_size = mi->ptr_array_pointee_bytes;
+      if (type->base_deref_size <= 0 && mi->deref_size > 0)
+        type->base_deref_size = mi->deref_size;
+    }
+    if (type->kind == PSX_TYPE_ARRAY && type->base)
+      member_decl_type_apply_shape_cache(type->base, mi);
+  }
+}
+
 static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
                                                        psx_funcptr_signature_t *func_suffix_sig,
                                                        int *out_paren_array_mul,
@@ -688,6 +709,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             for (int i = 0; i < _mi.arr_ndim; i++) _mi.arr_dims[i] = arr_dims_buf[i];
           }
         }
+        member_decl_type_apply_shape_cache(_mi.decl_type, &_mi);
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         member_count++;
       }

@@ -2242,13 +2242,15 @@ static node_t *parse_member_initializer(lvar_t *owner, const tag_member_info_t *
   char *tag_name = NULL;
   int tag_len = 0;
   int is_tag_pointer = 0;
+  int arr_dims[8] = {0};
+  int arr_ndim = psx_tag_member_decl_array_dims(info, arr_dims, 8);
   psx_tag_member_decl_tag_identity(info, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
   return parse_member_initializer_raw(
       owner, info->offset, psx_tag_member_decl_value_size(info),
       tag_kind, tag_name, tag_len, is_tag_pointer,
       psx_tag_member_decl_array_count(info), psx_tag_member_decl_outer_stride(info),
       psx_tag_member_decl_is_bool(info), psx_tag_member_decl_fp_kind(info),
-      info->arr_dims, info->arr_ndim);
+      arr_dims, arr_ndim);
 }
 
 /* 文字列リテラル val を `flat` から `row_w` バイト (上限 array_len) に展開し、
@@ -2523,7 +2525,8 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
 
 static int nested_designator_current_dim_len(const tag_member_info_t *info) {
   if (!info) return 0;
-  if (info->arr_ndim > 0 && info->arr_dims[0] > 0) return info->arr_dims[0];
+  int dim = psx_tag_member_decl_array_dim(info, 0);
+  if (dim > 0) return dim;
   return psx_tag_member_decl_array_count(info);
 }
 
@@ -2531,9 +2534,11 @@ static int nested_designator_subscript_stride_bytes(const tag_member_info_t *inf
   if (!info) return 0;
   int stride = psx_tag_member_decl_value_size(info);
   if (stride <= 0) stride = 1;
-  if (info->arr_ndim > 1) {
-    for (int i = 1; i < info->arr_ndim; i++) {
-      if (info->arr_dims[i] > 0) stride *= info->arr_dims[i];
+  int dim_count = psx_tag_member_decl_array_dim_count(info);
+  if (dim_count > 1) {
+    for (int i = 1; i < dim_count; i++) {
+      int dim = psx_tag_member_decl_array_dim(info, i);
+      if (dim > 0) stride *= dim;
     }
   } else if (info->decl_type && info->decl_type->kind == PSX_TYPE_ARRAY) {
     int deref_size = psx_type_deref_size(info->decl_type);
@@ -2549,6 +2554,15 @@ static void nested_designator_consume_array_dim(tag_member_info_t *info) {
     info->decl_type = info->decl_type->base;
     int type_size = psx_type_sizeof(info->decl_type);
     if (type_size > 0) info->type_size = type_size;
+    int dims[8] = {0};
+    int n = psx_tag_member_decl_array_dims(info, dims, 8);
+    for (int i = 0; i < 8; i++) info->arr_dims[i] = dims[i];
+    info->arr_ndim = n;
+    info->array_len =
+        (info->decl_type && info->decl_type->kind == PSX_TYPE_ARRAY)
+            ? psx_tag_member_decl_array_count(info)
+            : 0;
+    if (info->array_len > 0 || info->arr_ndim > 0) return;
   }
   if (info->arr_ndim > 1) {
     int remaining = 1;

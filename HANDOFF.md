@@ -21686,3 +21686,150 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     正本として読む経路は `psx_tag_member_decl_*` helper 側に寄せている。
   - 次は raw field を直接読む残りを repo 全体で再検索し、`tag_member_info_t` 以外の
     lvar/gvar/node_mem でも同じ型正本化の残りがないか確認するのが候補。
+
+### このセッション（続き890）: node_utils の tag member ノード生成で stale raw metadata を遮断
+- 見つかった浅い箇所:
+  - `psx_node_new_tag_member_deref_for()` は value/storage/array count は canonical helper に寄っていたが、
+    `tag_kind` / `tag_name` / `tag_len` / `fp_kind` / `is_bool` / `is_unsigned` /
+    `pointer_qual_levels` はまだ raw `tag_member_info_t` を直接読んでいた。
+  - `psx_node_new_tag_member_lvar_ref_for()` も `psx_node_new_member_lvar_ref_for()` へ渡す初期 metadata に
+    raw `type_size` / tag identity / `is_tag_pointer` を使っていた。
+  - `sync_tag_member_mem_from_decl_type()` の pointer pointee fp fallback にも raw `info->fp_kind` が残り、
+    `decl_type` があるのに stale raw fp kind が復活する余地があった。
+- 根本対応:
+  - `src/parser/tag_member_public.h` に `psx_tag_member_decl_is_unsigned()` と
+    `psx_tag_member_decl_pointer_qual_levels()` を追加し、unsigned と pointer level も
+    tag member canonical view から読めるようにした。
+  - `psx_node_new_tag_member_deref_for()` は関数冒頭で canonical tag identity / fp kind /
+    bool / unsigned / pointer level を計算し、以降の分岐は raw tag/fp/scalar flag を読まない形にした。
+  - `psx_node_new_tag_member_lvar_ref_for()` は初期化引数から raw `type_size` / tag metadata を外し、
+    `psx_tag_member_decl_value_size()` と `psx_tag_member_decl_tag_identity()` を使うようにした。
+  - `sync_tag_member_mem_from_decl_type()` の fp fallback も `psx_tag_member_decl_fp_kind()` 経由にした。
+  - `test_type_metadata_bridge()` では signed atomic int メンバの raw metadata だけを
+    `tag pointer` / `double` / `bool` / `unsigned` に汚し、lvar ref と deref の両方で
+    decl_type 由来の signed atomic int が勝って stale metadata が漏れないことを確認するようにした。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member から node_mem を作る主要経路でも、型がある場合は raw fallback cache ではなく
+    `decl_type` canonical view が優先されるようになった。
+  - まだ `info->deref_size` / `outer_stride` / `mid_stride` /
+    `ptr_array_pointee_bytes` / `arr_dims` などの shape cache は node_utils 内で読んでいる。
+    これらは現時点では `decl_type` から完全に再構成しきれない互換 cache だが、
+    次は `psx_tag_member_decl_*` に shape 系 helper を足して、読み口だけでもさらに 1 箇所へ寄せるのが候補。
+
+### このセッション（続き891）: tag member shape metadata の読み口を canonical helper へ集約
+- 見つかった浅い箇所:
+  - `deref_size` / `outer_stride` / `mid_stride` / `ptr_array_pointee_bytes` /
+    `arr_dims` / `arr_ndim` は、tag/fp/scalar flag と同様に `tag_member_info_t` raw cache から
+    直接読まれていた。
+  - `int (*p)[3]` のような pointer-to-array member では、`ptr_array_pointee_bytes` が
+    raw cache 側だけに載り、`decl_type` から canonical helper で復元できない状態だった。
+  - struct layout の `decl_type` は多次元配列を flat array として持つ場合があるため、
+    raw `arr_dims` が多次元を表しているときは、それを canonical view の一部として扱う必要があった。
+- 根本対応:
+  - `src/parser/tag_member_public.h` に shape 系 helper を追加した:
+    - `psx_tag_member_decl_array_dim_count()`
+    - `psx_tag_member_decl_array_dim()`
+    - `psx_tag_member_decl_array_dims()`
+    - `psx_tag_member_decl_deref_size()`
+    - `psx_tag_member_decl_mid_stride()`
+    - `psx_tag_member_decl_ptr_array_pointee_bytes()`
+    - `psx_tag_member_decl_ptr_array_pointee_elem_size()`
+  - 多次元 `arr_dims` は `arr_ndim > 1` の場合 raw dims を優先し、1D/欠落時は
+    `decl_type` の array chain から読むようにした。
+  - `node_utils.c` の `psx_node_new_tag_member_deref_for()` と
+    `sync_tag_member_mem_from_decl_type()` は shape 値も helper 経由にし、
+    raw cache を直接読まない形に寄せた。
+  - `decl.c` の member initializer / nested designator の現在次元長・stride 計算も
+    helper 経由にした。`nested_designator_consume_array_dim()` の raw `arr_dims` 操作は、
+    designator が 1 次元消費する mutable view 更新として残している。
+  - `struct_layout.c` に `member_decl_type_apply_shape_cache()` を追加し、`_mi` の
+    pointer-to-array bytes / stride cache を `_mi.decl_type` にも同期してから
+    `psx_ctx_add_tag_member()` するようにした。
+  - `test_type_metadata_bridge()` に shape helper の stale raw cache テストを追加し、
+    raw `ptr_array_pointee_bytes` / `arr_dims` / `deref_size` を消しても `decl_type` から
+    pointer-to-array bytes、pointee elem size、array dim、deref size が復元されることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+  - `rg -n "info->(deref_size|outer_stride|mid_stride|ptr_array_pointee_bytes|arr_ndim|arr_dims)" src/parser/node_utils.c src/parser/decl.c src/parser/parser.c src/parser/semantic_ctx.c src/parser/tag_member_public.h`
+    の残りは `decl.c` の `nested_designator_consume_array_dim()` にある mutable view 更新だけ。
+- 現状:
+  - tag member の読み口は value/tag/scalar/shape の大半が `psx_tag_member_decl_*` helper に集約された。
+  - まだ型正本化全体としては、`tag_member_info_t` 以外の `lvar_t` / `global_var_t` / `node_mem_t`
+    の型情報 cache をどこまで `psx_type_t` から同期・削減できるかが残件。
+
+### このセッション（続き892）: node_mem の tag identity 同期で stale raw tag を消す
+- 見つかった浅い箇所:
+  - `sync_gvar_ref_mem_from_decl_type()` と `sync_lvar_ref_mem_from_decl_type()` は、
+    `decl_type` が tag object の場合に tag metadata をセットするだけで、
+    `decl_type` が scalar / non-tag pointer の場合に古い raw `tag_kind` /
+    `tag_name` / `tag_len` / `is_tag_pointer` を明示的に消していなかった。
+  - `psx_node_init_gvar_ref_metadata()` / `psx_node_new_lvar_for()` は先に raw cache を
+    `node_mem_t` へ入れてから型同期するため、古い raw tag cache が node に残る余地があった。
+  - `sync_pointer_cast_mem_from_type()` と tag-member node 同期にも tag identity の型同期ロジックが
+    個別に存在し、型が non-tag のときにクリアする統一規則がなかった。
+- 根本対応:
+  - `node_utils.c` に `sync_tag_mem_from_decl_type()` を追加し、
+    `psx_type_t` から `node_mem_t` の tag identity を一元同期するようにした。
+    - direct struct/union object: tag をセットし `is_tag_pointer=0`
+    - pointer/array view of struct/union: tag をセットし `is_tag_pointer=1`
+    - non-tag scalar / non-tag pointer: `TK_EOF` / `NULL` / `0` へクリア
+  - `sync_gvar_ref_mem_from_decl_type()` / `sync_lvar_ref_mem_from_decl_type()` /
+    `sync_pointer_cast_mem_from_type()` / `sync_tag_member_mem_from_decl_type()` を
+    この helper 経由に統一した。
+  - 置換後に未使用になった `type_tag_aggregate_leaf()` を削除した。
+  - `test_type_metadata_bridge()` の gvar/lvar scalar node sync ケースに stale raw tag cache を混ぜ、
+    `decl_type=double` のとき node 側 tag identity が `TK_EOF` にクリアされることを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**（追加警告なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - `tag_member_info_t` から `node_mem_t` へ作る経路だけでなく、
+    `lvar_t` / `global_var_t` から `node_mem_t` へ作る主要経路でも、
+    tag identity は `decl_type` から最終同期されるようになった。
+  - 次は `lvar_t` / `global_var_t` の view helper と materialize/refresh 境界で、
+    unsigned/bool/fp/shape cache が `decl_type` からどこまで一貫して復元・クリアされるかを
+    さらに監査するのが候補。
+
+### このセッション（続き893）: materialize 境界で stale tag-pointer cache を direct tag にしない
+- 見つかった浅い箇所:
+  - 続き892で node 生成後の tag identity 同期は `decl_type` 正本へ寄せたが、
+    `psx_gvar_materialize_decl_type()` / `psx_lvar_materialize_decl_type()` が raw field から
+    `psx_type_t` を復元する境界では、古い `tag_kind=TK_STRUCT/TK_UNION` と
+    `is_tag_pointer=1` が残っているだけで scalar storage が tag/pointer 型へ化ける余地があった。
+  - `type_from_mem()` の direct tag aggregate 分岐は、pointer view 用の stale
+    `is_tag_pointer` と direct object tag を十分に区別していなかった。
+  - 一方で `is_array && is_tag_pointer` は「配列要素が tag pointer」という既存意味があり、
+    pointer-to-array of struct では `ptr_array_pointee_bytes` が pointer shape の証拠になるため、
+    tag identity を単純に消すと既存の array/tag pointer 復元を壊す。
+- 根本対応:
+  - `type_from_mem()` の direct tag aggregate 分岐を `!mem->is_tag_pointer` に限定した。
+  - `lvar_is_pointer_like_from_fields()` / `gvar_is_pointer_like_from_fields()` は、
+    raw `is_tag_pointer` 単独ではなく、array/vla または pointer-sized storage など
+    pointer shape と合わせて pointer-like と判断するようにした。
+  - lvar/gvar raw source mem 初期化では、pointer-like と判断できない stale
+    tag-pointer cache の tag identity を `TK_EOF` / `NULL` / `0` に消すようにした。
+    ただし array tag pointer や pointer-to-array shape では tag identity を保持する。
+  - gvar ref metadata 初期化にも同じ条件を適用し、materialize と node ref で
+    raw tag-pointer cache の扱いがずれないようにした。
+  - `test_type_metadata_bridge()` に gvar/lvar materialize 境界の stale scalar tag cache ケースを追加し、
+    `decl_type` がない状態でも scalar storage が direct struct/union に化けないことを確認した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `git diff --check` = **pass**
+- 現状:
+  - node 生成後の同期だけでなく、raw lvar/gvar から `psx_type_t` を再構成する境界でも、
+    stale tag-pointer cache が scalar 型を direct tag aggregate に変える経路を塞いだ。
+  - 次は lvar/gvar の unsigned/bool/fp/pointee flags について、同じく
+    materialize/refresh 境界で raw cache 単独に依存している箇所を監査するのが候補。
