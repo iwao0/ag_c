@@ -414,10 +414,10 @@ int main(void) {
   failures += run_case("fp_return_to_int", "int main(){return 1.5;}\n",
                        fp_return_to_int, 2, 1);
   failures += run_fail_case("external_call", "int main(){return puts(\"x\");}\n", "E4008");
-  const char *puts_stub[] = {"(call $puts", "(func $puts (param i32) (result i32)"};
+  const char *puts_stub[] = {"(call $puts", "(func $puts (param $s i32) (result i32)"};
   failures += run_case("puts_stub",
                        "#include <stdio.h>\nint main(){return puts(\"x\");}\n",
-                       puts_stub, 2, 1);
+                       puts_stub, 2, 2);
   const char *assert_stub[] = {"(call $__assert_rtn", "(func $__assert_rtn (param i32 i32 i32 i32)"};
   failures += run_case("assert_stub",
                        "#include <assert.h>\nint main(){assert(1); return 0;}\n",
@@ -731,8 +731,9 @@ int main(void) {
                        "int later(void); struct S{int (*f)(void);}; void set(struct S *s){s->f=later;} "
                        "int later(void){return 7;} int main(){struct S s; set(&s); return s.f();}\n",
                        forward_funcptr_store, 2, 7);
-  const char *fprintf_funcptr_stub[] = {"(func $fprintf (param i32 i32) (result i32)",
-                                        "(elem (i32.const 2) $fprintf", "call_indirect"};
+  const char *fprintf_funcptr_stub[] = {
+      "(func $__ag_funcptr_fprintf (param $p0 i32) (param $p1 i32) (result i32)",
+      "(elem (i32.const 2) $__ag_funcptr_fprintf", "call_indirect"};
   failures += run_case("fprintf_funcptr_stub",
                        "typedef void FILE; int fprintf(FILE*, const char*, ...); "
                        "int (*p)(FILE*, const char*, ...)=&fprintf; "

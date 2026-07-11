@@ -263,6 +263,70 @@ psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
   return type;
 }
 
+static psx_type_t *type_build_array_dim_chain(psx_type_t *base,
+                                               const int *dims,
+                                               int dim_count,
+                                               int leaf_size) {
+  if (!base || !dims || dim_count <= 0 || leaf_size <= 0) return base;
+  psx_type_t *result = base;
+  int child_size = psx_type_sizeof(base);
+  if (child_size <= 0) child_size = leaf_size;
+  for (int i = dim_count - 1; i >= 0; i--) {
+    int len = dims[i];
+    if (len <= 0) return base;
+    int size = child_size * len;
+    psx_type_t *array = psx_type_new_array(result, len, size,
+                                            child_size, 0);
+    array->base_deref_size = leaf_size;
+    array->outer_stride = child_size;
+    result = array;
+    child_size = size;
+  }
+  return result;
+}
+
+psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
+                                        const int *dims, int dim_count,
+                                        int leaf_size) {
+  if (!type || !dims || dim_count <= 0 || leaf_size <= 0) return type;
+
+  if (type->kind == PSX_TYPE_ARRAY) {
+    psx_type_t *old_outer = type;
+    psx_type_t *base = type;
+    while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
+    psx_type_t *rebuilt =
+        type_build_array_dim_chain(base, dims, dim_count, leaf_size);
+    if (rebuilt && rebuilt->kind == PSX_TYPE_ARRAY) {
+      psx_type_copy_common_qualifiers(rebuilt, old_outer);
+      rebuilt->fp_kind = old_outer->fp_kind;
+      rebuilt->pointee_fp_kind = old_outer->pointee_fp_kind;
+      rebuilt->funcptr_sig =
+          psx_decl_funcptr_sig_clone(old_outer->funcptr_sig);
+      rebuilt->type_sig = old_outer->type_sig;
+      rebuilt->tag_kind = old_outer->tag_kind;
+      rebuilt->tag_name = old_outer->tag_name;
+      rebuilt->tag_len = old_outer->tag_len;
+      rebuilt->tag_scope_depth_p1 = old_outer->tag_scope_depth_p1;
+    }
+    return rebuilt;
+  }
+
+  if (type->kind != PSX_TYPE_POINTER) return type;
+  psx_type_t *owner = type;
+  while (owner->base && owner->base->kind == PSX_TYPE_POINTER)
+    owner = owner->base;
+  psx_type_t *base = owner->base;
+  while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
+  psx_type_t *rebuilt =
+      type_build_array_dim_chain(base, dims, dim_count, leaf_size);
+  if (!rebuilt || rebuilt == base) return type;
+  owner->base = rebuilt;
+  owner->deref_size = psx_type_sizeof(rebuilt);
+  owner->base_deref_size = leaf_size;
+  psx_type_sync_pointer_to_array_metadata_from_base(owner);
+  return type;
+}
+
 psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
                                               int array_len) {
   psx_type_t *root = type;

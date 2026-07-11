@@ -3087,7 +3087,8 @@ static void parse_func_param_list_only(int *out_is_variadic, int *out_has_unname
 static tk_float_kind_t function_param_fp_kind_for_node(node_t *arg) {
   if (!arg) return TK_FLOAT_KIND_NONE;
   psx_type_t *type = psx_node_get_type(arg);
-  if (type && !psx_type_is_pointer(type) && type->kind == PSX_TYPE_FLOAT) {
+  if (type && !psx_type_is_pointer(type) &&
+      (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
     return type->fp_kind;
   }
   return (tk_float_kind_t)arg->fp_kind;
@@ -4322,7 +4323,8 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
   // float/double 仮引数は ABI に従い d0..d7 で受け取るため fp_kind を保持。
   // ただし配列宣言子 (`double a[n]`) はポインタへ adjust され整数レジスタ渡しに
   // なるので fp_kind は付けない (付けると d レジスタ受けになり ABI が壊れる)。
-  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator) {
+  if (ds.fp_kind != TK_FLOAT_KIND_NONE && !ds.is_complex &&
+      !param_is_ptr && !param_is_array_declarator) {
     psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                     ds.fp_kind, var->is_unsigned,
                                     var->tag_kind, var->tag_name, var->tag_len,

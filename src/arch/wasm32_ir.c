@@ -260,6 +260,15 @@ static int intern_function_table_ref(char *name, int name_len) {
   return idx + 2;
 }
 
+static int function_table_has_ref(const char *name, int name_len) {
+  for (int i = 0; i < g_func_table.ref_count; i++) {
+    if (name_eq(g_func_table.refs[i].name, g_func_table.refs[i].name_len,
+                name, name_len))
+      return 1;
+  }
+  return 0;
+}
+
 static int function_table_index_or_unsupported(char *name, int name_len) {
   if (!psx_ctx_has_function_name(name, name_len)) return -1;
   return intern_function_table_ref(name, name_len);
@@ -370,7 +379,14 @@ static void emit_function_table(void) {
   wasm_emitf(2, "(table %d funcref)\n", g_func_table.ref_count + 2);
   wasm_emitf(2, "(elem (i32.const 2)");
   for (int i = 0; i < g_func_table.ref_count; i++) {
-    cg_emitf(" $%.*s", g_func_table.refs[i].name_len, g_func_table.refs[i].name);
+    char *name = g_func_table.refs[i].name;
+    int name_len = g_func_table.refs[i].name_len;
+    if (name_len == 7 && memcmp(name, "fprintf", 7) == 0 &&
+        !psx_ctx_is_function_defined(name, name_len)) {
+      cg_emitf(" $__ag_funcptr_fprintf");
+    } else {
+      cg_emitf(" $%.*s", name_len, name);
+    }
   }
   cg_emitf(")\n");
 }
@@ -429,8 +445,12 @@ static void collect_vreg_type(wasm_func_ctx_t *ctx, ir_val_t v) {
 static void collect_inst_vregs(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   if (i->op == IR_PARAM && i->src1.id == IR_VAL_IMM) {
     int ordinal = func_param_ordinal_for_inst(ctx->f, i);
-    ir_type_t ty = (i->src1.imm < 0) ? IR_TY_PTR
-                                     : func_param_type_from_decl(ctx->f, ordinal, i->dst.type);
+    ir_type_t ty = IR_TY_PTR;
+    if (i->src1.imm >= 0) {
+      ty = (ordinal >= 0 && ordinal < ctx->f->param_abi_count && ordinal < 32)
+               ? ctx->f->param_abi_types[ordinal]
+               : func_param_type_from_decl(ctx->f, ordinal, i->dst.type);
+    }
     collect_vreg_type_as(ctx, i->dst, ty);
     return;
   }
@@ -1615,6 +1635,10 @@ static ir_type_t func_param_type(ir_func_t *f, int idx) {
     if (idx == 0) return IR_TY_PTR;
     idx--;
   }
+  if (idx >= 0 && idx < f->param_abi_count && idx < 32 &&
+      f->param_abi_types[idx] != IR_TY_VOID) {
+    return f->param_abi_types[idx];
+  }
   ir_inst_t *param = func_param_inst_at_ordinal(f, idx);
   if (param) {
     return func_param_type_from_decl(f, idx, param->dst.type);
@@ -2499,6 +2523,31 @@ static void emit_wasm_vsnprintf_stubs(void) {
     }
 }
 
+static const char *declared_function_param_wasm_type(const char *name,
+                                                     int name_len,
+                                                     int param_idx) {
+  int category = psx_ctx_get_function_param_category(
+      (char *)name, name_len, param_idx);
+  if (category == PSX_PCAT_PTR || category == PSX_PCAT_STRUCT)
+    return "i32";
+  tk_float_kind_t fp_kind = psx_ctx_get_function_param_fp_kind(
+      (char *)name, name_len, param_idx);
+  if (fp_kind == TK_FLOAT_KIND_FLOAT) return "f32";
+  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return "f64";
+  return psx_ctx_get_function_param_int_size(
+             (char *)name, name_len, param_idx) == 8
+             ? "i64" : "i32";
+}
+
+static int emit_declared_fixed_function_params(const char *name, int name_len) {
+  int nparams = psx_ctx_get_function_nargs_fixed((char *)name, name_len);
+  for (int i = 0; i < nparams; i++) {
+    cg_emitf(" (param $p%d %s)", i,
+             declared_function_param_wasm_type(name, name_len, i));
+  }
+  return nparams;
+}
+
 static void emit_wasm_printf_stubs(void) {
   int slots_addr = intern_data_symbol("__ag_printf_va_slots", 20, 16, 8)->addr;
   if (has_undefined_function("printf", 6)) {
@@ -2514,6 +2563,18 @@ static void emit_wasm_printf_stubs(void) {
     wasm_emitf(4, "(i64.store (i32.const %d) (local.get $b))\n", slots_addr + 8);
     wasm_emitf(4, "(call $__ag_vsnprintf_impl (i32.const 0) (i64.const 0) (local.get $fmt) (i64.const %d))\n", slots_addr);
     wasm_emitf(2, ")\n");
+    if (function_table_has_ref("fprintf", 7)) {
+      wasm_emitf(2, "(func $__ag_funcptr_fprintf");
+      int nparams = emit_declared_fixed_function_params("fprintf", 7);
+      if (nparams != 2 ||
+          psx_ctx_get_function_param_category("fprintf", 7, 0) != PSX_PCAT_PTR ||
+          psx_ctx_get_function_param_category("fprintf", 7, 1) != PSX_PCAT_PTR) {
+        wasm_unsupported_msg("fprintf function-pointer declaration in Wasm backend");
+      }
+      cg_emitf(" (result i32)\n");
+      wasm_emitf(4, "(call $__ag_vsnprintf_impl (i32.const 0) (i64.const 0) (local.get $p1) (i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
+      wasm_emitf(2, ")\n");
+    }
   }
 }
 

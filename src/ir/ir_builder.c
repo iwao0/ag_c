@@ -3314,9 +3314,16 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
-      ctx->f->param_abi_types[abi_idx++] =
-          (ps_node_is_pointer(arg) || psx_node_value_is_pointer_like((node_t *)lv) ||
-           psx_lvar_value_is_pointer_like(owner)) ? IR_TY_PTR : vty;
+      int is_pointer =
+          ps_node_is_pointer(arg) ||
+          psx_node_value_is_pointer_like((node_t *)lv) ||
+          psx_lvar_value_is_pointer_like(owner);
+      ir_type_t abi_type = is_pointer ? IR_TY_PTR : vty;
+      if (!is_pointer && !is_fp_type(abi_type) &&
+          psx_node_param_abi_type_size(arg) == 8) {
+        abi_type = IR_TY_I64;
+      }
+      ctx->f->param_abi_types[abi_idx++] = abi_type;
     }
     int ptr_vreg = address_of_lvar(ctx, lv->offset);
     if (ptr_vreg < 0) return 0;

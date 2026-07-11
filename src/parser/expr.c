@@ -3630,7 +3630,8 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
       if (bds > 0 && inner_ds == ptr_array_bytes) inner_ds = bds;
     }
   }
-  if (node->kind == ND_DEREF && psx_node_pointer_qual_levels(node) == 0 &&
+  if (!stride_from_canonical_type && node->kind == ND_DEREF &&
+      psx_node_pointer_qual_levels(node) == 0 &&
       inner_ds <= 0 && vla_rsf == 0) {
     int bds = psx_node_base_deref_size(node);
     if (bds == 0 && node->lhs) bds = psx_node_base_deref_size(node->lhs);

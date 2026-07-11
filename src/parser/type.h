@@ -81,6 +81,9 @@ psx_type_t *psx_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
                                           const int *row_sizes,
                                           int row_size_count, int leaf_size);
+psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
+                                        const int *dims, int dim_count,
+                                        int leaf_size);
 psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
                                               int array_len);
 psx_type_t *psx_type_apply_pointer_derivation(psx_type_t *type,

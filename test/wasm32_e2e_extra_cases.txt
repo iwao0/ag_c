@@ -581,6 +581,7 @@ probes_found_bugs/funcptr_ptrptr_global_param.c
 probes_found_bugs/funcptr_retptr_global_param_struct.c
 probes_found_bugs/typedef_funcptr_retptr_global_local.c
 probes_found_bugs/func_return_funcptr_ptrptr.c
+probes_found_bugs/cast_ptr_to_array_leaf_flags.c
 wasm32/libc_funcptr_stub_ops.c
 wasm32/errno_storage_ops.c
 wasm32/math_classify_compare_ops.c

@@ -4248,11 +4248,8 @@ void psx_decl_set_lvar_array_strides_from_dims(lvar_t *var,
     }
     var->extra_strides_count = (unsigned char)idx;
   }
-  int row_sizes[8] = {0};
-  int row_count = psx_decl_array_row_sizes(
-      dims, 1, dim_count, elem_size, row_sizes);
-  var->decl_type = psx_type_rebuild_array_shape(
-      decl_type, var->size, row_sizes, row_count, elem_size);
+  var->decl_type = psx_type_rebuild_array_dims(
+      decl_type, dims, dim_count, elem_size);
 }
 
 void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
@@ -4276,11 +4273,22 @@ void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
     }
     var->extra_strides_count = (unsigned char)idx;
   }
-  int row_sizes[8] = {0};
-  int row_count = psx_decl_array_row_sizes(
-      inner_dims, 0, inner_dim_count, elem_size, row_sizes);
-  var->decl_type = psx_type_rebuild_array_shape(
-      decl_type, var->size, row_sizes, row_count, elem_size);
+  if (decl_type && decl_type->kind == PSX_TYPE_ARRAY) {
+    int dims[8] = {0};
+    int inner_count = inner_dim_count > 7 ? 7 : inner_dim_count;
+    int inner_product = psx_decl_array_dim_product(
+        inner_dims, 0, inner_count);
+    int row_size = inner_product * elem_size;
+    int outer_len = row_size > 0 ? var->size / row_size : 0;
+    if (outer_len <= 0) outer_len = 1;
+    dims[0] = outer_len;
+    for (int i = 0; i < inner_count; i++) dims[i + 1] = inner_dims[i];
+    var->decl_type = psx_type_rebuild_array_dims(
+        decl_type, dims, inner_count + 1, elem_size);
+  } else {
+    var->decl_type = psx_type_rebuild_array_dims(
+        decl_type, inner_dims, inner_dim_count, elem_size);
+  }
 }
 
 void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
