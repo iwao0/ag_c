@@ -3908,10 +3908,10 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
                                          token_ident_t *inner_first_dim_ident) {
   // size=8 (pointer), elem_size=実際の要素サイズ
   lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
-  /* 1D の fp 要素配列引数 (`double a[n]`): pointee の fp 種別を伝播。size==elem_size
-   * (=8) で lvar_is_pointer の size>elem_size 判定に漏れる double 要素でも、これで
-   * ポインタ認識され subscript が fp load になる (int a[n] は size>elem_size で OK)。 */
-  if (inner_first_dim == 0 && ds->fp_kind != TK_FLOAT_KIND_NONE) {
+  /* C11 6.7.6.3p7: 配列仮引数は常に要素へのポインタへ adjust される。
+   * ABI storage が 8 byte という事実だけに依存せず、宣言型にも pointer を構築する。 */
+  psx_decl_set_lvar_pointer_derived_type(var, 1, ds->elem_size, 0);
+  if (ds->fp_kind != TK_FLOAT_KIND_NONE) {
     psx_decl_set_lvar_pointee_fp_kind(var, ds->fp_kind);
   }
   /* 全 inner dim が定数 (N-D const inner、`int t[][2][3][4]` 等): outer/mid/extra strides を立てる。

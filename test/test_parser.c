@@ -3889,6 +3889,23 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_deref_decays_to_address(ptrarr2d_row));
 
   parsed_code = parse_program_input(
+      "typedef int __tm_Row3[3]; typedef int (*__tm_PA3)[3]; "
+      "int __tm_typedef_ptrarr(void) { __tm_Row3 *a; __tm_PA3 b; return 0; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *typedef_row_ptr = find_func_lvar(fn, "a");
+  lvar_t *typedef_ptrarr = find_func_lvar(fn, "b");
+  ASSERT_TRUE(typedef_row_ptr != NULL);
+  ASSERT_TRUE(typedef_ptrarr != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, typedef_row_ptr->decl_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_row_ptr->decl_type->base->kind);
+  ASSERT_EQ(3, typedef_row_ptr->decl_type->base->array_len);
+  ASSERT_EQ(12, psx_type_deref_size(typedef_row_ptr->decl_type));
+  ASSERT_EQ(PSX_TYPE_POINTER, typedef_ptrarr->decl_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, typedef_ptrarr->decl_type->base->kind);
+  ASSERT_EQ(3, typedef_ptrarr->decl_type->base->array_len);
+  ASSERT_EQ(12, psx_type_deref_size(typedef_ptrarr->decl_type));
+
+  parsed_code = parse_program_input(
       "int __tm_ptrarr_leaf_flags(void) { "
       "  unsigned char uc[1][3]; unsigned char (*up)[3] = uc; "
       "  _Bool bb[1][2]; _Bool (*bp)[2] = bb; return 0; }");
@@ -4037,7 +4054,7 @@ static void test_type_metadata_bridge() {
   lvar_t *ptrarr3d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr3d_p != NULL);
   ASSERT_TRUE(ptrarr3d_p->decl_type != NULL);
-  ASSERT_EQ(0, ptrarr3d_p->decl_type->ptr_array_pointee_bytes);
+  ASSERT_EQ(96, ptrarr3d_p->decl_type->ptr_array_pointee_bytes);
   ASSERT_EQ(96, ptrarr3d_p->decl_type->outer_stride);
   ASSERT_EQ(48, ptrarr3d_p->decl_type->mid_stride);
   ASSERT_EQ(16, ptrarr3d_p->decl_type->extra_strides[0]);
@@ -7208,7 +7225,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, psx_type_sizeof(double_ptr_to_array_ty->base));
   ASSERT_EQ(16, psx_type_pointer_view_ptr_array_pointee_bytes(
                     double_ptr_to_array_ty));
-  ASSERT_EQ(8, double_ptr_to_array_ty->outer_stride);
+  ASSERT_EQ(16, double_ptr_to_array_ty->outer_stride);
   ASSERT_EQ(0, double_ptr_to_array_ty->mid_stride);
   ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, psx_node_pointee_fp_kind(double_ptr_to_array_call));
@@ -7259,8 +7276,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(48, psx_type_deref_size(manual_ptrarr_stored));
   ASSERT_EQ(48, psx_type_pointer_view_ptr_array_pointee_bytes(
                     manual_ptrarr_stored));
-  ASSERT_EQ(16, manual_ptrarr_stored->outer_stride);
-  ASSERT_EQ(4, manual_ptrarr_stored->mid_stride);
+  ASSERT_EQ(48, manual_ptrarr_stored->outer_stride);
+  ASSERT_EQ(16, manual_ptrarr_stored->mid_stride);
   ASSERT_EQ(0, manual_ptrarr_stored->extra_strides_count);
   psx_function_ret_info_t manual_ptrarr_info = psx_ctx_get_function_ret_info(
       (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1);
@@ -7948,7 +7965,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, psx_type_sizeof(indirect_double_ptr_to_array_ty->base));
   ASSERT_EQ(16, psx_type_pointer_view_ptr_array_pointee_bytes(
                     indirect_double_ptr_to_array_ty));
-  ASSERT_EQ(8, indirect_double_ptr_to_array_ty->outer_stride);
+  ASSERT_EQ(16, indirect_double_ptr_to_array_ty->outer_stride);
   ASSERT_EQ(0, indirect_double_ptr_to_array_ty->mid_stride);
   ASSERT_EQ(16, ps_node_deref_size(indirect_double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
@@ -8558,6 +8575,19 @@ static void test_type_metadata_bridge() {
             gfp_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             gfp_sig.function.callable.return_shape.pointee_fp_kind);
+
+  parsed_code = parse_program_input(
+      "typedef int *__tm696_GPI; int __tm696_gia[3]; "
+      "__tm696_GPI __tm696_gpi = __tm696_gia; int main(void){ return 0; }");
+  (void)parsed_code;
+  global_var_t *typedef_gpi = psx_find_global_var("__tm696_gpi", 11);
+  ASSERT_TRUE(typedef_gpi != NULL);
+  psx_type_t *typedef_gpi_type = psx_gvar_get_decl_type(typedef_gpi);
+  ASSERT_TRUE(typedef_gpi_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, typedef_gpi_type->kind);
+  ASSERT_EQ(8, psx_type_sizeof(typedef_gpi_type));
+  ASSERT_TRUE(typedef_gpi_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, typedef_gpi_type->base->kind);
 
   parsed_code = parse_program_input(
       "double __tm696_rows[2][2]; double (*__tm696_gpa)[2]=__tm696_rows; "

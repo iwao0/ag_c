@@ -26125,3 +26125,84 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - 残る確認候補は、`psx_type_pointer_view_*` 旧互換 API の direct call が
     本当に互換/public getter/テスト用途だけかを最終スキャンすることと、
     その後に広めの parser/e2e テストをかけること。
+
+### このセッション（続き952）: 配列次元を正本型へ保持し、宣言経路ごとの差を解消した
+- 開始地点:
+  - checkpoint commit は `5510e021 WIP preserve canonical ABI and array type shapes`。
+  - `psx_type_rebuild_array_dims()` 導入直後で、`test_parser.c:3868` に既知の回帰があった。
+- 根本対応:
+  - 配列次元から `ARRAY -> ... -> leaf` を直接構築し、サイズ列から次元を逆算する際に
+    `[1]` が消える非可逆な経路を避けた。
+  - canonical array chain から array/pointer owner の `outer_stride` / `mid_stride` /
+    `extra_strides` / `ptr_array_pointee_bytes` を一貫して投影するようにした。
+  - `double a[n]` などの配列仮引数を登録直後に canonical `POINTER -> element` へ adjust し、
+    fp 要素属性も leaf type へ設定した。ABI storage が8バイトという事実だけでポインタ判定しない。
+  - `typedef int R[3]; R *p` と `typedef int (*PA)[3]; PA p` は、旧 subscript 分岐を避けるため
+    pointer level を0にする表現を廃止し、どちらも `POINTER -> ARRAY[3] -> INTEGER` に統一した。
+  - struct array member initializer は `outer_stride > 0` を多次元判定に使わず、canonical
+    `arr_ndim >= 2` で判定するようにした。1D canonical array の要素 stride を誤認しなくなった。
+  - nested designator `.a.y` / `.m.x[1].b` は、canonical member type から得た tag key を
+    size=0 の仮 lvar に詰め直さず、`psx_tag_find_named_member()` へ直接渡すようにした。
+- regression:
+  - parser test に typedef 配列へのポインタ2形式が同じ canonical shape になる assert を追加。
+  - global pointer typedef の登録型が canonical pointer、`sizeof` が8である assert を追加。
+  - pointer-to-array owner の legacy projection 期待値を宣言経路間で統一した。
+- 解消を確認した Wasm E2E ケース:
+  - `cast_ptr_to_array_leaf_flags`
+  - `fp_array_parameter`
+  - `array_of_struct_member_init`
+  - `compound_literal_array_addr_sizeof`
+  - `designator_nested`
+  - `nested_array_designator`
+  - `struct_array_partial_init`
+  - `typedef_array_pointer_stride`
+  - `typedef_ptr_to_array`
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - Wasm E2E は途中計測 `42/1201 fail` -> `35/1201 fail` -> **`29/1201 fail`**。
+  - `git diff --check` = **pass**。
+- 現在の未コミット差分:
+  - `HANDOFF.md`, `src/parser/decl.c`, `src/parser/parser.c`, `src/parser/type.c`,
+    `test/test_parser.c`。
+- 次の候補:
+  - compile failure は `file_scope_ptr_from_array_compound`, `nested_struct_brace_elision`,
+    `anon_union_promoted_array_designator` の3件。brace elision / anonymous aggregate の型降下クラスタ。
+  - runtime failure の型関連クラスタは function-pointer return shape と VLA runtime stride。
+  - `global_pointer_typedef` は登録 canonical type と `sizeof==8` は parser test で確認済みなので、
+    残る failure は Wasm global load/lowering 側として切り分ける。
+
+### このセッション（続き953）: aggregate initializer と pointer-array compound literal の型降下を正本化した
+- 見つかった分散:
+  - tag member 表には、物理的な匿名 struct/union メンバと、`.` アクセス用に昇格した
+    named child alias が同居する。positional initializer が named member だけを列挙すると、
+    匿名aggregate本体を飛ばして昇格childを直接初期化し、brace階層を1段誤認していた。
+  - `parse_member_initializer_raw()` は canonical member type を受け取らず、tag key とサイズへ
+    平坦化して nested lvar を再構築していた。
+  - pointer-to-array要素のcompound literalは、タグ要素だけcanonical decay typeを作り、
+    `int (*[2])[3]` は `ptr_array_pointee_bytes` sidecarだけに依存していた。
+- 根本対応:
+  - `tag_get_next_initializer_member()` を追加し、positional initializerでは物理的な匿名aggregateを
+    canonical subobjectとして返し、直後のpromoted named aliasesを飛ばすようにした。
+    designator検索は従来どおりpromoted nameを利用するため、用途を分離できた。
+  - nested aggregate lvarへ `psx_tag_member_decl_type()` / value typeを直接引き継ぎ、
+    tag/size sidecarだけから型を再推測しないようにした。
+  - `compound_pointer_elem_array_decay_type()` をタグ限定から拡張し、1次元pointee配列を
+    `decay POINTER -> element POINTER -> ARRAY -> scalar/tag leaf` として構築するようにした。
+    unsigned/fp/tag属性もleafへ保持する。
+- 解消したfixture:
+  - `nested_struct_brace_elision`
+  - `anon_union_promoted_array_designator`
+  - `file_scope_ptr_from_array_compound`
+  - 最後のfixtureは最初compile failure、次にhelper結果 `227 != 237` まで進み、
+    `((int (*[2])[3]){x,y})[1][1][2]` のcanonical element type修正後に実行時もpassした。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - Wasm E2E = **`26/1201 fail`** (`29 -> 27 -> 26`)。
+- 残る型関連クラスタ:
+  - function pointer / function return shape
+  - VLA runtime stride
+  - pointer-to-array-of-funcptr / struct array-of-pointer-to-array
+  - type-name parserは多次元pointee dimsを現在byte productへ潰すため、完全な正本化には
+    exploded outputsではなくcanonical declarator descriptorを返す構造変更が残る。

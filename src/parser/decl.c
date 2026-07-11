@@ -1695,6 +1695,22 @@ static lvar_t nested_tag_lvar_at(lvar_t *owner, int offset, int elem_size,
   return nested;
 }
 
+static lvar_t nested_tag_lvar_from_member(lvar_t *owner, int offset,
+                                          const tag_member_info_t *info) {
+  const psx_type_t *value_type = psx_tag_member_decl_value_type(info);
+  int elem_size = value_type ? psx_type_sizeof(value_type)
+                             : psx_tag_member_decl_value_size(info);
+  token_kind_t tag_kind = TK_EOF;
+  char *tag_name = NULL;
+  int tag_len = 0;
+  psx_tag_member_decl_tag_identity(info, &tag_kind, &tag_name, &tag_len, NULL);
+  lvar_t nested = nested_tag_lvar_at(owner, offset, elem_size,
+                                     tag_kind, tag_name, tag_len);
+  nested.decl_type = (psx_type_t *)value_type;
+  if (value_type) lvar_apply_tag_identity_from_type(&nested, nested.decl_type);
+  return nested;
+}
+
 static lvar_t tag_array_element_lvar_at(lvar_t *var, int idx) {
   lvar_t nested = *var;
   int elem_size = lvar_array_leaf_element_size(var);
@@ -2211,7 +2227,8 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
                                             int member_tag_len, int member_is_tag_pointer,
                                             int member_array_len, int member_outer_stride,
                                             int member_is_bool, tk_float_kind_t member_fp_kind,
-                                            const int *member_arr_dims, int member_arr_ndim) {
+                                            const int *member_arr_dims, int member_arr_ndim,
+                                            const psx_type_t *member_decl_type) {
   if (member_is_tag_pointer) {
     member_fp_kind = TK_FLOAT_KIND_NONE;
   }
@@ -2255,7 +2272,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
        * フラット展開する。member_outer_stride は 1 行のバイトサイズなので
        * 行要素数 inner_len = outer_stride / elem_size。各行 brace の不足要素は
        * struct 全体の zero-fill に委ねる (行頭スナップで桁をずらす)。 */
-      if (member_outer_stride > 0 && elem_size > 0) {
+      if (member_arr_ndim >= 2 && member_outer_stride > 0 && elem_size > 0) {
         int inner_len = member_outer_stride / elem_size;
         if (inner_len < 1) inner_len = 1;
         int flat = 0;
@@ -2499,6 +2516,9 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
   if (member_is_object_aggregate) {
     lvar_t nested = nested_tag_lvar_at(owner, member_offset, member_type_size,
                                        member_tag_kind, member_tag_name, member_tag_len);
+    nested.decl_type = (psx_type_t *)member_decl_type;
+    if (nested.decl_type)
+      lvar_apply_tag_identity_from_type(&nested, nested.decl_type);
     /* C11 6.7.9: struct メンバの初期化は `{...}`、同型の式 (compound literal や
      * struct lvar) によるコピー、または brace 省略 (`{1,2,3}` の内側展開) で行える。
      * `{` 以外で始まるときは copy か brace 省略かを式の型で判断する。 */
@@ -2529,7 +2549,7 @@ static node_t *parse_member_initializer(lvar_t *owner, const tag_member_info_t *
       tag_kind, tag_name, tag_len, is_tag_pointer,
       psx_tag_member_decl_array_count(info), psx_tag_member_decl_outer_stride(info),
       psx_tag_member_decl_is_bool(info), psx_tag_member_decl_fp_kind(info),
-      arr_dims, arr_ndim);
+      arr_dims, arr_ndim, psx_tag_member_decl_type(info));
 }
 
 /* 文字列リテラル val を `flat` から `row_w` バイト (上限 array_len) に展開し、
@@ -2731,6 +2751,50 @@ static bool tag_get_next_named_member(lvar_t *var, int *ordinal_inout,
                                    ordinal_inout, out);
 }
 
+/* Positional initializers follow physical aggregate members. Anonymous
+ * aggregate children are also entered in the tag table as promoted named
+ * members for `.name` lookup; after returning the anonymous owner, skip those
+ * promoted aliases so they are not initialized a second time. */
+static bool tag_get_next_initializer_member(lvar_t *var, int *ordinal_inout,
+                                            tag_member_info_t *out) {
+  if (!var || !ordinal_inout) return false;
+  token_kind_t kind = TK_EOF;
+  char *name = NULL;
+  int len = 0;
+  if (!lvar_tag_lookup_key(var, &kind, &name, &len)) return false;
+  int member_count = psx_ctx_get_tag_member_count(kind, name, len);
+  while (*ordinal_inout < member_count) {
+    tag_member_info_t info = {0};
+    if (!psx_ctx_get_tag_member_info(kind, name, len,
+                                     (*ordinal_inout)++, &info)) {
+      return false;
+    }
+    if (info.len > 0) {
+      if (out) *out = info;
+      return true;
+    }
+    if (!psx_tag_member_is_unnamed_aggregate(&info)) continue;
+
+    token_kind_t child_kind = TK_EOF;
+    char *child_name = NULL;
+    int child_len = 0;
+    psx_tag_member_decl_tag_identity(&info, &child_kind, &child_name,
+                                     &child_len, NULL);
+    int child_count = psx_ctx_get_tag_member_count(child_kind, child_name,
+                                                   child_len);
+    for (int i = 0; i < child_count && *ordinal_inout < member_count; i++) {
+      tag_member_info_t child = {0};
+      if (psx_ctx_get_tag_member_info(child_kind, child_name, child_len,
+                                      i, &child) && child.len > 0) {
+        (*ordinal_inout)++;
+      }
+    }
+    if (out) *out = info;
+    return true;
+  }
+  return false;
+}
+
 // チェーン末尾に init_node を追加する。先頭時は init_node 自身が新しい先頭。
 static node_t *append_to_init_chain(node_t *init_chain, node_t *init_node) {
   if (!init_chain) return init_node;
@@ -2896,16 +2960,14 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
       if (!id2) psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       tag_member_info_t sub_info = {0};
       sub_info.tag_kind = TK_EOF;
-      lvar_t nested_owner = {0};
       token_kind_t owner_tag_kind = TK_EOF;
       char *owner_tag_name = NULL;
       int owner_tag_len = 0;
       psx_tag_member_decl_tag_identity(&cur_info, &owner_tag_kind, &owner_tag_name,
                                    &owner_tag_len, NULL);
-      nested_owner.tag_kind = owner_tag_kind;
-      nested_owner.tag_name = owner_tag_name;
-      nested_owner.tag_len = owner_tag_len;
-      if (!tag_find_member(&nested_owner, id2->str, id2->len, &sub_info)) {
+      if (!psx_tag_find_named_member(owner_tag_kind, owner_tag_name,
+                                     owner_tag_len, id2->str, id2->len,
+                                     &sub_info, NULL)) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
         break;
@@ -2941,15 +3003,8 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
    * E3064 で拒否していた。 */
   if (curtok()->kind == TK_LBRACE &&
       psx_tag_member_is_tag_aggregate(&cur_info)) {
-    token_kind_t tag_kind = TK_EOF;
-    char *tag_name = NULL;
-    int tag_len = 0;
-    int is_tag_pointer = 0;
-    psx_tag_member_decl_tag_identity(&cur_info, &tag_kind, &tag_name, &tag_len,
-                                 &is_tag_pointer);
-    lvar_t nested = nested_tag_lvar_at(var, cumulative_offset,
-                                       psx_tag_member_decl_value_size(&cur_info),
-                                       tag_kind, tag_name, tag_len);
+    lvar_t nested = nested_tag_lvar_from_member(var, cumulative_offset,
+                                                &cur_info);
     return parse_tag_object_initializer(&nested);
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, cumulative_offset, &cur_info);
@@ -3129,9 +3184,10 @@ static node_t *parse_struct_initializer(lvar_t *var) {
         }
         tk_expect('=');
       } else {
-        found = tag_get_next_named_member(var, &ordinal, &info);
+        found = tag_get_next_initializer_member(var, &ordinal, &info);
       }
-      if (!found || info.len <= 0) {
+      if (!found ||
+          (info.len <= 0 && !psx_tag_member_is_unnamed_aggregate(&info))) {
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
@@ -3282,7 +3338,7 @@ static node_t *struct_member_elision(lvar_t *nested) {
   while (ordinal < member_count) {
     if (chain && !elision_consume_separator()) break;
     tag_member_info_t mi = {0};
-    if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
+    if (!tag_get_next_initializer_member(nested, &ordinal, &mi)) break;
     node_t *minit = parse_member_initializer(nested, &mi);
     node_t *as = wrap_member_init_as_assign(nested, &mi, minit);
     chain = chain ? psx_node_new_binary(ND_COMMA, chain, as) : as;
@@ -3314,14 +3370,14 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
   int member_count = lvar_tag_member_count(nested);
   tag_member_info_t info = {0};
   int ordinal = 0;
-  if (!tag_get_next_named_member(nested, &ordinal, &info) || info.len <= 0) return first;
+  if (!tag_get_next_initializer_member(nested, &ordinal, &info)) return first;
   node_t *lhs0 = psx_node_new_tag_member_lvar_ref_for(nested, info.offset, &info);
   node_t *a0 = psx_node_new_assign(lhs0, first);
   node_t *chain = prefix ? psx_node_new_binary(ND_COMMA, prefix, (node_t *)a0) : (node_t *)a0;
   while (ordinal < member_count) {
     if (!elision_consume_separator()) break;
     tag_member_info_t mi = {0};
-    if (!tag_get_next_named_member(nested, &ordinal, &mi) || mi.len <= 0) break;
+    if (!tag_get_next_initializer_member(nested, &ordinal, &mi)) break;
     node_t *minit = parse_member_initializer(nested, &mi);
     chain = psx_node_new_binary(ND_COMMA, chain, wrap_member_init_as_assign(nested, &mi, minit));
   }
@@ -3402,9 +3458,9 @@ static node_t *parse_union_initializer(lvar_t *var) {
     tk_expect('=');
   } else {
     int ordinal = 0;
-    found = tag_get_next_named_member(var, &ordinal, &info);
+    found = tag_get_next_initializer_member(var, &ordinal, &info);
   }
-  if (!found || info.len <= 0) {
+  if (!found || (info.len <= 0 && !psx_tag_member_is_unnamed_aggregate(&info))) {
     psx_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
@@ -6157,19 +6213,20 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * 設定し、pointer_qual_levels=1 を立てる。これにより build_unary_deref_node の
          * 配列 decay 経路で pql/bds が carry され、build_subscript_deref の「要素はポインタ」
          * 分岐に乗って `*(*pia)[0]` の最終 deref が pointee サイズ (int=4) で出力される。 */
-        psx_decl_set_lvar_pointer_derived_type(var, element_is_pointer ? 1 : var->pointer_qual_levels,
-                                               element_is_pointer ? elem_size : eff_elem,
-                                               var->ptr_array_pointee_bytes);
+        int canonical_pointer_levels =
+            total_pointer_levels > 0 ? total_pointer_levels : 1;
+        psx_decl_set_lvar_pointer_derived_type(
+            var, canonical_pointer_levels,
+            element_is_pointer ? elem_size : eff_elem,
+            var->ptr_array_pointee_bytes);
         psx_decl_set_lvar_array_strides_from_inner_dims(var, td_array_dims,
                                                         td_array_dim_count, eff_elem);
         psx_decl_set_lvar_qualifiers(var, is_const_qualified, is_volatile_qualified,
                                      ptr_is_const_qualified, ptr_is_volatile_qualified,
                                      var->pointer_const_qual_mask,
                                      var->pointer_volatile_qual_mask);
-        /* 要素ポインタ配列だけ pointer_qual_levels=1 を立てる。通常の多次元 typedef 配列では
-         * 立てない: base_deref_size>0 と合わさって build_subscript_deref の「要素がポインタ」
-         * 分岐に乗り、q[i] が多段ストライド連鎖 (inner_deref_size 経由) でなく
-         * base_deref_size 単段になって 2D 以上の `q[i][j][k]` が壊れる。 */
+        /* canonical type は pointer -> array dims -> element を正本とする。
+         * pointer_qual_levels を落として legacy stride 分岐を避ける表現は使わない。 */
       } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
         /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
          * そのまま使って stride を計算しつつ lvar を登録する。

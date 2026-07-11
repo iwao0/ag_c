@@ -106,6 +106,7 @@ static psx_type_t *compound_pointer_elem_array_decay_type(token_kind_t cast_kind
                                                           int cast_tag_len,
                                                           int cast_elem_size,
                                                           tk_float_kind_t cast_fp_kind,
+                                                          int cast_is_unsigned,
                                                           int cast_array_count,
                                                           int cast_ptr_array_pointee_bytes);
 
@@ -1323,34 +1324,55 @@ static psx_type_t *compound_pointer_elem_array_decay_type(token_kind_t cast_kind
                                                           int cast_tag_len,
                                                           int cast_elem_size,
                                                           tk_float_kind_t cast_fp_kind,
+                                                          int cast_is_unsigned,
                                                           int cast_array_count,
                                                           int cast_ptr_array_pointee_bytes) {
   if (cast_array_count <= 0) return NULL;
-  if (!psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
-    (void)cast_kind;
-    (void)cast_fp_kind;
-    (void)cast_ptr_array_pointee_bytes;
-    return NULL;
-  }
   int pointee_size = cast_elem_size > 0 ? cast_elem_size : 8;
   psx_type_t *pointee = NULL;
-  int tag_size = psx_ctx_get_tag_size(cast_tag_kind, cast_tag_name, cast_tag_len);
-  if (tag_size <= 0) tag_size = pointee_size;
-  pointee = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len, 0, tag_size);
-  pointee_size = tag_size;
+  if (psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
+    int tag_size = psx_ctx_get_tag_size(cast_tag_kind, cast_tag_name,
+                                        cast_tag_len);
+    if (tag_size <= 0) tag_size = pointee_size;
+    pointee = psx_type_new_tag(cast_tag_kind, cast_tag_name, cast_tag_len,
+                               0, tag_size);
+    pointee_size = tag_size;
+  } else if (cast_ptr_array_pointee_bytes > 0) {
+    if (cast_fp_kind != TK_FLOAT_KIND_NONE) {
+      pointee = psx_type_new_float(cast_fp_kind, pointee_size);
+    } else {
+      pointee = psx_type_new_integer(cast_kind, pointee_size,
+                                     cast_is_unsigned);
+    }
+  } else {
+    return NULL;
+  }
   if (!pointee) return NULL;
+
+  if (cast_ptr_array_pointee_bytes > pointee_size &&
+      cast_ptr_array_pointee_bytes % pointee_size == 0) {
+    int pointee_array_len = cast_ptr_array_pointee_bytes / pointee_size;
+    psx_type_t *array = psx_type_new_array(
+        pointee, pointee_array_len, cast_ptr_array_pointee_bytes,
+        pointee_size, 0);
+    array->outer_stride = pointee_size;
+    array->base_deref_size = pointee_size;
+    pointee = array;
+    pointee_size = cast_ptr_array_pointee_bytes;
+  }
 
   psx_type_t *elem_ptr = psx_type_new_pointer(pointee, pointee_size);
   elem_ptr->pointer_qual_levels = 1;
-  elem_ptr->base_deref_size = pointee_size;
+  elem_ptr->base_deref_size = cast_elem_size > 0 ? cast_elem_size
+                                                  : pointee_size;
   elem_ptr->pointee_fp_kind = cast_fp_kind;
-  elem_ptr->ptr_array_pointee_bytes = cast_ptr_array_pointee_bytes;
-  if (cast_ptr_array_pointee_bytes > 0)
-    elem_ptr->outer_stride = cast_ptr_array_pointee_bytes;
+  if (pointee->kind == PSX_TYPE_ARRAY)
+    psx_type_sync_pointer_to_array_metadata_from_base(elem_ptr);
 
   psx_type_t *decayed = psx_type_new_pointer(elem_ptr, 8);
   decayed->pointer_qual_levels = 2;
-  decayed->base_deref_size = pointee_size;
+  decayed->base_deref_size = cast_elem_size > 0 ? cast_elem_size
+                                                 : pointee_size;
   decayed->ptr_array_pointee_bytes = cast_ptr_array_pointee_bytes;
   return decayed;
 }
@@ -1422,6 +1444,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
           ? compound_pointer_elem_array_decay_type(cast_kind, cast_tag_kind,
                                                    cast_tag_name, cast_tag_len,
                                                    cast_elem_size, cast_fp_kind,
+                                                   cast_is_unsigned,
                                                    cast_array_count,
                                                    cast_ptr_array_pointee_bytes)
           : NULL;
