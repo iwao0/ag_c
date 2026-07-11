@@ -1,7 +1,7 @@
 /* 関数ポインタ経由 (間接呼び出し) の戻り値 struct/union への直接メンバアクセス。
  * 以前は `op(41).v` が E3005 (`.` の左辺は構造体である必要があります) になっていた。
  * 直接呼び出し `mk(41).v` は動いていたが、間接呼び出しの funcall ノードに戻り tag
- * 型が伝播せず psx_node_get_tag_type が TK_EOF を返していたのが原因。
+ * 型が伝播せず ps_node_get_tag_type が TK_EOF を返していたのが原因。
  * callee の funcptr 変数 (tag フィールドに戻り tag を保持) から導出し、戻り値が
  * ポインタか否かは pointer_qual_levels (値戻り=1 / ポインタ戻り=2) で判定する。 */
 #include <assert.h>

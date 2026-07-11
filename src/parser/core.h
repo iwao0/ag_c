@@ -75,7 +75,7 @@ typedef struct {
   psx_funcptr_type_shape_t function;
 } psx_decl_funcptr_sig_t;
 
-int psx_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig);
+int ps_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig);
 int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret);
 int psx_funcptr_return_shape_matches(psx_funcptr_return_shape_t a,
                                      psx_funcptr_return_shape_t b);
@@ -112,7 +112,7 @@ psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
     int copy_variadic);
 psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
     psx_funcptr_type_shape_t fn);
-psx_decl_funcptr_sig_t psx_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig);
+psx_decl_funcptr_sig_t ps_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig);
 void psx_funcptr_signature_reset(psx_funcptr_signature_t *sig);
 void psx_skip_func_param_list(psx_funcptr_signature_t *sig);
 void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,

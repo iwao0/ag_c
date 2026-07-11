@@ -1,10 +1,11 @@
 #ifndef PARSER_STRUCT_LAYOUT_H
 #define PARSER_STRUCT_LAYOUT_H
 
-#include "core.h"
+#include "type.h"
 
 typedef struct {
   token_ident_t *member;
+  psx_declarator_shape_t declarator_shape;
   int is_ptr;
   int ptr_levels;
   int has_func_suffix;

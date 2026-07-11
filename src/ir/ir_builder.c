@@ -103,7 +103,7 @@ static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
  * 現在処理中の関数の lvars リスト (parser が保存) を walk する。 */
 static lvar_t *find_owning_lvar(ir_build_ctx_t *ctx, int offset) {
   lvar_t *head = ctx && ctx->cur_fn ? ctx->cur_fn->lvars : NULL;
-  return psx_lvar_find_owner(head, offset);
+  return ps_lvar_find_owner(head, offset);
 }
 
 /* スカラ要素 (struct member 含む) の「ロード時の値の IR 型」。 */
@@ -121,12 +121,12 @@ static ir_type_t scalar_value_type(int type_size, int is_pointer) {
 }
 
 static ir_type_t lvar_value_type(node_lvar_t *lv) {
-  tk_float_kind_t fpk = psx_node_value_fp_kind((node_t *)lv);
+  tk_float_kind_t fpk = ps_node_value_fp_kind((node_t *)lv);
   if (fpk == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fpk >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  int elem = psx_node_storage_type_size((node_t *)lv);
+  int elem = ps_node_storage_type_size((node_t *)lv);
   if (elem <= 0) elem = 4;
-  return scalar_value_type(elem, psx_node_value_is_pointer_like((node_t *)lv));
+  return scalar_value_type(elem, ps_node_value_is_pointer_like((node_t *)lv));
 }
 
 static int is_fp_type(ir_type_t t) {
@@ -137,7 +137,7 @@ static int is_fp_type(ir_type_t t) {
  * 非浮動小数 (TK_FLOAT_KIND_NONE) なら IR_TY_I32 を返す。
  * 呼び出し側で type_size に応じた整数型 (I8/I16/I32/PTR) に上書きすること。 */
 static ir_type_t ir_type_from_node(node_t *node) {
-  tk_float_kind_t fp_kind = psx_node_value_fp_kind(node);
+  tk_float_kind_t fp_kind = ps_node_value_fp_kind(node);
   if (fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   return IR_TY_I32;
@@ -150,16 +150,16 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     fail(ctx, "owning lvar not found");
     return -1;
   }
-  int var_offset = psx_lvar_offset(var);
+  int var_offset = ps_lvar_offset(var);
   int existing = find_alloca_vreg(ctx, var_offset);
   if (existing >= 0) return existing;
   if (ctx->lvar_count >= MAX_LVARS) {
     fail(ctx, "too many local variables");
     return -1;
   }
-  int size = psx_lvar_storage_size(var, 4);
-  int elem = psx_lvar_elem_size(var, 4);
-  int align_bytes = psx_lvar_align_bytes(var);
+  int size = ps_lvar_storage_size(var, 4);
+  int elem = ps_lvar_elem_size(var, 4);
+  int align_bytes = ps_lvar_align_bytes(var);
   int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
   /* struct のような複合型は 8B align を優先 (簡略化) */
   if (size >= 8 && align < 8) align = 8;
@@ -334,7 +334,7 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
   }
   int base_vreg = alloca_for_owner(ctx, owner);
   if (base_vreg < 0) return -1;
-  int delta = offset - psx_lvar_offset(owner);
+  int delta = offset - ps_lvar_offset(owner);
   if (delta == 0) return base_vreg;
   /* base + delta */
   int v = ir_func_new_vreg(ctx->f);
@@ -353,13 +353,13 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
  * 同名のグローバル宣言が extern なら is_got_funcref を立てる。 */
 static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   int v_addr = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(psx_gvar_is_thread_local_by_name(gv->name, gv->name_len)
+  ir_inst_t *sym = ir_inst_new(ps_gvar_is_thread_local_by_name(gv->name, gv->name_len)
                                    ? IR_LOAD_TLV_ADDR
                                    : IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
   sym->sym = gv->name;
   sym->sym_len = gv->name_len;
-  if (psx_gvar_is_extern_decl_by_name(gv->name, gv->name_len)) {
+  if (ps_gvar_is_extern_decl_by_name(gv->name, gv->name_len)) {
     sym->is_got_funcref = 1;
   }
   ir_func_append_inst(ctx->f, sym);
@@ -372,7 +372,7 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
 }
 
 static int aggregate_size_from_node(node_t *node) {
-  return psx_node_aggregate_value_size(node);
+  return ps_node_aggregate_value_size(node);
 }
 
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
@@ -456,14 +456,14 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
    * init (実部/虚部の store) を評価してから、rhs (複素数 lvar 参照) を複素数として
    * dst へコピーする。 */
   if (node->kind == ND_COMMA && node->rhs &&
-      psx_node_value_is_complex(node->rhs)) {
+      ps_node_value_is_complex(node->rhs)) {
     build_expr(ctx, node->lhs);
     if (ctx->failed) return;
     build_complex_to(ctx, node->rhs, dst_ptr_vreg, fp_ty, half);
     return;
   }
   /* scalar → complex promotion: re = scalar 値、im = 0.0 */
-  if (!psx_node_value_is_complex(node)) {
+  if (!ps_node_value_is_complex(node)) {
     ir_val_t v = build_expr(ctx, node);
     if (ctx->failed) return;
     /* 必要なら fp_ty に変換 */
@@ -471,7 +471,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
       int cv = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(IR_I2F);
       inst->dst = ir_val_vreg(cv, fp_ty); inst->src1 = v;
-      inst->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node);
+      inst->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(node);
       ir_func_append_inst(ctx->f, inst);
       v = ir_val_vreg(cv, fp_ty);
     } else if (v.type != fp_ty) {
@@ -509,7 +509,7 @@ static void build_complex_to(ir_build_ctx_t *ctx, node_t *node, int dst_ptr_vreg
    * src_fp_ty == fp_ty となり下の通常経路に乗る)、各成分を F2F 変換して dst へ
    * 格納する。これにより memcpy が壊す変換を全ノード種別で正しく扱う。 */
   ir_type_t src_fp_ty =
-      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      (ps_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   if (src_fp_ty != fp_ty) {
     int src_half = (src_fp_ty == IR_TY_F32) ? 4 : 8;
     int slot = ir_func_new_vreg(ctx->f);
@@ -767,7 +767,7 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
 static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const psx_decl_funcptr_sig_t *expected_sig) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!expected_sig || !psx_decl_funcptr_sig_has_payload(*expected_sig))
+  if (!expected_sig || !ps_decl_funcptr_sig_has_payload(*expected_sig))
     return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
@@ -819,15 +819,15 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
   /* load (型は node の fp_kind / type_size から判定) */
   ir_type_t load_ty = ir_type_from_node(node);
   if (load_ty == IR_TY_I32) {
-    int sz = psx_node_storage_type_size(node);
+    int sz = ps_node_storage_type_size(node);
     if (sz <= 0) sz = 4;
-    load_ty = scalar_value_type(sz, psx_node_value_is_pointer_like(node));
+    load_ty = scalar_value_type(sz, ps_node_value_is_pointer_like(node));
   }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *ld = ir_inst_new(IR_LOAD);
   ld->dst = ir_val_vreg(v, load_ty);
   ld->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
-  ld->is_unsigned = psx_node_is_unsigned_type(node) ? 1 : 0;
+  ld->is_unsigned = ps_node_is_unsigned_type(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, ld);
   return ld->dst;
 }
@@ -835,7 +835,7 @@ static ir_val_t build_node_gvar(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_num(ir_build_ctx_t *ctx, node_t *node) {
   node_num_t *n = (node_num_t *)node;
   /* float/double リテラル */
-  if (psx_node_value_fp_kind(&n->base) != TK_FLOAT_KIND_NONE) {
+  if (ps_node_value_fp_kind(&n->base) != TK_FLOAT_KIND_NONE) {
     ir_type_t ty = ir_type_from_node(&n->base);
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *inst = ir_inst_new(IR_LOAD_FP_IMM);
@@ -873,7 +873,7 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
   int bw = 0;
   int bo = 0;
   int bs = 0;
-  if (psx_node_bitfield_info(node, &bw, &bo, &bs)) {
+  if (ps_node_bitfield_info(node, &bw, &bo, &bs)) {
     return emit_bitfield_load(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR),
                               bw, bo, bs);
   }
@@ -881,7 +881,7 @@ static ir_val_t build_node_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *inst = ir_inst_new(IR_LOAD);
   inst->dst = ir_val_vreg(v, vty);
   inst->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
-  inst->is_unsigned = psx_node_is_unsigned_type(node) ? 1 : 0;
+  inst->is_unsigned = ps_node_is_unsigned_type(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -917,7 +917,7 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
     fail(ctx, "assign without target");
     return ir_val_none();
   }
-  if (psx_node_value_is_complex(node)) return build_assign_complex(ctx, node);
+  if (ps_node_value_is_complex(node)) return build_assign_complex(ctx, node);
   /* struct/union 値代入: 8B でも scalar 式として評価すると先頭メンバだけを
    * store してしまうため、tag 値そのものなら memcpy/materialize 経路に送る。 */
   if ((aggregate_size_from_node(node->lhs) > 0 && aggregate_size_from_node(node->rhs) > 0) ||
@@ -1098,8 +1098,8 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
           node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
           lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-          int cl_sz = owner_cl ? psx_lvar_storage_size(owner_cl, 0)
-                               : psx_node_storage_type_size(arg->rhs);
+          int cl_sz = owner_cl ? ps_lvar_storage_size(owner_cl, 0)
+                               : ps_node_storage_type_size(arg->rhs);
           if (aggregate_size_from_node(arg->rhs) > 0 &&
               (cl_sz > 8 || cg_size_needs_indirect_struct(cl_sz))) {
             (void)build_expr(ctx, arg->lhs);
@@ -1110,8 +1110,8 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
         int arg_full_size = 0;
         if (arg && arg->kind == ND_LVAR) {
           lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
-          if (owner) arg_full_size = psx_lvar_storage_size(owner, 0);
-          if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
+          if (owner) arg_full_size = ps_lvar_storage_size(owner, 0);
+          if (arg_full_size == 0) arg_full_size = ps_node_storage_type_size(arg);
         }
         if (cg_size_needs_indirect_struct(arg_full_size) &&
             arg && arg->kind == ND_LVAR) {
@@ -1211,7 +1211,7 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
     return;
   }
   if (src->kind == ND_CAST && src->lhs &&
-      src->type && psx_type_is_tag_aggregate(src->type)) {
+      src->type && ps_type_is_tag_aggregate(src->type)) {
     materialize_aggregate_expr_to(ctx, src->lhs, dst_ptr_vreg, size);
     return;
   }
@@ -1248,9 +1248,9 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = psx_lvar_funcptr_sig(find_owning_lvar(ctx, lv->offset));
-  if (!psx_decl_funcptr_sig_has_payload(sig)) {
-    sig = psx_node_funcptr_sig(node->lhs);
+  psx_decl_funcptr_sig_t sig = ps_lvar_funcptr_sig(find_owning_lvar(ctx, lv->offset));
+  if (!ps_decl_funcptr_sig_has_payload(sig)) {
+    sig = ps_node_funcptr_sig(node->lhs);
   }
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
@@ -1265,13 +1265,13 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   }
   int bw = 0;
   int bo = 0;
-  if (psx_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
+  if (ps_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ir_val_vreg(ptr_vreg, IR_TY_PTR), rhs,
                                 bw, bo);
   }
   /* 通常のスカラ代入 (int→float のような昇格 / float→int の縮小も対応) */
-  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
-                          psx_node_conversion_value_is_unsigned(node->rhs));
+  rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
+                          ps_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(ptr_vreg, IR_TY_PTR);
   st->src2 = rhs;
@@ -1292,19 +1292,19 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
   node_gvar_t *gv = (node_gvar_t *)node->lhs;
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (vty == IR_TY_I32) {
-    int sz = psx_node_storage_type_size(node->lhs);
+    int sz = ps_node_storage_type_size(node->lhs);
     if (sz <= 0) sz = 4;
-    vty = scalar_value_type(sz, psx_node_value_is_pointer_like(node->lhs));
+    vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  psx_decl_funcptr_sig_t sig = psx_gvar_funcptr_sig_by_name(gv->name, gv->name_len);
-  if (!psx_decl_funcptr_sig_has_payload(sig)) {
-    sig = psx_node_funcptr_sig(node->lhs);
+  psx_decl_funcptr_sig_t sig = ps_gvar_funcptr_sig_by_name(gv->name, gv->name_len);
+  if (!ps_decl_funcptr_sig_has_payload(sig)) {
+    sig = ps_node_funcptr_sig(node->lhs);
   }
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
-  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
-                          psx_node_conversion_value_is_unsigned(node->rhs));
+  rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
+                          ps_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ir_val_vreg(v_addr, IR_TY_PTR);
   st->src2 = rhs;
@@ -1324,20 +1324,20 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bo = 0;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = psx_node_funcptr_sig(node->lhs);
+  psx_decl_funcptr_sig_t sig = ps_node_funcptr_sig(node->lhs);
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
-  if (psx_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
+  if (ps_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, bo);
   }
   /* DEREF の type_size と fp_kind から書き込み幅を決める。 */
   ir_type_t vty = ir_type_from_node(node->lhs);
   if (!is_fp_type(vty)) {
-    vty = scalar_value_type(psx_node_storage_type_size(node->lhs),
-                            psx_node_value_is_pointer_like(node->lhs));
+    vty = scalar_value_type(ps_node_storage_type_size(node->lhs),
+                            ps_node_value_is_pointer_like(node->lhs));
   }
-  rhs = coerce_to_type_ex(ctx, rhs, vty, psx_node_is_unsigned_type(node->lhs),
-                          psx_node_conversion_value_is_unsigned(node->rhs));
+  rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
+                          ps_node_conversion_value_is_unsigned(node->rhs));
   ir_inst_t *st = ir_inst_new(IR_STORE);
   st->src1 = ptr;
   st->src2 = rhs;
@@ -1375,9 +1375,9 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
-  if (!sym || !sig || !psx_decl_funcptr_sig_has_payload(*sig)) return;
+  if (!sym || !sig || !ps_decl_funcptr_sig_has_payload(*sig)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
+  sym->funcptr_sig = ps_decl_funcptr_sig_clone(*sig);
 }
 
 static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee) {
@@ -1385,13 +1385,13 @@ static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t
   psx_decl_funcptr_sig_t sig = {0};
   if (callee->kind == ND_LVAR) {
     lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    sig = psx_lvar_funcptr_sig(lv);
+    sig = ps_lvar_funcptr_sig(lv);
   } else if (callee->kind == ND_GVAR) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
-    sig = psx_gvar_funcptr_sig_by_name(gvn->name, gvn->name_len);
+    sig = ps_gvar_funcptr_sig_by_name(gvn->name, gvn->name_len);
   }
-  if (!psx_decl_funcptr_sig_has_payload(sig)) {
-    sig = psx_node_funcptr_sig(callee);
+  if (!ps_decl_funcptr_sig_has_payload(sig)) {
+    sig = ps_node_funcptr_sig(callee);
   }
   return sig;
 }
@@ -1403,7 +1403,7 @@ static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call,
 }
 
 static int func_has_return_funcptr_sig(const node_func_t *fn) {
-  return psx_decl_funcptr_sig_has_payload(psx_node_funcdef_ret_funcptr_sig(fn));
+  return ps_decl_funcptr_sig_has_payload(ps_node_funcdef_ret_funcptr_sig(fn));
 }
 
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
@@ -1427,12 +1427,12 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bw = 0;
   int bo = 0;
   int bs = 0;
-  if (psx_node_bitfield_info(node, &bw, &bo, &bs)) {
+  if (ps_node_bitfield_info(node, &bw, &bo, &bs)) {
     return emit_bitfield_load(ctx, ptr, bw, bo, bs);
   }
   /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。 */
-  psx_type_t *deref_type = psx_node_materialize_type(node);
-  if (psx_node_deref_decays_to_address(node) ||
+  psx_type_t *deref_type = ps_node_materialize_type(node);
+  if (ps_node_deref_decays_to_address(node) ||
       (deref_type && deref_type->kind == PSX_TYPE_ARRAY)) {
     return ptr;
   }
@@ -1442,12 +1442,12 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
    * (関数ポインタ配列等で 8B 要素を i32 と誤判定しないように)。 */
   ir_type_t load_ty = ir_type_from_node(node);
   if (!is_fp_type(load_ty)) {
-    load_ty = scalar_value_type(psx_node_storage_type_size(node),
-                                psx_node_value_is_pointer_like(node));
+    load_ty = scalar_value_type(ps_node_storage_type_size(node),
+                                ps_node_value_is_pointer_like(node));
   }
   inst->dst = ir_val_vreg(v, load_ty);
   inst->src1 = ptr;
-  inst->is_unsigned = psx_node_conversion_value_is_unsigned(node) ? 1 : 0;
+  inst->is_unsigned = ps_node_conversion_value_is_unsigned(node) ? 1 : 0;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -1464,8 +1464,8 @@ static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
  * ND_LT/LE は _Complex に対して未定義なので扱わない (build_node_binop で
  * EQ/NE のときだけ呼ばれる)。 */
 static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
-  tk_float_kind_t fpk = psx_node_value_fp_kind(node->lhs);
-  tk_float_kind_t rhs_fpk = psx_node_value_fp_kind(node->rhs);
+  tk_float_kind_t fpk = ps_node_value_fp_kind(node->lhs);
+  tk_float_kind_t rhs_fpk = ps_node_value_fp_kind(node->rhs);
   if (rhs_fpk > fpk) fpk = rhs_fpk;
   ir_type_t fp_ty = (fpk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
@@ -1533,7 +1533,7 @@ static ir_val_t build_complex_cmp(ir_build_ctx_t *ctx, node_t *node) {
 static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
   /* _Complex EQ/NE 比較は専用経路 (build_complex_cmp) に分岐。 */
   if ((node->kind == ND_EQ || node->kind == ND_NE) && !node->from_logical_not &&
-      (psx_node_value_is_complex(node->lhs) || psx_node_value_is_complex(node->rhs))) {
+      (ps_node_value_is_complex(node->lhs) || ps_node_value_is_complex(node->rhs))) {
     return build_complex_cmp(ctx, node);
   }
   ir_val_t l = build_expr(ctx, node->lhs);
@@ -1545,11 +1545,11 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
    * lhs, plus explicit overrides inserted by cast lowering. Keep it separate
    * from UAC signedness used by DIV/MOD/LT/LE. */
   int is_shift = node->kind == ND_SHL || node->kind == ND_SHR;
-  int shift_uses_unsigned = psx_node_shift_operation_is_unsigned(node);
+  int shift_uses_unsigned = ps_node_shift_operation_is_unsigned(node);
   /* 比較 (LT/LE) と除算/剰余 (DIV/MOD) の符号は C11 6.3.1.8 の通常算術変換に
    * 従う。UAC 判定は parser/node_utils.c の typed result helper に集約し、
    * IR 側で rank / promotion を再実装しない。 */
-  int uac_unsig = psx_node_usual_arith_is_unsigned(node);
+  int uac_unsig = ps_node_usual_arith_is_unsigned(node);
   ir_op_t op = IR_ADD;
   switch (node->kind) {
     case ND_ADD: op = is_fp ? IR_FADD : IR_ADD; break;
@@ -1596,7 +1596,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *cv = ir_inst_new(IR_I2F);
       cv->dst = ir_val_vreg(v, fp_ty);
       cv->src1 = l;
-      cv->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node->lhs);
+      cv->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(node->lhs);
       ir_func_append_inst(ctx->f, cv);
       l = ir_val_vreg(v, fp_ty);
     } else if (l.type != fp_ty) {
@@ -1612,7 +1612,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
       ir_inst_t *cv = ir_inst_new(IR_I2F);
       cv->dst = ir_val_vreg(v, fp_ty);
       cv->src1 = r;
-      cv->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node->rhs);
+      cv->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(node->rhs);
       ir_func_append_inst(ctx->f, cv);
       r = ir_val_vreg(v, fp_ty);
     } else if (r.type != fp_ty) {
@@ -1669,7 +1669,7 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   node_t *parg = fn->args[0];
   int width = 4;
   int unsigned_p = 0;
-  psx_node_atomic_pointer_info(parg, &width, &unsigned_p);
+  ps_node_atomic_pointer_info(parg, &width, &unsigned_p);
   ir_type_t rty = (width == 8) ? IR_TY_I64 : IR_TY_I32;
   ir_val_t ptr = build_expr(ctx, parg);
   if (ctx->failed) return ir_val_none();
@@ -1748,7 +1748,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   int nargs_fixed = fn->nargs;
   if (!fn->callee) {
     int fixed = 0;
-    if (psx_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
+    if (ps_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
         fixed < fn->nargs) {
       is_variadic_call = 1;
       nargs_fixed = fixed;
@@ -1783,8 +1783,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-        int cl_sz = owner_cl ? psx_lvar_storage_size(owner_cl, 0)
-                             : psx_node_storage_type_size(arg->rhs);
+        int cl_sz = owner_cl ? ps_lvar_storage_size(owner_cl, 0)
+                             : ps_node_storage_type_size(arg->rhs);
         if (aggregate_size_from_node(arg->rhs) > 0 &&
             (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
           (void)build_expr(ctx, arg->lhs);
@@ -1796,11 +1796,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       /* _Complex 値引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1}。一時 slot に
        * {re,im} を materialize し、2 つの FP 値として push する。codegen の fp_idx
        * カウンタが連続 2 レジスタへ割り当てる。 */
-      if (arg && psx_node_value_is_complex(arg)) {
+      if (arg && ps_node_value_is_complex(arg)) {
         ir_type_t fp_ty =
-            (psx_node_value_fp_kind(arg) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+            (ps_node_value_fp_kind(arg) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
         if (!fn->callee && i < nargs_fixed) {
-          tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
+          tk_float_kind_t pfk = ps_ctx_get_function_param_fp_kind(
               fn->funcname, fn->funcname_len, i);
           if (pfk != TK_FLOAT_KIND_NONE) {
             fp_ty = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
@@ -1844,20 +1844,20 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         node_lvar_t *lv = (node_lvar_t *)arg;
         /* VLA / 配列 / pointer は decay 後の値が 8B なので struct 経路に
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
-        if (!psx_node_value_is_pointer_like(arg)) {
+        if (!ps_node_value_is_pointer_like(arg)) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-          if (owner) arg_full_size = psx_lvar_storage_size(owner, 0);
+          if (owner) arg_full_size = ps_lvar_storage_size(owner, 0);
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
-          if (arg_full_size == 0) arg_full_size = psx_node_storage_type_size(arg);
+          if (arg_full_size == 0) arg_full_size = ps_node_storage_type_size(arg);
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
-          if ((!owner || (!psx_lvar_is_array(owner) &&
-                          psx_lvar_pointer_qual_levels(owner) == 0)) &&
+          if ((!owner || (!ps_lvar_is_array(owner) &&
+                          ps_lvar_pointer_qual_levels(owner) == 0)) &&
               cg_size_needs_indirect_struct(arg_full_size) && arg_full_size <= 8) {
             struct_needs_ptr = 1;
           }
         } else {
-          arg_full_size = psx_node_storage_type_size(arg);
+          arg_full_size = ps_node_storage_type_size(arg);
         }
       } else if (arg && arg->kind == ND_GVAR) {
         arg_full_size = aggregate_size_from_node(arg);
@@ -1991,23 +1991,35 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
          * 渡される現状実装と整合が取れないため触らない。 */
         if (!fn->callee && i < nargs_fixed) {
-          tk_float_kind_t pfk = psx_ctx_get_function_param_fp_kind(
+          tk_float_kind_t pfk = ps_ctx_get_function_param_fp_kind(
               fn->funcname, fn->funcname_len, i);
           if (pfk != TK_FLOAT_KIND_NONE) {
             ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
             cv = coerce_to_type_ex(ctx, cv, target, 0,
-                                   psx_node_conversion_value_is_unsigned(arg));
-          } else if (is_fp_type(cv.type)) {
-            /* 整数仮引数に fp 実引数を渡す: F2I (fcvtzs) で切り詰める
-             * (`eat_int(7.9)` → 7)。仮引数幅が long(8) なら i64、それ以外は i32。
-             * 幅が未記録 (extern プロトタイプのみ等) のときは int 既定 (i32)。 */
-            int psz = psx_ctx_get_function_param_int_size(
+                                   ps_node_conversion_value_is_unsigned(arg));
+          } else {
+            /* 整数仮引数は、定義側と同じ prototype ABI 幅へ常に揃える。
+             * FP 実引数なら F2I、enum/狭整数など整数実引数なら extend/truncate を
+             * 行う。幅が未記録の pointer/旧式宣言は既存値型を維持する。 */
+            int psz = ps_ctx_get_function_param_int_size(
                 fn->funcname, fn->funcname_len, i);
-            ir_type_t target = (psz == 8) ? IR_TY_I64 : IR_TY_I32;
-            cv = coerce_to_type_ex(ctx, cv, target,
-                                   psx_ctx_get_function_param_int_unsigned(
-                                       fn->funcname, fn->funcname_len, i),
-                                   0);
+            int pcat = ps_ctx_get_function_param_category(
+                fn->funcname, fn->funcname_len, i);
+            if (psz <= 0 &&
+                (pcat == PSX_PCAT_INT4 || pcat == PSX_PCAT_INT8)) {
+              psz = 8;
+            }
+            if (psz <= 0 && !is_fp_type(cv.type) && cv.type != IR_TY_PTR &&
+                !ps_node_value_is_pointer_like(arg)) {
+              psz = 8;
+            }
+            if (psz > 0) {
+              ir_type_t target = (psz == 8) ? IR_TY_I64 : IR_TY_I32;
+              cv = coerce_to_type_ex(ctx, cv, target,
+                                     ps_ctx_get_function_param_int_unsigned(
+                                         fn->funcname, fn->funcname_len, i),
+                                     ps_node_conversion_value_is_unsigned(arg));
+            }
           }
         }
         cargs[argc++] = cv;
@@ -2027,7 +2039,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         ret_struct_size > 0 && !cg_size_needs_indirect_struct(ret_struct_size);
     if (small_struct_value_ret) {
       ret_ty = (ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
-    } else if (psx_node_value_is_pointer_like(node)) {
+    } else if (ps_node_value_is_pointer_like(node)) {
       ret_ty = IR_TY_PTR;
     } else if (ret_struct_size <= 0 && ps_node_type_size(node) >= 8) {
       ret_ty = IR_TY_I64;
@@ -2045,13 +2057,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->args = cargs;
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
-  call->is_void_call = psx_node_value_is_void(node) ? 1 : 0;
+  call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   if (fn->callee) attach_funcptr_sig_from_callee(ctx, call, fn->callee);
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
-  if (psx_node_value_is_complex(node)) {
+  if (ps_node_value_is_complex(node)) {
     int half = (ir_type_from_node(node) == IR_TY_F32) ? 4 : 8;
     int slot = ir_func_new_vreg(ctx->f);
     ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
@@ -2224,7 +2236,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     res_ty = IR_TY_PTR;
     slot_size = 8;
   }
-  if (res_ty == IR_TY_I32 && psx_node_storage_type_size(node) >= 8) {
+  if (res_ty == IR_TY_I32 && ps_node_storage_type_size(node) >= 8) {
     res_ty = IR_TY_I64;
     slot_size = 8;
   }
@@ -2249,7 +2261,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *cv = ir_inst_new(IR_I2F);
     cv->dst = ir_val_vreg(v, res_ty); cv->src1 = vt;
-    cv->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node->rhs);
+    cv->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(node->rhs);
     ir_func_append_inst(ctx->f, cv);
     vt = ir_val_vreg(v, res_ty);
   } else if (is_fp_type(res_ty) && is_fp_type(vt.type) && vt.type != res_ty) {
@@ -2264,8 +2276,8 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
    * してから STORE する。さもないと 4 バイトのみ書かれ、merge の 8 バイト LOAD で
    * 上位 4 バイトが garbage になる。 */
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && vt.type != res_ty) {
-    vt = coerce_to_type_ex(ctx, vt, res_ty, psx_node_conversion_value_is_unsigned(node),
-                           psx_node_conversion_value_is_unsigned(node->rhs));
+    vt = coerce_to_type_ex(ctx, vt, res_ty, ps_node_conversion_value_is_unsigned(node),
+                           ps_node_conversion_value_is_unsigned(node->rhs));
   } else if (res_ty == IR_TY_I32 && !is_fp_type(vt.type) && ir_type_size(vt.type) < 4) {
     /* sub-int (char/short) 分岐: slot は 4 バイトなので full-width で store する。
      * strb だと上位 3 バイトが未初期化のまま残り、merge の 4 バイト ldrsw が garbage を
@@ -2287,7 +2299,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *cv = ir_inst_new(IR_I2F);
     cv->dst = ir_val_vreg(v, res_ty); cv->src1 = ve;
-    cv->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(c->els);
+    cv->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(c->els);
     ir_func_append_inst(ctx->f, cv);
     ve = ir_val_vreg(v, res_ty);
   } else if (is_fp_type(res_ty) && is_fp_type(ve.type) && ve.type != res_ty) {
@@ -2298,8 +2310,8 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
     ve = ir_val_vreg(v, res_ty);
   }
   if ((res_ty == IR_TY_PTR || res_ty == IR_TY_I64) && ve.type != res_ty) {
-    ve = coerce_to_type_ex(ctx, ve, res_ty, psx_node_conversion_value_is_unsigned(node),
-                           psx_node_conversion_value_is_unsigned(c->els));
+    ve = coerce_to_type_ex(ctx, ve, res_ty, ps_node_conversion_value_is_unsigned(node),
+                           ps_node_conversion_value_is_unsigned(c->els));
   } else if (res_ty == IR_TY_I32 && !is_fp_type(ve.type) && ir_type_size(ve.type) < 4) {
     /* sub-int (char/short) 分岐の full-width store (then 側と同じ。詳細は上のコメント)。 */
     ve.type = IR_TY_I32;
@@ -2326,9 +2338,9 @@ static ir_val_t build_node_fp_to_int(ir_build_ctx_t *ctx, node_t *node) {
   if (ctx->failed) return ir_val_none();
   int dst = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_F2I);
-  inst->dst = ir_val_vreg(dst, psx_node_storage_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
+  inst->dst = ir_val_vreg(dst, ps_node_storage_type_size(node) == 8 ? IR_TY_I64 : IR_TY_I32);
   inst->src1 = v;
-  inst->is_unsigned = (unsigned char)psx_node_conversion_value_is_unsigned(node);
+  inst->is_unsigned = (unsigned char)ps_node_conversion_value_is_unsigned(node);
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }
@@ -2340,9 +2352,9 @@ static ir_val_t build_node_creal_cimag(ir_build_ctx_t *ctx, node_t *node) {
   int is_real = (node->kind == ND_CREAL);
   node_t *operand = node->lhs;
   ir_type_t fp_ty =
-      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      (ps_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   int half = (fp_ty == IR_TY_F32) ? 4 : 8;
-  if (!operand || !psx_node_value_is_complex(operand)) {
+  if (!operand || !ps_node_value_is_complex(operand)) {
     /* 実数オペランド: __real__ は値そのもの、__imag__ は 0.0。 */
     if (is_real) return build_expr(ctx, operand);
     int z = ir_func_new_vreg(ctx->f);
@@ -2384,7 +2396,7 @@ static ir_val_t build_node_fneg(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   ir_type_t ty =
-      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      (ps_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   v = coerce_to_type(ctx, v, ty);
   int dst = ir_func_new_vreg(ctx->f);
   ir_inst_t *inst = ir_inst_new(IR_FNEG);
@@ -2400,9 +2412,9 @@ static ir_val_t build_node_int_to_fp(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   ir_type_t target =
-      (psx_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      (ps_node_value_fp_kind(node) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
   return coerce_to_type_ex(ctx, v, target, 0,
-                           psx_node_conversion_value_is_unsigned(node->lhs));
+                           ps_node_conversion_value_is_unsigned(node->lhs));
 }
 
 static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
@@ -2430,16 +2442,16 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
     /* load/store 幅は DEREF node の type metadata と fp_kind から決める。 */
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
-      vty = scalar_value_type(psx_node_storage_type_size(target),
-                              psx_node_value_is_pointer_like(target));
+      vty = scalar_value_type(ps_node_storage_type_size(target),
+                              ps_node_value_is_pointer_like(target));
     }
   } else if (target->kind == ND_GVAR) {
     node_gvar_t *gv = (node_gvar_t *)target;
     vty = ir_type_from_node(target);
     if (vty == IR_TY_I32) {
-      int sz = psx_node_storage_type_size(target);
+      int sz = ps_node_storage_type_size(target);
       if (sz <= 0) sz = 4;
-      vty = scalar_value_type(sz, psx_node_value_is_pointer_like(target));
+      vty = scalar_value_type(sz, ps_node_value_is_pointer_like(target));
     }
     ptr_vreg = emit_load_sym_for_gvar(ctx, gv);
   } else {
@@ -2456,7 +2468,7 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
    * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
   long long step = 1;
-  int vla_rsf = ps_node_is_pointer(target) ? psx_node_vla_row_stride_frame_off(target) : 0;
+  int vla_rsf = ps_node_is_pointer(target) ? ps_node_vla_row_stride_frame_off(target) : 0;
   if (ps_node_is_pointer(target) && vla_rsf == 0) {
     int ds = ps_node_deref_size(target);
     if (ds > 1) step = ds;
@@ -2515,11 +2527,11 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t v = build_expr(ctx, node->lhs);
   if (ctx->failed) return ir_val_none();
   if (node->type && node->type->kind == PSX_TYPE_VOID) return ir_val_none();
-  if (node->type && psx_type_is_tag_aggregate(node->type)) return v;
+  if (node->type && ps_type_is_tag_aggregate(node->type)) return v;
   int target_size = 0;
   int widen_zext_i64 = 0;
   int needs_i64_extend = 0;
-  psx_node_cast_i64_extension_info(node, &target_size, &widen_zext_i64,
+  ps_node_cast_i64_extension_info(node, &target_size, &widen_zext_i64,
                                    &needs_i64_extend);
   /* `(long)unsigned_int` の zero-extend ラッパ: lhs (I32) を I64 へ ZEXT する。
    * coerce_to_type は常に SEXT なので unsigned widen には使えず、ここで明示挿入する。
@@ -2536,7 +2548,7 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
   if (needs_i64_extend &&
       v.type != IR_TY_I64 && v.type != IR_TY_PTR && !is_fp_type(v.type)) {
     int d = ir_func_new_vreg(ctx->f);
-    int src_unsigned = psx_node_i64_widen_source_is_unsigned(node->lhs);
+    int src_unsigned = ps_node_i64_widen_source_is_unsigned(node->lhs);
     ir_inst_t *sx = ir_inst_new(src_unsigned ? IR_ZEXT : IR_SEXT);
     sx->dst = ir_val_vreg(d, IR_TY_I64);
     sx->src1 = v;
@@ -2544,11 +2556,11 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
     return ir_val_vreg(d, IR_TY_I64);
   }
   ir_type_t target_ty = scalar_value_type(target_size,
-                                          psx_node_value_is_pointer_like(node));
+                                          ps_node_value_is_pointer_like(node));
   if (!is_fp_type(v.type) && v.type != target_ty) {
     return coerce_to_type_ex(ctx, v, target_ty,
-                             psx_node_conversion_value_is_unsigned(node),
-                             psx_node_conversion_value_is_unsigned(node->lhs));
+                             ps_node_conversion_value_is_unsigned(node),
+                             ps_node_conversion_value_is_unsigned(node->lhs));
   }
   return v;
 }
@@ -2564,7 +2576,7 @@ static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
    *   2D rt  : lhs = outer_count(n), rhs = row_stride(m * elem) */
   int desc_offset = 0;
   int rsf = 0;
-  if (!psx_node_vla_alloc_descriptor_info(node, &desc_offset, &rsf)) {
+  if (!ps_node_vla_alloc_descriptor_info(node, &desc_offset, &rsf)) {
     fail(ctx, "invalid VLA allocation descriptor");
     return ir_val_none();
   }
@@ -3000,7 +3012,7 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
   }
   if (node->lhs) {
     if (func_has_return_funcptr_sig(ctx->cur_fn)) {
-      psx_decl_funcptr_sig_t sig = psx_node_funcdef_ret_funcptr_sig(ctx->cur_fn);
+      psx_decl_funcptr_sig_t sig = ps_node_funcdef_ret_funcptr_sig(ctx->cur_fn);
       v = build_expr_with_funcptr_sig(ctx, node->lhs, &sig);
     } else {
       v = build_expr(ctx, node->lhs);
@@ -3009,8 +3021,8 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     /* 戻り値を関数の戻り型へ変換する (C11 6.8.6.4: 代入と同じ変換)。
      * `double f(){ return 7; }` の int→double (I2F) などがここで挟まる。 */
     v = coerce_to_type_ex(ctx, v, ctx->f->ret_type,
-                          ctx->cur_fn ? psx_node_is_unsigned_type((node_t *)ctx->cur_fn) : 0,
-                          psx_node_conversion_value_is_unsigned(node->lhs));
+                          ctx->cur_fn ? ps_node_is_unsigned_type((node_t *)ctx->cur_fn) : 0,
+                          ps_node_conversion_value_is_unsigned(node->lhs));
   } else {
     v = ir_val_imm(IR_TY_I32, 0);
   }
@@ -3247,17 +3259,17 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     node_lvar_t *lv = (node_lvar_t *)arg;
     lvar_t *owner = find_owning_lvar(ctx, lv->offset);
     int param_full_size = owner
-                              ? psx_lvar_storage_size(owner, psx_node_storage_type_size(arg))
-                              : psx_node_storage_type_size(arg);
+                              ? ps_lvar_storage_size(owner, ps_node_storage_type_size(arg))
+                              : ps_node_storage_type_size(arg);
     /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は
      * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
     int struct_param_needs_ptr =
-        owner && psx_lvar_tag_kind(owner) != TK_EOF && !psx_lvar_is_tag_pointer(owner) &&
-        !psx_lvar_is_array(owner) && psx_lvar_pointer_qual_levels(owner) == 0 &&
+        owner && ps_lvar_tag_kind(owner) != TK_EOF && !ps_lvar_is_tag_pointer(owner) &&
+        !ps_lvar_is_array(owner) && ps_lvar_pointer_qual_levels(owner) == 0 &&
         param_full_size != 1 && param_full_size != 2 &&
         param_full_size != 4 && param_full_size != 8;
     if ((param_full_size > 8 || struct_param_needs_ptr) &&
-        !(owner && psx_lvar_is_complex(owner))) {
+        !(owner && ps_lvar_is_complex(owner))) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
        * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
@@ -3275,10 +3287,10 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       ir_func_append_inst(ctx->f, cp);
       continue;
     }
-    if (owner && psx_lvar_is_complex(owner)) {
+    if (owner && ps_lvar_is_complex(owner)) {
       /* _Complex 引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1} の 2 FP レジスタで
        * 受け取り、slot+0 / slot+half に格納する (AAPCS64)。 */
-      ir_type_t pty = (psx_lvar_fp_kind(owner) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      ir_type_t pty = (ps_lvar_fp_kind(owner) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
       int half = (pty == IR_TY_F32) ? 4 : 8;
       int base_ptr = address_of_lvar(ctx, lv->offset);
       if (base_ptr < 0) return 0;
@@ -3316,11 +3328,11 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     if (abi_idx < 32) {
       int is_pointer =
           ps_node_is_pointer(arg) ||
-          psx_node_value_is_pointer_like((node_t *)lv) ||
-          psx_lvar_value_is_pointer_like(owner);
+          ps_node_value_is_pointer_like((node_t *)lv) ||
+          ps_lvar_value_is_pointer_like(owner);
       ir_type_t abi_type = is_pointer ? IR_TY_PTR : vty;
       if (!is_pointer && !is_fp_type(abi_type) &&
-          psx_node_param_abi_type_size(arg) == 8) {
+          ps_node_param_abi_type_size(arg) == 8) {
         abi_type = IR_TY_I64;
       }
       ctx->f->param_abi_types[abi_idx++] = abi_type;
@@ -3341,29 +3353,29 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
  * src は先行パラメータ (例 m) で、既に setup_function_params で frame slot に
  * 格納済み。subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
 static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) {
-  for (lvar_t *var = fn->lvars; var; var = psx_lvar_next_all(var)) {
-    if (!psx_lvar_is_param(var)) continue;
-    if (!psx_lvar_is_vla(var)) continue;
-    int row_stride_frame_off = psx_lvar_vla_row_stride_frame_off(var);
+  for (lvar_t *var = fn->lvars; var; var = ps_lvar_next_all(var)) {
+    if (!ps_lvar_is_param(var)) continue;
+    if (!ps_lvar_is_vla(var)) continue;
+    int row_stride_frame_off = ps_lvar_vla_row_stride_frame_off(var);
     if (row_stride_frame_off == 0) continue;
-    int elem = psx_lvar_vla_row_stride_elem_size(var);
+    int elem = ps_lvar_vla_row_stride_elem_size(var);
     if (elem <= 0) continue;
     /* N-D VLA 仮引数 (vla_param_inner_dim_count >= 1): 各 stride level を
      *   stride[k] = (dim[k] * dim[k+1] * ... * dim[n_inner-1]) * elem
      * で計算し slot+8*k に store する。後ろから掛けていけば各 level 1 回の MUL で済む。 */
-    int n_inner = psx_lvar_vla_param_inner_dim_count(var);
+    int n_inner = ps_lvar_vla_param_inner_dim_count(var);
     if (n_inner >= 1) {
       int v_prev = -1;
       for (int level = n_inner - 1; level >= 0; level--) {
         /* dim_value (i32) を vreg に取り出す。const dim は最内 level だけ immediate * elem
          * で済むが、構造を統一するため load 経路と同様に MUL の左辺に渡す。 */
         ir_val_t dim_val;
-        int dim_const = psx_lvar_vla_param_inner_dim_const(var, level);
+        int dim_const = ps_lvar_vla_param_inner_dim_const(var, level);
         if (dim_const > 0) {
           dim_val = ir_val_imm(IR_TY_I32, dim_const);
         } else {
           int src_ptr = address_of_lvar(ctx,
-                                        psx_lvar_vla_param_inner_dim_src_offset(var, level));
+                                        ps_lvar_vla_param_inner_dim_src_offset(var, level));
           if (src_ptr < 0) return 0;
           int v_loaded = ir_func_new_vreg(ctx->f);
           ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -3398,7 +3410,7 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
     }
     /* 旧 1D 経路: vla_param_inner_dim_count == 0 だが vla_row_stride_frame_off != 0
      * (古い経路。N-D 経路に移行後は通常到達しないが、互換のため残す)。 */
-    int src_ptr = address_of_lvar(ctx, psx_lvar_vla_row_stride_src_offset(var));
+    int src_ptr = address_of_lvar(ctx, ps_lvar_vla_row_stride_src_offset(var));
     if (src_ptr < 0) return 0;
     int v_m = ir_func_new_vreg(ctx->f);
     ir_inst_t *ld = ir_inst_new(IR_LOAD);
@@ -3441,14 +3453,14 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
     /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
      * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
     if (!is_main) {
-      if (!psx_node_value_is_void((node_t *)fn)) {
+      if (!ps_node_value_is_void((node_t *)fn)) {
         diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
                        "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
                        fn->funcname_len, fn->funcname);
       }
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = psx_node_value_is_void((node_t *)fn)
+    r->src1 = ps_node_value_is_void((node_t *)fn)
                   ? ir_val_none()
                   : ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
@@ -3459,21 +3471,21 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
-  psx_type_t *ret_type = psx_node_get_type((node_t *)fn);
+  psx_type_t *ret_type = ps_node_get_type((node_t *)fn);
   (void)ret_type;
   int ret_struct_size = aggregate_size_from_node((node_t *)fn);
   ir_type_t ret_ty = ir_type_from_node((node_t *)fn);
-  if (psx_node_value_is_void((node_t *)fn)) {
+  if (ps_node_value_is_void((node_t *)fn)) {
     ret_ty = IR_TY_VOID;
   }
-  if (ret_struct_size > 0 && !psx_node_value_is_pointer_like((node_t *)fn) &&
+  if (ret_struct_size > 0 && !ps_node_value_is_pointer_like((node_t *)fn) &&
       !cg_size_needs_indirect_struct(ret_struct_size)) {
     ret_ty = (ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
   }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */
-  if (ret_ty == IR_TY_I32 && psx_node_value_is_pointer_like((node_t *)fn)) {
+  if (ret_ty == IR_TY_I32 && ps_node_value_is_pointer_like((node_t *)fn)) {
     ret_ty = IR_TY_PTR;
   }
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
@@ -3485,9 +3497,9 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
-  if (psx_node_value_is_complex((node_t *)fn)) {
+  if (ps_node_value_is_complex((node_t *)fn)) {
     ctx->f->ret_complex_half =
-        (psx_node_value_fp_kind((node_t *)fn) == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+        (ps_node_value_fp_kind((node_t *)fn) == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
   }
   ctx->f->is_variadic = fn->is_variadic;
   ctx->f->is_static = fn->is_static;
@@ -3524,9 +3536,9 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
    * lvar (`int y;` 等で同 offset を持つもの) が find_alloca_vreg で alias のスロットを
    * 再利用させられ、サイズが alias のもの (`size=4` 等) に縮んで上位バイトが他のローカル
    * と重なる (SIGSEGV)。alias は alloca 対象から除外する。 */
-  for (lvar_t *var = fn->lvars; var; var = psx_lvar_next_all(var)) {
-    if (psx_lvar_is_param(var)) continue;  /* parameter は既に param/alloca/store した */
-    if (psx_lvar_is_static_local(var)) continue;
+  for (lvar_t *var = fn->lvars; var; var = ps_lvar_next_all(var)) {
+    if (ps_lvar_is_param(var)) continue;  /* parameter は既に param/alloca/store した */
+    if (ps_lvar_is_static_local(var)) continue;
     (void)alloca_for_owner(ctx, var);
     if (ctx->failed) return 0;
   }

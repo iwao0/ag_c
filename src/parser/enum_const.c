@@ -262,12 +262,12 @@ int psx_parse_enum_members(void) {
     }
     /* C11 6.7p4: 通常の identifier と同じ名前空間。同名のグローバル変数 / 関数 / typedef が
      * 既にあれば衝突。`int B = 10; enum E { B = 5 };` 等。 */
-    if (psx_find_global_var(enumerator->str, enumerator->len)) {
+    if (ps_find_global_var(enumerator->str, enumerator->len)) {
       psx_diag_ctx(curtok(), "enum",
                    "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
                    enumerator->len, enumerator->str);
     }
-    if (psx_ctx_has_function_name(enumerator->str, enumerator->len)) {
+    if (ps_ctx_has_function_name(enumerator->str, enumerator->len)) {
       psx_diag_ctx(curtok(), "enum",
                    "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
                    enumerator->len, enumerator->str);

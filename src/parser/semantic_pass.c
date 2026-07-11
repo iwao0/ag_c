@@ -33,17 +33,17 @@ typedef struct {
 
 static semantic_return_type_view_t semantic_return_type_view(node_func_t *fn) {
   semantic_return_type_view_t view = {0};
-  view.type = psx_node_get_type((node_t *)fn);
+  view.type = ps_node_get_type((node_t *)fn);
   psx_type_t *type = view.type;
   if (!type) return view;
-  view.fp_kind = psx_node_value_fp_kind((node_t *)fn);
+  view.fp_kind = ps_node_value_fp_kind((node_t *)fn);
   view.is_void = type->kind == PSX_TYPE_VOID;
   view.is_pointer = psx_type_is_pointer(type);
   view.is_bool = type->kind == PSX_TYPE_BOOL;
-  view.is_unsigned = psx_type_is_unsigned(type);
-  view.aggregate_size = psx_node_aggregate_value_size((node_t *)fn);
+  view.is_unsigned = ps_type_is_unsigned(type);
+  view.aggregate_size = ps_node_aggregate_value_size((node_t *)fn);
   if (!view.is_pointer && type->kind == PSX_TYPE_INTEGER) {
-    int size = psx_type_sizeof(type);
+    int size = ps_type_sizeof(type);
     if (size == 1 || size == 2) {
       view.is_narrow_integer = 1;
       view.narrow_size = size;
@@ -105,7 +105,7 @@ static void semantic_visit_node(node_t *node) {
       break;
   }
 
-  (void)psx_node_materialize_type(node);
+  (void)ps_node_materialize_type(node);
 }
 
 static void semantic_transform_return(node_t *node, node_func_t *current_func,
@@ -222,12 +222,12 @@ static int semantic_fp_literal_fractional_part_known(double f) {
 
 static tk_float_kind_t semantic_node_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
-  psx_type_t *type = psx_node_get_type(node);
+  psx_type_t *type = ps_node_get_type(node);
   if (type && !psx_type_is_pointer(type) &&
       (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
     return type->fp_kind != TK_FLOAT_KIND_NONE ? type->fp_kind : TK_FLOAT_KIND_DOUBLE;
   }
-  return (tk_float_kind_t)node->fp_kind;
+  return TK_FLOAT_KIND_NONE;
 }
 
 static void semantic_warn_float_to_int_expr(node_t *value, const token_t *tok,
@@ -252,7 +252,7 @@ static void semantic_warn_decl_initializer_constant_overflow(node_t *lhs, node_t
     return;
   }
   if (ps_node_is_pointer(lhs)) return;
-  if (psx_node_aggregate_value_size(lhs) > 0) return;
+  if (ps_node_aggregate_value_size(lhs) > 0) return;
   int type_size = ps_node_type_size(lhs);
   if (type_size <= 0 || type_size >= 4) return;
 
@@ -407,7 +407,7 @@ static void semantic_warn_identical_logical(node_t *node, const token_t *fallbac
 }
 
 static int semantic_sign_cmp_effective_unsigned(node_t *n) {
-  return psx_node_integer_promotion_is_unsigned(n);
+  return ps_node_integer_promotion_is_unsigned(n);
 }
 
 static void semantic_warn_sign_compare(node_t *lhs, node_t *rhs, const char *op,
@@ -418,7 +418,7 @@ static void semantic_warn_sign_compare(node_t *lhs, node_t *rhs, const char *op,
   if (lu == ru) return;
   node_t *signed_side = lu ? rhs : lhs;
   if (signed_side->kind == ND_NUM && ((node_num_t *)signed_side)->val >= 0) return;
-  if (!psx_node_usual_arith_operands_is_unsigned(lhs, rhs)) return;
+  if (!ps_node_usual_arith_operands_is_unsigned(lhs, rhs)) return;
   diag_warn_tokf(DIAG_WARN_PARSER_SIGN_COMPARE, tok,
                  "符号付きと符号なしの整数を比較しています ('%s' / 負値が大きな正の値として扱われる可能性)",
                  op);
@@ -1090,7 +1090,7 @@ static void semantic_check_unreachable_in_node(node_t *node, const token_t *fall
 
 static int semantic_node_is_aggregate_lvar(node_t *node) {
   if (!node || node->kind != ND_LVAR) return 0;
-  return psx_node_aggregate_value_size(node) > 0;
+  return ps_node_aggregate_value_size(node) > 0;
 }
 
 static node_t *semantic_assigned_aggregate_lvar_from_member_base(node_t *base);

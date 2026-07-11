@@ -11,16 +11,18 @@
  *   - lvar_t (opaque pointer) と読み取り/走査 helper
  *   - node_utils 由来の型・幅・signedness helper
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
- *      psx_node_*_is_unsigned など)
- *   - psx_ctx_get_function_is_variadic / _param_fp_kind (function_public)
+ *      ps_node_*_is_unsigned など)
+ *   - ps_ctx_get_function_is_variadic / _param_fp_kind (function_public)
  *   - global_var_t (opaque pointer) と読み取り helper
- *   - tag_member_info_t + psx_ctx_get_tag_member_count / _info
+ *   - tag_member_info_t + ps_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
  *
  * 非公開: tokenizer 内部、parser 自体の解析関数 (ps_program 等)、
  * decl 登録系 (psx_decl_register_lvar_*)、semantic_ctx の登録系 setter。
  * これら internal シンボルは外部から見えるが「契約上」非公開扱いとし、
  * IR / arch から直接 include しないことで境界を担保する。
+ * 関数名は、本ヘッダ群を介してparser外へ公開するAPIを ps_、parser内部専用を
+ * psx_ とする。
  */
 
 #include "ast.h"        /* node_t, node_lvar_t 等 */
@@ -54,10 +56,10 @@ bool ps_has_string_literals(void);
 bool ps_has_float_literals(void);
 
 /* function_public.h / tag_member_public.h からの公開:
- * - 関数呼出側 IR が必要とする psx_ctx_get_function_is_variadic /
+ * - 関数呼出側 IR が必要とする ps_ctx_get_function_is_variadic /
  *   _get_function_param_fp_kind
  * - codegen (arm64_apple.c) が global struct/union 初期化子を展開する
- *   ための tag_member_info_t と psx_ctx_get_tag_member_count /
+ *   ための tag_member_info_t と ps_ctx_get_tag_member_count /
  *   _get_tag_member_info (Phase A1 統合 API)
  * setter / reset / 登録系は semantic_ctx.h に残し、外部へは出さない。 */
 

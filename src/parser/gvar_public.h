@@ -95,62 +95,62 @@ typedef struct {
                 const psx_gvar_initializer_class_t *init_class);
 } psx_gvar_initializer_visit_ops_t;
 
-global_var_t *psx_find_global_var(char *name, int len);
-int psx_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
-int psx_gvar_storage_size(const global_var_t *gv, int fallback_size);
-int psx_gvar_is_array(const global_var_t *gv);
-int psx_gvar_is_tag_aggregate(const global_var_t *gv);
-int psx_gvar_is_struct_aggregate(const global_var_t *gv);
-int psx_gvar_is_union_aggregate(const global_var_t *gv);
-int psx_gvar_is_bool_scalar(const global_var_t *gv);
-int psx_gvar_array_element_is_bool(const global_var_t *gv);
-int psx_gvar_array_element_size(const global_var_t *gv);
-int psx_gvar_array_element_count(const global_var_t *gv);
-int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
-int psx_gvar_initializer_element_count(const global_var_t *gv, int fallback_size);
-int psx_gvar_has_aggregate_initializer(const global_var_t *gv);
-int psx_gvar_has_explicit_initializer(const global_var_t *gv);
+global_var_t *ps_find_global_var(char *name, int len);
+int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
+int ps_gvar_storage_size(const global_var_t *gv, int fallback_size);
+int ps_gvar_is_array(const global_var_t *gv);
+int ps_gvar_is_tag_aggregate(const global_var_t *gv);
+int ps_gvar_is_struct_aggregate(const global_var_t *gv);
+int ps_gvar_is_union_aggregate(const global_var_t *gv);
+int ps_gvar_is_bool_scalar(const global_var_t *gv);
+int ps_gvar_array_element_is_bool(const global_var_t *gv);
+int ps_gvar_array_element_size(const global_var_t *gv);
+int ps_gvar_array_element_count(const global_var_t *gv);
+int ps_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
+int ps_gvar_initializer_element_count(const global_var_t *gv, int fallback_size);
+int ps_gvar_has_aggregate_initializer(const global_var_t *gv);
+int ps_gvar_has_explicit_initializer(const global_var_t *gv);
 psx_gvar_initializer_class_t
-psx_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate);
-int psx_gvar_walk_init_slot_values(const global_var_t *gv,
+ps_gvar_initializer_class(const global_var_t *gv, int include_empty_aggregate);
+int ps_gvar_walk_init_slot_values(const global_var_t *gv,
                                    const psx_gvar_init_slots_layout_t *layout,
                                    int value_count,
                                    psx_gvar_init_slot_value_fn callback,
                                    void *user);
 psx_gvar_init_member_value_t
-psx_gvar_init_member_value(const global_var_t *gv, int idx,
+ps_gvar_init_member_value(const global_var_t *gv, int idx,
                            const tag_member_info_t *member);
 psx_gvar_init_scalar_value_t
-psx_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
-int psx_gvar_visit_initializer_classified(
+ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
+int ps_gvar_visit_initializer_classified(
     const global_var_t *gv, const psx_gvar_initializer_class_t *init_class,
     int fallback_size, const psx_gvar_initializer_visit_ops_t *ops, void *user);
-int psx_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
+int ps_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
                                int fallback_size,
                                const psx_gvar_initializer_visit_ops_t *ops,
                                void *user);
-int psx_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
+int ps_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
-int psx_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,
+int ps_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,
                               char **out_name, int *out_len);
-int psx_gvar_symbol_ref_named_function(psx_gvar_symbol_ref_t ref,
+int ps_gvar_symbol_ref_named_function(psx_gvar_symbol_ref_t ref,
                                        char **out_name, int *out_len);
-int psx_gvar_init_value_named_function(psx_gvar_init_value_t value,
+int ps_gvar_init_value_named_function(psx_gvar_init_value_t value,
                                         char **out_name, int *out_len);
-int psx_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
+int ps_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
                                         const psx_gvar_aggregate_walk_ops_t *ops,
                                         void *user);
-unsigned long long psx_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
+unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
                                                     int bit_width, int bit_offset);
-int psx_gvar_is_extern_decl(const global_var_t *gv);
-int psx_gvar_is_thread_local(const global_var_t *gv);
-int psx_gvar_is_static_storage(const global_var_t *gv);
-int psx_gvar_is_extern_decl_by_name(char *name, int len);
-int psx_gvar_is_thread_local_by_name(char *name, int len);
-int psx_gvar_is_static_storage_by_name(char *name, int len);
-char *psx_gvar_name(const global_var_t *gv);
-int psx_gvar_name_len(const global_var_t *gv);
-psx_decl_funcptr_sig_t psx_gvar_funcptr_sig(const global_var_t *src);
-psx_decl_funcptr_sig_t psx_gvar_funcptr_sig_by_name(char *name, int len);
+int ps_gvar_is_extern_decl(const global_var_t *gv);
+int ps_gvar_is_thread_local(const global_var_t *gv);
+int ps_gvar_is_static_storage(const global_var_t *gv);
+int ps_gvar_is_extern_decl_by_name(char *name, int len);
+int ps_gvar_is_thread_local_by_name(char *name, int len);
+int ps_gvar_is_static_storage_by_name(char *name, int len);
+char *ps_gvar_name(const global_var_t *gv);
+int ps_gvar_name_len(const global_var_t *gv);
+psx_decl_funcptr_sig_t ps_gvar_funcptr_sig(const global_var_t *src);
+psx_decl_funcptr_sig_t ps_gvar_funcptr_sig_by_name(char *name, int len);
 
 #endif

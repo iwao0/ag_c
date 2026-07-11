@@ -34,15 +34,16 @@ enum {
   PSX_PCAT_OTHER  = 7,
 };
 
-bool psx_ctx_has_function_name(char *name, int len);
-int psx_ctx_is_function_defined(char *name, int len);
-psx_function_ret_info_t psx_ctx_get_function_ret_info(char *name, int len);
-bool psx_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
-int psx_ctx_get_function_nargs_fixed(char *name, int len);
-tk_float_kind_t psx_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
-int psx_ctx_get_function_param_int_size(char *name, int len, int param_idx);
-int psx_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx);
-int psx_ctx_get_function_param_category(char *name, int len, int idx);
-int psx_ctx_scalar_type_size(token_kind_t kind);
+bool ps_ctx_has_function_name(char *name, int len);
+int ps_ctx_is_function_defined(char *name, int len);
+psx_function_ret_info_t ps_ctx_get_function_ret_info(char *name, int len);
+bool ps_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
+int ps_ctx_get_function_nargs_fixed(char *name, int len);
+tk_float_kind_t ps_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
+/* canonical parameter type から導出した関数呼び出し ABI の整数スロット幅。 */
+int ps_ctx_get_function_param_int_size(char *name, int len, int param_idx);
+int ps_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx);
+int ps_ctx_get_function_param_category(char *name, int len, int idx);
+int ps_ctx_scalar_type_size(token_kind_t kind);
 
 #endif

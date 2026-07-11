@@ -14,12 +14,10 @@ struct lvar_t;
 struct global_var_t;
 struct tag_member_info_t;
 
-psx_type_t *psx_node_get_type(node_t *node);
-psx_type_t *psx_node_materialize_type(node_t *node);
+psx_type_t *ps_node_get_type(node_t *node);
+psx_type_t *ps_node_materialize_type(node_t *node);
 psx_type_t *psx_lvar_get_decl_type(struct lvar_t *var);
-psx_type_t *psx_lvar_materialize_decl_type(struct lvar_t *var);
 psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
-psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
 psx_gvar_init_slot_t psx_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
 int psx_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);
@@ -77,7 +75,7 @@ node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
                                          tk_float_kind_t fp_kind, int is_bool);
 node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind);
 node_t *psx_node_new_lvar_fp_slot_for(struct lvar_t *owner, int offset, int type_size);
-node_t *psx_node_new_param_placeholder(int is_pointer, tk_float_kind_t fp_kind, int is_unsigned);
+node_t *psx_node_new_param_placeholder(psx_type_t *type);
 node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
@@ -117,10 +115,8 @@ node_t *psx_node_new_compound_gvar_array_addr_for(struct global_var_t *gv,
                                                   int array_size,
                                                   psx_type_t *canonical_type);
 node_t *psx_node_new_compound_lvar_array_addr_for(struct lvar_t *var,
-                                                  token_kind_t tag_kind,
-                                                  char *tag_name, int tag_len,
-                                                  int array_size,
-                                                  psx_type_t *canonical_type);
+                                                   int array_size,
+                                                   psx_type_t *canonical_type);
 node_t *psx_node_new_addr_value_for(node_t *operand);
 node_t *psx_node_new_explicit_addr_value_for(node_t *operand);
 node_t *psx_node_new_unary_addr_for(node_t *operand);
@@ -143,7 +139,7 @@ node_t *psx_node_new_gvar_for(struct global_var_t *gv);
 node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);
 struct lvar_t *psx_node_lvar_symbol(node_t *node);
-int psx_node_param_abi_type_size(node_t *node);
+int ps_node_param_abi_type_size(node_t *node);
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs);
 node_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
 

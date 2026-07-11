@@ -1,5 +1,5 @@
 // struct/union ポインタを返す関数の結果に `->` を使うと E3005 で拒否されるバグ。
-// (1) psx_node_get_tag_type の ND_FUNCALL 分岐が is_tag_pointer を常に 0 にして
+// (1) ps_node_get_tag_type の ND_FUNCALL 分岐が is_tag_pointer を常に 0 にして
 //     いたため、ポインタ返しでも「ポインタでない」と誤判定していた。
 // (2) 関数定義のタグ登録が値返し (!ret_is_ptr) のときだけで、ポインタ返しの
 //     タグが記録されていなかった。

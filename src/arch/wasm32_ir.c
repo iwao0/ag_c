@@ -198,7 +198,7 @@ typedef struct {
 
 static void find_string_lit_cb(string_lit_t *lit, void *user) {
   string_find_ctx_t *ctx = user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   if (!ctx->found && view.label &&
       name_eq(view.label, (int)strlen(view.label), ctx->label, ctx->label_len)) {
     ctx->found = lit;
@@ -207,7 +207,7 @@ static void find_string_lit_cb(string_lit_t *lit, void *user) {
 
 static int narrow_string_encoded_size(string_lit_t *lit) {
   if (!lit) return 1;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   return tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width,
                                       true, NULL, NULL);
 }
@@ -229,7 +229,7 @@ typedef struct {
 static void find_global_cb(global_var_t *gv, void *user) {
   global_find_ctx_t *ctx = user;
   if (!ctx->found &&
-      name_eq(psx_gvar_name(gv), psx_gvar_name_len(gv), ctx->name, ctx->name_len)) {
+      name_eq(ps_gvar_name(gv), ps_gvar_name_len(gv), ctx->name, ctx->name_len)) {
     ctx->found = gv;
   }
 }
@@ -237,7 +237,7 @@ static void find_global_cb(global_var_t *gv, void *user) {
 static int data_addr_for_global(const char *sym, int sym_len) {
   global_find_ctx_t ctx = {sym, sym_len, NULL};
   ps_iter_globals(find_global_cb, &ctx);
-  int size = psx_gvar_storage_size(ctx.found, 8);
+  int size = ps_gvar_storage_size(ctx.found, 8);
   int align = size >= 8 ? 8 : size >= 4 ? 4 : size >= 2 ? 2 : 1;
   return intern_data_symbol(sym, sym_len, size, align)->addr;
 }
@@ -270,7 +270,7 @@ static int function_table_has_ref(const char *name, int name_len) {
 }
 
 static int function_table_index_or_unsupported(char *name, int name_len) {
-  if (!psx_ctx_has_function_name(name, name_len)) return -1;
+  if (!ps_ctx_has_function_name(name, name_len)) return -1;
   return intern_function_table_ref(name, name_len);
 }
 
@@ -371,7 +371,7 @@ static void emit_function_table(void) {
   for (int i = 0; i < g_func_table.ref_count; i++) {
     char *name = g_func_table.refs[i].name;
     int name_len = g_func_table.refs[i].name_len;
-    if (!psx_ctx_is_function_defined(name, name_len) &&
+    if (!ps_ctx_is_function_defined(name, name_len) &&
         !(has_undefined_function(name, name_len) && has_minimal_libc_stub_function(name, name_len))) {
       wasm_unsupported_msg("external function pointer in Wasm backend");
     }
@@ -382,7 +382,7 @@ static void emit_function_table(void) {
     char *name = g_func_table.refs[i].name;
     int name_len = g_func_table.refs[i].name_len;
     if (name_len == 7 && memcmp(name, "fprintf", 7) == 0 &&
-        !psx_ctx_is_function_defined(name, name_len)) {
+        !ps_ctx_is_function_defined(name, name_len)) {
       cg_emitf(" $__ag_funcptr_fprintf");
     } else {
       cg_emitf(" $%.*s", name_len, name);
@@ -392,10 +392,10 @@ static void emit_function_table(void) {
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  if (psx_ctx_get_function_param_category(f->name, f->name_len, idx) == PSX_PCAT_STRUCT) {
+  if (ps_ctx_get_function_param_category(f->name, f->name_len, idx) == PSX_PCAT_STRUCT) {
     return IR_TY_PTR;
   }
-  if (raw != IR_TY_PTR && psx_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
+  if (raw != IR_TY_PTR && ps_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
     return IR_TY_I64;
   }
   return raw;
@@ -556,9 +556,9 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
 
 static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
   if (out_len) *out_len = 0;
-  psx_gvar_init_scalar_value_t value = psx_gvar_init_scalar_value(gv, 4);
+  psx_gvar_init_scalar_value_t value = ps_gvar_init_scalar_value(gv, 4);
   char *name = NULL;
-  if (!psx_gvar_init_value_named_function(value, &name, out_len)) return NULL;
+  if (!ps_gvar_init_value_named_function(value, &name, out_len)) return NULL;
   return name;
 }
 
@@ -607,8 +607,8 @@ static void find_global_member_func_ref_scalar(void *user,
                                                int idx, long long offset) {
   wasm_global_member_func_ref_ctx_t *ctx = user;
   if (!ctx || ctx->name || offset != ctx->target_offset) return;
-  psx_gvar_init_member_value_t value = psx_gvar_init_member_value(ctx->gv, idx, mi);
-  psx_gvar_init_value_named_function(value, &ctx->name, &ctx->name_len);
+  psx_gvar_init_member_value_t value = ps_gvar_init_member_value(ctx->gv, idx, mi);
+  ps_gvar_init_value_named_function(value, &ctx->name, &ctx->name_len);
 }
 
 static void find_global_member_func_ref_bitfield_unit(
@@ -641,7 +641,7 @@ static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) 
       .name = NULL,
       .name_len = 0,
   };
-  if (!psx_gvar_walk_aggregate_initializer(gv, 0, &global_member_func_ref_walk_ops,
+  if (!ps_gvar_walk_aggregate_initializer(gv, 0, &global_member_func_ref_walk_ops,
                                            &ctx)) {
     return NULL;
   }
@@ -1178,7 +1178,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     int callee_name_len = 0;
     char *callee_name = get_vreg_func_ref(ctx, i->callee.id, &callee_name_len);
     psx_function_ret_info_t callee_ret =
-        callee_name ? psx_ctx_get_function_ret_info(callee_name, callee_name_len)
+        callee_name ? ps_ctx_get_function_ret_info(callee_name, callee_name_len)
                     : (psx_function_ret_info_t){0};
     int returns_aggregate = i->ret_struct_size > 0 || i->ret_struct_area.id != IR_VAL_NONE;
     if (returns_aggregate && i->ret_struct_area.id == IR_VAL_NONE) {
@@ -1249,10 +1249,10 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     return;
   }
   if (!i->sym) wasm_unsupported_op(i->op);
-  if (!psx_ctx_has_function_name(i->sym, i->sym_len)) {
+  if (!ps_ctx_has_function_name(i->sym, i->sym_len)) {
     wasm_unsupported_msg("external or implicitly declared function call in Wasm backend");
   }
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(i->sym, i->sym_len);
+  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info(i->sym, i->sym_len);
   int returns_void = ret.is_void;
   if (i->ret_complex_half > 0) {
     wasm_emitf(indent, "(call $%.*s ", i->sym_len, i->sym);
@@ -1267,22 +1267,22 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
   int is_minimal_snprintf =
       i->sym_len == 8 && memcmp(i->sym, "snprintf", 8) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_swprintf =
       i->sym_len == 8 && memcmp(i->sym, "swprintf", 8) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_printf =
       i->sym_len == 6 && memcmp(i->sym, "printf", 6) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_fprintf =
       i->sym_len == 7 && memcmp(i->sym, "fprintf", 7) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_sscanf =
       i->sym_len == 6 && memcmp(i->sym, "sscanf", 6) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_swscanf =
       i->sym_len == 7 && memcmp(i->sym, "swscanf", 7) == 0 &&
-      !psx_ctx_is_function_defined(i->sym, i->sym_len);
+      !ps_ctx_is_function_defined(i->sym, i->sym_len);
   int is_minimal_fixed2_format = is_minimal_snprintf || is_minimal_swprintf;
   int is_minimal_output_count = is_minimal_printf || is_minimal_fprintf;
   int call_nargs = is_minimal_fixed2_format ? 5 :
@@ -1311,7 +1311,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
         (is_minimal_sscanf && (a == 0 || a == 1 || a >= 2)) ||
         (is_minimal_swscanf && (a == 0 || a == 1 || a >= 2));
     if (minimal_stub_ptr_arg ||
-        psx_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
+        ps_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
       arg_ty = IR_TY_PTR;
     } else if (is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) {
       arg_ty = IR_TY_I64;
@@ -1326,7 +1326,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
                 (i->sym_len == 8 && (memcmp(i->sym, "scalblnf", 8) == 0 ||
                                       memcmp(i->sym, "scalblnl", 8) == 0)))) {
       arg_ty = IR_TY_I64;
-    } else if (psx_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) {
+    } else if (ps_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) {
       arg_ty = IR_TY_I64;
     }
     cg_emitf(" ");
@@ -1390,7 +1390,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       return;
     }
     case IR_LOAD_SYM: {
-      if (psx_ctx_has_function_name(i->sym, i->sym_len)) {
+      if (ps_ctx_has_function_name(i->sym, i->sym_len)) {
         int func_idx = function_table_index_or_unsupported(i->sym, i->sym_len);
         wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, func_idx);
         set_vreg_func_ref(ctx, i->dst.id, i->sym, i->sym_len);
@@ -1398,13 +1398,13 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       }
       int addr = data_addr_for_global(i->sym, i->sym_len);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
-      set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len), 0);
+      set_vreg_global_ref(ctx, i->dst.id, ps_find_global_var(i->sym, i->sym_len), 0);
       return;
     }
     case IR_LOAD_TLV_ADDR: {
       int addr = data_addr_for_global(i->sym, i->sym_len);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
-      set_vreg_global_ref(ctx, i->dst.id, psx_find_global_var(i->sym, i->sym_len), 0);
+      set_vreg_global_ref(ctx, i->dst.id, ps_find_global_var(i->sym, i->sym_len), 0);
       return;
     }
     case IR_ZEXT:
@@ -1766,7 +1766,7 @@ static void emit_string_literal_wat_byte(unsigned char byte, void *user) {
 
 static void emit_string_literal_data(string_lit_t *lit, void *user) {
   (void)user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   int addr = data_addr_for_string_label(view.label);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
@@ -1784,7 +1784,7 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
 static psx_gvar_fp_bits_t fp_init_value_bits(tk_float_kind_t fp_kind, double value,
                                              const char *float_error) {
   psx_gvar_fp_bits_t bits;
-  if (!psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
+  if (!ps_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
     wasm_unsupported_msg(float_error);
   }
   return bits;
@@ -1796,10 +1796,10 @@ static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
   }
   char *name = NULL;
   int name_len = 0;
-  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
+  if (ps_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
     return function_table_index_or_unsupported(name, name_len);
   }
-  if (psx_gvar_symbol_ref_named(ref, &name, &name_len)) {
+  if (ps_gvar_symbol_ref_named(ref, &name, &name_len)) {
     return data_addr_for_global(name, name_len);
   }
   return -1;
@@ -1860,7 +1860,7 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size,
   if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   wasm_init_slots_data_ctx_t ctx = {.total_size = size};
-  if (!psx_gvar_walk_init_slot_values(gv, slot_layout, slot_layout->elem_count,
+  if (!ps_gvar_walk_init_slot_values(gv, slot_layout, slot_layout->elem_count,
                                       emit_global_init_slot_value_data, &ctx)) {
     wasm_unsupported_msg("global array initializer in Wasm backend");
   }
@@ -1869,7 +1869,7 @@ static void emit_global_init_values_data(global_var_t *gv, int addr, int size,
 
 static void emit_global_init_member_value_data(global_var_t *gv, int idx, int addr,
                                                const tag_member_info_t *mi) {
-  psx_gvar_init_member_value_t value = psx_gvar_init_member_value(gv, idx, mi);
+  psx_gvar_init_member_value_t value = ps_gvar_init_member_value(gv, idx, mi);
   if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
     wasm_unsupported_msg("global member size in Wasm backend");
   }
@@ -1889,10 +1889,10 @@ static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr
   if (!mi || mi->bit_width <= 0) {
     wasm_unsupported_msg("global bitfield initializer in Wasm backend");
   }
-  unsigned long long packed = psx_gvar_init_slot_bitfield_bits(gv, idx,
+  unsigned long long packed = ps_gvar_init_slot_bitfield_bits(gv, idx,
                                                                mi->bit_width, mi->bit_offset);
   emit_i32_data_bytes(addr + mi->offset, (long long)packed,
-                      psx_tag_member_decl_value_size(mi));
+                      ps_tag_member_decl_value_size(mi));
 }
 
 typedef struct {
@@ -1927,7 +1927,7 @@ static const psx_gvar_aggregate_walk_ops_t wasm_global_aggregate_walk_ops = {
 
 static void emit_global_struct_data(global_var_t *gv, int addr) {
   wasm_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  if (!psx_gvar_walk_aggregate_initializer(gv, addr,
+  if (!ps_gvar_walk_aggregate_initializer(gv, addr,
                                            &wasm_global_aggregate_walk_ops, &ctx)) {
     wasm_unsupported_msg("global aggregate initializer in Wasm backend");
   }
@@ -1978,11 +1978,11 @@ static const psx_gvar_initializer_visit_ops_t wasm_global_initializer_visit_ops 
 
 static void emit_global_data(global_var_t *gv, void *user) {
   (void)user;
-  if (psx_gvar_is_extern_decl(gv)) return;
-  int addr = data_addr_for_global(psx_gvar_name(gv), psx_gvar_name_len(gv));
-  int size = psx_gvar_storage_size(gv, 4);
+  if (ps_gvar_is_extern_decl(gv)) return;
+  int addr = data_addr_for_global(ps_gvar_name(gv), ps_gvar_name_len(gv));
+  int size = ps_gvar_storage_size(gv, 4);
   wasm_global_init_emit_ctx_t ctx = {.gv = gv, .addr = addr, .size = size};
-  if (!psx_gvar_visit_initializer(gv, 1, size, &wasm_global_initializer_visit_ops,
+  if (!ps_gvar_visit_initializer(gv, 1, size, &wasm_global_initializer_visit_ops,
                                   &ctx)) {
     wasm_unsupported_msg("global initializer in Wasm backend");
   }
@@ -1994,12 +1994,12 @@ void wasm32_emit_data_segments(void) {
 }
 
 static int has_undefined_function(const char *name, int len) {
-  return psx_ctx_has_function_name((char *)name, len) &&
-         !psx_ctx_is_function_defined((char *)name, len);
+  return ps_ctx_has_function_name((char *)name, len) &&
+         !ps_ctx_is_function_defined((char *)name, len);
 }
 
 static int has_defined_function(const char *name, int len) {
-  return psx_ctx_is_function_defined((char *)name, len);
+  return ps_ctx_is_function_defined((char *)name, len);
 }
 
 static void emit_minimal_static_data_if_needed(void) {
@@ -2036,7 +2036,7 @@ static void emit_minimal_static_data_if_needed(void) {
 }
 
 static ir_type_t wasm_function_result_type_from_decl(char *name, int name_len) {
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info(name, name_len);
+  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info(name, name_len);
   if (ret.is_pointer || ret.is_funcptr) {
     return IR_TY_PTR;
   }
@@ -2526,21 +2526,21 @@ static void emit_wasm_vsnprintf_stubs(void) {
 static const char *declared_function_param_wasm_type(const char *name,
                                                      int name_len,
                                                      int param_idx) {
-  int category = psx_ctx_get_function_param_category(
+  int category = ps_ctx_get_function_param_category(
       (char *)name, name_len, param_idx);
   if (category == PSX_PCAT_PTR || category == PSX_PCAT_STRUCT)
     return "i32";
-  tk_float_kind_t fp_kind = psx_ctx_get_function_param_fp_kind(
+  tk_float_kind_t fp_kind = ps_ctx_get_function_param_fp_kind(
       (char *)name, name_len, param_idx);
   if (fp_kind == TK_FLOAT_KIND_FLOAT) return "f32";
   if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return "f64";
-  return psx_ctx_get_function_param_int_size(
+  return ps_ctx_get_function_param_int_size(
              (char *)name, name_len, param_idx) == 8
              ? "i64" : "i32";
 }
 
 static int emit_declared_fixed_function_params(const char *name, int name_len) {
-  int nparams = psx_ctx_get_function_nargs_fixed((char *)name, name_len);
+  int nparams = ps_ctx_get_function_nargs_fixed((char *)name, name_len);
   for (int i = 0; i < nparams; i++) {
     cg_emitf(" (param $p%d %s)", i,
              declared_function_param_wasm_type(name, name_len, i));
@@ -2567,8 +2567,8 @@ static void emit_wasm_printf_stubs(void) {
       wasm_emitf(2, "(func $__ag_funcptr_fprintf");
       int nparams = emit_declared_fixed_function_params("fprintf", 7);
       if (nparams != 2 ||
-          psx_ctx_get_function_param_category("fprintf", 7, 0) != PSX_PCAT_PTR ||
-          psx_ctx_get_function_param_category("fprintf", 7, 1) != PSX_PCAT_PTR) {
+          ps_ctx_get_function_param_category("fprintf", 7, 0) != PSX_PCAT_PTR ||
+          ps_ctx_get_function_param_category("fprintf", 7, 1) != PSX_PCAT_PTR) {
         wasm_unsupported_msg("fprintf function-pointer declaration in Wasm backend");
       }
       cg_emitf(" (result i32)\n");
@@ -3744,10 +3744,10 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $abort (unreachable))\n");
   }
   if (has_undefined_function("setjmp", 6)) {
-    wasm_emitf(2, "(func $setjmp (param $env i64) (result i32) (i32.const 0))\n");
+    wasm_emitf(2, "(func $setjmp (param $env i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("longjmp", 7)) {
-    wasm_emitf(2, "(func $longjmp (param $env i64) (param $val i64) (unreachable))\n");
+    wasm_emitf(2, "(func $longjmp (param $env i32) (param $val i64) (unreachable))\n");
   }
   int needs_format_dec_helper =
       has_undefined_function("snprintf", 8) || has_undefined_function("sprintf", 7);
@@ -3766,7 +3766,7 @@ static void emit_minimal_libc_stubs(void) {
     emit_wasm_u64_dec_helper();
   }
   if (has_undefined_function("strftime", 8) ||
-      (has_undefined_function("wcsftime", 8) && !psx_ctx_is_function_defined("strftime", 8))) {
+      (has_undefined_function("wcsftime", 8) && !ps_ctx_is_function_defined("strftime", 8))) {
     emit_wasm_strftime_stub();
   }
   if (has_undefined_function("wcsftime", 8)) {
@@ -6010,10 +6010,10 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i64.const 1)\n");
     wasm_emitf(2, ")\n");
   }
-  int atan_defined = psx_ctx_has_function_name("atan", 4) &&
-                     psx_ctx_is_function_defined("atan", 4);
-  int atan2_defined = psx_ctx_has_function_name("atan2", 5) &&
-                      psx_ctx_is_function_defined("atan2", 5);
+  int atan_defined = ps_ctx_has_function_name("atan", 4) &&
+                     ps_ctx_is_function_defined("atan", 4);
+  int atan2_defined = ps_ctx_has_function_name("atan2", 5) &&
+                      ps_ctx_is_function_defined("atan2", 5);
   int need_atan2_stub = has_undefined_function("atan2", 5) ||
                         has_undefined_function("atan2f", 6) ||
                         has_undefined_function("atan2l", 6) ||
@@ -6146,8 +6146,8 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, ")\n");
     wasm_emitf(2, ")\n");
   }
-  int exp_defined = psx_ctx_has_function_name("exp", 3) &&
-                    psx_ctx_is_function_defined("exp", 3);
+  int exp_defined = ps_ctx_has_function_name("exp", 3) &&
+                    ps_ctx_is_function_defined("exp", 3);
   int need_exp_stub = has_undefined_function("exp", 3) ||
                       has_undefined_function("expf", 4) ||
                       has_undefined_function("expl", 4) ||
@@ -6204,8 +6204,8 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $sum)\n");
     wasm_emitf(2, ")\n");
   }
-  int log_defined = psx_ctx_has_function_name("log", 3) &&
-                    psx_ctx_is_function_defined("log", 3);
+  int log_defined = ps_ctx_has_function_name("log", 3) &&
+                    ps_ctx_is_function_defined("log", 3);
   int need_log_stub = has_undefined_function("log", 3) ||
                       has_undefined_function("logf", 4) ||
                       has_undefined_function("logl", 4) ||
@@ -6324,8 +6324,8 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("log1pl", 6)) {
     wasm_emitf(2, "(func $log1pl (param $x f64) (result f64) (call $log1p (local.get $x)))\n");
   }
-  int sin_defined = psx_ctx_has_function_name("sin", 3) &&
-                    psx_ctx_is_function_defined("sin", 3);
+  int sin_defined = ps_ctx_has_function_name("sin", 3) &&
+                    ps_ctx_is_function_defined("sin", 3);
   int need_sin_stub = has_undefined_function("sin", 3) ||
                       has_undefined_function("sinf", 4) ||
                       has_undefined_function("sinl", 4) ||
@@ -6368,8 +6368,8 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(local.get $sum)\n");
     wasm_emitf(2, ")\n");
   }
-  int cos_defined = psx_ctx_has_function_name("cos", 3) &&
-                    psx_ctx_is_function_defined("cos", 3);
+  int cos_defined = ps_ctx_has_function_name("cos", 3) &&
+                    ps_ctx_is_function_defined("cos", 3);
   int need_cos_stub = has_undefined_function("cos", 3) ||
                       has_undefined_function("cosf", 4) ||
                       has_undefined_function("cosl", 4) ||

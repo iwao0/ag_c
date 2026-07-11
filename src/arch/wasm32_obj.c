@@ -307,12 +307,12 @@ static void wb_zero(wb_t *b, int size) {
 
 static obj_data_t *data_for_symbol(char *sym, int sym_len, int *out_addend) {
   if (!sym) return NULL;
-  if (psx_ctx_has_function_name(sym, sym_len >= 0 ? sym_len : (int)strlen(sym))) {
+  if (ps_ctx_has_function_name(sym, sym_len >= 0 ? sym_len : (int)strlen(sym))) {
     obj_unsupported_msg("function address relocation in Wasm object mode");
   }
   int name_len = sym_len >= 0 ? sym_len : (int)strlen(sym);
-  int is_undefined = sym_len >= 0 ? psx_gvar_is_extern_decl_by_name(sym, sym_len) : 0;
-  int is_static = sym_len >= 0 ? psx_gvar_is_static_storage_by_name(sym, sym_len) : 0;
+  int is_undefined = sym_len >= 0 ? ps_gvar_is_extern_decl_by_name(sym, sym_len) : 0;
+  int is_static = sym_len >= 0 ? ps_gvar_is_static_storage_by_name(sym, sym_len) : 0;
   if (out_addend) *out_addend = 0;
   return intern_data(sym, name_len, 2, is_static, is_undefined);
 }
@@ -714,7 +714,7 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
               obj_sig_t csig = call_sig_from_inst(i);
               if (csig.result != IR_TY_VOID) {
                 psx_function_ret_info_t ret =
-                    i->sym ? psx_ctx_get_function_ret_info(i->sym, i->sym_len)
+                    i->sym ? ps_ctx_get_function_ret_info(i->sym, i->sym_len)
                            : (psx_function_ret_info_t){0};
                 int force_result_i32 = i->dst.type == IR_TY_PTR ||
                                        ret.is_pointer || ret.is_funcptr;
@@ -1023,7 +1023,7 @@ static int collect_param_count(ir_func_t *f) {
       }
     }
   }
-  int declared = f ? psx_ctx_get_function_nargs_fixed(f->name, f->name_len) : 0;
+  int declared = f ? ps_ctx_get_function_nargs_fixed(f->name, f->name_len) : 0;
   if (declared > count) {
     count = declared;
   }
@@ -1038,13 +1038,13 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
   if (f && idx >= 0 && idx < f->param_abi_count && idx < 32) {
     return f->param_abi_types[idx];
   }
-  int pcat = psx_ctx_get_function_param_category(f->name, f->name_len, idx);
+  int pcat = ps_ctx_get_function_param_category(f->name, f->name_len, idx);
   if (raw == IR_TY_PTR) return IR_TY_PTR;
   if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) return IR_TY_PTR;
-  tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind(f->name, f->name_len, idx);
+  tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind(f->name, f->name_len, idx);
   if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  int int_size = psx_ctx_get_function_param_int_size(f->name, f->name_len, idx);
+  int int_size = ps_ctx_get_function_param_int_size(f->name, f->name_len, idx);
   if (raw != IR_TY_PTR && int_size > 0) {
     return int_size == 8 ? IR_TY_I64 : IR_TY_I32;
   }
@@ -1053,7 +1053,7 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
 
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
   if (raw == IR_TY_VOID) return IR_TY_VOID;
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info((char *)name, name_len);
+  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info((char *)name, name_len);
   if (ret.is_pointer || ret.is_funcptr) {
     return IR_TY_PTR;
   }
@@ -1070,7 +1070,7 @@ static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_t
 
 static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
   obj_sig_t sig = {0};
-  psx_function_ret_info_t ret = psx_ctx_get_function_ret_info((char *)name, name_len);
+  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info((char *)name, name_len);
   if (ret.is_pointer || ret.is_funcptr) {
     sig.result = IR_TY_I32;
   } else if (ret.struct_size > 0) {
@@ -1091,17 +1091,17 @@ static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
 
   int nparams = 0;
   for (; nparams < 32; nparams++) {
-    int pcat = psx_ctx_get_function_param_category((char *)name, name_len, nparams);
-    tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind((char *)name, name_len, nparams);
-    int int_size = psx_ctx_get_function_param_int_size((char *)name, name_len, nparams);
+    int pcat = ps_ctx_get_function_param_category((char *)name, name_len, nparams);
+    tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind((char *)name, name_len, nparams);
+    int int_size = ps_ctx_get_function_param_int_size((char *)name, name_len, nparams);
     if (pcat == PSX_PCAT_UNSET && fp == TK_FLOAT_KIND_NONE && int_size <= 0) break;
   }
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      int pcat = psx_ctx_get_function_param_category((char *)name, name_len, p);
-      tk_float_kind_t fp = psx_ctx_get_function_param_fp_kind((char *)name, name_len, p);
+      int pcat = ps_ctx_get_function_param_category((char *)name, name_len, p);
+      tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind((char *)name, name_len, p);
       if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) sig.params[p] = IR_TY_I32;
       else if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
       else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
@@ -1154,13 +1154,13 @@ static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
   if (!gv) return func_sig_from_ctx(name, name_len);
-  return func_sig_from_funcptr_sig(psx_gvar_funcptr_sig(gv));
+  return func_sig_from_funcptr_sig(ps_gvar_funcptr_sig(gv));
 }
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
                                               const char *name, int name_len) {
   if (!mi) return func_sig_from_ctx(name, name_len);
-  return func_sig_from_funcptr_sig(psx_ctx_tag_member_funcptr_sig(mi));
+  return func_sig_from_funcptr_sig(ps_ctx_tag_member_funcptr_sig(mi));
 }
 
 static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
@@ -1216,7 +1216,7 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
       }
     }
   }
-  if (!has_ret_area && psx_ctx_has_function_name(f->name, f->name_len)) {
+  if (!has_ret_area && ps_ctx_has_function_name(f->name, f->name_len)) {
     obj_sig_t ctx_sig = func_sig_from_ctx(f->name, f->name_len);
     if (ctx_sig.nparams == sig->nparams && ctx_sig.nparams > 0) {
       free(sig->params);
@@ -1286,7 +1286,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t arg_ty = i->args[a].type;
       ir_type_t ty = wasm_ir_type(arg_ty);
-      int pcat = i->sym ? psx_ctx_get_function_param_category(i->sym, i->sym_len, a) : PSX_PCAT_UNSET;
+      int pcat = i->sym ? ps_ctx_get_function_param_category(i->sym, i->sym_len, a) : PSX_PCAT_UNSET;
       if (pcat == PSX_PCAT_PTR || arg_ty == IR_TY_PTR) ty = IR_TY_I32;
       else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
       sig.params[a + (has_ret_area ? 1 : 0)] = ty;
@@ -1621,7 +1621,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_LOAD_SYM:
         case IR_LOAD_TLV_ADDR: {
           if (!i->sym) obj_unsupported_op(i->op);
-          if (i->op == IR_LOAD_SYM && psx_ctx_has_function_name(i->sym, i->sym_len)) {
+          if (i->op == IR_LOAD_SYM && ps_ctx_has_function_name(i->sym, i->sym_len)) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
             if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
               target->sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
@@ -2333,7 +2333,7 @@ void wasm32_obj_gen_ir_module(ir_module_t *m) {
 
 static void emit_obj_string_literal(string_lit_t *lit, void *user) {
   (void)user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   int name_len = view.label ? (int)strlen(view.label) : 0;
   if (!view.label || name_len == 0) obj_unsupported_msg("string literal label in Wasm object mode");
   obj_data_t *d = intern_data(view.label, name_len, 0, 1, 0);
@@ -2349,7 +2349,7 @@ static obj_data_t *data_for_symbol_ref(psx_gvar_symbol_ref_t ref, int *out_adden
   }
   char *name = NULL;
   int name_len = 0;
-  if (psx_gvar_symbol_ref_named(ref, &name, &name_len)) {
+  if (ps_gvar_symbol_ref_named(ref, &name, &name_len)) {
     return data_for_symbol(name, name_len, out_addend);
   }
   obj_unsupported_msg("missing symbol initializer in Wasm object mode");
@@ -2359,7 +2359,7 @@ static obj_data_t *data_for_symbol_ref(psx_gvar_symbol_ref_t ref, int *out_adden
 static void data_write_symbol_addr(obj_data_t *d, psx_gvar_symbol_ref_t ref, int size) {
   char *name = NULL;
   int name_len = 0;
-  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
+  if (ps_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(name, name_len);
     if (!target) {
@@ -2395,7 +2395,7 @@ static void data_write_symbol_addr_at(obj_data_t *d, size_t off, psx_gvar_symbol
                                       int size) {
   char *name = NULL;
   int name_len = 0;
-  if (psx_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
+  if (ps_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(name, name_len);
     if (!target) {
@@ -2422,7 +2422,7 @@ static void data_write_scalar(obj_data_t *d, uint64_t value, int size) {
 
 static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind, double value) {
   psx_gvar_fp_bits_t bits;
-  if (!psx_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
+  if (!ps_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
     obj_unsupported_msg("global floating slot in Wasm object mode");
   }
   data_write_int_le_at(d, off, (uint64_t)bits.bits, bits.size);
@@ -2431,7 +2431,7 @@ static void data_write_fp_at(obj_data_t *d, size_t off, tk_float_kind_t fp_kind,
 static uint64_t data_bits_for_init_value(psx_gvar_init_value_t value) {
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
-    if (!psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
+    if (!ps_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       obj_unsupported_msg("global floating initializer in Wasm object mode");
     }
     return (uint64_t)bits.bits;
@@ -2446,7 +2446,7 @@ static void data_write_init_value(obj_data_t *d, psx_gvar_init_value_t value) {
   }
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
-    if (!psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
+    if (!ps_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       obj_unsupported_msg("global floating initializer in Wasm object mode");
     }
     data_write_scalar(d, (uint64_t)bits.bits, bits.size);
@@ -2472,7 +2472,7 @@ static void ensure_global_func_sig_for_init_symbol(global_var_t *gv,
                                                    psx_gvar_init_value_t value) {
   char *sym = NULL;
   int sym_len = 0;
-  if (!psx_gvar_init_value_named_function(value, &sym, &sym_len)) return;
+  if (!ps_gvar_init_value_named_function(value, &sym, &sym_len)) return;
   ensure_func_sig_for_address(sym, sym_len,
                               func_sig_from_global_funcptr(gv, sym, sym_len));
 }
@@ -2482,10 +2482,10 @@ static void data_write_init_member_value_at(obj_data_t *d, global_var_t *gv, int
                                             const tag_member_info_t *member_info) {
   if (idx < 0) return;
   psx_gvar_init_member_value_t value =
-      psx_gvar_init_member_value(gv, idx, member_info);
+      ps_gvar_init_member_value(gv, idx, member_info);
   char *sym = NULL;
   int sym_len = 0;
-  if (member_info && psx_gvar_init_value_named_function(value, &sym, &sym_len)) {
+  if (member_info && ps_gvar_init_value_named_function(value, &sym, &sym_len)) {
     ensure_func_sig_for_address(sym, sym_len,
                                 func_sig_from_member_funcptr(member_info, sym,
                                                              sym_len));
@@ -2497,10 +2497,10 @@ static void emit_obj_global_bitfield_member_data(obj_data_t *d, global_var_t *gv
                                                  size_t base_off,
                                                  const tag_member_info_t *mi) {
   if (!mi || mi->bit_width <= 0) obj_unsupported_msg("global bitfield initializer in Wasm object mode");
-  unsigned long long packed = psx_gvar_init_slot_bitfield_bits(gv, idx,
+  unsigned long long packed = ps_gvar_init_slot_bitfield_bits(gv, idx,
                                                                mi->bit_width, mi->bit_offset);
   data_write_int_le_at(d, base_off + (size_t)mi->offset, packed,
-                       psx_tag_member_decl_value_size(mi));
+                       ps_tag_member_decl_value_size(mi));
 }
 
 typedef struct {
@@ -2536,9 +2536,9 @@ static const psx_gvar_aggregate_walk_ops_t obj_global_aggregate_walk_ops = {
 
 static void emit_obj_global_aggregate_data(obj_data_t *d, global_var_t *gv, int size) {
   wb_zero(&d->bytes, size);
-  if (!psx_gvar_has_aggregate_initializer(gv)) return;
+  if (!ps_gvar_has_aggregate_initializer(gv)) return;
   obj_global_aggregate_emit_ctx_t ctx = {.d = d, .gv = gv};
-  if (!psx_gvar_walk_aggregate_initializer(gv, 0,
+  if (!ps_gvar_walk_aggregate_initializer(gv, 0,
                                            &obj_global_aggregate_walk_ops, &ctx)) {
     obj_unsupported_msg("global aggregate initializer in Wasm object mode");
   }
@@ -2584,7 +2584,7 @@ static int emit_obj_initializer_slots(void *user,
     obj_unsupported_msg("global array element size in Wasm object mode");
   }
   obj_init_slots_data_ctx_t slot_ctx = {.d = ctx->d, .gv = ctx->gv};
-  return psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->elem_count,
+  return ps_gvar_walk_init_slot_values(ctx->gv, layout, layout->elem_count,
                                         write_obj_global_init_slot_value,
                                         &slot_ctx);
 }
@@ -2614,18 +2614,18 @@ static const psx_gvar_initializer_visit_ops_t obj_global_initializer_visit_ops =
 
 static void emit_obj_global(global_var_t *gv, void *user) {
   (void)user;
-  char *name = psx_gvar_name(gv);
-  int name_len = psx_gvar_name_len(gv);
-  int is_static = psx_gvar_is_static_storage(gv);
-  if (psx_gvar_is_extern_decl(gv)) {
+  char *name = ps_gvar_name(gv);
+  int name_len = ps_gvar_name_len(gv);
+  int is_static = ps_gvar_is_static_storage(gv);
+  if (ps_gvar_is_extern_decl(gv)) {
     intern_data(name, name_len, 2, is_static, 1);
     return;
   }
 
-  int size = psx_gvar_storage_size(gv, 4);
+  int size = ps_gvar_storage_size(gv, 4);
   obj_data_t *d = intern_data(name, name_len, align_log2_for_size(size),
                               is_static, 0);
-  psx_gvar_initializer_class_t init_class = psx_gvar_initializer_class(gv, 1);
+  psx_gvar_initializer_class_t init_class = ps_gvar_initializer_class(gv, 1);
   if (d->is_emitted) {
     if (!init_class.has_payload || d->bytes.len != 0) return;
     d->bytes.len = 0;
@@ -2635,7 +2635,7 @@ static void emit_obj_global(global_var_t *gv, void *user) {
   data_note_alloc_size(d, (size_t)size);
 
   obj_global_init_emit_ctx_t emit_ctx = {.d = d, .gv = gv, .size = size};
-  if (!psx_gvar_visit_initializer_classified(gv, &init_class, size,
+  if (!ps_gvar_visit_initializer_classified(gv, &init_class, size,
                                              &obj_global_initializer_visit_ops,
                                              &emit_ctx)) {
     obj_unsupported_msg("global initializer in Wasm object mode");

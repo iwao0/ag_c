@@ -26483,3 +26483,443 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     declarator parserがidentifier-outward operator列を直接生成するよう統合する。
   - function operatorのreturn descriptorは現在parser側の`psx_decl_make_funcptr_sig_from_kind()`で
     組み立てている。canonical `FUNCTION.base`からcompat signatureを導出する一方向変換へ寄せる。
+
+### このセッション（続き961）: top-level宣言子を直接operator列へ変換した
+- 見つかった根本原因:
+  - top-level recursive declarator parserはpointer prefix、括弧内配列積、function suffixを
+    独立fieldへ平坦化し、semantic段階で結合順を推測していた。
+  - `psx_type_funcptr_signature()`はcanonical `FUNCTION.base`ではなく、FUNCTION/rootに複製された
+    return-shape cacheを返していた。global nested function pointerでは誤ったstorage型木をcacheが
+    隠しているケースもあった。
+- 根本対応:
+  - recursive parserをdirect-declarator suffixの後に同frameのpointer operatorを追加する標準的な
+    構造へ変更し、identifier-outward `ARRAY/POINTER/FUNCTION`列を構文解析中に直接生成する。
+  - top-level配列compat viewはoperator列から導出する。不完全配列はARRAY operator自身の
+    `is_incomplete_array`で区別し、新しい配列sidecarは作らない。
+  - top-level typedefとglobal objectのcanonical型は、builtin/typedef/function pointerを問わず
+    base canonical型へoperator列を適用して構築する。旧funcptr専用の型木再構築分岐は削除した。
+  - `psx_type_funcptr_signature()`は引数ABI情報をFUNCTION nodeから取り、戻り値shapeを
+    canonical `FUNCTION.base`から導出する。integer/float/void/data pointer/pointer-to-array/
+    returned function pointerを構造的に復元し、return-shape cacheがstaleでも型木を優先する。
+  - global `funcptr_sig` mirrorも最終canonical型から一方向に更新する。
+- parser regression:
+  - top-level `typedef int *TMDArrayPtr[3]`が`ARRAY -> POINTER -> int`、
+    `typedef int (*TMDPtrArray)[3]`が`POINTER -> ARRAY -> int`になること。
+  - FUNCTION nodeのcached returnをdoubleからintへ意図的に変更しても、`FUNCTION.base`由来の
+    double signatureが返ること。
+  - global nested function pointerの`_Generic`結合順回帰を含む既存parser suiteがpassすること。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の候補:
+  - local (`decl.c`)、block typedef (`stmt.c`)、struct member (`struct_layout.c`) のrecursive parserも
+    operator列を直接生成し、`ptr_in_paren/paren_array_mul/inner_dims`からの再合成を削除する。
+  - top-level登録のstorage/layout互換mirrorには`ptr_in_paren_group`等が残る。canonical型から
+    object array/pointer-to-array/layout viewを導出して、parser event mirrorを縮小する。
+
+### このセッション（続き962）: local typedef宣言子を直接operator列へ変換した
+- 見つかった根本原因:
+  - `decl.c`のlocal typedefは通常ローカル宣言と同じflatten parserを使い、`had_paren_group`、
+    `paren_array_mul`、pointer level、function suffixからcanonical型を再構築していた。
+  - function pointer typedefはさらに専用shapeを作り直し、source declaratorのoperator順を
+    一度失ってから復元していた。
+- 根本対応:
+  - local typedef専用の標準recursive declarator parserを追加し、direct suffixを読んだ後で
+    同frameのpointer operatorを追加する。pointer qualifierも各POINTER operatorへ直接保持する。
+  - ARRAY operatorはincomplete情報を含み、FUNCTION operatorはその場で解析したparameter ABI
+    signatureを持つ。配列互換viewはoperator列から導出する。
+  - typedef canonical型はbuiltin/既存typedefのbase型へoperator列を一度だけ適用して構築する。
+    旧function-pointer専用再構築は削除し、funcptr compat signatureはcanonical FUNCTION chainから
+    導出する。
+  - typedefのis_pointer/is_array/sizeof/array dims mirrorは完成したcanonical型から更新する。
+- parser regression:
+  - block内`typedef int *TMLocalArrayPtr[3]`を使ったlvarが`ARRAY -> POINTER -> int`、
+    `typedef int (*TMLocalPtrArray)[3]`を使ったlvarが`POINTER -> ARRAY -> int`になること。
+  - local function-pointer typedef/array/matrixの既存canonical chain回帰も継続pass。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の候補:
+  - 通常ローカル宣言はまだ旧`consume_decl_name_recursive()`と
+    `paren_array_mul/inner_array_mul`に依存する。配列/VLA/static loweringのtoken ownershipを
+    operator parserへ移し、lvar canonical型をbase+operator列から必須生成する。
+  - `stmt.c` block typedefと`struct_layout.c` member parserも同じdirect parserへ統合する。
+
+### このセッション（続き963）: 普通宣言子移行用のVLA次元境界を作った
+- 見つかった根本原因:
+  - 通常ローカルVLAの登録helperが、宣言子パーサが第1次元を読んだ後に
+    残りの`[...]`を再度トークンから解析していた。これでは宣言子operator parserが
+    suffixを一括所有できず、VLA式と型形状の責務境界も曖昧になる。
+- 根本対応:
+  - ARRAY operatorに定数配列/incompleteとは別の`is_vla_array`種別を追加し、
+    `psx_type_apply_declarator_shape()`がcanonical ARRAY nodeの`is_vla`へ反映するようにした。
+  - VLAの各次元についてAST式/定数値/定数フラグを持つ`decl_vla_dims_t`を導入した。
+    型自体はARRAY operator列、実行時式は宣言解析中記述として分離する。
+  - 実際のVLAスロット登録と`ND_VLA_ALLOC`生成を
+    `register_vla_lvar_from_dims()`へ切り出し、トークンを読まず次元記述を受け取るようにした。
+    旧入口は現在のtoken ownershipを保つ薄い互換ラッパーとして残した。
+  - 定数多次元配列登録も`register_multidim_array_lvar_from_dims()`へ分離し、
+    全次元列とtypedef由来次元列を引数で受け取るようにした。現行入口のトークン解析は
+    互換ラッパー内に限定した。
+  - static struct/union配列のloweringも
+    `try_lower_static_local_aggregate_array_consumed()`へ分離し、消費済み要素数から
+    登録できるようにした。
+  - `consume_declarator_array_suffix()`を追加し、1回の suffix解析から
+    定数/incomplete/VLAのARRAY operatorと`decl_vla_dims_t`の両方を生成するようにした。
+    local typedef parserをこの共通入口へ移し、定数配列の二重解釈を減らした。
+- 確認:
+  - `git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の候補:
+  - 通常ローカルのrecursive declarator parserがARRAY/FUNCTION/POINTER operatorと
+    `decl_vla_dims_t`を同時に生成し、旧`paren_array_mul/inner_array_mul`はoperator列からの
+    互換viewに変える。
+  - 用意した消費済みVLA/定数配列/static aggregateのcoreへ直接接続し、
+    lvar canonical型をbase+operator列から必ず構築する。
+- 命名整理:
+  - `ps_`を外部API、`psx_`を内部APIにするリネームは、正本化完了と全テスト通過の後に行う。
+
+### このセッション（続き964）: 普通ローカル宣言子を直接operator列へ切り替えた
+- 根本対応:
+  - 普通ローカル宣言の主経路から旧`consume_decl_name_recursive()`を外し、local typedefと
+    共通の標準recursive declarator parserでARRAY/FUNCTION/POINTER operatorを直接生成する。
+  - 旧`inner_array_mul/paren_array_mul`はパース中に組み立てず、operator列からの一方向compat
+    viewとして導出する。
+  - 通常配列、VLA、static aggregate配列は、消費済み次元列を受け取る登録coreへ直接渡す。
+  - lvar canonical型は旧sidecar型のrebaseではなく、基底canonical型へoperator列を1回だけ
+    適用して必ず構築する。typedef基底の修飾はclone元canonical型を正本とし、legacy
+    type-specフラグをrootへ重複適用しない。
+  - VLAの実行時stride slotは静的型と分離した宣言情報として、
+    `psx_type_copy_vla_runtime_metadata()`で登録型から最終canonical rootへ限定移送する。
+- canonical構造で露出した不整合の根本対応:
+  - 多段pointerのsemantic qualifier位置と字句順compat maskを分離し、canonical修飾からmask
+    viewを一方向同期する。
+  - pointee const/volatileは直下pointerの修飾ではなく最深要素型から読む。
+  - ARRAY strideとpointer-to-arrayの`outer_stride/ptr_array_pointee_bytes/base_deref_size`を
+    完成したcanonical chainから同期する。
+  - 関数ポインタの戻りshapeはcanonical `FUNCTION.base`から導出し、間接呼出し結果の
+    付帯signatureもcallee canonical FUNCTIONから更新する。
+- 削除:
+  - 普通ローカル用の`consume_decl_name_ex()`と、未消費tokenを前提にしたstatic aggregate
+    arrayラッパーを削除した。旧recursive parserはまだlocal extern経路が使う。
+- 確認:
+  - コンパイル時の新規warningなし。 `git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の候補:
+  - local extern/parameter/block typedef/member parserに残るflatten declaratorを共通direct
+    parserへ移す。
+  - `paren_array_mul/inner_array_mul`を読むstorage/layout分岐をcanonical queryへ置換し、
+    compat view自体を削除する。
+
+### このセッション（続き965）: local extern・block typedef・parameter・memberをdirect operator列へ移した
+- 根本対応:
+  - local externは普通ローカルと同じdirect declarator parserを使い、canonical baseへoperator列を
+    適用して型を構築する。`decl.c`に残っていた旧flatten recursive parserと配列suffix parserを
+    削除した。
+  - block typedefはARRAY/FUNCTION/POINTERを識別子から外向きの順で直接記録し、typedefの
+    `is_pointer/sizeof/array dims/funcptr signature` mirrorを完成canonical型から導出する。
+  - parameterもdirect operator列を正本にし、Cのarray/function parameter adjustmentを
+    `psx_type_adjust_parameter_type()`へ集約した。VLA実行時次元だけを別の宣言時情報として保持し、
+    登録後のlvar `decl_type`はbase+operator列から確定する。
+  - struct/union member parserもarray/function suffixを含む宣言子全体を直接operator列へ記録する。
+    layout用の積・stride mirrorは維持するが、最終`member.decl_type`とfuncptr signatureは
+    base+operator列のcanonical型から確定する。
+- canonical化で露出した共通不整合:
+  - direct shapeから作った連続pointer chainの`pointer_qual_levels`が各nodeで1のままだったため、
+    canonical chain同期でrootから`N..1`を設定するようにした。
+  - member canonical baseで`void`を整数型としていたため、void関数ポインタのWasm indirect callへ
+    誤った`result i64`が付いていた。`PSX_TYPE_VOID`を構築するよう修正した。
+- regression:
+  - parameterのarray adjustment、pointer-to-array、array-of-pointer、function pointerのcanonical
+    chainを直接検証するテストを追加した。
+  - memberの多次元array、pointer-to-array、array-of-pointer、二重function pointerのcanonical
+    chainを直接検証するテストを追加した。
+- 確認:
+  - `git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の候補:
+  - materialize fallbackと、残る`paren_array_mul`などのlayout/storage compat readを棚卸しし、
+    canonical queryへ置換する。
+  - 正本化完了候補で全1201件を実行し、その後に`ps_`外部API / `psx_`内部APIの命名整理を行う。
+
+### このセッション（続き966）: legacy型復元とsidecar query fallbackを削除した
+- 根本対応:
+  - lvar/gvarの`decl_type`欠落時に`size/elem_size/stride/qualifier` sidecarから型木を再構築する
+    materialize処理を削除した。`psx_lvar_get_decl_type()`と`psx_gvar_get_decl_type()`はcanonical
+    `decl_type`だけを返し、正本欠落を隠さない。
+  - `materialize_decl_type` APIを削除し、全利用箇所を純粋getterへ統合した。
+  - tag memberのsize/array/pointer/qualifier/stride queryからsidecar fallbackを外し、canonical
+    `decl_type`の構造だけを参照するようにした。
+  - node pointer stride queryもcanonical構造だけを参照するようにし、`legacy_flat`、
+    `with_sidecar`、`effective_stride_metadata` API群と閉じた旧復元実装を削除した。
+- VLAの構造と実行時情報の分離:
+  - `psx_type_copy_vla_runtime_metadata()`はruntime slot/offset/dimension descriptorだけをコピーし、
+    `deref_size/base_deref_size/stride`などの構造情報を上書きしない。
+  - pointer-to-VLAにもruntime descriptorを移送し、canonical ARRAY構築時はruntime `sizeof == 0`
+    でも子型のderef/element sizeからscalar strideを保持する。
+  - array-of-pointer-to-arrayを含むcanonical chainからstrideを求められるよう、構造queryを拡張した。
+- regression:
+  - canonical `decl_type`を意図的に消したsynthetic fixtureは、sidecarから復元されずNULLになることを
+    検証するよう変更した。
+  - flat pointerのraw metadataを期待していたテストはcanonical型木を使うか、構造queryが0を返す
+    negative testへ変更した。
+  - lvar/node constructorはcanonical型欠落時にABI引数やsidecarからscalar/pointer型を新造せず、
+    `decl_type`をそのまま受け渡すようにした。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の正本化対象:
+  - semantic/public viewに残るsidecar直接参照を、canonical型からの一方向projectionへ限定する。
+- 命名整理:
+  - ユーザー合意どおり、`ps_`外部API / `psx_`内部APIのリネームは正本化完了と全1201件通過後に行う。
+
+### このセッション（続き967）: semantic contextのtag member/typedef保存正本を`decl_type`へ統一した
+- 根本対応:
+  - `tag_member_t`からtype size/deref/array/tag/qualifier/fp/stride/funcptrなどの重複型フィールドを
+    削除した。内部保存はoffset/bitfield/layout identityとcanonical `decl_type`だけにし、公開
+    `tag_member_info_t`は取得時に型木から全項目をprojectionする。
+  - `typedef_name_t`からbase kind/size/tag/pointer/array dims/funcptrなどの重複型フィールドを
+    削除した。typedef検索、sizeof、pointer levelは保存済みcanonical `decl_type`から導出する。
+  - typedef pointer levelの後付けsetterを削除し、parser/stmt/decl側の呼び出しも除去した。
+  - tag member/typedefのfuncptr queryとtag identity queryから、`decl_type`欠落時にsidecarを返す
+    fallbackを削除した。
+  - typedef再宣言比較はsidecar比較fallbackを廃止し、canonical型木のidentityだけを比較する。
+    stride/deref/sizeなどの派生cacheは型同一性に含めない。
+- projection修正:
+  - 関数ポインタtypedefでもPOINTER/ARRAY/FUNCTION chainを辿ってreturn leafのbase/tag identityを
+    projectionする。ただし公開`fp_kind`はオブジェクト型の分類なのでNONEを保ち、戻りFP型は
+    canonical function signatureだけに保持する。
+  - array-of-pointer-to-arrayのpointee bytesは`ARRAY -> POINTER -> ARRAY`から内側ARRAYのsizeofを
+    算出する。pointer-to-array-of-tagをderefしたARRAY viewでは行全体sizeofをcarryする。
+- regression:
+  - tag memberの入力cacheとcanonical型が矛盾するfixtureはcanonical要素サイズを期待するよう変更。
+  - 最上位ARRAYのraw `ptr_array_pointee_bytes`確認をstructural queryへ置換した。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了候補まで保留する。
+- 次の正本化対象:
+  - lvar/global_varの保存構造とpublic queryを監査し、sidecarがcanonical型への入力やfallbackに
+    なっている残存箇所を除去する。ABI/layout/runtime専用情報は型identityから分離して残す。
+- 命名整理:
+  - `ps_`外部API / `psx_`内部APIのリネームは、正本化完了と全1201件通過後に行う。
+
+### このセッション（続き968）: lvar/gvar/tag member public queryのsidecar fallbackを削除した
+- 根本対応:
+  - lvarのpointer/array/tag aggregate/qualifier/complex/fp kind/decl sizeof/element size/array shape/VLA
+    descriptor queryをcanonical `decl_type`だけから取得するようにした。
+  - gvarのarray/tag aggregate/bool/decl sizeof/array element size/count/tag identity queryもcanonical
+    `decl_type`だけから取得するようにした。
+  - tag memberのstruct/union/unnamed aggregate判定から`tag_kind/is_tag_pointer` sidecar fallbackを外した。
+  - sidecarからtag aggregate sizeを再構築する未使用helperを削除した。
+- 境界として残した情報:
+  - lvar `size` / gvar `type_size`を使うstorage allocation sizeは、ABI slotや配置サイズとして
+    canonical宣言型の`sizeof`と異なり得るため、型identityではないstorage metadataとして維持する。
+  - global initializer値、symbol、slot countなども型情報ではないため対象外として維持する。
+- regression:
+  - sidecarだけを持つsynthetic lvar/gvar/tag member fixtureへcanonical型を明示し、setter/queryが
+    型木の変更を反映することを検証する形へ変更した。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了監査まで保留する。
+- 次の正本化対象:
+  - lvar/global_varへの型sidecar書き込みがcanonical型構築の入力として残るsetter群を監査し、
+    完成canonical型からのprojectionだけにできるものを削除する。
+  - `symtab.h` / `decl.h`の重複型フィールドを、ABI/layout/runtime用途と純粋cacheに分類する。
+
+### このセッション（続き969）: lvar/gvar型queryをstrict canonicalへ切り替えた
+- 根本対応:
+  - lvarのpointer-like、struct/union、self const/volatile、array shape、scalar/FP identity、VLA runtime
+    descriptorを、`decl_type`欠落時にsidecarから判定・復元しないようにした。
+  - gvarのdecl sizeof、array、struct/union、bool、array element size/count、tag identityもcanonical
+    型木だけから導出するようにした。
+  - tag member aggregate判定に残っていた`tag_kind/is_tag_pointer` fallbackも削除した。
+- 保存情報の分類:
+  - lvar `size/offset/align/is_byref_param`とgvar `type_size`はframe/global storage配置用であり、
+    canonical宣言型のidentityとは分離して維持する。
+  - VLA dimension source offsetやruntime stride slotは実行時descriptorだが、現在はcanonical型へ
+    コピー済みなのでqueryは型側だけを見る。
+  - initializer、usage、linkage、scope、bitfieldなどは型identityではないため維持する。
+  - `elem_size/fp_kind/tag_kind/pointer levels/stride/qualifier`等のsidecarはまだ旧setterが構築途中に
+    書き込むため構造体上に残るが、public queryのfallbackとしては使わない。
+- regression:
+  - sidecarだけでtag型を表していたsynthetic lvar/gvar/tag member fixtureへcanonical型を追加した。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。
+- 次の正本化対象:
+  - local/parameter/globalの登録途中で複数の`psx_decl_set_*`を順に呼び、sidecarとcanonical型を
+    相互更新する経路を、完成型の一括assignmentと一方向storage projectionへ置換する。
+  - 置換後に未使用となるlvar/global_varの純粋型cacheフィールドとsetterを削除する。
+
+### このセッション（続き970）: 通常local宣言の最終型二重更新を除去した
+- 根本対応:
+  - `psx_decl_set_lvar_decl_type()`をcanonical `decl_type`の設定とlegacy型cacheへの一方向
+    projectionの境界にした。storage `size/offset/align`やVLA source slot等は型cacheではないため
+    projection対象外のまま維持する。
+  - 通常local宣言でcanonical型を設定した後に、scalar/pointee/fp/pointer/complex/atomic/integer
+    identity/long double/funcptr/bool/voidをsetterで再編集していた後段処理を削除した。
+  - `_Atomic`、`long long`、plain `char`、`long double` identityはdeclarator operator適用前の
+    canonical base typeへ設定する。関数ポインタsignatureとpointer-to-array形状はdeclarator shapeで
+    作られたFUNCTION/POINTER/ARRAY型木をそのまま正本とする。
+  - lvar互換cacheはcanonical型木からscalar/pointee identity、qualifier mask、tag identity、funcptr
+    signature、array strideをまとめてprojectionする。cacheからcanonicalへ戻す処理は追加していない。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了監査まで保留する。
+- 次の正本化対象:
+  - 通常local宣言の登録前半に残るsetter列を、frame/VLA runtime metadata収集とcanonical型構築へ
+    分離する。登録途中のtemporary型から最終型へコピーするのはVLA runtime metadataだけにする。
+  - parameter/global/compound literal経路も完成canonical型の一括assignmentと一方向projectionへ
+    揃え、未使用化したsetterと純粋型cacheフィールドを削除する。
+- 命名整理:
+  - `ps_`外部API / `psx_`内部APIへのリネームは、正本化完了、全1201件通過の後に別工程で行う。
+
+### このセッション（続き971）: local/parameter/global登録をcanonical一括assignmentへ移行した
+- 通常local/VLA:
+  - declarator解析直後にcanonical型を1回だけ構築し、各storage登録分岐ではframe size/alignmentだけを
+    決めるようにした。tag/qualifier/pointer/stride/fp等を仮型へ書くsetter列は削除した。
+  - 旧`[`互換経路のVLAが途中`continue`でcanonical最終化を迂回していたため、VLAも同じ最終化を
+    通すよう修正した。仮型から引き継ぐのはVLA runtime descriptorだけ。
+- parameter:
+  - 全parameter登録分岐のpointer/tag/fp/stride/funcptr仮型setterを削除し、ABI slot sizeとbyref flag、
+    VLA runtime descriptorだけを登録してから`param_canonical_decl_type()`を一括設定するようにした。
+  - `param_decl_spec_t`へ完全な`psx_type_spec_result_t`を保持し、従来失われていたconst/volatile、
+    `_Atomic`、`long long`、plain `char`、`long double` identityをcanonical基底型へ反映した。
+  - parameter canonical identityのregressionを追加した。
+- top-level global:
+  - `psx_decl_set_gvar_decl_type()`をcanonicalからlegacy cacheへの一方向projection境界にした。
+  - canonical設定後のpointer-to-array/stride/pointee FP/funcptr setter列を削除した。
+  - 新規global登録は`type_size`、storage element width、array配置、linkageだけを設定し、仮の
+    `decl_type`を作らない。canonical型設定時にscalar/pointee/tag/funcptr/stride cacheをprojectionする。
+  - `toplevel_decl_spec_t`にも完全なtype-spec resultを保持し、atomic/integer identity/qualifierを
+    canonical基底型へ反映した。
+- storage境界:
+  - gvar `type_size`だけでなく`deref_size`も純粋な型identityではない。pointer-to-array-of-pointerでは
+    canonical dereference sizeが行全体24Bでも、global slotのstorage element widthはpointer 8Bになる。
+    projectionはcanonical構造からこのstorage leaf widthを導出する。
+- 削除:
+  - 未使用化したlvar atomic/integer identity/storage scalar/pointer-base-array setter、gvar inner-stride/
+    pointer-base-array/ptr-array-bytes/qualifier setter、parameter byref型setterを削除した。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了監査まで保留する。
+- 次の正本化対象:
+  - compound literalとstatic local lowering helperに残るlvar/gvar reverse setterを、canonical型の直接構築と
+    storage metadataへ分離する。
+  - test fixtureが型構築APIとして使用しているsetterをcanonical type constructorへ置換し、setterと
+    純粋型cacheフィールドをさらに削除する。
+- 命名整理:
+  - `ps_`外部API / `psx_`内部APIへのリネームは、正本化完了、全1201件通過の後に別工程で行う。
+
+### このセッション（続き972）: compound literal/static local loweringをcanonical一括assignmentへ移行した
+- compound literal:
+  - cast metadataからscalar/tag/pointer/pointer-to-array/arrayのcanonical object typeを一度だけ構築する
+    helperへ統合した。
+  - file-scope gvarとlocal lvarはstorage sizeだけを保持し、旧scalar/pointer/fp/tag setter列を使わず
+    `psx_decl_set_{gvar,lvar}_decl_type()`で完成型を設定する。
+- static local lowering:
+  - scalar、function pointer、scalar/pointer-element array、typedef/multidimensional array、struct/union、
+    aggregate arrayを共通canonical builderへ移行した。
+  - mangled gvarとshort-name alias lvarは同じcanonical型からそれぞれpersistent cloneを受け取り、alias登録
+    helperは型フラグ列を受け取らない。
+  - fixed arrayのstrideはcanonical ARRAY chainから一方向projectionし、登録途中のtemporary array rebuildを
+    削除した。
+- その他の登録経路:
+  - union/struct value cast用temporary lvarをtag canonical typeの直接assignmentへ変更した。
+  - block-scope externはstorage sizeを設定後にcanonical型を一括assignmentし、funcptr signatureの再注入を
+    削除した。
+- API削除:
+  - production/testの双方で未使用になったlvar scalar/bool/long-double setter、gvar array-stride/
+    pointee-size/scalar/bool/long-double setterを削除した。
+- 確認:
+  - コンパイル時の新規warningなし。`git diff --check` = clean。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全1201件のWasm E2Eは未実行。正本化完了監査まで保留する。
+- 次の正本化対象:
+  - test fixtureだけが型構築APIとして使用しているpointer/fp/void/complex/qualifier/funcptr/tag setterを、
+    canonical type constructor + `psx_decl_set_*_decl_type()`のprojectionテストへ置換する。
+  - 置換後に旧setterと純粋型cacheフィールドを削除し、全1201件を通して正本化完了を判定する。
+- 命名整理:
+  - `ps_`外部API / `psx_`内部APIへのリネームは、正本化完了と全1201件通過の後に着手する。
+
+### このセッション（続き973）: 型情報正本化を完了し、公開API命名を復元した
+- 正本化の最終修正:
+  - 不完全local配列の推論サイズをcanonical ARRAY型へ反映する共通処理を追加した。
+  - plain/signed char identity、nested union member、tag shadow scope、function pointer多重deref、
+    function pointer const判定、enum parameter ABI、Wasm32 setjmp stubの型をcanonical型に合わせた。
+  - 無名prototype parameterの簡易placeholderを廃止し、通常parameterと同じcanonical型を保持する
+    ND_LVAR placeholderへ統一した。これによりvariadic fixed `long`のABI幅も型正本から得られる。
+  - test fixtureだけが使っていたreverse setterをcanonical type constructorへ移行し、未使用setterを削除した。
+- 正本化の完了判定:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1202 compiled, 1202 executed**。
+  - sidecar fallback、legacy materializer、reverse setterの残存監査を行い、canonical型を宣言型identityの
+    唯一の入力とする状態を完了候補ではなく完了扱いにした。
+- 公開API命名:
+  - 規則を「parser外へ公開する関数は`ps_`、parser内部専用関数は`psx_`」と明文化した。
+  - `*_public.h`に宣言される関数とparser外のproduction codeから参照される関数の和集合173件を
+    `psx_`から`ps_`へリネームした。内部専用関数とinternal headerだけを使うtest helperは`psx_`を維持した。
+  - parser外production codeの`psx_`呼び出し = 0件、`*_public.h`の`psx_`宣言 = 0件。
+- リネーム後の確認:
+  - `make -j4 build/ag_c build/ag_c_wasm build/test_parser build/test_wasm32_backend build/test_wasm32_e2e`
+    = 成功、新規warningなし。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1202 compiled, 1202 executed**。
+  - `git diff --check` = clean。
+
+### このセッション（続き974）: 完了監査をやり直し、function/AST/tag型の残存二重管理を解消した
+- 訂正:
+  - 続き973の完了判定後にstrict auditを行うと、lvar/gvarの型cache、関数テーブルの戻り値/引数型cache、
+    AST query時のscalar fallbackが残っていた。973の「完了」は早すぎたため、本項の修正と全件確認を
+    正本化の最終完了判定とする。
+- 保存構造:
+  - `lvar_t` / `global_var_t`からscalar/pointer/tag/funcptr/qualifier/stride等の純粋型cacheを削除した。
+    storage size、VLA runtime descriptor、initializer、linkageは型identityではないため維持した。
+  - tag member/typedef/global再宣言比較をcanonical型木だけへ統一し、reverse setterとsidecar fallbackを削除した。
+  - `func_name_t`はcanonical `PSX_TYPE_FUNCTION`を唯一の意味型正本とし、戻り値、固定引数数、可変長性、
+    各引数型をそこから取得する。残る`param_abi_int_sizes`は既存calling convention用のABI projectionで、
+    型identityや再宣言比較には使わない。
+  - fixed parameter数は16を超えても保持し、型追跡だけ既存上限16に制限する。
+- AST:
+  - number、FP unary、direct/indirect call、function designatorを生成時canonical型へ移行した。
+  - function designatorは旧`POINTER -> return type`復元を廃止し、宣言子どおり
+    `POINTER -> FUNCTION -> return type`を保持する。
+  - `expr` / `semantic_pass`がcanonical型欠落時に`fp_kind/is_complex/is_void_call`を意味型として読む
+    fallbackを削除した。残るnode scalar bitはlowering/diagnosticへの一方向projectionである。
+- 型互換性とtag completeness:
+  - canonical FUNCTION型がある場合はfuncptr ABI maskを型identity比較から除外した。
+  - tag identityは名前文字列とscopeで比較し、token pointer同一性には依存しない。scope未解決値0は
+    resolved identityとの互換比較を許し、異なるresolved shadow scopeは区別する。
+  - forward tag typedefのcanonical型はtag完成後にtag表からsizeを更新し、incomplete snapshotを残さない。
+- 公開API命名:
+  - 973で実施した`ps_`外部API / `psx_`内部APIへの整理を維持した。再監査でもparser外productionの
+    `psx_`呼出し0件、public headerの`psx_`宣言0件。
+- 最終確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1202 compiled, 1202 executed**。
+  - 途中で4件露出したextern tag再宣言、nested function parameter、local extern tag、forward typedefは、
+    cache復活ではなく上記identity/completeness修正で解消した。

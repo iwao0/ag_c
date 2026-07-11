@@ -124,8 +124,8 @@ struct node_t {
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
 
-  /* Typed-AST path: when present, this semantic type is canonical; legacy fields
-   * remain as mirrors for ABI/codegen paths during migration. */
+  /* Canonical semantic type. Scalar bit fields above are one-way lowering and
+   * diagnostic projections; semantic type queries do not reconstruct from them. */
   psx_type_t *type;
   psx_expr_type_state_t type_state;
 };

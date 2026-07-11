@@ -1,17 +1,14 @@
-// 関数の宣言と定義でシグネチャを照合する (C11 6.7p4)。同名関数の再宣言で
-// (1) 引数数 / 可変長性、(2) 各引数の型カテゴリ (粗粒度: INT4/INT8/FLOAT/DOUBLE/PTR/STRUCT)
-// が異なる場合は E3064 で報告する。本 fixture は「合法な再宣言」 (シグネチャ一致) が
+// 関数の宣言と定義でcanonical関数型を照合する (C11 6.7p4)。同名関数の再宣言で
+// 戻り値型、引数数、可変長性、各引数型が異なる場合は E3064 で報告する。
+// 本 fixture は「合法な再宣言」 (シグネチャ一致) が
 // false-positive で弾かれないことの回帰確認。
 //
 // 修正前は戻り型のみ照合され、引数数 / 引数型の不一致が見逃されていた:
 //   int g(int); int g(int x, int y) { ... }   ← 旧: silently 通過
 //   int h(int); int h(double x) { ... }       ← 旧: silently 通過
 //
-// 修正:
-// (1) psx_ctx_track_function_nargs を追加し、初回登録/以降比較で引数数 + 可変長性を照合。
-// (2) psx_ctx_track_function_param_category を追加し、各引数を粗粒度カテゴリで分類。
-//     funcdef の param 走査内で track し、不一致なら E3064。
-//     粗粒度なので `int` 系 (char/short/int) や `long` 系 (long/long long) は区別しない (K&R 互換)。
+// 現在は `PSX_TYPE_FUNCTION` が戻り値型、固定引数数、可変長性、各canonical引数型を保持し、
+// 再宣言時に型木を一括比較する。ABI parameter maskは型identityの比較対象にしない。
 #include <assert.h>
 
 /* (a) 同一シグネチャの宣言+定義 */

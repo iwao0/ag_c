@@ -19,7 +19,7 @@ typedef struct {
   tk_float_kind_t fp_kind;
 } psx_float_lit_view_t;
 
-psx_string_lit_view_t psx_string_lit_view(const string_lit_t *lit);
-psx_float_lit_view_t psx_float_lit_view(const float_lit_t *lit);
+psx_string_lit_view_t ps_string_lit_view(const string_lit_t *lit);
+psx_float_lit_view_t ps_float_lit_view(const float_lit_t *lit);
 
 #endif

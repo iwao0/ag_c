@@ -8,7 +8,7 @@
  *
  * 修正: declaration type のcanonical tag identityにscope depthを保持する。
  * build_member_access はcanonical typeからその深度を取り出し、
- * psx_ctx_find_tag_member_info_at_scope に渡して「変数が宣言時に見ていた tag」のメンバを
+ * ps_ctx_find_tag_member_info_at_scope に渡して「変数が宣言時に見ていた tag」のメンバを
  * 引く。tag_scope_depth_p1 の +1 エンコードにより calloc/arena_alloc がそのまま「未設定」を
  * 意味し、既存ノードへの伝播忘れがあっても従来挙動 (最も内側 tag) に fallback する。 */
 #include <assert.h>

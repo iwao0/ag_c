@@ -18,7 +18,7 @@
  *   pointer_qual_levels=1 / base_deref_size=gv->deref_size を立てる (tag_kind!=EOF &&
  *   is_tag_pointer)。build_subscript_deref の「要素はポインタ」分岐に乗り、
  *   `parr[i]` の結果が struct ポインタ値 (deref_size=struct サイズ) として扱われ、
- *   psx_node_get_tag_type が is_tag_pointer=1 を立てて `->` 解決可能。
+ *   ps_node_get_tag_type が is_tag_pointer=1 を立てて `->` 解決可能。
  * (arch/arm64_apple.c) emit_one_global_var の struct 配列分岐に `!gv->is_tag_pointer`
  *   ガードを追加。struct ポインタ配列は scalar emit 経路に流して 8B ポインタとして出力する。 */
 #include <assert.h>

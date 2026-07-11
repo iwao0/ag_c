@@ -30,6 +30,8 @@ typedef struct {
   int array_len;
   unsigned int is_const_qualified : 1;
   unsigned int is_volatile_qualified : 1;
+  unsigned int is_incomplete_array : 1;
+  unsigned int is_vla_array : 1;
   psx_decl_funcptr_sig_t funcptr_sig;
 } psx_declarator_op_t;
 
@@ -89,6 +91,10 @@ struct psx_type_t {
   int extra_strides[5];
   unsigned char extra_strides_count;
 
+  psx_type_t *param_types[16];
+  int param_count;
+  unsigned char is_variadic_function;
+
 };
 
 psx_type_t *psx_type_new(psx_type_kind_t kind);
@@ -97,13 +103,16 @@ psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
 psx_type_t *psx_type_new_function(psx_type_t *return_type,
                                   psx_decl_funcptr_sig_t sig);
+void psx_type_set_function_params(psx_type_t *function_type,
+                                  psx_type_t *const *param_types,
+                                  int param_count, int is_variadic);
 psx_type_t *psx_type_new_funcptr_return_type(psx_decl_funcptr_sig_t sig);
 psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
                                  int object_pointer_levels);
 psx_type_t *psx_type_attach_funcptr_signature(
     psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
 const psx_type_t *psx_type_find_function(const psx_type_t *type);
-psx_decl_funcptr_sig_t psx_type_funcptr_signature(const psx_type_t *type);
+psx_decl_funcptr_sig_t ps_type_funcptr_signature(const psx_type_t *type);
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,
     tk_float_kind_t fp_kind, int is_unsigned,
@@ -125,16 +134,22 @@ int psx_declarator_shape_append_pointer_levels(
     unsigned int const_mask, unsigned int volatile_mask);
 int psx_declarator_shape_append_array(
     psx_declarator_shape_t *shape, int array_len);
+int psx_declarator_shape_append_array_ex(
+    psx_declarator_shape_t *shape, int array_len, int is_incomplete);
+int psx_declarator_shape_append_vla_array(
+    psx_declarator_shape_t *shape);
 int psx_declarator_shape_append_array_dims(
     psx_declarator_shape_t *shape, const int *dims, int dim_count);
 int psx_declarator_shape_append_function(
     psx_declarator_shape_t *shape, psx_decl_funcptr_sig_t sig);
 psx_type_t *psx_type_apply_declarator_shape(
     psx_type_t *base, const psx_declarator_shape_t *shape);
+psx_type_t *psx_type_adjust_parameter_type(psx_type_t *type);
 psx_type_t *psx_type_rebase_declarator(
     const psx_type_t *derived_type, const psx_type_t *canonical_base,
     int *out_rebased);
 psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
+void psx_type_complete_incomplete_array(psx_type_t *type, int object_size);
 psx_type_t *psx_type_clone(const psx_type_t *src);
 psx_type_t *psx_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
@@ -161,6 +176,8 @@ psx_type_t *psx_type_new_vla_object_view(
 void psx_type_set_vla_runtime_descriptor(
     psx_type_t *type, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset, int row_stride_elem_size);
+void psx_type_copy_vla_runtime_metadata(psx_type_t *dst,
+                                        const psx_type_t *src);
 void psx_type_set_vla_param_inner_dims(
     psx_type_t *type, const int *inner_dim_consts,
     const int *inner_dim_src_offsets, int inner_dim_count);
@@ -169,74 +186,35 @@ psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
 
 psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind);
 
-int psx_type_sizeof(const psx_type_t *type);
-int psx_type_deref_size(const psx_type_t *type);
+int ps_type_sizeof(const psx_type_t *type);
+int ps_type_deref_size(const psx_type_t *type);
 int psx_type_is_pointer(const psx_type_t *type);
-int psx_type_is_unsigned(const psx_type_t *type);
+int ps_type_is_unsigned(const psx_type_t *type);
 int psx_type_is_scalar(const psx_type_t *type);
-int psx_type_is_tag_aggregate(const psx_type_t *type);
+int ps_type_is_tag_aggregate(const psx_type_t *type);
+int psx_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
 int psx_type_pointer_depth(const psx_type_t *type);
-int psx_type_pointer_view_qual_levels(const psx_type_t *type);
-unsigned int psx_type_pointer_view_qual_mask(const psx_type_t *type,
-                                             int is_volatile);
-int psx_type_pointer_view_structural_qual_levels(const psx_type_t *type);
+int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type);
 unsigned int psx_type_pointer_view_structural_qual_mask(
     const psx_type_t *type, int is_volatile);
-int psx_type_pointer_view_base_deref_size(
-    const psx_type_t *type, int allow_sizeof_base_fallback);
-int psx_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
-int psx_type_pointer_view_ptr_array_pointee_bytes(const psx_type_t *type);
-int psx_type_pointer_view_structural_ptr_array_pointee_bytes(
+int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
+int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
-int psx_type_carries_ptr_array_pointee_after_deref(const psx_type_t *type);
-int psx_type_legacy_flat_pointer_ptr_array_pointee_bytes(
-    const psx_type_t *type, int sidecar_ptr_array_pointee_bytes);
-int psx_type_legacy_flat_pointer_stride_matches(
-    const psx_type_t *type, int sidecar_outer_stride,
-    int sidecar_mid_stride);
-int psx_type_pointer_view_ptr_array_pointee_bytes_with_sidecar(
-    const psx_type_t *type, int sidecar_ptr_array_pointee_bytes);
-int psx_type_pointer_view_array_deref_size_with_sidecar(
-    const psx_type_t *type, int sidecar_ptr_array_pointee_bytes,
-    int sidecar_outer_stride, int sidecar_mid_stride);
-int psx_type_pointer_view_stride_sync_allowed_with_sidecar(
-    const psx_type_t *type, int sidecar_ptr_array_pointee_bytes,
-    int sidecar_outer_stride, int sidecar_mid_stride);
 int psx_type_pointer_view_raw_array_shape_allowed(const psx_type_t *type);
 int psx_type_pointer_view_raw_stride_copy_allowed(const psx_type_t *type);
 int psx_type_pointer_view_raw_array_shape_has_hint(const psx_type_t *type);
 int psx_type_pointer_view_raw_array_size_hint(const psx_type_t *type);
 int psx_type_copy_pointer_view_stride_metadata(psx_type_t *dst,
                                                const psx_type_t *src);
-int psx_type_pointer_view_base_deref_size_with_sidecar(
-    const psx_type_t *type, int sidecar_base_deref_size,
-    int sidecar_ptr_array_pointee_bytes, int sidecar_outer_stride,
-    int sidecar_mid_stride);
-int psx_type_pointer_view_quals_with_sidecar(
-    const psx_type_t *type, int sidecar_pointer_levels,
-    unsigned int sidecar_const_mask, unsigned int sidecar_volatile_mask,
-    int sidecar_ptr_array_pointee_bytes, int sidecar_outer_stride,
-    int sidecar_mid_stride, int *levels, unsigned int *const_mask,
-    unsigned int *volatile_mask);
 psx_type_t *psx_type_wrap_ret_pointee_array_base(
     psx_type_t *base, psx_ret_pointee_array_t ret_array);
 void psx_type_sync_pointer_to_array_metadata_from_base(psx_type_t *type);
 int psx_type_canonicalize_flat_pointer_to_array(psx_type_t *type);
-int psx_type_pointer_view_stride_metadata(const psx_type_t *type,
+int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,
                                           int *next_stride,
                                           int *extra_strides,
                                           int *extra_strides_count);
-int psx_type_pointer_view_legacy_stride_metadata(const psx_type_t *type,
-                                                 int *inner_stride,
-                                                 int *next_stride,
-                                                 int *extra_strides,
-                                                 int *extra_strides_count);
-int psx_type_pointer_view_effective_stride_metadata(const psx_type_t *type,
-                                                    int *inner_stride,
-                                                    int *next_stride,
-                                                    int *extra_strides,
-                                                    int *extra_strides_count);
 int psx_type_array_view_stride_metadata(const psx_type_t *type,
                                         int keep_outer_row_stride,
                                         int *inner_stride,
@@ -249,12 +227,6 @@ int psx_type_decl_array_stride_metadata(const psx_type_t *type,
                                         int *extra_strides,
                                         int *extra_strides_count);
 int psx_type_pointer_view_mid_stride(const psx_type_t *type);
-int psx_type_pointer_view_outer_stride_with_sidecar(
-    const psx_type_t *type, int sidecar_ptr_array_pointee_bytes,
-    int sidecar_outer_stride, int sidecar_mid_stride);
-int psx_type_pointer_view_mid_stride_with_sidecar(
-    const psx_type_t *type, int sidecar_outer_stride,
-    int sidecar_mid_stride);
 int psx_type_pointer_view_vla_row_stride_frame_off(const psx_type_t *type);
 int psx_type_pointer_view_vla_strides_remaining(const psx_type_t *type);
 int psx_type_vla_row_stride_src_offset(const psx_type_t *type);

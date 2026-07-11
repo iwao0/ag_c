@@ -59,7 +59,7 @@ typedef struct {
 
 static void scan_string_lit_kinds(string_lit_t *lit, void *user) {
   string_lit_kind_scan_t *s = user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   if (view.char_width == TK_CHAR_WIDTH_CHAR) s->has_narrow = 1;
   else s->has_wide = 1;
 }
@@ -71,7 +71,7 @@ static void emit_string_literal_asm_byte(unsigned char byte, void *user) {
 
 static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
   (void)user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   if (view.char_width != TK_CHAR_WIDTH_CHAR) return;
   cg_emitf("%s:\n", view.label);
   tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
@@ -80,7 +80,7 @@ static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
 
 static void emit_wide_string_literal(string_lit_t *lit, void *user) {
   (void)user;
-  psx_string_lit_view_t view = psx_string_lit_view(lit);
+  psx_string_lit_view_t view = ps_string_lit_view(lit);
   if (view.char_width == TK_CHAR_WIDTH_CHAR) return;
   cg_emitf("%s:\n", view.label);
   tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
@@ -104,7 +104,7 @@ void gen_string_literals(void) {
 
 static void emit_one_float_literal(float_lit_t *lit, void *user) {
   (void)user;
-  psx_float_lit_view_t view = psx_float_lit_view(lit);
+  psx_float_lit_view_t view = ps_float_lit_view(lit);
   cg_emitf(".LCF%d:\n", view.id);
   if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
     union { float f; uint32_t i; } u = { .f = (float)view.fval };
@@ -154,7 +154,7 @@ static void emit_global_init_value(psx_gvar_init_value_t value) {
     emit_global_symbol_ref_quad(value.symbol_ref);
   } else if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
-    if (psx_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
+    if (ps_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
       if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
       else                cg_emitf("  .quad %llu\n", bits.bits);
     } else {
@@ -189,7 +189,7 @@ static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
                                     int slot_idx, long long offset) {
   (void)offset;
   arm64_global_aggregate_emit_ctx_t *ctx = user;
-  emit_global_init_value(psx_gvar_init_member_value(ctx->gv, slot_idx, mi));
+  emit_global_init_value(ps_gvar_init_member_value(ctx->gv, slot_idx, mi));
 }
 
 static void emit_global_walk_bitfield_unit(void *user,
@@ -204,10 +204,10 @@ static void emit_global_walk_bitfield_member(void *user, const tag_member_info_t
                                              int slot_idx, long long base_offset) {
   (void)base_offset;
   arm64_global_aggregate_emit_ctx_t *ctx = user;
-  unsigned long long packed = psx_gvar_init_slot_bitfield_bits(ctx->gv, slot_idx,
+  unsigned long long packed = ps_gvar_init_slot_bitfield_bits(ctx->gv, slot_idx,
                                                                mi->bit_width,
                                                                mi->bit_offset);
-  cg_emit_int_directive(psx_tag_member_decl_value_size(mi), (long long)packed);
+  cg_emit_int_directive(ps_tag_member_decl_value_size(mi), (long long)packed);
 }
 
 static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {
@@ -219,7 +219,7 @@ static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {
 
 static int emit_global_aggregate_init(global_var_t *gv) {
   arm64_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  return psx_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
+  return ps_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
 }
 
 typedef struct {
@@ -238,7 +238,7 @@ static int emit_global_initializer_slots(void *user,
                                          const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   arm64_global_init_emit_ctx_t *ctx = user;
-  if (!psx_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
+  if (!ps_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
                                       emit_global_init_slot_value, NULL)) {
     return 0;
   }
@@ -266,18 +266,18 @@ static const psx_gvar_initializer_visit_ops_t arm64_global_initializer_visit_ops
  * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
 static void emit_one_global_var(global_var_t *gv, void *user) {
   (void)user;
-  if (psx_gvar_is_extern_decl(gv)) return;
-  char *name = psx_gvar_name(gv);
-  int name_len = psx_gvar_name_len(gv);
-  int storage_size = psx_gvar_storage_size(gv, 4);
-  int has_explicit_initializer = psx_gvar_has_explicit_initializer(gv);
-  if (psx_gvar_is_thread_local(gv)) {
+  if (ps_gvar_is_extern_decl(gv)) return;
+  char *name = ps_gvar_name(gv);
+  int name_len = ps_gvar_name_len(gv);
+  int storage_size = ps_gvar_storage_size(gv, 4);
+  int has_explicit_initializer = ps_gvar_has_explicit_initializer(gv);
+  if (ps_gvar_is_thread_local(gv)) {
     /* _Thread_local: TLV descriptor + thread data/bss */
     if (has_explicit_initializer) {
       cg_emitf(".section __DATA,__thread_data\n");
       cg_emitf("_%.*s$tlv$init:\n", name_len, name);
       arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-      if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+      if (!ps_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
                                       &init_ctx)) {
         diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
                             "failed to emit arm64 thread-local initializer");
@@ -288,7 +288,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
       cg_emitf("  .space %d\n", storage_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-    if (!psx_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
+    if (!ps_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
     cg_emitf("_%.*s:\n", name_len, name);
     cg_emitf("  .quad __tlv_bootstrap\n");
     cg_emitf("  .quad 0\n");
@@ -298,13 +298,13 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
   if (has_explicit_initializer) {
     cg_emitf(".section __DATA,__data\n");
     /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
-    if (!psx_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
-    int align_size = psx_gvar_initializer_element_size(gv, storage_size);
+    if (!ps_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
+    int align_size = ps_gvar_initializer_element_size(gv, storage_size);
     int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
     cg_emitf(".align %d\n", align);
     cg_emitf("_%.*s:\n", name_len, name);
     arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-    if (!psx_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
+    if (!ps_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
                                     &init_ctx)) {
       diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
                           "failed to emit arm64 global initializer");
@@ -315,7 +315,7 @@ static void emit_one_global_var(global_var_t *gv, void *user) {
    * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
   int log2align = (storage_size >= 8) ? 3 : (storage_size >= 4) ? 2 : (storage_size >= 2) ? 1 : 0;
-  if (psx_gvar_is_static_storage(gv)) {
+  if (ps_gvar_is_static_storage(gv)) {
     cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", name_len, name, storage_size,
              log2align);
   } else {

@@ -1,6 +1,6 @@
 // 局所 VLA `struct P arr[n]` のタグ情報 carry。
-// register_vla_lvar_and_append_alloc の呼び出し元 (decl.c) が
-// psx_decl_set_var_tag を呼んでおらず、ローカル VLA `struct P arr[n]` で
+// register_vla_lvar_and_append_alloc の呼び出し元 (decl.c) が canonical tag type を
+// VLA runtime descriptorへ保持しておらず、ローカル VLA `struct P arr[n]` で
 // `arr[i].m` の `.` が「左辺は構造体/共用体でない」E3005 で弾かれていた。
 #include <assert.h>
 

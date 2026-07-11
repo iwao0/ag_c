@@ -45,6 +45,11 @@ static psx_type_t *member_scalar_type(token_kind_t base_kind, tk_float_kind_t fp
     type->is_atomic = is_atomic ? 1 : 0;
     return type;
   }
+  if (base_kind == TK_VOID) {
+    type = psx_type_new(PSX_TYPE_VOID);
+    type->scalar_kind = TK_VOID;
+    return type;
+  }
   token_kind_t scalar_kind = is_bool ? TK_BOOL : (base_kind != TK_EOF ? base_kind : TK_INT);
   type = psx_type_new_integer(scalar_kind, elem_size > 0 ? elem_size : 4, is_unsigned);
   type->is_atomic = is_atomic ? 1 : 0;
@@ -73,7 +78,7 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
     type = psx_type_attach_funcptr_signature(type, funcptr_sig);
   }
   if (array_len > 0) {
-    int elem_size_for_array = elem_storage_size > 0 ? elem_storage_size : psx_type_sizeof(type);
+    int elem_size_for_array = elem_storage_size > 0 ? elem_storage_size : ps_type_sizeof(type);
     int array_size = total_size > 0 ? total_size : elem_size_for_array * array_len;
     psx_type_t *array_type = psx_type_new_array(type, array_len, array_size,
                                                 elem_size_for_array, 0);
@@ -94,7 +99,7 @@ static psx_type_t *member_decl_type_pointer_to_array_from_layout(
                                              is_unsigned, is_bool, is_complex,
                                              is_atomic);
   if (element_is_pointer) {
-    int scalar_deref = elem_size > 0 ? elem_size : psx_type_sizeof(elem_type);
+    int scalar_deref = elem_size > 0 ? elem_size : ps_type_sizeof(elem_type);
     if (scalar_deref <= 0) scalar_deref = 8;
     psx_type_t *ptr = psx_type_new_pointer(elem_type, scalar_deref);
     ptr->base_deref_size = scalar_deref;
@@ -111,10 +116,10 @@ static psx_type_t *member_decl_type_pointer_to_array_from_layout(
     normalized_dims[0] = fallback_count;
     n = 1;
   }
-  if (n <= 0) return psx_type_new_pointer(elem_type, psx_type_sizeof(elem_type));
+  if (n <= 0) return psx_type_new_pointer(elem_type, ps_type_sizeof(elem_type));
 
   int leaf_storage = elem_storage_size > 0 ? elem_storage_size
-                                           : psx_type_sizeof(elem_type);
+                                           : ps_type_sizeof(elem_type);
   if (leaf_storage <= 0) leaf_storage = element_is_pointer ? 8 : elem_size;
   if (leaf_storage <= 0) leaf_storage = 1;
 
@@ -185,50 +190,61 @@ static void member_decl_type_apply_shape_cache(psx_type_t *type,
   }
 }
 
-static token_ident_t *parse_member_decl_name_recursive(int *is_ptr, int *out_has_func_suffix,
-                                                       psx_funcptr_signature_t *func_suffix_sig,
-                                                       int *out_paren_array_mul,
-                                                       int *out_ptr_in_paren,
-                                                       int *out_ptr_levels,
-                                                       int *out_funcptr_object_pointer_levels) {
-  int stars = psx_consume_pointer_prefix_counted(is_ptr);
-  if (out_ptr_levels) *out_ptr_levels += stars;
-  int frame_pointer_prefix_levels = out_ptr_levels ? *out_ptr_levels : 0;
+static token_ident_t *parse_member_decl_name_recursive(
+    member_decl_head_t *head, int nesting_depth) {
+  int level_start = head->ptr_levels;
+  int stars = psx_consume_pointer_prefix_counted(&head->is_ptr);
+  head->ptr_levels += stars;
+  int frame_pointer_prefix_levels = head->ptr_levels;
   token_ident_t *name = NULL;
-  int paren_array_mul = 1;
   if (tk_consume('(')) {
-    int ptr_before = *is_ptr;
-    name = parse_member_decl_name_recursive(is_ptr, out_has_func_suffix, func_suffix_sig,
-                                            &paren_array_mul,
-                                            out_ptr_in_paren, out_ptr_levels,
-                                            out_funcptr_object_pointer_levels);
-    /* `(` 通過直後に `*` を消費したか? `int (*p)[N]` 等を `int *p[N]` と区別するためのフラグ。
-     * 内側で更に `(` を踏んで設定された結果は維持する。 */
-    if (!ptr_before && *is_ptr && out_ptr_in_paren) *out_ptr_in_paren = 1;
-    paren_array_mul = psx_parse_array_suffixes_constexpr_required(paren_array_mul);
+    int levels_before = head->ptr_levels;
+    name = parse_member_decl_name_recursive(head, nesting_depth + 1);
+    if (head->ptr_levels > levels_before) head->ptr_in_paren = 1;
     tk_expect(')');
   } else {
     name = tk_consume_ident();
   }
-  int had_suffix_before = out_has_func_suffix ? *out_has_func_suffix : 0;
-  psx_skip_func_suffix_groups_ex(out_has_func_suffix, func_suffix_sig);
-  if (!had_suffix_before && out_has_func_suffix && *out_has_func_suffix &&
-      out_funcptr_object_pointer_levels && out_ptr_levels) {
-    int object_levels = *out_ptr_levels - frame_pointer_prefix_levels;
-    if (object_levels > 0) *out_funcptr_object_pointer_levels = object_levels;
+
+  for (;;) {
+    if (tk_consume('[')) {
+      int has_size = 0;
+      int dim = psx_parse_array_size_optional_constexpr(&has_size);
+      psx_declarator_shape_append_array_ex(
+          &head->declarator_shape, has_size ? dim : 0, !has_size);
+      if (nesting_depth > 0 && dim > 0) head->paren_array_mul *= dim;
+      continue;
+    }
+    if (curtok()->kind == TK_LPAREN) {
+      psx_funcptr_signature_t suffix = {0};
+      psx_skip_func_param_list(&suffix);
+      if (!head->has_func_suffix) head->func_suffix_sig = suffix;
+      head->has_func_suffix = 1;
+      if (head->funcptr_object_pointer_levels == 0) {
+        int object_levels = head->ptr_levels - frame_pointer_prefix_levels;
+        if (object_levels > 0)
+          head->funcptr_object_pointer_levels = object_levels;
+      }
+      psx_decl_funcptr_sig_t op_sig = {0};
+      op_sig.function.callable.signature = suffix;
+      psx_declarator_shape_append_function(
+          &head->declarator_shape, op_sig);
+      continue;
+    }
+    break;
   }
-  if (out_paren_array_mul) *out_paren_array_mul = paren_array_mul;
+
+  psx_declarator_shape_append_pointer_levels(
+      &head->declarator_shape, frame_pointer_prefix_levels - level_start,
+      0, 0);
   return name;
 }
 
 member_decl_head_t psx_parse_member_decl_head(void) {
   member_decl_head_t out = {0};
   out.paren_array_mul = 1;
-  out.member = parse_member_decl_name_recursive(&out.is_ptr, &out.has_func_suffix,
-                                                &out.func_suffix_sig,
-                                                &out.paren_array_mul, &out.ptr_in_paren,
-                                                &out.ptr_levels,
-                                                &out.funcptr_object_pointer_levels);
+  psx_declarator_shape_init(&out.declarator_shape);
+  out.member = parse_member_decl_name_recursive(&out, 0);
   return out;
 }
 
@@ -239,6 +255,41 @@ static int member_funcptr_direct_ret_is_data_pointer(const member_decl_head_t *h
   if (object_pointer_levels <= 0 && head->ptr_in_paren) object_pointer_levels = 1;
   int ret_pointer_levels = head->ptr_levels - object_pointer_levels;
   return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
+}
+
+static int member_array_layout_from_shape(
+    const member_decl_head_t *head, int *out_is_flex_array,
+    int *out_dim_count, int *out_first_dim, int *out_dims, int max_dims) {
+  int total = 1;
+  int dim_count = 0;
+  int first_dim = 0;
+  int is_flex = 0;
+  int saw_pointer = 0;
+  if (head) {
+    for (int i = 0; i < head->declarator_shape.count; i++) {
+      const psx_declarator_op_t *op = &head->declarator_shape.ops[i];
+      if (op->kind == PSX_DECL_OP_POINTER) {
+        saw_pointer = 1;
+        continue;
+      }
+      if (op->kind != PSX_DECL_OP_ARRAY) continue;
+      if (head->ptr_in_paren && !saw_pointer) continue;
+      int dim = op->array_len;
+      if (op->is_incomplete_array) {
+        is_flex = 1;
+        total = 0;
+      } else if (total > 0) {
+        total *= dim;
+      }
+      if (dim_count == 0) first_dim = dim;
+      if (out_dims && dim_count < max_dims) out_dims[dim_count] = dim;
+      dim_count++;
+    }
+  }
+  if (out_is_flex_array) *out_is_flex_array = is_flex;
+  if (out_dim_count) *out_dim_count = dim_count;
+  if (out_first_dim) *out_first_dim = first_dim;
+  return total;
 }
 
 int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -539,9 +590,9 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       }
       int arr_dim_count = 0, arr_first_dim = 0;
       int arr_dims_buf[8] = {0};
-      int arr_size = psx_parse_member_array_suffixes_ex(&is_flex_array,
-                                                        &arr_dim_count, &arr_first_dim,
-                                                        arr_dims_buf, 8);
+      int arr_size = member_array_layout_from_shape(
+          &head, &is_flex_array, &arr_dim_count, &arr_first_dim,
+          arr_dims_buf, 8);
       /* `int (*p)[N]` (struct メンバ版): パレン内 `*` + パレン外 trailing `[N]`。trailing は
        * pointee の配列次元であり、メンバ自身は単一ポインタ (8B 1 slot)。pointee dims は
        * outer_stride に reflect して downstream の `(*s.p)[i]` で参照する。
@@ -608,10 +659,6 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 宣言子にも追加 `[N]` がある場合 (`typedef int R[3]; struct {R r[2];}`) は
        * 宣言子側 dims を outer に、typedef 側 dims を inner に連結する。
        * 結果 r は [2][3] の 2D 配列で、6 要素 (24 バイト)。 */
-      int member_declarator_array_dim_count = arr_dim_count;
-      int member_declarator_array_dims[8] = {0};
-      for (int i = 0; i < member_declarator_array_dim_count && i < 8; i++)
-        member_declarator_array_dims[i] = arr_dims_buf[i];
       if (member_typedef_array_dim_count > 0 && !is_flex_array) {
         int combined_dims[8] = {0};
         int combined_count = 0;
@@ -697,28 +744,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           if (!psx_ret_pointee_array_has_dims(member_funcptr_sig.function.callable.return_shape.pointee_array)) {
             member_funcptr_sig.function.callable.return_shape.pointee_array = ret_pointee_array;
           }
-          psx_ctx_tag_member_set_funcptr_sig(&_mi, member_funcptr_sig);
         }
         _mi.decl_type = member_decl_type_from_layout(
             member_base_kind, member_fp_kind, member_tag_kind, member_tag_name,
             member_tag_len, elem_size, member_is_unsigned, member_is_bool,
             member_is_complex, member_is_atomic, member_is_ptr, layout_pointer_levels,
             member_array_len, total_size, member_elem_size, member_funcptr_sig);
-        if (member_typedef_decl_type && !head.ptr_in_paren &&
-            !head.has_func_suffix) {
-          psx_type_t *canonical_member = psx_type_clone(
-              member_typedef_decl_type);
-          psx_declarator_shape_t shape;
-          psx_declarator_shape_init(&shape);
-          psx_declarator_shape_append_array_dims(
-              &shape, member_declarator_array_dims,
-              member_declarator_array_dim_count);
-          psx_declarator_shape_append_pointer_levels(
-              &shape, head.ptr_levels, 0, 0);
-          canonical_member = psx_type_apply_declarator_shape(
-              canonical_member, &shape);
-          _mi.decl_type = canonical_member;
-        }
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
          * 保存し、build_member_deref_node が deref を multi-dim 配列形に組めるようにする。 */
@@ -812,6 +843,19 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             for (int i = 0; i < _mi.arr_ndim; i++) _mi.arr_dims[i] = arr_dims_buf[i];
           }
         }
+        psx_type_t *canonical_member = member_typedef_decl_type
+                                           ? psx_type_clone(member_typedef_decl_type)
+                                           : member_scalar_type(
+                                                 member_base_kind, member_fp_kind,
+                                                 member_tag_kind, member_tag_name,
+                                                 member_tag_len, elem_size,
+                                                 member_is_unsigned, member_is_bool,
+                                                 member_is_complex, member_is_atomic);
+        canonical_member = psx_type_apply_declarator_shape(
+            canonical_member, &head.declarator_shape);
+        if (canonical_member) {
+          _mi.decl_type = canonical_member;
+        }
         member_decl_type_apply_shape_cache(_mi.decl_type, &_mi);
         psx_ctx_add_tag_member(tag_kind, tag_name, tag_len, &_mi);
         member_count++;
@@ -821,10 +865,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 外側からは `outer.inner_member` の形でアクセスできる。 */
       if (!has_member_name && !head.is_ptr &&
           member_is_tag_aggregate && member_tag_name) {
-        int inner_count = psx_ctx_get_tag_member_count(member_tag_kind, member_tag_name, member_tag_len);
+        int inner_count = ps_ctx_get_tag_member_count(member_tag_kind, member_tag_name, member_tag_len);
         for (int i = 0; i < inner_count; i++) {
           tag_member_info_t im = {0};
-          if (psx_ctx_get_tag_member_info(member_tag_kind, member_tag_name, member_tag_len, i, &im)) {
+          if (ps_ctx_get_tag_member_info(member_tag_kind, member_tag_name, member_tag_len, i, &im)) {
             if (im.len == 0) continue; /* 匿名同士の連鎖は今回対象外 */
             tag_member_info_t _mi = im;
             _mi.offset = off + im.offset;

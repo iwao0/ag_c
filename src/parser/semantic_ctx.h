@@ -11,8 +11,7 @@
 void psx_ctx_reset_function_scope(void);
 void psx_ctx_reset_translation_unit_scope(void);
 void psx_ctx_reset_function_names(void);
-/* 各 parse 開始時に呼ぶソフトリセット: 関数情報は残し、診断フラグ (is_defined / nargs_set_once
- * / ret_set_once / param_categories) のみクリア。 */
+/* 各 parse 開始時に呼ぶソフトリセット: 関数情報は残し、is_defined のみクリア。 */
 void psx_ctx_reset_function_diag_state(void);
 /* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。 */
 void psx_ctx_reset_tag_diag_state(void);
@@ -85,17 +84,8 @@ static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
     const psx_typedef_info_t *info) {
   if (!info) return (psx_decl_funcptr_sig_t){0};
   const psx_type_t *decl_type = psx_ctx_typedef_decl_type(info);
-  if (decl_type)
-    return psx_type_funcptr_signature(decl_type);
-  return info->is_funcptr ? psx_decl_funcptr_sig_clone(info->funcptr_sig)
-                          : (psx_decl_funcptr_sig_t){0};
-}
-
-static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
-                                                   psx_decl_funcptr_sig_t sig) {
-  if (!info) return;
-  info->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
-  info->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
+  return decl_type ? ps_type_funcptr_signature(decl_type)
+                   : (psx_decl_funcptr_sig_t){0};
 }
 
 /* typedef 名を登録する。info->decl_type は正本として必須。
@@ -104,10 +94,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */
 bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
-// 多段ポインタ typedef (`typedef int **PP`) のポインタ段数を記録/取得する。
-// 単段 (`typedef int *PI`) や未設定は getter が is_pointer から 1 を返す。
-void psx_ctx_set_typedef_pointer_levels(char *name, int len, int levels);
-// ポインタ段数を返す。非ポインタは 0、is_pointer だが段数未設定なら 1。
+// canonical decl_typeからポインタ段数を返す。非ポインタは0。
 int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
@@ -123,35 +110,19 @@ int psx_ctx_get_function_ret_is_complex(char *name, int len);
 // 関数が variadic (`...` を持つ) かどうかと固定引数の個数を保持する。
 // Apple ARM64 ABI で variadic 引数を stack に積むため、呼び出し側 codegen が
 // `nargs_fixed` を境に register / stack を切り替えるのに使う。
-/* 仮引数 i の fp_kind を記録/取得。呼び出し側 IR が int 実引数→double 仮引数
- * の暗黙変換に I2F キャストを挿入するために使う。track は最初の 16 引数まで。 */
-void psx_ctx_set_function_param_fp_kind(char *name, int len, int param_idx,
-                                         tk_float_kind_t fp_kind);
-/* 仮引数 i が整数スカラのときの幅 (4/8、0 = 非整数) を記録/取得。呼び出し側 IR が
- * fp 実引数→整数仮引数の暗黙変換に F2I キャストを挿入するために使う。 */
-void psx_ctx_set_function_param_int_size(char *name, int len, int param_idx, int size);
-void psx_ctx_set_function_param_int_unsigned(char *name, int len, int param_idx, int is_unsigned);
-void psx_ctx_set_function_variadic(char *name, int len, int is_variadic, int nargs_fixed);
-/* 同名関数の再宣言で引数数 / 可変長性が一致するかを track する (C11 6.7p4)。
- * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。 */
-int psx_ctx_track_function_nargs(char *name, int len, int nargs, int is_variadic);
-
-/* 同名関数の再宣言で引数 i のカテゴリが一致するかを track する (C11 6.7p4)。
- * 初回呼び出しは記録、以降は比較。一致なら 1、不一致なら 0。
- * カテゴリは粗粒度 (int width / fp / pointer / struct) で K&R 互換のため厳密型は照合しない。 */
-int psx_ctx_track_function_param_category(char *name, int len, int idx, int category);
-
 /* 同名関数の本体定義が初回かどうかを track する (C11 6.9p3)。
  * 初回なら 1 を返して定義済みフラグを立てる、すでに定義済みなら 0。 */
 int psx_ctx_track_function_defined(char *name, int len);
 /* 戻り値型が void かどうかを問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
 bool psx_ctx_is_function_ret_void(char *name, int len);
-/* 関数の戻り値型 descriptor を track する。既存と異なる型なら 0 を返す。 */
-int psx_ctx_track_function_ret_type_descriptor(char *name, int len,
-                                               const psx_type_t *ret_type);
-void psx_ctx_set_function_ret_type(char *name, int len, const psx_type_t *ret_type);
 const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
+/* 完全な canonical 関数型を初回登録し、再宣言時は同じ型か照合する。 */
+int psx_ctx_track_function_type(char *name, int len,
+                                const psx_type_t *function_type);
+void psx_ctx_set_function_param_abi_int_size(char *name, int len,
+                                             int param_idx, int size);
+const psx_type_t *psx_ctx_get_function_type(char *name, int len);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
