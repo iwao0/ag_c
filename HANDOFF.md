@@ -26299,3 +26299,59 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     pointer/array declarator位置をcanonical treeへ寄せる。
   - VLA parameter dimension source (`vla_param_inner_dim_*`) はまだlvar sidecarをIR entryが直接読む。
     runtime descriptorの「次元式source」と「計算済みstride slots」を型/descriptor objectへまとめる余地がある。
+
+### このセッション（続き956）: typedefの派生型をcanonical treeから合成するようにした
+- 見つかった根本原因:
+  - `typedef int (*BinOp)(int,int); typedef BinOp Ops[3];` では、2段目のtypedef登録が
+    `BinOp`の`decl_type`を受け取らず、`is_pointer/array_dims/funcptr_sig`から
+    `ARRAY -> POINTER -> INTEGER`を再構築して`FUNCTION` nodeを失っていた。
+  - block-scope typedefは`decl.c`と`stmt.c`に別実装があり、実際には`stmt.c`側が先に処理するため、
+    一方だけ直してもローカルtypedefは旧表現のままだった。
+  - pointer-to-array typedefのglobal使用では、canonical `POINTER -> ARRAY -> leaf`設定後にも
+    `psx_decl_set_gvar_pointer_base_array()`が同じ次元を再追加していた。また`base_is_ptr`を
+    pointee要素がポインタである意味に流用し、`typedef int (*PA)[3]`のrow strideを24Bと計算していた。
+- 根本対応:
+  - `psx_type_new_funcptr()`を追加し、signatureから
+    `POINTER -> FUNCTION -> return type`を中央構築するようにした。
+  - arena所有の`psx_type_clone()`を追加し、永続typedef型を変更せずに宣言子operatorを適用する。
+  - `psx_type_wrap_array_dims()` / `psx_type_apply_declarator()`を追加し、`parser.c`、`decl.c`、
+    `stmt.c`に分散していたpointer/array operator適用を`type.c`へ集約した。
+  - `psx_type_rebase_declarator()`を追加し、typedefのcanonical baseを保ったまま、使用側で追加された
+    pointer/array suffixだけを付け替えるようにした。これにより`TMLocalFuncs matrix[2]`も
+    `ARRAY[2] -> ARRAY[2] -> POINTER -> FUNCTION`を保持する。
+  - top-level typedef specが`base_decl_type`を保持し、直接builtin/tag typedef、pointer-to-array、
+    function pointer、派生array/pointer typedefをcanonical treeとしてsemantic contextへ登録する。
+  - global/lvar所有者用decl_type setterを追加し、typedef使用宣言はlegacy field再構築ではなく
+    canonical base cloneへ今回のpointer operatorを適用するようにした。
+  - `stmt.c`のblock-scope typedef parserにも同じcanonical構築を導入した。
+  - typedef/tag signature getterはroot cache直読みをやめ、nested `FUNCTION`を探索する
+    `psx_type_funcptr_signature()`を優先するようにした。
+  - typedef登録とtag member登録では`decl_type`を必須にし、legacy sidecarからcanonical typeを
+    再構築するfallbackを削除した。tag member sidecarからcanonical typeへstride/array shapeを
+    逆同期する処理も削除し、型木を一方向の正本にした。
+  - struct memberのtypedef使用でもcanonical typedef baseへ宣言子operatorだけを適用し、
+    `typedef RowPtr rows[2]`のpointer-to-array shapeを保持するようにした。
+  - canonical baseがあるpointer-to-array globalでは型再構築sidecar helperを再適用せず、
+    strideの要素幅もcanonical leaf/object sizeから決定する。
+- parser regression:
+  - top-level `TMFunc -> TMFuncs[3]`のtypedef record、`ops`、`TMFuncs *pa`がすべて
+    canonical `FUNCTION` nodeを保持すること。
+  - block-scope `TMLocalFunc -> TMLocalFuncs[2]`でも`ops`/`pa`が同じ型木になること。
+  - block-scope typedefへ明示array suffixを追加した`TMLocalFuncs matrix[2]`が、外側・typedef側の
+    両arrayとnested `FUNCTION`を保持すること。
+  - pointer-to-array typedef globalの2段subscriptが最終integer valueになること。
+- 解消を個別Wasm実行で確認したfixture:
+  - `typedef_pointer_element_array_sizeof`
+  - `global_pointer_typedef`
+  - 新規 `local_typedef_funcptr_array_call`
+  - すべて `main() => i32:0`。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - focused-test方針に従い全1201件のWasm E2Eは未実行。続き953の26件からの現在値は未確定。
+- 次の候補:
+  - typedef使用の追加array suffixはcanonical baseへrebaseできたが、parser自身はまだ
+    `paren_array_mul/inner_array_mul`などflattenされた出力を持つ。pointer/array/function operator列を
+    順序付きで返すcanonical declarator descriptorへtop-level/local/stmt parserを統合する必要がある。
+  - typedef/tag登録のcanonical型必須化は完了した。次はlvar/gvar/tag memberに残るstride・配列次元の
+    legacy sidecar読取りを監査し、型木から導出できるものを削減する。

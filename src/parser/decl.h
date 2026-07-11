@@ -280,6 +280,10 @@ void psx_decl_set_gvar_long_double(global_var_t *gv, int is_long_double);
 void psx_decl_set_gvar_qualifiers(global_var_t *gv,
                                   int is_const_qualified,
                                   int is_volatile_qualified);
+void psx_decl_set_gvar_decl_type(global_var_t *gv,
+                                 const psx_type_t *decl_type);
+void psx_decl_set_lvar_decl_type(lvar_t *var,
+                                 const psx_type_t *decl_type);
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig);
 void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig);
@@ -304,6 +308,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int td_array_elem_size, int td_is_array,
                                                  int td_is_long_double, int base_pointer_levels,
                                                  psx_decl_funcptr_sig_t base_funcptr_sig,
+                                                 const psx_type_t *base_decl_type,
                                                  token_t *typespec_start,
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool);

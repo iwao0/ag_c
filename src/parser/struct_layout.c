@@ -314,6 +314,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
     int member_is_complex = 0;
     int member_is_atomic = 0;
     int member_is_ptr_typedef = 0;
+    const psx_type_t *member_typedef_decl_type = NULL;
     psx_decl_funcptr_sig_t member_typedef_funcptr_sig = {0};
     int member_typedef_array_dim_count = 0;
     int member_typedef_array_dims[8] = {0};
@@ -387,6 +388,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int td_isu = 0;
       psx_typedef_info_t _ti;
       if (psx_ctx_find_typedef_name(td->str, td->len, &_ti)) {
+        member_typedef_decl_type = psx_ctx_typedef_decl_type(&_ti);
         td_elem = _ti.elem_size;
         td_tag = _ti.tag_kind; td_tn = _ti.tag_name; td_tl = _ti.tag_len;
         td_isu = _ti.is_unsigned;
@@ -611,6 +613,10 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 宣言子にも追加 `[N]` がある場合 (`typedef int R[3]; struct {R r[2];}`) は
        * 宣言子側 dims を outer に、typedef 側 dims を inner に連結する。
        * 結果 r は [2][3] の 2D 配列で、6 要素 (24 バイト)。 */
+      int member_declarator_array_dim_count = arr_dim_count;
+      int member_declarator_array_dims[8] = {0};
+      for (int i = 0; i < member_declarator_array_dim_count && i < 8; i++)
+        member_declarator_array_dims[i] = arr_dims_buf[i];
       if (member_typedef_array_dim_count > 0 && !is_flex_array) {
         int combined_dims[8] = {0};
         int combined_count = 0;
@@ -703,6 +709,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             member_tag_len, elem_size, member_is_unsigned, member_is_bool,
             member_is_complex, member_is_atomic, member_is_ptr, layout_pointer_levels,
             member_array_len, total_size, member_elem_size, member_funcptr_sig);
+        if (member_typedef_decl_type && !head.ptr_in_paren &&
+            !head.has_func_suffix) {
+          psx_type_t *canonical_member = psx_type_clone(
+              member_typedef_decl_type);
+          canonical_member = psx_type_apply_declarator(
+              canonical_member, member_declarator_array_dims,
+              member_declarator_array_dim_count, head.ptr_levels, 0, 0, 0);
+          _mi.decl_type = canonical_member;
+        }
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
          * 保存し、build_member_deref_node が deref を multi-dim 配列形に組めるようにする。 */

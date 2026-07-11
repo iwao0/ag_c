@@ -68,6 +68,8 @@ psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
 psx_type_t *psx_type_new_function(psx_type_t *return_type,
                                   psx_decl_funcptr_sig_t sig);
+psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
+                                 int object_pointer_levels);
 psx_type_t *psx_type_attach_funcptr_signature(
     psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
 const psx_type_t *psx_type_find_function(const psx_type_t *type);
@@ -82,7 +84,20 @@ psx_type_t *psx_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           int base_deref_size,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
+psx_type_t *psx_type_wrap_array_dims(psx_type_t *base,
+                                     const int *dims, int dim_count);
+psx_type_t *psx_type_apply_declarator(psx_type_t *base,
+                                      const int *array_dims,
+                                      int array_dim_count,
+                                      int pointer_levels,
+                                      int pointer_outside_array,
+                                      unsigned int const_mask,
+                                      unsigned int volatile_mask);
+psx_type_t *psx_type_rebase_declarator(
+    const psx_type_t *derived_type, const psx_type_t *canonical_base,
+    int *out_rebased);
 psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
+psx_type_t *psx_type_clone(const psx_type_t *src);
 psx_type_t *psx_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
                                           const int *row_sizes,

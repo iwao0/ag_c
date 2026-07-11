@@ -3073,6 +3073,29 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, rows_next);
 
   parsed_code = parse_program_input(
+      "typedef int (*__tm_RowPtrScalar)[3]; __tm_RowPtrScalar __tm_row_scalar; "
+      "int __tm_row_scalar_use(void) { return __tm_row_scalar[1][0]; }");
+  global_var_t *row_scalar = psx_find_global_var("__tm_row_scalar", 15);
+  ASSERT_TRUE(row_scalar != NULL);
+  psx_type_t *row_scalar_type = psx_gvar_get_decl_type(row_scalar);
+  ASSERT_EQ(PSX_TYPE_POINTER, row_scalar_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, row_scalar_type->base->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, row_scalar_type->base->base->kind);
+  fn = as_func(parsed_code[0]);
+  body = as_block(fn->base.rhs);
+  node_t *row_scalar_elem = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    if (body->body[i]->kind == ND_RETURN) {
+      row_scalar_elem = body->body[i]->lhs;
+      break;
+    }
+  }
+  ASSERT_TRUE(row_scalar_elem != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, psx_node_get_type(row_scalar_elem)->kind);
+  ASSERT_EQ(4, ps_node_type_size(row_scalar_elem));
+  ASSERT_TRUE(!ps_node_is_pointer(row_scalar_elem));
+
+  parsed_code = parse_program_input(
       "int __tm_bool_matrix_use(void) { "
       "  _Bool m[2][3]; m[1][0] = 99; return 0; }");
   fn = as_func(parsed_code[0]);
@@ -6690,29 +6713,31 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, member_sync_out.is_unsigned);
   ASSERT_EQ(4, psx_tag_member_decl_value_size(&member_sync_out));
 
-  const char legacy_member_tag[] = "__tm_legacy_member_desc";
-  int legacy_member_tag_len = (int)sizeof(legacy_member_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)legacy_member_tag,
-                                      legacy_member_tag_len, 1, 8, 8);
-  tag_member_info_t legacy_member_desc = {0};
-  legacy_member_desc.name = "p";
-  legacy_member_desc.len = 1;
-  legacy_member_desc.type_size = 8;
-  legacy_member_desc.deref_size = 4;
-  legacy_member_desc.is_tag_pointer = 1;
-  legacy_member_desc.pointer_qual_levels = 1;
-  legacy_member_desc.is_unsigned = 1;
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)legacy_member_tag,
-                         legacy_member_tag_len, &legacy_member_desc);
-  tag_member_info_t legacy_member_out = {0};
+  const char canonical_member_tag[] = "__tm_canonical_member_desc";
+  int canonical_member_tag_len = (int)sizeof(canonical_member_tag) - 1;
+  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)canonical_member_tag,
+                                      canonical_member_tag_len, 1, 8, 8);
+  tag_member_info_t canonical_member_desc = {0};
+  canonical_member_desc.name = "p";
+  canonical_member_desc.len = 1;
+  canonical_member_desc.type_size = 8;
+  canonical_member_desc.deref_size = 4;
+  canonical_member_desc.is_tag_pointer = 1;
+  canonical_member_desc.pointer_qual_levels = 1;
+  canonical_member_desc.is_unsigned = 1;
+  canonical_member_desc.decl_type = psx_type_new_pointer(
+      psx_type_new_integer(TK_INT, 4, 1), 4);
+  psx_ctx_add_tag_member(TK_STRUCT, (char *)canonical_member_tag,
+                         canonical_member_tag_len, &canonical_member_desc);
+  tag_member_info_t canonical_member_out = {0};
   ASSERT_TRUE(psx_ctx_find_tag_member_info(
-      TK_STRUCT, (char *)legacy_member_tag, legacy_member_tag_len,
-      "p", 1, &legacy_member_out));
-  ASSERT_TRUE(legacy_member_out.decl_type != NULL);
-  ASSERT_EQ(PSX_TYPE_POINTER, legacy_member_out.decl_type->kind);
-  ASSERT_TRUE(legacy_member_out.decl_type->base != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, legacy_member_out.decl_type->base->kind);
-  ASSERT_TRUE(legacy_member_out.decl_type->base->is_unsigned);
+      TK_STRUCT, (char *)canonical_member_tag, canonical_member_tag_len,
+      "p", 1, &canonical_member_out));
+  ASSERT_TRUE(canonical_member_out.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, canonical_member_out.decl_type->kind);
+  ASSERT_TRUE(canonical_member_out.decl_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, canonical_member_out.decl_type->base->kind);
+  ASSERT_TRUE(canonical_member_out.decl_type->base->is_unsigned);
 
   const char walk_inner_tag[] = "__tm_walk_inner";
   int walk_inner_len = (int)sizeof(walk_inner_tag) - 1;
@@ -7388,8 +7413,10 @@ static void test_type_metadata_bridge() {
       psx_type_new_integer(TK_UNSIGNED, 1, 1);
   psx_type_t *tag_member_desc_inner =
       psx_type_new_array(tag_member_desc_leaf, 3, 3, 1, 0);
+  tag_member_desc_inner->outer_stride = 1;
   tag_member_desc.decl_type =
       psx_type_new_array(tag_member_desc_inner, 2, 6, 3, 0);
+  tag_member_desc.decl_type->outer_stride = 3;
   psx_ctx_add_tag_member(TK_STRUCT, (char *)tag_member_desc_tag,
                          (int)sizeof(tag_member_desc_tag) - 1,
                          &tag_member_desc);
@@ -8097,6 +8124,16 @@ static void test_type_metadata_bridge() {
       "int tm_add(int a,int b){return a+b;} "
       "int main(void){TMFuncs ops={tm_add,tm_add,tm_add}; TMFuncs *pa=&ops; "
       "return (*pa)[0](1,2);}");
+  psx_typedef_info_t tm_func_info = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TMFunc", 6, &tm_func_info));
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(
+      psx_ctx_typedef_funcptr_sig(&tm_func_info)));
+  psx_typedef_info_t tm_funcs_info = {0};
+  ASSERT_TRUE(psx_ctx_find_typedef_name("TMFuncs", 7, &tm_funcs_info));
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(
+      psx_ctx_typedef_funcptr_sig(&tm_funcs_info)));
+  ASSERT_TRUE(psx_type_find_function(
+      psx_ctx_typedef_decl_type(&tm_funcs_info)) != NULL);
   fn = as_func(parsed_code[1]);
   lvar_t *tm_ops = find_func_lvar(fn, "ops");
   lvar_t *tm_pa = find_func_lvar(fn, "pa");
@@ -8113,6 +8150,35 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm_pa->decl_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->base->base->kind);
   ASSERT_TRUE(psx_type_find_function(tm_pa->decl_type) != NULL);
+
+  parsed_code = parse_program_input(
+      "int tm_local_add(int a,int b){return a+b;} "
+      "int main(void){typedef int (*TMLocalFunc)(int,int); "
+      "typedef TMLocalFunc TMLocalFuncs[2]; "
+      "TMLocalFuncs ops={tm_local_add,tm_local_add}; "
+      "TMLocalFuncs matrix[2]; "
+      "TMLocalFuncs *pa=&ops; return (*pa)[0](1,2);}");
+  fn = as_func(parsed_code[1]);
+  lvar_t *tm_local_ops = find_func_lvar(fn, "ops");
+  lvar_t *tm_local_matrix = find_func_lvar(fn, "matrix");
+  lvar_t *tm_local_pa = find_func_lvar(fn, "pa");
+  ASSERT_TRUE(tm_local_ops != NULL);
+  ASSERT_TRUE(tm_local_matrix != NULL);
+  ASSERT_TRUE(tm_local_pa != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_ops->decl_type->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_ops->decl_type->base->kind);
+  ASSERT_TRUE(psx_type_find_function(tm_local_ops->decl_type) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_pa->decl_type->base->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->base->base->kind);
+  ASSERT_TRUE(psx_type_find_function(tm_local_pa->decl_type) != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->kind);
+  ASSERT_EQ(2, tm_local_matrix->decl_type->array_len);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->base->kind);
+  ASSERT_EQ(2, tm_local_matrix->decl_type->base->array_len);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            tm_local_matrix->decl_type->base->base->kind);
+  ASSERT_TRUE(psx_type_find_function(tm_local_matrix->decl_type) != NULL);
 
   parsed_code = parse_program_input(
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");

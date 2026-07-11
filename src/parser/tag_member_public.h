@@ -72,7 +72,7 @@ static inline psx_decl_funcptr_sig_t psx_ctx_tag_member_funcptr_sig(
   if (!m) return (psx_decl_funcptr_sig_t){0};
   const psx_type_t *decl_type = psx_tag_member_decl_type(m);
   if (decl_type)
-    return psx_decl_funcptr_sig_clone(decl_type->funcptr_sig);
+    return psx_type_funcptr_signature(decl_type);
   return m->is_funcptr ? psx_decl_funcptr_sig_clone(m->funcptr_sig)
                        : (psx_decl_funcptr_sig_t){0};
 }

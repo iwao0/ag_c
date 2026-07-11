@@ -4,6 +4,7 @@
 #include "core.h"
 #include "function_public.h"
 #include "tag_member_public.h"
+#include "type.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -34,7 +35,7 @@ int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
  * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
 void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
 /* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
- * m のレイアウト属性を保存し、型由来 cache は decl_type から同期する。 */
+ * m->decl_type は正本として必須。レイアウトcacheはdecl_typeから同期する。 */
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             const tag_member_info_t *m);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
@@ -85,7 +86,7 @@ static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
   if (!info) return (psx_decl_funcptr_sig_t){0};
   const psx_type_t *decl_type = psx_ctx_typedef_decl_type(info);
   if (decl_type)
-    return psx_decl_funcptr_sig_clone(decl_type->funcptr_sig);
+    return psx_type_funcptr_signature(decl_type);
   return info->is_funcptr ? psx_decl_funcptr_sig_clone(info->funcptr_sig)
                           : (psx_decl_funcptr_sig_t){0};
 }
@@ -100,8 +101,8 @@ static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
     decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
-/* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、
- * 0 = 既存と型が異なる衝突。呼び出し元で 0 のとき診断を出す。 */
+/* typedef 名を登録する。info->decl_type は正本として必須。
+ * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = decl_type欠落または型衝突。 */
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */

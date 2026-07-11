@@ -351,6 +351,9 @@ typedef struct {
   int is_complex;
   /* 基底型がポインタ typedef のときの段数 (`typedef int **PP; PP gp;` で 2)。 */
   int base_pointer_levels;
+  /* typedef 参照の正本。派生 typedef はこの型木へ declarator operator を適用し、
+   * is_pointer/array_dims/funcptr_sig から型を再構築しない。 */
+  const psx_type_t *base_decl_type;
   psx_decl_funcptr_sig_t base_funcptr_sig;
   int pointee_const;
   int pointee_volatile;
@@ -403,6 +406,11 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
                                            int td_first_dim,
                                            const int *td_dims, int td_dim_count,
                                            psx_ret_pointee_array_t funcptr_ret_pointee_array);
+static psx_type_t *build_toplevel_derived_typedef_type(
+    const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head,
+    const int *decl_dims, int decl_dim_count);
+static int toplevel_typedef_pointer_array_element_size(
+    const toplevel_decl_spec_t *spec, int fallback);
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind, const toplevel_decl_spec_t *spec);
 static void guard_toplevel_declarator_count(int declarator_count);
 static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
@@ -751,6 +759,7 @@ static void resolve_toplevel_typedef_ref(toplevel_decl_spec_t *spec) {
     td_is_ptr = _ti.is_pointer; td_is_unsigned = _ti.is_unsigned;
     td_is_long_double = _ti.is_long_double;
     td_is_array = _ti.is_array; td_dim_count = _ti.array_dim_count;
+    spec->base_decl_type = psx_ctx_typedef_decl_type(&_ti);
     spec->base_funcptr_sig = psx_ctx_typedef_funcptr_sig(&_ti);
     for (int i = 0; i < td_dim_count && i < 8; i++) spec->td_array_dims[i] = _ti.array_dims[i];
   }
@@ -799,6 +808,7 @@ static void reset_toplevel_decl_spec_state(toplevel_decl_spec_t *spec) {
   spec->base_kind = TK_EOF;
   spec->fp_kind = TK_FLOAT_KIND_NONE;
   spec->tag_kind = TK_EOF;
+  spec->base_decl_type = NULL;
   spec->base_funcptr_sig = (psx_decl_funcptr_sig_t){0};
 }
 
@@ -2626,6 +2636,8 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   int ptr_array_elem_store_size =
       (spec->base_is_ptr || (head.has_func_suffix && head.is_ptr)) ? 8
                                                                    : spec->elem_size;
+  ptr_array_elem_store_size = toplevel_typedef_pointer_array_element_size(
+      spec, ptr_array_elem_store_size);
   if (is_ptr_to_array && pointee_total > 0) {
     ptr_array_pointee_bytes = pointee_total * ptr_array_elem_store_size;
   } else if (head.is_ptr && head.ptr_levels == 0 && arr.is_array &&
@@ -2674,12 +2686,18 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   }
   validate_toplevel_object_array_suffix(spec, arr);
   global_var_t *gv = register_toplevel_object_from_declarator(spec, head, arr);
-  if (gv && arr.is_array && head.is_ptr && head.ptr_levels == 0 &&
-      spec->td_ptr_pointee_dim_count > 0) {
-    for (int i = spec->td_ptr_pointee_dim_count - 1; i >= 0; i--) {
-      if (spec->td_array_dims[i] > 0)
-        psx_decl_set_gvar_pointer_base_array(gv, spec->td_array_dims[i]);
+  if (gv && spec->base_decl_type && !head.has_func_suffix) {
+    const int *canonical_dims = arr.dims;
+    int canonical_dim_count = arr.dim_count;
+    if (is_ptr_to_array &&
+        (!spec->base_decl_type || spec->td_ptr_pointee_dim_count == 0)) {
+      canonical_dims = pointee_dims;
+      canonical_dim_count = pointee_dim_count;
     }
+    psx_type_t *canonical_type = build_toplevel_derived_typedef_type(
+        spec, head, canonical_dims, canonical_dim_count);
+    if (canonical_type)
+      psx_decl_set_gvar_decl_type(gv, canonical_type);
   }
   if (gv && ptr_array_pointee_bytes > 0) {
     psx_decl_set_gvar_ptr_array_pointee_bytes(gv, ptr_array_pointee_bytes);
@@ -2713,8 +2731,8 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
      * try_build_global_var_node のスカラ分岐が outer/mid/extra を node に反映する。 */
     int elem = spec->elem_size;
     int elem_store = ptr_array_elem_store_size;
-    if (spec->base_is_ptr && pointee_dim_count > 0 &&
-        pointee_dims[0] > 0) {
+    if (!spec->base_decl_type && spec->base_is_ptr &&
+        pointee_dim_count > 0 && pointee_dims[0] > 0) {
       psx_decl_set_gvar_pointer_base_array(gv, pointee_dims[0]);
     }
     if (head.paren_array_present && head.paren_array_mul > 0) {
@@ -2733,7 +2751,8 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
       if (target_count <= 0) target_count = 1;
       psx_decl_set_gvar_pointer_derived_type(gv, elem_store, elem,
                                              target_count * elem_store);
-      if (psx_type_pointer_depth(psx_gvar_get_decl_type(gv)) >= 2 &&
+      if (!spec->base_decl_type &&
+          psx_type_pointer_depth(psx_gvar_get_decl_type(gv)) >= 2 &&
           paren_dims[0] > 0) {
         psx_decl_set_gvar_pointer_base_array(gv, paren_dims[0]);
       }
@@ -2971,6 +2990,15 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+  psx_type_t *derived_type = build_toplevel_derived_typedef_type(
+      spec, head, td_dims, td_dim_count);
+  if (derived_type) {
+    psx_ctx_typedef_set_decl_type(&_ti, derived_type);
+    psx_decl_funcptr_sig_t canonical_sig =
+        psx_type_funcptr_signature(derived_type);
+    if (psx_decl_funcptr_sig_has_payload(canonical_sig))
+      psx_ctx_typedef_set_funcptr_sig(&_ti, canonical_sig);
+  }
   if (head.has_func_suffix && (head.is_ptr || head.ptr_in_paren_group)) {
     _ti.is_funcptr = 1;
     _ti.fp_kind = TK_FLOAT_KIND_NONE;
@@ -2979,15 +3007,90 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
 	            &head.func_suffix_sig, spec->base_kind, spec->fp_kind,
 	            toplevel_funcptr_direct_ret_is_data_pointer(spec, &head), 0, spec->is_complex,
 	            funcptr_ret_pointee_array);
-      if (head.func_suffix_count >= 2) {
+	    if (head.func_suffix_count >= 2) {
         psx_decl_funcptr_sig_promote_return_to_funcptr(
                   &sig, &head.returned_funcptr_suffix_sig);
 	    }
+	    int object_pointer_levels = head.funcptr_object_pointer_levels > 0
+	                                    ? head.funcptr_object_pointer_levels
+	                                    : 1;
+	    psx_type_t *funcptr_type =
+	        psx_type_new_funcptr(sig, object_pointer_levels);
+	    if (td_is_array)
+	      funcptr_type = psx_type_wrap_array_dims(
+	          funcptr_type, td_dims, td_dim_count);
+	    psx_ctx_typedef_set_decl_type(&_ti, funcptr_type);
 	    psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
 	  }
   if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
     psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
   }
+}
+
+static psx_type_t *toplevel_typedef_base_type(
+    const toplevel_decl_spec_t *spec) {
+  if (!spec) return NULL;
+  if (spec->base_decl_type)
+    return psx_type_clone(spec->base_decl_type);
+  if (psx_ctx_is_tag_aggregate_kind(spec->tag_kind)) {
+    return psx_type_new_tag(spec->tag_kind, spec->tag_name, spec->tag_len,
+                            0, spec->elem_size);
+  }
+  if (spec->is_complex) {
+    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
+    type->fp_kind = spec->fp_kind != TK_FLOAT_KIND_NONE
+                        ? spec->fp_kind
+                        : TK_FLOAT_KIND_DOUBLE;
+    type->size = spec->elem_size;
+    type->align = spec->elem_size >= 8 ? 8 : spec->elem_size;
+    return type;
+  }
+  if (spec->fp_kind != TK_FLOAT_KIND_NONE)
+    return psx_type_new_float(spec->fp_kind, spec->elem_size);
+  if (spec->base_kind == TK_VOID) {
+    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
+    type->scalar_kind = TK_VOID;
+    return type;
+  }
+  return psx_type_new_integer(spec->base_kind, spec->elem_size,
+                              spec->is_unsigned);
+}
+
+static int toplevel_typedef_pointer_array_element_size(
+    const toplevel_decl_spec_t *spec, int fallback) {
+  if (!spec || !spec->base_decl_type) return fallback;
+  const psx_type_t *type = spec->base_decl_type;
+  if (spec->td_ptr_pointee_dim_count <= 0) {
+    int object_size = psx_type_sizeof(type);
+    return object_size > 0 ? object_size : fallback;
+  }
+  while (type && type->kind == PSX_TYPE_POINTER) type = type->base;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  int elem_size = psx_type_sizeof(type);
+  return elem_size > 0 ? elem_size : fallback;
+}
+
+static psx_type_t *build_toplevel_derived_typedef_type(
+    const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head,
+    const int *decl_dims, int decl_dim_count) {
+  if (!spec || head.has_func_suffix) return NULL;
+
+  psx_type_t *type = toplevel_typedef_base_type(spec);
+  if (!type) return NULL;
+  if (spec->pointee_const) type->is_const_qualified = 1;
+  if (spec->pointee_volatile) type->is_volatile_qualified = 1;
+  int added_dim_count = decl_dim_count;
+  if (spec->td_array_dim_count > 0 && added_dim_count >= spec->td_array_dim_count)
+    added_dim_count -= spec->td_array_dim_count;
+
+  type = psx_type_apply_declarator(
+      type, decl_dims, added_dim_count, head.ptr_levels,
+      head.ptr_in_paren_group, 0, 0);
+
+  psx_decl_funcptr_sig_t sig = psx_type_funcptr_signature(type);
+  if (psx_decl_funcptr_sig_has_payload(sig))
+    type = psx_type_attach_funcptr_signature(type, sig);
+  return type;
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind, const toplevel_decl_spec_t *spec) {

@@ -34,6 +34,7 @@ typedef struct {
   int base_ptr_levels;
   int base_array_dims[8];
   int base_array_dim_count;
+  const psx_type_t *base_decl_type;
 } stmt_decl_type_state_t;
 typedef struct {
   int ptr_in_paren;
@@ -145,6 +146,31 @@ static stmt_array_suffix_t parse_stmt_array_suffixes(int base_mul) {
   return out;
 }
 
+static psx_type_t *stmt_typedef_base_type(
+    token_kind_t base_kind, int elem_size, tk_float_kind_t fp_kind,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int is_unsigned, int is_complex, const psx_type_t *base_decl_type) {
+  if (base_decl_type) return psx_type_clone(base_decl_type);
+  if (psx_ctx_is_tag_aggregate_kind(tag_kind))
+    return psx_type_new_tag(tag_kind, tag_name, tag_len, 0, elem_size);
+  if (is_complex) {
+    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
+    type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
+                        ? fp_kind
+                        : TK_FLOAT_KIND_DOUBLE;
+    type->size = elem_size;
+    type->align = elem_size >= 8 ? 8 : elem_size;
+    return type;
+  }
+  if (fp_kind != TK_FLOAT_KIND_NONE)
+    return psx_type_new_float(fp_kind, elem_size);
+  if (base_kind == TK_VOID) {
+    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
+    type->scalar_kind = TK_VOID;
+    return type;
+  }
+  return psx_type_new_integer(base_kind, elem_size, is_unsigned);
+}
 
 // _Alignas( constant-expression | type-name )
 
@@ -214,6 +240,8 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
     if (tag_name) *tag_name = _ti.tag_name;
     if (tag_len) *tag_len = _ti.tag_len;
     if (is_pointer_base) *is_pointer_base = _ti.is_pointer;
+    if (type_state)
+      type_state->base_decl_type = psx_ctx_typedef_decl_type(&_ti);
     /* 基底がポインタ typedef なら段数を捕捉 (合成 typedef の段数加算用)。 */
     if (type_state) type_state->base_ptr_levels = psx_ctx_get_typedef_pointer_levels(id->str, id->len);
     /* 基底が配列 typedef なら dims を捕捉 (typedef chain `typedef Row Matrix[2]` の合成用)。
@@ -273,6 +301,14 @@ static void parse_typedef_decl(void) {
     int base_is_ptr_only = (is_ptr && decl_stars == 0 && !decl_state.ptr_in_paren);
     int typedef_sizeof = is_ptr ? 8 : elem_size;
     stmt_array_suffix_t arr = parse_stmt_array_suffixes(0);
+    int declarator_dims[8] = {0};
+    int declarator_dim_count = arr.is_array ? arr.dim_count : 0;
+    for (int i = 0; i < declarator_dim_count && i < 8; i++)
+      declarator_dims[i] = arr.dims[i];
+    if (arr.is_array && declarator_dim_count <= 0) {
+      declarator_dims[0] = arr.arr_total;
+      declarator_dim_count = 1;
+    }
     if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
     else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
     else if (base_is_ptr_only && arr.is_array && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
@@ -330,6 +366,23 @@ static void parse_typedef_decl(void) {
     _ti.array_first_dim = td_first_dim;
     _ti.array_dim_count = td_dim_count;
     if (td_dims) for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = td_dims[i];
+    psx_type_t *canonical_type = stmt_typedef_base_type(
+        base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
+        td_is_unsigned, type_state.type_spec.is_complex,
+        type_state.base_decl_type);
+    if (canonical_type) {
+      if (td_pointee_const) canonical_type->is_const_qualified = 1;
+      if (td_pointee_volatile) canonical_type->is_volatile_qualified = 1;
+      canonical_type = psx_type_apply_declarator(
+          canonical_type, declarator_dims, declarator_dim_count,
+          decl_state.ptr_levels, decl_state.ptr_in_paren, 0, 0);
+      psx_decl_funcptr_sig_t inherited_sig =
+          psx_type_funcptr_signature(canonical_type);
+      if (psx_decl_funcptr_sig_has_payload(inherited_sig))
+        canonical_type = psx_type_attach_funcptr_signature(
+            canonical_type, inherited_sig);
+      psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
+    }
     if (decl_state.has_func_suffix && (is_ptr || decl_state.ptr_in_paren)) {
       _ti.is_funcptr = 1;
       _ti.fp_kind = TK_FLOAT_KIND_NONE;
@@ -337,6 +390,15 @@ static void parse_typedef_decl(void) {
           &decl_state.func_suffix_sig, base_kind, fp_kind,
           stmt_funcptr_direct_ret_is_data_pointer(&decl_state, is_pointer_base), 0,
           type_state.type_spec.is_complex, (psx_ret_pointee_array_t){0});
+      int object_pointer_levels = decl_state.funcptr_object_pointer_levels > 0
+                                      ? decl_state.funcptr_object_pointer_levels
+                                      : 1;
+      psx_type_t *funcptr_type =
+          psx_type_new_funcptr(sig, object_pointer_levels);
+      if (_ti.is_array)
+        funcptr_type = psx_type_wrap_array_dims(
+            funcptr_type, declarator_dims, declarator_dim_count);
+      psx_ctx_typedef_set_decl_type(&_ti, funcptr_type);
       psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
     }
     if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
@@ -476,6 +538,7 @@ static node_t *parse_decl_like_stmt(void) {
                                                       0, 0, 0, 0,
                                                       (psx_decl_funcptr_sig_t){0},
                                                       NULL,
+                                                      NULL,
                                                       0, 0);
     }
     if (tk_consume(';')) {
@@ -506,6 +569,7 @@ static node_t *parse_decl_like_stmt(void) {
                                                     &tag_type_spec, NULL, 0,
                                                     0, 0, 0, 0,
                                                     (psx_decl_funcptr_sig_t){0},
+                                                    NULL,
                                                     NULL,
                                                     0, 0);
   }
