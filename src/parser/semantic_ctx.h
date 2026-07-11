@@ -66,11 +66,26 @@ typedef struct {
   psx_type_t *decl_type;
 } psx_typedef_info_t;
 
+static inline const psx_type_t *psx_ctx_typedef_decl_type(
+    const psx_typedef_info_t *info) {
+  return info ? info->decl_type : NULL;
+}
+
+static inline psx_type_t *psx_ctx_typedef_decl_type_mut(psx_typedef_info_t *info) {
+  return info ? info->decl_type : NULL;
+}
+
+static inline void psx_ctx_typedef_set_decl_type(psx_typedef_info_t *info,
+                                                 psx_type_t *decl_type) {
+  if (info) info->decl_type = decl_type;
+}
+
 static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
     const psx_typedef_info_t *info) {
   if (!info) return (psx_decl_funcptr_sig_t){0};
-  if (info->decl_type && psx_decl_funcptr_sig_has_payload(info->decl_type->funcptr_sig))
-    return psx_decl_funcptr_sig_clone(info->decl_type->funcptr_sig);
+  const psx_type_t *decl_type = psx_ctx_typedef_decl_type(info);
+  if (decl_type)
+    return psx_decl_funcptr_sig_clone(decl_type->funcptr_sig);
   return info->is_funcptr ? psx_decl_funcptr_sig_clone(info->funcptr_sig)
                           : (psx_decl_funcptr_sig_t){0};
 }
@@ -80,6 +95,9 @@ static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
   if (!info) return;
   info->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   info->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
+  psx_type_t *decl_type = psx_ctx_typedef_decl_type_mut(info);
+  if (decl_type && psx_decl_funcptr_sig_has_payload(sig))
+    decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
 /* typedef 名を登録する。戻り値 1 = 成功 (新規 or 互換な再宣言)、

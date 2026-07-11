@@ -24,6 +24,11 @@ typedef struct {
   double fval;
   tk_float_kind_t fp_kind;
   int is_array;
+  int deref_size;
+  int outer_stride;
+  int mid_stride;
+  int extra_strides[5];
+  unsigned char extra_strides_count;
   int is_extern_decl;
   int is_static;
   int is_thread_local;
@@ -244,6 +249,7 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
                                             int inner_dim_count);
 void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
                                          const psx_decl_funcptr_sig_t *sig);
+void psx_decl_set_lvar_type_sig(lvar_t *var, char *type_sig);
 void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
                                      int elem_size, int is_array,
                                      tk_float_kind_t fp_kind,
@@ -278,6 +284,7 @@ void psx_decl_set_gvar_qualifiers(global_var_t *gv,
                                   int is_volatile_qualified);
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig);
+void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig);
 void psx_decl_set_current_funcname(char *name, int len);
 void psx_decl_get_current_funcname(char **out_name, int *out_len);
 

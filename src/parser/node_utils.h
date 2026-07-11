@@ -148,7 +148,6 @@ node_t *psx_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
                                          int next_deref_size,
                                          const int *extra_strides,
                                          int extra_strides_count);
-node_t *psx_node_new_byref_param_deref_for(struct lvar_t *var);
 node_t *psx_node_new_member_lvar_ref_for(struct lvar_t *owner, int member_offset,
                                          int member_type_size, token_kind_t member_tag_kind,
                                          char *member_tag_name, int member_tag_len,

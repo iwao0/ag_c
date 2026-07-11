@@ -81,16 +81,88 @@ static const psx_type_t *gvar_view_skip_arrays(const psx_type_t *type) {
   return type;
 }
 
+static int gvar_view_array_strides_from_type(const psx_type_t *type,
+                                             int *deref_size,
+                                             int *outer_stride,
+                                             int *mid_stride,
+                                             int *extra_strides,
+                                             int *extra_count) {
+  if (deref_size) *deref_size = 0;
+  if (outer_stride) *outer_stride = 0;
+  if (mid_stride) *mid_stride = 0;
+  if (extra_count) *extra_count = 0;
+  if (extra_strides) {
+    for (int i = 0; i < 5; i++) extra_strides[i] = 0;
+  }
+  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
+
+  int strides[10];
+  int n = 0;
+  const psx_type_t *cur = type;
+  while (cur && cur->kind == PSX_TYPE_ARRAY && n < 10) {
+    int stride = cur->base ? psx_type_sizeof(cur->base) : 0;
+    if (stride <= 0) stride = psx_type_deref_size(cur);
+    if (stride <= 0) break;
+    strides[n++] = stride;
+    cur = cur->base;
+  }
+  if (n <= 0) return 0;
+
+  if (deref_size) *deref_size = strides[n - 1];
+  if (n >= 2 && outer_stride) *outer_stride = strides[0];
+  if (n >= 3 && mid_stride) *mid_stride = strides[1];
+  int count = 0;
+  for (int i = 2; i < n - 1 && count < 5; i++) {
+    if (extra_strides) extra_strides[count] = strides[i];
+    count++;
+  }
+  if (extra_count) *extra_count = count;
+  return 1;
+}
+
 static void psx_gvar_view_apply_decl_type(psx_gvar_view_t *view,
                                           const psx_type_t *type) {
   if (!view || !type) return;
   int type_size = psx_type_sizeof(type);
-  if (type_size > 0) view->type_size = type_size;
+  if (type_size > 0 || type->kind == PSX_TYPE_ARRAY) view->type_size = type_size;
   view->is_array = type->kind == PSX_TYPE_ARRAY ? 1 : 0;
   view->fp_kind = TK_FLOAT_KIND_NONE;
+  view->deref_size = 0;
+  view->outer_stride = 0;
+  view->mid_stride = 0;
+  view->extra_strides_count = 0;
+  for (int i = 0; i < 5; i++) view->extra_strides[i] = 0;
+  int deref_size = 0;
+  int outer_stride = 0;
+  int mid_stride = 0;
+  int extra_strides[5] = {0};
+  int extra_count = 0;
+  if (gvar_view_array_strides_from_type(type, &deref_size, &outer_stride,
+                                        &mid_stride, extra_strides,
+                                        &extra_count)) {
+    view->deref_size = deref_size;
+    view->outer_stride = outer_stride;
+    view->mid_stride = mid_stride;
+    view->extra_strides_count = (unsigned char)extra_count;
+    for (int i = 0; i < 5; i++) view->extra_strides[i] = extra_strides[i];
+  } else {
+    int type_deref_size = psx_type_deref_size(type);
+    if (type_deref_size > 0) view->deref_size = type_deref_size;
+    if (type->outer_stride > 0) view->outer_stride = type->outer_stride;
+    if (type->mid_stride > 0) view->mid_stride = type->mid_stride;
+    if (type->extra_strides_count > 0) {
+      view->extra_strides_count = type->extra_strides_count;
+      for (int i = 0; i < type->extra_strides_count && i < 5; i++)
+        view->extra_strides[i] = type->extra_strides[i];
+    }
+  }
 
   const psx_type_t *base = gvar_view_skip_arrays(type);
   int is_tag_pointer = 0;
+  view->tag_kind = TK_EOF;
+  view->tag_name = NULL;
+  view->tag_len = 0;
+  view->is_tag_pointer = 0;
   if (base && base->kind == PSX_TYPE_POINTER) {
     is_tag_pointer = 1;
     base = base->base;
@@ -128,12 +200,19 @@ psx_gvar_view_t psx_gvar_view(const global_var_t *gv) {
       .fval = gv->fval,
       .fp_kind = (tk_float_kind_t)gv->fp_kind,
       .is_array = gv->is_array ? 1 : 0,
+      .deref_size = gv->deref_size,
+      .outer_stride = gv->outer_stride,
+      .mid_stride = gv->mid_stride,
+      .extra_strides_count = gv->extra_strides_count,
       .is_extern_decl = gv->is_extern_decl ? 1 : 0,
       .is_static = gv->is_static ? 1 : 0,
       .is_thread_local = gv->is_thread_local ? 1 : 0,
       .is_tag_pointer = gv->is_tag_pointer ? 1 : 0,
       .has_init_fvalues = gv->init_fvalues ? 1 : 0,
   };
+  for (int i = 0; i < gv->extra_strides_count && i < 5; i++) {
+    view.extra_strides[i] = gv->extra_strides[i];
+  }
   psx_gvar_view_apply_decl_type(&view,
                                 psx_gvar_get_decl_type((global_var_t *)gv));
   return view;
@@ -606,8 +685,9 @@ static psx_type_t *function_signature_ret_type(
       base, sig->ret_pointee_first_dim, sig->ret_pointee_second_dim);
   int deref_size = levels >= 2 ? 8 : psx_type_sizeof(pointee);
   if (deref_size <= 0) deref_size = 8;
-  psx_type_t *type = psx_type_new_pointer(pointee, deref_size);
-  type->pointer_qual_levels = levels;
+  psx_type_t *type =
+      psx_type_wrap_pointer_levels(pointee, levels, deref_size,
+                                   base ? psx_type_sizeof(base) : 0, 0, 0);
   type->base_deref_size = base ? psx_type_sizeof(base) : 0;
   function_type_apply_pointee_qualifiers(type, sig->ret_pointee_const,
                                          sig->ret_pointee_volatile);
@@ -1671,8 +1751,9 @@ static double psx_eval_const_fp(node_t *n, int *ok) {
 /* 多次元 member designator の `[i]` を 1 段消費し、残り次元の要素数へ畳み込む。 */
 static void consume_global_member_array_dim(tag_member_info_t *mi) {
   if (!mi) return;
-  if (mi->decl_type && mi->decl_type->kind == PSX_TYPE_ARRAY && mi->decl_type->base) {
-    mi->decl_type = mi->decl_type->base;
+  psx_type_t *decl_type = psx_tag_member_decl_type_mut(mi);
+  if (decl_type && decl_type->kind == PSX_TYPE_ARRAY && decl_type->base) {
+    psx_tag_member_set_decl_type(mi, decl_type->base);
   }
   if (mi->arr_ndim > 1) {
     int remaining = 1;
@@ -1825,8 +1906,9 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
 
 /* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
 void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  gbrace_ctx_t ctx = {gv->tag_kind, gv->tag_name, gv->tag_len, gv->is_array,
-                      gv->is_tag_pointer ? 1 : 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  gbrace_ctx_t ctx = {view.tag_kind, view.tag_name, view.tag_len, view.is_array,
+                      view.is_tag_pointer ? 1 : 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
   /* グローバル多次元配列 (`int g[3][2]` 等) のトップレベル ctx に sub_dims を埋める。
    * 内側 designator (`{[2] = {[1] = 99}}`) の elem_slots 計算で「外側 `[N]=` は内側次元の総
    * スカラ数 * N 進める」必要がある (続き13 で struct メンバ多次元配列に対応済みだが、その
@@ -1834,23 +1916,23 @@ void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx)
    * 初期化するためここでも sub_dims を埋める必要がある)。
    * gv の outer_stride / mid_stride / extra_strides の隣接ペアを割って各 dim を算出。
    * 1D 配列 (outer_stride==deref_size) は sub_ndim=0 (従来挙動)。 */
-  if (gv->is_array && gv->tag_kind == TK_EOF && gv->deref_size > 0
-      && gv->outer_stride > gv->deref_size) {
+  if (view.is_array && view.tag_kind == TK_EOF && view.deref_size > 0
+      && view.outer_stride > view.deref_size) {
     int strides[10];
     int n_strides = 0;
-    strides[n_strides++] = gv->outer_stride;
-    if (gv->mid_stride > 0) strides[n_strides++] = gv->mid_stride;
-    for (int i = 0; i < gv->extra_strides_count && i < 5; i++) {
-      if (gv->extra_strides[i] > 0) strides[n_strides++] = gv->extra_strides[i];
+    strides[n_strides++] = view.outer_stride;
+    if (view.mid_stride > 0) strides[n_strides++] = view.mid_stride;
+    for (int i = 0; i < view.extra_strides_count && i < 5; i++) {
+      if (view.extra_strides[i] > 0) strides[n_strides++] = view.extra_strides[i];
     }
-    strides[n_strides++] = gv->deref_size;
+    strides[n_strides++] = view.deref_size;
     int n_sub = n_strides - 1;
     if (n_sub > 8) n_sub = 8;
     for (int i = 0; i < n_sub; i++) {
       ctx.sub_dims[i] = strides[i] / strides[i + 1];
     }
     ctx.sub_ndim = n_sub;
-    ctx.elem_size = gv->deref_size;
+    ctx.elem_size = view.deref_size;
   }
   psx_gbrace_flat(gv, cap, start_idx, ctx);
 }
@@ -2057,6 +2139,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
     psx_gvar_init_slots_pad_zeros(gv, cap, cur_idx);
     if (active_union_ordinal >= 0)
       psx_gvar_init_slot_set_ordinal(gv, cur_idx, active_union_ordinal);
+    psx_gvar_view_t root_view = psx_gvar_view(gv);
     if (curtok()->kind == TK_LBRACE) {
       /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
        * 後方ジャンプ済みのときも正しい slot へ)。child は内側 designator を正しい型で
@@ -2064,12 +2147,13 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
       psx_gbrace_flat(gv, cap, cur_idx, child);
       cur_idx = gv->init_count;
       align_next_array_positional = 1;
-    } else if (curtok()->kind == TK_STRING && gv->deref_size == 1 && gv->outer_stride > 0) {
+    } else if (curtok()->kind == TK_STRING &&
+               root_view.deref_size == 1 && root_view.outer_stride > 0) {
       /* 多次元 char 配列の行を文字列で初期化: `char g[2][6]={"hello","world"}`。
        * 文字列を行 (outer_stride バイト) のバイト列へ展開する (char* 配列ではないので
        * .LC ポインタにしない)。残りは 0 埋め。 */
       node_t *e = psx_expr_assign();
-      int row_w = gv->outer_stride;
+      int row_w = root_view.outer_stride;
       psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
       string_lit_t *lit = NULL;
       if (e && e->kind == ND_STRING) {
@@ -2145,7 +2229,7 @@ static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ct
          * 混ざっていても (`double a[] = {1, 2.5}`) 宣言型 fp_kind を優先する。 */
         fv = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
       }
-      else if (e && gv->fp_kind != TK_FLOAT_KIND_NONE && gv->init_fvalues) {
+      else if (e && root_view.fp_kind != TK_FLOAT_KIND_NONE && gv->init_fvalues) {
         /* fp 配列の非 ND_NUM 要素 (負値 `-2.5` は ND_FNEG、定数式 `1.0/2` 等)。
          * psx_eval_const_fp で畳み込む。これがないと負の配列要素が 0 に化けていた。
          * fp_kind ゲート必須: init_fvalues はポインタ/整数配列でも確保されうるので、
@@ -2285,32 +2369,33 @@ static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long lo
 /* C11 6.7.6.2p1: `T a[] = {...}` の要素数を初期化子から確定する。
  * init_count は flat scalar slots なので、struct 配列と多次元配列では要素境界へ丸める。 */
 void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
-  if (!gv || gv->type_size != 0 || !gv->is_array ||
-      gv->deref_size <= 0 || gv->init_count <= 0) {
+  psx_gvar_view_t view = psx_gvar_view(gv);
+  if (!gv || view.type_size != 0 || !view.is_array ||
+      view.deref_size <= 0 || gv->init_count <= 0) {
     return;
   }
   if (psx_gvar_is_struct_aggregate(gv)) {
     /* `struct P a[] = {1,2,3,4}`: init_count is flat scalar slots, while
      * type_size must be inferred in struct elements. */
-    int elem_slots = psx_tag_flat_slot_count(gv->tag_kind, gv->tag_name, gv->tag_len);
+    int elem_slots = psx_tag_flat_slot_count(view.tag_kind, view.tag_name, view.tag_len);
     if (elem_slots < 1) elem_slots = 1;
     int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
     int total_slots = outer_dim * elem_slots;
     psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
-    psx_decl_set_gvar_type_size(gv, outer_dim * gv->deref_size);
-  } else if (gv->outer_stride > gv->deref_size) {
+    psx_decl_set_gvar_type_size(gv, outer_dim * view.deref_size);
+  } else if (view.outer_stride > view.deref_size) {
     /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
-    int inner_slots = gv->outer_stride / gv->deref_size;
+    int inner_slots = view.outer_stride / view.deref_size;
     if (inner_slots > 0) {
       int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
       int total_slots = outer_dim * inner_slots;
       psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
-      psx_decl_set_gvar_type_size(gv, total_slots * gv->deref_size);
+      psx_decl_set_gvar_type_size(gv, total_slots * view.deref_size);
     } else {
-      psx_decl_set_gvar_type_size(gv, gv->init_count * gv->deref_size);
+      psx_decl_set_gvar_type_size(gv, gv->init_count * view.deref_size);
     }
   } else {
-    psx_decl_set_gvar_type_size(gv, gv->init_count * gv->deref_size);
+    psx_decl_set_gvar_type_size(gv, gv->init_count * view.deref_size);
   }
 }
 
@@ -2347,7 +2432,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
        * として等価なので strip OK。複数値の `int *p = (int[]){10,20,30}` 形は strip すると先頭
        * 要素値がポインタスロットに書き込まれて SIGBUS なので skip し、式経路で compound literal
        * を hidden gvar に materialize させる。 */
-      int gv_is_aggregate = gv->is_array || psx_gvar_is_tag_aggregate(gv);
+      int gv_is_aggregate = psx_gvar_is_array(gv) || psx_gvar_is_tag_aggregate(gv);
       int may_strip = gv_is_aggregate;
       if (!may_strip) {
         token_t *brace_open = t->next;            /* '{' */
@@ -2366,18 +2451,20 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   // 1D と多次元 (ネスト brace) の両方を flat 化して保持する。
   if (curtok()->kind == TK_LBRACE) {
     gv->has_init = 1;
+    psx_gvar_view_t view = psx_gvar_view(gv);
     int cap = 16;
     /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
      * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
      * 浮動小数メンバをビットパターンで出力する。 */
     psx_gvar_init_slots_alloc(gv, cap,
-                              gv->fp_kind != TK_FLOAT_KIND_NONE || gv->tag_kind != TK_EOF);
+                              view.fp_kind != TK_FLOAT_KIND_NONE ||
+                                  view.tag_kind != TK_EOF);
     gv->init_count = 0;
     psx_parse_global_brace_init_flat(gv, &cap, -1);
     psx_decl_finalize_gvar_inferred_array_size(gv, &cap);
     /* C11 6.3.1.2: `_Bool a[N]={...}` の各要素初期化子を 0/1 に正規化する。
      * (配列ブランチはここで早期 return するため末尾のスカラ正規化には到達しない。) */
-    if (gv->elem_is_bool && gv->init_values) {
+    if (psx_gvar_array_element_is_bool(gv) && gv->init_values) {
       for (int i = 0; i < gv->init_count; i++) {
         psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
         psx_gvar_init_slot_write(gv, i, slot.value != 0 ? 1 : 0,
@@ -2391,9 +2478,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
    * ND_SUB(0, 42) になる。const 畳み込みできる式は折りたたんで init_val に格納する。 */
   int const_ok = 1;
   long long folded = init_expr ? psx_decl_eval_const_int(init_expr, &const_ok) : 0;
+  psx_gvar_view_t init_view = psx_gvar_view(gv);
   /* グローバル double/float 用の定数式畳み込み (`double v = 1.5 + 2.5;`)。
    * 各 ND_NUM の fval を取り、ND_ADD/SUB/MUL/DIV/単項マイナスを再帰評価する。 */
-  int fp_const_ok = (gv->fp_kind != TK_FLOAT_KIND_NONE);
+  int fp_const_ok = (init_view.fp_kind != TK_FLOAT_KIND_NONE);
   double fp_folded = 0.0;
   if (fp_const_ok && init_expr) {
     fp_folded = psx_eval_const_fp(init_expr, &fp_const_ok);
@@ -2404,10 +2492,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_val = n->val;
     /* グローバル変数が浮動小数スカラなら fval をビット出力用に保存する。
      * `double v = 3;` のように整数リテラルでも、宣言型 fp_kind を優先する。 */
-    if (gv->fp_kind != TK_FLOAT_KIND_NONE) {
+    if (init_view.fp_kind != TK_FLOAT_KIND_NONE) {
       gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
     }
-  } else if (init_expr && gv->fp_kind != TK_FLOAT_KIND_NONE && fp_const_ok) {
+  } else if (init_expr && init_view.fp_kind != TK_FLOAT_KIND_NONE && fp_const_ok) {
     /* 浮動小数の定数式 (`1.5 + 2.5`): fp_folded を fval に保存。 */
     gv->has_init = 1;
     gv->fval = fp_folded;
@@ -2436,9 +2524,10 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     gv->init_symbol_len = fr->funcname_len;
   } else if (init_expr && init_expr->kind == ND_STRING) {
     node_string_t *s = (node_string_t *)init_expr;
+    psx_gvar_view_t view = psx_gvar_view(gv);
     /* `char *p = "...";` のようなポインタ変数 (配列ではない) では、
      * 文字列ラベル `.LCn` のアドレスを `.quad` で書き出す。 */
-    if (!gv->is_array && gv->type_size == 8) {
+    if (!view.is_array && view.type_size == 8) {
       gv->has_init = 1;
       gv->init_symbol = s->string_label;
       gv->init_symbol_len = -1;  /* sentinel: emit raw label (no `_` prefix) */
@@ -2448,7 +2537,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
        * type_size を確定する。要素幅 (elem) が文字列の char_width (char/u8=1, u=2, U/L=4) と
        * 一致するときのみ (ASCII 内容のみ。非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。
        * emit (emit_one_global_var) は deref_size 幅で .byte/.short/.long 出力する。 */
-      int elem = gv->deref_size > 0 ? gv->deref_size : 1;
+      int elem = view.deref_size > 0 ? view.deref_size : 1;
       int cw = s->char_width > 0 ? (int)s->char_width : 1;
       if (elem == cw) {
         int total = s->byte_len + 1; /* null 終端を含む (要素数) */
@@ -2469,7 +2558,7 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     }
   }
   /* C11 6.3.1.2: _Bool スカラの初期化子は 0/1 に正規化する (`_Bool b = 5;` → 1)。 */
-  if (gv->is_bool && gv->has_init) {
+  if (psx_gvar_is_bool_scalar(gv) && gv->has_init) {
     gv->init_val = (gv->init_val != 0) ? 1 : 0;
   }
 }
@@ -2511,7 +2600,10 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
    * して隣接メモリを読んでいた (SIGSEGV / 誤値)。配列扱いを解除し、pointee の各次元を
    * subscript ストライドに記録する (ローカル decl.c の `(*p)[N]...` 分岐と同じ表現)。関数
    * ポインタ (`(*f)(args)`) は has_func_suffix で除外。 */
-  int is_ptr_to_array = (head.is_ptr && head.ptr_in_paren_group &&
+  int paren_pointer_to_array =
+      head.ptr_in_paren_group ||
+      (spec->base_is_ptr && head.paren_array_present);
+  int is_ptr_to_array = (head.is_ptr && paren_pointer_to_array &&
                          !head.has_func_suffix && arr.is_array &&
                          arr.dim_count >= 1 && !arr.has_incomplete_array);
   int pointee_total = arr.arr_total;        /* pointee 全要素数 (= 全次元の積) */
@@ -2533,8 +2625,11 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
     }
   }
   int ptr_array_pointee_bytes = 0;
+  int ptr_array_elem_store_size =
+      (spec->base_is_ptr || (head.has_func_suffix && head.is_ptr)) ? 8
+                                                                   : spec->elem_size;
   if (is_ptr_to_array && pointee_total > 0) {
-    ptr_array_pointee_bytes = pointee_total * spec->elem_size;
+    ptr_array_pointee_bytes = pointee_total * ptr_array_elem_store_size;
   } else if (head.is_ptr && head.ptr_levels == 0 && arr.is_array &&
              spec->td_ptr_pointee_dim_count > 0) {
     int td_pointee_total = 1;
@@ -2612,6 +2707,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
      * = pointee 全体、mid_stride 以降が内側)。deref_size(=elem) は register 設定済み。
      * try_build_global_var_node のスカラ分岐が outer/mid/extra を node に反映する。 */
     int elem = spec->elem_size;
+    int elem_store = ptr_array_elem_store_size;
     if (head.paren_array_present && head.paren_array_mul > 0) {
       int paren_dims[8] = {0};
       int paren_dim_count = head.paren_array_dim_count;
@@ -2621,18 +2717,29 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
         paren_dims[0] = head.paren_array_mul;
         paren_dim_count = 1;
       }
-      psx_decl_set_gvar_array_strides_from_inner_dims(gv, paren_dims, paren_dim_count, 8);
+      psx_decl_set_gvar_array_strides_from_inner_dims(gv, paren_dims,
+                                                      paren_dim_count,
+                                                      elem_store);
       int target_count = pointee_total / head.paren_array_mul;
       if (target_count <= 0) target_count = 1;
-      psx_decl_set_gvar_pointer_derived_type(gv, 8, elem, target_count * elem);
+      psx_decl_set_gvar_pointer_derived_type(gv, elem_store, elem,
+                                             target_count * elem_store);
     } else if (pointee_dim_count >= 2) {
       int vdims[9];
       vdims[0] = 1;
       for (int i = 0; i < pointee_dim_count && i + 1 < 9; i++) vdims[i + 1] = pointee_dims[i];
-      psx_decl_set_gvar_array_strides_from_dims(gv, vdims, pointee_dim_count + 1, elem);
+      psx_decl_set_gvar_array_strides_from_dims(gv, vdims,
+                                                pointee_dim_count + 1,
+                                                elem_store);
     } else {
       int single_pointee_dim = (pointee_dim_count > 0) ? pointee_dims[0] : pointee_total;
-      psx_decl_set_gvar_array_strides_from_inner_dims(gv, &single_pointee_dim, 1, elem);
+      psx_decl_set_gvar_array_strides_from_inner_dims(gv, &single_pointee_dim,
+                                                      1, elem_store);
+    }
+    if (ptr_array_pointee_bytes > 0 && elem_store > elem) {
+      psx_decl_set_gvar_pointer_qual_levels(gv, 1);
+      psx_decl_set_gvar_pointer_derived_type(gv, elem_store, elem,
+                                             ptr_array_pointee_bytes);
     }
     if (spec->fp_kind != TK_FLOAT_KIND_NONE) {
       psx_decl_set_gvar_pointee_fp_kind(gv, spec->fp_kind);
@@ -2686,9 +2793,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   }
   finalize_toplevel_object_declarator(spec, gv);
   if (gv && decl_type_sig) {
-    gv->type_sig = decl_type_sig;
-    psx_type_t *decl_type = psx_gvar_get_decl_type(gv);
-    if (decl_type) decl_type->type_sig = decl_type_sig;
+    psx_decl_set_gvar_type_sig(gv, decl_type_sig);
   }
 }
 
@@ -3123,10 +3228,14 @@ static token_ident_t *parse_decl_name_recursive(const toplevel_decl_spec_t *spec
     had_parens = 1;
     psx_skip_gnu_attributes();
     int ptr_before_inner = head->is_ptr;
+    int ptr_levels_before_inner = head->ptr_levels;
     name = parse_decl_name_recursive(spec, head, require_name, &paren_array_mul);
     /* 括弧内で初めて `*` が立った (`(*pa)`): 配列へのポインタ / 関数ポインタの指標。
      * 後続の `[N]` サフィックスと合わせて pointer-to-array を識別する。 */
-    if (head->is_ptr && !ptr_before_inner) head->ptr_in_paren_group = 1;
+    if (head->ptr_levels > ptr_levels_before_inner ||
+        (head->is_ptr && !ptr_before_inner)) {
+      head->ptr_in_paren_group = 1;
+    }
     /* 括弧内に `[N]` があるか (要素数 1 でも配列扱いにするため、積ではなく有無を記録)。 */
     if (curtok()->kind == TK_LBRACKET) head->paren_array_present = 1;
     paren_array_mul = psx_parse_array_suffixes_capture_dims(
@@ -3991,6 +4100,32 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
   }
   if (param_is_ptr && ds->tag_kind == TK_EOF) {
     int pointer_array_outer_dim = decl_state ? decl_state->pointer_array_outer_dim : 0;
+    if (param_is_array_declarator && ds->base_is_pointer &&
+        param_inner_first_dim > 0 && !param_has_func_suffix) {
+      int elem_store_size = (ds->elem_size > 0 && ds->elem_size < 8) ? 8 : ds->elem_size;
+      if (elem_store_size <= 0) elem_store_size = 8;
+      int scalar_deref_size = (elem_store_size == 8 && ds->elem_size > 0 && ds->elem_size < 8)
+                                  ? ds->elem_size
+                                  : elem_store_size;
+      int inner_dims[2] = {param_inner_first_dim, param_inner_second_dim};
+      int inner_dim_count = param_inner_second_dim > 0 ? 2 : 1;
+      int row_bytes = elem_store_size;
+      for (int i = 0; i < inner_dim_count; i++) {
+        if (inner_dims[i] > 0) row_bytes *= inner_dims[i];
+      }
+      lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len,
+                                                 8, elem_store_size, 0);
+      psx_decl_set_lvar_pointer_derived_type(var, 1,
+                                             scalar_deref_size,
+                                             row_bytes);
+      psx_decl_set_lvar_pointee_scalar_flags(
+          var, ds->is_unsigned, ds->base_type_kind == TK_BOOL);
+      psx_decl_set_lvar_pointee_fp_kind(var, ds->fp_kind);
+      psx_decl_set_lvar_array_strides_from_inner_dims(var, inner_dims,
+                                                      inner_dim_count,
+                                                      elem_store_size);
+      return var;
+    }
 	    if (param_is_array_declarator && pointer_array_outer_dim > 0 &&
 	        param_inner_first_dim > 0 && !param_has_func_suffix) {
 	      lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, 8, 0);

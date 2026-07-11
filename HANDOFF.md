@@ -1,8 +1,1504 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-10（続き981: function-pointer return call の decay 判定を canonical funcall type に寄せた）
+最終更新: 2026-07-11（続き1027: legacy mem からの type 再構成入口を分けた）
 
 ## 現状
+- 続き1027: **legacy mem からの type 再構成入口を分けた**。
+
+  続き1026後、次の焦点として `type_from_mem()` の残り方を確認した。
+  この関数は、direct type がある node fallback では `mem->base.type` を返す一方で、
+  lvar/gvar の旧 `node_mem_t` payload から type を再構成する役割も持っていた。
+  そのため、呼び出し名だけ見ると typed node 経路まで legacy payload 再構成へ入るように見え、
+  「`psx_type_t` が正本、`node_mem_t` は legacy mirror/fallback」という境界が曖昧だった。
+
+  修正として、実体を `type_from_legacy_mem_payload()` に改名し、
+  ここからは direct type 早期 return を削除した。
+  その上で入口を 2 つに分けた。
+  `type_from_legacy_node_mem()` は `psx_node_get_type()` や unary/subscript fallback 用で、
+  `mem->base.type` がある場合は必ずそれを返してから legacy payload に落ちる。
+  `type_from_legacy_decl_mem()` は lvar/gvar の旧 decl field materialization 用で、
+  旧 payload からの復元であることを名前に出した。
+
+  既存の `type_from_mem()` call site はすべて上記の named wrapper に置き換えた。
+  これにより挙動は維持しつつ、direct type 経路と legacy payload 復元経路の入口が分かれた。
+
+  regression:
+  - 新規追加はなし。既存の decl materialization、unary deref row、subscript、
+    VLA row、stale raw metadata regression が同じ経路を通る。
+  - 今回は挙動変更ではなく、legacy type 復元の入口を明示して
+    正本 `psx_type_t` と legacy `node_mem_t` fallback の境界を読み取れる形にする構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_pointer_to_array_base_from_mem()` /
+  `type_pointer_array_base_from_mem()` 周辺を確認し、
+  legacy payload 専用 helper として命名・隔離するか、type module 側へ寄せるかを判断する。
+
+- 続き1026: **array view stride 再構成を type helper に移した**。
+
+  続き1025後、次の焦点として `sync_array_mem_from_structural_type()` を確認した。
+  node mirror への書き込みは `store_pointer_array_stride_payload_mem()` に集約済みだったが、
+  array row の `child_stride` / `grandchild_stride` / raw outer/mid stride の整合判定は
+  まだ `node_utils.c` 側に残っていた。
+  これは「array type から row stride metadata をどう解釈するか」という type shape の意味論が、
+  node mirror 同期関数に残る形だった。
+
+  修正として、`type.h/type.c` に
+  `psx_type_array_view_stride_metadata()` を追加した。
+  この helper は `PSX_TYPE_ARRAY` の row stride metadata を読み、
+  既存の `keep_outer_row_stride` の挙動も引数で扱う。
+  `sync_array_mem_from_structural_type()` は type size / deref size を node mirror に写した後、
+  `psx_type_array_view_stride_metadata()` の結果を
+  `store_pointer_array_stride_payload_mem()` で保存するだけになった。
+
+  これにより、array child/grandchild stride の再構成ロジックは type module 側へ移り、
+  node 側は node mirror の保存形式だけを担当する形に近づいた。
+
+  regression:
+  - 新規追加はなし。既存の 2D/3D array row、pointer-to-array row、
+    VLA row regression が同じ subscript/deref 経路を通る。
+  - 今回は挙動変更ではなく、array view stride の意味論を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_from_mem()` / `type_pointer_to_array_base_from_mem()` 周辺に残る
+  node_mem から type を再構成する legacy 経路を確認する。
+  direct type がある経路からはかなり外れてきたため、次は「type が無い legacy 入力」を
+  どこまで隔離・命名できるかを詰める。
+
+- 続き1025: **node_mem stride fallback を typed row 例外と legacy node に限定した**。
+
+  続き1024後、`node_pointer_stride_from_mem()` の残存 caller を確認した。
+  `node_pointer_stride_from_node_direct()` には direct type がある場合でも
+  `ND_DEREF` + array type の row 正規化/VLA row のために node_mem stride を読む例外があり、
+  さらに `psx_node_new_unary_deref_for()` の row 正規化前処理には、
+  operand type が stride sync 不許可のときに raw node_mem を直接読む経路が残っていた。
+  後者は type が「同期不可」と判断した stale raw metadata を復活させる抜け道になり得るため、
+  正本化の観点では浅い対応だった。
+
+  修正として、`node_utils.c` に
+  `node_pointer_stride_mem_fallback_allowed_for_typed_node()` を追加した。
+  direct type がある場合の node_mem fallback は、
+  `ND_DEREF` かつ `PSX_TYPE_ARRAY` の typed row に限定し、
+  通常の row 正規化は `mem->inner_deref_size <= psx_type_deref_size(type)` の範囲だけ許可する。
+  VLA row は runtime stride mirror が必要な例外として同じ helper に閉じた。
+  それ以外の direct type 付き node では `node_pointer_stride_from_mem()` に落ちない。
+
+  また、`psx_node_new_unary_deref_for()` の row 正規化前処理は
+  `psx_node_pointer_stride_metadata()` を常に使うように変更した。
+  これにより、type が存在する場合は type 優先境界と typed row 例外だけを通り、
+  type がない場合だけ legacy node_mem fallback が使われる。
+  この変更で `decl_type_pointer_stride_sync_allowed()` は未使用になったため削除した。
+
+  regression:
+  - 新規追加はなし。既存の stale raw metadata regression と、
+    VLA 3D row / pointer-to-array row regression が今回の境界を通る。
+  - 今回は挙動変更ではなく、node_mem stride fallback の許可範囲を
+    named helper に閉じ、unary deref の direct raw fallback を public metadata reader に寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`sync_array_mem_from_structural_type()` に残る
+  array stride 再構成ロジックを type helper 側へ寄せられるか確認する。
+  今は node mirror 書き込みは helper 化済みだが、array child/grandchild stride の計算は
+  まだ `node_utils.c` 側に残っている。
+
+- 続き1024: **node stride metadata reader の type 優先境界を整理した**。
+
+  続き1023後、`psx_node_pointer_stride_metadata()` /
+  `node_pointer_stride_from_node_direct()` 周辺を確認した。
+  `node_pointer_stride_from_type()` は effective type reader を呼ぶだけになっていたが、
+  caller 側ではまだ `legacy_flat_pointer_type_matches_node_mem()` を通してから
+  type reader を呼んでいた。
+  これは structural type であっても node sidecar shape check を経由する形で、
+  「type が正本、node_mem は legacy mirror」という境界が曖昧だった。
+
+  修正として、`node_pointer_stride_from_type()` を
+  `node_pointer_stride_from_type_with_sidecar()` に置き換えた。
+  この helper は `psx_type_pointer_view_stride_sync_allowed_with_sidecar()` で
+  structural/VLA/tag aggregate/pointer-to-array は type 側の判定だけで許可し、
+  旧 flat pointer だけ sidecar を使ってから
+  `psx_type_pointer_view_effective_stride_metadata()` を読む。
+  `node_pointer_stride_from_node_direct()` はこの helper を使うようにし、
+  node 側の `legacy_flat_pointer_type_matches_node_mem()` は削除した。
+
+  さらに、続き1023で追加した `store_pointer_array_stride_payload_mem()` を
+  `sync_array_mem_from_structural_type()` と array addr metadata 同期にも使うようにして、
+  stride payload の node mirror 書き込み形式をさらに 1 箇所へ寄せた。
+
+  今回の整理で `psx_type_pointer_view_shape_matches_sidecar()` は未使用になったため、
+  public 宣言と実装を削除した。
+  旧 flat pointer shape check は `type.c` 内部の
+  `psx_type_legacy_flat_pointer_shape_matches_sidecar()` に閉じた。
+
+  regression:
+  - 新規追加はなし。既存の pointer-to-array / VLA / stale raw metadata regression が
+    `psx_node_pointer_stride_metadata()` 経路を引き続き通る。
+  - 今回は挙動変更ではなく、node stride metadata reader の type 優先境界と
+    public API 表面を整理する構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`node_pointer_stride_from_mem()` の残存 fallback を確認する。
+  direct type がある VLA array / normalized row だけ例外として残し、
+  それ以外は direct type なしの legacy node に限定できるかを詰める。
+
+- 続き1023: **node mirror stride copy を単一 helper に集約した**。
+
+  続き1022後、`sync_gvar_ref_mem_from_decl_type()` /
+  `sync_lvar_identifier_mem_from_decl_type()` /
+  `sync_pointer_cast_mem_from_type()` /
+  `sync_unary_deref_mem_from_pointer_type()` /
+  `sync_tag_member_mem_from_decl_type()` を横並びで確認した。
+  type 側の reader/sync 許可 API はできていたが、node mirror の
+  `inner_deref_size` / `next_deref_size` / `extra_strides` /
+  `extra_strides_count` へコピーする処理が各 caller に重複していた。
+  これは値の意味論そのものではないが、stride mirror の保存形式が
+  caller ごとに再実装されており、正本化の妨げになっていた。
+
+  修正として、`node_utils.c` に次の helper を追加した。
+  - `clear_pointer_array_stride_payload_mem()`
+  - `store_pointer_array_stride_payload_mem()`
+  - `sync_pointer_array_stride_payload_mem_from_type()`
+
+  `sync_pointer_array_stride_payload_mem_from_type()` は、
+  `psx_type_pointer_view_stride_sync_allowed_with_sidecar()` と
+  `node_pointer_stride_from_type()` を使って、type/sidecar から node mirror へ
+  stride payload を同期する単一経路になっている。
+  gvar/lvar/tag member は sidecar 値を渡すだけにし、cast/deref は sidecar なしで
+  同じ helper を使うようにした。
+
+  これに伴い、`gvar_decl_type_pointer_stride_sync_allowed()` と
+  `lvar_decl_type_pointer_stride_sync_allowed()` は未使用になったため削除した。
+  tag member の array fallback は既存挙動を保つため残したが、
+  実際の書き込みは `store_pointer_array_stride_payload_mem()` 経由にした。
+
+  regression:
+  - 新規追加はなし。既存の pointer-to-array / VLA / tag member / stale raw metadata regression が
+    同じ mirror 同期経路を通る。
+  - 今回は挙動変更ではなく、node mirror への stride payload 書き込みを
+    1 つの helper に畳む構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、まだ `node_utils.c` に残る `node_pointer_stride_from_type()` wrapper と
+  `node_pointer_stride_from_mem()` fallback の役割を見直す。
+  特に `psx_node_pointer_stride_metadata()` / unary deref / subscript が
+  type 正本を優先できているかを確認し、node_mem 由来 fallback を legacy 境界として
+  さらに狭める。
+
+- 続き1022: **effective stride reader と sync 許可を type API に寄せた**。
+
+  続き1021後、`node_utils.c` 側を確認すると、
+  `node_pointer_stride_from_type()` が structural stride reader と legacy/runtime stride reader の
+  合成順を直接持っていた。
+  また `sync_pointer_cast_mem_from_type()` と `sync_unary_deref_mem_from_pointer_type()` には、
+  incomplete flat pointer の raw stride を node mirror へ同期してよいかの条件が
+  `type->kind` / `type->base` / `vla_row_stride_frame_off` 判定として残っていた。
+  これは「有効な pointer stride metadata をどう読むか」「node mirror へ同期してよいか」の正本が
+  type module と node 側に分散している状態だった。
+
+  修正として、`type.h/type.c` に
+  `psx_type_pointer_view_effective_stride_metadata()` を追加した。
+  この API は structural stride metadata を優先し、取れない場合だけ
+  legacy/runtime stride metadata を読む。
+  `node_pointer_stride_from_type()` はこの API を呼ぶだけになった。
+
+  さらに、`sync_pointer_cast_mem_from_type()` と
+  `sync_unary_deref_mem_from_pointer_type()` の raw 同期許可条件を、
+  `psx_type_pointer_view_stride_sync_allowed_with_sidecar(type, 0, 0, 0)` へ置き換えた。
+  これで incomplete flat pointer などの raw stride を node mirror に同期しない境界も、
+  type API 側の目的別判定に寄った。
+
+  regression:
+  - 新規追加はなし。既存の pointer-to-array / VLA / stale raw metadata regression が
+    同じ reader/sync 経路を通る。
+  - 今回は挙動変更ではなく、effective stride reader と raw sync 許可条件を
+    type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`sync_gvar_ref_mem_from_decl_type()` /
+  `sync_lvar_identifier_mem_from_decl_type()` /
+  `sync_tag_member_mem_from_decl_type()` に残る node mirror への stride copy を、
+  共通 helper か type API 経由にさらに寄せる。
+
+- 続き1021: **deref stride metadata copy を type helper に集約した**。
+
+  続き1020で `type_from_deref_operand()` の raw array shape 判定は type API に寄せたが、
+  deref 結果の `psx_type_t` へ stride metadata をコピーする処理自体は
+  `node_utils.c` に残っていた。
+  structural stride の場合は `outer_stride` / `mid_stride` / `extra_strides` を
+  reader の戻り値から手で代入し、raw runtime stride の場合は `type->outer_stride` /
+  `type->mid_stride` / `type->extra_strides` を直接コピーしていた。
+  これは「stride metadata をどう結果 type に同期するか」の正本が node 側に残る形だった。
+
+  修正として、`type.h/type.c` に
+  `psx_type_copy_pointer_view_stride_metadata()` を追加した。
+  この helper は structural stride が取れる場合は structural reader の結果をコピーし、
+  取れない場合は `psx_type_pointer_view_raw_stride_copy_allowed()` が許可する raw runtime stride だけをコピーする。
+  `type_from_deref_operand()` の array result / pointer result は、この helper を呼ぶだけになった。
+
+  regression:
+  - 新規追加はなし。続き1012で追加した stale raw stride deref regression と、
+    既存の VLA / pointer-to-array deref regression が同じ経路を通る。
+  - 今回は挙動変更ではなく、deref 結果 type への stride metadata copy を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`node_utils.c` に残る `sync_pointer_cast_mem_from_type()` /
+  `sync_unary_deref_mem_from_pointer_type()` などの node mirror への stride copy も、
+  同じ type API で薄くできるか確認する。
+
+- 続き1020: **deref raw array shape 判定を type API 化した**。
+
+  続き1019後、`type_from_deref_operand()` 内に残る
+  `type->outer_stride` / `type->mid_stride` / `type->extra_strides_count` の直接条件を確認した。
+  ここでは deref 結果を array として再構成してよいか、raw stride を結果 type にコピーしてよいか、
+  raw `outer_stride` を array size hint として使ってよいか、という判定を node 側で持っていた。
+  これは続き1012以降で狭めた raw fallback の境界が、まだ `node_utils.c` に残る形だった。
+
+  修正として、`type.h/type.c` に次の API を追加した。
+  - `psx_type_pointer_view_raw_array_shape_allowed()`
+  - `psx_type_pointer_view_raw_stride_copy_allowed()`
+  - `psx_type_pointer_view_raw_array_shape_has_hint()`
+  - `psx_type_pointer_view_raw_array_size_hint()`
+
+  `type_from_deref_operand()` は、raw array shape を使う条件や size hint の有無を
+  これらの type API へ委譲するようにした。
+  raw stride 値のコピー自体はまだ同関数内に残るが、コピーしてよいかの境界は
+  type module 側へ移った。
+
+  regression:
+  - 新規追加はなし。続き1012で追加した stale raw stride deref regression と、
+    既存の VLA / pointer-to-array deref regression が同じ経路を通る。
+  - 今回は挙動変更ではなく、deref 再構成時の raw shape 許可条件を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_from_deref_operand()` に残る raw stride 値コピー
+  (`outer_stride` / `mid_stride` / `extra_strides`) 自体も type helper に閉じ込める。
+
+- 続き1019: **legacy flat pointer の shape/stride reader を type API 化した**。
+
+  続き1018後、`legacy_flat_pointer_type_matches_node_mem()` と
+  `tag_member_public.h` の `psx_tag_member_decl_outer_stride()` /
+  `psx_tag_member_decl_mid_stride()` を確認した。
+  ここには旧 flat pointer の sidecar 照合や、pointer-to-array / array の outer/mid stride を
+  どう読むかの分岐が parser public/node 側に残っていた。
+  これは type shape の意味論がまだ `type.c` 以外にも散っている状態だった。
+
+  修正として、`type.h/type.c` に次の API を追加した。
+  - `psx_type_pointer_view_shape_matches_sidecar()`
+  - `psx_type_pointer_view_outer_stride_with_sidecar()`
+  - `psx_type_pointer_view_mid_stride_with_sidecar()`
+
+  `node_utils.c::legacy_flat_pointer_type_matches_node_mem()` は
+  shape compatibility API を呼ぶだけにした。
+  `tag_member_public.h` の outer/mid stride reader も type API に委譲し、
+  legacy flat pointer の `outer_stride` / `mid_stride` sidecar 照合を直接持たないようにした。
+  これで旧 flat pointer の shape/stride 解釈は type module 側に閉じた。
+
+  regression:
+  - 新規追加はなし。既存の tag member stale pointer metadata regression と
+    pointer-to-array regression が同じ reader 経路を引き続き通る。
+  - 今回は挙動変更ではなく、legacy flat pointer shape/stride reader を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_from_deref_operand()` 内に残る
+  `type->outer_stride` / `type->extra_strides_count` などの raw field 直接条件を、
+  sidecar/structural reader 経由の判定へさらに寄せる。
+
+- 続き1018: **pointer stride sync allowed 判定を type API に集約した**。
+
+  続き1017後、`decl_type_pointer_stride_sync_allowed()` /
+  `gvar_decl_type_pointer_stride_sync_allowed()` /
+  `lvar_decl_type_pointer_stride_sync_allowed()` を確認した。
+  ここには structural array/pointer-to-array/VLA/tag aggregate pointer の sync 許可条件と、
+  旧 flat pointer の `ptr_array_pointee_bytes` / `outer_stride` / `mid_stride` sidecar 照合が
+  node 側に重複して残っていた。
+  これは「どの type view は stride mirror へ同期してよいか」の正本が
+  `type.c` と `node_utils.c` に分散している状態だった。
+
+  修正として、`type.h/type.c` に
+  `psx_type_pointer_view_stride_sync_allowed_with_sidecar()` を追加した。
+  structural な array / pointer-to-array / VLA runtime pointer / tag aggregate pointer は
+  type 構造から判定し、旧 flat pointer だけ sidecar の
+  `ptr_array_pointee_bytes` / `outer_stride` / `mid_stride` と一致した場合に許可する。
+  node 側の gvar/lvar/default wrapper は、この API に sidecar 値を渡すだけになった。
+
+  regression:
+  - 新規追加はなし。既存の pointer-to-array / stale raw pointer metadata regression が
+    gvar/lvar identifier sync 経路を引き続き通る。
+  - 今回は挙動変更ではなく、stride sync 許可条件を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`legacy_flat_pointer_type_matches_node_mem()` や
+  tag member sync 周辺に残る legacy flat pointer 照合を、同じ目的別 type API 化の流れで整理する。
+
+- 続き1017: **array deref size 判定を type API に集約した**。
+
+  続き1016後、VLA 以外の `outer_stride` / `mid_stride` /
+  `ptr_array_pointee_bytes` direct branch を確認した。
+  `gvar_ref_deref_size_from_type()` と `lvar_identifier_deref_size_from_type()` が、
+  pointer-to-array の `ptr_array_pointee_bytes`、`base_size > base_deref_size` 補正、
+  legacy flat pointer の `outer_stride` fallback、structural pointer-to-array の
+  `base_size` fallback をそれぞれ node 側で直接解釈していた。
+  これは「配列 view の deref 行幅」をどう決めるかの正本が
+  `type.c` と `node_utils.c` に分散している状態だった。
+
+  修正として、`type.h/type.c` に
+  `psx_type_pointer_view_array_deref_size_with_sidecar()` を追加した。
+  structural pointer-to-array は type 構造から、旧 flat pointer は
+  sidecar の `ptr_array_pointee_bytes` / `outer_stride` / `mid_stride` と一致した場合だけ
+  行幅を返す。
+  `gvar_ref_deref_size_from_type()` と `lvar_identifier_deref_size_from_type()` は、
+  VLA runtime pointer の 0 返し条件だけ自分で持ち、配列 view の行幅判定はこの type API に委譲した。
+
+  regression:
+  - 新規追加はなし。既存の pointer-to-array / stale raw pointer metadata regression が
+    gvar/lvar identifier deref size 経路を引き続き通る。
+  - 今回は挙動変更ではなく、array deref size の解釈を type module 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`decl_type_pointer_stride_sync_allowed()` /
+  `*_decl_type_pointer_stride_sync_allowed()` に残る legacy flat pointer shape 判定も、
+  sidecar 付きの目的別 type API に寄せる。
+
+- 続き1016: **VLA type field 直接読みを reader/sync 経路から削った**。
+
+  続き1015で VLA pointer view getter を追加したが、`node_utils.c` にはまだ
+  `decl_type->vla_row_stride_frame_off` 判定や
+  `type->vla_row_stride_frame_off == 0` を使う branch、
+  type view から node/type mirror へ VLA metadata を同期するときの直接 field copy が残っていた。
+  これらは VLA の有効値条件や「pointer/array view だけが持てる」という意味論を
+  node 側へ漏らしていた。
+
+  修正として、次の reader/sync 経路を
+  `psx_type_pointer_view_vla_row_stride_frame_off()` /
+  `psx_type_pointer_view_vla_strides_remaining()` 経由にした。
+  - `decl_type_pointer_stride_sync_allowed()`
+  - `lvar_identifier_deref_size_from_type()`
+  - `sync_pointer_cast_mem_from_type()`
+  - `sync_lvar_identifier_mem_from_decl_type()`
+  - `type_decay_array_to_pointer()`
+  - `type_from_deref_operand()`
+  - `sync_unary_deref_mem_from_pointer_type()`
+  - `type_array_row_after_subscript()`
+  - `sync_tag_member_mem_from_decl_type()`
+
+  `node_utils.c` に残る `type->vla_*` 直接参照は、lvar sidecar から
+  materialized `psx_type_t` へ値を書き込む構築時同期だけになった。
+  これは読み取り正本ではなく、旧 sidecar から type 正本へ移す入口なので残している。
+
+  regression:
+  - 新規追加はなし。既存の typed VLA pointer / stale plain pointer VLA regression が
+    同じ reader/sync 経路を通る。
+  - 今回は挙動変更ではなく、VLA metadata の読み取り条件を type module API 側へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、VLA 以外の `outer_stride` / `mid_stride` / `ptr_array_pointee_bytes`
+  direct branch のうち、既に type API があるものを同じ方針で潰す。
+
+- 続き1015: **VLA pointer view reader を type API 化した**。
+
+  続き1014後、`node_utils.c` の reader 層を確認したところ、
+  `vla_view_from_type()` が `psx_type_t::vla_row_stride_frame_off` と
+  `psx_type_t::vla_strides_remaining` を直接読んでいた。
+  これは stride metadata 本体ほど複雑ではないが、node reader が type layout の
+  field 名と有効値条件を知る形で、VLA pointer view の正本が node/type にまたがっていた。
+
+  修正として、`type.h/type.c` に
+  `psx_type_pointer_view_vla_row_stride_frame_off()` と
+  `psx_type_pointer_view_vla_strides_remaining()` を追加した。
+  どちらも pointer/array view 以外では 0 を返し、
+  `vla_strides_remaining` は既存の node reader と同じく positive value だけを返す。
+  `node_utils.c::vla_view_from_type()` は、この type API を呼ぶだけになった。
+
+  regression:
+  - 新規追加はなし。既存の typed VLA pointer / stale plain pointer VLA regression が
+    `psx_node_vla_row_stride_frame_off()` 経路で同じ条件を確認している。
+  - 今回は挙動変更ではなく、VLA pointer view の読み取り責務を type module へ寄せる構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`node_utils.c` の `decl_type->vla_row_stride_frame_off` 判定や
+  `type->vla_row_stride_frame_off == 0` を使う branch を、今回の API または
+  より目的別の type helper に寄せる。
+
+- 続き1014: **legacy stride reader を VLA/runtime と raw fallback helper に分けた**。
+
+  続き1013で `node_utils.c` から `type.c` へ移した
+  `psx_type_pointer_view_legacy_stride_metadata()` は、移動後も 1 つの関数内で
+  VLA/runtime descriptor の読み取りと旧 raw mirror fallback の読み取りが混在していた。
+  これは node 側からは切り離せたものの、type module 内ではまだ
+  「正当な runtime metadata」と「互換用の旧 raw metadata」の境界が読みにくい状態だった。
+
+  修正として、`type.c` 内に private helper を 2 つ追加した。
+  `type_pointer_view_vla_runtime_stride_metadata()` は VLA array / VLA pointer descriptor の
+  runtime stride 読み取りだけを担当する。
+  `type_pointer_view_legacy_raw_stride_metadata()` は旧 flat pointer-to-array の
+  `outer_stride` / `mid_stride` / `extra_strides` fallback だけを担当する。
+  public API の `psx_type_pointer_view_legacy_stride_metadata()` は出力初期化・
+  pointer view 判定・`extra_strides_count` clamp の後、
+  VLA/runtime helper -> legacy raw helper の順に呼ぶだけにした。
+
+  regression:
+  - 新規追加はなし。続き1009-1013で追加済みの stale raw stride regression と
+    VLA stride regression が同じ public reader 経路を通る。
+  - 今回は挙動変更ではなく、type module 内の fallback 境界を分割する構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`node_utils.c` に残る
+  `ptr_array_pointee_bytes` / `vla_row_stride_frame_off` / raw stride 直接参照のうち、
+  type view から計算できるものをさらに type API へ寄せる。
+
+- 続き1013: **pointer stride の legacy/runtime fallback を type API へ移した**。
+
+  続き1012で `type_from_deref_operand()` 内の raw stride 再注入は閉じたが、
+  `node_utils.c` の `node_pointer_stride_from_type()` 自体にはまだ
+  `psx_type_t` の `outer_stride` / `mid_stride` / `extra_strides` を直接解釈する
+  VLA / legacy fallback が大量に残っていた。
+  これは node mirror 側に type raw metadata の意味論が残る形で、
+  「stride をどう読むか」の正本が `type.c` と `node_utils.c` に分散していた。
+
+  修正として、`type.h/type.c` に
+  `psx_type_pointer_view_legacy_stride_metadata()` を追加した。
+  structural reader の `psx_type_pointer_view_stride_metadata()` が失敗した後の
+  VLA descriptor / 旧 pointer-to-array raw metadata fallback はこの API に集約した。
+  `node_utils.c` の `node_pointer_stride_from_type()` は、
+  structural reader -> legacy/runtime reader を呼ぶだけの薄い wrapper になった。
+  併せて、移動後に未使用になった `node_utils.c` local の
+  `type_array_outer_element_size()` は削除した。
+
+  regression:
+  - 新規追加はなし。続き1009-1012で追加済みの stale plain pointer /
+    stale pointer-to-array / stale deref array stride regression が同じ reader 経路を通る。
+  - 今回は挙動変更より、raw fallback の所有元を node から type module へ移す構造修正。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`psx_type_pointer_view_legacy_stride_metadata()` 自体をさらに
+  structural / VLA runtime / legacy sidecar の小 helper に分割し、旧 raw fallback の許可条件を
+  sidecar 照合付き API へ寄せる。
+
+- 続き1012: **deref array 再構成で raw stride を結果 type に再注入しないようにした**。
+
+  続き1011の残件だった `type_from_deref_operand()` を整理した。
+  ここでは pointer deref の結果 type を作るとき、構造的な
+  `pointer -> array` がない旧 flat pointer でも、`outer_stride` などの raw field を
+  配列サイズ復元に使う fallback が残っていた。
+  問題は、この raw field を「配列サイズのヒント」として使うだけでなく、
+  作成した結果 `psx_type_t` の `outer_stride` / `mid_stride` /
+  `extra_strides` にそのまま再コピーしていたこと。
+  tag aggregate 旧 flat pointer のような境界で stale `mid_stride` や
+  `extra_strides` が混ざると、deref 結果 type に別正本として復活できた。
+
+  修正として、`type_from_deref_operand()` の fallback を
+  `can_use_raw_array_shape` と `can_copy_raw_stride` に分けた。
+  raw field を配列サイズのヒントとして使う境界は残すが、結果 type に raw stride を
+  再コピーできるのは VLA descriptor など raw runtime shape が必要な境界だけにした。
+  旧 flat tag aggregate pointer では、結果 type の stride は作った array 構造から
+  reader が計算する扱いに寄せ、stale raw `mid_stride/extra_strides` は再注入しない。
+
+  regression:
+  - `test_type_metadata_bridge` に、`PSX_TYPE_POINTER -> struct` の旧 flat array pointer に
+    `outer_stride=16` / stale `mid_stride=99` / `extra_strides[0]=77` を混ぜた synthetic
+    unary deref を追加。
+  - deref 結果は `PSX_TYPE_ARRAY` / size 16 / elem 4 になる一方で、
+    `outer_stride=0` / `mid_stride=0` / `extra_strides_count=0` のままになり、
+    stale raw stride が結果 type にコピーされないことを確認。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`node_pointer_stride_from_type()` の後半に残る raw fallback 群を
+  type module 側の structural / VLA / legacy sidecar API に分離し、
+  direct type reader と node mirror reader の責務をさらに切る。
+
+- 続き1011: **function return pointer-to-array 構築を type API へ集約した**。
+
+  続き1010で function return pointer-to-array の direct / funcptr / indirect call
+  の result type は `pointer -> array` 構造へ寄せたが、その構築 helper は
+  `node_utils.c` private に残り、`semantic_ctx.c` 側では
+  `ret_pointee_array` descriptor を一度 `ptr_array_pointee_bytes` /
+  `outer_stride` / `mid_stride` / `extra_strides` の raw metadata に落としてから
+  `psx_type_canonicalize_flat_pointer_to_array()` で再構造化していた。
+  つまり「関数戻り値 pointer-to-array の正本」が、descriptor / raw stride /
+  `node_utils` private helper の 3 箇所に分散していた。
+
+  修正として、`type.h/type.c` に
+  `psx_type_wrap_ret_pointee_array_base()` と
+  `psx_type_sync_pointer_to_array_metadata_from_base()` を追加した。
+  `node_utils.c` の direct funcall / funcptr callee / indirect funcall は
+  private helper をやめてこの type API を使う。
+  `semantic_ctx.c` の `ctx_type_normalize_function_ret_type()` は、
+  `ret_pointee_array` descriptor から直接 `type->base` を `pointer -> array`
+  構造へ置き換え、stride / ptr-array mirror は構造 reader から同期するようにした。
+  これで `semantic_ctx` 側の正規化から raw stride を中間正本として使う経路を外した。
+
+  regression:
+  - `test_type_metadata_bridge` に、manual function ret type の pointer に stale
+    `ptr_array_pointee_bytes=999` / `outer_stride=777` / `mid_stride=555` /
+    `extra_strides[0]=333` を混ぜたケースを追加。
+  - `ret_pointee_array=(3,4,4)` descriptor から保存後の ret_type が
+    `PSX_TYPE_POINTER -> PSX_TYPE_ARRAY` になり、`ptr_array_pointee_bytes=48` /
+    `outer_stride=16` / `mid_stride=4` / `extra_strides_count=0` に正規化されることを確認。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_from_deref_operand()` 内の array 再構成で残っている
+  `can_use_raw_stride` fallback を分類し、VLA/旧 flat pointer など本当に raw sidecar が
+  必要な境界だけに閉じる。
+
+- 続き1010: **array decay / function return pointer-to-array を structural type 正本へ寄せた**。
+
+  続き1009で残件にしていた `type_decay_array_to_pointer()` は、decayed pointer を作る際に
+  `array_type->ptr_array_pointee_bytes` / `outer_stride` / `mid_stride` /
+  `extra_strides` をそのまま pointer 側へコピーしていた。
+  これだと array type に stale raw metadata が残った場合、node mirror 側では構造 reader が
+  勝っていても、`base.type` の pointer type 自体に stale metadata が残る。
+
+  修正として、decayed pointer の shape metadata は `array_type` の raw field からではなく、
+  作成後の `pointer -> array` 構造に対して
+  `type_pointer_view_ptr_array_pointee_bytes()` /
+  `psx_type_pointer_view_stride_metadata()` を通して同期するようにした。
+  これにより、array decl_type の stale `outer_stride=55` / `mid_stride=33` のような値は
+  decayed pointer type へコピーされず、構造由来の `outer_stride=16` /
+  `mid_stride=4` が入る。
+
+  function return pointer-to-array についても、direct funcall / funcptr callee /
+  indirect funcall の三経路を監査した。
+  direct と funcptr callee は既に `type_wrap_ret_pointee_array_base()` で
+  `pointer -> array` 構造を作っていたが、その後 `ret_array` 由来の stride を
+  pointer raw field へ直接重ねていたため、`type_sync_pointer_to_array_metadata_from_base()`
+  にまとめた。
+  indirect funcall は `pointer(base=scalar) + ret_array stride metadata` になっていたので、
+  ここも `type_wrap_ret_pointee_array_base()` を通して `base` を array chain にした。
+
+  regression:
+  - stale array decl_type から作る gvar array address の `base.type` が、stale raw
+    `55/33` ではなく構造由来の `outer_stride=16` / `mid_stride=4` を持つ。
+  - direct function call の `double (*)[2]` 戻り値が `PSX_TYPE_POINTER -> PSX_TYPE_ARRAY`
+    になり、`psx_type_pointer_view_ptr_array_pointee_bytes()` で 16 を返す。
+  - indirect function pointer call の `double (*)[2]` 戻り値も同じく
+    `PSX_TYPE_POINTER -> PSX_TYPE_ARRAY` になる。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+  次に進めるなら、残る raw metadata fallback のうち、
+  `type_from_deref_operand()` 内で array を再構成する箇所と、
+  `semantic_ctx.c` の `ctx_sync_ret_pointee_array_to_type()` が type raw stride を
+  直接設定する箇所を同じ方針で整理する。
+
+- 続き1009: **pointer stride reader/subscript sync の raw fallback を structural 優先へ寄せた**。
+
+  `node_pointer_stride_from_type()` は先頭で
+  `psx_type_pointer_view_stride_metadata()` を読むようになっていたが、その後ろに
+  `type->outer_stride` / `mid_stride` / `extra_strides` を直接読む legacy fallback が
+  まだ広く残っていた。
+  そのため complete plain pointer に stale stride metadata が残ると、構造上は
+  pointer-to-array ではないのに `psx_node_pointer_stride_metadata()` が stride を返せた。
+
+  修正として、complete `PSX_TYPE_POINTER` で `base` があり、かつ
+  `base->kind != PSX_TYPE_ARRAY`、さらに VLA row descriptor でもない場合は、
+  raw stride fallback に進まず 0 を返すようにした。
+  VLA descriptor 経路はまだ正当な flat metadata を持つため維持している。
+
+  regression:
+  - complete plain pointer `int *` の type に stale
+    `outer_stride=48` / `mid_stride=16` / `extra_strides[0]=8` があっても、
+    `psx_node_pointer_stride_metadata()` は false。
+  - node mem 側に stale ptr-array/VLA payload があり、明示 complete plain pointer
+    type がある場合も、引き続き stale metadata は勝たない。
+
+  さらに `psx_node_new_subscript_deref_for()` の canonical array sync で、
+  `canonical_subscript_type->outer_stride` / `mid_stride` / `extra_strides` を無条件に
+  node mirror へ直コピーしていた箇所を helper 化した。
+  新 helper は raw stride 値をそのまま信用せず、`psx_type_deref_size()` /
+  `psx_type_sizeof()` から見て妥当な stride だけ採用する。
+  妥当でない stale raw 値は構造 fallback へ落とし、single-dimensional array row では
+  既存通り stride metadata を持たない。
+  pointer-to-array 由来の subscript だけは、既存の外側 row stride 保持 semantics に
+  合わせて `deref_size` を inner stride として残す。
+
+  regression:
+  - canonical subscript type 側に stale `outer_stride=999` / `mid_stride=777` /
+    `extra_strides[0]=333` が混ざっていても、生成された subscript deref の stride は
+    stale 値にならない。
+  - 通常 array、VLA const inner row、parameter pointer-to-array、global
+    pointer-to-array の既存 stride semantics は維持。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_decay_array_to_pointer()` と function return
+  pointer-to-array 周辺に残る raw metadata copy/生成経路を、同じく
+  「complete type structure が正本、raw metadata は検証済み互換情報か不完全型 fallback」
+  の境界へ寄せる。
+
+- 続き1008: **flat pointer-to-array materialize を canonical array chain へ正規化**。
+
+  続き1007後、gvar/lvar の deref size helper に残っていた legacy fallback を
+  `!decl_type->base` の不完全型だけに狭めた。
+  これで complete plain pointer の stale `ptr_array_pointee_bytes` /
+  `outer_stride` / `mid_stride` が node mirror へ逆流しにくくなった。
+
+  ただし、この制限で `int (*p)[3]` や `typedef int M[2][3][4]; M *p` のような
+  pointer-to-array が落ちた。原因は reader ではなく、materialize 済み `decl_type` が
+  `pointer -> array` ではなく、`pointer(base=scalar) + ptr_array/stride metadata` の
+  flat 表現に残る経路があったこと。
+
+  根本対応として `type.c/type.h` に
+  `psx_type_canonicalize_flat_pointer_to_array()` を追加し、lvar/gvar の新規
+  materialize 直後だけ呼ぶようにした。
+  `ptr_array_pointee_bytes` または `outer_stride/mid_stride` だけで表現された
+  flat pointer-to-array を、`PSX_TYPE_POINTER -> PSX_TYPE_ARRAY -> ... -> leaf`
+  の canonical chain に正規化する。
+  既存 `decl_type` が明示的に渡されている場合は、complete plain pointer に注入された
+  stale metadata regression を壊さないよう、勝手に canonicalize しない。
+  また `RowPtr3 *` のような pointer-to-pointer-to-array を誤って array 化しないため、
+  `base->kind == PSX_TYPE_POINTER` は対象外にした。
+
+  regression:
+  - `int (*p)[3]` は node deref size / ptr_array bytes / stride metadata が
+    canonical array chain から `12` / inner `4` になる。
+  - `typedef int M[2][3][4]; M *p` は `decl_type->base` が
+    `array[2] -> array[3] -> array[4] -> int` になる。
+  - complete plain pointer に stale pointer-to-array metadata を注入した
+    lvar/gvar/tag member regression は、引き続き plain pointer として扱われる。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  現状:
+  - gvar/lvar deref size helper の legacy一致 fallback は不完全型だけに狭まり、
+    complete type では canonical chain が正本になった。
+  - pointer-to-array の flat legacy metadata は、新規 materialize 時点で
+    type 構造へ寄せる入口ができた。
+  - 残りは `node_pointer_stride_from_type()` 内の古い fallback 群と、
+    subscript final sync 付近の direct copy を、同じ「complete type は structural、
+    不完全型だけ metadata fallback」の境界へ寄せること。
+
+- 続き1007: **tag member pointer metadata reader/sync を type 構造優先へ寄せた**。
+
+  `tag_member_public.h` の pointer metadata accessor は、`decl_type` がある場合でも
+  `decl_type->outer_stride` / `mid_stride` / `ptr_array_pointee_bytes` などの raw cache を
+  直接読む箇所が残っていた。
+  そのため `struct { int *p; }` のような plain pointer member でも、
+  `tag_member_info_t` や `decl_type` 側に stale な pointer-to-array metadata が残ると、
+  `psx_tag_member_decl_*()` や tag member node 生成が pointer-to-array と誤認できた。
+
+  修正として、`type.c/type.h` に共有の pointer view helper を追加した:
+  - `psx_type_pointer_depth()`
+  - `psx_type_pointer_view_qual_levels()`
+  - `psx_type_pointer_view_qual_mask()`
+  - `psx_type_pointer_view_base_deref_size()`
+  - `psx_type_pointer_view_ptr_array_pointee_bytes()`
+  - `psx_type_pointer_view_mid_stride()`
+
+  `tag_member_public.h` 側は pointer qualifier / deref size / outer stride /
+  mid stride / ptr_array pointee bytes をこの type view 経由で読むようにした。
+  plain pointer は構造上 pointer-to-array ではないため、stale `outer_stride` /
+  `mid_stride` / `ptr_array_pointee_bytes` があっても 0 または leaf 幅へ正規化される。
+
+  `node_utils.c` の tag member `decl_type` sync でも、pointer-to-array 判定に
+  `psx_type_pointer_view_ptr_array_pointee_bytes()` /
+  `psx_type_pointer_view_base_deref_size()` /
+  `psx_type_pointer_view_qual_levels()` を使うようにした。
+  さらに plain pointer では `node_pointer_stride_from_type()` 由来の stale stride を
+  node mirror へ同期しないようにした。
+
+  途中で `node_utils.c` 全体の legacy `type_pointer_view_*` helper を共有 API の
+  thin wrapper にする案も試したが、まだ完全な構造型へ復元されていない
+  pointer-to-array lowering metadata を読む経路を壊し、
+  `test/test_parser.c:3246` の `ptrarr_row` regression が落ちたため見送った。
+  現時点では tag member 境界のみ共有 API に寄せ、node lowering 汎用 helper の段階移行は
+  次以降に分けるのが安全。
+
+  regression として、plain pointer tag member の public info と `decl_type` に
+  stale `outer_stride=96` / `mid_stride=48` / `ptr_array_pointee_bytes=96` を注入し、
+  accessor と `psx_node_new_tag_member_*_for()` が plain pointer metadata
+  (`deref_size=4`, `base_deref_size=4`, stride/ptr_array payload なし) を返すことを固定した。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、node_utils の legacy `type_pointer_view_*` helper を一気に wrapper 化するのではなく、
+  pointer-to-array 復元が必要な legacy 経路と、明示 `decl_type` がある正本経路を分離してから
+  共有 API へ寄せる。
+
+- 続き1006: **public funcptr setter 同期と find/fill out zero 初期化**。
+
+  public `tag_member_info_t` / `psx_typedef_info_t` の
+  `psx_ctx_*_set_funcptr_sig()` は legacy `funcptr_sig` cache だけを更新し、
+  既存 `decl_type->funcptr_sig` を更新していなかった。
+  そのため public info を受け取った後に setter で funcptr signature を差し替えると、
+  type 側の正本が stale なまま残る余地があった。
+
+  修正として、両 public setter は legacy cache を更新しつつ、
+  既存 `decl_type` があり、渡された sig に payload がある場合は
+  `decl_type->funcptr_sig` へ同じ clone を同期するようにした。
+  空 sig で type 側の既存 funcptr metadata を消すと `_Generic` の function-pointer
+  typedef 経路が壊れるため、type への書き込みは payload 付き sig に限定した。
+
+  さらにこの変更で、`psx_ctx_find_typedef_name()` と `fill_tag_member_info()` が
+  呼び出し元の未初期化 out 構造体に部分代入してから setter を呼ぶ問題が表面化した。
+  setter が `out->decl_type` を見るようになった以上、find/fill 境界で out を
+  `memset(..., 0, sizeof(*out))` してから埋める必要がある。
+  ここを修正し、`typedef int (*fp_t)(int); ... fp_t p=f;` が
+  未初期化 `decl_type` に触れて E3064/SIGSEGV へ進む経路を潰した。
+
+  回帰テストとして、tag member / typedef public setter が既存 `decl_type`
+  pointer を維持したまま type 側 `funcptr_sig` を更新するケースを追加した。
+
+  確認:
+  - `make -B build/ag_c` = **pass**
+  - `./build/ag_c /tmp/agc_generic_case.c`
+    （`typedef int (*fp_t)(int); ... _Generic(p, int (*)(int): 13, default: 7);`）= **pass**
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+  - 注意: 今回は inline header (`semantic_ctx.h` / `tag_member_public.h`) を変えているため、
+    通常の `make build/test_parser` だけだと古い parser object と混ざることがあった。
+    この種の確認では `make -B build/test_parser` で強制再ビルドすること。
+
+- 続き1005: **lvar/gvar funcptr_sig setter を decl_type 同期型にした**。
+
+  semantic context 側の tag member / typedef record setter は、既に legacy
+  `funcptr_sig` cache と既存 `decl_type->funcptr_sig` を同期していた。
+  一方で decl 側の `psx_decl_set_lvar_funcptr_signature()` /
+  `psx_decl_set_gvar_funcptr_signature()` は、funcptr signature を設定するたびに
+  `decl_type` を invalidate していた。
+  funcptr signature は callable metadata であり、storage size / pointer depth /
+  array shape を変えないため、既に materialized された canonical type を捨てるより、
+  type 側へ同期するほうが「型情報の正本を type に寄せる」方針に合う。
+
+  修正として、両 setter は legacy `funcptr_sig` cache を更新しつつ、
+  既存 `decl_type` がある場合は `decl_type->funcptr_sig` へ同じ clone を同期するようにした。
+  `decl_type` が無い場合は従来通り raw cache が materialize 元になる。
+  `type_sig` setter と同じく、型形状を早期 materialize せず、既存 type がある時だけ
+  付帯 metadata を同期する境界になった。
+
+  回帰テストとして、materialized 済み lvar/gvar に funcptr signature を後から設定しても
+  `decl_type` pointer が維持され、type 側の `funcptr_sig` が更新されるケースを追加した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1004: **pointer/array view type 適用境界で scalar cache を共通クリアするようにした**。
+
+  続き1003で `sync_pointer_cast_mem_from_type()` に stale scalar metadata を落とす処理を
+  直接入れたが、同じ責務が `apply_array_addr_decl_type()` や
+  `sync_tag_member_mem_from_decl_type()` の pointer/array type 経路にも必要だった。
+  特に tag member deref は `tag_member_info_t` の legacy field から `fp_kind` /
+  bool / unsigned / tag metadata を先に node mem へ詰め、その後で `decl_type` から
+  sync していたため、pointer member の canonical type があっても raw scalar cache が
+  残る余地があった。
+
+  修正として `clear_scalar_payload_for_pointer_type()` を追加し、
+  pointer/array view type を node mem へ適用する境界で共通して呼ぶようにした。
+  `sync_pointer_cast_mem_from_type()`、`apply_array_addr_decl_type()`、
+  `sync_tag_member_mem_from_decl_type()` が同じ helper を使うため、caller ごとに
+  scalar cache を消し忘れる構造を減らした。
+
+  回帰テストとして、`tag_member_info_t` 側に stale な `fp_kind` / bool / unsigned /
+  tag cache が入っていても、pointer `decl_type` を持つ tag member deref では
+  canonical pointer type が勝つケースを追加した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1003: **pointer type 同期で stale scalar metadata を明示的に消すようにした**。
+
+  続き1001/1002で node 初期化側の raw cache 混入を減らしたが、
+  根本側の `sync_pointer_cast_mem_from_type()` 自体は pointer payload を初期化するだけで、
+  既に node mem に入っている `base.fp_kind` / `base.is_unsigned` /
+  `is_bool` / `is_unsigned` / scalar complex/atomic/long 系 metadata を消していなかった。
+  そのため、caller が raw `lvar_t` / `global_var_t` cache を先に詰めてから
+  pointer type sync を呼ぶと、pointer type と矛盾する scalar metadata が残る余地があった。
+
+  修正として `sync_pointer_cast_mem_from_type()` の先頭で scalar metadata を
+  pointer type として再初期化するようにした。`base.fp_kind` と符号/bool/complex/long 系は
+  pointer type では stale cache として扱って落とし、atomic だけは pointer type 側の
+  `type->is_atomic` に同期する。
+  これにより lvar/gvar/static local/tag member など複数 caller が同じ pointer type 同期境界を
+  使っても、raw scalar cache が node mem に残りにくくなった。
+
+  回帰テストとして `test_type_metadata_bridge()` の通常 lvar pointer node に、
+  stale な `fp_kind` / bool / unsigned / tag cache を混ぜた状態でも canonical pointer
+  `decl_type` が勝つことを追加した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1002: **static local gvar ref の raw cache fallback を decl_type 無しに限定した**。
+
+  続き1001で通常の gvar ref / array base は canonical `decl_type` が取れる場合に
+  raw `global_var_t` cache を混ぜないようにしたが、static local alias から作る
+  `psx_node_init_static_local_gvar_ref_metadata()` はまだ `lvar_t` の `fp_kind` /
+  `is_bool` / `is_unsigned` / tag metadata を node mem に先に詰め、その後で
+  backing global type または alias lvar type から同期していた。
+  pointer type では scalar/tag 側の stale 値を完全には消せないため、
+  static local pointer ref に raw cache が漏れる余地が残っていた。
+
+  修正として、backing global があり `backing_type` が取れる場合は
+  `sync_gvar_ref_mem_from_decl_type()` だけで初期化して return するようにした。
+  backing が無くても alias lvar の `decl_type` がある場合は、その type から
+  scalar/pointer/tag/funcptr metadata を同期して return する。
+  既存の `lvar_t` raw field 初期化は `decl_type` が無い場合の fallback に限定した。
+
+  回帰テストとして、backing global が見つからない static local fallback alias で
+  stale な scalar/tag cache が scalar `decl_type` に勝たないケースと、
+  backing global がある static local pointer で stale な scalar/tag cache が
+  pointer node に漏れないケースを追加した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1001: **node metadata 初期化の raw cache 混入を type 優先へ寄せた**。
+
+  `psx_node_new_array_elem_lvar_for()` は `lvar_t->decl_type` から canonical な
+  array leaf element type を取れている場合でも、先に `lvar_t` 側の `fp_kind` /
+  `is_bool` / `is_unsigned` / tag metadata を node mem に詰めてから type sync していた。
+  scalar element では `sync_scalar_mem_from_decl_type()` が stale 値を消せるが、
+  pointer element では `sync_pointer_cast_mem_from_type()` が scalar 側 metadata を
+  全て消す責務を持っていないため、raw cache が node に残りうる境界だった。
+
+  修正として、array element type が存在する場合は `sync_scalar_mem_from_decl_type()` /
+  `sync_pointer_cast_mem_from_type()` / `sync_tag_mem_from_decl_type()` の type 同期だけで
+  node metadata を初期化し、`lvar_t` の legacy field は `elem_type` が無い場合の
+  fallback に限定した。
+
+  同じ方針で `psx_node_init_gvar_ref_metadata()` /
+  `psx_node_init_gvar_array_base_metadata()` も、`psx_gvar_get_decl_type()` で canonical
+  type が取れる場合は `sync_gvar_ref_mem_from_decl_type()` だけで初期化して return し、
+  `global_var_t` の raw scalar/tag/cache field は decl_type が無い場合の fallback に寄せた。
+  これにより、global pointer ref で `gv->fp_kind` / `gv->is_bool` / `gv->is_unsigned`
+  などの古い cache が node mem へ混入する経路を減らした。
+
+  回帰テストとして `test_type_metadata_bridge()` に、canonical array element が pointer type
+  のとき stale な `lvar_t` scalar/tag cache が node に漏れないケースと、canonical global
+  pointer type があるとき stale な `global_var_t` scalar/tag cache が node に漏れないケースを
+  追加した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1000: **lvar/gvar type_sig の同期境界を setter に集約した**。
+
+  `_Generic` 用の正規化型文字列 `type_sig` は、local 宣言側では `var->type_sig` と
+  `var->decl_type->type_sig`、global 宣言側では `gv->type_sig` と
+  `gv->decl_type->type_sig` へそれぞれ直接書いていた。
+  `type_sig` 自体は型形状を変えない付帯情報なので、shape setter と違って
+  `decl_type` を invalidate する必要はないが、raw field と canonical type field の同期点が
+  宣言処理に散っていた。
+
+  修正として `psx_decl_set_lvar_type_sig()` / `psx_decl_set_gvar_type_sig()` を追加し、
+  legacy field と既存 `decl_type` の `type_sig` 同期をこの setter に閉じた。
+  local/global 宣言処理は raw field へ直接書かず、この setter 経由で同期する。
+  setter は materialize を誘発しないため、宣言途中で型形状が早期確定するリスクは避け、
+  既に materialized type がある場合だけ付帯情報を同期する。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き999: **semantic_ctx 内部 record の decl_type/funcptr_sig 境界を正本側へ寄せた**。
+
+  続き998で public `tag_member_info_t` / `psx_typedef_info_t` の `decl_type` reader/setter は
+  追加したが、`semantic_ctx.c` 内部の `tag_member_t` / `typedef_name_t` record はまだ
+  `m->decl_type` / `t->decl_type` を各所で直接読んでいた。
+  さらに `tag_member_record_set_funcptr_sig()` / `typedef_record_set_funcptr_sig()` は
+  legacy `funcptr_sig` cache だけを更新し、`decl_type` を持つ record でも type 側の
+  `funcptr_sig` と同期しない余地が残っていた。
+
+  修正として `semantic_ctx.c` に内部 record 用の `*_record_decl_type()` /
+  `*_record_decl_type_mut()` / setter を追加し、tag member record の cache sync、
+  storage-to-type sync、desc apply、lookup 出力、typedef 登録・再宣言比較・lookup 出力を
+  その境界経由へ寄せた。
+  また `*_record_set_funcptr_sig()` は record が `decl_type` を持つ場合、
+  legacy cache と同時に `decl_type->funcptr_sig` も更新するようにした。
+  これで semantic context 内でも、funcptr signature の正本が type 側にある場合に
+  cache だけが別状態へ進む経路を減らした。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き998: **pointee fp_kind と tag/typedef decl_type reader を正本境界へ寄せた**。
+
+  `node_utils.c` の `lvar_pointee_fp_kind()` / `gvar_pointee_fp_kind()` は、
+  続き997で対応した bool/unsigned と同様に `src->decl_type` を直接読んでいた。
+  ここを、既に `decl_type` が存在する場合だけ `lvar_decl_type_view()` /
+  `gvar_decl_type_view()` を通し、canonical pointee type から fp kind を判定するようにした。
+  `decl_type` が無い場合は従来通り legacy `pointee_fp_kind` fallback を使うため、
+  続き997で起きた materialize 再帰は避けている。
+
+  さらに `tag_member_public.h` に `psx_tag_member_decl_type()` /
+  `psx_tag_member_decl_type_mut()` / `psx_tag_member_set_decl_type()` を追加し、
+  tag member accessor 群、`node_utils.c` の tag member aggregate/ref 構築、
+  `decl.c` / `parser.c` の nested/global member designator の array-dim 消費を
+  その reader/setter 経由へ寄せた。
+  これで `tag_member_info_t` の `decl_type` 直参照は header 内の reader/setter に閉じ、
+  呼び出し側が個別に正本フィールドを覗く形を減らした。
+
+  同じ方針で `semantic_ctx.h` に `psx_ctx_typedef_decl_type()` /
+  `psx_ctx_typedef_decl_type_mut()` / `psx_ctx_typedef_set_decl_type()` を追加し、
+  `psx_ctx_typedef_funcptr_sig()`、`ctx_typedef_info_apply_type()`、
+  typedef 登録・再宣言比較・lookup 出力が public typedef info の `decl_type` を
+  reader/setter 経由で扱うようにした。
+  `decl_type` がある場合は funcptr sig もその type 側を正本として返すため、
+  legacy `funcptr_sig` との二重正本に戻りにくくなっている。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**（warning なし）
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き997: **lvar/gvar pointee bool/unsigned 判定を既存 canonical view 境界へ寄せた**。
+
+  `node_utils.c` の `lvar_pointee_is_bool()` / `lvar_pointee_is_unsigned()` と
+  `gvar_pointee_is_bool()` / `gvar_pointee_is_unsigned()` は、続き996時点でも
+  `var->decl_type` / `gv->decl_type` を直接読んでいた。
+  これは `lvar_decl_type_view()` / `gvar_decl_type_view()` の materialize/runtime-shape sync 境界を
+  迂回し、pointee flag だけ別の正本を読める形だった。
+
+  修正として、既に `decl_type` が存在する場合だけ `*_decl_type_view()` を通し、
+  canonical pointee type から bool/unsigned を判定するようにした。
+  `decl_type` が無い場合は従来どおり raw fallback を使う。
+  初回は無条件に `*_decl_type_view()` を呼んだため、`type_from_mem()` 用の
+  legacy mem 初期化中に materialize が再帰して `./build/test_parser` が SIGSEGV した。
+  そのため「既存 canonical type がある場合だけ view helper、それ以外は legacy fallback」という境界へ修正した。
+
+  確認:
+  - 初回 `./build/test_parser` = **SIGSEGV**（materialize 再帰）
+  - 修正後 `make -j4 build/test_parser` = **pass**
+  - 修正後 `./build/test_parser` = **OK: All unit tests passed**
+  - 修正後 `git diff --check` = **pass**
+
+- 続き996: **lvar self qualifier 判定を canonical view/helper 経由へ寄せた**。
+
+  続き935で node public reader 側の pointer qualifier levels/mask は
+  `type_pointer_view_qual_*()` helper 経由に寄せたが、`node_utils.c` の
+  `lvar_self_is_const_qualified()` / `lvar_self_is_volatile_qualified()` はまだ
+  `var->decl_type` を直接見ており、materialize/view 境界と structural pointer mask helper を
+  通っていなかった。
+  この helper は array address fallback や tag member owner qualifier 継承に使われるため、
+  lvar 側だけ別の「正本」を読む余地が残っていた。
+
+  修正として、両 helper が `lvar_decl_type_view()` から canonical type を取り、
+  pointer view の場合は raw `pointer_const_qual_mask` / `pointer_volatile_qual_mask` ではなく
+  `type_pointer_view_qual_mask()` を使うようにした。
+  これにより、materialized `decl_type` と nested pointer 構造由来の qualifier mask 補完を
+  lvar self qualifier 判定でも共有する。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き995: **struct/union copy initializer の object size 判定も decl_type 正本へ寄せた**。
+
+  続き994で aggregate array element の synthetic `lvar_t` は canonical leaf に寄ったが、
+  `build_struct_copy_from_value()` にはまだ raw `var->size` による small/medium/large struct 判定と、
+  deref RHS の `type_size` 補正が残っていた。
+  また union の no-brace copy initializer でも `build_byte_copy_chain(..., var->size, ...)`
+  を直接使っており、`decl_type` が正本としてある場合でも古い raw size がコピー幅に戻れる状態だった。
+
+  修正として `lvar_object_decl_size()` を追加し、`psx_lvar_decl_sizeof()` を優先して
+  object size を取るようにした。`build_struct_copy_from_value()` の ternary fallback、
+  `ND_FUNCALL` / `ND_DEREF` の small/medium/large struct 分岐、deref RHS の `type_size` 補正、
+  union no-brace copy の byte-copy 幅をこの helper 経由へ変更した。
+
+  追加確認:
+  - raw `size=77` / `elem_size=99` / raw tag 無しだが、`decl_type` は 12B struct の
+    synthetic `lvar_t` について、`psx_lvar_decl_sizeof()` と
+    `psx_node_new_lvar_object_ref_for()` が raw size ではなく 12B / `TK_STRUCT` を返す
+    regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き994: **local aggregate array initializer の要素 lvar/zero-fill も decl_type 正本へ寄せた**。
+
+  続き993で local array initializer の flat element count / designator stride は
+  `psx_lvar_array_*` accessor 経由になったが、`struct S a[N]` / `union U a[N]`
+  の要素 subobject を作る経路にはまだ raw `lvar_t.elem_size` / tag identity が残っていた。
+  具体的には `tag_array_element_lvar_at()`、array designator 後の `.member` 処理、
+  brace 省略 struct array element、`append_struct_zero_fill_chain()` が、
+  `decl_type` に canonical array/tag shape がある場合でも古い raw size/tag を使える状態だった。
+
+  修正として、`lvar_array_leaf_element_decl_type()` から leaf element 型を取り、
+  `lvar_array_leaf_element_size()` で canonical element size を優先するようにした。
+  さらに `lvar_apply_tag_identity_from_type()` を追加し、array element synthetic `lvar_t` の
+  `decl_type` / tag identity / size / stride state を leaf element 型に揃えるようにした。
+  `append_struct_zero_fill_chain()` の zero-fill 範囲も `psx_lvar_decl_sizeof()` 優先にして、
+  struct object と aggregate array のどちらでも raw `size/elem_size` に戻りにくくした。
+
+  追加確認:
+  - raw `size=77` / `elem_size=99` / `is_array=0` / raw tag 無しだが、
+    `decl_type` は `struct[2]` の synthetic `lvar_t` について、
+    `psx_lvar_decl_sizeof()` が 24、`psx_lvar_array_scalar_element_size()` が 12、
+    `psx_node_new_array_elem_lvar_for(..., 1)` が offset 112 / type_size 12 /
+    `TK_STRUCT` を返す regression を追加。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き993: **local array initializer の配列 shape も lvar canonical accessor 経由へ寄せた**。
+
+  続き992までで global initializer 側は `psx_gvar_view()` 経由に寄ったが、
+  local array initializer (`parse_array_initializer()` /
+  `parse_array_braced_init()` / designator stride 計算) はまだ raw
+  `lvar_t.size` / `elem_size` / `outer_stride` / `mid_stride` /
+  `extra_strides` から flat element count や多次元 row/chunk size を計算していた。
+  そのため `decl_type` が正本としてある場合でも、古い raw stride が
+  `[i][j]` designator や nested brace chunking に復活できる余地があった。
+
+  修正として、`lvar_public.h` に
+  `psx_lvar_array_flat_element_count()` と
+  `psx_lvar_array_designator_stride_elements()` を追加。
+  `decl.c` 側には `decl_type` の nested array type から scalar element size と
+  stride（要素単位）を復元する helper を置き、raw fallback は `decl_type` が無い場合だけ使う。
+  `parse_array_initializer()` の `array_len`、
+  `array_desig_elem_stride()`、多次元 char row initializer、
+  nested brace chunk size、配列文字列初期化の elem width 判定をこの accessor 経由へ変更した。
+
+  追加確認:
+  - raw `size=77` / `elem_size=99` / `is_array=0` /
+    `outer_stride=55` / `mid_stride=33` だが、`decl_type` は
+    canonical `int[2][3][4]` の synthetic `lvar_t` について、
+    `psx_lvar_array_flat_element_count()` が 24、
+    `psx_lvar_array_designator_stride_elements(depth=0/1/2)` が
+    12 / 4 / 1 を返す regression を追加。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き992: **global incomplete array 推論も gvar canonical view 経由へ寄せた**。
+
+  続き991で global brace initializer の context は `psx_gvar_view()` 経由にしたが、
+  直後の `psx_decl_finalize_gvar_inferred_array_size()` はまだ raw
+  `gv->type_size` / `gv->is_array` / `gv->deref_size` /
+  `gv->outer_stride` / `gv->tag_kind` を読んでいた。
+  そのため `decl_type` 側では incomplete array (`type_size == 0`) が正本なのに、
+  raw `type_size` が古い非 0 値を持つと array size 推論が早期 return する余地があった。
+
+  修正として、`psx_gvar_view_apply_decl_type()` は array 型の `type_size == 0` も
+  meaningful な canonical size として view に反映するようにした。
+  そのうえで `psx_decl_finalize_gvar_inferred_array_size()` は
+  `psx_gvar_view(gv)` の `type_size` / `is_array` / `deref_size` /
+  `outer_stride` / tag identity を使って推論するように変更。
+  global multidim char array の文字列行 initializer も、
+  raw `gv->deref_size/outer_stride` ではなく root `psx_gvar_view(gv)` の
+  canonical stride を条件と row width に使うようにした。
+
+  追加確認:
+  - raw `type_size=77` / `is_array=0` / `deref_size=99` だが、
+    `decl_type` は incomplete `int[]` で `init_count=3` の synthetic `global_var_t` について、
+    `psx_decl_finalize_gvar_inferred_array_size()` が canonical `decl_type` 由来で
+    `type_size=12` を確定する regression を追加。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き991: **global brace initializer の配列 shape を gvar canonical view 経由へ寄せた**。
+
+  `psx_parse_global_brace_init_flat()` はトップレベル global/static initializer の
+  brace context を作るとき、まだ `global_var_t` の raw
+  `tag_kind` / `is_array` / `is_tag_pointer` / `deref_size` /
+  `outer_stride` / `mid_stride` / `extra_strides` を直接読んでいた。
+  これは `decl_type` が正本としてあるのに、古い raw shape が initializer の
+  multidim designator/positional boundary 計算へ復活できる経路だった。
+
+  修正として `psx_gvar_view_t` に `deref_size` / `outer_stride` /
+  `mid_stride` / `extra_strides_count` / `extra_strides` を追加し、
+  `psx_gvar_view()` が `decl_type` の nested array 構造から scalar elem と
+  inner stride 列を復元するようにした。
+  `psx_parse_global_brace_init_flat()` は `gbrace_ctx_t` と plain multidim array の
+  `sub_dims` 計算を `psx_gvar_view(gv)` 経由へ変更したため、
+  raw `global_var_t` の stale stride より canonical `decl_type` が優先される。
+
+  追加確認:
+  - raw `is_array` / `deref_size` / `outer_stride` / `mid_stride` /
+    `extra_strides` を stale にした 2D/4D `global_var_t` でも、
+    `psx_gvar_view()` が `decl_type` 由来の `deref_size` / stride 列を返す
+    regression を追加。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+- 続き990: **explicit canonical type と legacy 復元 type の raw fallback 境界を分けた**。
+
+  続き989で `psx_node_get_type(node)` が返る場合に raw fallback を閉じたが、
+  そのままだと legacy-only node の raw metadata からその場で復元した type まで
+  「明示 canonical type」と同じ扱いになり、atomic pointer info のような
+  legacy fallback が必要な経路を壊せた。
+  正本化したいのは `node->type` または `mem->base.type` として明示的に canonical type が載っている場合であり、
+  raw metadata から復元した互換 view は raw と同じ出所なので fallback を許す必要がある。
+
+  修正として、`src/parser/node_utils.c` に `node_has_explicit_type()` を追加し、
+  `node->type` または `node_mem_t.base.type` がある場合だけ raw fallback を止める境界にした。
+  `funcptr_sig_from_node()` / `pointer_view_from_node_direct()` /
+  `vla_view_from_node_direct()` / `scalar_flag_from_node_direct()` /
+  `pointee_flag_from_node_direct()` / `psx_node_value_fp_kind()` /
+  `psx_node_value_is_complex()` をこの境界へ揃えた。
+  これにより、明示 canonical pointer/int type がある synthetic node では stale raw
+  funcptr / ptr-array / VLA / scalar / pointee / FP / complex metadata が復活しない一方、
+  legacy-only node では従来どおり raw fallback が機能する。
+
+  追加確認:
+  - `base.type` が plain pointer/int なのに raw `fp_kind` / `is_complex` /
+    `pointee_is_unsigned` / `pointee_is_bool` / `pointee_is_void` が stale に立つ synthetic node で、
+    value / pointee helper が raw payload を返さない regression を追加。
+  - 既存の legacy-only `stale_atomic_ptr_mem` regression で、
+    raw `pointee_is_unsigned` から atomic unsigned 判定がまだ取れることを確認。
+  - 続き989の funcptr / ptr-array / VLA explicit type regression も維持。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き989: **node helper の base.type あり raw fallback をさらに閉じた**。
+
+  続き988までで cast target の pointer-element array shape は明示 flag に寄ったが、
+  `src/parser/node_utils.c` の public helper にはまだ
+  `psx_node_get_type(node)` で canonical type が取れるのに、`node->type` が直接セットされていない場合だけ
+  raw `node_mem_t` metadata へ fallback する箇所が残っていた。
+  特に `mem->base.type` を持つ synthetic node は `psx_node_get_type()` がその canonical type を返すため、
+  そこに funcptr / ptr-array / VLA payload が無いなら「無い」が正本であるべき。
+  しかし従来は raw `mem->funcptr_sig` / `ptr_array_pointee_bytes` /
+  `vla_row_stride_frame_off` が stale payload として復活できた。
+
+  修正として、`funcptr_sig_from_node()` は `psx_node_get_type(node)` が返った時点で
+  type 側の signature を正本として返し、raw funcptr merge へ落ちないようにした。
+  同じく `pointer_view_from_node_direct()` / `vla_view_from_node_direct()` も、
+  canonical type が取れたのに該当 field が type 側に無い場合は raw fallback せず 0 を返す。
+  `type_from_mem()` が `mem->base.type` をそのまま canonical type として扱う既存契約に合わせた修正。
+
+  追加確認:
+  - `base.type` が data pointer で raw `funcptr_sig` だけが stale payload を持つ synthetic node で、
+    `psx_node_funcptr_sig()` / `psx_node_has_funcptr_signature()` が raw payload を返さない regression を追加。
+  - `base.type` が plain pointer で raw `ptr_array_pointee_bytes` / VLA stride だけが stale payload を持つ synthetic node で、
+    `psx_node_ptr_array_pointee_bytes()` / `psx_node_vla_row_stride_frame_off()` /
+    `psx_node_pointer_stride_metadata()` が raw payload を返さない regression を追加。
+  - 既存の typed pointer with canonical ptr-array/VLA payload regression は維持し、
+    type 側に payload がある場合は引き続き canonical payload が読めることを確認。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き988: **cast pointer-element array 判定をサイズ差推定から明示 flag へ寄せた**。
+
+  続き987の cast 修正では、`int * (*)[2][3]` のように scalar element 4B と
+  pointer element storage 8B の差があるケースは直ったが、
+  `long * (*)[2]` / `double * (*)[2]` のように scalar size と pointer storage が同じ 8B の場合、
+  `ptr_array_pointee_bytes > scalar_array_bytes` という推定では pointer element array かどうかを
+  canonical type に表せない余地が残っていた。
+  runtime では偶然同じ offset になる場合があるが、型 shape の正本として
+  `POINTER -> ARRAY -> long` と `POINTER -> ARRAY -> POINTER -> long` が混ざるのは根本対応ではない。
+
+  修正として、`src/parser/expr.c` の `parse_cast_type()` から
+  `cast_ptr_array_element_is_pointer` を明示的に返すようにした。
+  これは typedef 由来または明示 suffix 由来の base pointer element を、
+  `ptr_array_pointee_bytes` とは別の事実として `apply_cast()` /
+  `expr_cast_target_type()` へ渡す。
+  `expr_cast_target_type()` は bytes の大小ではなくこの flag を正本にして、
+  pointer-element array の canonical type を組む。
+  scalar pointer-to-array cast (`(long (*)[2])0`, `(unsigned char (*)[3])0`) は
+  flag が立たないので従来どおり `POINTER -> ARRAY -> scalar` のまま。
+
+  追加確認:
+  - parser regression として `(long (*)[2])0` は
+    `POINTER -> ARRAY -> INTEGER`、`(long * (*)[2])0` は
+    `POINTER -> ARRAY -> POINTER` になることを追加。
+    どちらも deref bytes は 16 なので、サイズだけでなく shape を確認している。
+  - targeted e2e:
+    `/private/tmp/agc_probe_cast_typedef_long_ptr_elem.c`
+    `typedef long *LP; ... return (int)*(*(LP (*)[2])&rows)[1];`
+    は `./build/ag_c -> clang -> run` で exit **49**。
+  - 続き987の targeted e2e 再確認:
+    `/private/tmp/agc_probe_cast_typedef_ptr_elem_2d.c` は exit **47**。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き987: **cast typedef pointer-to-array 2D の pointer element 型正本化を進めた**。
+
+  続き986までで function parameter の `IP (*p)[2][3]` は直ったが、
+  cast target の `(IP (*)[2][3])&rows` 経路には同じ混同が残っていた。
+  global/local 変数宣言の `typedef int *IP; IP (*p)[2][3]` は既に期待どおり動いた一方、
+  cast では target type が `POINTER -> ARRAY -> ARRAY -> int` 相当に平坦化され、
+  pointer element storage 8B ではなく scalar element 4B で stride を組んでいた。
+  そのため `(*(IP (*)[2][3])&rows)[1][1]` が offset 12 / 4 で進み、
+  pointer の途中アドレスから load して SIGSEGV していた。
+
+  修正として、`src/parser/expr.c` の `parse_cast_type()` で typedef 由来または明示 suffix 由来の
+  base pointer element を区別し、pointer-to-array pointee bytes を計算する時だけ
+  element storage を 8B として扱うようにした。
+  以前の広い `*is_pointer > 0` 判定は `(unsigned char (*)[3])0` のような scalar pointer-to-array
+  cast まで pointer-element 配列扱いにして既存 regression を壊したため、
+  `typedef_base_is_pointer || explicit_base_pointer_suffix` に絞っている。
+
+  さらに `expr_cast_target_type()` で、`ptr_array_pointee_bytes` が scalar array bytes より大きく
+  8B 要素で割り切れる場合は pointer-element array と判定し、
+  canonical type を `POINTER -> ARRAY[2] -> ARRAY[3] -> POINTER -> int` として組むようにした。
+  `outer_stride` / `mid_stride` / `ptr_array_pointee_bytes` も canonical array 側に伝播し、
+  `psx_node_pointer_stride_metadata()` が top stride 24 / next stride 8 を返せる形に揃えた。
+
+  追加確認:
+  - `(int * (*)[2][3])0` の parser regression を追加。
+    cast node は deref 48 / base deref 4、shape は
+    `POINTER -> ARRAY -> ARRAY -> POINTER`、pointer stride は 24 / 8 として確認。
+  - targeted e2e:
+    `/private/tmp/agc_probe_cast_typedef_ptr_elem_2d.c`
+    `typedef int *IP; ... return *(*(IP (*)[2][3])&rows)[1][1];`
+    は `./build/ag_c -> clang -> run` で exit **47**（修正前は SIGSEGV）。
+  - 同系統の宣言経路再確認:
+    `/private/tmp/agc_probe_global_typedef_ptr_elem_2d.c` は exit **43**、
+    `/private/tmp/agc_probe_local_typedef_ptr_elem_2d.c` は exit **45**。
+  - `make -j4 build/ag_c build/test_parser && ./build/test_parser` =
+    **OK: All unit tests passed**
+
+- 続き986: **function parameter typedef pointer-to-array 2D の pointer element 型正本化を進めた**。
+
+  続き985で `IP (*p)[3]` の 1D param は直ったが、
+  `IP (*p)[2][3]` では `POINTER -> ARRAY -> ARRAY -> POINTER -> int`
+  の canonical type 復元がまだ平坦化されていた。
+  具体的には pointer element array を `[6] pointer` のように扱い、`(*p)[1][1]`
+  の 2 番目の subscript が 8B pointer storage ではなく 4B scalar deref で進むため、
+  pointer の途中アドレスから load して誤値になっていた。
+
+  修正として、`src/parser/node_utils.c` の legacy metadata → canonical type 復元で、
+  pointer-element array shape を `ptr_array_pointee_bytes / mid_stride / extra_strides / 8`
+  から多次元 array として組み直す helper を追加した。
+  内側 row へ進むたびに `ptr_array_pointee_bytes` も row 全体サイズへ縮めるようにし、
+  `type_from_subscript_base_type()` は `sizeof(view->base) == inner_deref_size` の
+  pointer-element 多次元 row を正しく内側 array として返す。
+  さらに `psx_node_pointer_stride_metadata()` の `ptr_array + mid_stride` 分岐で、
+  `POINTER -> ARRAY -> ARRAY -> POINTER` の next stride を nested array の element
+  storage 8B から復元するようにした。
+
+  追加確認:
+  - `int __tm_param_ptrarr_ptr_elem_2d(__tm_param_IP2 (*p)[2][3]) { return *(*p)[1][0]; }`
+    の parser regression を追加。param `p` は
+    `POINTER -> ARRAY[2] -> ARRAY[3] -> POINTER`、top stride 24 / next stride 8、
+    inner row stride 8 / final deref 4 として確認。
+  - targeted e2e:
+    `/private/tmp/agc_probe_param_typedef_ptr_elem_2d.c`
+    `typedef int *IP; int f2(IP (*p)[2][3]) { return *(*p)[1][0]; } ...`
+    は `./build/ag_c -> clang -> run` で exit **37**。
+  - targeted e2e:
+    `/private/tmp/agc_probe_param_typedef_ptr_elem_2d_inner.c`
+    `typedef int *IP; int f2(IP (*p)[2][3]) { return *(*p)[1][1]; } ...`
+    は `./build/ag_c -> clang -> run` で exit **41**（修正前は offset 4 で誤読し exit 1）。
+  - `make -j4 build/ag_c build/test_parser && ./build/test_parser` =
+    **OK: All unit tests passed**
+
+- 続き985: **function parameter typedef pointer-to-array の pointer element 型正本化を進めた**。
+
+  続き983/984で global/member の `typedef int *IP; IP (*p)[3]` 系は
+  `POINTER -> ARRAY -> POINTER -> int` に寄ったが、function parameter 登録経路
+  (`register_param_lvar`) には同じ混同が残っていた。
+  `int f(IP (*p)[3]) { return *(*p)[0]; }` で、typedef 由来の pointer と宣言子
+  `(*p)` の pointer が `param_ptr_levels=2` として扱われ、row bytes が
+  `3 * elem_size(4)` 相当になったり、`array of pointer-to-array` 寄りの
+  metadata に落ちるため、実行時に SIGSEGV していた。
+
+  修正として、param 登録で `ds->base_is_pointer && param_is_array_declarator`
+  の pointer-to-array を専用に canonical 化した。要素 storage は 8B、
+  final scalar deref は typedef の pointee サイズ (`int` なら 4B) として保持し、
+  row bytes / stride は inner dims と 8B storage から計算する。
+  legacy field は `pointer_qual_levels=1`, `ptr_array_pointee_bytes=row_bytes`,
+  `base_deref_size=scalar_deref` になるよう設定し、materialize 後の `decl_type` が
+  `POINTER -> ARRAY -> POINTER -> int` になる形に揃えた。
+
+  追加確認:
+  - `int __tm_param_ptrarr_ptr_elem(__tm_param_IP (*p)[3]) { return *(*p)[0]; }`
+    の parser regression を追加。param `p` は `POINTER -> ARRAY -> POINTER`、
+    `*p` は type size 24 / deref 8、`(*p)[0]` は type size 8 / deref 4 の
+    pointer value として確認。
+  - targeted e2e:
+    `/private/tmp/agc_probe_param_typedef_ptr_elem.c`
+    `typedef int *IP; int f(IP (*p)[3]) { return *(*p)[0]; } ... return f(&row);`
+    は `./build/ag_c -> clang -> run` で exit **31**（以前は SIGSEGV）。
+  - 直近の同系統 probe 再確認:
+    `/private/tmp/agc_probe_typedef_ptr_elem.c` は exit **19**、
+    `/private/tmp/agc_probe_member_typedef_ptr_elem.c` は exit **21**。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き984: **struct member typedef pointer-to-array の pointer element 型正本化を進めた**。
+
+  続き983で global の `typedef int *IP; IP (*gpia)[3]` は直ったが、
+  `struct S { IP (*m)[3]; }` では member layout 側に同じ混同が残っていた。
+  typedef 由来の pointer と宣言子 `(*m)` の pointer が `total_pointer_levels=2` に混ざり、
+  pointee 配列の全体サイズも `3 * elem_size(4)` と計算されるため、
+  `*(*s.m)[0]` が 8B pointer load ではなく崩れた幅で読まれて SIGSEGV していた。
+
+  修正として、`src/parser/struct_layout.c` に member pointer-to-array 用の canonical
+  decl_type builder を追加した。`int (*p)[N]` は `POINTER -> ARRAY -> int`、
+  `IP (*p)[N]` は `POINTER -> ARRAY -> POINTER -> int` として作り、
+  row 全体 bytes / pointer element storage width / final scalar deref を型側に持たせる。
+  raw cache は互換のため残すが、stale raw `ptr_array_pointee_bytes` より canonical
+  decl_type の shape が優先されるようになった。
+
+  追加確認:
+  - `struct __tm_member_ip_ptrarr { __tm_member_IP (*p)[3]; }` の regression を追加。
+    member `p` は `POINTER -> ARRAY -> POINTER`、`*p` は type size 24 / deref 8、
+    `(*p)[0]` は type size 8 / deref 4 の pointer value として確認。
+  - 既存 `struct __tm_member_ptrarr { int (*p)[3]; }` の stale raw metadata regression は、
+    canonical decl_type 由来の正しい `ptr_array_pointee_bytes=12` を返す期待値に更新。
+  - targeted e2e:
+    `/private/tmp/agc_probe_member_typedef_ptr_elem.c`
+    `typedef int *IP; struct S { IP (*m)[3]; }; ... return *(*s.m)[0];`
+    は `./build/ag_c -> clang -> run` で exit **21**（以前は SIGSEGV）。
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き983: **global typedef pointer-to-array の pointer element 型正本化を進めた**。
+
+  続き982の `global pointer-to-array` 正本化で `int (*gp)[3][4]` は改善したが、
+  `typedef int *IP; IP (*gpia)[3] = &row;` のように pointee 配列の要素自体が pointer の場合、
+  global 登録時に typedef 由来の pointer level が外側の pointer-to-array level と混ざり、
+  `*gpia` / `(*gpia)[0]` の型 view が row 全体の deref size と pointer 要素の load width を混同していた。
+
+  修正として、top-level global の pointer-to-array 判定で要素ストレージ幅を `spec->base_is_ptr`
+  から 8B として扱い、`ptr_in_paren_group` は括弧内再帰前後の pointer level 差分でも検出するようにした。
+  `IP (*gpia)[3]` では外側 pointer level を 1 に正規化し、要素 pointer は canonical array base type
+  (`ARRAY -> POINTER -> int`) 側に持たせる。
+
+  node 側では `type_from_deref_operand()` が返す `array of pointer` view の `elem_size` /
+  `deref_size` を pointer storage width に正規化し、canonical type が array と分かった後に
+  汎用の「多段 pointer を 1 段剥がす」処理で `deref_size` を scalar 側へ戻さないようにした。
+  `type_from_subscript_base_type()` も 1 次元 row の `inner_deref_size == 0` ケースで
+  `elem_size == sizeof(pointer element)` なら pointer 要素を返す。
+
+  追加確認:
+  - global `typedef int *__tm696_GIP; __tm696_GIP (*__tm696_gpia)[3]` の regression を追加。
+    `gpia` は `POINTER -> ARRAY -> POINTER`、`*gpia` は type size 24 / deref 8、
+    `(*gpia)[0]` は type size 8 / deref 4 の pointer value として確認。
+  - targeted e2e:
+    `/private/tmp/agc_probe_ptrarr_1d.c`
+    `int row[6]; int (*p)[6] = &row; int main(void){ row[5]=17; return (*p)[5]; }`
+    は `./build/ag_c -> clang -> run` で exit **17**。
+  - targeted e2e:
+    `/private/tmp/agc_probe_typedef_ptr_elem.c`
+    `typedef int *IP; IP row[3]; IP (*pia)[3] = &row; int main(void){ a=19; return *(*pia)[0]; }`
+    は `./build/ag_c -> clang -> run` で exit **19**（以前は SIGSEGV）。
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
+- 続き982: **global pointer-to-array の subscript 型正本化を進めた**。
+
+  続き981までで funcall / arithmetic / return 周辺は canonical type へ寄ったが、
+  `global_var_t` の cached `decl_type` と pointer-to-array subscript にはまだ raw stride /
+  ptr-array metadata が式 node の正本として振る舞える余地が残っていた。
+
+  修正として、`psx_gvar_materialize_decl_type()` に `lvar` と同じ runtime shape 補完を追加し、
+  cached `decl_type` を返す場合も `type_sig` と stride を canonical type 側へ反映するようにした。
+  ただし `ptr_array_pointee_bytes > 0` の stale raw shape は canonical pointer type を汚さないよう、
+  既存 `lvar` と同じく補完を抑制している。
+
+  さらに `type_pointer_to_array_base_from_mem()` の pointer-element 推定を絞り、
+  `int (*)[3][4]` を `int *` 配列として誤判定しないようにした。
+  scalar pointer-to-array では `next_deref_size` / extra strides を canonical row array type に保存し、
+  `type_from_subscript_base_type()` では flat な row ではなく必要なら内側 array type を作る。
+  これにより global `int (*gp)[3][4]` の `gp[i][j]` が scalar load ではなく
+  `int[4]` の address-producing array view として扱われる。
+
+  併せて、subscript の pointer-to-array 元判定で `ND_LVAR` だけでなく `ND_GVAR` も
+  canonical type から認識するようにし、canonical type が pointer 以外の場合は
+  legacy `is_scalar_ptr_member` flag を lvalue 判定に使わないようにした。
+
+  追加確認:
+  - cached gvar `decl_type` への runtime shape 補完と、stale ptr-array raw metadata が
+    canonical plain pointer を汚さない regression を追加。
+  - global `int (*__tm696_gpi)[3][4]` の subscript chain で `gp[i]` / `gp[i][j]` が
+    canonical array type になり、base address を使う regression を追加。
+  - targeted e2e:
+    `/tmp/agc_probe_gvar_ptrarr3d.c`
+    `int rows[2][3][4]; int (*gp)[3][4] = rows; int main(void){ rows[1][2][3]=11; return gp[1][2][3]; }`
+    は `./build/ag_c -> clang -> run` で exit **11**（期待値）。
+  - `make -j4 build/ag_c` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **green**
+
 - 続き981: **function-pointer return call の decay 判定を canonical funcall type に寄せた**。
 
   続き980までで式の FP/complex 入力は canonical helper に寄ったが、
@@ -22369,3 +23865,1186 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - struct copy / aggregate cast の境界でも、raw mirror ではなく canonical type/tag identity を正本として使う方向に進んだ。
   - 次は `expr.c` / `node_utils.c` の `is_scalar_ptr_member` など、型そのものではなく lvalue 文脈を表す raw flag と
     本当に型正本へ寄せるべき raw mirror を分離して棚卸しするのが候補。
+
+### このセッション（続き912）: local initializer 宛先判定を canonical lvar accessor に寄せた
+- 見つかった浅い箇所:
+  - `psx_decl_parse_initializer_for_var()` の入口と scalar initializer 分岐で、宛先 local 変数が array /
+    aggregate / complex かどうかを raw `lvar_t` mirror (`var->is_array`, `var->tag_kind`, `var->is_complex`,
+    `var->elem_size`) から直接判定していた。
+  - 直前まで RHS の aggregate 判定は canonical accessor 化していたが、LHS 側だけ raw mirror を正本として残すと、
+    `decl_type` と mirror が食い違った合成/移行ケースで initializer の分岐先が分散する。
+- 根本対応:
+  - array initializer 入口を `psx_lvar_is_array(var)` に変更した。
+  - complex brace initializer 判定を `psx_lvar_is_complex(var)` に変更し、実部/虚部幅も
+    `psx_lvar_elem_size(var, var->elem_size)` 経由で取得するようにした。
+  - scalar initializer 分岐の宛先判定を `!psx_lvar_is_tag_aggregate(var) && !psx_lvar_is_array(var)` に変更し、
+    raw `var->tag_kind == TK_EOF && !var->is_array` を正本として使わない形にした。
+  - regression として、`decl_type` は scalar だが raw mirror は array/tag になっている lvar 合成ケースで
+    `psx_lvar_is_array()` / `psx_lvar_is_tag_aggregate()` が canonical `decl_type` を優先することを追加した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+- 現状:
+  - local initializer の LHS/RHS 双方で、array/tag/aggregate 判定を canonical accessor へ寄せる範囲が広がった。
+  - 次は `decl.c` に残る raw `var->size/elem_size/tag_kind` 参照のうち、layout/offset 計算として正当なものと
+    型判定として正本化すべきものを分け、後者をさらに `psx_lvar_*` / `psx_type_*` に寄せるのが候補。
+
+### このセッション（続き913）: struct/union member lookup key を canonical lvar tag identity に寄せた
+- 見つかった浅い箇所:
+  - `tag_find_member_ordinal()` / `tag_get_member_at()` / `tag_get_next_named_member()` /
+    `member_is_covered_by_unnamed_union()` / `skip_remaining_unnamed_union_members()` /
+    `parse_struct_initializer()` が、member table lookup の key として raw
+    `var->tag_kind` / `var->tag_name` / `var->tag_len` を直接読んでいた。
+  - struct copy 互換判定では `tag_object_identity_from_lvar()` によって `decl_type` 優先へ寄せていたが、
+    initializer の member lookup では別の raw key 経路が残っていた。
+  - 配列要素の `[i].member` designator では、一時 `lvar_t elem` に親配列の raw tag mirror だけをコピーしており、
+    親配列の `decl_type` leaf tag を正本として使えなかった。
+- 根本対応:
+  - `lvar_tag_lookup_key()` を追加し、member lookup key を `tag_object_identity_from_lvar()` から取得するようにした。
+    これにより `decl_type` がある場合は canonical tag identity が lookup の正本になる。
+  - `lvar_array_leaf_element_decl_type()` を追加し、`[i].member` designator 用の一時 element lvar に
+    canonical leaf element `decl_type` を載せるようにした。
+  - element offset/size も `psx_lvar_elem_size(var, var->elem_size)` を通して取得し、raw `var->elem_size`
+    直接依存を一段減らした。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_array_member_designator.c`
+      (`struct S a[2] = {[1].x = 7}; return a[0].x + a[0].y + a[1].x + a[1].y;`)
+      を `./build/ag_c` -> `clang` -> 実行 = **exit 7**
+- 現状:
+  - `decl.c` の member table lookup は raw `var->tag_*` を直接 key として読む形から、canonical lvar tag identity
+    経由へまとまった。
+  - 残る raw `var->tag_*` は、fallback mirror の生成/初期化、配列 element への fallback コピー、宣言更新時の
+    mirror sync などに絞られてきている。
+
+### このセッション（続き914）: struct copy / brace elision の member count も canonical key に寄せた
+- 見つかった浅い箇所:
+  - 続き913で通常の member lookup helper は canonical key 化したが、`build_struct_copy_chain_from_source()` は
+    `psx_tag_next_named_member(dst->tag_kind, dst->tag_name, dst->tag_len, ...)` を直接呼んでいた。
+  - `struct_member_elision()` と `parse_struct_member_no_brace()` も、brace 省略で使う member_count を
+    raw `nested->tag_kind` / `nested->tag_name` / `nested->tag_len` から取得していた。
+  - struct copy source 用の一時 `src_var` も raw `src->mem.tag_*` だけを持ち、source node の canonical
+    `node->type` を member access 側へ渡せていなかった。
+- 根本対応:
+  - `lvar_tag_member_count()` を追加し、member_count 取得も `lvar_tag_lookup_key()` 経由にまとめた。
+  - `build_struct_copy_chain_from_source()` の member 列挙を `tag_get_next_named_member(dst, ...)` に変更し、
+    destination の canonical tag identity を正本にした。
+  - struct copy source の一時 `src_var.decl_type` に `psx_node_get_type((node_t *)src)` を載せ、source member ref も
+    canonical type を保持できるようにした。
+  - brace elision の `member_count` 取得を `lvar_tag_member_count(nested)` に置き換えた。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_struct_copy.c`
+      (`struct S a={3,4}; struct S b=a; return b.x+b.y;`) = **exit 7**
+    - `/tmp/agc_probe_struct_elision.c`
+      (`struct B { struct A a; int z; }; struct B b={1,2,3}; return ...;`) = **exit 6**
+    - `/tmp/agc_probe_array_member_designator.c`
+      (`struct S a[2] = {[1].x = 7}; return ...;`) = **exit 7**
+- 現状:
+  - `decl.c` 内で `psx_tag_*member*` / `psx_ctx_get_tag_member_count()` に raw `var/dst/nested->tag_*`
+    を直接渡す経路はなくなった。
+  - 次は `node_utils.c` 側の lvar/gvar node 生成で raw mirror を埋めてから canonical sync している箇所を見直し、
+    `decl_type` がある場合に raw mirror が再び正本扱いされないようにするのが候補。
+
+### このセッション（続き915）: array element lvar node の leaf 型正本化
+- 見つかった浅い箇所:
+  - `psx_node_new_array_elem_lvar_for()` は `type_array_leaf_element_type(psx_lvar_get_decl_type(var))` で
+    canonical leaf type を取得していたが、node の `type_size` / offset stride は raw `var->elem_size` のままだった。
+  - さらに leaf type を設定した後も raw `var->tag_kind` / `var->tag_name` / `var->tag_len` /
+    `var->is_tag_pointer` を node mirror にコピーし、`sync_tag_mem_from_decl_type()` を呼んでいなかった。
+  - そのため、`decl_type` 上は scalar 配列でも stale tag mirror が array element node に残る経路があった。
+- 根本対応:
+  - array element node 生成時に canonical leaf `elem_type` を先に求め、`psx_type_sizeof(elem_type)` が取れる場合は
+    それを element size / offset stride / node `type_size` の正本にした。
+  - raw tag mirror は legacy fallback としていったん埋めるが、最後に `sync_tag_mem_from_decl_type()` を呼び、
+    leaf type が scalar なら tag mirror を `TK_EOF` にクリアするようにした。
+  - regression として、raw mirror は struct/tag pointer だが `decl_type` は `int[2]` の合成 lvar から
+    `psx_node_new_array_elem_lvar_for(..., 1)` を作り、`type_size=4`, `offset=4`, tag mirror cleared になることを追加した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_array_elem_lvar.c` (`int a[2] = {3,4}; return a[1];`) = **exit 4**
+- 現状:
+  - `node_utils.c` の array element lvar 生成でも、raw `lvar_t` mirror より canonical leaf `psx_type_t` が優先されるようになった。
+  - 次は gvar/static-local ref metadata の raw `gv->tag_*` / `var->tag_*` コピー後に canonical sync している箇所を、
+    sync 漏れや size の raw fallback 優先がないか確認するのが候補。
+
+### このセッション（続き916）: lvar typed wrapper の raw size 上書きを canonical type 優先にした
+- 見つかった浅い箇所:
+  - `psx_node_new_lvar_typed_for()` は `psx_node_new_lvar_for()` で `decl_type` から canonical metadata を同期した直後に、
+    引数 `type_size` で `node->mem.type_size` を無条件に上書きしていた。
+  - そのため direct caller が stale/raw size を渡すと、`decl_type` が正本として存在していても `type_size` mirror が
+    raw 値へ戻る経路が残っていた。
+- 根本対応:
+  - `psx_node_new_lvar_typed_for()` は、`var` に canonical `decl_type` があり `psx_type_sizeof(decl_type)` が取れる場合は
+    raw `type_size` で上書きしないようにした。
+  - `decl_type` が無い legacy/offset-only 用途では従来どおり引数 `type_size` を fallback として使う。
+  - regression として、raw mirror は stale だが `decl_type=int` の lvar に対して
+    `psx_node_new_lvar_typed_for(..., 99)` を呼んでも `type_size=4` のままになることを追加した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_lvar_typed_for_scalar.c` (`int x=5; return x;`) = **exit 5**
+    - `/tmp/agc_probe_array_elem_lvar.c` (`int a[2]={3,4}; return a[1];`) = **exit 4**
+- 現状:
+  - lvar node 生成の一段上にある typed wrapper でも、canonical `decl_type` がある場合に raw size が
+    正本を上書きする経路を閉じた。
+  - 次は static local / gvar ref metadata の typed wrapper や address node 生成で、同様の raw override がないか
+    続けて確認するのが候補。
+
+### このセッション（続き917）: byref struct parameter の古い pointer-slot 抽象を削除した
+- 見つかった浅い箇所:
+  - >8B struct 値渡し仮引数 (`is_byref_param`) の識別子解決が
+    `psx_node_new_byref_param_deref_for()` 経由で `ND_DEREF(ptr_lvar)` を作っていた。
+  - しかし現在の IR entry (`setup_function_params`) は、呼び出し側から受け取った pointer を関数 entry で
+    通常の lvar frame slot へ `MEMCPY` 済みにしている。
+  - つまり parser 側だけが「byref param の lvar slot は pointer」という古い別正本を持っており、
+    `struct S { long a,b,c; }; long f(struct S s){ return s.b; }` で `s.b` が先頭メンバ値を
+    address として扱って segfault する経路があった。
+- 根本対応:
+  - `build_byref_param_node()` を通常の `psx_node_new_lvar_identifier_ref_for(var)` に変更し、
+    byref parameter の式表現を「entry materialize 後の canonical struct lvar」に統一した。
+  - 古い別正本だった `psx_node_new_byref_param_deref_for()` を `node_utils.c` / `node_utils.h` から削除した。
+  - regression は、byref struct parameter の node が `ND_LVAR` / canonical `decl_type` / `type_size=24` /
+    non-pointer / canonical struct tag になることを確認する形に更新した。
+  - stale raw mirror (`elem_size=99`, `tag_kind=TK_UNION`, `is_tag_pointer=1`) を持つ合成 byref lvar でも、
+    `decl_type` 側の canonical struct metadata が node へ反映されることを確認した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `rg -n "psx_node_new_byref_param_deref_for" src test` = **no matches**
+  - 局所 e2e:
+    - `/tmp/agc_probe_byref_param.c`
+      (`struct S { long a; long b; long c; }; long f(struct S s){ return s.b; } int main(){ ... return f(s); }`)
+      は修正前 **exit 139**、修正後 `./build/ag_c` -> `clang` -> 実行 = **exit 2**
+- 現状:
+  - byref struct parameter については、parser の型正本と IR entry の実データ配置が一致した。
+  - 次は static local / gvar / address node 周辺の raw fallback と canonical `decl_type` の優先順位を続けて棚卸しする。
+
+### このセッション（続き918）: tag member scalar sync でも canonical tag clear を保証した
+- 見つかった浅い箇所:
+  - static local / gvar / address node 周辺を棚卸し中、`new_addr_node()` の未初期化を疑ったが、
+    `arena_alloc()` は `memset` 済みだったためそこは対象外だった。
+  - 実際に弱かったのは `sync_tag_member_mem_from_decl_type()` で、pointer/array canonical type では
+    `sync_tag_mem_from_decl_type()` を呼ぶ一方、scalar canonical type では
+    `sync_scalar_mem_from_decl_type()` だけで return していた。
+  - 通常の `psx_tag_member_decl_tag_identity()` 経由では `decl_type` が scalar なら tag はクリアされるが、
+    helper 自体の契約としては「scalar canonical type が stale raw tag を消す」保証が弱かった。
+- 根本対応:
+  - `sync_tag_member_mem_from_decl_type()` の scalar branch でも `sync_tag_mem_from_decl_type(mem, type)` を呼び、
+    canonical scalar type が tag mirror (`tag_kind` / `tag_name` / `tag_len` / `is_tag_pointer`) を必ずクリアするようにした。
+  - regression として、raw `tag_member_info_t` は stale struct/tag pointer だが `decl_type=int` の合成 member から
+    `psx_node_new_tag_member_lvar_ref_for()` を作ると、`type_size=4` かつ tag mirror cleared になることを追加した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_member_scalar_decl_type.c`
+      (`struct S { int x; int y; }; int main(){ struct S s={3,4}; return s.x + s.y; }`)
+      を `./build/ag_c` -> `clang` -> 実行 = **exit 7**
+- 現状:
+  - tag member node sync helper の中でも、canonical scalar `decl_type` が raw tag mirror を消す責務が明確になった。
+  - 次は gvar/static-local address metadata の `pointee_is_scalar_ptr` / `is_tag_pointer` など、
+    `apply_array_addr_decl_type()` 後にも raw flag が残り得るかを続けて見る。
+
+### このセッション（続き919）: lvar/gvar funcptr metadata も decl_type を正本にした
+- 見つかった浅い箇所:
+  - `funcptr_sig_from_lvar()` / `funcptr_sig_from_gvar()` は、`decl_type` に funcptr payload がある時だけ
+    canonical type を返し、payload が無い時は raw `funcptr_sig` へ fallback していた。
+  - そのため `decl_type` が存在して「これは funcptr ではない」と示している合成/移行ケースでも、
+    stale raw `funcptr_sig` が別正本として復活する余地があった。
+- 根本対応:
+  - `decl_type` が存在する場合は、payload の有無も含めて `decl_type->funcptr_sig` を正本として返すようにした。
+  - `decl_type` が無い legacy metadata の場合だけ raw `lvar_t` / `global_var_t` の `funcptr_sig` に fallback する。
+  - regression として、raw `funcptr_sig` に payload があるが `decl_type=int` の lvar/gvar で、
+    `psx_lvar_funcptr_sig()` / `psx_gvar_funcptr_sig()` と node 生成結果が funcptr と見なされないことを追加した。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_funcptr_canonical.c`
+      (`int f(void){ return 7; } int main(void){ int (*fp)(void)=f; return fp(); }`)
+      を `./build/ag_c` -> `clang` -> 実行 = **exit 7**
+- 現状:
+  - lvar/gvar の function pointer metadata でも、`decl_type` がある場合は raw mirror が別正本として復活しないようになった。
+  - 次は tag member / typedef 側の `decl_type` あり + raw funcptr fallback の扱いも同じ方針で棚卸しする。
+
+### このセッション（続き920）: typedef/tag member funcptr と typedef decl_type 生成を正本側へ寄せた
+- 見つかった浅い箇所:
+  - `psx_ctx_tag_member_funcptr_sig()` / `psx_ctx_typedef_funcptr_sig()` と対応する record helper が、
+    `decl_type` に funcptr payload がある時だけ canonical type を返し、payload が無い時は raw
+    `is_funcptr/funcptr_sig` に fallback していた。
+  - これにより、`decl_type` が存在して「これは funcptr ではない」と示している tag member / typedef でも、
+    stale raw funcptr metadata が別正本として復活する余地があった。
+  - さらに `typedef double *DP` のような非 funcptr typedef では `decl_type` 自体が無いケースがあり、
+    accessor を直すだけでは raw fallback を断てなかった。
+  - `ctx_typedef_info_apply_type()` が配列型にも `is_pointer=1` を立てており、
+    `typedef int M[2][3][4]; M *p` が「配列へのポインタ」ではなく「ポインタ typedef へのポインタ」に流れる
+    古い互換 metadata 問題も露出した。
+- 根本対応:
+  - tag member / typedef の funcptr accessor と record helper は、`decl_type` がある場合は payload の有無も含めて
+    `decl_type->funcptr_sig` を正本として返すようにした。raw fallback は `decl_type` が無い legacy case だけに限定。
+  - `assign_typedef_fields()` に legacy `psx_typedef_info_t` から canonical `psx_type_t` を構築する補助を追加し、
+    scalar / data pointer / array typedef でも `decl_type` を登録するようにした。
+  - typedef 再宣言の互換チェックも、片側だけ `decl_type` がある場合に新規側を canonical type 化して
+    `ctx_type_shape_matches()` で比較するようにした。funcptr typedef は legacy data pointer type より funcptr type を優先して比較する。
+  - `ctx_typedef_info_apply_type()` の `is_pointer` は `PSX_TYPE_POINTER` のみに限定し、配列 typedef は
+    `is_array/array_dims` で表すようにした。
+  - 既存 `decl_type` を持つ lvar でも、legacy pointer-to-array stride (`outer_stride/mid_stride/extra_strides`) が
+    `ptr_array_pointee_bytes` を使わない古い表現なら canonical type に補完するようにした。
+- regression:
+  - tag member: raw `funcptr_sig` が stale payload を持つ data pointer member でも、`decl_type` が data pointer なら
+    `psx_ctx_tag_member_funcptr_sig()` と node metadata は funcptr と見なさない。
+  - typedef: raw `funcptr_sig` が stale payload を持つ `typedef double *DP` でも、`decl_type` が data pointer なら
+    `psx_ctx_typedef_funcptr_sig()` は payload なしを返す。
+  - `typedef double (*FP)(void)` は raw field を壊しても `decl_type->funcptr_sig` から canonical double return を返す。
+  - `typedef int M[2][3][4]; M *p` は `outer_stride=96 / mid_stride=48 / extra_stride=16` を canonical type/node へ保持する。
+- 確認:
+  - `git diff --check` = **pass**
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - 局所 e2e:
+    - `/tmp/agc_probe_typedef_funcptr.c`
+      (`typedef double *DP; typedef double (*FP)(void); ... return fp()==*dp ? 7 : 1;`)
+      を `./build/ag_c` -> `clang` -> 実行 = **exit 7**
+    - `/tmp/agc_probe_typedef_array_ptr.c`
+      (`typedef int M[2][3][4]; int pick(M *p){ return (*p)[1][2][3]; } ...`)
+      を `./build/ag_c` -> `clang` -> 実行 = **exit 9**
+- 現状:
+  - tag member / typedef / lvar / gvar の funcptr metadata は、`decl_type` がある場合に raw mirror が復活しない方向へ揃った。
+  - typedef は legacy descriptor だけでなく canonical `decl_type` を持つ範囲が広がった。
+  - 残りは gvar/static local/address node などで、`decl_type` があるのに raw mirror を優先する accessor/helper が残っていないかの棚卸し。
+
+### このセッション（続き921）: local/static array address の shape も decl_type 正本へ寄せた
+- 見つかった浅い箇所:
+  - local array initializer は `var->size/elem_size/outer_stride/mid_stride/extra_strides` を直接読んでおり、
+    `decl_type` が存在しても raw shape が別正本として残っていた。
+  - `psx_node_new_lvar_array_addr_for()` / `psx_node_new_static_local_array_addr_for()` でも、
+    `apply_array_addr_decl_type()` 後に `lvar` raw shape を再同期するため、static local の backing `global_var_t->decl_type`
+    や lvar の canonical array type と stale raw payload が混ざる余地があった。
+  - `ND_ADDR` の row stride は canonical 型だけでは表現し切れず `node_mem_t` に contextual metadata として保持しているが、
+    stride accessor 側が plain pointer type を先に見て contextual row shape を見落とす経路があった。
+- 根本対応:
+  - `psx_lvar_array_scalar_element_size()` / `psx_lvar_array_flat_element_count()` /
+    `psx_lvar_array_designator_stride_elements()` を追加し、local array initializer は raw field 直接参照ではなく
+    lvar canonical accessor 経由で shape を読むようにした。
+  - 既存 `decl_type` が明示的な `PSX_TYPE_ARRAY` の場合、`sync_materialized_lvar_runtime_shape()` は
+    VLA 以外の raw stride を canonical type へ後注入しないようにした。
+  - array address metadata は `source_type` がある場合に `decl_type` / static-local backing `decl_type` から
+    row/inner/next stride を同期し、`source_type` が無い legacy case だけ raw `lvar` payload へ fallback するようにした。
+  - scalar `source_type` で array-address helper に入った場合も、raw pointer payload を消して scalar canonical type を勝たせるようにした。
+  - `ND_ADDR` の stride metadata は、contextual row shape が `node_mem_t` にある場合にそれを pointer type より優先して返すようにした。
+- regression:
+  - stale raw `size/elem_size/is_array/outer_stride/mid_stride` を持つ合成 lvar でも、
+    `decl_type=int[2][3][4]` から flat element count 24、designator stride 12/4/1、
+    address row stride 48・inner 16・next 4 を返すことを追加。
+  - static local `int si[2]` の lvar 側に stale raw pointer/FP/bool/unsigned payload を注入しても、
+    address node は backing `global_var_t->decl_type` 由来の `int[2]` を正本にし、
+    `deref_size=4` / `ptr_array_pointee_bytes=0` / `inner_deref_size=4` を返すことを確認。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - local/static local の array shape と address row metadata は、通常経路では `decl_type` / backing `decl_type`
+    を正本として扱うようになった。
+  - raw `lvar` shape は `decl_type` が無い legacy fallback と VLA runtime shape に絞られてきた。
+  - 次は gvar array address / compound array address 側で、`init_gvar_array_addr_strides()` や compound helper が
+    `global_var_t` raw shape を先に読む箇所を同じ方針で棚卸しする。
+
+### このセッション（続き922）: gvar/compound array address も raw-first から decl_type-first へ寄せた
+- 見つかった浅い箇所:
+  - `psx_node_init_gvar_array_addr_metadata()` は `global_var_t` raw tag/stride/flag を先に注入し、
+    最後に `apply_array_addr_decl_type()` で上書きする構造だった。
+  - `psx_node_init_compound_lvar_array_addr_metadata()` /
+    `psx_node_init_compound_gvar_array_addr_metadata()` も同様に raw shape を先に作ってから canonical type を当てていた。
+  - `sync_materialized_gvar_runtime_shape()` は、明示 `decl_type` が `PSX_TYPE_ARRAY` の場合でも
+    `global_var_t.outer_stride/mid_stride/extra_strides` を後注入しており、lvar 側で閉じた stale raw shape 復活の gvar 版が残っていた。
+- 根本対応:
+  - gvar array address は、`decl_type` が存在する場合に raw `global_var_t` payload を通らず
+    `apply_array_addr_decl_type()` から初期化するようにした。raw path は `decl_type` が無い legacy case に限定。
+  - compound lvar/gvar array address も、canonical `decl_type` がある場合は raw tag/shape を先に作らず、
+    `compound_literal_array_size` など必要な contextual field だけ保持して canonical type を適用するようにした。
+  - `sync_materialized_gvar_runtime_shape()` は lvar と同じく、通常の明示 array type には raw runtime shape を注入せず、
+    pointer / VLA array の runtime shape だけを補完するようにした。
+- regression:
+  - stale raw `type_size/deref_size/is_array/outer_stride/mid_stride` を持つ合成 gvar でも、
+    明示 `decl_type=int[2][3][4]` が raw stride で汚れないことを追加。
+  - 同じ gvar の array address が canonical shape から `deref_size=48` / `inner=16` / `next=4` を返し、
+    `psx_node_pointer_stride_metadata()` でも同じ stride を返すことを追加。
+  - 既存の gvar / compound global stale flag tests は、raw-first をやめた後も `decl_type` 由来の bool/unsigned/tag/FP clear を保つことを確認。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - local/static local/gvar/compound の array address metadata は、`decl_type` がある通常経路で raw mirror を先に正本化する形ではなくなった。
+  - raw shape fallback は `decl_type` が無い legacy case と pointer/VLA runtime shape にかなり絞られた。
+  - 次は `init_gvar_array_addr_strides()` 自体の呼び出し残りや、gvar initializer / aggregate layout 側で
+    `global_var_t` raw shape を直接読む箇所が canonical accessor へ寄せられるかを棚卸しする。
+
+### このセッション（続き923）: gvar aggregate layout の tag/array 判定も decl_type 正本へ寄せた
+- 見つかった浅い箇所:
+  - `gvar_aggregate_layout()` は `psx_gvar_view()` の raw snapshot を使い、`tag_kind/tag_name/tag_len/type_size/is_array` を
+    `global_var_t` mirror から layout へコピーしていた。
+  - そのため `decl_type` が struct / struct array を示していても、raw `tag_kind=TK_EOF` や raw `is_array=0/type_size` が
+    aggregate walk の正本として扱われる余地があった。
+  - `psx_gvar_array_element_size()` の tag aggregate fallback も raw tag identity を直接参照していた。
+- 根本対応:
+  - gvar の tag identity helper を追加し、`decl_type` がある場合は array を剥がした canonical tag type から
+    `tag_kind/tag_name/tag_len/tag_scope_depth_p1` を取得するようにした。`decl_type` が無い場合だけ raw tag field に fallback。
+  - `gvar_aggregate_layout()` は canonical `psx_gvar_decl_sizeof()` / `psx_gvar_is_array()` /
+    `psx_gvar_is_union_aggregate()` と canonical tag identity で layout を作るようにした。
+  - `psx_gvar_array_element_size()` の tag aggregate fallback も canonical tag identity 経由へ寄せた。
+- regression:
+  - raw `tag_kind=TK_EOF/type_size=4` だが `decl_type` が struct を示す既存 aggregate walk ケースを維持。
+  - 新たに raw `is_array=0/tag_kind=TK_EOF/type_size=4/deref_size=99` でも、
+    `decl_type=struct Pair[2]` から aggregate array walk でき、offset `0/4/8/12` と値 `11..14` を返すケースを追加。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - gvar aggregate initializer walk の layout 生成は、raw `global_var_t` mirror ではなく canonical accessor/type identity を正本にする方向へ寄った。
+  - `psx_gvar_view()` 自体は raw snapshot として残っているため、次は call site ごとに「raw view が必要な低レベル用途」か
+    「canonical accessor に寄せるべき意味論用途」かをさらに分ける。
+
+### このセッション（続き924）: psx_gvar_view 自体の stale raw shape/tag を decl_type で消すようにした
+- 見つかった浅い箇所:
+  - `psx_gvar_view()` は `decl_type` 由来で `type_size/is_array/fp_kind` を上書きしていたが、
+    canonical type が scalar / non-tag の場合に raw `tag_kind/is_tag_pointer/deref_size/outer_stride/mid_stride/extra_strides`
+    を明示的に消していなかった。
+  - そのため `decl_type=int` のように型正本がある synthetic / 移行ケースでも、view の読者が stale raw tag/shape を
+    別正本として読める余地があった。
+  - `apply_toplevel_object_initializer()` と `psx_gbrace_flat()` にも、初期化分岐で raw `gv->is_array/type_size/fp_kind/tag_kind/deref_size`
+    を直接読む箇所が残っていた。
+- 根本対応:
+  - `psx_gvar_view_apply_decl_type()` は `decl_type` がある場合、deref/stride/extra stride/tag/tag pointer を一度クリアし、
+    canonical type から復元できる値だけを view に載せるようにした。
+  - `apply_toplevel_object_initializer()` の compound literal strip 判定、brace initializer の fvalue slot 確保、
+    scalar FP 定数初期化、string pointer/array 判定を `psx_gvar_view()` / canonical accessor 経由へ寄せた。
+  - `psx_gbrace_flat()` の FP 配列要素定数式ゲートも、raw `gv->fp_kind` ではなく canonical `root_view.fp_kind` を使うようにした。
+- regression:
+  - raw `tag_kind/is_tag_pointer/deref_size/outer_stride/mid_stride/extra_strides` が stale でも、
+    `decl_type=int` の `psx_gvar_view()` が scalar shape/tag なしへ戻ることを追加。
+  - 既存の gvar view array shape / tag pointer regression は維持し、canonical array/type 由来の stride/tag が引き続き復元されることを確認。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - `psx_gvar_view()` は raw snapshot ではなく「legacy init payload + canonical type view」の bridge として振る舞う方向へ寄った。
+  - 残りは `global_var_t` の宣言構築時 raw field 更新と、`decl_type` が無い legacy fallback を分けて監査するのが次候補。
+
+### このセッション（続き925）: gvar `_Bool` 初期化判定も decl_type 正本 accessor へ寄せた
+- 見つかった浅い箇所:
+  - `apply_toplevel_object_initializer()` は、配列要素の `_Bool` 正規化を raw `gv->elem_is_bool`、
+    スカラ `_Bool` 正規化を raw `gv->is_bool` だけで判定していた。
+  - そのため `decl_type` が `_Bool` / `_Bool[]` を示していても raw flag が古い synthetic / 移行ケースでは
+    初期化値の 0/1 正規化を外せる余地があった。
+- 根本対応:
+  - `psx_gvar_is_bool_scalar()` と `psx_gvar_array_element_is_bool()` を `gvar_public.h` に追加した。
+  - どちらも `decl_type` がある場合は canonical type を正本にし、raw `is_bool/elem_is_bool` は
+    `decl_type` が無い legacy fallback に限定した。
+  - parser の `_Bool` 初期化正規化はこの accessor 経由へ寄せ、parser が raw bool mirror を直接正本として読まないようにした。
+- regression:
+  - raw `is_bool=0` でも `decl_type=_Bool` の gvar は scalar bool と判定することを追加。
+  - raw `is_bool=1` でも `decl_type=int` の gvar は scalar bool ではないことを追加。
+  - raw `elem_is_bool/pointee_is_bool` を壊しても、`decl_type=_Bool[3]` / `int[3]` が配列要素 bool 判定の正本になることを追加。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - gvar 初期化判定の `_Bool` identity は `decl_type` 優先の public accessor に寄った。
+  - 次は `node_utils.c` 内の node mirror 初期化で残る raw `is_bool/pointee_is_bool` 代入が、
+    canonical sync で十分に消されているか、または accessor 化すべき読者かを分けるのが候補。
+
+### このセッション（続き926）: gvar pointee bool/unsigned mirror も既存 decl_type 優先へ寄せた
+- 見つかった浅い箇所:
+  - `gvar_pointee_is_bool()` / `gvar_pointee_is_unsigned()` は raw `pointee_is_bool/elem_is_bool` や
+    raw `pointee_is_unsigned/is_array/is_unsigned` だけを読んでいた。
+  - `psx_node_init_gvar_ref_metadata()` は最後に canonical sync を呼ぶため多くは上書きされるが、
+    helper 自体が raw mirror 正本のままだと array addr fallback や node mirror 初期化入口で同じ問題が残る。
+- 根本対応:
+  - `global_var_t->decl_type` が既に存在する場合は、`type_pointee_value_type()` から pointee leaf を取り、
+    bool/unsigned を canonical type 由来で判定するようにした。
+  - `decl_type` が無い場合だけ従来の raw fallback を使う。
+  - 一度 `gvar_decl_type_view()` 経由にしたところ、`psx_gvar_materialize_decl_type()` 中に
+    `init_gvar_decl_source_mem()` -> `gvar_pointee_is_bool()` -> `gvar_decl_type_view()` と再帰して
+    `test_parser` が SIGSEGV になったため、materialize 素材側でも安全な `gv->decl_type` 直接参照に修正した。
+- regression:
+  - raw `pointee_is_bool=0` でも `decl_type=_Bool *` の gvar node は `pointee_is_bool=1` を復元することを追加。
+  - raw `pointee_is_bool=1/pointee_is_unsigned=0` でも `decl_type=unsigned *` の gvar node は
+    canonical type から `pointee_is_bool=0/pointee_is_unsigned=1` を復元することを追加。
+- 確認:
+  - 初回 `./build/test_parser` は `gvar_decl_type_view()` 再帰で SIGSEGV。
+  - 修正後 `make -j4 build/ag_c build/test_parser` = **pass**
+  - 修正後 `./build/test_parser` = **OK: All unit tests passed**
+  - 修正後 `git diff --check` = **pass**
+- 現状:
+  - gvar node mirror の pointee bool/unsigned は、既存 `decl_type` がある場合に raw mirror へ戻りにくくなった。
+  - 次は同じ観点で `gvar_pointee_is_*` 以外の raw scalar flag (`is_unsigned`, `is_long_double`, qualifiers など) が
+    canonical sync 前提で十分か、public accessor 化すべき読者かを棚卸しするのが候補。
+
+### このセッション（続き927）: node self qualifier reader の explicit type 判定を統一した
+- 棚卸し結果:
+  - `node_mem_t.base.type` は `node_t.type` と同じ領域なので、`node->type` と別正本があるわけではなかった。
+  - ただし scalar/pointee/pointer view reader は `node_has_explicit_type()` 経由へ寄っている一方、
+    `node_self_is_const_qualified()` / `node_self_is_volatile_qualified()` だけ `node->type` 直接判定のままだった。
+- 対応:
+  - self qualifier reader も `node_has_explicit_type()` 経由に揃えた。
+  - これは機能バグ修正というより、typed-AST 正本を読む入口を統一して次の raw fallback 棚卸しをしやすくする整理。
+- regression:
+  - raw `is_const_qualified=1` でも typed `int` が非 const なら const 代入拒否しない既存ケースを維持。
+  - typed `const int` / `int * const` 相当の const 判定を明示的に追加し、canonical type 側の意味を固定。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - node reader の explicit type 判定は少し整理されたが、ここ自体は正本分散の大きな機能穴ではなかった。
+  - 次は宣言シンボル側 (`lvar` / `gvar`) の raw helper に残る実際の分散を優先する。
+
+### このセッション（続き928）: lvar pointee bool/unsigned mirror も既存 decl_type 優先へ寄せた
+- 見つかった浅い箇所:
+  - `gvar_pointee_is_bool()` / `gvar_pointee_is_unsigned()` は続き926で `decl_type` 優先にしたが、
+    対になる `lvar_pointee_is_bool()` / `lvar_pointee_is_unsigned()` は raw
+    `pointee_is_bool/pointee_is_unsigned/is_array/is_unsigned/is_bool` だけを読んでいた。
+  - そのため local variable の node mirror 初期化入口では、`decl_type` が `_Bool *` / `unsigned *` を示していても
+    stale raw pointee flag に戻れる余地が残っていた。
+- 根本対応:
+  - `lvar_t->decl_type` が既に存在する場合は、`type_pointee_value_type()` から pointee leaf を取り、
+    bool/unsigned を canonical type 由来で判定するようにした。
+  - `decl_type` が無い場合だけ従来の raw fallback を使う。
+  - `psx_lvar_materialize_decl_type()` 中の素材生成からも呼ばれる helper なので、`psx_lvar_get_decl_type()` 経由ではなく
+    `var->decl_type` 直接参照にして materialize 再帰を避けた。
+- regression:
+  - raw `pointee_is_bool=0` でも `decl_type=_Bool *` の lvar node は `pointee_is_bool=1` を復元することを追加。
+  - raw `pointee_is_bool=1/pointee_is_unsigned=0` でも `decl_type=unsigned *` の lvar node は
+    canonical type から `pointee_is_bool=0/pointee_is_unsigned=1` を復元することを追加。
+- 確認:
+  - `make -j4 build/ag_c build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - gvar/lvar 両方の pointee bool/unsigned helper が、既存 `decl_type` 優先に揃った。
+  - 次は raw `is_unsigned/is_long_double/qualifier` helper で、materialize 素材と semantic reader が混ざっている箇所を
+    同じ基準で分ける。
+
+### このセッション（続き929）: tag member lvar ref の owner qualifier 伝播を decl_type 正本へ寄せた
+- 見つかった浅い箇所:
+  - `psx_node_new_tag_member_lvar_ref_for()` は、member node の型へ owner 側の `const` / `volatile` を伝播するときに
+    `owner->is_const_qualified` / `owner->is_volatile_qualified` の raw mirror を直接読んでいた。
+  - そのため migration 中や synthetic lvar で `owner->decl_type` が `const volatile struct` を示していても、
+    raw qualifier が stale なら member node の `base.type` と legacy mirror が非 const/non volatile として作られる余地があった。
+- 根本対応:
+  - `lvar_self_is_const_qualified()` / `lvar_self_is_volatile_qualified()` を追加し、既存 `decl_type` がある場合は
+    array view を剥がした canonical type から self qualifier を読むようにした。
+  - pointer view の場合は self pointer qualifier mask の level 0 を見る。`decl_type` が無い場合だけ従来 raw mirror に fallback する。
+  - materialize 中の再帰を避けるため、ここでも `psx_lvar_get_decl_type()` ではなく既存 `var->decl_type` を直接参照する。
+  - `psx_node_new_tag_member_lvar_ref_for()` は owner qualifier をこの helper から受け取り、
+    `type_with_self_qualifiers()` と legacy mirror の両方へ同じ値を反映するようにした。
+- regression:
+  - raw owner qualifier が 0 でも、`owner->decl_type` が `const volatile struct` の場合に tag member lvar ref が
+    `is_const_qualified=1` / `is_volatile_qualified=1` になり、member node の typed `base.type` も const/volatile になるケースを追加。
+  - その member node に対する代入が const 代入エラーになることも確認した。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - tag member owner qualifier 伝播は raw lvar mirror ではなく既存 `decl_type` を正本として読むようになった。
+  - 次は gvar/lvar の self scalar flag (`is_unsigned`, `is_long_double`, fp kind など) で、
+    semantic reader と materialize seed が混ざっている箇所を同じ基準でさらに分離する。
+
+### このセッション（続き930）: lvar array address metadata の qualifier 再上書きを止めた
+- 見つかった浅い箇所:
+  - `init_lvar_array_addr_metadata_with_decl_type()` は `decl_type` から `apply_array_addr_decl_type()` /
+    `sync_pointee_flags_mem_from_type()` / `sync_tag_mem_from_decl_type()` を通して array address metadata を作った後に、
+    末尾で `var->is_const_qualified` / `var->is_volatile_qualified` と raw tag 情報を再代入していた。
+  - そのため `decl_type` が `const volatile int[N]` のような canonical qualifier を持っていても、
+    stale raw qualifier が 0 なら node mirror 側だけ非 const/non volatile に戻れる構造だった。
+- 根本対応:
+  - `addr->base.type` がある場合は、最後に raw lvar tag/qualifier を戻さず、canonical type からの
+    `sync_tag_mem_from_decl_type()` 結果を残すようにした。
+  - `addr->base.type` が無い legacy fallback のときだけ raw tag と qualifier を使う。
+  - legacy fallback の qualifier も、続き929で追加した `lvar_self_is_const_qualified()` /
+    `lvar_self_is_volatile_qualified()` 経由に寄せた。
+- regression:
+  - raw `is_const_qualified=0` / `is_volatile_qualified=0` でも、
+    `decl_type=const volatile int[2]` の lvar array address node は
+    `mem.is_const_qualified=1` / `mem.is_volatile_qualified=1` を保持するケースを追加。
+  - `psx_node_pointee_is_const_qualified()` / `psx_node_pointee_is_volatile_qualified()` でも
+    typed pointee qualifier が見えることを固定した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - lvar array address metadata は、`decl_type` から作った qualifier/tag mirror を raw lvar mirror で壊さなくなった。
+  - 次は gvar array address 側や static local array address 側に同型の「typed sync 後の raw 再代入」がないかを
+    同じ観点で確認する。
+
+### このセッション（続き931）: funcptr merge の pointee fp_kind 補完を decl_type 正本へ寄せた
+- 棚卸し結果:
+  - gvar array address / static local array address の主要経路は、型がある場合に raw mirror を戻さず return する形になっていた。
+  - 一方で `psx_node_merge_funcptr_metadata_from_lvar()` /
+    `psx_node_merge_funcptr_metadata_from_gvar()` は、funcptr signature 側は `decl_type` 優先なのに、
+    `dst->pointee_fp_kind` の補完だけ raw `src->pointee_fp_kind` を直接読んでいた。
+- 根本対応:
+  - `lvar_pointee_fp_kind()` / `gvar_pointee_fp_kind()` を追加し、既存 `decl_type` がある場合は
+    `type_deep_pointee_fp_kind()` の結果を正本として使うようにした。
+  - `decl_type` が存在する場合は、結果が `TK_FLOAT_KIND_NONE` でもそのまま採用する。
+    初回実装では `NONE` の場合に raw fallback して `int *` + stale raw `DOUBLE` を復活させてしまい、
+    regression が失敗したため修正した。
+  - `decl_type` が無い場合だけ従来 raw `pointee_fp_kind` に fallback する。
+- regression:
+  - raw `pointee_fp_kind=NONE` でも `decl_type=double *` の lvar merge は `DOUBLE` を補完する。
+  - raw `pointee_fp_kind=NONE` でも `decl_type=float *` の gvar merge は `FLOAT` を補完する。
+  - raw `pointee_fp_kind=DOUBLE` でも `decl_type=int *` の lvar merge は `NONE` を維持し、
+    stale raw fp kind を復活させない。
+- 確認:
+  - 初回 `./build/test_parser` は `int *` + stale raw `DOUBLE` の regression で失敗。
+  - 修正後 `make -j4 build/test_parser` = **pass**
+  - 修正後 `./build/test_parser` = **OK: All unit tests passed**
+  - 修正後 `git diff --check` = **pass**
+- 現状:
+  - public merge API の pointee fp kind 補完も、既存 `decl_type` がある場合は raw mirror ではなく canonical type を正本にするようになった。
+  - 次は同じ「補完だけ raw に戻る」形が `pointee_fp_kind` 以外 (`is_unsigned`, `is_long_double`, qualifiers) に残っていないかを
+    node copy/merge/public accessor 周辺で確認する。
+
+### このセッション（続き932）: psx_type_t 内部の pointee_fp_kind cache より base 構造を優先した
+- 見つかった浅い箇所:
+  - 続き931で lvar/gvar merge の `pointee_fp_kind` は `decl_type` 優先になったが、
+    その中で使う `type_deep_pointee_fp_kind()` が `psx_type_t->pointee_fp_kind` cache を
+    `base` 構造より先に読んでいた。
+  - そのため `decl_type=int *` でも type cache 側に stale `DOUBLE` が残っていると、
+    `decl_type` を正本として読んだはずの経路で fp pointee が復活する余地があった。
+- 根本対応:
+  - `type_deep_pointee_fp_kind()` は、まず pointer/array の `base` を辿って leaf 型を確認し、
+    leaf が `PSX_TYPE_FLOAT` ならその `fp_kind` を返すようにした。
+  - leaf まで到達できた場合は、leaf が float でないこと (`NONE`) も正本として確定する。
+  - `base` が欠けていて構造から判断できない不完全型の場合だけ、従来の `pointee_fp_kind` cache に fallback する。
+  - 初回実装では leaf が `int` の `NONE` 後に cache fallback してしまい、stale `DOUBLE` が復活したため修正した。
+- regression:
+  - `decl_type=double *` で type cache `pointee_fp_kind=NONE` でも、構造から `DOUBLE` を復元する。
+  - `decl_type=int *` で type cache `pointee_fp_kind=DOUBLE` でも、merge と typed node reader は `NONE` を維持する。
+- 確認:
+  - 初回 `./build/test_parser` は `int *` + stale type cache `DOUBLE` の regression で失敗。
+  - 修正後 `make -j4 build/test_parser` = **pass**
+  - 修正後 `./build/test_parser` = **OK: All unit tests passed**
+  - 修正後 `git diff --check` = **pass**
+- 現状:
+  - `pointee_fp_kind` は lvar/gvar raw mirror だけでなく、`psx_type_t` 内部 cache よりも構造的な `base` 型を正本として扱うようになった。
+  - 次は同じ観点で `psx_type_t` 内部の他 cache (`pointee_fp_kind` 以外の pointer metadata / funcptr metadata) が
+    semantic reader で構造より優先されていないかを見る。
+
+### このセッション（続き933）: base_deref_size reader を psx_type_t cache より base 構造優先にした
+- 見つかった浅い箇所:
+  - `type_pointer_view_base_deref_size()` が `psx_type_t->base_deref_size` cache を
+    `base` 構造より先に返していた。
+  - そのため `decl_type=double *` なのに type cache 側に stale `4` が残っていると、
+    `psx_node_base_deref_size()` が構造上の leaf 幅 `8` ではなく cache の `4` を返せる状態だった。
+  - `base_deref_size` cache は既存コード上、pointer-to-array の leaf 幅だけでなく、
+    typedef array parameter の配列全体 stride のような文脈依存値も持っており、正本として扱うには曖昧だった。
+- 根本対応:
+  - `type_structural_base_deref_size()` を追加し、pointer/array view の `base` を leaf まで辿って
+    `psx_type_sizeof(leaf)` から base deref leaf 幅を計算するようにした。
+  - `type_pointer_view_base_deref_size()` は、`base` 構造から leaf まで到達できる場合はその値を返し、
+    `base` が欠けていて構造から判断できない不完全型だけ従来 cache/fallback を使う。
+  - これにより `node_has_explicit_type()` な node の public reader は、raw mirror だけでなく
+    `psx_type_t->base_deref_size` cache の stale 値にも引っ張られにくくなった。
+- regression:
+  - raw `base_deref_size=77` / type cache `base_deref_size=99` でも、
+    `decl_type=int *` の typed node reader は構造から `4` を返す。
+  - raw `base_deref_size=77` / type cache `base_deref_size=99` でも、
+    `decl_type=int (*)[3]` の typed node reader は構造から leaf 幅 `4` を返す。
+  - `decl_type=double *` + stale type cache `base_deref_size=4` は、reader が `8` を返す期待へ更新。
+  - `__tm_M2 *a` のような typedef array parameter では、type cache 側に `48` が残っていても、
+    `psx_node_base_deref_size()` は構造由来 leaf 幅 `4` を返すことを固定した。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - public reader の `base_deref_size` は、構造が完全な typed node では `psx_type_t->base_deref_size`
+    cache より `base` 構造を正本として使うようになった。
+  - 次は同じ pointer metadata reader のうち、`ptr_array_pointee_bytes` / pointer qualifier mask / level が
+    cache または raw mirror を正本として復活させていないかを確認する。
+
+### このセッション（続き934）: ptr_array_pointee_bytes reader/sync を型構造優先にした
+- 見つかった浅い箇所:
+  - `pointer_view_from_type(... NODE_POINTER_PTR_ARRAY_POINTEE_BYTES ...)` が
+    `psx_type_t->ptr_array_pointee_bytes` cache をそのまま返していた。
+  - そのため `decl_type=int *` のような plain pointer でも、type cache 側に stale `24` が残っていると
+    `psx_node_ptr_array_pointee_bytes()` が pointer-to-array と誤認できる状態だった。
+  - gvar/lvar/tag member/cast/unary deref の typed sync でも `type->ptr_array_pointee_bytes` を直接 node mirror に
+    コピーしており、reader を直しても mirror 側に stale 値が再注入される余地があった。
+- 根本対応:
+  - `type_structural_ptr_array_pointee_bytes()` と
+    `type_pointer_view_ptr_array_pointee_bytes()` を追加した。
+  - `base` 構造が完全な場合は、`pointer to array` なら `sizeof(base array)`、
+    `array of pointer-to-array` / `array of tag aggregate` なら array 全体サイズを返し、
+    plain pointer/普通の array では `0` を正本として確定する。
+  - `base` が欠けていて構造から判断できない不完全型の場合だけ、従来 cache に fallback する。
+  - `pointer_view_from_type()` の public reader と、gvar/lvar/tag member/cast/unary deref の typed sync で
+    同じ helper を使うようにした。
+- regression:
+  - `decl_type=double *` + stale type cache `ptr_array_pointee_bytes=16` は、
+    `psx_node_ptr_array_pointee_bytes()` が `0` を返す期待へ更新。
+  - `decl_type=int *` + stale type cache `ptr_array_pointee_bytes=24` の `ND_ADD` cached pointer は `0` を返す。
+  - `decl_type=int (*)[3]` + stale type cache `ptr_array_pointee_bytes=99` は、
+    構造から `12` を返す。
+  - `decl_type=int (*)[3]` の `ND_ADD` cached pointer も、stale cache `24` ではなく構造から `12` を返す。
+- 確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - `ptr_array_pointee_bytes` も、構造が完全な typed node では type cache/raw mirror を正本として扱わなくなった。
+  - 次は pointer qualifier mask / levels について、`pointer_qual_levels` cache と `base` depth/qualifier mask の
+    どちらを正本にすべきかを分けて確認する。
+
+### このセッション（続き935）: ptr-array subscript の tag 要素サイズを canonical type 側で正規化した
+- 見つかった浅い箇所:
+  - `ptr_array_pointee_bytes` の reader/sync を型構造優先にした後も、
+    `psx_node_new_subscript_deref_for()` 内で `base_type->base` をそのまま `canonical_subscript_type` に戻す経路が残っていた。
+  - そのため `struct S (*p)[2][3]` から `(*p)[0][0]` を作ると、
+    最終要素は `struct S` なのに canonical type の `sizeof` が前段 row の `24` のまま残り、
+    node mirror の `type_size=8` より canonical type 側が優先されて失敗していた。
+  - subscript deref node も `arena_alloc()` 後に部分初期化だけしており、
+    stale mirror field を残し得る形だった。
+- 根本対応:
+  - `type_normalize_tag_aggregate_size()` を追加し、tag aggregate の値サイズが既存 type size より小さい場合は
+    tag identity / qualifiers / funcptr signature を保ったまま、その値サイズの canonical tag type を作るようにした。
+  - `type_from_subscript_base_type()` の非 row 結果と、`base_array_element_is_tag` の direct override 経路の両方で
+    この正規化を通すようにした。
+  - `psx_node_new_subscript_deref_for()` の `node_mem_t` をゼロ初期化し、未使用 mirror field が
+    後段 reader へ偶然残る余地を減らした。
+  - 既に入れていた subscript の tag aggregate final sync と合わせて、
+    final struct element では pointer payload を消し、canonical type / node mirror の双方が `type_size=8`, `deref_size=0`
+    になるようにした。
+- regression:
+  - `struct __tm_ptrarr2d_S { int a; int b; }; struct __tm_ptrarr2d_S (*p)[2][3]` の手動 node 構築で、
+    `(*p)[0]` は array row `type_size=24`, `deref_size=8` のまま保持する。
+  - 同じ経路の `(*p)[0][0]` は `PSX_TYPE_STRUCT`, `type_size=8`, `deref_size=0` になり、
+    row size `24` が struct element の canonical type に戻らない。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - ptr-array / pointer-to-array の subscript 経路で、tag aggregate element のサイズ正本が
+    row mirror ではなく canonical tag type 側へ寄った。
+  - 全体テストはまだ回していない。ユーザー方針どおり、正本化が一区切りするまでは parser focused test を主に使う。
+  - 次は pointer qualifier mask / levels の続き、または subscript/unary deref に残る `base.type = type_from_mem(...)`
+    の逆流経路を確認する。
+
+### このセッション（続き936）: 関数戻り値の多段 pointer type を nested base chain へ寄せた
+- 見つかった浅い箇所:
+  - pointer qualifier levels の監査で、`psx_type_pointer_view_qual_levels()` は構造上の pointer depth を下限にしている一方、
+    `pointer_qual_levels` cache が構造より大きい場合はまだその値を正本として扱うことが分かった。
+  - これは stale cache の逆流にもなり得るが、既存コードには `base=int` の単一 `PSX_TYPE_POINTER` に
+    `pointer_qual_levels=2` を載せて `int **` を表す flat 表現も残っている。
+  - 特に関数戻り値 type の生成 (`function_ret_type_from_func()` / `function_signature_ret_type()`) は、
+    `int **` を `pointer -> int` + `pointer_qual_levels=2` として作っていたため、
+    levels cache をすぐ捨てると壊れる状態だった。
+- 根本対応:
+  - `psx_type_wrap_pointer_levels()` を `type.c` / `type.h` に追加した。
+    N 段 pointer を `pointer -> pointer -> ... -> base` の nested `base` chain として構築し、
+    top pointer の deref 幅、leaf 幅、qualifier mask を明示的に受け取る helper。
+  - `function_ret_type_from_func()` と `function_signature_ret_type()` で、
+    単一 pointer + `pointer_qual_levels=N` ではなく `psx_type_wrap_pointer_levels()` を使うようにした。
+  - nested 化に伴い、`ctx_function_ret_info_apply_type()` は top pointer を1段だけ剥がす前提をやめ、
+    残りの pointer chain を leaf まで辿って token kind / fp kind を復元するようにした。
+- regression:
+  - `int **__tm_pp(void)` の call result は引き続き `pointer_qual_levels=2`, top `deref_size=8`。
+  - 追加で、その canonical type が `PSX_TYPE_POINTER -> PSX_TYPE_POINTER -> int` の nested base chain を持ち、
+    inner pointer の `deref_size=4` になることを固定した。
+  - `psx_ctx_get_function_ret_info("__tm_pp")` は nested type から復元しても `pointer_levels=2`, `token_kind=TK_INT` を維持する。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - pointer levels cache をいきなり reader から消すのではなく、まず関数戻り値 type の生成元を nested 構造へ寄せた。
+  - まだ cast / function signature / return descriptor 以外にも flat `pointer_qual_levels=N` を使う生成経路が残るため、
+    次は同じ helper を使える生成箇所を追加で減らす。
+
+### このセッション（続き937）: struct member と plain cast の多段 pointer type も nested 化した
+- 見つかった浅い箇所:
+  - 続き936で `psx_type_wrap_pointer_levels()` を追加した後も、
+    struct member decl_type と cast target type には、手元の loop で
+    `PSX_TYPE_POINTER(base=int) + pointer_qual_levels=2` のような flat 多段 pointer を作る箇所が残っていた。
+  - これらは reader 側が `pointer_qual_levels` cache を正本として扱い続ける理由になり、
+    stale cache と本物の多段 pointer 表現を区別しにくくしていた。
+- 根本対応:
+  - `struct_layout.c` の `member_decl_type_from_layout()` で、通常 pointer member の型生成を
+    `psx_type_wrap_pointer_levels()` に置き換えた。
+  - `expr.c` の `expr_cast_target_type()` で、plain pointer cast について
+    `psx_type_wrap_pointer_levels()` を使うようにした。
+  - pointer-to-array cast は stride / ptr-array metadata を持つ専用経路なので、今回は旧 loop を維持した。
+- regression:
+  - `struct __tm_member_pp { int **pp; }` の `tag_member_info_t.decl_type` が
+    `PSX_TYPE_POINTER -> PSX_TYPE_POINTER -> int` の nested base chain を持つことを固定した。
+  - `(int **)0` の cast result も `pointer_qual_levels=2` を維持しつつ、
+    canonical type は nested base chain になり、inner pointer の `deref_size=4` を持つことを固定した。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - 関数戻り値、struct member、plain cast の多段 pointer type は nested base chain へ寄った。
+  - まだ `node_utils.c` の raw `node_mem_t` 復元経路や pointer-to-array 専用経路では
+    `pointer_qual_levels` cache を使う箇所が残る。次は helper 適用可能な生成元をさらに減らすか、
+    reader 側で「構造が完全なら cache を上限にしない」条件を入れられるかを確認する。
+
+### このセッション（続き938）: raw node_mem と tag pointer array element の多段 pointer 復元を nested helper に寄せた
+- 見つかった浅い箇所:
+  - `type_ensure_inner_pointer_levels()` は raw `node_mem_t.pointer_qual_levels` から inner pointer chain を手作りしており、
+    `psx_type_wrap_pointer_levels()` と同じ責務を重複していた。
+  - `type_new_array_base_from_mem()` の tag pointer element も、`struct S **a[N]` 相当の要素型を
+    `PSX_TYPE_POINTER(base=struct S) + pointer_qual_levels=2` の flat 表現で作っていた。
+  - これらは reader 側が `pointer_qual_levels` cache を正本として扱い続ける理由になり、
+    base chain と cache のどちらを信用すべきかを曖昧にしていた。
+- 根本対応:
+  - `type_ensure_inner_pointer_levels()` を `psx_type_wrap_pointer_levels()` 呼び出しへ置換した。
+  - raw mem の outer 1段を落とした qualifier mask (`>> 1`) を inner chain に渡し、
+    `pointee_fp_kind` と funcptr signature は生成した inner chain の pointer nodes に同期するようにした。
+  - `type_new_array_base_from_mem()` の tag pointer element 生成も `psx_type_wrap_pointer_levels()` に置き換え、
+    array element の canonical type が nested `pointer -> pointer -> tag` chain を持つようにした。
+- regression:
+  - raw `node_mem_t` with `pointer_qual_levels=3`, const mask `5`, volatile mask `6` から
+    `psx_node_get_type()` した type が top levels/masks を維持し、base inner pointer chain が
+    levels=2, const mask 2, volatile mask 3, inner inner deref 4 を持つことを固定した。
+  - 手作り `lvar_t` の `struct __tm_nested_tag_ptr_array **[2]` 相当を `psx_lvar_get_decl_type()` で materialize し、
+    array element が `PSX_TYPE_POINTER -> PSX_TYPE_POINTER -> PSX_TYPE_STRUCT` の nested chain になることを固定した。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - 関数戻り値、struct member、plain cast、raw `node_mem_t` の inner pointer 復元、tag pointer array element が
+    共通 nested helper に寄った。
+  - 残りは pointer-to-array 専用経路、`type_pointer_array_base_from_mem()` /
+    `type_pointer_to_array_base_from_mem()` の stride 付き復元、reader 側の cache 上限採用条件。
+
+### このセッション（続き939）: pointer levels/masks reader を構造優先に切り替えた
+- 見つかった浅い箇所:
+  - `psx_type_pointer_view_qual_levels()` / `type_pointer_view_qual_levels()` は、
+    nested `base` chain の構造 depth が cache より大きい場合だけ構造を採用し、
+    cache の方が大きい場合は stale `pointer_qual_levels` を正本として返していた。
+  - qualifier mask reader も同じ条件だったため、`base` chain が完全な `int *` に
+    `pointer_qual_levels=3`, mask `0x5` が残ると、`int ***` 相当の情報として逆流していた。
+  - `psx_lvar_pointer_qual_levels()` も `type->pointer_qual_levels` を直読みしていた。
+- 根本対応:
+  - public `psx_type_pointer_view_qual_levels()` と node_utils 側 mirror helper を、
+    構造 depth が分かる pointer type では必ず structural depth を返すようにした。
+  - qualifier mask も構造が分かる場合は nested chain から再構成し、cache mask は base 欠落など構造不明時の fallback に限定した。
+  - `psx_lvar_pointer_qual_levels()` を `psx_type_pointer_view_qual_levels()` 経由にした。
+- regression:
+  - typed node の `base.type` が構造上は `double *` なのに stale `pointer_qual_levels=2`, const mask `3` を持つ場合、
+    `psx_node_pointer_qual_levels()` は `1`, const mask は `1` を返す。
+  - cached `ND_ADD` type が構造上は `int *` なのに stale `pointer_qual_levels=3`, masks `0x5/0x2` を持つ場合、
+    levels は `1`, const mask は `1`, volatile mask は `0` を返す。
+  - flat `PSX_TYPE_POINTER(base=int) + pointer_qual_levels=2` を deref しても、`int *` ではなく構造どおり `int` として扱う。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - pointer levels / qualifier masks は、構造が完全なら `pointer_qual_levels` cache を上限として採用しなくなった。
+  - これで flat cache を正本にする reader 側の大きな逆流は一つ外れた。
+  - 残りは pointer-to-array / ptr-array の stride 付き復元で、意図的に cache/metadata を持つ箇所を
+    canonical type 構造とどう分担するか。
+
+### このセッション（続き940）: pointer-to-array stride reader を canonical array chain 優先にした
+- 見つかった浅い箇所:
+  - `node_pointer_stride_from_type()` は `type->outer_stride` / `type->mid_stride` を直接強く信用しており、
+    `T (*)[N][M]` の canonical `base` array chain が完全でも stale stride cache が混ざる余地があった。
+  - `sync_unary_deref_mem_from_pointer_type()` も deref node の mirror に `type->outer_stride` / `type->mid_stride` を
+    直接コピーしていた。
+  - public type reader には `ptr_array_pointee_bytes` と `mid_stride` はあったが、array chain から stride metadata を
+    まとめて読む入口がなかった。
+- 根本対応:
+  - `psx_type_pointer_view_stride_metadata()` を追加し、`T (*)[N]` / `T (*)[N][M]` と多次元 array 型では
+    canonical array chain の `deref_size` から `inner_stride` / `next_stride` / extra strides を復元するようにした。
+  - `psx_type_pointer_view_mid_stride()` は、構造から stride が分かる場合は stale `mid_stride` より structural `next_stride`
+    を優先するようにした。
+  - `node_pointer_stride_from_type()` と `sync_unary_deref_mem_from_pointer_type()` は、
+    直接 metadata を読む前に `psx_type_pointer_view_stride_metadata()` を使うようにした。
+  - 1次元 array value (`T[N]`) は次元が残っていないので stride metadata を返さず、pointer-to-array だけは
+    single array でも stride を返す境界を入れた。
+- regression:
+  - cached `ND_ADD` type が canonical `int (*)[3][4]` を持ちつつ stale `outer_stride=999`, `mid_stride=777`,
+    extra stride `333` を持つ場合でも、`psx_node_pointer_stride_metadata()` は構造から `inner=16`, `next=4`,
+    extra count `0` を返す。
+  - 同じ type に対する `psx_type_pointer_view_mid_stride()` も stale `777` ではなく structural `4` を返す。
+  - 既存の `int a[n][4]` から作った 1次元 row は、引き続き stride metadata を持たない。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - pointer-to-array / array chain の stride reader は canonical type 構造を優先するようになった。
+  - 残りは `type_from_deref_operand()` などの生成側で `type->outer_stride` を直接見ている箇所、
+    および gvar/lvar/tag member の view/sync で同じ reader に寄せ切れていない箇所。
+
+### このセッション（続き941）: deref 生成側と tag member stride accessor を structural reader に寄せた
+- 見つかった浅い箇所:
+  - 続き940で `psx_type_pointer_view_stride_metadata()` を追加した後も、
+    `type_from_deref_operand()` は array view 判定・array size 決定・deref result への stride コピーで
+    `type->outer_stride` / `type->mid_stride` を直接参照していた。
+  - `psx_tag_member_decl_outer_stride()` も decl_type がある場合に stale `decl_type->outer_stride` を返す経路があり、
+    canonical array chain が見えていても legacy cache が勝つ余地があった。
+- 根本対応:
+  - `type_from_deref_operand()` は structural stride reader が取れる場合、その `inner/next/extra` を
+    array view 判定と生成 result への stride コピーに使うようにした。
+  - structural stride が取れない古い/不完全な型だけ、従来の `outer_stride` / `mid_stride` fallback を使う。
+  - `psx_tag_member_decl_outer_stride()` は pointer-to-array の `ptr_array_pointee_bytes` を優先した上で、
+    array decl_type では `psx_type_pointer_view_stride_metadata()` の `inner_stride` を返すようにした。
+  - 完全な plain pointer decl_type では stale stride fallback に落ちず `0` を返すようにした。
+- regression:
+  - cached `int (*)[3][4]` type に stale `outer_stride=999`, `mid_stride=777`, extra `333` があっても、
+    `psx_node_pointer_stride_metadata()` と `psx_type_pointer_view_mid_stride()` は structural `inner=16`, `next=4` を返す。
+  - tag member の `decl_type=int[2][3]` に stale `outer_stride=99`, `mid_stride=77` があっても、
+    `psx_tag_member_decl_outer_stride()` は structural `3` を返す。
+  - plain pointer tag member に stale stride/ptr-array metadata があっても、
+    outer/mid/ptr-array/dim accessor は `0` を返す既存期待を維持。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - pointer-to-array / array chain の reader と主要な deref 生成側は、canonical type 構造優先になった。
+  - 残りは gvar/lvar の deref size helper にある legacy一致条件、`node_pointer_stride_from_type()` 内の
+    不完全型 fallback、subscript final sync 付近の direct copy。ここは全部消すのではなく、
+    「base chain が完全な場合だけ structural を正本、不完全型だけ metadata fallback」として順に狭める。
+
+### このセッション（続き942）: function ret pointer-to-array と 1D array stride fallback を構造優先にした
+- 見つかった浅い箇所:
+  - `semantic_ctx.c` の `ctx_type_normalize_function_ret_type()` は、function return の
+    `pointee_array` shape から `outer_stride` / `mid_stride` を直接書いており、
+    pointer-to-array の構造化と raw cache 同期が同じ場所に混ざっていた。
+  - `type_from_deref_operand()` は structural reader を使い始めていたが、raw fallback を使える条件が
+    関数内で明示されておらず、今後の変更で stale `outer_stride` が array view 判定へ戻りやすい状態だった。
+  - `node_pointer_stride_from_type()` の最後の fallback は、完全な 1D array type に stale
+    `outer_stride/mid_stride/extra_strides` が載った場合にも stride metadata として返せた。
+- 根本対応:
+  - `ctx_sync_pointer_array_metadata_from_structure()` を追加し、function return type の
+    `ptr_array_pointee_bytes` / stride cache は `PSX_TYPE_POINTER -> PSX_TYPE_ARRAY` 構造から再同期するようにした。
+  - scalar base pointer に function return `pointee_array` がある場合は、
+    `psx_type_canonicalize_flat_pointer_to_array()` で先に canonical pointer-to-array 構造へ寄せてから同期する。
+  - `type_from_deref_operand()` では `can_use_raw_stride` を導入し、structural stride が取れない場合の raw fallback を
+    VLA / tag aggregate など明示的に許可された legacy shape に限定した。
+  - 完全な 1D array type は、`outer_stride == deref_size` かつ `mid/extra` が空の正当な row stride だけ許可し、
+    それ以外の stale raw stride は `psx_node_pointer_stride_metadata()` から返さないようにした。
+- regression:
+  - typed node の完全な `int[4]` type に stale `outer_stride=48`, `mid_stride=16`, extra `8` を混ぜても、
+    `psx_node_pointer_stride_metadata()` は false を返す。
+  - 既存の 3D pointer-to-array の途中 row (`outer_stride == deref_size` の 1D row) は、
+    引き続き stride metadata を返すことを確認した。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - function return pointer-to-array、deref 生成、array/pointer stride reader はかなり canonical type 構造優先に寄った。
+  - 残り候補は `gvar_ref_deref_size_from_type()` / `lvar_identifier_deref_size_from_type()` の
+    `!decl_type->base` legacy一致条件、gvar/lvar/tag member の sync で raw sidecar をどこまで消せるか、
+    および `node_pointer_stride_from_mem()` の legacy fallback を typed node から完全に切り離す整理。
+
+### このセッション（続き943）: typed ND_ADDR/ND_DEREF の mem stride 先読みを型優先にした
+- 見つかった浅い箇所:
+  - `gvar_ref_deref_size_from_type()` / `lvar_identifier_deref_size_from_type()` の legacy 一致条件は
+    既に `!decl_type->base` に限定されており、完全な type 構造がある場合は raw sidecar へ落ちない状態だった。
+  - 一方で `node_pointer_stride_from_node_direct()` は、`ND_ADDR` と `ND_DEREF + array type` で
+    `node_mem_t` の contextual stride を type より先に読んでいた。
+  - そのため typed node に完全な `base.type` があっても、stale `inner_deref_size` /
+    `next_deref_size` / `ptr_array_pointee_bytes` が stride metadata として勝てる余地があった。
+- 根本対応:
+  - `ND_ADDR` の mem stride 先読みを撤去し、直接 type が付いている場合は
+    `node_pointer_stride_from_type()` / function return shape を先に使うようにした。
+  - `ND_DEREF + array type` は一律撤去すると 3D pointer-to-array の「一段消費後 row stride」が落ちるため、
+    `mem->inner_deref_size <= psx_type_deref_size(type)` の shifted context だけ mem を許可する条件に狭めた。
+  - stale mem が type の deref size より大きい場合は、typed node では mem fallback を使わない。
+- regression:
+  - typed `ND_ADDR` に canonical `int *` type と stale mem stride (`48/16/8`, ptr-array 48) を混ぜても、
+    `psx_node_pointer_stride_metadata()` は false を返す。
+  - typed `ND_DEREF` に canonical `int[4]` type と同じ stale mem stride を混ぜても false を返す。
+  - 既存の pointer-to-array 3D row / subscript row は、shifted context として引き続き stride metadata を返す。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - typed node から `node_mem_t` stride が先に勝つ経路はかなり狭まった。
+  - VLA row stride は runtime metadata が正本になるため、単純に type 構造だけへ寄せる対象ではない。
+  - 次の候補は `sync_pointer_cast_mem_from_type()` / address metadata sync で raw mirror を再注入していないかの確認、
+    または `gvar/lvar/tag member` sync の `ptr_array_pointee_bytes` legacy fallback をさらに helper 化して境界を明示すること。
+
+### このセッション（続き944）: address metadata sync の ptr-array payload を reader 経由にした
+- 見つかった浅い箇所:
+  - `sync_pointer_cast_mem_from_type()` は既に `type_pointer_view_ptr_array_pointee_bytes()` /
+    `node_pointer_stride_from_type()` 経由で同期しており、大きな raw 逆流は見つからなかった。
+  - 一方で `apply_array_addr_decl_type()` は `view->pointer_qual_levels` と
+    `view->ptr_array_pointee_bytes` を直接読んでおり、完全な scalar pointer view に stale
+    `ptr_array_pointee_bytes` cache が残ると address node mirror に再注入できた。
+- 根本対応:
+  - `apply_array_addr_decl_type()` の pointer level / ptr-array payload 同期を
+    `type_pointer_view_qual_levels()` / `type_pointer_view_ptr_array_pointee_bytes()` 経由にした。
+  - これにより、canonical `int *` type に stale `ptr_array_pointee_bytes=96` が残っていても、
+    address metadata へ ptr-array payload として戻らない。
+- regression:
+  - stale `outer_stride=96`, `mid_stride=48`, `ptr_array_pointee_bytes=96` を持つ canonical `int *`
+    decl_type を `psx_node_new_compound_lvar_array_addr_for()` に渡しても、addr mirror の
+    `ptr_array_pointee_bytes` は `0` のまま。
+  - 同じ addr node に対する `psx_node_pointer_stride_metadata()` も false を返す。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - cast sync / array address sync の主要な pointer metadata mirror は public type reader 経由に寄った。
+  - 残り候補は `gvar/lvar/tag member` sync の `ptr_array_pointee_bytes` legacy fallback を helper 化し、
+    `!decl_type->base` の旧表現専用であることをコード上も明示すること。
+
+### このセッション（続き945）: gvar/lvar の旧 flat pointer ptr-array fallback を sidecar 照合へ寄せた
+- 見つかった浅い箇所:
+  - `gvar_ref_deref_size_from_type()` / `sync_gvar_ref_mem_from_decl_type()` と
+    `lvar_identifier_deref_size_from_type()` / `sync_lvar_identifier_mem_from_decl_type()` に、
+    `!decl_type->base` 旧表現用の ptr-array / stride fallback 条件が重複していた。
+  - さらに `psx_type_pointer_view_ptr_array_pointee_bytes()` は base がない pointer では raw
+    `ptr_array_pointee_bytes` を返すため、gvar/lvar sidecar との一致確認を通さずに
+    typed node へ ptr-array payload を戻せる余地があった。
+  - `sync_pointer_cast_mem_from_type()` が先に raw ptr-array を mem へ入れた後、gvar sync 側は
+    reader 結果が 0 の場合に `mem->ptr_array_pointee_bytes` を上書きしていなかった。
+- 根本対応:
+  - `decl_type_legacy_flat_ptr_array_pointee_bytes()` /
+    `decl_type_legacy_flat_stride_matches()` /
+    `decl_type_ptr_array_pointee_bytes_with_sidecar()` を追加し、
+    base がない旧 flat pointer は宣言 sidecar と一致する場合だけ同期する境界を明示した。
+  - gvar/lvar の deref size / ptr-array sync / stride sync allowed をこの helper 経由に寄せた。
+  - `node_pointer_stride_from_node_direct()` に
+    `legacy_flat_pointer_type_matches_node_mem()` guard を追加し、node mem と一致しない
+    base なし pointer type の raw stride が public stride reader から復活しないようにした。
+  - gvar sync では ptr-array reader 結果を 0 でも上書きし、
+    `sync_pointer_cast_mem_from_type()` が先に入れた stale payload を残さないようにした。
+- regression:
+  - base がない旧 pointer decl_type に raw `ptr_array_pointee_bytes=32` があり、
+    lvar/gvar 側 sidecar が `16` の mismatch なら、生成 node の
+    `ptr_array_pointee_bytes` は `0` になり、`psx_node_pointer_stride_metadata()` も false を返す。
+  - 既存の sidecar 一致 legacy shape と canonical pointer-to-array shape は parser unit で維持されている。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - gvar/lvar identifier/ref の旧 flat pointer fallback は、少なくとも ptr-array と stride metadata について
+    sidecar 一致が境界になった。
+  - まだ `tag_member` sync と、他の `psx_type_pointer_view_ptr_array_pointee_bytes()` 直接呼び出しのうち
+    decl sidecar 照合が必要な箇所を再スキャンする余地がある。
+
+### このセッション（続き946）: tag member の旧 flat pointer fallback も sidecar 照合へ寄せた
+- 見つかった浅い箇所:
+  - `psx_tag_member_decl_outer_stride()` /
+    `psx_tag_member_decl_ptr_array_pointee_bytes()` は、`decl_type` がある場合に
+    `psx_type_pointer_view_ptr_array_pointee_bytes()` を直接呼び、base がない旧 pointer type の
+    raw `ptr_array_pointee_bytes` を member sidecar と照合せず返せた。
+  - `sync_tag_member_mem_from_decl_type()` も同じ direct reader を使っており、
+    typed tag member node へ stale ptr-array payload が戻る余地があった。
+- 根本対応:
+  - `tag_member_public.h` に
+    `psx_tag_member_decl_legacy_flat_ptr_array_bytes()` /
+    `psx_tag_member_decl_legacy_flat_stride_matches()` /
+    `psx_tag_member_decl_ptr_array_bytes_from_type()` を追加した。
+  - base がない旧 pointer member は、member sidecar と type sidecar が一致する場合だけ
+    ptr-array / stride を返すようにした。
+  - `tag_member_ref_deref_size_from_type()` と `sync_tag_member_mem_from_decl_type()` は
+    tag member 用 helper 経由で ptr-array を読むようにし、reader 結果が 0 の場合も
+    `mem->ptr_array_pointee_bytes` を 0 に上書きするようにした。
+- regression:
+  - `tag_member_info_t` の sidecar が `ptr_array_pointee_bytes=16`, `outer/mid=16/8` で、
+    base なし旧 pointer `decl_type` 側が `ptr_array_pointee_bytes=32`, `outer/mid=32/16` の mismatch なら、
+    tag member accessor は ptr-array / outer / mid を 0 とみなす。
+  - `psx_node_new_tag_member_lvar_ref_for()` と `psx_node_new_tag_member_deref_for()` で生成した node も、
+    stale ptr-array / stride metadata を持たず、`psx_node_pointer_stride_metadata()` は false を返す。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - gvar/lvar/tag member の base なし旧 flat pointer fallback は、ptr-array / stride metadata について
+    いずれも sidecar 一致を境界にできた。
+  - 次は `psx_type_pointer_view_ptr_array_pointee_bytes()` の残り direct call を分類し、
+    型構築・cast・array address など「構造由来として安全な場所」と、decl sidecar 照合が必要な場所を
+    さらに分けて潰すのがよい。
+
+### このセッション（続き947）: generic typed node 経路の ptr-array reader を構造限定へ寄せた
+- 見つかった浅い箇所:
+  - `decl_type_pointer_stride_sync_allowed()` は型だけを見る generic helper なのに、
+    `psx_type_pointer_view_ptr_array_pointee_bytes()` 経由で base がない旧 pointer type の raw
+    `ptr_array_pointee_bytes` を stride 同期許可に使えた。
+  - `pointer_view_from_type()` / `sync_pointer_cast_mem_from_type()` /
+    `sync_unary_deref_mem_from_pointer_type()` も sidecar 文脈を持たないため、
+    typed node の public accessor や cast/deref metadata から raw ptr-array/stride が復活できた。
+- 根本対応:
+  - `type_pointer_view_structural_ptr_array_pointee_bytes()` を追加し、
+    構造的に `POINTER -> ARRAY` と分かる場合だけ ptr-array bytes を返す reader を分離した。
+  - `decl_type_pointer_stride_sync_allowed()` と `pointer_view_from_type()` の ptr-array branch を
+    構造限定 reader に変更した。
+  - `sync_pointer_cast_mem_from_type()` と `sync_unary_deref_mem_from_pointer_type()` では、
+    base がない旧 pointer type の raw ptr-array/stride を型単独では同期しないようにした。
+    VLA row stride は runtime metadata なので例外として残している。
+- regression:
+  - lvar/gvar の base なし旧 pointer mismatch node は、mem payload だけでなく
+    `psx_node_ptr_array_pointee_bytes()` でも 0 を返す。
+  - base がない旧 pointer type に raw `ptr_array_pointee_bytes=32`, `outer/mid=32/16` が載った
+    pointer cast result でも、node mem と public ptr-array accessor は 0 で、
+    `psx_node_pointer_stride_metadata()` は false を返す。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - sidecar 文脈を持たない generic typed node 経路では、base なし旧 flat pointer raw が
+    ptr-array/stride metadata として復活しにくくなった。
+  - `psx_type_pointer_view_ptr_array_pointee_bytes()` の残り direct call は、構造同期、sidecar 付き wrapper、
+    または gvar/lvar の null fallback などに分類できる。次は public `type.c` 側の reader API 自体を
+    raw fallback あり/なしに分割できるかを見ると、正本化がさらに進む。
+
+### このセッション（続き948）: type.c の ptr-array reader API を raw fallback あり/なしに分けた
+- 見つかった浅い箇所:
+  - `psx_type_pointer_view_ptr_array_pointee_bytes()` は public API だが、構造が分からない base なし旧 pointer でも
+    raw `ptr_array_pointee_bytes` を返す互換 reader だった。
+  - そのため `semantic_ctx` / `node_utils` / `tag_member_public` のような「型構造から同期したい」呼び出しも、
+    名前上は構造 reader のつもりで旧 raw fallback を踏める状態だった。
+- 根本対応:
+  - `psx_type_pointer_view_structural_ptr_array_pointee_bytes()` を `type.h/type.c` に追加し、
+    `POINTER -> ARRAY` / array view として構造的に分かる場合だけ ptr-array bytes を返す public API にした。
+  - `semantic_ctx.c` の `ctx_sync_pointer_array_metadata_from_structure()` は新 API 経由に変更した。
+  - `node_utils.c` の generic typed node 経路、`decl_type_pointer_stride_sync_allowed()`、
+    `pointer_view_from_type()`、cast/deref sync、null sidecar fallback は新 API 経由に寄せた。
+  - `tag_member_public.h` の base あり通常経路も新 API を使い、base なし旧 pointer だけ member sidecar 照合 helper に残した。
+- regression:
+  - base なし旧 pointer type は、旧互換 reader `psx_type_pointer_view_ptr_array_pointee_bytes()` では 32 を返すが、
+    新しい structural reader では 0 を返す。
+  - canonical `POINTER -> ARRAY` type では structural reader が 16 を返す。
+  - lvar/gvar/cast の既存 stale raw 回帰も引き続き通る。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - 実装側の `psx_type_pointer_view_ptr_array_pointee_bytes()` direct call は、定義とテストを除いて消えた。
+  - raw fallback あり API は旧互換の存在として残り、通常同期は structural API へかなり寄った。
+  - 次は同じ分割を `base_deref_size` / `mid_stride` / pointer qualifier など他の type view reader に広げるか、
+    あるいは gvar/lvar/tag member の legacy sidecar helper を共通 module に切り出すかを検討できる。
+
+### このセッション（続き949）: base_deref_size reader も structural-only / legacy sidecar に分けた
+- 見つかった浅い箇所:
+  - `ptr_array` は raw fallback あり/なしを分けたが、`base_deref_size` はまだ
+    `psx_type_pointer_view_base_deref_size()` の raw fallback を generic typed node sync から読めた。
+  - そのため base がない旧 flat pointer type に stale `base_deref_size` が残っていると、
+    lvar/gvar/tag-member の ptr-array/stride mismatch を 0 にしても、base size だけ復活する余地があった。
+- 根本対応:
+  - `psx_type_pointer_view_structural_base_deref_size()` を `type.h/type.c` に追加し、
+    base chain から構造的に leaf size を証明できる場合だけ返す public API にした。
+  - `node_utils.c` の `pointer_view_from_type()`、array address sync、pointer cast sync、
+    generic typed sync は structural-only base reader に寄せた。
+  - lvar/gvar/tag-member の旧 flat pointer は
+    `decl_type_base_deref_size_with_sidecar()` 経由にし、decl sidecar と宣言側 sidecar が一致する場合だけ
+    raw `base_deref_size` を読むようにした。
+  - `tag_member_public.h` の deref-size helper も base なし旧 pointer について、
+    ptr-array/stride sidecar が一致しない raw `base_deref_size` を採用しないようにした。
+- regression:
+  - lvar/gvar/tag-member の base なし旧 pointer mismatch ケースに raw `base_deref_size=4` を追加し、
+    `psx_node_base_deref_size()` が 0 のままになることを確認する assert を追加した。
+  - canonical `POINTER -> ARRAY` など構造から base size が分かる既存ケースは parser unit で維持されている。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - `psx_type_pointer_view_base_deref_size()` の direct call は定義と宣言だけになり、
+    通常同期からは raw fallback 付き base reader が外れた。
+  - 次は `mid_stride` の raw fallback と pointer qualifier reader を分類し、同じように
+    structural-only / legacy sidecar / 旧互換 API の責務を分ける。
+
+### このセッション（続き950）: pointer qualifier reader も structural-only / legacy sidecar に分けた
+- 見つかった浅い箇所:
+  - `psx_type_pointer_view_qual_levels()` / `psx_type_pointer_view_qual_mask()` は、base がない旧 pointer type でも
+    raw `pointer_qual_levels` / mask を返す旧互換 reader だった。
+  - `pointer_view_from_type()` や `sync_pointer_cast_mem_from_type()` がこの raw fallback を使うと、
+    ptr-array/stride/base size は 0 にしても、qualifier だけ typed node に復活できた。
+- 根本対応:
+  - `psx_type_pointer_view_structural_qual_levels()` /
+    `psx_type_pointer_view_structural_qual_mask()` を `type.h/type.c` に追加した。
+  - `node_utils.c` の generic typed node 経路と pointer cast sync は structural-only qualifier reader を使うようにした。
+  - lvar/gvar/tag-member の旧 flat pointer は `decl_type_pointer_quals_with_sidecar()` 経由にし、
+    base なし旧 pointer に raw shape がある場合は ptr-array/stride sidecar と一致した場合だけ qualifier を復元する。
+  - `tag_member_public.h` の `psx_tag_member_decl_pointer_qual_levels()` も、
+    structural reader 優先、base なし旧 pointer は member sidecar 一致時だけ raw level を返すようにした。
+- regression:
+  - lvar/gvar/tag-member の base なし旧 pointer mismatch ケースで、
+    `psx_node_pointer_qual_levels()` と const/volatile mask accessor が 0 のままになる assert を追加した。
+  - `psx_tag_member_decl_pointer_qual_levels()` も mismatch では 0 を返すことを確認している。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+- 現状:
+  - 実装側の `psx_type_pointer_view_qual_levels()` direct call は、旧互換 public getter の
+    `psx_lvar_pointer_qual_levels()` と定義/テストに残るのみ。
+  - `mid_stride` reader は現状 base なし旧 pointer では 0 を返し、残る主な構造課題は
+    gvar/lvar/tag-member に重複した legacy sidecar helper の共通化。
+
+### このセッション（続き951）: legacy sidecar 判定を type モジュールへ共通化した
+- 見つかった浅い箇所:
+  - base なし旧 flat pointer の sidecar 照合条件が `node_utils.c` と
+    `tag_member_public.h` に別々にあり、ptr-array / stride / base size / qualifier の境界条件を
+    今後ずらしてしまう余地があった。
+- 根本対応:
+  - `type.h/type.c` に legacy sidecar 用の共通 API を追加した:
+    `psx_type_legacy_flat_pointer_ptr_array_pointee_bytes()` /
+    `psx_type_legacy_flat_pointer_stride_matches()` /
+    `psx_type_legacy_flat_pointer_shape_matches_sidecar()` /
+    `psx_type_pointer_view_ptr_array_pointee_bytes_with_sidecar()` /
+    `psx_type_pointer_view_base_deref_size_with_sidecar()` /
+    `psx_type_pointer_view_quals_with_sidecar()`。
+  - `node_utils.c` から `decl_type_*_with_sidecar` と legacy flat 判定 helper を削除し、
+    gvar/lvar/tag-member sync は `type` の共通 API を使うようにした。
+  - `tag_member_public.h` から独自の legacy flat ptr-array/stride helper を削除し、
+    deref size / pointer qualifier / ptr-array / outer/mid stride の判断を共通 API に寄せた。
+- regression:
+  - 続き945-950で追加した lvar/gvar/tag-member mismatch 回帰がそのまま通っている。
+  - 追加テストはなく、今回は判定の所有元を `type` に集約する構造修正。
+- 確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+- 現状:
+  - legacy sidecar 境界の正本は `type.c` 側へ集約された。
+  - 残る確認候補は、`psx_type_pointer_view_*` 旧互換 API の direct call が
+    本当に互換/public getter/テスト用途だけかを最終スキャンすることと、
+    その後に広めの parser/e2e テストをかけること。

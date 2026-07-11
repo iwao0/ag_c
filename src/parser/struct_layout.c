@@ -67,12 +67,9 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
                                         is_bool, is_complex, is_atomic);
   if (is_pointer) {
     int levels = pointer_levels > 0 ? pointer_levels : 1;
-    for (int i = 0; i < levels; i++) {
-      int deref_size = (i == 0) ? elem_size : 8;
-      if (deref_size <= 0) deref_size = 8;
-      type = psx_type_new_pointer(type, deref_size);
-      type->pointer_qual_levels = i + 1;
-    }
+    int top_deref_size = levels >= 2 ? 8 : elem_size;
+    type = psx_type_wrap_pointer_levels(type, levels, top_deref_size,
+                                        elem_size, 0, 0);
     if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
       type->funcptr_sig = psx_decl_funcptr_sig_clone(funcptr_sig);
     }
@@ -88,6 +85,65 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
     return array_type;
   }
   return type;
+}
+
+static psx_type_t *member_decl_type_pointer_to_array_from_layout(
+    token_kind_t base_kind, tk_float_kind_t fp_kind,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int elem_size, int is_unsigned, int is_bool, int is_complex,
+    int is_atomic, int element_is_pointer,
+    const int *dims, int dim_count, int fallback_count,
+    int elem_storage_size) {
+  psx_type_t *elem_type = member_scalar_type(base_kind, fp_kind, tag_kind,
+                                             tag_name, tag_len, elem_size,
+                                             is_unsigned, is_bool, is_complex,
+                                             is_atomic);
+  if (element_is_pointer) {
+    int scalar_deref = elem_size > 0 ? elem_size : psx_type_sizeof(elem_type);
+    if (scalar_deref <= 0) scalar_deref = 8;
+    psx_type_t *ptr = psx_type_new_pointer(elem_type, scalar_deref);
+    ptr->base_deref_size = scalar_deref;
+    ptr->pointer_qual_levels = 1;
+    elem_type = ptr;
+  }
+
+  int normalized_dims[8] = {0};
+  int n = dim_count;
+  if (n < 0) n = 0;
+  if (n > 8) n = 8;
+  for (int i = 0; i < n; i++) normalized_dims[i] = dims ? dims[i] : 0;
+  if (n <= 0 && fallback_count > 0) {
+    normalized_dims[0] = fallback_count;
+    n = 1;
+  }
+  if (n <= 0) return psx_type_new_pointer(elem_type, psx_type_sizeof(elem_type));
+
+  int leaf_storage = elem_storage_size > 0 ? elem_storage_size
+                                           : psx_type_sizeof(elem_type);
+  if (leaf_storage <= 0) leaf_storage = element_is_pointer ? 8 : elem_size;
+  if (leaf_storage <= 0) leaf_storage = 1;
+
+  psx_type_t *array = elem_type;
+  int suffix_size = leaf_storage;
+  for (int i = n - 1; i >= 0; i--) {
+    int len = normalized_dims[i];
+    if (len <= 0) len = 1;
+    int array_size = suffix_size * len;
+    psx_type_t *next = psx_type_new_array(array, len, array_size,
+                                          suffix_size, 0);
+    next->base_deref_size = elem_size > 0 ? elem_size : leaf_storage;
+    array = next;
+    suffix_size = array_size;
+  }
+
+  psx_type_t *ptr = psx_type_new_pointer(array, suffix_size);
+  ptr->base_deref_size = elem_size > 0 ? elem_size : leaf_storage;
+  ptr->pointer_qual_levels = 1;
+  ptr->ptr_array_pointee_bytes = suffix_size;
+  ptr->outer_stride = suffix_size;
+  if (n >= 2 && normalized_dims[0] > 0)
+    ptr->mid_stride = suffix_size / normalized_dims[0];
+  return ptr;
 }
 
 static void tag_member_info_init_layout_cache(tag_member_info_t *mi,
@@ -499,8 +555,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       int pointee_arr_size = 0;
       int pointee_arr_dim_count = 0;
       int pointee_arr_first_dim = 0;
+      int pointee_arr_dims[8] = {0};
+      int pointee_arr_elem_storage_size = elem_size;
+      int pointee_arr_element_is_pointer = 0;
       int ptr_array_pointee_bytes = 0;
       psx_ret_pointee_array_t direct_funcptr_ret_pointee_array = {0};
+      /* The frontend currently models C pointer objects as 8 bytes even when the Wasm
+       * backend lowers addresses to i32. Keep aggregate layout consistent with sizeof
+       * and the rest of parser metadata until the whole type model is moved to ILP32. */
+      int ptr_size = 8;
       if (head.is_ptr && head.has_func_suffix && arr_size > 1 && !is_flex_array) {
         /* 関数ポインタメンバが配列へのポインタを返す直書き宣言子:
          * `int (*(*f)(void))[N]` / `int (*(*f)(void))[N][M]`。
@@ -519,6 +582,11 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
           pointee_arr_size = arr_size;
           pointee_arr_dim_count = arr_dim_count;
           pointee_arr_first_dim = arr_first_dim;
+          for (int i = 0; i < arr_dim_count && i < 8; i++)
+            pointee_arr_dims[i] = arr_dims_buf[i];
+          pointee_arr_element_is_pointer = member_is_ptr_typedef ? 1 : 0;
+          pointee_arr_elem_storage_size =
+              pointee_arr_element_is_pointer ? ptr_size : elem_size;
           arr_size = 1;
           arr_dim_count = 0;
           arr_first_dim = 0;
@@ -568,13 +636,12 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
        * 宣言子に `*` が現れないため head.is_ptr を立てておくと扱いが揃う。 */
       int total_pointer_levels = head.ptr_levels + (member_is_ptr_typedef ? 1 : 0);
       int member_is_ptr = head.is_ptr || member_is_ptr_typedef;
-      /* The frontend currently models C pointer objects as 8 bytes even when the Wasm
-       * backend lowers addresses to i32. Keep aggregate layout consistent with sizeof
-       * and the rest of parser metadata until the whole type model is moved to ILP32. */
-      int ptr_size = 8;
+      int layout_pointer_levels = total_pointer_levels;
+      if (pointee_arr_size > 0 && head.is_ptr)
+        layout_pointer_levels = head.ptr_levels > 0 ? head.ptr_levels : 1;
       int member_elem_size = member_is_ptr ? ptr_size : elem_size;
       int total_size = is_flex_array ? 0 : (member_elem_size * arr_size);
-      int deref_size = member_is_ptr ? ((total_pointer_levels >= 2) ? ptr_size : elem_size) : 0;
+      int deref_size = member_is_ptr ? ((layout_pointer_levels >= 2) ? ptr_size : elem_size) : 0;
       int member_align = member_is_ptr ? ptr_size : elem_size;
       /* struct/union メンバ (非ポインタ) のアラインメントは「メンバの最大スカラ
        * アラインメント (psx_ctx_get_tag_align)」であり、sizeof ではない。
@@ -611,7 +678,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             &_mi, member_is_ptr ? ptr_size : elem_size, deref_size,
             member_array_len, member_tag_kind, member_tag_name, member_tag_len,
             member_fp_kind, member_is_bool, member_is_unsigned,
-            member_is_ptr, member_is_ptr ? total_pointer_levels : 0);
+            member_is_ptr, member_is_ptr ? layout_pointer_levels : 0);
         psx_decl_funcptr_sig_t member_funcptr_sig = member_typedef_funcptr_sig;
         if (member_is_ptr) {
           if (head.has_func_suffix) {
@@ -634,17 +701,26 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         _mi.decl_type = member_decl_type_from_layout(
             member_base_kind, member_fp_kind, member_tag_kind, member_tag_name,
             member_tag_len, elem_size, member_is_unsigned, member_is_bool,
-            member_is_complex, member_is_atomic, member_is_ptr, total_pointer_levels,
+            member_is_complex, member_is_atomic, member_is_ptr, layout_pointer_levels,
             member_array_len, total_size, member_elem_size, member_funcptr_sig);
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを
          * outer_stride に保存。多次元 pointee の場合は 1 段目 subscript stride も mid_stride に
          * 保存し、build_member_deref_node が deref を multi-dim 配列形に組めるようにする。 */
         if (has_member_name && pointee_arr_size > 0) {
-          _mi.outer_stride = pointee_arr_size * elem_size;
+          _mi.outer_stride = pointee_arr_size * pointee_arr_elem_storage_size;
           if (pointee_arr_dim_count >= 2 && pointee_arr_first_dim > 0) {
             /* 2D pointee (`int (*p)[M][N]`): 1 段目 subscript stride = (M*N*elem)/M = N*elem */
-            _mi.mid_stride = (pointee_arr_size / pointee_arr_first_dim) * elem_size;
+            _mi.mid_stride = (pointee_arr_size / pointee_arr_first_dim) *
+                             pointee_arr_elem_storage_size;
           }
+          _mi.ptr_array_pointee_bytes = _mi.outer_stride;
+          _mi.decl_type = member_decl_type_pointer_to_array_from_layout(
+              member_base_kind, member_fp_kind, member_tag_kind,
+              member_tag_name, member_tag_len, elem_size, member_is_unsigned,
+              member_is_bool, member_is_complex, member_is_atomic,
+              pointee_arr_element_is_pointer, pointee_arr_dims,
+              pointee_arr_dim_count, pointee_arr_size,
+              pointee_arr_elem_storage_size);
         }
         /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`): 各要素ポインタが指す配列の
          * 全バイト数 (= N * elem) を保存する。`s.p[i]` の subscript 結果 deref に carry し、

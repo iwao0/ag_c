@@ -102,6 +102,8 @@ int psx_gvar_is_array(const global_var_t *gv);
 int psx_gvar_is_tag_aggregate(const global_var_t *gv);
 int psx_gvar_is_struct_aggregate(const global_var_t *gv);
 int psx_gvar_is_union_aggregate(const global_var_t *gv);
+int psx_gvar_is_bool_scalar(const global_var_t *gv);
+int psx_gvar_array_element_is_bool(const global_var_t *gv);
 int psx_gvar_array_element_size(const global_var_t *gv);
 int psx_gvar_array_element_count(const global_var_t *gv);
 int psx_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
