@@ -763,7 +763,8 @@ static int type_pointer_view_vla_runtime_stride_metadata(
     if (inner_stride) *inner_stride = type->deref_size;
     return 1;
   }
-  if (type->kind == PSX_TYPE_POINTER && type->vla_row_stride_frame_off != 0 &&
+  if ((type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
+      type->vla_row_stride_frame_off != 0 &&
       type->outer_stride <= 0 && type->mid_stride <= 0 && count <= 0) {
     int inner = type->base_deref_size > 0 ? type->base_deref_size
                                           : psx_type_deref_size(type->base);

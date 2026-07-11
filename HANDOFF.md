@@ -1,8 +1,117 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1048: local symbol node の型mirror撤去に着手した）
+最終更新: 2026-07-11（続き1052: raw deref constructorを除去した）
 
 ## 現状
+- 続き1052: **raw deref constructorと専用mirror同期連鎖を除去した。**
+
+  unary dereferenceとsubscript dereferenceは、canonical result typeを構築できない場合も
+  plain unresolved `node_t/ND_DEREF`を返すようにした。旧`node_mem_t` payloadを組み立てる
+  `new_legacy_unary_deref()` / `new_legacy_subscript_deref()`はproduction call siteがなくなったため削除し、
+  そこからだけ使われていたscalar/tag/pointer/array/stride同期helperもまとめて除去した。
+
+  parser unit testに残っていたtype-null raw deref fixtureはcanonical `psx_type_t`または
+  `node_t::type_state`を使う検証へ移した。これによりproduction constructorとテストの双方で、
+  新しいraw deref payloadを生成しない状態になった。既存raw payloadを読む
+  `legacy_deref_mem_view()`とそのcompatibility accessorはまだ残しているため、raw bridge全体の
+  撤去完了ではない。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `new_legacy_unary_deref` / `new_legacy_subscript_deref` = **0件**
+  - `git diff --check` = **pass**
+
+  次は`psx_node_materialize_type()`のraw `ND_DEREF` materialization fallbackと、
+  `legacy_deref_mem_view()`を参照するcompatibility accessorを段階的に削除する。
+  canonical typeを持つtyped `node_mem_t/ND_DEREF` fixtureはraw readerを通らないため、
+  実際の依存箇所をcompile/testで絞りながらreader自体を消す。
+
+- 続き1051: **string node から型mirror payloadを除去した。**
+
+  `node_string_t`を`node_mem_t + literal payload`からplain `node_t + literal payload`へ変更した。
+  label、character width、prefix、decoded element countは文字列値とemissionに必要な
+  storage payloadとして残し、type size、deref size、pointer flagのraw mirrorは削除した。
+  constructorはcharacter widthとsignednessからelement `psx_type_t`を作り、decay後の
+  canonical pointer typeを`node_t::type`へ直接設定する。cloneも実構造の`node_t`先頭を複製する。
+
+  `legacy_node_mem_view()`の最後の非-deref対象だった`ND_STRING`を外した。raw readerは
+  `legacy_deref_mem_view()`へ改名し、`kind == ND_DEREF && type == NULL`だけを受理する
+  専用境界に縮小した。clone対象の判定もレイアウト名の`is_mem_node_kind()`から
+  用途名の`is_lvalue_clone_kind()`へ変更した。
+
+  確認:
+  - `make -B build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `node_string_t::mem` / `snode->mem` = **0件**
+  - generic raw reader = **なし。`legacy_deref_mem_view()`のみ**
+  - `git diff --check` = **pass**
+
+  次は最後のraw `ND_DEREF` compatibility bridgeを削除する。現状はunary/subscriptの
+  canonical result typeを作れない場合に`new_legacy_*_deref()`へfallbackする一方、
+  parser unit testに人工`node_mem_t/ND_DEREF`のfixtureが残る。fallbackをplain unresolved nodeに
+  変更し、fixtureをcanonical type/type_state検証へ移してから、
+  `legacy_deref_mem_view()`、`materialize_legacy_node_type()`、raw deref constructorをまとめて削除する。
+
+- 続き1050: **plain expression kind をraw readerから除外した。**
+
+  `ND_ASSIGN`、`ND_ADDR`、`ND_CAST`のconstructorはすべて`sizeof(node_t)`でallocationし、
+  canonical `type`または`type_state`を直接設定している。それにもかかわらず
+  `legacy_node_mem_view()`がこれらを`node_mem_t` として受け入れていたため、raw readerから
+  3 kindを外した。現在raw readerが受け入れるのは、raw-only compatibility bridgeの
+  `ND_DEREF`と、実構造に`node_mem_t`を含む`ND_STRING`だけである。
+
+  compound literal array sizeはplain `ND_ADDR::type_state.compound_literal_array_size`のみを
+  正本にし、raw ADDR fallbackを削除した。cast i64 extensionもcanonical typeと
+  `node_t::widen_zext_i64`だけから決定し、raw CAST mirrorを削除した。indirect funcallの
+  raw callee readerも`ND_DEREF`だけに限定し、plain ASSIGN/CASTのunsigned overrideは
+  `node_t::is_unsigned`へ書く。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `legacy_node_mem_view()`の受理kind = **`ND_DEREF`, `ND_STRING`のみ**
+  - `git diff --check` = **pass**
+
+  次は`node_string_t` のlabel/width/byte lengthと型mirrorを分離し、文字列型を
+  canonical array/pointer typeから取得できるようにする。その後、`ND_DEREF` raw-only bridgeの
+  constructorとfixtureを専用compatibility型へ隔離できれば、generic raw reader自体の削除へ進める。
+
+- 続き1049: **local symbol node の型mirror撤去を完了した。**
+
+  production `ND_LVAR`を`node_mem_t`として読むテストを全てcanonical type/accessorへ
+  移行した。unsigned/bool/complex/atomic/tag/pointer-to-array/member/VLAのsize、pointee、
+  stride、qualifierは`node_t::type`から検証し、`as_mem()` helperも削除した。raw bridge自体を
+  検査する人工fixtureは、実際にcompatibility経路を残している`ND_DEREF`へ移した。
+
+  `psx_node_materialize_type()`と`legacy_node_mem_view()`から`ND_LVAR`を外した。これにより
+  canonical typeを持たないplain local nodeが来ても、後続が存在しないraw payloadを
+  読むことはない。lvar identifier/tag member/pointer castの未使用raw sync helperも削除し、
+  `make -B build/test_parser`は警告なしでビルドできる。
+
+  移行で`int a[n][4]`のVLA descriptor storage 16Bを、Cの配列型サイズとして
+  再解釈していた不一致が露出した。`canonical_lvar_vla_type()`でleaf型から
+  「未知長の外側VLA + 固定内側row」を構築し、descriptorのframe slot sizeと
+  canonical array shapeを分離した。runtime strideを持つarray viewも`psx_type_t`の
+  VLA metadataから取得できるようにした。
+
+  またglobal struct copyに残っていた`node_gvar_t* -> node_lvar_t*`キャストを削除し、
+  storage layoutではなく`node_t`のcanonical tag identityだけで互換性判定を共通化した。
+  raw funcall callee readerからもplain `ND_LVAR`/`ND_GVAR`を外した。
+
+  確認:
+  - `make -B build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - production local nodeへの`as_mem()` / `node_lvar_t::mem` = **0件**
+  - `git diff --check` = **pass**
+
+  次は`legacy_node_mem_view()`に残る`ND_ASSIGN`/`ND_ADDR`/`ND_STRING`/`ND_CAST`を実構造ごとに
+  監査する。productionでplain化済みのkindをraw compatibilityリーダがまだ受け入れる
+  場合は、`ND_DEREF` raw-only bridgeと同じように物理的に分離する。
+
 - 続き1048: **local symbol node をplain storage identityへ移行中。中間checkpoint。**
 
   `node_lvar_t`の先頭を`node_mem_t`からplain `node_t`へ変更し、local variable、parameter、

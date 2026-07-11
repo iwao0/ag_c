@@ -4090,7 +4090,7 @@ static node_string_t *make_string_lit_node(char *str, int len,
                                            tk_char_width_t char_width,
                                            tk_string_prefix_kind_t prefix_kind) {
   node_string_t *snode = arena_alloc(sizeof(node_string_t));
-  snode->mem.base.kind = ND_STRING;
+  snode->base.kind = ND_STRING;
   int id = string_label_count++;
   int label_len = snprintf(NULL, 0, ".LC%d", id);
   snode->string_label = calloc((size_t)label_len + 1, 1);
@@ -4102,12 +4102,8 @@ static node_string_t *make_string_lit_node(char *str, int len,
   lit->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   lit->str_prefix_kind = prefix_kind;
   psx_register_string_lit(lit);
-  snode->mem.type_size = 8;
-  snode->mem.deref_size = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   /* 文字列リテラルは char (または wchar) 配列で、式中ではポインタに decay する。
    * `"abc"[1]` の subscript チェックや (ptr + n) のスケーリングに使う。 */
-  snode->mem.is_pointer = 1;
-  snode->mem.base.fp_kind = TK_FLOAT_KIND_NONE;
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   snode->str_prefix_kind = prefix_kind;
   int elem_width = snode->char_width;
@@ -4118,8 +4114,8 @@ static node_string_t *make_string_lit_node(char *str, int len,
                                : (elem_is_unsigned ? TK_UNSIGNED : TK_INT);
   psx_type_t *elem_type =
       psx_type_new_integer(elem_kind, elem_width, elem_is_unsigned);
-  snode->mem.base.type = psx_type_new_pointer(elem_type, elem_width);
-  snode->mem.base.type->base_deref_size = elem_width;
+  snode->base.type = psx_type_new_pointer(elem_type, elem_width);
+  snode->base.type->base_deref_size = elem_width;
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */

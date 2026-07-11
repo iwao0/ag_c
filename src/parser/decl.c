@@ -421,7 +421,6 @@ static bool elision_consume_separator(void);
 static int parse_nonneg_const_expr_decl(const char *what);
 static int resolve_copy_source_lvar(node_t *expr, node_t **out_prefix, node_lvar_t **out_src);
 static int is_supported_scalar_store_size(int size);
-static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var);
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src);
 static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int elem_size, int array_len);
 static node_t *try_parse_array_member_string_initializer(int dst_base_off, int elem_size, int array_len);
@@ -1508,10 +1507,6 @@ static int is_compatible_tag_object_node(node_t *src, lvar_t *var) {
   if (!tag_object_identity_from_node(src, &src_id)) return 0;
   if (!tag_object_identity_from_lvar(var, &dst_id)) return 0;
   return tag_object_identity_matches(&src_id, &dst_id);
-}
-
-static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
-  return is_compatible_tag_object_node((node_t *)src, var);
 }
 
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
@@ -3120,13 +3115,13 @@ static node_t *parse_struct_initializer(lvar_t *var) {
 static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
   node_t *init_chain = NULL;
   int object_size = lvar_object_decl_size(var);
-  if (value && value->kind == ND_LVAR && is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
+  if (value && value->kind == ND_LVAR &&
+      is_compatible_tag_object_node(value, var)) {
     init_chain = build_struct_copy_chain_from_source(var, (node_lvar_t *)value);
   } else if (value && value->kind == ND_GVAR &&
-             is_compatible_tag_object_lvar((node_lvar_t *)value, var)) {
+             is_compatible_tag_object_node(value, var)) {
     /* グローバル構造体からのコピー初期化 `struct S t = g;`。構造体全体を 1 つの
-     * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。node_gvar_t は
-     * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
+     * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。 */
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
     node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
@@ -3150,7 +3145,8 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     node_lvar_t *else_src = NULL;
     resolve_copy_source_lvar(ternary->base.rhs, &then_prefix, &then_src);
     resolve_copy_source_lvar(ternary->els, &else_prefix, &else_src);
-    if (!is_compatible_tag_object_lvar(then_src, var) || !is_compatible_tag_object_lvar(else_src, var)) {
+    if (!is_compatible_tag_object_node((node_t *)then_src, var) ||
+        !is_compatible_tag_object_node((node_t *)else_src, var)) {
       /* 分岐が lvar でない (`struct S s = c ? ok() : err()` の funccall 分岐など) ときは
        * struct 全体の ND_ASSIGN(var, ternary) にする。<=8B はスカラ選択、>8B は IR の
        * materialize_aggregate_expr_to が各分岐を dst へ materialize する。 */
@@ -3291,7 +3287,7 @@ static node_t *parse_union_initializer_no_brace(lvar_t *var) {
   node_t *prefix = NULL;
   node_lvar_t *src = NULL;
   if (resolve_copy_source_lvar(rhs, &prefix, &src)) {
-    if (is_compatible_tag_object_lvar(src, var)) {
+    if (is_compatible_tag_object_node((node_t *)src, var)) {
       node_t *copy =
           build_byte_copy_chain(var->offset, src->offset,
                                 lvar_object_decl_size(var), NULL);

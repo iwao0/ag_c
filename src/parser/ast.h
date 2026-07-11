@@ -245,7 +245,7 @@ struct node_lvar_t {
 // 文字列リテラルノード
 typedef struct node_string_t node_string_t;
 struct node_string_t {
-  node_mem_t mem;
+  node_t base;
   char *string_label; // 文字列リテラルのデータラベル
   tk_char_width_t char_width;
   tk_string_prefix_kind_t str_prefix_kind;
