@@ -3814,11 +3814,18 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
                                             int pointer_qual_levels,
                                             int base_deref_size,
                                             int ptr_array_pointee_bytes) {
-  var->decl_type = NULL;
+  if (!var) return;
+  psx_type_t *type = psx_lvar_materialize_decl_type(var);
   var->pointer_qual_levels = pointer_qual_levels;
   var->base_deref_size = (short)base_deref_size;
   var->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
-  (void)psx_lvar_materialize_decl_type(var);
+  int top_deref_size = ptr_array_pointee_bytes > 0
+                           ? ptr_array_pointee_bytes
+                           : var->elem_size;
+  var->decl_type = psx_type_apply_pointer_derivation(
+      type, pointer_qual_levels, top_deref_size, base_deref_size,
+      ptr_array_pointee_bytes, var->pointer_const_qual_mask,
+      var->pointer_volatile_qual_mask);
 }
 
 static psx_type_t *psx_decl_value_leaf_type(psx_type_t *type) {
@@ -3907,15 +3914,31 @@ void psx_decl_set_lvar_bool(lvar_t *var, int is_bool) {
   if (!var) return;
   var->is_bool = is_bool ? 1 : 0;
   psx_type_t *type = psx_lvar_materialize_decl_type(var);
+  if (psx_decl_type_has_pointer(type)) return;
   psx_decl_set_scalar_leaf_bool(
       psx_decl_value_leaf_type(type), var->is_bool, var->is_unsigned);
   if (type) type->is_unsigned = var->is_bool ? 0 : var->is_unsigned;
 }
 
 void psx_decl_set_lvar_complex(lvar_t *var, int is_complex) {
-  var->decl_type = NULL;
+  if (!var) return;
   var->is_complex = is_complex ? 1 : 0;
-  (void)psx_lvar_materialize_decl_type(var);
+  psx_type_t *type = psx_lvar_materialize_decl_type(var);
+  if (!type || psx_decl_type_has_pointer(type) ||
+      psx_type_is_tag_aggregate(type)) {
+    return;
+  }
+  if (var->is_complex) {
+    type->kind = PSX_TYPE_COMPLEX;
+    type->scalar_kind = TK_EOF;
+    type->fp_kind = var->fp_kind;
+    type->size = var->size;
+    type->align = var->size >= 8 ? 8 : (var->size >= 4 ? 4 : 1);
+  } else if (type->kind == PSX_TYPE_COMPLEX) {
+    type->kind = var->fp_kind != TK_FLOAT_KIND_NONE
+                     ? PSX_TYPE_FLOAT
+                     : PSX_TYPE_INTEGER;
+  }
 }
 
 static psx_type_t *psx_decl_array_leaf_type(psx_type_t *type) {
@@ -4067,8 +4090,8 @@ void psx_decl_set_lvar_qualifiers(lvar_t *var,
   var->pointer_volatile_qual_mask = pointer_volatile_qual_mask;
   psx_type_t *type = psx_lvar_materialize_decl_type(var);
   if (!type) return;
-  type->is_const_qualified = var->is_const_qualified;
-  type->is_volatile_qualified = var->is_volatile_qualified;
+  psx_type_set_decl_spec_qualifiers(type, var->is_const_qualified,
+                                    var->is_volatile_qualified);
   psx_type_t *pointer = psx_decl_array_leaf_type(type);
   int level = 0;
   while (pointer && pointer->kind == PSX_TYPE_POINTER) {
@@ -4193,7 +4216,6 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
                                             const int *inner_dim_src_offsets,
                                             int inner_dim_count) {
   if (!var) return;
-  var->decl_type = NULL;
   if (inner_dim_count < 0) inner_dim_count = 0;
   if (inner_dim_count > 7) inner_dim_count = 7;
   var->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
@@ -4203,14 +4225,24 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
     var->vla_param_inner_dim_src_offsets[i] =
         (i < inner_dim_count && inner_dim_src_offsets) ? inner_dim_src_offsets[i] : 0;
   }
-  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!var || !sig) return;
   var->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
-  for (psx_type_t *type = var->decl_type;
+  psx_type_t *type = psx_lvar_materialize_decl_type(var);
+  if (psx_decl_funcptr_sig_has_payload(*sig) && type &&
+      type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY) {
+    int base_size = psx_type_sizeof(type);
+    if (base_size <= 0) base_size = var->base_deref_size;
+    if (base_size <= 0) base_size = var->elem_size;
+    if (base_size <= 0) base_size = 8;
+    type = psx_type_new_pointer(type, base_size);
+    type->base_deref_size = base_size;
+    var->decl_type = type;
+  }
+  for (;
        type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
        type = type->base) {
     type->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
@@ -4356,11 +4388,23 @@ void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
                                             int deref_size,
                                             int pointee_elem_size,
                                             int ptr_array_pointee_bytes) {
-  gv->decl_type = NULL;
+  if (!gv) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
   gv->deref_size = (short)deref_size;
   gv->pointee_elem_size = (short)pointee_elem_size;
   gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
-  (void)psx_gvar_materialize_decl_type(gv);
+  psx_type_t *derived = psx_type_apply_pointer_derivation(
+      type, gv->pointer_qual_levels, deref_size, pointee_elem_size,
+      ptr_array_pointee_bytes, 0, 0);
+  gv->decl_type = psx_type_clone_persistent(derived);
+}
+
+void psx_decl_set_gvar_pointer_base_array(global_var_t *gv, int array_len) {
+  if (!gv || array_len <= 0) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
+  if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return;
+  psx_type_t *wrapped = psx_type_wrap_pointer_base_array(type, array_len);
+  gv->decl_type = psx_type_clone_persistent(wrapped);
 }
 
 void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
@@ -4432,6 +4476,7 @@ void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool) {
   gv->is_bool = is_bool ? 1 : 0;
   gv->elem_is_bool = elem_is_bool ? 1 : 0;
   psx_type_t *type = psx_gvar_materialize_decl_type(gv);
+  if (psx_decl_type_has_pointer(type)) return;
   psx_decl_set_scalar_leaf_bool(
       psx_decl_value_leaf_type(type), gv->is_bool || gv->elem_is_bool,
       gv->is_unsigned);
@@ -4454,18 +4499,25 @@ void psx_decl_set_gvar_qualifiers(global_var_t *gv,
   gv->is_const_qualified = is_const_qualified ? 1 : 0;
   gv->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
   psx_type_t *type = psx_gvar_materialize_decl_type(gv);
-  if (type) {
-    type->is_const_qualified = gv->is_const_qualified;
-    type->is_volatile_qualified = gv->is_volatile_qualified;
-  }
+  psx_type_set_decl_spec_qualifiers(type, gv->is_const_qualified,
+                                    gv->is_volatile_qualified);
 }
 
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig) {
   if (!gv || !sig) return;
   gv->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
-  if (gv->decl_type)
-    gv->decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
+  if (psx_decl_funcptr_sig_has_payload(*sig) && type &&
+      type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY) {
+    int base_size = psx_type_sizeof(type);
+    if (base_size <= 0) base_size = gv->deref_size;
+    if (base_size <= 0) base_size = 8;
+    type = psx_type_new_pointer(type, base_size);
+    type->base_deref_size = base_size;
+    gv->decl_type = type;
+  }
+  if (type) type->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
 }
 
 void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig) {
@@ -5824,11 +5876,15 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * の「要素はポインタ」分岐に乗せる。関数ポインタ要素は call で 8B 値をそのまま使う
          * ため、bds=8 (= eff_elem) のままで OK (既存挙動)。 */
         if (base_is_pointer && !decl_state.trailing_func_suffix && elem_size > 0 && elem_size < 8) {
-          psx_decl_set_lvar_pointer_derived_type(var, 1, elem_size,
+          psx_decl_set_lvar_pointer_derived_type(var, 2, elem_size,
                                                  var->ptr_array_pointee_bytes);
         } else {
           psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels, eff_elem,
                                                  var->ptr_array_pointee_bytes);
+        }
+        if (base_is_pointer && !decl_state.trailing_func_suffix &&
+            paren_array_mul > 0) {
+          psx_decl_set_lvar_pointer_base_array(var, paren_array_mul);
         }
         if (!decl_state.trailing_func_suffix && paren_array_mul > 0 &&
             var->ptr_array_pointee_bytes == 0) {

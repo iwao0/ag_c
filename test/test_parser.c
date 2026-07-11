@@ -3372,6 +3372,7 @@ static void test_type_metadata_bridge() {
   lvar_t tmp_void_ptr_lvar = {0};
   psx_decl_init_lvar_storage_type(&tmp_void_ptr_lvar, 8, 8, 0,
                                   TK_FLOAT_KIND_NONE, 0, TK_EOF, NULL, 0, 0);
+  psx_decl_set_lvar_pointer_derived_type(&tmp_void_ptr_lvar, 1, 0, 0);
   psx_decl_set_lvar_pointee_void(&tmp_void_ptr_lvar, 1);
   ASSERT_TRUE(psx_lvar_value_is_pointer_like(&tmp_void_ptr_lvar));
 
@@ -4233,7 +4234,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_node_type_size(param_ptrarr3d_arg_node));
   ASSERT_EQ(48, ps_node_deref_size(param_ptrarr3d_arg_node));
   ASSERT_TRUE(psx_node_get_type(param_ptrarr3d_arg_node)->base_deref_size > 0);
-  ASSERT_EQ(48, psx_node_get_type(param_ptrarr3d_arg_node)->base_deref_size);
+  ASSERT_EQ(4, psx_node_get_type(param_ptrarr3d_arg_node)->base_deref_size);
   ASSERT_EQ(4, psx_node_base_deref_size(param_ptrarr3d_arg_node));
 
   parsed_code = parse_program_input(

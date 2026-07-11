@@ -78,6 +78,13 @@ psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
                                           int row_size_count, int leaf_size);
 psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
                                               int array_len);
+psx_type_t *psx_type_apply_pointer_derivation(psx_type_t *type,
+                                               int pointer_levels,
+                                               int top_deref_size,
+                                               int base_deref_size,
+                                               int ptr_array_pointee_bytes,
+                                               unsigned int const_mask,
+                                               unsigned int volatile_mask);
 psx_type_t *psx_type_new_runtime_vla_row_view(
     const psx_type_t *source, int row_size, int elem_size,
     int row_stride_frame_off, int strides_remaining);
@@ -171,6 +178,9 @@ int psx_type_pointer_view_vla_row_stride_frame_off(const psx_type_t *type);
 int psx_type_pointer_view_vla_strides_remaining(const psx_type_t *type);
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
+void psx_type_set_decl_spec_qualifiers(psx_type_t *type,
+                                       int is_const_qualified,
+                                       int is_volatile_qualified);
 void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src);
 
 #endif

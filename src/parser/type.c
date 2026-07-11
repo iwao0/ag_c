@@ -207,7 +207,7 @@ psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
                                  ? base_deref_size
                                  : array_leaf->base_deref_size;
   } else {
-    owner->base_deref_size = owner->deref_size;
+    owner->base_deref_size = leaf_size;
   }
   psx_type_sync_pointer_to_array_metadata_from_base(owner);
   owner->outer_stride = size_count > 0 ? sizes[0] : 0;
@@ -243,6 +243,118 @@ psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
   type->base = array;
   type->deref_size = total_size;
   psx_type_sync_pointer_to_array_metadata_from_base(type);
+  return type;
+}
+
+psx_type_t *psx_type_apply_pointer_derivation(psx_type_t *type,
+                                               int pointer_levels,
+                                               int top_deref_size,
+                                               int base_deref_size,
+                                               int ptr_array_pointee_bytes,
+                                               unsigned int const_mask,
+                                               unsigned int volatile_mask) {
+  if (!type) return NULL;
+
+  psx_type_t **owner = &type;
+  while (*owner && (*owner)->kind == PSX_TYPE_ARRAY)
+    owner = &(*owner)->base;
+
+  int existing_levels = 0;
+  for (psx_type_t *view = *owner;
+       view && (view->kind == PSX_TYPE_POINTER ||
+                view->kind == PSX_TYPE_ARRAY);
+       view = view->base) {
+    if (view->kind == PSX_TYPE_POINTER) existing_levels++;
+  }
+  int wanted_levels = pointer_levels > 0 ? pointer_levels : 1;
+  if (existing_levels == 0) {
+    if (pointer_levels <= 0 && ptr_array_pointee_bytes <= 0) {
+      type->base_deref_size = base_deref_size;
+      return type;
+    }
+    int deref_size = top_deref_size > 0 ? top_deref_size
+                                         : psx_type_sizeof(*owner);
+    if (deref_size <= 0) deref_size = 8;
+    *owner = psx_type_wrap_pointer_levels(
+        *owner, wanted_levels, deref_size, base_deref_size,
+        const_mask, volatile_mask);
+  } else if (wanted_levels > existing_levels) {
+    int missing = wanted_levels - existing_levels;
+    int deref_size = top_deref_size > 0 ? top_deref_size : 8;
+    *owner = psx_type_wrap_pointer_levels(
+        *owner, missing, deref_size, base_deref_size,
+        const_mask, volatile_mask);
+  }
+
+  psx_type_t *pointer = type;
+  while (pointer && pointer->kind == PSX_TYPE_ARRAY)
+    pointer = pointer->base;
+  while (pointer && pointer->kind == PSX_TYPE_POINTER &&
+         pointer->base && pointer->base->kind == PSX_TYPE_POINTER) {
+    pointer = pointer->base;
+  }
+  if (!pointer) return type;
+  if (ptr_array_pointee_bytes > 0 && pointer->base &&
+      (pointer->base->kind != PSX_TYPE_ARRAY ||
+       psx_type_sizeof(pointer->base) != ptr_array_pointee_bytes)) {
+    psx_type_t *array_leaf = pointer->base;
+    while (array_leaf && array_leaf->kind == PSX_TYPE_ARRAY)
+      array_leaf = array_leaf->base;
+    int child_size = psx_type_sizeof(array_leaf);
+    if (array_leaf && base_deref_size > 0 &&
+        (array_leaf->kind == PSX_TYPE_INTEGER ||
+         array_leaf->kind == PSX_TYPE_BOOL ||
+         array_leaf->kind == PSX_TYPE_FLOAT)) {
+      child_size = base_deref_size;
+    }
+    if (child_size <= 0) child_size = base_deref_size;
+    if (child_size > 0 &&
+        ptr_array_pointee_bytes >= child_size &&
+        ptr_array_pointee_bytes % child_size == 0) {
+      pointer->base = psx_type_new_array(
+          array_leaf, ptr_array_pointee_bytes / child_size,
+          ptr_array_pointee_bytes, child_size, 0);
+      pointer->base->base_deref_size = base_deref_size;
+    }
+  }
+  int effective_deref = ptr_array_pointee_bytes > 0
+                            ? ptr_array_pointee_bytes
+                            : top_deref_size;
+  if (effective_deref > 0) pointer->deref_size = effective_deref;
+  if (base_deref_size > 0) pointer->base_deref_size = base_deref_size;
+  pointer->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  if (ptr_array_pointee_bytes > 0)
+    pointer->outer_stride = ptr_array_pointee_bytes;
+  int level = 0;
+  for (psx_type_t *view = type;
+       view && (view->kind == PSX_TYPE_POINTER ||
+                view->kind == PSX_TYPE_ARRAY);
+       view = view->base) {
+    if (view->kind != PSX_TYPE_POINTER) continue;
+    if (base_deref_size > 0) view->base_deref_size = base_deref_size;
+    if (base_deref_size > 0 && view->base &&
+        view->base->kind != PSX_TYPE_POINTER &&
+        view->base->kind != PSX_TYPE_ARRAY) {
+      view->deref_size = base_deref_size;
+    }
+    view->pointer_const_qual_mask =
+        level < 32 ? const_mask >> level : 0;
+    view->pointer_volatile_qual_mask =
+        level < 32 ? volatile_mask >> level : 0;
+    level++;
+  }
+
+  psx_type_t *leaf = type;
+  while (leaf && (leaf->kind == PSX_TYPE_POINTER ||
+                  leaf->kind == PSX_TYPE_ARRAY)) {
+    leaf = leaf->base;
+  }
+  if (leaf && base_deref_size > 0 &&
+      (leaf->kind == PSX_TYPE_INTEGER || leaf->kind == PSX_TYPE_BOOL ||
+       leaf->kind == PSX_TYPE_FLOAT)) {
+    leaf->size = base_deref_size;
+    leaf->align = base_deref_size > 8 ? 8 : base_deref_size;
+  }
   return type;
 }
 
@@ -1296,6 +1408,24 @@ void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {
   dst->is_long_long = src->is_long_long;
   dst->is_plain_char = src->is_plain_char;
   dst->is_long_double = src->is_long_double;
+}
+
+void psx_type_set_decl_spec_qualifiers(psx_type_t *type,
+                                       int is_const_qualified,
+                                       int is_volatile_qualified) {
+  if (!type) return;
+  type->is_const_qualified = is_const_qualified ? 1 : 0;
+  type->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
+
+  psx_type_t *value_type = type;
+  while (value_type &&
+         (value_type->kind == PSX_TYPE_POINTER ||
+          value_type->kind == PSX_TYPE_ARRAY)) {
+    value_type = value_type->base;
+  }
+  if (!value_type || value_type->kind == PSX_TYPE_FUNCTION) return;
+  value_type->is_const_qualified = is_const_qualified ? 1 : 0;
+  value_type->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
 }
 
 void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src) {

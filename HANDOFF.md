@@ -1,8 +1,32 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1060: eager mutatorのcanonical直接更新を進行中）
+最終更新: 2026-07-11（続き1061: scalar/qualifier/pointee mutatorの直接更新を安定化）
 
 ## 現状
+- 続き1061: **eager scalar/qualifier/pointee mutatorのcanonical直接更新を安定化した。**
+
+  続き1060で発生していた`E3078`は、declaration specifierのconst/volatileをderived root
+  だけでなくcanonical value leafへ設定する`psx_type_set_decl_spec_qualifiers()`を追加して
+  解消した。`const struct S (*p)[N]`のようなpointer-to-arrayでもlhs/rhsが同じleaf qualifierを
+  読む。
+
+  legacy再materializeが偶然行っていた補正もcanonical builderへ戻した。scalar leafの
+  pointer-to-arrayは`base_deref_size`を行サイズでなくleafサイズへ統一し、parameter pointerは
+  宣言子の`param_ptr_levels`から最初から構築する。object bool mutatorはpointer leafを変更せず、
+  pointee bool mutatorとの責務を分離した。function-pointer signature mutatorはcanonical typeを
+  必ずmaterializeし、scalar storageしかない場合は明示pointerへ昇格してsignatureを型チェーンへ
+  載せる。
+
+  complex mutatorはcanonical scalar kindを直接変更し、型構造を持たないVLA parameter inner-dim
+  sidecar更新からも再materializeを削除した。`decl_type = NULL`は13件から11件へ減った。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+
+  次は残る11件のうち、lvar/gvar pointer-derived builderとtag setterをcanonical構造の直接構築へ
+  移す。storage initializerは初回構築責務を持つため、単なるmutatorとは分けて最後に扱う。
+
 - 続き1060: **scalar identity / qualifier / pointee mutatorをcanonical typeの直接更新へ移している途中。**
 
   lvarのatomic、integer identity、long double、qualifierと、gvarのlong double、qualifierは、

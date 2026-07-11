@@ -266,6 +266,7 @@ void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
                                             int deref_size,
                                             int pointee_elem_size,
                                             int ptr_array_pointee_bytes);
+void psx_decl_set_gvar_pointer_base_array(global_var_t *gv, int array_len);
 void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
                                            int pointer_qual_levels);
 void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size);

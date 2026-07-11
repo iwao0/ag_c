@@ -2722,6 +2722,10 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
       if (target_count <= 0) target_count = 1;
       psx_decl_set_gvar_pointer_derived_type(gv, elem_store, elem,
                                              target_count * elem_store);
+      if (psx_type_pointer_depth(psx_gvar_get_decl_type(gv)) >= 2 &&
+          paren_dims[0] > 0) {
+        psx_decl_set_gvar_pointer_base_array(gv, paren_dims[0]);
+      }
     } else if (pointee_dim_count >= 2) {
       int vdims[9];
       vdims[0] = 1;
@@ -4036,7 +4040,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     psx_decl_init_lvar_storage_type(var, 8, ds->struct_size, 0,
                                     TK_FLOAT_KIND_NONE, 0,
                                     ds->tag_kind, ds->tag_name, ds->tag_len, 1);
-    psx_decl_set_lvar_pointer_derived_type(var, 0, ds->struct_size, 0);
+    psx_decl_set_lvar_pointer_derived_type(var, 1, ds->struct_size, 0);
     return var;
   }
   if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 16) {
@@ -4067,7 +4071,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                                     TK_FLOAT_KIND_NONE, 0,
                                     ds->tag_kind, ds->tag_name, ds->tag_len, 1);
     int struct_pointer_base_deref = ds->struct_size > 0 ? ds->struct_size : pointee;
-    psx_decl_set_lvar_pointer_derived_type(var, 0, struct_pointer_base_deref, 0);
+    psx_decl_set_lvar_pointer_derived_type(var, 1, struct_pointer_base_deref, 0);
     /* 多段の struct ポインタ仮引数 (`struct N **root`): pointer_qual_levels を
      * declarator の段数で立てる。これがないと build_unary_deref_node の `*root` で
      * is_tag_pointer 伝播が pql>=2 を要求して 0 にクリアしてしまい、続く
@@ -4150,7 +4154,8 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                              ? ds->elem_size
                              : pointee_size;
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, lvar_elem_size, 0);
-    psx_decl_set_lvar_pointer_derived_type(var, 0, base_pointee_size, 0);
+    psx_decl_set_lvar_pointer_derived_type(var, param_ptr_levels,
+                                           base_pointee_size, 0);
     /* `unsigned char *p` / `unsigned short *p` 等: pointee が unsigned なら
      * pointee_is_unsigned を立てる。build_lvar_or_vla_node が伝播し、`*p` / `p[i]` が
      * zero-extend load (ldrb/ldrh) になる。未設定だと符号拡張で値が化けていた。 */
@@ -4159,28 +4164,6 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
                                     TK_EOF, NULL, 0, 0);
     psx_decl_set_lvar_pointee_scalar_flags(
         var, ds->is_unsigned, ds->base_type_kind == TK_BOOL);
-    /* `long *a` / `unsigned long *a` / scalar `T **a` のように pointee が 8 バイトの
-     * ポインタ仮引数は size==elem_size==8 となり、lvar_is_pointer の size>elem_size
-     * 判定に漏れる。pointer_qual_levels を立ててポインタと認識させ subscript `a[i]`
-     * を通す。
-     * 注意: int* など pointee<8 では size>elem_size 判定が既に効いておりポインタ
-     * 認識されている。そこへ pql を立てると subscript の結果型が誤って pointer 化し
-     * `p[i]` が壊れる (arr_as_ptr 回帰)。よって pointee_size>=8 のときだけ立てる。
-     * fp 単段ポインタ (`double *a`) は pointee_fp_kind 経路で処理済みなので除外。 */
-    if (pointee_size >= 8 && !(param_ptr_levels == 1 && ds->fp_kind != TK_FLOAT_KIND_NONE) &&
-        /* 配列へのポインタ `T (*p)[N]` (pointee が配列) は除外。pql を立てると
-         * subscript が単段ポインタ (T*) 扱いになり outer_stride を無視して 1 要素
-         * 分しか進まない。要素 struct が 8B 以上のときだけ pointee_size>=8 に該当し
-         * 壊れていた (int(*)[N] は pointee<8 で元から pql 非設定)。 */
-        !(param_is_array_declarator && param_inner_first_dim > 0) &&
-        /* `typedef int row_t[N]; row_t *a` も pointee は配列。typedef サイズが
-         * 8B 以上でも pql を立てると `a[i]` が中間行ではなくポインタ値として
-         * load され、続く `a[i][j]` が壊れる。 */
-        !(param_ptr_levels == 1 && ds->typedef_is_array)) {
-      psx_decl_set_lvar_pointer_derived_type(var, param_ptr_levels,
-                                             var->base_deref_size,
-                                             var->ptr_array_pointee_bytes);
-    }
     /* `double *a` / `float *a` の単段ポインタ仮引数: pointee の fp 種別を伝播し、
      * `*a` / `a[i]` が fp load/store になるようにする (未設定だと整数 load + scvtf に
      * なって値が壊れていた)。 */
@@ -4210,7 +4193,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     /* `typedef int Vec3[3]; int sum(Vec3 v)` の仮引数:
      * C11 6.7.6.3p7 により配列型は pointer に adjust される (decay 先頭要素ポインタ)。 */
     lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
-    psx_decl_set_lvar_pointer_derived_type(var, 0, ds->elem_size, 0);
+    psx_decl_set_lvar_pointer_derived_type(var, 1, ds->elem_size, 0);
     return var;
   }
   if (!param_is_ptr && ds->tag_kind == TK_EOF && ds->is_complex) {
