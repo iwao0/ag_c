@@ -1762,38 +1762,13 @@ static psx_type_t *type_from_direct_funcall(node_func_t *fn) {
              : NULL;
 }
 
-static psx_funcptr_signature_t funcptr_signature_from_function_name(char *name, int len) {
-  psx_funcptr_signature_t suffix = {0};
-  suffix.is_variadic =
-      ps_ctx_get_function_is_variadic(name, len, &suffix.nargs_fixed) ? 1 : 0;
-  for (int i = 0; i < suffix.nargs_fixed && i < 16; i++) {
-    tk_float_kind_t fp_kind = ps_ctx_get_function_param_fp_kind(name, len, i);
-    if (fp_kind != TK_FLOAT_KIND_NONE) {
-      unsigned short fp_code = fp_kind == TK_FLOAT_KIND_FLOAT ? 1u : 2u;
-      suffix.param_fp_mask |= (unsigned short)(fp_code << (2 * i));
-      continue;
-    }
-    int param_size = ps_ctx_get_function_param_int_size(name, len, i);
-    if (param_size > 0) {
-      unsigned short int_code = param_size >= 8 ? 2u : 1u;
-      suffix.param_int_mask |= (unsigned short)(int_code << (2 * i));
-      continue;
-    }
-    if (ps_ctx_get_function_param_category(name, len, i) == PSX_PCAT_PTR) {
-      suffix.param_int_mask |= (unsigned short)(3u << (2 * i));
-    }
-  }
-  return suffix;
-}
-
 static psx_type_t *type_from_funcref(node_funcref_t *fr) {
   if (!fr || !fr->funcname) return NULL;
   psx_type_t *function = type_clone_arena(
       psx_ctx_get_function_type(fr->funcname, fr->funcname_len));
   if (!function || function->kind != PSX_TYPE_FUNCTION) return NULL;
-  psx_funcptr_signature_t suffix =
-      funcptr_signature_from_function_name(fr->funcname, fr->funcname_len);
-  function->funcptr_sig.function.callable.signature = suffix;
+  function->funcptr_sig.function.callable.signature =
+      ps_type_funcptr_signature(function).function.callable.signature;
   psx_type_t *pointer = psx_type_new_pointer(function, 0);
   pointer->funcptr_sig = ps_decl_funcptr_sig_clone(function->funcptr_sig);
   return pointer;
@@ -1963,14 +1938,11 @@ static void sync_funcall_result_metadata_from_type(node_func_t *fn,
   if (!fn || !type) return;
   fn->base.fp_kind = TK_FLOAT_KIND_NONE;
   fn->base.is_complex = 0;
-  fn->base.is_void_call = 0;
-  fn->base.ret_struct_size = 0;
   fn->base.is_unsigned = 0;
   fn->base.is_atomic = type->is_atomic ? 1 : 0;
   fn->base.is_long_long = 0;
 
   if (type->kind == PSX_TYPE_VOID) {
-    fn->base.is_void_call = 1;
     return;
   }
   if (type->kind == PSX_TYPE_COMPLEX) {
@@ -1985,8 +1957,6 @@ static void sync_funcall_result_metadata_from_type(node_func_t *fn,
     return;
   }
   if (ps_type_is_tag_aggregate(type)) {
-    int size = ps_type_sizeof(type);
-    if (size > 0) fn->base.ret_struct_size = size;
     return;
   }
   if (type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER) {
@@ -2285,9 +2255,8 @@ int ps_node_type_size(node_t *node) {
       return s > 0 ? s : 4;
     }
     case ND_FUNCALL: {
-      if (node->ret_struct_size > 0) return node->ret_struct_size;
-      if (node->fp_kind == TK_FLOAT_KIND_FLOAT) return 4;
-      if (node->fp_kind >= TK_FLOAT_KIND_DOUBLE) return 8;
+      int size = ps_type_sizeof(ps_node_get_type(node));
+      if (size > 0) return size;
       return 4;
     }
     /* 算術/論理演算: ポインタ算術 (ptr ± int) なら 8、それ以外は
@@ -3714,6 +3683,11 @@ node_t *psx_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size)
   return (node_t *)new_lvar_symbol_node(offset, owner, type);
 }
 
+node_t *psx_node_new_lvar_type_at_for(lvar_t *owner, int offset,
+                                      psx_type_t *type) {
+  return (node_t *)new_lvar_symbol_node(offset, owner, type);
+}
+
 node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
                                          tk_float_kind_t fp_kind, int is_bool) {
   psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
@@ -3787,17 +3761,10 @@ node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
   return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
 }
 
-node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,
-                                    int is_unsigned, tk_float_kind_t abi_fp_kind,
-                                    int is_complex) {
+node_t *psx_node_new_param_lvar_for(lvar_t *var) {
   psx_type_t *decl_type = var ? psx_lvar_get_decl_type(var) : NULL;
-  (void)is_unsigned;
-  (void)abi_fp_kind;
-  (void)is_complex;
-  node_lvar_t *node = new_lvar_symbol_node(
+  return (node_t *)new_lvar_symbol_node(
       var ? var->offset : 0, var, decl_type);
-  node->param_abi_type_size = abi_type_size;
-  return (node_t *)node;
 }
 
 node_t *psx_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
@@ -3923,6 +3890,14 @@ node_t *psx_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type) {
   wrap->lhs = operand;
   if (!cast_type) cast_type = type_new_void();
   return annotate_explicit_type(wrap, cast_type);
+}
+
+node_t *psx_node_new_source_cast(node_t *operand, psx_type_t *target_type) {
+  node_t *cast = arena_alloc(sizeof(node_num_t));
+  cast->kind = ND_CAST;
+  cast->lhs = operand;
+  cast->is_source_cast = 1;
+  return annotate_explicit_type(cast, target_type);
 }
 
 static node_t *new_addr_node(node_t *base) {
@@ -4598,11 +4573,6 @@ lvar_t *psx_node_lvar_symbol(node_t *node) {
   return lv->var ? lv->var : psx_decl_find_lvar_by_offset(lv->offset);
 }
 
-int ps_node_param_abi_type_size(node_t *node) {
-  if (!node || node->kind != ND_LVAR) return 0;
-  return ((node_lvar_t *)node)->param_abi_type_size;
-}
-
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {
   if (!target || !is_lvalue_clone_kind(target->kind)) return target;
   switch (target->kind) {
@@ -4634,20 +4604,6 @@ node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {
     default:
       return target;
   }
-}
-
-static int lhs_is_bool_slot(node_t *lhs) {
-  if (!lhs || (lhs->kind != ND_LVAR && lhs->kind != ND_DEREF && lhs->kind != ND_GVAR)) {
-    return 0;
-  }
-  psx_type_t *type = ps_node_get_type(lhs);
-  if (type && type->kind == PSX_TYPE_BOOL) return 1;
-  if (lhs->kind == ND_DEREF && lhs->lhs &&
-      psx_node_pointee_is_bool(lhs->lhs) &&
-      (ps_node_type_size(lhs) <= 1 || ps_node_deref_size(lhs) <= 1)) {
-    return 1;
-  }
-  return 0;
 }
 
 static int node_scalar_ptr_member_lvalue(node_t *node) {
@@ -4771,33 +4727,47 @@ node_t *psx_node_new_vla_alloc(int descriptor_frame_off,
 }
 
 node_t *psx_node_new_assign(node_t *lhs, node_t *rhs) {
-  /* C11 6.5.16: 代入の RHS は void 型であってはならない。
-   * direct / indirect call の違いは ND_FUNCALL の materialized type 側へ寄せる。 */
-  if (rhs && rhs->kind == ND_FUNCALL) {
-    node_func_t *fn = (node_func_t *)rhs;
-    psx_type_t *rhs_type = ps_node_get_type(rhs);
-    if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
-      if (fn->callee == NULL && fn->funcname) {
-        psx_diag_ctx(tk_get_current_token(), "assign",
-                     "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
-                     fn->funcname_len, fn->funcname);
-      } else {
-        psx_diag_ctx(tk_get_current_token(), "assign",
-                     "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
-      }
-    }
-  }
   node_t *node = arena_alloc(sizeof(node_t));
   node->kind = ND_ASSIGN;
   node->lhs = lhs;
-  node->rhs = (lhs_is_bool_slot(lhs) && rhs)
-                  ? psx_node_new_binary(ND_NE, rhs, psx_node_new_num(0))
-                  : rhs;
+  node->rhs = rhs;
   node->type = ps_node_get_type(lhs);
   return node;
 }
 
-void psx_node_reject_const_assign(node_t *node, const char *op) {
+node_t *psx_node_new_decl_initializer(node_t *target, node_t *value,
+                                      psx_decl_init_kind_t init_kind,
+                                      token_t *tok) {
+  node_decl_init_t *node = arena_alloc(sizeof(node_decl_init_t));
+  node->base.kind = ND_DECL_INIT;
+  node->base.lhs = target;
+  node->base.rhs = value;
+  node->base.tok = tok;
+  node->base.type = target ? ps_node_get_type(target) : NULL;
+  node->init_kind = init_kind;
+  return (node_t *)node;
+}
+
+node_t *psx_node_new_decl_initializer_list(
+    node_t *target, psx_decl_init_kind_t init_kind,
+    psx_initializer_entry_t *entries, int entry_count, token_t *tok) {
+  return psx_node_new_decl_initializer(
+      target, psx_node_new_initializer_list(entries, entry_count, tok),
+      init_kind, tok);
+}
+
+node_t *psx_node_new_initializer_list(
+    psx_initializer_entry_t *entries, int entry_count, token_t *tok) {
+  node_init_list_t *node = arena_alloc(sizeof(node_init_list_t));
+  node->base.kind = ND_INIT_LIST;
+  node->base.tok = tok;
+  node->entries = entries;
+  node->entry_count = entry_count;
+  return (node_t *)node;
+}
+
+void psx_node_reject_const_assign_at(node_t *node, const char *op,
+                                     token_t *tok) {
   (void)op;
   if (!node) return;
   if (node->kind == ND_LVAR || node->kind == ND_GVAR || node->kind == ND_DEREF) {
@@ -4808,10 +4778,14 @@ void psx_node_reject_const_assign(node_t *node, const char *op) {
      * (`int * const p;` のケース)。非ポインタ変数は従来通り
      * is_const_qualified を見る (`const int x = 5; x = 10;` を拒否)。 */
     if (node_self_is_const_qualified(node)) {
-      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, curtok(),
+      diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, tok,
                      diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));
     }
   }
+}
+
+void psx_node_reject_const_assign(node_t *node, const char *op) {
+  psx_node_reject_const_assign_at(node, op, curtok());
 }
 
 static int node_pointee_is_const(node_t *node) {
@@ -4819,7 +4793,8 @@ static int node_pointee_is_const(node_t *node) {
   return psx_node_pointee_is_const_qualified(node);
 }
 
-void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
+void psx_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
+                                           token_t *tok) {
   if (!lhs || !rhs) return;
   if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
   if (!ps_node_is_pointer(lhs)) return;
@@ -4829,16 +4804,24 @@ void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
   }
   if (psx_node_pointee_is_const_qualified(lhs)) return;
   if (node_pointee_is_const(rhs)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, curtok(),
+    diag_emit_tokf(DIAG_ERR_PARSER_CONST_QUAL_DISCARD, tok,
                    diag_message_for(DIAG_ERR_PARSER_CONST_QUAL_DISCARD));
   }
 }
 
-void psx_node_expect_lvalue(node_t *node, const char *op) {
+void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs) {
+  psx_node_reject_const_qual_discard_at(lhs, rhs, curtok());
+}
+
+void psx_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
   if (!node || (node->kind != ND_LVAR && node->kind != ND_DEREF && node->kind != ND_GVAR)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, curtok(),
+    diag_emit_tokf(DIAG_ERR_PARSER_LVALUE_REQUIRED, tok,
                    diag_message_for(DIAG_ERR_PARSER_LVALUE_REQUIRED), (char *)op);
   }
+}
+
+void psx_node_expect_lvalue(node_t *node, const char *op) {
+  psx_node_expect_lvalue_at(node, op, curtok());
 }
 
 void psx_node_expect_incdec_target(node_t *node, const char *op) {
@@ -4846,20 +4829,4 @@ void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_reject_const_assign(node, op);
   /* C11 6.5.2.4 / 6.5.3.1: ++ / -- の対象は実数型 (整数・浮動小数点) または
    * ポインタ型でよい。float / double も許可する。 */
-}
-
-node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op) {
-  psx_node_expect_lvalue(lhs, op);
-  psx_node_reject_const_assign(lhs, op);
-  /* C11 6.5.16.2p3: `p += n` でポインタ算術するときは、rhs を要素サイズ倍に
-   * スケーリングする。`add()` 経路と挙動を揃える。 */
-  if ((op_kind == ND_ADD || op_kind == ND_SUB) && ps_node_is_pointer(lhs)) {
-    int ds = ps_node_deref_size(lhs);
-    if (ds > 1) {
-      rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(ds));
-    }
-  }
-  node_t *op_expr = psx_node_new_binary(op_kind, lhs, rhs);
-  node_t *assign_node = psx_node_new_assign(lhs, op_expr);
-  return (node_t *)assign_node;
 }

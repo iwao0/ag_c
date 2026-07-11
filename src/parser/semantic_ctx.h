@@ -30,6 +30,9 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
+psx_aggregate_definition_t *psx_ctx_get_tag_definition(
+    token_kind_t kind, char *name, int len);
+void psx_ctx_attach_aggregate_definitions(psx_type_t *type);
 /* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を
  * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
 void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
@@ -120,8 +123,6 @@ const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
 /* 完全な canonical 関数型を初回登録し、再宣言時は同じ型か照合する。 */
 int psx_ctx_track_function_type(char *name, int len,
                                 const psx_type_t *function_type);
-void psx_ctx_set_function_param_abi_int_size(char *name, int len,
-                                             int param_idx, int size);
 const psx_type_t *psx_ctx_get_function_type(char *name, int len);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
 int psx_ctx_get_function_ret_is_pointer(char *name, int len);

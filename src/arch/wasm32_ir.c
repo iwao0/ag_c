@@ -1,6 +1,7 @@
 #include "wasm32_ir.h"
 #include "../codegen_emit.h"
 #include "../diag/diag.h"
+#include "../ir/abi_lowering.h"
 #include "../parser/parser_public.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
@@ -392,12 +393,10 @@ static void emit_function_table(void) {
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
-  if (ps_ctx_get_function_param_category(f->name, f->name_len, idx) == PSX_PCAT_STRUCT) {
-    return IR_TY_PTR;
-  }
-  if (raw != IR_TY_PTR && ps_ctx_get_function_param_int_size(f->name, f->name_len, idx) == 8) {
-    return IR_TY_I64;
-  }
+  ir_abi_param_info_t param =
+      ir_abi_classify_function_param(f->name, f->name_len, idx);
+  if (param.param_class == IR_ABI_PARAM_AGGREGATE) return IR_TY_PTR;
+  if (raw != IR_TY_PTR && param.type != IR_TY_VOID) return param.type;
   return raw;
 }
 
@@ -1310,8 +1309,10 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
         (is_minimal_fixed2_format && (a == 0 || a == 2)) ||
         (is_minimal_sscanf && (a == 0 || a == 1 || a >= 2)) ||
         (is_minimal_swscanf && (a == 0 || a == 1 || a >= 2));
+    ir_abi_param_info_t declared_param =
+        ir_abi_classify_function_param(i->sym, i->sym_len, a);
     if (minimal_stub_ptr_arg ||
-        ps_ctx_get_function_param_category(i->sym, i->sym_len, a) == PSX_PCAT_PTR) {
+        declared_param.param_class == IR_ABI_PARAM_POINTER) {
       arg_ty = IR_TY_PTR;
     } else if (is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) {
       arg_ty = IR_TY_I64;
@@ -1326,7 +1327,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
                 (i->sym_len == 8 && (memcmp(i->sym, "scalblnf", 8) == 0 ||
                                       memcmp(i->sym, "scalblnl", 8) == 0)))) {
       arg_ty = IR_TY_I64;
-    } else if (ps_ctx_get_function_param_int_size(i->sym, i->sym_len, a) == 8) {
+    } else if (declared_param.type == IR_TY_I64) {
       arg_ty = IR_TY_I64;
     }
     cg_emitf(" ");
@@ -2526,17 +2527,12 @@ static void emit_wasm_vsnprintf_stubs(void) {
 static const char *declared_function_param_wasm_type(const char *name,
                                                      int name_len,
                                                      int param_idx) {
-  int category = ps_ctx_get_function_param_category(
+  ir_abi_param_info_t param = ir_abi_classify_function_param(
       (char *)name, name_len, param_idx);
-  if (category == PSX_PCAT_PTR || category == PSX_PCAT_STRUCT)
-    return "i32";
-  tk_float_kind_t fp_kind = ps_ctx_get_function_param_fp_kind(
-      (char *)name, name_len, param_idx);
-  if (fp_kind == TK_FLOAT_KIND_FLOAT) return "f32";
-  if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return "f64";
-  return ps_ctx_get_function_param_int_size(
-             (char *)name, name_len, param_idx) == 8
-             ? "i64" : "i32";
+  if (param.type == IR_TY_F32) return "f32";
+  if (param.type == IR_TY_F64) return "f64";
+  if (param.type == IR_TY_I64) return "i64";
+  return "i32";
 }
 
 static int emit_declared_fixed_function_params(const char *name, int name_len) {
@@ -2566,9 +2562,13 @@ static void emit_wasm_printf_stubs(void) {
     if (function_table_has_ref("fprintf", 7)) {
       wasm_emitf(2, "(func $__ag_funcptr_fprintf");
       int nparams = emit_declared_fixed_function_params("fprintf", 7);
+      ir_abi_param_info_t stream_param =
+          ir_abi_classify_function_param("fprintf", 7, 0);
+      ir_abi_param_info_t format_param =
+          ir_abi_classify_function_param("fprintf", 7, 1);
       if (nparams != 2 ||
-          ps_ctx_get_function_param_category("fprintf", 7, 0) != PSX_PCAT_PTR ||
-          ps_ctx_get_function_param_category("fprintf", 7, 1) != PSX_PCAT_PTR) {
+          stream_param.param_class != IR_ABI_PARAM_POINTER ||
+          format_param.param_class != IR_ABI_PARAM_POINTER) {
         wasm_unsupported_msg("fprintf function-pointer declaration in Wasm backend");
       }
       cg_emitf(" (result i32)\n");

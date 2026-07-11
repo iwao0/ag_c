@@ -42,6 +42,7 @@ struct tag_type_t {
   int size;
   int align;       // struct/union のアラインメント (_Alignof 用、agg_align)。0 = 未設定。
   int scope_depth;
+  psx_aggregate_definition_t *definition;
 };
 typedef struct tag_member_t tag_member_t;
 struct tag_member_t {
@@ -119,10 +120,6 @@ struct func_name_t {
   char *name;
   int len;
   psx_type_t *function_type;
-  /* IR の既存 calling convention が使う整数スロット幅。C の意味型ではなく、
-   * parameter node から lowering 時に作る ABI projection。 */
-  unsigned char param_abi_int_sizes[16];
-  int param_abi_int_sizes_count;
   /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
    * のみではこのフラグは立たない。 */
@@ -738,6 +735,39 @@ int ps_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
   return t ? t->member_count : -1;
 }
 
+static bool get_tag_member_info_impl(token_kind_t kind, char *name, int len,
+                                     int scope_depth, int index,
+                                     tag_member_info_t *out);
+
+psx_aggregate_definition_t *psx_ctx_get_tag_definition(
+    token_kind_t kind, char *name, int len) {
+  tag_type_t *tag = find_tag_type(kind, name, len);
+  if (!tag) return NULL;
+  if (tag->definition) return tag->definition;
+
+  psx_aggregate_definition_t *definition =
+      calloc(1, sizeof(psx_aggregate_definition_t));
+  definition->tag_kind = tag->kind;
+  definition->tag_name = tag->name;
+  definition->tag_len = tag->len;
+  definition->size = tag->size;
+  definition->align = tag->align;
+  definition->member_count = tag->member_count;
+  tag->definition = definition;
+  if (definition->member_count > 0) {
+    definition->members = calloc((size_t)definition->member_count,
+                                 sizeof(tag_member_info_t));
+    for (int i = 0; i < definition->member_count; i++) {
+      if (!get_tag_member_info_impl(kind, name, len, tag->scope_depth,
+                                    i, &definition->members[i])) {
+        definition->member_count = i;
+        break;
+      }
+    }
+  }
+  return definition;
+}
+
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type(kind, name, len);
   return t ? t->size : -1;
@@ -786,6 +816,18 @@ static int cmp_tag_member_ptr(const void *a, const void *b) {
 
 /* tag_member_t の全属性を tag_member_info_t へ写す。get/find_tag_member_info が
  * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
+void psx_ctx_attach_aggregate_definitions(psx_type_t *type) {
+  if (!type) return;
+  if (ps_type_is_tag_aggregate(type) && !type->aggregate_definition) {
+    type->aggregate_definition = psx_ctx_get_tag_definition(
+        type->tag_kind, type->tag_name, type->tag_len);
+  }
+  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY ||
+      type->kind == PSX_TYPE_FUNCTION) {
+    psx_ctx_attach_aggregate_definitions(type->base);
+  }
+}
+
 static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) {
   memset(out, 0, sizeof(*out));
   out->name = m->member_name;
@@ -795,6 +837,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->bit_offset = m->bit_offset;
   out->bit_is_signed = m->bit_is_signed;
   psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
+  psx_ctx_attach_aggregate_definitions(decl_type);
   ps_tag_member_set_decl_type(out, decl_type);
   ctx_tag_member_info_apply_type(out, decl_type);
 }
@@ -1137,34 +1180,10 @@ static const psx_type_t *ctx_function_param_type(const func_name_t *f,
   return f->function_type->param_types[param_idx];
 }
 
-tk_float_kind_t ps_ctx_get_function_param_fp_kind(char *name, int len, int param_idx) {
+const psx_type_t *ps_ctx_get_function_param_type(char *name, int len,
+                                                 int param_idx) {
   func_name_t *f = find_function_name(name, len);
-  const psx_type_t *type = ctx_function_param_type(f, param_idx);
-  return type && (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)
-             ? type->fp_kind
-             : TK_FLOAT_KIND_NONE;
-}
-
-int ps_ctx_get_function_param_int_size(char *name, int len, int param_idx) {
-  func_name_t *f = find_function_name(name, len);
-  if (!f || param_idx < 0 || param_idx >= f->param_abi_int_sizes_count)
-    return 0;
-  return f->param_abi_int_sizes[param_idx];
-}
-
-void psx_ctx_set_function_param_abi_int_size(char *name, int len,
-                                             int param_idx, int size) {
-  func_name_t *f = find_function_name(name, len);
-  if (!f || param_idx < 0 || param_idx >= 16) return;
-  f->param_abi_int_sizes[param_idx] = (unsigned char)size;
-  if (param_idx + 1 > f->param_abi_int_sizes_count)
-    f->param_abi_int_sizes_count = param_idx + 1;
-}
-
-int ps_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx) {
-  func_name_t *f = find_function_name(name, len);
-  const psx_type_t *type = ctx_function_param_type(f, param_idx);
-  return type ? ps_type_is_unsigned(type) : 0;
+  return ctx_function_param_type(f, param_idx);
 }
 
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
@@ -1180,23 +1199,6 @@ int psx_ctx_track_function_defined(char *name, int len) {
 int ps_ctx_is_function_defined(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f && f->is_defined;
-}
-
-int ps_ctx_get_function_param_category(char *name, int len, int idx) {
-  func_name_t *f = find_function_name(name, len);
-  const psx_type_t *type = ctx_function_param_type(f, idx);
-  if (!type) return PSX_PCAT_UNSET;
-  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_FUNCTION)
-    return PSX_PCAT_PTR;
-  if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)
-    return type->fp_kind == TK_FLOAT_KIND_FLOAT ? PSX_PCAT_FLOAT
-                                                : PSX_PCAT_DOUBLE;
-  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION ||
-      type->kind == PSX_TYPE_ARRAY)
-    return PSX_PCAT_STRUCT;
-  if (type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER)
-    return ps_type_sizeof(type) > 4 ? PSX_PCAT_INT8 : PSX_PCAT_INT4;
-  return PSX_PCAT_OTHER;
 }
 
 bool psx_ctx_is_function_ret_void(char *name, int len) {

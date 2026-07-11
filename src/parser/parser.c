@@ -13,64 +13,22 @@
 #include "dynarray.h"
 #include "enum_const.h"
 #include "expr.h"
+#include "global_registry.h"
+#include "initializer_syntax.h"
 #include "ret_pointee_array.h"
 #include "stmt.h"
 #include "struct_layout.h"
 #include "type.h"
 #include "../diag/diag.h"
+#include "../semantic/constant_expression.h"
+#include "../semantic/declaration_resolution.h"
+#include "../lowering/static_data_initializer.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static string_lit_t *string_literals = NULL;
-static float_lit_t *float_literals = NULL;
-static global_var_t *global_vars = NULL;
-
-/* グローバル変数の名前ハッシュ索引。グローバル参照の解決 (try_build_global_var_node)
- * や登録時の重複チェックが global_vars を線形走査しており、グローバル N 個・参照 M 回で
- * O(N*M) になっていた。名前を 256 バケットへハッシュして O(1) 化する。global_vars は
- * TU 全体で生存しスコープも無いので、登録時に挿入するだけ (除去・リセット不要)。 */
-#define GVAR_HASH_BUCKETS 256u
-static global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
-
-static unsigned gvar_name_hash(const char *name, int len) {
-  unsigned h = 2166136261u;
-  for (int i = 0; i < len; i++) h = (h ^ (unsigned char)name[i]) * 16777619u;
-  return h & (GVAR_HASH_BUCKETS - 1u);
-}
-
-void psx_register_global_var(global_var_t *gv) {
-  gv->next = global_vars;
-  global_vars = gv;
-  unsigned h = gvar_name_hash(gv->name, gv->name_len);
-  gv->next_hash = gvars_by_bucket[h];
-  gvars_by_bucket[h] = gv;
-}
-
-void psx_register_string_lit(string_lit_t *lit) {
-  lit->next = string_literals;
-  string_literals = lit;
-}
-
-void psx_register_float_lit(float_lit_t *lit) {
-  lit->next = float_literals;
-  float_literals = lit;
-}
-
-global_var_t *ps_find_global_var(char *name, int len) {
-  /* bucket は MRU 順 (登録順) なので、最初の名前一致が global_vars 線形走査と
-   * 同じ変数 (重複登録時も先頭 = 同一挙動)。 */
-  unsigned h = gvar_name_hash(name, len);
-  for (global_var_t *gv = gvars_by_bucket[h]; gv; gv = gv->next_hash) {
-    if (gv->name_len == len && memcmp(gv->name, name, (size_t)len) == 0) {
-      return gv;
-    }
-  }
-  return NULL;
-}
 
 int ps_gvar_is_extern_decl(const global_var_t *gv) {
   return (gv && gv->is_extern_decl) ? 1 : 0;
@@ -235,14 +193,6 @@ int ps_gvar_name_len(const global_var_t *gv) {
   return gv ? gv->name_len : 0;
 }
 
-string_lit_t *psx_find_string_lit_by_label(char *label) {
-  if (!label) return NULL;
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    if (strcmp(lit->label, label) == 0) return lit;
-  }
-  return NULL;
-}
-
 psx_string_lit_view_t ps_string_lit_view(const string_lit_t *lit) {
   if (!lit) return (psx_string_lit_view_t){0};
   return (psx_string_lit_view_t){
@@ -260,45 +210,6 @@ psx_float_lit_view_t ps_float_lit_view(const float_lit_t *lit) {
       .id = lit->id,
       .fp_kind = lit->fp_kind,
   };
-}
-
-/* parser_public.h で宣言した visitor の実装 (Phase C3-1)。
- * codegen 側が global_vars / string_literals / float_literals リストを
- * 直接舐めるのを廃して、走査経路を 1 箇所にまとめる。 */
-void ps_iter_globals(global_var_visitor_t fn, void *user) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    fn(gv, user);
-  }
-}
-
-bool ps_iter_string_literals(string_lit_visitor_t fn, void *user) {
-  if (!string_literals) return false;
-  for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
-    fn(lit, user);
-  }
-  return true;
-}
-
-bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
-  if (!float_literals) return false;
-  for (float_lit_t *lit = float_literals; lit; lit = lit->next) {
-    fn(lit, user);
-  }
-  return true;
-}
-
-bool ps_has_string_literals(void) { return string_literals != NULL; }
-bool ps_has_float_literals(void) { return float_literals != NULL; }
-
-static void reset_global_var_diag_state(void) {
-  for (global_var_t *gv = global_vars; gv; gv = gv->next) {
-    gv->has_init = 0;
-  }
-}
-
-static void reset_literal_tables(void) {
-  string_literals = NULL;
-  float_literals = NULL;
 }
 
 typedef struct {
@@ -813,9 +724,7 @@ static void reset_toplevel_decl_spec_state(toplevel_decl_spec_t *spec) {
 }
 
 void ps_reset_translation_unit_state(void) {
-  global_vars = NULL;
-  reset_literal_tables();
-  memset(gvars_by_bucket, 0, sizeof(gvars_by_bucket));
+  psx_global_registry_reset_translation_unit();
   toplevel_decl_spec_t spec;
   reset_toplevel_decl_spec_state(&spec);
   psx_anon_tag_reset_translation_unit_state();
@@ -929,17 +838,6 @@ void psx_skip_gnu_attributes(void) {
     psx_skip_gnu_attributes_at(&t);
     set_curtok(t);
   }
-}
-
-static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *name) {
-  psx_ctx_record_unsupported_gnu_extension_warning(tok, name);
-}
-
-static void consume_gnu_range_designator_tail_if_any(void) {
-  if (curtok()->kind != TK_ELLIPSIS) return;
-  warn_unsupported_gnu_extension_name(curtok(), "array range designator");
-  set_curtok(curtok()->next);
-  (void)psx_expr_assign();
 }
 
 static inline token_t *curtok(void) {
@@ -1307,7 +1205,7 @@ node_t **ps_program_from(token_t *start) {
    * (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パースの
    * `int g=1;` の has_init=1 や前回 funcdef の is_defined=1 が次回パースに漏れて、
    * 重複定義チェック等が誤って発火する。 */
-  reset_global_var_diag_state();
+  psx_global_registry_reset_diag_state();
   psx_ctx_reset_function_diag_state();
   psx_ctx_reset_tag_diag_state();
   return ps_program_ctx(NULL, start);
@@ -1631,678 +1529,6 @@ static void guard_toplevel_declarator_count(int declarator_count) {
                PS_MAX_DECLARATOR_COUNT);
 }
 
-// グローバル変数の `{...}` 初期化子を再帰的に flatten して gv->init_values に
-// 行優先で詰める。ネストした brace は単に下りる: `{{1,2},{3,4}}` も `{1,2,3,4}` と
-// 同じ列になる (多次元配列のメモリレイアウトは行優先)。
-// 各要素は ND_NUM のみ受け付け、定数式評価は未対応 (ND_NUM 以外は 0 をプレースする)。
-/* グローバル double/float 初期化用の定数式畳み込み。
- * ND_NUM (fval) / ND_ADD / ND_SUB / ND_MUL / ND_DIV / 単項マイナスを再帰評価する。
- * 整数リテラル (ND_NUM with fp_kind=NONE) も double に昇格して評価。
- * 評価不可なら *ok=0。 */
-static double psx_eval_const_fp(node_t *n, int *ok) {
-  if (!n) { *ok = 0; return 0.0; }
-  switch (n->kind) {
-    case ND_NUM: {
-      node_num_t *num = (node_num_t *)n;
-      if (num->base.fp_kind != TK_FLOAT_KIND_NONE) return num->fval;
-      return (double)num->val;
-    }
-    case ND_ADD: {
-      double l = psx_eval_const_fp(n->lhs, ok);
-      if (!*ok) return 0.0;
-      double r = psx_eval_const_fp(n->rhs, ok);
-      return *ok ? l + r : 0.0;
-    }
-    case ND_SUB: {
-      double l = psx_eval_const_fp(n->lhs, ok);
-      if (!*ok) return 0.0;
-      double r = psx_eval_const_fp(n->rhs, ok);
-      return *ok ? l - r : 0.0;
-    }
-    case ND_MUL: {
-      double l = psx_eval_const_fp(n->lhs, ok);
-      if (!*ok) return 0.0;
-      double r = psx_eval_const_fp(n->rhs, ok);
-      return *ok ? l * r : 0.0;
-    }
-    case ND_DIV: {
-      double l = psx_eval_const_fp(n->lhs, ok);
-      if (!*ok) return 0.0;
-      double r = psx_eval_const_fp(n->rhs, ok);
-      if (!*ok || r == 0.0) { *ok = 0; return 0.0; }
-      return l / r;
-    }
-    case ND_FNEG: {
-      /* 浮動小数の単項マイナス (`-1.0f` は ND_FNEG(1.0f))。これを扱わないと
-       * 負の fp グローバル初期化子が定数畳み込みに失敗し has_init が立たず BSS(0) に
-       * 化けていた (`float g=-1.0f;` が 0 になる)。 */
-      double v = psx_eval_const_fp(n->lhs, ok);
-      return *ok ? -v : 0.0;
-    }
-    default:
-      *ok = 0;
-      return 0.0;
-  }
-}
-
-/* 多次元 member designator の `[i]` を 1 段消費し、残り次元の要素数へ畳み込む。 */
-static void consume_global_member_array_dim(tag_member_info_t *mi) {
-  if (!mi) return;
-  psx_type_t *decl_type = ps_tag_member_decl_type_mut(mi);
-  if (decl_type && decl_type->kind == PSX_TYPE_ARRAY && decl_type->base) {
-    ps_tag_member_set_decl_type(mi, decl_type->base);
-  }
-  if (mi->arr_ndim > 1) {
-    int remaining = 1;
-    for (int i = 1; i < mi->arr_ndim; i++) {
-      mi->arr_dims[i - 1] = mi->arr_dims[i];
-      if (mi->arr_dims[i - 1] > 0) remaining *= mi->arr_dims[i - 1];
-    }
-    mi->arr_ndim--;
-    mi->array_len = remaining;
-    return;
-  }
-  mi->array_len = 0;
-  mi->arr_ndim = 0;
-}
-
-/* グローバル struct/union の `.member` designator 解決は
- * ps_tag_member_designator_slot() に統合した。本体 psx_gbrace_flat はネスト時の型コンテキスト ctx に対して
- * 解決する必要があるため gv 固定版は使わない。 */
-
-static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
-
-/* ネスト brace 内の designator (`.member` / `[N]`) を解決するための「現在の brace level が
- * 初期化している集約型」コンテキスト。これがないと `.s={.a=7}` や `.items={[2]={.a=7}}` の
- * 内側 `.a` を最外 gv の型に対して探してしまい E3064 になっていた。 */
-typedef struct {
-  token_kind_t tag_kind;  /* struct/union タグ (要素が struct/union なら) / TK_EOF */
-  char *tag_name;
-  int tag_len;
-  int is_array;           /* この level が配列か (要素型は tag_kind) */
-  int is_tag_pointer;     /* この level の要素がタグへのポインタ (`struct P *arr[3]`)。
-                           * 設定時、is_array=1 で要素は「タグポインタ scalar 8B」になり
-                           * gbrace_child_at が各要素を 1 slot (= 8B) として返す。
-                           * 通常のタグ値配列 (`struct P arr[3]`) は 0 で従来どおり struct
-                           * 単位 (= 内側メンバ数 slot) で展開する。 */
-  int elem_size;          /* 非タグ配列メンバ (`char name[8]`) の要素サイズ。char 配列の文字列展開判定に使う */
-  int array_len;          /* 同上の要素数 (0=非配列) */
-  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の「残り」次元チェーン。is_array=1 のとき、
-   * 最外側次元はこの level が表現し、sub_dims[0..sub_ndim) が内側に残る次元を最外側から並べる。
-   * gbrace_child_at で 1 段下がるたびに sub_dims を 1 つ消費し、内側 ctx を生成する。
-   * sub_ndim==0 は単純 1 次元 (従来挙動)。sub_ndim==1 は要素が「char[sub_dims[0]] 行」(文字列展開)。
-   * sub_ndim>=2 はさらに内側がネスト配列。 */
-  int sub_dims[8];
-  int sub_ndim;
-  /* ネスト union の active メンバ fp_kind (TK_FLOAT_KIND_NONE = fp ではない or 不明)。
-   * `.member = expr` designator で fp メンバを解決した時に立て、後段の scalar 書き込みで
-   * sentinel (init_value_symbol_lens) を立ててネスト union fp 出力に使う。 */
-  tk_float_kind_t pending_fp_kind;
-  int pending_fp_size;  /* float=4, double=8 (sentinel decode 用) */
-} gbrace_ctx_t;
-
-/* tag_member_info_t (designator の葉メンバ型) から子 brace のコンテキストを作る。 */
-static void gbrace_ctx_clear(gbrace_ctx_t *c) {
-  memset(c, 0, sizeof(*c));
-  c->tag_kind = TK_EOF;
-  c->pending_fp_kind = TK_FLOAT_KIND_NONE;
-}
-
-static void gbrace_ctx_from_member(gbrace_ctx_t *c, const tag_member_info_t *mi) {
-  int elem = ps_tag_member_decl_value_size(mi);
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_pointer = 0;
-  ps_tag_member_decl_tag_identity(mi, &tag_kind, &tag_name, &tag_len,
-                                   &is_tag_pointer);
-  gbrace_ctx_clear(c);
-  c->tag_kind = tag_kind;
-  c->tag_name = tag_name;
-  c->tag_len = tag_len;
-  c->is_array = (ps_tag_member_decl_array_count(mi) > 0);
-  c->is_tag_pointer = is_tag_pointer ? 1 : 0;
-  c->elem_size = elem;
-  c->array_len = ps_tag_member_decl_array_count(mi);
-  /* 多次元配列メンバ: 各次元サイズが arr_dims に入る。最外側 1 段はこの ctx が
-   * is_array=1 として表現するので、残り (sub_dims) には arr_dims[1..arr_ndim) を
-   * 最外側から並べてコピー。child_at が 1 段ずつ消費する。
-   * - char (`char c[2][2][3]`): 内側 1D を文字列展開する (sub_ndim==1 で is_array=0)。
-   * - 非 char (`int x[3][3]`): 内側次元を ndim-1 として再帰し、`[N]=` 経路では
-   *   sub_dims から内側 1 要素の slot 数を計算する。
-   * - struct タグ配列 (`struct C rows[3][2]`): 最外 `[N]=` の elem_slots を
-   *   `struct slot * 内側次元の積` で計算するために sub_dims を保持する。
-   * 2 次元以上のみ (1D は sub_dims 不要、従来の array_len で運用)。 */
-  if (mi->arr_ndim >= 2) {
-    int n = mi->arr_ndim - 1;
-    if (n > 8) n = 8;
-    for (int i = 0; i < n; i++) c->sub_dims[i] = mi->arr_dims[i + 1];
-    c->sub_ndim = n;
-  }
-}
-
-/* aggregate `ctx` の中で level 先頭から slot オフセット `off` にある部分オブジェクトの型。
- * positional 初期化 (`{{.a=1},{.b=2}}`) で次の brace 要素のコンテキストを得るのに使う。 */
-static void gbrace_child_at(gbrace_ctx_t *c, const gbrace_ctx_t *ctx, int off) {
-  gbrace_ctx_clear(c);
-  if (ctx->is_array) {
-    /* 配列要素はすべて同型 (要素型 = ctx.tag_kind)。
-     * タグポインタ配列 (`struct P *arr[3]`): 要素は「struct P へのポインタ scalar (8B)」。
-     * tag_kind は伝播せず TK_EOF にして scalar 8B として返す。これがないと psx_gbrace_flat
-     * の struct 経路で「struct 値 (= 内側メンバ数 slot)」として展開され、parr[1]/parr[2] の
-     * シンボル+offset が誤 slot に書かれていた。1 要素 = 1 slot で済むよう scalar 化する。 */
-    if (ctx->is_tag_pointer) {
-      c->tag_kind = TK_EOF;
-      c->is_array = 0;
-      c->elem_size = 8;
-      return;
-    }
-    c->tag_kind = ctx->tag_kind;
-    c->tag_name = ctx->tag_name;
-    c->tag_len = ctx->tag_len;
-    c->is_array = 0;
-    /* 多次元配列メンバ: 残り次元 sub_dims を 1 段消費して内側 ctx を生成する。
-     * - char (`char c[2][2][3]`): 最内 1 段 (sub_ndim==1) は文字列展開用に is_array=0 で
-     *   返す。中間段 (sub_ndim>=2) は is_array=1 で sub_dims を 1 つ前に詰めて再帰。
-     * - 非 char (`int x[3][3]`): 中間段は is_array=1 で内側ndim配列として再帰。最内
-     *   1 段 (sub_ndim==1) は scalar 要素 (`int`) を 1 つ書く ctx (is_array=0, elem_size=)
-     *   としてそのまま fall-through (sub_dims 機構を抜ける)。
-     * - struct タグ多次元配列 (`struct C rows[3][2]`): 中間段 (sub_ndim>=2) と最内 1 段
-     *   (sub_ndim==1) のいずれも is_array=1 で「内側次元数の struct タグ配列」として
-     *   返す。これがないと内側 brace `{{.val=99}}` で designator が「単一 struct」コンテキストに
-     *   解釈され `.val=` が E3064 で弾かれる。 */
-    if (ctx->sub_ndim >= 1) {
-      if (ctx->tag_kind == TK_EOF && ctx->elem_size == 1 && ctx->sub_ndim == 1) {
-        /* char 最内 1D: 行 (sub_dims[0] バイト) として文字列展開分岐に乗せる。 */
-        c->elem_size = 1;
-        c->array_len = ctx->sub_dims[0];
-      } else if (ctx->sub_ndim >= 2 || ctx->elem_size > 1 || ctx->tag_kind != TK_EOF) {
-        /* 中間段 / 非 char 多次元 / struct タグ多次元: 内側 (sub_ndim-1) 次元の配列。 */
-        int inner_total = 1;
-        for (int i = 0; i < ctx->sub_ndim; i++) inner_total *= ctx->sub_dims[i];
-        c->is_array = 1;
-        c->elem_size = ctx->elem_size;
-        c->array_len = inner_total;
-        int n = ctx->sub_ndim - 1;
-        for (int i = 0; i < n; i++) c->sub_dims[i] = ctx->sub_dims[i + 1];
-        c->sub_ndim = n;
-      }
-    }
-    return;
-  }
-  if (psx_ctx_is_tag_aggregate_kind(ctx->tag_kind)) {
-    tag_member_info_t mi = {0};
-    if (ps_tag_member_at_flat_slot(ctx->tag_kind, ctx->tag_name, ctx->tag_len,
-                                    off, &mi, NULL)) {
-      gbrace_ctx_from_member(c, &mi);
-    }
-  }
-}
-
-static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ctx_t ctx);
-
-/* static local 配列の lowering (decl.c) からも使えるよう非 static 化。 */
-void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  gbrace_ctx_t ctx = {view.tag_kind, view.tag_name, view.tag_len, view.is_array,
-                      view.is_tag_pointer ? 1 : 0, 0, 0, {0}, 0, TK_FLOAT_KIND_NONE, 0};
-  /* グローバル多次元配列 (`int g[3][2]` 等) のトップレベル ctx に sub_dims を埋める。
-   * 内側 designator (`{[2] = {[1] = 99}}`) の elem_slots 計算で「外側 `[N]=` は内側次元の総
-   * スカラ数 * N 進める」必要がある (続き13 で struct メンバ多次元配列に対応済みだが、その
-   * 経路は gbrace_ctx_from_member 経由。トップレベル global 多次元配列は本関数が ctx を
-   * 初期化するためここでも sub_dims を埋める必要がある)。
-   * gv の outer_stride / mid_stride / extra_strides の隣接ペアを割って各 dim を算出。
-   * 1D 配列 (outer_stride==deref_size) は sub_ndim=0 (従来挙動)。 */
-  if (view.is_array && view.tag_kind == TK_EOF && view.deref_size > 0
-      && view.outer_stride > view.deref_size) {
-    int strides[10];
-    int n_strides = 0;
-    strides[n_strides++] = view.outer_stride;
-    if (view.mid_stride > 0) strides[n_strides++] = view.mid_stride;
-    for (int i = 0; i < view.extra_strides_count && i < 5; i++) {
-      if (view.extra_strides[i] > 0) strides[n_strides++] = view.extra_strides[i];
-    }
-    strides[n_strides++] = view.deref_size;
-    int n_sub = n_strides - 1;
-    if (n_sub > 8) n_sub = 8;
-    for (int i = 0; i < n_sub; i++) {
-      ctx.sub_dims[i] = strides[i] / strides[i + 1];
-    }
-    ctx.sub_ndim = n_sub;
-    ctx.elem_size = view.deref_size;
-  }
-  psx_gbrace_flat(gv, cap, start_idx, ctx);
-}
-
-static void psx_gbrace_flat(global_var_t *gv, int *cap, int start_idx, gbrace_ctx_t ctx) {
-  tk_expect('{');
-  if (tk_consume('}')) return;
-  /* 書き込み位置はフラットな絶対 index。ネスト brace の再帰でも連続して
-   * 追記できるよう、現在の充填位置 (init_count) から開始する。
-   * designator [N]=/.member= で外側が cur_idx をジャンプ済みのときは、その slot
-   * (start_idx) から書き始める (`{.z=14, .i={12,13}}` で .i の brace を slot 0 へ)。
-   * start_idx < 0 は「init_count から」を意味する (トップレベル呼出)。 */
-  int cur_idx = (start_idx >= 0) ? start_idx : gv->init_count;
-  int level_start = cur_idx;  /* この brace level の先頭 slot ([N]= の絶対位置計算に使う) */
-  int align_next_array_positional = 0;
-  for (;;) {
-    /* 配列レベルの positional 要素は要素境界へ揃える。直前の要素が部分初期化
-     * (`{.a=1}` で b を埋めない) でも init_count が要素途中で止まり、次要素が
-     * ずれるのを防ぐ。designator (`[N]=`) はこの後 cur_idx を再設定するので除外。 */
-    if (align_next_array_positional && ctx.is_array &&
-        curtok()->kind != TK_LBRACKET && curtok()->kind != TK_DOT) {
-      /* タグポインタ配列 (`struct P *arr[3]`) は要素 = 1 slot (scalar pointer) なので
-       * es=1 で従来どおり境界揃え不要。タグ値配列 (`struct P arr[3]`) は struct 内側メンバ数。 */
-      int es = (psx_ctx_is_tag_aggregate_kind(ctx.tag_kind) && !ctx.is_tag_pointer)
-                   ? ps_tag_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len) : 1;
-      if (es > 1) {
-        int r = (cur_idx - level_start) % es;
-        if (r != 0) cur_idx += es - r;  /* 次の要素境界へ切り上げ (隙間は後段で 0 埋め) */
-      }
-      /* plain 多次元配列の positional 要素境界。部分初期化した行の直後は次行の先頭 slot へ
-       * 進める (`int a[2][3][5]` で `{0,0,3,5}` の 4 スカラの次は slot 5 から)。
-       * sub_dims の積が 1 要素の flat slot 数 (`[3][5]`→15、行 `[5]`→5)。 */
-      if (es <= 1 && ctx.sub_ndim >= 1) {
-        int elem_slots = 1;
-        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
-        if (elem_slots > 1) {
-          int off = cur_idx - level_start;
-          int r = off % elem_slots;
-          if (r != 0) cur_idx += elem_slots - r;
-        }
-      }
-    }
-    align_next_array_positional = 0;
-    /* この反復で初期化する部分オブジェクトの型 (ネスト brace の子コンテキスト)。
-     * 既定は positional 位置の型。designator のときは下で上書きする。 */
-    gbrace_ctx_t child;
-    gbrace_child_at(&child, &ctx, cur_idx - level_start);
-    int active_union_ordinal = -1;
-    /* `[N] = expr` 形式の designated initializer (C11 6.7.9p6) を許可する。
-     * cur_idx を N に飛ばし、その位置から書き込む。間の要素は 0 のまま。 */
-    if (curtok()->kind == TK_LBRACKET) {
-      set_curtok(curtok()->next);
-      node_t *idx_node = psx_expr_assign();
-      int const_ok = 1;
-      long long idx_val = psx_decl_eval_const_int(idx_node, &const_ok);
-      if (!const_ok || idx_val < 0) {
-        psx_diag_ctx(curtok(), "decl",
-                     "配列指定初期化子の添字は非負の定数式である必要があります");
-      }
-      consume_gnu_range_designator_tail_if_any();
-      tk_expect(']');
-      /* struct 要素配列の `[N]=` は要素 1 つが内側スカラ数だけ slot を占めるので
-       * N にその数を掛ける (`struct P g[3]={[2]={5,6}}` の [2] は flat slot 4)。
-       * 多次元配列 (`int x[3][3]`) も同様: 1 要素 = 内側次元の総スカラ数 (sub_dims の積)。
-       * scalar 要素配列は 1 slot なので従来どおり N。 */
-      int elem_slots = 1;
-      if (ctx.tag_kind == TK_STRUCT && !ctx.is_tag_pointer) {
-        /* タグ値配列 (`struct P arr[3]={[1]={...}}`) は要素 = 内側メンバ数 slot。
-         * タグポインタ配列 (`struct P *arr[3]={[1]=&p}`) は要素 = 1 slot (scalar pointer)
-         * なので elem_slots=1 のまま (`is_tag_pointer` で除外)。 */
-        elem_slots = ps_tag_flat_slot_count(ctx.tag_kind, ctx.tag_name, ctx.tag_len);
-        if (elem_slots < 1) elem_slots = 1;
-        /* 多次元 struct タグ配列メンバ (`struct C rows[3][2]`): 1 要素 (rows[i]) は
-         * 内側次元 (sub_dims[*]) の積 ぶんだけ struct slot が並ぶ。`[N]=` ジャンプは
-         * `struct slot * 内側次元の積` で進める必要がある (これがないと外側 designator が
-         * 内側次元を無視し誤ジャンプ。99 が rows[2][0] でなく rows[1][0] に書かれていた)。 */
-        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
-      } else if (ctx.sub_ndim >= 1) {
-        /* 多次元配列メンバ (非タグ): 1 要素 = 内側 sub_ndim 次元の総スカラ数。
-         * `int x[3][3]` で sub_dims={3} なら elem_slots=3、`[2]=` は slot 6 へ。
-         * これがないと elem_slots=1 のまま `[2]=` が slot 2 へジャンプし他要素を
-         * 上書きしていた (designator nested バグ)。 */
-        for (int i = 0; i < ctx.sub_ndim; i++) elem_slots *= ctx.sub_dims[i];
-        if (elem_slots < 1) elem_slots = 1;
-      }
-      /* level 先頭からの絶対 slot。ネスト配列 (`.items={[2]={...}}`) では level_start を
-       * 足さないと外側メンバの offset を無視して先頭から書いてしまう。 */
-      int flat_off = (int)idx_val * elem_slots;
-      gbrace_ctx_t designator_child;
-      gbrace_child_at(&designator_child, &ctx, flat_off);
-      int designator_depth = 1;
-      while (curtok()->kind == TK_LBRACKET) {
-        set_curtok(curtok()->next);
-        int iok = 1;
-        long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
-        consume_gnu_range_designator_tail_if_any();
-        tk_expect(']');
-        if (!iok || iv < 0) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
-        }
-        if (designator_depth > ctx.sub_ndim) {
-          psx_diag_ctx(curtok(), "decl", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
-        }
-        int stride = 1;
-        for (int i = designator_depth; i < ctx.sub_ndim; i++) stride *= ctx.sub_dims[i];
-        flat_off += (int)iv * stride;
-        gbrace_ctx_t nested_designator_child;
-        gbrace_child_at(&nested_designator_child, &designator_child, (int)iv * stride);
-        designator_child = nested_designator_child;
-        designator_depth++;
-      }
-      tk_expect('=');
-      cur_idx = level_start + flat_off;
-      /* `[N]=` の要素型 = 配列要素 (ctx の要素型)。多次元配列なら designator の段数だけ降りる。 */
-      child = designator_child;
-    }
-    /* `.member = expr` 形式の struct/union メンバ designator (C11 6.7.9p6)。
-     * メンバの flat slot へ cur_idx を飛ばす。union は活性メンバ序数を記録。 */
-    else if (curtok()->kind == TK_DOT) {
-      set_curtok(curtok()->next);
-      token_ident_t *m = tk_consume_ident();
-      if (!m || ctx.tag_kind == TK_EOF) {
-        psx_diag_ctx(curtok(), "decl", "%s",
-                     diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
-      }
-      int ordinal = 0;
-      /* designator は最外 gv ではなく「現在の brace level の型」ctx に対して解決する。
-       * これがないと `.s={.a=7}` / `.items={[2]={.a=7}}` の内側 `.a` を gv の型に
-       * 探して E3064 になっていた。level_start を足して絶対 slot にする。 */
-      int slot = ps_tag_member_designator_slot(ctx.tag_kind, ctx.tag_name, ctx.tag_len,
-                                                m->str, m->len, &ordinal);
-      if (slot < 0) {
-        psx_diag_ctx(curtok(), "decl", "%s",
-                     diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
-      }
-      cur_idx = level_start + slot;
-      if (ctx.tag_kind == TK_UNION) {
-        gv->union_init_ordinal = ordinal;
-        active_union_ordinal = ordinal;
-      }
-      /* `.member[idx]` / `.member.sub` の designator チェーンを辿る (C11 6.7.9p6)。
-       * 現メンバの型情報 cmi を持ち、[idx] は要素 slot 数だけ、.sub は内側メンバの
-       * slot offset だけ cur_idx を進める。これがないと `struct W w={.arr[1]=7}`
-       * (グローバル) が E2006 で拒否されていた。 */
-      tag_member_info_t cmi = {0};
-      ps_ctx_get_tag_member_info(ctx.tag_kind, ctx.tag_name, ctx.tag_len, ordinal, &cmi);
-      /* ネスト union の fp メンバ designator (`.f = 2.5f`): 次の scalar 書き込みで sentinel
-       * を立てて emit にネスト union active メンバが fp であることを伝える。0.0f と .n=0 を
-       * 判別可能にするため、ヒューリスティック (fv!=0) ではなく明示的に通知する。 */
-      tk_float_kind_t cmi_fp_kind = ps_tag_member_decl_fp_kind(&cmi);
-      if (ctx.tag_kind == TK_UNION && cmi_fp_kind != TK_FLOAT_KIND_NONE) {
-        ctx.pending_fp_kind = cmi_fp_kind;
-        ctx.pending_fp_size = ps_tag_member_decl_value_size(&cmi);
-      }
-      for (;;) {
-        if (curtok()->kind == TK_LBRACKET) {
-          set_curtok(curtok()->next);
-          int iok = 1;
-          long long iv = psx_decl_eval_const_int(psx_expr_assign(), &iok);
-          consume_gnu_range_designator_tail_if_any();
-          tk_expect(']');
-          if (!iok || iv < 0) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID));
-          }
-          int per = ps_tag_member_subscript_stride_slots(&cmi);
-          cur_idx += (int)iv * per;
-          consume_global_member_array_dim(&cmi); /* 添字を 1 段消費 */
-        } else if (curtok()->kind == TK_DOT) {
-          set_curtok(curtok()->next);
-          token_ident_t *sm = tk_consume_ident();
-          token_kind_t cmi_tag_kind = TK_EOF;
-          char *cmi_tag_name = NULL;
-          int cmi_tag_len = 0;
-          ps_tag_member_decl_tag_identity(&cmi, &cmi_tag_kind, &cmi_tag_name,
-                                           &cmi_tag_len, NULL);
-          if (!sm || cmi_tag_kind == TK_EOF)
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_INVALID));
-          int container_is_union = (cmi_tag_kind == TK_UNION);
-          int sub_ordinal = -1;
-          int sub_slot = ps_tag_member_designator_slot(cmi_tag_kind, cmi_tag_name, cmi_tag_len,
-                                                        sm->str, sm->len, &sub_ordinal);
-          if (sub_slot < 0 ||
-              !ps_ctx_get_tag_member_info(cmi_tag_kind, cmi_tag_name, cmi_tag_len,
-                                           sub_ordinal, &cmi)) {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_MEMBER_DESIGNATOR_NOT_FOUND));
-          }
-          if (container_is_union) active_union_ordinal = sub_ordinal;
-          else cur_idx += sub_slot;
-        } else break;
-      }
-      tk_expect('=');
-      /* designator の葉メンバ型を子 brace コンテキストにする (`.s={.a=7}` の `{...}` は struct I)。 */
-      gbrace_ctx_from_member(&child, &cmi);
-    }
-    /* 書き込み位置 cur_idx の slot を確保する (designator の後方ジャンプにも対応)。 */
-    psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + 1);
-    /* cur_idx より前の未使用要素を 0 で埋める (前方ジャンプ時のギャップ)。
-     * 後方ジャンプ (cur_idx < init_count) では既存 slot なので何もしない。 */
-    psx_gvar_init_slots_pad_zeros(gv, cap, cur_idx);
-    if (active_union_ordinal >= 0)
-      psx_gvar_init_slot_set_ordinal(gv, cur_idx, active_union_ordinal);
-    psx_gvar_view_t root_view = psx_gvar_view(gv);
-    if (curtok()->kind == TK_LBRACE) {
-      /* 入れ子 brace は外側の現在位置 cur_idx から書き始める (designator で
-       * 後方ジャンプ済みのときも正しい slot へ)。child は内側 designator を正しい型で
-       * 解決するためのコンテキスト (`.s={.a=7}` の `{...}` は struct I)。 */
-      psx_gbrace_flat(gv, cap, cur_idx, child);
-      cur_idx = gv->init_count;
-      align_next_array_positional = 1;
-    } else if (curtok()->kind == TK_STRING &&
-               root_view.deref_size == 1 && root_view.outer_stride > 0) {
-      /* 多次元 char 配列の行を文字列で初期化: `char g[2][6]={"hello","world"}`。
-       * 文字列を行 (outer_stride バイト) のバイト列へ展開する (char* 配列ではないので
-       * .LC ポインタにしない)。残りは 0 埋め。 */
-      node_t *e = psx_expr_assign();
-      int row_w = root_view.outer_stride;
-      psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
-      string_lit_t *lit = NULL;
-      if (e && e->kind == ND_STRING) {
-        lit = psx_find_string_lit_by_label(((node_string_t *)e)->string_label);
-      }
-      int j = 0, sp = 0;
-      if (lit) {
-        while (sp < lit->len && j < row_w) {
-          uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
-          psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
-          psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
-          j++;
-        }
-      }
-      while (j < row_w) {  /* 行の残りを 0 埋め */
-        psx_gvar_init_slot_clear(gv, cur_idx + j);
-        j++;
-      }
-      cur_idx += row_w;
-      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
-      if (!tk_consume(',')) break;
-      if (curtok()->kind == TK_RBRACE) break;
-      continue;
-    } else if (curtok()->kind == TK_STRING && child.tag_kind == TK_EOF &&
-               child.array_len > 0 && child.elem_size == 1) {
-      /* struct の char 配列メンバを文字列で初期化: `struct S{char name[8];} g={"main"}`。
-       * 文字列を array_len バイトへ展開する (char* メンバではないので .LC ポインタにしない。
-       * 旧挙動は scalar 経路で .quad <ラベル> を 1 slot に書き、name 全体がポインタ値に
-       * 化けていた)。残りは 0 埋め。
-       *
-       * 多次元 char メンバ (`char rows[2][4]`) への brace elision `{"ab","cd"}`: 1 文字列を
-       * 「行」(sub_dims 最後の次元 = 行幅) に展開する。残りメンバ要素の埋めは外側ループの
-       * 次反復が gbrace_child_at で同メンバを返すので自動で続く (cur_idx は行幅ぶん進めるだけ)。
-       * これがないと array_len 全体 (=メンバ全要素数) を 1 文字列で埋めてしまい後続文字列が
-       * 次メンバとして扱われていた (struct に他メンバが無いと 0 埋めだけになる)。 */
-      node_t *e = psx_expr_assign();
-      int row_w = child.sub_ndim > 0 ? child.sub_dims[child.sub_ndim - 1] : child.array_len;
-      if (row_w <= 0) row_w = child.array_len;
-      psx_gvar_init_slots_ensure_capacity(gv, cap, cur_idx + row_w);
-      string_lit_t *lit = NULL;
-      if (e && e->kind == ND_STRING) {
-        lit = psx_find_string_lit_by_label(((node_string_t *)e)->string_label);
-      }
-      int j = 0, sp = 0;
-      if (lit) {
-        while (sp < lit->len && j < row_w) {
-          uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
-          psx_gvar_init_slot_write(gv, cur_idx + j, (unsigned char)cp, 0.0, NULL, 0);
-          psx_gvar_init_slot_set_ordinal(gv, cur_idx + j, -1);
-          j++;
-        }
-      }
-      while (j < row_w) {
-        psx_gvar_init_slot_clear(gv, cur_idx + j);
-        j++;
-      }
-      cur_idx += row_w;
-      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
-      if (!tk_consume(',')) break;
-      if (curtok()->kind == TK_RBRACE) break;
-      continue;
-    } else {
-      node_t *e = psx_expr_assign();
-      long long v = 0;
-      double fv = 0.0;
-      char *sym = NULL;
-      int sym_len = 0;
-      int ok = 1;
-      if (e && e->kind == ND_NUM) {
-        node_num_t *n = (node_num_t *)e;
-        v = n->val;
-        /* float/double 要素のグローバル配列では fval を保存。整数リテラルが
-         * 混ざっていても (`double a[] = {1, 2.5}`) 宣言型 fp_kind を優先する。 */
-        fv = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
-      }
-      else if (e && root_view.fp_kind != TK_FLOAT_KIND_NONE && gv->init_fvalues) {
-        /* fp 配列の非 ND_NUM 要素 (負値 `-2.5` は ND_FNEG、定数式 `1.0/2` 等)。
-         * psx_eval_const_fp で畳み込む。これがないと負の配列要素が 0 に化けていた。
-         * fp_kind ゲート必須: init_fvalues はポインタ/整数配列でも確保されうるので、
-         * fp 配列に限定しないと `&data[n]`/文字列要素を乗っ取り symbol を失う。 */
-        int fok = 1;
-        double folded = psx_eval_const_fp(e, &fok);
-        if (fok) fv = folded;
-      }
-      else if (e && e->kind == ND_FUNCREF) {
-        /* `struct Op gop = {sq};` 等の関数ポインタメンバ初期化。 */
-        node_funcref_t *fr = (node_funcref_t *)e;
-        sym = fr->funcname;
-        sym_len = fr->funcname_len;
-      } else if (e && (e->kind == ND_ADDR || e->kind == ND_ADD || e->kind == ND_SUB ||
-                       e->kind == ND_CAST)) {
-        /* `&g` / `&data[n]` / `data + n` 形式: グローバル変数 (配列要素) のアドレスを
-         * 要素に置く。resolve_global_addr_init が (シンボル, バイトオフセット) へ
-         * 解決する。オフセットは init_values に格納し、codegen が `_sym+off` を出力する。
-         * これがないと `int *arr[]={&data[0],&data[2]}` が const int 評価で 0 になり
-         * NULL ポインタ配列になっていた (deref で SIGSEGV)。 */
-        long long off = 0;
-        if (resolve_global_addr_init(e, &sym, &sym_len, &off)) {
-          v = off;
-        } else {
-          int ok2 = 1;
-          v = psx_decl_eval_const_int(e, &ok2);
-        }
-      } else if (e && e->kind == ND_STRING) {
-        /* `const char *arr[] = {"abc", ...};` の文字列リテラル要素。
-         * 文字列の .LC<n> ラベルをそのまま symbol として保持し、
-         * codegen 側で `_` プレフィックスなしで `.quad <label>` を出力する。
-         * sym_len=0 でも sym!=NULL の状態を表現する苦しいフォーマットなので、
-         * 別途識別するため init_value_symbol_lens を -1 にしておく。 */
-        node_string_t *s = (node_string_t *)e;
-        sym = s->string_label;
-        sym_len = -1; /* sentinel: emit raw label (no `_` prefix) */
-      } else if (e) v = psx_decl_eval_const_int(e, &ok);
-      /* 書き込み位置は cur_idx (designator でジャンプ済み)。init_count は
-       * 充填済みの最大要素数として追跡する。 */
-      psx_gvar_init_slot_write(gv, cur_idx, v, fv, sym, sym_len);
-      if (ctx.tag_kind == TK_UNION && active_union_ordinal < 0)
-        psx_gvar_init_slot_set_ordinal(gv, cur_idx, gv->union_init_ordinal);
-      /* ネスト union の fp active メンバ sentinel: DOT 経路で pending_fp_kind がセットされて
-       * いれば、init_value_symbols=NULL かつ init_value_symbol_lens に sentinel (-2: float,
-       * -3: double/long double) を立てる。emit TK_UNION 分岐がこれを読んで fp として出力。
-       * sentinel -1 は既存の「文字列リテラル要素」用なので使わない。
-       * scalar 書き込み 1 回で消費して clear (`{.f=2.5f,.n=99}` などの後勝ち designator にも対応)。 */
-      if (sym == NULL && ctx.pending_fp_kind != TK_FLOAT_KIND_NONE) {
-        psx_gvar_init_slot_write_fp_sentinel(gv, cur_idx,
-                                             ctx.pending_fp_kind, ctx.pending_fp_size);
-        ctx.pending_fp_kind = TK_FLOAT_KIND_NONE;
-        ctx.pending_fp_size = 0;
-      }
-      cur_idx++;
-      if (cur_idx > gv->init_count) gv->init_count = cur_idx;
-    }
-    if (!tk_consume(',')) break;
-    if (curtok()->kind == TK_RBRACE) break;  // 末尾カンマ許容
-  }
-  tk_expect('}');
-}
-
-/* グローバルポインタ初期化子のアドレス式を (シンボル, バイトオフセット) へ解決する。
- *   &x / x(配列decay)          → (x, 0)
- *   a + n / &a[n]              → (a, n*sizeof(elem))
- *   &a[n] (= &*(a+n))          → DEREF を剥がして再帰
- * 解決できれば 1 を返し sym・sym_len・off を設定する。 */
-int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
-  return resolve_global_addr_init(e, sym, sym_len, off);
-}
-
-static int resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off) {
-  if (!e) return 0;
-  switch (e->kind) {
-    case ND_ADDR:
-      if (e->lhs && e->lhs->kind == ND_GVAR) {
-        node_gvar_t *g = (node_gvar_t *)e->lhs;
-        *sym = g->name; *sym_len = g->name_len;
-        return 1;
-      }
-      if (e->lhs && e->lhs->kind == ND_DEREF) {
-        return resolve_global_addr_init(e->lhs->lhs, sym, sym_len, off);
-      }
-      return 0;
-    /* `(char*)&g_arr[N]` のような明示キャストは ND_CAST にラップされる。
-     * シンボル+offset 解決には型変換の有無は無関係なので、operand に再帰する。 */
-    case ND_CAST:
-      return resolve_global_addr_init(e->lhs, sym, sym_len, off);
-    case ND_FUNCREF: {
-      node_funcref_t *fr = (node_funcref_t *)e;
-      *sym = fr->funcname; *sym_len = fr->funcname_len;
-      return 1;
-    }
-    case ND_GVAR: {
-      node_gvar_t *g = (node_gvar_t *)e;
-      *sym = g->name; *sym_len = g->name_len;
-      return 1;
-    }
-    /* 文字列リテラルを「ベース + 0」のシンボル参照として扱う。
-     * `const char *p = "abc" + 2;` のような形を resolve できるようにし、後段の
-     * ND_ADD 経路で +2 を加算した init_symbol_offset として登録する。
-     * init_symbol_len=-1 を sentinel に立てて codegen が `.LCn` を `_` プレフィックス
-     * なしで出すようにする (通常 gvar 名と同じ仕組み)。 */
-    case ND_STRING: {
-      node_string_t *s = (node_string_t *)e;
-      *sym = s->string_label; *sym_len = -1;
-      return 1;
-    }
-    case ND_ADD: {
-      int ok = 1;
-      if (resolve_global_addr_init(e->lhs, sym, sym_len, off)) {
-        long long c = psx_decl_eval_const_int(e->rhs, &ok);
-        if (!ok) return 0;
-        *off += c; return 1;
-      }
-      if (resolve_global_addr_init(e->rhs, sym, sym_len, off)) {
-        long long c = psx_decl_eval_const_int(e->lhs, &ok);
-        if (!ok) return 0;
-        *off += c; return 1;
-      }
-      return 0;
-    }
-    case ND_SUB: {
-      int ok = 1;
-      if (resolve_global_addr_init(e->lhs, sym, sym_len, off)) {
-        long long c = psx_decl_eval_const_int(e->rhs, &ok);
-        if (!ok) return 0;
-        *off -= c; return 1;
-      }
-      return 0;
-    }
-    default:
-      return 0;
-  }
-}
-
 /* C11 6.7.6.2p1: `T a[] = {...}` の要素数を初期化子から確定する。
  * init_count は flat scalar slots なので、struct 配列と多次元配列では要素境界へ丸める。 */
 void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
@@ -2337,6 +1563,7 @@ void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
 }
 
 static void apply_toplevel_object_initializer(global_var_t *gv) {
+  token_t *assign_tok = curtok();
   if (!tk_consume('=')) return;
   /* C11 6.9.2: 同名グローバル変数の二重定義検出。register_toplevel_global_decl が merge して
    * 既存 gvar を返すため、`int g = 1; int g = 2;` の 2 度目の `=` 時には gv->has_init が
@@ -2386,35 +1613,64 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
   }
   // `T arr[N] = {a,b,c,...}` 形式のグローバル配列初期化子。
   // 1D と多次元 (ネスト brace) の両方を flat 化して保持する。
+  node_t *init_expr = NULL;
   if (curtok()->kind == TK_LBRACE) {
     gv->has_init = 1;
-    psx_gvar_view_t view = psx_gvar_view(gv);
-    int cap = 16;
-    /* 浮動小数要素の配列 (`double a[5] = {...}`) や、float/double メンバを持ち得る
-     * struct/union では fvalues も並行確保する。要素ごとに fval を保存し、codegen が
-     * 浮動小数メンバをビットパターンで出力する。 */
-    psx_gvar_init_slots_alloc(gv, cap,
-                              view.fp_kind != TK_FLOAT_KIND_NONE ||
-                                  view.tag_kind != TK_EOF);
-    gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap, -1);
-    psx_decl_finalize_gvar_inferred_array_size(gv, &cap);
-    /* C11 6.3.1.2: `_Bool a[N]={...}` の各要素初期化子を 0/1 に正規化する。
-     * (配列ブランチはここで早期 return するため末尾のスカラ正規化には到達しない。) */
-    if (ps_gvar_array_element_is_bool(gv) && gv->init_values) {
-      for (int i = 0; i < gv->init_count; i++) {
-        psx_gvar_init_slot_t slot = psx_gvar_init_slot_view(gv, i);
-        psx_gvar_init_slot_write(gv, i, slot.value != 0 ? 1 : 0,
-                                 slot.fvalue, slot.symbol, slot.symbol_len);
+    psx_type_t *type = psx_gvar_get_decl_type(gv);
+    psx_ctx_attach_aggregate_definitions(type);
+    if (type && type->kind == PSX_TYPE_ARRAY &&
+        type->array_len <= 0 && !type->is_vla) {
+      long long initializer_count =
+          psx_initializer_syntax_infer_array_count(
+              assign_tok, ps_type_deref_size(type));
+      int entries_initialize_outer_elements =
+          psx_initializer_syntax_first_element_is_brace(assign_tok) ||
+          psx_initializer_syntax_has_top_level_index_designator(assign_tok);
+      if (!psx_resolve_incomplete_array_type(
+              type,
+              &(psx_incomplete_array_resolution_t){
+                  .initializer_count = initializer_count,
+                  .entries_initialize_outer_elements =
+                      entries_initialize_outer_elements,
+              })) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(
+                         DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       }
+      psx_decl_set_gvar_type_size(gv, ps_type_sizeof(type));
     }
-    return;
+    token_t *init_tok = curtok();
+    node_t *syntax = psx_parse_initializer_syntax_list();
+    if (type && (type->kind == PSX_TYPE_ARRAY ||
+                 ps_type_is_tag_aggregate(type))) {
+      if (!lower_static_object_initializer(
+              gv, type, (node_init_list_t *)syntax, init_tok)) {
+        psx_diag_ctx(init_tok, "static-init", "%s",
+                     diag_message_for(
+                         DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+      }
+      return;
+    }
+    node_init_list_t *list = (node_init_list_t *)syntax;
+    if (list->entry_count != 1 ||
+        list->entries[0].designator_count > 0 ||
+        !list->entries[0].value ||
+        list->entries[0].value->kind == ND_INIT_LIST) {
+      psx_diag_ctx(init_tok, "static-init", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+    }
+    init_expr = list->entries[0].value;
   }
-  node_t *init_expr = psx_expr_assign();
+  if (!init_expr) {
+    init_expr = psx_expr_assign();
+    psx_semantic_analyze_expression(init_expr,
+                                    init_expr ? init_expr->tok : curtok());
+  }
   /* `int g = -42;` のように unary minus を含む式は ND_NUM ではなく
    * ND_SUB(0, 42) になる。const 畳み込みできる式は折りたたんで init_val に格納する。 */
   int const_ok = 1;
-  long long folded = init_expr ? psx_decl_eval_const_int(init_expr, &const_ok) : 0;
+  long long folded = init_expr ? psx_eval_const_int(init_expr, &const_ok) : 0;
   psx_gvar_view_t init_view = psx_gvar_view(gv);
   /* グローバル double/float 用の定数式畳み込み (`double v = 1.5 + 2.5;`)。
    * 各 ND_NUM の fval を取り、ND_ADD/SUB/MUL/DIV/単項マイナスを再帰評価する。 */
@@ -2446,7 +1702,8 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
     /* `int *p = &x;` / `int *p = a + 1;` / `int *p = &a[1];` 等の
      * グローバル/配列アドレス + オフセット初期化。 */
     char *asym = NULL; int asym_len = 0; long long aoff = 0;
-    if (resolve_global_addr_init(init_expr, &asym, &asym_len, &aoff)) {
+    if (psx_resolve_static_address_constant(
+            init_expr, &asym, &asym_len, &aoff)) {
       gv->has_init = 1;
       gv->init_symbol = asym;
       gv->init_symbol_len = asym_len;
@@ -2967,20 +2224,6 @@ static void register_function_signature(const psx_function_signature_t *sig) {
                    "関数 '%.*s' の型が以前の宣言と異なります (C11 6.7p3-4)",
                    tok->len, tok->str);
     }
-  }
-  for (int i = 0; i < sig->nargs && i < 16; i++) {
-    node_t *arg = sig->args ? sig->args[i] : NULL;
-    const psx_type_t *param_type = arg ? ps_node_get_type(arg) : NULL;
-    if (!param_type || psx_type_is_pointer(param_type) ||
-        param_type->kind == PSX_TYPE_FLOAT ||
-        param_type->kind == PSX_TYPE_COMPLEX) {
-      continue;
-    }
-    int size = ps_node_param_abi_type_size(arg);
-    if (size <= 0) size = ps_type_sizeof(param_type);
-    if (size >= 1 && size <= 4) size = 4;
-    if (size == 4 || size == 8)
-      psx_ctx_set_function_param_abi_int_size(tok->str, tok->len, i, size);
   }
 }
 
@@ -4066,23 +3309,7 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
     psx_decl_set_lvar_decl_type(var, canonical_param_type);
   }
   // args[] には宣言型を正本にした ND_LVAR を格納する。
-  // ABI の受け渡しサイズは IR 生成時に owner/param metadata から判断する。
-  // 配列宣言子の struct パラメータ (`struct V arr[]`) はポインタに adjust される
-  // ので、ABI サイズは 8 (pointer) であり struct_size ではない。
-  int abi_type_size = (ds.tag_kind != TK_EOF && !param_is_ptr && ds.struct_size > 0 &&
-                       !param_is_array_declarator)
-                      ? ds.struct_size : 8;
-  // codegen 側で `str d_reg` (FP) と `str x_reg` (integer) を切り替えるために
-  // args[i] ノードにも fp_kind を残す。配列宣言子はポインタ (整数レジスタ) なので除外。
-  tk_float_kind_t abi_fp_kind =
-      (ds.fp_kind != TK_FLOAT_KIND_NONE && !param_is_ptr && !param_is_array_declarator)
-          ? ds.fp_kind : TK_FLOAT_KIND_NONE;
-  /* 複素数仮引数: args[] ノードにも is_complex を残す (setup_function_params は
-   * owner->is_complex を見るが、念のため両方に伝播)。 */
-  int abi_is_complex = ds.is_complex && !param_is_ptr && !param_is_array_declarator;
-  node_t *param_node = psx_node_new_param_lvar_for(var, abi_type_size,
-                                                   ds.is_unsigned, abi_fp_kind,
-                                                   abi_is_complex);
+  node_t *param_node = psx_node_new_param_lvar_for(var);
   node->args[(*nargs)++] = param_node;
   return 0;
 }
@@ -4620,7 +3847,6 @@ static node_t *funcdef(void) {
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)tok;
   node->base.is_implicit_int_return = saw_implicit_int_return ? 1 : 0;
-  node->base.ret_struct_size = ret_struct_size;
   /* 戻り型の fp_kind をノードへ記録。IR builder の ir_type_from_node が
    * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。
    * ただし `double *g()` のようにポインタを返す関数は戻り値が x0 のポインタ値なので

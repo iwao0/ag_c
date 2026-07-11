@@ -3,7 +3,7 @@
 // そのまま cargs[] に格納するだけで、callee のプロトタイプ仮引数が double
 // でも変換しなかった。結果、整数値が整数レジスタ (x0..x7) で渡されるが
 // 関数側は FP レジスタ (d0..d7) から読むため、garbage を加算 → (int) で 0。
-// 修正で ps_ctx_get_function_param_fp_kind を引いて I2F キャストを挿入。
+// IR loweringがcanonical parameter typeを分類し、I2Fキャストを挿入する。
 #include <assert.h>
 int sum(double a, double b, double c, double d,
         double e, double f, double g, double h,

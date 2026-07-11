@@ -2,6 +2,7 @@
 #define PARSER_FUNCTION_PUBLIC_H
 
 #include "core.h"
+#include "type.h"
 #include <stdbool.h>
 
 typedef struct {
@@ -23,27 +24,13 @@ typedef struct {
   psx_ret_pointee_array_t pointee_array;
 } psx_function_ret_info_t;
 
-enum {
-  PSX_PCAT_UNSET = 0,
-  PSX_PCAT_INT4  = 1,  /* char/short/int / _Bool */
-  PSX_PCAT_INT8  = 2,  /* long / long long */
-  PSX_PCAT_FLOAT = 3,
-  PSX_PCAT_DOUBLE = 4,
-  PSX_PCAT_PTR   = 5,
-  PSX_PCAT_STRUCT = 6,
-  PSX_PCAT_OTHER  = 7,
-};
-
 bool ps_ctx_has_function_name(char *name, int len);
 int ps_ctx_is_function_defined(char *name, int len);
 psx_function_ret_info_t ps_ctx_get_function_ret_info(char *name, int len);
 bool ps_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 int ps_ctx_get_function_nargs_fixed(char *name, int len);
-tk_float_kind_t ps_ctx_get_function_param_fp_kind(char *name, int len, int param_idx);
-/* canonical parameter type から導出した関数呼び出し ABI の整数スロット幅。 */
-int ps_ctx_get_function_param_int_size(char *name, int len, int param_idx);
-int ps_ctx_get_function_param_int_unsigned(char *name, int len, int param_idx);
-int ps_ctx_get_function_param_category(char *name, int len, int idx);
+const psx_type_t *ps_ctx_get_function_param_type(char *name, int len,
+                                                 int param_idx);
 int ps_ctx_scalar_type_size(token_kind_t kind);
 
 #endif

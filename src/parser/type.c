@@ -1,5 +1,6 @@
 #include "type.h"
 #include "arena.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,6 +50,51 @@ psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size) {
   return type;
 }
 
+static psx_type_t *type_from_legacy_param_code(
+    unsigned short fp_mask, unsigned short int_mask, int index) {
+  unsigned short fp_code = (fp_mask >> (2 * index)) & 3u;
+  if (fp_code == 1u)
+    return psx_type_new_float(TK_FLOAT_KIND_FLOAT, 4);
+  if (fp_code == 2u)
+    return psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+
+  unsigned short int_code = (int_mask >> (2 * index)) & 3u;
+  if (int_code == 1u)
+    return psx_type_new_integer(TK_EOF, 4, 0);
+  if (int_code == 2u)
+    return psx_type_new_integer(TK_EOF, 8, 0);
+  if (int_code == 3u) {
+    psx_type_t *void_type = psx_type_new(PSX_TYPE_VOID);
+    void_type->scalar_kind = TK_VOID;
+    return psx_type_new_pointer(void_type, 1);
+  }
+  return NULL;
+}
+
+static void type_sync_function_params_from_signature(
+    psx_type_t *function_type, psx_decl_funcptr_sig_t sig) {
+  if (!function_type || function_type->kind != PSX_TYPE_FUNCTION) return;
+  psx_funcptr_signature_t legacy = sig.function.callable.signature;
+  int param_count = legacy.nargs_fixed;
+  for (int i = 0; i < 8; i++) {
+    unsigned int shift = (unsigned int)(2 * i);
+    if (((legacy.param_fp_mask >> shift) & 3u) != 0 ||
+        ((legacy.param_int_mask >> shift) & 3u) != 0) {
+      param_count = i + 1;
+    }
+  }
+  function_type->param_count = param_count;
+  function_type->is_variadic_function = legacy.is_variadic ? 1 : 0;
+  int tracked = function_type->param_count > 16
+                    ? 16 : function_type->param_count;
+  for (int i = 0; i < tracked; i++) {
+    if (!function_type->param_types[i]) {
+      function_type->param_types[i] = type_from_legacy_param_code(
+          legacy.param_fp_mask, legacy.param_int_mask, i);
+    }
+  }
+}
+
 psx_type_t *psx_type_new_function(psx_type_t *return_type,
                                   psx_decl_funcptr_sig_t sig) {
   psx_type_t *type = psx_type_new(PSX_TYPE_FUNCTION);
@@ -80,8 +126,48 @@ const psx_type_t *psx_type_find_function(const psx_type_t *type) {
   return NULL;
 }
 
+void psx_type_complete_function_params(psx_type_t *type) {
+  if (!type) return;
+  psx_decl_funcptr_sig_t sig = type->funcptr_sig;
+  if (!ps_decl_funcptr_sig_has_payload(sig))
+    sig = ps_type_funcptr_signature(type);
+  while (type && type->kind != PSX_TYPE_FUNCTION) {
+    if (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)
+      return;
+    type = type->base;
+  }
+  if (!type || type->kind != PSX_TYPE_FUNCTION) return;
+  type_sync_function_params_from_signature(type, sig);
+}
+
 static psx_funcptr_type_shape_t type_function_shape_from_canonical(
     const psx_type_t *function);
+
+static psx_funcptr_signature_t type_function_signature_from_canonical(
+    const psx_type_t *function) {
+  psx_funcptr_signature_t signature = {0};
+  if (!function || function->kind != PSX_TYPE_FUNCTION) return signature;
+  signature.is_variadic = function->is_variadic_function ? 1 : 0;
+  signature.nargs_fixed = function->param_count;
+  for (int i = 0; i < function->param_count && i < 8; i++) {
+    const psx_type_t *param = function->param_types[i];
+    if (!param) continue;
+    if (param->kind == PSX_TYPE_FLOAT || param->kind == PSX_TYPE_COMPLEX) {
+      unsigned short code =
+          param->fp_kind == TK_FLOAT_KIND_FLOAT ? 1u : 2u;
+      signature.param_fp_mask |= (unsigned short)(code << (2 * i));
+    } else if (param->kind == PSX_TYPE_POINTER ||
+               param->kind == PSX_TYPE_ARRAY ||
+               param->kind == PSX_TYPE_FUNCTION) {
+      signature.param_int_mask |= (unsigned short)(3u << (2 * i));
+    } else if (param->kind == PSX_TYPE_BOOL ||
+               param->kind == PSX_TYPE_INTEGER) {
+      unsigned short code = ps_type_sizeof(param) > 4 ? 2u : 1u;
+      signature.param_int_mask |= (unsigned short)(code << (2 * i));
+    }
+  }
+  return signature;
+}
 
 static const psx_type_t *type_array_leaf(const psx_type_t *type) {
   while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
@@ -153,7 +239,10 @@ static psx_funcptr_type_shape_t type_function_shape_from_canonical(
     const psx_type_t *function) {
   psx_funcptr_type_shape_t shape = {0};
   if (!function || function->kind != PSX_TYPE_FUNCTION) return shape;
-  shape.callable.signature = function->funcptr_sig.function.callable.signature;
+  shape.callable.signature = function->param_count > 0 ||
+                                     function->is_variadic_function
+                                 ? type_function_signature_from_canonical(function)
+                                 : function->funcptr_sig.function.callable.signature;
   shape.callable.return_shape = type_return_shape_from_canonical(
       function->base, &shape.returned_funcptr);
   return shape;
@@ -398,18 +487,18 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
   return type;
 }
 
-void psx_type_complete_incomplete_array(psx_type_t *type, int object_size) {
+int psx_type_complete_array(psx_type_t *type, int array_len) {
   if (!type || type->kind != PSX_TYPE_ARRAY || type->is_vla ||
-      object_size <= 0 || !type->base) {
-    return;
-  }
+      array_len <= 0 || !type->base) return 0;
   int child_size = ps_type_sizeof(type->base);
-  if (child_size <= 0 || object_size % child_size != 0) return;
-  if (type->array_len <= 0) type->array_len = object_size / child_size;
-  if (type->size <= 0) type->size = object_size;
+  if (child_size <= 0 || array_len > INT_MAX / child_size) return 0;
+  if (type->array_len > 0 && type->array_len != array_len) return 0;
+  type->array_len = array_len;
+  type->size = array_len * child_size;
   type->elem_size = child_size;
   type->deref_size = child_size;
   type_sync_array_stride_metadata_from_base(type);
+  return 1;
 }
 
 psx_type_t *psx_type_clone(const psx_type_t *src) {
@@ -1263,6 +1352,60 @@ int psx_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
     default:
       return 0;
   }
+}
+
+static int type_derivation_to_function_matches(const psx_type_t *a,
+                                               const psx_type_t *b) {
+  while (a && b && a->kind != PSX_TYPE_FUNCTION &&
+         b->kind != PSX_TYPE_FUNCTION) {
+    if (a->kind != b->kind ||
+        (a->kind != PSX_TYPE_POINTER && a->kind != PSX_TYPE_ARRAY) ||
+        a->is_const_qualified != b->is_const_qualified ||
+        a->is_volatile_qualified != b->is_volatile_qualified) {
+      return 0;
+    }
+    if (a->kind == PSX_TYPE_ARRAY && a->array_len != b->array_len) return 0;
+    a = a->base;
+    b = b->base;
+  }
+  return a && b && a->kind == PSX_TYPE_FUNCTION &&
+         b->kind == PSX_TYPE_FUNCTION;
+}
+
+static psx_decl_funcptr_sig_t type_generic_function_signature(
+    const psx_type_t *type, const psx_type_t *function) {
+  psx_decl_funcptr_sig_t sig = ps_type_funcptr_signature(type);
+  if (function && ps_decl_funcptr_sig_has_payload(function->funcptr_sig)) {
+    sig.function = psx_funcptr_type_shape_merge_missing(
+        sig.function, function->funcptr_sig.function, 1);
+  }
+  return sig;
+}
+
+int psx_type_generic_matches(const psx_type_t *control,
+                             const psx_type_t *association) {
+  if (!control || !association) return 0;
+  if (control->type_sig && association->type_sig) {
+    return strcmp(control->type_sig, association->type_sig) == 0;
+  }
+  const psx_type_t *control_function = psx_type_find_function(control);
+  const psx_type_t *association_function =
+      psx_type_find_function(association);
+  if (!control_function && !association_function)
+    return psx_type_shape_matches(control, association);
+  if (!control_function || !association_function) return 0;
+  if (!type_derivation_to_function_matches(control, association)) return 0;
+
+  psx_decl_funcptr_sig_t control_sig =
+      type_generic_function_signature(control, control_function);
+  psx_decl_funcptr_sig_t association_sig =
+      type_generic_function_signature(association, association_function);
+  if (ps_decl_funcptr_sig_has_payload(control_sig) &&
+      ps_decl_funcptr_sig_has_payload(association_sig)) {
+    return psx_funcptr_type_shape_matches(control_sig.function,
+                                          association_sig.function);
+  }
+  return psx_type_shape_matches(control_function, association_function);
 }
 
 int ps_type_is_tag_aggregate(const psx_type_t *type) {

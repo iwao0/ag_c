@@ -3,11 +3,22 @@
 #include "core.h"
 #include "diag.h"
 #include "expr.h"
+#include "initializer_syntax.h"
+#include "local_registry.h"
 #include "node_utils.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "config_runtime.h"
 #include "../diag/diag.h"
+#include "../lowering/frame_layout.h"
+#include "../lowering/initializer_lowering.h"
+#include "../lowering/local_storage.h"
+#include "../lowering/static_data_initializer.h"
+#include "../lowering/static_local_lowering.h"
+#include "../lowering/vla_lowering.h"
+#include "../semantic/declaration_resolution.h"
+#include "../semantic/constant_expression.h"
+#include "../semantic/local_declaration_plan.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
 #include <limits.h>
@@ -15,73 +26,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-static lvar_t *locals;       // 現在のスコープで見えるローカル変数リスト
-static lvar_t *all_locals;   // 全スコープのローカル変数リスト（未使用チェック用）
-static int locals_offset;
 static char *current_funcname;
 static int current_funcname_len;
-typedef struct {
-  int scalar_seq;
-  int array_seq;
-  int array_consumed_seq;
-  int struct_seq;
-  int aggregate_array_seq;
-} static_local_mangle_state_t;
-static static_local_mangle_state_t static_local_mangle_state;
-struct psx_lvar_usage_region_t {
-  psx_lvar_usage_region_t *prev;
-  unsigned int suppress_warnings : 1;
-};
-typedef struct lvar_usage_event_t lvar_usage_event_t;
-struct lvar_usage_event_t {
-  lvar_usage_event_t *next;
-  lvar_t *var;
-  psx_lvar_usage_kind_t kind;
-  psx_lvar_usage_region_t *region;
-};
-static lvar_usage_event_t *lvar_usage_events_head;
-static lvar_usage_event_t *lvar_usage_events_tail;
-static psx_lvar_usage_region_t *current_lvar_usage_region;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 static void psx_decl_sync_lvar_type_cache(lvar_t *var);
 
-// ブロックスコープのローカル変数リスト保存スタック
-#define LVAR_SCOPE_STACK_MAX 256
-static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-static int lvar_scope_depth;
-
-/* ローカル変数の名前ハッシュ索引。`locals` 連結リストの線形走査
- * (psx_decl_find_lvar) は識別子参照ごとに呼ばれ O(N^2) になるため、名前を
- * バケットへハッシュして O(1) 化する。各 bucket は MRU 順 (add で先頭挿入)
- * なので最初の名前一致が最も内側のスコープ = 正しいシャドーイング。スコープを
- * 抜けるときに脱落分を bucket から除去するので、bucket には可視なローカルだけが残る。 */
-#define LVAR_HASH_BUCKETS 256u
-static lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
-/* オフセット → lvar 逆引き索引 (psx_decl_find_lvar_by_offset 用)。node_lvar_t は
- * offset だけを持つので lvar 本体を引き戻すのに使う。all_locals (関数内全ローカル) を
- * 線形走査していたため代入のたびに O(N) かかり O(N^2) になっていた。offset は関数内で
- * 一意 (locals_offset は単調増加) かつ all_locals はスコープ離脱で減らないので、
- * add で挿入・関数境界の reset でクリアするだけでよい (名前索引のような除去は不要)。 */
-static lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
-
-static unsigned lvar_offset_hash(int offset) {
-  return (((unsigned)offset) * 2654435761u) >> 24;  /* Knuth 乗算ハッシュの上位 8bit */
-}
-
 static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *name);
-
-/* スコープ一意連番。enter_scope ごとに採番し、同一スコープ内の重複宣言検出に使う
- * (同じ scope_seq を持つ変数が既にあれば C11 6.7p3 違反)。 */
-static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
-static unsigned g_lvar_scope_seq;     // enter_scope ごとに ++
-static unsigned cur_lvar_scope_seq;   // 現在スコープの連番
-
-static unsigned lvar_name_hash(const char *name, int len) {
-  unsigned h = 2166136261u;
-  for (int i = 0; i < len; i++) h = (h ^ (unsigned char)name[i]) * 16777619u;
-  return h & (LVAR_HASH_BUCKETS - 1u);
-}
 
 void psx_decl_set_current_funcname(char *name, int len) {
   current_funcname = name;
@@ -91,23 +42,6 @@ void psx_decl_set_current_funcname(char *name, int len) {
 void psx_decl_get_current_funcname(char **out_name, int *out_len) {
   if (out_name) *out_name = current_funcname;
   if (out_len) *out_len = current_funcname_len;
-}
-
-lvar_t *ps_lvar_next_all(const lvar_t *var) {
-  return var ? var->next_all : NULL;
-}
-
-lvar_t *ps_lvar_find_owner(lvar_t *head, int offset) {
-  for (lvar_t *var = head; var; var = var->next_all) {
-    if (var->is_static_local) continue;
-    int sz = var->size > 0 ? var->size : 1;
-    if (var->offset <= offset && offset < var->offset + sz) return var;
-  }
-  return NULL;
-}
-
-int ps_lvar_offset(const lvar_t *var) {
-  return var ? var->offset : 0;
 }
 
 static psx_type_t *lvar_public_decl_type(const lvar_t *var) {
@@ -336,29 +270,9 @@ void psx_decl_reset_translation_unit_state(void) {
   psx_decl_reset_locals();
   current_funcname = NULL;
   current_funcname_len = 0;
-  memset(&static_local_mangle_state, 0, sizeof(static_local_mangle_state));
+  psx_static_local_lowering_reset();
 }
 
-/* add 後に呼ぶ: スコープ連番を刻み、名前 bucket とオフセット bucket の先頭へ挿入する。 */
-static void lvar_index_on_add(lvar_t *var) {
-  var->scope_seq = cur_lvar_scope_seq;
-  unsigned h = lvar_name_hash(var->name, var->len);
-  var->next_hash = lvars_by_bucket[h];
-  lvars_by_bucket[h] = var;
-  unsigned oh = lvar_offset_hash(var->offset);
-  var->next_offhash = lvars_by_offset[oh];
-  lvars_by_offset[oh] = var;
-}
-
-/* スコープ離脱時に呼ぶ: bucket から var を取り除く (通常は bucket 先頭にいる)。 */
-static void lvar_index_on_remove(lvar_t *var) {
-  unsigned h = lvar_name_hash(var->name, var->len);
-  lvar_t **pp = &lvars_by_bucket[h];
-  while (*pp) {
-    if (*pp == var) { *pp = var->next_hash; return; }
-    pp = &(*pp)->next_hash;
-  }
-}
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
@@ -411,7 +325,6 @@ typedef struct {
   int td_array_elem_size;
   int td_is_array;
   int base_pointer_levels;
-  psx_decl_funcptr_sig_t td_funcptr_sig;
   const psx_type_t *base_decl_type;
 } local_decl_spec_t;
 typedef struct {
@@ -463,10 +376,6 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
                                                 int td_pointee_const, int td_pointee_volatile,
                                                 int td_is_unsigned, int td_is_long_double,
                                                 int td_is_complex);
-static psx_type_t *local_typedef_base_type(
-    token_kind_t base_kind, int elem_size, tk_float_kind_t fp_kind,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int is_unsigned, int is_complex, const psx_type_t *base_decl_type);
 static global_var_t *find_global_var_decl(char *name, int len);
 static tk_float_kind_t fp_kind_for_type_kind(token_kind_t type_kind);
 static void resolve_builtin_type_local(token_kind_t type_kind, int *out_elem_size,
@@ -574,106 +483,6 @@ static int resolve_typedef_array_element_size(token_ident_t *id) {
   return _ti.sizeof_size / _ti.array_dims[0];
 }
 
-static long long eval_const_expr_decl(node_t *n, int *ok);
-
-long long psx_decl_eval_const_int(node_t *n, int *ok) {
-  return eval_const_expr_decl(n, ok);
-}
-
-static long long eval_const_expr_decl(node_t *n, int *ok) {
-  if (!n) { *ok = 0; return 0; }
-  switch (n->kind) {
-  case ND_NUM:
-    return ((node_num_t *)n)->val;
-  case ND_CAST:
-    if (n->type && n->type->kind == PSX_TYPE_VOID) {
-      *ok = 0;
-      return 0;
-    }
-    return eval_const_expr_decl(n->lhs, ok);
-  case ND_GVAR: {
-    /* グローバル変数参照: 整数定数で初期化された const gvar は ICE として
-     * 折り畳む (例: `const int A = 5; const int C = A * 7;`)。
-     * 厳密な C 標準では ICE に該当しないが ag_c は寛容に扱う。
-     * シンボルアドレス初期 / 浮動小数 / 配列は除外。 */
-    node_gvar_t *gv = (node_gvar_t *)n;
-    for (global_var_t *g = ps_find_global_var(gv->name, gv->name_len); g; g = NULL) {
-      if (g->name_len == gv->name_len &&
-          memcmp(g->name, gv->name, (size_t)g->name_len) == 0) {
-        const psx_type_t *type = psx_gvar_get_decl_type(g);
-        if (g->has_init && !g->init_symbol && !g->init_values && !g->init_fvalues &&
-            type && type->kind != PSX_TYPE_ARRAY &&
-            type->kind != PSX_TYPE_FLOAT && type->kind != PSX_TYPE_COMPLEX) {
-          return g->init_val;
-        }
-        break;
-      }
-    }
-    *ok = 0;
-    return 0;
-  }
-  case ND_COMMA:
-    (void)eval_const_expr_decl(n->lhs, ok);
-    if (!*ok) return 0;
-    return eval_const_expr_decl(n->rhs, ok);
-  case ND_TERNARY: {
-    long long c = eval_const_expr_decl(n->lhs, ok);
-    if (!*ok) return 0;
-    node_t *then_expr = n->rhs;
-    node_t *else_expr = ((node_ctrl_t *)n)->els;
-    return c ? eval_const_expr_decl(then_expr, ok) : eval_const_expr_decl(else_expr, ok);
-  }
-  case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
-  case ND_SHL: case ND_SHR:
-  case ND_BITAND: case ND_BITXOR: case ND_BITOR:
-  case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
-  case ND_LOGAND: case ND_LOGOR:
-    break;
-  default:
-    *ok = 0; return 0;
-  }
-  /* `&g_arr[3] - &g_arr[1]` のような「同一シンボル上のポインタ減算」は ICE。
-   * 両辺をそれぞれ (sym, off) に解決し、同 sym なら byte 差分を返す。
-   * 上位レイヤ (`add()` で ND_DIV(ND_SUB, sizeof) にラップ) が要素単位に変換する。
-   * 修正前は ND_SUB の左右 (= ND_ADD/ND_ADDR) が switch にないため eval が失敗し、
-   * `long g_diff = &g_arr[3] - &g_arr[1];` がグローバル init を `.comm` (0) に落としていた。 */
-  if (n->kind == ND_SUB) {
-    char *lsym = NULL, *rsym = NULL;
-    int lsym_len = 0, rsym_len = 0;
-    long long loff = 0, roff = 0;
-    if (psx_resolve_global_addr_init(n->lhs, &lsym, &lsym_len, &loff) &&
-        psx_resolve_global_addr_init(n->rhs, &rsym, &rsym_len, &roff) &&
-        lsym && rsym && lsym_len == rsym_len &&
-        (lsym_len == -1 ? lsym == rsym
-                        : (lsym_len > 0 && memcmp(lsym, rsym, (size_t)lsym_len) == 0))) {
-      return loff - roff;
-    }
-  }
-  // 二項演算共通: 左→右の順で評価し、op を適用。
-  long long l = eval_const_expr_decl(n->lhs, ok);
-  if (!*ok) return 0;
-  long long r = eval_const_expr_decl(n->rhs, ok);
-  switch (n->kind) {
-  case ND_ADD:    return l + r;
-  case ND_SUB:    return l - r;
-  case ND_MUL:    return l * r;
-  case ND_DIV:    return l / r;
-  case ND_MOD:    return l % r;
-  case ND_SHL:    return l << r;
-  case ND_SHR:    return l >> r;
-  case ND_BITAND: return l & r;
-  case ND_BITXOR: return l ^ r;
-  case ND_BITOR:  return l | r;
-  case ND_EQ:     return l == r;
-  case ND_NE:     return l != r;
-  case ND_LT:     return l < r;
-  case ND_LE:     return l <= r;
-  case ND_LOGAND: return (l && r) ? 1 : 0;
-  case ND_LOGOR:  return (l || r) ? 1 : 0;
-  default:        *ok = 0; return 0;
-  }
-}
-
 static void skip_ptr_qualifiers_decl(int *is_const_qualified, int *is_volatile_qualified) {
   while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
     if (curtok()->kind == TK_CONST && is_const_qualified) *is_const_qualified = 1;
@@ -706,7 +515,7 @@ static long long parse_array_size_expr_decl(node_t **out_node, int *out_ok) {
   node_t *n = psx_expr_assign();
   if (out_node) *out_node = n;
   int ok = 1;
-  long long v = eval_const_expr_decl(n, &ok);
+  long long v = psx_eval_const_int(n, &ok);
   if (out_ok) *out_ok = ok;
   if (ok && v < 0) {
     psx_diag_ctx(curtok(), "decl", "%s",
@@ -1100,129 +909,10 @@ static int decl_peek_trailing_array_dims_have_vla(void) {
   return 0;
 }
 
-// 波括弧初期化子 `{ ... }` のトップレベル要素数を数えるトークン先読みヘルパ。
-// `brace_tok` は `{` を指している必要がある。curtok は変更しない。
-// 指定初期化子 `[N]=` で位置がジャンプする場合は、最大位置+1 を返す。
-// 推定不可（空、複雑な指定子、トークン不整合）なら 0。
-long long psx_decl_count_brace_init_elements(token_t *brace_tok) {
-  if (!brace_tok || brace_tok->kind != TK_LBRACE) return 0;
-  token_t *t = brace_tok->next; // skip '{'
-  if (t && t->kind == TK_RBRACE) return 0; // 空 `{}` は推定不可
-
-  long long idx = 0;
-  long long max_seen = -1;
-  int depth = 0;
-  bool seen_content = false;
-  while (t) {
-    if (depth == 0) {
-      if (t->kind == TK_RBRACE) {
-        if (seen_content && idx > max_seen) max_seen = idx;
-        break;
-      }
-      if (t->kind == TK_COMMA) {
-        if (seen_content) {
-          if (idx > max_seen) max_seen = idx;
-          idx++;
-          seen_content = false;
-        }
-        t = t->next;
-        continue;
-      }
-      if (!seen_content && t->kind == TK_LBRACKET) {
-        // 指定初期化子 `[N]=...`
-        t = t->next;
-        if (t && t->kind == TK_NUM && tk_as_num(t)->num_kind == TK_NUM_KIND_INT) {
-          idx = (long long)tk_as_num_int(t)->uval;
-          t = t->next;
-        } else {
-          return 0; // 複雑な式は未対応
-        }
-        if (!t || t->kind != TK_RBRACKET) return 0;
-        t = t->next;
-        if (t && t->kind == TK_ASSIGN) t = t->next;
-        continue;
-      }
-    }
-    if (t->kind == TK_LBRACE || t->kind == TK_LPAREN || t->kind == TK_LBRACKET) {
-      depth++;
-    } else if (t->kind == TK_RBRACE || t->kind == TK_RPAREN || t->kind == TK_RBRACKET) {
-      depth--;
-      if (depth < 0) return 0; // 異常: 開きより閉じが多い
-    }
-    seen_content = true;
-    t = t->next;
-  }
-  if (max_seen < 0) return 0;
-  return max_seen + 1;
-}
-
-// `=` 直後 `{` の中身がもう一段の `{` で始まるか（ネスト初期化子）を判定する。
-// 2D 推定 `int a[][N]={{...},{...}}` をフラット形式 `{1,2,3,...}` と区別するために使う。
-// curtok は変更しない。
-static bool init_first_element_is_brace(void) {
-  token_t *t = curtok();
-  if (!t || t->kind != TK_ASSIGN) return false;
-  t = t->next;
-  if (!t || t->kind != TK_LBRACE) return false;
-  t = t->next;
-  // 簡略化のため、先頭の指定初期化子 (`[N]=` `.name=`) はスキップせず、直接判定する。
-  return t && t->kind == TK_LBRACE;
-}
-
-// 文字列リテラル列の合計内容長 + 1 (NUL) を返す。t は文字列開始トークン。
-// 文字列の終端後のトークンが終端記号 (`}` または NULL ライク) でなければ
-// 単純な文字列初期化と見なせないので 0 を返す。
-static long long count_char_init_from_string_seq(token_t *t, bool require_rbrace_terminator) {
-  long long total = 0;
-  while (t && t->kind == TK_STRING) {
-    token_string_t *st = (token_string_t *)t;
-    total += tk_count_string_code_units(st->str, st->len, (int)st->char_width);
-    t = t->next;
-  }
-  if (require_rbrace_terminator) {
-    if (!t || t->kind != TK_RBRACE) return 0;
-  }
-  return total + 1; // 終端 NUL
-}
-
-// `int a[] = ...` の `[]` で要素数を初期化子から推定するためのトークン先読みヘルパ。
-// curtok は変更しない。`=` で始まる初期化子を想定し、推定できなければ 0 を返す。
-// elem_size==1 の場合は文字列リテラル初期化子（NUL を含む長さ）にも対応する。
-// 波括弧で囲まれた `{"..."}` 形式も同じく文字列初期化として扱う。
-static long long infer_array_count_from_initializer_at(token_t *assign_tok, int elem_size) {
-  token_t *t = assign_tok;
-  if (!t || t->kind != TK_ASSIGN) return 0;
-  t = t->next;
-  if (!t) return 0;
-  /* `T a[] = "..."` / `u"..."` (U/L 含む): 要素幅 (elem_size) が文字列のコード単位幅
-   * (char/u8=1, u=2, U/L=4) と一致するとき、コード単位数 + NUL で要素数を推論する。 */
-  if (t->kind == TK_STRING) {
-    int cw = (int)((token_string_t *)t)->char_width;
-    if (cw <= 0) cw = 1;
-    if (elem_size == cw) return count_char_init_from_string_seq(t, false);
-  }
-  if (t->kind == TK_LBRACE) {
-    token_t *inside = t->next;
-    if (inside && inside->kind == TK_STRING) {
-      int cw = (int)((token_string_t *)inside)->char_width;
-      if (cw <= 0) cw = 1;
-      if (elem_size == cw) {
-        long long n = count_char_init_from_string_seq(inside, true);
-        if (n > 0) return n;
-      }
-    }
-  }
-  return psx_decl_count_brace_init_elements(t);
-}
-
-static long long infer_array_count_from_initializer(int elem_size) {
-  return infer_array_count_from_initializer_at(curtok(), elem_size);
-}
-
 static int parse_nonneg_const_expr_decl(const char *what) {
   node_t *n = psx_expr_assign();
   int ok = 1;
-  long long v = eval_const_expr_decl(n, &ok);
+  long long v = psx_eval_const_int(n, &ok);
   if (!ok) {
     psx_diag_ctx(curtok(), "decl", diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
                  what);
@@ -1606,10 +1296,34 @@ static void bump_initializer_count(int *count) {
   }
 }
 
+static node_t *parse_array_scalar_initializer_list(lvar_t *var) {
+  token_t *brace_tok = curtok();
+  node_t *syntax = psx_parse_initializer_syntax_list();
+  node_init_list_t *list = (node_init_list_t *)syntax;
+  return psx_node_new_decl_initializer_list(
+      psx_node_new_lvar_object_ref_for(var), PSX_DECL_INIT_ARRAY_LIST,
+      list->entries, list->entry_count, brace_tok);
+}
+
+static int union_has_scalar_first_named_member(lvar_t *var) {
+  psx_type_t *type = psx_lvar_get_decl_type(var);
+  psx_aggregate_definition_t *definition =
+      type ? type->aggregate_definition : NULL;
+  if (!definition || definition->tag_kind != TK_UNION) return 0;
+  for (int i = 0; i < definition->member_count; i++) {
+    tag_member_info_t *member = &definition->members[i];
+    if (member->len <= 0) continue;
+    return ps_tag_member_decl_array_count(member) == 0 &&
+           !ps_tag_member_is_tag_aggregate(member);
+  }
+  return 0;
+}
+
 /* `char a[] = {"hello"};` 形式 (C11 6.7.9p14) のチェック&パース。
  * 該当する場合のみトークンを消費して init chain を返す。該当しなければ
  * NULL を返し、呼び出し側は通常の brace 初期化に進む。 */
 static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_len) {
+  (void)array_len;
   int elem_size = ps_lvar_array_scalar_element_size(var);
   if (elem_size <= 0) elem_size = var ? var->elem_size : 0;
   if (elem_size != 1 || !curtok() || curtok()->kind != TK_LBRACE) return NULL;
@@ -1618,32 +1332,14 @@ static node_t *try_parse_array_braced_string_initializer(lvar_t *var, int array_
   token_t *p = peek;
   while (p && p->kind == TK_STRING) p = p->next;
   if (!p || p->kind != TK_RBRACE) return NULL;
+  token_t *init_tok = curtok();
   tk_consume('{');
   node_t *str_node = psx_expr_assign(); // 連結を含めて1つの ND_STRING になる
   tk_expect('}');
   if (!str_node || str_node->kind != ND_STRING) return NULL;
-  node_string_t *s = (node_string_t *)str_node;
-  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
-  if (!lit) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
-  }
-  node_t *init_chain = NULL;
-  int i = 0;
-  int src_pos = 0;
-  while (src_pos < lit->len && i < array_len) {
-    uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &src_pos);
-    init_chain = append_to_init_chain(init_chain,
-        build_array_elem_assign(var, i, psx_node_new_num((unsigned char)cp)));
-    i++;
-  }
-  /* 残り全てを 0 で埋める (C11 6.7.9p21)。修正前は 1 個だけだった。 */
-  while (i < array_len) {
-    init_chain = append_to_init_chain(init_chain,
-        build_array_elem_assign(var, i, psx_node_new_num(0)));
-    i++;
-  }
-  return init_chain ? init_chain : psx_node_new_num(0);
+  return psx_node_new_decl_initializer(
+      psx_node_new_lvar_object_ref_for(var), str_node,
+      PSX_DECL_INIT_ARRAY_EXPR, init_tok);
 }
 
 /* 多次元配列の指定初期化子 [i0][i1]... の第 d 次サブスクリプトの要素単位
@@ -1849,47 +1545,6 @@ static node_t *parse_array_braced_init(lvar_t *var, int array_len) {
   return body;
 }
 
-/* `char a[N] = "hello"` 形の raw 文字列リテラル初期化 (C11 6.7.9p14)。
- * 各文字を psx_node_new_num で elem ごとに assign し、配列長より短ければ
- * 残りを 0 で埋める (p21)。 */
-typedef struct {
-  lvar_t *var;
-  node_t *init_chain;
-  int idx;
-} array_string_init_ctx_t;
-
-static void append_array_string_init_unit(uint32_t unit, void *user) {
-  array_string_init_ctx_t *ctx = user;
-  ctx->init_chain = append_to_init_chain(
-      ctx->init_chain,
-      build_array_elem_assign(ctx->var, ctx->idx, psx_node_new_num((long long)unit)));
-  ctx->idx++;
-}
-
-static node_t *build_array_string_initializer(lvar_t *var, node_string_t *s, int array_len) {
-  string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
-  if (!lit) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
-  }
-  /* 要素幅 (= var->elem_size) のコードユニットに変換して格納する。char/u8 配列は
-   * 1 バイト = 1 ユニット、u/U/L 配列は UTF-8 をデコードしたコードユニット (u は補助面で
-   * サロゲート対)。dispatch 側で elem_size == 文字列 char_width を保証済み。 */
-  int cw = ps_lvar_array_scalar_element_size(var);
-  if (cw <= 0) cw = var ? var->elem_size : 1;
-  if (cw <= 0) cw = 1;
-  array_string_init_ctx_t ctx = {var, NULL, 0};
-  tk_emit_string_code_units(lit->str, lit->len, cw, array_len,
-                            append_array_string_init_unit, &ctx);
-  /* 文字列が配列長より短い場合 (`char a[10] = "hi"`) は残り全てを 0 で埋める。 */
-  while (ctx.idx < array_len) {
-    ctx.init_chain = append_to_init_chain(ctx.init_chain,
-        build_array_elem_assign(var, ctx.idx, psx_node_new_num(0)));
-    ctx.idx++;
-  }
-  return ctx.init_chain ? ctx.init_chain : psx_node_new_num(0);
-}
-
 static node_t *parse_array_initializer(lvar_t *var) {
   int elem_size = ps_lvar_array_scalar_element_size(var);
   if (elem_size <= 0) elem_size = var ? var->elem_size : 0;
@@ -1903,52 +1558,27 @@ static node_t *parse_array_initializer(lvar_t *var) {
     if (str_init) return str_init;
   }
   if (curtok() && curtok()->kind == TK_LBRACE) {
+    if (ps_lvar_is_tag_aggregate(var) &&
+        psx_initializer_lowering_supports_recursive_aggregate(
+            psx_lvar_get_decl_type(var)) &&
+        (psx_initializer_syntax_is_braced_subobject_array_list(curtok()) ||
+         (psx_initializer_lowering_supports_flat_brace_elision(
+              psx_lvar_get_decl_type(var)) &&
+          psx_initializer_syntax_is_flat_mixed_list(curtok())))) {
+      return parse_array_scalar_initializer_list(var);
+    }
+    if (!ps_lvar_is_tag_aggregate(var) &&
+        psx_initializer_syntax_is_scalar_array_list(curtok())) {
+      return parse_array_scalar_initializer_list(var);
+    }
     return parse_array_braced_init(var, array_len);
   }
 
+  token_t *init_tok = curtok();
   node_t *rhs = psx_expr_assign();
-  /* `char a[N] = "hello"` / `unsigned short a[N] = u"hi"` / `T a[N] = U".."`/`L".."` 形
-   * (波括弧なし raw 文字列): 各コード単位を要素 assign。要素幅 (elem_size) が文字列の
-   * char_width (char/u8=1, u=2, U/L=4) と一致するときに限る (ASCII 内容のみ対応。
-   * 非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。 */
-  if (rhs->kind == ND_STRING) {
-    int cw = (int)((node_string_t *)rhs)->char_width;
-    if (cw <= 0) cw = 1;
-    if (elem_size == cw) {
-      return build_array_string_initializer(var, (node_string_t *)rhs, array_len);
-    }
-  }
-  node_t *init_chain = NULL;
-  /* Extension: `int arr[N] = (T[N]){...}` 形式 (compound literal で配列初期化)。
-   * parse_compound_literal_from_type は ND_COMMA(init_chain, ND_ADDR(lvar)) を
-   * 返すので、その lvar から要素ごとに arr へ copy する init_chain を生成する。
-   * Clang/GCC が拡張で受け付ける形式で、p304 (関数ポインタ配列の compound
-   * literal init) の最終段でこの経路が要る。 */
-  if (array_len > 0 && rhs && rhs->kind == ND_COMMA &&
-      rhs->rhs && rhs->rhs->kind == ND_ADDR &&
-      rhs->rhs->lhs && rhs->rhs->lhs->kind == ND_LVAR) {
-    node_lvar_t *src = (node_lvar_t *)rhs->rhs->lhs;
-    init_chain = rhs->lhs; /* compound literal の init 部分 */
-    for (int i = 0; i < array_len; i++) {
-      node_t *dst = new_array_elem_lvar_at(var->offset, elem_size, i);
-      node_t *src_node = psx_node_new_lvar_typed_at_for(src->var, src->offset + i * elem_size,
-                                                        elem_size);
-      node_t *assign = psx_node_new_assign(dst, src_node);
-      init_chain = append_to_init_chain(init_chain, (node_t *)assign);
-    }
-    return init_chain;
-  }
-  // Extension: scalar expression for array init
-  //   int a[3] = 1;  => a[0]=1, a[1]=0, a[2]=0
-  if (array_len > 0) {
-    init_chain = build_array_elem_assign(var, 0, rhs);
-    for (int idx = 1; idx < array_len; idx++) {
-      init_chain = append_to_init_chain(init_chain,
-          build_array_elem_assign(var, idx, psx_node_new_num(0)));
-    }
-    return init_chain;
-  }
-  return psx_node_new_num(0);
+  return psx_node_new_decl_initializer(
+      psx_node_new_lvar_object_ref_for(var), rhs,
+      PSX_DECL_INIT_ARRAY_EXPR, init_tok);
 }
 
 /* 配列メンバの 1 要素代入を構築する。_Bool と float/double の型 metadata 伝播
@@ -2093,7 +1723,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
       /* 3 次元以上の char 配列メンバ (`char c[2][2][3]`) は、各次元 dims を持って
        * 再帰展開する。2D の outer_stride 経路では「行 = 内側 1 次元 char 配列」しか
        * 表現できず、行自体がさらに 2D 配列となる 3D 以上で内側構造を見れないため。
-       * グローバルの gbrace_ctx_t.sub_dims チェーンと同じ機構をローカルに移植。 */
+       * 各次元を明示した再帰処理でローカル初期化へ展開する。 */
       if (member_arr_ndim >= 3 && member_arr_dims && elem_size == 1) {
         int flat = 0;
         node_t *chain = parse_multidim_char_member_brace(
@@ -2124,7 +1754,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
          * バイト展開して flat に書き込み、行ぶん flat を進めるヘルパ。これがないと
          * 文字列リテラルが「.LC アドレスの 1 バイト」として 1 slot に書き込まれ
          * (`strb w20, [x19]`)、行データがポインタ値の下位 1 バイトに化けていた。
-         * グローバル経路 (psx_gbrace_flat) と対称な処理。 */
+         * static-data lowering の文字列行展開と対称な処理。 */
 #define EMIT_ROW_FROM_STRING(VAL)                                                                  \
         do {                                                                                       \
           node_string_t *_s = (node_string_t *)(VAL);                                              \
@@ -2153,7 +1783,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
             /* 外側 `[N]=` designator (C11 6.7.9p6): 行 N へジャンプ。 */
             if (curtok()->kind == TK_LBRACKET) {
               set_curtok(curtok()->next);
-              long long ridx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+              long long ridx = psx_eval_const_int(psx_expr_assign(), NULL);
               consume_gnu_range_designator_tail_if_any();
               tk_expect(']');
               tk_expect('=');
@@ -2169,7 +1799,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
                   /* 内側 `[M]=` designator: 行内の列 M へジャンプ。 */
                   if (curtok()->kind == TK_LBRACKET) {
                     set_curtok(curtok()->next);
-                    long long cidx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+                    long long cidx = psx_eval_const_int(psx_expr_assign(), NULL);
                     consume_gnu_range_designator_tail_if_any();
                     tk_expect(']');
                     tk_expect('=');
@@ -2395,7 +2025,7 @@ static node_t *parse_member_initializer(lvar_t *owner, const tag_member_info_t *
 
 /* 文字列リテラル val を `flat` から `row_w` バイト (上限 array_len) に展開し、
  * 1 バイトずつ assign ノードを init_chain に追加する。残りは struct 全体の zero-fill
- * に委ねる (caller が flat を行末まで進める)。grobal 経路 (psx_gbrace_flat) と対称。 */
+ * に委ねる (caller が flat を行末まで進める)。 */
 static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row_w,
                                        int array_len, int *flat, node_string_t *s,
                                        node_t *init_chain,
@@ -2430,7 +2060,7 @@ static node_t *parse_multidim_tag_member_brace(lvar_t *owner, int member_offset,
   for (;;) {
     if (curtok()->kind == TK_LBRACKET) {
       set_curtok(curtok()->next);
-      long long didx = psx_decl_eval_const_int(psx_expr_assign(), NULL);
+      long long didx = psx_eval_const_int(psx_expr_assign(), NULL);
       consume_gnu_range_designator_tail_if_any();
       tk_expect(']');
       tk_expect('=');
@@ -3653,160 +3283,6 @@ static decl_array_suffix_t decl_array_suffix_from_shape(
   return out;
 }
 
-static int decl_funcptr_direct_ret_is_data_pointer(const decl_declarator_state_t *decl_state,
-                                                   int ptr_levels,
-                                                   int base_is_pointer) {
-  if (!decl_state || !decl_state->trailing_func_suffix) return 0;
-  int object_pointer_levels = decl_state->funcptr_object_pointer_levels;
-  if (object_pointer_levels <= 0) object_pointer_levels = decl_state->paren_pointer_levels;
-  int ret_pointer_levels = ptr_levels - object_pointer_levels;
-  if (decl_state->func_suffix_count >= 2 && ret_pointer_levels > 0) ret_pointer_levels--;
-  return (ret_pointer_levels > 0 || base_is_pointer) ? 1 : 0;
-}
-
-void psx_decl_reset_locals(void) {
-  locals = NULL;
-  all_locals = NULL;
-  locals_offset = 0;
-  lvar_scope_depth = 0;
-  for (unsigned i = 0; i < LVAR_HASH_BUCKETS; i++) {
-    lvars_by_bucket[i] = NULL;
-    lvars_by_offset[i] = NULL;
-  }
-  g_lvar_scope_seq = 0;
-  cur_lvar_scope_seq = 0;
-  lvar_usage_events_head = NULL;
-  lvar_usage_events_tail = NULL;
-  current_lvar_usage_region = NULL;
-}
-
-void psx_decl_enter_scope(void) {
-  if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    lvar_scope_stack[lvar_scope_depth] = locals;
-    lvar_scope_seq_stack[lvar_scope_depth] = cur_lvar_scope_seq;
-  }
-  lvar_scope_depth++;
-  cur_lvar_scope_seq = ++g_lvar_scope_seq;
-}
-
-void psx_decl_leave_scope(void) {
-  if (lvar_scope_depth <= 0) return;
-  lvar_scope_depth--;
-  if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
-    /* このスコープで追加された変数 (locals head .. 退避点) を名前索引から外す。 */
-    lvar_t *restore = lvar_scope_stack[lvar_scope_depth];
-    for (lvar_t *v = locals; v != restore; v = v->next) lvar_index_on_remove(v);
-    locals = restore;
-    cur_lvar_scope_seq = lvar_scope_seq_stack[lvar_scope_depth];
-  }
-}
-
-// For variadic functions: reserve slots for all 8 argument registers
-// (8 regs × 8 bytes = 64 bytes at offsets 8..64) so that body-local
-// variables don't overlap with the variadic register save area.
-void psx_decl_reserve_variadic_regs(void) {
-  if (locals_offset < 64) locals_offset = 64;
-}
-
-lvar_t *psx_decl_get_locals(void) { return all_locals; }
-
-psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void) {
-  psx_lvar_usage_region_t *region = calloc(1, sizeof(psx_lvar_usage_region_t));
-  region->prev = current_lvar_usage_region;
-  current_lvar_usage_region = region;
-  return region;
-}
-
-void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region) {
-  if (!region) return;
-  if (current_lvar_usage_region == region) {
-    current_lvar_usage_region = region->prev;
-    return;
-  }
-  current_lvar_usage_region = region->prev;
-}
-
-void psx_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
-  if (region) region->suppress_warnings = 1;
-}
-
-void psx_decl_attach_lvar_current_region(lvar_t *var) {
-  if (var) var->decl_region = current_lvar_usage_region;
-}
-
-void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
-                                          psx_lvar_usage_region_t *region) {
-  if (!var) return;
-  lvar_usage_event_t *ev = calloc(1, sizeof(lvar_usage_event_t));
-  ev->var = var;
-  ev->kind = kind;
-  ev->region = region;
-  if (!lvar_usage_events_head) {
-    lvar_usage_events_head = ev;
-  } else {
-    lvar_usage_events_tail->next = ev;
-  }
-  lvar_usage_events_tail = ev;
-}
-
-void psx_decl_replay_lvar_usage_events(lvar_t *all) {
-  for (lvar_t *v = all; v; v = v->next_all) {
-    v->is_used = 0;
-    v->is_unevaluated_used = 0;
-    v->is_address_taken = 0;
-    v->is_initialized = 0;
-    v->suppress_unreachable_warnings = 0;
-    v->used_count = 0;
-    if (v->decl_region) {
-      v->suppress_unreachable_warnings = v->decl_region->suppress_warnings ? 1 : 0;
-    }
-  }
-  for (lvar_usage_event_t *ev = lvar_usage_events_head; ev; ev = ev->next) {
-    lvar_t *var = ev->var;
-    if (!var) continue;
-    if (ev->region && ev->region->suppress_warnings) continue;
-    switch (ev->kind) {
-      case PSX_LVAR_USAGE_EVALUATED:
-        var->used_count++;
-        var->is_used = 1;
-        break;
-      case PSX_LVAR_USAGE_UNEVALUATED:
-        var->is_unevaluated_used = 1;
-        break;
-      case PSX_LVAR_USAGE_ADDRESS_TAKEN:
-        if (var->used_count > 0) var->used_count--;
-        var->is_used = var->used_count > 0;
-        var->is_address_taken = 1;
-        break;
-      case PSX_LVAR_USAGE_INITIALIZED:
-        var->is_initialized = 1;
-        break;
-    }
-  }
-}
-
-lvar_t *psx_decl_find_lvar_by_offset(int offset) {
-  /* offset bucket は all_locals と同じく MRU 順なので、最初の offset 一致が
-   * 旧 all_locals 線形走査と同じ変数になる (offset 重複時の挙動も一致)。 */
-  unsigned oh = lvar_offset_hash(offset);
-  for (lvar_t *var = lvars_by_offset[oh]; var; var = var->next_offhash) {
-    if (var->offset == offset) return var;
-  }
-  return NULL;
-}
-
-lvar_t *psx_decl_find_lvar(char *name, int len) {
-  /* 名前 bucket は MRU 順 (内側スコープが先頭) かつ可視な変数のみ。
-   * 最初の名前一致が `locals` 線形走査と同じ「最も内側の見える変数」になる。 */
-  unsigned h = lvar_name_hash(name, len);
-  for (lvar_t *var = lvars_by_bucket[h]; var; var = var->next_hash) {
-    if (var->len == len && memcmp(var->name, name, len) == 0) {
-      return var;
-    }
-  }
-  return NULL;
-}
-
 static void psx_decl_clear_lvar_array_strides(lvar_t *var) {
   if (!var) return;
   var->outer_stride = 0;
@@ -3925,22 +3401,15 @@ lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int el
    * 名前索引で最も内側の同名変数を引き、それが現在スコープ (= 同じ scope_seq) の
    * ものなら重複。外側スコープのものはシャドーイングなので許可。 */
   lvar_t *prev = psx_decl_find_lvar(name, len);
-  if (prev && prev->scope_seq == cur_lvar_scope_seq) {
+  if (prev && prev->scope_seq == psx_local_registry_current_scope_seq()) {
     psx_diag_duplicate_with_name(curtok(), "variable", name, len);
     /* psx_diag_duplicate_with_name は exit するため後続には到達しない */
   }
 
   lvar_t *var = calloc(1, sizeof(lvar_t));
-  var->next = locals;
-  var->next_all = all_locals;
-  all_locals = var;
   var->name = name;
   var->len = len;
-  if (align > 1) {
-    locals_offset = (locals_offset + align - 1) & ~(align - 1);
-  }
-  var->offset = locals_offset;  // BASE of variable (address = x29 + 16 + var->offset)
-  locals_offset += size;
+  var->offset = local_storage_allocate(size, align);
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array ? 1 : 0;
@@ -3949,8 +3418,7 @@ lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int el
       TK_EOF, NULL, 0, 0, 0);
   var->align_bytes = align;
   psx_decl_attach_lvar_current_region(var);
-  locals = var;
-  lvar_index_on_add(var);
+  psx_local_registry_add(var);
   return var;
 }
 
@@ -4010,29 +3478,6 @@ static psx_type_t *static_local_array_type(psx_type_t *element,
   return type;
 }
 
-static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,
-                                           int mangled_len, int size,
-                                           int elem_size,
-                                           const psx_type_t *decl_type) {
-  lvar_t *var = calloc(1, sizeof(lvar_t));
-  var->next = locals;
-  var->next_all = all_locals;
-  all_locals = var;
-  var->name = tok->str;
-  var->len = tok->len;
-  psx_decl_attach_lvar_current_region(var);
-  var->offset = 0;
-  var->size = size;
-  var->elem_size = elem_size;
-  psx_decl_set_lvar_decl_type(var, decl_type);
-  var->is_static_local = 1;
-  var->static_global_name = mangled;
-  var->static_global_name_len = mangled_len;
-  locals = var;
-  lvar_index_on_add(var);
-  return var;
-}
-
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   if (ps_lvar_is_array(var)) {
     return parse_array_initializer(var);
@@ -4041,9 +3486,37 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     if (curtok()->kind != TK_LBRACE) {
       return parse_struct_copy_initializer(var);
     }
+    if ((psx_initializer_lowering_supports_flat_brace_elision(
+             psx_lvar_get_decl_type(var)) &&
+         psx_initializer_syntax_is_flat_mixed_list(curtok())) ||
+        (psx_initializer_lowering_supports_recursive_aggregate(
+             psx_lvar_get_decl_type(var)) &&
+         psx_initializer_syntax_is_braced_subobject_array_list(curtok()))) {
+      token_t *init_tok = curtok();
+      node_t *syntax = psx_parse_initializer_syntax_list();
+      node_init_list_t *list = (node_init_list_t *)syntax;
+      return psx_node_new_decl_initializer_list(
+          psx_node_new_lvar_object_ref_for(var),
+          PSX_DECL_INIT_STRUCT_LIST,
+          list->entries, list->entry_count, init_tok);
+    }
     return parse_struct_initializer(var);
   }
   if (!is_pointer && ps_lvar_is_union_aggregate(var)) {
+    if (curtok()->kind == TK_LBRACE &&
+        ((union_has_scalar_first_named_member(var) &&
+          psx_initializer_syntax_is_simple_member_list(curtok())) ||
+         (psx_initializer_lowering_supports_recursive_aggregate(
+              psx_lvar_get_decl_type(var)) &&
+          psx_initializer_syntax_is_braced_subobject_array_list(curtok())))) {
+      token_t *init_tok = curtok();
+      node_t *syntax = psx_parse_initializer_syntax_list();
+      node_init_list_t *list = (node_init_list_t *)syntax;
+      return psx_node_new_decl_initializer_list(
+          psx_node_new_lvar_object_ref_for(var),
+          PSX_DECL_INIT_UNION_LIST,
+          list->entries, list->entry_count, init_tok);
+    }
     return parse_union_initializer(var);
   }
   node_t *lvar = psx_node_new_lvar_expr_ref_for(var, is_pointer);
@@ -4053,56 +3526,20 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
    * 再利用)。im を省略した `{re}` は虚部 0。これがないとスカラ初期化子扱いで
    * `{0,1}` が E3064 になり、虚数単位 `I` (= {0,1}) を定義できなかった。 */
   if (ps_lvar_is_complex(var) && curtok()->kind == TK_LBRACE) {
+    token_t *init_tok = curtok();
     tk_consume('{');
-    int complex_size = ps_lvar_elem_size(var, var->elem_size);
-    int half = complex_size > 0 ? complex_size / 2 : 8;
     node_t *re = psx_expr_assign();
     node_t *im = NULL;
     if (tk_consume(',') && curtok()->kind != TK_RBRACE) im = psx_expr_assign();
     tk_expect('}');
-    node_t *re_lv = psx_node_new_lvar_fp_slot_for(var, var->offset, half);
-    node_t *re_as = psx_node_new_assign(re_lv, re);
-    node_t *im_lv = psx_node_new_lvar_fp_slot_for(var, var->offset + half, half);
-    node_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
-    return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
+    return psx_node_new_decl_initializer(
+        lvar, psx_node_new_binary(ND_COMMA, re, im),
+        PSX_DECL_INIT_COMPLEX, init_tok);
   }
+  token_t *init_tok = curtok();
   node_t *init_expr = parse_scalar_brace_initializer();
-  if (is_pointer) {
-    psx_node_reject_const_qual_discard(lvar, init_expr);
-    /* C11 6.5.16.1: ポインタ変数を非ゼロ整数定数で初期化するのは制約違反。
-     * NULL ポインタ定数 (整数 0) のみ例外として許可する。明示ポインタ cast は
-     * ND_CAST の pointer result として表すため、この ND_NUM 検査には入らない。 */
-    if (init_expr && init_expr->kind == ND_NUM) {
-      node_num_t *num = (node_num_t *)init_expr;
-      if (num->val != 0) {
-        psx_diag_ctx(curtok(), "init",
-                     "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
-                     num->val);
-      }
-    }
-  } else if (!ps_lvar_is_tag_aggregate(var) && !ps_lvar_is_array(var) &&
-             init_expr) {
-    /* C11 6.5.16.1: スカラ非ポインタ変数を文字列リテラル (char*) など
-     * ポインタ型で初期化するのは互換性のない型の制約違反。
-     * 明示キャスト (int)"hello" は apply_cast で is_pointer がクリアされるので
-     * ここでは ps_node_is_pointer を見て暗黙変換のみを検出する。 */
-    if (ps_node_is_pointer(init_expr)) {
-      psx_diag_ctx(curtok(), "init",
-                   "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
-    }
-    /* C11 6.5.16.1: struct/union 値をスカラに代入することはできない。
-     * raw mirror の tag/is_pointer ではなく canonical type accessor で判定する。 */
-    if (ps_node_aggregate_value_size(init_expr) > 0) {
-      token_kind_t init_tag_kind = TK_EOF;
-      ps_node_get_tag_type(init_expr, &init_tag_kind, NULL, NULL, NULL);
-      psx_diag_ctx(curtok(), "init",
-                   "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
-                   psx_ctx_tag_kind_spelling(init_tag_kind));
-    }
-  }
-  node_t *assign_node = psx_node_new_assign(lvar, init_expr);
-  assign_node->is_decl_initializer = 1;
-  return (node_t *)assign_node;
+  return psx_node_new_decl_initializer(
+      lvar, init_expr, PSX_DECL_INIT_SCALAR, init_tok);
 }
 
 node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t decl_fp_kind,
@@ -4119,7 +3556,6 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
                                                   decl_is_unsigned_hint,
                                                   &empty_type_spec, NULL, 0,
                                                   0, 0, 0, 0,
-                                                  (psx_decl_funcptr_sig_t){0},
                                                   NULL,
                                                   NULL,
                                                   /* decl_base_is_void = */ 0,
@@ -4131,12 +3567,12 @@ node_t *psx_decl_parse_declaration_after_type(int elem_size, tk_float_kind_t dec
  * 対応範囲: スカラ整数 / 浮動小数点 / ポインタ。`=` の右辺は数値定数、
  * またはポインタ用のアドレス定数 (`&g` / 関数参照 / 文字列リテラル等)。
  * 配列・struct・union・複合型は未対応。 */
-static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int deref_size,
-                                          tk_float_kind_t fp_kind, int is_unsigned,
-                                          int is_bool,
-                                          int is_pointer,
-                                          psx_decl_funcptr_sig_t funcptr_sig) {
-  if (var_size <= 0) return 0;
+static int try_lower_static_local_scalar(token_ident_t *tok, int var_size,
+                                         int element_size,
+                                         tk_float_kind_t fp_kind,
+                                         int is_pointer,
+                                         const psx_type_t *canonical_type) {
+  if (var_size <= 0 || !canonical_type) return 0;
   /* peek フェーズ: 受理できる init 形 (なし、`=` + 単純な数値リテラル、
    * または pointer のアドレス定数式) のみ scalar 経路で処理する。 */
   int init_is_addr = 0;
@@ -4171,31 +3607,8 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
       if (!tail || (tail->kind != TK_SEMI && tail->kind != TK_COMMA)) return 0;
     }
   }
-  /* mangled name: `<funcname>.<varname>.<seq>` を arena に組み立てる。seq は重複防止用。 */
-  char *funcname = NULL;
-  int funcname_len = 0;
-  psx_decl_get_current_funcname(&funcname, &funcname_len);
-  int seq = static_local_mangle_state.scalar_seq++;
-  char seq_buf[12];
-  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "%d", seq);
-  /* funcname (or "anon") + "." + tok->name + "." + seq */
-  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
-  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
-  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
-   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
-   * リセットしても消えないよう、arena でなく malloc で確保する。 */
-  char *mangled = malloc((size_t)total_len + 1);
-  int off = 0;
-  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
-  mangled[off] = '\0';
-
   /* 初期化子 (`= N`) があれば NUM をパースして init_val に取り込む。
-   * 整数式は psx_decl_eval_const_int で folding (`= -5` は ND_SUB(0,5) として
+   * 整数式は psx_eval_const_int で folding (`= -5` は ND_SUB(0,5) として
    * パースされるため、ND_NUM だけ見ると 0 に化けていた)。
    * float/double の static ローカルはリテラル値が ->fval にあるので、ND_NUM のときに
    * fval を取り出す。 */
@@ -4211,7 +3624,8 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
       long long off = 0;
       char *sym = NULL;
       int sym_len = 0;
-      if (!psx_resolve_global_addr_init(e, &sym, &sym_len, &off)) {
+      if (!psx_resolve_static_address_constant(
+              e, &sym, &sym_len, &off)) {
         psx_diag_ctx(curtok(), "decl",
                      "static local pointer initializer must be an address constant");
       }
@@ -4224,41 +3638,31 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
       has_init = 1;
     } else {
       int ok = 1;
-      long long v = psx_decl_eval_const_int(e, &ok);
+      long long v = psx_eval_const_int(e, &ok);
       if (ok) init_val = v;
       has_init = 1;
     }
   }
 
-  /* global_var_t を作って global_vars に追加。 */
-  global_var_t *gv = calloc(1, sizeof(global_var_t));
-  gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない (別 TU と衝突しない)。 */
-  gv->name = mangled;
-  gv->name_len = total_len;
-  psx_type_t *decl_type = static_local_scalar_type(
-      deref_size, fp_kind, is_unsigned, is_bool);
-  if (is_pointer) {
-    decl_type = psx_type_new_pointer(decl_type, deref_size);
-  }
-  if (is_pointer && ps_decl_funcptr_sig_has_payload(funcptr_sig))
-    decl_type = psx_type_attach_funcptr_signature(decl_type, funcptr_sig);
-  gv->type_size = var_size;
-  psx_decl_set_gvar_decl_type(gv, decl_type);
-  gv->has_init = has_init;
-  gv->init_val = init_val;
-  gv->init_symbol = init_symbol;
-  gv->init_symbol_len = init_symbol_len;
-  gv->init_symbol_offset = init_symbol_offset;
-  gv->fval = init_fval;
-  psx_register_global_var(gv);
-
-  /* lvar を「alias」として登録 — frame には置かないが、short name で引けるよう
-   * locals に挿入する。is_static_local を立てて、識別子解決時に ND_GVAR に
-   * 切り替える。size=0、offset は意味を持たない (=0)。 */
-  lvar_t *var = register_static_local_alias(tok, mangled, total_len,
-                                            var_size, deref_size, decl_type);
-  (void)var;
-  return 1;
+  char *funcname = NULL;
+  int funcname_len = 0;
+  psx_decl_get_current_funcname(&funcname, &funcname_len);
+  return lower_static_local_scalar(
+             &(psx_static_local_scalar_request_t){
+                 .function_name = funcname,
+                 .function_name_len = funcname_len,
+                 .name = tok->str,
+                 .name_len = tok->len,
+                 .storage_size = var_size,
+                 .element_size = element_size,
+                 .type = canonical_type,
+                 .has_initializer = has_init,
+                 .integer_value = init_val,
+                 .floating_value = init_fval,
+                 .symbol = init_symbol,
+                 .symbol_len = init_symbol_len,
+                 .symbol_offset = init_symbol_offset,
+             }) != NULL;
 }
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
@@ -4360,11 +3764,17 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
       if (cw <= 0) cw = 1;
       if (elem_size != cw) return 0;
       if (!has_size_token) {
-        arr_count = infer_array_count_from_initializer_at(after_rb, elem_size);
+        arr_count = psx_initializer_syntax_infer_array_count(after_rb, elem_size);
         if (arr_count <= 0) return 0;
       }
       has_string_init = 1;
-    } else if (after_eq->kind != TK_LBRACE) {
+    } else if (after_eq->kind == TK_LBRACE) {
+      if (!has_size_token) {
+        arr_count = psx_initializer_syntax_infer_array_count(
+            after_rb, elem_size);
+        if (arr_count <= 0) return 0;
+      }
+    } else {
       return 0; /* スカラ式は fallback */
     }
     has_init = 1;
@@ -4384,11 +3794,18 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   /* global_var_t を構築。 */
   global_var_t *gv = calloc(1, sizeof(global_var_t));
   gv->is_static = 1;  /* 関数内 static は内部リンケージ: .global を出さない。 */
-  int initial_type_size = 0;
-  if (has_size_token || (has_string_init && arr_count > 0)) {
-    initial_type_size = (int)arr_count * elem_size;
-  }
+  int initial_type_size = arr_count > 0
+                              ? (int)arr_count * elem_size : 0;
   gv->type_size = initial_type_size;
+  psx_type_t *element_type = static_local_scalar_type(
+      pointer_elem_pointee_size > 0 ? pointer_elem_pointee_size : elem_size,
+      fp_kind, is_unsigned, is_bool);
+  if (pointer_elem_pointee_size > 0)
+    element_type = psx_type_new_pointer(element_type,
+                                        pointer_elem_pointee_size);
+  psx_type_t *decl_type = static_local_array_type(
+      element_type, NULL, 0, (int)arr_count);
+  psx_static_local_prepare_global(gv, decl_type);
 
   if (has_init && has_string_init) {
     tk_expect('=');
@@ -4409,11 +3826,10 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
   } else if (has_init) {
     tk_expect('=');
     gv->has_init = 1;
-    int cap = 16;
-    psx_gvar_init_slots_alloc(gv, cap, fp_kind != TK_FLOAT_KIND_NONE);
-    gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap, -1);
-    psx_decl_finalize_gvar_inferred_array_size(gv, &cap);
+    token_t *init_tok = curtok();
+    node_t *syntax = psx_parse_initializer_syntax_list();
+    if (!lower_static_scalar_array_initializer(
+            gv, decl_type, (node_init_list_t *)syntax, init_tok)) return 0;
   }
   if (gv->type_size == 0) {
     /* サイズが確定できないケース (`[];` で init もなし) は scope 外として
@@ -4421,53 +3837,18 @@ static int try_lower_static_local_array(token_ident_t *tok, int elem_size,
      * curtok は既に進めてしまっているため戻せない。診断を出して 0 で続行。 */
     psx_decl_set_gvar_type_size(gv, elem_size); /* 暫定 1 要素 */
   }
-  int final_array_count = gv->type_size / elem_size;
-  psx_type_t *element_type = static_local_scalar_type(
-      pointer_elem_pointee_size > 0 ? pointer_elem_pointee_size : elem_size,
-      fp_kind, is_unsigned, is_bool);
-  if (pointer_elem_pointee_size > 0)
-    element_type = psx_type_new_pointer(element_type,
-                                        pointer_elem_pointee_size);
-  psx_type_t *decl_type = static_local_array_type(
-      element_type, NULL, 0, final_array_count);
-  psx_decl_set_gvar_decl_type(gv, decl_type);
-
-  /* mangled name: スカラ版と同じ "funcname.varname.<seq>" スキーム。配列用に
-   * 'a' プレフィックスを付けてスカラの seq と衝突を避ける。 */
-  char *funcname = NULL;
-  int funcname_len = 0;
-  psx_decl_get_current_funcname(&funcname, &funcname_len);
-  int seq = static_local_mangle_state.array_seq++;
-  char seq_buf[12];
-  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "a%d", seq);
-  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
-  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
-  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
-   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
-   * リセットしても消えないよう、arena でなく malloc で確保する。 */
-  char *mangled = malloc((size_t)total_len + 1);
-  int off = 0;
-  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
-  mangled[off] = '\0';
-
-  gv->name = mangled;
-  gv->name_len = total_len;
-  psx_register_global_var(gv);
-
-  /* alias lvar を locals に登録。`is_array=0, size=0` にすることで
-   * codegen のフレーム割当 (auto array 経路) を抑制する。
-   * resolve_identifier は is_static_local + static_global_name + elem_size>0
-   * の組み合わせで「配列の static_local」を識別し、global_vars から
-   * 名前で gv を引いて size 等を取得する。 */
-  lvar_t *var = register_static_local_alias(tok, mangled, total_len,
-                                            0, elem_size, decl_type);
-  (void)var;
-  return 1;
+  return lower_static_local_object(
+             &(psx_static_local_object_request_t){
+                 .kind = PSX_STATIC_LOCAL_ARRAY,
+                 .function_name = current_funcname,
+                 .function_name_len = current_funcname_len,
+                 .name = tok->str,
+                 .name_len = tok->len,
+                 .global = gv,
+                 .alias_size = 0,
+                 .alias_element_size = elem_size,
+                 .type = decl_type,
+             }) != NULL;
 }
 
 static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_size,
@@ -4490,13 +3871,13 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
       if (cw <= 0) cw = 1;
       if (elem_size != cw) return 0;
       if (arr_count == -1) {
-        arr_count = infer_array_count_from_initializer(elem_size);
+        arr_count = psx_initializer_syntax_infer_array_count(curtok(), elem_size);
         if (arr_count <= 0) return 0;
       }
       has_string_init = 1;
     } else if (after_eq->kind == TK_LBRACE) {
       if (arr_count == -1) {
-        arr_count = infer_array_count_from_initializer(elem_size);
+        arr_count = psx_initializer_syntax_infer_array_count(curtok(), elem_size);
         if (arr_count <= 0) return 0;
       }
     } else {
@@ -4521,7 +3902,7 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
                                         pointer_elem_pointee_size);
   psx_type_t *decl_type = static_local_array_type(
       element_type, inner_array_dims, inner_array_dim_count, (int)arr_count);
-  psx_decl_set_gvar_decl_type(gv, decl_type);
+  psx_static_local_prepare_global(gv, decl_type);
 
   if (has_init && has_string_init) {
     tk_expect('=');
@@ -4542,38 +3923,24 @@ static int try_lower_static_local_array_consumed(token_ident_t *tok, int elem_si
   } else if (has_init) {
     tk_expect('=');
     gv->has_init = 1;
-    int cap = 16;
-    psx_gvar_init_slots_alloc(gv, cap, fp_kind != TK_FLOAT_KIND_NONE);
-    gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap, -1);
+    token_t *init_tok = curtok();
+    node_t *syntax = psx_parse_initializer_syntax_list();
+    if (!lower_static_scalar_array_initializer(
+            gv, decl_type, (node_init_list_t *)syntax, init_tok)) return 0;
   }
 
-  char *funcname = NULL;
-  int funcname_len = 0;
-  psx_decl_get_current_funcname(&funcname, &funcname_len);
-  int seq = static_local_mangle_state.array_consumed_seq++;
-  char seq_buf[12];
-  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "ac%d", seq);
-  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
-  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
-  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  char *mangled = malloc((size_t)total_len + 1);
-  int off = 0;
-  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
-  mangled[off] = '\0';
-
-  gv->name = mangled;
-  gv->name_len = total_len;
-  psx_register_global_var(gv);
-
-  lvar_t *var = register_static_local_alias(tok, mangled, total_len,
-                                            0, elem_size, decl_type);
-  (void)var;
-  return 1;
+  return lower_static_local_object(
+             &(psx_static_local_object_request_t){
+                 .kind = PSX_STATIC_LOCAL_CONSUMED_ARRAY,
+                 .function_name = current_funcname,
+                 .function_name_len = current_funcname_len,
+                 .name = tok->str,
+                 .name_len = tok->len,
+                 .global = gv,
+                 .alias_size = 0,
+                 .alias_element_size = elem_size,
+                 .type = decl_type,
+             }) != NULL;
 }
 
 static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_size,
@@ -4609,8 +3976,8 @@ static int try_lower_static_local_typedef_array(token_ident_t *tok, int elem_siz
  * mangled global へ実体を置き、識別子は alias lvar (is_static_local) 経由で
  * ND_GVAR に解決する。これがないと auto 局所として扱われ呼び出し跨ぎで永続せず、
  * 毎回初期化子で再初期化されていた。
- * 初期化子 (`= {...}`) はトップレベル global struct と同じ psx_parse_global_brace_init_flat
- * で flat 値列へ落とし、codegen の emit_global_struct_init がレイアウトに沿って出力する。
+ * 初期化子 (`= {...}`) は raw initializer syntax を static-data lowering で flat 値列へ
+ * 落とし、codegen の emit_global_struct_init がレイアウトに沿って出力する。
  * ポインタ・配列の struct (`static struct S *p` / `static struct S arr[N]`) は呼び出し側
  * ゲートで除外済み。前提: tag_kind が struct/union、is_pointer==0、配列でない。 */
 static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_kind,
@@ -4629,55 +3996,34 @@ static int try_lower_static_local_struct(token_ident_t *tok, token_kind_t tag_ki
   psx_type_t *decl_type = psx_type_new_tag(
       tag_kind, tag_name, tag_len,
       tag_scope_depth >= 0 ? tag_scope_depth + 1 : 0, struct_size);
+  psx_ctx_attach_aggregate_definitions(decl_type);
   gv->type_size = struct_size;
-  psx_decl_set_gvar_decl_type(gv, decl_type);
+  psx_static_local_prepare_global(gv, decl_type);
 
   if (curtok()->kind == TK_ASSIGN && curtok()->next &&
       curtok()->next->kind == TK_LBRACE) {
     tk_expect('=');
     gv->has_init = 1;
-    int cap = 16;
-    /* struct は float/double メンバを持ち得るので fvalues も並行確保する
-     * (トップレベル global struct と同じ。codegen が fp メンバをビット出力)。 */
-    psx_gvar_init_slots_alloc(gv, cap, 1);
-    gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap, -1);
+    token_t *init_tok = curtok();
+    node_t *syntax = psx_parse_initializer_syntax_list();
+    if (!lower_static_object_initializer(
+            gv, decl_type, (node_init_list_t *)syntax, init_tok)) return 0;
   }
   /* `= 式` (非 brace) の struct コピー初期化や init 無しは has_init=0 のまま
    * (codegen が .zero でゼロ初期化)。前者は将来課題。 */
 
-  /* mangled name: 配列版と同じスキームで 's' プレフィックス。 */
-  char *funcname = NULL;
-  int funcname_len = 0;
-  psx_decl_get_current_funcname(&funcname, &funcname_len);
-  int seq = static_local_mangle_state.struct_seq++;
-  char seq_buf[12];
-  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "s%d", seq);
-  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
-  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
-  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  /* 永続: static local を lowering したグローバルの名前で global_var_t->name が
-   * 参照する (コンパイル末尾の gen_global_vars まで生存)。関数ごとに AST arena を
-   * リセットしても消えないよう、arena でなく malloc で確保する。 */
-  char *mangled = malloc((size_t)total_len + 1);
-  int off = 0;
-  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
-  mangled[off] = '\0';
-
-  gv->name = mangled;
-  gv->name_len = total_len;
-  psx_register_global_var(gv);
-
-  /* alias lvar を locals に登録。size=struct_size, elem_size=struct_size で、
-   * is_static_local + static_global_name + tag 情報を持たせる。識別子解決は
-   * build_lvar_or_vla_node の static_local 分岐で ND_GVAR (tag 付き) を返す。 */
-  register_static_local_alias(tok, mangled, total_len,
-                              struct_size, struct_size, decl_type);
-  return 1;
+  return lower_static_local_object(
+             &(psx_static_local_object_request_t){
+                 .kind = PSX_STATIC_LOCAL_AGGREGATE,
+                 .function_name = current_funcname,
+                 .function_name_len = current_funcname_len,
+                 .name = tok->str,
+                 .name_len = tok->len,
+                 .global = gv,
+                 .alias_size = struct_size,
+                 .alias_element_size = struct_size,
+                 .type = decl_type,
+             }) != NULL;
 }
 
 /* 消費済みの1D aggregate配列宣言子をmangled globalへloweringする。
@@ -4696,7 +4042,7 @@ static int try_lower_static_local_aggregate_array_consumed(
     if (!curtok()->next || curtok()->next->kind != TK_LBRACE) return 0;
     has_init = 1;
     if (arr_count == -1) {
-      arr_count = psx_decl_count_brace_init_elements(curtok()->next);
+      arr_count = psx_initializer_syntax_count_brace_elements(curtok()->next);
       if (arr_count <= 0) return 0;
     }
   } else if (curtok()->kind == TK_COMMA || curtok()->kind == TK_SEMI) {
@@ -4714,61 +4060,33 @@ static int try_lower_static_local_aggregate_array_consumed(
   psx_type_t *element_type = psx_type_new_tag(
       tag_kind, tag_name, tag_len,
       tag_scope_depth >= 0 ? tag_scope_depth + 1 : 0, elem_size);
+  psx_ctx_attach_aggregate_definitions(element_type);
   psx_type_t *decl_type = static_local_array_type(
       element_type, NULL, 0, (int)arr_count);
   gv->type_size = (int)arr_count * elem_size;
-  psx_decl_set_gvar_decl_type(gv, decl_type);
+  psx_static_local_prepare_global(gv, decl_type);
 
   if (has_init) {
     tk_expect('=');
     gv->has_init = 1;
-    int cap = 16;
-    psx_gvar_init_slots_alloc(gv, cap, 1);
-    gv->init_count = 0;
-    psx_parse_global_brace_init_flat(gv, &cap, -1);
+    token_t *init_tok = curtok();
+    node_t *syntax = psx_parse_initializer_syntax_list();
+    if (!lower_static_object_initializer(
+            gv, decl_type, (node_init_list_t *)syntax, init_tok)) return 0;
   }
 
-  char *funcname = NULL;
-  int funcname_len = 0;
-  psx_decl_get_current_funcname(&funcname, &funcname_len);
-  int seq = static_local_mangle_state.aggregate_array_seq++;
-  char seq_buf[12];
-  int seq_len = snprintf(seq_buf, sizeof(seq_buf), "sa%d", seq);
-  const char *fname = funcname && funcname_len > 0 ? funcname : "anon";
-  int fname_len = funcname && funcname_len > 0 ? funcname_len : 4;
-  int total_len = fname_len + 1 + tok->len + 1 + seq_len;
-  char *mangled = malloc((size_t)total_len + 1);
-  int off = 0;
-  memcpy(mangled + off, fname, (size_t)fname_len); off += fname_len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, tok->str, (size_t)tok->len); off += tok->len;
-  mangled[off++] = '.';
-  memcpy(mangled + off, seq_buf, (size_t)seq_len); off += seq_len;
-  mangled[off] = '\0';
-
-  gv->name = mangled;
-  gv->name_len = total_len;
-  psx_register_global_var(gv);
-
-  register_static_local_alias(tok, mangled, total_len,
-                              0, elem_size, decl_type);
-  return 1;
-}
-
-/* typedef が配列型 (`typedef int M[2][3][4]; M m;`) のときの lvar 登録。
- * td_array_dims をそのまま多次元配列の dims として扱い、
- * outer_stride / mid_stride / extra_strides (8 次元まで) を計算する。 */
-static lvar_t *register_typedef_array_lvar(token_ident_t *tok, int elem_size,
-                                            const int *td_array_dims, int td_array_dim_count,
-                                            int alignas_val) {
-  int arr_total = 1;
-  for (int di = 0; di < td_array_dim_count; di++) {
-    if (td_array_dims[di] > 0) arr_total *= td_array_dims[di];
-  }
-  int arr_elem_size = elem_size;
-  lvar_t *var = psx_decl_register_lvar_sized_align(tok->str, tok->len,
-      arr_total * arr_elem_size, arr_elem_size, 1, alignas_val);
-  return var;
+  return lower_static_local_object(
+             &(psx_static_local_object_request_t){
+                 .kind = PSX_STATIC_LOCAL_AGGREGATE_ARRAY,
+                 .function_name = current_funcname,
+                 .function_name_len = current_funcname_len,
+                 .name = tok->str,
+                 .name_len = tok->len,
+                 .global = gv,
+                 .alias_size = 0,
+                 .alias_element_size = elem_size,
+                 .type = decl_type,
+             }) != NULL;
 }
 
 /* 消費済みの宣言子次元列から配列storage/strideを登録する。
@@ -4803,12 +4121,12 @@ static lvar_t *register_multidim_array_lvar_from_dims(
   long long array_size = decl_dim_count > 0 ? decl_dims[0] : 0;
   if (first_dim_inferred) {
     // 外側 `[]` を初期化子から推定する。
-    long long top_count = infer_array_count_from_initializer(elem_size);
+    long long top_count = psx_initializer_syntax_infer_array_count(curtok(), elem_size);
     if (top_count <= 0) {
       psx_diag_ctx(curtok(), "decl", "%s",
                    diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       array_size = 1; // フォールバック
-    } else if (inner_dim_size > 0 && !init_first_element_is_brace()) {
+    } else if (inner_dim_size > 0 && !psx_initializer_syntax_first_element_is_brace(curtok())) {
       // 多次元のフラット初期化 `int a[][3]={1,2,3,4,5,6}`: 推定値は総要素数。
       array_size = top_count;
     } else {
@@ -4845,100 +4163,28 @@ static lvar_t *register_multidim_array_lvar(token_ident_t *tok, int elem_size,
       array_size_inout);
 }
 
-static lvar_t *register_vla_lvar_from_dims(token_ident_t *tok, int elem_size,
-                                            const decl_vla_dims_t *dims,
-                                            node_t **init_chain_inout) {
-  /* N-D VLA 宣言子の登録 (N <= MAX_VLA_DIMS)。
-   *   1D                 : 16B slot ([base][bytesize])。subscript は const elem stride。
-   *   2D const inner     : 16B slot ([base][bytesize])。subscript は const outer_stride。
-   *   2D runtime inner   : 24B slot ([base][bytesize][row_stride])。
-   *   3D 以上            : (16 + 8*(N-1))B slot ([base][bytesize][stride_0][stride_1]...
-   *                       [stride_{N-2}])。各 subscript で stride スロットを順に消費する。 */
-  int dim_count = dims ? dims->count : 0;
-  if (dim_count <= 0 || dim_count > DECL_MAX_VLA_DIMS) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+static lvar_t *lower_vla_lvar_from_dims(token_ident_t *tok, int elem_size,
+                                        const decl_vla_dims_t *dims,
+                                        node_t **init_chain_inout) {
+  psx_vla_lowering_request_t request = {0};
+  request.name = tok->str;
+  request.name_len = tok->len;
+  request.element_size = elem_size;
+  request.dimension_count = dims ? dims->count : 0;
+  request.diag_tok = curtok();
+  for (int i = 0; dims && i < dims->count && i < PSX_VLA_MAX_DIMS; i++) {
+    request.dimensions[i] = dims->nodes[i];
+    request.const_values[i] = dims->const_values[i];
+    request.is_const[i] = dims->is_const[i];
   }
-
-  int vla_row_stride_frame_off = 0;
-  int outer_stride = 0;
-  int vla_strides_remaining = 0;
-  lvar_t *var;
-  if (dim_count == 1) {
-    /* 1D VLA */
-    outer_stride = elem_size;
-    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-  } else if (dim_count == 2 && dims->is_const[1]) {
-    /* 2D const-inner: outer_stride = M * elem (const). No runtime stride slot. */
-    outer_stride = (int)dims->const_values[1] * elem_size;
-    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 1, 0);
-  } else if (dim_count == 2) {
-    /* 2D runtime-inner: 24B slot, runtime stride at slot+16. */
-    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 24, elem_size, 1, 0);
-    vla_row_stride_frame_off = var->offset + 16;
-  } else {
-    /* 3D 以上: (16 + 8*(N-1))B slot。N-1 個の runtime stride を slot+16, slot+24, ... に保存する
-     * (たとえ const dim を含んでいても、運用を統一するため全て runtime として store する)。
-     * subscript chain では vla_row を +=8 でシフトし vla_strides_remaining を -1 ずつ消費する。 */
-    int n_strides = dim_count - 1;
-    int slot_bytes = 16 + 8 * n_strides;
-    var = psx_decl_register_lvar_sized_align(tok->str, tok->len, slot_bytes, elem_size, 1, 0);
-    vla_row_stride_frame_off = var->offset + 16;
-    vla_strides_remaining = n_strides - 1;
+  psx_vla_lowering_result_t result = lower_vla_declaration(&request);
+  if (result.init) {
+    *init_chain_inout = *init_chain_inout
+                            ? psx_node_new_binary(
+                                  ND_COMMA, *init_chain_inout, result.init)
+                            : result.init;
   }
-  psx_decl_set_lvar_vla_descriptor(var, outer_stride,
-                                   vla_row_stride_frame_off,
-                                   vla_strides_remaining,
-                                   0, 0);
-
-  /* VLA_ALLOC 確保ノード */
-  node_t *alloc_lhs = NULL;
-  node_t *alloc_rhs = NULL;
-  if (dim_count == 1) {
-    /* 1D: byte_size = n * elem */
-    alloc_lhs = psx_node_new_binary(ND_MUL, dims->nodes[0], psx_node_new_num(elem_size));
-  } else if (dim_count == 2 && dims->is_const[1]) {
-    /* 2D const-inner: byte_size = n * outer_stride (const) */
-    alloc_lhs = psx_node_new_binary(ND_MUL, dims->nodes[0], psx_node_new_num(outer_stride));
-  } else if (dim_count == 2) {
-    /* 2D runtime-inner: lhs=n, rhs=m*elem。VLA_ALLOC が n*rhs=total を計算し
-     * rhs を slot+16 (vla_row) に store する。 */
-    alloc_lhs = dims->nodes[0];
-    alloc_rhs = psx_node_new_binary(ND_MUL, dims->nodes[1], psx_node_new_num(elem_size));
-  } else {
-    /* N-D (N>=3): lhs = dim[0], rhs = outer_stride_expr = dim[1]*dim[2]*...*dim[N-1]*elem。
-     * VLA_ALLOC が lhs*rhs=total を計算し rhs を slot+16 (= 最外 stride) に store。
-     * 残り N-2 段の stride は init_chain に STORE を注入 (slot+24, slot+32, ...)。
-     * 注: dims->nodes は AST ノードを多段で再利用するので、副作用のある式は未サポート。 */
-    node_t *outer_stride_expr = psx_node_new_num(elem_size);
-    for (int i = dim_count - 1; i >= 1; i--) {
-      outer_stride_expr = psx_node_new_binary(ND_MUL, outer_stride_expr, dims->nodes[i]);
-    }
-    alloc_lhs = dims->nodes[0];
-    alloc_rhs = outer_stride_expr;
-  }
-  node_t *alloc_node = psx_node_new_vla_alloc(var->offset, vla_row_stride_frame_off,
-                                              alloc_lhs, alloc_rhs);
-  if (!*init_chain_inout) *init_chain_inout = alloc_node;
-  else *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, alloc_node);
-
-  /* N>=3: stride[1..N-2] を slot+24, slot+32, ... に store する STORE 列を注入する。
-   * stride[k] = dim[k+1] * dim[k+2] * ... * dim[N-1] * elem。stride[0] は VLA_ALLOC の rhs と
-   * 同値で既に slot+16 に store 済み (rsf 経路)、stride[N-1]=elem は最終 subscript で
-   * const として扱われるので store 不要。 */
-  if (dim_count >= 3) {
-    for (int level = 1; level < dim_count - 1; level++) {
-      node_t *expr = psx_node_new_num(elem_size);
-      for (int i = dim_count - 1; i >= level + 1; i--) {
-        expr = psx_node_new_binary(ND_MUL, expr, dims->nodes[i]);
-      }
-      int slot_off = var->offset + 16 + 8 * level;
-      node_t *slot = psx_node_new_lvar_typed(slot_off, 8);
-      node_t *st = (node_t *)psx_node_new_assign(slot, expr);
-      *init_chain_inout = psx_node_new_binary(ND_COMMA, *init_chain_inout, st);
-    }
-  }
-  return var;
+  return result.var;
 }
 
 /* 旧入口はトークン所有を保つ互換ラッパー。普通宣言子の演算子列化後は、
@@ -4962,7 +4208,7 @@ static lvar_t *register_vla_lvar_and_append_alloc(token_ident_t *tok, int elem_s
   }
   /* 9 次元以上は従来どおり読み飛ばす。 */
   parse_decl_skip_constexpr_array_suffixes();
-  return register_vla_lvar_from_dims(tok, elem_size, &dims, init_chain_inout);
+  return lower_vla_lvar_from_dims(tok, elem_size, &dims, init_chain_inout);
 }
 
 /* ---- _Generic 用: 複雑な派生型の正規化トークン文字列を作る ----
@@ -5017,7 +4263,6 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int td_is_array_for_this_decl,
                                                  int td_is_long_double,
                                                  int base_pointer_levels,
-                                                 psx_decl_funcptr_sig_t base_funcptr_sig,
                                                  const psx_type_t *base_decl_type,
                                                  token_t *typespec_start,
                                                  int decl_base_is_void,
@@ -5027,6 +4272,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
   psx_type_spec_result_t empty_type_spec = {0};
   empty_type_spec.kind = TK_EOF;
   if (!type_spec) type_spec = &empty_type_spec;
+  (void)td_is_array_for_this_decl;
   /* 基底 typedef 由来の metadata は呼び出し元の type-spec state から明示的に受け取る。 */
   if (base_is_pointer && base_pointer_levels < 1) base_pointer_levels = 1;
   if (!base_is_pointer) base_pointer_levels = 0;
@@ -5141,22 +4387,46 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                    tok ? tok->len : 0, tok ? tok->str : "");
     }
 
-    psx_type_t *canonical_type = local_typedef_base_type(
-        type_spec->kind, elem_size, decl_fp_kind,
-        tag_kind, tag_name, tag_len, decl_is_unsigned, decl_is_complex,
-        base_decl_type);
-    if (canonical_type) {
-      if (!base_decl_type) {
-        if (is_const_qualified) canonical_type->is_const_qualified = 1;
-        if (is_volatile_qualified) canonical_type->is_volatile_qualified = 1;
+    psx_type_t *canonical_type = psx_resolve_decl_type(
+        &(psx_decl_type_request_t){
+            .base_kind = type_spec->kind,
+            .elem_size = elem_size,
+            .fp_kind = decl_fp_kind,
+            .tag_kind = tag_kind,
+            .tag_name = tag_name,
+            .tag_len = tag_len,
+            .is_unsigned = decl_is_unsigned,
+            .is_complex = decl_is_complex,
+            .is_const_qualified = !base_decl_type && is_const_qualified,
+            .is_volatile_qualified = !base_decl_type && is_volatile_qualified,
+            .is_atomic = decl_is_atomic,
+            .is_long_long = decl_is_long_long,
+            .is_plain_char = !base_decl_type && decl_is_plain_char,
+            .override_plain_char = !base_decl_type,
+            .is_long_double = decl_is_long_double,
+            .base_decl_type = base_decl_type,
+            .declarator_shape = &decl_state.declarator_shape,
+        });
+
+    if (canonical_type && canonical_type->kind == PSX_TYPE_ARRAY &&
+        canonical_type->array_len <= 0 && !canonical_type->is_vla) {
+      long long initializer_count =
+          psx_initializer_syntax_infer_array_count(
+              curtok(), is_pointer ? 8 : elem_size);
+      int entries_initialize_outer_elements =
+          psx_initializer_syntax_first_element_is_brace(curtok()) ||
+          psx_initializer_syntax_has_top_level_index_designator(curtok());
+      if (!psx_resolve_incomplete_array_type(
+              canonical_type,
+              &(psx_incomplete_array_resolution_t){
+                  .initializer_count = initializer_count,
+                  .entries_initialize_outer_elements =
+                      entries_initialize_outer_elements,
+              })) {
+        psx_diag_ctx(curtok(), "decl", "%s",
+                     diag_message_for(
+                         DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       }
-      if (decl_is_atomic) canonical_type->is_atomic = 1;
-      if (decl_is_long_long) canonical_type->is_long_long = 1;
-      if (!base_decl_type)
-        canonical_type->is_plain_char = decl_is_plain_char ? 1 : 0;
-      if (decl_is_long_double) canonical_type->is_long_double = 1;
-      canonical_type = psx_type_apply_declarator_shape(
-          canonical_type, &decl_state.declarator_shape);
     }
 
     int static_scalar_tag_ok = (tag_kind == TK_EOF || tag_kind == TK_ENUM);
@@ -5167,29 +4437,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     if (decl_is_static && static_scalar_tag_ok &&
         inner_array_mul == 0 && paren_array_mul == 0 &&
         curtok()->kind != TK_LBRACKET && td_array_dim_count == 0) {
-      int static_ret_is_data_pointer =
-          decl_funcptr_direct_ret_is_data_pointer(&decl_state, ptr_levels, base_is_pointer);
-      psx_decl_funcptr_sig_t static_funcptr_sig =
-          is_pointer
-              ? (decl_state.trailing_func_suffix
-                     ? psx_decl_make_funcptr_sig(
-                           &decl_state.func_suffix_sig,
-                           (!static_ret_is_data_pointer && !decl_base_is_void &&
-                            tag_kind == TK_EOF && decl_fp_kind == TK_FLOAT_KIND_NONE)
-                               ? (unsigned char)(elem_size >= 8 ? 8 : 4)
-                               : 0,
-                           decl_fp_kind,
-                           psx_ret_pointee_array_make(0, 0, 0),
-                           decl_base_is_void, static_ret_is_data_pointer, 0,
-                           decl_is_complex)
-                     : base_funcptr_sig)
-              : (psx_decl_funcptr_sig_t){0};
       if (try_lower_static_local_scalar(tok, var_size,
                                          is_pointer ? pointer_deref_size : var_size,
                                          is_pointer ? TK_FLOAT_KIND_NONE : decl_fp_kind,
-                                         decl_is_unsigned, decl_base_is_bool,
                                          is_pointer,
-                                         static_funcptr_sig)) {
+                                         canonical_type)) {
         if (!tk_consume(',')) break;
         continue;
       }
@@ -5287,7 +4539,26 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
 
     lvar_t *var = NULL;
     {
-      if (decl_state.inner_array_dim_count > 0 && object_array_has_vla) {
+      psx_complete_array_storage_plan_t array_plan = {0};
+      psx_complete_object_storage_plan_t object_plan = {0};
+      if (curtok()->kind != TK_LBRACKET &&
+          psx_plan_complete_array_storage(canonical_type, &array_plan)) {
+        int effective_align = alignas_val > 0
+                                  ? alignas_val
+                                  : array_plan.alignment;
+        var = psx_decl_register_lvar_sized_align(
+            tok->str, tok->len, array_plan.storage_size,
+            array_plan.scalar_element_size, 1, effective_align);
+      } else if (curtok()->kind != TK_LBRACKET &&
+                 decl_state.paren_array_vla_dim == NULL &&
+                 psx_plan_complete_object_storage(canonical_type, &object_plan)) {
+        int effective_align = alignas_val > 0
+                                  ? alignas_val
+                                  : object_plan.alignment;
+        var = psx_decl_register_lvar_sized_align(
+            tok->str, tok->len, object_plan.storage_size,
+            object_plan.element_size, 0, effective_align);
+      } else if (decl_state.inner_array_dim_count > 0 && object_array_has_vla) {
         decl_vla_dims_t object_dims = {0};
         object_dims.count = decl_state.inner_array_dim_count;
         for (int i = 0; i < object_dims.count && i < DECL_MAX_VLA_DIMS; i++) {
@@ -5297,36 +4568,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           object_dims.is_incomplete[i] = decl_state.array_dims.is_incomplete[i];
         }
         int array_elem_size = is_pointer ? 8 : elem_size;
-        var = register_vla_lvar_from_dims(
+        var = lower_vla_lvar_from_dims(
             tok, array_elem_size, &object_dims, &init_chain);
-      } else if ((inner_array_mul > 0 || inner_array_mul == -1) && !is_pointer) {
-        int object_dims[8] = {0};
-        for (int i = 0; i < decl_state.inner_array_dim_count && i < 8; i++)
-          object_dims[i] = decl_state.inner_array_dims[i];
-        long long total_count = 0;
-        var = register_multidim_array_lvar_from_dims(
-            tok, elem_size, object_dims, decl_state.inner_array_dim_count,
-            inner_array_mul == -1, 0, td_array_dim_count, td_array_dims,
-            alignas_val, &total_count);
-      } else if ((inner_array_mul > 0 || inner_array_mul == -1) && is_pointer) {
-        // `int (*ops[N])(int,int)` 関数ポインタ配列、または
-        // `int (*p[N])[M]` array-of-pointer-to-array。
-        // どちらも配列要素は 8 バイトのポインタなので elem_size=8 で is_array を立てる。
-        // inner_array_mul==-1 は `int (*ops[])(...)={f,g,...}` の形で、
-        // 要素数を初期化子から推定する必要がある。
-        int effective_count = inner_array_mul;
-        if (inner_array_mul == -1) {
-          long long inferred = infer_array_count_from_initializer(8);
-          if (inferred > 0) {
-            effective_count = (int)inferred;
-          } else {
-            psx_diag_ctx(curtok(), "decl", "%s",
-                         diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-            effective_count = 1;
-          }
-        }
-        int arr_total_bytes = effective_count * 8;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, arr_total_bytes, 8, 1, alignas_val);
       } else if (paren_array_mul > 0 && decl_state.paren_array_vla_dim != NULL) {
         /* pointer-to-VLA `int (*p)[m]` (m はランタイム値)。行ストライド (m*elem) は
          * コンパイル時に決まらないので、ポインタ値 + 行ストライドの隠しスロットを 16B 確保し
@@ -5334,68 +4577,15 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * 注入する。subscript は vla_row_stride_frame_off を実行時参照する (定数版の outer_stride
         * 相当)。outer_stride は 0 のままにして「実行時ストライド」経路に乗せる。 */
         var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 16, elem_size, 0, alignas_val);
-        psx_decl_set_lvar_vla_descriptor(var, var->outer_stride,
-                                         var->offset + 8, 0, 0, elem_size);
+        psx_decl_set_lvar_vla_descriptor(
+            var, var->outer_stride,
+            frame_layout_pointer_vla_stride_offset(var->offset), 0, 0, elem_size);
         node_t *slot = psx_node_new_lvar_typed(var->vla_row_stride_frame_off, 8);
         node_t *stride_val = psx_node_new_binary(ND_MUL, decl_state.paren_array_vla_dim,
                                                  psx_node_new_num(elem_size));
         node_t *store = (node_t *)psx_node_new_assign(slot, stride_val);
         init_chain = init_chain ? psx_node_new_binary(ND_COMMA, init_chain, store) : store;
         decl_state.paren_array_vla_dim = NULL;
-      } else if (paren_array_mul > 0) {
-        // (*p)[N] パターン: 配列へのポインタ
-        /* 配列要素がポインタ (関数ポインタや typedef 経由のデータポインタ) の場合、
-         * 要素サイズは「ポインタサイズ = 8」になる。elem_size は基底 (戻り型 or pointee 型、
-         * 例 int=4) で来るので上書きする。条件:
-         *   (a) `int (*(*pa)[N])(args)` 形式: trailing 部に関数シグネチャ
-         *   (b) `BinOp (*pa)[N]` / `typedef int *IP; IP (*pa)[N]` 形式: base_is_pointer
-         * これがないと (*pa)[i] の deref が 4B (ldrsw) で出力され、ポインタを下位 4B だけ
-         * load して SIGSEGV / 誤値になる。 */
-        int element_is_pointer_paren = ((decl_state.trailing_func_suffix && is_pointer) ||
-                                        base_is_pointer ||
-                                        (ptr_levels >= 2 && is_pointer))
-                                           ? 1 : 0;
-        int eff_elem = element_is_pointer_paren ? 8 : elem_size;
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
-      } else if (is_pointer && td_array_dim_count > 0 &&
-                 (total_pointer_levels == 1 ||
-                  (ptr_levels == 1 && td_is_array_for_this_decl)) &&
-                 curtok()->kind != TK_LBRACKET) {
-        /* `row3 *p` (row3 = typedef int[3]): 配列へのポインタ。paren 形 `int (*p)[3]`
-         * と同じく outer_stride=配列全体バイト数、base_deref_size=要素サイズ、
-         * 多次元 typedef なら mid_stride を設定する。これがないと p+1 / p[i] が
-         * 要素 1 個分しか進まず、直書き `int(*p)[3]` と挙動が食い違う。
-         *
-         * 要素がポインタの 1 次元配列 typedef (`typedef BinOp OpArr3[3]; OpArr3 *pa`):
-         * td_array_elem_size が要素サイズ (8) を返す。条件で eff_elem に上書き:
-         *  (a) td_array_dim_count == 1 (1 次元 typedef、内側次元が無い)
-         *  (b) td_array_elem_size > elem_size (要素が基底型より大きい = ポインタ要素)
-         *      または typedef 基底自体が pointer (関数ポインタ要素など同サイズの pointer 要素)
-         * 多次元 typedef (`typedef int m23[2][3]; m23 *q`、td_array_dim_count==2) は既存の
-         * elem_size + outer_stride / mid_stride 経路を使うので上書きしない。基底と要素が
-         * 同サイズ (`typedef long L[3]; L *p`) も elem_size のままで正しい。
-         * pointer-to-array typedef (`typedef int (*PA)[3]; PA p`) は td_array_elem_size=0。 */
-        int eff_elem = elem_size;
-        if (td_array_elem_size_for_this_decl > 0 &&
-            td_array_dim_count == 1 &&
-            (td_array_elem_size_for_this_decl > elem_size || base_is_pointer)) {
-          eff_elem = td_array_elem_size_for_this_decl;
-        }
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, 8, eff_elem, 0, alignas_val);
-      } else if (!is_pointer && td_array_dim_count > 0 && curtok()->kind != TK_LBRACKET) {
-        /* typedef 配列型 (`typedef int M[2][3][4]; M m;`): td_array_dims を
-         * そのまま使って stride を計算しつつ lvar を登録する。
-         * 要素がポインタの 1 次元配列 typedef (`typedef IP IPA[3]`、続き20 で td_array_elem_size
-         * を取得済み) は要素サイズが 8 (ポインタ) なので elem_size の代わりに使う。条件:
-         *  (a) td_array_dim_count == 1 (1 次元、多次元 typedef は td_array_elem_size が「行
-         *      サイズ」になるので除外。`typedef int M[3][4]; M m` で 16 を使うと壊れる)
-         *  (b) td_array_elem_size > elem_size (要素サイズが基底型より大きい = ポインタ要素) */
-        int eff_elem_for_arr = (td_array_elem_size_for_this_decl > 0 &&
-                                td_array_dim_count == 1 &&
-                                td_array_elem_size_for_this_decl > elem_size)
-                                   ? td_array_elem_size_for_this_decl : elem_size;
-        var = register_typedef_array_lvar(tok, eff_elem_for_arr, td_array_dims,
-                                           td_array_dim_count, alignas_val);
       } else if (tk_consume('[')) {
         node_t *size_node = NULL;
         int size_ok = 1;
@@ -5445,13 +4635,13 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                             size_inferred_from_init, is_pointer,
                                             td_array_dim_count, td_array_dims, alignas_val);
       } else {
-        var = psx_decl_register_lvar_sized_align(tok->str, tok->len, var_size,
-                                           is_pointer ? pointer_deref_size : var_size, 0, alignas_val);
+        psx_diag_ctx(curtok(), "decl",
+                     "canonical local storage planning failed for '%.*s'",
+                     tok->len, tok->str);
       }
     }
 
     if (canonical_type) {
-      psx_type_complete_incomplete_array(canonical_type, var->size);
       psx_type_copy_vla_runtime_metadata(
           canonical_type, psx_lvar_get_decl_type(var));
       psx_decl_set_lvar_decl_type(var, canonical_type);
@@ -5489,7 +4679,7 @@ node_t *psx_decl_parse_declaration(void) {
     set_curtok(curtok()->next);
     tk_expect('(');
     int const_ok = 1;
-    long long cond_val = eval_const_expr_decl(psx_expr_assign(), &const_ok);
+    long long cond_val = psx_eval_const_int(psx_expr_assign(), &const_ok);
     tk_expect(',');
     if (curtok()->kind != TK_STRING) {
       diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
@@ -5536,7 +4726,6 @@ node_t *psx_decl_parse_declaration(void) {
                                                   ds.td_is_array,
                                                   ds.is_long_double,
                                                   ds.base_pointer_levels,
-                                                  ds.td_funcptr_sig,
                                                   ds.base_decl_type,
                                                   typespec_start,
                                                   ds.type_kind == TK_VOID ? 1 : 0,
@@ -5572,7 +4761,6 @@ static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out) {
     psx_typedef_info_t _ti;
     if (psx_ctx_find_typedef_name(id->str, id->len, &_ti)) {
       out->td_is_array = _ti.is_array ? 1 : 0;
-      out->td_funcptr_sig = psx_ctx_typedef_funcptr_sig(&_ti);
       out->base_decl_type = psx_ctx_typedef_decl_type(&_ti);
     }
   }
@@ -5608,12 +4796,19 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
     token_ident_t *name = consume_direct_declarator_name(
         &decl_state, &is_ptr, &ptr_const_mask, &ptr_volatile_mask,
         &ptr_levels);
-    psx_type_t *canonical_type = local_typedef_base_type(
-        ds->type_kind, ds->elem_size, ds->fp_kind,
-        ds->tag_kind, ds->tag_name, ds->tag_len,
-        ds->is_unsigned, ds->type_spec.is_complex, ds->base_decl_type);
-    canonical_type = psx_type_apply_declarator_shape(
-        canonical_type, &decl_state.declarator_shape);
+    psx_type_t *canonical_type = psx_resolve_decl_type(
+        &(psx_decl_type_request_t){
+            .base_kind = ds->type_kind,
+            .elem_size = ds->elem_size,
+            .fp_kind = ds->fp_kind,
+            .tag_kind = ds->tag_kind,
+            .tag_name = ds->tag_name,
+            .tag_len = ds->tag_len,
+            .is_unsigned = ds->is_unsigned,
+            .is_complex = ds->type_spec.is_complex,
+            .base_decl_type = ds->base_decl_type,
+            .declarator_shape = &decl_state.declarator_shape,
+        });
     int is_function_prototype =
         canonical_type && canonical_type->kind == PSX_TYPE_FUNCTION;
     if (!is_function_prototype) {
@@ -5751,37 +4946,6 @@ static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_s
                  diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
 }
 
-static psx_type_t *local_typedef_base_type(
-    token_kind_t base_kind, int elem_size, tk_float_kind_t fp_kind,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int is_unsigned, int is_complex, const psx_type_t *base_decl_type) {
-  if (base_decl_type) return psx_type_clone(base_decl_type);
-  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
-    int scope_depth = ps_ctx_get_tag_scope_depth(
-        tag_kind, tag_name, tag_len);
-    return psx_type_new_tag(tag_kind, tag_name, tag_len,
-                            scope_depth >= 0 ? scope_depth + 1 : 0,
-                            elem_size);
-  }
-  if (is_complex) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
-    type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
-                        ? fp_kind
-                        : TK_FLOAT_KIND_DOUBLE;
-    type->size = elem_size;
-    type->align = elem_size >= 8 ? 8 : elem_size;
-    return type;
-  }
-  if (fp_kind != TK_FLOAT_KIND_NONE)
-    return psx_type_new_float(fp_kind, elem_size);
-  if (base_kind == TK_VOID) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
-    type->scalar_kind = TK_VOID;
-    return type;
-  }
-  return psx_type_new_integer(base_kind, elem_size, is_unsigned);
-}
-
 static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr,
                                                  token_kind_t base_kind, int elem_size,
                                                  tk_float_kind_t fp_kind,
@@ -5838,14 +5002,22 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   _ti.array_first_dim = td_first_dim;
   _ti.array_dim_count = td_dim_count;
   for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
-  psx_type_t *canonical_type = local_typedef_base_type(
-      base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
-      td_is_unsigned, td_is_complex, base_decl_type);
+  psx_type_t *canonical_type = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_kind = base_kind,
+          .elem_size = elem_size,
+          .fp_kind = fp_kind,
+          .tag_kind = tag_kind,
+          .tag_name = tag_name,
+          .tag_len = tag_len,
+          .is_unsigned = td_is_unsigned,
+          .is_complex = td_is_complex,
+          .is_const_qualified = td_pointee_const,
+          .is_volatile_qualified = td_pointee_volatile,
+          .base_decl_type = base_decl_type,
+          .declarator_shape = &decl_state->declarator_shape,
+      });
   if (canonical_type) {
-    if (td_pointee_const) canonical_type->is_const_qualified = 1;
-    if (td_pointee_volatile) canonical_type->is_volatile_qualified = 1;
-    canonical_type = psx_type_apply_declarator_shape(
-        canonical_type, &decl_state->declarator_shape);
     psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
 
     _ti.is_pointer = canonical_type->kind == PSX_TYPE_POINTER;

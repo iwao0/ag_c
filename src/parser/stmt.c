@@ -427,7 +427,6 @@ static node_t *parse_decl_like_stmt(void) {
                                                       tag_path_saw_volatile, 0,
                                                       &tag_type_spec, NULL, 0,
                                                       0, 0, 0, 0,
-                                                      (psx_decl_funcptr_sig_t){0},
                                                       NULL,
                                                       NULL,
                                                       0, 0);
@@ -459,7 +458,6 @@ static node_t *parse_decl_like_stmt(void) {
                                                     tag_path_saw_const, tag_path_saw_volatile, 0,
                                                     &tag_type_spec, NULL, 0,
                                                     0, 0, 0, 0,
-                                                    (psx_decl_funcptr_sig_t){0},
                                                     NULL,
                                                     NULL,
                                                     0, 0);

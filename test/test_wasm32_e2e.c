@@ -238,6 +238,7 @@ static const wasm_e2e_case_t cases[] = {
     {"array", "multi_dim_decl", "test/fixtures/array/multi_dim_decl.c"},
     {"array", "multi_dim_init", "test/fixtures/array/multi_dim_init.c"},
     {"array", "multi_dim_init_sum", "test/fixtures/array/multi_dim_init_sum.c"},
+    {"array", "char_3d_string_rows", "test/fixtures/array/char_3d_string_rows.c"},
     {"array", "inferred_size_2d_flat", "test/fixtures/array/inferred_size_2d_flat.c"},
     {"array", "inferred_size_2d_nested", "test/fixtures/array/inferred_size_2d_nested.c"},
     {"array", "three_dim_assign_read", "test/fixtures/array/three_dim_assign_read.c"},

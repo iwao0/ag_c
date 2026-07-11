@@ -66,6 +66,8 @@ typedef enum {
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
   ND_CAST,       // 明示 cast wrapper。pointer cast では pointee metadata を保持し、
                  // integer cast では operand を壊さず result 幅/signedness を保持する。
+  ND_INIT_LIST, // raw braced initializer syntax
+  ND_DECL_INIT, // raw declaration initializer, lowered after semantic resolution
   ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
   ND_CIMAG,       // GNU __imag__ x: 複素数 lhs の虚部 (実数なら 0)。fp_kind=結果型。
   ND_STMT_EXPR,   // GNU statement expression ({ ...; expr })
@@ -73,6 +75,43 @@ typedef enum {
 
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
+typedef enum {
+  PSX_DECL_INIT_SCALAR,
+  PSX_DECL_INIT_COMPLEX,
+  PSX_DECL_INIT_ARRAY_EXPR,
+  PSX_DECL_INIT_ARRAY_LIST,
+  PSX_DECL_INIT_STRUCT_LIST,
+  PSX_DECL_INIT_UNION_LIST,
+} psx_decl_init_kind_t;
+
+typedef enum {
+  PSX_INIT_DESIGNATOR_MEMBER,
+  PSX_INIT_DESIGNATOR_INDEX,
+} psx_initializer_designator_kind_t;
+
+typedef struct {
+  psx_initializer_designator_kind_t kind;
+  node_t *index_expr;
+  node_t *range_end_expr;
+  char *member_name;
+  int member_len;
+  token_t *tok;
+  unsigned char is_range;
+} psx_initializer_designator_t;
+
+typedef struct {
+  node_t *value;
+  psx_initializer_designator_t designators[8];
+  unsigned char designator_count;
+  node_t *index_exprs[8];
+  unsigned char index_expr_count;
+  char *member_name;
+  int member_len;
+  token_t *tok;
+  long long index;
+  unsigned char has_index;
+  unsigned char has_member;
+} psx_initializer_entry_t;
 /* Expression-local state that cannot be represented by the canonical type,
  * such as array/VLA dereference cursors. */
 typedef struct {
@@ -109,7 +148,6 @@ struct node_t {
   unsigned int is_atomic : 1;   // 1: _Atomic型（load-acquire/store-release）
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
-  unsigned int is_void_call : 1; // ND_FUNCALL: 戻り値が void
   unsigned int is_long_long : 1; // 1: long long 型 (_Generic で long と区別)
   unsigned int records_lvar_usage : 1;
   unsigned int lvar_usage_unevaluated : 1;
@@ -120,15 +158,25 @@ struct node_t {
   unsigned int is_implicit_func_decl : 1;
   unsigned int is_implicit_int_return : 1;
   unsigned int widen_zext_i64 : 1;
-
-  // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
-  int ret_struct_size;
+  unsigned int is_source_cast : 1;
+  unsigned int is_source_compound_assignment : 1;
 
   /* Canonical semantic type. Scalar bit fields above are one-way lowering and
    * diagnostic projections; semantic type queries do not reconstruct from them. */
   psx_type_t *type;
   psx_expr_type_state_t type_state;
 };
+
+typedef struct {
+  node_t base;
+  psx_decl_init_kind_t init_kind;
+} node_decl_init_t;
+
+typedef struct {
+  node_t base;
+  psx_initializer_entry_t *entries;
+  int entry_count;
+} node_init_list_t;
 
 typedef struct {
   node_t base;
@@ -162,7 +210,6 @@ struct node_lvar_t {
   node_t base;
   int offset;       // フレームオフセット
   struct lvar_t *var; // 宣言元シンボル。semantic pass の symbol identity 判定に使う。
-  int param_abi_type_size; // 仮引数の受け渡し幅。0 は通常の lvar node。
 };
 
 // 文字列リテラルノード

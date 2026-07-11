@@ -12,6 +12,7 @@
 #include "semantic_ctx.h"
 #include "type.h"
 #include "../diag/diag.h"
+#include "../semantic/constant_expression.h"
 #include "../tokenizer/tokenizer.h"
 #include "../pragma_pack.h"
 
@@ -319,7 +320,7 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
       set_curtok(curtok()->next);
       tk_expect('(');
       int const_ok = 1;
-      long long cond_val = psx_decl_eval_const_int(psx_expr_assign(), &const_ok);
+      long long cond_val = psx_eval_const_int(psx_expr_assign(), &const_ok);
       tk_expect(',');
       if (curtok()->kind != TK_STRING) {
         psx_diag_ctx(curtok(), "decl", "%s",
@@ -828,8 +829,8 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             _mi.mid_stride = inner2 * member_elem_size;
           }
           /* 多次元配列メンバの各次元サイズを保存する。
-           * (1) char (`char c[2][2][3]`): グローバル brace init `{{{"ab","cd"},...}}` を
-           *     再帰展開する (gbrace_ctx_t.sub_dims 経由) のに使う。
+           * (1) char (`char c[2][2][3]`): brace init `{{{"ab","cd"},...}}` を
+           *     canonical type の各次元に沿って再帰展開するのに使う。
            * (2) 非 char (`int x[3][3]`): `[N]={...}` designator の elem_slots を
            *     「内側次元の総スカラ数」として算出するのに使う。これがないと多次元配列で
            *     `[N]=` のジャンプ幅が 1 slot ぶんしか進まず `[2]=` が slot 6 でなく

@@ -71,6 +71,8 @@ node_t *psx_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *psx_node_new_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_typed_at_for(struct lvar_t *owner, int offset, int type_size);
+node_t *psx_node_new_lvar_type_at_for(struct lvar_t *owner, int offset,
+                                      psx_type_t *type);
 node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
                                          tk_float_kind_t fp_kind, int is_bool);
 node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind);
@@ -83,9 +85,7 @@ node_t *psx_node_new_lvar_object_ref_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_expr_ref_for(struct lvar_t *var, int is_pointer);
 node_t *psx_node_new_lvar_identifier_ref_for(struct lvar_t *var);
 node_t *psx_node_new_vla_decay_ref_for(struct lvar_t *var);
-node_t *psx_node_new_param_lvar_for(struct lvar_t *var, int abi_type_size,
-                                    int is_unsigned, tk_float_kind_t abi_fp_kind,
-                                    int is_complex);
+node_t *psx_node_new_param_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_array_elem_lvar_for(struct lvar_t *var, int idx);
 node_t *psx_node_new_fp_to_int_cast(node_t *operand, int width, psx_type_t *cast_type);
 node_t *psx_node_new_int_to_fp_cast(node_t *operand, tk_float_kind_t target,
@@ -106,6 +106,7 @@ node_t *psx_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
                                          int elem_size, int is_unsigned);
 node_t *psx_node_new_aggregate_cast_result(node_t *operand, psx_type_t *cast_type);
 node_t *psx_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type);
+node_t *psx_node_new_source_cast(node_t *operand, psx_type_t *target_type);
 node_t *psx_node_new_gvar_array_addr_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_array_addr_for(struct lvar_t *var, int gvar_type_size);
 node_t *psx_node_new_lvar_array_addr_for(struct lvar_t *var, int is_tag_pointer);
@@ -139,14 +140,25 @@ node_t *psx_node_new_gvar_for(struct global_var_t *gv);
 node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);
 struct lvar_t *psx_node_lvar_symbol(node_t *node);
-int ps_node_param_abi_type_size(node_t *node);
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs);
 node_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
+node_t *psx_node_new_decl_initializer(node_t *target, node_t *value,
+                                      psx_decl_init_kind_t init_kind,
+                                      token_t *tok);
+node_t *psx_node_new_decl_initializer_list(
+    node_t *target, psx_decl_init_kind_t init_kind,
+    psx_initializer_entry_t *entries, int entry_count, token_t *tok);
+node_t *psx_node_new_initializer_list(
+    psx_initializer_entry_t *entries, int entry_count, token_t *tok);
 
 void psx_node_reject_const_assign(node_t *node, const char *op);
+void psx_node_reject_const_assign_at(node_t *node, const char *op,
+                                     token_t *tok);
 void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs);
+void psx_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
+                                           token_t *tok);
+void psx_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok);
 void psx_node_expect_lvalue(node_t *node, const char *op);
 void psx_node_expect_incdec_target(node_t *node, const char *op);
-node_t *psx_node_new_compound_assign(node_t *lhs, node_kind_t op_kind, node_t *rhs, const char *op);
 
 #endif

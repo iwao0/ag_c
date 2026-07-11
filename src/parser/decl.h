@@ -186,25 +186,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  const int *td_array_dims, int td_array_dim_count,
                                                  int td_array_elem_size, int td_is_array,
                                                  int td_is_long_double, int base_pointer_levels,
-                                                 psx_decl_funcptr_sig_t base_funcptr_sig,
                                                  const psx_type_t *base_decl_type,
                                                  token_t *typespec_start,
                                                  int decl_base_is_void,
                                                  int decl_base_is_bool);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
-/* AST 上の式ノードを定数畳み込みして long long を返す。
- * ok=1 を返した時のみ結果は有効。ND_NUM, ND_ADD/SUB/..., 三項などを扱う。 */
-long long psx_decl_eval_const_int(node_t *n, int *ok);
-int psx_resolve_global_addr_init(node_t *e, char **sym, int *sym_len, long long *off);
 
-// `{ ... }` のトップレベル要素数を先読みで返す。curtok は変更しない。
-// 推定不可なら 0。指定初期化子 `[N]=` で位置がジャンプする場合は最大位置+1 を返す。
-long long psx_decl_count_brace_init_elements(token_t *brace_tok);
-
-/* parser.c の brace init flat パーサ。global_var_t の init_values[] /
- * init_value_symbols[] / init_value_symbol_lens[] / init_fvalues[] を埋める。
- * static local 配列の lowering (decl.c) からも再利用する。 */
-void psx_parse_global_brace_init_flat(global_var_t *gv, int *cap, int start_idx);
 void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap);
 
 void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,

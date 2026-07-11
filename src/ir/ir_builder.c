@@ -19,6 +19,7 @@
 
 #include "ir_builder.h"
 #include "ir.h"
+#include "abi_lowering.h"
 /* Phase C2: parser の公開 API は parser_public.h 1 本に集約。
  * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
  * transitively 取り込む形で内部実装の変更を吸収する)。 */
@@ -1800,11 +1801,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         ir_type_t fp_ty =
             (ps_node_value_fp_kind(arg) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
         if (!fn->callee && i < nargs_fixed) {
-          tk_float_kind_t pfk = ps_ctx_get_function_param_fp_kind(
+          ir_abi_param_info_t param = ir_abi_classify_function_param(
               fn->funcname, fn->funcname_len, i);
-          if (pfk != TK_FLOAT_KIND_NONE) {
-            fp_ty = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-          }
+          if (param.param_class == IR_ABI_PARAM_FLOAT) fp_ty = param.type;
         }
         int half = (fp_ty == IR_TY_F32) ? 4 : 8;
         int slot = ir_func_new_vreg(ctx->f);
@@ -1991,33 +1990,24 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
          * 渡される現状実装と整合が取れないため触らない。 */
         if (!fn->callee && i < nargs_fixed) {
-          tk_float_kind_t pfk = ps_ctx_get_function_param_fp_kind(
+          ir_abi_param_info_t param = ir_abi_classify_function_param(
               fn->funcname, fn->funcname_len, i);
-          if (pfk != TK_FLOAT_KIND_NONE) {
-            ir_type_t target = (pfk == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-            cv = coerce_to_type_ex(ctx, cv, target, 0,
+          if (param.param_class == IR_ABI_PARAM_FLOAT) {
+            cv = coerce_to_type_ex(ctx, cv, param.type, 0,
                                    ps_node_conversion_value_is_unsigned(arg));
           } else {
-            /* 整数仮引数は、定義側と同じ prototype ABI 幅へ常に揃える。
-             * FP 実引数なら F2I、enum/狭整数など整数実引数なら extend/truncate を
-             * 行う。幅が未記録の pointer/旧式宣言は既存値型を維持する。 */
-            int psz = ps_ctx_get_function_param_int_size(
-                fn->funcname, fn->funcname_len, i);
-            int pcat = ps_ctx_get_function_param_category(
-                fn->funcname, fn->funcname_len, i);
-            if (psz <= 0 &&
-                (pcat == PSX_PCAT_INT4 || pcat == PSX_PCAT_INT8)) {
-              psz = 8;
+            ir_type_t target =
+                param.param_class == IR_ABI_PARAM_INTEGER ||
+                        (param.param_class == IR_ABI_PARAM_AGGREGATE &&
+                         param.type != IR_TY_PTR)
+                    ? param.type
+                    : IR_TY_VOID;
+            if (target == IR_TY_VOID && !is_fp_type(cv.type) &&
+                cv.type != IR_TY_PTR && !ps_node_value_is_pointer_like(arg)) {
+              target = IR_TY_I64;
             }
-            if (psz <= 0 && !is_fp_type(cv.type) && cv.type != IR_TY_PTR &&
-                !ps_node_value_is_pointer_like(arg)) {
-              psz = 8;
-            }
-            if (psz > 0) {
-              ir_type_t target = (psz == 8) ? IR_TY_I64 : IR_TY_I32;
-              cv = coerce_to_type_ex(ctx, cv, target,
-                                     ps_ctx_get_function_param_int_unsigned(
-                                         fn->funcname, fn->funcname_len, i),
+            if (target != IR_TY_VOID) {
+              cv = coerce_to_type_ex(ctx, cv, target, param.is_unsigned,
                                      ps_node_conversion_value_is_unsigned(arg));
             }
           }
@@ -3326,15 +3316,14 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
+      ir_abi_param_info_t param = ir_abi_classify_function_param(
+          fn->funcname, fn->funcname_len, i);
       int is_pointer =
           ps_node_is_pointer(arg) ||
           ps_node_value_is_pointer_like((node_t *)lv) ||
           ps_lvar_value_is_pointer_like(owner);
-      ir_type_t abi_type = is_pointer ? IR_TY_PTR : vty;
-      if (!is_pointer && !is_fp_type(abi_type) &&
-          ps_node_param_abi_type_size(arg) == 8) {
-        abi_type = IR_TY_I64;
-      }
+      ir_type_t abi_type = is_pointer ? IR_TY_PTR : param.type;
+      if (abi_type == IR_TY_VOID) abi_type = vty;
       ctx->f->param_abi_types[abi_idx++] = abi_type;
     }
     int ptr_vreg = address_of_lvar(ctx, lv->offset);

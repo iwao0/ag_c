@@ -20,7 +20,7 @@ DIAG_MSG_SRCS=src/diag/messages_ja.c
 CFLAGS+=-DDIAG_LANG_JA
 endif
 
-SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
+SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/semantic/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(wildcard src/lowering/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c
@@ -35,6 +35,7 @@ TEST_E2E=build/test_e2e
 TEST_PREPROCESS=build/test_preprocess
 TEST_FUZZ_QUICK=build/test_fuzz_quick
 TEST_IR=build/test_ir
+TEST_FRAME_LAYOUT=build/test_frame_layout
 TEST_IR_E2E=build/test_ir_e2e
 TEST_WASM32_BACKEND=build/test_wasm32_backend
 TEST_WASM32_E2E=build/test_wasm32_e2e
@@ -42,7 +43,7 @@ TEST_WASM32_OBJECT=build/test_wasm32_object
 BENCH_TOKENIZER=build/bench_tokenizer
 BENCH_PARSER=build/bench_parser
 TOKENIZER_LIB_OBJS=$(OBJROOT)/tokenizer/allocator.o $(OBJROOT)/tokenizer/config_runtime.o $(OBJROOT)/tokenizer/cursor.o $(OBJROOT)/tokenizer/escape.o $(OBJROOT)/tokenizer/filename_table.o $(OBJROOT)/tokenizer/literals.o $(OBJROOT)/tokenizer/number.o $(OBJROOT)/tokenizer/scanner.o $(OBJROOT)/tokenizer/tokenizer.o $(OBJROOT)/tokenizer/token_kind.o $(OBJROOT)/tokenizer/keywords.o $(OBJROOT)/tokenizer/punctuator.o $(OBJROOT)/tokenizer/trigraph.o
-PARSER_LIB_OBJS=$(OBJROOT)/parser/alignas_value.o $(OBJROOT)/parser/anon_tag.o $(OBJROOT)/parser/arena.o $(OBJROOT)/parser/array_suffixes.o $(OBJROOT)/parser/config_runtime.o $(OBJROOT)/parser/parser.o $(OBJROOT)/parser/decl.o $(OBJROOT)/parser/diag.o $(OBJROOT)/parser/enum_const.o $(OBJROOT)/parser/expr.o $(OBJROOT)/parser/semantic_ctx.o $(OBJROOT)/parser/semantic_pass.o $(OBJROOT)/parser/node_utils.o $(OBJROOT)/parser/stmt.o $(OBJROOT)/parser/struct_layout.o $(OBJROOT)/parser/pragma_pack.o $(OBJROOT)/parser/type.o
+PARSER_LIB_OBJS=$(OBJROOT)/parser/alignas_value.o $(OBJROOT)/parser/anon_tag.o $(OBJROOT)/parser/arena.o $(OBJROOT)/parser/array_suffixes.o $(OBJROOT)/parser/config_runtime.o $(OBJROOT)/parser/parser.o $(OBJROOT)/parser/decl.o $(OBJROOT)/parser/diag.o $(OBJROOT)/parser/enum_const.o $(OBJROOT)/parser/expr.o $(OBJROOT)/parser/global_registry.o $(OBJROOT)/parser/initializer_syntax.o $(OBJROOT)/parser/local_registry.o $(OBJROOT)/parser/semantic_ctx.o $(OBJROOT)/parser/semantic_pass.o $(OBJROOT)/parser/node_utils.o $(OBJROOT)/parser/stmt.o $(OBJROOT)/parser/struct_layout.o $(OBJROOT)/parser/pragma_pack.o $(OBJROOT)/parser/type.o $(OBJROOT)/parser/type_name.o $(OBJROOT)/semantic/declaration_resolution.o $(OBJROOT)/semantic/constant_expression.o $(OBJROOT)/semantic/initializer_resolution.o $(OBJROOT)/semantic/local_declaration_plan.o $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o $(OBJROOT)/lowering/static_data_initializer.o $(OBJROOT)/lowering/static_local_lowering.o $(OBJROOT)/lowering/vla_lowering.o $(OBJROOT)/lowering/expr_lowering.o $(OBJROOT)/lowering/cast_lowering.o $(OBJROOT)/lowering/assignment_lowering.o $(OBJROOT)/lowering/initializer_lowering.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
 IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_print.o
@@ -93,6 +94,10 @@ $(TEST_FUZZ_QUICK): test/test_fuzz_quick.c $(TARGET)
 	$(CC) $(CFLAGS) -o $@ test/test_fuzz_quick.c
 
 $(TEST_IR): test/test_ir.c $(IR_LIB_OBJS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $^
+
+$(TEST_FRAME_LAYOUT): test/test_frame_layout.c $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
@@ -180,12 +185,13 @@ check-tokenizer-perf-light:
 log-tokenizer-hotpath-daily:
 	./scripts/log_tokenizer_hotpath_daily.sh
 
-test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
+test: $(TARGET) $(TEST_TOKENIZER) $(TEST_PARSER) $(TEST_E2E) $(TEST_PREPROCESS) $(TEST_FUZZ_QUICK) $(TEST_IR) $(TEST_FRAME_LAYOUT) $(TEST_IR_E2E) $(TEST_WASM32_BACKEND) $(TEST_WASM32_E2E) $(TEST_WASM32_OBJECT)
 	$(TEST_TOKENIZER)
 	$(TEST_PARSER)
 	$(TEST_PREPROCESS)
 	$(TEST_FUZZ_QUICK)
 	$(TEST_IR)
+	$(TEST_FRAME_LAYOUT)
 	$(TEST_IR_E2E)
 	$(TEST_WASM32_BACKEND)
 	$(TEST_WASM32_E2E)

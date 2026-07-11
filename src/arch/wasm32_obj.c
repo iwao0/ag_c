@@ -1,5 +1,6 @@
 #include "wasm32_obj.h"
 #include "../diag/diag.h"
+#include "../ir/abi_lowering.h"
 #include "../parser/parser_public.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
@@ -1038,16 +1039,13 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
   if (f && idx >= 0 && idx < f->param_abi_count && idx < 32) {
     return f->param_abi_types[idx];
   }
-  int pcat = ps_ctx_get_function_param_category(f->name, f->name_len, idx);
   if (raw == IR_TY_PTR) return IR_TY_PTR;
-  if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) return IR_TY_PTR;
-  tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind(f->name, f->name_len, idx);
-  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  int int_size = ps_ctx_get_function_param_int_size(f->name, f->name_len, idx);
-  if (raw != IR_TY_PTR && int_size > 0) {
-    return int_size == 8 ? IR_TY_I64 : IR_TY_I32;
-  }
+  ir_abi_param_info_t param =
+      ir_abi_classify_function_param(f->name, f->name_len, idx);
+  if (param.param_class == IR_ABI_PARAM_POINTER ||
+      param.param_class == IR_ABI_PARAM_AGGREGATE)
+    return IR_TY_PTR;
+  if (param.type != IR_TY_VOID) return param.type;
   return raw;
 }
 
@@ -1089,22 +1087,16 @@ static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
     sig.result = IR_TY_I32;
   }
 
-  int nparams = 0;
-  for (; nparams < 32; nparams++) {
-    int pcat = ps_ctx_get_function_param_category((char *)name, name_len, nparams);
-    tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind((char *)name, name_len, nparams);
-    int int_size = ps_ctx_get_function_param_int_size((char *)name, name_len, nparams);
-    if (pcat == PSX_PCAT_UNSET && fp == TK_FLOAT_KIND_NONE && int_size <= 0) break;
-  }
+  int nparams = ps_ctx_get_function_nargs_fixed((char *)name, name_len);
+  if (nparams > 32) nparams = 32;
   sig.nparams = nparams;
   if (nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
     for (int p = 0; p < nparams; p++) {
-      int pcat = ps_ctx_get_function_param_category((char *)name, name_len, p);
-      tk_float_kind_t fp = ps_ctx_get_function_param_fp_kind((char *)name, name_len, p);
-      if (pcat == PSX_PCAT_PTR || pcat == PSX_PCAT_STRUCT) sig.params[p] = IR_TY_I32;
-      else if (fp == TK_FLOAT_KIND_FLOAT) sig.params[p] = IR_TY_F32;
-      else if (fp >= TK_FLOAT_KIND_DOUBLE) sig.params[p] = IR_TY_F64;
+      ir_abi_param_info_t param = ir_abi_classify_function_param(
+          (char *)name, name_len, p);
+      if (param.type == IR_TY_PTR) sig.params[p] = IR_TY_I32;
+      else if (param.type != IR_TY_VOID) sig.params[p] = param.type;
       else sig.params[p] = IR_TY_I64;
     }
   }
@@ -1286,8 +1278,12 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t arg_ty = i->args[a].type;
       ir_type_t ty = wasm_ir_type(arg_ty);
-      int pcat = i->sym ? ps_ctx_get_function_param_category(i->sym, i->sym_len, a) : PSX_PCAT_UNSET;
-      if (pcat == PSX_PCAT_PTR || arg_ty == IR_TY_PTR) ty = IR_TY_I32;
+      ir_abi_param_info_t param = i->sym
+                                      ? ir_abi_classify_function_param(
+                                            i->sym, i->sym_len, a)
+                                      : (ir_abi_param_info_t){0};
+      if (param.param_class == IR_ABI_PARAM_POINTER || arg_ty == IR_TY_PTR)
+        ty = IR_TY_I32;
       else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
       sig.params[a + (has_ret_area ? 1 : 0)] = ty;
     }

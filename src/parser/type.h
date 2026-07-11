@@ -18,6 +18,17 @@ typedef enum {
 } psx_type_kind_t;
 
 typedef struct psx_type_t psx_type_t;
+struct tag_member_info_t;
+
+typedef struct psx_aggregate_definition_t {
+  token_kind_t tag_kind;
+  char *tag_name;
+  int tag_len;
+  int size;
+  int align;
+  int member_count;
+  struct tag_member_info_t *members;
+} psx_aggregate_definition_t;
 
 typedef enum {
   PSX_DECL_OP_POINTER = 0,
@@ -59,6 +70,7 @@ struct psx_type_t {
   char *tag_name;
   int tag_len;
   int tag_scope_depth_p1;
+  psx_aggregate_definition_t *aggregate_definition;
 
   unsigned int is_unsigned : 1;
   unsigned int is_const_qualified : 1;
@@ -112,6 +124,7 @@ psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
 psx_type_t *psx_type_attach_funcptr_signature(
     psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
 const psx_type_t *psx_type_find_function(const psx_type_t *type);
+void psx_type_complete_function_params(psx_type_t *type);
 psx_decl_funcptr_sig_t ps_type_funcptr_signature(const psx_type_t *type);
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,
@@ -149,7 +162,7 @@ psx_type_t *psx_type_rebase_declarator(
     const psx_type_t *derived_type, const psx_type_t *canonical_base,
     int *out_rebased);
 psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
-void psx_type_complete_incomplete_array(psx_type_t *type, int object_size);
+int psx_type_complete_array(psx_type_t *type, int array_len);
 psx_type_t *psx_type_clone(const psx_type_t *src);
 psx_type_t *psx_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
@@ -193,6 +206,8 @@ int ps_type_is_unsigned(const psx_type_t *type);
 int psx_type_is_scalar(const psx_type_t *type);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
 int psx_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
+int psx_type_generic_matches(const psx_type_t *control,
+                             const psx_type_t *association);
 int psx_type_pointer_depth(const psx_type_t *type);
 int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type);
 unsigned int psx_type_pointer_view_structural_qual_mask(
