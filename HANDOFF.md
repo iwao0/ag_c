@@ -1,8 +1,342 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1027: legacy mem からの type 再構成入口を分けた）
+最終更新: 2026-07-11（続き1036: typed reader の raw stride 依存を監査した）
 
 ## 現状
+- 続き1036: **typed reader の raw stride 依存を監査した**。
+
+  `node_value_view_from_node_direct()` と
+  `node_pointer_stride_from_node_direct()` に残る typed node の raw fallback を
+  実際に外して parser regression を走らせた。その結果、通常 unary deref、
+  subscript deref、固定内側次元 VLA で、同じ構造配列型でも必要な stride cursor が
+  異なることを確認した。現状はこの cursor が `node_mem_t` の
+  `deref_size/inner_deref_size/next_deref_size` にだけ保持されているため、
+  raw fallback を単純削除すると多次元配列/VLA の意味が失われる。
+
+  未完成の fallback 削除実験は戻し、続き1035までの安定状態を維持した。
+  次は raw read を個別に消すのではなく、unary deref/subscript deref/VLA row の
+  stride cursor を canonical type または専用 canonical expression metadata として
+  表現してから reader を切り替える必要がある。
+
+  あわせて typed pointer fixture の `int *` が canonical type 上だけ
+  `deref_size=8` になっていた不整合を `4` に修正した。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+- 続き1035: **getter から暗黙 legacy 型復元を削除した**。
+
+  続き1034後、残っていた `ND_LVAR/ND_DEREF` compatibility materializer の
+  置き場所を確認した。既存 API に `psx_node_materialize_type()` があり、
+  semantic pass は各 node に対して明示的にこれを呼んでいたため、
+  legacy 変換境界を generic getter ではなく materialization phase に置ける状態だった。
+
+  修正として、`psx_node_get_type()` から `ND_LVAR/ND_DEREF` の
+  `materialize_legacy_node_type()` 呼び出しを削除した。
+  `psx_node_get_type()` は、既存 canonical type を返すか、binary/ternary/funcall/number 等の
+  structural operands から type を導出するだけになり、`node_mem_t` raw payload を
+  型の入力として読まない。
+
+  `psx_node_materialize_type()` は、type 未設定の `ND_LVAR/ND_DEREF` に限って
+  `materialize_legacy_node_type()` を呼ぶ明示的 compatibility boundary とした。
+  semantic pass は従来からこの API を呼ぶため、旧入力は phase 境界で一度だけ
+  canonical type に変換され、その後の getter/reader は `node->type` を正本にする。
+
+  legacy raw node regression は、`psx_node_get_type()` の暗黙変換を期待せず、
+  `psx_node_materialize_type()` を明示的に呼ぶよう更新した。
+  さらに未 materialize raw node に対して getter が `NULL` を返し、
+  materialize 後にだけ `base.type` が設定されることを追加確認した。
+
+  regression:
+  - legacy nested pointer、scalar/2D bool/unsigned array、array decay、tag scalar、
+    atomic pointer fixture を明示 materialization 経路へ移行。
+  - production parser/semantic pass の既存 regression は全件通過。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、node type reader 群に残る raw fallback を lifecycle 観点で監査する。
+  materialization 前だけ許される compatibility reader と、materialization 後にも
+  raw fields を参照し得る reader を区別し、後者が残っていれば type-only にする。
+  その後、正本化完了条件を整理して全テストへ進む。
+
+- 続き1034: **GVAR fallback を削除し内部 LVAR を型付けした**。
+
+  続き1033後、`ND_LVAR/ND_GVAR` の symbol decl_type materialization と
+  node constructor を監査した。lvar/gvar symbol は
+  `psx_lvar_get_decl_type()` / `psx_gvar_get_decl_type()` が type 未設定時に
+  declaration fields から一度だけ `decl_type` を生成し、ref node constructor は
+  その type を `node->type` へ同期していた。
+
+  GVAR はproduction constructor がすべて symbol-backed であり、直接 raw GVAR node を
+  組み立てる互換テストも無かったため、`psx_node_get_type()` の legacy materializer
+  対象から `ND_GVAR` を削除した。
+
+  LVAR には symbol を持たない compiler-internal slot があるため constructor を修正した。
+  - `psx_node_new_lvar()` / `psx_node_new_lvar_typed()` は既定 integer type を設定する。
+  - scalar/fp/bool slot constructor は用途に応じた scalar type へ置き換える。
+  - unsigned slot constructor は unsigned integer type を設定する。
+  - pointer parameter placeholder は pointee fp/signedness から pointer type を設定する。
+
+  symbol-backed constructor はその後 symbol `decl_type` で既定 type を上書きするため、
+  production LVAR node は内部 slot を含め作成直後から structural type を持つ。
+  generic materializer の対象は現在 `ND_LVAR/ND_DEREF` だけで、実利用はテスト等が
+  `node_mem_t` を直接組み立てる compatibility input に限定された。
+
+  regression:
+  - `psx_node_new_lvar_typed()` が作成直後から指定 width の integer type を持つことを追加。
+  - 既存の VLA stride slot、byte copy、array element slot、parameter placeholder、
+    global/static-local ref regression が constructor/symbol type 経路を通る。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、残る `ND_LVAR/ND_DEREF` compatibility materializer を扱う。
+  production constructor 由来ではないことを明示する API/境界へ移すか、
+  legacy regression fixture 自体を明示 materialization へ変更して
+  generic getter からの暗黙復元を完全に外せるか判断する。
+
+- 続き1033: **string/cast を constructor で型必須にした**。
+
+  続き1032後、`psx_node_get_type()` の generic legacy materializer 対象だった
+  `ND_ASSIGN/ND_ADDR/ND_STRING/ND_CAST` の production constructor を監査した。
+  assign/address は作成時に source type から result type を設定していたが、
+  string literal は type を一度も設定せず getter の raw 復元に依存していた。
+  cast も通常は target type を渡す一方、VLA `sizeof` runtime size 用など
+  `cast_type == NULL` の production caller があり、同じく getter fallback に依存していた。
+
+  修正として次を行った。
+  - `make_string_lit_node()` が char width/prefix から scalar element type を作り、
+    pointer type を `snode->mem.base.type` に設定する。
+  - `psx_node_new_integer_cast_result_ex()` は target type 未指定時に
+    size/signedness/plain-char/long-long から integer type を生成する。
+  - `psx_node_new_pointer_cast_result()` は target type 未指定時に
+    type kind/tag/fp/bool/unsigned/pointer levels から structural pointer type を生成する。
+  - `psx_node_new_void_cast_result()` は未指定時に void type を生成する。
+
+  その上で `psx_node_get_type()` の legacy materializer 対象から
+  `ND_ASSIGN/ND_ADDR/ND_STRING/ND_CAST` を削除した。
+  これらは constructor が type を設定することが契約となり、欠落時に互換 cache から
+  暗黙復元されない。materializer の対象は `ND_LVAR/ND_GVAR/ND_DEREF` だけになった。
+
+  regression:
+  - string literal node が作成直後から `pointer -> char` type を持つことを追加確認。
+  - target type 未指定の unsigned integer cast が作成直後から
+    unsigned integer type を持つことを追加確認。
+  - 既存の address/assign/cast/string/VLA sizeof regression が constructor type 経路を通る。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、残る `ND_LVAR/ND_GVAR/ND_DEREF` materializer を監査する。
+  production symbol/ref/deref node がすべて作成時 type を持つかを確認し、
+  materializer を明示的な compatibility input だけにできるか、または kind ごとに
+  constructor materialization へ移せるかを詰める。
+
+- 続き1032: **deref/subscript の二段 legacy 復元を削除した**。
+
+  続き1031後、残っていた3つの `materialize_legacy_node_type()` call を確認した。
+  unary deref では operand の `psx_node_get_type()`、subscript では base の
+  `psx_node_get_type()` が先に初回 materialize を行うため、通常は source type が
+  既に存在する。それでも導出結果が不足した場合に、結果 node へ途中まで書いた
+  raw size/stride fields を再び汎用 legacy converter へ渡す二段 fallback が残っていた。
+
+  この3箇所を削除した。
+  - unary deref row は `type_from_deref_operand()` の operand-derived type のみを使う。
+  - runtime VLA subscript row は `psx_type_new_runtime_vla_row_view()` のみを使う。
+  - 通常 subscript は `type_from_subscript_base_type()` の canonical result のみを使う。
+
+  既存の legacy scalar/array/multidimensional array、pointer-to-array、VLA 2D/3D、
+  tag member、function-pointer regression を通しても削除箇所は必要なかった。
+  これにより、結果 node の raw mirror を型の入力へ戻す循環はなくなった。
+
+  現在 `materialize_legacy_node_type()` の caller は `psx_node_get_type()` の
+  type 未設定 mem-node case だけである。`legacy_mem_reconstruct_type()` のもう一つの
+  caller は lvar/gvar の旧 declaration fields を最初に `decl_type` へ移す
+  `type_from_legacy_decl_mem()` であり、式評価中の逆変換ではない。
+
+  regression:
+  - 新規追加はなし。上記既存 regression が3つの専用 structural type 経路を通る。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、generic getter materializer の対象 kind を確認する。
+  production constructor が必ず type を設定する `ND_ASSIGN/ND_ADDR/ND_STRING/ND_CAST`
+  まで互換 fallback 対象に残す必要があるかを調べ、legacy input の入口を
+  lvar/gvar/deref など本当に必要な kind へさらに限定する。
+
+- 続き1031: **legacy node type を初回取得時に固定した**。
+
+  続き1030後、`psx_node_get_type()` の type 未設定
+  `ND_LVAR/ND_GVAR/ND_DEREF/ND_ASSIGN/ND_ADDR/ND_STRING/ND_CAST` 経路を確認した。
+  production node はほぼ作成時に type を持つ一方、互換テスト等が直接組み立てる
+  legacy `node_mem_t` は、getter を呼ぶたびに旧 payload から新しい
+  `psx_type_t` を作って返すだけで `node->type` へ保存していなかった。
+  そのため同一 node の型が読み取り回数ごとに別 object となり、raw fields が
+  引き続き暗黙の正本として残っていた。
+
+  修正として、`type_from_node_type_or_legacy_mem()` /
+  `type_from_untyped_legacy_node_mem()` を
+  `materialize_legacy_node_type()` に置き換えた。
+  type が既にあれば必ずそれを返し、無い場合だけ legacy payload から一度生成して
+  `mem->base.type` に保存する。generic getter と unary/subscript の最終 legacy fallback は
+  すべてこの materializer を通るため、初回以降は `psx_type_t` が正本になる。
+
+  この変更で、`pointee_is_unsigned` 等だけを持つ旧 pointer-like node が
+  scalar type として materialize され、後続 raw getter と意味が食い違う不足が露出した。
+  `legacy_mem_has_pointee_payload()` を追加し、pointer levels、pointee scalar/void/bool/
+  unsigned/fp、pointer qualifier、pointer-to-array payload のいずれかがあれば、
+  legacy 復元時に pointer type として構造化するよう修正した。
+
+  regression:
+  - 3-level pointer の旧 `node_mem_t` を初回取得後に `base.type` へ保存したこと、
+    raw `pointer_qual_levels` を変更しても2回目以降は同じ type object と
+    canonical level=3 を返すことを追加確認。
+  - 既存 atomic pointer regression が、pointee unsigned を type 内に保持して
+    raw fallback なしで同じ結果を返すことを確認。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、unary/subscript に残る `materialize_legacy_node_type()` call を確認する。
+  operand/base の generic getter が先に materialize するため、現在の3箇所は
+  「入力 metadata が不足して generic type を作れなかった場合」の最終 fallback に
+  かなり限定された。到達可能な legacy shape をテストで特定し、不要なら削除、
+  必要なら専用の明示的 runtime view constructor へ置き換える。
+
+- 続き1030: **tag member の型正本を登録時に必須化した**。
+
+  続き1029後、member access に残っていた `decl_type == NULL` fallback の生成元を
+  `struct_layout.c` から `semantic_ctx.c` まで追跡した。
+  production の3つの `psx_ctx_add_tag_member()` caller はすべて登録前に
+  `decl_type` を生成しており、欠落し得るのは互換 API が旧 `tag_member_info_t`
+  cache fields だけを渡す場合だった。従来はその欠落を member access 時まで保持し、
+  一時的な `node_mem_t` を組み立ててから type を逆生成していた。
+
+  修正として、`semantic_ctx.c` に
+  `ctx_tag_member_build_type_from_legacy_desc()` を追加した。
+  `psx_ctx_add_tag_member()` の内部保存処理は、descriptor に `decl_type` があれば
+  persistent clone を保存し、無ければ tag/scalar/fp/bool/unsigned、pointer levels、
+  array dims、function-pointer signature、pointer-to-array shape cache から
+  persistent `psx_type_t` を一度だけ生成して保存する。
+  その後は既存の `tag_member_record_sync_type_from_storage()` /
+  `tag_member_record_sync_cache_from_type()` が type と互換 cache を同期する。
+
+  これにより semantic context から取得した `tag_member_info_t` は常に
+  `decl_type` を持つ。`psx_node_new_tag_member_deref_for()` から
+  `type_from_untyped_legacy_node_mem()` fallback を削除し、member access は
+  登録済み structural type だけを使うようにした。
+
+  regression:
+  - `decl_type == NULL` の旧 pointer member descriptor を
+    `psx_ctx_add_tag_member()` へ登録し、取得時には
+    `pointer -> unsigned integer` の structural type が存在するテストを追加。
+  - 既存の member scalar/pointer/array/pointer-to-array、匿名 aggregate、
+    bitfield/function-pointer regression も同じ semantic context 経路を通る。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`psx_node_get_type()` の type 未設定 lvar/gvar/deref fallback を
+  調べる。parser が生成する symbol はほぼ decl_type を持つため、旧構造体を直接
+  組み立てる compatibility input を node 作成時に一度だけ materialize し、
+  getter で毎回 `node_mem_t` から型を再生成する構造を減らせるか確認する。
+
+- 続き1029: **typed deref/subscript の legacy 型復元を止めた**。
+
+  続き1028後、`type_from_legacy_node_mem()` の残存 call site を分類した。
+  tag member の `decl_type == NULL` と type 未設定 node は本物の legacy fallback だが、
+  unary deref の row 正規化中に3回、subscript の VLA row/最終 scalar 判定中にも、
+  base/operand の `psx_type_t` が存在するのに一時的な `node_mem_t` payload から
+  type を作り直す経路が残っていた。
+
+  unary deref では、operand に type が無い legacy 入力だけ
+  `psx_type_canonicalize_flat_pointer_to_array()` を適用し、typed operand の type は
+  raw stride hint で書き換えないようにした。その上で row 正規化途中の3つの
+  legacy 再構成を削除し、最後の fallback も `operand->type == NULL` に限定した。
+  これにより typed unary deref は最初に導出した structural type を最後まで使う。
+
+  runtime VLA row は structural type だけでは実行時 row size を表せないため、
+  `type.h/type.c` に `psx_type_new_runtime_vla_row_view()` を追加した。
+  subscript は base type と runtime row size/stride/frame metadata を明示的に渡して
+  `PSX_TYPE_ARRAY` view を作る。従来のように `node_mem_t` 全体を型へ逆変換しない。
+  helper でも型を作れない type 未設定 legacy base のみ、旧 fallback を残した。
+  通常 subscript の最終 fallback も `base->type == NULL` に限定した。
+
+  最後に入口を次の2つへ分けた。
+  - `type_from_node_type_or_legacy_mem()`: generic node type reader。既存 type を必ず優先。
+  - `type_from_untyped_legacy_node_mem()`: `base.type == NULL` を要求する旧 payload 復元。
+
+  後者は type が存在すれば `NULL` を返すため、今後 typed path から誤って呼んでも
+  legacy payload が structural type を上書きできない。
+
+  regression:
+  - 既存の stale typed pointer regression が、通常 pointer の raw outer/mid stride を
+    array と誤認しないことを確認している。
+  - 既存の runtime VLA pointer/VLA 3D row regression が、新しい type helper 経路で
+    `PSX_TYPE_ARRAY` view と runtime stride progression を維持する。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、残る untyped legacy fallback の生成元を詰める。
+  特に tag member の `decl_type == NULL` 経路で、tag member 登録時に structural type を
+  常に保持できるか確認し、member access 時の旧 payload 復元を減らす。
+
+- 続き1028: **legacy mem 型再構成を専用ブロックへ隔離した**。
+
+  続き1027後、`type_pointer_to_array_base_from_mem()` /
+  `type_pointer_array_base_from_mem()` 周辺を確認した。
+  この2関数だけでなく、scalar pointee、array base/shape、inner pointer level、
+  tag size、qualifier/function-pointer metadata まで含む helper 群が連鎖しており、
+  実質的には `node_mem_t` payload から `psx_type_t` を復元する一つの
+  legacy subsystem だった。しかし各 helper は一般的な `type_*_from_mem()` 名で、
+  通常の typed node 処理と legacy 復元の境界が読み取りにくかった。
+
+  修正として、この helper 群をすべて `legacy_mem_reconstruct_*` /
+  `legacy_mem_*` に統一し、唯一の集約入口を
+  `legacy_mem_reconstruct_type()` とした。復元ブロックの入力はすべて
+  `const node_mem_t *` に変更し、旧 payload を型情報の書き戻し先として
+  扱えない読み取り専用境界にした。
+
+  typed node 用の `type_from_legacy_node_mem()` はこのブロックの外に残し、
+  `mem->base.type` があれば必ずそれを返す。旧 lvar/gvar field materialization 用の
+  `type_from_legacy_decl_mem()` だけが、direct type を見ずに legacy 復元入口へ入る。
+  これにより `psx_type_t` が正本で、`node_mem_t` からの型生成は明示的な
+  compatibility fallback だけ、という構造を名前・const 境界の両方で固定した。
+
+  regression:
+  - 新規追加はなし。既存の type metadata bridge、pointer-to-array、VLA row、
+    legacy lvar/gvar materialization regression が同じ復元経路を通る。
+  - 今回は挙動変更ではなく、legacy 型復元 subsystem の隔離と読み取り専用化。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次に進めるなら、`type_from_legacy_node_mem()` の残存 call site を分類する。
+  subscript/unary deref など型を生成した時点で `base.type` を設定できる経路は、
+  後段で旧 payload から復元せず、前段の structural type を直接引き継ぐようにして、
+  legacy node fallback の利用箇所そのものを減らす。
+
 - 続き1027: **legacy mem からの type 再構成入口を分けた**。
 
   続き1026後、次の焦点として `type_from_mem()` の残り方を確認した。

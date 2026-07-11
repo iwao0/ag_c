@@ -72,6 +72,9 @@ psx_type_t *psx_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
 psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
+psx_type_t *psx_type_new_runtime_vla_row_view(
+    const psx_type_t *source, int row_size, int elem_size,
+    int row_stride_frame_off, int strides_remaining);
 psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size);
 

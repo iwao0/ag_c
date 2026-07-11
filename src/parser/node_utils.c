@@ -196,7 +196,8 @@ psx_decl_funcptr_sig_t psx_node_mem_funcptr_sig(const node_mem_t *mem) {
   return funcptr_sig_from_mem(mem);
 }
 
-static void type_copy_funcptr_metadata(psx_type_t *type, const node_mem_t *mem) {
+static void legacy_mem_copy_funcptr_metadata(psx_type_t *type,
+                                             const node_mem_t *mem) {
   if (!type || !mem) return;
   type->funcptr_sig = funcptr_sig_from_mem(mem);
 }
@@ -241,18 +242,21 @@ static int tag_aggregate_size_from_ctx(token_kind_t tk, char *tn, int tl,
   return max_end > 0 ? max_end : fallback;
 }
 
-static int mem_tag_pointee_size(const node_mem_t *mem) {
+/* The functions in this block are the only type reconstruction path for
+ * legacy node_mem_t payloads. Typed nodes must enter through
+ * materialize_legacy_node_type() so an existing psx_type_t always wins. */
+static int legacy_mem_tag_pointee_size(const node_mem_t *mem) {
   if (!mem || !psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) return 0;
   int fallback = mem->deref_size > 0 ? mem->deref_size : mem->base_deref_size;
   return tag_aggregate_size_from_ctx(mem->tag_kind, mem->tag_name, mem->tag_len,
                                      mem->tag_scope_depth_p1, fallback);
 }
 
-static int mem_pointee_scalar_is_bool(const node_mem_t *mem) {
+static int legacy_mem_pointee_scalar_is_bool(const node_mem_t *mem) {
   return mem && mem->pointee_is_bool ? 1 : 0;
 }
 
-static int mem_legacy_array_element_flag(const node_mem_t *mem, int scalar_flag) {
+static int legacy_mem_array_element_flag(const node_mem_t *mem, int scalar_flag) {
   if (!mem || !scalar_flag || mem->is_scalar_ptr_member) return 0;
   if (mem->is_pointer && mem->pointer_qual_levels > 0) return 0;
   if (mem->is_array_member) return 1;
@@ -261,24 +265,36 @@ static int mem_legacy_array_element_flag(const node_mem_t *mem, int scalar_flag)
          (mem->type_size % mem->deref_size) == 0;
 }
 
-static int mem_array_leaf_is_bool(const node_mem_t *mem) {
+static int legacy_mem_array_leaf_is_bool(const node_mem_t *mem) {
   return mem && (mem->pointee_is_bool ||
-                 mem_legacy_array_element_flag(mem, mem->is_bool)) ? 1 : 0;
+                 legacy_mem_array_element_flag(mem, mem->is_bool)) ? 1 : 0;
 }
 
-static int mem_array_leaf_is_unsigned(const node_mem_t *mem) {
+static int legacy_mem_array_leaf_is_unsigned(const node_mem_t *mem) {
   return mem && (mem->pointee_is_unsigned ||
-                 mem_legacy_array_element_flag(mem, mem->is_unsigned)) ? 1 : 0;
+                 legacy_mem_array_element_flag(mem, mem->is_unsigned)) ? 1 : 0;
 }
 
-static psx_type_t *type_new_pointee_base_from_mem(const node_mem_t *mem) {
+static int legacy_mem_has_pointee_payload(const node_mem_t *mem) {
+  return mem &&
+         (mem->pointer_qual_levels > 0 || mem->pointee_is_scalar_ptr ||
+          mem->pointee_is_void || mem->pointee_is_bool ||
+          mem->pointee_is_unsigned || mem->is_pointer_const_qualified ||
+          mem->is_pointer_volatile_qualified ||
+          mem->pointer_const_qual_mask != 0 ||
+          mem->pointer_volatile_qual_mask != 0 ||
+          mem->pointee_fp_kind != TK_FLOAT_KIND_NONE ||
+          mem->ptr_array_pointee_bytes > 0);
+}
+
+static psx_type_t *legacy_mem_reconstruct_pointee_base(const node_mem_t *mem) {
   if (!mem) return NULL;
   if (mem->pointee_is_scalar_ptr) {
     int base_size = mem->base_deref_size > 0 ? mem->base_deref_size : 4;
     psx_type_t *base = mem->pointee_fp_kind != TK_FLOAT_KIND_NONE
                            ? psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind,
                                                 base_size)
-                           : psx_type_new_integer(mem_pointee_scalar_is_bool(mem)
+                           : psx_type_new_integer(legacy_mem_pointee_scalar_is_bool(mem)
                                                       ? TK_BOOL : TK_EOF,
                                                    base_size,
                                                    mem->pointee_is_unsigned);
@@ -289,7 +305,7 @@ static psx_type_t *type_new_pointee_base_from_mem(const node_mem_t *mem) {
   }
   if (mem->pointee_is_void) return type_new_void();
   if (psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) {
-    int size = mem_tag_pointee_size(mem);
+    int size = legacy_mem_tag_pointee_size(mem);
     return psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                             mem->tag_scope_depth_p1, size);
   }
@@ -300,12 +316,12 @@ static psx_type_t *type_new_pointee_base_from_mem(const node_mem_t *mem) {
   }
   int sz = mem->base_deref_size > 0 ? mem->base_deref_size : mem->deref_size;
   if (sz <= 0 || sz > 8) sz = 4;
-  return psx_type_new_integer(mem_pointee_scalar_is_bool(mem) ? TK_BOOL : TK_EOF, sz,
+  return psx_type_new_integer(legacy_mem_pointee_scalar_is_bool(mem) ? TK_BOOL : TK_EOF, sz,
                               mem->pointee_is_unsigned);
 }
 
-static psx_type_t *type_new_scalar_pointee_from_mem(const node_mem_t *mem,
-                                                    int scalar_size) {
+static psx_type_t *legacy_mem_reconstruct_scalar_pointee(const node_mem_t *mem,
+                                                         int scalar_size) {
   if (!mem) return NULL;
   if (scalar_size <= 0) scalar_size = mem->base_deref_size;
   if (scalar_size <= 0) scalar_size = mem->deref_size;
@@ -315,23 +331,23 @@ static psx_type_t *type_new_scalar_pointee_from_mem(const node_mem_t *mem,
                               scalar_size);
   }
   if (psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) {
-    int tag_size = mem_tag_pointee_size(mem);
+    int tag_size = legacy_mem_tag_pointee_size(mem);
     if (tag_size <= 0) tag_size = scalar_size;
     return psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                             mem->tag_scope_depth_p1, tag_size);
   }
-  return psx_type_new_integer(mem_pointee_scalar_is_bool(mem) ? TK_BOOL : TK_EOF,
+  return psx_type_new_integer(legacy_mem_pointee_scalar_is_bool(mem) ? TK_BOOL : TK_EOF,
                               scalar_size, mem->pointee_is_unsigned);
 }
 
-static psx_type_t *type_new_array_base_from_mem(const node_mem_t *mem) {
+static psx_type_t *legacy_mem_reconstruct_array_base(const node_mem_t *mem) {
   if (mem && mem->ptr_array_pointee_bytes > 0 && mem->base_deref_size > 0 &&
       mem->pointee_is_scalar_ptr) {
     int scalar_size = mem->base_deref_size;
     psx_type_t *scalar = mem->pointee_fp_kind != TK_FLOAT_KIND_NONE
                              ? psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind,
                                                   scalar_size)
-                             : psx_type_new_integer(mem_pointee_scalar_is_bool(mem)
+                             : psx_type_new_integer(legacy_mem_pointee_scalar_is_bool(mem)
                                                         ? TK_BOOL : TK_EOF,
                                                      scalar_size,
                                                      mem->pointee_is_unsigned);
@@ -353,7 +369,7 @@ static psx_type_t *type_new_array_base_from_mem(const node_mem_t *mem) {
   if (mem && mem->is_tag_pointer && psx_ctx_is_tag_aggregate_kind(mem->tag_kind) &&
       (mem->ptr_array_pointee_bytes <= 0 ||
        (mem->pointee_is_scalar_ptr && mem->pointer_qual_levels > 0))) {
-    int tag_size = mem_tag_pointee_size(mem);
+    int tag_size = legacy_mem_tag_pointee_size(mem);
     psx_type_t *tag = psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                                        mem->tag_scope_depth_p1, tag_size);
     int levels = mem->pointer_qual_levels > 0 ? mem->pointer_qual_levels : 1;
@@ -364,7 +380,7 @@ static psx_type_t *type_new_array_base_from_mem(const node_mem_t *mem) {
   }
   if (mem && psx_ctx_is_tag_aggregate_kind(mem->tag_kind) &&
       mem->pointer_qual_levels > 0) {
-    int tag_size = mem_tag_pointee_size(mem);
+    int tag_size = legacy_mem_tag_pointee_size(mem);
     psx_type_t *tag = psx_type_new_tag(mem->tag_kind, mem->tag_name, mem->tag_len,
                                        mem->tag_scope_depth_p1, tag_size);
     int top_deref = mem->pointer_qual_levels >= 2 ? 8 : tag_size;
@@ -373,20 +389,21 @@ static psx_type_t *type_new_array_base_from_mem(const node_mem_t *mem) {
                                         mem->pointer_const_qual_mask,
                                         mem->pointer_volatile_qual_mask);
   }
-  if ((mem_array_leaf_is_bool(mem) || mem_array_leaf_is_unsigned(mem)) &&
+  if ((legacy_mem_array_leaf_is_bool(mem) ||
+       legacy_mem_array_leaf_is_unsigned(mem)) &&
       mem->pointee_fp_kind == TK_FLOAT_KIND_NONE &&
       !psx_ctx_is_tag_aggregate_kind(mem->tag_kind)) {
     int sz = mem->base_deref_size > 0 ? mem->base_deref_size : mem->deref_size;
     if (sz <= 0 || sz > 8) sz = 1;
-    return psx_type_new_integer(mem_array_leaf_is_bool(mem) ? TK_BOOL : TK_EOF,
-                                sz, mem_array_leaf_is_unsigned(mem));
+    return psx_type_new_integer(legacy_mem_array_leaf_is_bool(mem) ? TK_BOOL : TK_EOF,
+                                sz, legacy_mem_array_leaf_is_unsigned(mem));
   }
-  return type_new_pointee_base_from_mem(mem);
+  return legacy_mem_reconstruct_pointee_base(mem);
 }
 
-static psx_type_t *type_new_array_shape_from_mem(const node_mem_t *mem,
-                                                 int elem_size,
-                                                 int force_vla) {
+static psx_type_t *legacy_mem_reconstruct_array_shape(const node_mem_t *mem,
+                                                      int elem_size,
+                                                      int force_vla) {
   if (!mem || mem->type_size <= 0 || elem_size <= 0) return NULL;
 
   int strides[8] = {0};
@@ -415,7 +432,7 @@ static psx_type_t *type_new_array_shape_from_mem(const node_mem_t *mem,
       if (candidates[j] == best) candidates[j] = 0;
     }
   }
-  psx_type_t *type = type_new_array_base_from_mem(mem);
+  psx_type_t *type = legacy_mem_reconstruct_array_base(mem);
   int leaf_storage_size = psx_type_sizeof(type);
   if (leaf_storage_size <= 0) leaf_storage_size = elem_size;
   if (strides[count - 1] != leaf_storage_size && count < 8) {
@@ -453,8 +470,8 @@ static int type_pointer_depth(const psx_type_t *type) {
   return depth;
 }
 
-static psx_type_t *type_ensure_inner_pointer_levels(psx_type_t *base,
-                                                    const node_mem_t *mem) {
+static psx_type_t *legacy_mem_reconstruct_inner_pointer_levels(
+    psx_type_t *base, const node_mem_t *mem) {
   if (!base || !mem || mem->pointer_qual_levels <= 1) return base;
   int base_deref = mem->base_deref_size > 0 ? mem->base_deref_size : mem->deref_size;
   if (base_deref <= 0) base_deref = psx_type_sizeof(base);
@@ -476,7 +493,8 @@ static psx_type_t *type_ensure_inner_pointer_levels(psx_type_t *base,
   return wrapped;
 }
 
-static psx_type_t *type_pointer_array_base_from_mem(const node_mem_t *mem) {
+static psx_type_t *legacy_mem_reconstruct_pointer_array_base(
+    const node_mem_t *mem) {
   if (!mem || mem->inner_deref_size <= 0 || mem->ptr_array_pointee_bytes <= 0 ||
       mem->pointer_qual_levels < 2) {
     return NULL;
@@ -484,7 +502,7 @@ static psx_type_t *type_pointer_array_base_from_mem(const node_mem_t *mem) {
   int scalar_size = mem->base_deref_size > 0 ? mem->base_deref_size
                                              : mem->deref_size;
   if (scalar_size <= 0) scalar_size = mem->pointee_is_bool ? 1 : 4;
-  psx_type_t *scalar = type_new_scalar_pointee_from_mem(mem, scalar_size);
+  psx_type_t *scalar = legacy_mem_reconstruct_scalar_pointee(mem, scalar_size);
   int row_len = scalar_size > 0 ? mem->ptr_array_pointee_bytes / scalar_size : 0;
   if (row_len <= 0) row_len = 1;
   psx_type_t *row = psx_type_new_array(scalar, row_len,
@@ -507,10 +525,9 @@ static psx_type_t *type_pointer_array_base_from_mem(const node_mem_t *mem) {
   return array;
 }
 
-static psx_type_t *type_pointer_element_array_shape_from_mem(const node_mem_t *mem,
-                                                             psx_type_t *elem_ptr,
-                                                             int elem_store_size,
-                                                             int scalar_size) {
+static psx_type_t *legacy_mem_reconstruct_pointer_element_array_shape(
+    const node_mem_t *mem, psx_type_t *elem_ptr, int elem_store_size,
+    int scalar_size) {
   if (!mem || !elem_ptr || mem->ptr_array_pointee_bytes <= 0 ||
       elem_store_size <= 0) {
     return NULL;
@@ -569,7 +586,8 @@ static psx_type_t *type_pointer_element_array_shape_from_mem(const node_mem_t *m
   return type;
 }
 
-static psx_type_t *type_pointer_to_array_base_from_mem(const node_mem_t *mem) {
+static psx_type_t *legacy_mem_reconstruct_pointer_to_array_base(
+    const node_mem_t *mem) {
   if (!mem || mem->ptr_array_pointee_bytes <= 0 ||
       mem->pointer_qual_levels <= 0 || mem->type_size > 8 ||
       mem->compound_literal_array_size > 0) {
@@ -578,7 +596,7 @@ static psx_type_t *type_pointer_to_array_base_from_mem(const node_mem_t *mem) {
   int scalar_size = mem->base_deref_size > 0 ? mem->base_deref_size
                                              : mem->deref_size;
   if (scalar_size <= 0) scalar_size = mem->pointee_is_bool ? 1 : 4;
-  psx_type_t *scalar = type_new_scalar_pointee_from_mem(mem, scalar_size);
+  psx_type_t *scalar = legacy_mem_reconstruct_scalar_pointee(mem, scalar_size);
   int points_to_pointer_element =
       mem->pointee_is_scalar_ptr &&
       mem->type_size == 8 &&
@@ -590,8 +608,8 @@ static psx_type_t *type_pointer_to_array_base_from_mem(const node_mem_t *mem) {
     psx_type_t *elem_ptr = psx_type_new_pointer(scalar, scalar_size);
     elem_ptr->base_deref_size = scalar_size;
     elem_ptr->pointer_qual_levels = 1;
-    psx_type_t *row = type_pointer_element_array_shape_from_mem(mem, elem_ptr,
-                                                                8, scalar_size);
+    psx_type_t *row = legacy_mem_reconstruct_pointer_element_array_shape(
+        mem, elem_ptr, 8, scalar_size);
     if (!row) return NULL;
     if (mem->pointer_qual_levels <= 1) return row;
     psx_type_t *row_ptr = psx_type_new_pointer(row, mem->ptr_array_pointee_bytes);
@@ -627,7 +645,8 @@ static psx_type_t *type_pointer_to_array_base_from_mem(const node_mem_t *mem) {
   return row_ptr;
 }
 
-static psx_type_t *type_array_shape_base_from_mem(const node_mem_t *mem) {
+static psx_type_t *legacy_mem_reconstruct_array_shape_base(
+    const node_mem_t *mem) {
   if (!mem || mem->deref_size <= 0 || mem->inner_deref_size <= 0 ||
       mem->deref_size <= mem->inner_deref_size ||
       mem->ptr_array_pointee_bytes > 0) {
@@ -655,8 +674,9 @@ static psx_type_t *type_array_shape_base_from_mem(const node_mem_t *mem) {
   } else if (mem->pointee_fp_kind != TK_FLOAT_KIND_NONE) {
     base = psx_type_new_float((tk_float_kind_t)mem->pointee_fp_kind, scalar_size);
   } else {
-    base = psx_type_new_integer(mem_array_leaf_is_bool(mem) ? TK_BOOL : TK_EOF,
-                                scalar_size, mem_array_leaf_is_unsigned(mem));
+    base = psx_type_new_integer(legacy_mem_array_leaf_is_bool(mem) ? TK_BOOL : TK_EOF,
+                                scalar_size,
+                                legacy_mem_array_leaf_is_unsigned(mem));
   }
 
   for (int i = count - 2; i >= 0; i--) {
@@ -727,8 +747,9 @@ static psx_type_t *type_with_self_qualifiers(psx_type_t *type,
   return copy;
 }
 
-static psx_type_t *type_from_legacy_mem_payload(node_mem_t *mem, int force_array,
-                                                int force_vla) {
+static psx_type_t *legacy_mem_reconstruct_type(const node_mem_t *mem,
+                                               int force_array,
+                                               int force_vla) {
   if (!mem) return NULL;
 
   psx_type_t *type = NULL;
@@ -743,16 +764,16 @@ static psx_type_t *type_from_legacy_mem_payload(node_mem_t *mem, int force_array
   if (force_array || looks_like_array_decay) {
     int elem_size = mem->deref_size > 0 ? mem->deref_size : mem->base_deref_size;
     if (elem_size <= 0 && mem->is_tag_pointer) elem_size = 8;
-    if (elem_size <= 0) elem_size = mem_tag_pointee_size(mem);
+    if (elem_size <= 0) elem_size = legacy_mem_tag_pointee_size(mem);
     if (elem_size <= 0) elem_size = mem->type_size;
     int array_len = (elem_size > 0 && mem->type_size > 0 &&
                      (mem->type_size % elem_size) == 0)
                         ? mem->type_size / elem_size
                         : 0;
-    type = type_new_array_shape_from_mem(mem, elem_size, force_vla);
+    type = legacy_mem_reconstruct_array_shape(mem, elem_size, force_vla);
     int has_canonical_array_shape = type != NULL;
     if (!type) {
-      psx_type_t *base = type_new_array_base_from_mem(mem);
+      psx_type_t *base = legacy_mem_reconstruct_array_base(mem);
       type = psx_type_new_array(base, array_len, mem->type_size, elem_size, force_vla);
     }
     int canonical_deref_size = type ? type->deref_size : 0;
@@ -786,23 +807,24 @@ static psx_type_t *type_from_legacy_mem_payload(node_mem_t *mem, int force_array
       type->extra_strides_count = (unsigned char)canonical_extra_strides_count;
       for (int i = 0; i < 5; i++) type->extra_strides[i] = canonical_extra_strides[i];
     }
-  } else if (mem->is_pointer || mem->is_tag_pointer) {
-    psx_type_t *base = type_pointer_array_base_from_mem(mem);
+  } else if (mem->is_pointer || mem->is_tag_pointer ||
+             legacy_mem_has_pointee_payload(mem)) {
+    psx_type_t *base = legacy_mem_reconstruct_pointer_array_base(mem);
     int base_is_array_shape = base != NULL;
     if (!base) {
-      base = type_pointer_to_array_base_from_mem(mem);
+      base = legacy_mem_reconstruct_pointer_to_array_base(mem);
       base_is_array_shape = base && base->kind == PSX_TYPE_ARRAY;
     }
     if (!base) {
-      base = type_array_shape_base_from_mem(mem);
+      base = legacy_mem_reconstruct_array_shape_base(mem);
       base_is_array_shape = base != NULL;
     }
-    if (!base) base = type_new_pointee_base_from_mem(mem);
+    if (!base) base = legacy_mem_reconstruct_pointee_base(mem);
     int has_array_stride_shape =
         mem->inner_deref_size > 0 || mem->next_deref_size > 0 ||
         mem->extra_strides_count > 0;
     if (!has_array_stride_shape) {
-      base = type_ensure_inner_pointer_levels(base, mem);
+      base = legacy_mem_reconstruct_inner_pointer_levels(base, mem);
     }
     int outer_deref = base_is_array_shape ? psx_type_sizeof(base)
                       : ((mem->pointer_qual_levels >= 2 && !has_array_stride_shape)
@@ -861,21 +883,23 @@ static psx_type_t *type_from_legacy_mem_payload(node_mem_t *mem, int force_array
     type->is_long_long = mem->is_long_long;
     type->is_plain_char = mem->is_plain_char;
     type->is_long_double = mem->is_long_double;
-    type_copy_funcptr_metadata(type, mem);
+    legacy_mem_copy_funcptr_metadata(type, mem);
   }
   return type;
 }
 
-static psx_type_t *type_from_legacy_node_mem(node_mem_t *mem, int force_array,
-                                             int force_vla) {
+static psx_type_t *materialize_legacy_node_type(node_mem_t *mem,
+                                                int force_array,
+                                                int force_vla) {
   if (!mem) return NULL;
   if (mem->base.type) return mem->base.type;
-  return type_from_legacy_mem_payload(mem, force_array, force_vla);
+  mem->base.type = legacy_mem_reconstruct_type(mem, force_array, force_vla);
+  return mem->base.type;
 }
 
-static psx_type_t *type_from_legacy_decl_mem(node_mem_t *mem, int force_array,
-                                             int force_vla) {
-  return type_from_legacy_mem_payload(mem, force_array, force_vla);
+static psx_type_t *type_from_legacy_decl_mem(const node_mem_t *mem,
+                                             int force_array, int force_vla) {
+  return legacy_mem_reconstruct_type(mem, force_array, force_vla);
 }
 
 static psx_type_t *type_clone_persistent(const psx_type_t *src) {
@@ -3490,14 +3514,6 @@ psx_type_t *psx_node_get_type(node_t *node) {
     return node->type;
   }
   switch (node->kind) {
-    case ND_LVAR:
-    case ND_GVAR:
-    case ND_DEREF:
-    case ND_ASSIGN:
-    case ND_ADDR:
-    case ND_STRING:
-    case ND_CAST:
-      return type_from_legacy_node_mem(as_mem(node), 0, 0);
     case ND_COMMA:
     case ND_STMT_EXPR:
     {
@@ -3585,6 +3601,8 @@ psx_type_t *psx_node_get_type(node_t *node) {
 
 psx_type_t *psx_node_materialize_type(node_t *node) {
   if (!node) return NULL;
+  if (!node->type && (node->kind == ND_LVAR || node->kind == ND_DEREF))
+    return materialize_legacy_node_type(as_mem(node), 0, 0);
   psx_type_t *type = psx_node_get_type(node);
   if (type) node->type = type;
   return type;
@@ -5882,6 +5900,7 @@ node_t *psx_node_new_num(long long val) {
 node_t *psx_node_new_lvar(int offset) {
   node_lvar_t *node = arena_alloc(sizeof(node_lvar_t));
   node->mem.base.kind = ND_LVAR;
+  node->mem.base.type = psx_type_new_integer(TK_INT, 8, 0);
   node->mem.tag_kind = TK_EOF;
   node->offset = offset;
   node->mem.type_size = 8;
@@ -5891,6 +5910,8 @@ node_t *psx_node_new_lvar(int offset) {
 node_t *psx_node_new_lvar_typed(int offset, int type_size) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar(offset);
   node->mem.type_size = type_size;
+  if (type_size > 0)
+    node->mem.base.type = psx_type_new_integer(TK_INT, type_size, 0);
   return (node_t *)node;
 }
 
@@ -5918,6 +5939,11 @@ node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(offset, type_size);
   node->mem.base.fp_kind = fp_kind;
   node->mem.is_bool = is_bool ? 1 : 0;
+  if (fp_kind != TK_FLOAT_KIND_NONE) {
+    node->mem.base.type = psx_type_new_float(fp_kind, type_size);
+  } else if (is_bool) {
+    node->mem.base.type = psx_type_new_integer(TK_BOOL, type_size, 1);
+  }
   return (node_t *)node;
 }
 
@@ -5941,6 +5967,13 @@ node_t *psx_node_new_param_placeholder(int is_pointer, tk_float_kind_t fp_kind, 
     node->mem.is_pointer = 1;
     node->mem.base.is_unsigned = is_unsigned ? 1 : 0;
     node->mem.is_unsigned = is_unsigned ? 1 : 0;
+    int fp_size = fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8;
+    psx_type_t *base = fp_kind != TK_FLOAT_KIND_NONE
+                           ? psx_type_new_float(fp_kind, fp_size)
+                           : psx_type_new_integer(
+                                 is_unsigned ? TK_UNSIGNED : TK_INT, 4,
+                                 is_unsigned);
+    node->mem.base.type = psx_type_new_pointer(base, psx_type_sizeof(base));
     return (node_t *)node;
   }
   node_t *node = psx_node_new_num(0);
@@ -5953,6 +5986,8 @@ node_t *psx_node_new_unsigned_lvar_typed(int offset, int type_size) {
   node_lvar_t *node = (node_lvar_t *)psx_node_new_lvar_typed(offset, type_size);
   node->mem.base.is_unsigned = 1;
   node->mem.is_unsigned = 1;
+  node->mem.base.type =
+      psx_type_new_integer(TK_UNSIGNED, type_size, 1);
   return (node_t *)node;
 }
 
@@ -6254,6 +6289,13 @@ node_t *psx_node_new_integer_cast_result_ex(node_t *operand, psx_type_t *cast_ty
   wrap->is_long_long = is_long_long ? 1 : 0;
   wrap->is_plain_char = is_plain_char ? 1 : 0;
   wrap->widen_zext_i64 = widen_zext_i64 ? 1 : 0;
+  if (!cast_type) {
+    token_kind_t scalar_kind = is_plain_char
+                                   ? TK_CHAR
+                                   : (is_unsigned ? TK_UNSIGNED : TK_INT);
+    cast_type = psx_type_new_integer(scalar_kind, type_size, is_unsigned);
+    cast_type->is_long_long = is_long_long ? 1 : 0;
+  }
   sync_scalar_mem_from_decl_type(wrap, cast_type);
   return annotate_explicit_type((node_t *)wrap, cast_type);
 }
@@ -6351,6 +6393,30 @@ node_t *psx_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
   } else if (type_kind == TK_BOOL) {
     wrap->pointee_is_bool = 1;
   }
+  if (!cast_type) {
+    psx_type_t *base = NULL;
+    if (type_kind == TK_VOID) {
+      base = type_new_void();
+    } else if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+      int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+      if (tag_size <= 0) tag_size = elem_size;
+      base = psx_type_new_tag(tag_kind, tag_name, tag_len, 0, tag_size);
+    } else if (type_kind == TK_FLOAT || type_kind == TK_DOUBLE) {
+      tk_float_kind_t fp_kind = type_kind == TK_FLOAT
+                                    ? TK_FLOAT_KIND_FLOAT
+                                    : TK_FLOAT_KIND_DOUBLE;
+      base = psx_type_new_float(fp_kind, elem_size > 0 ? elem_size : 8);
+    } else if (type_kind == TK_BOOL) {
+      base = psx_type_new_integer(TK_BOOL, elem_size > 0 ? elem_size : 1, 1);
+    } else {
+      base = psx_type_new_integer(
+          is_unsigned ? TK_UNSIGNED : TK_INT,
+          elem_size > 0 ? elem_size : 4, is_unsigned);
+    }
+    cast_type = psx_type_wrap_pointer_levels(
+        base, pointer_levels, wrap->deref_size, wrap->base_deref_size, 0, 0);
+    sync_pointer_cast_mem_from_type(wrap, cast_type);
+  }
   return annotate_explicit_type((node_t *)wrap, cast_type);
 }
 
@@ -6371,6 +6437,7 @@ node_t *psx_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type) {
   wrap->base.kind = ND_CAST;
   wrap->base.lhs = operand;
   wrap->type_size = 0;
+  if (!cast_type) cast_type = type_new_void();
   return annotate_explicit_type((node_t *)wrap, cast_type);
 }
 
@@ -6484,6 +6551,8 @@ static psx_decl_funcptr_sig_t funcptr_sig_for_deref_result(psx_decl_funcptr_sig_
 static psx_type_t *type_from_deref_operand(node_t *operand) {
   psx_type_t *type = psx_node_get_type(operand);
   if (!type_is_pointer_view_type(type) || !type->base) return NULL;
+  if (!operand || !operand->type)
+    psx_type_canonicalize_flat_pointer_to_array(type);
   int pointer_levels = psx_type_pointer_view_structural_qual_levels(type);
   int ptr_array_pointee_bytes =
       psx_type_pointer_view_structural_ptr_array_pointee_bytes(type);
@@ -6990,9 +7059,6 @@ node_t *psx_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
                                                 deref->is_const_qualified,
                                                 deref->is_volatile_qualified);
     sync_tag_member_mem_from_decl_type(deref, info, deref->base.type);
-  } else {
-    deref->base.type =
-        type_from_legacy_node_mem(deref, mem_array_len > 0, 0);
   }
   return (node_t *)deref;
 }
@@ -7038,10 +7104,6 @@ node_t *psx_node_new_unary_deref_for(node_t *operand) {
           node->extra_strides[i - 1] = extras[i];
         node->extra_strides_count = (unsigned char)(extras_count - 1);
       }
-      if (!node->base.type || node->base.type->kind != PSX_TYPE_ARRAY) {
-        node->base.type = NULL;
-        node->base.type = type_from_legacy_node_mem(node, 1, 0);
-      }
       if (extras_count <= 0 && next > 0 && node->next_deref_size <= 0 &&
           node->base.type) {
         int tail_stride = type_array_leaf_element_size(node->base.type);
@@ -7064,10 +7126,6 @@ node_t *psx_node_new_unary_deref_for(node_t *operand) {
     node->tag_len = tag_len;
     if (row_deref_normalized) {
       node->is_tag_pointer = 0;
-      if (!node->base.type || node->base.type->kind != PSX_TYPE_ARRAY) {
-        node->base.type = NULL;
-        node->base.type = type_from_legacy_node_mem(node, 1, 0);
-      }
     } else {
       node->is_tag_pointer = (psx_node_pointer_qual_levels(operand) >= 2) ? 1 : 0;
       node->deref_size = 0;
@@ -7130,8 +7188,6 @@ node_t *psx_node_new_unary_deref_for(node_t *operand) {
       node->deref_size = (short)array_elem_size;
       node->inner_deref_size = 0;
       node->is_tag_pointer = 0;
-      if (!node->base.type || node->base.type->kind != PSX_TYPE_ARRAY)
-        node->base.type = type_from_legacy_node_mem(node, 1, 0);
       row_deref_normalized = 1;
     }
   }
@@ -7276,12 +7332,6 @@ node_t *psx_node_new_unary_deref_for(node_t *operand) {
   if (node->deref_size > 0 && node->base.fp_kind != TK_FLOAT_KIND_NONE &&
       node->pointee_fp_kind == TK_FLOAT_KIND_NONE) {
     node->pointee_fp_kind = node->base.fp_kind;
-  }
-  if (row_deref_normalized) {
-    if (!node->base.type || node->base.type->kind != PSX_TYPE_ARRAY) {
-      node->base.type = NULL;
-      node->base.type = type_from_legacy_node_mem(node, 1, 0);
-    }
   }
   if (node->base.type && node->base.type->kind == PSX_TYPE_ARRAY)
     node->is_pointer = 1;
@@ -7524,7 +7574,9 @@ node_t *psx_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
       (!canonical_subscript_type ||
        canonical_subscript_type->kind != PSX_TYPE_ARRAY);
   if (vla_intermediate_row) {
-    deref->base.type = type_from_legacy_node_mem(deref, 1, 1);
+    deref->base.type = psx_type_new_runtime_vla_row_view(
+        base_type, deref->type_size, deref->deref_size,
+        deref->vla_row_stride_frame_off, deref->vla_strides_remaining);
     deref_type_is_canonical = deref->base.type != NULL;
   }
 
@@ -7682,8 +7734,6 @@ node_t *psx_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
       (void)sync_unary_deref_mem_from_scalar_type(deref,
                                                   canonical_subscript_type);
     }
-  } else if (!subscript_is_intermediate_row && !deref_type_is_canonical) {
-    deref->base.type = type_from_legacy_node_mem(deref, 0, 0);
   }
   return (node_t *)deref;
 }

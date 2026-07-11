@@ -102,6 +102,34 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
   return type;
 }
 
+psx_type_t *psx_type_new_runtime_vla_row_view(
+    const psx_type_t *source, int row_size, int elem_size,
+    int row_stride_frame_off, int strides_remaining) {
+  if (!source) return NULL;
+  const psx_type_t *element = source;
+  if (source->kind == PSX_TYPE_POINTER && source->base)
+    element = source->base;
+  if (element->kind == PSX_TYPE_ARRAY) return (psx_type_t *)element;
+  if (elem_size <= 0) elem_size = psx_type_sizeof(element);
+  if (elem_size <= 0) elem_size = psx_type_deref_size(element);
+  if (elem_size <= 0) return NULL;
+  if (row_size < elem_size) row_size = elem_size;
+  int array_len = row_size / elem_size;
+  if (array_len <= 0) array_len = 1;
+
+  psx_type_t *row = psx_type_new_array((psx_type_t *)element, array_len,
+                                       row_size, elem_size, 1);
+  row->base_deref_size = source->base_deref_size > 0
+                             ? source->base_deref_size
+                             : elem_size;
+  row->outer_stride = elem_size;
+  row->pointee_fp_kind = source->pointee_fp_kind;
+  row->funcptr_sig = psx_decl_funcptr_sig_clone(source->funcptr_sig);
+  row->vla_row_stride_frame_off = row_stride_frame_off;
+  row->vla_strides_remaining = strides_remaining;
+  return row;
+}
+
 psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind) {
   switch (tag_kind) {
     case TK_STRUCT: return PSX_TYPE_STRUCT;

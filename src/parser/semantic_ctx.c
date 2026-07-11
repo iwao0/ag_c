@@ -831,6 +831,70 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
   }
 }
 
+static psx_type_t *ctx_tag_member_build_type_from_legacy_desc(
+    const tag_member_info_t *desc) {
+  if (!desc) return NULL;
+  int is_pointer = desc->is_tag_pointer || desc->pointer_qual_levels > 0 ||
+                   psx_decl_funcptr_sig_has_payload(
+                       psx_ctx_tag_member_funcptr_sig(desc));
+  int scalar_size = desc->deref_size > 0 ? desc->deref_size : desc->type_size;
+  if (scalar_size <= 0) scalar_size = desc->is_bool ? 1 : 4;
+
+  psx_type_t *type = NULL;
+  if (psx_ctx_is_tag_aggregate_kind(desc->tag_kind)) {
+    type = ctx_type_new_tag_persistent(desc->tag_kind, desc->tag_name,
+                                       desc->tag_len, 0, scalar_size);
+  } else if (desc->fp_kind != TK_FLOAT_KIND_NONE) {
+    type = ctx_type_new_float_persistent(desc->fp_kind, scalar_size);
+  } else {
+    type = ctx_type_new_integer_persistent(
+        desc->is_bool ? TK_BOOL : TK_INT, scalar_size, desc->is_unsigned);
+  }
+  if (!type) return NULL;
+
+  if (is_pointer) {
+    int levels = desc->pointer_qual_levels > 0
+                     ? desc->pointer_qual_levels
+                     : 1;
+    int base_deref_size = psx_type_sizeof(type);
+    if (base_deref_size <= 0) base_deref_size = scalar_size;
+    for (int level = 1; level <= levels; level++) {
+      int deref_size = level == 1 ? base_deref_size : 8;
+      if (level == levels && desc->deref_size > 0)
+        deref_size = desc->deref_size;
+      psx_type_t *ptr = ctx_type_new_pointer_persistent(type, deref_size);
+      if (!ptr) return type;
+      ptr->pointer_qual_levels = level;
+      ptr->base_deref_size = base_deref_size;
+      type = ptr;
+    }
+  }
+
+  int dims[8] = {0};
+  int ndim = desc->arr_ndim;
+  if (ndim < 0) ndim = 0;
+  if (ndim > 8) ndim = 8;
+  for (int i = 0; i < ndim; i++) dims[i] = desc->arr_dims[i];
+  if (ndim <= 0 && desc->array_len > 0) {
+    dims[0] = desc->array_len;
+    ndim = 1;
+  }
+  if (ndim > 0 && !(is_pointer && desc->ptr_array_pointee_bytes > 0)) {
+    int elem_size = psx_type_sizeof(type);
+    if (elem_size <= 0) elem_size = is_pointer ? 8 : scalar_size;
+    psx_type_t *array = ctx_type_build_array_dims(type, dims, ndim, elem_size);
+    if (array) type = array;
+  }
+
+  type->funcptr_sig =
+      psx_decl_funcptr_sig_clone(psx_ctx_tag_member_funcptr_sig(desc));
+  if (desc->outer_stride > 0) type->outer_stride = desc->outer_stride;
+  if (desc->mid_stride > 0) type->mid_stride = desc->mid_stride;
+  if (desc->ptr_array_pointee_bytes > 0)
+    type->ptr_array_pointee_bytes = desc->ptr_array_pointee_bytes;
+  return type;
+}
+
 static void tag_member_record_sync_cache_from_type(tag_member_t *m) {
   psx_type_t *decl_type = tag_member_record_decl_type_mut(m);
   if (!m || !decl_type) return;
@@ -905,8 +969,10 @@ static void tag_member_record_apply_desc(tag_member_t *m,
   m->arr_ndim = desc->arr_ndim;
   m->ptr_array_pointee_bytes = desc->ptr_array_pointee_bytes;
   tag_member_record_set_funcptr_sig(m, psx_ctx_tag_member_funcptr_sig(desc));
+  const psx_type_t *desc_type = psx_tag_member_decl_type(desc);
   tag_member_record_set_decl_type(
-      m, ctx_type_clone_persistent(psx_tag_member_decl_type(desc)));
+      m, desc_type ? ctx_type_clone_persistent(desc_type)
+                   : ctx_tag_member_build_type_from_legacy_desc(desc));
   tag_member_record_sync_type_from_storage(m);
   tag_member_record_sync_cache_from_type(m);
 }
