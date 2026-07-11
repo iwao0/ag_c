@@ -2602,8 +2602,7 @@ static node_t *apply_cast(token_kind_t type_kind, int is_pointer, node_t *operan
     /* `(int *)void_p` などポインタ型キャスト: 元の operand に pointee_is_void
      * が立っている場合、後続 deref エラーを誤発生させないよう ND_CAST で
      * ラップして pointee_is_void をクリアする。 */
-    if (is_pointer && operand->kind == ND_LVAR &&
-        ((node_lvar_t *)operand)->mem.pointee_is_void) {
+    if (is_pointer && psx_node_pointee_is_void(operand)) {
       /* キャスト先のポインタ要素サイズを反映する。これがないと `((int*)void_p)[i]` が
        * 既定の 8 バイトストライドで添字され誤った要素を読む。base_deref_size は立てない
        * (立てると「要素自体がポインタ」扱いになり subscript 結果が誤ってポインタ化する)。 */

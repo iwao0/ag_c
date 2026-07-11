@@ -1518,10 +1518,15 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
   lvar_t src_var = {0};
   src_var.offset = src->offset;
   src_var.decl_type = psx_node_get_type((node_t *)src);
-  src_var.tag_kind = src->mem.tag_kind;
-  src_var.tag_name = src->mem.tag_name;
-  src_var.tag_len = src->mem.tag_len;
-  src_var.is_tag_pointer = src->mem.is_tag_pointer;
+  if (src_var.decl_type) {
+    src_var.tag_kind = src_var.decl_type->tag_kind;
+    src_var.tag_name = src_var.decl_type->tag_name;
+    src_var.tag_len = src_var.decl_type->tag_len;
+    src_var.is_tag_pointer =
+        src_var.decl_type->kind == PSX_TYPE_POINTER &&
+        src_var.decl_type->base &&
+        psx_type_is_tag_aggregate(src_var.decl_type->base);
+  }
 
   node_t *init_chain = NULL;
   int ordinal = 0;

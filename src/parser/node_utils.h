@@ -41,10 +41,6 @@ void psx_gvar_init_slot_write_fp_sentinel(struct global_var_t *gv, int idx,
 void psx_gvar_init_slot_set_ordinal(struct global_var_t *gv, int idx, int ordinal);
 int psx_node_base_deref_size(node_t *node);
 int psx_node_ptr_array_pointee_bytes(node_t *node);
-void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const struct global_var_t *gv);
-void psx_node_init_gvar_array_base_metadata(node_mem_t *mem, const struct global_var_t *gv);
-void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const struct lvar_t *var,
-                                                  int type_size);
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);

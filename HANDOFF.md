@@ -1,8 +1,138 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1044: production dereference node から型mirror領域を除去した）
+最終更新: 2026-07-11（続き1048: local symbol node の型mirror撤去に着手した）
 
 ## 現状
+- 続き1048: **local symbol node をplain storage identityへ移行中。中間checkpoint。**
+
+  `node_lvar_t`の先頭を`node_mem_t`からplain `node_t`へ変更し、local variable、parameter、
+  array element、member referenceのconstructorが宣言型または派生型を`node_t::type`へ直接設定する
+  構造へ移した。`offset`と`var`はstorage identityとして残し、型size、pointee属性、
+  qualifier、function signatureはcanonical `psx_type_t`から取得する。global symbolのplain化、
+  production dereferenceのplain化、pointer cast/member copyのraw read除去も同じ差分に含む。
+
+  production sourceとparser test binaryのビルドは通る。ただしparser testにはまだ
+  `node_lvar_t`を`node_mem_t`として読むlegacy assertionが残っており、実行は最初の残存箇所で
+  失敗する。これはcanonical accessorの動作不良ではなく、廃止したraw mirrorを検査する
+  テストの移行未完了による。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **fail: `test/test_parser.c:3228`**
+  - `git diff --check` = **pass**
+
+  次は残る`as_mem(local_node)` assertion/mutationをcanonical type/accessorの検査へ移行する。
+  parser testが通った後、`ND_LVAR`を`legacy_node_mem_view()`、raw size fallback、
+  `psx_node_materialize_type()`のraw経路から外し、未使用になったlvar mirror helperを削除する。
+
+- 続き1047: **global symbol node から型mirror payloadを除去した**。
+
+  `node_gvar_t`の全利用を監査した。IR/parser/semantic passが必要としていたstorage identityは
+  `name`、`name_len`、`is_thread_local`だけで、型size/tag/pointee/stride/function signatureの
+  raw payloadを直接読むproduction codeはなかった。
+
+  `node_gvar_t`を`node_mem_t + name`からplain `node_t + name`へ変更した。
+  global、global array base、static-local backingの3 constructorは、それぞれ
+  `psx_gvar_get_decl_type()`またはbacking/lvar canonical declaration typeを`node_t::type`へ直接設定する。
+  cloneも`node_gvar_t`の実サイズで行い、storage identityを保ったまま`node_t::lhs`だけを差し替える。
+
+  `ND_GVAR`を`legacy_node_mem_view()`、raw size fallback、raw unsigned mutationから外したため、
+  canonical typeを消したglobal nodeが`node_mem_t`として再解釈される経路もない。テストはraw mirrorの
+  field一致ではなく、canonical type、tag、pointee、function signature accessorを検証する形へ移行した。
+
+  productionから不要になった`psx_node_init_gvar_ref_metadata()`、
+  `psx_node_init_gvar_array_base_metadata()`、`psx_node_init_static_local_gvar_ref_metadata()`と、
+  global sidecarをraw node mirrorへ同期するhelperを削除した。global symbolの型情報は宣言側
+  `psx_type_t`だけが正本になった。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `node_gvar_t::mem`参照 / 旧gvar metadata API検索 = **0件**
+  - `git diff --check` = **pass**
+
+  次は`node_lvar_t`の`offset`/`var` storage identityと型mirrorを分離する。local member/array slotの
+  expression-local bitfield stateを`node_t::type_state`へ残し、宣言型・派生要素型を直接設定できる
+  constructorから順にplain symbol nodeへ移す。事前監査でproduction側の
+  `node_lvar_t::mem`直接readはpointer cast時の`pointee_is_void`判定1件だけだったため、既に
+  `psx_node_pointee_is_void()`へ置換した。残る直接参照はconstructor内のmirror生成と
+  raw互換テストに限定されている。
+
+- 続き1046: **production subscript の raw workspace 依存を除去した**。
+
+  続き1045で固定長arrayまでcanonical direct pathへ移した後、pointer要素配列、function-return
+  array、VLAを順に同じpathへ統合した。pointer要素型とreturn array shapeは既に
+  `type_from_subscript_base_type()`がcanonical typeから復元できるため、
+  `ptr_array_pointee_bytes`やfuncptr sidecarによる結果型選択を削除した。
+
+  VLAは`type_from_vla_subscript_result()`が次のdescriptor frame offsetとremaining countを
+  canonical result typeへ直接設定する。descriptorを消費し終えた固定内側配列も、その
+  canonical array typeを保持する。base-address provenanceと消費後strideだけを
+  `psx_expr_type_state_t`へ保存し、raw VLA mirrorを経由しない。
+
+  canonical subscript typeを作れない場合は`type_from_deref_operand()`を共通fallbackとし、
+  canonical base typeを持つ全subscriptがplain `node_t`を直接生成するようにした。typed baseで
+  型導出に失敗してもrawへfallbackせずplain unresolved nodeを返す構造ガードを置いた。
+  `node_mem_t` workspaceは`new_legacy_unary_deref()`と`new_legacy_subscript_deref()`という
+  raw-only input bridgeに限定された。
+
+  監査中、`psx_node_clone_lvalue_with_lhs()`がtyped plain `ND_DEREF`を`node_mem_t`としてコピーし、
+  node末尾を越えて読む未定義動作も見つかった。cloneを`ND_LVAR`/`ND_GVAR`/`ND_STRING`/
+  `ND_DEREF`の実構造ごとに分け、typed dereferenceはplain `node_t`として複製するよう修正した。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - production dereference resultへの`node_mem_t*` cast検索 = **0件**
+  - `git diff --check` = **pass**
+
+  次は`ND_LVAR`/`ND_GVAR` symbol referenceに同居するstorage identityと型mirrorを分離する。
+  まずclone/accessor/codegenが実際に必要とするstorage payloadを分類し、canonical typeがある
+  symbol nodeでraw readerへ逆流しない現在の境界を、専用symbol node構造へ反映する。
+
+- 続き1045: **tag/unary dereference の production 型生成を raw workspace から分離した**。
+
+  production `ND_DEREF`をplain nodeへした後も、テストにplain nodeを`node_mem_t*`へcastして
+  raw fieldを読み書きする箇所が残っていた。subscript/unary/tag-member dereferenceの結果を
+  raw payloadとして扱う宣言・mutation・zero assertionを全件除去し、canonical type、size、
+  stride、function-pointer accessorの検証へ移行した。symbol referenceのlegacy sidecar汚染
+  regressionは、専用payloadを持つ移行対象として残している。
+
+  tag-member dereferenceはmember canonical type、owner qualifier、bitfield state、
+  scalar-pointer provenanceをplain `node_t`へ直接構築するよう変更した。従来は大量のraw mirrorを
+  stack workspaceへ同期した後、その大半を捨てて`node_t`部分だけを返していたため、その経路と
+  `sync_tag_member_mem_from_decl_type()`依存をproduction dereferenceから完全に削除した。
+
+  unary dereferenceは`type_from_deref_operand()`がcanonical result typeを作れる場合、plain nodeを
+  直接返す。多次元array lvalueで現在の1段を消費した後のstride列だけは型そのものではなく
+  expression-local stateなので、`init_unary_deref_expr_state()`がoperandのstride列を1段shiftして
+  `psx_expr_type_state_t`へ格納する。raw-only fixture向けの旧処理は
+  `new_legacy_unary_deref()`へ隔離した。
+
+  subscriptもstride/VLAを持たないcanonical `pointer -> T`については、結果型を`T`から直接作る
+  plain-node pathへ移した。pointer-to-array、多次元stride、VLA rowなど式ローカルshape stateが
+  必要な経路だけを`new_shaped_subscript_deref()`へ隔離した。現在`node_mem_t` workspaceが残るのは
+  raw-only unary bridgeと、このshaped subscript bridgeの2境界だけである。
+
+  続いて固定長のpointer-to-array/多次元array subscriptも、
+  `type_from_subscript_base_type()`のcanonical result typeを直接採用するpathへ移した。
+  結果がarray lvalueの場合だけ`init_subscript_expr_state()`がbase-address provenanceと、現在の
+  次元を消費した後のstride列を`psx_expr_type_state_t`へ保存する。これにより通常scalar/pointerと
+  固定長array subscriptはworkspaceを通らず、shaped bridgeはVLA、pointer要素配列、
+  function return arrayなど補助shape情報を要する経路へ限定された。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - production dereference resultへの`node_mem_t*` cast検索 = **0件**
+  - `git diff --check` = **pass**
+
+  次は`new_shaped_subscript_deref()`に残るVLA/pointer-element/function-return-array処理を、
+  canonical result type builderとsubscript-local state builderへ分離する。その後、raw-only unary
+  bridgeを呼ぶproduction経路がないことを確認し、symbol reference/storage identityの
+  専用構造化へ進む。
+
 - 続き1044: **production dereference node から型mirror領域を除去した**。
 
   `ND_DEREF`のtag member、unary dereference、subscript constructorを分類し、arena上の

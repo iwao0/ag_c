@@ -237,7 +237,7 @@ struct node_num_t {
 // ローカル変数ノード
 typedef struct node_lvar_t node_lvar_t;
 struct node_lvar_t {
-  node_mem_t mem;
+  node_t base;
   int offset;       // フレームオフセット
   struct lvar_t *var; // 宣言元シンボル。semantic pass の symbol identity 判定に使う。
 };
@@ -322,7 +322,7 @@ struct node_jump_t {
 // グローバル変数参照ノード
 typedef struct node_gvar_t node_gvar_t;
 struct node_gvar_t {
-  node_mem_t mem;  // type_size, deref_size, tag info
+  node_t base;
   char *name;
   int name_len;
   unsigned int is_thread_local : 1;
