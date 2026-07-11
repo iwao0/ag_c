@@ -45,15 +45,6 @@ void psx_node_init_gvar_ref_metadata(node_mem_t *mem, const struct global_var_t 
 void psx_node_init_gvar_array_base_metadata(node_mem_t *mem, const struct global_var_t *gv);
 void psx_node_init_static_local_gvar_ref_metadata(node_mem_t *mem, const struct lvar_t *var,
                                                   int type_size);
-void psx_node_init_lvar_array_addr_metadata(node_mem_t *addr, const struct lvar_t *var,
-                                            int is_tag_pointer);
-void psx_node_init_gvar_array_addr_metadata(node_mem_t *addr, const struct global_var_t *gv);
-void psx_node_init_compound_lvar_array_addr_metadata(node_mem_t *addr, const struct lvar_t *var,
-                                                     token_kind_t tag_kind, char *tag_name,
-                                                     int tag_len, int array_size);
-void psx_node_init_compound_gvar_array_addr_metadata(node_mem_t *addr, const struct global_var_t *gv,
-                                                     int ptr_array_pointee_bytes,
-                                                     int pointer_elem_size, int array_size);
 unsigned int psx_node_pointer_const_qual_mask(node_t *node);
 unsigned int psx_node_pointer_volatile_qual_mask(node_t *node);
 int psx_node_pointee_is_unsigned(node_t *node);
@@ -159,7 +150,7 @@ node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);
 struct lvar_t *psx_node_lvar_symbol(node_t *node);
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs);
-node_mem_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
+node_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
 
 void psx_node_reject_const_assign(node_t *node, const char *op);
 void psx_node_reject_const_qual_discard(node_t *lhs, node_t *rhs);

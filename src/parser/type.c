@@ -109,7 +109,13 @@ psx_type_t *psx_type_new_runtime_vla_row_view(
   const psx_type_t *element = source;
   if (source->kind == PSX_TYPE_POINTER && source->base)
     element = source->base;
-  if (element->kind == PSX_TYPE_ARRAY) return (psx_type_t *)element;
+  if (element->kind == PSX_TYPE_ARRAY) {
+    psx_type_t *row = psx_type_new(PSX_TYPE_ARRAY);
+    *row = *element;
+    row->vla_row_stride_frame_off = row_stride_frame_off;
+    row->vla_strides_remaining = strides_remaining;
+    return row;
+  }
   if (elem_size <= 0) elem_size = psx_type_sizeof(element);
   if (elem_size <= 0) elem_size = psx_type_deref_size(element);
   if (elem_size <= 0) return NULL;

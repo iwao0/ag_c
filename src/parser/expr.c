@@ -1214,7 +1214,7 @@ static node_t *materialize_struct_rvalue_funcall(node_t *base,
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
   psx_decl_set_var_tag(var, base_tag_kind, base_tag_name, base_tag_len, 0);
   node_t *lhs_obj = psx_node_new_lvar_expr_ref_for(var, 0);
-  node_mem_t *assign_node = psx_node_new_assign(lhs_obj, base);
+  node_t *assign_node = psx_node_new_assign(lhs_obj, base);
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, psx_node_new_lvar_expr_ref_for(var, 0));
 }
 
@@ -1230,11 +1230,9 @@ static node_t *materialize_struct_rvalue_ternary(node_t *base,
   lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), obj_size, obj_size, 0);
   psx_decl_set_var_tag(var, base_tag_kind, base_tag_name, base_tag_len, 0);
   node_t *lhs_then = psx_node_new_lvar_expr_ref_for(var, 0);
-  node_mem_t *assign_then = psx_node_new_assign(lhs_then, tern->base.rhs);
-  assign_then->type_size = obj_size;
+  node_t *assign_then = psx_node_new_assign(lhs_then, tern->base.rhs);
   node_t *lhs_else = psx_node_new_lvar_expr_ref_for(var, 0);
-  node_mem_t *assign_else = psx_node_new_assign(lhs_else, tern->els);
-  assign_else->type_size = obj_size;
+  node_t *assign_else = psx_node_new_assign(lhs_else, tern->els);
   node_ctrl_t *select = arena_alloc(sizeof(node_ctrl_t));
   select->base.kind = ND_TERNARY;
   select->base.lhs = tern->base.lhs;
@@ -2068,7 +2066,7 @@ static node_t *lower_union_value_cast(node_t *operand,
   }
 
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
-  node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
+  node_t *assign_node = psx_node_new_assign(lhs, operand);
 
   node_t *ref = psx_node_new_lvar_expr_ref_for(var, 0);
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
@@ -2092,7 +2090,7 @@ static node_t *lower_struct_value_cast(node_t *operand,
   }
 
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
-  node_mem_t *assign_node = psx_node_new_assign(lhs, operand);
+  node_t *assign_node = psx_node_new_assign(lhs, operand);
 
   node_t *ref = psx_node_new_lvar_expr_ref_for(var, 0);
   return psx_node_new_binary(ND_COMMA, (node_t *)assign_node, ref);
@@ -2801,7 +2799,7 @@ static node_t *hoist_compound_assign_lvalue(node_t *target, node_t **prefix_io) 
   char *tmp_name = new_compound_lit_name();
   lvar_t *t = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name), 8, 8, 0);
   /* t = &target (アドレスを一度だけ評価) */
-  node_mem_t *t_assign = psx_node_new_assign(psx_node_new_lvar_expr_ref_for(t, 1), addr);
+  node_t *t_assign = psx_node_new_assign(psx_node_new_lvar_expr_ref_for(t, 1), addr);
   /* target のメタ情報を複製し、アドレス部だけ副作用のない temp 参照へ差し替える。 */
   node_t *via = psx_node_clone_lvalue_with_lhs(target, psx_node_new_lvar_expr_ref_for(t, 1));
   if (*prefix_io)
@@ -2839,8 +2837,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       set_curtok(curtok()->next);
       node_t *rhs = assign_ctx(ctx);
       psx_node_reject_const_qual_discard(assign_target, rhs);
-      node_mem_t *assign_node = psx_node_new_assign(assign_target, rhs);
-      assign_node->base.is_source_assignment = 1;
+      node_t *assign_node = psx_node_new_assign(assign_target, rhs);
+      assign_node->is_source_assignment = 1;
       node = (node_t *)assign_node;
       if (lhs_prefix) node = psx_node_new_binary(ND_COMMA, lhs_prefix, node);
       break;

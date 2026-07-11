@@ -1358,7 +1358,7 @@ static node_t *build_byte_copy_chain(int dst_base_off, int src_base_off, int siz
   for (int i = 0; i < size; i++) {
     node_t *lhs = new_byte_lvar_at(dst_base_off + i);
     node_t *rhs = new_byte_lvar_at(src_base_off + i);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+    node_t *assign_node = psx_node_new_assign(lhs, rhs);
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1514,10 +1514,6 @@ static int is_compatible_tag_object_lvar(node_lvar_t *src, lvar_t *var) {
   return is_compatible_tag_object_node((node_t *)src, var);
 }
 
-static int is_compatible_tag_object_mem(node_mem_t *src, lvar_t *var) {
-  return is_compatible_tag_object_node((node_t *)src, var);
-}
-
 static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src) {
   lvar_t src_var = {0};
   src_var.offset = src->offset;
@@ -1541,7 +1537,7 @@ static node_t *build_struct_copy_chain_from_source(lvar_t *dst, node_lvar_t *src
         is_supported_scalar_store_size(value_size)) {
       node_t *lhs = psx_node_new_tag_member_lvar_ref_for(dst, info.offset, &info);
       node_t *rhs_member = psx_node_new_tag_member_lvar_ref_for(&src_var, info.offset, &info);
-      node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_member);
+      node_t *assign_node = psx_node_new_assign(lhs, rhs_member);
       node_t *init_node = (node_t *)assign_node;
       if (!init_chain) init_chain = init_node;
       else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1566,7 +1562,7 @@ static node_t *try_parse_array_member_copy_initializer(int dst_base_off, int ele
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
     int src_elem_off = src->offset + idx * src->elem_size;
     node_t *rhs = psx_node_new_lvar_typed(src_elem_off, elem_size);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+    node_t *assign_node = psx_node_new_assign(lhs, rhs);
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1596,7 +1592,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
      * 1 文字にデコードしてから配列に格納する。 */
     uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &src_pos);
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)cp));
+    node_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num((unsigned char)cp));
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1604,7 +1600,7 @@ static node_t *try_parse_array_member_string_initializer(int dst_base_off, int e
   }
   if (idx < array_len) {
     node_t *lhs = new_array_elem_lvar_at(dst_base_off, elem_size, idx);
-    node_mem_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
+    node_t *assign_node = psx_node_new_assign(lhs, psx_node_new_num(0));
     node_t *init_node = (node_t *)assign_node;
     if (!init_chain) init_chain = init_node;
     else init_chain = psx_node_new_binary(ND_COMMA, init_chain, init_node);
@@ -1634,7 +1630,7 @@ static node_t *parse_array_init_chunk(lvar_t *var, int *init_elem_count, bool *a
 // type_size と fp_kind は var の要素型から複製する。
 static node_t *build_array_elem_assign(lvar_t *var, int idx, node_t *value) {
   node_t *lhs = new_array_elem_lvar(var, idx);
-  node_mem_t *assign_node = psx_node_new_assign(lhs, value);
+  node_t *assign_node = psx_node_new_assign(lhs, value);
   return (node_t *)assign_node;
 }
 
@@ -2029,7 +2025,7 @@ static node_t *parse_array_initializer(lvar_t *var) {
       node_t *dst = new_array_elem_lvar_at(var->offset, elem_size, i);
       node_t *src_node = psx_node_new_lvar_typed_at_for(src->var, src->offset + i * elem_size,
                                                         elem_size);
-      node_mem_t *assign = psx_node_new_assign(dst, src_node);
+      node_t *assign = psx_node_new_assign(dst, src_node);
       init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     }
     return init_chain;
@@ -2049,11 +2045,11 @@ static node_t *parse_array_initializer(lvar_t *var) {
 
 /* 配列メンバの 1 要素代入を構築する。_Bool と float/double の型 metadata 伝播
  * (float 配列メンバ `float v[4]` の要素 store を fp store にする) をまとめて行う。 */
-static node_mem_t *build_member_array_elem_assign_at(int base_offset, int elem_size, int idx,
+static node_t *build_member_array_elem_assign_at(int base_offset, int elem_size, int idx,
                                                      node_t *value, tk_float_kind_t fp_kind,
                                                      int is_bool) {
   node_t *lhs = new_array_elem_lvar_scalar_at(base_offset, elem_size, idx, fp_kind, is_bool);
-  node_mem_t *an = psx_node_new_assign(lhs, value);
+  node_t *an = psx_node_new_assign(lhs, value);
   return an;
 }
 
@@ -2148,7 +2144,7 @@ static node_t *parse_scalar_array_member_brace_body(lvar_t *owner, int member_of
         psx_diag_ctx(curtok(), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
-      node_mem_t *assign_node = build_member_array_elem_assign_at(
+      node_t *assign_node = build_member_array_elem_assign_at(
           owner->offset + member_offset, elem_size, target_idx,
           parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
       init_chain = append_to_init_chain(init_chain, (node_t *)assign_node);
@@ -2229,7 +2225,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
           if (_lit) {                                                                              \
             while (_sp < _lit->len && _j < inner_len && flat + _j < array_len) {                   \
               uint32_t _cp = tk_next_narrow_string_code_unit(_lit->str, _lit->len, &_sp);          \
-              node_mem_t *_an = build_member_array_elem_assign_at(                                 \
+              node_t *_an = build_member_array_elem_assign_at(                                 \
                   owner->offset + member_offset, elem_size, flat + _j,                             \
                   psx_node_new_num((int)_cp), member_fp_kind, member_is_bool);                     \
               if (!init_chain) init_chain = (node_t *)_an;                                         \
@@ -2303,7 +2299,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
                     continue;
                   }
                   if (k < inner_len && flat < array_len) {
-                    node_mem_t *an = build_member_array_elem_assign_at(
+                    node_t *an = build_member_array_elem_assign_at(
                         owner->offset + member_offset, elem_size, flat, val,
                         member_fp_kind, member_is_bool);
                     if (!init_chain) init_chain = (node_t *)an;
@@ -2323,7 +2319,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
               if (elem_size == 1 && val && val->kind == ND_STRING) {
                 EMIT_ROW_FROM_STRING(val);
               } else if (flat < array_len) {
-                node_mem_t *an = build_member_array_elem_assign_at(
+                node_t *an = build_member_array_elem_assign_at(
                     owner->offset + member_offset, elem_size, flat, val,
                     member_fp_kind, member_is_bool);
                 if (!init_chain) init_chain = (node_t *)an;
@@ -2368,7 +2364,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
               init_node = parse_tag_object_initializer(&nested);
             }
           } else {
-            node_mem_t *assign_node = build_member_array_elem_assign_at(
+            node_t *assign_node = build_member_array_elem_assign_at(
                 owner->offset + member_offset, elem_size, target_idx,
                 parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
             init_node = (node_t *)assign_node;
@@ -2427,7 +2423,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
       node_t *array_copy = try_parse_array_member_copy_initializer(owner->offset + member_offset, elem_size, array_len);
       if (array_copy) return array_copy;
       if (consume_terminal_zero_initializer()) return psx_node_new_num(0);
-      node_mem_t *assign0 = build_member_array_elem_assign_at(
+      node_t *assign0 = build_member_array_elem_assign_at(
           owner->offset + member_offset, elem_size, 0,
           parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
       init_chain = (node_t *)assign0;
@@ -2436,7 +2432,7 @@ static node_t *parse_member_initializer_raw(lvar_t *owner, int member_offset, in
          * 終了し、comma は親の初期化子ループが消費する (`{1,2,.a={3,4}}` で a を
          * 途中まで埋めてから .a で上書きするケース)。 */
         if (!elision_consume_separator()) break;
-        node_mem_t *assign_node = build_member_array_elem_assign_at(
+        node_t *assign_node = build_member_array_elem_assign_at(
             owner->offset + member_offset, elem_size, idx,
             parse_scalar_brace_initializer(), member_fp_kind, member_is_bool);
         init_chain = psx_node_new_binary(ND_COMMA, init_chain, (node_t *)assign_node);
@@ -2499,7 +2495,7 @@ static node_t *emit_string_row_assigns(lvar_t *owner, int member_offset, int row
   int j = 0, sp = 0;
   while (sp < lit->len && j < row_w && *flat + j < array_len) {
     uint32_t cp = tk_next_narrow_string_code_unit(lit->str, lit->len, &sp);
-    node_mem_t *an = build_member_array_elem_assign_at(
+    node_t *an = build_member_array_elem_assign_at(
         owner->offset + member_offset, 1, *flat + j, psx_node_new_num((int)cp),
         fp_kind, is_bool);
     init_chain = init_chain
@@ -2600,7 +2596,7 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
               continue;
             }
             if (k < row_w && *flat + k < array_len) {
-              node_mem_t *an = build_member_array_elem_assign_at(
+              node_t *an = build_member_array_elem_assign_at(
                   owner->offset + member_offset, 1, *flat + k, val,
                   member_fp_kind, member_is_bool);
               init_chain = init_chain
@@ -2633,7 +2629,7 @@ static node_t *parse_multidim_char_member_brace(lvar_t *owner, int member_offset
       /* 全 brace 省略の scalar 要素 (`{1,2,3,4,...}`)。1 要素 1 バイトずつ書く。 */
       node_t *val = parse_scalar_brace_initializer();
       if (*flat < array_len) {
-        node_mem_t *an = build_member_array_elem_assign_at(
+        node_t *an = build_member_array_elem_assign_at(
             owner->offset + member_offset, 1, *flat, val,
             member_fp_kind, member_is_bool);
         init_chain = init_chain
@@ -2743,7 +2739,7 @@ static node_t *build_nested_array_designator_assign(lvar_t *var,
   node_t *val = parse_scalar_brace_initializer();
   tk_float_kind_t fp_kind =
       (info && !info->is_tag_pointer) ? psx_tag_member_decl_fp_kind(info) : TK_FLOAT_KIND_NONE;
-  node_mem_t *assign_node = build_member_array_elem_assign_at(
+  node_t *assign_node = build_member_array_elem_assign_at(
       var->offset + info->offset, psx_tag_member_decl_value_size(info), nested_idx,
       val, fp_kind, psx_tag_member_decl_is_bool(info));
   return (node_t *)assign_node;
@@ -2765,7 +2761,7 @@ static node_t *wrap_member_init_as_assign(lvar_t *var,
     return member_init;
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info->offset, info);
-  node_mem_t *assign_node = psx_node_new_assign(lhs, member_init);
+  node_t *assign_node = psx_node_new_assign(lhs, member_init);
   return (node_t *)assign_node;
 }
 
@@ -2909,7 +2905,7 @@ static node_t *consume_nested_designator_and_build_assign(lvar_t *var, tag_membe
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, cumulative_offset, &cur_info);
   node_t *rhs_val = parse_scalar_brace_initializer();
-  node_mem_t *assign_node = psx_node_new_assign(lhs, rhs_val);
+  node_t *assign_node = psx_node_new_assign(lhs, rhs_val);
   return (node_t *)assign_node;
 }
 
@@ -2959,25 +2955,25 @@ static node_t *append_struct_zero_fill_chain(lvar_t *var, node_t *init_chain) {
   int off = 0;
   while (off + 8 <= total) {
     node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 8);
-    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    node_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 8;
   }
   while (off + 4 <= total) {
     node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 4);
-    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    node_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 4;
   }
   while (off + 2 <= total) {
     node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 2);
-    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    node_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 2;
   }
   while (off + 1 <= total) {
     node_t *lhs = psx_node_new_lvar_typed_at_for(var, var->offset + off, 1);
-    node_mem_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
+    node_t *assign = psx_node_new_assign(lhs, psx_node_new_num(0));
     init_chain = append_to_init_chain(init_chain, (node_t *)assign);
     off += 1;
   }
@@ -3127,19 +3123,19 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
      * ND_ASSIGN でコピーする (代入文 `t = g` と同じ memcpy 経路)。node_gvar_t は
      * node_lvar_t と同じく先頭が node_mem_t なので互換判定を共用できる。 */
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_DEREF &&
-             is_compatible_tag_object_mem((node_mem_t *)value, var)) {
+             is_compatible_tag_object_node(value, var)) {
     /* `va_arg(ap, struct S)` expands to `*(struct S *)...`: a same-type
      * struct lvalue that can be copied as a whole. */
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_CAST &&
              is_compatible_tag_object_node(value, var)) {
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (value && value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
@@ -3155,7 +3151,7 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
        * materialize_aggregate_expr_to が各分岐を dst へ materialize する。 */
       if (object_size <= 8 || ps_node_type_size(value) == object_size) {
         node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-        node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+        node_t *assign_node = psx_node_new_assign(lhs_var, value);
         return (node_t *)assign_node;
       }
       psx_diag_ctx(curtok(), "decl", "%s",
@@ -3174,22 +3170,17 @@ static node_t *build_struct_copy_from_value(lvar_t *var, node_t *value) {
     /* ≤8B struct: 関数呼び出し結果や `*ptr` deref の非 lvar 値を
      * 1 ワード assign でコピー初期化する。 */
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    if (value->kind == ND_DEREF) {
-      /* ND_DEREF の type_size を struct サイズに揃えて、codegen が
-       * struct 全体を 1 ワードで load するようにする。 */
-      ((node_mem_t *)value)->type_size = object_size;
-    }
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (object_size > 8 && object_size <= 16 && value && value->kind == ND_FUNCALL) {
     // 9-16B struct: 関数呼び出し結果を x0/x1 ペアで受け取り、2ワード代入で初期化
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   } else if (object_size > 16 && value && value->kind == ND_FUNCALL) {
     // >16B struct: indirect return (x8) 経由で呼び出し先が直接代入先に書き込む
     node_t *lhs_var = psx_node_new_lvar_object_ref_for(var);
-    node_mem_t *assign_node = psx_node_new_assign(lhs_var, value);
+    node_t *assign_node = psx_node_new_assign(lhs_var, value);
     init_chain = (node_t *)assign_node;
   }
   return init_chain;  // 互換型でなければ NULL
@@ -3275,7 +3266,7 @@ static node_t *parse_struct_member_no_brace(lvar_t *nested) {
   int ordinal = 0;
   if (!tag_get_next_named_member(nested, &ordinal, &info) || info.len <= 0) return first;
   node_t *lhs0 = psx_node_new_tag_member_lvar_ref_for(nested, info.offset, &info);
-  node_mem_t *a0 = psx_node_new_assign(lhs0, first);
+  node_t *a0 = psx_node_new_assign(lhs0, first);
   node_t *chain = prefix ? psx_node_new_binary(ND_COMMA, prefix, (node_t *)a0) : (node_t *)a0;
   while (ordinal < member_count) {
     if (!elision_consume_separator()) break;
@@ -3313,7 +3304,7 @@ static node_t *parse_union_initializer_no_brace(lvar_t *var) {
                  diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
   node_t *lhs = psx_node_new_tag_member_lvar_ref_for(var, info.offset, &info);
-  node_mem_t *assign_node = psx_node_new_assign(lhs, rhs);
+  node_t *assign_node = psx_node_new_assign(lhs, rhs);
   return (node_t *)assign_node;
 }
 
@@ -4235,9 +4226,9 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
     if (tk_consume(',') && curtok()->kind != TK_RBRACE) im = psx_expr_assign();
     tk_expect('}');
     node_t *re_lv = psx_node_new_lvar_fp_slot_for(var, var->offset, half);
-    node_mem_t *re_as = psx_node_new_assign(re_lv, re);
+    node_t *re_as = psx_node_new_assign(re_lv, re);
     node_t *im_lv = psx_node_new_lvar_fp_slot_for(var, var->offset + half, half);
-    node_mem_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
+    node_t *im_as = psx_node_new_assign(im_lv, im ? im : psx_node_new_num(0));
     return psx_node_new_binary(ND_COMMA, (node_t *)re_as, (node_t *)im_as);
   }
   node_t *init_expr = parse_scalar_brace_initializer();
@@ -4274,8 +4265,8 @@ node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
                    psx_ctx_tag_kind_spelling(init_tag_kind));
     }
   }
-  node_mem_t *assign_node = psx_node_new_assign(lvar, init_expr);
-  assign_node->base.is_decl_initializer = 1;
+  node_t *assign_node = psx_node_new_assign(lvar, init_expr);
+  assign_node->is_decl_initializer = 1;
   return (node_t *)assign_node;
 }
 

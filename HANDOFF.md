@@ -1,8 +1,146 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1039: raw-only semantic payload と VLA descriptor を分離した）
+最終更新: 2026-07-11（続き1044: production dereference node から型mirror領域を除去した）
 
 ## 現状
+- 続き1044: **production dereference node から型mirror領域を除去した**。
+
+  `ND_DEREF`のtag member、unary dereference、subscript constructorを分類し、arena上の
+  production ASTにはplain `node_t`だけを保存するようにした。複雑な既存判定は当面
+  constructor-localなstack `node_mem_t` workspaceで計算し、canonical `psx_type_t`と
+  `psx_expr_type_state_t`を確定した後、`node_t`部分だけをarenaへ格納する。これにより
+  downstream reader/codegenがproduction dereferenceのraw payloadを型の正本として
+  再利用することは物理的にできなくなった。
+
+  移行によって、runtime VLA row型constructorが既存array型をそのまま返し、次の
+  row-stride frame offsetを捨てる不一致が露出した。既存array型を複製してVLA metadataを
+  更新するよう修正し、3次元VLAのsubscript結果が親offsetではなく次行offsetを持つことを
+  canonical accessorで確認した。
+
+  また、canonical `pointer -> struct`型が存在しても旧`scalar_ptr_member`フラグにより
+  subscriptのpointee型採用を拒否していた条件を削除した。これにより`symbols[0].name`のような
+  struct pointer memberの添字結果は、legacy flagではなく型構造だけからstruct値型になる。
+  production dereferenceを直接`node_mem_t`へcastしていた主要テストはcanonical type/accessorへ
+  移行し、function-pointer metadataもnode accessor経由へ変更した。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次はconstructor-local `node_mem_t` workspaceの各計算を、canonical result type builder、
+  expression-local stride/provenance builder、codegen load/store descriptorへ分解する。
+  テストに残るproduction dereferenceのraw castも同時に除去する。
+
+- 続き1043: **address expression から型mirror領域を除去した**。
+
+  `ND_ADDR`の通常`&`、array decay、static/global/local array、compound literal address、
+  明示的`&arr`を分類した。production constructorはすべて宣言型またはoperand型を取得できるため、
+  `node_mem_t`ではなくplain `node_t`を生成するようにした。
+
+  array addressは宣言配列型を`type_decay_array_to_pointer()`でcanonical pointer型へ変換し、
+  pointee属性・qualifier・多次元strideを`psx_type_t`だけから提供する。compound literal固有の
+  array sizeだけは`psx_expr_type_state_t`に保持する。
+
+  明示的`&arr`はdecay addressのraw size/strideを並べ替える方式を廃止し、address operandの
+  元の配列型からcanonical pointer-to-array型を直接作るようにした。regressionで通常decayが
+  `pointer -> element`、明示addressが`pointer -> array`となり、deref sizeが配列全体サイズ、
+  compound-only stateが消えることを確認した。
+
+  productionから未使用になった4つの`psx_node_init_*array_addr_metadata()`公開APIと、
+  raw stride/tag/pointee mirrorを組み立てる専用helper群を削除した。address関連テストは
+  raw field期待からcanonical type/accessor期待へ移行した。`ND_ADDR`もlvalue clone対象から外した。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は最も複雑な`ND_DEREF`を、canonical result type、expression-local stride/provenance、
+  codegen load/store descriptorに分解する。symbol referenceはstorage identityを専用構造に残しつつ、
+  型mirrorを除去する。
+
+- 続き1042: **cast wrapper から型mirror領域を除去した**。
+
+  `ND_CAST`のconstructor、reader、IR利用を監査した。production constructorは整数・pointer・
+  aggregate・voidの全castでcanonical `psx_type_t`を必ず設定し、IR builderもcanonical typeと
+  `node_t::widen_zext_i64`だけを使っていた。
+
+  それにもかかわらず各constructorは`node_mem_t`へsize/signedness/pointee/tag/strideを
+  一度mirrorし、pointer castではraw fieldを組み立ててから再度`psx_type_t`へ変換していた。
+  全cast wrapperをplain `node_t`へ変更し、pointer castはbase typeとpointer levelから
+  canonical typeを直接構築するようにした。integer/aggregate/void castのmirror同期も削除した。
+
+  cast regressionはraw fieldの存在確認をやめ、canonical type accessor、pointer stride、
+  pointee属性、`node_t::widen_zext_i64`を検証する形へ変更した。`ND_ASSIGN`と`ND_CAST`は
+  lvalue clone対象からも外し、plain nodeを`node_mem_t`として複製できないようにした。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は`ND_ADDR`を、通常address expression、compound literal array state、array decayに分類し、
+  型mirrorを専用semantic/codegen stateから分離する。`ND_DEREF`とsymbol referenceは
+  expression-local strideやstorage identityを持つため、その後に扱う。
+
+- 続き1041: **typed operation node から型mirror領域を除去した**。
+
+  `node_mem_t`への直接castをparser constructorとIR bridgeで監査した。IR builderは既に
+  size/signedness/pointer/bitfield等を`psx_node_*` accessorだけから取得しており、
+  raw型sidecarの直接readはなかった。
+
+  parser側では、constructorが必ずcanonical typeを設定する`ND_FP_TO_INT`が
+  `node_mem_t`を確保してraw scalar mirrorを同期し、materializerにもraw `type_size`から
+  型を再構築する経路が残っていた。これをplain `node_t`へ変更し、materializerの
+  raw復元caseを削除した。unsigned conversionはcanonical result typeから判定する。
+
+  同様に`ND_ASSIGN`も結果型は常にLHSのcanonical typeであるため、`node_mem_t`から
+  plain `node_t`へ変更した。全caller/helperの型を更新し、struct ternary materializationの
+  raw `type_size`上書き、assignment constructor内のscalar/pointer mirror同期を削除した。
+  pointer/complex/atomic assignment regressionはraw fieldではなくcanonical type accessorを
+  検証する形へ変更した。
+
+  `decl.c`に残っていたtag object互換判定用castとsmall struct derefのraw width補完も削除した。
+  parser/IR側から`node_mem_t`型payloadを直接読む経路は、現在`node_utils.c`内の明示的な
+  legacy/materialization/clone境界に閉じている。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は`node_mem_t`を必要とする残りのnode kind (`ND_CAST`、`ND_ADDR`、`ND_DEREF`、
+  symbol reference)を分類し、operation-only nodeから順に専用/plain構造へ移す。
+
+- 続き1040: **typed reader から legacy raw への逆流を構造的に遮断した**。
+
+  続き1039後の `node_mem_view()` 利用箇所を全件監査した。bitfield と compound literal
+  array size はcanonical stateがゼロのtyped nodeでraw mirrorへfallbackできていたため、
+  typed nodeでは「値なし」もcanonicalな結果として扱うようにした。偽のraw bitfield/sizeを
+  typed non-bitfield/non-compound nodeへ設定してもreader結果が変わらないregressionを追加した。
+
+  compound literalへ明示的`&`を適用する変換も、raw size/strideを直接再読せず、
+  canonical accessorから読み出して変換後の`psx_expr_type_state_t`へ格納するようにした。
+  compound-only stateは変換後にcanonical/rawの双方で明示的に消去する。
+
+  型サイズについても、canonical typeのsize 0は未完成型という有効な状態なので、
+  `psx_node_storage_type_size()`とcast extension readerがraw `type_size`で補完しないようにした。
+  legacy nodeだけは従来のraw fallbackを維持している。
+
+  最後にreader専用の`node_mem_view()`を`legacy_node_mem_view()`へ改名し、`node->type`が
+  存在する場合は常に`NULL`を返す構造ガードを入れた。これにより今後reader側で個別の
+  typed guardを入れ忘れても、compatibility mirrorを型情報の正本として再利用できない。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は`node_mem_t`を直接castして読むconstructor/codegen bridgeを監査する。
+  legacy reader境界は閉じたが、mirror生成側とIR側には専用accessorを経由しない参照が残るため、
+  「canonical type」「expression semantic state」「codegen payload」の分類を続ける。
+
 - 続き1039: **raw-only semantic payload と VLA descriptor を分離した**。
 
   raw reader に残っていた bitfield、compound literal array size、VLA allocation offset を
