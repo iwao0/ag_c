@@ -2674,6 +2674,13 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
   }
   validate_toplevel_object_array_suffix(spec, arr);
   global_var_t *gv = register_toplevel_object_from_declarator(spec, head, arr);
+  if (gv && arr.is_array && head.is_ptr && head.ptr_levels == 0 &&
+      spec->td_ptr_pointee_dim_count > 0) {
+    for (int i = spec->td_ptr_pointee_dim_count - 1; i >= 0; i--) {
+      if (spec->td_array_dims[i] > 0)
+        psx_decl_set_gvar_pointer_base_array(gv, spec->td_array_dims[i]);
+    }
+  }
   if (gv && ptr_array_pointee_bytes > 0) {
     psx_decl_set_gvar_ptr_array_pointee_bytes(gv, ptr_array_pointee_bytes);
   }
@@ -2706,6 +2713,10 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
      * try_build_global_var_node のスカラ分岐が outer/mid/extra を node に反映する。 */
     int elem = spec->elem_size;
     int elem_store = ptr_array_elem_store_size;
+    if (spec->base_is_ptr && pointee_dim_count > 0 &&
+        pointee_dims[0] > 0) {
+      psx_decl_set_gvar_pointer_base_array(gv, pointee_dims[0]);
+    }
     if (head.paren_array_present && head.paren_array_mul > 0) {
       int paren_dims[8] = {0};
       int paren_dim_count = head.paren_array_dim_count;
@@ -2739,7 +2750,6 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
                                                       1, elem_store);
     }
     if (ptr_array_pointee_bytes > 0 && elem_store > elem) {
-      psx_decl_set_gvar_pointer_qual_levels(gv, 1);
       psx_decl_set_gvar_pointer_derived_type(gv, elem_store, elem,
                                              ptr_array_pointee_bytes);
     }
@@ -3151,7 +3161,8 @@ static void register_function_signature(const psx_function_signature_t *sig) {
     if (pfk != TK_FLOAT_KIND_NONE) {
       psx_ctx_set_function_param_fp_kind(tok->str, tok->len, i, pfk);
     } else if (arg && !ps_node_is_pointer(arg)) {
-      int sz = ps_node_type_size(arg);
+      int sz = psx_node_param_abi_type_size(arg);
+      if (sz <= 0) sz = ps_node_type_size(arg);
       if (sz >= 1 && sz <= 4) {
         psx_ctx_set_function_param_int_size(tok->str, tok->len, i, 4);
         psx_ctx_set_function_param_int_unsigned(tok->str, tok->len, i,
@@ -3910,7 +3921,10 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
     if (decl_state->inner_dim_consts[i] <= 0) { all_inner_const = 0; break; }
   }
   if (inner_first_dim > 0 && all_inner_const) {
-    psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels,
+    psx_decl_set_lvar_pointer_derived_type(
+                                           var, var->pointer_qual_levels > 0
+                                                    ? var->pointer_qual_levels
+                                                    : 1,
                                            ds->elem_size,
                                            var->ptr_array_pointee_bytes);
     /* level k の stride = dim[k+1]*...*dim[N-1]*elem。outer_stride = level 0、
@@ -3929,7 +3943,10 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
     lvar_t *rs = register_param_stride_slot(param, 8 * n_inner);
     psx_decl_set_lvar_vla_descriptor(var, var->outer_stride,
                                      rs->offset, n_inner - 1, 0, ds->elem_size);
-    psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels,
+    psx_decl_set_lvar_pointer_derived_type(
+                                           var, var->pointer_qual_levels > 0
+                                                    ? var->pointer_qual_levels
+                                                    : 1,
                                            ds->elem_size,
                                            var->ptr_array_pointee_bytes);
     /* 内側 dim 情報を保存。emit_vla_row_stride_for_params がこれを読んで stride を計算する。 */
@@ -3970,7 +3987,10 @@ static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t 
    * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
    * runtime stride を読んで `g[i]` を正しく steping できる。 */
   attach_param_runtime_stride(var, param, inner_first_dim_ident, ds->elem_size);
-  psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels,
+  psx_decl_set_lvar_pointer_derived_type(
+                                         var, var->pointer_qual_levels > 0
+                                                  ? var->pointer_qual_levels
+                                                  : 1,
                                          ds->elem_size,
                                          var->ptr_array_pointee_bytes);
   return var;
@@ -4115,7 +4135,13 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
       }
       lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len,
                                                  8, elem_store_size, 0);
-      psx_decl_set_lvar_pointer_derived_type(var, 1,
+      /* `typedef int *IP; IP (*p)[N]` is pointer -> array -> pointer -> int.
+       * Build both pointer levels first, then insert the array below the outer
+       * pointer so the canonical type retains the typedef's pointer element. */
+      psx_decl_set_lvar_pointer_derived_type(var, 2,
+                                             scalar_deref_size, 0);
+      psx_decl_set_lvar_pointer_base_array(var, param_inner_first_dim);
+      psx_decl_set_lvar_pointer_derived_type(var, 2,
                                              scalar_deref_size,
                                              row_bytes);
       psx_decl_set_lvar_pointee_scalar_flags(

@@ -1,8 +1,55 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1061: scalar/qualifier/pointee mutatorの直接更新を安定化）
+最終更新: 2026-07-11（続き1063: storage型の明示構築と宣言型幅/ABI幅の分離）
 
 ## 現状
+- 続き1063: **storage宣言型の初回構築をcanonical builderへ移し、C宣言型幅とWasm ABI幅を分離した。**
+
+  `psx_type_new_storage_object()`と`psx_type_new_vla_object_view()`を追加し、lvar/gvarの
+  storage initializerとVLA fallbackが同じcanonical type構築APIを使うようにした。通常の
+  parser経路から`decl_type = NULL`でlegacy fieldsへ戻る処理はなくなり、pointer/array/VLA/tag
+  mutatorは既存のcanonical treeを直接更新する。
+
+  canonicalな`int`幅が4になったことで、従来偶然8だったparameter node幅をWasm ABI署名にも
+  使っていた問題が顕在化した。`node_lvar_t.param_abi_type_size`を追加し、C上の宣言型幅とは別に
+  parameterの受け渡し幅を保持するようにした。`register_function_signature()`はこのABI幅を読む。
+
+  確認:
+  - `make -j4 build/test_parser build/test_wasm32_backend build/ag_c_wasm` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **fail（残り6件）**
+    `puts_stub` / `fprintf_funcptr_stub`の署名2件と、global/struct/static unionの
+    function-pointer array member call 4件。ABI幅分離前に出ていた広範なi32/i64不一致は解消した。
+
+  次は残る6件で、libc stubの引数がC宣言幅を使うべきかWasm内部ABI幅を使うべきかを整理し、
+  function-pointer signature maskの構築元をcanonical function typeへ統一する。その後に
+  `make -j4 test`を再実行する。
+
+- 続き1062: **pointer/array/VLA mutatorのlegacy再materializeを廃止し、canonical構造を直接更新した。**
+
+  `psx_type_apply_pointer_derivation()`を使うlvar/gvar builderを、parameter/globalを含む
+  alternating pointer/array宣言へ広げた。`typedef int *IP; IP (*p)[3]`は
+  `POINTER -> ARRAY -> POINTER -> INTEGER`、`typedef int (*Row)[3]; Row rows[2]`は
+  `ARRAY -> POINTER -> ARRAY -> INTEGER`として保持する。pointer-base-array helperは
+  rootが配列でも最初のpointerを更新でき、pointer-to-array typedefの全次元をcanonical treeへ
+  組み込める。
+
+  gvarのpointer qualifier level / pointee element size / pointer-array bytes setterは
+  `decl_type=NULL`によるlegacy fieldsからの再生成をやめた。配列要素ポインタ、多段ポインタの
+  中間8-byte幅、typedef由来の内側pointerを既存canonical tree上で更新する。VLA descriptorと
+  gvar inferred sizeもtype nodeへ直接反映し、16-byte VLA実装スロットに由来する外側array viewは
+  non-array pointer derivation時に除去する。
+
+  tag setterも既存canonical treeのvalue leafをstruct/unionへ直接置換し、tag pointerが必要な
+  場合だけpointer nodeを追加するようにした。`decl_type = NULL`は11件から2件へ減り、残りは
+  lvar/gvar storage initializer各1件だけ。次は`type`モジュールに明示的なstorage-declaration
+  builderを置き、初回type構築をlegacy materializerから外す。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - 全suiteは正本化完了時まで保留（ユーザー指定どおりfocused testのみ）
+
 - 続き1061: **eager scalar/qualifier/pointee mutatorのcanonical直接更新を安定化した。**
 
   続き1060で発生していた`E3078`は、declaration specifierのconst/volatileをderived root

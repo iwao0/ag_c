@@ -46,6 +46,43 @@ psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size) {
   return type;
 }
 
+psx_type_t *psx_type_new_storage_object(
+    int object_size, int elem_size, int is_array,
+    tk_float_kind_t fp_kind, int is_unsigned,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int tag_scope_depth_p1, int is_pointer) {
+  int value_size = elem_size > 0 ? elem_size : object_size;
+  if (value_size <= 0) value_size = 1;
+
+  psx_type_t *value = NULL;
+  if (tag_kind == TK_STRUCT || tag_kind == TK_UNION) {
+    value = psx_type_new_tag(tag_kind, tag_name, tag_len,
+                             tag_scope_depth_p1, value_size);
+  } else if (fp_kind != TK_FLOAT_KIND_NONE) {
+    value = psx_type_new_float(fp_kind, value_size);
+  } else {
+    value = psx_type_new_integer(TK_EOF, value_size, is_unsigned);
+  }
+
+  psx_type_t *element = value;
+  if (is_pointer) {
+    element = psx_type_new_pointer(value, value_size);
+    element->base_deref_size = value_size;
+  }
+  if (!is_array) return element;
+
+  int storage_elem_size = is_pointer ? 8 : elem_size;
+  if (storage_elem_size <= 0) storage_elem_size = psx_type_sizeof(element);
+  if (storage_elem_size <= 0) storage_elem_size = 1;
+  int array_len = object_size > 0 && object_size % storage_elem_size == 0
+                      ? object_size / storage_elem_size
+                      : 0;
+  psx_type_t *array = psx_type_new_array(
+      element, array_len, object_size, storage_elem_size, 0);
+  array->base_deref_size = value_size;
+  return array;
+}
+
 static unsigned int pointer_mask_for_subtree(unsigned int mask,
                                              int total_levels,
                                              int subtree_levels) {
@@ -228,9 +265,11 @@ psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
 
 psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
                                               int array_len) {
+  psx_type_t *root = type;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
   if (!type || type->kind != PSX_TYPE_POINTER || !type->base ||
       array_len <= 0) {
-    return type;
+    return root;
   }
   int child_size = psx_type_sizeof(type->base);
   if (child_size <= 0) child_size = psx_type_deref_size(type->base);
@@ -243,7 +282,7 @@ psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
   type->base = array;
   type->deref_size = total_size;
   psx_type_sync_pointer_to_array_metadata_from_base(type);
-  return type;
+  return root;
 }
 
 psx_type_t *psx_type_apply_pointer_derivation(psx_type_t *type,
@@ -390,6 +429,41 @@ psx_type_t *psx_type_new_runtime_vla_row_view(
   row->vla_row_stride_frame_off = row_stride_frame_off;
   row->vla_strides_remaining = strides_remaining;
   return row;
+}
+
+psx_type_t *psx_type_new_vla_object_view(
+    const psx_type_t *source, int outer_stride,
+    int row_stride_frame_off, int strides_remaining) {
+  if (!source) return NULL;
+  const psx_type_t *leaf = source;
+  while (leaf && (leaf->kind == PSX_TYPE_ARRAY ||
+                  leaf->kind == PSX_TYPE_POINTER)) {
+    leaf = leaf->base;
+  }
+  if (!leaf) return NULL;
+  int leaf_size = psx_type_sizeof(leaf);
+  if (leaf_size <= 0) return NULL;
+
+  psx_type_t *element = (psx_type_t *)leaf;
+  if (row_stride_frame_off == 0 && outer_stride > leaf_size &&
+      outer_stride % leaf_size == 0) {
+    element = psx_type_new_array(
+        element, outer_stride / leaf_size,
+        outer_stride, leaf_size, 0);
+    element->base_deref_size = leaf_size;
+  }
+  int element_size = psx_type_sizeof(element);
+  if (element_size <= 0) element_size = leaf_size;
+  psx_type_t *vla = psx_type_new_array(
+      element, 0, 0, element_size, 1);
+  vla->base_deref_size = leaf_size;
+  vla->outer_stride = outer_stride;
+  vla->pointee_fp_kind = source->pointee_fp_kind;
+  vla->funcptr_sig = psx_decl_funcptr_sig_clone(source->funcptr_sig);
+  vla->vla_row_stride_frame_off = row_stride_frame_off;
+  vla->vla_strides_remaining = strides_remaining;
+  psx_type_copy_common_qualifiers(vla, source);
+  return vla;
 }
 
 psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind) {

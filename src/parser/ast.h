@@ -162,6 +162,7 @@ struct node_lvar_t {
   node_t base;
   int offset;       // フレームオフセット
   struct lvar_t *var; // 宣言元シンボル。semantic pass の symbol identity 判定に使う。
+  int param_abi_type_size; // 仮引数の受け渡し幅。0 は通常の lvar node。
 };
 
 // 文字列リテラルノード

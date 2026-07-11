@@ -44,6 +44,8 @@ static lvar_usage_event_t *lvar_usage_events_tail;
 static psx_lvar_usage_region_t *current_lvar_usage_region;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
+static psx_type_t *psx_decl_value_leaf_type(psx_type_t *type);
+static int psx_decl_type_has_pointer(const psx_type_t *type);
 
 // ブロックスコープのローカル変数リスト保存スタック
 #define LVAR_SCOPE_STACK_MAX 256
@@ -347,7 +349,7 @@ int psx_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
 void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, int tag_len,
                           int is_tag_pointer) {
   if (!var) return;
-  var->decl_type = NULL;
+  psx_type_t *type = var->decl_type;
   var->tag_kind = tag_kind;
   var->tag_name = tag_name;
   var->tag_len = tag_len;
@@ -358,13 +360,34 @@ void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, in
   } else {
     var->tag_scope_depth_p1 = 0;
   }
-  (void)psx_lvar_materialize_decl_type(var);
+  if (!type) {
+    (void)psx_lvar_materialize_decl_type(var);
+    return;
+  }
+  psx_type_t *leaf = psx_decl_value_leaf_type(type);
+  if (leaf && psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+    int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+    if (tag_size <= 0) tag_size = var->elem_size > 0 ? var->elem_size : leaf->size;
+    leaf->kind = psx_type_kind_from_tag_kind(tag_kind);
+    leaf->tag_kind = tag_kind;
+    leaf->tag_name = tag_name;
+    leaf->tag_len = tag_len;
+    leaf->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+    leaf->size = tag_size;
+    leaf->align = tag_size >= 8 ? 8 : (tag_size >= 4 ? 4 : (tag_size >= 2 ? 2 : 1));
+  }
+  if (is_tag_pointer && !psx_decl_type_has_pointer(type)) {
+    int tag_size = leaf ? psx_type_sizeof(leaf) : var->elem_size;
+    var->decl_type = psx_type_apply_pointer_derivation(
+        type, 1, tag_size, tag_size, 0, var->pointer_const_qual_mask,
+        var->pointer_volatile_qual_mask);
+  }
 }
 
 void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_name, int tag_len,
                            int is_tag_pointer) {
   if (!gv) return;
-  gv->decl_type = NULL;
+  psx_type_t *type = gv->decl_type;
   gv->tag_kind = tag_kind;
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;
@@ -375,7 +398,29 @@ void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_na
   } else {
     gv->tag_scope_depth_p1 = 0;
   }
-  (void)psx_gvar_materialize_decl_type(gv);
+  if (!type) {
+    (void)psx_gvar_materialize_decl_type(gv);
+    return;
+  }
+  psx_type_t *leaf = psx_decl_value_leaf_type(type);
+  if (leaf && psx_ctx_is_tag_aggregate_kind(tag_kind)) {
+    int tag_size = psx_ctx_get_tag_size(tag_kind, tag_name, tag_len);
+    if (tag_size <= 0)
+      tag_size = gv->deref_size > 0 ? gv->deref_size : leaf->size;
+    leaf->kind = psx_type_kind_from_tag_kind(tag_kind);
+    leaf->tag_kind = tag_kind;
+    leaf->tag_name = tag_name;
+    leaf->tag_len = tag_len;
+    leaf->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+    leaf->size = tag_size;
+    leaf->align = tag_size >= 8 ? 8 : (tag_size >= 4 ? 4 : (tag_size >= 2 ? 2 : 1));
+  }
+  if (is_tag_pointer && !psx_decl_type_has_pointer(type)) {
+    int tag_size = leaf ? psx_type_sizeof(leaf) : gv->deref_size;
+    psx_type_t *derived = psx_type_apply_pointer_derivation(
+        type, 1, tag_size, tag_size, 0, 0, 0);
+    gv->decl_type = psx_type_clone_persistent(derived);
+  }
 }
 
 void psx_decl_reset_translation_unit_state(void) {
@@ -3792,22 +3837,63 @@ void psx_decl_init_lvar_storage_type(lvar_t *var, int size,
                                      char *tag_name, int tag_len,
                                      int is_tag_pointer) {
   if (!var) return;
-  var->decl_type = NULL;
+  psx_type_t *type = var->decl_type;
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array ? 1 : 0;
   var->fp_kind = fp_kind;
   var->is_unsigned = is_unsigned ? 1 : 0;
-  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
-    psx_decl_set_var_tag(var, tag_kind, tag_name, tag_len, is_tag_pointer);
-  } else {
-    var->tag_kind = TK_EOF;
-    var->tag_name = NULL;
-    var->tag_len = 0;
-    var->is_tag_pointer = 0;
-    var->tag_scope_depth_p1 = 0;
+  var->tag_kind = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_kind : TK_EOF;
+  var->tag_name = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_name : NULL;
+  var->tag_len = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_len : 0;
+  var->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  int scope_depth = psx_ctx_is_tag_aggregate_kind(tag_kind)
+                        ? psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len)
+                        : -1;
+  var->tag_scope_depth_p1 = scope_depth >= 0 ? scope_depth + 1 : 0;
+  if (!type) {
+    var->decl_type = psx_type_new_storage_object(
+        size, elem_size, is_array, fp_kind, is_unsigned,
+        var->tag_kind, var->tag_name, var->tag_len,
+        var->tag_scope_depth_p1, is_tag_pointer);
+    return;
   }
-  (void)psx_lvar_materialize_decl_type(var);
+  psx_type_t *leaf = psx_decl_value_leaf_type(type);
+  int value_size = elem_size > 0 ? elem_size : size;
+  if (leaf && psx_ctx_is_tag_aggregate_kind(var->tag_kind)) {
+    leaf->kind = psx_type_kind_from_tag_kind(var->tag_kind);
+    leaf->tag_kind = var->tag_kind;
+    leaf->tag_name = var->tag_name;
+    leaf->tag_len = var->tag_len;
+    leaf->tag_scope_depth_p1 = var->tag_scope_depth_p1;
+  } else if (leaf) {
+    leaf->kind = fp_kind != TK_FLOAT_KIND_NONE ? PSX_TYPE_FLOAT
+                                               : PSX_TYPE_INTEGER;
+    leaf->scalar_kind = TK_EOF;
+    leaf->fp_kind = fp_kind;
+    leaf->is_unsigned = is_unsigned ? 1 : 0;
+    leaf->tag_kind = TK_EOF;
+    leaf->tag_name = NULL;
+    leaf->tag_len = 0;
+    leaf->tag_scope_depth_p1 = 0;
+  }
+  if (leaf && value_size > 0) {
+    leaf->size = value_size;
+    leaf->align = value_size > 8 ? 8 : value_size;
+  }
+  if (type->kind == PSX_TYPE_ARRAY) {
+    int storage_elem_size = psx_type_sizeof(type->base);
+    if (storage_elem_size <= 0) storage_elem_size = elem_size;
+    type->size = size;
+    type->elem_size = storage_elem_size;
+    if (storage_elem_size > 0 && size >= 0 && size % storage_elem_size == 0)
+      type->array_len = size / storage_elem_size;
+  }
+  if (is_tag_pointer && !psx_decl_type_has_pointer(type)) {
+    var->decl_type = psx_type_apply_pointer_derivation(
+        type, 1, value_size, value_size, 0,
+        var->pointer_const_qual_mask, var->pointer_volatile_qual_mask);
+  }
 }
 
 void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
@@ -3816,6 +3902,9 @@ void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
                                             int ptr_array_pointee_bytes) {
   if (!var) return;
   psx_type_t *type = psx_lvar_materialize_decl_type(var);
+  if (!var->is_array && pointer_qual_levels > 0) {
+    while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  }
   var->pointer_qual_levels = pointer_qual_levels;
   var->base_deref_size = (short)base_deref_size;
   var->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
@@ -4201,14 +4290,26 @@ void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
                                       int row_stride_src_offset,
                                       int row_stride_elem_size) {
   if (!var) return;
-  var->decl_type = NULL;
+  psx_type_t *type = psx_lvar_materialize_decl_type(var);
   var->is_vla = 1;
   var->outer_stride = outer_stride;
   var->vla_row_stride_frame_off = row_stride_frame_off;
   var->vla_strides_remaining = strides_remaining;
   var->vla_row_stride_src_offset = row_stride_src_offset;
   var->vla_row_stride_elem_size = (short)row_stride_elem_size;
-  (void)psx_lvar_materialize_decl_type(var);
+  if (!type) return;
+  if (var->is_array && type->kind != PSX_TYPE_POINTER) {
+    psx_type_t *vla = psx_type_new_vla_object_view(
+        type, outer_stride, row_stride_frame_off, strides_remaining);
+    if (vla) {
+      var->decl_type = vla;
+      type = vla;
+    }
+  }
+  type->is_vla = 1;
+  type->outer_stride = outer_stride;
+  type->vla_row_stride_frame_off = row_stride_frame_off;
+  type->vla_strides_remaining = strides_remaining;
 }
 
 void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
@@ -4301,18 +4402,65 @@ void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
                                      char *tag_name, int tag_len,
                                      int is_tag_pointer) {
   if (!gv) return;
-  gv->decl_type = NULL;
+  psx_type_t *type = gv->decl_type;
   gv->type_size = type_size;
   gv->deref_size = (short)elem_size;
   gv->is_array = is_array ? 1 : 0;
   gv->fp_kind = (unsigned char)fp_kind;
   gv->is_unsigned = is_unsigned ? 1 : 0;
-  if (psx_ctx_is_tag_aggregate_kind(tag_kind)) {
-    psx_decl_set_gvar_tag(gv, tag_kind, tag_name, tag_len, is_tag_pointer);
-  } else {
-    gv->tag_kind = TK_EOF;
+  gv->tag_kind = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_kind : TK_EOF;
+  gv->tag_name = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_name : NULL;
+  gv->tag_len = psx_ctx_is_tag_aggregate_kind(tag_kind) ? tag_len : 0;
+  gv->is_tag_pointer = is_tag_pointer ? 1 : 0;
+  int scope_depth = psx_ctx_is_tag_aggregate_kind(tag_kind)
+                        ? psx_ctx_get_tag_scope_depth(tag_kind, tag_name, tag_len)
+                        : -1;
+  gv->tag_scope_depth_p1 = scope_depth >= 0 ? scope_depth + 1 : 0;
+  if (!type) {
+    psx_type_t *storage = psx_type_new_storage_object(
+        type_size, elem_size, is_array, fp_kind, is_unsigned,
+        gv->tag_kind, gv->tag_name, gv->tag_len,
+        gv->tag_scope_depth_p1, is_tag_pointer);
+    gv->decl_type = psx_type_clone_persistent(storage);
+    return;
   }
-  (void)psx_gvar_materialize_decl_type(gv);
+  psx_type_t *leaf = psx_decl_value_leaf_type(type);
+  int value_size = elem_size > 0 ? elem_size : type_size;
+  if (leaf && psx_ctx_is_tag_aggregate_kind(gv->tag_kind)) {
+    leaf->kind = psx_type_kind_from_tag_kind(gv->tag_kind);
+    leaf->tag_kind = gv->tag_kind;
+    leaf->tag_name = gv->tag_name;
+    leaf->tag_len = gv->tag_len;
+    leaf->tag_scope_depth_p1 = gv->tag_scope_depth_p1;
+  } else if (leaf) {
+    leaf->kind = fp_kind != TK_FLOAT_KIND_NONE ? PSX_TYPE_FLOAT
+                                               : PSX_TYPE_INTEGER;
+    leaf->scalar_kind = TK_EOF;
+    leaf->fp_kind = fp_kind;
+    leaf->is_unsigned = is_unsigned ? 1 : 0;
+    leaf->tag_kind = TK_EOF;
+    leaf->tag_name = NULL;
+    leaf->tag_len = 0;
+    leaf->tag_scope_depth_p1 = 0;
+  }
+  if (leaf && value_size > 0) {
+    leaf->size = value_size;
+    leaf->align = value_size > 8 ? 8 : value_size;
+  }
+  if (type->kind == PSX_TYPE_ARRAY) {
+    int storage_elem_size = psx_type_sizeof(type->base);
+    if (storage_elem_size <= 0) storage_elem_size = elem_size;
+    type->size = type_size;
+    type->elem_size = storage_elem_size;
+    if (storage_elem_size > 0 && type_size >= 0 &&
+        type_size % storage_elem_size == 0)
+      type->array_len = type_size / storage_elem_size;
+  }
+  if (is_tag_pointer && !psx_decl_type_has_pointer(type)) {
+    psx_type_t *derived = psx_type_apply_pointer_derivation(
+        type, 1, value_size, value_size, 0, 0, 0);
+    gv->decl_type = psx_type_clone_persistent(derived);
+  }
 }
 
 static void psx_decl_clear_gvar_array_strides(global_var_t *gv) {
@@ -4379,9 +4527,23 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
 }
 
 void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
-  gv->decl_type = NULL;
+  if (!gv) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
   gv->type_size = type_size;
-  (void)psx_gvar_materialize_decl_type(gv);
+  if (!type || type_size < 0) return;
+  if (type->kind == PSX_TYPE_ARRAY) {
+    int elem_size = type->elem_size;
+    if (elem_size <= 0 && type->base)
+      elem_size = psx_type_sizeof(type->base);
+    type->size = type_size;
+    if (elem_size > 0 && type_size % elem_size == 0)
+      type->array_len = type_size / elem_size;
+  } else if (type->kind != PSX_TYPE_POINTER) {
+    type->size = type_size;
+    type->align = type_size >= 8 ? 8
+                                 : (type_size >= 4 ? 4
+                                                   : (type_size >= 2 ? 2 : 1));
+  }
 }
 
 void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
@@ -4393,8 +4555,11 @@ void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
   gv->deref_size = (short)deref_size;
   gv->pointee_elem_size = (short)pointee_elem_size;
   gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  int pointer_levels = gv->pointer_qual_levels > 0
+                           ? gv->pointer_qual_levels
+                           : 1;
   psx_type_t *derived = psx_type_apply_pointer_derivation(
-      type, gv->pointer_qual_levels, deref_size, pointee_elem_size,
+      type, pointer_levels, deref_size, pointee_elem_size,
       ptr_array_pointee_bytes, 0, 0);
   gv->decl_type = psx_type_clone_persistent(derived);
 }
@@ -4402,31 +4567,59 @@ void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
 void psx_decl_set_gvar_pointer_base_array(global_var_t *gv, int array_len) {
   if (!gv || array_len <= 0) return;
   psx_type_t *type = psx_gvar_materialize_decl_type(gv);
-  if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return;
+  if (!type || !psx_decl_type_has_pointer(type)) return;
   psx_type_t *wrapped = psx_type_wrap_pointer_base_array(type, array_len);
   gv->decl_type = psx_type_clone_persistent(wrapped);
 }
 
 void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
                                            int pointer_qual_levels) {
-  gv->decl_type = NULL;
+  if (!gv) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
   gv->pointer_qual_levels = (pointer_qual_levels > 0 && pointer_qual_levels < 256)
                                 ? (unsigned char)pointer_qual_levels
                                 : 0;
-  (void)psx_gvar_materialize_decl_type(gv);
+  int base_deref_size = gv->pointee_elem_size > 0
+                            ? gv->pointee_elem_size
+                            : gv->deref_size;
+  int top_deref_size = gv->pointer_qual_levels >= 2
+                           ? 8
+                           : gv->deref_size;
+  psx_type_t *derived = psx_type_apply_pointer_derivation(
+      type, gv->pointer_qual_levels, top_deref_size, base_deref_size,
+      0, 0, 0);
+  gv->decl_type = psx_type_clone_persistent(derived);
 }
 
 void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size) {
-  gv->decl_type = NULL;
+  if (!gv) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
   gv->pointee_elem_size = (short)pointee_elem_size;
-  (void)psx_gvar_materialize_decl_type(gv);
+  if (pointee_elem_size <= 0 || !type) return;
+  int pointer_levels = gv->pointer_qual_levels;
+  if (!psx_decl_type_has_pointer(type) && type->kind == PSX_TYPE_ARRAY)
+    pointer_levels = 1;
+  if (pointer_levels <= 0 && !psx_decl_type_has_pointer(type)) return;
+  psx_type_t *derived = psx_type_apply_pointer_derivation(
+      type, pointer_levels, pointee_elem_size, pointee_elem_size,
+      0, 0, 0);
+  gv->decl_type = psx_type_clone_persistent(derived);
 }
 
 void psx_decl_set_gvar_ptr_array_pointee_bytes(global_var_t *gv,
                                                int ptr_array_pointee_bytes) {
-  gv->decl_type = NULL;
+  if (!gv) return;
+  psx_type_t *type = psx_gvar_materialize_decl_type(gv);
   gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
-  (void)psx_gvar_materialize_decl_type(gv);
+  if (!type || (type->kind != PSX_TYPE_POINTER &&
+                type->kind != PSX_TYPE_ARRAY)) {
+    return;
+  }
+  type->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  if (ptr_array_pointee_bytes > 0) {
+    type->deref_size = ptr_array_pointee_bytes;
+    type->outer_stride = ptr_array_pointee_bytes;
+  }
 }
 
 void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind) {
@@ -4757,6 +4950,10 @@ static int try_lower_static_local_scalar(token_ident_t *tok, int var_size, int d
   psx_decl_init_gvar_storage_type(gv, var_size, deref_size, 0, fp_kind,
                                   is_pointer ? 0 : is_unsigned,
                                   TK_EOF, NULL, 0, 0);
+  if (is_pointer) {
+    psx_decl_set_gvar_pointer_derived_type(gv, deref_size,
+                                           deref_size, 0);
+  }
   psx_decl_set_gvar_pointee_scalar_flags(gv,
                                          is_pointer && is_unsigned,
                                          is_pointer && is_bool);
@@ -6041,8 +6238,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         psx_decl_set_lvar_qualifiers(var, is_const_qualified, is_volatile_qualified,
                                      ptr_is_const_qualified, ptr_is_volatile_qualified,
                                      ptr_const_mask, ptr_volatile_mask);
-        psx_decl_set_lvar_pointer_derived_type(var, total_pointer_levels,
-                                               var->base_deref_size,
+        psx_decl_set_lvar_pointer_derived_type(
+            var, total_pointer_levels > 0 ? total_pointer_levels
+                                          : (is_pointer ? 1 : 0),
+                                               is_pointer ? pointer_deref_size
+                                                          : var->base_deref_size,
                                                var->ptr_array_pointee_bytes);
         if (is_pointer) {
           psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels, elem_size,
@@ -6055,8 +6255,11 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         psx_decl_set_lvar_qualifiers(var, is_const_qualified, is_volatile_qualified,
                                      ptr_is_const_qualified, ptr_is_volatile_qualified,
                                      ptr_const_mask, ptr_volatile_mask);
-        psx_decl_set_lvar_pointer_derived_type(var, total_pointer_levels,
-                                               var->base_deref_size,
+        psx_decl_set_lvar_pointer_derived_type(
+            var, total_pointer_levels > 0 ? total_pointer_levels
+                                          : (is_pointer ? 1 : 0),
+                                               is_pointer ? pointer_deref_size
+                                                          : var->base_deref_size,
                                                var->ptr_array_pointee_bytes);
         if (is_pointer && total_pointer_levels >= 2) {
           psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels, elem_size,

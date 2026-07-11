@@ -1095,32 +1095,10 @@ static psx_type_t *canonical_lvar_vla_type(lvar_t *var,
                                            psx_type_t *reconstructed) {
   if (!var || !var->is_vla || var->pointer_qual_levels > 0 || !reconstructed)
     return reconstructed;
-
-  psx_type_t *leaf = reconstructed;
-  while (leaf->kind == PSX_TYPE_ARRAY && leaf->base) leaf = leaf->base;
-
-  int leaf_size = psx_type_sizeof(leaf);
-  if (leaf_size <= 0) leaf_size = var->elem_size;
-  if (leaf_size <= 0) return reconstructed;
-
-  psx_type_t *element = leaf;
-  if (var->vla_row_stride_frame_off == 0 &&
-      var->outer_stride > leaf_size &&
-      (var->outer_stride % leaf_size) == 0) {
-    int row_size = var->outer_stride;
-    element = psx_type_new_array(leaf, row_size / leaf_size,
-                                 row_size, leaf_size, 0);
-    element->base_deref_size = leaf_size;
-  }
-
-  int element_size = psx_type_sizeof(element);
-  if (element_size <= 0) element_size = leaf_size;
-  psx_type_t *vla = psx_type_new_array(element, 0, 0, element_size, 1);
-  vla->base_deref_size = leaf_size;
-  vla->pointee_fp_kind = reconstructed->pointee_fp_kind;
-  vla->funcptr_sig = psx_decl_funcptr_sig_clone(reconstructed->funcptr_sig);
-  psx_type_copy_common_qualifiers(vla, reconstructed);
-  return vla;
+  psx_type_t *vla = psx_type_new_vla_object_view(
+      reconstructed, var->outer_stride,
+      var->vla_row_stride_frame_off, var->vla_strides_remaining);
+  return vla ? vla : reconstructed;
 }
 
 static void sync_materialized_gvar_runtime_shape(global_var_t *gv, psx_type_t *type) {
@@ -4949,7 +4927,10 @@ node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,
           is_unsigned ? TK_UNSIGNED : TK_INT, abi_type_size, is_unsigned);
     }
   }
-  return (node_t *)new_lvar_symbol_node(var ? var->offset : 0, var, decl_type);
+  node_lvar_t *node = new_lvar_symbol_node(
+      var ? var->offset : 0, var, decl_type);
+  node->param_abi_type_size = abi_type_size;
+  return (node_t *)node;
 }
 
 node_t *psx_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
@@ -5753,6 +5734,11 @@ lvar_t *psx_node_lvar_symbol(node_t *node) {
   if (!node || node->kind != ND_LVAR) return NULL;
   node_lvar_t *lv = (node_lvar_t *)node;
   return lv->var ? lv->var : psx_decl_find_lvar_by_offset(lv->offset);
+}
+
+int psx_node_param_abi_type_size(node_t *node) {
+  if (!node || node->kind != ND_LVAR) return 0;
+  return ((node_lvar_t *)node)->param_abi_type_size;
 }
 
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {

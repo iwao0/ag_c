@@ -66,6 +66,11 @@ psx_type_t *psx_type_new(psx_type_kind_t kind);
 psx_type_t *psx_type_new_integer(token_kind_t scalar_kind, int size, int is_unsigned);
 psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
+psx_type_t *psx_type_new_storage_object(
+    int object_size, int elem_size, int is_array,
+    tk_float_kind_t fp_kind, int is_unsigned,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int tag_scope_depth_p1, int is_pointer);
 psx_type_t *psx_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           int top_deref_size,
                                           int base_deref_size,
@@ -87,6 +92,9 @@ psx_type_t *psx_type_apply_pointer_derivation(psx_type_t *type,
                                                unsigned int volatile_mask);
 psx_type_t *psx_type_new_runtime_vla_row_view(
     const psx_type_t *source, int row_size, int elem_size,
+    int row_stride_frame_off, int strides_remaining);
+psx_type_t *psx_type_new_vla_object_view(
+    const psx_type_t *source, int outer_stride,
     int row_stride_frame_off, int strides_remaining);
 psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size);

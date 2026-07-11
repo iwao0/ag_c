@@ -142,6 +142,7 @@ node_t *psx_node_new_gvar_for(struct global_var_t *gv);
 node_t *psx_node_new_gvar_array_base_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_gvar_for(struct lvar_t *var, int type_size);
 struct lvar_t *psx_node_lvar_symbol(node_t *node);
+int psx_node_param_abi_type_size(node_t *node);
 node_t *psx_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs);
 node_t *psx_node_new_assign(node_t *lhs, node_t *rhs);
 
