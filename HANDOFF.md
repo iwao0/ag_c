@@ -1,8 +1,81 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1057: declaration commit境界を8件へ縮小した）
+最終更新: 2026-07-11（続き1060: eager mutatorのcanonical直接更新を進行中）
 
 ## 現状
+- 続き1060: **scalar identity / qualifier / pointee mutatorをcanonical typeの直接更新へ移している途中。**
+
+  lvarのatomic、integer identity、long double、qualifierと、gvarのlong double、qualifierは、
+  `decl_type = NULL`後に`legacy_decl_shape_t`から全体を再materializeする処理をやめ、既存の
+  canonical root/leaf/pointer chainを局所更新するようにした。続いてlvar/gvarのbool、pointee
+  scalar flags、pointee fp kind、pointee voidも直接更新へ移した。
+
+  現在は作業途中のチェックポイントで、`make -j4 build/test_parser`は成功するが、
+  `./build/test_parser`が`test_type_metadata_bridge`内で予期しない`E3078`（const修飾された
+  ポインタからconst無しポインタへの暗黙変換）を出して終了する。scalar arrayのidentity
+  上書きは修正済みで、次は同テスト内のどの宣言・代入でqualifier構造が変わったかを特定し、
+  pointer qualifierの直接更新規則を直す。
+
+  このコミットは意図的なWIPであり、parser unit全件通過点ではない。続き1059までは
+  `./build/test_parser`全件通過済み。
+
+- 続き1059: **残るlvar commit 3境界をcanonical操作へ移し、commit APIを完全撤去した。**
+
+  local compound literalは初期化AST生成後に型を変更していなかったため、末尾commitを削除した。
+  >16 byte struct parameterは`psx_decl_set_lvar_byref_param()`でABI storage 8 byteと
+  declaration struct type（実サイズ）を分離し、canonical tag typeを直接設定する。
+
+  local declarator末尾の`psx_decl_init_lvar_storage_type()`再実行を
+  `psx_decl_set_lvar_storage_scalar_kind()`へ置き換えた。分岐内で構築済みのpointer/array構造を
+  捨てず、scalar leafのfp/unsigned identityだけを更新する。多段関数ポインタsignatureは
+  `psx_decl_set_lvar_funcptr_signature()`がpointer/array chain全段へ直接伝播する。
+
+  `int (*(*rows)[2])[3]`のような交互pointer/array宣言は、generic stride再構築では表現位置を
+  決められないため、`psx_type_wrap_pointer_base_array()`と
+  `psx_decl_set_lvar_pointer_base_array()`でtop pointer直下へarrayを構造的に挿入する。
+  通常のnested array chainは`psx_type_rebuild_array_shape()`がrow size列からcanonical
+  `outer/mid/extra`、pointer-element leaf、base deref cacheを設定する。
+
+  これにより`psx_decl_commit_lvar_type()` / `psx_decl_commit_gvar_type()`はcall・宣言・定義とも
+  0件になった。宣言確定後にflat fieldsから型全体を再推測する経路はない。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - explicit declaration commit API/call = **0件**
+
+  次は各eager lvar/gvar mutatorがまだ`decl_type = NULL`後に`legacy_decl_shape_t`から
+  再materializeしている部分を、既存canonical typeの局所更新へ順次置き換える。
+  commit境界は消えたが、`legacy_decl_shape_t`自体の撤去はまだ完了していない。
+
+- 続き1058: **配列stride mutatorをlegacy再構築から切り離し、commit境界を3件へ縮小した。**
+
+  `psx_type_rebuild_array_shape()`を型層へ追加した。既存canonical typeのleaf
+  （scalar/tag/pointer/function pointer）を保持し、宣言解析済みの次元列から得たrow size列で
+  nested `PSX_TYPE_ARRAY`を直接構築する。通常配列はobject sizeを最外arrayとして使い、
+  pointer-to-arrayは最内pointerのbaseへarray列を接続する。
+
+  lvar/gvarの`psx_decl_set_*_array_strides_from_dims()`および
+  `psx_decl_set_*_array_strides_from_inner_dims()`は、flat strideを互換sidecarとして更新しつつ
+  canonical `decl_type`を直接差し替える。`legacy_decl_shape_t`から型全体を再推測する
+  commit call 4件を削除した。global型のheap寿命を維持するcloneは
+  `psx_type_clone_persistent()`として型層へ移した。
+
+  static-local lowering後のlvar/gvar commitも監査した。型設定はすべてeager mutatorで完了し、
+  その後は名前・初期値・alias属性しか変更していなかったため、旧保険の2 callを削除した。
+  production callerが0件になった`psx_decl_commit_gvar_type()` APIも削除した。
+
+  確認:
+  - `make -j4 build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - array stride mutator内のdeclaration commit = **0件**
+  - `psx_decl_commit_gvar_type` = **0件**
+  - explicit declaration commit = **lvar 3件 / 3境界**
+
+  残る3境界はlocal compound initializer、byref parameter確定、local declarator末尾。
+  次は各境界の直前に残るdirect flat-field mutationをcanonical type builderへ移し、
+  `psx_decl_commit_lvar_type()`とlvar側`legacy_decl_shape_t`再構築を削除する。
+
 - 続き1057: **declaration commit境界を11件から8件へ縮小した。**
 
   global inferred array sizeは`psx_decl_finalize_gvar_inferred_array_size()`から

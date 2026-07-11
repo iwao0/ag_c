@@ -1564,7 +1564,6 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                            cast_kind == TK_BOOL);
   }
   node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
-  (void)psx_decl_commit_lvar_type(var);
   node_t *ref;
   if (is_arr) {
     ref = psx_node_new_compound_lvar_array_addr_for(

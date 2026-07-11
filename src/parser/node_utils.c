@@ -878,16 +878,6 @@ static psx_type_t *type_from_legacy_decl_shape(const legacy_decl_shape_t *mem,
   return legacy_decl_shape_reconstruct_type(mem, force_array, force_vla);
 }
 
-static psx_type_t *type_clone_persistent(const psx_type_t *src) {
-  if (!src) return NULL;
-  psx_type_t *dst = calloc(1, sizeof(psx_type_t));
-  if (!dst) return NULL;
-  *dst = *src;
-  dst->base = type_clone_persistent(src->base);
-  dst->funcptr_sig = psx_decl_funcptr_sig_clone(src->funcptr_sig);
-  return dst;
-}
-
 static psx_type_t *type_clone_arena(const psx_type_t *src) {
   if (!src) return NULL;
   psx_type_t *dst = arena_alloc(sizeof(psx_type_t));
@@ -1177,12 +1167,6 @@ psx_type_t *psx_lvar_materialize_decl_type(lvar_t *var) {
   sync_materialized_lvar_runtime_shape(var, var->decl_type);
   if (var->decl_type) var->decl_type->type_sig = var->type_sig;
   return var->decl_type;
-}
-
-psx_type_t *psx_decl_commit_lvar_type(lvar_t *var) {
-  if (!var) return NULL;
-  var->decl_type = NULL;
-  return psx_lvar_materialize_decl_type(var);
 }
 
 static int gvar_is_pointer_like_from_fields(const global_var_t *gv) {
@@ -2712,16 +2696,10 @@ psx_type_t *psx_gvar_materialize_decl_type(global_var_t *gv) {
   init_gvar_decl_shape(&mem, gv);
   psx_type_t *arena_type = type_from_legacy_decl_shape(&mem, gv->is_array, 0);
   psx_type_canonicalize_flat_pointer_to_array(arena_type);
-  gv->decl_type = type_clone_persistent(arena_type);
+  gv->decl_type = psx_type_clone_persistent(arena_type);
   sync_materialized_gvar_runtime_shape(gv, gv->decl_type);
   if (gv->decl_type) gv->decl_type->type_sig = gv->type_sig;
   return gv->decl_type;
-}
-
-psx_type_t *psx_decl_commit_gvar_type(global_var_t *gv) {
-  if (!gv) return NULL;
-  gv->decl_type = NULL;
-  return psx_gvar_materialize_decl_type(gv);
 }
 
 static psx_type_t *type_new_void(void) {

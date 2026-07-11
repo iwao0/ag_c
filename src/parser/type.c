@@ -1,5 +1,6 @@
 #include "type.h"
 #include "arena.h"
+#include <stdlib.h>
 
 psx_type_t *psx_type_new(psx_type_kind_t kind) {
   psx_type_t *type = arena_alloc(sizeof(psx_type_t));
@@ -99,6 +100,149 @@ psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int el
                                 ? base->pointee_fp_kind
                                 : base->fp_kind;
   }
+  return type;
+}
+
+psx_type_t *psx_type_clone_persistent(const psx_type_t *src) {
+  if (!src) return NULL;
+  psx_type_t *dst = calloc(1, sizeof(psx_type_t));
+  if (!dst) return NULL;
+  *dst = *src;
+  dst->base = psx_type_clone_persistent(src->base);
+  dst->funcptr_sig = psx_decl_funcptr_sig_clone(src->funcptr_sig);
+  return dst;
+}
+
+static psx_type_t *type_build_array_size_chain(
+    psx_type_t *base, const int *sizes, int size_count, int leaf_size) {
+  if (!base || !sizes || size_count <= 0 || leaf_size <= 0) return base;
+  psx_type_t *type = base;
+  for (int i = size_count - 1; i >= 0; i--) {
+    int total_size = sizes[i];
+    int child_size = i + 1 < size_count ? sizes[i + 1]
+                                        : psx_type_sizeof(type);
+    if (child_size <= 0) child_size = leaf_size;
+    if (total_size <= 0 || child_size <= 0 || total_size < child_size)
+      continue;
+    int array_len = total_size / child_size;
+    if (array_len <= 0) array_len = 1;
+    psx_type_t *array =
+        psx_type_new_array(type, array_len, total_size, child_size, 0);
+    array->base_deref_size = leaf_size;
+    array->outer_stride = child_size;
+    array->mid_stride = i + 2 < size_count ? sizes[i + 2] : 0;
+    int extra_count = 0;
+    for (int j = i + 3; j < size_count && extra_count < 5; j++)
+      array->extra_strides[extra_count++] = sizes[j];
+    array->extra_strides_count = (unsigned char)extra_count;
+    type = array;
+  }
+  return type;
+}
+
+static int type_normalize_row_sizes(int object_size, const int *row_sizes,
+                                    int row_size_count, int *sizes,
+                                    int include_object_size) {
+  int count = 0;
+  if (include_object_size && object_size > 0) sizes[count++] = object_size;
+  for (int i = 0; i < row_size_count && count < 8; i++) {
+    int size = row_sizes ? row_sizes[i] : 0;
+    if (size <= 0) continue;
+    if (count > 0 && size >= sizes[count - 1]) continue;
+    sizes[count++] = size;
+  }
+  return count;
+}
+
+psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
+                                          const int *row_sizes,
+                                          int row_size_count, int leaf_size) {
+  if (!type || !row_sizes || row_size_count <= 0 || leaf_size <= 0)
+    return type;
+
+  int sizes[8] = {0};
+  if (type->kind == PSX_TYPE_ARRAY) {
+    psx_type_t *old_outer = type;
+    psx_type_t *base = type;
+    while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
+    int size_count = type_normalize_row_sizes(
+        object_size, row_sizes, row_size_count, sizes, 1);
+    psx_type_t *rebuilt =
+        type_build_array_size_chain(base, sizes, size_count, leaf_size);
+    if (rebuilt && rebuilt->kind == PSX_TYPE_ARRAY) {
+      psx_type_copy_common_qualifiers(rebuilt, old_outer);
+      rebuilt->fp_kind = old_outer->fp_kind;
+      rebuilt->pointee_fp_kind = old_outer->pointee_fp_kind;
+      rebuilt->funcptr_sig =
+          psx_decl_funcptr_sig_clone(old_outer->funcptr_sig);
+      rebuilt->type_sig = old_outer->type_sig;
+      rebuilt->tag_kind = old_outer->tag_kind;
+      rebuilt->tag_name = old_outer->tag_name;
+      rebuilt->tag_len = old_outer->tag_len;
+      rebuilt->tag_scope_depth_p1 = old_outer->tag_scope_depth_p1;
+    }
+    return rebuilt;
+  }
+
+  if (type->kind != PSX_TYPE_POINTER) return type;
+  psx_type_t *owner = type;
+  while (owner->base && owner->base->kind == PSX_TYPE_POINTER)
+    owner = owner->base;
+  psx_type_t *base = owner->base;
+  while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
+  int size_count = type_normalize_row_sizes(
+      object_size, row_sizes, row_size_count, sizes, 0);
+  psx_type_t *rebuilt =
+      type_build_array_size_chain(base, sizes, size_count, leaf_size);
+  if (!rebuilt || rebuilt == base) return type;
+  owner->base = rebuilt;
+  owner->deref_size = psx_type_sizeof(rebuilt);
+  const psx_type_t *array_leaf = rebuilt;
+  while (array_leaf && array_leaf->kind == PSX_TYPE_ARRAY)
+    array_leaf = array_leaf->base;
+  if (array_leaf && array_leaf->kind == PSX_TYPE_POINTER) {
+    int base_deref_size =
+        psx_type_pointer_view_structural_base_deref_size(array_leaf);
+    owner->base_deref_size = base_deref_size > 0
+                                 ? base_deref_size
+                                 : array_leaf->base_deref_size;
+  } else {
+    owner->base_deref_size = owner->deref_size;
+  }
+  psx_type_sync_pointer_to_array_metadata_from_base(owner);
+  owner->outer_stride = size_count > 0 ? sizes[0] : 0;
+  owner->mid_stride = size_count > 1 ? sizes[1] : 0;
+  int extra_count = size_count > 2 ? size_count - 2 : 0;
+  if (extra_count > 5) extra_count = 5;
+  owner->extra_strides_count = (unsigned char)extra_count;
+  for (int i = 0; i < extra_count; i++)
+    owner->extra_strides[i] = sizes[i + 2];
+  for (int i = extra_count; i < 5; i++) owner->extra_strides[i] = 0;
+  if (array_leaf && array_leaf->kind == PSX_TYPE_POINTER) {
+    owner->ptr_array_pointee_bytes = size_count > 0 ? sizes[0] : 0;
+  } else if (size_count > 1) {
+    owner->ptr_array_pointee_bytes = 0;
+  }
+  return type;
+}
+
+psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
+                                              int array_len) {
+  if (!type || type->kind != PSX_TYPE_POINTER || !type->base ||
+      array_len <= 0) {
+    return type;
+  }
+  int child_size = psx_type_sizeof(type->base);
+  if (child_size <= 0) child_size = psx_type_deref_size(type->base);
+  if (child_size <= 0) return type;
+  int total_size = array_len * child_size;
+  psx_type_t *array = psx_type_new_array(
+      type->base, array_len, total_size, child_size, 0);
+  array->base_deref_size = type->base_deref_size;
+  array->outer_stride = child_size;
+  type->base = array;
+  type->deref_size = total_size;
+  psx_type_sync_pointer_to_array_metadata_from_base(type);
   return type;
 }
 

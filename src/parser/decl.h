@@ -215,6 +215,11 @@ void psx_decl_set_lvar_integer_identity(lvar_t *var,
                                         int is_plain_char);
 void psx_decl_set_lvar_long_double(lvar_t *var, int is_long_double);
 void psx_decl_set_lvar_pointee_void(lvar_t *var, int pointee_is_void);
+void psx_decl_set_lvar_byref_param(lvar_t *var);
+void psx_decl_set_lvar_storage_scalar_kind(lvar_t *var,
+                                           tk_float_kind_t fp_kind,
+                                           int is_unsigned);
+void psx_decl_set_lvar_pointer_base_array(lvar_t *var, int array_len);
 void psx_decl_set_lvar_qualifiers(lvar_t *var,
                                   int is_const_qualified,
                                   int is_volatile_qualified,
@@ -277,8 +282,6 @@ void psx_decl_set_gvar_qualifiers(global_var_t *gv,
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
                                          const psx_decl_funcptr_sig_t *sig);
 void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig);
-psx_type_t *psx_decl_commit_lvar_type(lvar_t *var);
-psx_type_t *psx_decl_commit_gvar_type(global_var_t *gv);
 void psx_decl_set_current_funcname(char *name, int len);
 void psx_decl_get_current_funcname(char **out_name, int *out_len);
 

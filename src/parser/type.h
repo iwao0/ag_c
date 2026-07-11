@@ -72,6 +72,12 @@ psx_type_t *psx_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
 psx_type_t *psx_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
+psx_type_t *psx_type_clone_persistent(const psx_type_t *src);
+psx_type_t *psx_type_rebuild_array_shape(psx_type_t *type, int object_size,
+                                          const int *row_sizes,
+                                          int row_size_count, int leaf_size);
+psx_type_t *psx_type_wrap_pointer_base_array(psx_type_t *type,
+                                              int array_len);
 psx_type_t *psx_type_new_runtime_vla_row_view(
     const psx_type_t *source, int row_size, int elem_size,
     int row_stride_frame_off, int strides_remaining);

@@ -4045,7 +4045,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
     psx_decl_init_lvar_storage_type(var, 8, ds->struct_size, 0,
                                     TK_FLOAT_KIND_NONE, 0,
                                     ds->tag_kind, ds->tag_name, ds->tag_len, 0);
-    var->is_byref_param = 1;
+    psx_decl_set_lvar_byref_param(var);
     return var;
   }
   if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 0) {
@@ -4133,8 +4133,7 @@ static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t
 	                                             ds->elem_size,
 	                                             param_inner_first_dim * ds->elem_size);
 	      if (param_ptr_levels >= 2) {
-	        int pointer_array_dims[1] = {pointer_array_outer_dim};
-	        psx_decl_set_lvar_array_strides_from_inner_dims(var, pointer_array_dims, 1, 8);
+	        psx_decl_set_lvar_pointer_base_array(var, pointer_array_outer_dim);
 	      }
 	      return var;
 	    }
@@ -4320,7 +4319,6 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                                     var->tag_kind, var->tag_name, var->tag_len,
                                     var->is_tag_pointer);
   }
-  (void)psx_decl_commit_lvar_type(var);
   // args[] には宣言型を正本にした ND_LVAR を格納する。
   // ABI の受け渡しサイズは IR 生成時に owner/param metadata から判断する。
   // 配列宣言子の struct パラメータ (`struct V arr[]`) はポインタに adjust される
