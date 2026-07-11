@@ -84,6 +84,7 @@ node_t *psx_node_new_lvar_typed_for(struct lvar_t *var, int type_size);
 node_t *psx_node_new_lvar_object_ref_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_expr_ref_for(struct lvar_t *var, int is_pointer);
 node_t *psx_node_new_lvar_identifier_ref_for(struct lvar_t *var);
+node_t *psx_node_new_vla_decay_ref_for(struct lvar_t *var);
 node_t *psx_node_new_param_lvar_for(struct lvar_t *var, int abi_type_size,
                                     int is_unsigned, tk_float_kind_t abi_fp_kind,
                                     int is_complex);

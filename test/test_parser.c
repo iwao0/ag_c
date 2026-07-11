@@ -3318,6 +3318,26 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_subscript_deref_uses_base_address(vla_ptr_row));
 
   parsed_code = parse_program_input(
+      "int __tm_vla_ptr_arith(int m, int a[2][3]) { "
+      "int (*p)[m] = a; return (*(p + 1))[2]; }");
+  fn = as_func(parsed_code[0]);
+  body = as_block(fn->base.rhs);
+  node_t *vla_ptr_arith_elem = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    if (body->body[i]->kind == ND_RETURN) {
+      vla_ptr_arith_elem = body->body[i]->lhs;
+      break;
+    }
+  }
+  ASSERT_TRUE(vla_ptr_arith_elem != NULL);
+  ASSERT_EQ(ND_DEREF, vla_ptr_arith_elem->kind);
+  ASSERT_EQ(4, ps_node_type_size(vla_ptr_arith_elem));
+  ASSERT_TRUE(vla_ptr_arith_elem->lhs != NULL);
+  ASSERT_EQ(ND_ADD, vla_ptr_arith_elem->lhs->kind);
+  ASSERT_TRUE(vla_ptr_arith_elem->lhs->lhs != NULL);
+  ASSERT_TRUE(vla_ptr_arith_elem->lhs->lhs->kind != ND_DEREF);
+
+  parsed_code = parse_program_input(
       "int __tm_vla_fp_sidecar(int m) { double a[2][3]; double (*p)[m] = a; "
       "p[0][1] = 9.5; return 0; }");
   fn = as_func(parsed_code[0]);
@@ -3335,6 +3355,18 @@ static void test_type_metadata_bridge() {
             psx_node_vla_row_stride_frame_off(vla_fp_ptr_node));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             psx_node_pointee_fp_kind(vla_fp_ptr_node));
+
+  parsed_code = parse_program_input(
+      "int __tm_vla_fp_leaf(int n) { double a[n]; return 0; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *vla_fp_leaf_lvar = find_func_lvar(fn, "a");
+  ASSERT_TRUE(vla_fp_leaf_lvar != NULL);
+  psx_type_t *vla_fp_leaf = vla_fp_leaf_lvar->decl_type;
+  while (vla_fp_leaf && vla_fp_leaf->kind == PSX_TYPE_ARRAY)
+    vla_fp_leaf = vla_fp_leaf->base;
+  ASSERT_TRUE(vla_fp_leaf != NULL);
+  ASSERT_EQ(PSX_TYPE_FLOAT, vla_fp_leaf->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, vla_fp_leaf->fp_kind);
 
   parsed_code = parse_program_input(
       "struct __tm_ptrarr_S { int x; }; "
@@ -4363,6 +4395,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(vla3d_a->vla_row_stride_frame_off > 0);
   ASSERT_EQ(1, vla3d_a->vla_strides_remaining);
   node_t *vla3d_node = psx_node_new_lvar_identifier_ref_for(vla3d_a);
+  node_t *vla3d_decay = psx_node_new_vla_decay_ref_for(vla3d_a);
+  ASSERT_EQ(PSX_TYPE_POINTER, psx_node_get_type(vla3d_decay)->kind);
+  ASSERT_TRUE(ps_node_is_pointer(vla3d_decay));
+  ASSERT_EQ(0, psx_node_aggregate_value_size(vla3d_decay));
+  ASSERT_EQ(vla3d_a->vla_row_stride_frame_off,
+            psx_node_vla_row_stride_frame_off(vla3d_decay));
   int vla3d_inner = 0;
   int vla3d_next = 0;
   ASSERT_TRUE(psx_node_pointer_stride_metadata(vla3d_node,
@@ -7974,6 +8012,15 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, indirect_double_ptr_to_array_ty->funcptr_sig.function.callable.return_shape.pointee_array.elem_size);
   lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
   ASSERT_TRUE(dpa_lvar != NULL);
+  const psx_type_t *dpa_function_type =
+      psx_type_find_function(dpa_lvar->decl_type);
+  ASSERT_TRUE(dpa_function_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, dpa_function_type->kind);
+  ASSERT_TRUE(dpa_function_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, dpa_function_type->base->kind);
+  ASSERT_TRUE(dpa_function_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, dpa_function_type->base->base->kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, dpa_function_type->base->base->base->kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dpa_lvar->funcptr_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dpa_lvar->funcptr_sig.function.callable.return_shape.pointee_fp_kind);
 
@@ -8001,6 +8048,71 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(indirect_explicit_row_elem_ty != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, indirect_explicit_row_elem_ty->kind);
   ASSERT_EQ(4, psx_type_sizeof(indirect_explicit_row_elem_ty));
+
+  parsed_code = parse_program_input(
+      "int add(int a,int b){return a+b;} int (*ops[3])(int,int)={add,add,add}; "
+      "int main(void){ int (*(*pb)[3])(int,int)=&ops; return (*pb)[0](1,2); }");
+  fn = as_func(parsed_code[1]);
+  lvar_t *pb_lvar = find_func_lvar(fn, "pb");
+  ASSERT_TRUE(pb_lvar != NULL);
+  psx_type_t *pb_type = pb_lvar->decl_type;
+  ASSERT_TRUE(pb_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, pb_type->kind);
+  ASSERT_TRUE(pb_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, pb_type->base->kind);
+  ASSERT_TRUE(pb_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, pb_type->base->base->kind);
+  ASSERT_TRUE(pb_type->base->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, pb_type->base->base->base->kind);
+
+  parsed_code = parse_program_input(
+      "static int data; static void *get(void){return &data;} "
+      "int main(void){int *p=(int *)get(); return p[0];}");
+  fn = as_func(parsed_code[1]);
+  body = as_block(fn->base.rhs);
+  node_t *void_ptr_call = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    node_t *candidate = body->body[i];
+    if (candidate->kind == ND_ASSIGN && candidate->rhs &&
+        candidate->rhs->kind == ND_CAST) {
+      void_ptr_call = candidate->rhs->lhs;
+      break;
+    }
+  }
+  ASSERT_TRUE(void_ptr_call != NULL);
+  ASSERT_EQ(ND_FUNCALL, void_ptr_call->kind);
+  psx_type_t *void_ptr_call_type = psx_node_get_type(void_ptr_call);
+  ASSERT_TRUE(void_ptr_call_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, void_ptr_call_type->kind);
+  ASSERT_TRUE(void_ptr_call_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_VOID, void_ptr_call_type->base->kind);
+  ASSERT_TRUE(!psx_node_value_is_void(void_ptr_call));
+  psx_function_ret_info_t void_ptr_ret_info =
+      psx_ctx_get_function_ret_info("get", 3);
+  ASSERT_TRUE(void_ptr_ret_info.is_pointer);
+  ASSERT_TRUE(!void_ptr_ret_info.is_void);
+
+  parsed_code = parse_program_input(
+      "typedef int (*TMFunc)(int,int); typedef TMFunc TMFuncs[3]; "
+      "int tm_add(int a,int b){return a+b;} "
+      "int main(void){TMFuncs ops={tm_add,tm_add,tm_add}; TMFuncs *pa=&ops; "
+      "return (*pa)[0](1,2);}");
+  fn = as_func(parsed_code[1]);
+  lvar_t *tm_ops = find_func_lvar(fn, "ops");
+  lvar_t *tm_pa = find_func_lvar(fn, "pa");
+  ASSERT_TRUE(tm_ops != NULL);
+  ASSERT_TRUE(tm_pa != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_ops->decl_type->kind);
+  ASSERT_TRUE(tm_ops->decl_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_ops->decl_type->base->kind);
+  ASSERT_TRUE(psx_decl_funcptr_sig_has_payload(tm_ops->funcptr_sig));
+  ASSERT_TRUE(psx_type_find_function(tm_ops->decl_type) != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->kind);
+  ASSERT_TRUE(tm_pa->decl_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, tm_pa->decl_type->base->kind);
+  ASSERT_TRUE(tm_pa->decl_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->base->base->kind);
+  ASSERT_TRUE(psx_type_find_function(tm_pa->decl_type) != NULL);
 
   parsed_code = parse_program_input(
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
@@ -8124,6 +8236,25 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, rows_info.decl_type->base->base->kind);
   ASSERT_EQ(3, rows_info.decl_type->base->base->array_len);
   ASSERT_EQ(4, rows_info.decl_type->base->base->elem_size);
+
+  parsed_code = parse_program_input(
+      "struct TMPtrRows { int (*p[2])[3]; }; int main(void){return 0;}");
+  (void)parsed_code;
+  tag_member_info_t ptr_rows_info = {0};
+  ASSERT_TRUE(psx_ctx_find_tag_member_info(
+      TK_STRUCT, "TMPtrRows", 9, "p", 1, &ptr_rows_info));
+  ASSERT_TRUE(ptr_rows_info.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ptr_rows_info.decl_type->kind);
+  ASSERT_EQ(2, ptr_rows_info.decl_type->array_len);
+  ASSERT_TRUE(ptr_rows_info.decl_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, ptr_rows_info.decl_type->base->kind);
+  ASSERT_TRUE(ptr_rows_info.decl_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ptr_rows_info.decl_type->base->base->kind);
+  ASSERT_EQ(3, ptr_rows_info.decl_type->base->base->array_len);
+  ASSERT_TRUE(ptr_rows_info.decl_type->base->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ptr_rows_info.decl_type->base->base->base->kind);
+  ASSERT_EQ(12, psx_type_sizeof(ptr_rows_info.decl_type->base->base));
 
   parsed_code = parse_program_input(
       "struct __tm_member_ptrarr { int (*p)[3]; }; "

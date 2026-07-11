@@ -693,7 +693,7 @@ static psx_type_t *function_signature_ret_type(
                                          sig->ret_pointee_volatile);
   if (sig->ret_is_funcptr &&
       psx_decl_funcptr_sig_has_payload(effective_funcptr_sig)) {
-    type->funcptr_sig = psx_decl_funcptr_sig_clone(effective_funcptr_sig);
+    type = psx_type_attach_funcptr_signature(type, effective_funcptr_sig);
   }
   return type;
 }

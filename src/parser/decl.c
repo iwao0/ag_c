@@ -4033,8 +4033,6 @@ void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind) {
   var->pointee_fp_kind = fp_kind;
   psx_type_t *type = psx_lvar_materialize_decl_type(var);
   if (!psx_decl_type_has_pointee(type)) return;
-  if (type->kind == PSX_TYPE_ARRAY && !psx_decl_type_has_pointer(type))
-    fp_kind = var->fp_kind;
   for (psx_type_t *view = type;
        view && (view->kind == PSX_TYPE_POINTER || view->kind == PSX_TYPE_ARRAY);
        view = view->base) {
@@ -4369,6 +4367,21 @@ void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
       var->decl_type = vla;
       type = vla;
     }
+  } else if (!var->is_array && type->kind == PSX_TYPE_POINTER &&
+             row_stride_frame_off != 0 && type->base &&
+             type->base->kind != PSX_TYPE_ARRAY) {
+    int elem_size = row_stride_elem_size > 0
+                        ? row_stride_elem_size
+                        : psx_type_sizeof(type->base);
+    if (elem_size > 0) {
+      psx_type_t *row = psx_type_new_array(
+          type->base, 0, 0, elem_size, 1);
+      row->base_deref_size = elem_size;
+      row->outer_stride = elem_size;
+      type->base = row;
+      type->deref_size = 0;
+      type->base_deref_size = elem_size;
+    }
   }
   type->is_vla = 1;
   type->outer_stride = outer_stride;
@@ -4407,11 +4420,7 @@ void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
     type->base_deref_size = base_size;
     var->decl_type = type;
   }
-  for (;
-       type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
-       type = type->base) {
-    type->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
-  }
+  var->decl_type = psx_type_attach_funcptr_signature(type, *sig);
 }
 
 void psx_decl_set_lvar_type_sig(lvar_t *var, char *type_sig) {
@@ -4774,7 +4783,7 @@ void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
     type->base_deref_size = base_size;
     gv->decl_type = type;
   }
-  if (type) type->funcptr_sig = psx_decl_funcptr_sig_clone(*sig);
+  gv->decl_type = psx_type_attach_funcptr_signature(type, *sig);
 }
 
 void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig) {
@@ -6136,14 +6145,22 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
          * `*(*pia)[0]` の最終 deref が pointee サイズで出力されるよう build_subscript_deref
          * の「要素はポインタ」分岐に乗せる。関数ポインタ要素は call で 8B 値をそのまま使う
          * ため、bds=8 (= eff_elem) のままで OK (既存挙動)。 */
+        int paren_pointer_levels =
+            total_pointer_levels > 0 ? total_pointer_levels : 1;
         if (base_is_pointer && !decl_state.trailing_func_suffix && elem_size > 0 && elem_size < 8) {
-          psx_decl_set_lvar_pointer_derived_type(var, 2, elem_size,
+          psx_decl_set_lvar_pointer_derived_type(var, paren_pointer_levels,
+                                                 elem_size,
                                                  var->ptr_array_pointee_bytes);
         } else {
-          psx_decl_set_lvar_pointer_derived_type(var, var->pointer_qual_levels, eff_elem,
+          psx_decl_set_lvar_pointer_derived_type(var, paren_pointer_levels,
+                                                 eff_elem,
                                                  var->ptr_array_pointee_bytes);
         }
-        if (base_is_pointer && !decl_state.trailing_func_suffix &&
+        int paren_array_is_funcptr_object =
+            decl_state.trailing_func_suffix &&
+            !decl_funcptr_direct_ret_is_data_pointer(
+                &decl_state, ptr_levels, base_is_pointer);
+        if ((base_is_pointer || paren_array_is_funcptr_object) &&
             paren_array_mul > 0) {
           psx_decl_set_lvar_pointer_base_array(var, paren_array_mul);
         }
@@ -6268,12 +6285,12 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           /* VLA は continue で下の fp_kind/is_unsigned 設定をスキップする。VLA 記述子
            * 自体はベースポインタ (整数) なので fp_kind は NONE のまま、要素型は
            * pointee_fp_kind に入れて subscript の fp load/store に伝播させる。 */
-          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           /* タグ情報も carry (struct/union 要素 VLA `struct P arr[n]` で `arr[i].m` を解決可能に)。
            * is_tag_pointer=0: 配列なので tag ポインタではない。 */
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                           var->fp_kind, decl_is_unsigned,
                                           tag_kind, tag_name, tag_len, 0);
+          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           if (!tk_consume(',')) break;
           continue;
         }
@@ -6285,10 +6302,10 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         if (!size_inferred_from_init && decl_peek_trailing_array_dims_have_vla()) {
           node_t *first_size_node = psx_node_new_num((int)array_size);
           var = register_vla_lvar_and_append_alloc(tok, elem_size, first_size_node, &init_chain);
-          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                           var->fp_kind, decl_is_unsigned,
                                           tag_kind, tag_name, tag_len, 0);
+          psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
           if (!tk_consume(',')) break;
           continue;
         }
@@ -6341,7 +6358,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     psx_decl_set_lvar_pointee_scalar_flags(
         var, is_pointer && !is_funcptr_decl && decl_is_unsigned,
         is_pointer && !is_funcptr_decl && decl_base_is_bool);
-	    if (!is_pointer || is_funcptr_decl) {
+	    if (var->is_array && !is_funcptr_decl) {
+	      psx_decl_set_lvar_pointee_fp_kind(var, decl_fp_kind);
+	    } else if (!is_pointer || is_funcptr_decl) {
 	      psx_decl_set_lvar_pointee_fp_kind(var, TK_FLOAT_KIND_NONE);
 	    } else {
 	      /* 多段ポインタ (`double **pp`) でも最内 pointee の fp 種別を保持する。
@@ -6377,7 +6396,8 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
       int direct_ret_is_data_pointer =
           decl_funcptr_direct_ret_is_data_pointer(&decl_state, ptr_levels, base_is_pointer);
       psx_ret_pointee_array_t direct_ret_pointee_array =
-          (decl_state.trailing_func_suffix && paren_array_mul > 0 &&
+          (decl_state.trailing_func_suffix && direct_ret_is_data_pointer &&
+           paren_array_mul > 0 &&
            decl_state.paren_array_first_dim > 0)
               ? psx_ret_pointee_array_make(decl_state.paren_array_first_dim,
                                            decl_state.paren_array_second_dim,

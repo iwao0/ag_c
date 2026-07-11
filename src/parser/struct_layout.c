@@ -727,6 +727,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
          * `(*s.p[i])[j]` の build_unary_deref_node 経路で要素ストライドに再設定する。 */
         if (has_member_name && ptr_array_pointee_bytes > 0) {
           _mi.ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+          int pointee_count = elem_size > 0
+                                  ? ptr_array_pointee_bytes / elem_size
+                                  : 0;
+          if (pointee_count > 0) {
+            _mi.decl_type = psx_type_wrap_pointer_base_array(
+                _mi.decl_type, pointee_count);
+            if (_mi.decl_type) {
+              _mi.decl_type->ptr_array_pointee_bytes =
+                  ptr_array_pointee_bytes;
+            }
+          }
         }
         if (has_member_name && member_typedef_ptr_array_pointee_bytes > 0) {
           if (head.is_ptr || member_array_len > 0) {

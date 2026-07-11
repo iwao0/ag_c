@@ -4397,6 +4397,9 @@ static node_t *resolve_identifier(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (psx_lvar_is_array(var) && !psx_lvar_is_vla(var)) {
     return annotate_lvar_usage_node(build_array_lvar_addr_node(var), var, ctx);
   }
+  if (psx_lvar_is_vla(var)) {
+    return annotate_lvar_usage_node(psx_node_new_vla_decay_ref_for(var), var, ctx);
+  }
   if (var->is_byref_param) {
     return annotate_lvar_usage_node(build_byref_param_node(var), var, ctx);
   }

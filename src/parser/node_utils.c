@@ -130,8 +130,7 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_legacy_decl_shape(const legacy_de
 }
 
 static psx_decl_funcptr_sig_t funcptr_sig_from_type(const psx_type_t *type) {
-  if (!type) return (psx_decl_funcptr_sig_t){0};
-  return psx_decl_funcptr_sig_clone(type->funcptr_sig);
+  return psx_type_funcptr_signature(type);
 }
 
 static int funcptr_sig_has_return_shape(psx_decl_funcptr_sig_t sig) {
@@ -2927,6 +2926,9 @@ static psx_type_t *type_from_funcptr_callee_type(node_func_t *fn) {
   if (!fn || !fn->callee) return NULL;
   psx_type_t *callee_type = psx_node_get_type(fn->callee);
   if (!callee_type || callee_type->kind != PSX_TYPE_POINTER) return NULL;
+  const psx_type_t *function_type = psx_type_find_function(callee_type);
+  if (function_type && function_type->base)
+    return type_clone_arena(function_type->base);
   psx_decl_funcptr_sig_t callee_sig = funcptr_sig_from_type(callee_type);
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
@@ -4909,6 +4911,13 @@ node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
   }
 
   return psx_node_new_lvar_for(var);
+}
+
+node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
+  psx_type_t *array_type = var ? psx_lvar_get_decl_type(var) : NULL;
+  psx_type_t *decay_type = type_decay_array_to_pointer(array_type);
+  if (!decay_type) return psx_node_new_lvar_identifier_ref_for(var);
+  return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
 }
 
 node_t *psx_node_new_param_lvar_for(lvar_t *var, int abi_type_size,

@@ -655,7 +655,7 @@ static void ctx_function_ret_info_apply_type(psx_function_ret_info_t *info,
   switch (type->kind) {
     case PSX_TYPE_VOID:
       info->token_kind = TK_VOID;
-      info->is_void = 1;
+      info->is_void = info->is_pointer ? 0 : 1;
       break;
     case PSX_TYPE_BOOL:
     case PSX_TYPE_INTEGER:

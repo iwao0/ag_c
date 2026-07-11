@@ -46,6 +46,146 @@ psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size) {
   return type;
 }
 
+psx_type_t *psx_type_new_function(psx_type_t *return_type,
+                                  psx_decl_funcptr_sig_t sig) {
+  psx_type_t *type = psx_type_new(PSX_TYPE_FUNCTION);
+  type->base = return_type;
+  type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
+  return type;
+}
+
+const psx_type_t *psx_type_find_function(const psx_type_t *type) {
+  while (type) {
+    if (type->kind == PSX_TYPE_FUNCTION) return type;
+    if (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)
+      return NULL;
+    type = type->base;
+  }
+  return NULL;
+}
+
+psx_decl_funcptr_sig_t psx_type_funcptr_signature(const psx_type_t *type) {
+  const psx_type_t *function = psx_type_find_function(type);
+  if (function && psx_decl_funcptr_sig_has_payload(function->funcptr_sig))
+    return psx_decl_funcptr_sig_clone(function->funcptr_sig);
+  return type ? psx_decl_funcptr_sig_clone(type->funcptr_sig)
+              : (psx_decl_funcptr_sig_t){0};
+}
+
+static psx_type_t *type_return_from_funcptr_shape(
+    psx_type_t *base, psx_funcptr_type_shape_t shape) {
+  psx_funcptr_return_shape_t ret = shape.callable.return_shape;
+  psx_type_t *return_type = base;
+  if (ret.is_data_pointer && return_type &&
+      return_type->kind == PSX_TYPE_POINTER) {
+    return_type = return_type->base;
+  }
+  if ((ret.is_data_pointer || psx_ret_pointee_array_has_dims(ret.pointee_array)) &&
+      ret.pointee_fp_kind != TK_FLOAT_KIND_NONE) {
+    return_type = psx_type_new_float(
+        ret.pointee_fp_kind,
+        ret.pointee_fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  } else if (!ret.is_data_pointer && ret.fp_kind != TK_FLOAT_KIND_NONE) {
+    return_type = psx_type_new_float(
+        ret.fp_kind, ret.fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  } else if (!ret.is_data_pointer && ret.is_void) {
+    return_type = psx_type_new(PSX_TYPE_VOID);
+    return_type->scalar_kind = TK_VOID;
+  } else if (!ret.is_data_pointer && ret.int_width > 0 &&
+             (!return_type || return_type->kind == PSX_TYPE_INTEGER ||
+              return_type->kind == PSX_TYPE_BOOL)) {
+    int is_unsigned = return_type ? return_type->is_unsigned : 0;
+    return_type = psx_type_new_integer(TK_EOF, ret.int_width, is_unsigned);
+  }
+  psx_ret_pointee_array_t ret_array = ret.pointee_array;
+  if (psx_ret_pointee_array_has_dims(ret_array)) {
+    while (return_type && return_type->kind == PSX_TYPE_ARRAY)
+      return_type = return_type->base;
+    if (return_type &&
+        (return_type->kind == PSX_TYPE_INTEGER ||
+         return_type->kind == PSX_TYPE_BOOL) &&
+        ret_array.elem_size > 0 &&
+        psx_type_sizeof(return_type) != ret_array.elem_size) {
+      return_type = psx_type_new_integer(
+          return_type->kind == PSX_TYPE_BOOL ? TK_BOOL : return_type->scalar_kind,
+          ret_array.elem_size, return_type->is_unsigned);
+    }
+    return_type = psx_type_wrap_ret_pointee_array_base(return_type, ret_array);
+  }
+  if (shape.callable.return_shape.is_data_pointer) {
+    int deref_size = psx_type_sizeof(return_type);
+    if (deref_size <= 0) deref_size = 8;
+    return_type = psx_type_new_pointer(return_type, deref_size);
+    return_type->base_deref_size = deref_size;
+    if (psx_ret_pointee_array_has_dims(ret_array)) {
+      return_type->funcptr_sig.function.callable.return_shape.pointee_array =
+          ret_array;
+      psx_type_sync_pointer_to_array_metadata_from_base(return_type);
+    }
+  }
+  if (psx_funcptr_returned_func_has_payload(shape.returned_funcptr)) {
+    psx_funcptr_type_shape_t returned_shape =
+        psx_funcptr_returned_func_as_type_shape(shape.returned_funcptr);
+    psx_decl_funcptr_sig_t returned_sig = {0};
+    returned_sig.function = psx_funcptr_type_shape_clone(returned_shape);
+    psx_type_t *returned_function = psx_type_new_function(
+        type_return_from_funcptr_shape(base, returned_shape), returned_sig);
+    return_type = psx_type_new_pointer(returned_function, 0);
+    return_type->funcptr_sig = psx_decl_funcptr_sig_clone(returned_sig);
+  }
+  return return_type;
+}
+
+psx_type_t *psx_type_attach_funcptr_signature(
+    psx_type_t *object_type, psx_decl_funcptr_sig_t sig) {
+  if (!object_type || !psx_decl_funcptr_sig_has_payload(sig)) return object_type;
+  psx_type_canonicalize_flat_pointer_to_array(object_type);
+
+  psx_type_t *cur = object_type;
+  psx_type_t *pointers[16] = {0};
+  int pointer_count = 0;
+  psx_type_t *last_array = NULL;
+  while (cur && (cur->kind == PSX_TYPE_POINTER || cur->kind == PSX_TYPE_ARRAY)) {
+    cur->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
+    if (cur->kind == PSX_TYPE_POINTER && pointer_count < 16)
+      pointers[pointer_count++] = cur;
+    if (cur->kind == PSX_TYPE_ARRAY) last_array = cur;
+    cur = cur->base;
+  }
+  if (last_array && last_array->base &&
+      last_array->base->kind != PSX_TYPE_POINTER &&
+      (object_type->kind == PSX_TYPE_ARRAY ||
+       !sig.function.callable.return_shape.is_data_pointer)) {
+    psx_type_t *return_type = type_return_from_funcptr_shape(
+        last_array->base, sig.function);
+    psx_type_t *function = psx_type_new_function(return_type, sig);
+    psx_type_t *element_pointer = psx_type_new_pointer(function, 0);
+    element_pointer->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
+    last_array->base = element_pointer;
+    last_array->elem_size = 8;
+    last_array->deref_size = 8;
+    return object_type;
+  }
+  int function_pointer_index = pointer_count - 1;
+  if (sig.function.callable.return_shape.is_data_pointer &&
+      function_pointer_index > 0) {
+    function_pointer_index--;
+  }
+  psx_type_t *function_pointer =
+      function_pointer_index >= 0 ? pointers[function_pointer_index] : NULL;
+  if (!function_pointer) return object_type;
+  if (function_pointer->base && function_pointer->base->kind == PSX_TYPE_FUNCTION) {
+    function_pointer->base->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
+    return object_type;
+  }
+
+  psx_type_t *return_type = type_return_from_funcptr_shape(
+      function_pointer->base, sig.function);
+  function_pointer->base = psx_type_new_function(return_type, sig);
+  function_pointer->deref_size = 0;
+  return object_type;
+}
+
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,
     tk_float_kind_t fp_kind, int is_unsigned,

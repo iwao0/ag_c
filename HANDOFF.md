@@ -26206,3 +26206,96 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - pointer-to-array-of-funcptr / struct array-of-pointer-to-array
   - type-name parserは多次元pointee dimsを現在byte productへ潰すため、完全な正本化には
     exploded outputsではなくcanonical declarator descriptorを返す構造変更が残る。
+
+### このセッション（続き954）: function type を canonical tree に組み込み call/deref/IR を統一した
+- 見つかった根本原因:
+  - `PSX_TYPE_FUNCTION` は enum に存在していたが実際には使われず、function pointer は
+    `POINTER -> 戻り値型` と `funcptr_sig` sidecar の二重表現だった。
+  - そのため、関数ポインタを返す call に明示 `*` を適用すると戻り値型のデータポインタと誤認し、
+    table index をメモリロードしていた。また間接callの引数/戻りABIが実引数型へ引きずられていた。
+  - `int (*(*pb)[3])(int,int)` の `[3]` は object 側の関数ポインタ配列なのに、callable の
+    return pointee-array shape にも格納されていた。
+  - canonical return type が `void *` でも、互換 `ret_info_cache` は base の `void` を見て
+    `is_void=1` とし、Wasm direct call が戻り値を捨てていた。
+- 根本対応:
+  - `psx_type_new_function()` / `psx_type_attach_funcptr_signature()` /
+    `psx_type_find_function()` / `psx_type_funcptr_signature()` を追加した。
+  - function pointer の canonical shape を `POINTER -> FUNCTION -> return type` とし、
+    配列・多段ポインタでは declarator の位置に `FUNCTION` を挿入するようにした。
+  - function return type は signature の integer/fp/void/data-pointer/pointee-array/returned-funcptr
+    shape から再構築し、`funcptr_sig` は互換cacheとして残しつつ参照時は `FUNCTION` nodeを優先した。
+  - indirect call の結果型は canonical `FUNCTION.base` をcloneし、callable return sidecarからの
+    再推測をfallbackに下げた。
+  - `int (*(*pb)[3])(...)` は `POINTER -> ARRAY[3] -> POINTER -> FUNCTION -> INTEGER` とし、
+    object array dimsをreturn shapeへ入れない。`int (*(*direct)(void))[3]` の
+    `POINTER -> FUNCTION -> POINTER -> ARRAY[3] -> INTEGER` とは型木で区別する。
+  - `ret_info_cache.is_void` は canonical return type自身が`VOID`のときだけ立て、`void *` は
+    `is_pointer=1, is_void=0` とするよう修正した。
+- parser regression:
+  - pointer-to-array of direct function pointers の完全なcanonical chainをassertした。
+  - function pointer returning pointer-to-array の `FUNCTION.base` shapeとfp leafをassertした。
+  - direct `void *` return callが `POINTER -> VOID` であり、cacheも非voidであることをassertした。
+- 解消を個別Wasm実行で確認したfixture:
+  - `func_returning_funcptr_call`
+  - `funcptr_fp_to_int_arg`
+  - `funcptr_global_array_fp_return`
+  - `global_size1_funcptr_array`
+  - `ptr_to_array_of_funcptrs`
+  - `func_return_funcptr_ptrptr`
+  - `func_pointer_return_subscript`
+  - すべて `main() => i32:0`。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 上記7 fixtureを `ag_c_wasm -> wat2wasm -> wasm-interp` で再実行して全件pass。
+  - 合意したfocused-test方針に従い、全1201件のWasm E2Eは今回は未実行。
+    直前の authoritative count は続き953の **26/1201 fail** のままで、現在値は次の全計測まで未確定。
+- 次の候補:
+  - 残る型関連の主群はVLA runtime strideと`struct array-of-pointer-to-array`。
+  - function pointer型を作る一部のtypedef/tag-member/toplevel経路には、まだ
+    `funcptr_sig` cacheを直接代入する箇所がある。中央attach APIへ寄せてcanonical `FUNCTION` nodeを
+    全宣言所有者へ行き渡らせる必要がある。
+
+### このセッション（続き955）: VLA object/decay/runtime rowをcanonical typeで分離した
+- 見つかった根本原因:
+  - ローカルVLAの宣言型はcanonical `ARRAY` objectになっていたが、通常式の識別子参照でも
+    descriptor object型をそのまま返していた。関数引数へ渡すと16バイトaggregateとしてdescriptorを
+    コピーし、data pointerではなくコピー先frameをcalleeへ渡していた。
+  - `double/float VLA` はdeclared element FP種別をcanonical leafへ設定した後、descriptor storageの
+    integer初期化でleafを整数へ戻していた。固定FP配列も`var->fp_kind`からhelper内で補正する
+    旧挙動に依存し、宣言側からNONEを渡していた。
+  - pointer-to-VLA `int (*p)[m]` はruntime row slotを持つ一方、canonical typeは
+    `POINTER -> INTEGER`のままだった。したがって`*(p+1)`をarray rowではなくscalar loadと判定した。
+- 根本対応:
+  - `psx_node_new_vla_decay_ref_for()`を追加し、通常式のローカルVLA識別子をcanonical ARRAYから
+    `POINTER -> element/row`へdecayさせた。descriptor先頭slotのdata pointerを値として読むため、
+    call argumentでもaggregate copyへ入らない。
+  - VLA storage初期化とelement type設定の順序を分離し、descriptor ABIはintegerのまま、
+    canonical array leafだけをdeclared FP typeへした。
+  - 固定配列も`var->is_array`分岐でdeclared `decl_fp_kind`をcanonical leafへ直接設定し、
+    helper内の`var->fp_kind`補正を削除した。
+  - runtime descriptorを持つpointer-to-VLAは
+    `POINTER -> VLA ARRAY(unknown length) -> element`を構築した。runtime row strideは外側pointer、
+    行内のelement strideと型はARRAY leafが正本になり、`*(p+1)`はaddress-decayする。
+- parser regression:
+  - local 3D VLAのdecay nodeがpointerでaggregate valueではなく、runtime stride slotを保持すること。
+  - `double a[n]`のcanonical leafが`FLOAT/double`であること。
+  - `(*(p+1))[2]`が4バイトinteger elementで、明示derefをbase addressとして扱うこと。
+- 解消を個別Wasm実行で確認したfixture:
+  - `pointer_to_vla`
+  - `vla_3d4d_param`
+  - `vla_double_element`
+  - `vla_param_basic_access`
+  - `vla_param_write_through`
+  - すべて `main() => i32:0`。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 上記5 fixtureを `ag_c_wasm -> wat2wasm -> wasm-interp` で再実行して全件pass。
+  - focused-test方針に従い全1201件のWasm E2Eは未実行。続き953の26件から
+    function群7件とVLA群5件が個別に解消したが、現在の全体countは未計測。
+- 次の候補:
+  - `struct_array_of_ptr_to_array_member` と `typedef_pointer_element_array_sizeof` の
+    pointer/array declarator位置をcanonical treeへ寄せる。
+  - VLA parameter dimension source (`vla_param_inner_dim_*`) はまだlvar sidecarをIR entryが直接読む。
+    runtime descriptorの「次元式source」と「計算済みstride slots」を型/descriptor objectへまとめる余地がある。

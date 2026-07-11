@@ -66,6 +66,12 @@ psx_type_t *psx_type_new(psx_type_kind_t kind);
 psx_type_t *psx_type_new_integer(token_kind_t scalar_kind, int size, int is_unsigned);
 psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
+psx_type_t *psx_type_new_function(psx_type_t *return_type,
+                                  psx_decl_funcptr_sig_t sig);
+psx_type_t *psx_type_attach_funcptr_signature(
+    psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
+const psx_type_t *psx_type_find_function(const psx_type_t *type);
+psx_decl_funcptr_sig_t psx_type_funcptr_signature(const psx_type_t *type);
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,
     tk_float_kind_t fp_kind, int is_unsigned,
