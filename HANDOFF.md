@@ -1,8 +1,93 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1036: typed reader の raw stride 依存を監査した）
+最終更新: 2026-07-11（続き1039: raw-only semantic payload と VLA descriptor を分離した）
 
 ## 現状
+- 続き1039: **raw-only semantic payload と VLA descriptor を分離した**。
+
+  raw reader に残っていた bitfield、compound literal array size、VLA allocation offset を
+  分類した。bitfield 情報と compound literal の配列全体サイズは式 semantic state に
+  属するため `psx_expr_type_state_t` へ移し、typed reader は生成後の
+  `node_mem_t` compatibility mirror を参照しないようにした。
+
+  一方、VLA allocation の descriptor/row-stride frame offset は型情報ではなく
+  codegen descriptor なので、専用の `node_vla_alloc_t` に分離した。
+  `ND_VLA_ALLOC` は `node_mem_view()` の対象から外れ、一般の memory-expression payload と
+  VLA allocation descriptor を同じ構造体で扱わなくなった。
+
+  regression では、production parser が生成した compound literal address と bitfield
+  member access の raw mirror を意図的に消しても canonical state の結果が維持されることを
+  確認した。VLA alloc は専用構造体への切り替え後も既存 parser tests が通っている。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は残る `node_mem_view()` reader を監査し、legacy compatibility mirror、
+  expression semantic state、codegen-only payload の境界を同じ基準で整理する。
+
+- 続き1038: **typed provenance と cast state を正本化した**。
+
+  tag identity、VLA frame/remaining、pointer qualifier、pointee qualifier reader を
+  横断監査した。これらは既に `psx_type_t` が存在すれば raw fields を読まない構造で、
+  stale tag/qualifier/VLA sidecar regression も canonical type 優先を確認している。
+
+  一方、その周辺で typed node のまま raw provenance を読んでいた
+  `is_scalar_ptr_member` と subscript base-address 判定を見つけたため、
+  `psx_expr_type_state_t` に `is_scalar_ptr_member_lvalue` と
+  `subscript_uses_base_address` を追加した。tag member constructor は宣言情報から
+  scalar pointer member state を直接設定し、unary/subscript compatibility 境界は
+  base-address state を一度だけ確定する。各 reader は typed node では raw flag を読まない。
+
+  また `psx_node_cast_i64_extension_info()` が target width は canonical type、
+  zero-extension 指示だけは `node_mem_t::widen_zext_i64` を読んでいたため、
+  canonical flag を `node_t::widen_zext_i64` へ移した。旧 field は codegen 移行中の
+  compatibility mirror とし、typed reader は canonical node flag を使う。
+
+  regression:
+  - canonical double-pointer fixture で stale scalar-member flag が pointer level を
+    上書きしないことを確認。
+  - production tag pointer member の raw scalar-member flag を生成後に消しても
+    lvalue provenance が維持されることを確認。
+  - typed cast の raw `widen_zext_i64` を生成後に消しても zero-extension 指示が
+    維持されることを確認。
+
+  確認:
+  - `make build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は raw-only reader の bitfield、compound literal array size、VLA allocation descriptor を
+  「型情報」「式 semantic state」「codegen descriptor」に分類し、型/式状態に属するものを
+  canonical node state へ移す。
+
+- 続き1037: **expression type state を正本化した**。
+
+  続き1036で判明した、同じ配列型でも unary deref / subscript deref / VLA row により
+  現在の deref 幅と次の stride cursor が異なる問題に対し、`node_t` に
+  `psx_expr_type_state_t` を追加した。これは宣言型 `psx_type_t` を複製するものではなく、
+  式ごとの `deref_size` override と `inner/next/extra` stride cursor だけを保持する。
+
+  constructor 完了時に compatibility mirror から type state を一度だけ確定し、
+  `store_pointer_array_stride_payload_mem()` も canonical state と legacy mirror を
+  同期する一方向境界にした。`ps_node_deref_size()` と
+  `psx_node_pointer_stride_metadata()` の typed path は、以後
+  `node->type_state` と `psx_type_t` だけを読み、`node_mem_t` の
+  `deref_size/inner_deref_size/next_deref_size/extra_strides` を fallback として読まない。
+
+  regression では、多次元配列 unary deref と固定内側次元 VLA identifier の生成後に
+  legacy mirror を意図的に破壊し、deref 幅と stride cursor が変化しないことを確認した。
+
+  確認:
+  - `make -B build/test_parser` = **pass**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `git diff --check` = **pass**
+
+  次は、typed reader のうち tag/VLA qualifier 等で node raw fields を参照する経路を
+  同じ lifecycle 観点で監査する。constructor 内で mirror を組み立てる処理はまだ残るが、
+  reader の正本は canonical type / expression type state に移った。
+
 - 続き1036: **typed reader の raw stride 依存を監査した**。
 
   `node_value_view_from_node_direct()` と

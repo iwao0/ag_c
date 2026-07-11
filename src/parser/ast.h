@@ -73,6 +73,24 @@ typedef enum {
 
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
+/* Expression-local view of a canonical type. Array/VLA dereference cursors
+ * belong here; node_mem_t keeps only compatibility mirrors. */
+typedef struct {
+  int deref_size;
+  int inner_stride;
+  int next_stride;
+  int extra_strides[5];
+  unsigned char extra_strides_count;
+  unsigned char has_deref_size;
+  unsigned char has_stride;
+  unsigned char is_scalar_ptr_member_lvalue;
+  unsigned char subscript_uses_base_address;
+  unsigned char bit_width;
+  unsigned char bit_offset;
+  unsigned char bit_is_signed;
+  int compound_literal_array_size;
+} psx_expr_type_state_t;
+
 struct node_t {
   node_kind_t kind; // ノードの型
 
@@ -101,6 +119,7 @@ struct node_t {
   unsigned int has_empty_body : 1;
   unsigned int is_implicit_func_decl : 1;
   unsigned int is_implicit_int_return : 1;
+  unsigned int widen_zext_i64 : 1;
 
   // 構造体戻り値サイズ（ND_RETURN: 関数の戻り値構造体サイズ, ND_FUNCALL: 呼出先の戻り値サイズ）
   int ret_struct_size;
@@ -108,7 +127,14 @@ struct node_t {
   /* Typed-AST path: when present, this semantic type is canonical; legacy fields
    * remain as mirrors for ABI/codegen paths during migration. */
   psx_type_t *type;
+  psx_expr_type_state_t type_state;
 };
+
+typedef struct {
+  node_t base;
+  int descriptor_frame_off;
+  int row_stride_frame_off;
+} node_vla_alloc_t;
 
 // メモリ参照系ノード（型サイズ情報）
 typedef struct node_mem_t node_mem_t;
@@ -158,7 +184,7 @@ struct node_mem_t {
   // 1: struct/union の配列メンバを表す lvalue。`char x[1]` のように
   // type_size == deref_size になる配列も、値文脈では load せず address へ decay する。
   unsigned int is_array_member : 1;
-  // 1: ND_CAST が「lhs を I64 へ zero-extend する」ラッパであることを示す。
+  // node_t::widen_zext_i64 の compatibility mirror。
   // `(long)unsigned_int` の zero-extend を IR_ZEXT で明示挿入するために使う
   // (coerce_to_type は常に SEXT のため unsigned の widen に乗れない)。
   unsigned int widen_zext_i64 : 1;
@@ -180,7 +206,7 @@ struct node_mem_t {
   int vla_strides_remaining;
   /* 配列 compound literal は通常式では pointer decay するが、sizeof の直下では
    * C11 6.5.3.4p2 により元の配列全体サイズを返す必要がある。 */
-  int compound_literal_array_size;
+  int compound_literal_array_size; // type_state.compound_literal_array_size の compatibility mirror
   /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) で carry する、各要素ポインタが
    * 指す配列の全バイト数 (= N * elem)。`s.p` の deref ノードと、`s.p[i]` の subscript 結果
    * deref ノードに carry し、build_unary_deref_node の pointer-to-array 分岐に乗せて
