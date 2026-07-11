@@ -373,14 +373,18 @@ static void parse_typedef_decl(void) {
     if (canonical_type) {
       if (td_pointee_const) canonical_type->is_const_qualified = 1;
       if (td_pointee_volatile) canonical_type->is_volatile_qualified = 1;
-      canonical_type = psx_type_apply_declarator(
-          canonical_type, declarator_dims, declarator_dim_count,
-          decl_state.ptr_levels, decl_state.ptr_in_paren, 0, 0);
-      psx_decl_funcptr_sig_t inherited_sig =
-          psx_type_funcptr_signature(canonical_type);
-      if (psx_decl_funcptr_sig_has_payload(inherited_sig))
-        canonical_type = psx_type_attach_funcptr_signature(
-            canonical_type, inherited_sig);
+      psx_declarator_shape_t shape;
+      psx_declarator_shape_init(&shape);
+      if (decl_state.ptr_in_paren)
+        psx_declarator_shape_append_pointer_levels(
+            &shape, decl_state.ptr_levels, 0, 0);
+      psx_declarator_shape_append_array_dims(
+          &shape, declarator_dims, declarator_dim_count);
+      if (!decl_state.ptr_in_paren)
+        psx_declarator_shape_append_pointer_levels(
+            &shape, decl_state.ptr_levels, 0, 0);
+      canonical_type = psx_type_apply_declarator_shape(
+          canonical_type, &shape);
       psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
     }
     if (decl_state.has_func_suffix && (is_ptr || decl_state.ptr_in_paren)) {
@@ -393,11 +397,16 @@ static void parse_typedef_decl(void) {
       int object_pointer_levels = decl_state.funcptr_object_pointer_levels > 0
                                       ? decl_state.funcptr_object_pointer_levels
                                       : 1;
-      psx_type_t *funcptr_type =
-          psx_type_new_funcptr(sig, object_pointer_levels);
+      psx_declarator_shape_t shape;
+      psx_declarator_shape_init(&shape);
       if (_ti.is_array)
-        funcptr_type = psx_type_wrap_array_dims(
-            funcptr_type, declarator_dims, declarator_dim_count);
+        psx_declarator_shape_append_array_dims(
+            &shape, declarator_dims, declarator_dim_count);
+      psx_declarator_shape_append_pointer_levels(
+          &shape, object_pointer_levels, 0, 0);
+      psx_declarator_shape_append_function(&shape, sig);
+      psx_type_t *funcptr_type = psx_type_apply_declarator_shape(
+          psx_type_new_funcptr_return_type(sig), &shape);
       psx_ctx_typedef_set_decl_type(&_ti, funcptr_type);
       psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
     }

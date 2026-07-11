@@ -18,6 +18,30 @@ typedef enum {
 } psx_type_kind_t;
 
 typedef struct psx_type_t psx_type_t;
+
+typedef enum {
+  PSX_DECL_OP_POINTER = 0,
+  PSX_DECL_OP_ARRAY,
+  PSX_DECL_OP_FUNCTION,
+} psx_declarator_op_kind_t;
+
+typedef struct {
+  psx_declarator_op_kind_t kind;
+  int array_len;
+  unsigned int is_const_qualified : 1;
+  unsigned int is_volatile_qualified : 1;
+  psx_decl_funcptr_sig_t funcptr_sig;
+} psx_declarator_op_t;
+
+typedef struct {
+  psx_declarator_op_t ops[24];
+  int count;
+} psx_declarator_shape_t;
+
+/* Operators are stored from the declared identifier outward. Applying them in
+ * reverse order preserves parenthesized declarator binding without flattening
+ * pointer/array/function placement into independent flags. */
+
 struct psx_type_t {
   psx_type_kind_t kind;
   psx_type_t *base;
@@ -54,6 +78,11 @@ struct psx_type_t {
   char *type_sig;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
+  int vla_row_stride_src_offset;
+  short vla_row_stride_elem_size;
+  short vla_param_inner_dim_consts[7];
+  int vla_param_inner_dim_src_offsets[7];
+  unsigned char vla_param_inner_dim_count;
   int ptr_array_pointee_bytes;
   int outer_stride;
   int mid_stride;
@@ -68,6 +97,7 @@ psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
 psx_type_t *psx_type_new_function(psx_type_t *return_type,
                                   psx_decl_funcptr_sig_t sig);
+psx_type_t *psx_type_new_funcptr_return_type(psx_decl_funcptr_sig_t sig);
 psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
                                  int object_pointer_levels);
 psx_type_t *psx_type_attach_funcptr_signature(
@@ -86,13 +116,21 @@ psx_type_t *psx_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           unsigned int volatile_mask);
 psx_type_t *psx_type_wrap_array_dims(psx_type_t *base,
                                      const int *dims, int dim_count);
-psx_type_t *psx_type_apply_declarator(psx_type_t *base,
-                                      const int *array_dims,
-                                      int array_dim_count,
-                                      int pointer_levels,
-                                      int pointer_outside_array,
-                                      unsigned int const_mask,
-                                      unsigned int volatile_mask);
+void psx_declarator_shape_init(psx_declarator_shape_t *shape);
+int psx_declarator_shape_append_pointer(
+    psx_declarator_shape_t *shape, int is_const_qualified,
+    int is_volatile_qualified);
+int psx_declarator_shape_append_pointer_levels(
+    psx_declarator_shape_t *shape, int levels,
+    unsigned int const_mask, unsigned int volatile_mask);
+int psx_declarator_shape_append_array(
+    psx_declarator_shape_t *shape, int array_len);
+int psx_declarator_shape_append_array_dims(
+    psx_declarator_shape_t *shape, const int *dims, int dim_count);
+int psx_declarator_shape_append_function(
+    psx_declarator_shape_t *shape, psx_decl_funcptr_sig_t sig);
+psx_type_t *psx_type_apply_declarator_shape(
+    psx_type_t *base, const psx_declarator_shape_t *shape);
 psx_type_t *psx_type_rebase_declarator(
     const psx_type_t *derived_type, const psx_type_t *canonical_base,
     int *out_rebased);
@@ -120,6 +158,12 @@ psx_type_t *psx_type_new_runtime_vla_row_view(
 psx_type_t *psx_type_new_vla_object_view(
     const psx_type_t *source, int outer_stride,
     int row_stride_frame_off, int strides_remaining);
+void psx_type_set_vla_runtime_descriptor(
+    psx_type_t *type, int row_stride_frame_off, int strides_remaining,
+    int row_stride_src_offset, int row_stride_elem_size);
+void psx_type_set_vla_param_inner_dims(
+    psx_type_t *type, const int *inner_dim_consts,
+    const int *inner_dim_src_offsets, int inner_dim_count);
 psx_type_t *psx_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size);
 
@@ -199,6 +243,11 @@ int psx_type_array_view_stride_metadata(const psx_type_t *type,
                                         int *next_stride,
                                         int *extra_strides,
                                         int *extra_strides_count);
+int psx_type_decl_array_stride_metadata(const psx_type_t *type,
+                                        int *outer_stride,
+                                        int *mid_stride,
+                                        int *extra_strides,
+                                        int *extra_strides_count);
 int psx_type_pointer_view_mid_stride(const psx_type_t *type);
 int psx_type_pointer_view_outer_stride_with_sidecar(
     const psx_type_t *type, int sidecar_ptr_array_pointee_bytes,
@@ -208,6 +257,11 @@ int psx_type_pointer_view_mid_stride_with_sidecar(
     int sidecar_mid_stride);
 int psx_type_pointer_view_vla_row_stride_frame_off(const psx_type_t *type);
 int psx_type_pointer_view_vla_strides_remaining(const psx_type_t *type);
+int psx_type_vla_row_stride_src_offset(const psx_type_t *type);
+int psx_type_vla_row_stride_elem_size(const psx_type_t *type);
+int psx_type_vla_param_inner_dim_count(const psx_type_t *type);
+int psx_type_vla_param_inner_dim_const(const psx_type_t *type, int index);
+int psx_type_vla_param_inner_dim_src_offset(const psx_type_t *type, int index);
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
 void psx_type_set_decl_spec_qualifiers(psx_type_t *type,

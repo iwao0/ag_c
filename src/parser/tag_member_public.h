@@ -82,9 +82,6 @@ static inline void psx_ctx_tag_member_set_funcptr_sig(
   if (!m) return;
   m->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
-  psx_type_t *decl_type = psx_tag_member_decl_type_mut(m);
-  if (decl_type && psx_decl_funcptr_sig_has_payload(sig))
-    decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
 static inline const psx_type_t *psx_tag_member_decl_value_type(

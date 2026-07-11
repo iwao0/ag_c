@@ -4458,6 +4458,110 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_node_subscript_deref_uses_base_address(vla3d_cell_row));
 
   parsed_code = parse_program_input(
+      "int __tm_vla_param_shape(int m, int k, int t[][m][3][k]) { "
+      "  return t[0][0][0][0]; }");
+  fn = as_func(parsed_code[0]);
+  lvar_t *vla_param_m = find_func_lvar(fn, "m");
+  lvar_t *vla_param_k = find_func_lvar(fn, "k");
+  lvar_t *vla_param_t = find_func_lvar(fn, "t");
+  ASSERT_TRUE(vla_param_m != NULL);
+  ASSERT_TRUE(vla_param_k != NULL);
+  ASSERT_TRUE(vla_param_t != NULL);
+  ASSERT_TRUE(vla_param_t->decl_type != NULL);
+  ASSERT_TRUE(vla_param_t->decl_type->is_vla);
+  ASSERT_EQ(3, psx_type_vla_param_inner_dim_count(vla_param_t->decl_type));
+  ASSERT_EQ(0, psx_type_vla_param_inner_dim_const(vla_param_t->decl_type, 0));
+  ASSERT_EQ(3, psx_type_vla_param_inner_dim_const(vla_param_t->decl_type, 1));
+  ASSERT_EQ(0, psx_type_vla_param_inner_dim_const(vla_param_t->decl_type, 2));
+  ASSERT_EQ(vla_param_m->offset,
+            psx_type_vla_param_inner_dim_src_offset(vla_param_t->decl_type, 0));
+  ASSERT_EQ(vla_param_k->offset,
+            psx_type_vla_param_inner_dim_src_offset(vla_param_t->decl_type, 2));
+  ASSERT_EQ(4, psx_type_vla_row_stride_elem_size(vla_param_t->decl_type));
+  vla_param_t->vla_param_inner_dim_count = 1;
+  vla_param_t->vla_param_inner_dim_consts[1] = 9;
+  vla_param_t->vla_param_inner_dim_src_offsets[0] = 777;
+  vla_param_t->vla_row_stride_elem_size = 8;
+  ASSERT_EQ(3, psx_lvar_vla_param_inner_dim_count(vla_param_t));
+  ASSERT_EQ(3, psx_lvar_vla_param_inner_dim_const(vla_param_t, 1));
+  ASSERT_EQ(vla_param_m->offset,
+            psx_lvar_vla_param_inner_dim_src_offset(vla_param_t, 0));
+  ASSERT_EQ(4, psx_lvar_vla_row_stride_elem_size(vla_param_t));
+
+  int canonical_stride_dims[4] = {2, 3, 4, 5};
+  psx_type_t *canonical_stride_array = psx_type_wrap_array_dims(
+      psx_type_new_integer(TK_INT, 4, 0), canonical_stride_dims, 4);
+  canonical_stride_array->outer_stride = 999;
+  canonical_stride_array->mid_stride = 998;
+  int canonical_outer_stride = 0;
+  int canonical_mid_stride = 0;
+  int canonical_extra_strides[5] = {0};
+  int canonical_extra_stride_count = 0;
+  ASSERT_TRUE(psx_type_decl_array_stride_metadata(
+      canonical_stride_array, &canonical_outer_stride,
+      &canonical_mid_stride, canonical_extra_strides,
+      &canonical_extra_stride_count));
+  ASSERT_EQ(240, canonical_outer_stride);
+  ASSERT_EQ(80, canonical_mid_stride);
+  ASSERT_EQ(1, canonical_extra_stride_count);
+  ASSERT_EQ(20, canonical_extra_strides[0]);
+  psx_type_t *canonical_stride_pointer = psx_type_new_pointer(
+      psx_type_clone(canonical_stride_array->base), 240);
+  canonical_stride_pointer->outer_stride = 997;
+  ASSERT_TRUE(psx_type_decl_array_stride_metadata(
+      canonical_stride_pointer, &canonical_outer_stride,
+      &canonical_mid_stride, canonical_extra_strides,
+      &canonical_extra_stride_count));
+  ASSERT_EQ(240, canonical_outer_stride);
+  ASSERT_EQ(80, canonical_mid_stride);
+  ASSERT_EQ(1, canonical_extra_stride_count);
+  ASSERT_EQ(20, canonical_extra_strides[0]);
+
+  psx_declarator_shape_t array_of_pointer_shape;
+  psx_declarator_shape_init(&array_of_pointer_shape);
+  ASSERT_TRUE(psx_declarator_shape_append_array(
+      &array_of_pointer_shape, 3));
+  ASSERT_TRUE(psx_declarator_shape_append_pointer(
+      &array_of_pointer_shape, 0, 0));
+  psx_type_t *array_of_pointer_type = psx_type_apply_declarator_shape(
+      psx_type_new_integer(TK_INT, 4, 0), &array_of_pointer_shape);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_of_pointer_type->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, array_of_pointer_type->base->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, array_of_pointer_type->base->base->kind);
+
+  psx_declarator_shape_t pointer_to_array_shape;
+  psx_declarator_shape_init(&pointer_to_array_shape);
+  ASSERT_TRUE(psx_declarator_shape_append_pointer(
+      &pointer_to_array_shape, 0, 0));
+  ASSERT_TRUE(psx_declarator_shape_append_array(
+      &pointer_to_array_shape, 3));
+  psx_type_t *pointer_to_array_type = psx_type_apply_declarator_shape(
+      psx_type_new_integer(TK_INT, 4, 0), &pointer_to_array_shape);
+  ASSERT_EQ(PSX_TYPE_POINTER, pointer_to_array_type->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, pointer_to_array_type->base->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, pointer_to_array_type->base->base->kind);
+
+  psx_decl_funcptr_sig_t declarator_func_sig = {0};
+  declarator_func_sig.function.callable.signature.param_int_mask = 1u;
+  declarator_func_sig.function.callable.return_shape.int_width = 4;
+  psx_declarator_shape_t array_of_funcptr_shape;
+  psx_declarator_shape_init(&array_of_funcptr_shape);
+  ASSERT_TRUE(psx_declarator_shape_append_array(
+      &array_of_funcptr_shape, 2));
+  ASSERT_TRUE(psx_declarator_shape_append_pointer(
+      &array_of_funcptr_shape, 0, 0));
+  ASSERT_TRUE(psx_declarator_shape_append_function(
+      &array_of_funcptr_shape, declarator_func_sig));
+  psx_type_t *array_of_funcptr_type = psx_type_apply_declarator_shape(
+      psx_type_new_funcptr_return_type(declarator_func_sig),
+      &array_of_funcptr_shape);
+  ASSERT_EQ(PSX_TYPE_ARRAY, array_of_funcptr_type->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, array_of_funcptr_type->base->kind);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, array_of_funcptr_type->base->base->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            array_of_funcptr_type->base->base->base->kind);
+
+  parsed_code = parse_program_input(
       "int __tm_vla_const_inner(int n) { int a[n][4]; return a[0][1]; }");
   fn = as_func(parsed_code[0]);
   lvar_t *vla_const_inner_a = find_func_lvar(fn, "a");
@@ -4842,9 +4946,10 @@ static void test_type_metadata_bridge() {
 
   node_t canonical_funcptr = {0};
   canonical_funcptr.kind = ND_DEREF;
-  canonical_funcptr.type = psx_type_new_pointer(
-      psx_type_new_integer(TK_INT, 4, 0), 8);
-  canonical_funcptr.type->funcptr_sig.function.callable.return_shape.int_width = 4;
+  psx_decl_funcptr_sig_t canonical_funcptr_sig = {0};
+  canonical_funcptr_sig.function.callable.return_shape.int_width = 4;
+  canonical_funcptr.type = psx_type_new_funcptr(canonical_funcptr_sig, 1);
+  canonical_funcptr.type->funcptr_sig.function.callable.return_shape.int_width = 8;
   ASSERT_EQ(4, psx_node_funcptr_sig(&canonical_funcptr).function.callable.return_shape.int_width);
 
   node_t compound_lit_addr = {0};
@@ -8227,29 +8332,29 @@ static void test_type_metadata_bridge() {
   partial_sig_member.type_size = 8;
   partial_sig_member.deref_size = 8;
   partial_sig_member.is_tag_pointer = 1;
-  partial_sig_member.decl_type =
-      psx_type_new_pointer(psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8), 8);
-  partial_sig_member.decl_type->funcptr_sig.function.callable.signature.param_fp_mask = 1u;
-  partial_sig_member.decl_type->funcptr_sig.function.callable.return_shape.fp_kind =
-      TK_FLOAT_KIND_DOUBLE;
   psx_decl_funcptr_sig_t partial_member_sig = {0};
   partial_member_sig.function.callable.signature.param_fp_mask = 1u;
   partial_member_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  partial_sig_member.decl_type = psx_type_new_funcptr(partial_member_sig, 1);
   psx_ctx_tag_member_set_funcptr_sig(&partial_sig_member, partial_member_sig);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            partial_sig_member.decl_type->funcptr_sig.function.callable.return_shape.fp_kind);
+            psx_type_funcptr_signature(partial_sig_member.decl_type)
+                .function.callable.return_shape.fp_kind);
   partial_member_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_NONE;
   partial_member_sig.function.callable.return_shape.int_width = 4;
   psx_type_t *partial_sig_member_decl_type = partial_sig_member.decl_type;
   psx_ctx_tag_member_set_funcptr_sig(&partial_sig_member, partial_member_sig);
   ASSERT_TRUE(partial_sig_member.decl_type == partial_sig_member_decl_type);
-  ASSERT_EQ(4,
-            partial_sig_member.decl_type->funcptr_sig.function.callable.return_shape.int_width);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE,
-            partial_sig_member.decl_type->funcptr_sig.function.callable.return_shape.fp_kind);
+  ASSERT_EQ(0, psx_type_funcptr_signature(partial_sig_member.decl_type)
+                   .function.callable.return_shape.int_width);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            psx_type_funcptr_signature(partial_sig_member.decl_type)
+                .function.callable.return_shape.fp_kind);
   node_t *partial_sig_node = psx_node_new_tag_member_deref_for(
       psx_node_new_num(0), psx_node_new_num(0), &partial_sig_member);
-  ASSERT_EQ(4, psx_node_funcptr_sig(partial_sig_node).function.callable.return_shape.int_width);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            psx_node_funcptr_sig(partial_sig_node)
+                .function.callable.return_shape.fp_kind);
   ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(partial_sig_node));
 
   parsed_code = parse_program_input(
@@ -8263,6 +8368,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, fns_info.decl_type->elem_size);
   ASSERT_TRUE(fns_info.decl_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, fns_info.decl_type->base->kind);
+  ASSERT_TRUE(fns_info.decl_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, fns_info.decl_type->base->base->kind);
+  ASSERT_TRUE(fns_info.decl_type->base->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, fns_info.decl_type->base->base->base->kind);
   ASSERT_EQ(4, fns_info.decl_type->base->funcptr_sig.function.callable.return_shape.int_width);
   ASSERT_TRUE(fns_info.decl_type->base->funcptr_sig.function.callable.signature.param_int_mask != 0);
 
@@ -8938,9 +9047,11 @@ static void test_type_metadata_bridge() {
   psx_type_t *td_fp_decl_type = td_fp.decl_type;
   psx_ctx_typedef_set_funcptr_sig(&td_fp, td_fp.funcptr_sig);
   ASSERT_TRUE(td_fp.decl_type == td_fp_decl_type);
-  ASSERT_EQ(4, td_fp.decl_type->funcptr_sig.function.callable.return_shape.int_width);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE,
-            td_fp.decl_type->funcptr_sig.function.callable.return_shape.fp_kind);
+  ASSERT_EQ(0, psx_type_funcptr_signature(td_fp.decl_type)
+                   .function.callable.return_shape.int_width);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            psx_type_funcptr_signature(td_fp.decl_type)
+                .function.callable.return_shape.fp_kind);
   td_dp.funcptr_sig.function.callable.return_shape.int_width = 8;
   td_dp.is_funcptr = 1;
   psx_decl_funcptr_sig_t td_dp_stale_sig = psx_ctx_typedef_funcptr_sig(&td_dp);

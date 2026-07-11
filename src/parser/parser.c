@@ -3014,11 +3014,16 @@ static void register_toplevel_typedef_name(token_ident_t *name, token_kind_t sto
 	    int object_pointer_levels = head.funcptr_object_pointer_levels > 0
 	                                    ? head.funcptr_object_pointer_levels
 	                                    : 1;
-	    psx_type_t *funcptr_type =
-	        psx_type_new_funcptr(sig, object_pointer_levels);
+	    psx_declarator_shape_t shape;
+	    psx_declarator_shape_init(&shape);
 	    if (td_is_array)
-	      funcptr_type = psx_type_wrap_array_dims(
-	          funcptr_type, td_dims, td_dim_count);
+	      psx_declarator_shape_append_array_dims(
+	          &shape, td_dims, td_dim_count);
+	    psx_declarator_shape_append_pointer_levels(
+	        &shape, object_pointer_levels, 0, 0);
+	    psx_declarator_shape_append_function(&shape, sig);
+	    psx_type_t *funcptr_type = psx_type_apply_declarator_shape(
+	        psx_type_new_funcptr_return_type(sig), &shape);
 	    psx_ctx_typedef_set_decl_type(&_ti, funcptr_type);
 	    psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
 	  }
@@ -3082,15 +3087,17 @@ static psx_type_t *build_toplevel_derived_typedef_type(
   int added_dim_count = decl_dim_count;
   if (spec->td_array_dim_count > 0 && added_dim_count >= spec->td_array_dim_count)
     added_dim_count -= spec->td_array_dim_count;
-
-  type = psx_type_apply_declarator(
-      type, decl_dims, added_dim_count, head.ptr_levels,
-      head.ptr_in_paren_group, 0, 0);
-
-  psx_decl_funcptr_sig_t sig = psx_type_funcptr_signature(type);
-  if (psx_decl_funcptr_sig_has_payload(sig))
-    type = psx_type_attach_funcptr_signature(type, sig);
-  return type;
+  psx_declarator_shape_t shape;
+  psx_declarator_shape_init(&shape);
+  if (head.ptr_in_paren_group)
+    psx_declarator_shape_append_pointer_levels(
+        &shape, head.ptr_levels, 0, 0);
+  psx_declarator_shape_append_array_dims(
+      &shape, decl_dims, added_dim_count);
+  if (!head.ptr_in_paren_group)
+    psx_declarator_shape_append_pointer_levels(
+        &shape, head.ptr_levels, 0, 0);
+  return psx_type_apply_declarator_shape(type, &shape);
 }
 
 static int is_toplevel_typedef_unsigned(token_kind_t stored_base_kind, const toplevel_decl_spec_t *spec) {

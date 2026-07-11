@@ -26355,3 +26355,131 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
     順序付きで返すcanonical declarator descriptorへtop-level/local/stmt parserを統合する必要がある。
   - typedef/tag登録のcanonical型必須化は完了した。次はlvar/gvar/tag memberに残るstride・配列次元の
     legacy sidecar読取りを監査し、型木から導出できるものを削減する。
+
+### このセッション（続き957）: funcptr cacheからcanonical型への逆同期を止めた
+- 見つかった根本原因:
+  - `psx_ctx_typedef_set_funcptr_sig()` / `psx_ctx_tag_member_set_funcptr_sig()` とsemantic recordの
+    setterは、互換cacheを更新する一方で`decl_type->funcptr_sig`も書き換えていた。canonical型と
+    sidecarが食い違った場合に、cache側から正本が変更される双方向同期になっていた。
+  - `struct_layout.c`の直接関数ポインタmemberは、`POINTER -> scalar return`のrootへ
+    `funcptr_sig`を置くだけで、canonical `FUNCTION` nodeを持っていなかった。
+  - nodeのfuncptr signature getterだけがroot `type->funcptr_sig`を直接読み、typedef/tag/lvar/gvarの
+    getterと異なってnested `FUNCTION`を優先していなかった。
+- 根本対応:
+  - typedef/tag descriptorとsemantic recordのfuncptr setterをcache-onlyにし、canonical `decl_type`を
+    一切変更しないようにした。cacheはcanonical型から導出して保存できるが、逆方向には同期しない。
+  - struct member型の構築を`psx_type_attach_funcptr_signature()`へ通し、直接memberと配列memberを
+    `POINTER -> FUNCTION -> return` / `ARRAY -> POINTER -> FUNCTION -> return`にした。
+  - node getterを`psx_type_funcptr_signature()`へ統一し、nested `FUNCTION`とroot cacheが食い違う場合は
+    canonical `FUNCTION`側を返すようにした。
+- parser regression:
+  - `struct { int (*fns[2])(int,int); }`が
+    `ARRAY[2] -> POINTER -> FUNCTION -> INTEGER`を保持すること。
+  - typedef/tag descriptorのcache setterへ異なるsignatureを渡してもcanonical型が変化しないこと。
+  - node root cacheを意図的にstaleにしてもnested `FUNCTION`のsignatureが選ばれること。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - focused Wasm fixture `funcptr_member_fp_return` / `struct_funcptr_array` /
+    `global_struct_with_funcptr` はすべて `main() => i32:0`。
+  - 合意したfocused-test方針に従い全1201件のWasm E2Eは未実行。現在の全体countは未確定。
+- 次の候補:
+  - `lvar/gvar/tag member`に残るstride・配列次元sidecarは、getterのcanonical優先化は進んでいるが、
+    setterが型木を再構築する経路とdescriptor runtime情報がまだ混在する。固定配列shapeと
+    VLA runtime dimension sourceを分け、固定shapeは型木だけから導出する。
+  - parserの`paren_array_mul/inner_array_mul`等を、順序付きcanonical declarator descriptorへ統合する。
+
+### このセッション（続き958）: VLA parameter runtime dimension descriptorを型側へ移した
+- 見つかった根本原因:
+  - N-D VLA仮引数の内側dimension sourceは`lvar_t.vla_param_inner_dim_*`だけに保存され、
+    IR function entryがlvar sidecarを直接読んでstride slotを計算していた。
+  - row stride source/element sizeも`lvar_t`だけにあり、すでに型側へ移っていた
+    `vla_row_stride_frame_off` / `vla_strides_remaining`と正本が分かれていた。
+- 根本対応:
+  - `psx_type_t`へrow stride source/element sizeと、最大7段のinner dimension
+    const/source-offset descriptorを追加した。
+  - `psx_type_set_vla_runtime_descriptor()` / `psx_type_set_vla_param_inner_dims()`と
+    read-only getterを追加し、clone/copyでもruntime descriptorを保持するようにした。
+  - `psx_decl_set_lvar_vla_descriptor()` / `psx_decl_set_lvar_vla_param_inner_dims()`は型側を更新し、
+    `psx_lvar_vla_*` public getterはcanonical VLA型がある場合は型だけを読むようにした。
+    IR entryは既存public getter経由なので、lvar mirrorがstaleでも型descriptorからstrideを生成する。
+  - `lvar_t`の同名fieldは移行中の互換mirrorとして残したが、read pathの正本ではなくなった。
+- parser regression:
+  - `int t[][m][3][k]`の型descriptorがinner dims `[m,3,k]`を
+    source-offset/const/source-offsetとして保持すること。
+  - lvar mirrorのcount/const/source/element-sizeを意図的に変更してもpublic getterがcanonical型の
+    3段descriptorと4-byte elementを返すこと。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - focused Wasm fixture `vla_3d4d_param` = `main() => i32:0`。
+  - 全1201件のWasm E2Eは未実行。現在の全体countは未確定。
+- 次の候補:
+  - 固定配列の`outer_stride/mid_stride/extra_strides` setterは、sidecarを設定してから型木を
+    rebuildする双方向的な形が残る。宣言時にcanonical array chainを直接完成させ、mirrorは
+    型から一方向に導出する形へ変える。
+  - parserのflattenされたarray/pointer出力を順序付きcanonical declarator descriptorへ統合する。
+
+### このセッション（続き959）: 固定配列stride mirrorをcanonical array chainから導出した
+- 見つかった根本原因:
+  - `psx_decl_set_{lvar,gvar}_array_strides_from_{dims,inner_dims}()`は、dimension積から
+    `outer_stride/mid_stride/extra_strides` sidecarを先に設定し、その後で同じ入力から型木を
+    rebuildしていた。同じshapeを二経路で構築するsidecar-firstの処理だった。
+- 根本対応:
+  - `psx_type_decl_array_stride_metadata()`を追加し、canonical
+    `ARRAY -> ...` / `POINTER -> ARRAY -> ...` chainから、legacy mirrorに必要なrow stride列を
+    構造的に抽出するようにした。scalar elementの最終strideはmirrorの既存仕様どおり除外する。
+  - lvar/gvarの4 setterは、まずcanonical array chainを完成させ、その後共通type APIから
+    `outer/mid/extra` mirrorを一方向に更新するようにした。dimension積からsidecarを独立計算する
+    コードは削除した。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - focused Wasm fixture:
+    - `global_multidim_array_nested_designator_plain`
+    - `local_pointer_to_2d_array`
+    - `struct_array_of_ptr_to_array_member`
+    - `array_row_decay_3d_pointer_arith`
+    - すべて `main() => i32:0`。
+  - 全1201件のWasm E2Eは未実行。現在の全体countは未確定。
+- 次の候補:
+  - parserの`paren_array_mul/inner_array_mul`、pointer level、function suffix等のexploded outputを、
+    source declaratorのoperator順を保持するcanonical declarator descriptorへ統合する。
+  - `psx_lvar_materialize_decl_type()` / `psx_gvar_materialize_decl_type()`には、decl_type欠落時の
+    legacy shape再構築と、既存型へのruntime stride sidecar同期が残る。全登録経路でdecl_type必須を
+    証明してmaterialize fallbackを縮小する。
+
+### このセッション（続き960）: canonical declarator operator descriptorを導入した
+- 見つかった根本原因:
+  - canonical型構築API自身が`array_dims + pointer_levels + pointer_outside_array`を受け取り、
+    `int *a[3]`と`int (*p)[3]`の差をbooleanで復元していた。function placementはさらに別の
+    `psx_type_new_funcptr()`分岐で構築され、declarator operator順が正本になっていなかった。
+- 根本対応:
+  - identifierから外向きに`POINTER` / `ARRAY` / `FUNCTION`を並べる
+    `psx_declarator_shape_t`を追加した。型構築はoperator列を逆順に適用する。
+  - 例:
+    - `int *a[3]` = `ARRAY[3], POINTER`
+    - `int (*p)[3]` = `POINTER, ARRAY[3]`
+    - `int (*f[2])(int)` = `ARRAY[2], POINTER, FUNCTION`
+  - pointer qualifier、incomplete array、function signatureをoperator自身に保持できるAPIと、
+    `psx_type_apply_declarator_shape()`を追加した。
+  - top-level typedef、`decl.c` local typedef、`stmt.c` block typedef、structのtypedef memberを
+    descriptor builderへ移した。関数ポインタtypedefもreturn typeを分離してから
+    `ARRAY/POINTER/FUNCTION` operator列で構築する。
+  - 旧`psx_type_apply_declarator(... pointer_outside_array ...)`は全callerを移行して削除した。
+- parser regression:
+  - synthetic operator列からarray-of-pointer、pointer-to-array、array-of-function-pointerが
+    それぞれ異なるcanonical chainになること。
+  - 既存top-level/local/block typedefおよびstruct memberのcanonical chain回帰も継続pass。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - focused Wasm fixture `local_typedef_funcptr_array_call` /
+    `typedef_pointer_element_array_sizeof` / `global_pointer_typedef` /
+    `struct_array_of_ptr_to_array_member` はすべて `main() => i32:0`。
+  - 全1201件のWasm E2Eは未実行。現在の全体countは未確定。
+- 次の候補:
+  - syntax parserはまだ`ptr_in_paren`、`paren_array_mul`、`inner_dims`等のexploded stateを作り、
+    semantic段階でoperator descriptorへ変換している。top-level/local/stmt/structのrecursive
+    declarator parserがidentifier-outward operator列を直接生成するよう統合する。
+  - function operatorのreturn descriptorは現在parser側の`psx_decl_make_funcptr_sig_from_kind()`で
+    組み立てている。canonical `FUNCTION.base`からcompat signatureを導出する一方向変換へ寄せる。

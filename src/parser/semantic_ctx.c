@@ -171,8 +171,6 @@ static void tag_member_record_set_funcptr_sig(tag_member_t *m,
   if (!m) return;
   m->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   m->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
-  psx_type_t *decl_type = tag_member_record_decl_type_mut(m);
-  if (decl_type) decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
 static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
@@ -230,8 +228,6 @@ static void typedef_record_set_funcptr_sig(typedef_name_t *t,
   if (!t) return;
   t->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   t->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
-  psx_type_t *decl_type = typedef_record_decl_type_mut(t);
-  if (decl_type) decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
 typedef struct func_name_t func_name_t;

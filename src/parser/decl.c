@@ -315,22 +315,37 @@ tk_float_kind_t psx_lvar_fp_kind(const lvar_t *var) {
 }
 
 int psx_lvar_vla_row_stride_frame_off(const lvar_t *var) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_pointer_view_vla_row_stride_frame_off(type);
   return var ? var->vla_row_stride_frame_off : 0;
 }
 
 int psx_lvar_vla_row_stride_elem_size(const lvar_t *var) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_vla_row_stride_elem_size(type);
   return var ? var->vla_row_stride_elem_size : 0;
 }
 
 int psx_lvar_vla_row_stride_src_offset(const lvar_t *var) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_vla_row_stride_src_offset(type);
   return var ? var->vla_row_stride_src_offset : 0;
 }
 
 int psx_lvar_vla_param_inner_dim_count(const lvar_t *var) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_vla_param_inner_dim_count(type);
   return var ? var->vla_param_inner_dim_count : 0;
 }
 
 int psx_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_vla_param_inner_dim_const(type, idx);
   if (!var || idx < 0 || idx >= (int)(sizeof(var->vla_param_inner_dim_consts) /
                                       sizeof(var->vla_param_inner_dim_consts[0]))) {
     return 0;
@@ -339,6 +354,9 @@ int psx_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx) {
 }
 
 int psx_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  if (type && type->is_vla)
+    return psx_type_vla_param_inner_dim_src_offset(type, idx);
   if (!var || idx < 0 || idx >= (int)(sizeof(var->vla_param_inner_dim_src_offsets) /
                                       sizeof(var->vla_param_inner_dim_src_offsets[0]))) {
     return 0;
@@ -4298,6 +4316,25 @@ static void psx_decl_clear_lvar_array_strides(lvar_t *var) {
   }
 }
 
+static void psx_decl_sync_lvar_array_strides_from_type(lvar_t *var) {
+  if (!var) return;
+  int outer = 0;
+  int mid = 0;
+  int extras[5] = {0};
+  int extra_count = 0;
+  psx_decl_clear_lvar_array_strides(var);
+  if (!psx_type_decl_array_stride_metadata(
+          var->decl_type, &outer, &mid, extras, &extra_count)) {
+    return;
+  }
+  var->outer_stride = outer;
+  var->mid_stride = mid;
+  if (extra_count > 0 && !var->extra_strides)
+    var->extra_strides = calloc(5, sizeof(int));
+  var->extra_strides_count = (unsigned char)extra_count;
+  for (int i = 0; i < extra_count; i++) var->extra_strides[i] = extras[i];
+}
+
 void psx_decl_set_lvar_array_strides_from_dims(lvar_t *var,
                                                const int *dims, int dim_count,
                                                int elem_size) {
@@ -4305,21 +4342,9 @@ void psx_decl_set_lvar_array_strides_from_dims(lvar_t *var,
   psx_type_t *decl_type = psx_lvar_materialize_decl_type(var);
   psx_decl_clear_lvar_array_strides(var);
   if (!dims || dim_count < 2 || elem_size <= 0) return;
-  var->outer_stride = psx_decl_array_dim_product(dims, 1, dim_count) * elem_size;
-  if (dim_count >= 3) {
-    var->mid_stride = psx_decl_array_dim_product(dims, 2, dim_count) * elem_size;
-  }
-  if (dim_count >= 4) {
-    if (!var->extra_strides) var->extra_strides = calloc(5, sizeof(int));
-    int idx = 0;
-    for (int start = 3; start < dim_count && idx < 5; start++) {
-      var->extra_strides[idx++] =
-          psx_decl_array_dim_product(dims, start, dim_count) * elem_size;
-    }
-    var->extra_strides_count = (unsigned char)idx;
-  }
   var->decl_type = psx_type_rebuild_array_dims(
       decl_type, dims, dim_count, elem_size);
+  psx_decl_sync_lvar_array_strides_from_type(var);
 }
 
 void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
@@ -4330,19 +4355,6 @@ void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
   psx_type_t *decl_type = psx_lvar_materialize_decl_type(var);
   psx_decl_clear_lvar_array_strides(var);
   if (!inner_dims || inner_dim_count < 1 || elem_size <= 0) return;
-  var->outer_stride = psx_decl_array_dim_product(inner_dims, 0, inner_dim_count) * elem_size;
-  if (inner_dim_count >= 2) {
-    var->mid_stride = psx_decl_array_dim_product(inner_dims, 1, inner_dim_count) * elem_size;
-  }
-  if (inner_dim_count >= 3) {
-    if (!var->extra_strides) var->extra_strides = calloc(5, sizeof(int));
-    int idx = 0;
-    for (int start = 2; start < inner_dim_count && idx < 5; start++) {
-      var->extra_strides[idx++] =
-          psx_decl_array_dim_product(inner_dims, start, inner_dim_count) * elem_size;
-    }
-    var->extra_strides_count = (unsigned char)idx;
-  }
   if (decl_type && decl_type->kind == PSX_TYPE_ARRAY) {
     int dims[8] = {0};
     int inner_count = inner_dim_count > 7 ? 7 : inner_dim_count;
@@ -4359,6 +4371,7 @@ void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
     var->decl_type = psx_type_rebuild_array_dims(
         decl_type, inner_dims, inner_dim_count, elem_size);
   }
+  psx_decl_sync_lvar_array_strides_from_type(var);
 }
 
 void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
@@ -4399,10 +4412,10 @@ void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
       type->base_deref_size = elem_size;
     }
   }
-  type->is_vla = 1;
   type->outer_stride = outer_stride;
-  type->vla_row_stride_frame_off = row_stride_frame_off;
-  type->vla_strides_remaining = strides_remaining;
+  psx_type_set_vla_runtime_descriptor(
+      type, row_stride_frame_off, strides_remaining,
+      row_stride_src_offset, row_stride_elem_size);
 }
 
 void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
@@ -4419,6 +4432,9 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
     var->vla_param_inner_dim_src_offsets[i] =
         (i < inner_dim_count && inner_dim_src_offsets) ? inner_dim_src_offsets[i] : 0;
   }
+  psx_type_set_vla_param_inner_dims(
+      psx_lvar_materialize_decl_type(var), inner_dim_consts,
+      inner_dim_src_offsets, inner_dim_count);
 }
 
 void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
@@ -4560,6 +4576,20 @@ static void psx_decl_clear_gvar_array_strides(global_var_t *gv) {
   for (int i = 0; i < 5; i++) gv->extra_strides[i] = 0;
 }
 
+static void psx_decl_sync_gvar_array_strides_from_type(global_var_t *gv) {
+  if (!gv) return;
+  int extras[5] = {0};
+  int extra_count = 0;
+  psx_decl_clear_gvar_array_strides(gv);
+  if (!psx_type_decl_array_stride_metadata(
+          gv->decl_type, &gv->outer_stride, &gv->mid_stride,
+          extras, &extra_count)) {
+    return;
+  }
+  gv->extra_strides_count = (unsigned char)extra_count;
+  for (int i = 0; i < extra_count; i++) gv->extra_strides[i] = extras[i];
+}
+
 void psx_decl_set_gvar_array_strides_from_dims(global_var_t *gv,
                                                const int *dims, int dim_count,
                                                int elem_size) {
@@ -4567,24 +4597,13 @@ void psx_decl_set_gvar_array_strides_from_dims(global_var_t *gv,
   psx_type_t *decl_type = psx_gvar_materialize_decl_type(gv);
   psx_decl_clear_gvar_array_strides(gv);
   if (!dims || dim_count < 2 || elem_size <= 0) return;
-  gv->outer_stride = psx_decl_array_dim_product(dims, 1, dim_count) * elem_size;
-  if (dim_count >= 3) {
-    gv->mid_stride = psx_decl_array_dim_product(dims, 2, dim_count) * elem_size;
-  }
-  if (dim_count >= 4) {
-    int idx = 0;
-    for (int start = 3; start < dim_count && idx < 5; start++) {
-      gv->extra_strides[idx++] =
-          psx_decl_array_dim_product(dims, start, dim_count) * elem_size;
-    }
-    gv->extra_strides_count = (unsigned char)idx;
-  }
   int row_sizes[8] = {0};
   int row_count = psx_decl_array_row_sizes(
       dims, 1, dim_count, elem_size, row_sizes);
   psx_type_t *rebuilt = psx_type_rebuild_array_shape(
       decl_type, gv->type_size, row_sizes, row_count, elem_size);
   gv->decl_type = psx_type_clone_persistent(rebuilt);
+  psx_decl_sync_gvar_array_strides_from_type(gv);
 }
 
 void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
@@ -4595,24 +4614,13 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
   psx_type_t *decl_type = psx_gvar_materialize_decl_type(gv);
   psx_decl_clear_gvar_array_strides(gv);
   if (!inner_dims || inner_dim_count < 1 || elem_size <= 0) return;
-  gv->outer_stride = psx_decl_array_dim_product(inner_dims, 0, inner_dim_count) * elem_size;
-  if (inner_dim_count >= 2) {
-    gv->mid_stride = psx_decl_array_dim_product(inner_dims, 1, inner_dim_count) * elem_size;
-  }
-  if (inner_dim_count >= 3) {
-    int idx = 0;
-    for (int start = 2; start < inner_dim_count && idx < 5; start++) {
-      gv->extra_strides[idx++] =
-          psx_decl_array_dim_product(inner_dims, start, inner_dim_count) * elem_size;
-    }
-    gv->extra_strides_count = (unsigned char)idx;
-  }
   int row_sizes[8] = {0};
   int row_count = psx_decl_array_row_sizes(
       inner_dims, 0, inner_dim_count, elem_size, row_sizes);
   psx_type_t *rebuilt = psx_type_rebuild_array_shape(
       decl_type, gv->type_size, row_sizes, row_count, elem_size);
   gv->decl_type = psx_type_clone_persistent(rebuilt);
+  psx_decl_sync_gvar_array_strides_from_type(gv);
 }
 
 void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
@@ -6844,14 +6852,18 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
   if (canonical_type) {
     if (td_pointee_const) canonical_type->is_const_qualified = 1;
     if (td_pointee_volatile) canonical_type->is_volatile_qualified = 1;
-    canonical_type = psx_type_apply_declarator(
-        canonical_type, declarator_dims, declarator_dim_count,
-        ptr_levels, decl_state && decl_state->had_paren_group, 0, 0);
-    psx_decl_funcptr_sig_t inherited_sig =
-        psx_type_funcptr_signature(canonical_type);
-    if (psx_decl_funcptr_sig_has_payload(inherited_sig))
-      canonical_type = psx_type_attach_funcptr_signature(
-          canonical_type, inherited_sig);
+    psx_declarator_shape_t shape;
+    psx_declarator_shape_init(&shape);
+    if (decl_state && decl_state->had_paren_group)
+      psx_declarator_shape_append_pointer_levels(
+          &shape, ptr_levels, 0, 0);
+    psx_declarator_shape_append_array_dims(
+        &shape, declarator_dims, declarator_dim_count);
+    if (!decl_state || !decl_state->had_paren_group)
+      psx_declarator_shape_append_pointer_levels(
+          &shape, ptr_levels, 0, 0);
+    canonical_type = psx_type_apply_declarator_shape(
+        canonical_type, &shape);
     psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
   }
   if (typedef_is_funcptr) {
@@ -6871,11 +6883,16 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
     int object_pointer_levels = decl_state->funcptr_object_pointer_levels > 0
                                     ? decl_state->funcptr_object_pointer_levels
                                     : 1;
-    psx_type_t *funcptr_type =
-        psx_type_new_funcptr(sig, object_pointer_levels);
+    psx_declarator_shape_t shape;
+    psx_declarator_shape_init(&shape);
     if (td_is_array)
-      funcptr_type = psx_type_wrap_array_dims(
-          funcptr_type, declarator_dims, declarator_dim_count);
+      psx_declarator_shape_append_array_dims(
+          &shape, declarator_dims, declarator_dim_count);
+    psx_declarator_shape_append_pointer_levels(
+        &shape, object_pointer_levels, 0, 0);
+    psx_declarator_shape_append_function(&shape, sig);
+    psx_type_t *funcptr_type = psx_type_apply_declarator_shape(
+        psx_type_new_funcptr_return_type(sig), &shape);
     psx_ctx_typedef_set_decl_type(&_ti, funcptr_type);
     psx_ctx_typedef_set_funcptr_sig(&_ti, sig);
   }

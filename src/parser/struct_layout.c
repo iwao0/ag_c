@@ -70,18 +70,13 @@ static psx_type_t *member_decl_type_from_layout(token_kind_t base_kind,
     int top_deref_size = levels >= 2 ? 8 : elem_size;
     type = psx_type_wrap_pointer_levels(type, levels, top_deref_size,
                                         elem_size, 0, 0);
-    if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
-      type->funcptr_sig = psx_decl_funcptr_sig_clone(funcptr_sig);
-    }
+    type = psx_type_attach_funcptr_signature(type, funcptr_sig);
   }
   if (array_len > 0) {
     int elem_size_for_array = elem_storage_size > 0 ? elem_storage_size : psx_type_sizeof(type);
     int array_size = total_size > 0 ? total_size : elem_size_for_array * array_len;
     psx_type_t *array_type = psx_type_new_array(type, array_len, array_size,
                                                 elem_size_for_array, 0);
-    if (psx_decl_funcptr_sig_has_payload(funcptr_sig)) {
-      array_type->funcptr_sig = psx_decl_funcptr_sig_clone(funcptr_sig);
-    }
     return array_type;
   }
   return type;
@@ -713,9 +708,15 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
             !head.has_func_suffix) {
           psx_type_t *canonical_member = psx_type_clone(
               member_typedef_decl_type);
-          canonical_member = psx_type_apply_declarator(
-              canonical_member, member_declarator_array_dims,
-              member_declarator_array_dim_count, head.ptr_levels, 0, 0, 0);
+          psx_declarator_shape_t shape;
+          psx_declarator_shape_init(&shape);
+          psx_declarator_shape_append_array_dims(
+              &shape, member_declarator_array_dims,
+              member_declarator_array_dim_count);
+          psx_declarator_shape_append_pointer_levels(
+              &shape, head.ptr_levels, 0, 0);
+          canonical_member = psx_type_apply_declarator_shape(
+              canonical_member, &shape);
           _mi.decl_type = canonical_member;
         }
         /* pointer-to-array メンバ (`int (*p)[N]` / `int (*p)[M][N]`): pointee 全バイトサイズを

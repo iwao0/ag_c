@@ -140,8 +140,7 @@ psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
                                  int object_pointer_levels) {
   if (!psx_decl_funcptr_sig_has_payload(sig)) return NULL;
   if (object_pointer_levels < 1) object_pointer_levels = 1;
-  psx_type_t *return_type =
-      type_return_from_funcptr_shape(NULL, sig.function);
+  psx_type_t *return_type = psx_type_new_funcptr_return_type(sig);
   psx_type_t *function = psx_type_new_function(return_type, sig);
   psx_type_t *type = psx_type_new_pointer(function, 0);
   type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
@@ -150,6 +149,11 @@ psx_type_t *psx_type_new_funcptr(psx_decl_funcptr_sig_t sig,
     type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   }
   return type;
+}
+
+psx_type_t *psx_type_new_funcptr_return_type(psx_decl_funcptr_sig_t sig) {
+  if (!psx_decl_funcptr_sig_has_payload(sig)) return NULL;
+  return type_return_from_funcptr_shape(NULL, sig.function);
 }
 
 psx_type_t *psx_type_attach_funcptr_signature(
@@ -496,28 +500,99 @@ psx_type_t *psx_type_wrap_array_dims(psx_type_t *base,
   return result;
 }
 
-psx_type_t *psx_type_apply_declarator(psx_type_t *base,
-                                      const int *array_dims,
-                                      int array_dim_count,
-                                      int pointer_levels,
-                                      int pointer_outside_array,
-                                      unsigned int const_mask,
-                                      unsigned int volatile_mask) {
-  if (!base) return NULL;
-  psx_type_t *type = base;
-  if (pointer_outside_array)
-    type = psx_type_wrap_array_dims(type, array_dims, array_dim_count);
+void psx_declarator_shape_init(psx_declarator_shape_t *shape) {
+  if (!shape) return;
+  *shape = (psx_declarator_shape_t){0};
+}
 
-  if (pointer_levels > 0) {
-    int base_size = psx_type_sizeof(type);
-    if (base_size <= 0) base_size = 8;
-    type = psx_type_wrap_pointer_levels(
-        type, pointer_levels, pointer_levels >= 2 ? 8 : base_size,
-        base_size, const_mask, volatile_mask);
+static psx_declarator_op_t *declarator_shape_append(
+    psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind) {
+  if (!shape || shape->count < 0 || shape->count >= 24) return NULL;
+  psx_declarator_op_t *op = &shape->ops[shape->count++];
+  *op = (psx_declarator_op_t){0};
+  op->kind = kind;
+  return op;
+}
+
+int psx_declarator_shape_append_pointer(
+    psx_declarator_shape_t *shape, int is_const_qualified,
+    int is_volatile_qualified) {
+  psx_declarator_op_t *op =
+      declarator_shape_append(shape, PSX_DECL_OP_POINTER);
+  if (!op) return 0;
+  op->is_const_qualified = is_const_qualified ? 1u : 0u;
+  op->is_volatile_qualified = is_volatile_qualified ? 1u : 0u;
+  return 1;
+}
+
+int psx_declarator_shape_append_pointer_levels(
+    psx_declarator_shape_t *shape, int levels,
+    unsigned int const_mask, unsigned int volatile_mask) {
+  if (!shape || levels < 0) return 0;
+  for (int level = 0; level < levels; level++) {
+    if (!psx_declarator_shape_append_pointer(
+            shape, level < 32 && (const_mask & (1u << level)),
+            level < 32 && (volatile_mask & (1u << level)))) {
+      return 0;
+    }
   }
+  return 1;
+}
 
-  if (!pointer_outside_array)
-    type = psx_type_wrap_array_dims(type, array_dims, array_dim_count);
+int psx_declarator_shape_append_array(
+    psx_declarator_shape_t *shape, int array_len) {
+  psx_declarator_op_t *op =
+      declarator_shape_append(shape, PSX_DECL_OP_ARRAY);
+  if (!op) return 0;
+  op->array_len = array_len;
+  return 1;
+}
+
+int psx_declarator_shape_append_array_dims(
+    psx_declarator_shape_t *shape, const int *dims, int dim_count) {
+  if (!shape || dim_count < 0 || (dim_count > 0 && !dims)) return 0;
+  for (int i = 0; i < dim_count; i++) {
+    if (!psx_declarator_shape_append_array(shape, dims[i])) return 0;
+  }
+  return 1;
+}
+
+int psx_declarator_shape_append_function(
+    psx_declarator_shape_t *shape, psx_decl_funcptr_sig_t sig) {
+  psx_declarator_op_t *op =
+      declarator_shape_append(shape, PSX_DECL_OP_FUNCTION);
+  if (!op) return 0;
+  op->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
+  return 1;
+}
+
+psx_type_t *psx_type_apply_declarator_shape(
+    psx_type_t *base, const psx_declarator_shape_t *shape) {
+  if (!base || !shape) return base;
+  psx_type_t *type = base;
+  for (int i = shape->count - 1; i >= 0; i--) {
+    const psx_declarator_op_t *op = &shape->ops[i];
+    if (op->kind == PSX_DECL_OP_POINTER) {
+      int deref_size = psx_type_sizeof(type);
+      if (deref_size <= 0) deref_size = 8;
+      type = psx_type_new_pointer(type, deref_size);
+      type->is_const_qualified = op->is_const_qualified;
+      type->is_volatile_qualified = op->is_volatile_qualified;
+      type->pointer_const_qual_mask = op->is_const_qualified ? 1u : 0u;
+      type->pointer_volatile_qual_mask = op->is_volatile_qualified ? 1u : 0u;
+    } else if (op->kind == PSX_DECL_OP_ARRAY) {
+      int elem_size = psx_type_sizeof(type);
+      if (elem_size <= 0) elem_size = 1;
+      int total_size = op->array_len > 0 ? op->array_len * elem_size : 0;
+      type = psx_type_new_array(type, op->array_len, total_size,
+                                elem_size, 0);
+    } else if (op->kind == PSX_DECL_OP_FUNCTION) {
+      type = psx_type_new_function(type, op->funcptr_sig);
+    }
+  }
+  psx_decl_funcptr_sig_t sig = psx_type_funcptr_signature(type);
+  if (psx_decl_funcptr_sig_has_payload(sig))
+    type = psx_type_attach_funcptr_signature(type, sig);
   return type;
 }
 
@@ -832,6 +907,37 @@ psx_type_t *psx_type_new_vla_object_view(
   vla->vla_strides_remaining = strides_remaining;
   psx_type_copy_common_qualifiers(vla, source);
   return vla;
+}
+
+void psx_type_set_vla_runtime_descriptor(
+    psx_type_t *type, int row_stride_frame_off, int strides_remaining,
+    int row_stride_src_offset, int row_stride_elem_size) {
+  if (!type) return;
+  type->is_vla = 1;
+  type->vla_row_stride_frame_off = row_stride_frame_off;
+  type->vla_strides_remaining = strides_remaining;
+  type->vla_row_stride_src_offset = row_stride_src_offset;
+  type->vla_row_stride_elem_size =
+      row_stride_elem_size > 0 ? (short)row_stride_elem_size : 0;
+}
+
+void psx_type_set_vla_param_inner_dims(
+    psx_type_t *type, const int *inner_dim_consts,
+    const int *inner_dim_src_offsets, int inner_dim_count) {
+  if (!type) return;
+  if (inner_dim_count < 0) inner_dim_count = 0;
+  if (inner_dim_count > 7) inner_dim_count = 7;
+  type->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
+  for (int i = 0; i < 7; i++) {
+    type->vla_param_inner_dim_consts[i] =
+        (i < inner_dim_count && inner_dim_consts)
+            ? (short)inner_dim_consts[i]
+            : 0;
+    type->vla_param_inner_dim_src_offsets[i] =
+        (i < inner_dim_count && inner_dim_src_offsets)
+            ? inner_dim_src_offsets[i]
+            : 0;
+  }
 }
 
 psx_type_kind_t psx_type_kind_from_tag_kind(token_kind_t tag_kind) {
@@ -1430,6 +1536,47 @@ int psx_type_array_view_stride_metadata(const psx_type_t *type,
   return 1;
 }
 
+int psx_type_decl_array_stride_metadata(const psx_type_t *type,
+                                        int *outer_stride,
+                                        int *mid_stride,
+                                        int *extra_strides,
+                                        int *extra_strides_count) {
+  type_clear_stride_outputs(outer_stride, mid_stride, extra_strides,
+                            extra_strides_count);
+  if (!type) return 0;
+  const psx_type_t *array = NULL;
+  if (type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->kind == PSX_TYPE_ARRAY) {
+    array = type->base;
+  } else if (type->kind == PSX_TYPE_ARRAY && type->base &&
+             type->base->kind == PSX_TYPE_ARRAY) {
+    array = type->base;
+  }
+  if (!array) return 0;
+
+  int strides[7] = {0};
+  int count = 0;
+  for (const psx_type_t *cur = array;
+       cur && cur->kind == PSX_TYPE_ARRAY && count < 7;
+       cur = cur->base) {
+    int stride = psx_type_sizeof(cur);
+    if (stride <= 0) break;
+    strides[count++] = stride;
+  }
+  if (count <= 0) return 0;
+  if (outer_stride) *outer_stride = strides[0];
+  if (mid_stride) *mid_stride = count > 1 ? strides[1] : 0;
+  int extra_count = count > 2 ? count - 2 : 0;
+  if (extra_count > 5) extra_count = 5;
+  if (extra_strides_count) *extra_strides_count = extra_count;
+  if (extra_strides) {
+    for (int i = 0; i < extra_count; i++)
+      extra_strides[i] = strides[i + 2];
+    for (int i = extra_count; i < 5; i++) extra_strides[i] = 0;
+  }
+  return 1;
+}
+
 int psx_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,
                                           int *next_stride,
@@ -1755,6 +1902,30 @@ int psx_type_pointer_view_vla_strides_remaining(const psx_type_t *type) {
   return type->vla_strides_remaining > 0 ? type->vla_strides_remaining : 0;
 }
 
+int psx_type_vla_row_stride_src_offset(const psx_type_t *type) {
+  return type && type->is_vla ? type->vla_row_stride_src_offset : 0;
+}
+
+int psx_type_vla_row_stride_elem_size(const psx_type_t *type) {
+  return type && type->is_vla && type->vla_row_stride_elem_size > 0
+             ? type->vla_row_stride_elem_size
+             : 0;
+}
+
+int psx_type_vla_param_inner_dim_count(const psx_type_t *type) {
+  return type && type->is_vla ? type->vla_param_inner_dim_count : 0;
+}
+
+int psx_type_vla_param_inner_dim_const(const psx_type_t *type, int index) {
+  if (!type || !type->is_vla || index < 0 || index >= 7) return 0;
+  return type->vla_param_inner_dim_consts[index];
+}
+
+int psx_type_vla_param_inner_dim_src_offset(const psx_type_t *type, int index) {
+  if (!type || !type->is_vla || index < 0 || index >= 7) return 0;
+  return type->vla_param_inner_dim_src_offsets[index];
+}
+
 static int type_structural_pointer_qual_levels(const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return 0;
   int levels = psx_type_pointer_depth(type);
@@ -1880,6 +2051,14 @@ void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src) {
   dst->funcptr_sig = psx_decl_funcptr_sig_clone(src->funcptr_sig);
   dst->vla_row_stride_frame_off = src->vla_row_stride_frame_off;
   dst->vla_strides_remaining = src->vla_strides_remaining;
+  dst->vla_row_stride_src_offset = src->vla_row_stride_src_offset;
+  dst->vla_row_stride_elem_size = src->vla_row_stride_elem_size;
+  dst->vla_param_inner_dim_count = src->vla_param_inner_dim_count;
+  for (int i = 0; i < 7; i++) {
+    dst->vla_param_inner_dim_consts[i] = src->vla_param_inner_dim_consts[i];
+    dst->vla_param_inner_dim_src_offsets[i] =
+        src->vla_param_inner_dim_src_offsets[i];
+  }
   dst->ptr_array_pointee_bytes = src->ptr_array_pointee_bytes;
   dst->outer_stride = src->outer_stride;
   dst->mid_stride = src->mid_stride;

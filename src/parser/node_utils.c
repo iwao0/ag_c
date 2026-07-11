@@ -3921,21 +3921,18 @@ static int node_value_view_from_node_direct(node_t *node, node_value_view_field_
   return 0;
 }
 
-static psx_decl_funcptr_sig_t funcptr_sig_from_node(node_t *node, int copy_variadic) {
+static psx_decl_funcptr_sig_t funcptr_sig_from_node(node_t *node) {
   if (!node) return (psx_decl_funcptr_sig_t){0};
-  psx_decl_funcptr_sig_t sig = {0};
-  psx_type_t *type = psx_node_get_type(node);
-  if (type) sig = funcptr_sig_merge_missing(sig, &type->funcptr_sig, copy_variadic);
-  return sig;
+  return funcptr_sig_from_type(psx_node_get_type(node));
 }
 
 int psx_node_has_funcptr_signature(node_t *node) {
   if (!node) return 0;
-  return psx_decl_funcptr_sig_has_payload(funcptr_sig_from_node(node, 1));
+  return psx_decl_funcptr_sig_has_payload(funcptr_sig_from_node(node));
 }
 
 psx_decl_funcptr_sig_t psx_node_funcptr_sig(node_t *node) {
-  return funcptr_sig_from_node(node, 1);
+  return funcptr_sig_from_node(node);
 }
 
 psx_decl_funcptr_sig_t psx_lvar_funcptr_sig(const lvar_t *src) {
@@ -3952,33 +3949,33 @@ psx_decl_funcptr_sig_t psx_gvar_funcptr_sig_by_name(char *name, int len) {
 
 unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
   if (!node) return 0;
-  return funcptr_sig_from_node(node, 1).function.callable.signature.param_fp_mask;
+  return funcptr_sig_from_node(node).function.callable.signature.param_fp_mask;
 }
 
 unsigned short psx_node_funcptr_param_int_mask(node_t *node) {
   if (!node) return 0;
-  return funcptr_sig_from_node(node, 1).function.callable.signature.param_int_mask;
+  return funcptr_sig_from_node(node).function.callable.signature.param_int_mask;
 }
 
 int psx_node_funcptr_returns_void(node_t *node) {
   if (!node) return 0;
-  return funcptr_sig_from_node(node, 1).function.callable.return_shape.is_void ? 1 : 0;
+  return funcptr_sig_from_node(node).function.callable.return_shape.is_void ? 1 : 0;
 }
 
 int psx_node_funcptr_returns_complex(node_t *node) {
   if (!node) return 0;
-  return funcptr_sig_from_node(node, 1).function.callable.return_shape.is_complex ? 1 : 0;
+  return funcptr_sig_from_node(node).function.callable.return_shape.is_complex ? 1 : 0;
 }
 
 int psx_node_funcptr_returns_pointee_array(node_t *node) {
   if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = funcptr_sig_from_node(node, 1);
+  psx_decl_funcptr_sig_t sig = funcptr_sig_from_node(node);
   return psx_ret_pointee_array_has_dims(sig.function.callable.return_shape.pointee_array) ? 1 : 0;
 }
 
 tk_float_kind_t psx_node_funcptr_ret_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
-  return funcptr_sig_from_node(node, 1).function.callable.return_shape.fp_kind;
+  return funcptr_sig_from_node(node).function.callable.return_shape.fp_kind;
 }
 
 static global_var_t *static_local_backing_gvar(const lvar_t *var) {

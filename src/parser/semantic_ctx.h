@@ -96,9 +96,6 @@ static inline void psx_ctx_typedef_set_funcptr_sig(psx_typedef_info_t *info,
   if (!info) return;
   info->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
   info->is_funcptr = psx_decl_funcptr_sig_has_payload(sig) ? 1 : 0;
-  psx_type_t *decl_type = psx_ctx_typedef_decl_type_mut(info);
-  if (decl_type && psx_decl_funcptr_sig_has_payload(sig))
-    decl_type->funcptr_sig = psx_decl_funcptr_sig_clone(sig);
 }
 
 /* typedef 名を登録する。info->decl_type は正本として必須。
