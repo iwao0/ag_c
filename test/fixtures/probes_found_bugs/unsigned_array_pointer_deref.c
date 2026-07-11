@@ -3,11 +3,8 @@
 // `unsigned a[2]; a[0] == 0xFFFFFFFFu` や `unsigned *p; *p == 0xFFFFFFFFu` が、
 // 要素/pointee を ldrsw (sign-extend = -1) でロードし、定数 (zero-extend) と一致せず
 // false になっていた。変数へ代入すると truncate で動いていた (直接使用のみ)。
-// 原因: subscript / 単項 deref の結果ノードに is_unsigned が伝播していなかった
-//   (pointee_is_unsigned フラグが無かった)。
-// 修正: node_mem_t に pointee_is_unsigned を追加し、配列/ポインタのベースノード
-//   (local/global) に立て、build_subscript_deref / build_unary_deref_node が
-//   結果 ND_DEREF の is_unsigned に引き継ぐ。
+// 原因: subscript / 単項 deref がcanonical pointee signednessを参照していなかった。
+// 修正: canonical array/pointer typeのpointee型から結果ND_DEREFの型を構築する。
 // 期待: exit=42
 #include <assert.h>
 unsigned garr[3] = {0xFFFFFFFFu, 1, 2};

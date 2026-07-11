@@ -6,7 +6,7 @@
 // (1) lvar_t.vla_mid_stride_frame_off を vla_strides_remaining に置換 (汎用化)。
 //     vla_row_stride_frame_off = 次 subscript で消費する stride スロットの frame offset、
 //     vla_strides_remaining = その後にまだ続く runtime stride スロット数。
-// (2) node_mem_t にも vla_strides_remaining を追加し、subscript chain で carry。
+// (2) canonical VLA type と expression-local type_state で残りstrideをcarry。
 // (3) register_vla_lvar_and_append_alloc を N-D 対応に書き換え:
 //     slot サイズ = 16 + 8*(N-1) bytes、stride[k] (= dim[k+1]*...*dim[N-1]*elem) を
 //     slot+16+8*k に store する。level 0 は VLA_ALLOC の rsf 経路で、level 1..N-2 は

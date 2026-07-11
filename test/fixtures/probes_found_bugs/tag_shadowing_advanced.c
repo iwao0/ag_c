@@ -2,13 +2,12 @@
  * (a) ネスト 2 段 shadow: 内側 1 で宣言した変数を内側 2 から参照
  * (b) 内側スコープでグローバル変数 (外側 tag) のメンバを参照
  *
- * 以前は lvar_t / global_var_t / node_mem_t が tag_kind/name/len しか持たず、宣言時の
+ * 以前は宣言と参照nodeが tag_kind/name/len しか持たず、宣言時の
  * tag_scope_depth を覚えていなかった。メンバ参照 (build_member_access) は find_tag_type で
  * 「最も内側」のタグを取得するため、変数の宣言時タグと参照時タグがズレ E3064 になっていた。
  *
- * 修正: lvar_t / global_var_t / node_mem_t に tag_scope_depth_p1 (+1 エンコード、0=未設定)
- * を追加。変数宣言時に psx_ctx_get_tag_scope_depth で取得し、識別子参照ノード構築時に
- * 伝播。build_member_access は psx_node_get_tag_scope_depth でその深度を取り出し、
+ * 修正: declaration type のcanonical tag identityにscope depthを保持する。
+ * build_member_access はcanonical typeからその深度を取り出し、
  * psx_ctx_find_tag_member_info_at_scope に渡して「変数が宣言時に見ていた tag」のメンバを
  * 引く。tag_scope_depth_p1 の +1 エンコードにより calloc/arena_alloc がそのまま「未設定」を
  * 意味し、既存ノードへの伝播忘れがあっても従来挙動 (最も内側 tag) に fallback する。 */

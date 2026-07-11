@@ -73,8 +73,8 @@ typedef enum {
 
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
-/* Expression-local view of a canonical type. Array/VLA dereference cursors
- * belong here; node_mem_t keeps only compatibility mirrors. */
+/* Expression-local state that cannot be represented by the canonical type,
+ * such as array/VLA dereference cursors. */
 typedef struct {
   int deref_size;
   int inner_stride;
@@ -135,84 +135,6 @@ typedef struct {
   int descriptor_frame_off;
   int row_stride_frame_off;
 } node_vla_alloc_t;
-
-// メモリ参照系ノード（型サイズ情報）
-typedef struct node_mem_t node_mem_t;
-struct node_mem_t {
-  node_t base;
-  short type_size;   // ロード/ストアサイズ（1=char, 8=int/pointer）
-  short deref_size;  // ポインタが指す先の要素サイズ
-  short base_deref_size; // 多段ポインタの最内ポインタが指す要素サイズ（int**→4）
-  unsigned char bit_width;   // ビットフィールド幅（0: 非ビットフィールド, max 64）
-  unsigned char bit_offset;  // ビットフィールド開始ビット位置（ストレージユニット先頭から）
-  token_kind_t tag_kind; // TK_STRUCT/TK_UNION（非タグ型はTK_EOF）
-  char *tag_name;
-  int tag_len;
-  /* タグ宣言時のスコープ深度 + 1 (0=未設定、>0 で実 depth=値-1)。arena_alloc がゼロ
-   * 初期化なので未設定を 0 にしておくと初期化忘れがあっても安全。メンバ参照経路で
-   * 「変数が宣言時に見ていた tag」を引くのに使う。 */
-  int tag_scope_depth_p1;
-  unsigned int bit_is_signed : 1;           // ビットフィールドの符号（1: signed, 0: unsigned）
-  unsigned int is_tag_pointer : 1;          // 1: tagへのポインタ値, 0: tag値そのもの
-  unsigned int is_pointer : 1;              // 1: ポインタ型（ポインタ加算スケーリング対象）
-  unsigned int is_unsigned : 1;             // 1: unsigned型
-  unsigned int is_const_qualified : 1;
-  unsigned int is_volatile_qualified : 1;
-  unsigned int is_pointer_const_qualified : 1;
-  unsigned int is_complex : 1;              // 1: _Complex型（実部+虚部）
-  unsigned int is_atomic : 1;               // 1: _Atomic型（load-acquire/store-release）
-  unsigned int pointee_is_void : 1;         // 1: pointee 型が void（`void *p`）
-  unsigned int is_bool : 1;                  // 1: _Bool 型 (代入を 0/1 に正規化する)
-  unsigned int is_long_long : 1;             // 1: long long 型 (_Generic で long と区別)
-  unsigned int is_plain_char : 1;            // 1: plain char 型 (_Generic で signed/unsigned char と区別)
-  unsigned int is_long_double : 1;           // 1: long double 型 (_Generic で double と区別。fp_kind は DOUBLE のまま)
-  unsigned int pointee_is_bool : 1;          // 1: pointee 型が _Bool（_Bool 配列等）
-  unsigned int pointee_is_unsigned : 1;      // 1: pointee 型が unsigned（unsigned 配列/ポインタ）
-  // 配列要素 (各スロット) がスカラポインタ (`char *names[N]`, `int *vals[N]`) で
-  // あることを示す。subscript の結果 ND_DEREF に is_scalar_ptr_member を
-  // 立てるための上流フラグ。グローバル配列で deref_size = ポインタサイズ (8) と
-  // pointee 要素サイズ (例: 1 for char) が異なるケースを表現する。
-  unsigned int pointee_is_scalar_ptr : 1;
-  unsigned int is_pointer_volatile_qualified : 1;
-  unsigned int pointee_fp_kind : 3;         // tk_float_kind_t: ポインタ先スカラのFP種別
-  // ポインタメンバ deref (`s.p` で p が `char *` 等のスカラポインタメンバ)
-  // を表すフラグ。配列メンバの「decay 表現としての is_pointer」と区別する。
-  // subscript_base_address_of がスカラポインタ deref の場合 ND_DEREF を返し
-  // (= ポインタ値 load を引き起こす)、配列メンバの場合 ND_ADD (アドレス計算)
-  // を返す挙動を切り替えるために使う。
-  unsigned int is_scalar_ptr_member : 1;
-  // 1: struct/union の配列メンバを表す lvalue。`char x[1]` のように
-  // type_size == deref_size になる配列も、値文脈では load せず address へ decay する。
-  unsigned int is_array_member : 1;
-  // node_t::widen_zext_i64 の compatibility mirror。
-  // `(long)unsigned_int` の zero-extend を IR_ZEXT で明示挿入するために使う
-  // (coerce_to_type は常に SEXT のため unsigned の widen に乗れない)。
-  unsigned int widen_zext_i64 : 1;
-  unsigned int pointer_const_qual_mask;
-  unsigned int pointer_volatile_qual_mask;
-  psx_decl_funcptr_sig_t funcptr_sig;
-  int pointer_qual_levels;
-  // 多次元配列サポート用
-  short inner_deref_size;       // サブスクリプト結果の deref_size（次元の要素サイズ。0=N/A）
-  short next_deref_size;        // 3D 配列での 2 段サブスクリプト後の要素サイズ。0=2D 以下。
-  // 4 次元以上の追加ストライド: サブスクリプト 1 回ごとに deref_size ← inner_deref_size,
-  // inner_deref_size ← next_deref_size, next_deref_size ← extra_strides[0] と
-  // シフトさせる。最大 8 次元（3 + 5 段）まで対応。
-  int extra_strides[5];
-  unsigned char extra_strides_count;
-  int vla_row_stride_frame_off; // N-D VLA: 次 subscript で消費する runtime stride のフレームオフセット (0=なし)
-  /* N-D VLA (N >= 3): vla_row_stride_frame_off の後にさらに何個の runtime stride スロット
-   * が続くか。lvar_t と同じ意味。subscript で 1 段消費するたび -1、vla_row は +=8 シフトする。 */
-  int vla_strides_remaining;
-  /* 配列 compound literal は通常式では pointer decay するが、sizeof の直下では
-   * C11 6.5.3.4p2 により元の配列全体サイズを返す必要がある。 */
-  int compound_literal_array_size; // type_state.compound_literal_array_size の compatibility mirror
-  /* array-of-pointer-to-array struct メンバ (`int (*p[M])[N]`) で carry する、各要素ポインタが
-   * 指す配列の全バイト数 (= N * elem)。`s.p` の deref ノードと、`s.p[i]` の subscript 結果
-   * deref ノードに carry し、build_unary_deref_node の pointer-to-array 分岐に乗せて
-   * `(*s.p[i])[j]` を要素ストライドで添字できるようにする。 */
-  int ptr_array_pointee_bytes;
-};
 
 // 数値ノード
 typedef struct node_num_t node_num_t;

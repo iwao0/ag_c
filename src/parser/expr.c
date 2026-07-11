@@ -1473,7 +1473,6 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       psx_gvar_init_slots_alloc(gv, cap, 1);  /* fp 要素 (`(double[]){...}`) 用 */
       gv->init_count = 0;
       psx_parse_global_brace_init_flat(gv, &cap, -1);
-      (void)psx_gvar_refresh_decl_type(gv);
       psx_register_global_var(gv);
       if (is_arr) {
         /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
@@ -1523,7 +1522,6 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
         gv->init_val = n->val;
       }
     }
-    (void)psx_gvar_refresh_decl_type(gv);
     psx_register_global_var(gv);
     node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
     return apply_postfix((node_t *)gvar_node, ctx);
@@ -1566,7 +1564,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                            cast_kind == TK_BOOL);
   }
   node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
-  (void)psx_lvar_refresh_decl_type(var);
+  (void)psx_decl_commit_lvar_type(var);
   node_t *ref;
   if (is_arr) {
     ref = psx_node_new_compound_lvar_array_addr_for(
@@ -2057,7 +2055,6 @@ static node_t *lower_union_value_cast(node_t *operand,
   psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
                                   cast_fp_kind, 0,
                                   cast_tag_kind, cast_tag_name, cast_tag_len, 0);
-  (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
   if (!psx_tag_first_named_member(cast_tag_kind, cast_tag_name, cast_tag_len, &info, NULL)) {
@@ -2081,7 +2078,6 @@ static node_t *lower_struct_value_cast(node_t *operand,
   psx_decl_init_lvar_storage_type(var, base_elem, base_elem, 0,
                                   cast_fp_kind, 0,
                                   cast_tag_kind, cast_tag_name, cast_tag_len, 0);
-  (void)psx_lvar_refresh_decl_type(var);
 
   tag_member_info_t info = {0};
   if (!psx_tag_first_named_member(cast_tag_kind, cast_tag_name, cast_tag_len, &info, NULL)) {
@@ -3640,8 +3636,7 @@ static node_t *make_subscript_scaled_offset(node_t *node, node_t *idx,
     int bds = psx_node_base_deref_size(node);
     if (bds == 0 && node->lhs) bds = psx_node_base_deref_size(node->lhs);
     int pointer_array_element_row =
-        (ptr_array_bytes > 0 && ds > bds) ||
-        (psx_node_legacy_pointee_scalar_ptr(node) && ds == 8);
+        ptr_array_bytes > 0 && ds > bds;
     if (bds > 0 && ts > bds && !pointer_array_element_row) es = bds;
   }
   node_t *scaled;

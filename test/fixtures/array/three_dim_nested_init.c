@@ -5,8 +5,8 @@
 //        2) ネスト初期化 `{{{...},{...}}, ...}` を parse_array_initializer が
 //           扱えなかった (2 段までしか対応)
 // 対応:
-// - lvar_t に mid_stride、node_mem_t に next_deref_size を追加し、
-//   サブスクリプトチェーンで「1段先」「2段先」のストライドを伝搬
+// - canonical array type と expression-local type_state で、サブスクリプト
+//   チェーンの「1段先」「2段先」のストライドを伝搬
 // - parse_array_initializer に sub_row_len による中段 `{...}` の再帰処理を追加
 // 期待: exit=12
 #include <assert.h>

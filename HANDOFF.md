@@ -1,8 +1,145 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1052: raw deref constructorを除去した）
+最終更新: 2026-07-11（続き1057: declaration commit境界を8件へ縮小した）
 
 ## 現状
+- 続き1057: **declaration commit境界を11件から8件へ縮小した。**
+
+  global inferred array sizeは`psx_decl_finalize_gvar_inferred_array_size()`から
+  eager canonicalな`psx_decl_set_gvar_type_size()`を通るため、brace initializerと
+  toplevel initializer外側のcommit 2件を削除した。単純global compound literalも
+  type fieldを変更しないためcommitを削除した。parser unit testは全件通過する。
+
+  `psx_decl_commit_lvar_type()` / `psx_decl_commit_gvar_type()`の宣言は
+  `node_utils.h`から`decl.h`へ移し、declaration builder境界の所有APIであることを
+  header構成にも反映した。
+
+  残る8件:
+  - lvar/gvar array stride mutator = 4
+  - static-local alias同期 = 2
+  - local compound initializer / local declarator / byref parameter確定 = 3
+
+  上記はcall数では合計9に見えるが、static-local helperはlvar/gvarを同一builder commitで
+  同時確定する1境界として数えるため、意味上は8境界である。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - explicit commit call = **9 calls / 8 semantic boundaries**
+
+  次はarray dimension列からcanonical nested array typeを直接構築するhelperを追加し、
+  stride mutator内の4 commit callを削除する。pointer-to-arrayのinner dimsと通常配列の
+  full dimsを同じstructural builderで扱う必要がある。
+
+- 続き1056: **declaration refreshを明示的なbuilder commit境界へ縮小した。**
+
+  eager canonical mutator後に残っていた`psx_lvar_refresh_decl_type()` /
+  `psx_gvar_refresh_decl_type()` callを監査した。mutator直後、単純compound literal、
+  extern登録などの冗長callを削除した。
+
+  残るcallはinferred array initializer、array stride direct update、static-local alias同期、
+  byref parameter確定、local declarator末尾など、parser内部のflat builder状態を
+  canonical typeへ確定する実際の境界だけである。APIを
+  `psx_decl_commit_lvar_type()` / `psx_decl_commit_gvar_type()`へ改名し、
+  lazy refreshではなく明示的なdeclaration commitであることを名前に反映した。
+
+  parser unit testでcommitを一つずつ外して検証し、byref struct parameterとnested
+  function-pointer local declaratorのcommitは必須であることも確認した。これらは
+  direct flat-field mutationが残る具体的な次期builder移行対象である。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - old `psx_*_refresh_decl_type` API = **0件**
+  - explicit declaration commit call = **11境界**
+
+  次は11境界を用途別builderへ移す。まずarray stride/inferred sizeをcanonical typeへ
+  直接反映し、そのcommitを削除する。その後byref parameterとfunction-pointer declaratorの
+  parsed typeをsymbolへ直接渡し、`legacy_decl_shape_t`再構築を不要にする。
+
+- 続き1055: **lvar/gvar declaration mutatorをeager canonical化した。**
+
+  `psx_decl_init_*_storage_type()`、tag/pointer/pointee/scalar identity/qualifier/
+  array stride/VLA/global sizeの各public mutatorは、flat field更新後にcanonical `decl_type`を
+  即時materializeする。呼び出し元へ`decl_type == NULL`を返し、後のaccessor呼出しに
+  再構築を委ねる契約をやめた。parser testもmutator直後のcanonical typeを直接検証する。
+
+  `psx_decl_invalidate_lvar_decl_type()` / `psx_decl_invalidate_gvar_decl_type()`の公開inline
+  helperを削除した。`decl_type = NULL`はmutator/refresh実装内部の一時状態だけに限定した。
+
+  function-pointer signature accessorは`psx_lvar_materialize_decl_type()` /
+  `psx_gvar_materialize_decl_type()`で得たcanonical typeだけを読み、flat
+  `lvar_t::funcptr_sig` / `global_var_t::funcptr_sig`へのfallbackを削除した。
+  flat signatureを読むのはprivate `legacy_decl_shape_t` adapterの入力時だけである。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - public `psx_decl_invalidate_*_decl_type` = **0件**
+  - `funcptr_sig_from_lvar_raw` / `funcptr_sig_from_gvar_raw` = **0件**
+
+  次はparser/expr/decl内部に残る明示`psx_*_refresh_decl_type()`を分類する。
+  単なる旧checkpointは削除し、宣言解析中にflat fieldsを直接更新している箇所は
+  dedicated declarator builderへ移す。これが完了すれば`legacy_decl_shape_t`と
+  refresh APIを削除し、symbol生成時から`decl_type`を唯一の正本にできる。
+
+- 続き1054: **`node_mem_t` compatibility mirror構造体を完全撤去した。**
+
+  lvar/gvarの旧flat declaration fieldsからcanonical `decl_type`を作る処理は、
+  AST nodeを継承しないprivate `legacy_decl_shape_t`へ分離した。再構築helperはこの専用型だけを
+  受け取り、`node_t base`やAST kindを経由しない。production sourceで`node_mem_t`を使う
+  ロジックは0件になった。
+
+  parser testに67件残っていたtyped-stale `node_mem_t` fixtureはplain `node_t`とcanonical
+  `psx_type_t`へ移行した。mirror fieldへ偽値を設定してcanonical優先を検査する形をやめ、
+  accessorがcanonical type/type_stateの契約を直接満たすことを検査する。これにより
+  `ast.h`の`node_mem_t`定義と`node_fwd.h`のforward declarationを削除できた。
+
+  array/VLA/tag/pointee signedness/ptr-array/long double fixtureの履歴コメントも、
+  現在のcanonical typeとexpression-local `type_state`を説明する内容へ更新した。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c` = **pass**
+  - `node_mem_t` in `src/**/*.[ch]`, `test/**/*.[ch]` = **0件**
+  - `git diff --check` = **pass**
+
+  次の本丸はlvar/global_varのflat declaration fieldsと`decl_type`が併存し、
+  invalidation後に`legacy_decl_shape_t`から遅延再構築される点である。decl parserの確定時に
+  canonical typeを必ず設定するようconstructor/mutatorを移し、raw fallbackの
+  `funcptr_sig_from_lvar_raw()` / `funcptr_sig_from_gvar_raw()`と
+  `legacy_decl_shape_t`自体を段階的に削除する。
+
+- 続き1053: **raw deref readerとtest-only `node_mem_t` funcptr APIを除去した。**
+
+  `psx_node_materialize_type()`のraw `ND_DEREF` reconstruction fallbackを削除し、
+  tag、scalar/pointee flag、pointer/VLA shape、value size、stride、funcptr signature、
+  qualifier、bitfield、array decayの各accessorから`legacy_deref_mem_view()` fallbackを
+  すべて除去した。untyped derefの補助情報はplain `node_t::type_state`だけを読み、
+  型を持つnodeはcanonical `psx_type_t`だけを読む。`legacy_deref_mem_view()`、`as_mem()`、
+  `materialize_legacy_node_type()`は0件になった。
+
+  indirect funcall result typeもcalleeのcanonical function-pointer typeだけから構築する。
+  raw callee signatureを読むsecond pathを削除した。lvalue cloneとunsigned overrideも
+  `node_t`を直接扱い、type-null `ND_DEREF`を`node_mem_t`として複製・更新しない。
+
+  productionから呼ばれずparser testだけが保持していた`node_mem_t`向けfuncptr
+  copy/merge/store/query APIも削除した。テストは`psx_lvar_funcptr_sig()`、
+  `psx_gvar_funcptr_sig()`、`psx_ctx_tag_member_funcptr_sig()`、`psx_node_funcptr_sig()`で
+  canonical signatureを直接検証する。
+
+  確認:
+  - `make build/test_parser` = **pass（compiler warning 0）**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `legacy_deref_mem_view` / `materialize_legacy_node_type` / `as_mem` = **0件**
+  - obsolete `psx_node_*funcptr_metadata*` API = **0件**
+  - production `sizeof(node_mem_t)` / AST cast = **0件**
+
+  現在`node_mem_t`がproductionで残る用途は、lvar/gvarの旧flat declaration fieldsを
+  canonical `decl_type`へ変換する一時workspaceだけである。次はこれをAST node型ではない
+  dedicated declaration-shape inputへ分離し、`node_mem_t`とtyped stale fixtureを撤去する。
+
 - 続き1052: **raw deref constructorと専用mirror同期連鎖を除去した。**
 
   unary dereferenceとsubscript dereferenceは、canonical result typeを構築できない場合も

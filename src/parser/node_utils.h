@@ -18,10 +18,8 @@ psx_type_t *psx_node_get_type(node_t *node);
 psx_type_t *psx_node_materialize_type(node_t *node);
 psx_type_t *psx_lvar_get_decl_type(struct lvar_t *var);
 psx_type_t *psx_lvar_materialize_decl_type(struct lvar_t *var);
-psx_type_t *psx_lvar_refresh_decl_type(struct lvar_t *var);
 psx_type_t *psx_gvar_get_decl_type(struct global_var_t *gv);
 psx_type_t *psx_gvar_materialize_decl_type(struct global_var_t *gv);
-psx_type_t *psx_gvar_refresh_decl_type(struct global_var_t *gv);
 psx_gvar_init_slot_t psx_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t psx_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
 int psx_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);
@@ -58,7 +56,6 @@ int psx_node_pointer_stride_metadata(node_t *node, int *inner_stride,
                                      int *next_stride, int *extra_strides,
                                      int *extra_strides_count);
 int psx_node_scalar_ptr_member_lvalue(node_t *node);
-int psx_node_legacy_pointee_scalar_ptr(node_t *node);
 int psx_node_subscript_deref_uses_base_address(node_t *node);
 psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node);
 int psx_node_compound_literal_array_size(node_t *node);

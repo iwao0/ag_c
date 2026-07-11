@@ -9,12 +9,9 @@
 // 修正:
 // - global_var_t に short pointee_elem_size を追加。is_ptr && is_array の
 //   とき g_toplevel_decl_elem_size (= char なら 1) を保存。
-// - node_mem_t に pointee_is_scalar_ptr フラグを追加。
-//   try_build_global_var_node の配列ブランチで pointee_elem_size > 0 &&
-//   tag_kind == TK_EOF (struct でないスカラ型ポインタ要素) のときに立てる。
-// - build_subscript_deref で base の pointee_is_scalar_ptr が立っているとき、
-//   結果 ND_DEREF に is_scalar_ptr_member=1 + deref_size=pointee_elem_size
-//   を設定。これで struct メンバ char* (commit 6a663ed) と同じ semantics
+// - canonical array element typeにscalar pointer shapeを保持する。
+// - build_subscript_derefがそのelement typeからpointer result typeを構築する。
+//   これで struct メンバ char* と同じsemantics
 //   になり、subscript_base_address_of が ND_DEREF をそのまま返してポインタ値
 //   load を引き起こす。
 #include <assert.h>

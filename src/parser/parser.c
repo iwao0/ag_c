@@ -1531,7 +1531,6 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
       existing->is_extern_decl = 0;
       if (existing->type_size == 0 && new_type_size > 0) {
         psx_decl_set_gvar_type_size(existing, new_type_size);
-        (void)psx_gvar_refresh_decl_type(existing);
       }
     }
     return existing;
@@ -1591,7 +1590,6 @@ static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *s
     int lvls = head->ptr_levels + spec->base_pointer_levels;
     psx_decl_set_gvar_pointer_qual_levels(gv, lvls);
   }
-  (void)psx_gvar_refresh_decl_type(gv);
   psx_register_global_var(gv);
   return gv;
 }
@@ -2828,12 +2826,10 @@ static void validate_toplevel_object_array_suffix(const toplevel_decl_spec_t *sp
 static void finalize_toplevel_object_declarator(const toplevel_decl_spec_t *spec, global_var_t *gv) {
   if (spec->is_extern) {
     consume_toplevel_extern_initializer_if_any();
-    (void)psx_gvar_refresh_decl_type(gv);
     return;
   }
   gv->is_thread_local = spec->is_thread_local;
   apply_toplevel_object_initializer(gv);
-  (void)psx_gvar_refresh_decl_type(gv);
 }
 
 static global_var_t *register_toplevel_object_from_declarator(const toplevel_decl_spec_t *spec,
@@ -4324,7 +4320,7 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
                                     var->tag_kind, var->tag_name, var->tag_len,
                                     var->is_tag_pointer);
   }
-  (void)psx_lvar_refresh_decl_type(var);
+  (void)psx_decl_commit_lvar_type(var);
   // args[] には宣言型を正本にした ND_LVAR を格納する。
   // ABI の受け渡しサイズは IR 生成時に owner/param metadata から判断する。
   // 配列宣言子の struct パラメータ (`struct V arr[]`) はポインタに adjust される

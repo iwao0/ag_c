@@ -346,7 +346,8 @@ int psx_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
 
 void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, int tag_len,
                           int is_tag_pointer) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  if (!var) return;
+  var->decl_type = NULL;
   var->tag_kind = tag_kind;
   var->tag_name = tag_name;
   var->tag_len = tag_len;
@@ -357,11 +358,13 @@ void psx_decl_set_var_tag(lvar_t *var, token_kind_t tag_kind, char *tag_name, in
   } else {
     var->tag_scope_depth_p1 = 0;
   }
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_name, int tag_len,
                            int is_tag_pointer) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  if (!gv) return;
+  gv->decl_type = NULL;
   gv->tag_kind = tag_kind;
   gv->tag_name = tag_name;
   gv->tag_len = tag_len;
@@ -372,6 +375,7 @@ void psx_decl_set_gvar_tag(global_var_t *gv, token_kind_t tag_kind, char *tag_na
   } else {
     gv->tag_scope_depth_p1 = 0;
   }
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_reset_translation_unit_state(void) {
@@ -3787,7 +3791,8 @@ void psx_decl_init_lvar_storage_type(lvar_t *var, int size,
                                      token_kind_t tag_kind,
                                      char *tag_name, int tag_len,
                                      int is_tag_pointer) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  if (!var) return;
+  var->decl_type = NULL;
   var->size = size;
   var->elem_size = elem_size;
   var->is_array = is_array ? 1 : 0;
@@ -3802,61 +3807,71 @@ void psx_decl_init_lvar_storage_type(lvar_t *var, int size,
     var->is_tag_pointer = 0;
     var->tag_scope_depth_p1 = 0;
   }
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_pointer_derived_type(lvar_t *var,
                                             int pointer_qual_levels,
                                             int base_deref_size,
                                             int ptr_array_pointee_bytes) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->pointer_qual_levels = pointer_qual_levels;
   var->base_deref_size = (short)base_deref_size;
   var->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_pointee_scalar_flags(lvar_t *var,
                                             int is_unsigned, int is_bool) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->pointee_is_unsigned = is_unsigned ? 1 : 0;
   var->pointee_is_bool = is_bool ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_pointee_fp_kind(lvar_t *var, tk_float_kind_t fp_kind) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->pointee_fp_kind = fp_kind;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_bool(lvar_t *var, int is_bool) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_bool = is_bool ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_complex(lvar_t *var, int is_complex) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_complex = is_complex ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_atomic(lvar_t *var, int is_atomic) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_atomic = is_atomic ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_integer_identity(lvar_t *var,
                                         int is_long_long,
                                         int is_plain_char) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_long_long = is_long_long ? 1 : 0;
   var->is_plain_char = is_plain_char ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_long_double(lvar_t *var, int is_long_double) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_long_double = is_long_double ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_pointee_void(lvar_t *var, int pointee_is_void) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->pointee_is_void = pointee_is_void ? 1 : 0;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_qualifiers(lvar_t *var,
@@ -3866,13 +3881,14 @@ void psx_decl_set_lvar_qualifiers(lvar_t *var,
                                   int is_pointer_volatile_qualified,
                                   unsigned int pointer_const_qual_mask,
                                   unsigned int pointer_volatile_qual_mask) {
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_const_qualified = is_const_qualified ? 1 : 0;
   var->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
   var->is_pointer_const_qualified = is_pointer_const_qualified ? 1 : 0;
   var->is_pointer_volatile_qualified = is_pointer_volatile_qualified ? 1 : 0;
   var->pointer_const_qual_mask = pointer_const_qual_mask;
   var->pointer_volatile_qual_mask = pointer_volatile_qual_mask;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 static int psx_decl_array_dim_product(const int *dims, int start, int count) {
@@ -3885,7 +3901,7 @@ static int psx_decl_array_dim_product(const int *dims, int start, int count) {
 
 static void psx_decl_clear_lvar_array_strides(lvar_t *var) {
   if (!var) return;
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->outer_stride = 0;
   var->mid_stride = 0;
   var->extra_strides_count = 0;
@@ -3912,6 +3928,7 @@ void psx_decl_set_lvar_array_strides_from_dims(lvar_t *var,
     }
     var->extra_strides_count = (unsigned char)idx;
   }
+  (void)psx_decl_commit_lvar_type(var);
 }
 
 void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
@@ -3933,6 +3950,7 @@ void psx_decl_set_lvar_array_strides_from_inner_dims(lvar_t *var,
     }
     var->extra_strides_count = (unsigned char)idx;
   }
+  (void)psx_decl_commit_lvar_type(var);
 }
 
 void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
@@ -3942,13 +3960,14 @@ void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
                                       int row_stride_src_offset,
                                       int row_stride_elem_size) {
   if (!var) return;
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   var->is_vla = 1;
   var->outer_stride = outer_stride;
   var->vla_row_stride_frame_off = row_stride_frame_off;
   var->vla_strides_remaining = strides_remaining;
   var->vla_row_stride_src_offset = row_stride_src_offset;
   var->vla_row_stride_elem_size = (short)row_stride_elem_size;
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
@@ -3956,7 +3975,7 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
                                             const int *inner_dim_src_offsets,
                                             int inner_dim_count) {
   if (!var) return;
-  psx_decl_invalidate_lvar_decl_type(var);
+  var->decl_type = NULL;
   if (inner_dim_count < 0) inner_dim_count = 0;
   if (inner_dim_count > 7) inner_dim_count = 7;
   var->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
@@ -3966,6 +3985,7 @@ void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
     var->vla_param_inner_dim_src_offsets[i] =
         (i < inner_dim_count && inner_dim_src_offsets) ? inner_dim_src_offsets[i] : 0;
   }
+  (void)psx_lvar_materialize_decl_type(var);
 }
 
 void psx_decl_set_lvar_funcptr_signature(lvar_t *var,
@@ -4027,7 +4047,8 @@ void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
                                      token_kind_t tag_kind,
                                      char *tag_name, int tag_len,
                                      int is_tag_pointer) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  if (!gv) return;
+  gv->decl_type = NULL;
   gv->type_size = type_size;
   gv->deref_size = (short)elem_size;
   gv->is_array = is_array ? 1 : 0;
@@ -4038,11 +4059,12 @@ void psx_decl_init_gvar_storage_type(global_var_t *gv, int type_size,
   } else {
     gv->tag_kind = TK_EOF;
   }
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 static void psx_decl_clear_gvar_array_strides(global_var_t *gv) {
   if (!gv) return;
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->outer_stride = 0;
   gv->mid_stride = 0;
   gv->extra_strides_count = 0;
@@ -4066,6 +4088,7 @@ void psx_decl_set_gvar_array_strides_from_dims(global_var_t *gv,
     }
     gv->extra_strides_count = (unsigned char)idx;
   }
+  (void)psx_decl_commit_gvar_type(gv);
 }
 
 void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
@@ -4086,71 +4109,82 @@ void psx_decl_set_gvar_array_strides_from_inner_dims(global_var_t *gv,
     }
     gv->extra_strides_count = (unsigned char)idx;
   }
+  (void)psx_decl_commit_gvar_type(gv);
 }
 
 void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->type_size = type_size;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_pointer_derived_type(global_var_t *gv,
                                             int deref_size,
                                             int pointee_elem_size,
                                             int ptr_array_pointee_bytes) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->deref_size = (short)deref_size;
   gv->pointee_elem_size = (short)pointee_elem_size;
   gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_pointer_qual_levels(global_var_t *gv,
                                            int pointer_qual_levels) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->pointer_qual_levels = (pointer_qual_levels > 0 && pointer_qual_levels < 256)
                                 ? (unsigned char)pointer_qual_levels
                                 : 0;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_pointee_elem_size(global_var_t *gv, int pointee_elem_size) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->pointee_elem_size = (short)pointee_elem_size;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_ptr_array_pointee_bytes(global_var_t *gv,
                                                int ptr_array_pointee_bytes) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_pointee_fp_kind(global_var_t *gv, tk_float_kind_t fp_kind) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->pointee_fp_kind = (unsigned char)fp_kind;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_pointee_scalar_flags(global_var_t *gv,
                                             int is_unsigned, int is_bool) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->pointee_is_unsigned = is_unsigned ? 1 : 0;
   gv->pointee_is_bool = is_bool ? 1 : 0;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_bool(global_var_t *gv, int is_bool, int elem_is_bool) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->is_bool = is_bool ? 1 : 0;
   gv->elem_is_bool = elem_is_bool ? 1 : 0;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_long_double(global_var_t *gv, int is_long_double) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->is_long_double = is_long_double ? 1 : 0;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_qualifiers(global_var_t *gv,
                                   int is_const_qualified,
                                   int is_volatile_qualified) {
-  psx_decl_invalidate_gvar_decl_type(gv);
+  gv->decl_type = NULL;
   gv->is_const_qualified = is_const_qualified ? 1 : 0;
   gv->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
+  (void)psx_gvar_materialize_decl_type(gv);
 }
 
 void psx_decl_set_gvar_funcptr_signature(global_var_t *gv,
@@ -4195,8 +4229,8 @@ static lvar_t *register_static_local_alias(token_ident_t *tok, char *mangled,
 }
 
 static void refresh_static_local_decl_types(global_var_t *gv, lvar_t *var) {
-  (void)psx_gvar_refresh_decl_type(gv);
-  (void)psx_lvar_refresh_decl_type(var);
+  (void)psx_decl_commit_gvar_type(gv);
+  (void)psx_decl_commit_lvar_type(var);
 }
 
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
@@ -5660,7 +5694,6 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                           var->fp_kind, decl_is_unsigned,
                                           tag_kind, tag_name, tag_len, 0);
-          (void)psx_lvar_refresh_decl_type(var);
           if (!tk_consume(',')) break;
           continue;
         }
@@ -5676,7 +5709,6 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
           psx_decl_init_lvar_storage_type(var, var->size, var->elem_size, var->is_array,
                                           var->fp_kind, decl_is_unsigned,
                                           tag_kind, tag_name, tag_len, 0);
-          (void)psx_lvar_refresh_decl_type(var);
           if (!tk_consume(',')) break;
           continue;
         }
@@ -5803,8 +5835,7 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
     if (decl_base_is_void && is_pointer && total_pointer_levels == 1) {
       psx_decl_set_lvar_pointee_void(var, 1);
     }
-    (void)psx_lvar_refresh_decl_type(var);
-
+    (void)psx_decl_commit_lvar_type(var);
     /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化し、decl_type の付帯情報へ
      * 寄せる。 */
     if (declarator_count == 1 && ts_start && var && tok) {
@@ -5987,7 +6018,6 @@ static void register_local_extern_decl(token_ident_t *name, int is_ptr, decl_arr
                                   is_ptr ? TK_FLOAT_KIND_NONE : fp_kind,
                                   is_unsigned, tag_kind, tag_name, tag_len, is_ptr);
   gv->is_extern_decl = 1;
-  (void)psx_gvar_refresh_decl_type(gv);
   psx_register_global_var(gv);
 }
 
