@@ -493,6 +493,15 @@ struct pragma_once_entry {
 };
 static pragma_once_entry_t *pragma_once_list = NULL;
 
+static void reset_pragma_once_list(void) {
+  while (pragma_once_list) {
+    pragma_once_entry_t *entry = pragma_once_list;
+    pragma_once_list = entry->next;
+    free(entry->path);
+    free(entry);
+  }
+}
+
 static bool pragma_once_seen(const char *path) {
   for (pragma_once_entry_t *e = pragma_once_list; e; e = e->next) {
     if (!strcmp(e->path, path)) return true;
@@ -2629,6 +2638,16 @@ static void pps_ensure_lookahead(void) {
 token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src) {
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
   g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  reset_pragma_once_list();
+  while (cond_incl) {
+    cond_incl_t *entry = cond_incl;
+    cond_incl = entry->next;
+    free(entry);
+  }
+  while (include_stack) pop_include();
+  macro_expand_steps = 0;
+  if_expr_eval_steps = 0;
+  include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
   tk_allocator_set_recyclable(0);
   macros = NULL;

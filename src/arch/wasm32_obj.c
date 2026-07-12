@@ -1097,7 +1097,7 @@ static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
           (char *)name, name_len, p);
       if (param.type == IR_TY_PTR) sig.params[p] = IR_TY_I32;
       else if (param.type != IR_TY_VOID) sig.params[p] = param.type;
-      else sig.params[p] = IR_TY_I64;
+      else sig.params[p] = IR_TY_I32;
     }
   }
   return sig;
@@ -1114,10 +1114,8 @@ static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_m
 static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
   if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  if (iw != 0) {
-    if (iw == 3) return IR_TY_I32;
-    return IR_TY_I64;
-  }
+  if (iw == 1 || iw == 3) return IR_TY_I32;
+  if (iw == 2) return IR_TY_I64;
   return IR_TY_I64;
 }
 
@@ -1240,24 +1238,9 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
         int null_ptr_pair_arg =
             a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
         if (arg_ty == IR_TY_PTR || null_ptr_pair_arg) ty = IR_TY_I32;
-        else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
         sig.params[a] = ty;
       }
       sig.nparams = call_nargs;
-    }
-    for (int a = 0; a < call_nargs && a < sig.nparams; a++) {
-      ir_type_t arg_ty = i->args[a].type;
-      int null_ptr_pair_arg =
-          a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
-      psx_decl_funcptr_sig_t fs = i->funcptr_sig;
-      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
-      int funcptr_pointer_param = iw == 3;
-      if (!fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
-          sig.params[a] == IR_TY_I32 && arg_ty != IR_TY_PTR &&
-          arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64 && !null_ptr_pair_arg &&
-          !funcptr_pointer_param) {
-        sig.params[a] = IR_TY_I64;
-      }
     }
     if (!i->is_void_call && i->dst.id != IR_VAL_NONE) {
       if (i->dst.type == IR_TY_PTR ||
@@ -1284,7 +1267,8 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
                                       : (ir_abi_param_info_t){0};
       if (param.param_class == IR_ABI_PARAM_POINTER || arg_ty == IR_TY_PTR)
         ty = IR_TY_I32;
-      else if (arg_ty != IR_TY_F32 && arg_ty != IR_TY_F64) ty = IR_TY_I64;
+      else if (param.type != IR_TY_VOID)
+        ty = wasm_ir_type(param.type);
       sig.params[a + (has_ret_area ? 1 : 0)] = ty;
     }
   }
@@ -1640,10 +1624,16 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         }
         case IR_ZEXT:
         case IR_SEXT:
-        case IR_TRUNC:
-          emit_val(&body, i->src1, actual_vreg_type(i->dst), param_count);
+        case IR_TRUNC: {
+          ir_type_t got = actual_vreg_type(i->src1);
+          ir_type_t want = actual_vreg_type(i->dst);
+          emit_local_get(&body, local_index(param_count, i->src1.id));
+          emit_stack_cast(&body, got, want,
+                          i->op == IR_ZEXT ? 1 :
+                          i->op == IR_SEXT ? 0 : actual_vreg_unsigned(i->src1));
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
+        }
         case IR_I2F: {
           ir_type_t src_ty = wasm_ir_type(i->src1.type);
           emit_val(&body, i->src1, src_ty, param_count);

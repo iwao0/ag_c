@@ -59,8 +59,8 @@ node_t *psx_parse_local_declaration_syntax(
                       DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
                   PS_MAX_DECLARATOR_COUNT);
     }
-    psx_parsed_declarator_t declarator =
-        psx_parse_declarator_syntax_tree();
+    psx_parsed_declarator_t declarator;
+    psx_parse_declarator_syntax_tree_into(&declarator);
     ps_parse_runtime_declarator_expressions(&declarator);
     if (!declarator.identifier) {
       ps_diag_ctx(curtok(), "decl", "%s",

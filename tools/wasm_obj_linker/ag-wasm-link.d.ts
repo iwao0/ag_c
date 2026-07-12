@@ -1,6 +1,10 @@
 export interface AgcWasmLinkOptions {
   exports?: string[];
   useStdlib?: boolean;
+  initialMemoryPages?: number;
+  maximumMemoryPages?: number;
+  stackSize?: number;
+  maximumTableElements?: number;
 }
 
 export interface AgcWasmLinkerOptions {

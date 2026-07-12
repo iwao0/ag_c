@@ -39,6 +39,7 @@ int ps_ctx_current_tag_scope_depth(void);
 int ps_ctx_find_tag_kind_at_current_scope(
     char *name, int len, token_kind_t *out_kind);
 int ps_ctx_get_tag_size(token_kind_t kind, char *name, int len);
+void ps_ctx_refresh_type_completeness(psx_type_t *type);
 int ps_ctx_get_tag_align(token_kind_t kind, char *name, int len);
 psx_aggregate_definition_t *ps_ctx_get_tag_definition(
     token_kind_t kind, char *name, int len);

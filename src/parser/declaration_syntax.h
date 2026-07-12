@@ -105,6 +105,8 @@ void psx_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options);
 psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void);
+void psx_parse_declarator_syntax_tree_into(
+    psx_parsed_declarator_t *declarator);
 psx_parsed_declarator_t
 psx_parse_toplevel_declarator_syntax_tree(void);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void);

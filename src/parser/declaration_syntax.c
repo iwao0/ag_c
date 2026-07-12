@@ -330,22 +330,23 @@ static int is_parameter_grouping_parenthesis(
       next, (const declaration_declarator_parse_context_t *)context);
 }
 
-static psx_parsed_declarator_t parse_declarator_syntax_tree(
+static void parse_declarator_syntax_tree_into(
+    psx_parsed_declarator_t *declarator,
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context,
     int allow_implicit_function_parameters) {
-  psx_parsed_declarator_t declarator = {0};
-  ps_declarator_shape_init(&declarator.declarator_shape);
+  memset(declarator, 0, sizeof(*declarator));
+  ps_declarator_shape_init(&declarator->declarator_shape);
   declaration_declarator_parse_context_t parse_context = {
-      .declarator = &declarator,
+      .declarator = declarator,
       .is_typedef_name = is_typedef_name,
       .typedef_name_context = typedef_name_context,
       .allow_implicit_function_parameters =
           allow_implicit_function_parameters,
   };
-  declarator.identifier = psx_parse_declarator_syntax(
+  declarator->identifier = psx_parse_declarator_syntax(
       &(psx_declarator_syntax_t){
           .context = &parse_context,
           .is_grouping_parenthesis =
@@ -356,28 +357,37 @@ static psx_parsed_declarator_t parse_declarator_syntax_tree(
           .append_pointer = append_declarator_pointer,
           .diagnose_too_complex = diagnose_declarator_too_complex,
       },
-      &declarator.pointer_levels);
+      &declarator->pointer_levels);
   if (!is_abstract && tk_consume(':')) {
-    declarator.has_bitfield = 1;
+    declarator->has_bitfield = 1;
     token_t *start = current_token();
     token_t *end = find_declaration_expression_end(
         start, TK_COMMA, TK_SEMI);
-    declarator.bit_width_expression =
+    declarator->bit_width_expression =
         make_parsed_const_expr(start, end);
-    if (!declarator.bit_width_expression.end) {
+    if (!declarator->bit_width_expression.end) {
       ps_diag_ctx(current_token(), "declaration-syntax",
                    "unterminated bit-field width");
     }
-    tk_set_current_token(declarator.bit_width_expression.end);
+    tk_set_current_token(declarator->bit_width_expression.end);
   }
-  declarator.diagnostic_token = declarator.identifier
-                                    ? (token_t *)declarator.identifier
+  declarator->diagnostic_token = declarator->identifier
+                                    ? (token_t *)declarator->identifier
                                     : current_token();
-  return declarator;
 }
 
 psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void) {
-  return parse_declarator_syntax_tree(0, NULL, NULL, NULL, 0);
+  psx_parsed_declarator_t declarator;
+  parse_declarator_syntax_tree_into(
+      &declarator, 0, NULL, NULL, NULL, 0);
+  return declarator;
+}
+
+void psx_parse_declarator_syntax_tree_into(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator) return;
+  parse_declarator_syntax_tree_into(
+      declarator, 0, NULL, NULL, NULL, 0);
 }
 
 static int is_current_typedef_name(token_t *token, void *context) {
@@ -387,19 +397,26 @@ static int is_current_typedef_name(token_t *token, void *context) {
 
 psx_parsed_declarator_t
 psx_parse_toplevel_declarator_syntax_tree(void) {
-  return parse_declarator_syntax_tree(
-      0, NULL, is_current_typedef_name, NULL, 1);
+  psx_parsed_declarator_t declarator;
+  parse_declarator_syntax_tree_into(
+      &declarator, 0, NULL, is_current_typedef_name, NULL, 1);
+  return declarator;
 }
 
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void) {
-  return parse_declarator_syntax_tree(1, NULL, NULL, NULL, 0);
+  psx_parsed_declarator_t declarator;
+  parse_declarator_syntax_tree_into(
+      &declarator, 1, NULL, NULL, NULL, 0);
+  return declarator;
 }
 
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context) {
-  return parse_declarator_syntax_tree(
-      0, is_parameter_grouping_parenthesis,
+  psx_parsed_declarator_t declarator;
+  parse_declarator_syntax_tree_into(
+      &declarator, 0, is_parameter_grouping_parenthesis,
       is_typedef_name, context, 0);
+  return declarator;
 }
 
 void ps_parse_runtime_declarator_expressions(

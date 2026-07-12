@@ -71,6 +71,27 @@ function callLinkObjects(fn, descPtr, objectCount, exportsPtr, exportCount, useS
   }
 }
 
+function callLinkObjectsWithOptions(fn, descPtr, objectCount, exportsPtr, exportCount,
+                                    useStdlib, optionsPtr, outLenPtr) {
+  return Number(fn(
+    BigInt(descPtr),
+    objectCount,
+    BigInt(exportsPtr),
+    exportCount,
+    useStdlib ? 1 : 0,
+    BigInt(optionsPtr),
+    BigInt(outLenPtr),
+  ));
+}
+
+function asU32Option(value, fallback, name) {
+  const resolved = value ?? fallback;
+  if (!Number.isInteger(resolved) || resolved < 0 || resolved > 0xffffffff) {
+    throw new RangeError(`${name} must be an unsigned 32-bit integer`);
+  }
+  return resolved;
+}
+
 function ensureMemoryRange(memory, ptr, len, label) {
   if (ptr < 0 || len < 0 || ptr + len > memory.buffer.byteLength) {
     throw new RangeError(`${label} buffer is outside wasm memory`);
@@ -116,6 +137,7 @@ export async function createLinker(wasmSource, options = {}) {
   const malloc = instance.exports.malloc;
   const free = instance.exports.free;
   const linkObjects = instance.exports.agc_wasm_link_objects;
+  const linkObjectsWithOptions = instance.exports.agc_wasm_link_objects_with_options;
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
   const stderrPtrExport = instance.exports.__agc_runtime_stderr_ptr;
@@ -141,6 +163,9 @@ export async function createLinker(wasmSource, options = {}) {
   }
   function setU64(addr, value) {
     view.setBigUint64(addr, BigInt(value), true);
+  }
+  function setU32(addr, value) {
+    view.setUint32(addr, value, true);
   }
   function getU64(addr) {
     return Number(view.getBigUint64(addr, true));
@@ -231,6 +256,12 @@ export async function createLinker(wasmSource, options = {}) {
     const exportNames = options.exports ?? ["main"];
     if (!Array.isArray(exportNames)) throw new TypeError("exports must be an array");
     const useStdlib = options.useStdlib ?? true;
+    const hasLayoutOptions = options.initialMemoryPages !== undefined ||
+      options.maximumMemoryPages !== undefined || options.stackSize !== undefined ||
+      options.maximumTableElements !== undefined;
+    if (hasLayoutOptions && typeof linkObjectsWithOptions !== "function") {
+      throw new Error("this ag_wasm_link module does not support memory/table layout options");
+    }
     const allocations = [];
     let linkedPtr = 0;
     try {
@@ -269,9 +300,37 @@ export async function createLinker(wasmSource, options = {}) {
       ensureMemoryRange(memory, outLenPtr, 8, "output length");
       setU64(outLenPtr, 0);
 
+      let linkerOptionsPtr = 0;
+      if (typeof linkObjectsWithOptions === "function") {
+        const initialMemoryPages = asU32Option(options.initialMemoryPages, 1024,
+                                               "initialMemoryPages");
+        const maximumMemoryPages = options.maximumMemoryPages === undefined
+          ? 0 : asU32Option(options.maximumMemoryPages, 0, "maximumMemoryPages");
+        const stackSize = asU32Option(options.stackSize, 0, "stackSize");
+        const maximumTableElements = options.maximumTableElements === undefined
+          ? 0 : asU32Option(options.maximumTableElements, 0, "maximumTableElements");
+        let flags = 0;
+        if (options.maximumMemoryPages !== undefined) flags |= 1;
+        if (options.maximumTableElements !== undefined) flags |= 2;
+        linkerOptionsPtr = callMalloc(malloc, 20);
+        if (!linkerOptionsPtr) throw new Error("ag_wasm_link malloc failed for linker options");
+        allocations.push(linkerOptionsPtr);
+        refresh();
+        ensureMemoryRange(memory, linkerOptionsPtr, 20, "linker options");
+        setU32(linkerOptionsPtr, flags);
+        setU32(linkerOptionsPtr + 4, initialMemoryPages);
+        setU32(linkerOptionsPtr + 8, maximumMemoryPages);
+        setU32(linkerOptionsPtr + 12, stackSize);
+        setU32(linkerOptionsPtr + 16, maximumTableElements);
+      }
+
       try {
-        linkedPtr = callLinkObjects(linkObjects, descPtr, objectBytes.length, exportsPtr,
-                                    exportPtrs.length, useStdlib, outLenPtr);
+        linkedPtr = typeof linkObjectsWithOptions === "function"
+          ? callLinkObjectsWithOptions(linkObjectsWithOptions, descPtr, objectBytes.length,
+                                       exportsPtr, exportPtrs.length, useStdlib,
+                                       linkerOptionsPtr, outLenPtr)
+          : callLinkObjects(linkObjects, descPtr, objectBytes.length, exportsPtr,
+                            exportPtrs.length, useStdlib, outLenPtr);
       } catch (err) {
         throwLinkFailure(err);
       }

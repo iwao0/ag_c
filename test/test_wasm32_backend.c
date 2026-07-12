@@ -165,7 +165,7 @@ int main(void) {
   failures += run_case("arith", "int main(){return (3+4)*5-6;}\n", arith, 2, 29);
   const char *local[] = {"__stack_pointer", "i32.store", "i32.load"};
   failures += run_case("local", "int main(){int x; x=7; return x+1;}\n", local, 3, 8);
-  const char *call[] = {"(func $add (param $p0 i64) (param $p1 i64) (result i32)", "(call $add"};
+  const char *call[] = {"(func $add (param $p0 i32) (param $p1 i32) (result i32)", "(call $add"};
   failures += run_case("call", "int add(int a,int b){return a+b;} int main(){return add(3,4);}\n", call, 2, 7);
   const char *void_call[] = {"(func $set (param $p0 i32)", "(call $set", "i32.store"};
   failures += run_case("void_call",
@@ -345,7 +345,7 @@ int main(void) {
                        "struct P{int a; int b;}; struct P make(struct P *p){return *p;} "
                        "int main(){struct P q; q.a=8; q.b=9; struct P r; r=make(&q); return r.a+r.b;}\n",
                        struct8_return_deref, 3, 17);
-  const char *struct8_return_ternary[] = {"(func $pick (param $p0 i64) (result i64)", "if", "i64.load"};
+  const char *struct8_return_ternary[] = {"(func $pick (param $p0 i32) (result i64)", "if", "i64.load"};
   failures += run_case("struct8_return_ternary",
                        "struct P{int a; int b;}; struct P pick(int c){struct P a; struct P b; "
                        "a.a=1; a.b=2; b.a=3; b.b=4; return c?b:a;} "
@@ -430,7 +430,7 @@ int main(void) {
   failures += run_case("strcpy_stub",
                        "#include <string.h>\nint main(){char a[8]; strcpy(a,\"ok\"); return a[0]=='o' && a[1]=='k';}\n",
                        strcpy_stub, 2, 1);
-  const char *putchar_stub[] = {"(call $putchar", "(func $putchar (param $c i64) (result i32)"};
+  const char *putchar_stub[] = {"(call $putchar", "(func $putchar (param $c i32) (result i32)"};
   failures += run_case("putchar_stub",
                        "#include <stdio.h>\nint main(){return putchar('A')-65;}\n",
                        putchar_stub, 2, 0);
@@ -448,7 +448,7 @@ int main(void) {
                                     "(func $fread (param i32 i64 i64 i32) (result i64)",
                                     "(func $fwrite (param i32 i64 i64 i32) (result i64)",
                                     "(func $getc (param i32) (result i32)",
-                                    "(func $fgets (param i32 i64 i32) (result i32)"};
+                                    "(func $fgets (param i32 i32 i32) (result i32)"};
   failures += run_case("stdio_file_stubs",
                        "#include <stdio.h>\n"
                        "int main(){FILE *f=fopen(\"x\",\"r\"); char b[4]; "
@@ -668,7 +668,7 @@ int main(void) {
                        "double add(double x){return x+0.5;} int main(){double (*fp)(double); "
                        "fp=add; return (int)fp(3);}\n",
                        funcptr_int_to_double_arg, 3, 3);
-  const char *funcptr_double_to_int_arg[] = {"i32.trunc_f64_s", "call_indirect", "(param i64)"};
+  const char *funcptr_double_to_int_arg[] = {"i32.trunc_f64_s", "call_indirect", "(param i32)"};
   failures += run_case("funcptr_double_to_int_arg",
                        "int take(int x){return x;} int main(){int (*fp)(int); fp=take; return fp(7.9);}\n",
                        funcptr_double_to_int_arg, 3, 7);
@@ -688,8 +688,8 @@ int main(void) {
                        "int main(){double (*(*fp)(void))[2]; fp=get; fp()[1][1]=4.5; "
                        "return (int)a[1][1];}\n",
                        funcptr_pointer_to_double_array_return, 2, 4);
-  const char *funcptr_struct_return[] = {"(func $mkbig (param $p0 i32) (param $p1 i64)",
-                                         "(call_indirect (param i32) (param i64)", "i32.store"};
+  const char *funcptr_struct_return[] = {"(func $mkbig (param $p0 i32) (param $p1 i32)",
+                                         "(call_indirect (param i32) (param i32)", "i32.store"};
   failures += run_case("funcptr_struct_return",
                        "struct Big{int a; int b; int c;}; "
                        "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
@@ -697,7 +697,7 @@ int main(void) {
                        "return r.a+r.c+fp(1).b;}\n",
                        funcptr_struct_return, 3, 84);
   const char *global_funcptr_struct_return[] = {"(data (i32.const", "(table 3 funcref)",
-                                                "(call_indirect (param i32) (param i64)"};
+                                                "(call_indirect (param i32) (param i32)"};
   failures += run_case("global_funcptr_struct_return",
                        "struct Big{int a; int b; int c;}; "
                        "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
@@ -705,7 +705,7 @@ int main(void) {
                        "return r.b+r.c;}\n",
                        global_funcptr_struct_return, 3, 13);
   const char *struct_funcptr_struct_return[] = {"(data (i32.const", "(table 3 funcref)",
-                                                "(call_indirect (param i32) (param i64)"};
+                                                "(call_indirect (param i32) (param i32)"};
   failures += run_case("struct_funcptr_struct_return",
                        "struct Big{int a; int b; int c;}; "
                        "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; r.c=x+2; return r;} "
@@ -869,11 +869,11 @@ int main(void) {
                        "x=4294967295U; return id(x)>4294967294.0;}\n",
                        unsigned_int_to_double_call, 2, 1);
   const char *double_to_unsigned_int_call[] = {
-      "i32.trunc_f64_u", "i64.extend_i32_u", "(call $take"};
+      "i32.trunc_f64_u", "(call $take"};
   failures += run_case("double_to_unsigned_int_call",
                        "int take(unsigned int x){return (int)(x>>31);} "
                        "int main(){return take(4294967295.0);}\n",
-                       double_to_unsigned_int_call, 3, 1);
+                       double_to_unsigned_int_call, 2, 1);
   const char *unsigned_int_to_double_return[] = {"f64.convert_i32_u", "(call $f"};
   failures += run_case("unsigned_int_to_double_return",
                        "double f(){unsigned int x; x=4294967295U; return x;} "

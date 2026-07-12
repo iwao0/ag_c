@@ -37,6 +37,38 @@ function assertWasm(bytes) {
   }
 }
 
+function readUleb(bytes, state) {
+  let value = 0;
+  for (let shift = 0; shift < 35 && state.pos < bytes.length; shift += 7) {
+    const byte = bytes[state.pos++];
+    value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) return value >>> 0;
+  }
+  throw new Error("invalid wasm uleb");
+}
+
+function inspectLayout(bytes) {
+  const layout = { memory: null, table: null, hasStart: false };
+  const state = { pos: 8 };
+  while (state.pos < bytes.length) {
+    const id = bytes[state.pos++];
+    const size = readUleb(bytes, state);
+    const end = state.pos + size;
+    if (id === 8) layout.hasStart = true;
+    if (id === 4 || id === 5) {
+      if (readUleb(bytes, state) !== 1) throw new Error("unexpected limits vector");
+      if (id === 4 && bytes[state.pos++] !== 0x70) throw new Error("unexpected table type");
+      const flags = readUleb(bytes, state);
+      const initial = readUleb(bytes, state);
+      const maximum = (flags & 1) !== 0 ? readUleb(bytes, state) : null;
+      if (id === 4) layout.table = { flags, initial, maximum };
+      else layout.memory = { flags, initial, maximum };
+    }
+    state.pos = end;
+  }
+  return layout;
+}
+
 const singleObj = compileObject("single", "int main(void) { return 42; }\n");
 const linked = Buffer.from(linker.link([singleObj], { exports: ["main"] }));
 assertWasm(linked);
@@ -81,6 +113,26 @@ try {
 }
 
 console.log(`ag_wasm_link selfhost API xtu smoke: ok (${linkedXtuPath})`);
+
+const layoutObj = compileObject(
+  "layout_options",
+  "int add1(int x){return x+1;} int (*fp)(int)=add1; int main(void){return fp(41);}\n",
+);
+const linkedLayout = Buffer.from(linker.link([layoutObj], {
+  exports: ["main"],
+  useStdlib: false,
+  initialMemoryPages: 1,
+  maximumMemoryPages: 4,
+  stackSize: 131072,
+  maximumTableElements: 8,
+}));
+const layout = inspectLayout(linkedLayout);
+if (!layout.memory || layout.memory.flags !== 1 || layout.memory.initial !== 3 ||
+    layout.memory.maximum !== 4 || !layout.table || layout.table.flags !== 1 ||
+    layout.table.initial !== 3 || layout.table.maximum !== 8 || layout.hasStart) {
+  throw new Error(`linker API layout options were not encoded: ${JSON.stringify(layout)}`);
+}
+console.log("ag_wasm_link selfhost API layout options smoke: ok");
 
 try {
   stderrChunks.length = 0;

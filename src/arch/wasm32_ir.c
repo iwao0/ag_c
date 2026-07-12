@@ -286,11 +286,7 @@ static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_ty
   unsigned iw = (fs.function.callable.signature.param_int_mask >> (2 * idx)) & 3u;
   if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  if (iw != 0) {
-    ir_type_t ty = funcptr_int_mask_type(iw);
-    if (ty == IR_TY_I32 && iw != 3 && fallback != IR_TY_PTR && !is_fp_type(fallback)) return IR_TY_I64;
-    return ty;
-  }
+  if (iw != 0) return funcptr_int_mask_type(iw);
   return fallback;
 }
 
@@ -1203,13 +1199,6 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
-      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
-      if (from_funcptr_sig && !fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
-          arg_ty == IR_TY_I32 &&
-          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
-          iw != 3) {
-        arg_ty = IR_TY_I64;
-      }
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_funcptr_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
       cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
@@ -1227,13 +1216,6 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       int null_ptr_pair_arg =
           !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
-      unsigned iw = a < 8 ? ((fs.function.callable.signature.param_int_mask >> (2 * a)) & 3u) : 0;
-      if (from_funcptr_sig && !fs.function.callable.signature.is_variadic && !i->is_variadic_call &&
-          arg_ty == IR_TY_I32 &&
-          raw_arg_ty != IR_TY_PTR && !is_fp_type(raw_arg_ty) && !null_ptr_pair_arg &&
-          iw != 3) {
-        arg_ty = IR_TY_I64;
-      }
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_funcptr_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
       cg_emitf(" ");
@@ -3681,7 +3663,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $ungetc (param i64 i32) (result i32) (i32.const -1))\n");
   }
   if (has_undefined_function("fgets", 5)) {
-    wasm_emitf(2, "(func $fgets (param i32 i64 i32) (result i32) (i32.const 0))\n");
+    wasm_emitf(2, "(func $fgets (param i32 i32 i32) (result i32) (i32.const 0))\n");
   }
   if (has_undefined_function("getline", 7)) {
     wasm_emitf(2, "(func $getline (param i32 i32 i32) (result i64) (i64.const -1))\n");
@@ -4277,13 +4259,13 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strchr", 6)) {
-    wasm_emitf(2, "(func $strchr (param $s i32) (param $ch i64) (result i32)\n");
+    wasm_emitf(2, "(func $strchr (param $s i32) (param $ch i32) (result i32)\n");
     wasm_emitf(4, "(local $p i32)\n");
     wasm_emitf(4, "(local $c i32)\n");
     wasm_emitf(4, "(local.set $p (local.get $s))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(local.set $c (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.eq (local.get $c) (i32.wrap_i64 (local.get $ch))) (then (return (local.get $p))))\n");
+    wasm_emitf(6, "(if (i32.eq (local.get $c) (local.get $ch)) (then (return (local.get $p))))\n");
     wasm_emitf(6, "(if (i32.eq (local.get $c) (i32.const 0)) (then (br $done)))\n");
     wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
@@ -4292,14 +4274,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("strrchr", 7)) {
-    wasm_emitf(2, "(func $strrchr (param $s i32) (param $ch i64) (result i32)\n");
+    wasm_emitf(2, "(func $strrchr (param $s i32) (param $ch i32) (result i32)\n");
     wasm_emitf(4, "(local $p i32)\n");
     wasm_emitf(4, "(local $last i32)\n");
     wasm_emitf(4, "(local $c i32)\n");
     wasm_emitf(4, "(local.set $p (local.get $s))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(local.set $c (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(6, "(if (i32.eq (local.get $c) (i32.wrap_i64 (local.get $ch))) (then (local.set $last (local.get $p))))\n");
+    wasm_emitf(6, "(if (i32.eq (local.get $c) (local.get $ch)) (then (local.set $last (local.get $p))))\n");
     wasm_emitf(6, "(if (i32.eq (local.get $c) (i32.const 0)) (then (br $done)))\n");
     wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
@@ -4452,17 +4434,17 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("putchar", 7)) {
-    wasm_emitf(2, "(func $putchar (param $c i64) (result i32) (i32.wrap_i64 (local.get $c)))\n");
+    wasm_emitf(2, "(func $putchar (param $c i32) (result i32) (local.get $c))\n");
   }
   if (has_undefined_function("memset", 6)) {
-    wasm_emitf(2, "(func $memset (param $dst i32) (param $ch i64) (param $n i64) (result i32)\n");
+    wasm_emitf(2, "(func $memset (param $dst i32) (param $ch i32) (param $n i64) (result i32)\n");
     wasm_emitf(4, "(local $p i32)\n");
     wasm_emitf(4, "(local $end i32)\n");
     wasm_emitf(4, "(local.set $p (local.get $dst))\n");
     wasm_emitf(4, "(local.set $end (i32.add (local.get $p) (i32.wrap_i64 (local.get $n))))\n");
     wasm_emitf(4, "(block $done (loop $loop\n");
     wasm_emitf(6, "(if (i32.ge_u (local.get $p) (local.get $end)) (then (br $done)))\n");
-    wasm_emitf(6, "(i32.store8 (local.get $p) (i32.wrap_i64 (local.get $ch)))\n");
+    wasm_emitf(6, "(i32.store8 (local.get $p) (local.get $ch))\n");
     wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
     wasm_emitf(6, "(br $loop)\n");
     wasm_emitf(4, "))\n");

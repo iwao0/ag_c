@@ -597,7 +597,7 @@ long __agc_runtime_realpath(long path_addr, long resolved_path_addr) {
   } else {
     long n = 0;
     while (path[n]) n++;
-    resolved_path_addr = __agc_runtime_malloc(n + 1);
+    resolved_path_addr = (long)__agc_runtime_malloc((unsigned long)(n + 1));
     resolved = ag_rt_ptr(resolved_path_addr);
   }
   long i = 0;
@@ -1162,7 +1162,7 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   if (!*lineptr || (long)*cap < need) {
     new_cap = *cap ? (long)*cap : 128;
     while (new_cap < need) new_cap *= 2;
-    *lineptr = (char *)ag_rt_ptr(__agc_runtime_realloc((long)*lineptr, new_cap));
+    *lineptr = (char *)__agc_runtime_realloc(*lineptr, (unsigned long)new_cap);
     *cap = (unsigned long)new_cap;
   }
   dst = *lineptr;

@@ -20,8 +20,9 @@ make test-wasm-linker-selfhost
 ```
 
 `build/wasm_linker_selfhost/ag_wasm_link.wasm` exports `memory`, `malloc`,
-`free`, `main`, and `agc_wasm_link_objects`. The API takes object bytes from
-linear memory rather than filesystem paths:
+`free`, `main`, `agc_wasm_link_objects`, and
+`agc_wasm_link_objects_with_options`. The API takes object bytes from linear
+memory rather than filesystem paths:
 
 ```c
 typedef struct {
@@ -29,9 +30,9 @@ typedef struct {
   long len;
 } agc_link_slice_t;
 
-long agc_wasm_link_objects(long inputs, long input_count,
-                           long exports, long export_count,
-                           long use_stdlib, long out_len);
+long agc_wasm_link_objects(long inputs, int input_count,
+                           long exports, int export_count,
+                           int use_stdlib, long out_len);
 ```
 
 `inputs` points to an array of `(ptr,len)` object slices. `exports` points to an
@@ -47,6 +48,10 @@ import { createLinker } from "./tools/wasm_obj_linker/ag-wasm-link.js";
 const linker = await createLinker(wasmBytes);
 const linked = linker.link([mainObjectBytes, otherObjectBytes], {
   exports: ["main"],
+  initialMemoryPages: 128,
+  maximumMemoryPages: 256,
+  stackSize: 2097152,
+  maximumTableElements: 4096,
 });
 ```
 
@@ -57,6 +62,25 @@ const linked = linker.link([mainObjectBytes, otherObjectBytes], {
 ./build/ag_c_wasm -c -o other.o other.c
 ./build/ag_wasm_link --no-entry --export=main -o linked.wasm main.o other.o
 ```
+
+Memory, stack reservation, and function-table limits can be configured from
+both the CLI and JavaScript API:
+
+```sh
+./build/ag_wasm_link --no-entry --export=main \
+  --initial-memory-pages=128 \
+  --maximum-memory-pages=256 \
+  --stack-size=2097152 \
+  --maximum-table-elements=4096 \
+  -o linked.wasm main.o other.o
+```
+
+The initial memory value is a lower bound. The linker raises it when linked
+data plus the requested stack reservation needs more pages, and rejects the
+module if that exceeds the configured maximum. Memory defaults to 1024 initial
+pages with no maximum for compatibility. Table maximums are emitted only when
+a table is needed and the option is specified. The linker does not emit a Wasm
+Start section; a C `start` function must be exported and invoked by the host.
 
 `ag_wasm_link` appends `build/libagc_runtime.o` by default as the current
 standard runtime object. Build it first with `make build/libagc_runtime.o`, or

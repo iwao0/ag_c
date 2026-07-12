@@ -28,9 +28,8 @@ static psx_parsed_aggregate_item_t *append_aggregate_item(
   return item;
 }
 
-static void append_aggregate_declarator(
-    psx_parsed_aggregate_member_declaration_t *declaration,
-    psx_parsed_declarator_t declarator) {
+static psx_parsed_declarator_t *append_aggregate_declarator(
+    psx_parsed_aggregate_member_declaration_t *declaration) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
     ps_diag_ctx(current_token(), "aggregate-syntax",
                  "aggregate declarator limit exceeded");
@@ -44,7 +43,10 @@ static void append_aggregate_declarator(
         (size_t)declaration->declarator_capacity,
         sizeof(*declaration->declarators));
   }
-  declaration->declarators[declaration->declarator_count++] = declarator;
+  psx_parsed_declarator_t *declarator =
+      &declaration->declarators[declaration->declarator_count++];
+  memset(declarator, 0, sizeof(*declarator));
+  return declarator;
 }
 
 void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
@@ -64,11 +66,11 @@ void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
     psx_parse_decl_specifier_syntax(&declaration->specifier);
     declaration->pack_alignment = pragma_pack_current_alignment();
     for (;;) {
-      psx_parsed_declarator_t declarator =
-          psx_parse_declarator_syntax_tree();
-      append_aggregate_declarator(declaration, declarator);
+      psx_parsed_declarator_t *declarator =
+          append_aggregate_declarator(declaration);
+      psx_parse_declarator_syntax_tree_into(declarator);
       int has_comma = tk_consume(',');
-      if (!declarator.identifier && !declarator.has_bitfield && has_comma)
+      if (!declarator->identifier && !declarator->has_bitfield && has_comma)
         ps_diag_missing(current_token(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!has_comma) break;
     }

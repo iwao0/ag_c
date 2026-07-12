@@ -5,6 +5,7 @@
 #include "type_name_resolution.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 
 #include <string.h>
 
@@ -169,6 +170,7 @@ void psx_resolve_sizeof_query(
   resolve_sizeof_type_name(query, resolution);
   if (resolution->status != PSX_TYPE_QUERY_RESOLUTION_OK) return;
   psx_type_t *type = sizeof_operand_type(query);
+  ps_ctx_refresh_type_completeness(type);
   query->queried_type = type;
 
   int subscript_depth = 0;
@@ -217,5 +219,6 @@ void psx_resolve_alignof_query(node_alignof_query_t *query) {
   if (!query) return;
   psx_type_t *type =
       psx_resolve_bound_type_name_ref(&query->type_name);
+  ps_ctx_refresh_type_completeness(type);
   query->resolved_alignment = type && type->align > 0 ? type->align : 1;
 }

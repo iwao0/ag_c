@@ -156,6 +156,189 @@ static int run_fail_case(const char *name, const char *cmd, const char *needle) 
   return 0;
 }
 
+static int run_linked_import_abi_case(void) {
+  if (!command_available("wasm-objdump")) return 0;
+  if (write_file("build/wasm32_obj/import_abi_a.c",
+                 "int host_value(int); int call_a(void){return host_value(1);}\n") != 0 ||
+      write_file("build/wasm32_obj/import_abi_b.c",
+                 "typedef int Value; int host_value(Value); "
+                 "int call_b(void){return host_value(2);}\n") != 0 ||
+      write_file("build/wasm32_obj/import_abi_bad.c",
+                 "int host_value(long long); int call_bad(void){return host_value(3);}\n") != 0) {
+    return 1;
+  }
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/import_abi_a.o "
+              "build/wasm32_obj/import_abi_a.c", "import ABI a") != 0 ||
+      run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/import_abi_b.o "
+              "build/wasm32_obj/import_abi_b.c", "import ABI b") != 0 ||
+      run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/import_abi_bad.o "
+              "build/wasm32_obj/import_abi_bad.c", "import ABI bad") != 0 ||
+      run_cmd("./build/ag_wasm_link --nostdlib --no-entry --export=call_a --export=call_b "
+              "-o build/wasm32_obj/linked_import_abi.wasm "
+              "build/wasm32_obj/import_abi_a.o build/wasm32_obj/import_abi_b.o",
+              "link import ABI") != 0 ||
+      run_cmd("wasm-objdump -x build/wasm32_obj/linked_import_abi.wasm > "
+              "build/wasm32_obj/linked_import_abi.objdump", "dump import ABI") != 0) {
+    return 1;
+  }
+  char dump[16384];
+  if (slurp("build/wasm32_obj/linked_import_abi.objdump", dump, sizeof(dump)) != 0)
+    return 1;
+  if (!strstr(dump, "<env.host_value>") || !strstr(dump, "(i32) -> i32")) {
+    fprintf(stderr, "FAIL: linked host import does not use the declared i32 ABI\n");
+    return 1;
+  }
+  return run_fail_case(
+      "import_abi_mismatch",
+      "./build/ag_wasm_link --nostdlib --no-entry "
+      "-o build/wasm32_obj/linked_import_abi_bad.wasm "
+      "build/wasm32_obj/import_abi_a.o build/wasm32_obj/import_abi_bad.o",
+      "function signature mismatch: host_value");
+}
+
+typedef struct {
+  int has_memory;
+  unsigned memory_flags;
+  unsigned memory_initial;
+  unsigned memory_maximum;
+  int has_table;
+  unsigned table_flags;
+  unsigned table_initial;
+  unsigned table_maximum;
+  int has_start;
+} wasm_layout_t;
+
+static int read_uleb32(const unsigned char *data, size_t len, size_t *pos,
+                       unsigned *value) {
+  unsigned result = 0;
+  for (unsigned shift = 0; shift < 35 && *pos < len; shift += 7) {
+    unsigned byte = data[(*pos)++];
+    result |= (byte & 0x7fu) << shift;
+    if (!(byte & 0x80u)) {
+      *value = result;
+      return 0;
+    }
+  }
+  return -1;
+}
+
+static int inspect_wasm_layout(const char *path, wasm_layout_t *layout) {
+  memset(layout, 0, sizeof(*layout));
+  FILE *fp = fopen(path, "rb");
+  if (!fp) return -1;
+  if (fseek(fp, 0, SEEK_END) != 0) { fclose(fp); return -1; }
+  long file_len = ftell(fp);
+  if (file_len < 8 || fseek(fp, 0, SEEK_SET) != 0) { fclose(fp); return -1; }
+  unsigned char *data = malloc((size_t)file_len);
+  if (!data) { fclose(fp); return -1; }
+  size_t len = fread(data, 1, (size_t)file_len, fp);
+  fclose(fp);
+  if (len != (size_t)file_len || memcmp(data, "\0asm\1\0\0\0", 8) != 0) {
+    free(data);
+    return -1;
+  }
+  size_t pos = 8;
+  while (pos < len) {
+    unsigned id = data[pos++];
+    unsigned payload_len = 0;
+    if (read_uleb32(data, len, &pos, &payload_len) != 0 || payload_len > len - pos) {
+      free(data);
+      return -1;
+    }
+    size_t end = pos + payload_len;
+    if (id == 8) layout->has_start = 1;
+    if (id == 4 || id == 5) {
+      unsigned count = 0;
+      if (read_uleb32(data, end, &pos, &count) != 0 || count != 1) {
+        free(data);
+        return -1;
+      }
+      if (id == 4) {
+        if (pos >= end || data[pos++] != 0x70) { free(data); return -1; }
+        layout->has_table = 1;
+        if (read_uleb32(data, end, &pos, &layout->table_flags) != 0 ||
+            read_uleb32(data, end, &pos, &layout->table_initial) != 0 ||
+            ((layout->table_flags & 1u) &&
+             read_uleb32(data, end, &pos, &layout->table_maximum) != 0)) {
+          free(data);
+          return -1;
+        }
+      } else {
+        layout->has_memory = 1;
+        if (read_uleb32(data, end, &pos, &layout->memory_flags) != 0 ||
+            read_uleb32(data, end, &pos, &layout->memory_initial) != 0 ||
+            ((layout->memory_flags & 1u) &&
+             read_uleb32(data, end, &pos, &layout->memory_maximum) != 0)) {
+          free(data);
+          return -1;
+        }
+      }
+    }
+    pos = end;
+  }
+  free(data);
+  return 0;
+}
+
+static int run_linker_layout_option_cases(void) {
+  if (write_file("build/wasm32_obj/layout_plain.c",
+                 "int main(void){return 42;}\n") != 0 ||
+      write_file("build/wasm32_obj/layout_table.c",
+                 "int add1(int x){return x+1;} int (*fp)(int)=add1; "
+                 "int main(void){return fp(41);}\n") != 0) return 1;
+  if (run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/layout_plain.o "
+              "build/wasm32_obj/layout_plain.c", "layout plain object") != 0 ||
+      run_cmd("./build/ag_c_wasm -c -o build/wasm32_obj/layout_table.o "
+              "build/wasm32_obj/layout_table.c", "layout table object") != 0 ||
+      run_cmd("./build/ag_wasm_link --nostdlib --no-entry --export=main "
+              "-o build/wasm32_obj/layout_default.wasm build/wasm32_obj/layout_plain.o",
+              "default layout link") != 0 ||
+      run_cmd("./build/ag_wasm_link --nostdlib --no-entry --export=main "
+              "--initial-memory-pages=1 --maximum-memory-pages=8 --stack-size=131072 "
+              "--maximum-table-elements=8 -o build/wasm32_obj/layout_configured.wasm "
+              "build/wasm32_obj/layout_table.o", "configured layout link") != 0) return 1;
+
+  wasm_layout_t def = {0};
+  wasm_layout_t configured = {0};
+  if (inspect_wasm_layout("build/wasm32_obj/layout_default.wasm", &def) != 0 ||
+      inspect_wasm_layout("build/wasm32_obj/layout_configured.wasm", &configured) != 0) {
+    fprintf(stderr, "FAIL: could not decode linked layout sections\n");
+    return 1;
+  }
+  if (!def.has_memory || def.memory_flags != 0 || def.memory_initial != 1024 ||
+      def.has_table || def.has_start) {
+    fprintf(stderr, "FAIL: default linker layout changed unexpectedly\n");
+    return 1;
+  }
+  if (!configured.has_memory || configured.memory_flags != 1 ||
+      configured.memory_initial != 3 || configured.memory_maximum != 8 ||
+      !configured.has_table || configured.table_flags != 1 ||
+      configured.table_initial != 3 || configured.table_maximum != 8 ||
+      configured.has_start) {
+    fprintf(stderr, "FAIL: configured linker layout was not encoded as requested\n");
+    return 1;
+  }
+  if (run_fail_case("layout_initial_above_maximum",
+                    "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+                    "--initial-memory-pages=4 --maximum-memory-pages=3 "
+                    "-o build/wasm32_obj/layout_bad_initial.wasm "
+                    "build/wasm32_obj/layout_plain.o",
+                    "initial memory pages exceed maximum memory pages") != 0 ||
+      run_fail_case("layout_stack_above_maximum",
+                    "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+                    "--initial-memory-pages=1 --maximum-memory-pages=1 --stack-size=131072 "
+                    "-o build/wasm32_obj/layout_bad_stack.wasm "
+                    "build/wasm32_obj/layout_plain.o",
+                    "memory requirement exceeds maximum memory pages") != 0 ||
+      run_fail_case("layout_table_above_maximum",
+                    "./build/ag_wasm_link --nostdlib --no-entry --export=main "
+                    "--maximum-table-elements=2 "
+                    "-o build/wasm32_obj/layout_bad_table.wasm "
+                    "build/wasm32_obj/layout_table.o",
+                    "table requirement exceeds maximum table elements") != 0) return 1;
+  return 0;
+}
+
 static int run_optional_link_case(void) {
   if (!command_available("wasm-validate") || !command_available("wasm-interp") ||
       ensure_wasm_linker_on_path() != 0) {
@@ -859,18 +1042,50 @@ int main(void) {
                                 "int other(void); int main(void){return other();}\n",
                                 extern_needles, 4);
 
-  const char *extern_int_param_needles[] = {"<inc>", "undefined", "(i64) -> i32"};
+  const char *extern_int_param_needles[] = {"<inc>", "undefined", "(i32) -> i32"};
   failures += run_objdump_check("extern_int_param",
                                 "int inc(int); int main(void){return inc(4);}\n",
                                 extern_int_param_needles, 3);
 
-  const char *variadic_no_extra_needles[] = {"<pick>", "(i64) -> i32", "R_WASM_FUNCTION_INDEX_LEB"};
+  const char *host_int_import_needles[] = {
+      "<screen_clear>", "<input_down>", "<draw_rect>",
+      "(i32) -> nil", "(i32) -> i32", "(i32, i32, i32, i32, i32) -> nil"};
+  const char *host_int_import_rejects[] = {"i64.extend_i32_s"};
+  failures += run_objdump_check_absent(
+      "host_int_import_abi",
+      "void screen_clear(int); void draw_rect(int,int,int,int,int); "
+      "int input_down(int); void start(void){screen_clear(0);} "
+      "void update(void){if(input_down(0))draw_rect(1,2,3,4,5);}\n",
+      host_int_import_needles, 6, host_int_import_rejects, 1);
+
+  const char *host_scalar_import_needles[] = {
+      "<take_color>", "<take_button>", "<take_pointer>", "<take_wide>",
+      "<take_float>", "<take_double>", "(i32) -> nil", "(i64) -> nil",
+      "(f32) -> nil", "(f64) -> nil"};
+  failures += run_objdump_check(
+      "host_scalar_import_abi",
+      "typedef int Color; enum Button{BUTTON_A=1}; "
+      "void take_color(Color); void take_button(enum Button); "
+      "void take_pointer(void *); void take_wide(long long); "
+      "void take_float(float); void take_double(double); "
+      "void call_all(void){take_color(1);take_button(BUTTON_A);"
+      "take_pointer((void*)0);take_wide(1LL);take_float(1.0f);take_double(1.0);}\n",
+      host_scalar_import_needles, 10);
+
+  const char *pointer_to_long_needles[] = {
+      "<pointer_bits>", "(i32) -> i64", "i64.extend_i32_u"};
+  failures += run_objdump_check(
+      "pointer_to_long_cast",
+      "long pointer_bits(void *p){return (long)p;}\n",
+      pointer_to_long_needles, 3);
+
+  const char *variadic_no_extra_needles[] = {"<pick>", "(i32) -> i32", "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("variadic_no_extra",
                                 "int pick(int n, ...){return n;} int main(void){return pick(4);}\n",
                                 variadic_no_extra_needles, 3);
 
   const char *variadic_extra_needles[] = {
-      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store",
+      "__ag_va_arg_area", "__stack_pointer", "(i32) -> i32", "i64.store",
       "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("variadic_extra",
                                 "int pick(int n, ...){return n;} "
@@ -878,7 +1093,7 @@ int main(void) {
                                 variadic_extra_needles, 5);
 
   const char *variadic_va_arg_read_needles[] = {
-      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store", "i32.load"};
+      "__ag_va_arg_area", "__stack_pointer", "(i32) -> i32", "i64.store", "i32.load"};
   failures += run_objdump_check("variadic_va_arg_read",
                                 "#include <stdarg.h>\n"
                                 "int first(int n, ...){va_list ap; va_start(ap,n); "
@@ -887,7 +1102,7 @@ int main(void) {
                                 variadic_va_arg_read_needles, 5);
 
   const char *variadic_fp_extra_needles[] = {
-      "__ag_va_arg_area", "(i64) -> i32", "f64.promote_f32", "f64.store"};
+      "__ag_va_arg_area", "(i32) -> i32", "f64.promote_f32", "f64.store"};
   failures += run_objdump_check("variadic_fp_extra",
                                 "int pick(int n, ...){return n;} "
                                 "int main(void){float x=1.5f; return pick(1,x);}\n",
@@ -900,7 +1115,7 @@ int main(void) {
                                 extern_variadic_extra_needles, 5);
 
   const char *indirect_variadic_extra_needles[] = {
-      "__indirect_function_table", "__ag_va_arg_area", "(i64) -> i32", "call_indirect",
+      "__indirect_function_table", "__ag_va_arg_area", "(i32) -> i32", "call_indirect",
       "i64.store"};
   failures += run_objdump_check("local_variadic_funcptr_extra",
                                 "int pick(int n, ...){return n;} "
@@ -1155,7 +1370,7 @@ int main(void) {
                                 local_struct_assign_needles, 3);
 
   const char *large_struct_return_needles[] = {
-      "(i32, i64) -> nil", "R_WASM_FUNCTION_INDEX_LEB", "i64.store", "i32.store"};
+      "(i32, i32) -> nil", "R_WASM_FUNCTION_INDEX_LEB", "i64.store", "i32.store"};
   failures += run_objdump_check("large_struct_return",
                                 "struct P{int x; int y; int z;}; "
                                 "struct P make(int x){struct P p={x,x+1,x+2}; return p;} "
@@ -1163,7 +1378,7 @@ int main(void) {
                                 large_struct_return_needles, 4);
 
   const char *extern_large_struct_return_needles[] = {
-      "<make>", "undefined", "(i32, i64) -> nil", "R_WASM_FUNCTION_INDEX_LEB"};
+      "<make>", "undefined", "(i32, i32) -> nil", "R_WASM_FUNCTION_INDEX_LEB"};
   failures += run_objdump_check("extern_large_struct_return",
                                 "struct P{int x; int y; int z;}; struct P make(int); "
                                 "int main(void){struct P p=make(4); return p.z;}\n",
@@ -1448,7 +1663,7 @@ int main(void) {
                                        extern_funcptr_rejects, 0);
 
   const char *extern_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
   failures += run_objdump_check("extern_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "union Ops{int (*f[2])(int); long raw;}; "
@@ -1857,7 +2072,7 @@ int main(void) {
                                        extern_funcptr_rejects, 0);
 
   const char *extern_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<ops>"};
   failures += run_objdump_check("extern_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "struct Ops{int (*f[2])(int);}; struct Ops ops={.f[1]=add2}; "
@@ -1865,7 +2080,7 @@ int main(void) {
                                 extern_struct_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_static_local_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops.", "binding=local"};
   failures += run_objdump_check("extern_static_local_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -1875,7 +2090,7 @@ int main(void) {
                                 extern_static_local_struct_funcptr_array_member_xtu_needles, 7);
 
   const char *extern_nested_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_nested_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "struct Ops{int (*f[2])(int);}; "
@@ -1885,7 +2100,7 @@ int main(void) {
                                 extern_nested_struct_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_static_local_nested_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_nested_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -1896,7 +2111,7 @@ int main(void) {
                                 extern_static_local_nested_struct_funcptr_array_member_xtu_needles, 7);
 
   const char *extern_nested_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_nested_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "union Ops{int (*f[2])(int); long raw;}; "
@@ -1906,7 +2121,7 @@ int main(void) {
                                 extern_nested_union_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_static_local_nested_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_nested_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -1917,7 +2132,7 @@ int main(void) {
                                 extern_static_local_nested_union_funcptr_array_member_xtu_needles, 7);
 
   const char *extern_struct_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_struct_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "union Inner{int (*f[2])(int); long raw;}; "
@@ -1927,7 +2142,7 @@ int main(void) {
                                 extern_struct_union_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_static_local_struct_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_struct_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -1938,7 +2153,7 @@ int main(void) {
                                 extern_static_local_struct_union_funcptr_array_member_xtu_needles, 7);
 
   const char *extern_union_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_union_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
                                 "struct Inner{int (*f[2])(int);}; "
@@ -1948,7 +2163,7 @@ int main(void) {
                                 extern_union_struct_funcptr_array_member_xtu_needles, 6);
 
   const char *extern_static_local_union_struct_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_union_struct_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -1959,7 +2174,7 @@ int main(void) {
                                 extern_static_local_union_struct_funcptr_array_member_xtu_needles, 7);
 
   const char *extern_struct_array_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_struct_array_funcptr_member_xtu",
                                 "extern int add2(int); "
                                 "struct Ops{int (*f[2])(int);}; "
@@ -1969,7 +2184,7 @@ int main(void) {
                                 extern_struct_array_funcptr_member_xtu_needles, 6);
 
   const char *extern_static_local_struct_array_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_struct_array_funcptr_member_xtu",
                                 "extern int add2(int); "
@@ -1980,7 +2195,7 @@ int main(void) {
                                 extern_static_local_struct_array_funcptr_member_xtu_needles, 7);
 
   const char *extern_union_array_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_union_array_funcptr_member_xtu",
                                 "extern int add2(int); "
                                 "union Ops{int (*f[2])(int); long raw;}; "
@@ -1990,7 +2205,7 @@ int main(void) {
                                 extern_union_array_funcptr_member_xtu_needles, 6);
 
   const char *extern_static_local_union_array_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_union_array_funcptr_member_xtu",
                                 "extern int add2(int); "
@@ -2001,7 +2216,7 @@ int main(void) {
                                 extern_static_local_union_array_funcptr_member_xtu_needles, 7);
 
   const char *extern_struct_multidim_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_struct_multidim_funcptr_member_xtu",
                                 "extern int add2(int); "
                                 "struct Ops{int (*f[2])(int);}; "
@@ -2011,7 +2226,7 @@ int main(void) {
                                 extern_struct_multidim_funcptr_member_xtu_needles, 6);
 
   const char *extern_static_local_struct_multidim_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_struct_multidim_funcptr_member_xtu",
                                 "extern int add2(int); "
@@ -2022,7 +2237,7 @@ int main(void) {
                                 extern_static_local_struct_multidim_funcptr_member_xtu_needles, 7);
 
   const char *extern_union_multidim_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32", "call_indirect", "<wrap>"};
   failures += run_objdump_check("extern_union_multidim_funcptr_member_xtu",
                                 "extern int add2(int); "
                                 "union Ops{int (*f[2])(int); long raw;}; "
@@ -2032,7 +2247,7 @@ int main(void) {
                                 extern_union_multidim_funcptr_member_xtu_needles, 6);
 
   const char *extern_static_local_union_multidim_funcptr_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.wrap.", "binding=local"};
   failures += run_objdump_check("extern_static_local_union_multidim_funcptr_member_xtu",
                                 "extern int add2(int); "
@@ -2102,7 +2317,7 @@ int main(void) {
                                        extern_funcptr_rejects, 0);
 
   const char *extern_static_local_union_funcptr_array_member_xtu_needles[] = {
-      "<add2>", "undefined", "(i64) -> i32", "R_WASM_TABLE_INDEX_I32",
+      "<add2>", "undefined", "(i32) -> i32", "R_WASM_TABLE_INDEX_I32",
       "call_indirect", "<main.ops.", "binding=local"};
   failures += run_objdump_check("extern_static_local_union_funcptr_array_member_xtu",
                                 "extern int add2(int); "
@@ -2221,7 +2436,7 @@ int main(void) {
                                 indirect_int_to_double_arg_needles, 4);
 
   const char *indirect_double_to_int_arg_needles[] = {
-      "__indirect_function_table", "(i64) -> i32", "trunc_f64_s", "call_indirect"};
+      "__indirect_function_table", "(i32) -> i32", "trunc_f64_s", "call_indirect"};
   failures += run_objdump_check("indirect_double_to_int_arg",
                                 "int take(int x){return x;} "
                                 "int main(void){int (*fp)(int)=take; return fp(7.9);}\n",
@@ -2244,7 +2459,7 @@ int main(void) {
                                 indirect_pointer_return_needles, 4);
 
   const char *indirect_large_struct_return_needles[] = {
-      "__indirect_function_table", "(i32, i64) -> nil", "call_indirect", "i64.store"};
+      "__indirect_function_table", "(i32, i32) -> nil", "call_indirect", "i64.store"};
   failures += run_objdump_check("indirect_large_struct_return",
                                 "struct Big{int a; int b; int c;}; "
                                 "struct Big mkbig(int x){struct Big r; r.a=x; r.b=x+1; "
@@ -2310,6 +2525,8 @@ int main(void) {
                             "E0002");
 
   failures += run_e2e_fixture_object_scan();
+  failures += run_linked_import_abi_case();
+  failures += run_linker_layout_option_cases();
   failures += run_optional_link_case();
 
   if (failures) {

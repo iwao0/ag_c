@@ -1265,7 +1265,7 @@ int ps_ctx_has_typedef_in_current_scope(char *name, int len) {
   return find_typedef_in_current_scope(name, len) != NULL;
 }
 
-static void ctx_type_refresh_tag_completeness(psx_type_t *type) {
+void ps_ctx_refresh_type_completeness(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
     int size = ps_ctx_get_tag_size(type->tag_kind, type->tag_name,
@@ -1275,10 +1275,10 @@ static void ctx_type_refresh_tag_completeness(psx_type_t *type) {
       if (type->align <= 0) type->align = size >= 8 ? 8 : size;
     }
   }
-  ctx_type_refresh_tag_completeness(type->base);
+  ps_ctx_refresh_type_completeness(type->base);
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count && i < 16; i++)
-      ctx_type_refresh_tag_completeness(type->param_types[i]);
+      ps_ctx_refresh_type_completeness(type->param_types[i]);
   }
 }
 
@@ -1328,7 +1328,7 @@ int psx_ctx_define_typedef_name(
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
   typedef_name_t *t = find_typedef(name, len);
   if (!t) return false;
-  ctx_type_refresh_tag_completeness(typedef_record_decl_type_mut(t));
+  ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
   if (out_sizeof_size)
     *out_sizeof_size = ps_type_sizeof(typedef_record_decl_type(t));
   return true;
@@ -1343,7 +1343,7 @@ int psx_ctx_get_typedef_pointer_levels(char *name, int len) {
 bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
   typedef_name_t *t = find_typedef(name, len);
   if (!t) return false;
-  ctx_type_refresh_tag_completeness(typedef_record_decl_type_mut(t));
+  ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
   if (out) {
     memset(out, 0, sizeof(*out));
     psx_type_t *decl_type = typedef_record_decl_type_mut(t);
@@ -1357,7 +1357,7 @@ bool ps_ctx_find_typedef_decl_type(
     char *name, int len, const psx_type_t **out_type) {
   typedef_name_t *t = find_typedef(name, len);
   if (!t) return false;
-  ctx_type_refresh_tag_completeness(typedef_record_decl_type_mut(t));
+  ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
   if (out_type) *out_type = typedef_record_decl_type(t);
   return true;
 }
@@ -1374,7 +1374,7 @@ bool ps_ctx_find_typedef_decl_type_at(
         !ps_local_registry_scope_is_visible_from(
             type->scope_seq, point.scope_seq))
       continue;
-    ctx_type_refresh_tag_completeness(
+    ps_ctx_refresh_type_completeness(
         typedef_record_decl_type_mut(type));
     if (out_type) *out_type = typedef_record_decl_type(type);
     return true;

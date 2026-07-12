@@ -240,7 +240,9 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
   }
   /* pointer <-> integer の幅変換。Wasm では pointer は i32 なので、単に型 tag を
    * 差し替えると i64 値を i32 local に入れる invalid code になる。 */
-  if (target_ty == IR_TY_PTR && ir_type_size(v.type) > ir_type_size(target_ty)) {
+  if (target_ty == IR_TY_PTR &&
+      (v.type == IR_TY_I64 ||
+       ir_type_size(v.type) > ir_type_size(target_ty))) {
     int dst = ir_func_new_vreg(ctx->f);
     ir_inst_t *inst = ir_inst_new(IR_TRUNC);
     inst->dst = ir_val_vreg(dst, target_ty);
@@ -248,7 +250,9 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
     ir_func_append_inst(ctx->f, inst);
     return ir_val_vreg(dst, target_ty);
   }
-  if (v.type == IR_TY_PTR && ir_type_size(target_ty) > ir_type_size(v.type)) {
+  if (v.type == IR_TY_PTR &&
+      (target_ty == IR_TY_I64 ||
+       ir_type_size(target_ty) > ir_type_size(v.type))) {
     int dst = ir_func_new_vreg(ctx->f);
     ir_inst_t *inst = ir_inst_new(IR_ZEXT);
     inst->dst = ir_val_vreg(dst, target_ty);
@@ -773,6 +777,10 @@ static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
   switch (node->kind) {
     case ND_FUNCREF:
       return build_node_funcref_with_sig(ctx, node, expected_sig);
+    case ND_ADDR:
+      if (node->lhs && node->lhs->kind == ND_FUNCREF)
+        return build_node_funcref_with_sig(ctx, node->lhs, expected_sig);
+      return build_expr(ctx, node);
     case ND_CAST:
       if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
                         node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
@@ -2002,10 +2010,6 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
                          param.type != IR_TY_PTR)
                     ? param.type
                     : IR_TY_VOID;
-            if (target == IR_TY_VOID && !is_fp_type(cv.type) &&
-                cv.type != IR_TY_PTR && !ps_node_value_is_pointer_like(arg)) {
-              target = IR_TY_I64;
-            }
             if (target != IR_TY_VOID) {
               cv = coerce_to_type_ex(ctx, cv, target, param.is_unsigned,
                                      ps_node_conversion_value_is_unsigned(arg));

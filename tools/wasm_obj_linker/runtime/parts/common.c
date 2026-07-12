@@ -27,6 +27,7 @@ static char *ag_rt_ptr(long addr) {
 }
 
 static long ag_rt_heap = 8 * 1024 * 1024;
+static long ag_rt_memory_limit_bytes = 64L * 1024L * 1024L;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
 static char ag_rt_strerror[] = "error";

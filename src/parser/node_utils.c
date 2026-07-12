@@ -1727,11 +1727,11 @@ static int tag_union_init_member_for_slot_scoped(token_kind_t tag_kind, char *ta
     if (init_fp_size != selected_fp_size &&
         !(init_fp_size == 0 && selected_fp_size == 0)) {
       for (int i = 0; i < definition->member_count; i++) {
-        tag_member_info_t candidate = definition->members[i];
-        int candidate_fp_size = tag_member_fp_size(&candidate);
+        const tag_member_info_t *candidate = &definition->members[i];
+        int candidate_fp_size = tag_member_fp_size(candidate);
         if ((init_fp_size > 0 && candidate_fp_size == init_fp_size) ||
             (init_fp_size == 0 && candidate_fp_size == 0)) {
-          *out = candidate;
+          *out = *candidate;
           break;
         }
       }

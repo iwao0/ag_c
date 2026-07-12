@@ -5003,6 +5003,15 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
+  parsed_code = parse_program_input(
+      "typedef struct Forward Forward; "
+      "struct Forward { void *items; int count; int capacity; }; "
+      "int main(void) { Forward *body = 0; return sizeof(*body); }");
+  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ASSERT_EQ(ND_RETURN, ret->kind);
+  ASSERT_EQ(ND_NUM, ret->lhs->kind);
+  ASSERT_EQ(16, as_num(ret->lhs)->val);
+
   parsed_code = parse_program_input("main() { struct S { int x; }; return _Alignof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);

@@ -173,6 +173,25 @@ typedef struct {
   int func_index;
 } export_func_t;
 
+enum {
+  LINK_OPT_MAX_MEMORY = 1u << 0,
+  LINK_OPT_MAX_TABLE = 1u << 1,
+};
+
+typedef struct {
+  uint32_t flags;
+  uint32_t initial_memory_pages;
+  uint32_t maximum_memory_pages;
+  uint32_t stack_size;
+  uint32_t maximum_table_elements;
+} linker_options_t;
+
+static linker_options_t default_linker_options(void) {
+  linker_options_t options = {0};
+  options.initial_memory_pages = 1024;
+  return options;
+}
+
 static void die(const char *msg) {
   fprintf(stderr, "ag_wasm_link: %s\n", msg);
   exit(1);
@@ -3914,8 +3933,40 @@ static int export_list_contains(const char **export_names, int export_count, con
   return 0;
 }
 
+static void patch_runtime_layout_value(final_data_t *datas, int data_count,
+                                       const char *name, uint64_t value) {
+  size_t name_len = strlen(name);
+  for (int i = 0; i < data_count; i++) {
+    data_seg_t *data = &datas[i].obj->data[datas[i].data_index];
+    if ((size_t)data->name.len != name_len ||
+        memcmp(data->name.s, name, name_len) != 0) continue;
+    if (data->size < 8) die("runtime layout value has invalid size");
+    for (int byte = 0; byte < 8; byte++)
+      data->bytes[byte] = (unsigned char)(value >> (8 * byte));
+    return;
+  }
+}
+
+static int has_runtime_layout_value(
+    final_data_t *datas, int data_count, const char *name) {
+  size_t name_len = strlen(name);
+  for (int i = 0; i < data_count; i++) {
+    data_seg_t *data = &datas[i].obj->data[datas[i].data_index];
+    if ((size_t)data->name.len == name_len &&
+        memcmp(data->name.s, name, name_len) == 0)
+      return 1;
+  }
+  return 0;
+}
+
 static void build_module_into(buf_t *out, const char **export_names, int export_count,
-                              object_t *objs, int obj_count, int use_stdlib) {
+                              object_t *objs, int obj_count, int use_stdlib,
+                              const linker_options_t *requested_options) {
+  linker_options_t options = requested_options ? *requested_options : default_linker_options();
+  if ((options.flags & LINK_OPT_MAX_MEMORY) &&
+      options.initial_memory_pages > options.maximum_memory_pages) {
+    die("initial memory pages exceed maximum memory pages");
+  }
   check_duplicate_definitions(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
@@ -4001,9 +4052,33 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
   patch_object_relocations(objs, obj_count, &imports, &import_count,
                            &types, &type_count, &type_cap, &globals, &global_count, &global_cap,
                            &table_funcs, &table_count, &table_cap);
-  uint32_t min_memory = mem > 67108864 ? mem : 67108864;
-  uint32_t memory_pages = align_to_u32_checked(min_memory, 65536, "memory layout overflow") / 65536;
-  uint32_t stack_top = memory_pages * 65536;
+  uint32_t heap_data_end = mem;
+  if (has_runtime_layout_value(datas, data_count, "ag_rt_heap") &&
+      heap_data_end < 8u * 1024u * 1024u)
+    heap_data_end = 8u * 1024u * 1024u;
+  uint64_t required_bytes = (uint64_t)heap_data_end + options.stack_size;
+  if (required_bytes > UINT32_MAX) die("memory layout including stack exceeds Wasm32 address space");
+  uint32_t required_pages = (uint32_t)((required_bytes + 65535u) / 65536u);
+  uint32_t memory_pages = required_pages > options.initial_memory_pages
+                              ? required_pages : options.initial_memory_pages;
+  if (memory_pages > 65535u) die("initial memory pages exceed usable Wasm32 address space");
+  if ((options.flags & LINK_OPT_MAX_MEMORY) &&
+      memory_pages > options.maximum_memory_pages) {
+    die("memory requirement exceeds maximum memory pages");
+  }
+  uint32_t table_initial = (uint32_t)table_count + 2;
+  if ((needs_table || table_count > 0) &&
+      (options.flags & LINK_OPT_MAX_TABLE) &&
+      table_initial > options.maximum_table_elements) {
+    die("table requirement exceeds maximum table elements");
+  }
+  uint32_t stack_top = memory_pages * 65536u;
+  uint32_t heap_base = align_to_u32_checked(
+      heap_data_end, 16, "memory layout overflow");
+  uint32_t heap_limit = stack_top - options.stack_size;
+  if (heap_base > heap_limit) die("linked data overlaps reserved stack");
+  patch_runtime_layout_value(datas, data_count, "ag_rt_heap", heap_base);
+  patch_runtime_layout_value(datas, data_count, "ag_rt_memory_limit_bytes", heap_limit);
   for (int i = 0; i < global_count; i++) {
     if (is_stack_pointer_name(globals[i].name)) globals[i].init_value = stack_top;
   }
@@ -4043,15 +4118,19 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
   if (needs_table || table_count > 0) {
     buf_uleb(&sec, 1);
     buf_u8(&sec, 0x70);
-    buf_u8(&sec, 0);
-    buf_uleb(&sec, (uint32_t)table_count + 2);
+    buf_u8(&sec, (options.flags & LINK_OPT_MAX_TABLE) ? 1 : 0);
+    buf_uleb(&sec, table_initial);
+    if (options.flags & LINK_OPT_MAX_TABLE)
+      buf_uleb(&sec, options.maximum_table_elements);
     emit_section(out, SEC_TABLE, &sec);
     free(sec.data); sec = (buf_t){0};
   }
 
   buf_uleb(&sec, 1);
-  buf_u8(&sec, 0);
+  buf_u8(&sec, (options.flags & LINK_OPT_MAX_MEMORY) ? 1 : 0);
   buf_uleb(&sec, memory_pages);
+  if (options.flags & LINK_OPT_MAX_MEMORY)
+    buf_uleb(&sec, options.maximum_memory_pages);
   emit_section(out, SEC_MEMORY, &sec);
   free(sec.data); sec = (buf_t){0};
 
@@ -4141,9 +4220,10 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
 }
 
 static void build_module(const char *out_path, const char **export_names, int export_count,
-                         object_t *objs, int obj_count, int use_stdlib) {
+                         object_t *objs, int obj_count, int use_stdlib,
+                         const linker_options_t *options) {
   buf_t out;
-  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib);
+  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib, options);
   write_output(out_path, &out);
 }
 
@@ -4152,9 +4232,10 @@ typedef struct {
   long len;
 } api_slice_t;
 
-long agc_wasm_link_objects(long inputs_addr, int input_count,
-                           long exports_addr, int export_count,
-                           int use_stdlib, long out_len_addr) {
+static long link_objects_api(long inputs_addr, int input_count,
+                             long exports_addr, int export_count,
+                             int use_stdlib, long options_addr,
+                             long out_len_addr) {
   if (!inputs_addr || input_count <= 0 || input_count > 4096 || export_count < 0 || export_count > 4096) {
     die("invalid linker API arguments");
   }
@@ -4179,16 +4260,49 @@ long agc_wasm_link_objects(long inputs_addr, int input_count,
   }
 
   buf_t out;
-  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib);
+  const linker_options_t *options = options_addr
+                                        ? (const linker_options_t *)(uintptr_t)options_addr
+                                        : NULL;
+  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib, options);
   unsigned char *ret = xmalloc(out.len);
   memcpy(ret, out.data, out.len);
   *out_len = (long)out.len;
   return (long)(uintptr_t)ret;
 }
 
+long agc_wasm_link_objects(long inputs_addr, int input_count,
+                           long exports_addr, int export_count,
+                           int use_stdlib, long out_len_addr) {
+  return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
+                          use_stdlib, 0, out_len_addr);
+}
+
+long agc_wasm_link_objects_with_options(long inputs_addr, int input_count,
+                                        long exports_addr, int export_count,
+                                        int use_stdlib, long options_addr,
+                                        long out_len_addr) {
+  return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
+                          use_stdlib, options_addr, out_len_addr);
+}
+
 static void usage(void) {
-  fprintf(stderr, "usage: ag_wasm_link [--nostdlib] --no-entry [--export=name ...] -o out.wasm a.o b.o ...\n");
+  fprintf(stderr,
+          "usage: ag_wasm_link [--nostdlib] --no-entry [--export=name ...] "
+          "[--initial-memory-pages=N] [--maximum-memory-pages=N] "
+          "[--stack-size=N] [--maximum-table-elements=N] "
+          "-o out.wasm a.o b.o ...\n");
   exit(2);
+}
+
+static uint32_t parse_u32_option(const char *text, const char *name) {
+  if (!text || !text[0]) dief("missing value for %s", name);
+  uint64_t value = 0;
+  for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+    if (*p < '0' || *p > '9') dief("invalid numeric value for %s", name);
+    value = value * 10u + (uint64_t)(*p - '0');
+    if (value > UINT32_MAX) dief("numeric value out of range for %s", name);
+  }
+  return (uint32_t)value;
 }
 
 static int file_exists(const char *path) {
@@ -4210,6 +4324,7 @@ int main(int argc, char **argv) {
   const char **export_names = xmalloc(((size_t)argc + 1) * sizeof(char *));
   int export_count = 0, export_cap = argc + 1;
   int use_stdlib = 1;
+  linker_options_t options = default_linker_options();
   const char **inputs = xmalloc(((size_t)argc + 1) * sizeof(char *));
   int input_count = 0;
   for (int i = 1; i < argc; i++) {
@@ -4227,6 +4342,19 @@ int main(int argc, char **argv) {
       /* accepted for wasm-ld-shaped command lines */
     } else if (strcmp(argv[i], "--nostdlib") == 0) {
       use_stdlib = 0;
+    } else if (strncmp(argv[i], "--initial-memory-pages=", 23) == 0) {
+      options.initial_memory_pages =
+          parse_u32_option(argv[i] + 23, "--initial-memory-pages");
+    } else if (strncmp(argv[i], "--maximum-memory-pages=", 23) == 0) {
+      options.maximum_memory_pages =
+          parse_u32_option(argv[i] + 23, "--maximum-memory-pages");
+      options.flags |= LINK_OPT_MAX_MEMORY;
+    } else if (strncmp(argv[i], "--stack-size=", 13) == 0) {
+      options.stack_size = parse_u32_option(argv[i] + 13, "--stack-size");
+    } else if (strncmp(argv[i], "--maximum-table-elements=", 25) == 0) {
+      options.maximum_table_elements =
+          parse_u32_option(argv[i] + 25, "--maximum-table-elements");
+      options.flags |= LINK_OPT_MAX_TABLE;
     } else if (argv[i][0] == '-') {
       usage();
     } else {
@@ -4244,6 +4372,6 @@ int main(int argc, char **argv) {
   }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));
   for (int i = 0; i < input_count; i++) objs[i] = parse_object(inputs[i]);
-  build_module(out, export_names, export_count, objs, input_count, use_stdlib);
+  build_module(out, export_names, export_count, objs, input_count, use_stdlib, &options);
   return 0;
 }
