@@ -1,8 +1,155 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1069: enum定数登録のsemantic resolution統合）
+最終更新: 2026-07-12（続き1074: member declaratorの共有syntax parser統合）
 
 ## 現状
+- 続き1074: **member固有declarator再帰parserを共有syntax parserへ統合した。**
+
+  `psx_parse_member_decl_head()`は独自`parse_member_decl_name_recursive()`を使わず、top-level、parameter、
+  function returnと同じ`psx_parse_declarator_syntax()`を呼ぶ。member callbackはarray/function suffixを
+  canonical `psx_declarator_shape_t`へ追加し、pointer callbackはconst/volatile qualifierを保持する。
+
+  grouping parenthesis、pointer prefixの上限、GNU attribute skip、再帰順序は共有parserが唯一の実装に
+  なった。member側は共有parserから渡されるnesting depth、direct pointer count、frame pointer countを
+  funcptr object/return shapeの補助情報へ変換するだけで、pointer tokenを直接再parseしない。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `struct_layout.c`の独自declarator再帰 / `psx_consume_pointer_prefix_counted` call = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次は`paren_array_mul` / `ptr_in_paren`で再構築しているpointer-to-array layout metadataを、完成した
+  canonical member typeのobject array/pointee array planから派生させる。
+
+- 続き1073: **member type specifierの解決と型制約検査をsemantic層へ移した。**
+
+  `psx_resolve_aggregate_member_base_type()`を追加し、builtin/tag/typedefのparsed type specを一度
+  canonical base typeへ解決する。scalar kind/size、signedness、bool/complex/atomic、floating kind、
+  pointer/function情報はbase canonical treeから派生し、各member declaratorは同じbase typeをcloneして
+  shapeを適用する。parser内の3分岐はtokenとtag definitionを読むだけになった。
+
+  `psx_validate_aggregate_member_type()`は完成したmember typeを検査し、不完全aggregateの値/配列保持と
+  function type memberをstatus化する。pointerならpointeeが不完全でも許可する。従来の「次tokenが`*`か」
+  「function suffixがあり直前に`*`があるか」という表面判定を削除し、未知tagはまずincomplete canonical
+  tagとして登録してから最終type shapeで許否を決める。括弧付きpointerにも正しく対応する。
+
+  この移行で、member type resolverがsize=0の不完全tagへscalar fallbackの4 bytesを与えていた問題も
+  発見した。fallbackを非tag scalarだけに限定し、tagのincomplete状態をcanonical typeに保持する。
+
+  boundary testではincomplete tag value拒否/pointer許可、function type拒否、bool/unsigned/atomic base
+  factsを検証した。parser testには未知tagの括弧付きpointer、typedef pointerの受理、未知tag配列、
+  function typedef memberの拒否を追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `struct_layout.c`のtoken表面によるincomplete/function member診断 = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はmember declaratorのpointer/array/function構文を共有`declarator_syntax`へ移し、
+  `member_decl_head_t`固有parserと`paren_array_mul` mirrorを削除する。
+
+- 続き1072: **aggregate memberのstorage/layout情報をcanonical typeから派生させた。**
+
+  `psx_plan_aggregate_member_storage()`を追加し、member canonical typeからstorage size、alignment、
+  scalar/value size、deref size、pointer depth、array次元/総要素数、flexible array、signed/floating
+  categoryを一度に解決する。`struct_layout.c`のplacementは`elem_size * arr_size`やtypedef flagではなく、
+  このsemantic planだけを入力にする。
+
+  typedef memberは`psx_typedef_info_t`の`elem_size/is_pointer/is_unsigned/fp_kind/tag_kind/array_dims`を
+  再展開しなくなった。canonical型専用`psx_ctx_find_typedef_decl_type()`で正本を取得し、base planと
+  declarator shapeから完成型を作る。array typedefの追加次元とpointer-to-array typedef metadataも
+  canonical treeから派生する。bit-field typedefも`base_decl_type`を直接type resolutionへ渡す。
+
+  tag canonical typeはaggregate definitionの明示alignmentを引き継ぐようにした。これにより
+  `sizeof=12, align=4`のstructをsizeからalign=8と推測する経路をなくした。登録時に捨てられていた
+  `tag_member_info_t` legacy cache初期化も削除し、contextはcanonical `decl_type`からcacheを導出する。
+  `struct_layout.c`は693行から576行になった。
+
+  boundary testではcanonical pointer-to-arrayの8-byte storage/alignment、pointer depth、scalar sizeと、
+  size=12/align=4のtag definitionから作るmember planを検証した。既存のtypedef array/pointer、funcptr、
+  multidimensional member、aggregate ABI testも通過した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `struct_layout.c`の`psx_typedef_info_t` / typedef array mirror / legacy member cache初期化 = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はmember type specifierのbuiltin/tag/typedef分岐をparsed spec requestへまとめ、tag lookupと
+  incomplete-member制約をsemantic resolutionへ移す。
+
+- 続き1071: **aggregate memberのcanonical type構築を共有declaration resolverへ統合した。**
+
+  `psx_resolve_aggregate_member_type()`を追加し、builtin/tag/typedefのbase typeとmember declarator
+  shapeを`psx_resolve_decl_type()`へ渡す。pointer/array/function declarator、typedef clone、aggregate
+  definition attachはglobal/local/parameterと同じcanonical builderを使い、member固有のfuncptr/stride
+  metadataだけを解決後の型へ補う。
+
+  `struct_layout.c`から独自`member_scalar_type()`、`member_decl_type_from_layout()`、pointer-to-array
+  builder、canonical typeへの後付けshape cache関数を削除した。従来はlayout用typeを作り、特殊caseで
+  差し替え、最後にdeclarator shapeから再度作り直していたが、現在はcanonical typeを一度だけ作る。
+  parser内の`psx_type_new_*` / `psx_type_clone()` / `psx_type_apply_declarator_shape()`直接callも0件になり、
+  `struct_layout.c`は855行から693行になった。
+
+  boundary testには共有resolverからのpointer-to-array shapeとlayout metadata反映を追加した。既存の
+  member canonical type、typedef pointer/array、funcptr、multi-dimensional member testもそのまま通過した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `struct_layout.c`のmember専用type builder / `psx_type_new_*`直接call = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次は`struct_layout.c`に残るtypedef mirror展開とarray/pointer layout metadata計算を、canonical typeを
+  読むsemantic operationへ移し、legacy fieldsを型正本から派生させる。
+
+- 続き1070: **aggregate memberのlayout stateと登録をsemantic resolutionへ移した。**
+
+  `aggregate_member_resolution`を追加し、struct/unionのcurrent offset、union最大size、aggregate
+  alignment、bit-field storage runを一つのstateで管理する。通常memberのpack/alignas適用、union配置、
+  AAPCS bit-field packing、最終size/alignmentはparserの局所変数ではなくsemantic operationが計算する。
+  bit-field幅がstorage幅を超える場合もstatusとして拒否する。
+
+  canonical `tag_member_info_t`の登録は`psx_resolve_aggregate_member()`へ統合した。contextには
+  duplicate時に既存descriptorを変更しないatomic `psx_ctx_register_tag_member()`を追加し、名前付き
+  memberと匿名aggregateから昇格したmemberの重複を同じ規則で拒否する。len=0の匿名aggregate
+  placeholderは複数登録できる。旧`psx_ctx_add_tag_member()`は互換wrapperとしてのみ残り、production
+  parserからの直接callは0件になった。
+
+  duplicate検査により、`ps_program_from()`のsoft resetが前の翻訳単位のmember tableを残していた
+  問題も顕在化した。tag complete stateのreset時にmember tableとdecl orderを破棄し、翻訳単位間の
+  名前リークを根本から止めた。`struct_layout.c`は907行から855行になった。
+
+  boundary testではstruct/union配置、pack alignment、AAPCS bit-field継続/overflow、幅超過、named
+  duplicate、複数anonymous placeholderを検証した。parser acceptance/rejectionには直接重複、匿名
+  promotion衝突、幅超過、複数匿名aggregateを追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - production parserの`psx_ctx_add_tag_member` / `psx_ctx_register_tag_member`直接call = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次は`struct_layout.c`に残るbuiltin/tag/typedef別のmember canonical type構築をparsed member
+  declaration requestへまとめ、型解決をsemantic層へ移す。
+
 - 続き1069: **enumeratorの名前衝突判定と登録をsemantic resolutionへ統合した。**
 
   `psx_resolve_enum_constant()`を追加し、enumeratorが属するordinary identifier namespaceを

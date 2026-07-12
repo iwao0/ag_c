@@ -519,9 +519,9 @@ void psx_ctx_emit_deferred_parser_warnings(void) {
   }
 }
 
-/* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。これにより、同一プロセス
- * 内で複数回 ps_program_from を呼ぶユニットテストで前回パースの "struct S 完全定義済み"
- * 状態が今回パースに漏れず、再定義チェックが誤発火しない。 */
+/* タグの完全型定義状態をソフトリセットする。member tableも翻訳単位ごとの情報なので
+ * 同時に破棄する。従来はmember recordを残して同名tagの次回parseで上書きしていたため、
+ * duplicate判定を正しく行うと前回翻訳単位のmemberを誤検出していた。 */
 void psx_ctx_reset_tag_diag_state(void) {
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_type_t *t = tag_types_by_bucket[i]; t; t = t->next_hash) {
@@ -530,6 +530,8 @@ void psx_ctx_reset_tag_diag_state(void) {
       t->definition = NULL;
     }
   }
+  memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
+  tag_member_decl_order = 0;
 }
 
 /* 各 parse 開始時に呼ぶ、関数名テーブルの「ソフトリセット」: 累積状態 (関数情報) は残し、
@@ -813,21 +815,25 @@ int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len) {
   return (t && t->align > 0) ? t->align : -1;
 }
 
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            const tag_member_info_t *desc) {
-  if (!desc || !ps_tag_member_decl_type(desc)) return;
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(desc->name, desc->len)) & (PCTX_HASH_BUCKETS - 1u);
+static tag_member_t *find_tag_member_record_at_current_scope(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *desc, unsigned bucket) {
+  if (!desc || desc->len <= 0) return NULL;
   for (tag_member_t *m = tag_members_by_bucket[bucket]; m; m = m->next_hash) {
     if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
         m->member_len == desc->len &&
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
         strncmp(m->member_name, desc->name, (size_t)desc->len) == 0 &&
         m->scope_depth == tag_scope_depth) {
-      tag_member_record_apply_desc(m, desc);
-      return;
+      return m;
     }
   }
+  return NULL;
+}
+
+static void insert_tag_member_record(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *desc, unsigned bucket) {
   tag_member_t *m = calloc(1, sizeof(tag_member_t));
   m->tag_kind = tag_kind;
   m->tag_name = tag_name;
@@ -839,6 +845,41 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
   tag_members_by_bucket[bucket] = m;
+}
+
+int psx_ctx_register_tag_member(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *desc, int *out_created) {
+  if (out_created) *out_created = 0;
+  if ((tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
+      tag_len <= 0 || !desc || !desc->name || desc->len < 0 ||
+      !ps_tag_member_decl_type(desc)) {
+    return 0;
+  }
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(desc->name, desc->len)) & (PCTX_HASH_BUCKETS - 1u);
+  if (find_tag_member_record_at_current_scope(
+          tag_kind, tag_name, tag_len, desc, bucket)) {
+    return 0;
+  }
+  insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
+  if (out_created) *out_created = 1;
+  return 1;
+}
+
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+                            const tag_member_info_t *desc) {
+  if (!desc || !ps_tag_member_decl_type(desc)) return;
+  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                     psx_ctx_hash_name(desc->name, desc->len)) &
+                    (PCTX_HASH_BUCKETS - 1u);
+  tag_member_t *existing = find_tag_member_record_at_current_scope(
+      tag_kind, tag_name, tag_len, desc, bucket);
+  if (existing) {
+    tag_member_record_apply_desc(existing, desc);
+    return;
+  }
+  insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {
@@ -1169,6 +1210,15 @@ bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     psx_ctx_typedef_set_decl_type(out, decl_type);
     ctx_typedef_info_apply_type(out, decl_type);
   }
+  return true;
+}
+
+bool psx_ctx_find_typedef_decl_type(
+    char *name, int len, const psx_type_t **out_type) {
+  typedef_name_t *t = find_typedef(name, len);
+  if (!t) return false;
+  ctx_type_refresh_tag_completeness(typedef_record_decl_type_mut(t));
+  if (out_type) *out_type = typedef_record_decl_type(t);
   return true;
 }
 

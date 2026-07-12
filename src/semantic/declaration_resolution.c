@@ -18,6 +18,8 @@ static psx_type_t *resolve_decl_base_type(
         scope_depth >= 0 ? scope_depth + 1 : 0, request->elem_size);
     type->aggregate_definition = psx_ctx_get_tag_definition(
         request->tag_kind, request->tag_name, request->tag_len);
+    if (type->aggregate_definition && type->aggregate_definition->align > 0)
+      type->align = type->aggregate_definition->align;
     return type;
   }
   if (request->is_complex) {

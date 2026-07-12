@@ -46,6 +46,12 @@ void psx_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
  * m->decl_type は正本として必須。レイアウトcacheはdecl_typeから同期する。 */
 void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             const tag_member_info_t *m);
+/* canonical member descriptorを現在のtag scopeへ新規登録する。
+ * 名前付きmemberの同一scope重複は0を返し、既存descriptorを変更しない。
+ * 無名aggregate placeholder (m->len == 0) は複数登録できる。 */
+int psx_ctx_register_tag_member(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *m, int *out_created);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);
@@ -109,6 +115,8 @@ int psx_ctx_register_typedef_name(
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */
 bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
+bool psx_ctx_find_typedef_decl_type(
+    char *name, int len, const psx_type_t **out_type);
 int psx_ctx_has_typedef_in_current_scope(char *name, int len);
 // canonical decl_typeからポインタ段数を返す。非ポインタは0。
 int psx_ctx_get_typedef_pointer_levels(char *name, int len);

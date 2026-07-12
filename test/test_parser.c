@@ -7,6 +7,7 @@
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/semantic_pass.h"
+#include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
 #include "../src/semantic/function_declaration_plan.h"
@@ -1261,6 +1262,264 @@ static void test_tag_declaration_resolution_boundary() {
   psx_ctx_leave_block_scope();
   ASSERT_EQ(0, ps_ctx_get_tag_scope_depth(
                    TK_STRUCT, (char *)"__TagBoundary", 13));
+}
+
+static void test_aggregate_member_resolution_boundary() {
+  printf("test_aggregate_member_resolution_boundary...\n");
+  ps_reset_translation_unit_state();
+
+  psx_aggregate_layout_state_t layout;
+  psx_aggregate_layout_init(&layout, TK_STRUCT);
+  psx_aggregate_object_placement_t object;
+  psx_resolve_aggregate_object_placement(
+      &layout,
+      &(psx_aggregate_object_placement_request_t){
+          .storage_size = 1,
+          .natural_alignment = 1,
+      },
+      &object);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, object.status);
+  ASSERT_EQ(0, object.offset);
+
+  psx_aggregate_bitfield_resolution_t bitfield;
+  psx_resolve_aggregate_bitfield_placement(
+      &layout,
+      &(psx_aggregate_bitfield_request_t){
+          .storage_size = 4,
+          .bit_width = 20,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
+  ASSERT_EQ(0, bitfield.offset);
+  ASSERT_EQ(8, bitfield.bit_offset);
+  psx_resolve_aggregate_bitfield_placement(
+      &layout,
+      &(psx_aggregate_bitfield_request_t){
+          .storage_size = 4,
+          .bit_width = 16,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
+  ASSERT_EQ(4, bitfield.offset);
+  ASSERT_EQ(0, bitfield.bit_offset);
+  psx_resolve_aggregate_bitfield_placement(
+      &layout,
+      &(psx_aggregate_bitfield_request_t){
+          .storage_size = 4,
+          .bit_width = 33,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE,
+            bitfield.status);
+
+  psx_resolve_aggregate_object_placement(
+      &layout,
+      &(psx_aggregate_object_placement_request_t){
+          .storage_size = 2,
+          .natural_alignment = 8,
+          .pack_alignment = 2,
+      },
+      &object);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, object.status);
+  ASSERT_EQ(8, object.offset);
+  ASSERT_EQ(2, object.alignment);
+  ASSERT_EQ(12, psx_aggregate_layout_size(&layout));
+  ASSERT_EQ(4, psx_aggregate_layout_alignment(&layout));
+
+  psx_aggregate_layout_init(&layout, TK_UNION);
+  psx_resolve_aggregate_object_placement(
+      &layout,
+      &(psx_aggregate_object_placement_request_t){
+          .storage_size = 4,
+          .natural_alignment = 4,
+      },
+      &object);
+  ASSERT_EQ(0, object.offset);
+  psx_resolve_aggregate_object_placement(
+      &layout,
+      &(psx_aggregate_object_placement_request_t){
+          .storage_size = 8,
+          .natural_alignment = 8,
+      },
+      &object);
+  ASSERT_EQ(0, object.offset);
+  ASSERT_EQ(8, psx_aggregate_layout_size(&layout));
+  ASSERT_EQ(8, psx_aggregate_layout_alignment(&layout));
+
+  psx_declarator_shape_t member_shape;
+  psx_declarator_shape_init(&member_shape);
+  psx_declarator_shape_append_pointer_levels(&member_shape, 1, 0, 0);
+  psx_declarator_shape_append_array_ex(&member_shape, 3, 0);
+  psx_type_t *member_type = psx_resolve_aggregate_member_type(
+      &(psx_aggregate_member_type_request_t){
+          .declaration = {
+              .base_kind = TK_INT,
+              .elem_size = 4,
+              .declarator_shape = &member_shape,
+          },
+      });
+  ASSERT_TRUE(member_type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, member_type->kind);
+  ASSERT_TRUE(member_type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, member_type->base->kind);
+  ASSERT_EQ(3, member_type->base->array_len);
+  ASSERT_TRUE(member_type->base->base != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, member_type->base->base->kind);
+
+  tag_member_info_t pointer_layout = {
+      .ptr_array_pointee_bytes = 12,
+      .outer_stride = 12,
+      .deref_size = 4,
+  };
+  member_type = psx_resolve_aggregate_member_type(
+      &(psx_aggregate_member_type_request_t){
+          .declaration = {
+              .base_kind = TK_INT,
+              .elem_size = 4,
+              .declarator_shape = &member_shape,
+          },
+          .layout_metadata = &pointer_layout,
+      });
+  ASSERT_EQ(12, member_type->ptr_array_pointee_bytes);
+  ASSERT_EQ(12, member_type->outer_stride);
+  psx_aggregate_member_storage_plan_t member_storage;
+  psx_plan_aggregate_member_storage(member_type, &member_storage);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
+  ASSERT_EQ(8, member_storage.storage_size);
+  ASSERT_EQ(8, member_storage.alignment);
+  ASSERT_TRUE(member_storage.is_pointer_object);
+  ASSERT_EQ(1, member_storage.pointer_depth);
+  ASSERT_EQ(4, member_storage.scalar_size);
+
+  psx_tag_declaration_resolution_t tag_resolution;
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"__AlignedMember",
+          .name_len = 15,
+          .mode = PSX_TAG_DECLARATION_DEFINITION,
+          .size = 12,
+          .alignment = 4,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  psx_type_t *aligned_member = psx_resolve_aggregate_member_type(
+      &(psx_aggregate_member_type_request_t){
+          .declaration = {
+              .tag_kind = TK_STRUCT,
+              .tag_name = (char *)"__AlignedMember",
+              .tag_len = 15,
+              .elem_size = 12,
+          },
+      });
+  psx_plan_aggregate_member_storage(aligned_member, &member_storage);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
+  ASSERT_EQ(12, member_storage.storage_size);
+  ASSERT_EQ(4, member_storage.alignment);
+
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"__IncompleteMember",
+          .name_len = 18,
+          .mode = PSX_TAG_DECLARATION_FORWARD,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  psx_aggregate_member_base_resolution_t incomplete_base;
+  psx_resolve_aggregate_member_base_type(
+      &(psx_aggregate_member_base_resolution_request_t){
+          .declaration = {
+              .tag_kind = TK_STRUCT,
+              .tag_name = (char *)"__IncompleteMember",
+              .tag_len = 18,
+          },
+      },
+      &incomplete_base);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, incomplete_base.status);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE,
+            psx_validate_aggregate_member_type(incomplete_base.type));
+  psx_declarator_shape_t incomplete_pointer_shape;
+  psx_declarator_shape_init(&incomplete_pointer_shape);
+  psx_declarator_shape_append_pointer_levels(
+      &incomplete_pointer_shape, 1, 0, 0);
+  psx_type_t *incomplete_pointer = psx_resolve_aggregate_member_type(
+      &(psx_aggregate_member_type_request_t){
+          .declaration = {
+              .base_decl_type = incomplete_base.type,
+              .declarator_shape = &incomplete_pointer_shape,
+          },
+      });
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK,
+            psx_validate_aggregate_member_type(incomplete_pointer));
+
+  psx_type_t *function_member = psx_type_new_function(
+      psx_type_new_integer(TK_INT, 4, 0),
+      (psx_decl_funcptr_sig_t){0});
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_FUNCTION_TYPE,
+            psx_validate_aggregate_member_type(function_member));
+
+  psx_aggregate_member_base_resolution_t bool_base;
+  psx_resolve_aggregate_member_base_type(
+      &(psx_aggregate_member_base_resolution_request_t){
+          .declaration = {
+              .base_kind = TK_BOOL,
+              .elem_size = 1,
+              .is_unsigned = 1,
+              .is_atomic = 1,
+          },
+      },
+      &bool_base);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bool_base.status);
+  ASSERT_TRUE(bool_base.storage.is_bool);
+  ASSERT_TRUE(bool_base.storage.is_unsigned);
+  ASSERT_TRUE(bool_base.storage.is_atomic);
+  ASSERT_EQ(TK_BOOL, bool_base.storage.scalar_kind);
+
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  tag_member_info_t named = {
+      .name = (char *)"x",
+      .len = 1,
+      .decl_type = integer,
+  };
+  psx_aggregate_member_resolution_t resolution;
+  psx_resolve_aggregate_member(
+      &(psx_aggregate_member_resolution_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"__MemberBoundary",
+          .tag_name_len = 16,
+          .member = &named,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+  ASSERT_TRUE(resolution.created);
+  psx_resolve_aggregate_member(
+      &(psx_aggregate_member_resolution_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"__MemberBoundary",
+          .tag_name_len = 16,
+          .member = &named,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, resolution.status);
+
+  tag_member_info_t anonymous = {
+      .name = (char *)"",
+      .len = 0,
+      .decl_type = integer,
+  };
+  for (int i = 0; i < 2; i++) {
+    anonymous.offset = 4 + i * 4;
+    psx_resolve_aggregate_member(
+        &(psx_aggregate_member_resolution_request_t){
+            .tag_kind = TK_STRUCT,
+            .tag_name = (char *)"__MemberBoundary",
+            .tag_name_len = 16,
+            .member = &anonymous,
+        },
+        &resolution);
+    ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+  }
 }
 
 static void test_typedef_declaration_resolution_boundary() {
@@ -10929,8 +11188,27 @@ static void test_parse_invalid() {
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
+  expect_parse_ok(
+      "int main(void) { struct Forward (*p); (void)p; return 0; }");
+  expect_parse_ok(
+      "typedef struct Forward Forward; struct Holder { Forward *p; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(
+      "struct Holder { struct Forward values[2]; }; "
+      "int main(void) { return 0; }");
+  expect_parse_fail(
+      "typedef int FunctionType(int); struct Holder { FunctionType f; }; "
+      "int main(void) { return 0; }");
   expect_parse_fail("struct S; union S; int main(void) { return 0; }");
   expect_parse_fail("struct E {}; struct E {}; int main(void) { return 0; }");
+  expect_parse_fail("struct S { int x; int x; }; int main(void) { return 0; }");
+  expect_parse_fail(
+      "struct S { int x; struct { int x; }; }; int main(void) { return 0; }");
+  expect_parse_fail(
+      "struct S { unsigned int x : 33; }; int main(void) { return 0; }");
+  expect_parse_ok(
+      "struct S { struct { int x; }; struct { int y; }; }; "
+      "int main(void) { struct S s = {{1}, {2}}; return s.x + s.y; }");
   expect_parse_ok("typedef int X; typedef int X; int main(void) { return 0; }");
   expect_parse_fail("typedef int X; typedef long X; int main(void) { return 0; }");
   expect_parse_fail("int X; typedef int X; int main(void) { return 0; }");
@@ -11499,6 +11777,7 @@ int main() {
   test_parameter_declaration_storage_plan_boundary();
   test_global_declaration_storage_plan_boundary();
   test_tag_declaration_resolution_boundary();
+  test_aggregate_member_resolution_boundary();
   test_typedef_declaration_resolution_boundary();
   test_enum_constant_resolution_boundary();
   test_initializer_resolution_boundary();
