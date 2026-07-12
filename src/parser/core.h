@@ -120,10 +120,6 @@ psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
 psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
     psx_funcptr_type_shape_t fn);
 psx_decl_funcptr_sig_t ps_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig);
-void psx_funcptr_signature_reset(psx_funcptr_signature_t *sig);
-void psx_skip_func_param_list(psx_funcptr_signature_t *sig);
-void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,
-                                    psx_funcptr_signature_t *sig);
 bool psx_try_consume_pragma_pack_marker(void);
 
 #endif

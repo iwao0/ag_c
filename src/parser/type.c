@@ -829,6 +829,14 @@ int psx_declarator_shape_append_shape(
             shape, op->array_len, op->is_incomplete_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       appended = psx_declarator_shape_append_function(shape, op->funcptr_sig);
+      if (appended) {
+        psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
+        copy->has_canonical_function_params =
+            op->has_canonical_function_params;
+        copy->function_param_types = op->function_param_types;
+        copy->function_param_count = op->function_param_count;
+        copy->function_is_variadic = op->function_is_variadic;
+      }
     }
     if (!appended) return 0;
   }
@@ -908,6 +916,11 @@ psx_type_t *psx_type_apply_declarator_shape(
                                 elem_size, op->is_vla_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       type = psx_type_new_function(type, op->funcptr_sig);
+      if (op->has_canonical_function_params) {
+        psx_type_set_function_params(
+            type, op->function_param_types,
+            op->function_param_count, op->function_is_variadic);
+      }
     }
   }
   type_sync_pointer_compat_qual_masks(type);

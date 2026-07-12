@@ -39,6 +39,8 @@ typedef struct {
   int ptr_levels;
   int funcptr_object_pointer_levels;
   psx_declarator_shape_t declarator_shape;
+  psx_parsed_function_suffix_t function_suffixes[24];
+  int function_suffix_count;
 } stmt_typedef_declarator_state_t;
 static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
                                 token_kind_t *tag_kind, char **tag_name, int *tag_len,
@@ -53,6 +55,35 @@ static node_t *parse_stmt_label(void);
 static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
+
+static void resolve_stmt_typedef_declarator_shape(
+    stmt_typedef_declarator_state_t *state,
+    psx_declarator_shape_t *out, token_t *diagnostic_token) {
+  *out = state->declarator_shape;
+  for (int i = 0; i < state->function_suffix_count; i++) {
+    psx_parsed_function_suffix_t *suffix = &state->function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= out->count ||
+        out->ops[suffix->declarator_op_index].kind != PSX_DECL_OP_FUNCTION) {
+      psx_diag_ctx(diagnostic_token, "typedef",
+                   "invalid statement function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters, &out->ops[suffix->declarator_op_index],
+        diagnostic_token);
+  }
+}
+
+static void dispose_stmt_typedef_declarator_state(
+    stmt_typedef_declarator_state_t *state) {
+  for (int i = 0; i < state->function_suffix_count; i++) {
+    psx_parsed_function_parameters_t *parameters =
+        state->function_suffixes[i].parameters;
+    if (!parameters) continue;
+    psx_dispose_function_parameters_syntax(parameters);
+    free(parameters);
+  }
+}
 
 static token_ident_t *parse_typedef_name_decl_recursive(stmt_typedef_declarator_state_t *decl_state,
                                                         int *is_ptr) {
@@ -77,12 +108,22 @@ static token_ident_t *parse_typedef_name_decl_recursive(stmt_typedef_declarator_
       continue;
     }
     if (curtok()->kind == TK_LPAREN) {
-      psx_funcptr_signature_t suffix = {0};
-      psx_skip_func_param_list(&suffix);
-      psx_decl_funcptr_sig_t op_sig = {0};
-      op_sig.function.callable.signature = suffix;
+      int op_index = decl_state->declarator_shape.count;
       psx_declarator_shape_append_function(
-          &decl_state->declarator_shape, op_sig);
+          &decl_state->declarator_shape, (psx_decl_funcptr_sig_t){0});
+      if (decl_state->function_suffix_count >= 24)
+        psx_diag_ctx(curtok(), "typedef", "declarator is too complex");
+      psx_parsed_function_parameters_t *parameters =
+          calloc(1, sizeof(*parameters));
+      if (!parameters)
+        psx_diag_ctx(curtok(), "typedef",
+                     "function parameter syntax allocation failed");
+      psx_parse_function_parameters_syntax(parameters);
+      decl_state->function_suffixes[decl_state->function_suffix_count++] =
+          (psx_parsed_function_suffix_t){
+              .declarator_op_index = op_index,
+              .parameters = parameters,
+          };
       continue;
     }
     break;
@@ -266,8 +307,12 @@ static void parse_typedef_decl(void) {
       if (td_pointee_const) canonical_type->is_const_qualified = 1;
       if (td_pointee_volatile) canonical_type->is_volatile_qualified = 1;
     }
+    psx_declarator_shape_t resolved_declarator_shape;
+    resolve_stmt_typedef_declarator_shape(
+        &decl_state, &resolved_declarator_shape, (token_t *)name);
     canonical_type = psx_type_apply_declarator_shape(
-        canonical_type, &decl_state.declarator_shape);
+        canonical_type, &resolved_declarator_shape);
+    dispose_stmt_typedef_declarator_state(&decl_state);
     if (canonical_type && type_state.type_spec.is_long_double)
       canonical_type->is_long_double = 1;
     psx_apply_parsed_typedef_declaration(

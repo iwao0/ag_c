@@ -20,6 +20,8 @@ typedef struct {
   int is_plain_char;
   int override_plain_char;
   int is_long_double;
+  char *typedef_name;
+  int typedef_name_len;
   const psx_type_t *base_decl_type;
   const psx_declarator_shape_t *declarator_shape;
 } psx_decl_type_request_t;

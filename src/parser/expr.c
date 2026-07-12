@@ -17,6 +17,7 @@
 #include "../lowering/local_object_lowering.h"
 #include "../lowering/static_data_initializer.h"
 #include "../semantic/declaration_resolution.h"
+#include "../semantic/function_parameter_resolution.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
@@ -52,6 +53,33 @@ typedef struct {
   int is_funcptr;
   int typedef_base_is_pointer;
 } type_name_parse_state_t;
+
+typedef struct {
+  psx_type_t *types[16];
+  int count;
+  int is_variadic;
+  psx_funcptr_signature_t legacy;
+} expr_function_parameters_t;
+
+static void parse_expr_function_parameters(
+    token_t *lparen, expr_function_parameters_t *out) {
+  if (!lparen || !out) return;
+  *out = (expr_function_parameters_t){0};
+  token_t *saved = curtok();
+  set_curtok(lparen);
+  psx_parsed_function_parameters_t parameters = {0};
+  psx_parse_function_parameters_syntax(&parameters);
+  psx_declarator_op_t function_op = {.kind = PSX_DECL_OP_FUNCTION};
+  psx_resolve_function_parameters_syntax(
+      &parameters, &function_op, lparen);
+  out->count = function_op.function_param_count;
+  out->is_variadic = function_op.function_is_variadic;
+  out->legacy = function_op.funcptr_sig.function.callable.signature;
+  for (int i = 0; i < out->count && i < 16; i++)
+    out->types[i] = function_op.function_param_types[i];
+  psx_dispose_function_parameters_syntax(&parameters);
+  set_curtok(saved);
+}
 
 static expr_parse_ctx_t expr_parse_ctx_default(void) {
   expr_parse_ctx_t ctx = {0};
@@ -289,7 +317,7 @@ static bool skip_bracket_sequence(token_t **pt) {
 }
 
 static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer,
-                                       psx_funcptr_signature_t *out_sig) {
+                                       expr_function_parameters_t *out_params) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
   t = t->next;
@@ -307,13 +335,7 @@ static int parse_funcptr_abstract_decl(token_t **ptok, int *is_pointer,
   token_t *param_lparen = t;
   token_t *after_params = skip_balanced_paren_token(t);
   if (!after_params) return 0;
-  if (out_sig) {
-    psx_funcptr_signature_reset(out_sig);
-    token_t *saved = curtok();
-    set_curtok(param_lparen);
-    psx_skip_func_param_list(out_sig);
-    set_curtok(saved);
-  }
+  if (out_params) parse_expr_function_parameters(param_lparen, out_params);
   *ptok = after_params;
   *is_pointer = 1;
   return 1;
@@ -437,7 +459,7 @@ static int parse_array_of_ptr_to_array_of_ptr_abstract_decl(token_t **ptok, int 
 
 // Parse abstract declarator like: int (*(*)(void))[3]
 static int parse_ptr_to_func_returning_ptr_to_array_abstract_decl(
-    token_t **ptok, psx_funcptr_signature_t *out_sig,
+    token_t **ptok, expr_function_parameters_t *out_params,
     psx_ret_pointee_array_t *out_ret_array, int elem_size) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
@@ -474,13 +496,7 @@ static int parse_ptr_to_func_returning_ptr_to_array_abstract_decl(
     t = brackets;
     if (!skip_bracket_sequence(&t)) return 0;
   }
-  if (out_sig) {
-    psx_funcptr_signature_reset(out_sig);
-    token_t *saved = curtok();
-    set_curtok(param_lparen);
-    psx_skip_func_param_list(out_sig);
-    set_curtok(saved);
-  }
+  if (out_params) parse_expr_function_parameters(param_lparen, out_params);
   *ptok = t;
   return 1;
 }
@@ -522,8 +538,8 @@ static int parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(token
 
 // Parse abstract declarator like: int (*(*)(void))(int)
 static int parse_ptr_to_func_returning_ptr_to_func_abstract_decl(
-    token_t **ptok, psx_funcptr_signature_t *out_sig,
-    psx_funcptr_signature_t *out_returned_sig) {
+    token_t **ptok, expr_function_parameters_t *out_params,
+    expr_function_parameters_t *out_returned_params) {
   token_t *t = *ptok;
   if (!t || t->kind != TK_LPAREN) return 0;
   t = t->next;
@@ -548,20 +564,11 @@ static int parse_ptr_to_func_returning_ptr_to_func_abstract_decl(
   token_t *returned_param_lparen = t;
   after_params = skip_balanced_paren_token(t);
   if (!after_params) return 0;
-  if (out_sig) {
-    psx_funcptr_signature_reset(out_sig);
-    token_t *saved = curtok();
-    set_curtok(outer_param_lparen);
-    psx_skip_func_param_list(out_sig);
-    set_curtok(saved);
-  }
-  if (out_returned_sig) {
-    psx_funcptr_signature_reset(out_returned_sig);
-    token_t *saved = curtok();
-    set_curtok(returned_param_lparen);
-    psx_skip_func_param_list(out_returned_sig);
-    set_curtok(saved);
-  }
+  if (out_params)
+    parse_expr_function_parameters(outer_param_lparen, out_params);
+  if (out_returned_params)
+    parse_expr_function_parameters(
+        returned_param_lparen, out_returned_params);
   *ptok = after_params;
   return 1;
 }
@@ -938,11 +945,11 @@ static void parse_type_name_abstract_declarators(
   int ret_is_funcptr = 0;
   int saw_funcptr_suffix = 0;
   psx_ret_pointee_array_t ret_pointee_array = {0};
-  psx_funcptr_signature_t funcptr_suffix = {0};
-  psx_funcptr_signature_t returned_funcptr_suffix = {0};
+  expr_function_parameters_t funcptr_parameters = {0};
+  expr_function_parameters_t returned_funcptr_parameters = {0};
 
   if (parse_funcptr_abstract_decl(&t, &pointer_flag,
-                                  &funcptr_suffix)) {
+                                  &funcptr_parameters)) {
     state->is_funcptr = 1;
     saw_funcptr_suffix = 1;
   }
@@ -992,7 +999,7 @@ static void parse_type_name_abstract_declarators(
 
   (void)parse_array_of_ptr_to_array_of_ptr_abstract_decl(&t, NULL);
   if (parse_ptr_to_func_returning_ptr_to_array_abstract_decl(
-          &t, &funcptr_suffix, &ret_pointee_array, out->base_size)) {
+          &t, &funcptr_parameters, &ret_pointee_array, out->base_size)) {
     pointer_flag = 1;
     state->is_funcptr = 1;
     saw_funcptr_suffix = 1;
@@ -1001,7 +1008,7 @@ static void parse_type_name_abstract_declarators(
   (void)parse_array_of_ptr_to_func_returning_ptr_to_array_abstract_decl(
       &t, NULL);
   if (parse_ptr_to_func_returning_ptr_to_func_abstract_decl(
-          &t, &funcptr_suffix, &returned_funcptr_suffix)) {
+          &t, &funcptr_parameters, &returned_funcptr_parameters)) {
     pointer_flag = 1;
     state->is_funcptr = 1;
     saw_funcptr_suffix = 1;
@@ -1016,11 +1023,26 @@ static void parse_type_name_abstract_declarators(
   out->canonicalize_function = state->is_funcptr ? 1u : 0u;
   if (saw_funcptr_suffix) {
     out->funcptr_sig = psx_decl_make_funcptr_sig_from_kind(
-        &funcptr_suffix, out->base_kind, out->fp_kind,
+        &funcptr_parameters.legacy, out->base_kind, out->fp_kind,
         ret_is_data_pointer, 0, out->is_complex, ret_pointee_array);
+    out->has_canonical_function_params = 1;
+    out->function_param_count = funcptr_parameters.count;
+    out->function_is_variadic = funcptr_parameters.is_variadic;
+    for (int i = 0; i < funcptr_parameters.count && i < 16; i++)
+      out->function_param_types[i] = funcptr_parameters.types[i];
     if (ret_is_funcptr) {
       psx_decl_funcptr_sig_promote_return_to_funcptr(
-          &out->funcptr_sig, &returned_funcptr_suffix);
+          &out->funcptr_sig, &returned_funcptr_parameters.legacy);
+      out->has_canonical_returned_function_params = 1;
+      out->returned_function_param_count =
+          returned_funcptr_parameters.count;
+      out->returned_function_is_variadic =
+          returned_funcptr_parameters.is_variadic;
+      for (int i = 0;
+           i < returned_funcptr_parameters.count && i < 16; i++) {
+        out->returned_function_param_types[i] =
+            returned_funcptr_parameters.types[i];
+      }
     }
   }
   *cursor = t;

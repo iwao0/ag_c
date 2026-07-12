@@ -35,6 +35,14 @@ typedef struct {
   int pointer_array_pointee_bytes;
 
   psx_decl_funcptr_sig_t funcptr_sig;
+  psx_type_t *function_param_types[16];
+  int function_param_count;
+  int function_is_variadic;
+  unsigned int has_canonical_function_params : 1;
+  psx_type_t *returned_function_param_types[16];
+  int returned_function_param_count;
+  int returned_function_is_variadic;
+  unsigned int has_canonical_returned_function_params : 1;
   psx_declarator_shape_t declarator_shape;
   const psx_type_t *canonical_base;
   char *type_sig;

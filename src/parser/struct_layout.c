@@ -9,7 +9,11 @@
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
+static psx_type_t *resolve_member_specifier_type(
+    const psx_parsed_decl_specifier_t *specifier);
+static void resolve_member_declarator_syntax(
+    const psx_parsed_declarator_t *parsed,
+    psx_declarator_shape_t *shape, int *bit_width);
 
 static void apply_member_tag_action(
     const psx_parsed_member_tag_action_t *action) {
@@ -38,12 +42,60 @@ static void apply_member_tag_action(
       action->diagnostic_token);
 }
 
+void psx_resolve_function_parameters_syntax(
+    psx_parsed_function_parameters_t *parameters,
+    psx_declarator_op_t *function_op, token_t *diagnostic_token) {
+  if (!parameters || !function_op ||
+      function_op->kind != PSX_DECL_OP_FUNCTION) {
+    psx_diag_ctx(diagnostic_token, "declarator-syntax",
+                 "invalid function parameter syntax target");
+  }
+  int resolved_count = 0;
+  psx_ctx_enter_block_scope();
+  for (int i = 0; i < parameters->count; i++) {
+    psx_parsed_function_parameter_t *parameter = &parameters->items[i];
+    apply_member_tag_action(&parameter->specifier.tag_action);
+    psx_type_t *base = resolve_member_specifier_type(&parameter->specifier);
+    if (!base) {
+      psx_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
+                   diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
+    }
+    psx_declarator_shape_t parameter_shape;
+    int ignored_bit_width = 0;
+    resolve_member_declarator_syntax(
+        &parameter->declarator, &parameter_shape, &ignored_bit_width);
+    psx_type_t *type = psx_type_apply_declarator_shape(base, &parameter_shape);
+    if (parameters->count == 1 && type && type->kind == PSX_TYPE_VOID &&
+        parameter_shape.count == 0) {
+      resolved_count = 0;
+      break;
+    }
+    if (resolved_count < 16) {
+      parameters->resolved_types[resolved_count] =
+          psx_type_adjust_parameter_type(type);
+    }
+    resolved_count++;
+  }
+  psx_ctx_leave_block_scope();
+  function_op->has_canonical_function_params = 1;
+  function_op->function_param_types = parameters->resolved_types;
+  function_op->function_param_count = resolved_count;
+  function_op->function_is_variadic = parameters->is_variadic;
+  psx_type_t *projection = psx_type_new_function(
+      psx_type_new(PSX_TYPE_VOID), (psx_decl_funcptr_sig_t){0});
+  psx_type_set_function_params(
+      projection, parameters->resolved_types,
+      resolved_count, parameters->is_variadic);
+  function_op->funcptr_sig.function.callable.signature =
+      ps_type_funcptr_signature(projection).function.callable.signature;
+}
+
 static void resolve_member_declarator_syntax(
-    const psx_parsed_aggregate_member_declarator_t *parsed,
+    const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width) {
   *shape = parsed->declarator_shape;
   for (int i = 0; i < parsed->array_bound_count; i++) {
-    const psx_parsed_aggregate_array_bound_t *bound =
+    const psx_parsed_array_bound_t *bound =
         &parsed->array_bounds[i];
     long long value = psx_eval_parsed_enum_const_expr(
         bound->expression.start, bound->expression.end);
@@ -65,6 +117,22 @@ static void resolve_member_declarator_syntax(
     shape->ops[bound->declarator_op_index].array_len = (int)value;
     shape->ops[bound->declarator_op_index].is_incomplete_array = 0;
   }
+  for (int i = 0; i < parsed->function_suffix_count; i++) {
+    const psx_parsed_function_suffix_t *suffix =
+        &parsed->function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= shape->count ||
+        shape->ops[suffix->declarator_op_index].kind !=
+            PSX_DECL_OP_FUNCTION ||
+        !suffix->parameters) {
+      psx_diag_ctx(parsed->diagnostic_token, "aggregate-syntax",
+                   "invalid deferred function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters,
+        &shape->ops[suffix->declarator_op_index],
+        parsed->diagnostic_token);
+  }
   *bit_width = 0;
   if (parsed->has_bitfield) {
     long long value = psx_eval_parsed_enum_const_expr(
@@ -72,6 +140,43 @@ static void resolve_member_declarator_syntax(
         parsed->bit_width_expression.end);
     *bit_width = value > 0 ? (int)value : 0;
   }
+}
+
+static psx_type_t *resolve_member_specifier_type(
+    const psx_parsed_decl_specifier_t *specifier) {
+  if (!specifier) return NULL;
+  const psx_type_spec_result_t *syntax = &specifier->type_spec;
+  psx_decl_type_request_t request = {
+      .base_kind = TK_EOF,
+      .fp_kind = TK_FLOAT_KIND_NONE,
+      .tag_kind = TK_EOF,
+      .is_unsigned = syntax->is_unsigned,
+      .is_complex = syntax->is_complex,
+      .is_const_qualified = syntax->is_const_qualified,
+      .is_volatile_qualified = syntax->is_volatile_qualified,
+      .is_atomic = syntax->is_atomic,
+      .is_long_long = syntax->is_long_long,
+      .is_plain_char = syntax->is_plain_char,
+      .is_long_double = syntax->is_long_double,
+  };
+  switch (specifier->source) {
+    case PSX_PARSED_DECL_TYPE_BUILTIN:
+      request.base_kind = syntax->kind;
+      request.override_plain_char = syntax->kind == TK_CHAR;
+      break;
+    case PSX_PARSED_DECL_TYPE_TAG:
+      request.tag_kind = specifier->tag_action.kind;
+      request.tag_name = specifier->tag_action.name;
+      request.tag_len = specifier->tag_action.name_len;
+      break;
+    case PSX_PARSED_DECL_TYPEDEF_NAME:
+      request.typedef_name = specifier->typedef_name->str;
+      request.typedef_name_len = specifier->typedef_name->len;
+      break;
+    default:
+      return NULL;
+  }
+  return psx_resolve_decl_type(&request);
 }
 
 int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -102,31 +207,24 @@ int psx_apply_parsed_aggregate_body_layout(
     const psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
     apply_member_tag_action(&declaration->specifier.tag_action);
-    psx_decl_type_request_t type_request =
-        declaration->specifier.declaration;
-    if (type_request.tag_kind != TK_EOF) {
-      int tag_size = psx_ctx_get_tag_size(
-          type_request.tag_kind, type_request.tag_name,
-          type_request.tag_len);
-      if (tag_size >= 0) type_request.elem_size = tag_size;
-    }
     psx_type_t *member_base_type =
-        psx_resolve_decl_type(&type_request);
+        resolve_member_specifier_type(&declaration->specifier);
     if (!member_base_type) {
-      psx_diag_ctx(curtok(), "member",
-                   "canonical aggregate member base type resolution failed");
+      psx_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     int requested_alignment = 0;
     for (int j = 0;
          j < declaration->specifier.alignas_expression_count; j++) {
-      const psx_parsed_aggregate_const_expr_t *expression =
+      const psx_parsed_const_expr_t *expression =
           &declaration->specifier.alignas_expressions[j];
       int value = psx_eval_parsed_alignas_value(
           expression->start, expression->end);
       if (value > requested_alignment) requested_alignment = value;
     }
     for (int j = 0; j < declaration->declarator_count; j++) {
-      const psx_parsed_aggregate_member_declarator_t *head =
+      const psx_parsed_declarator_t *head =
           &declaration->declarators[j];
       int has_member_name = head->member != NULL;
       psx_declarator_shape_t resolved_shape;

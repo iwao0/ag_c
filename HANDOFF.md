@@ -1,8 +1,182 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1090: aggregate constant expressionのdeferred semantic化）
+最終更新: 2026-07-12（続き1096: function parameter syntax moduleの物理分離）
 
 ## 現状
+- 続き1096: **generic function parameter syntaxの型/API/実装をaggregate bodyから分離した。**
+
+  `declaration_syntax.h`を新設し、neutral declaration specifier、tag action、array/bit expression範囲、recursive
+  declarator、function suffix参照をaggregate body型から切り離した。aggregate専用名だったspecifier/declarator
+  型とparse APIも`psx_parsed_decl_specifier_t` / `psx_parsed_declarator_t`、
+  `psx_parse_decl_specifier_syntax()` / `psx_parse_declarator_syntax_tree()`へ改名した。
+
+  `function_parameter_syntax.{c,h}`を追加し、parameter item/list型、dynamic item列、ellipsis処理、再帰parse、dispose
+  ownershipを独立moduleへ移した。`aggregate_member_syntax.h`はaggregate body item/listだけを公開し、generic
+  parameter moduleはbody layoutやsemantic contextを知らない。Makefileのparser test objectにも新moduleを追加した。
+
+  semantic公開境界として`semantic/function_parameter_resolution.h`を追加した。`decl.c`と`expr.c`は
+  `struct_layout.h`経由ではなくsyntax/semantic APIへ依存するため、generic宣言経路がaggregate layout headerを
+  includeする逆依存は解消した。resolver実装はtag action再帰を分けるまで`struct_layout.c`に残る。
+
+  確認:
+  - `aggregate_member_syntax.h`のgeneric specifier/declarator/function parameter定義 = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次は`psx_resolve_function_parameters_syntax()`を`struct_layout.c`からsemantic implementationへ移す。そのため、
+  tag action/nested aggregate definition applyをcallbackまたは先行phaseとして分離し、semantic resolverがlayout
+  parserへ依存しない形にする。その後、declaration specifier実装本体もaggregate sourceから独立させる。
+
+- 続き1095: **function definition/expr type-nameを移行し、legacy parameter token scannerを削除した。**
+
+  function definitionのreturned-function suffixは`func_ret_parse_state_t`がparsed parameter syntaxを所有し、
+  return declarator shapeを`psx_type_name_build()`へ渡す前にcanonical parameter型を設定する。return type構築後は
+  syntaxを再帰解放し、`parser.c`からlegacy scanner参照がなくなった。
+
+  `expr.c`のcast/sizeof/_Generic向け手書きabstract declarator 4経路もgeneric parameter syntaxを使う。
+  `psx_type_name_t`はdirect/returned functionのcanonical parameter型配列、count、variadicを保持し、型構築時に
+  function nodeへcloneする。ABI互換のfp/int maskはcanonical型から投影し、pointer-to-array returnなどの既存
+  return sidecarは独立に維持する。
+
+  typedef double、`int *`、variadicを持つcastと`_Generic`の境界テストを追加し、型照合結果=53だけでなくcast
+  nodeのcanonical function parameter型も直接確認した。移行後に呼び出し0件となった
+  `skip_func_params()`、`psx_skip_func_param_list()`、`psx_funcptr_signature_reset()`の実装・公開APIを削除し、
+  fixtureコメントもcanonical型からABI maskを投影する現状へ更新した。
+
+  確認:
+  - `psx_skip_func_param_list` / `skip_func_params` = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  function parameter型の正本化は完了した。次はgeneric parameter syntax実装がまだ
+  `aggregate_member_syntax.c`、resolve実装が`struct_layout.c`にある物理的な逆依存を解消し、
+  `function_parameter_syntax`とsemantic resolution moduleへ分離する。その後、top-level/local/parameterで重複する
+  type-specifier解析をneutral declaration specifierへ統合する。
+
+- 続き1094: **local declarationとparameter nested declaratorをparsed canonical parameter syntaxへ移した。**
+
+  `decl_declarator_state_t`は通常local、local extern、local typedefのfunction suffixごとにparsed parametersを
+  所有する。canonical declaration request直前にlocal shapeへparameter型を解決し、型木がcloneした直後に
+  syntaxをdisposeする。書き込みだけだった`func_suffix_sig` / `returned_funcptr_suffix_sig` mirrorも削除した。
+
+  `stmt.c`のblock-scope typedef専用declaratorも同じ所有・解決・dispose経路へ移した。さらに
+  `param_declarator_state_t`がnested function suffixを保持し、`psx_resolve_parameter_declaration()`へ渡すshapeを
+  canonical parameter types付きで完成させる。parameter loweringは一時syntaxではなく完成型だけを見る。
+
+  local境界テストはblock-scope `typedef double LocalSigParam;`と
+  `int (*p)(LocalSigParam, int *, ...);`を使い、lvar canonical function型のdouble、`int *`、variadicを確認した。
+  nested parameter境界もtypedef doubleを使う`int (*(*q)(void))(NestedSigParam)`へ変更し、outer functionの
+  parameter count=0とreturned functionのcanonical double parameterを型木から直接確認した。
+
+  確認:
+  - `psx_skip_func_param_list()`残存 = **5 call sites**（function return suffix 1、expr type-name 4）
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はfunction definitionのreturned function suffixを移し、最後に`expr.c`のcast/_Generic/sizeof向けabstract
+  type-name parserをgeneric declarator syntaxへ統合する。legacy scanner本体と公開APIは5件が0になった時点で
+  削除する。
+
+- 続き1093: **top-level object/typedefのnested function suffixをgeneric parsed parameter syntaxへ移した。**
+
+  function parameter syntax型をaggregate専用名から`psx_parsed_function_parameters_t` /
+  `psx_parsed_function_suffix_t`へ切り離し、parse・resolve・dispose APIを公開した。specifier/declaratorの内部表現は
+  引き続き再帰syntaxを使うが、利用側はparameter listをopaque ownershipとして扱える。
+
+  `toplevel_declarator_head_t`はnested/parenthesized function suffixごとにplaceholder function opとparsed
+  parametersを所有する。canonical型構築時にlocal shapeへparameter型を解決し、apply後に再帰syntaxを必ず
+  disposeする。plain function prototypeは従来どおりnamed parameter ASTを作る専用canonical経路を使う。
+
+  境界テストへ`typedef double __tm_top_param_t;`と
+  `int (*__tm_top_fp)(__tm_top_param_t, int *, ...);`を追加し、global canonical function型がdouble、`int *`、
+  variadic=trueを保持することを直接確認した。top-level nested suffixはidentifier tokenをlegacy maskへ潰さない。
+  呼び出し0件だった`psx_skip_func_suffix_groups_ex()`公開wrapperも削除した。
+
+  確認:
+  - `psx_skip_func_param_list()`残存 = **8 call sites**（aggregate/top-level nestedは0）
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はlocal declaration (`decl.c` / `stmt.c`)とparameter nested declarator (`parser.c`)を同じparsed ownershipへ
+  移す。その後、`expr.c`のcast/type-name専用abstract declaratorとfunction return suffixを統合し、legacy scanner
+  本体と公開APIを削除する。
+
+- 続き1092: **aggregate function suffixのlegacy token mask走査を再帰的parameter syntaxへ置換した。**
+
+  aggregate declaratorは`psx_skip_func_param_list()`でparameter tokenを8引数分のfp/int maskへ潰さず、
+  各parameterのneutral specifierとdeclarator、variadic flagを再帰的に保持する。nested function pointer、pointer、
+  array、typedef parameterも同じsyntax treeを使い、disposeもnested suffixまで再帰解放する。
+
+  canonical declarator function operatorはapply時に解決済みparameter type配列、parameter count、variadic flagを
+  受け取れるようになった。`psx_type_apply_declarator_shape()`はfunction type生成時にそれらをcloneするため、
+  legacy ABI maskはcanonical parameter identityの正本ではなくなった。16件超の宣言も従来どおり受理し、全件を
+  parse/typecheckしつつcanonical型が追跡する先頭16件だけを配列へ保持する。
+
+  phase boundary testへ
+  `int (*callback)(DeferredParam, int *, struct PrototypeOnly *, ...);`を追加した。`DeferredParam`未登録でparseを
+  完了し、再帰parameter syntaxを確認した後、double typedefとして登録してapplyする。完成memberはoffset=64、
+  function canonical paramsは`double`、`int *`、prototype-scope struct pointer、variadic=trueになる。parameter
+  resolveはsuffixごとの一時scopeで行うため、新規`PrototypeOnly` tagはcanonical identityに残るが外側contextへ
+  漏れない。旧identifier tokenのmask走査ではtypedef identityもprototype scopeも保持できなかった。
+
+  確認:
+  - aggregate syntax内の`psx_skip_func_param_list` / legacy param mask参照 = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  aggregate bodyのparse -> resolve/typecheck分離は主要経路で完了した。次はtop-level/local/type-nameにも残る
+  `psx_skip_func_param_list()`利用を同じparsed parameter syntaxへ統合し、function parameter型の正本を
+  declaration経路全体でcanonical `psx_type_t`へ揃える。
+
+- 続き1091: **aggregate type specifierからtype context lookupとsemantic requestの半完成状態を除いた。**
+
+  `psx_parsed_aggregate_member_specifier_t`は`psx_decl_type_request_t`を内包せず、builtin/tag/typedef-nameの
+  source分類、`psx_type_spec_result_t`、typedef identifier token、tag actionだけを保持するneutral syntax
+  descriptorになった。aggregate syntaxはtypedef存在確認、canonical type取得、builtin size取得を行わず、
+  `semantic_ctx.h`への依存も削除した。
+
+  apply passはspecifier descriptorからlocal `psx_decl_type_request_t`を組み立てるだけにした。typedef lookup、
+  builtin scalar size、float kind、complex storage size、tag完成サイズの正規化は
+  `psx_resolve_decl_type()`が所有する。これによりparse時の型情報とapply時のcanonical型という二つの正本が
+  aggregate member経路から消えた。
+
+  phase boundary testには未登録の`DeferredAlias late;`を含むbodyを追加した。typedef未登録のままparseが完了し、
+  parsed specifierがtypedef-name tokenだけを保持していることを確認した後、typedefを登録してapplyし、
+  `late`がoffset=60のcanonical int memberになることを確認した。旧parse時lookup経路では成立しない境界である。
+
+  確認:
+  - aggregate syntax内の`psx_ctx_*`参照 = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  aggregate bodyで残る大きなparse/semantic結合はfunction declarator suffixの
+  `psx_skip_func_param_list()`で、parameter型をparse中に解決してlegacy signatureへ畳んでいる。次はfunction
+  suffixをparsed parameter syntaxとして保持し、apply時にcanonical function typeへ解決する。
+
 - 続き1090: **array bound、bit-field width、alignasの定数評価をaggregate apply phaseへ移した。**
 
   aggregate syntaxはarray bound、bit-field width、`_Alignas(...)`の式を評価せず、開始・終了tokenを

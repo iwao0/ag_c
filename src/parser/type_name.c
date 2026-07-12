@@ -142,6 +142,23 @@ psx_type_t *psx_type_name_build(const psx_type_name_t *name) {
       ps_decl_funcptr_sig_has_payload(name->funcptr_sig) && levels > 0 &&
       name->array_dim_count == 0) {
     psx_type_t *type = psx_type_new_funcptr(name->funcptr_sig, levels);
+    psx_type_t *function = (psx_type_t *)psx_type_find_function(type);
+    if (function && name->has_canonical_function_params) {
+      psx_type_set_function_params(
+          function, name->function_param_types,
+          name->function_param_count, name->function_is_variadic);
+    }
+    psx_type_t *returned_function = function
+                                        ? (psx_type_t *)psx_type_find_function(
+                                              function->base)
+                                        : NULL;
+    if (returned_function &&
+        name->has_canonical_returned_function_params) {
+      psx_type_set_function_params(
+          returned_function, name->returned_function_param_types,
+          name->returned_function_param_count,
+          name->returned_function_is_variadic);
+    }
     apply_pointer_qualifiers(type, levels, name->pointer_const_mask,
                              name->pointer_volatile_mask);
     type->type_sig = name->type_sig;

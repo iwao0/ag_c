@@ -5,7 +5,6 @@
 #include "diag.h"
 #include "dynarray.h"
 #include "enum_const.h"
-#include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../pragma_pack.h"
 #include "../tokenizer/tokenizer.h"
@@ -37,7 +36,7 @@ static token_t *find_aggregate_expression_end(
 static void consume_aggregate_alignas(
     void *context, psx_type_spec_result_t *result) {
   (void)result;
-  psx_parsed_aggregate_member_specifier_t *specifier = context;
+  psx_parsed_decl_specifier_t *specifier = context;
   if (!specifier || specifier->alignas_expression_count >= 8) {
     psx_diag_ctx(current_token(), "aggregate-syntax",
                  "aggregate alignas limit exceeded");
@@ -52,7 +51,7 @@ static void consume_aggregate_alignas(
                  "unterminated aggregate alignas");
   }
   specifier->alignas_expressions[specifier->alignas_expression_count++] =
-      (psx_parsed_aggregate_const_expr_t){.start = start, .end = end};
+      (psx_parsed_const_expr_t){.start = start, .end = end};
   tk_set_current_token(end);
   tk_expect(')');
 }
@@ -66,7 +65,7 @@ static void diagnose_member_declarator_too_complex(
 static int append_member_declarator_pointer(
     void *context, int is_const, int is_volatile, int nesting_depth) {
   (void)nesting_depth;
-  psx_parsed_aggregate_member_declarator_t *declarator = context;
+  psx_parsed_declarator_t *declarator = context;
   return declarator && psx_declarator_shape_append_pointer(
                            &declarator->declarator_shape,
                            is_const, is_volatile);
@@ -79,7 +78,7 @@ static int consume_member_declarator_suffix(
   (void)direct_was_parenthesized;
   (void)direct_pointer_count;
   (void)frame_pointer_count;
-  psx_parsed_aggregate_member_declarator_t *declarator = context;
+  psx_parsed_declarator_t *declarator = context;
   if (!declarator) return 0;
   if (current_token()->kind == TK_LBRACKET) {
     tk_expect('[');
@@ -108,7 +107,7 @@ static int consume_member_declarator_suffix(
         diagnose_member_declarator_too_complex(context, current_token());
       }
       declarator->array_bounds[declarator->array_bound_count++] =
-          (psx_parsed_aggregate_array_bound_t){
+          (psx_parsed_array_bound_t){
               .declarator_op_index = op_index,
               .expression = {
                   .start = expression_start,
@@ -119,20 +118,32 @@ static int consume_member_declarator_suffix(
     return 1;
   }
   if (current_token()->kind != TK_LPAREN) return 0;
-  psx_funcptr_signature_t suffix = {0};
-  psx_skip_func_param_list(&suffix);
-  psx_decl_funcptr_sig_t function = {0};
-  function.function.callable.signature = suffix;
+  int op_index = declarator->declarator_shape.count;
   if (!psx_declarator_shape_append_function(
-          &declarator->declarator_shape, function)) {
+          &declarator->declarator_shape, (psx_decl_funcptr_sig_t){0})) {
     diagnose_member_declarator_too_complex(context, current_token());
   }
+  if (declarator->function_suffix_count >= 24) {
+    diagnose_member_declarator_too_complex(context, current_token());
+  }
+  psx_parsed_function_parameters_t *parameters =
+      calloc(1, sizeof(*parameters));
+  if (!parameters) {
+    psx_diag_ctx(current_token(), "aggregate-syntax",
+                 "function parameter syntax allocation failed");
+  }
+  psx_parse_function_parameters_syntax(parameters);
+  declarator->function_suffixes[declarator->function_suffix_count++] =
+      (psx_parsed_function_suffix_t){
+          .declarator_op_index = op_index,
+          .parameters = parameters,
+      };
   return 1;
 }
 
-psx_parsed_aggregate_member_declarator_t
-psx_parse_aggregate_member_declarator(void) {
-  psx_parsed_aggregate_member_declarator_t declarator = {0};
+psx_parsed_declarator_t
+psx_parse_declarator_syntax_tree(void) {
+  psx_parsed_declarator_t declarator = {0};
   psx_declarator_shape_init(&declarator.declarator_shape);
   declarator.member = psx_parse_declarator_syntax(
       &(psx_declarator_syntax_t){
@@ -160,29 +171,25 @@ psx_parse_aggregate_member_declarator(void) {
 }
 
 static void parse_member_tag_specifier(
-    psx_parsed_aggregate_member_specifier_t *specifier) {
-  psx_decl_type_request_t *declaration = &specifier->declaration;
+    psx_parsed_decl_specifier_t *specifier) {
   psx_parsed_member_tag_action_t *action = &specifier->tag_action;
   action->diagnostic_token = current_token();
-  declaration->tag_kind = current_token()->kind;
-  action->kind = declaration->tag_kind;
+  action->kind = current_token()->kind;
   tk_set_current_token(current_token()->next);
   token_ident_t *tag = tk_consume_ident();
   if (tag) {
-    declaration->tag_name = tag->str;
-    declaration->tag_len = tag->len;
+    action->name = tag->str;
+    action->name_len = tag->len;
   } else if (current_token()->kind == TK_LBRACE) {
     psx_make_anonymous_tag_name(
-        &declaration->tag_name, &declaration->tag_len);
+        &action->name, &action->name_len);
   } else {
     psx_diag_missing(current_token(), diag_text_for(DIAG_TEXT_TAG_NAME));
   }
-  action->name = declaration->tag_name;
-  action->name_len = declaration->tag_len;
 
   if (tk_consume('{')) {
     action->action = PSX_PARSED_MEMBER_TAG_DEFINITION;
-    if (declaration->tag_kind == TK_ENUM) {
+    if (action->kind == TK_ENUM) {
       action->enum_body = calloc(1, sizeof(*action->enum_body));
       if (!action->enum_body) {
         psx_diag_ctx(current_token(), "aggregate-syntax",
@@ -202,53 +209,34 @@ static void parse_member_tag_specifier(
   }
 }
 
-void psx_parse_aggregate_member_specifier(
-    psx_parsed_aggregate_member_specifier_t *specifier) {
+void psx_parse_decl_specifier_syntax(
+    psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return;
   memset(specifier, 0, sizeof(*specifier));
-  specifier->declaration.base_kind = TK_EOF;
-  specifier->declaration.tag_kind = TK_EOF;
-  specifier->declaration.fp_kind = TK_FLOAT_KIND_NONE;
-  specifier->declaration.elem_size = 8;
+  specifier->diagnostic_token = current_token();
 
-  psx_type_spec_result_t type_spec = {0};
   token_kind_t builtin_kind = psx_consume_type_kind_with_syntax_ex(
-      &type_spec,
+      &specifier->type_spec,
       &(psx_type_spec_syntax_t){
           .context = specifier,
           .consume_alignas = consume_aggregate_alignas,
       });
-  specifier->declaration.is_unsigned = type_spec.is_unsigned;
-  specifier->declaration.is_complex = type_spec.is_complex;
-  specifier->declaration.is_const_qualified = type_spec.is_const_qualified;
-  specifier->declaration.is_volatile_qualified = type_spec.is_volatile_qualified;
-  specifier->declaration.is_atomic = type_spec.is_atomic;
-  specifier->declaration.is_long_long = type_spec.is_long_long;
-  specifier->declaration.is_plain_char = type_spec.is_plain_char;
-  specifier->declaration.is_long_double = type_spec.is_long_double;
 
   if (builtin_kind != TK_EOF) {
-    specifier->declaration.base_kind = builtin_kind;
-    specifier->declaration.override_plain_char = builtin_kind == TK_CHAR;
-    psx_ctx_get_type_info(
-        builtin_kind, NULL, &specifier->declaration.elem_size);
-    if (builtin_kind == TK_FLOAT)
-      specifier->declaration.fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (builtin_kind == TK_DOUBLE)
-      specifier->declaration.fp_kind = TK_FLOAT_KIND_DOUBLE;
-    if (type_spec.is_complex) specifier->declaration.elem_size *= 2;
+    specifier->source = PSX_PARSED_DECL_TYPE_BUILTIN;
     return;
   }
 
-  if (psx_ctx_is_tag_keyword(current_token()->kind)) {
+  if (current_token()->kind == TK_STRUCT ||
+      current_token()->kind == TK_UNION ||
+      current_token()->kind == TK_ENUM) {
+    specifier->source = PSX_PARSED_DECL_TYPE_TAG;
     parse_member_tag_specifier(specifier);
     return;
   }
-  if (psx_ctx_is_typedef_name_token(current_token())) {
-    token_ident_t *typedef_name = (token_ident_t *)current_token();
-    psx_ctx_find_typedef_decl_type(
-        typedef_name->str, typedef_name->len,
-        &specifier->declaration.base_decl_type);
+  if (current_token()->kind == TK_IDENT) {
+    specifier->source = PSX_PARSED_DECL_TYPEDEF_NAME;
+    specifier->typedef_name = (token_ident_t *)current_token();
     tk_set_current_token(current_token()->next);
     return;
   }
@@ -275,7 +263,7 @@ static psx_parsed_aggregate_item_t *append_aggregate_item(
 
 static void append_aggregate_declarator(
     psx_parsed_aggregate_member_declaration_t *declaration,
-    psx_parsed_aggregate_member_declarator_t declarator) {
+    psx_parsed_declarator_t declarator) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
     psx_diag_ctx(current_token(), "aggregate-syntax",
                  "aggregate declarator limit exceeded");
@@ -306,11 +294,11 @@ void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
     item->kind = PSX_PARSED_AGGREGATE_MEMBER_DECLARATION;
     psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
-    psx_parse_aggregate_member_specifier(&declaration->specifier);
+    psx_parse_decl_specifier_syntax(&declaration->specifier);
     declaration->pack_alignment = pragma_pack_current_alignment();
     for (;;) {
-      psx_parsed_aggregate_member_declarator_t declarator =
-          psx_parse_aggregate_member_declarator();
+      psx_parsed_declarator_t declarator =
+          psx_parse_declarator_syntax_tree();
       append_aggregate_declarator(declaration, declarator);
       int has_comma = tk_consume(',');
       if (!declarator.member && !declarator.has_bitfield && has_comma)
@@ -321,21 +309,42 @@ void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
   }
 }
 
+void psx_dispose_decl_specifier_syntax(
+    psx_parsed_decl_specifier_t *specifier) {
+  if (!specifier) return;
+  psx_parsed_member_tag_action_t *tag_action = &specifier->tag_action;
+  if (tag_action->aggregate_body) {
+    psx_dispose_parsed_aggregate_body(tag_action->aggregate_body);
+    free(tag_action->aggregate_body);
+  }
+  if (tag_action->enum_body) {
+    psx_dispose_parsed_enum_body(tag_action->enum_body);
+    free(tag_action->enum_body);
+  }
+}
+
+void psx_dispose_declarator_syntax(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator) return;
+  for (int i = 0; i < declarator->function_suffix_count; i++) {
+    psx_parsed_function_parameters_t *parameters =
+        declarator->function_suffixes[i].parameters;
+    if (!parameters) continue;
+    psx_dispose_function_parameters_syntax(parameters);
+    free(parameters);
+  }
+}
+
 void psx_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
   if (!body) return;
   for (int i = 0; i < body->item_count; i++) {
     if (body->items[i].kind == PSX_PARSED_AGGREGATE_MEMBER_DECLARATION) {
-      psx_parsed_member_tag_action_t *tag_action =
-          &body->items[i].value.member_declaration.specifier.tag_action;
-      if (tag_action->aggregate_body) {
-        psx_dispose_parsed_aggregate_body(tag_action->aggregate_body);
-        free(tag_action->aggregate_body);
-      }
-      if (tag_action->enum_body) {
-        psx_dispose_parsed_enum_body(tag_action->enum_body);
-        free(tag_action->enum_body);
-      }
-      free(body->items[i].value.member_declaration.declarators);
+      psx_parsed_aggregate_member_declaration_t *declaration =
+          &body->items[i].value.member_declaration;
+      psx_dispose_decl_specifier_syntax(&declaration->specifier);
+      for (int j = 0; j < declaration->declarator_count; j++)
+        psx_dispose_declarator_syntax(&declaration->declarators[j]);
+      free(declaration->declarators);
     }
   }
   free(body->items);

@@ -1308,11 +1308,14 @@ static void test_aggregate_body_phase_boundary() {
                "PhaseEnumNext = PhaseEnumZero + 2 } e; "
                "int arr[PhaseEnumNext]; "
                "unsigned flags:PhaseEnumZero; "
-               "_Alignas(PhaseEnumNext + 3) char aligned; }");
+               "_Alignas(PhaseEnumNext + 3) char aligned; "
+               "DeferredAlias late; "
+               "int (*callback)(DeferredParam, int *, "
+               "struct PrototypeOnly *, ...); }");
   tk_set_current_token(tokens);
   psx_parsed_aggregate_body_t body;
   psx_parse_aggregate_body(&body);
-  ASSERT_EQ(8, body.item_count);
+  ASSERT_EQ(10, body.item_count);
   ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
             body.items[0].kind);
   ASSERT_EQ(2, body.items[0].value.member_declaration.declarator_count);
@@ -1336,6 +1339,19 @@ static void test_aggregate_body_phase_boundary() {
                   .bit_width_expression.start != NULL);
   ASSERT_EQ(1, body.items[7].value.member_declaration.specifier
                    .alignas_expression_count);
+  ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
+            body.items[8].value.member_declaration.specifier.source);
+  ASSERT_EQ(13, body.items[8].value.member_declaration.specifier
+                    .typedef_name->len);
+  ASSERT_EQ(1, body.items[9].value.member_declaration.declarators[0]
+                   .function_suffix_count);
+  psx_parsed_function_parameters_t *callback_parameters =
+      body.items[9].value.member_declaration.declarators[0]
+          .function_suffixes[0].parameters;
+  ASSERT_TRUE(callback_parameters != NULL);
+  ASSERT_EQ(3, callback_parameters->count);
+  ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
+            callback_parameters->items[0].specifier.source);
   ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
 
   tag_member_info_t member = {0};
@@ -1349,13 +1365,28 @@ static void test_aggregate_body_phase_boundary() {
   long long enum_value = 0;
   ASSERT_TRUE(!psx_ctx_find_enum_const(
       (char *)"PhaseEnumZero", 13, &enum_value));
+  const psx_type_t *deferred_alias_type = NULL;
+  ASSERT_TRUE(!psx_ctx_find_typedef_decl_type(
+      (char *)"DeferredAlias", 13, &deferred_alias_type));
+
+  psx_typedef_info_t deferred_alias = {0};
+  psx_ctx_typedef_set_decl_type(
+      &deferred_alias, psx_type_new_integer(TK_INT, 4, 0));
+  ASSERT_TRUE(psx_ctx_define_typedef_name(
+      (char *)"DeferredAlias", 13, &deferred_alias));
+  psx_typedef_info_t deferred_parameter = {0};
+  psx_ctx_typedef_set_decl_type(
+      &deferred_parameter,
+      psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  ASSERT_TRUE(psx_ctx_define_typedef_name(
+      (char *)"DeferredParam", 13, &deferred_parameter));
 
   int size = 0;
   int alignment = 0;
-  ASSERT_EQ(8, psx_apply_parsed_aggregate_body_layout(
+  ASSERT_EQ(10, psx_apply_parsed_aggregate_body_layout(
                    &body, TK_STRUCT, (char *)"__ParsedBody", 12,
                    &size, &alignment));
-  ASSERT_EQ(64, size);
+  ASSERT_EQ(72, size);
   ASSERT_EQ(8, alignment);
   ASSERT_TRUE(ps_ctx_find_tag_member_info(
       TK_STRUCT, (char *)"__ParsedBody", 12,
@@ -1397,6 +1428,29 @@ static void test_aggregate_body_phase_boundary() {
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"aligned", 7, &member));
   ASSERT_EQ(56, member.offset);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"late", 4, &member));
+  ASSERT_EQ(60, member.offset);
+  ASSERT_EQ(PSX_TYPE_INTEGER, member.decl_type->kind);
+  ASSERT_EQ(4, member.decl_type->size);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"callback", 8, &member));
+  ASSERT_EQ(64, member.offset);
+  const psx_type_t *callback_type =
+      psx_type_find_function(member.decl_type);
+  ASSERT_TRUE(callback_type != NULL);
+  ASSERT_EQ(3, callback_type->param_count);
+  ASSERT_TRUE(callback_type->is_variadic_function);
+  ASSERT_EQ(PSX_TYPE_FLOAT, callback_type->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, callback_type->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, callback_type->param_types[1]->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, callback_type->param_types[1]->base->kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, callback_type->param_types[2]->kind);
+  ASSERT_EQ(PSX_TYPE_STRUCT, callback_type->param_types[2]->base->kind);
+  ASSERT_TRUE(!psx_ctx_has_tag_type(
+      TK_STRUCT, (char *)"PrototypeOnly", 13));
   psx_dispose_parsed_aggregate_body(&body);
 }
 
@@ -2967,6 +3021,29 @@ static void test_expr_unary_ops() {
 
 static void test_expr_generic() {
   printf("test_expr_generic...\n");
+
+  parsed_code = parse_program_input(
+      "typedef double ExprCanonicalParam; "
+      "int main(void){ return _Generic("
+      "(int (*)(ExprCanonicalParam, int *, ...))0, "
+      "int (*)(ExprCanonicalParam, int *, ...): 53, default: 7); }");
+  node_t *canonical_generic_return =
+      as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ASSERT_EQ(ND_RETURN, canonical_generic_return->kind);
+  ASSERT_EQ(53, as_num(canonical_generic_return->lhs)->val);
+  node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
+      "(int (*)(ExprCanonicalParam, int *, ...))0");
+  const psx_type_t *canonical_expr_function =
+      psx_type_find_function(ps_node_get_type(canonical_expr_funcptr));
+  ASSERT_TRUE(canonical_expr_function != NULL);
+  ASSERT_EQ(2, canonical_expr_function->param_count);
+  ASSERT_TRUE(canonical_expr_function->is_variadic_function);
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            canonical_expr_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            canonical_expr_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            canonical_expr_function->param_types[1]->kind);
 
   parsed_code = parse_program_input(
       "typedef int (*unary_fn)(int); int generic_id(int x){return x;} "
@@ -5035,13 +5112,25 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_sig_f(int x){ return x; } "
-      "int __tm_sig_local(void) { int (*p)(int)=__tm_sig_f; return p(1); }");
+      "int __tm_sig_local(void) { typedef double LocalSigParam; "
+      "int (*p)(LocalSigParam, int *, ...); return 0; }");
   fn = as_func(parsed_code[1]);
   lvar_t *sig_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(sig_lvar != NULL);
   psx_type_t *sig_lvar_type = psx_lvar_get_decl_type(sig_lvar);
   ASSERT_TRUE(sig_lvar_type != NULL);
   ASSERT_TRUE(sig_lvar_type->type_sig != NULL);
+  const psx_type_t *sig_lvar_function =
+      psx_type_find_function(sig_lvar_type);
+  ASSERT_TRUE(sig_lvar_function != NULL);
+  ASSERT_EQ(2, sig_lvar_function->param_count);
+  ASSERT_TRUE(sig_lvar_function->is_variadic_function);
+  ASSERT_EQ(PSX_TYPE_FLOAT, sig_lvar_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            sig_lvar_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, sig_lvar_function->param_types[1]->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            sig_lvar_function->param_types[1]->base->kind);
   sig_lvar->decl_type = NULL;
   ASSERT_TRUE(psx_lvar_get_decl_type(sig_lvar) == NULL);
   sig_lvar->decl_type = sig_lvar_type;
@@ -5105,7 +5194,9 @@ static void test_type_metadata_bridge() {
                    .function.returned_funcptr.type->callable.return_shape.int_width);
 
   parsed_code = parse_program_input(
-      "int __tm_sig_nested_param(int (*(*q)(void))(double)) { return 0; }");
+      "typedef double NestedSigParam; "
+      "int __tm_sig_nested_param(int (*(*q)(void))(NestedSigParam)) "
+      "{ return 0; }");
   fn = as_func(parsed_code[0]);
   lvar_t *sig_nested_param = find_func_lvar(fn, "q");
   ASSERT_TRUE(sig_nested_param != NULL);
@@ -5116,10 +5207,24 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, sig_nested_param_type->funcptr_sig.function.returned_funcptr.type->callable.signature.param_fp_mask);
   ASSERT_EQ(4, sig_nested_param_type->funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
   ASSERT_EQ(0, sig_nested_param_type->funcptr_sig.function.callable.return_shape.int_width);
+  const psx_type_t *outer_nested_param_function =
+      psx_type_find_function(sig_nested_param_type);
+  ASSERT_TRUE(outer_nested_param_function != NULL);
+  ASSERT_EQ(0, outer_nested_param_function->param_count);
+  const psx_type_t *returned_nested_param_function =
+      psx_type_find_function(outer_nested_param_function->base);
+  ASSERT_TRUE(returned_nested_param_function != NULL);
+  ASSERT_EQ(1, returned_nested_param_function->param_count);
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            returned_nested_param_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            returned_nested_param_function->param_types[0]->fp_kind);
 
   parsed_code = parse_program_input(
       "int __tm_sig_gf(int x){ return x; } "
       "int (*__tm_sig_gfp)(int); "
+      "typedef double __tm_top_param_t; "
+      "int (*__tm_top_fp)(__tm_top_param_t, int *, ...); "
       "int __tm_sig_global(void) { return __tm_sig_gfp(1); }");
   (void)parsed_code;
   global_var_t *sig_gvar = ps_find_global_var("__tm_sig_gfp", 12);
@@ -5130,6 +5235,18 @@ static void test_type_metadata_bridge() {
   sig_gvar->decl_type = NULL;
   ASSERT_TRUE(psx_gvar_get_decl_type(sig_gvar) == NULL);
   sig_gvar->decl_type = sig_gvar_type;
+  global_var_t *top_fp = ps_find_global_var(
+      "__tm_top_fp", (int)(sizeof("__tm_top_fp") - 1));
+  ASSERT_TRUE(top_fp != NULL);
+  const psx_type_t *top_function =
+      psx_type_find_function(psx_gvar_get_decl_type(top_fp));
+  ASSERT_TRUE(top_function != NULL);
+  ASSERT_EQ(2, top_function->param_count);
+  ASSERT_TRUE(top_function->is_variadic_function);
+  ASSERT_EQ(PSX_TYPE_FLOAT, top_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, top_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, top_function->param_types[1]->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER, top_function->param_types[1]->base->kind);
 
   parsed_code = parse_program_input(
       "int (*(*__tm_sig_nested_gfp)(void))(double); "

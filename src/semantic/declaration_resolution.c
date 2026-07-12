@@ -10,36 +10,62 @@
 static psx_type_t *resolve_decl_base_type(
     const psx_decl_type_request_t *request) {
   if (request->base_decl_type) return psx_type_clone(request->base_decl_type);
+  if (request->typedef_name) {
+    const psx_type_t *typedef_type = NULL;
+    if (!psx_ctx_find_typedef_decl_type(
+            request->typedef_name, request->typedef_name_len,
+            &typedef_type))
+      return NULL;
+    return psx_type_clone(typedef_type);
+  }
+  int elem_size = request->elem_size;
   if (request->tag_kind == TK_ENUM) {
+    if (elem_size <= 0) elem_size = 4;
     int scope_depth = ps_ctx_get_tag_scope_depth(
         request->tag_kind, request->tag_name, request->tag_len);
     return psx_type_new_enum(
         request->tag_name, request->tag_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0, request->elem_size);
+        scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
   }
   if (psx_ctx_is_tag_aggregate_kind(request->tag_kind)) {
+    if (elem_size <= 0) {
+      elem_size = psx_ctx_get_tag_size(
+          request->tag_kind, request->tag_name, request->tag_len);
+      if (elem_size < 0) elem_size = 0;
+    }
     int scope_depth = ps_ctx_get_tag_scope_depth(
         request->tag_kind, request->tag_name, request->tag_len);
     psx_type_t *type = psx_type_new_tag(
         request->tag_kind, request->tag_name, request->tag_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0, request->elem_size);
+        scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
     type->aggregate_definition = psx_ctx_get_tag_definition(
         request->tag_kind, request->tag_name, request->tag_len);
     if (type->aggregate_definition && type->aggregate_definition->align > 0)
       type->align = type->aggregate_definition->align;
     return type;
   }
+  if (elem_size <= 0) {
+    elem_size = ps_ctx_scalar_type_size(request->base_kind);
+    if (request->is_complex) elem_size *= 2;
+  }
+  tk_float_kind_t fp_kind = request->fp_kind;
+  if (fp_kind == TK_FLOAT_KIND_NONE) {
+    if (request->base_kind == TK_FLOAT)
+      fp_kind = TK_FLOAT_KIND_FLOAT;
+    else if (request->base_kind == TK_DOUBLE)
+      fp_kind = TK_FLOAT_KIND_DOUBLE;
+  }
   if (request->is_complex) {
     psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
-    type->fp_kind = request->fp_kind != TK_FLOAT_KIND_NONE
-                        ? request->fp_kind
+    type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
+                        ? fp_kind
                         : TK_FLOAT_KIND_DOUBLE;
-    type->size = request->elem_size;
-    type->align = request->elem_size >= 8 ? 8 : request->elem_size;
+    type->size = elem_size;
+    type->align = elem_size >= 8 ? 8 : elem_size;
     return type;
   }
-  if (request->fp_kind != TK_FLOAT_KIND_NONE) {
-    return psx_type_new_float(request->fp_kind, request->elem_size);
+  if (fp_kind != TK_FLOAT_KIND_NONE) {
+    return psx_type_new_float(fp_kind, elem_size);
   }
   if (request->base_kind == TK_VOID) {
     psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
@@ -47,7 +73,7 @@ static psx_type_t *resolve_decl_base_type(
     return type;
   }
   return psx_type_new_integer(
-      request->base_kind, request->elem_size, request->is_unsigned);
+      request->base_kind, elem_size, request->is_unsigned);
 }
 
 psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {

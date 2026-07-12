@@ -226,6 +226,8 @@ typedef struct {
    * pointer operators lexically attached to the declaration specifier. */
   psx_declarator_shape_t declarator_shape;
   psx_declarator_shape_t base_pointer_shape;
+  psx_parsed_function_suffix_t function_suffixes[24];
+  int function_suffix_count;
   int saw_implicit_int;
 } func_ret_parse_state_t;
 typedef struct {
@@ -256,6 +258,8 @@ static int has_next_toplevel_declarator(void);
 typedef struct {
   token_ident_t *name;
   psx_declarator_shape_t declarator_shape;
+  psx_parsed_function_suffix_t function_suffixes[24];
+  int function_suffix_count;
 } toplevel_declarator_head_t;
 static toplevel_declarator_head_t new_toplevel_declarator_head(void);
 static toplevel_declarator_head_t parse_toplevel_declarator_head(const toplevel_decl_spec_t *spec,
@@ -317,6 +321,8 @@ static int is_tag_return_function_signature(token_t *tok);
 static void skip_balanced_group(token_kind_t lkind, token_kind_t rkind);
 typedef struct {
   psx_declarator_shape_t declarator_shape;
+  psx_parsed_function_suffix_t function_suffixes[24];
+  int function_suffix_count;
   int inner_dim_consts[7];
   token_ident_t *inner_dim_idents[7];
   int inner_dim_count;
@@ -1082,15 +1088,6 @@ static int is_tag_return_function_signature(token_t *tok) {
   return is_function_declarator_sig(t);
 }
 
-void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,
-                                    psx_funcptr_signature_t *sig) {
-  psx_funcptr_signature_reset(sig);
-  while (curtok()->kind == TK_LPAREN) {
-    if (out_has_func_suffix) *out_has_func_suffix = 1;
-    psx_skip_func_param_list(sig);
-  }
-}
-
 static void parse_toplevel_declarator_list(const toplevel_decl_spec_t *spec) {
   parse_toplevel_declarator_list_with_apply(
       spec, apply_toplevel_object_from_head);
@@ -1106,6 +1103,13 @@ static void parse_toplevel_declarator_list_with_apply(const toplevel_decl_spec_t
     toplevel_declarator_head_t head =
         parse_toplevel_declarator_head(spec, 1);
     apply(spec, head);
+    for (int i = 0; i < head.function_suffix_count; i++) {
+      psx_parsed_function_parameters_t *parameters =
+          head.function_suffixes[i].parameters;
+      if (!parameters) continue;
+      psx_dispose_function_parameters_syntax(parameters);
+      free(parameters);
+    }
     if (!has_next_toplevel_declarator()) break;
   }
 }
@@ -1315,6 +1319,22 @@ static void register_toplevel_typedef_name(
 static psx_type_t *build_toplevel_derived_typedef_type(
     const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head) {
   if (!spec) return NULL;
+  psx_declarator_shape_t resolved_shape = head.declarator_shape;
+  for (int i = 0; i < head.function_suffix_count; i++) {
+    const psx_parsed_function_suffix_t *suffix =
+        &head.function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= resolved_shape.count ||
+        resolved_shape.ops[suffix->declarator_op_index].kind !=
+            PSX_DECL_OP_FUNCTION) {
+      psx_diag_ctx((token_t *)head.name, "decl",
+                   "invalid top-level function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters,
+        &resolved_shape.ops[suffix->declarator_op_index],
+        (token_t *)head.name);
+  }
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_kind = spec->base_kind,
@@ -1334,7 +1354,7 @@ static psx_type_t *build_toplevel_derived_typedef_type(
           .is_long_double =
               spec->type_spec.is_long_double || spec->is_long_double,
           .base_decl_type = spec->base_decl_type,
-          .declarator_shape = &head.declarator_shape,
+          .declarator_shape = &resolved_shape,
       });
 }
 
@@ -1520,13 +1540,23 @@ static int consume_toplevel_decl_suffix(void *context, int nesting_depth,
    * parenthesized function suffixes are declarator operators here. */
   if (curtok()->kind == TK_LPAREN &&
       (nesting_depth > 0 || direct_was_parenthesized)) {
-    psx_funcptr_signature_t parsed_suffix = {0};
-    psx_skip_func_param_list(&parsed_suffix);
-    psx_decl_funcptr_sig_t op_sig = {0};
-    op_sig.function.callable.signature = parsed_suffix;
+    int op_index = head->declarator_shape.count;
     if (!psx_declarator_shape_append_function(
-            &head->declarator_shape, op_sig))
+            &head->declarator_shape, (psx_decl_funcptr_sig_t){0}))
       diagnose_toplevel_decl_too_complex(context, curtok());
+    if (head->function_suffix_count >= 24)
+      diagnose_toplevel_decl_too_complex(context, curtok());
+    psx_parsed_function_parameters_t *parameters =
+        calloc(1, sizeof(*parameters));
+    if (!parameters)
+      psx_diag_ctx(curtok(), "decl",
+                   "function parameter syntax allocation failed");
+    psx_parse_function_parameters_syntax(parameters);
+    head->function_suffixes[head->function_suffix_count++] =
+        (psx_parsed_function_suffix_t){
+            .declarator_op_index = op_index,
+            .parameters = parameters,
+        };
     return 1;
   }
   return 0;
@@ -1919,14 +1949,28 @@ static int psx_skip_param_func_suffix_groups(
     param_declarator_state_t *decl_state) {
   int consumed = 0;
   while (curtok()->kind == TK_LPAREN) {
-    psx_funcptr_signature_t parsed_suffix = {0};
-    psx_skip_func_param_list(&parsed_suffix);
     consumed = 1;
     if (decl_state) {
-      psx_decl_funcptr_sig_t op_sig = {0};
-      op_sig.function.callable.signature = parsed_suffix;
+      int op_index = decl_state->declarator_shape.count;
       psx_declarator_shape_append_function(
-          &decl_state->declarator_shape, op_sig);
+          &decl_state->declarator_shape, (psx_decl_funcptr_sig_t){0});
+      if (decl_state->function_suffix_count >= 24)
+        psx_diag_ctx(curtok(), "param", "declarator is too complex");
+      psx_parsed_function_parameters_t *parameters =
+          calloc(1, sizeof(*parameters));
+      if (!parameters)
+        psx_diag_ctx(curtok(), "param",
+                     "function parameter syntax allocation failed");
+      psx_parse_function_parameters_syntax(parameters);
+      decl_state->function_suffixes[decl_state->function_suffix_count++] =
+          (psx_parsed_function_suffix_t){
+              .declarator_op_index = op_index,
+              .parameters = parameters,
+          };
+    } else {
+      psx_parsed_function_parameters_t discarded = {0};
+      psx_parse_function_parameters_syntax(&discarded);
+      psx_dispose_function_parameters_syntax(&discarded);
     }
   }
   return consumed;
@@ -2034,10 +2078,27 @@ static int consume_param_declarator_suffix(
 
 static int resolve_parameter_decl(
     const param_decl_spec_t *ds,
-    const param_declarator_state_t *decl_state,
+    param_declarator_state_t *decl_state,
     int is_pointer_declarator, int is_array_declarator,
     int has_function_suffix,
     psx_parameter_declaration_resolution_t *resolution) {
+  psx_declarator_shape_t resolved_declarator_shape =
+      decl_state->declarator_shape;
+  for (int i = 0; i < decl_state->function_suffix_count; i++) {
+    psx_parsed_function_suffix_t *suffix =
+        &decl_state->function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= resolved_declarator_shape.count ||
+        resolved_declarator_shape.ops[suffix->declarator_op_index].kind !=
+            PSX_DECL_OP_FUNCTION) {
+      psx_diag_ctx(curtok(), "param",
+                   "invalid parameter function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters,
+        &resolved_declarator_shape.ops[suffix->declarator_op_index],
+        curtok());
+  }
   psx_parameter_declaration_resolution_request_t request = {
       .type = {
           .base_kind = ds->base_type_kind,
@@ -2058,7 +2119,7 @@ static int resolve_parameter_decl(
           .override_plain_char = ds->base_decl_type == NULL,
           .is_long_double = ds->type_spec.is_long_double,
           .base_decl_type = ds->base_decl_type,
-          .declarator_shape = &decl_state->declarator_shape,
+          .declarator_shape = &resolved_declarator_shape,
       },
       .is_pointer_declarator = is_pointer_declarator,
       .is_array_declarator = is_array_declarator,
@@ -2073,7 +2134,16 @@ static int resolve_parameter_decl(
       request.inner_dimensions[i].source_name_len = source->len;
     }
   }
-  return psx_resolve_parameter_declaration(&request, resolution);
+  int ok = psx_resolve_parameter_declaration(&request, resolution);
+  for (int i = 0; i < decl_state->function_suffix_count; i++) {
+    psx_parsed_function_parameters_t *parameters =
+        decl_state->function_suffixes[i].parameters;
+    if (!parameters) continue;
+    psx_dispose_function_parameters_syntax(parameters);
+    free(parameters);
+    decl_state->function_suffixes[i].parameters = NULL;
+  }
+  return ok;
 }
 
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
@@ -2411,13 +2481,25 @@ static int consume_func_declarator_suffix(void *context, int nesting_depth,
       parse_function_param_list(&ctx->params, 1);
       ctx->saw_function_suffix = 1;
     } else {
-      psx_funcptr_signature_t returned_func_sig = {0};
-      psx_skip_func_param_list(&returned_func_sig);
-      psx_decl_funcptr_sig_t op_sig = {0};
-      op_sig.function.callable.signature = returned_func_sig;
+      int op_index = ctx->ret_state->declarator_shape.count;
       if (!psx_declarator_shape_append_function(
-              &ctx->ret_state->declarator_shape, op_sig))
+              &ctx->ret_state->declarator_shape,
+              (psx_decl_funcptr_sig_t){0}))
         diagnose_func_declarator_too_complex(context, curtok());
+      if (ctx->ret_state->function_suffix_count >= 24)
+        diagnose_func_declarator_too_complex(context, curtok());
+      psx_parsed_function_parameters_t *parameters =
+          calloc(1, sizeof(*parameters));
+      if (!parameters)
+        psx_diag_ctx(curtok(), "funcdef",
+                     "function parameter syntax allocation failed");
+      psx_parse_function_parameters_syntax(parameters);
+      ctx->ret_state->function_suffixes[
+          ctx->ret_state->function_suffix_count++] =
+          (psx_parsed_function_suffix_t){
+              .declarator_op_index = op_index,
+              .parameters = parameters,
+          };
     }
     return 1;
   }
@@ -2511,6 +2593,21 @@ static node_t *funcdef(void) {
   int nargs = 0;
   token_ident_t *tok = parse_func_declarator(&ret_state, &is_variadic,
                                              &has_unnamed_param, &args, &nargs);
+  for (int i = 0; i < ret_state.function_suffix_count; i++) {
+    psx_parsed_function_suffix_t *suffix =
+        &ret_state.function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= ret_state.declarator_shape.count ||
+        ret_state.declarator_shape.ops[suffix->declarator_op_index].kind !=
+            PSX_DECL_OP_FUNCTION) {
+      psx_diag_ctx((token_t *)tok, "funcdef",
+                   "invalid returned function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters,
+        &ret_state.declarator_shape.ops[suffix->declarator_op_index],
+        (token_t *)tok);
+  }
   psx_declarator_shape_init(&ret_state.type_name.declarator_shape);
   if (!psx_declarator_shape_append_shape(
           &ret_state.type_name.declarator_shape,
@@ -2522,6 +2619,13 @@ static node_t *funcdef(void) {
                  "function return declarator is too complex");
   }
   psx_type_t *return_type = psx_type_name_build(&ret_state.type_name);
+  for (int i = 0; i < ret_state.function_suffix_count; i++) {
+    psx_parsed_function_parameters_t *parameters =
+        ret_state.function_suffixes[i].parameters;
+    if (!parameters) continue;
+    psx_dispose_function_parameters_syntax(parameters);
+    free(parameters);
+  }
   if (!return_type) {
     psx_diag_ctx(curtok(), "funcdef", "%s",
                  "canonical function return type construction failed");

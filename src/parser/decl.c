@@ -19,6 +19,7 @@
 #include "../lowering/vla_lowering.h"
 #include "../semantic/declaration_resolution.h"
 #include "../semantic/constant_expression.h"
+#include "../semantic/function_parameter_resolution.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -308,7 +309,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name,
                                                  int td_is_unsigned, int td_is_long_double,
                                                  int td_is_complex,
                                                  const psx_type_t *base_decl_type,
-                                                 const decl_declarator_state_t *decl_state);
+                                                 decl_declarator_state_t *decl_state);
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
                                                 tk_float_kind_t fp_kind,
                                                 token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -467,12 +468,11 @@ struct decl_declarator_state_t {
   node_t *paren_array_vla_dim;
   /* 宣言子の trailing 部に関数シグネチャ `(args...)` があれば 1。 */
   int trailing_func_suffix;
-  psx_funcptr_signature_t func_suffix_sig;
-  psx_funcptr_signature_t returned_funcptr_suffix_sig;
   /* 宣言子に paren グループ `(*...)` があれば 1。 */
   int had_paren_group;
   /* trailing `()` の個数 (pointer-to-function が戻り funcptr を持つとき 2 以上)。 */
   int func_suffix_count;
+  psx_parsed_function_suffix_t function_suffixes[24];
   /* Pointer stars consumed inside the paren-grouped declarator (`(*p)` /
    * `(**pp)`). These build the function-pointer object itself, not the
    * function return type. */
@@ -486,6 +486,36 @@ static void reset_decl_declarator_state(decl_declarator_state_t *state) {
   if (!state) return;
   memset(state, 0, sizeof(*state));
   psx_declarator_shape_init(&state->declarator_shape);
+}
+
+static void resolve_decl_declarator_shape(
+    decl_declarator_state_t *state, psx_declarator_shape_t *out,
+    token_t *diagnostic_token) {
+  *out = state->declarator_shape;
+  for (int i = 0; i < state->func_suffix_count; i++) {
+    psx_parsed_function_suffix_t *suffix = &state->function_suffixes[i];
+    if (suffix->declarator_op_index < 0 ||
+        suffix->declarator_op_index >= out->count ||
+        out->ops[suffix->declarator_op_index].kind != PSX_DECL_OP_FUNCTION) {
+      psx_diag_ctx(diagnostic_token, "decl",
+                   "invalid local function suffix target");
+    }
+    psx_resolve_function_parameters_syntax(
+        suffix->parameters, &out->ops[suffix->declarator_op_index],
+        diagnostic_token);
+  }
+}
+
+static void dispose_decl_declarator_state(decl_declarator_state_t *state) {
+  if (!state) return;
+  for (int i = 0; i < state->func_suffix_count; i++) {
+    psx_parsed_function_parameters_t *parameters =
+        state->function_suffixes[i].parameters;
+    if (!parameters) continue;
+    psx_dispose_function_parameters_syntax(parameters);
+    free(parameters);
+    state->function_suffixes[i].parameters = NULL;
+  }
 }
 /* 基底 typedef が配列型 (`typedef BinOp OpArr3[3]`) のとき、要素 1 個のバイト数。
  * `OpArr3 *pa` (typedef 配列型へのポインタ + 要素がポインタ) で要素サイズを 8 と判定する
@@ -758,86 +788,6 @@ static void warn_unsupported_gnu_extension_name(const token_t *tok, const char *
   psx_ctx_record_unsupported_gnu_extension_warning(tok, name);
 }
 
-void psx_funcptr_signature_reset(psx_funcptr_signature_t *sig) {
-  if (sig) memset(sig, 0, sizeof(*sig));
-}
-
-static void skip_func_params(psx_funcptr_signature_t *sig) {
-  if (!tk_consume('(')) return;
-  int depth = 1;
-  int ncommas = 0;       /* depth==1 のカンマ数 */
-  int saw_ellipsis = 0;
-  int fixed_before_ellipsis = 0;
-  unsigned short fp_mask = 0;
-  unsigned short int_mask = 0;
-  int param_idx = 0;     /* 現在の仮引数 index */
-  int cur_fp = 0;        /* 0=未 / 1=float / 2=double */
-  int cur_int = 0;       /* 0=未 / 1=4B / 2=8B / 3=pointer */
-  int cur_disq = 0;      /* * / [ / ( を含む = スカラ fp でない */
-  while (depth > 0) {
-    token_kind_t k = curtok()->kind;
-    if (k == TK_EOF) {
-      psx_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_MISSING_FUNC_DECL_RPAREN));
-    }
-    if (k == TK_LPAREN) {
-      if (depth == 1) {
-        cur_disq = 1;
-        cur_int = 3;
-      }
-      depth++;
-    }
-    else if (k == TK_RPAREN) {
-      depth--;
-      if (depth == 0) {  /* 最後の仮引数を確定 */
-        if (cur_fp && !cur_disq && param_idx < 8)
-          fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
-        if (cur_int && (!cur_disq || cur_int == 3) && param_idx < 8)
-          int_mask |= (unsigned short)(cur_int << (2 * param_idx));
-      }
-    }
-    else if (k == TK_COMMA && depth == 1) {
-      ncommas++;
-      if (cur_fp && !cur_disq && param_idx < 8)
-        fp_mask |= (unsigned short)(cur_fp << (2 * param_idx));
-      if (cur_int && (!cur_disq || cur_int == 3) && param_idx < 8)
-        int_mask |= (unsigned short)(cur_int << (2 * param_idx));
-      param_idx++; cur_fp = 0; cur_int = 0; cur_disq = 0;
-    }
-    else if (k == TK_ELLIPSIS && depth == 1) {
-      saw_ellipsis = 1;
-      fixed_before_ellipsis = ncommas;  /* `...` 前のカンマ数 = 固定引数数 */
-    }
-    else if (depth == 1) {
-      if (k == TK_DOUBLE) cur_fp = 2;        /* double / long double */
-      else if (k == TK_FLOAT) cur_fp = 1;
-      else if (k == TK_LONG) cur_int = 2;
-      else if (k == TK_INT || k == TK_CHAR || k == TK_SHORT ||
-               k == TK_SIGNED || k == TK_UNSIGNED || k == TK_BOOL ||
-               k == TK_ENUM) cur_int = 1;
-      else if (k == TK_MUL || k == TK_LBRACKET) {
-        cur_disq = 1;
-        cur_int = 3;  /* pointer/array adjusted parameter */
-      }
-    }
-    set_curtok(curtok()->next);
-  }
-  if (saw_ellipsis) {
-    if (sig) {
-      sig->is_variadic = 1;
-      sig->nargs_fixed = fixed_before_ellipsis;
-    }
-  }
-  if (sig) {
-    sig->param_fp_mask = fp_mask;
-    sig->param_int_mask = int_mask;
-  }
-}
-
-void psx_skip_func_param_list(psx_funcptr_signature_t *sig) {
-  skip_func_params(sig);
-}
-
 /* `[` 消費後の1次元を解析し、ARRAY operatorと実行時次元記述を
  * 同じイベントから生成する。型本体にAST式は所有させない。 */
 static void consume_declarator_array_suffix(decl_declarator_state_t *decl_state) {
@@ -922,18 +872,26 @@ static token_ident_t *consume_direct_declarator_name_recursive(
       continue;
     }
     if (curtok()->kind == TK_LPAREN) {
-      psx_funcptr_signature_t parsed_suffix = {0};
-      psx_skip_func_param_list(&parsed_suffix);
-      if (decl_state->func_suffix_count == 0)
-        decl_state->func_suffix_sig = parsed_suffix;
-      else if (decl_state->func_suffix_count == 1)
-        decl_state->returned_funcptr_suffix_sig = parsed_suffix;
+      int op_index = decl_state->declarator_shape.count;
+      psx_declarator_shape_append_function(
+          &decl_state->declarator_shape, (psx_decl_funcptr_sig_t){0});
+      if (decl_state->func_suffix_count >= 24) {
+        psx_diag_ctx(curtok(), "decl", "declarator is too complex");
+      }
+      psx_parsed_function_parameters_t *parameters =
+          calloc(1, sizeof(*parameters));
+      if (!parameters) {
+        psx_diag_ctx(curtok(), "decl",
+                     "function parameter syntax allocation failed");
+      }
+      psx_parse_function_parameters_syntax(parameters);
+      decl_state->function_suffixes[decl_state->func_suffix_count] =
+          (psx_parsed_function_suffix_t){
+              .declarator_op_index = op_index,
+              .parameters = parameters,
+          };
       decl_state->trailing_func_suffix = 1;
       decl_state->func_suffix_count++;
-      psx_decl_funcptr_sig_t op_sig = {0};
-      op_sig.function.callable.signature = parsed_suffix;
-      psx_declarator_shape_append_function(
-          &decl_state->declarator_shape, op_sig);
       continue;
     }
     break;
@@ -1433,12 +1391,17 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
         psx_expr_assign();
       }
       if (curtok()->kind == TK_COMMA) {
+        dispose_decl_declarator_state(&decl_state);
         set_curtok(curtok()->next);
         continue;
       }
+      dispose_decl_declarator_state(&decl_state);
       tk_expect(';');
       return init_chain ? init_chain : psx_node_new_num(0);
     }
+    psx_declarator_shape_t resolved_declarator_shape;
+    resolve_decl_declarator_shape(
+        &decl_state, &resolved_declarator_shape, (token_t *)tok);
     psx_type_t *canonical_type = psx_resolve_decl_type(
         &(psx_decl_type_request_t){
             .base_kind = type_spec->kind,
@@ -1457,8 +1420,9 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
             .override_plain_char = !base_decl_type,
             .is_long_double = decl_is_long_double,
             .base_decl_type = base_decl_type,
-            .declarator_shape = &decl_state.declarator_shape,
+            .declarator_shape = &resolved_declarator_shape,
         });
+    dispose_decl_declarator_state(&decl_state);
     is_pointer = canonical_type && canonical_type->kind == PSX_TYPE_POINTER;
 
     if (decl_base_is_void && canonical_type &&
@@ -1750,6 +1714,9 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
     token_ident_t *name = consume_direct_declarator_name(
         &decl_state, &is_ptr, &ptr_const_mask, &ptr_volatile_mask,
         &ptr_levels);
+    psx_declarator_shape_t resolved_declarator_shape;
+    resolve_decl_declarator_shape(
+        &decl_state, &resolved_declarator_shape, (token_t *)name);
     psx_type_t *canonical_type = psx_resolve_decl_type(
         &(psx_decl_type_request_t){
             .base_kind = ds->type_kind,
@@ -1761,8 +1728,9 @@ static void parse_local_extern_declarator_list(local_decl_spec_t *ds) {
             .is_unsigned = ds->is_unsigned,
             .is_complex = ds->type_spec.is_complex,
             .base_decl_type = ds->base_decl_type,
-            .declarator_shape = &decl_state.declarator_shape,
+            .declarator_shape = &resolved_declarator_shape,
         });
+    dispose_decl_declarator_state(&decl_state);
     int is_function_prototype =
         canonical_type && canonical_type->kind == PSX_TYPE_FUNCTION;
     if (!is_function_prototype) {
@@ -1897,7 +1865,10 @@ static void define_local_typedef_from_declarator(token_ident_t *name,
                                                  int td_is_unsigned, int td_is_long_double,
                                                  int td_is_complex,
                                                  const psx_type_t *base_decl_type,
-                                                 const decl_declarator_state_t *decl_state) {
+                                                 decl_declarator_state_t *decl_state) {
+  psx_declarator_shape_t resolved_declarator_shape;
+  resolve_decl_declarator_shape(
+      decl_state, &resolved_declarator_shape, (token_t *)name);
   psx_type_t *canonical_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_kind = base_kind,
@@ -1912,7 +1883,7 @@ static void define_local_typedef_from_declarator(token_ident_t *name,
           .is_volatile_qualified = td_pointee_volatile,
           .is_long_double = td_is_long_double,
           .base_decl_type = base_decl_type,
-          .declarator_shape = &decl_state->declarator_shape,
+          .declarator_shape = &resolved_declarator_shape,
       });
   psx_apply_parsed_typedef_declaration(
       name->str, name->len, canonical_type, curtok());
@@ -1944,6 +1915,7 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
                                          td_is_unsigned, td_is_long_double, td_is_complex,
                                          base_decl_type,
                                          &decl_state);
+    dispose_decl_declarator_state(&decl_state);
     if (!tk_consume(',')) break;
   }
 }
