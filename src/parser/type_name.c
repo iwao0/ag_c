@@ -8,6 +8,7 @@ void psx_type_name_init(psx_type_name_t *name) {
   name->base_kind = TK_EOF;
   name->tag_kind = TK_EOF;
   name->fp_kind = TK_FLOAT_KIND_NONE;
+  psx_declarator_shape_init(&name->declarator_shape);
 }
 
 void psx_type_normalize_integer_identity(psx_type_t *type) {
@@ -112,6 +113,13 @@ psx_type_t *psx_type_name_build(const psx_type_name_t *name) {
     base->is_volatile_qualified = name->pointee_volatile ? 1 : 0;
   }
 
+  if (name->declarator_shape.count > 0) {
+    psx_type_t *type = psx_type_apply_declarator_shape(
+        base, &name->declarator_shape);
+    if (type) type->type_sig = name->type_sig;
+    return type;
+  }
+
   int levels = name->pointer_levels;
   if (name->canonical_base && levels > 0) {
     int size = ps_type_sizeof(base);
@@ -140,11 +148,19 @@ psx_type_t *psx_type_name_build(const psx_type_name_t *name) {
                                             : ps_type_sizeof(base);
   if (deep_base_size <= 0) deep_base_size = 8;
   int pointer_element_array =
-      name->array_dim_count > 0 && name->pointer_array_pointee_bytes > 0 &&
-      name->pointer_array_element_is_pointer;
+      (name->array_dim_count > 0 || name->is_unspecified_array) &&
+      name->pointer_array_element_is_pointer && levels > 0;
   if (pointer_element_array) {
-    type = psx_type_new_pointer(base, deep_base_size);
-    type->base_deref_size = deep_base_size;
+    int element_pointer_levels =
+        name->pointer_array_pointee_bytes > 0 ? 1 : levels;
+    type = psx_type_wrap_pointer_levels(
+        type, element_pointer_levels, deep_base_size, deep_base_size,
+        name->pointer_const_mask, name->pointer_volatile_mask);
+    apply_pointer_qualifiers(
+        type, element_pointer_levels, name->pointer_const_mask,
+        name->pointer_volatile_mask);
+    if (name->pointer_array_pointee_bytes <= 0)
+      levels = 0;
   }
   for (int i = name->array_dim_count - 1; i >= 0; i--) {
     int dim = name->array_dims[i];
@@ -164,7 +180,7 @@ psx_type_t *psx_type_name_build(const psx_type_name_t *name) {
       type->ptr_array_pointee_bytes = ps_type_sizeof(type);
     }
   }
-  if (name->is_unspecified_array && levels == 0) {
+  if (name->is_unspecified_array) {
     int elem_size = ps_type_sizeof(type);
     type = psx_type_new_array(type, 0, 0, elem_size, 0);
   }

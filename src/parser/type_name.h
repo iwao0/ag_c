@@ -34,6 +34,7 @@ typedef struct {
   int pointer_array_pointee_bytes;
 
   psx_decl_funcptr_sig_t funcptr_sig;
+  psx_declarator_shape_t declarator_shape;
   psx_type_t *canonical_base;
   char *type_sig;
 } psx_type_name_t;

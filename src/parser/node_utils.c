@@ -4245,30 +4245,6 @@ node_t *psx_node_new_lvar_array_addr_for(lvar_t *var, int is_tag_pointer) {
   return addr;
 }
 
-node_t *psx_node_new_compound_gvar_array_addr_for(global_var_t *gv,
-                                                  int ptr_array_pointee_bytes,
-                                                  int pointer_elem_size,
-                                                  int array_size,
-                                                  psx_type_t *canonical_type) {
-  (void)ptr_array_pointee_bytes;
-  (void)pointer_elem_size;
-  node_t *addr = new_addr_node(psx_node_new_gvar_for(gv));
-  init_array_addr_canonical_type(addr, canonical_type ? canonical_type
-                                                      : psx_gvar_get_decl_type(gv));
-  addr->type_state.compound_literal_array_size = array_size;
-  return addr;
-}
-
-node_t *psx_node_new_compound_lvar_array_addr_for(lvar_t *var,
-                                                  int array_size,
-                                                  psx_type_t *canonical_type) {
-  node_t *addr = new_addr_node(psx_node_new_lvar_for(var));
-  init_array_addr_canonical_type(addr, canonical_type ? canonical_type
-                                                      : psx_lvar_get_decl_type(var));
-  addr->type_state.compound_literal_array_size = array_size;
-  return addr;
-}
-
 node_t *psx_node_new_addr_value_for(node_t *operand) {
   node_t *addr = new_addr_node(operand);
   addr->type = type_from_address_operand(operand);
@@ -4656,15 +4632,6 @@ psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node) {
   return ptr;
 }
 
-int psx_node_compound_literal_array_size(node_t *node) {
-  if (!node) return 0;
-  if (node->kind == ND_COMMA) return psx_node_compound_literal_array_size(node->rhs);
-  if (node->kind != ND_ADDR) return 0;
-  if (node->type_state.compound_literal_array_size > 0)
-    return node->type_state.compound_literal_array_size;
-  return 0;
-}
-
 int psx_node_bitfield_width(node_t *node) {
   return node ? node->type_state.bit_width : 0;
 }
@@ -4829,4 +4796,15 @@ void psx_node_expect_incdec_target(node_t *node, const char *op) {
   psx_node_reject_const_assign(node, op);
   /* C11 6.5.2.4 / 6.5.3.1: ++ / -- の対象は実数型 (整数・浮動小数点) または
    * ポインタ型でよい。float / double も許可する。 */
+}
+int psx_node_compound_literal_array_size(node_t *node) {
+  if (!node) return 0;
+  if (node->kind == ND_COMMA)
+    return psx_node_compound_literal_array_size(node->rhs);
+  if (node->kind != ND_ADDR || node->is_explicit_addr_expr || !node->lhs)
+    return 0;
+  psx_type_t *object_type = ps_node_get_type(node->lhs);
+  return object_type && object_type->kind == PSX_TYPE_ARRAY
+             ? ps_type_sizeof(object_type)
+             : 0;
 }

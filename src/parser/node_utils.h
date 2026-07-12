@@ -56,7 +56,6 @@ int psx_node_pointer_stride_metadata(node_t *node, int *inner_stride,
 int psx_node_scalar_ptr_member_lvalue(node_t *node);
 int psx_node_subscript_deref_uses_base_address(node_t *node);
 psx_type_t *psx_node_row_decay_pointer_arith_type(node_t *node);
-int psx_node_compound_literal_array_size(node_t *node);
 int psx_node_bitfield_width(node_t *node);
 /* タグ shadow 応用形向け: ノードに紐付くタグの宣言時 scope_depth を返す (見つからなければ -1)。
  * build_member_access が「変数が宣言時に見ていた tag」のメンバを引くのに使う。 */
@@ -110,14 +109,6 @@ node_t *psx_node_new_source_cast(node_t *operand, psx_type_t *target_type);
 node_t *psx_node_new_gvar_array_addr_for(struct global_var_t *gv);
 node_t *psx_node_new_static_local_array_addr_for(struct lvar_t *var, int gvar_type_size);
 node_t *psx_node_new_lvar_array_addr_for(struct lvar_t *var, int is_tag_pointer);
-node_t *psx_node_new_compound_gvar_array_addr_for(struct global_var_t *gv,
-                                                  int ptr_array_pointee_bytes,
-                                                  int pointer_elem_size,
-                                                  int array_size,
-                                                  psx_type_t *canonical_type);
-node_t *psx_node_new_compound_lvar_array_addr_for(struct lvar_t *var,
-                                                   int array_size,
-                                                   psx_type_t *canonical_type);
 node_t *psx_node_new_addr_value_for(node_t *operand);
 node_t *psx_node_new_explicit_addr_value_for(node_t *operand);
 node_t *psx_node_new_unary_addr_for(node_t *operand);
@@ -162,3 +153,4 @@ void psx_node_expect_lvalue(node_t *node, const char *op);
 void psx_node_expect_incdec_target(node_t *node, const char *op);
 
 #endif
+int psx_node_compound_literal_array_size(node_t *node);

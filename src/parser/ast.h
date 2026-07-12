@@ -123,7 +123,6 @@ typedef struct {
   unsigned char bit_width;
   unsigned char bit_offset;
   unsigned char bit_is_signed;
-  int compound_literal_array_size;
 } psx_expr_type_state_t;
 
 struct node_t {

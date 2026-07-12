@@ -28208,3 +28208,135 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - compound literal type constructionのlegacy cast fieldsをcanonical type-name resultへ置換する。
   - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
   - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1022）: top-level typedef/global array projectionをcanonical typeへ統合した
+- typedef registry boundary:
+  - `semantic_ctx`のtypedef registryが保存するのは既にcanonical `decl_type`のみで、
+    `psx_typedef_info_t`のsize/dims/pointerフィールドはlookup時に型木から投影されることを確認した。
+  - `register_toplevel_typedef_name()`は完成した`psx_type_t`だけを受け取り、
+    registryへそのまま登録するAPIに変更した。
+- parser cleanup:
+  - `toplevel_decl_spec_t`の`td_array_dims[]` / `td_array_dim_count` /
+    `td_ptr_pointee_dim_count`を削除した。
+  - typedef chainのdims結合、pointer-element array特例、pointer-to-array特例、
+    typedef `sizeof`手計算を削除した。これらはdeclarator shapeが作る型木と重複し、
+    registry登録時には使われていなかった。
+  - global object登録前の`arr` compatibility viewと、それに対するpointer-to-array /
+    function-pointer-array補正を削除した。global loweringは従来からこのviewを受け取らず、
+    canonical typeだけを使っていた。
+  - incomplete global arrayの診断はdeclarator suffix mirrorではなく、
+    canonical typeの`kind == PSX_TYPE_ARRAY && array_len <= 0`で判定する。
+- scale:
+  - `parser.c`は3,574行から3,295行になった。
+  - 変更は`parser.c`のみで、27行追加/306行削除。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - compound literal type constructionのlegacy cast fieldsをcanonical type-name resultへ置換する。
+  - parameter declaration specに残るtypedef array size/dims mirrorをcanonical parameter type由来へ移す。
+  - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1023）: compound literalの型再構築をcanonical type-name resultへ統合した
+- compound literal boundary:
+  - `parse_compound_literal_from_type()`の17個のlegacy型引数を削除し、
+    `psx_type_name_build()`が作ったcanonical `psx_type_t`だけを受け取るようにした。
+  - scalar/tag/complex/pointer/array型をcompound専用フィールドから再構築していた
+    `compound_literal_base_type()` / `compound_literal_object_type()` /
+    `compound_pointer_elem_array_decay_type()`を削除した。
+  - incomplete arrayはcanonical typeをraw initializer ASTから完成し、完成型をそのまま
+    global/local object loweringへ渡す。
+- type-name declarator shape:
+  - `psx_type_name_t`に`psx_declarator_shape_t`を追加した。
+  - `(*[N])[M]`のような括弧付きarray-of-pointer-to-arrayを積/byte数に潰さず、
+    `array -> pointer -> array`のoperator順でcanonical builderに渡す。
+  - `T *[]`のような不完array-of-pointerはpointer chainを要素型に適用してから
+    incomplete arrayで包む。pointer-to-arrayとの結合順序もfocused cast testで確認した。
+- node cleanup:
+  - compound専用gvar/lvar array address helperを削除し、通常のcanonical array decay helperを使う。
+  - `psx_expr_type_state_t.compound_literal_array_size`キャッシュを削除した。
+  - compound arrayの`sizeof`は`ND_ADDR` の対象objectがcanonical array typeからサイズを読む。
+- scale:
+  - `expr.c`は3,380行から3,179行になった。
+  - 続き1022と合わせ、現在の未コミット差分は9ファイル、178行追加/603行削除
+    (`HANDOFF.md`を除くコード/テストは112行追加/603行削除)。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - parameter declaration specに残るtypedef array size/dims mirrorをcanonical parameter type由来へ移す。
+  - type-nameの残る特殊abstract declaratorも段階的に`declarator_shape`へ統合する。
+  - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1024）: parameter typedef mirrorをcanonical parameter typeへ統合した
+- parameter decl spec:
+  - `param_decl_spec_t`から`typedef_is_array` / `typedef_sizeof_size` /
+    `typedef_array_first_dim` / `typedef_array_dims[]` / `typedef_array_dim_count`を削除した。
+  - typedef pointer用の`base_is_pointer` / `base_pointer_levels`、typedef funcptr signature複製、
+    typedef long-double複製も削除した。
+  - typedef lookupはcanonical `base_decl_type`だけをspecに保持し、宣言子shapeを適用後に
+    `psx_type_adjust_parameter_type()`でCのarray/function parameter adjustmentを行う。
+- parameter storage/lowering:
+  - pointer typedefの段数をparser flagへ手動加算する経路を削除した。
+    normal parameter storageは`psx_plan_parameter_storage()`がcanonical top-level kindから判定する。
+  - VLA parameter loweringの`element_size`は`ds.elem_size`ではなく、canonical parameter typeの
+    pointer/array chainを辿ったleaf typeの`sizeof`から導出する。
+  - aggregate arrayをVLA特殊経路から除外する判定もtypedef tag mirrorではなくcanonical leaf kindを使う。
+- coverage:
+  - typedef pointer parameter、typedef aggregate parameter、pointer-to-array parameter、
+    pointer-element 1D/2D array parameterのcanonical type/stride検査がすべて通った。
+- scale:
+  - `parser.c`は3,295行から3,229行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - type-nameの残る特殊abstract declaratorを`declarator_shape`へ統合する。
+  - function return/prototypeに残るpointer levelとpointee arrayの並行表現をcanonical function typeへ統合する。
+  - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1025）: function return/prototypeをcanonical function type境界へ統合した
+- function signature:
+  - `psx_function_signature_t`はcanonical `return_type`を保持し、戻り型を再構築するための
+    struct size、pointer level、qualifier、tag名、pointee array dimensionsなどの並行フィールドを削除した。
+  - prototypeはtop-level declarator shapeが完成した型をreturn typeとして登録する。
+  - function definitionは構文解析中の一時状態を一度canonical return typeへ畳み込み、
+    signature registryへは完成した型だけを渡す。
+- semantic boundary:
+  - `semantic/function_declaration_plan.{c,h}`を追加した。
+  - canonical return/parameter types、variadic flag、callable signatureから
+    `PSX_TYPE_FUNCTION`を構築する責務をsemantic moduleへ移した。
+  - parser registryは名前競合確認、既存ABI compatibility projection、semantic plan呼び出し、
+    registry登録を行い、function type自体は直接組み立てない。
+- coverage:
+  - semantic boundary testでpointer return、複数parameter、variadic、callable signatureを含む
+    canonical function type構築を確認した。
+- scale:
+  - `parser.c`は3,229行から3,234行。再構築フィールド削除とsemantic boundary追加を含むため、
+    行数より責務分離を優先した変更になっている。
+  - 続き1022から1025までの未コミット差分は新規2ファイルを含む12ファイル、
+    436行追加/791行削除。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - `parsed_function_return_t` / `func_ret_parse_state_t`に残るpointer/dimension parse stateを
+    declarator shapeとcanonical base typeへ統合する。
+  - returned function-pointerのcallable ABI normalizationをparser registryからsemanticへ移す。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
