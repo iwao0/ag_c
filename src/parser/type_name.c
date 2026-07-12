@@ -56,6 +56,11 @@ static void apply_pointer_qualifiers(psx_type_t *type, int levels,
 
 static psx_type_t *build_base(const psx_type_name_t *name) {
   if (name->canonical_base) return psx_type_clone(name->canonical_base);
+  if (name->tag_kind == TK_ENUM) {
+    return psx_type_new_enum(
+        name->tag_name, name->tag_len,
+        name->tag_scope_depth_p1, name->base_size);
+  }
   if (name->tag_kind == TK_STRUCT || name->tag_kind == TK_UNION) {
     psx_type_t *type = psx_type_new_tag(
         name->tag_kind, name->tag_name, name->tag_len,

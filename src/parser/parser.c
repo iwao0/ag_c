@@ -376,6 +376,8 @@ static token_kind_t parse_atomic_type_specifier(void);
 static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind);
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out);
 static void skip_cv_qualifiers_into(psx_type_spec_result_t *out);
+static void skip_cv_qualifiers_into_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 static void resolve_toplevel_typedef_ref(toplevel_decl_spec_t *spec);
 typedef struct {
   token_ident_t *name;
@@ -601,6 +603,11 @@ static inline void set_curtok(token_t *tok) {
 }
 
 static void skip_cv_qualifiers_into(psx_type_spec_result_t *out) {
+  skip_cv_qualifiers_into_ex(out, NULL);
+}
+
+static void skip_cv_qualifiers_into_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
   psx_type_spec_result_reset(out);
   /* C11 6.7.1p2: 宣言指定子に storage class 指定子は高々 1 個。
    * 例外として _Thread_local は static / extern と一緒に書ける。 */
@@ -619,6 +626,10 @@ static void skip_cv_qualifiers_into(psx_type_spec_result_t *out) {
     }
     if (curtok()->kind == TK_THREAD_LOCAL) saw_thread_local = 1;
     if (curtok()->kind == TK_ALIGNAS) {
+      if (syntax && syntax->consume_alignas) {
+        syntax->consume_alignas(syntax->context, out);
+        continue;
+      }
       set_curtok(curtok()->next);
       if (curtok()->kind != TK_LPAREN) {
         psx_diag_ctx(curtok(), "decl", "%s",
@@ -1676,9 +1687,14 @@ static token_kind_t resolve_type_kind_from_flags(int saw_void, int saw_float, in
 }
 
 token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out) {
+  return psx_consume_type_kind_with_syntax_ex(out, NULL);
+}
+
+token_kind_t psx_consume_type_kind_with_syntax_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
   psx_type_spec_result_t local;
   if (!out) out = &local;
-  skip_cv_qualifiers_into(out);
+  skip_cv_qualifiers_into_ex(out, syntax);
   if (curtok()->kind == TK_ATOMIC && curtok()->next && curtok()->next->kind == TK_LPAREN) {
     out->is_atomic = 1;
     token_kind_t inner = parse_atomic_type_specifier();

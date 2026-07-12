@@ -10,6 +10,13 @@
 static psx_type_t *resolve_decl_base_type(
     const psx_decl_type_request_t *request) {
   if (request->base_decl_type) return psx_type_clone(request->base_decl_type);
+  if (request->tag_kind == TK_ENUM) {
+    int scope_depth = ps_ctx_get_tag_scope_depth(
+        request->tag_kind, request->tag_name, request->tag_len);
+    return psx_type_new_enum(
+        request->tag_name, request->tag_len,
+        scope_depth >= 0 ? scope_depth + 1 : 0, request->elem_size);
+  }
   if (psx_ctx_is_tag_aggregate_kind(request->tag_kind)) {
     int scope_depth = ps_ctx_get_tag_scope_depth(
         request->tag_kind, request->tag_name, request->tag_len);

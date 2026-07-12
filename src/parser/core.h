@@ -26,7 +26,14 @@ typedef struct {
   int alignas_value;
 } psx_type_spec_result_t;
 
+typedef struct {
+  void *context;
+  void (*consume_alignas)(void *context, psx_type_spec_result_t *result);
+} psx_type_spec_syntax_t;
+
 token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out);
+token_kind_t psx_consume_type_kind_with_syntax_ex(
+    psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 /* _Generic 用: [start, end) のトークン綴りを単一スペースで連結 (skip は除外)。'(' を
  * 含まない単純型は NULL。複雑な派生型 (関数ポインタ/ネスト宣言子) の型照合に使う。 */
 char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip);

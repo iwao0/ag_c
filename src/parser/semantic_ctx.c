@@ -851,19 +851,54 @@ int psx_ctx_register_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *desc, int *out_created) {
   if (out_created) *out_created = 0;
-  if ((tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
-      tag_len <= 0 || !desc || !desc->name || desc->len < 0 ||
-      !ps_tag_member_decl_type(desc)) {
+  if (!psx_ctx_register_tag_members(
+          tag_kind, tag_name, tag_len, desc, 1, NULL))
     return 0;
-  }
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(desc->name, desc->len)) & (PCTX_HASH_BUCKETS - 1u);
-  if (find_tag_member_record_at_current_scope(
-          tag_kind, tag_name, tag_len, desc, bucket)) {
-    return 0;
-  }
-  insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
   if (out_created) *out_created = 1;
+  return 1;
+}
+
+int psx_ctx_register_tag_members(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *members, int member_count,
+    int *out_conflict_index) {
+  if (out_conflict_index) *out_conflict_index = -1;
+  if ((tag_kind != TK_STRUCT && tag_kind != TK_UNION) || !tag_name ||
+      tag_len <= 0 || !members || member_count <= 0) {
+    return 0;
+  }
+
+  for (int i = 0; i < member_count; i++) {
+    const tag_member_info_t *desc = &members[i];
+    if (!desc->name || desc->len < 0 || !ps_tag_member_decl_type(desc)) {
+      if (out_conflict_index) *out_conflict_index = i;
+      return 0;
+    }
+    if (desc->len == 0) continue;
+    unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                       psx_ctx_hash_name(desc->name, desc->len)) &
+                      (PCTX_HASH_BUCKETS - 1u);
+    if (find_tag_member_record_at_current_scope(
+            tag_kind, tag_name, tag_len, desc, bucket)) {
+      if (out_conflict_index) *out_conflict_index = i;
+      return 0;
+    }
+    for (int j = 0; j < i; j++) {
+      if (members[j].len == desc->len && desc->len > 0 &&
+          strncmp(members[j].name, desc->name, (size_t)desc->len) == 0) {
+        if (out_conflict_index) *out_conflict_index = i;
+        return 0;
+      }
+    }
+  }
+
+  for (int i = 0; i < member_count; i++) {
+    const tag_member_info_t *desc = &members[i];
+    unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
+                       psx_ctx_hash_name(desc->name, desc->len)) &
+                      (PCTX_HASH_BUCKETS - 1u);
+    insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
+  }
   return 1;
 }
 

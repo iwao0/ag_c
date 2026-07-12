@@ -2,6 +2,8 @@
 
 #include "../parser/semantic_ctx.h"
 
+#include <limits.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int align_up(int value, int alignment) {
@@ -13,118 +15,33 @@ static int is_aggregate_kind(token_kind_t kind) {
   return kind == TK_STRUCT || kind == TK_UNION;
 }
 
-static int collect_array_shape(const psx_type_t *type, int *dims,
-                               int *dim_count, int *element_size) {
-  int count = 0;
-  while (type && type->kind == PSX_TYPE_ARRAY) {
-    if (dims && count < 8) dims[count] = type->array_len;
-    count++;
-    type = type->base;
-  }
-  if (dim_count) *dim_count = count;
-  if (element_size) {
-    *element_size = ps_type_sizeof(type);
-    if (*element_size <= 0 && type) *element_size = type->elem_size;
-  }
-  return count > 0;
-}
+typedef struct {
+  const psx_type_t *type;
+  int bit_width;
+} aggregate_bitfield_request_t;
 
-psx_type_t *psx_resolve_aggregate_member_type(
-    const psx_aggregate_member_type_request_t *request) {
-  if (!request) return NULL;
-  psx_decl_type_request_t declaration = request->declaration;
-  if (!declaration.base_decl_type &&
-      !psx_ctx_is_tag_aggregate_kind(declaration.tag_kind) &&
-      declaration.base_kind == TK_EOF) {
-    declaration.base_kind = TK_INT;
-  }
-  if (!declaration.base_decl_type &&
-      !psx_ctx_is_tag_aggregate_kind(declaration.tag_kind) &&
-      declaration.elem_size <= 0)
-    declaration.elem_size = 4;
-  psx_type_t *type = psx_resolve_decl_type(&declaration);
-  if (!type) return NULL;
-  return type;
-}
+typedef struct {
+  psx_aggregate_member_status_t status;
+  int offset;
+  int bit_offset;
+  int storage_size;
+  int bit_is_signed;
+} aggregate_bitfield_resolution_t;
 
-void psx_plan_aggregate_member_storage(
-    const psx_type_t *type, psx_aggregate_member_storage_plan_t *plan) {
-  if (!plan) return;
-  memset(plan, 0, sizeof(*plan));
-  plan->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!type) return;
+typedef struct {
+  int storage_size;
+  int natural_alignment;
+  int pack_alignment;
+  int requested_alignment;
+} aggregate_object_placement_request_t;
 
-  plan->storage_size = ps_type_sizeof(type);
-  plan->alignment = type->align;
-  if (plan->alignment <= 0) plan->alignment = 1;
-  const psx_type_t *value = type;
-  long long element_count = 1;
-  while (value && value->kind == PSX_TYPE_ARRAY) {
-    if (plan->array_dim_count < 8)
-      plan->array_dims[plan->array_dim_count] = value->array_len;
-    plan->array_dim_count++;
-    if (value->array_len <= 0) {
-      plan->is_flexible_array = 1;
-      element_count = 0;
-    } else if (element_count > 0) {
-      element_count *= value->array_len;
-      if (element_count > 0x7fffffffLL) return;
-    }
-    value = value->base;
-  }
-  plan->array_element_count = (int)element_count;
-  plan->value_size = ps_type_sizeof(value);
-  if (plan->value_size <= 0 && value) plan->value_size = value->elem_size;
-  plan->is_pointer_object = value && value->kind == PSX_TYPE_POINTER;
-  plan->pointer_depth = psx_type_pointer_depth(value);
-  if (plan->is_pointer_object) {
-    plan->deref_size = ps_type_deref_size(value);
-    if (plan->deref_size <= 0 && value->base)
-      plan->deref_size = ps_type_sizeof(value->base);
-    if (collect_array_shape(
-            value->base, plan->pointee_array_dims,
-            &plan->pointee_array_dim_count,
-            &plan->pointee_array_element_size)) {
-      plan->pointee_array_size = ps_type_sizeof(value->base);
-    }
-  }
-  const psx_type_t *scalar = value;
-  while (scalar && (scalar->kind == PSX_TYPE_POINTER ||
-                    scalar->kind == PSX_TYPE_ARRAY ||
-                    scalar->kind == PSX_TYPE_FUNCTION)) {
-    scalar = scalar->base;
-  }
-  plan->scalar_size = ps_type_sizeof(scalar);
-  if (plan->scalar_size <= 0 && scalar) plan->scalar_size = scalar->elem_size;
-  plan->is_unsigned = scalar ? ps_type_is_unsigned(scalar) : 0;
-  plan->fp_kind = scalar ? scalar->fp_kind : TK_FLOAT_KIND_NONE;
-  plan->scalar_kind = scalar ? scalar->scalar_kind : TK_EOF;
-  plan->is_bool = scalar && scalar->kind == PSX_TYPE_BOOL;
-  plan->is_complex = scalar && scalar->kind == PSX_TYPE_COMPLEX;
-  plan->is_atomic = scalar && scalar->is_atomic;
-  if (plan->storage_size < 0 || plan->value_size < 0) return;
-  plan->status = PSX_AGGREGATE_MEMBER_OK;
-}
+typedef struct {
+  psx_aggregate_member_status_t status;
+  int offset;
+  int alignment;
+} aggregate_object_placement_t;
 
-void psx_resolve_aggregate_member_base_type(
-    const psx_aggregate_member_base_resolution_request_t *request,
-    psx_aggregate_member_base_resolution_t *resolution) {
-  if (!resolution) return;
-  memset(resolution, 0, sizeof(*resolution));
-  resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!request) return;
-  resolution->type = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = request->declaration,
-      });
-  if (!resolution->type) return;
-  psx_plan_aggregate_member_storage(
-      resolution->type, &resolution->storage);
-  if (resolution->storage.status != PSX_AGGREGATE_MEMBER_OK) return;
-  resolution->status = PSX_AGGREGATE_MEMBER_OK;
-}
-
-psx_aggregate_member_status_t psx_validate_aggregate_member_type(
+static psx_aggregate_member_status_t validate_aggregate_member_type(
     const psx_type_t *type) {
   if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
   const psx_type_t *stored = type;
@@ -151,10 +68,10 @@ void psx_aggregate_layout_init(
   state->bitfield_storage_offset = -1;
 }
 
-void psx_resolve_aggregate_bitfield_placement(
+static void resolve_aggregate_bitfield_placement(
     psx_aggregate_layout_state_t *state,
-    const psx_aggregate_bitfield_request_t *request,
-    psx_aggregate_bitfield_resolution_t *resolution) {
+    const aggregate_bitfield_request_t *request,
+    aggregate_bitfield_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
@@ -173,7 +90,7 @@ void psx_resolve_aggregate_bitfield_placement(
   resolution->storage_size = storage_size;
   resolution->bit_is_signed =
       type->kind != PSX_TYPE_BOOL && !ps_type_is_unsigned(type) &&
-      !request->is_enum_type;
+      type->scalar_kind != TK_ENUM;
   int storage_bits = storage_size * 8;
   if (request->bit_width > storage_bits) {
     resolution->status = PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE;
@@ -231,10 +148,10 @@ void psx_resolve_aggregate_bitfield_placement(
   resolution->status = PSX_AGGREGATE_MEMBER_OK;
 }
 
-void psx_resolve_aggregate_object_placement(
+static void resolve_aggregate_object_placement(
     psx_aggregate_layout_state_t *state,
-    const psx_aggregate_object_placement_request_t *request,
-    psx_aggregate_object_placement_t *placement) {
+    const aggregate_object_placement_request_t *request,
+    aggregate_object_placement_t *placement) {
   if (!placement) return;
   memset(placement, 0, sizeof(*placement));
   placement->status = PSX_AGGREGATE_MEMBER_INVALID;
@@ -279,90 +196,44 @@ int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state) {
   return state && state->alignment > 0 ? state->alignment : 1;
 }
 
-void psx_resolve_aggregate_member(
-    const psx_aggregate_member_resolution_request_t *request,
-    psx_aggregate_member_resolution_t *resolution) {
-  if (!resolution) return;
-  memset(resolution, 0, sizeof(*resolution));
-  resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!request || !is_aggregate_kind(request->tag_kind) ||
-      !request->tag_name || request->tag_name_len <= 0 ||
-      !request->member_name || request->member_name_len < 0 ||
-      request->offset < 0 || !request->type) {
-    return;
-  }
-  tag_member_info_t member = {
-      .name = request->member_name,
-      .len = request->member_name_len,
-      .offset = request->offset,
-      .bit_width = request->bit_width,
-      .bit_offset = request->bit_offset,
-      .bit_is_signed = request->bit_is_signed,
-      .decl_type = request->type,
-  };
-  int created = 0;
-  if (!psx_ctx_register_tag_member(
-          request->tag_kind, request->tag_name, request->tag_name_len,
-          &member, &created)) {
-    resolution->status = request->member_name_len > 0
-                             ? PSX_AGGREGATE_MEMBER_DUPLICATE
-                             : PSX_AGGREGATE_MEMBER_INVALID;
-    return;
-  }
-  resolution->created = created;
-  resolution->scope_depth = psx_ctx_current_tag_scope_depth();
-  resolution->status = PSX_AGGREGATE_MEMBER_OK;
-}
-
-void psx_promote_aggregate_members(
-    const psx_aggregate_member_promotion_request_t *request,
-    psx_aggregate_member_promotion_t *promotion) {
-  if (!promotion) return;
-  memset(promotion, 0, sizeof(*promotion));
-  promotion->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!request || !is_aggregate_kind(request->target_tag_kind) ||
-      !request->target_tag_name || request->target_tag_name_len <= 0 ||
-      !is_aggregate_kind(request->source_tag_kind) ||
-      !request->source_tag_name || request->source_tag_name_len <= 0 ||
-      request->base_offset < 0) {
-    return;
-  }
-
-  int count = ps_ctx_get_tag_member_count(
-      request->source_tag_kind, request->source_tag_name,
-      request->source_tag_name_len);
-  for (int i = 0; i < count; i++) {
+static int collect_promoted_aggregate_members(
+    const psx_type_t *source_type, int base_offset,
+    tag_member_info_t **out_members, int *out_member_count) {
+  *out_members = NULL;
+  *out_member_count = 0;
+  if (!ps_type_is_tag_aggregate(source_type) || !source_type->tag_name ||
+      source_type->tag_len <= 0 || base_offset < 0)
+    return 0;
+  int source_count = ps_ctx_get_tag_member_count(
+      source_type->tag_kind, source_type->tag_name,
+      source_type->tag_len);
+  if (source_count < 0) return 0;
+  tag_member_info_t *members = source_count > 0
+                                   ? calloc((size_t)source_count,
+                                            sizeof(*members))
+                                   : NULL;
+  if (source_count > 0 && !members) return 0;
+  int member_count = 0;
+  for (int i = 0; i < source_count; i++) {
     tag_member_info_t source = {0};
     if (!ps_ctx_get_tag_member_info(
-            request->source_tag_kind, request->source_tag_name,
-            request->source_tag_name_len, i, &source)) {
-      return;
+            source_type->tag_kind, source_type->tag_name,
+            source_type->tag_len, i, &source)) {
+      free(members);
+      return 0;
     }
     if (source.len == 0) continue;
-    psx_aggregate_member_resolution_t member_resolution;
-    psx_resolve_aggregate_member(
-        &(psx_aggregate_member_resolution_request_t){
-            .tag_kind = request->target_tag_kind,
-            .tag_name = request->target_tag_name,
-            .tag_name_len = request->target_tag_name_len,
-            .member_name = source.name,
-            .member_name_len = source.len,
-            .offset = request->base_offset + source.offset,
-            .type = source.decl_type,
-            .bit_width = source.bit_width,
-            .bit_offset = source.bit_offset,
-            .bit_is_signed = source.bit_is_signed,
-        },
-        &member_resolution);
-    if (member_resolution.status != PSX_AGGREGATE_MEMBER_OK) {
-      promotion->status = member_resolution.status;
-      promotion->conflicting_name = source.name;
-      promotion->conflicting_name_len = source.len;
-      return;
+    if (source.offset < 0 || base_offset > INT_MAX - source.offset) {
+      free(members);
+      return 0;
     }
-    promotion->promoted_count++;
+    members[member_count] = source;
+    members[member_count].offset = base_offset + source.offset;
+    member_count++;
   }
-  promotion->status = PSX_AGGREGATE_MEMBER_OK;
+  *out_members = members;
+  *out_member_count = member_count;
+  return 1;
 }
 
 void psx_resolve_aggregate_member_declaration(
@@ -383,28 +254,25 @@ void psx_resolve_aggregate_member_declaration(
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
-  int source_is_aggregate = is_aggregate_kind(request->source_tag_kind);
-  if (!has_name && !source_is_aggregate && !request->has_bitfield) {
+  resolution->type = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_decl_type = request->base_type,
+          .declarator_shape = request->declarator_shape,
+      });
+  if (!resolution->type) return;
+  int is_anonymous_aggregate =
+      !has_name && ps_type_is_tag_aggregate(resolution->type);
+  if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;
   }
 
-  resolution->type = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .base_decl_type = request->base_type,
-              .declarator_shape = request->declarator_shape,
-          },
-      });
-  if (!resolution->type) return;
-
   if (request->has_bitfield) {
-    psx_aggregate_bitfield_resolution_t bitfield;
-    psx_resolve_aggregate_bitfield_placement(
+    aggregate_bitfield_resolution_t bitfield;
+    resolve_aggregate_bitfield_placement(
         &working_layout,
-        &(psx_aggregate_bitfield_request_t){
+        &(aggregate_bitfield_request_t){
             .type = resolution->type,
-            .is_enum_type = request->is_enum_type,
             .bit_width = request->bit_width,
         },
         &bitfield);
@@ -419,85 +287,79 @@ void psx_resolve_aggregate_member_declaration(
       return;
     }
   } else {
-    resolution->status = psx_validate_aggregate_member_type(resolution->type);
+    resolution->status = validate_aggregate_member_type(resolution->type);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
-    psx_aggregate_member_storage_plan_t storage;
-    psx_plan_aggregate_member_storage(resolution->type, &storage);
-    if (storage.status != PSX_AGGREGATE_MEMBER_OK) {
-      resolution->status = storage.status;
-      return;
-    }
-    psx_aggregate_object_placement_t placement;
-    psx_resolve_aggregate_object_placement(
+    int storage_size = ps_type_sizeof(resolution->type);
+    int storage_alignment = resolution->type->align;
+    if (storage_size < 0) return;
+    if (storage_alignment <= 0) storage_alignment = 1;
+    aggregate_object_placement_t placement;
+    resolve_aggregate_object_placement(
         &working_layout,
-        &(psx_aggregate_object_placement_request_t){
-            .storage_size = storage.storage_size,
-            .natural_alignment = storage.alignment,
+        &(aggregate_object_placement_request_t){
+            .storage_size = storage_size,
+            .natural_alignment = storage_alignment,
             .pack_alignment = request->pack_alignment,
             .requested_alignment = request->requested_alignment,
         },
         &placement);
     resolution->status = placement.status;
     resolution->offset = placement.offset;
-    resolution->storage_size = storage.storage_size;
+    resolution->storage_size = storage_size;
     if (placement.status != PSX_AGGREGATE_MEMBER_OK) return;
   }
 
-  if (has_name || source_is_aggregate) {
-    char *name = has_name ? request->member_name : (char *)"";
-    int name_len = has_name ? request->member_name_len : 0;
-    psx_aggregate_member_resolution_t member;
-    psx_resolve_aggregate_member(
-        &(psx_aggregate_member_resolution_request_t){
-            .tag_kind = request->target_tag_kind,
-            .tag_name = request->target_tag_name,
-            .tag_name_len = request->target_tag_name_len,
-            .member_name = name,
-            .member_name_len = name_len,
-            .offset = resolution->offset,
-            .type = resolution->type,
-            .bit_width = request->has_bitfield ? request->bit_width : 0,
-            .bit_offset = resolution->bit_offset,
-            .bit_is_signed = resolution->bit_is_signed,
-        },
-        &member);
-    if (member.status != PSX_AGGREGATE_MEMBER_OK) {
-      resolution->status = member.status;
-      resolution->conflicting_name = name;
-      resolution->conflicting_name_len = name_len;
+  tag_member_info_t *promoted_members = NULL;
+  int promoted_count = 0;
+  if (is_anonymous_aggregate) {
+    if (!collect_promoted_aggregate_members(
+            resolution->type, resolution->offset,
+            &promoted_members, &promoted_count))
       return;
-    }
-    resolution->registered_member_count++;
   }
 
-  psx_aggregate_member_storage_plan_t completed_storage;
-  psx_plan_aggregate_member_storage(resolution->type, &completed_storage);
-  if (completed_storage.status != PSX_AGGREGATE_MEMBER_OK) {
-    resolution->status = completed_storage.status;
+  int own_member_count = has_name || is_anonymous_aggregate ? 1 : 0;
+  int batch_count = own_member_count + promoted_count;
+  tag_member_info_t *batch = batch_count > 0
+                                 ? calloc((size_t)batch_count, sizeof(*batch))
+                                 : NULL;
+  if (batch_count > 0 && !batch) {
+    free(promoted_members);
     return;
   }
-  if (!has_name && source_is_aggregate &&
-      !completed_storage.is_pointer_object && request->source_tag_name) {
-    psx_aggregate_member_promotion_t promotion;
-    psx_promote_aggregate_members(
-        &(psx_aggregate_member_promotion_request_t){
-            .target_tag_kind = request->target_tag_kind,
-            .target_tag_name = request->target_tag_name,
-            .target_tag_name_len = request->target_tag_name_len,
-            .source_tag_kind = request->source_tag_kind,
-            .source_tag_name = request->source_tag_name,
-            .source_tag_name_len = request->source_tag_name_len,
-            .base_offset = resolution->offset,
-        },
-        &promotion);
-    if (promotion.status != PSX_AGGREGATE_MEMBER_OK) {
-      resolution->status = promotion.status;
-      resolution->conflicting_name = promotion.conflicting_name;
-      resolution->conflicting_name_len = promotion.conflicting_name_len;
-      return;
-    }
-    resolution->registered_member_count += promotion.promoted_count;
+  if (own_member_count) {
+    batch[0] = (tag_member_info_t){
+        .name = has_name ? request->member_name : (char *)"",
+        .len = has_name ? request->member_name_len : 0,
+        .offset = resolution->offset,
+        .bit_width = request->has_bitfield ? request->bit_width : 0,
+        .bit_offset = resolution->bit_offset,
+        .bit_is_signed = resolution->bit_is_signed,
+        .decl_type = resolution->type,
+    };
   }
+  if (promoted_count > 0) {
+    memcpy(batch + own_member_count, promoted_members,
+           (size_t)promoted_count * sizeof(*batch));
+  }
+  free(promoted_members);
+
+  int conflict_index = -1;
+  if (batch_count > 0 &&
+      !psx_ctx_register_tag_members(
+          request->target_tag_kind, request->target_tag_name,
+          request->target_tag_name_len, batch, batch_count,
+          &conflict_index)) {
+    resolution->status = PSX_AGGREGATE_MEMBER_DUPLICATE;
+    if (conflict_index >= 0 && conflict_index < batch_count) {
+      resolution->conflicting_name = batch[conflict_index].name;
+      resolution->conflicting_name_len = batch[conflict_index].len;
+    }
+    free(batch);
+    return;
+  }
+  resolution->registered_member_count = batch_count;
+  free(batch);
   *layout = working_layout;
   resolution->status = PSX_AGGREGATE_MEMBER_OK;
 }

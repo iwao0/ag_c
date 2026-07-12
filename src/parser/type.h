@@ -111,6 +111,8 @@ struct psx_type_t {
 
 psx_type_t *psx_type_new(psx_type_kind_t kind);
 psx_type_t *psx_type_new_integer(token_kind_t scalar_kind, int size, int is_unsigned);
+psx_type_t *psx_type_new_enum(char *tag_name, int tag_len,
+                              int tag_scope_depth_p1, int size);
 psx_type_t *psx_type_new_float(tk_float_kind_t fp_kind, int size);
 psx_type_t *psx_type_new_pointer(psx_type_t *base, int deref_size);
 psx_type_t *psx_type_new_function(psx_type_t *return_type,

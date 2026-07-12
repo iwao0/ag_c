@@ -7,6 +7,8 @@
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/semantic_pass.h"
+#include "../src/parser/aggregate_member_syntax.h"
+#include "../src/parser/struct_layout.h"
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
@@ -1265,119 +1267,334 @@ static void test_tag_declaration_resolution_boundary() {
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
 
+static int register_boundary_tag_member(
+    token_kind_t tag_kind, char *tag_name, int tag_name_len,
+    char *member_name, int member_name_len, int offset, psx_type_t *type,
+    int bit_width, int bit_offset, int bit_is_signed) {
+  tag_member_info_t member = {
+      .name = member_name,
+      .len = member_name_len,
+      .offset = offset,
+      .bit_width = bit_width,
+      .bit_offset = bit_offset,
+      .bit_is_signed = bit_is_signed,
+      .decl_type = type,
+  };
+  int created = 0;
+  return psx_ctx_register_tag_member(
+             tag_kind, tag_name, tag_name_len, &member, &created) &&
+         created;
+}
+
+static void test_aggregate_body_phase_boundary() {
+  printf("test_aggregate_body_phase_boundary...\n");
+  ps_reset_translation_unit_state();
+
+  psx_tag_declaration_resolution_t tag;
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"__ParsedBody",
+          .name_len = 12,
+          .mode = PSX_TAG_DECLARATION_FORWARD,
+      },
+      &tag);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag.status);
+
+  token_t *tokens = tk_tokenize(
+      (char *)"int a, *b; _Static_assert(1, \"ok\"); char c; "
+               "struct PhaseInnerTag { int x; } inner; "
+               "enum PhaseEnumTag { PhaseEnumZero = 3, "
+               "PhaseEnumNext = PhaseEnumZero + 2 } e; "
+               "int arr[PhaseEnumNext]; "
+               "unsigned flags:PhaseEnumZero; "
+               "_Alignas(PhaseEnumNext + 3) char aligned; }");
+  tk_set_current_token(tokens);
+  psx_parsed_aggregate_body_t body;
+  psx_parse_aggregate_body(&body);
+  ASSERT_EQ(8, body.item_count);
+  ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
+            body.items[0].kind);
+  ASSERT_EQ(2, body.items[0].value.member_declaration.declarator_count);
+  ASSERT_EQ(PSX_PARSED_AGGREGATE_STATIC_ASSERT, body.items[1].kind);
+  ASSERT_TRUE(body.items[1].value.static_assertion.condition != NULL);
+  ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
+            body.items[2].kind);
+  ASSERT_EQ(PSX_PARSED_MEMBER_TAG_DEFINITION,
+            body.items[3].value.member_declaration.specifier
+                .tag_action.action);
+  ASSERT_TRUE(body.items[3].value.member_declaration.specifier
+                  .tag_action.aggregate_body != NULL);
+  ASSERT_EQ(PSX_PARSED_MEMBER_TAG_DEFINITION,
+            body.items[4].value.member_declaration.specifier
+                .tag_action.action);
+  ASSERT_TRUE(body.items[4].value.member_declaration.specifier
+                  .tag_action.enum_body != NULL);
+  ASSERT_EQ(1, body.items[5].value.member_declaration.declarators[0]
+                   .array_bound_count);
+  ASSERT_TRUE(body.items[6].value.member_declaration.declarators[0]
+                  .bit_width_expression.start != NULL);
+  ASSERT_EQ(1, body.items[7].value.member_declaration.specifier
+                   .alignas_expression_count);
+  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+
+  tag_member_info_t member = {0};
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"a", 1, &member));
+  ASSERT_TRUE(!psx_ctx_has_tag_type(
+      TK_STRUCT, (char *)"PhaseInnerTag", 13));
+  ASSERT_TRUE(!psx_ctx_has_tag_type(
+      TK_ENUM, (char *)"PhaseEnumTag", 12));
+  long long enum_value = 0;
+  ASSERT_TRUE(!psx_ctx_find_enum_const(
+      (char *)"PhaseEnumZero", 13, &enum_value));
+
+  int size = 0;
+  int alignment = 0;
+  ASSERT_EQ(8, psx_apply_parsed_aggregate_body_layout(
+                   &body, TK_STRUCT, (char *)"__ParsedBody", 12,
+                   &size, &alignment));
+  ASSERT_EQ(64, size);
+  ASSERT_EQ(8, alignment);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"a", 1, &member));
+  ASSERT_EQ(0, member.offset);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"b", 1, &member));
+  ASSERT_EQ(8, member.offset);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"c", 1, &member));
+  ASSERT_EQ(16, member.offset);
+  ASSERT_TRUE(psx_ctx_has_tag_type(
+      TK_STRUCT, (char *)"PhaseInnerTag", 13));
+  ASSERT_EQ(4, psx_ctx_get_tag_size(
+                   TK_STRUCT, (char *)"PhaseInnerTag", 13));
+  ASSERT_TRUE(psx_ctx_has_tag_type(
+      TK_ENUM, (char *)"PhaseEnumTag", 12));
+  ASSERT_TRUE(psx_ctx_find_enum_const(
+      (char *)"PhaseEnumZero", 13, &enum_value));
+  ASSERT_EQ(3, enum_value);
+  ASSERT_TRUE(psx_ctx_find_enum_const(
+      (char *)"PhaseEnumNext", 13, &enum_value));
+  ASSERT_EQ(5, enum_value);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"arr", 3, &member));
+  ASSERT_EQ(28, member.offset);
+  ASSERT_TRUE(member.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, member.decl_type->kind);
+  ASSERT_EQ(5, member.decl_type->array_len);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"flags", 5, &member));
+  ASSERT_EQ(48, member.offset);
+  ASSERT_EQ(3, member.bit_width);
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"__ParsedBody", 12,
+      (char *)"aligned", 7, &member));
+  ASSERT_EQ(56, member.offset);
+  psx_dispose_parsed_aggregate_body(&body);
+}
+
 static void test_aggregate_member_resolution_boundary() {
   printf("test_aggregate_member_resolution_boundary...\n");
   ps_reset_translation_unit_state();
 
   psx_aggregate_layout_state_t layout;
   psx_aggregate_layout_init(&layout, TK_STRUCT);
-  psx_aggregate_object_placement_t object;
-  psx_resolve_aggregate_object_placement(
+  psx_declarator_shape_t boundary_shape;
+  psx_declarator_shape_init(&boundary_shape);
+  psx_aggregate_member_declaration_resolution_t boundary;
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_object_placement_request_t){
-          .storage_size = 1,
-          .natural_alignment = 1,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = psx_type_new_integer(TK_CHAR, 1, 0),
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"c",
+          .member_name_len = 1,
       },
-      &object);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, object.status);
-  ASSERT_EQ(0, object.offset);
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(0, boundary.offset);
 
   psx_type_t *bitfield_integer = psx_type_new_integer(TK_INT, 4, 0);
-  psx_aggregate_bitfield_resolution_t bitfield;
-  psx_resolve_aggregate_bitfield_placement(
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = bitfield_integer,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = bitfield_integer,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"a",
+          .member_name_len = 1,
+          .has_bitfield = 1,
           .bit_width = 20,
       },
-      &bitfield);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
-  ASSERT_EQ(0, bitfield.offset);
-  ASSERT_EQ(8, bitfield.bit_offset);
-  ASSERT_TRUE(bitfield.bit_is_signed);
-  psx_resolve_aggregate_bitfield_placement(
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(0, boundary.offset);
+  ASSERT_EQ(8, boundary.bit_offset);
+  ASSERT_TRUE(boundary.bit_is_signed);
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = bitfield_integer,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = bitfield_integer,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"b",
+          .member_name_len = 1,
+          .has_bitfield = 1,
           .bit_width = 16,
       },
-      &bitfield);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
-  ASSERT_EQ(4, bitfield.offset);
-  ASSERT_EQ(0, bitfield.bit_offset);
-  psx_resolve_aggregate_bitfield_placement(
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(4, boundary.offset);
+  ASSERT_EQ(0, boundary.bit_offset);
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = bitfield_integer,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = bitfield_integer,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"overflow",
+          .member_name_len = 8,
+          .has_bitfield = 1,
           .bit_width = 33,
       },
-      &bitfield);
+      &boundary);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE,
-            bitfield.status);
-  ASSERT_EQ(4, bitfield.storage_size);
-  psx_resolve_aggregate_bitfield_placement(
+            boundary.status);
+  ASSERT_EQ(4, boundary.storage_size);
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = psx_type_new_pointer(bitfield_integer, 4),
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = psx_type_new_pointer(bitfield_integer, 4),
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"pointer",
+          .member_name_len = 7,
+          .has_bitfield = 1,
           .bit_width = 1,
       },
-      &bitfield);
+      &boundary);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE,
-            bitfield.status);
+            boundary.status);
 
   psx_aggregate_layout_state_t bitfield_sign_layout;
   psx_aggregate_layout_init(&bitfield_sign_layout, TK_STRUCT);
-  psx_resolve_aggregate_bitfield_placement(
+  psx_type_t *canonical_enum = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .tag_kind = TK_ENUM,
+          .tag_name = (char *)"E",
+          .tag_len = 1,
+          .elem_size = 4,
+      });
+  ASSERT_TRUE(canonical_enum != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, canonical_enum->kind);
+  ASSERT_EQ(TK_ENUM, canonical_enum->scalar_kind);
+  ASSERT_EQ(TK_ENUM, canonical_enum->tag_kind);
+  ASSERT_TRUE(psx_type_shape_matches(
+      canonical_enum, psx_type_clone(canonical_enum)));
+  ASSERT_TRUE(!psx_type_shape_matches(
+      canonical_enum,
+      psx_type_new_enum((char *)"F", 1, 1, 4)));
+  ASSERT_TRUE(!psx_type_shape_matches(canonical_enum, bitfield_integer));
+  psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = bitfield_integer,
-          .is_enum_type = 1,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__SignBoundary",
+          .target_tag_name_len = 14,
+          .base_type = canonical_enum,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"e",
+          .member_name_len = 1,
+          .has_bitfield = 1,
           .bit_width = 2,
       },
-      &bitfield);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
-  ASSERT_TRUE(!bitfield.bit_is_signed);
-  psx_resolve_aggregate_bitfield_placement(
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_TRUE(!boundary.bit_is_signed);
+  psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
-      &(psx_aggregate_bitfield_request_t){
-          .type = psx_type_new_integer(TK_BOOL, 1, 1),
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__SignBoundary",
+          .target_tag_name_len = 14,
+          .base_type = psx_type_new_integer(TK_BOOL, 1, 1),
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"b",
+          .member_name_len = 1,
+          .has_bitfield = 1,
           .bit_width = 1,
       },
-      &bitfield);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
-  ASSERT_TRUE(!bitfield.bit_is_signed);
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_TRUE(!boundary.bit_is_signed);
 
-  psx_resolve_aggregate_object_placement(
+  psx_type_t *packed_member = psx_type_new_integer(TK_SHORT, 2, 0);
+  packed_member->align = 8;
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_object_placement_request_t){
-          .storage_size = 2,
-          .natural_alignment = 8,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__LayoutBoundary",
+          .target_tag_name_len = 16,
+          .base_type = packed_member,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"tail",
+          .member_name_len = 4,
           .pack_alignment = 2,
       },
-      &object);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, object.status);
-  ASSERT_EQ(8, object.offset);
-  ASSERT_EQ(2, object.alignment);
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(8, boundary.offset);
   ASSERT_EQ(12, psx_aggregate_layout_size(&layout));
   ASSERT_EQ(4, psx_aggregate_layout_alignment(&layout));
 
   psx_aggregate_layout_init(&layout, TK_UNION);
-  psx_resolve_aggregate_object_placement(
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_object_placement_request_t){
-          .storage_size = 4,
-          .natural_alignment = 4,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_UNION,
+          .target_tag_name = (char *)"__UnionBoundary",
+          .target_tag_name_len = 15,
+          .base_type = bitfield_integer,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"i",
+          .member_name_len = 1,
       },
-      &object);
-  ASSERT_EQ(0, object.offset);
-  psx_resolve_aggregate_object_placement(
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(0, boundary.offset);
+  psx_resolve_aggregate_member_declaration(
       &layout,
-      &(psx_aggregate_object_placement_request_t){
-          .storage_size = 8,
-          .natural_alignment = 8,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_UNION,
+          .target_tag_name = (char *)"__UnionBoundary",
+          .target_tag_name_len = 15,
+          .base_type = psx_type_new_integer(TK_LONG, 8, 0),
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"l",
+          .member_name_len = 1,
       },
-      &object);
-  ASSERT_EQ(0, object.offset);
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
+  ASSERT_EQ(0, boundary.offset);
   ASSERT_EQ(8, psx_aggregate_layout_size(&layout));
   ASSERT_EQ(8, psx_aggregate_layout_alignment(&layout));
 
@@ -1385,13 +1602,11 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_init(&member_shape);
   psx_declarator_shape_append_pointer_levels(&member_shape, 1, 0, 0);
   psx_declarator_shape_append_array_ex(&member_shape, 3, 0);
-  psx_type_t *member_type = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .base_kind = TK_INT,
-              .elem_size = 4,
-              .declarator_shape = &member_shape,
-          },
+  psx_type_t *member_type = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_kind = TK_INT,
+          .elem_size = 4,
+          .declarator_shape = &member_shape,
       });
   ASSERT_TRUE(member_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, member_type->kind);
@@ -1403,18 +1618,11 @@ static void test_aggregate_member_resolution_boundary() {
 
   ASSERT_EQ(12, member_type->ptr_array_pointee_bytes);
   ASSERT_EQ(12, member_type->outer_stride);
-  psx_aggregate_member_storage_plan_t member_storage;
-  psx_plan_aggregate_member_storage(member_type, &member_storage);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
-  ASSERT_EQ(8, member_storage.storage_size);
-  ASSERT_EQ(8, member_storage.alignment);
-  ASSERT_TRUE(member_storage.is_pointer_object);
-  ASSERT_EQ(1, member_storage.pointer_depth);
-  ASSERT_EQ(4, member_storage.scalar_size);
-  ASSERT_EQ(12, member_storage.pointee_array_size);
-  ASSERT_EQ(4, member_storage.pointee_array_element_size);
-  ASSERT_EQ(1, member_storage.pointee_array_dim_count);
-  ASSERT_EQ(3, member_storage.pointee_array_dims[0]);
+  ASSERT_EQ(8, ps_type_sizeof(member_type));
+  ASSERT_EQ(8, member_type->align);
+  ASSERT_EQ(1, psx_type_pointer_depth(member_type));
+  ASSERT_EQ(12, ps_type_sizeof(member_type->base));
+  ASSERT_EQ(4, ps_type_sizeof(member_type->base->base));
 
   psx_declarator_shape_t pointer_array_shape;
   psx_declarator_shape_init(&pointer_array_shape);
@@ -1422,25 +1630,20 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_append_pointer_levels(
       &pointer_array_shape, 1, 0, 0);
   psx_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
-  psx_type_t *pointer_array_member = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .base_kind = TK_INT,
-              .elem_size = 4,
-              .declarator_shape = &pointer_array_shape,
-          },
+  psx_type_t *pointer_array_member = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_kind = TK_INT,
+          .elem_size = 4,
+          .declarator_shape = &pointer_array_shape,
       });
-  psx_plan_aggregate_member_storage(
-      pointer_array_member, &member_storage);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
-  ASSERT_EQ(16, member_storage.storage_size);
-  ASSERT_EQ(1, member_storage.array_dim_count);
-  ASSERT_EQ(2, member_storage.array_dims[0]);
-  ASSERT_EQ(2, member_storage.array_element_count);
-  ASSERT_TRUE(member_storage.is_pointer_object);
-  ASSERT_EQ(12, member_storage.pointee_array_size);
-  ASSERT_EQ(1, member_storage.pointee_array_dim_count);
-  ASSERT_EQ(3, member_storage.pointee_array_dims[0]);
+  ASSERT_TRUE(pointer_array_member != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, pointer_array_member->kind);
+  ASSERT_EQ(2, pointer_array_member->array_len);
+  ASSERT_EQ(16, ps_type_sizeof(pointer_array_member));
+  ASSERT_EQ(PSX_TYPE_POINTER, pointer_array_member->base->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, pointer_array_member->base->base->kind);
+  ASSERT_EQ(3, pointer_array_member->base->base->array_len);
+  ASSERT_EQ(12, ps_type_sizeof(pointer_array_member->base->base));
 
   psx_tag_declaration_resolution_t tag_resolution;
   psx_resolve_tag_declaration(
@@ -1454,19 +1657,16 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_type_t *aligned_member = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .tag_kind = TK_STRUCT,
-              .tag_name = (char *)"__AlignedMember",
-              .tag_len = 15,
-              .elem_size = 12,
-          },
+  psx_type_t *aligned_member = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"__AlignedMember",
+          .tag_len = 15,
+          .elem_size = 12,
       });
-  psx_plan_aggregate_member_storage(aligned_member, &member_storage);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
-  ASSERT_EQ(12, member_storage.storage_size);
-  ASSERT_EQ(4, member_storage.alignment);
+  ASSERT_TRUE(aligned_member != NULL);
+  ASSERT_EQ(12, ps_type_sizeof(aligned_member));
+  ASSERT_EQ(4, aligned_member->align);
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
@@ -1477,55 +1677,80 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_aggregate_member_base_resolution_t incomplete_base;
-  psx_resolve_aggregate_member_base_type(
-      &(psx_aggregate_member_base_resolution_request_t){
-          .declaration = {
-              .tag_kind = TK_STRUCT,
-              .tag_name = (char *)"__IncompleteMember",
-              .tag_len = 18,
-          },
+  psx_type_t *incomplete_base = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"__IncompleteMember",
+          .tag_len = 18,
+      });
+  ASSERT_TRUE(incomplete_base != NULL);
+  psx_aggregate_layout_state_t constraint_layout;
+  psx_aggregate_layout_init(&constraint_layout, TK_STRUCT);
+  psx_resolve_aggregate_member_declaration(
+      &constraint_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__ConstraintBoundary",
+          .target_tag_name_len = 20,
+          .base_type = incomplete_base,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"incomplete",
+          .member_name_len = 10,
       },
-      &incomplete_base);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, incomplete_base.status);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE,
-            psx_validate_aggregate_member_type(incomplete_base.type));
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE, boundary.status);
   psx_declarator_shape_t incomplete_pointer_shape;
   psx_declarator_shape_init(&incomplete_pointer_shape);
   psx_declarator_shape_append_pointer_levels(
       &incomplete_pointer_shape, 1, 0, 0);
-  psx_type_t *incomplete_pointer = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .base_decl_type = incomplete_base.type,
-              .declarator_shape = &incomplete_pointer_shape,
-          },
+  psx_type_t *incomplete_pointer = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_decl_type = incomplete_base,
+          .declarator_shape = &incomplete_pointer_shape,
       });
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK,
-            psx_validate_aggregate_member_type(incomplete_pointer));
+  psx_resolve_aggregate_member_declaration(
+      &constraint_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__ConstraintBoundary",
+          .target_tag_name_len = 20,
+          .base_type = incomplete_pointer,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"pointer",
+          .member_name_len = 7,
+      },
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
 
   psx_type_t *function_member = psx_type_new_function(
       psx_type_new_integer(TK_INT, 4, 0),
       (psx_decl_funcptr_sig_t){0});
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_FUNCTION_TYPE,
-            psx_validate_aggregate_member_type(function_member));
-
-  psx_aggregate_member_base_resolution_t bool_base;
-  psx_resolve_aggregate_member_base_type(
-      &(psx_aggregate_member_base_resolution_request_t){
-          .declaration = {
-              .base_kind = TK_BOOL,
-              .elem_size = 1,
-              .is_unsigned = 1,
-              .is_atomic = 1,
-          },
+  psx_resolve_aggregate_member_declaration(
+      &constraint_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"__ConstraintBoundary",
+          .target_tag_name_len = 20,
+          .base_type = function_member,
+          .declarator_shape = &boundary_shape,
+          .member_name = (char *)"function",
+          .member_name_len = 8,
       },
-      &bool_base);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bool_base.status);
-  ASSERT_TRUE(bool_base.storage.is_bool);
-  ASSERT_TRUE(bool_base.storage.is_unsigned);
-  ASSERT_TRUE(bool_base.storage.is_atomic);
-  ASSERT_EQ(TK_BOOL, bool_base.storage.scalar_kind);
+      &boundary);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_FUNCTION_TYPE, boundary.status);
+
+  psx_type_t *bool_base = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_kind = TK_BOOL,
+          .elem_size = 1,
+          .is_unsigned = 1,
+          .is_atomic = 1,
+      });
+  ASSERT_TRUE(bool_base != NULL);
+  ASSERT_EQ(PSX_TYPE_BOOL, bool_base->kind);
+  ASSERT_TRUE(ps_type_is_unsigned(bool_base));
+  ASSERT_TRUE(bool_base->is_atomic);
+  ASSERT_EQ(TK_BOOL, bool_base->scalar_kind);
 
   psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
   psx_declarator_shape_t transaction_shape;
@@ -1600,23 +1825,44 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_MISSING_NAME, transaction.status);
 
-  psx_aggregate_member_resolution_t resolution;
-  psx_resolve_aggregate_member(
-      &(psx_aggregate_member_resolution_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"__MemberBoundary",
-          .tag_name_len = 16,
-          .member_name = (char *)"x",
-          .member_name_len = 1,
-          .offset = 4,
-          .type = integer,
-          .bit_width = 3,
-          .bit_offset = 5,
-          .bit_is_signed = 1,
+  psx_declarator_shape_t unnamed_pointer_shape;
+  psx_declarator_shape_init(&unnamed_pointer_shape);
+  psx_declarator_shape_append_pointer_levels(
+      &unnamed_pointer_shape, 1, 0, 0);
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = aligned_member,
+          .declarator_shape = &unnamed_pointer_shape,
       },
-      &resolution);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
-  ASSERT_TRUE(resolution.created);
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_MISSING_NAME, transaction.status);
+  ASSERT_EQ(transaction_size_before_duplicate,
+            psx_aggregate_layout_size(&transaction_layout));
+
+  psx_declarator_shape_t unnamed_array_shape;
+  psx_declarator_shape_init(&unnamed_array_shape);
+  psx_declarator_shape_append_array_ex(&unnamed_array_shape, 2, 0);
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = aligned_member,
+          .declarator_shape = &unnamed_array_shape,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_MISSING_NAME, transaction.status);
+  ASSERT_EQ(transaction_size_before_duplicate,
+            psx_aggregate_layout_size(&transaction_layout));
+
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"__MemberBoundary", 16,
+      (char *)"x", 1, 4, integer, 3, 5, 1));
   tag_member_info_t resolved_named = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
       TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
@@ -1627,31 +1873,13 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(resolved_named.bit_is_signed);
   ASSERT_TRUE(resolved_named.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, resolved_named.decl_type->kind);
-  psx_resolve_aggregate_member(
-      &(psx_aggregate_member_resolution_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"__MemberBoundary",
-          .tag_name_len = 16,
-          .member_name = (char *)"x",
-          .member_name_len = 1,
-          .offset = 4,
-          .type = integer,
-      },
-      &resolution);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, resolution.status);
+  ASSERT_TRUE(!register_boundary_tag_member(
+      TK_STRUCT, (char *)"__MemberBoundary", 16,
+      (char *)"x", 1, 4, integer, 0, 0, 0));
 
-  psx_resolve_aggregate_member(
-      &(psx_aggregate_member_resolution_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"__MemberBoundary",
-          .tag_name_len = 16,
-          .member_name = (char *)"p",
-          .member_name_len = 1,
-          .offset = 8,
-          .type = member_type,
-      },
-      &resolution);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"__MemberBoundary", 16,
+      (char *)"p", 1, 8, member_type, 0, 0, 0));
   tag_member_info_t resolved_pointer = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
       TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
@@ -1661,18 +1889,9 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(4, resolved_pointer.deref_size);
 
   for (int i = 0; i < 2; i++) {
-    psx_resolve_aggregate_member(
-        &(psx_aggregate_member_resolution_request_t){
-            .tag_kind = TK_STRUCT,
-            .tag_name = (char *)"__MemberBoundary",
-            .tag_name_len = 16,
-            .member_name = (char *)"",
-            .member_name_len = 0,
-            .offset = 4 + i * 4,
-            .type = integer,
-        },
-        &resolution);
-    ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+    ASSERT_TRUE(register_boundary_tag_member(
+        TK_STRUCT, (char *)"__MemberBoundary", 16,
+        (char *)"", 0, 4 + i * 4, integer, 0, 0, 0));
   }
 
   psx_resolve_tag_declaration(
@@ -1696,35 +1915,39 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_resolve_aggregate_member(
-      &(psx_aggregate_member_resolution_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"PromSrc",
-          .tag_name_len = 7,
-          .member_name = (char *)"b",
-          .member_name_len = 1,
-          .offset = 4,
-          .type = integer,
-          .bit_width = 3,
-          .bit_offset = 2,
-          .bit_is_signed = 1,
-      },
-      &resolution);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
-  psx_aggregate_member_promotion_t promotion;
-  psx_promote_aggregate_members(
-      &(psx_aggregate_member_promotion_request_t){
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"PromSrc", 7,
+      (char *)"b", 1, 4, integer, 3, 2, 1));
+  psx_aggregate_layout_state_t promoted_layout;
+  psx_aggregate_layout_init(&promoted_layout, TK_STRUCT);
+  psx_declarator_shape_t promoted_shape;
+  psx_declarator_shape_init(&promoted_shape);
+  psx_resolve_aggregate_member_declaration(
+      &promoted_layout,
+      &(psx_aggregate_member_declaration_request_t){
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"PromDst",
           .target_tag_name_len = 7,
-          .source_tag_kind = TK_STRUCT,
-          .source_tag_name = (char *)"PromSrc",
-          .source_tag_name_len = 7,
-          .base_offset = 8,
+          .base_type = psx_type_new_integer(TK_LONG, 8, 0),
+          .declarator_shape = &promoted_shape,
+          .member_name = (char *)"prefix",
+          .member_name_len = 6,
       },
-      &promotion);
-  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, promotion.status);
-  ASSERT_EQ(1, promotion.promoted_count);
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, transaction.status);
+  psx_resolve_aggregate_member_declaration(
+      &promoted_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"PromDst",
+          .target_tag_name_len = 7,
+          .base_type = psx_type_new_tag(
+              TK_STRUCT, (char *)"PromSrc", 7, 1, 8),
+          .declarator_shape = &promoted_shape,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, transaction.status);
+  ASSERT_EQ(2, transaction.registered_member_count);
   tag_member_info_t promoted = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(
       TK_STRUCT, (char *)"PromDst", 7, (char *)"b", 1, &promoted));
@@ -1734,6 +1957,71 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(promoted.bit_is_signed);
   ASSERT_TRUE(promoted.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, promoted.decl_type->kind);
+
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"BatchSrc",
+          .name_len = 8,
+          .mode = PSX_TAG_DECLARATION_DEFINITION,
+          .member_count = 2,
+          .size = 8,
+          .alignment = 4,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"BatchDst",
+          .name_len = 8,
+          .mode = PSX_TAG_DECLARATION_FORWARD,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"BatchSrc", 8,
+      (char *)"a", 1, 0, integer, 0, 0, 0));
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"BatchSrc", 8,
+      (char *)"b", 1, 4, integer, 0, 0, 0));
+  ASSERT_TRUE(register_boundary_tag_member(
+      TK_STRUCT, (char *)"BatchDst", 8,
+      (char *)"b", 1, 0, integer, 0, 0, 0));
+
+  tag_member_info_t absent_promoted = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"BatchDst", 8,
+      (char *)"b", 1, &absent_promoted));
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"BatchDst", 8,
+      (char *)"a", 1, &absent_promoted));
+
+  psx_aggregate_layout_state_t anonymous_layout;
+  psx_aggregate_layout_init(&anonymous_layout, TK_STRUCT);
+  psx_declarator_shape_t anonymous_shape;
+  psx_declarator_shape_init(&anonymous_shape);
+  psx_type_t *batch_source_type =
+      psx_type_new_tag(TK_STRUCT, (char *)"BatchSrc", 8, 1, 8);
+  psx_resolve_aggregate_member_declaration(
+      &anonymous_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"BatchDst",
+          .target_tag_name_len = 8,
+          .base_type = batch_source_type,
+          .declarator_shape = &anonymous_shape,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, transaction.status);
+  ASSERT_EQ(1, transaction.conflicting_name_len);
+  ASSERT_EQ(0, psx_aggregate_layout_size(&anonymous_layout));
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"BatchDst", 8,
+      (char *)"a", 1, &absent_promoted));
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"BatchDst", 8,
+      (char *)"", 0, &absent_promoted));
 }
 
 static void test_static_assert_resolution_boundary() {
@@ -3864,6 +4152,23 @@ static void test_expr_member_access() {
                                      &bit_is_signed));
   ASSERT_EQ(3, bit_width);
   ASSERT_EQ(1, bit_is_signed);
+
+  parsed_code = parse_program_input(
+      "enum CanonicalBitfieldEnum { CanonicalBitfieldValue }; "
+      "typedef enum CanonicalBitfieldEnum CanonicalBitfieldEnumType; "
+      "int main(void) { struct B { CanonicalBitfieldEnumType x:3; }; "
+      "struct B b; return b.x; }");
+  body = as_block(as_func(parsed_code[0])->base.rhs);
+  ret = NULL;
+  for (int i = 0; body->body[i]; i++) {
+    if (body->body[i]->kind == ND_RETURN) ret = body->body[i];
+  }
+  ASSERT_TRUE(ret != NULL);
+  bitfield = ret->lhs;
+  ASSERT_TRUE(ps_node_bitfield_info(bitfield, &bit_width, &bit_offset,
+                                     &bit_is_signed));
+  ASSERT_EQ(3, bit_width);
+  ASSERT_EQ(0, bit_is_signed);
 }
 
 static void test_expr_string() {
@@ -12051,6 +12356,7 @@ int main() {
   test_parameter_declaration_storage_plan_boundary();
   test_global_declaration_storage_plan_boundary();
   test_tag_declaration_resolution_boundary();
+  test_aggregate_body_phase_boundary();
   test_aggregate_member_resolution_boundary();
   test_static_assert_resolution_boundary();
   test_typedef_declaration_resolution_boundary();

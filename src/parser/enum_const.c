@@ -1,9 +1,13 @@
 #include "enum_const.h"
 #include "enum_constant_declaration.h"
 #include "diag.h"
+#include "dynarray.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+
+#include <stdlib.h>
+#include <string.h>
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
@@ -37,6 +41,22 @@ long long psx_parse_enum_const_expr(void) {
 long long psx_parse_case_const_expr(void) {
   enum_const_eval_ctx_t ctx = {.allow_wide_const = 1};
   return parse_conditional_ctx(&ctx);
+}
+
+long long psx_eval_parsed_enum_const_expr(token_t *start, token_t *end) {
+  if (!start || !end) {
+    psx_diag_ctx(curtok(), "constant-expression",
+                 "missing parsed constant expression range");
+  }
+  token_t *saved_token = curtok();
+  set_curtok(start);
+  long long value = psx_parse_enum_const_expr();
+  if (curtok() != end) {
+    psx_diag_ctx(curtok(), "constant-expression",
+                 "parsed constant expression was not fully consumed");
+  }
+  set_curtok(saved_token);
+  return value;
 }
 
 static long long parse_conditional_ctx(enum_const_eval_ctx_t *ctx) {
@@ -248,25 +268,91 @@ static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx) {
   return tk_expect_number();
 }
 
-int psx_parse_enum_members(void) {
-  int member_count = 0;
-  long long next_value = 0;
+static token_t *find_enum_initializer_end(token_t *token) {
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  for (token_t *current = token; current; current = current->next) {
+    if (paren_depth == 0 && bracket_depth == 0 && brace_depth == 0 &&
+        (current->kind == TK_COMMA || current->kind == TK_RBRACE))
+      return current;
+    if (current->kind == TK_LPAREN) paren_depth++;
+    else if (current->kind == TK_RPAREN) paren_depth--;
+    else if (current->kind == TK_LBRACKET) bracket_depth++;
+    else if (current->kind == TK_RBRACKET) bracket_depth--;
+    else if (current->kind == TK_LBRACE) brace_depth++;
+    else if (current->kind == TK_RBRACE) brace_depth--;
+  }
+  return NULL;
+}
+
+void psx_parse_enum_body(psx_parsed_enum_body_t *body) {
+  if (!body) return;
+  memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
-    token_ident_t *enumerator = tk_consume_ident();
-    if (!enumerator) {
+    if (body->member_count >= PS_MAX_DECLARATOR_COUNT) {
+      psx_diag_ctx(curtok(), "enum-syntax",
+                   "enum member limit exceeded");
+    }
+    if (body->member_count == body->member_capacity) {
+      body->member_capacity = pda_next_cap(
+          body->member_capacity, body->member_count + 1);
+      body->members = pda_xreallocarray(
+          body->members, (size_t)body->member_capacity,
+          sizeof(*body->members));
+    }
+    psx_parsed_enum_member_t *member =
+        &body->members[body->member_count++];
+    memset(member, 0, sizeof(*member));
+    member->enumerator = tk_consume_ident();
+    if (!member->enumerator) {
       psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
     }
-    long long value = next_value;
     if (tk_consume('=')) {
-      value = psx_parse_enum_const_expr();
+      member->initializer_start = curtok();
+      member->initializer_end = find_enum_initializer_end(curtok());
+      if (!member->initializer_end) {
+        psx_diag_ctx(curtok(), "enum-syntax",
+                     "unterminated enum initializer");
+      }
+      set_curtok(member->initializer_end);
     }
-    psx_apply_parsed_enum_constant(
-        enumerator->str, enumerator->len, value, curtok());
-    next_value = value + 1;
-    member_count++;
     if (tk_consume('}')) break;
     tk_expect(',');
     if (tk_consume('}')) break;
   }
+}
+
+int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body) {
+  if (!body) return 0;
+  long long next_value = 0;
+  token_t *saved_token = curtok();
+  for (int i = 0; i < body->member_count; i++) {
+    const psx_parsed_enum_member_t *member = &body->members[i];
+    long long value = next_value;
+    if (member->initializer_start) {
+      value = psx_eval_parsed_enum_const_expr(
+          member->initializer_start, member->initializer_end);
+    }
+    psx_apply_parsed_enum_constant(
+        member->enumerator->str, member->enumerator->len, value,
+        (token_t *)member->enumerator);
+    next_value = value + 1;
+  }
+  set_curtok(saved_token);
+  return body->member_count;
+}
+
+void psx_dispose_parsed_enum_body(psx_parsed_enum_body_t *body) {
+  if (!body) return;
+  free(body->members);
+  memset(body, 0, sizeof(*body));
+}
+
+int psx_parse_enum_members(void) {
+  psx_parsed_enum_body_t body;
+  psx_parse_enum_body(&body);
+  int member_count = psx_apply_parsed_enum_body(&body);
+  psx_dispose_parsed_enum_body(&body);
   return member_count;
 }

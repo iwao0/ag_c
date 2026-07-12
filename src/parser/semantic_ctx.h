@@ -52,6 +52,12 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
 int psx_ctx_register_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *m, int *out_created);
+/* canonical member descriptor群を原子的に登録する。全descriptorと重複を
+ * 事前検査し、失敗時は1件も登録しない。 */
+int psx_ctx_register_tag_members(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *members, int member_count,
+    int *out_conflict_index);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);

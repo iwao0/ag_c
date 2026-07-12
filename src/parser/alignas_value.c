@@ -21,3 +21,23 @@ int psx_parse_alignas_value(void) {
   tk_expect(')');
   return val;
 }
+
+int psx_eval_parsed_alignas_value(token_t *start, token_t *end) {
+  if (!start || !end) return 1;
+  token_t *saved_token = curtok();
+  set_curtok(start);
+  int value = 1;
+  if (psx_ctx_is_type_token(curtok()->kind) ||
+      psx_ctx_is_typedef_name_token(curtok())) {
+    int elem_size = 8;
+    psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+    value = elem_size;
+    set_curtok(end);
+  } else {
+    long long parsed = psx_eval_parsed_enum_const_expr(start, end);
+    value = parsed > 0 ? (int)parsed : 1;
+  }
+  if (curtok() != end) set_curtok(end);
+  set_curtok(saved_token);
+  return value;
+}

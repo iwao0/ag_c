@@ -1,8 +1,251 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1081: aggregate member semantic transaction化）
+最終更新: 2026-07-12（続き1090: aggregate constant expressionのdeferred semantic化）
 
 ## 現状
+- 続き1090: **array bound、bit-field width、alignasの定数評価をaggregate apply phaseへ移した。**
+
+  aggregate syntaxはarray bound、bit-field width、`_Alignas(...)`の式を評価せず、開始・終了tokenを
+  parsed declarator/specifierへ保持する。array declarator shapeにはparse時点でplaceholder opだけを作り、
+  対応するop indexもsyntax dataとして記録する。旧parsed `bit_width` / `requested_alignment` mirrorは削除した。
+
+  aggregate apply passはsource orderでnested tag/enum actionを適用した後、保存した式範囲を評価する。
+  array長をlocal canonical declarator shapeへ反映し、bit-field widthと最大requested alignmentを確定してから、
+  atomic member declaration transactionへ渡す。式評価helperはcurrent tokenを保存・復元し、指定範囲を
+  完全に消費したことも検証する。
+
+  phase boundary testをenum値に依存する`int arr[PhaseEnumNext]`、
+  `unsigned flags:PhaseEnumZero`、`_Alignas(PhaseEnumNext + 3) char aligned`へ拡張した。parse後には式範囲だけが
+  ありenum constant/context/layoutは未変更、apply後にはarray length=5、bit width=3、aligned offset=56、
+  outer size=64/alignment=8になることを確認した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  aggregate bodyのcontext mutationと定数評価はapply phaseへ移った。残る構文側の意味依存は、builtin type
+  metadataとtypedef canonical typeのread-only取得、およびfunction suffix parameter parsingにある。次は
+  type specifierを純粋なsyntax descriptorにし、type lookup/normalizationをresolve phaseへ寄せる。
+
+- 続き1089: **member tag specifierとenum bodyのcontext変更をparse phaseからapply phaseへ移した。**
+
+  member specifierはtagを即登録せず、reference/definition、tag identity、diagnostic tokenを
+  `psx_parsed_member_tag_action_t`へ保持する。definitionの場合は再帰的なparsed aggregate body、またはparsed
+  enum bodyを所有する。disposeはnested bodyを再帰解放する。
+
+  aggregate apply passは各member declarationの直前にtag actionをsource orderで実行する。definitionでは
+  self-reference用のreference登録、nested body layout/enum constantsのresolve、complete tag definitionの順で
+  適用し、その時点のtag sizeをlocal declaration requestへ反映してcanonical typeを構築する。forward tagを
+  使うmemberは後続definitionを先取りせず、宣言位置のcontextでtypecheckされる。
+
+  enumも`psx_parse_enum_body()`がenumeratorとinitializer token範囲だけを保持し、contextへ定数を登録しない。
+  `psx_apply_parsed_enum_body()`がtoken範囲をsource orderで評価して1件ずつcanonical enum constant resolutionへ
+  渡すため、後続initializerから先行enumeratorを参照できる。従来の`psx_parse_enum_members()`は
+  parse -> apply -> dispose wrapperになった。
+
+  phase boundary testをnested structとenumへ拡張し、parse後はnested struct/enum tagとenumeratorが未登録、
+  apply後はnested size=4、enum values=3/5、outer layout size=32/alignment=8になることを確認した。
+
+  確認:
+  - aggregate syntax中のcontext mutation = **0件**（type/typedef分類のread-only lookupのみ）
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  残るparse/semantic結合は、typedef canonical typeのread-only取得と、array dimension/bit-field width/alignasの
+  constant evaluationをsyntax parse中に行う点。次はdeclarator constant expressionをtoken/AST syntax dataとして
+  保持し、aggregate apply passで評価してcanonical declarator shapeを完成させる。
+
+- 続き1088: **aggregate bodyをparsed item listへしてからsemantic layout passを適用する二段構造にした。**
+
+  `psx_parse_aggregate_body()`はbody全体をmember declaration groupとstatic assertionのitem列へ構文解析する。
+  member groupはspecifier、commaで連なるdeclarator列、各diagnostic token、parse時のpack alignmentを保持し、
+  canonical type、offset、layout state、context member登録は作らない。動的配列には共通`dynarray.h`の上限・OOM
+  処理を使い、`psx_dispose_parsed_aggregate_body()`で所有配列を解放する。
+
+  `psx_apply_parsed_aggregate_body_layout()`はparsed listを先頭から走査し、base type resolve、atomic member
+  declaration transaction、static assertion applyを行う。従来の`psx_parse_struct_or_union_members_layout()`は
+  parse -> apply -> disposeを接続するだけになった。
+
+  static assertionも`psx_parse_static_assert_syntax()`でcondition ASTと診断位置を保持し、
+  `psx_apply_parsed_static_assert()`で定数評価とsemantic status診断を行う二段APIにした。top-level/localの既存
+  entry pointは両方を連続して呼ぶwrapperなので挙動を維持する。
+
+  phase boundary testでは`int a, *b; _Static_assert(...); char c;`をparseし、3 item/2 declarator/static ASTを
+  確認した時点でtarget contextにmemberがないこと、その後applyするとa=0、b=8、c=16、size=24、align=8に
+  なることを検証した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  まだmember tag specifierのforward/nested tag declarationはsyntax parse中にcontextへ適用される。次はtag
+  specifierをparsed tag action/nested bodyとして保持し、aggregate apply passでsource orderどおりresolveする。
+  そこまで終わるとaggregate領域の`parse -> resolve/typecheck`分離が実質的に完了する。
+
+- 続き1087: **bit-field/object placementとmember type validationをprivate helperへ移した。**
+
+  `psx_resolve_aggregate_bitfield_placement()`、`psx_resolve_aggregate_object_placement()`、
+  `psx_validate_aggregate_member_type()`および低水準request/result型をpublic headerから削除した。実装内では
+  transactionがworking layoutに対して呼ぶstatic helperとして保持する。外部からlayoutだけを進めたり、
+  validationとcontext登録を分離して実行する経路はなくなった。
+
+  既存semantic boundary testの先行object余白へのbit-field packing、container繰越、width overflow、pointer
+  rejection、enum/bool signedness、pack alignment、union最大size/alignment、incomplete/function type制約を、
+  すべてatomic declaration transactionのrequest/status/offset/bit facts/layout queryで検証し直した。
+
+  public semantic surfaceは次の4関数だけになった。
+  - `psx_aggregate_layout_init()`
+  - `psx_aggregate_layout_size()`
+  - `psx_aggregate_layout_alignment()`
+  - `psx_resolve_aggregate_member_declaration()`
+
+  確認:
+  - 旧低水準API/型名 = **production/testとも0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  public headerは63行になった。次は`struct_layout.c`がmember syntaxを1件parseするたびsemantic transactionを
+  実行している時系列結合を外し、aggregate body全体をparsed declaration listへしてからsemantic layout passを
+  走らせる。これがaggregate領域での実際の`parse -> resolve/typecheck`フェーズ分離になる。
+
+- 続き1086: **単件member登録と単独promotionのpublic semantic APIを削除した。**
+
+  `psx_resolve_aggregate_member()`と`psx_promote_aggregate_members()`はproductionから呼ばれなくなっていた一方、
+  layout working copyを伴わずcontextだけを変更でき、atomic declaration transactionを迂回する入口だった。
+  request/result型を含めてpublic headerと実装から削除し、promotion member収集はdeclaration transaction内部の
+  private helperにした。
+
+  semantic boundary testのsource fixture作成はcontextのcanonical descriptor登録を明示的に使い、promotionの
+  成功、offset加算、bit-field facts保持、後段重複時の全件rollbackはすべて
+  `psx_resolve_aggregate_member_declaration()`経由で検証する。production semantic層でaggregate member contextを
+  変更する入口は、このatomic transactionだけになった。
+
+  確認:
+  - 削除したmember resolution/promotion API名 = **production/testとも0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  `aggregate_member_resolution.c`は339行、public headerは99行になった。次は現在transactionとtestだけが使う
+  bit-field/object placement、type validationの低水準APIをprivate化し、public semantic surfaceをlayout
+  init/queryとatomic declaration transactionへ絞る。
+
+- 続き1085: **aggregate固有のtype/base resolution wrapperとstorage projectionを削除した。**
+
+  `psx_resolve_aggregate_member_type()`と`psx_resolve_aggregate_member_base_type()`は、一般の
+  `psx_resolve_decl_type()`を包んでdefaultを足すだけの二段APIだったため削除した。`struct_layout.c`はparsed
+  declaration requestをgeneral declaration resolverへ直接渡し、semantic declaration transactionも
+  canonical base typeへdeclarator shapeを適用する際に同じresolverを使う。
+
+  `psx_aggregate_member_storage_plan_t`と`psx_plan_aggregate_member_storage()`も削除した。array dimensions、
+  pointer depth、pointee array size、scalar category等の大きなprojectionはproductionで使われず、canonical
+  typeから作った値をテストが再確認していただけだった。layout transactionはcanonical typeの`sizeof/align`を
+  直接消費し、テストはpointer/array/tag/boolのcanonical type treeと属性そのものを検証する。
+
+  確認:
+  - aggregate type/base/storage wrapper名 = **production/testとも0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  `struct_layout.c`は71行、`aggregate_member_resolution.c`は417行になった。次はproductionから呼ばれなくなった
+  単件`psx_resolve_aggregate_member()`と単独`psx_promote_aggregate_members()`をpublic APIから除き、contextを
+  変更できるsemantic入口をatomic declaration transactionへ限定する。
+
+- 続き1084: **anonymous aggregate promotion元のtag mirrorを削除し、canonical member typeを正本にした。**
+
+  `psx_aggregate_member_declaration_request_t`から`source_tag_kind/name/len`を削除した。semantic transactionは
+  declarator shape適用後の完成したmember typeが直接struct/unionかを判定し、そのcanonical typeのtag identityを
+  promotionへ渡す。`psx_aggregate_member_promotion_request_t`も3つのtag fieldではなく`source_type`を受け取り、
+  member列挙はそのtag kind/name/scopeで行う。`struct_layout.c`からpromotion元type syntaxの横持ちが消えた。
+
+  同時に、base specifierだけがaggregateなら無名pointer/arrayもanonymous memberとして通していた制約漏れを
+  修正した。完成型が直接aggregateの場合だけplaceholder登録とpromotionを行い、無名pointer/arrayは
+  `MISSING_NAME`となる。semantic boundary testで両方の拒否とlayout不変を検証した。
+
+  確認:
+  - `rg -n "source_tag_kind|source_tag_name|source_tag_name_len" src test/test_parser.c` = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  `struct_layout.c`は75行で、member type/layout/promotion情報の再計算は持たない。次はaggregate member境界に
+  残るbase type resolutionとdeclaration transactionの二段APIを監査し、不要な中間storage projectionや
+  request wrapperを整理する。
+
+- 続き1083: **enum categoryとtag identityをcanonical `psx_type_t`へ統合した。**
+
+  `psx_type_new_enum()`を追加し、enumを`PSX_TYPE_INTEGER` / `scalar_kind=TK_ENUM`としてunderlying integerの
+  性質を保ちながら、`tag_kind`、tag name、scope identityも同じ型に保持する。declaration resolution、
+  type-name build、legacy storage objectの各入口をこのconstructorへ統一した。型shape比較もenum tag identityを
+  比較し、enumとintおよび別tagのenumを同一型として扱わない。
+
+  aggregate bit-field request/declaration requestから`is_enum_type`を削除した。signednessは完成したcanonical
+  member typeの`scalar_kind`だけから決まり、`struct_layout.c`はtag syntax由来のenum mirrorを渡さない。
+  これにより従来mirrorが効かなかった`typedef enum` bit-fieldもdirect enumと同じ結果になる。
+
+  確認:
+  - canonical enumのkind/scalar/tag identity、clone一致、別enum/int不一致 = **boundary test passed**
+  - typedef enum bit-fieldのcanonical signedness = **parser test passed**
+  - `rg -n "is_enum_type" src test/test_parser.c` = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はaggregate declaration requestに残る`source_tag_kind/name/len` mirrorを削除し、anonymous promotion元を
+  canonical base/member typeのtag identityから導出する。
+
+- 続き1082: **anonymous aggregate member promotionをcontext登録まで含むatomic transactionにした。**
+
+  `psx_ctx_register_tag_members()`を追加し、batch内のdescriptor妥当性、既存memberとの重複、batch内重複を
+  全件事前検査してから一括登録する。従来の単件`psx_ctx_register_tag_member()`もこのbatch APIへ委譲する。
+  `psx_promote_aggregate_members()`はsource memberを一度収集してoffsetを解決し、全件を一括登録するため、
+  後続memberの重複時に先行memberだけがtargetへ残らない。
+
+  declaration transactionではanonymous placeholderとpromoted member群を同じbatchへ載せた。これにより
+  promotion失敗時はlayout working copyだけでなく、placeholderを含むcontext登録も一切commitされない。
+  semantic boundary testでは2 memberの後段が既存名と衝突するケースを作り、先行member、placeholder、layout
+  のすべてが不変であることを検証した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はcanonical typeに保持されていないenum categoryを型情報へ統合し、bit-field requestとparserから
+  `is_enum_type` mirrorを削除する。
+
 - 続き1081: **aggregate member 1件の型解決、制約検査、layout、登録をsemantic transactionへ統合した。**
 
   `psx_resolve_aggregate_member_declaration()`を追加し、canonical base typeとdeclarator shapeからのmember
