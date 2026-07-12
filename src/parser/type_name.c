@@ -59,7 +59,7 @@ static psx_type_t *build_base(const psx_type_name_t *name) {
   if (name->tag_kind == TK_STRUCT || name->tag_kind == TK_UNION) {
     psx_type_t *type = psx_type_new_tag(
         name->tag_kind, name->tag_name, name->tag_len,
-        0, name->base_size);
+        name->tag_scope_depth_p1, name->base_size);
     type->aggregate_definition = psx_ctx_get_tag_definition(
         name->tag_kind, name->tag_name, name->tag_len);
     return type;

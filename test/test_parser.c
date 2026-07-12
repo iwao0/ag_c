@@ -9,6 +9,7 @@
 #include "../src/parser/semantic_pass.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/function_declaration_plan.h"
+#include "../src/semantic/function_declaration_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/global_declaration_plan.h"
@@ -958,6 +959,87 @@ static void test_parameter_declaration_storage_plan_boundary() {
       function_plan.function_type->param_types[0], integer));
   ASSERT_TRUE(psx_type_shape_matches(
       function_plan.function_type->param_types[1], pointer));
+
+  psx_declarator_shape_t returned_funcptr_shape;
+  psx_declarator_shape_t returned_value_shape;
+  psx_declarator_shape_init(&returned_funcptr_shape);
+  psx_declarator_shape_init(&returned_value_shape);
+  ASSERT_TRUE(psx_declarator_shape_append_pointer(
+      &returned_funcptr_shape, 0, 0));
+  psx_decl_funcptr_sig_t returned_callable = {0};
+  returned_callable.function.callable.signature.nargs_fixed = 1;
+  returned_callable.function.callable.signature.param_int_mask = 1;
+  ASSERT_TRUE(psx_declarator_shape_append_function(
+      &returned_funcptr_shape, returned_callable));
+  ASSERT_TRUE(psx_declarator_shape_append_pointer(
+      &returned_value_shape, 0, 0));
+  ASSERT_TRUE(psx_declarator_shape_append_shape(
+      &returned_funcptr_shape, &returned_value_shape));
+  ASSERT_EQ(2, psx_declarator_shape_count_ops(
+                   &returned_funcptr_shape, PSX_DECL_OP_POINTER));
+  ASSERT_EQ(1, psx_declarator_shape_count_ops(
+                   &returned_funcptr_shape, PSX_DECL_OP_FUNCTION));
+  ASSERT_EQ(0, psx_declarator_shape_count_ops(
+                   &returned_funcptr_shape, PSX_DECL_OP_ARRAY));
+  psx_type_t *returned_funcptr = psx_type_apply_declarator_shape(
+      psx_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
+      &returned_funcptr_shape);
+  psx_function_declaration_plan_t funcptr_plan = {0};
+  ASSERT_TRUE(psx_plan_function_declaration(
+      &(psx_function_declaration_request_t){
+          .return_type = returned_funcptr,
+      },
+      &funcptr_plan));
+  ASSERT_TRUE(funcptr_plan.returns_function_pointer);
+  ASSERT_EQ(1, funcptr_plan.returned_funcptr_signature.function.callable
+                   .signature.nargs_fixed);
+  ASSERT_EQ(1u, funcptr_plan.returned_funcptr_signature.function.callable
+                    .signature.param_int_mask);
+  ASSERT_TRUE(funcptr_plan.returned_funcptr_signature.function.callable
+                  .return_shape.is_data_pointer);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            funcptr_plan.returned_funcptr_signature.function.callable
+                .return_shape.pointee_fp_kind);
+
+  ps_reset_translation_unit_state();
+  psx_function_declaration_resolution_request_t resolution_request = {
+      .name = (char *)"__resolution_fn",
+      .name_len = 15,
+      .return_type = integer,
+      .parameter_types = parameter_types,
+      .parameter_count = 2,
+      .is_variadic = 1,
+  };
+  psx_function_declaration_resolution_t resolution = {0};
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(ps_ctx_has_function_name("__resolution_fn", 15));
+  ASSERT_TRUE(psx_ctx_get_function_type("__resolution_fn", 15) != NULL);
+
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
+  ASSERT_EQ(0, ps_ctx_is_function_defined("__resolution_fn", 15));
+  resolution_request.return_type = pointer;
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_TYPE_CONFLICT, resolution.status);
+
+  resolution_request.return_type = integer;
+  resolution_request.is_definition = 1;
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(ps_ctx_is_function_defined("__resolution_fn", 15));
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION,
+            resolution.status);
+
+  parsed_code = parse_program_input("int __resolution_object;");
+  ASSERT_TRUE(ps_find_global_var("__resolution_object", 19) != NULL);
+  resolution_request.name = (char *)"__resolution_object";
+  resolution_request.name_len = 19;
+  resolution_request.return_type = integer;
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
+            resolution.status);
 }
 
 static void test_global_declaration_storage_plan_boundary() {
@@ -10434,6 +10516,21 @@ static void test_multiple_funcdefs() {
   parsed_code = parse_program_input("int **sig_def_pp(void) { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(2, psx_ctx_get_function_ret_pointer_levels("sig_def_pp", 10));
+
+  parsed_code = parse_program_input(
+      "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }");
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  psx_decl_funcptr_sig_t deep_sig =
+      psx_ctx_get_function_ret_funcptr_sig("sig_deep", 8);
+  ASSERT_TRUE(ps_decl_funcptr_sig_has_payload(deep_sig));
+  ASSERT_EQ(1u, deep_sig.function.callable.signature.param_int_mask);
+  ASSERT_TRUE(psx_funcptr_returned_func_has_payload(
+      deep_sig.function.returned_funcptr));
+  psx_funcptr_type_shape_t nested_deep =
+      psx_funcptr_returned_func_as_type_shape(
+          deep_sig.function.returned_funcptr);
+  ASSERT_EQ(2u, nested_deep.callable.signature.param_fp_mask);
+  ASSERT_EQ(3, nested_deep.callable.return_shape.pointee_array.first_dim);
 
   parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);

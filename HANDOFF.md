@@ -1,8 +1,25 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-11（続き1063: storage型の明示構築と宣言型幅/ABI幅の分離）
+最終更新: 2026-07-12（続き1064: 関数宣言・定義登録のsemantic resolution統合）
 
 ## 現状
+- 続き1064: **prototype、definition、重複定義の登録を同じsemantic operationへ統合した。**
+
+  `psx_function_declaration_resolution_request_t`へ`is_definition`を追加し、canonical function
+  typeの登録後にdefinition状態も原子的に更新する。二度目のdefinitionは
+  `PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION`として返す。型衝突判定を先に行う既存順序と、
+  prototypeを何度宣言してもdefinition状態を立てない挙動は維持した。
+
+  parserは`psx_ctx_track_function_defined()`を直接呼ばなくなり、syntaxから`TK_SEMI`かどうかを
+  definition intentとして渡し、semantic statusを既存のE3064診断へ変換するだけになった。
+  boundary testにprototype反復、初回definition、重複definitionを追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - full E2Eは正本化完了境界まで保留
+
 - 続き1063: **storage宣言型の初回構築をcanonical builderへ移し、C宣言型幅とWasm ABI幅を分離した。**
 
   `psx_type_new_storage_object()`と`psx_type_new_vla_object_view()`を追加し、lvar/gvarの
@@ -28338,5 +28355,182 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - `parsed_function_return_t` / `func_ret_parse_state_t`に残るpointer/dimension parse stateを
     declarator shapeとcanonical base typeへ統合する。
   - returned function-pointerのcallable ABI normalizationをparser registryからsemanticへ移す。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1026）: function definition return declaratorの並行表現を廃止した
+- canonical return declarator:
+  - `parsed_function_return_t`と、そのscalar/tag/pointer/qualifier/array情報から型を再構築する
+    helper群を削除した。
+  - `func_ret_parse_state_t`から`ret_pointer_levels`、outer pointer flag、function-pointer object
+    pointer levels、funcptr mirror、pointee arrayの固定first/second dimensionsを削除した。
+  - function definitionの戻り型は`psx_type_name_t`、identifier-outward declarator shape、
+    declaration-specifier側pointer shapeだけを保持し、shapeを連結して一度だけcanonical typeを作る。
+  - `int *(*f(void))(int)`や`int (*f(void))[N][M]`の結合順序はpointer/dimension数値ではなく、
+    `pointer -> function/array -> base pointer`というoperator列に保持される。
+- reusable type boundary:
+  - `psx_declarator_shape_append_shape()`を追加し、別々にparseしたdeclarator部分を
+    funcptr signatureをcloneしながらidentifier-outward順に連結できるようにした。
+  - `psx_type_name_t.canonical_base`をconst参照にし、typedef正本を変更しない契約を型で表した。
+  - canonical tag type-nameにscope depthを追加し、旧return専用builderが保持していたtag identityを失わない。
+- semantic ABI ownership:
+  - `psx_function_signature_t`から`ret_fp_kind` / `ret_token_kind` / `ret_is_funcptr` /
+    `funcptr_sig`を削除した。
+  - parser registryにあったreturned function-pointerのfp kind、integer width、data-pointer補正を削除した。
+  - `psx_plan_function_declaration()`がcanonical return typeを走査し、returned function-pointerの
+    callable signatureとreturn shapeを導出してfunction typeとfuncdef nodeへ返す。
+- coverage:
+  - semantic boundary testに、double pointerを返すfunction pointerを戻り値に持つ関数型を追加した。
+  - shape連結順、returned callable parameter mask、data-pointer判定、pointee fp kindを確認している。
+- scale:
+  - `parser.c`は3,234行から2,985行になった。
+  - 現在の未コミット差分は9ファイル、234行追加/373行削除。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - `parse_func_declarator()`自身のparameter-list重複と2段までの括弧付きdeclarator分岐を、
+    共通recursive declarator parserへ統合する。
+  - function declaration conflict診断とname registry ownershipをsemantic側へ移す。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1027）: function declaratorを任意深さのrecursive parserへ統合した
+- parameter-list boundary:
+  - prototypeとfunction definitionに重複していたvariadic、comma、unnamed parameter解析を
+    `parsed_function_params_t` / `parse_function_param_list()`へ統合した。
+  - actual function suffixだけがparameter AST/localを作り、returned function suffixは
+    callable signatureだけを作る責務分離にした。
+- recursive declarator:
+  - `parse_func_name_declarator_recursive()`と、`parse_func_declarator()`内の通常、1段funcptr、
+    2段nested funcptrという手書き分岐を削除した。
+  - 新しいrecursive parserはidentifier-outward順にpointer/function/array operatorを記録する。
+    最初のfunction suffixを定義対象関数としてreturn shapeから除き、それ以降をcanonical
+    return declarator shapeへ残すため、括弧の深さに依存しない。
+  - pointerごとのconst/volatile qualifierもoperatorへ保持し、旧分岐のように捨てない。
+- semantic registry canonicalization:
+  - 深さ3のfuncptr return testにより、`semantic_ctx`がcanonical type treeではなくouter pointerの
+    legacy `funcptr_sig` payloadでfuncptr判定していた問題を検出した。
+  - `ctx_type_returns_funcptr()`と`ctx_type_returned_funcptr_sig()`を
+    `psx_type_find_function()` / `ps_type_funcptr_signature()`由来へ変更した。
+  - `int (*(*(*f(void))(int))(double))[3]`で、outer int parameter signature、nested double
+    parameter signature、最終array[3] return shapeがregistryまで保持されることを確認した。
+- scale:
+  - `parser.c`は続き1026の2,985行から2,917行になった。
+  - 続き1026と合わせたコード/テスト差分は9ファイル、307行追加/560行削除
+    (`HANDOFF.md`を除く)。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - top-level / parameter / function definitionで別々に残るrecursive declarator parserを、
+    syntax専用の共通declarator moduleへ統合する。
+  - function declaration conflict診断とname registry ownershipをsemantic側へ移す。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1028）: 3系統のdeclarator再帰をsyntax moduleへ正本化した
+- syntax module:
+  - `parser/declarator_syntax.{c,h}`を追加した。
+  - 括弧付きdirect declaratorの再帰、pointer prefix、pointer qualifier、identifier、
+    identifier-outward suffix順序を共通engineが所有する。
+  - 利用側はfunction/array suffix消費、pointer operator反映、診断をcallbackで渡す。
+  - parameterの`int (int)`のようなabstract function declaratorはgrouping判定hook、
+    `a[N]`と`(*a)[N]`の区別はdirect/frame pointer countとして構文情報を返す。
+- migrated paths:
+  - top-level declarator、parameter declarator、function definition declaratorの3系統を
+    `psx_parse_declarator_syntax()`へ移行した。
+  - `parse_decl_name_recursive()` / `parse_param_declarator_name_recursive()` /
+    function definition内のrecursive parserを削除し、再帰本体は1実装だけになった。
+  - top-level固有のplain prototype suffix保留、parameter固有のVLA dimension捕捉、
+    function definition固有のactual parameter AST構築は各suffix callbackに残した。
+  - pointer const/volatileは全3経路で同じsyntax eventからcanonical shapeへ記録される。
+- scale:
+  - `parser.c`は続き1027の2,917行から2,871行になった。
+  - 続き1026からのコード/テスト差分は新規2ファイルを含む12ファイル、
+    665行追加/853行削除 (`HANDOFF.md`を除く)。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - declarator callbackに残るcompatibility mirror更新をcanonical shape完成後のprojectionへ移す。
+  - function declaration conflict診断とname registry ownershipをsemantic側へ移す。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1029）: declarator compatibility mirrorをcanonical shape projectionへ置換した
+- top-level declarator:
+  - `toplevel_declarator_head_t`を`name + declarator_shape`だけに縮小した。
+  - `is_ptr`、pointer levels、paren array dims/multiplier、function suffix signatures/count、
+    funcptr object pointer levelsなど、書き込みだけだったmirrorを削除した。
+  - incomplete tag object判定は`head.is_ptr`ではなく、完成canonical typeからarrayを除いた
+    value typeがpointerかどうかで判定する。
+  - `toplevel_decl_spec_t`の`base_is_ptr` / `base_pointer_levels` / `base_funcptr_sig`も削除した。
+    typedef由来のpointer/array/function構造は`base_decl_type`だけが正本になる。
+- parameter declarator:
+  - function suffix signatures/count、funcptr object pointer levels、pointer-array outer dim mirrorを削除した。
+  - parse APIのpointer level、first/second dim、array/pointer/function flagsという出力引数を削除した。
+  - array/pointer/function判定は完成した`psx_declarator_shape_t`を
+    `psx_declarator_shape_count_ops()`で投影する。
+  - VLA runtime dimensionだけは構文式/tokenを後段loweringへ渡す必要があるため、
+    `inner_dim_consts` / `inner_dim_idents`をsyntax side dataとして保持する。
+- scale:
+  - `parser.c`は続き1028の2,871行から2,729行になった。
+  - 続き1026からのコード/テスト差分は新規2ファイルを含む12ファイル、
+    665行追加/977行削除 (`HANDOFF.md`を除く)。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - function declaration conflict/name registryのsemantic ownershipを強める。
+  - declarator suffix callbackに残る診断をsyntax diagnostic eventへ整理する。
+  - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1030）: function declaration name/type resolutionをsemanticへ移した
+- semantic resolution:
+  - `semantic/function_declaration_resolution.{c,h}`を追加した。
+  - canonical function type planning、object namespace衝突、function名作成、同名再宣言の
+    型照合を`psx_resolve_function_declaration()`の1 operationへ統合した。
+  - 結果は`OK` / `INVALID` / `OBJECT_NAME_CONFLICT` / `TYPE_CONFLICT`のstatusで返し、
+    semantic層はparser tokenや診断文を所有しない。
+- atomic registry:
+  - `psx_ctx_register_function_type()`を追加した。名前がなければ作成し、既存ならcanonical
+    function typeを照合し、初回だけpersistent cloneを登録する。
+  - 旧`psx_ctx_track_function_type()`はatomic APIへのcompatibility wrapperにした。
+    「名前が未登録なら何もせず成功」という旧契約はなくなった。
+- parser boundary:
+  - `register_function_signature()`からglobal object lookup、function name define、function type track、
+    semantic plan直接呼び出しを削除した。
+  - parserはparameter nodeからcanonical type配列を集めてresolutionへ渡し、statusを
+    source token付き診断へ変換し、funcdef nodeへreturned-funcptr projectionを付けるだけになった。
+- coverage:
+  - semantic boundary testで新規登録、同型再宣言、return type衝突、global object名衝突を
+    それぞれstatusとregistry stateまで直接確認した。
+- scale:
+  - `parser.c`は続き1029の2,729行から2,728行になった。
+  - 続き1026からのコード/テスト差分は新規4ファイルを含む15ファイル、
+    807行追加/1,004行削除 (`HANDOFF.md`を除く)。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - function definition重複判定もdeclaration resolutionと同じsemantic ownershipへ統合する。
+  - declarator suffix callbackに残る診断をsyntax diagnostic eventへ整理する。
   - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
   - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。

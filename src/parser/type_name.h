@@ -10,6 +10,7 @@ typedef struct {
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
+  int tag_scope_depth_p1;
 
   unsigned int is_unsigned : 1;
   unsigned int is_long_long : 1;
@@ -35,7 +36,7 @@ typedef struct {
 
   psx_decl_funcptr_sig_t funcptr_sig;
   psx_declarator_shape_t declarator_shape;
-  psx_type_t *canonical_base;
+  const psx_type_t *canonical_base;
   char *type_sig;
 } psx_type_name_t;
 

@@ -190,34 +190,13 @@ static void ctx_type_normalize_function_ret_type(psx_type_t *type) {
 }
 
 static int ctx_type_returns_funcptr(const psx_type_t *type) {
-  if (!type) return 0;
-  psx_decl_funcptr_sig_t sig = type->funcptr_sig;
-  if (psx_funcptr_returned_func_has_payload(sig.function.returned_funcptr))
-    return 1;
-  if (psx_funcptr_signature_has_payload(sig.function.callable.signature))
-    return 1;
-  psx_funcptr_return_shape_t ret = sig.function.callable.return_shape;
-  if (!psx_funcptr_return_shape_has_payload(ret)) return 0;
-  if (type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_ARRAY &&
-      !ret.int_width &&
-      ret.fp_kind == TK_FLOAT_KIND_NONE &&
-      ret.pointee_fp_kind == TK_FLOAT_KIND_NONE &&
-      !ret.is_void && !ret.is_data_pointer && !ret.is_complex &&
-      psx_ret_pointee_array_has_dims(ret.pointee_array)) {
-    return 0;
-  }
-  return 1;
+  return type && type->kind == PSX_TYPE_POINTER &&
+         psx_type_find_function(type) != NULL;
 }
 
 static psx_decl_funcptr_sig_t ctx_type_returned_funcptr_sig(const psx_type_t *type) {
   if (!ctx_type_returns_funcptr(type)) return (psx_decl_funcptr_sig_t){0};
-  psx_decl_funcptr_sig_t sig = {0};
-  sig.function = psx_funcptr_returned_func_as_type_shape(
-      type->funcptr_sig.function.returned_funcptr);
-  if (!psx_funcptr_type_shape_has_payload(sig.function))
-    sig = ps_decl_funcptr_sig_clone(type->funcptr_sig);
-  return sig;
+  return ps_type_funcptr_signature(type);
 }
 
 static void ctx_function_ret_info_apply_type(psx_function_ret_info_t *info,
@@ -1256,15 +1235,28 @@ const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
              : NULL;
 }
 
-int psx_ctx_track_function_type(char *name, int len,
-                                const psx_type_t *function_type) {
+int psx_ctx_register_function_type(char *name, int len,
+                                   const psx_type_t *function_type) {
+  if (!name || len <= 0 || !function_type ||
+      function_type->kind != PSX_TYPE_FUNCTION) {
+    return 0;
+  }
   func_name_t *f = find_function_name(name, len);
-  if (!f || !function_type || function_type->kind != PSX_TYPE_FUNCTION) return 1;
+  if (!f) {
+    psx_ctx_define_function_name(name, len);
+    f = find_function_name(name, len);
+  }
+  if (!f) return 0;
   if (f->function_type)
     return psx_type_shape_matches(f->function_type, function_type);
   f->function_type = ctx_type_clone_persistent(function_type);
   ctx_type_normalize_function_ret_type(f->function_type->base);
   return 1;
+}
+
+int psx_ctx_track_function_type(char *name, int len,
+                                const psx_type_t *function_type) {
+  return psx_ctx_register_function_type(name, len, function_type);
 }
 
 const psx_type_t *psx_ctx_get_function_type(char *name, int len) {

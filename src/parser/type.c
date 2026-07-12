@@ -786,6 +786,39 @@ int psx_declarator_shape_append_function(
   return 1;
 }
 
+int psx_declarator_shape_append_shape(
+    psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix) {
+  if (!shape || !suffix || suffix->count < 0) return 0;
+  for (int i = 0; i < suffix->count; i++) {
+    const psx_declarator_op_t *op = &suffix->ops[i];
+    int appended = 0;
+    if (op->kind == PSX_DECL_OP_POINTER) {
+      appended = psx_declarator_shape_append_pointer(
+          shape, op->is_const_qualified, op->is_volatile_qualified);
+    } else if (op->kind == PSX_DECL_OP_ARRAY) {
+      if (op->is_vla_array)
+        appended = psx_declarator_shape_append_vla_array(shape);
+      else
+        appended = psx_declarator_shape_append_array_ex(
+            shape, op->array_len, op->is_incomplete_array);
+    } else if (op->kind == PSX_DECL_OP_FUNCTION) {
+      appended = psx_declarator_shape_append_function(shape, op->funcptr_sig);
+    }
+    if (!appended) return 0;
+  }
+  return 1;
+}
+
+int psx_declarator_shape_count_ops(
+    const psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind) {
+  if (!shape) return 0;
+  int count = 0;
+  for (int i = 0; i < shape->count; i++) {
+    if (shape->ops[i].kind == kind) count++;
+  }
+  return count;
+}
+
 /* is_const/is_volatileはidentifier-outwardのcanonical構造上の修飾位置。
  * pointer_*_qual_maskは旧APIが使う字句順compat viewなので、各連続pointer
  * chainで順番を反転したlocal bitを保持する。 */

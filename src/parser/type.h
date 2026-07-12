@@ -155,6 +155,10 @@ int psx_declarator_shape_append_array_dims(
     psx_declarator_shape_t *shape, const int *dims, int dim_count);
 int psx_declarator_shape_append_function(
     psx_declarator_shape_t *shape, psx_decl_funcptr_sig_t sig);
+int psx_declarator_shape_append_shape(
+    psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix);
+int psx_declarator_shape_count_ops(
+    const psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind);
 psx_type_t *psx_type_apply_declarator_shape(
     psx_type_t *base, const psx_declarator_shape_t *shape);
 psx_type_t *psx_type_adjust_parameter_type(psx_type_t *type);
