@@ -4,6 +4,7 @@
 #include "node_utils.h"
 #include "semantic_ctx.h"
 #include "semantic_pass.h"
+#include "static_assert_declaration.h"
 #include "decl.h"
 #include "core.h"
 #include "alignas_value.h"
@@ -370,7 +371,6 @@ static void parse_function_param_list(parsed_function_params_t *params,
 static token_ident_t *parse_func_declarator(func_ret_parse_state_t *ret_state,
                                             int *out_is_variadic, int *out_has_unnamed_param,
                                             node_t ***out_args, int *out_nargs);
-static void parse_static_assert_toplevel(void);
 static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static tk_float_kind_t fp_kind_for_type_kind_toplevel(token_kind_t type_kind);
@@ -683,28 +683,6 @@ int psx_consume_pointer_prefix_counted(int *is_ptr) {
 
 void psx_consume_pointer_prefix(int *is_ptr) {
   (void)psx_consume_pointer_prefix_counted(is_ptr);
-}
-
-static void parse_static_assert_toplevel(void) {
-  if (curtok()->kind != TK_STATIC_ASSERT) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_EXPECTED));
-  }
-  set_curtok(curtok()->next);
-  tk_expect('(');
-  long long cond_val = psx_parse_enum_const_expr();
-  tk_expect(',');
-  if (curtok()->kind != TK_STRING) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
-  }
-  set_curtok(curtok()->next);
-  tk_expect(')');
-  tk_expect(';');
-  if (cond_val == 0) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
-  }
 }
 
 static token_t *skip_decl_prefix_lookahead(token_t *t) {
@@ -1561,7 +1539,7 @@ static void parse_toplevel_declarator_stmt(const toplevel_decl_spec_t *spec,
 
 static int parse_toplevel_declaration_like(void) {
   if (curtok()->kind == TK_STATIC_ASSERT) {
-    parse_static_assert_toplevel();
+    psx_parse_static_assert_declaration();
     return 1;
   }
   if (psx_ctx_is_tag_keyword(curtok()->kind)) {

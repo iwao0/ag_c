@@ -18,6 +18,7 @@
 #include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
+#include "../src/semantic/static_assert_resolution.h"
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
@@ -1281,21 +1282,23 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, object.status);
   ASSERT_EQ(0, object.offset);
 
+  psx_type_t *bitfield_integer = psx_type_new_integer(TK_INT, 4, 0);
   psx_aggregate_bitfield_resolution_t bitfield;
   psx_resolve_aggregate_bitfield_placement(
       &layout,
       &(psx_aggregate_bitfield_request_t){
-          .storage_size = 4,
+          .type = bitfield_integer,
           .bit_width = 20,
       },
       &bitfield);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
   ASSERT_EQ(0, bitfield.offset);
   ASSERT_EQ(8, bitfield.bit_offset);
+  ASSERT_TRUE(bitfield.bit_is_signed);
   psx_resolve_aggregate_bitfield_placement(
       &layout,
       &(psx_aggregate_bitfield_request_t){
-          .storage_size = 4,
+          .type = bitfield_integer,
           .bit_width = 16,
       },
       &bitfield);
@@ -1305,12 +1308,44 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_bitfield_placement(
       &layout,
       &(psx_aggregate_bitfield_request_t){
-          .storage_size = 4,
+          .type = bitfield_integer,
           .bit_width = 33,
       },
       &bitfield);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE,
             bitfield.status);
+  ASSERT_EQ(4, bitfield.storage_size);
+  psx_resolve_aggregate_bitfield_placement(
+      &layout,
+      &(psx_aggregate_bitfield_request_t){
+          .type = psx_type_new_pointer(bitfield_integer, 4),
+          .bit_width = 1,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE,
+            bitfield.status);
+
+  psx_aggregate_layout_state_t bitfield_sign_layout;
+  psx_aggregate_layout_init(&bitfield_sign_layout, TK_STRUCT);
+  psx_resolve_aggregate_bitfield_placement(
+      &bitfield_sign_layout,
+      &(psx_aggregate_bitfield_request_t){
+          .type = bitfield_integer,
+          .is_enum_type = 1,
+          .bit_width = 2,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
+  ASSERT_TRUE(!bitfield.bit_is_signed);
+  psx_resolve_aggregate_bitfield_placement(
+      &bitfield_sign_layout,
+      &(psx_aggregate_bitfield_request_t){
+          .type = psx_type_new_integer(TK_BOOL, 1, 1),
+          .bit_width = 1,
+      },
+      &bitfield);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, bitfield.status);
+  ASSERT_TRUE(!bitfield.bit_is_signed);
 
   psx_resolve_aggregate_object_placement(
       &layout,
@@ -1366,20 +1401,6 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(member_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, member_type->base->base->kind);
 
-  tag_member_info_t pointer_layout = {
-      .ptr_array_pointee_bytes = 12,
-      .outer_stride = 12,
-      .deref_size = 4,
-  };
-  member_type = psx_resolve_aggregate_member_type(
-      &(psx_aggregate_member_type_request_t){
-          .declaration = {
-              .base_kind = TK_INT,
-              .elem_size = 4,
-              .declarator_shape = &member_shape,
-          },
-          .layout_metadata = &pointer_layout,
-      });
   ASSERT_EQ(12, member_type->ptr_array_pointee_bytes);
   ASSERT_EQ(12, member_type->outer_stride);
   psx_aggregate_member_storage_plan_t member_storage;
@@ -1390,6 +1411,36 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(member_storage.is_pointer_object);
   ASSERT_EQ(1, member_storage.pointer_depth);
   ASSERT_EQ(4, member_storage.scalar_size);
+  ASSERT_EQ(12, member_storage.pointee_array_size);
+  ASSERT_EQ(4, member_storage.pointee_array_element_size);
+  ASSERT_EQ(1, member_storage.pointee_array_dim_count);
+  ASSERT_EQ(3, member_storage.pointee_array_dims[0]);
+
+  psx_declarator_shape_t pointer_array_shape;
+  psx_declarator_shape_init(&pointer_array_shape);
+  psx_declarator_shape_append_array_ex(&pointer_array_shape, 2, 0);
+  psx_declarator_shape_append_pointer_levels(
+      &pointer_array_shape, 1, 0, 0);
+  psx_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
+  psx_type_t *pointer_array_member = psx_resolve_aggregate_member_type(
+      &(psx_aggregate_member_type_request_t){
+          .declaration = {
+              .base_kind = TK_INT,
+              .elem_size = 4,
+              .declarator_shape = &pointer_array_shape,
+          },
+      });
+  psx_plan_aggregate_member_storage(
+      pointer_array_member, &member_storage);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, member_storage.status);
+  ASSERT_EQ(16, member_storage.storage_size);
+  ASSERT_EQ(1, member_storage.array_dim_count);
+  ASSERT_EQ(2, member_storage.array_dims[0]);
+  ASSERT_EQ(2, member_storage.array_element_count);
+  ASSERT_TRUE(member_storage.is_pointer_object);
+  ASSERT_EQ(12, member_storage.pointee_array_size);
+  ASSERT_EQ(1, member_storage.pointee_array_dim_count);
+  ASSERT_EQ(3, member_storage.pointee_array_dims[0]);
 
   psx_tag_declaration_resolution_t tag_resolution;
   psx_resolve_tag_declaration(
@@ -1477,49 +1528,229 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(TK_BOOL, bool_base.storage.scalar_kind);
 
   psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
-  tag_member_info_t named = {
-      .name = (char *)"x",
-      .len = 1,
-      .decl_type = integer,
-  };
+  psx_declarator_shape_t transaction_shape;
+  psx_declarator_shape_init(&transaction_shape);
+  psx_aggregate_layout_state_t transaction_layout;
+  psx_aggregate_layout_init(&transaction_layout, TK_STRUCT);
+  psx_aggregate_member_declaration_resolution_t transaction;
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = integer,
+          .declarator_shape = &transaction_shape,
+          .member_name = (char *)"a",
+          .member_name_len = 1,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, transaction.status);
+  ASSERT_EQ(0, transaction.offset);
+  ASSERT_EQ(4, transaction.storage_size);
+  ASSERT_EQ(1, transaction.registered_member_count);
+  ASSERT_TRUE(transaction.type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, transaction.type->kind);
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = integer,
+          .declarator_shape = &transaction_shape,
+          .member_name = (char *)"b",
+          .member_name_len = 1,
+          .has_bitfield = 1,
+          .bit_width = 3,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, transaction.status);
+  ASSERT_EQ(4, transaction.offset);
+  ASSERT_EQ(0, transaction.bit_offset);
+  ASSERT_TRUE(transaction.bit_is_signed);
+  ASSERT_EQ(1, transaction.registered_member_count);
+  int transaction_size_before_duplicate =
+      psx_aggregate_layout_size(&transaction_layout);
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = integer,
+          .declarator_shape = &transaction_shape,
+          .member_name = (char *)"a",
+          .member_name_len = 1,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, transaction.status);
+  ASSERT_EQ(1, transaction.conflicting_name_len);
+  ASSERT_EQ(transaction_size_before_duplicate,
+            psx_aggregate_layout_size(&transaction_layout));
+  psx_resolve_aggregate_member_declaration(
+      &transaction_layout,
+      &(psx_aggregate_member_declaration_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"Txn",
+          .target_tag_name_len = 3,
+          .base_type = integer,
+          .declarator_shape = &transaction_shape,
+      },
+      &transaction);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_MISSING_NAME, transaction.status);
+
   psx_aggregate_member_resolution_t resolution;
   psx_resolve_aggregate_member(
       &(psx_aggregate_member_resolution_request_t){
           .tag_kind = TK_STRUCT,
           .tag_name = (char *)"__MemberBoundary",
           .tag_name_len = 16,
-          .member = &named,
+          .member_name = (char *)"x",
+          .member_name_len = 1,
+          .offset = 4,
+          .type = integer,
+          .bit_width = 3,
+          .bit_offset = 5,
+          .bit_is_signed = 1,
       },
       &resolution);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
+  tag_member_info_t resolved_named = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+      TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
+      (char *)"x", 1, &resolved_named));
+  ASSERT_EQ(4, resolved_named.offset);
+  ASSERT_EQ(3, resolved_named.bit_width);
+  ASSERT_EQ(5, resolved_named.bit_offset);
+  ASSERT_TRUE(resolved_named.bit_is_signed);
+  ASSERT_TRUE(resolved_named.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, resolved_named.decl_type->kind);
   psx_resolve_aggregate_member(
       &(psx_aggregate_member_resolution_request_t){
           .tag_kind = TK_STRUCT,
           .tag_name = (char *)"__MemberBoundary",
           .tag_name_len = 16,
-          .member = &named,
+          .member_name = (char *)"x",
+          .member_name_len = 1,
+          .offset = 4,
+          .type = integer,
       },
       &resolution);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, resolution.status);
 
-  tag_member_info_t anonymous = {
-      .name = (char *)"",
-      .len = 0,
-      .decl_type = integer,
-  };
+  psx_resolve_aggregate_member(
+      &(psx_aggregate_member_resolution_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"__MemberBoundary",
+          .tag_name_len = 16,
+          .member_name = (char *)"p",
+          .member_name_len = 1,
+          .offset = 8,
+          .type = member_type,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+  tag_member_info_t resolved_pointer = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+      TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
+      (char *)"p", 1, &resolved_pointer));
+  ASSERT_EQ(12, resolved_pointer.ptr_array_pointee_bytes);
+  ASSERT_EQ(12, resolved_pointer.outer_stride);
+  ASSERT_EQ(4, resolved_pointer.deref_size);
+
   for (int i = 0; i < 2; i++) {
-    anonymous.offset = 4 + i * 4;
     psx_resolve_aggregate_member(
         &(psx_aggregate_member_resolution_request_t){
             .tag_kind = TK_STRUCT,
             .tag_name = (char *)"__MemberBoundary",
             .tag_name_len = 16,
-            .member = &anonymous,
+            .member_name = (char *)"",
+            .member_name_len = 0,
+            .offset = 4 + i * 4,
+            .type = integer,
         },
         &resolution);
     ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
   }
+
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"PromSrc",
+          .name_len = 7,
+          .mode = PSX_TAG_DECLARATION_DEFINITION,
+          .member_count = 1,
+          .size = 8,
+          .alignment = 4,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  psx_resolve_tag_declaration(
+      &(psx_tag_declaration_resolution_request_t){
+          .kind = TK_STRUCT,
+          .name = (char *)"PromDst",
+          .name_len = 7,
+          .mode = PSX_TAG_DECLARATION_FORWARD,
+      },
+      &tag_resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
+  psx_resolve_aggregate_member(
+      &(psx_aggregate_member_resolution_request_t){
+          .tag_kind = TK_STRUCT,
+          .tag_name = (char *)"PromSrc",
+          .tag_name_len = 7,
+          .member_name = (char *)"b",
+          .member_name_len = 1,
+          .offset = 4,
+          .type = integer,
+          .bit_width = 3,
+          .bit_offset = 2,
+          .bit_is_signed = 1,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, resolution.status);
+  psx_aggregate_member_promotion_t promotion;
+  psx_promote_aggregate_members(
+      &(psx_aggregate_member_promotion_request_t){
+          .target_tag_kind = TK_STRUCT,
+          .target_tag_name = (char *)"PromDst",
+          .target_tag_name_len = 7,
+          .source_tag_kind = TK_STRUCT,
+          .source_tag_name = (char *)"PromSrc",
+          .source_tag_name_len = 7,
+          .base_offset = 8,
+      },
+      &promotion);
+  ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, promotion.status);
+  ASSERT_EQ(1, promotion.promoted_count);
+  tag_member_info_t promoted = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)"PromDst", 7, (char *)"b", 1, &promoted));
+  ASSERT_EQ(12, promoted.offset);
+  ASSERT_EQ(3, promoted.bit_width);
+  ASSERT_EQ(2, promoted.bit_offset);
+  ASSERT_TRUE(promoted.bit_is_signed);
+  ASSERT_TRUE(promoted.decl_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, promoted.decl_type->kind);
+}
+
+static void test_static_assert_resolution_boundary() {
+  printf("test_static_assert_resolution_boundary...\n");
+  psx_static_assert_resolution_t resolution;
+  psx_resolve_static_assert(
+      &(psx_static_assert_request_t){.is_constant = 1, .value = 1},
+      &resolution);
+  ASSERT_EQ(PSX_STATIC_ASSERT_OK, resolution.status);
+  psx_resolve_static_assert(
+      &(psx_static_assert_request_t){.is_constant = 1, .value = 0},
+      &resolution);
+  ASSERT_EQ(PSX_STATIC_ASSERT_FAILED, resolution.status);
+  psx_resolve_static_assert(
+      &(psx_static_assert_request_t){.is_constant = 0, .value = 1},
+      &resolution);
+  ASSERT_EQ(PSX_STATIC_ASSERT_NOT_CONSTANT, resolution.status);
 }
 
 static void test_typedef_declaration_resolution_boundary() {
@@ -4920,6 +5151,36 @@ static void test_type_metadata_bridge() {
             canonical_member_cb.decl_type->base->base->kind);
   ASSERT_EQ(1, ps_type_funcptr_signature(canonical_member_cb.decl_type)
                    .function.callable.signature.param_int_mask);
+
+  const char *qualified_member_tag = "__tm_member_qualified";
+  parsed_code = parse_program_input(
+      "struct __tm_member_qualified { const int c; "
+      "volatile unsigned long long v; _Atomic int a; char pad; "
+      "_Alignas(8) int y; }; ");
+  (void)parsed_code;
+  tag_member_info_t qualified_member_c = {0};
+  tag_member_info_t qualified_member_v = {0};
+  tag_member_info_t qualified_member_a = {0};
+  tag_member_info_t qualified_member_y = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)qualified_member_tag,
+      (int)strlen(qualified_member_tag), "c", 1, &qualified_member_c));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)qualified_member_tag,
+      (int)strlen(qualified_member_tag), "v", 1, &qualified_member_v));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)qualified_member_tag,
+      (int)strlen(qualified_member_tag), "a", 1, &qualified_member_a));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+      TK_STRUCT, (char *)qualified_member_tag,
+      (int)strlen(qualified_member_tag), "y", 1, &qualified_member_y));
+  ASSERT_TRUE(qualified_member_c.decl_type->is_const_qualified);
+  ASSERT_TRUE(qualified_member_v.decl_type->is_volatile_qualified);
+  ASSERT_TRUE(qualified_member_v.decl_type->is_unsigned);
+  ASSERT_TRUE(qualified_member_v.decl_type->is_long_long);
+  ASSERT_EQ(8, ps_type_sizeof(qualified_member_v.decl_type));
+  ASSERT_TRUE(qualified_member_a.decl_type->is_atomic);
+  ASSERT_EQ(0, qualified_member_y.offset % 8);
 
   parsed_code = parse_program_input(
       "int __tm_local_ptr_rows(void) { "
@@ -11165,6 +11426,12 @@ static void test_multiple_funcdefs() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
+
+  parsed_code = parse_program_input(
+      "struct SA { _Static_assert(sizeof(int)==4, \"ok\"); int x; }; "
+      "int main(void) { return 0; }");
+  ASSERT_TRUE(parsed_code[0] != NULL);
+  ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 }
 
 static void test_parse_invalid() {
@@ -11234,6 +11501,8 @@ static void test_parse_invalid() {
   expect_parse_fail("int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
   expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
   expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
+  expect_parse_fail(
+      "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
   expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
   expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
   expect_parse_fail("main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
@@ -11278,6 +11547,11 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
   expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
   expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message(
+      "main() { struct S { int *p:1; }; return 0; }",
+      "bit-field has non-integer canonical type");
+  expect_parse_fail("main() { struct S { int a[2]:1; }; return 0; }");
+  expect_parse_fail("main() { struct S { float f:1; }; return 0; }");
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
   expect_parse_fail_with_message("main() { int x; int *p=&x; return *(void *)p; }",
                                  "void* の deref はできません");
@@ -11778,6 +12052,7 @@ int main() {
   test_global_declaration_storage_plan_boundary();
   test_tag_declaration_resolution_boundary();
   test_aggregate_member_resolution_boundary();
+  test_static_assert_resolution_boundary();
   test_typedef_declaration_resolution_boundary();
   test_enum_constant_resolution_boundary();
   test_initializer_resolution_boundary();

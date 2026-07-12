@@ -7,6 +7,7 @@
 #include "node_utils.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
+#include "static_assert_declaration.h"
 #include "tag_declaration.h"
 #include "typedef_declaration.h"
 #include "config_runtime.h"
@@ -1664,26 +1665,7 @@ node_t *psx_decl_parse_declaration(void) {
   }
 
   if (curtok()->kind == TK_STATIC_ASSERT) {
-    set_curtok(curtok()->next);
-    tk_expect('(');
-    int const_ok = 1;
-    long long cond_val = psx_eval_const_int(psx_expr_assign(), &const_ok);
-    tk_expect(',');
-    if (curtok()->kind != TK_STRING) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING));
-    }
-    set_curtok(curtok()->next);
-    tk_expect(')');
-    tk_expect(';');
-    if (!const_ok) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_COND_NOT_CONST));
-    }
-    if (cond_val == 0) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED, curtok(), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
-    }
+    psx_parse_static_assert_declaration();
     return psx_node_new_num(0);
   }
 
