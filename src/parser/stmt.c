@@ -47,7 +47,7 @@ static int is_decl_like_start_stmt(void) {
 }
 
 static node_t *parse_decl_like_stmt(void) {
-  return ps_parse_local_declaration_syntax(active_local_declarations);
+  return psx_parse_local_declaration_syntax(active_local_declarations);
 }
 
 static node_t *block_item(void) {
@@ -228,7 +228,7 @@ static node_t *parse_stmt_do_while(void) {
   node->base.kind = ND_DO_WHILE;
   node->base.rhs = stmt_internal();
   if (curtok()->kind != TK_WHILE) {
-    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
+    ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
   }
   set_curtok(curtok()->next);
   tk_expect('(');
@@ -324,7 +324,7 @@ static node_t *parse_stmt_goto(void) {
   set_curtok(curtok()->next);
   token_ident_t *ident = tk_consume_ident();
   if (!ident) {
-    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
+    ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
   }
   node_jump_t *node = arena_alloc(sizeof(node_jump_t));
   node->base.kind = ND_GOTO;

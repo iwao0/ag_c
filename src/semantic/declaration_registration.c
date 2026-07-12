@@ -3,11 +3,12 @@
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../parser/diag.h"
-#include "../semantic/constant_expression.h"
-#include "../semantic/enum_constant_resolution.h"
-#include "../semantic/semantic_pass.h"
-#include "../semantic/static_assert_resolution.h"
-#include "../semantic/typedef_declaration_resolution.h"
+#include "constant_expression.h"
+#include "identifier_binding.h"
+#include "semantic_pass.h"
+#include "enum_constant_resolution.h"
+#include "static_assert_resolution.h"
+#include "typedef_declaration_resolution.h"
 
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
@@ -57,7 +58,7 @@ void psx_apply_parsed_enum_constant(
       &resolution);
   if (resolution.status == PSX_ENUM_CONSTANT_OK) return;
   if (resolution.status == PSX_ENUM_CONSTANT_DUPLICATE) {
-    psx_diag_duplicate_with_name(
+    ps_diag_duplicate_with_name(
         diag_tok, "enum constant", name, name_len);
   }
   if (resolution.status == PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT) {
@@ -121,7 +122,7 @@ int psx_apply_aggregate_member_declaration(
   if (resolution.status == PSX_AGGREGATE_MEMBER_OK)
     return resolution.registered_member_count;
   if (resolution.status == PSX_AGGREGATE_MEMBER_MISSING_NAME) {
-    psx_diag_missing(diag_tok, diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    ps_diag_missing(diag_tok, diag_text_for(DIAG_TEXT_MEMBER_NAME));
   }
   if (resolution.status == PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE) {
     ps_diag_ctx(diag_tok, "decl", "%s",
@@ -158,7 +159,8 @@ int psx_apply_aggregate_member_declaration(
 
 void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
   if (!condition) return;
-  condition = psx_semantic_analyze_expression(condition, diag_tok);
+  condition = psx_bind_identifier_tree(condition, diag_tok);
+  psx_semantic_resolve_tree(condition, NULL, diag_tok);
   int is_constant = 1;
   long long value = psx_eval_const_int(condition, &is_constant);
   psx_static_assert_resolution_t resolution;

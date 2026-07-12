@@ -27,7 +27,7 @@ psx_type_t *ps_type_new(psx_type_kind_t kind) {
   return type;
 }
 
-void psx_type_normalize_integer_identity(psx_type_t *type) {
+void ps_type_normalize_integer_identity(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_INTEGER) {
     if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
@@ -36,10 +36,10 @@ void psx_type_normalize_integer_identity(psx_type_t *type) {
     else if (type->size == 8) type->scalar_kind = TK_LONG;
     else type->scalar_kind = TK_INT;
   }
-  psx_type_normalize_integer_identity(type->base);
+  ps_type_normalize_integer_identity(type->base);
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count && i < 16; i++)
-      psx_type_normalize_integer_identity(type->param_types[i]);
+      ps_type_normalize_integer_identity(type->param_types[i]);
   }
 }
 
@@ -456,9 +456,9 @@ static psx_type_t *type_return_from_funcptr_shape(
       psx_type_sync_pointer_to_array_metadata_from_base(return_type);
     }
   }
-  if (ps_funcptr_returned_func_has_payload(shape.returned_funcptr)) {
+  if (psx_funcptr_returned_func_has_payload(shape.returned_funcptr)) {
     psx_funcptr_type_shape_t returned_shape =
-        ps_funcptr_returned_func_as_type_shape(shape.returned_funcptr);
+        psx_funcptr_returned_func_as_type_shape(shape.returned_funcptr);
     psx_decl_funcptr_sig_t returned_sig = {0};
     returned_sig.function = psx_funcptr_type_shape_clone(returned_shape);
     psx_type_t *returned_function = ps_type_new_function(
@@ -1623,7 +1623,7 @@ psx_type_t *ps_type_generic_control(const psx_type_t *control) {
   } else if (type->kind == PSX_TYPE_FUNCTION) {
     type = ps_type_new_pointer(type, 0);
   }
-  psx_type_normalize_integer_identity(type);
+  ps_type_normalize_integer_identity(type);
   return type;
 }
 

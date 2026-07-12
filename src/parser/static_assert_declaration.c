@@ -21,7 +21,7 @@ void psx_parse_static_assert_syntax(
   }
   tk_set_current_token(current_token()->next);
   tk_expect('(');
-  declaration->condition = ps_expr_assign();
+  declaration->condition = psx_expr_assign();
   tk_expect(',');
   if (current_token()->kind != TK_STRING) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING,

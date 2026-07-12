@@ -7,13 +7,12 @@ node_t *lower_unary_negate_expression(node_t *node) {
   psx_type_t *operand_type = ps_node_get_type(node->lhs);
   if (operand_type && operand_type->kind == PSX_TYPE_FLOAT) {
     node_t *negated = ps_node_new_binary(ND_FNEG, node->lhs, NULL);
-    negated->type = node->type;
-    negated->fp_kind = operand_type->fp_kind;
+    ps_node_bind_type(negated, node->type);
     return negated;
   }
   node_t *negated = ps_node_new_binary(
       ND_SUB, ps_node_new_num(0), node->lhs);
-  negated->type = node->type;
+  ps_node_bind_type(negated, node->type);
   return negated;
 }
 

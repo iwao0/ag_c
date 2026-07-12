@@ -9,7 +9,8 @@
 #include "parser/decl.h"
 #include "parser/diag.h"
 #include "parser/local_registry.h"
-#include "frontend/declaration_application.h"
+#include "semantic/declaration_application.h"
+#include "frontend/semantic_pipeline.h"
 #include "parser/dynarray.h"
 #include "parser/node_utils.h"
 #include "parser/semantic_ctx.h"
@@ -21,6 +22,7 @@
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/parameter_declaration_resolution.h"
+
 
 #include <stdlib.h>
 #include <string.h>
@@ -157,6 +159,19 @@ int psx_finish_global_declaration_pipeline(
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
             initializer_resolution.status);
+      if (initializer_resolution.is_aggregate_initializer) {
+        initializer_resolution.initializer =
+            psx_frontend_analyze_initializer_syntax(
+                initializer_resolution.initializer,
+                request->initializer->value_tok);
+      } else {
+        initializer_resolution.initializer =
+            psx_frontend_analyze_expression(
+                initializer_resolution.initializer,
+                initializer_resolution.initializer->tok
+                    ? initializer_resolution.initializer->tok
+                    : request->initializer->value_tok);
+      }
       if (!lower_resolved_global_declaration_initializer(
               global, &initializer_resolution,
               request->initializer->value_tok)) {
@@ -225,8 +240,9 @@ int psx_apply_function_declaration_pipeline(
   if (request->function_node) {
     request->function_node->function_type = ps_type_clone(
         resolution.declaration_plan.function_type);
-    request->function_node->base.type = ps_type_clone(
-        request->function_node->function_type->base);
+    ps_node_bind_type(
+        (node_t *)request->function_node,
+        ps_type_clone(request->function_node->function_type->base));
   }
   return 1;
 }
@@ -544,6 +560,16 @@ int psx_finish_static_local_declaration_pipeline(
         request->initializer->value_tok
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
+  }
+  if (resolution.is_aggregate_initializer) {
+    resolution.initializer = psx_frontend_analyze_initializer_syntax(
+        resolution.initializer, request->initializer->value_tok);
+  } else {
+    resolution.initializer = psx_frontend_analyze_expression(
+        resolution.initializer,
+        resolution.initializer->tok
+            ? resolution.initializer->tok
+            : request->initializer->value_tok);
   }
   if (!lower_static_local_declaration_initializer(
           result->global, &resolution, request->initializer->value_tok,

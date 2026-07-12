@@ -12,9 +12,9 @@ typedef struct {
 } psx_parsed_initializer_t;
 
 node_t *psx_parse_initializer_syntax_list(void);
-void ps_prepare_optional_initializer_syntax(
+void psx_prepare_optional_initializer_syntax(
     psx_parsed_initializer_t *out);
-void ps_parse_initializer_syntax_value(
+void psx_parse_initializer_syntax_value(
     psx_parsed_initializer_t *out, token_t *assign_tok);
 
 #endif

@@ -4,7 +4,7 @@
 #include "../parser/function_parameter_syntax.h"
 #include "../parser/aggregate_member_syntax.h"
 #include "../parser/ast.h"
-#include "../semantic/declaration_resolution.h"
+#include "declaration_resolution.h"
 
 typedef enum {
   PSX_DECLARATION_PHASE_EMPTY = 0,

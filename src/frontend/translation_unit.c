@@ -1,8 +1,9 @@
 #include "translation_unit.h"
 
-#include "declaration_registration.h"
+#include "../semantic/declaration_registration.h"
 #include "function_definition.h"
 #include "local_declaration.h"
+#include "semantic_pipeline.h"
 #include "toplevel_declaration.h"
 #include "../parser/anon_tag.h"
 #include "../parser/arena.h"
@@ -11,15 +12,14 @@
 #include "../parser/global_registry.h"
 #include "../pragma_pack.h"
 #include "../parser/semantic_ctx.h"
-#include "../semantic/semantic_pass.h"
 #include <stdlib.h>
 
 void psx_frontend_reset_translation_unit_state(void) {
   ps_global_registry_reset_translation_unit();
-  psx_anon_tag_reset_translation_unit_state();
-  psx_expr_reset_translation_unit_state();
-  psx_decl_reset_translation_unit_state();
-  psx_ctx_reset_translation_unit_scope();
+  ps_anon_tag_reset_translation_unit_state();
+  ps_expr_reset_translation_unit_state();
+  ps_decl_reset_translation_unit_state();
+  ps_ctx_reset_translation_unit_scope();
   pragma_pack_reset();
   arena_free_all();
 }
@@ -28,11 +28,11 @@ void psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
     tokenizer_context_t *tk_ctx, token_t *start) {
   if (!stream) return;
-  psx_global_registry_reset_diag_state();
+  ps_global_registry_reset_diag_state();
   ps_ctx_reset_function_diag_state();
   ps_ctx_reset_tag_diag_state();
-  psx_ctx_reset_function_names();
-  psx_parser_stream_begin(
+  ps_ctx_reset_function_names();
+  ps_parser_stream_begin(
       &stream->parser, tk_ctx, start,
       psx_frontend_toplevel_declaration_callbacks());
 }
@@ -61,7 +61,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
           psx_frontend_local_declaration_callbacks());
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      psx_semantic_analyze_function(function, function->tok);
+      psx_frontend_analyze_function(function, function->tok);
       return function;
     }
   }
@@ -70,8 +70,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
 
 void psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream) return;
-  psx_ctx_emit_deferred_parser_warnings();
-  psx_parser_stream_end(&stream->parser);
+  ps_ctx_emit_deferred_parser_warnings();
+  ps_parser_stream_end(&stream->parser);
 }
 
 void psx_frontend_free_processed_ast(void) {
@@ -106,7 +106,7 @@ node_t **psx_frontend_program_ctx(
   }
   program[count] = NULL;
   psx_frontend_stream_end(&stream);
-  psx_semantic_analyze_program(program);
+  psx_frontend_analyze_program(program);
   return program;
 }
 

@@ -1,7 +1,7 @@
 #ifndef DECLARATION_PIPELINE_H
 #define DECLARATION_PIPELINE_H
 
-#include "frontend/declaration_application.h"
+#include "semantic/declaration_application.h"
 #include "parser/declaration_syntax.h"
 #include "parser/initializer_syntax.h"
 #include "parser/symtab.h"

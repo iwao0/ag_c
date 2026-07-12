@@ -39,7 +39,7 @@ int psx_parse_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
-int ps_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_dims,
+int psx_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_dims,
                                           int *out_dim_count) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   int dc = 0;
@@ -58,11 +58,11 @@ int ps_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_di
 
 int psx_parse_member_array_suffixes(int *out_is_flex_array,
                                     int *out_dim_count, int *out_first_dim) {
-  return ps_parse_member_array_suffixes_ex(out_is_flex_array, out_dim_count,
+  return psx_parse_member_array_suffixes_ex(out_is_flex_array, out_dim_count,
                                             out_first_dim, NULL, 0);
 }
 
-int ps_parse_member_array_suffixes_ex(int *out_is_flex_array,
+int psx_parse_member_array_suffixes_ex(int *out_is_flex_array,
                                        int *out_dim_count, int *out_first_dim,
                                        int *out_dims, int max_dims) {
   int arr_total = 1;

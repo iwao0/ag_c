@@ -1,7 +1,7 @@
 #include "local_declaration.h"
 
-#include "declaration_application.h"
-#include "declaration_registration.h"
+#include "../semantic/declaration_application.h"
+#include "../semantic/declaration_registration.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../parser/decl.h"
@@ -123,7 +123,7 @@ static void begin_declarator(
   if (application->is_static) {
     char *function_name = NULL;
     int function_name_len = 0;
-    psx_decl_get_current_funcname(&function_name, &function_name_len);
+    ps_decl_get_current_funcname(&function_name, &function_name_len);
     application->static_request =
         (psx_static_local_declaration_pipeline_request_t){
             .function_name = function_name,

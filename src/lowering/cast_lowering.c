@@ -13,7 +13,7 @@
 static int aggregate_temp_seq;
 
 static node_t *annotate(node_t *node, psx_type_t *type) {
-  if (node && type) node->type = type;
+  if (node && type) ps_node_bind_type(node, type);
   return node;
 }
 
@@ -32,7 +32,6 @@ static node_t *lower_value_to_fp(node_t *operand, tk_float_kind_t target) {
       (source != TK_FLOAT_KIND_NONE &&
        (source >= TK_FLOAT_KIND_DOUBLE) ==
            (target >= TK_FLOAT_KIND_DOUBLE))) {
-    operand->fp_kind = target;
     return annotate(operand, type);
   }
   return ps_node_new_int_to_fp_cast(operand, target, type);
@@ -198,7 +197,7 @@ static node_t *lower_aggregate_cast(node_t *operand,
 
   int object_size = view.elem_size > 0 ? view.elem_size : 8;
   char *temp_name = new_aggregate_temp_name();
-  lvar_t *temp = psx_decl_register_lvar_sized(
+  lvar_t *temp = ps_decl_register_lvar_sized(
       temp_name, (int)strlen(temp_name), object_size, object_size, 0);
   ps_local_registry_set_decl_type(temp, view.target);
 
@@ -248,7 +247,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
 
   if (view.is_pointer || view.kind == TK_LONG) {
     operand = fp_to_int(operand, view.is_pointer ? NULL : view.target);
-    operand->fp_kind = TK_FLOAT_KIND_NONE;
     if (!view.is_pointer && view.kind == TK_LONG) {
       if (operand->kind == ND_NUM) {
         ((node_num_t *)operand)->int_is_long = 1;
@@ -295,7 +293,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
   if (view.kind == TK_INT || view.kind == TK_ENUM ||
       view.kind == TK_SIGNED || view.kind == TK_UNSIGNED) {
     operand = fp_to_int(operand, view.target);
-    operand->fp_kind = TK_FLOAT_KIND_NONE;
     int target_unsigned = view.kind != TK_ENUM &&
                           (view.is_unsigned || view.kind == TK_UNSIGNED);
     if (operand->kind == ND_NUM) {
@@ -330,7 +327,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
 
   if (view.kind == TK_SHORT || view.kind == TK_CHAR) {
     operand = fp_to_int(operand, view.target);
-    operand->fp_kind = TK_FLOAT_KIND_NONE;
     int width = view.kind == TK_SHORT ? 16 : 8;
     long long mask = view.kind == TK_SHORT ? 0xffffLL : 0xffLL;
     if (operand->kind == ND_NUM) {
@@ -429,8 +425,7 @@ void lower_source_cast_expression(node_t *node, token_t *fallback_diag_tok) {
   token_t *source_tok = node->tok;
   if (lowered == operand && lowered->kind != ND_NUM) {
     node->is_source_cast = 0;
-    node->type = target;
-    node->fp_kind = target ? target->fp_kind : TK_FLOAT_KIND_NONE;
+    ps_node_bind_type(node, target);
     return;
   }
   if (lowered->kind == ND_NUM)

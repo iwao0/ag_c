@@ -95,8 +95,8 @@ int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
 psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
     psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
     int copy_variadic);
-int ps_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
-psx_funcptr_type_shape_t ps_funcptr_returned_func_as_type_shape(
+int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
+psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
     psx_funcptr_returned_func_t ret);
 psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
     psx_funcptr_type_shape_t fn);

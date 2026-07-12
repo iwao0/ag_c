@@ -60,12 +60,12 @@ static void parse_declarator_head(
   append_declarator_slot(declaration);
   psx_parsed_declarator_t *declarator =
       &declaration->declarators[declaration->declarator_count - 1];
-  *declarator = ps_parse_declarator_syntax_tree();
+  *declarator = psx_parse_toplevel_declarator_syntax_tree();
   ps_prepare_constant_declarator_expressions(declarator);
   require_declarator_name(declarator);
 }
 
-void ps_parse_toplevel_declaration_head_syntax(
+void psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration) {
   if (!declaration) return;
   *declaration = (psx_parsed_toplevel_declaration_t){0};
@@ -75,7 +75,7 @@ void ps_parse_toplevel_declaration_head_syntax(
     tk_set_current_token(current_token()->next);
   }
 
-  ps_parse_decl_specifier_syntax_ex(
+  psx_parse_decl_specifier_syntax_ex(
       &declaration->specifier,
       &(psx_decl_specifier_syntax_options_t){
           .is_typedef_name = is_toplevel_typedef_name,
@@ -92,7 +92,7 @@ void ps_parse_toplevel_declaration_head_syntax(
   if (!declaration->is_standalone_tag) parse_declarator_head(declaration);
 }
 
-void ps_finish_toplevel_declaration_syntax(
+void psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks) {
   if (!declaration) return;
@@ -112,14 +112,14 @@ void ps_finish_toplevel_declaration_syntax(
         &declaration->declarators[declaration->declarator_count - 1];
     psx_parsed_initializer_t *initializer =
         &declaration->initializers[declaration->declarator_count - 1];
-    ps_prepare_optional_initializer_syntax(initializer);
+    psx_prepare_optional_initializer_syntax(initializer);
     if (callbacks && callbacks->begin_declarator)
       callbacks->begin_declarator(
           declaration_context, declarator, initializer);
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
       tk_expect('=');
-      ps_parse_initializer_syntax_value(initializer, assign_tok);
+      psx_parse_initializer_syntax_value(initializer, assign_tok);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
@@ -131,18 +131,18 @@ void ps_finish_toplevel_declaration_syntax(
     callbacks->finish_declaration(declaration_context);
 }
 
-void ps_parse_toplevel_declaration_syntax(
+void psx_parse_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks) {
-  ps_parse_toplevel_declaration_head_syntax(declaration);
-  ps_finish_toplevel_declaration_syntax(declaration, callbacks);
+  psx_parse_toplevel_declaration_head_syntax(declaration);
+  psx_finish_toplevel_declaration_syntax(declaration, callbacks);
 }
 
 void ps_dispose_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration) {
   if (!declaration) return;
   for (int i = 0; i < declaration->declarator_count; i++)
-    ps_dispose_declarator_syntax(&declaration->declarators[i]);
+    psx_dispose_declarator_syntax(&declaration->declarators[i]);
   free(declaration->declarators);
   free(declaration->initializers);
   ps_dispose_decl_specifier_syntax(&declaration->specifier);

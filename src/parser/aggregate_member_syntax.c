@@ -47,7 +47,7 @@ static void append_aggregate_declarator(
   declaration->declarators[declaration->declarator_count++] = declarator;
 }
 
-void ps_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
+void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
   if (!body) return;
   memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
@@ -65,18 +65,18 @@ void ps_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
     declaration->pack_alignment = pragma_pack_current_alignment();
     for (;;) {
       psx_parsed_declarator_t declarator =
-          ps_parse_declarator_syntax_tree();
+          psx_parse_declarator_syntax_tree();
       append_aggregate_declarator(declaration, declarator);
       int has_comma = tk_consume(',');
       if (!declarator.identifier && !declarator.has_bitfield && has_comma)
-        psx_diag_missing(current_token(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+        ps_diag_missing(current_token(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!has_comma) break;
     }
     tk_expect(';');
   }
 }
 
-void ps_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
+void psx_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
   if (!body) return;
   for (int i = 0; i < body->item_count; i++) {
     if (body->items[i].kind == PSX_PARSED_AGGREGATE_MEMBER_DECLARATION) {
@@ -84,7 +84,7 @@ void ps_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
           &body->items[i].value.member_declaration;
       ps_dispose_decl_specifier_syntax(&declaration->specifier);
       for (int j = 0; j < declaration->declarator_count; j++)
-        ps_dispose_declarator_syntax(&declaration->declarators[j]);
+        psx_dispose_declarator_syntax(&declaration->declarators[j]);
       free(declaration->declarators);
     }
   }

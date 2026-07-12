@@ -26,7 +26,7 @@ void ps_decl_set_current_funcname(char *name, int len) {
   current_funcname_len = len;
 }
 
-void psx_decl_get_current_funcname(char **out_name, int *out_len) {
+void ps_decl_get_current_funcname(char **out_name, int *out_len) {
   if (out_name) *out_name = current_funcname;
   if (out_len) *out_len = current_funcname_len;
 }
@@ -251,8 +251,8 @@ void ps_decl_set_gvar_decl_type(global_var_t *gv,
   gv->decl_type = ps_type_clone_persistent(decl_type);
 }
 
-void psx_decl_reset_translation_unit_state(void) {
-  psx_decl_reset_locals();
+void ps_decl_reset_translation_unit_state(void) {
+  ps_decl_reset_locals();
   current_funcname = NULL;
   current_funcname_len = 0;
   psx_declaration_pipeline_reset_translation_unit_state();
@@ -354,7 +354,7 @@ psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
   return merged;
 }
 
-int ps_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
+int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
   return ret.is_funcptr ||
          (ret.type && psx_funcptr_type_shape_has_payload(*ret.type));
 }
@@ -362,7 +362,7 @@ int ps_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
 static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
     psx_funcptr_type_shape_t fn);
 
-psx_funcptr_type_shape_t ps_funcptr_returned_func_as_type_shape(
+psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
     psx_funcptr_returned_func_t ret) {
   return ret.type ? *ret.type : (psx_funcptr_type_shape_t){0};
 }
@@ -391,8 +391,8 @@ psx_funcptr_returned_func_t psx_funcptr_returned_func_clone(
 
 int psx_funcptr_returned_func_matches(psx_funcptr_returned_func_t a,
                                       psx_funcptr_returned_func_t b) {
-  psx_funcptr_type_shape_t a_fn = ps_funcptr_returned_func_as_type_shape(a);
-  psx_funcptr_type_shape_t b_fn = ps_funcptr_returned_func_as_type_shape(b);
+  psx_funcptr_type_shape_t a_fn = psx_funcptr_returned_func_as_type_shape(a);
+  psx_funcptr_type_shape_t b_fn = psx_funcptr_returned_func_as_type_shape(b);
   return a.is_funcptr == b.is_funcptr &&
          psx_funcptr_type_shape_matches(a_fn, b_fn);
 }
@@ -402,9 +402,9 @@ psx_funcptr_returned_func_t psx_funcptr_returned_func_merge_missing(
     int copy_variadic) {
   int merged_is_funcptr = merged.is_funcptr || src.is_funcptr;
   psx_funcptr_type_shape_t merged_fn =
-      ps_funcptr_returned_func_as_type_shape(merged);
+      psx_funcptr_returned_func_as_type_shape(merged);
   psx_funcptr_type_shape_t src_fn =
-      ps_funcptr_returned_func_as_type_shape(src);
+      psx_funcptr_returned_func_as_type_shape(src);
   merged_fn = psx_funcptr_type_shape_merge_missing(
       merged_fn, src_fn, copy_variadic);
   merged = psx_funcptr_returned_func_from_type_shape(merged_fn);
@@ -422,14 +422,14 @@ static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
 
 int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn) {
   return psx_funcptr_callable_shape_has_payload(fn.callable) ||
-         ps_funcptr_returned_func_has_payload(fn.returned_funcptr);
+         psx_funcptr_returned_func_has_payload(fn.returned_funcptr);
 }
 
 int psx_funcptr_type_shape_matches(psx_funcptr_type_shape_t a,
                                    psx_funcptr_type_shape_t b) {
   int has_returned =
-      ps_funcptr_returned_func_has_payload(a.returned_funcptr) ||
-      ps_funcptr_returned_func_has_payload(b.returned_funcptr);
+      psx_funcptr_returned_func_has_payload(a.returned_funcptr) ||
+      psx_funcptr_returned_func_has_payload(b.returned_funcptr);
   return psx_funcptr_callable_shape_matches(a.callable, b.callable) &&
          (!has_returned ||
           psx_funcptr_returned_func_matches(a.returned_funcptr,
@@ -441,8 +441,8 @@ psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
     int copy_variadic) {
   merged.callable = psx_funcptr_callable_shape_merge_missing(
       merged.callable, src.callable, copy_variadic);
-  if (ps_funcptr_returned_func_has_payload(merged.returned_funcptr) ||
-      ps_funcptr_returned_func_has_payload(src.returned_funcptr)) {
+  if (psx_funcptr_returned_func_has_payload(merged.returned_funcptr) ||
+      psx_funcptr_returned_func_has_payload(src.returned_funcptr)) {
     merged.returned_funcptr = psx_funcptr_returned_func_merge_missing(
         merged.returned_funcptr, src.returned_funcptr, copy_variadic);
   }
@@ -500,7 +500,7 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *
   return sig;
 }
 
-psx_decl_funcptr_sig_t ps_decl_make_funcptr_sig_from_kind(
+psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
     const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
     tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
     int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array) {
@@ -511,7 +511,7 @@ psx_decl_funcptr_sig_t ps_decl_make_funcptr_sig_from_kind(
       ret_is_funcptr, ret_is_complex);
 }
 
-void ps_decl_funcptr_sig_promote_return_to_funcptr(
+void psx_decl_funcptr_sig_promote_return_to_funcptr(
     psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig) {
   if (!sig) return;
   psx_funcptr_type_shape_t returned_fn = {0};
@@ -549,13 +549,13 @@ node_t *ps_decl_bind_initializer_for_var(
     psx_decl_init_kind_t initializer_kind, token_t *init_tok) {
   node_t *target =
       ps_lvar_is_array(var) || ps_lvar_is_tag_aggregate(var)
-          ? ps_node_new_lvar_object_ref_for(var)
+          ? psx_node_new_lvar_object_ref_for(var)
           : ps_node_new_lvar_expr_ref_for(var, is_pointer);
-  return ps_node_new_raw_decl_initializer(
+  return psx_node_new_raw_decl_initializer(
       target, initializer, initializer_kind, init_tok);
 }
 
-node_t *ps_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
+node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   if (curtok() && curtok()->kind == TK_LBRACE) {
     token_t *init_tok = curtok();
     node_t *syntax = psx_parse_initializer_syntax_list();
@@ -564,5 +564,5 @@ node_t *ps_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   }
   token_t *init_tok = curtok();
   return ps_decl_bind_initializer_for_var(
-      var, is_pointer, ps_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
+      var, is_pointer, psx_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
 }

@@ -4,11 +4,11 @@
 #include "../parser/ast.h"
 #include "../tokenizer/token.h"
 
-void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_tok);
-node_t *psx_semantic_analyze_expression(node_t *expr,
-                                        const token_t *fallback_diag_tok);
-node_t *psx_semantic_analyze_initializer_syntax(
-    node_t *syntax, const token_t *fallback_diag_tok);
-void psx_semantic_analyze_program(node_t **program);
+void psx_semantic_resolve_tree(
+    node_t *node, node_func_t *current_func,
+    const token_t *fallback_diag_tok);
+void psx_semantic_resolve_initializer_tree(
+    node_t *syntax, node_func_t *current_func,
+    const token_t *fallback_diag_tok);
 
 #endif

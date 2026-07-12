@@ -1,0 +1,65 @@
+#include "semantic_pipeline.h"
+
+#include "../lowering/semantic_lowering_pass.h"
+#include "../parser/decl.h"
+#include "../semantic/control_flow_validation.h"
+#include "../semantic/identifier_binding.h"
+#include "../semantic/lvar_usage_analysis.h"
+#include "../semantic/semantic_diagnostics.h"
+#include "../semantic/semantic_pass.h"
+
+void psx_frontend_analyze_function(
+    node_t *function, const token_t *fallback_diag_tok) {
+  if (!function || function->kind != ND_FUNCDEF) return;
+  function = psx_bind_identifier_tree(function, fallback_diag_tok);
+  node_func_t *current_function = (node_func_t *)function;
+  psx_validate_control_flow(function, fallback_diag_tok);
+  psx_semantic_resolve_tree(
+      function, current_function, fallback_diag_tok);
+  function = psx_lower_semantic_tree(function, fallback_diag_tok);
+  psx_semantic_resolve_tree(
+      function, current_function, fallback_diag_tok);
+  current_function->lvars = ps_decl_get_locals();
+  psx_emit_semantic_warnings(
+      function, current_function, fallback_diag_tok);
+  psx_emit_unreachable_warnings(function, fallback_diag_tok);
+  psx_lower_implicit_conversions(
+      function, current_function, fallback_diag_tok);
+  psx_analyze_function_lvar_usage(
+      current_function, fallback_diag_tok);
+}
+
+node_t *psx_frontend_analyze_expression(
+    node_t *expression, const token_t *fallback_diag_tok) {
+  expression = psx_bind_identifier_tree(
+      expression, fallback_diag_tok);
+  psx_semantic_resolve_tree(expression, NULL, fallback_diag_tok);
+  expression = psx_lower_semantic_tree(expression, fallback_diag_tok);
+  psx_semantic_resolve_tree(expression, NULL, fallback_diag_tok);
+  psx_lower_implicit_conversions(expression, NULL, fallback_diag_tok);
+  return expression;
+}
+
+node_t *psx_frontend_analyze_initializer_syntax(
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  syntax = psx_bind_identifier_initializer_tree(
+      syntax, fallback_diag_tok);
+  psx_semantic_resolve_initializer_tree(syntax, NULL, fallback_diag_tok);
+  syntax = psx_lower_semantic_initializer_syntax(
+      syntax, fallback_diag_tok);
+  psx_semantic_resolve_initializer_tree(syntax, NULL, fallback_diag_tok);
+  return syntax;
+}
+
+void psx_frontend_analyze_program(node_t **program) {
+  if (!program) return;
+  for (int i = 0; program[i]; i++) {
+    if (program[i]->kind == ND_FUNCDEF) continue;
+    program[i] = psx_bind_identifier_tree(
+        program[i], program[i]->tok);
+    psx_semantic_resolve_tree(program[i], NULL, program[i]->tok);
+    program[i] = psx_lower_semantic_tree(program[i], program[i]->tok);
+    psx_semantic_resolve_tree(program[i], NULL, program[i]->tok);
+    psx_lower_implicit_conversions(program[i], NULL, program[i]->tok);
+  }
+}

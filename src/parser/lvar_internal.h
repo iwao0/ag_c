@@ -6,9 +6,11 @@
 struct lvar_t {
   lvar_t *next;
   lvar_t *next_all;
+  lvar_t *next_binding;
   lvar_t *next_hash;
   lvar_t *next_offhash;
   unsigned scope_seq;
+  unsigned declaration_seq;
   char *name;
   int len;
   int offset;

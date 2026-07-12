@@ -4,6 +4,9 @@
 #include "../tokenizer/token.h"
 #include "node_fwd.h"
 
+typedef struct psx_type_t psx_type_t;
+
+psx_type_t *ps_node_get_type(node_t *node);
 int ps_node_is_pointer(node_t *n);
 int ps_node_deref_size(node_t *n);
 int ps_node_type_size(node_t *n);

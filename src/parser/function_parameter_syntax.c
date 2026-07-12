@@ -54,7 +54,7 @@ void psx_parse_function_parameters_syntax_ex(
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters);
     if (allow_implicit_int) {
-      ps_parse_decl_specifier_syntax_ex(
+      psx_parse_decl_specifier_syntax_ex(
           &parameter->specifier,
           &(psx_decl_specifier_syntax_options_t){
               .is_typedef_name = is_parameter_typedef_name,
@@ -77,7 +77,7 @@ void psx_dispose_function_parameters_syntax(
   if (!parameters) return;
   for (int i = 0; i < parameters->count; i++) {
     ps_dispose_decl_specifier_syntax(&parameters->items[i].specifier);
-    ps_dispose_declarator_syntax(&parameters->items[i].declarator);
+    psx_dispose_declarator_syntax(&parameters->items[i].declarator);
   }
   free(parameters->items);
   memset(parameters, 0, sizeof(*parameters));

@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_IDENTIFIER_RESOLUTION_H
 #define SEMANTIC_IDENTIFIER_RESOLUTION_H
 
-#include "../parser/lvar_public.h"
+#include "../parser/local_registry.h"
 #include "../parser/symtab.h"
 
 typedef enum {
@@ -17,6 +17,8 @@ typedef struct {
   char *name;
   int name_len;
   int is_call;
+  int has_local_lookup_point;
+  psx_local_lookup_point_t local_lookup_point;
 } psx_identifier_resolution_request_t;
 
 typedef struct {

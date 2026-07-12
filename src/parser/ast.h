@@ -33,6 +33,7 @@ typedef enum {
   ND_TERNARY, // ?:
   ND_COMMA,  // ,
   ND_ASSIGN, // =
+  ND_IDENTIFIER, // raw identifier reference; semantic binding前のみ存在する
   ND_LVAR,   // ローカル変数
   ND_IF,     // if
   ND_WHILE,  // while
@@ -89,6 +90,8 @@ typedef struct {
   struct psx_parsed_type_name_t *syntax;
   psx_type_t *bound_base_type;
   psx_type_t *resolved_type;
+  unsigned scope_seq;
+  unsigned declaration_seq;
 } psx_type_name_ref_t;
 
 typedef enum {
@@ -150,14 +153,10 @@ struct node_t {
   struct lvar_t *usage_lvar;
   token_kind_t source_op;
 
-  // データ型判定用（演算結果の型）
-  unsigned int fp_kind : 3;     // tk_float_kind_t (0..2)
-  unsigned int is_unsigned : 1; // 1: unsigned演算
-  unsigned int is_complex : 1;  // 1: _Complex型演算
-  unsigned int is_atomic : 1;   // 1: _Atomic型（load-acquire/store-release）
+  unsigned int unsigned_override : 1;
+  unsigned int has_unsigned_override : 1;
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
-  unsigned int is_long_long : 1; // 1: long long 型 (_Generic で long と区別)
   unsigned int records_lvar_usage : 1;
   unsigned int lvar_usage_unevaluated : 1;
   unsigned int is_explicit_addr_expr : 1;
@@ -169,10 +168,8 @@ struct node_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
   unsigned int is_source_compound_assignment : 1;
-  unsigned int has_shift_unsigned_override : 1;
 
-  /* Canonical semantic type. Scalar bit fields above are one-way lowering and
-   * diagnostic projections; semantic type queries do not reconstruct from them. */
+  /* Canonical semantic type. */
   psx_type_t *type;
   psx_expr_type_state_t type_state;
 };
@@ -181,6 +178,14 @@ typedef struct {
   node_t base;
   psx_decl_init_kind_t init_kind;
 } node_decl_init_t;
+
+typedef struct {
+  node_t base;
+  char *name;
+  int name_len;
+  unsigned scope_seq;
+  unsigned declaration_seq;
+} node_identifier_t;
 
 typedef struct {
   node_t base;

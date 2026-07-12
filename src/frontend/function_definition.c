@@ -1,6 +1,6 @@
 #include "function_definition.h"
 
-#include "declaration_application.h"
+#include "../semantic/declaration_application.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../parser/arena.h"
@@ -14,8 +14,8 @@
 node_func_t *psx_apply_function_definition_header(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return NULL;
-  psx_decl_reset_locals();
-  psx_ctx_reset_function_scope();
+  ps_decl_reset_locals();
+  ps_ctx_reset_function_scope();
 
   psx_type_t *base_type =
       psx_apply_parsed_decl_specifier(&definition->return_specifier);
@@ -54,7 +54,7 @@ node_func_t *psx_apply_function_definition_header(
                 "function definition pipeline finalization failed");
   }
   if (applied.has_unnamed_parameter) {
-    psx_diag_missing(
+    ps_diag_missing(
         definition->declarator.diagnostic_token,
         diag_text_for(DIAG_TEXT_PARAMETER));
   }
@@ -68,18 +68,9 @@ node_func_t *psx_apply_function_definition_header(
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)name;
-  node->base.type = return_type;
+  ps_node_bind_type((node_t *)node, return_type);
   node->base.is_implicit_int_return =
       definition->has_implicit_int_return ? 1 : 0;
-  node->base.fp_kind =
-      return_type->kind == PSX_TYPE_POINTER
-          ? TK_FLOAT_KIND_NONE
-          : (return_type->kind == PSX_TYPE_FLOAT ||
-                     return_type->kind == PSX_TYPE_COMPLEX
-                 ? return_type->fp_kind
-                 : TK_FLOAT_KIND_NONE);
-  node->base.is_complex =
-      return_type->kind == PSX_TYPE_COMPLEX ? 1 : 0;
   node->funcname = name->str;
   node->funcname_len = name->len;
   node->is_static = definition->is_static;
@@ -116,6 +107,6 @@ node_func_t *psx_apply_function_definition_header(
                 "function declaration pipeline failed");
   }
   ps_decl_set_current_funcname(name->str, name->len);
-  if (node->is_variadic) psx_decl_reserve_variadic_regs();
+  if (node->is_variadic) ps_decl_reserve_variadic_regs();
   return node;
 }

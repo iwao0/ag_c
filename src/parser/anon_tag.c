@@ -4,11 +4,11 @@
 
 static int anonymous_tag_seq = 0;
 
-void psx_anon_tag_reset_translation_unit_state(void) {
+void ps_anon_tag_reset_translation_unit_state(void) {
   anonymous_tag_seq = 0;
 }
 
-void ps_make_anonymous_tag_name(char **out_name, int *out_len) {
+void psx_make_anonymous_tag_name(char **out_name, int *out_len) {
   int seq = anonymous_tag_seq++;
   int len = snprintf(NULL, 0, "__anon_tag_%d", seq);
   char *name = calloc((size_t)len + 1, 1);

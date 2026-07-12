@@ -1,7 +1,7 @@
 #include "toplevel_declaration.h"
 
-#include "declaration_application.h"
-#include "declaration_registration.h"
+#include "../semantic/declaration_application.h"
+#include "../semantic/declaration_registration.h"
 #include "../declaration_pipeline.h"
 #include "../parser/diag.h"
 

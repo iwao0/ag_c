@@ -387,7 +387,7 @@ bool psx_try_consume_pragma_pack_marker(void) {
 }
 
 // program = funcdef*
-void psx_parser_stream_begin(
+void ps_parser_stream_begin(
     psx_parser_stream_t *stream,
     tokenizer_context_t *tk_ctx, token_t *start,
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
@@ -416,7 +416,7 @@ int ps_parse_next_toplevel_item(
       return 1;
     }
     psx_parsed_toplevel_declaration_t declaration;
-    ps_parse_toplevel_declaration_head_syntax(&declaration);
+    psx_parse_toplevel_declaration_head_syntax(&declaration);
     psx_skip_gnu_attributes();
     if (!declaration.is_standalone_tag && curtok()->kind == TK_LBRACE) {
       psx_parsed_declarator_t *declarator = &declaration.declarators[0];
@@ -427,12 +427,12 @@ int ps_parse_next_toplevel_item(
                         DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
       }
       item->kind = PSX_TOPLEVEL_ITEM_FUNCTION_HEADER;
-      ps_move_toplevel_declaration_head_to_function_definition(
+      psx_move_toplevel_declaration_head_to_function_definition(
           &declaration, &item->value.function_header);
     } else {
       item->kind = PSX_TOPLEVEL_ITEM_DECLARATION;
       item->value.declaration = declaration;
-      ps_finish_toplevel_declaration_syntax(
+      psx_finish_toplevel_declaration_syntax(
           &item->value.declaration,
           stream ? stream->toplevel_declarations : NULL);
     }
@@ -448,7 +448,7 @@ int ps_parse_next_toplevel_item(
   return 0;
 }
 
-void psx_parser_stream_end(psx_parser_stream_t *stream) {
+void ps_parser_stream_end(psx_parser_stream_t *stream) {
   if (stream) {
     stream->tk_ctx = NULL;
     stream->toplevel_declarations = NULL;

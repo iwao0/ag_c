@@ -5,9 +5,20 @@
 
 typedef struct psx_type_t psx_type_t;
 
+typedef struct {
+  unsigned scope_seq;
+  unsigned declaration_seq;
+} psx_local_lookup_point_t;
+
 unsigned ps_local_registry_current_scope_seq(void);
+unsigned ps_local_registry_register_binding_event(void);
+int ps_local_registry_scope_is_visible_from(
+    unsigned declaration_scope, unsigned reference_scope);
+psx_local_lookup_point_t ps_local_registry_capture_lookup_point(void);
+lvar_t *ps_local_registry_find_visible(
+    char *name, int name_len, psx_local_lookup_point_t point);
 void ps_local_registry_reset(void);
-void ps_local_registry_add(lvar_t *var);
+void psx_local_registry_add(lvar_t *var);
 lvar_t *ps_local_registry_create_storage_object(
     char *name, int name_len, int offset, int storage_size,
     int element_size, int is_array, int alignment);

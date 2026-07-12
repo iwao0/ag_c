@@ -35,6 +35,7 @@ struct deferred_parser_warning_t {
 typedef struct tag_type_t tag_type_t;
 struct tag_type_t {
   tag_type_t *next_hash;
+  tag_type_t *next_all;
   token_kind_t kind;
   char *name;
   int len;
@@ -43,6 +44,8 @@ struct tag_type_t {
   int size;
   int align;       // struct/union のアラインメント (_Alignof 用、agg_align)。0 = 未設定。
   int scope_depth;
+  unsigned scope_seq;
+  unsigned declaration_seq;
   psx_aggregate_definition_t *definition;
 };
 typedef struct tag_member_t tag_member_t;
@@ -93,18 +96,24 @@ static void refresh_cached_tag_definition(tag_type_t *tag) {
 typedef struct enum_const_t enum_const_t;
 struct enum_const_t {
   enum_const_t *next_hash;
+  enum_const_t *next_all;
   char *name;
   int len;
   long long value;
   int scope_depth;
+  unsigned scope_seq;
+  unsigned declaration_seq;
 };
 typedef struct typedef_name_t typedef_name_t;
 struct typedef_name_t {
   typedef_name_t *next_hash;
+  typedef_name_t *next_all;
   char *name;
   int len;
   psx_type_t *decl_type;
   int scope_depth;
+  unsigned scope_seq;
+  unsigned declaration_seq;
 };
 
 static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *m) {
@@ -446,9 +455,12 @@ static goto_ref_t *goto_refs_all = NULL;
 static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
 static deferred_parser_warning_t *deferred_parser_warnings_all = NULL;
 static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
+static tag_type_t *all_tag_types;
 static tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
 static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
+static enum_const_t *all_enum_consts;
 static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
+static typedef_name_t *all_typedefs;
 static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
@@ -473,18 +485,21 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
 /* 翻訳単位 (program) の境界で関数名テーブルを初期化する。
  * テストでは fork() 経由で複数のプログラムを 1 プロセス内で解析するため、
  * 関数戻り値型チェック等が前テストの登録に引きずられないようにする。 */
-void psx_ctx_reset_function_names(void) {
+void ps_ctx_reset_function_names(void) {
   memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
 }
 
-void psx_ctx_reset_translation_unit_scope(void) {
+void ps_ctx_reset_translation_unit_scope(void) {
   goto_refs_all = NULL;
   deferred_parser_warnings_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
+  all_tag_types = NULL;
   memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
   memset(enum_consts_by_bucket, 0, sizeof(enum_consts_by_bucket));
+  all_enum_consts = NULL;
   memset(typedefs_by_bucket, 0, sizeof(typedefs_by_bucket));
+  all_typedefs = NULL;
   memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
   tag_scope_depth = 0;
   tag_member_decl_order = 0;
@@ -501,7 +516,7 @@ void ps_ctx_record_unsupported_gnu_extension_warning(const token_t *tok, const c
   deferred_parser_warnings_all = w;
 }
 
-void psx_ctx_emit_deferred_parser_warnings(void) {
+void ps_ctx_emit_deferred_parser_warnings(void) {
   deferred_parser_warning_t *rev = NULL;
   while (deferred_parser_warnings_all) {
     deferred_parser_warning_t *w = deferred_parser_warnings_all;
@@ -545,10 +560,35 @@ void ps_ctx_reset_function_diag_state(void) {
   }
 }
 
-void psx_ctx_reset_function_scope(void) {
+void ps_ctx_reset_function_scope(void) {
   goto_refs_all = NULL;
   memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
   tag_scope_depth = 0;
+  tag_type_t **all_tag = &all_tag_types;
+  while (*all_tag) {
+    if ((*all_tag)->scope_depth > 0 || (*all_tag)->scope_seq != 0) {
+      *all_tag = (*all_tag)->next_all;
+      continue;
+    }
+    all_tag = &(*all_tag)->next_all;
+  }
+  typedef_name_t **all_typedef = &all_typedefs;
+  while (*all_typedef) {
+    if ((*all_typedef)->scope_depth > 0 ||
+        (*all_typedef)->scope_seq != 0) {
+      *all_typedef = (*all_typedef)->next_all;
+      continue;
+    }
+    all_typedef = &(*all_typedef)->next_all;
+  }
+  enum_const_t **all_enum = &all_enum_consts;
+  while (*all_enum) {
+    if ((*all_enum)->scope_depth > 0 || (*all_enum)->scope_seq != 0) {
+      *all_enum = (*all_enum)->next_all;
+      continue;
+    }
+    all_enum = &(*all_enum)->next_all;
+  }
   for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
     tag_type_t **tt = &tag_types_by_bucket[i];
     while (*tt) {
@@ -652,7 +692,7 @@ void psx_ctx_register_label_def(char *name, int len, token_t *tok) {
   unsigned bucket = psx_ctx_hash_name(name, len);
   for (label_def_t *d = label_defs_by_bucket[bucket]; d; d = d->next_hash) {
     if (d->len == len && strncmp(d->name, name, (size_t)len) == 0) {
-      psx_diag_duplicate_with_name(tok, diag_text_for(DIAG_TEXT_LABEL), name, len);
+      ps_diag_duplicate_with_name(tok, diag_text_for(DIAG_TEXT_LABEL), name, len);
     }
   }
   label_def_t *d = calloc(1, sizeof(label_def_t));
@@ -695,15 +735,39 @@ bool ps_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
   return find_tag_type(kind, name, len) != NULL;
 }
 
+psx_type_t *ps_ctx_clone_tag_type_at(
+    token_kind_t kind, char *name, int len,
+    psx_local_lookup_point_t point) {
+  for (tag_type_t *tag = all_tag_types; tag; tag = tag->next_all) {
+    if (tag->kind != kind || tag->len != len ||
+        strncmp(tag->name, name, (size_t)len) != 0 ||
+        (tag->scope_depth > 0 &&
+         tag->declaration_seq > point.declaration_seq) ||
+        !ps_local_registry_scope_is_visible_from(
+            tag->scope_seq, point.scope_seq))
+      continue;
+    psx_type_t *type = kind == TK_ENUM
+        ? ps_type_new_enum(
+              name, len, tag->scope_depth + 1,
+              tag->size > 0 ? tag->size : 4)
+        : ps_type_new_tag(
+              kind, name, len, tag->scope_depth + 1, tag->size);
+    type->aggregate_definition = tag->definition;
+    if (tag->align > 0) type->align = tag->align;
+    return type;
+  }
+  return NULL;
+}
+
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
-  ps_ctx_define_tag_type_with_layout(kind, name, len, 0, 0, 0);
+  psx_ctx_define_tag_type_with_layout(kind, name, len, 0, 0, 0);
 }
 
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count) {
-  ps_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0, 0);
+  psx_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0, 0);
 }
 
-void ps_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
+void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align) {
   int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
   if (!ps_ctx_register_tag_type(kind, name, len, is_complete,
@@ -732,7 +796,10 @@ int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
     if (tag_size > existing->size) existing->size = tag_size;
     if (tag_align > existing->align) existing->align = tag_align;
     if (is_complete) existing->is_complete = 1;
-    refresh_cached_tag_definition(existing);
+    if (existing->is_complete && !existing->definition)
+      (void)ps_ctx_get_tag_definition(kind, name, len);
+    else
+      refresh_cached_tag_definition(existing);
     return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -745,8 +812,14 @@ int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
   t->size = tag_size;
   t->align = tag_align;
   t->scope_depth = tag_scope_depth;
+  t->scope_seq = ps_local_registry_current_scope_seq();
+  t->declaration_seq = ps_local_registry_register_binding_event();
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
+  t->next_all = all_tag_types;
+  all_tag_types = t;
+  if (t->is_complete)
+    (void)ps_ctx_get_tag_definition(kind, name, len);
   return 1;
 }
 
@@ -847,7 +920,7 @@ static void insert_tag_member_record(
   tag_members_by_bucket[bucket] = m;
 }
 
-int ps_ctx_register_tag_member(
+int psx_ctx_register_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *desc, int *out_created) {
   if (out_created) *out_created = 0;
@@ -899,10 +972,12 @@ int ps_ctx_register_tag_members(
                       (PCTX_HASH_BUCKETS - 1u);
     insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
   }
+  tag_type_t *tag = find_tag_type(tag_kind, tag_name, tag_len);
+  if (tag && tag->definition) refresh_cached_tag_definition(tag);
   return 1;
 }
 
-void ps_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             const tag_member_info_t *desc) {
   if (!desc || !ps_tag_member_decl_type(desc)) return;
   unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
@@ -912,9 +987,13 @@ void ps_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
       tag_kind, tag_name, tag_len, desc, bucket);
   if (existing) {
     tag_member_record_apply_desc(existing, desc);
+    tag_type_t *tag = find_tag_type(tag_kind, tag_name, tag_len);
+    if (tag && tag->definition) refresh_cached_tag_definition(tag);
     return;
   }
   insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
+  tag_type_t *tag = find_tag_type(tag_kind, tag_name, tag_len);
+  if (tag && tag->definition) refresh_cached_tag_definition(tag);
 }
 
 static int cmp_tag_member_ptr(const void *a, const void *b) {
@@ -1116,13 +1195,17 @@ int ps_ctx_register_enum_const(
   e->len = len;
   e->value = value;
   e->scope_depth = tag_scope_depth;
+  e->scope_seq = ps_local_registry_current_scope_seq();
+  e->declaration_seq = ps_local_registry_register_binding_event();
   e->next_hash = enum_consts_by_bucket[bucket];
   enum_consts_by_bucket[bucket] = e;
+  e->next_all = all_enum_consts;
+  all_enum_consts = e;
   if (out_created) *out_created = 1;
   return 1;
 }
 
-int ps_ctx_define_enum_const(char *name, int len, long long value) {
+int psx_ctx_define_enum_const(char *name, int len, long long value) {
   return ps_ctx_register_enum_const(name, len, value, NULL);
 }
 
@@ -1131,6 +1214,24 @@ bool ps_ctx_find_enum_const(char *name, int len, long long *out_value) {
   if (!e) return false;
   if (out_value) *out_value = e->value;
   return true;
+}
+
+bool ps_ctx_find_enum_const_at(
+    char *name, int len, psx_local_lookup_point_t point,
+    long long *out_value) {
+  if (!name || len <= 0) return false;
+  for (enum_const_t *e = all_enum_consts; e; e = e->next_all) {
+    if (e->len != len ||
+        strncmp(e->name, name, (size_t)len) != 0 ||
+        (e->scope_seq != 0 &&
+         e->declaration_seq > point.declaration_seq) ||
+        !ps_local_registry_scope_is_visible_from(
+            e->scope_seq, point.scope_seq))
+      continue;
+    if (out_value) *out_value = e->value;
+    return true;
+  }
+  return false;
 }
 
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len) {
@@ -1208,14 +1309,18 @@ int ps_ctx_register_typedef_name(
   t->name = name;
   t->len = len;
   t->scope_depth = tag_scope_depth;
+  t->scope_seq = ps_local_registry_current_scope_seq();
+  t->declaration_seq = ps_local_registry_register_binding_event();
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
+  t->next_all = all_typedefs;
+  all_typedefs = t;
   assign_typedef_fields(t, info);
   if (out_created) *out_created = 1;
   return 1;
 }
 
-int ps_ctx_define_typedef_name(
+int psx_ctx_define_typedef_name(
     char *name, int len, const psx_typedef_info_t *info) {
   return ps_ctx_register_typedef_name(name, len, info, NULL, NULL);
 }
@@ -1229,7 +1334,7 @@ bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
   return true;
 }
 
-int ps_ctx_get_typedef_pointer_levels(char *name, int len) {
+int psx_ctx_get_typedef_pointer_levels(char *name, int len) {
   typedef_name_t *t = find_typedef(name, len);
   if (!t) return 0;
   return ctx_type_pointer_levels(typedef_record_decl_type(t));
@@ -1257,6 +1362,26 @@ bool ps_ctx_find_typedef_decl_type(
   return true;
 }
 
+bool ps_ctx_find_typedef_decl_type_at(
+    char *name, int len, psx_local_lookup_point_t point,
+    const psx_type_t **out_type) {
+  for (typedef_name_t *type = all_typedefs; type;
+       type = type->next_all) {
+    if (type->len != len ||
+        strncmp(type->name, name, (size_t)len) != 0 ||
+        (type->scope_depth > 0 &&
+         type->declaration_seq > point.declaration_seq) ||
+        !ps_local_registry_scope_is_visible_from(
+            type->scope_seq, point.scope_seq))
+      continue;
+    ctx_type_refresh_tag_completeness(
+        typedef_record_decl_type_mut(type));
+    if (out_type) *out_type = typedef_record_decl_type(type);
+    return true;
+  }
+  return false;
+}
+
 bool psx_ctx_is_typedef_name_token(token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return false;
   token_ident_t *id = (token_ident_t *)tok;
@@ -1264,7 +1389,7 @@ bool psx_ctx_is_typedef_name_token(token_t *tok) {
 }
 
 void psx_ctx_define_function_name(char *name, int len) {
-  ps_ctx_define_function_name_with_ret(name, len, 0);
+  psx_ctx_define_function_name_with_ret(name, len, 0);
 }
 
 // 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
@@ -1278,7 +1403,7 @@ static func_name_t *find_function_name(char *name, int len) {
   return NULL;
 }
 
-void ps_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
+void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
   func_name_t *existing = find_function_name(name, len);
   if (existing) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
@@ -1351,7 +1476,7 @@ bool psx_ctx_is_function_ret_void(char *name, int len) {
   return ps_ctx_get_function_ret_info(name, len).is_void != 0;
 }
 
-int ps_ctx_get_function_ret_is_pointer(char *name, int len) {
+int psx_ctx_get_function_ret_is_pointer(char *name, int len) {
   return ps_ctx_get_function_ret_info(name, len).is_pointer;
 }
 
@@ -1359,7 +1484,7 @@ int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
   return ps_ctx_get_function_ret_info(name, len).is_funcptr;
 }
 
-psx_decl_funcptr_sig_t ps_ctx_get_function_ret_funcptr_sig(char *name, int len) {
+psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len) {
   psx_function_ret_info_t info = ps_ctx_get_function_ret_info(name, len);
   return info.is_funcptr ? ps_decl_funcptr_sig_clone(info.funcptr_sig)
                          : (psx_decl_funcptr_sig_t){0};
@@ -1391,11 +1516,11 @@ int psx_ctx_get_function_ret_pointee_array_second_dim(char *name, int len) {
   return ps_ctx_get_function_ret_info(name, len).pointee_array.second_dim;
 }
 
-int ps_ctx_get_function_ret_pointer_levels(char *name, int len) {
+int psx_ctx_get_function_ret_pointer_levels(char *name, int len) {
   return ps_ctx_get_function_ret_info(name, len).pointer_levels;
 }
 
-const psx_type_t *ps_ctx_get_function_ret_type(char *name, int len) {
+const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f && f->function_type && f->function_type->kind == PSX_TYPE_FUNCTION
              ? f->function_type->base
@@ -1421,7 +1546,7 @@ int ps_ctx_register_function_type(char *name, int len,
   return 1;
 }
 
-int ps_ctx_track_function_type(char *name, int len,
+int psx_ctx_track_function_type(char *name, int len,
                                 const psx_type_t *function_type) {
   return ps_ctx_register_function_type(name, len, function_type);
 }

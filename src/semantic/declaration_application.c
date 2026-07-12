@@ -7,11 +7,13 @@
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "../semantic/aggregate_member_resolution.h"
-#include "../semantic/declaration_resolution.h"
-#include "../semantic/enum_constant_resolution.h"
-#include "../semantic/constant_expression.h"
-#include "../semantic/function_parameter_resolution.h"
+#include "aggregate_member_resolution.h"
+#include "declaration_resolution.h"
+#include "enum_constant_resolution.h"
+#include "constant_expression.h"
+#include "function_parameter_resolution.h"
+#include "identifier_binding.h"
+#include "semantic_pass.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 
@@ -293,6 +295,10 @@ void psx_apply_runtime_parsed_declarator_ex(
       ps_diag_ctx(parsed->expression.start, "declarator-resolution",
                    "runtime array bound syntax was not prepared");
     }
+    expression = psx_bind_identifier_tree(
+        expression, parsed->expression.start);
+    psx_semantic_resolve_tree(
+        expression, NULL, parsed->expression.start);
     int is_constant = 1;
     long long value = psx_eval_const_int(expression, &is_constant);
     if (is_constant && value < 0) {

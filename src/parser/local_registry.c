@@ -14,11 +14,15 @@
 
 static lvar_t *locals;
 static lvar_t *all_locals;
+static lvar_t *all_bindings;
 static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
 static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
 static int lvar_scope_depth;
 static unsigned next_scope_seq;
 static unsigned current_scope_seq;
+static unsigned next_declaration_seq;
+static unsigned *scope_parent_by_seq;
+static size_t scope_parent_capacity;
 static lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
 static lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
 
@@ -50,8 +54,36 @@ static unsigned offset_hash(int offset) {
   return (((unsigned)offset) * 2654435761u) >> 24;
 }
 
+static void ensure_scope_parent_capacity(unsigned scope_seq) {
+  if ((size_t)scope_seq < scope_parent_capacity) return;
+  size_t capacity = scope_parent_capacity ? scope_parent_capacity : 16;
+  while (capacity <= (size_t)scope_seq) capacity *= 2;
+  unsigned *grown = realloc(
+      scope_parent_by_seq, capacity * sizeof(*scope_parent_by_seq));
+  if (!grown) {
+    ps_diag_ctx(tk_get_current_token(), "scope",
+                "local scope ancestry allocation failed");
+  }
+  memset(grown + scope_parent_capacity, 0,
+         (capacity - scope_parent_capacity) * sizeof(*grown));
+  scope_parent_by_seq = grown;
+  scope_parent_capacity = capacity;
+}
+
+int ps_local_registry_scope_is_visible_from(
+    unsigned declaration_scope, unsigned reference_scope) {
+  for (;;) {
+    if (reference_scope == declaration_scope) return 1;
+    if (reference_scope == 0 ||
+        (size_t)reference_scope >= scope_parent_capacity)
+      return 0;
+    reference_scope = scope_parent_by_seq[reference_scope];
+  }
+}
+
 static void index_add(lvar_t *var) {
   var->scope_seq = current_scope_seq;
+  var->declaration_seq = ps_local_registry_register_binding_event();
   unsigned name_bucket = name_hash(var->name, var->len);
   var->next_hash = lvars_by_bucket[name_bucket];
   lvars_by_bucket[name_bucket] = var;
@@ -88,11 +120,39 @@ unsigned ps_local_registry_current_scope_seq(void) {
   return current_scope_seq;
 }
 
-void ps_local_registry_add(lvar_t *var) {
+unsigned ps_local_registry_register_binding_event(void) {
+  return ++next_declaration_seq;
+}
+
+psx_local_lookup_point_t ps_local_registry_capture_lookup_point(void) {
+  return (psx_local_lookup_point_t){
+      .scope_seq = current_scope_seq,
+      .declaration_seq = next_declaration_seq,
+  };
+}
+
+lvar_t *ps_local_registry_find_visible(
+    char *name, int name_len, psx_local_lookup_point_t point) {
+  if (!name || name_len <= 0) return NULL;
+  for (lvar_t *var = all_bindings; var; var = var->next_binding) {
+    if (var->declaration_seq > point.declaration_seq ||
+        var->len != name_len ||
+        memcmp(var->name, name, (size_t)name_len) != 0)
+      continue;
+    if (ps_local_registry_scope_is_visible_from(
+            var->scope_seq, point.scope_seq))
+      return var;
+  }
+  return NULL;
+}
+
+void psx_local_registry_add(lvar_t *var) {
   if (!var) return;
   var->next = locals;
   var->next_all = all_locals;
+  var->next_binding = all_bindings;
   all_locals = var;
+  all_bindings = var;
   locals = var;
   index_add(var);
 }
@@ -103,7 +163,7 @@ lvar_t *ps_local_registry_create_storage_object(
   lvar_t *previous = ps_decl_find_lvar(name, name_len);
   if (previous &&
       previous->scope_seq == ps_local_registry_current_scope_seq()) {
-    psx_diag_duplicate_with_name(
+    ps_diag_duplicate_with_name(
         tk_get_current_token(), "variable", name, name_len);
   }
 
@@ -119,8 +179,8 @@ lvar_t *ps_local_registry_create_storage_object(
   var->decl_type = psx_type_new_storage_object(
       storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
       TK_EOF, NULL, 0, 0, 0);
-  ps_decl_attach_lvar_current_region(var);
-  ps_local_registry_add(var);
+  psx_decl_attach_lvar_current_region(var);
+  psx_local_registry_add(var);
   return var;
 }
 
@@ -130,7 +190,7 @@ lvar_t *ps_local_registry_create_type_binding(
   lvar_t *previous = ps_decl_find_lvar(name, name_len);
   if (previous &&
       previous->scope_seq == ps_local_registry_current_scope_seq()) {
-    psx_diag_duplicate_with_name(
+    ps_diag_duplicate_with_name(
         tk_get_current_token(), "parameter", name, name_len);
   }
   lvar_t *var = calloc(1, sizeof(*var));
@@ -138,11 +198,14 @@ lvar_t *ps_local_registry_create_type_binding(
   var->name = name;
   var->len = name_len;
   var->scope_seq = current_scope_seq;
+  var->declaration_seq = ps_local_registry_register_binding_event();
   var->decl_type = ps_type_clone_persistent(type);
   var->size = ps_type_sizeof(type);
   var->elem_size = ps_type_deref_size(type);
   var->is_param = 1;
   var->next = locals;
+  var->next_binding = all_bindings;
+  all_bindings = var;
   locals = var;
   unsigned bucket = name_hash(name, name_len);
   var->next_hash = lvars_by_bucket[bucket];
@@ -164,8 +227,8 @@ lvar_t *ps_local_registry_create_static_alias(
   var->is_static_local = 1;
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
-  ps_decl_attach_lvar_current_region(var);
-  ps_local_registry_add(var);
+  psx_decl_attach_lvar_current_region(var);
+  psx_local_registry_add(var);
   return var;
 }
 
@@ -346,11 +409,15 @@ int ps_lvar_name_len(const lvar_t *var) {
 void ps_local_registry_reset(void) {
   locals = NULL;
   all_locals = NULL;
+  all_bindings = NULL;
   lvar_scope_depth = 0;
   memset(lvars_by_bucket, 0, sizeof(lvars_by_bucket));
   memset(lvars_by_offset, 0, sizeof(lvars_by_offset));
   next_scope_seq = 0;
   current_scope_seq = 0;
+  next_declaration_seq = 0;
+  ensure_scope_parent_capacity(0);
+  scope_parent_by_seq[0] = 0;
   usage_events_head = NULL;
   usage_events_tail = NULL;
   current_usage_region = NULL;
@@ -362,7 +429,10 @@ void ps_decl_enter_scope(void) {
     lvar_scope_seq_stack[lvar_scope_depth] = current_scope_seq;
   }
   lvar_scope_depth++;
+  unsigned parent_scope_seq = current_scope_seq;
   current_scope_seq = ++next_scope_seq;
+  ensure_scope_parent_capacity(current_scope_seq);
+  scope_parent_by_seq[current_scope_seq] = parent_scope_seq;
 }
 
 void ps_decl_leave_scope(void) {
@@ -397,7 +467,7 @@ void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
   if (region) region->suppress_warnings = 1;
 }
 
-void ps_decl_attach_lvar_current_region(lvar_t *var) {
+void psx_decl_attach_lvar_current_region(lvar_t *var) {
   if (var) var->decl_region = current_usage_region;
 }
 

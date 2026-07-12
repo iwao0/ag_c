@@ -1,0 +1,13 @@
+#ifndef SEMANTIC_LVAR_USAGE_ANALYSIS_H
+#define SEMANTIC_LVAR_USAGE_ANALYSIS_H
+
+#include "../parser/ast.h"
+#include "../parser/decl.h"
+#include "../tokenizer/token.h"
+
+void psx_collect_lvar_usage_events(
+    node_t *node, psx_lvar_usage_region_t *inherited_region);
+void psx_analyze_function_lvar_usage(
+    node_func_t *function, const token_t *fallback_diag_tok);
+
+#endif

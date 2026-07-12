@@ -78,6 +78,6 @@ void ps_global_registry_reset_translation_unit(void) {
   memset(gvars_by_bucket, 0, sizeof(gvars_by_bucket));
 }
 
-void psx_global_registry_reset_diag_state(void) {
+void ps_global_registry_reset_diag_state(void) {
   for (global_var_t *gv = global_vars; gv; gv = gv->next) gv->has_init = 0;
 }

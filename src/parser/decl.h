@@ -49,11 +49,11 @@ typedef enum {
  * を 1 行で設定するヘルパ (Phase A2 リファクタリング)。
  * decl.c / parser.c で 4 行のパターンが 9 箇所重複していたのを集約する。 */
 
-void psx_decl_reset_locals(void);
+void ps_decl_reset_locals(void);
 void ps_decl_enter_scope(void);
 void ps_decl_leave_scope(void);
 lvar_t *ps_decl_get_locals(void);
-void psx_decl_reserve_variadic_regs(void);
+void ps_decl_reserve_variadic_regs(void);
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind);
 psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *suffix_sig,
@@ -64,30 +64,30 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *
                                                  int ret_is_data_pointer,
                                                  int ret_is_funcptr,
                                                  int ret_is_complex);
-psx_decl_funcptr_sig_t ps_decl_make_funcptr_sig_from_kind(
+psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
     const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
     tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
     int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array);
-void ps_decl_funcptr_sig_promote_return_to_funcptr(
+void psx_decl_funcptr_sig_promote_return_to_funcptr(
     psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig);
 lvar_t *ps_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 void ps_decl_replay_lvar_usage_events(lvar_t *all_locals);
-void psx_decl_reset_translation_unit_state(void);
+void ps_decl_reset_translation_unit_state(void);
 psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void);
 void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region);
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
-void ps_decl_attach_lvar_current_region(lvar_t *var);
-lvar_t *psx_decl_register_lvar(char *name, int len);
-lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
-lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
+void psx_decl_attach_lvar_current_region(lvar_t *var);
+lvar_t *ps_decl_register_lvar(char *name, int len);
+lvar_t *ps_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
+lvar_t *ps_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
 void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size);
 void ps_decl_set_gvar_decl_type(global_var_t *gv,
                                  const psx_type_t *decl_type);
 void ps_decl_set_current_funcname(char *name, int len);
-void psx_decl_get_current_funcname(char **out_name, int *out_len);
+void ps_decl_get_current_funcname(char **out_name, int *out_len);
 
-node_t *ps_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
+node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
 node_t *ps_decl_bind_initializer_for_var(
     lvar_t *var, int is_pointer, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok);

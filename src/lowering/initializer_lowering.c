@@ -21,7 +21,7 @@ static node_t *append_init(node_t *chain, node_t *item) {
 static int initializer_value_is_zero(const node_t *value) {
   if (!value || value->kind != ND_NUM) return 0;
   const node_num_t *number = (const node_num_t *)value;
-  return value->fp_kind != TK_FLOAT_KIND_NONE
+  return ps_node_value_fp_kind((node_t *)value) != TK_FLOAT_KIND_NONE
              ? number->fval == 0.0
              : number->val == 0;
 }

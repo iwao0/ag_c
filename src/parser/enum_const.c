@@ -42,7 +42,7 @@ long long psx_parse_case_const_expr(void) {
   return parse_conditional_ctx(&ctx);
 }
 
-long long ps_eval_parsed_enum_const_expr(token_t *start, token_t *end) {
+long long psx_eval_parsed_enum_const_expr(token_t *start, token_t *end) {
   if (!start || !end) {
     ps_diag_ctx(curtok(), "constant-expression",
                  "missing parsed constant expression range");
@@ -436,7 +436,7 @@ void psx_parse_enum_body(psx_parsed_enum_body_t *body) {
     memset(member, 0, sizeof(*member));
     member->enumerator = tk_consume_ident();
     if (!member->enumerator) {
-      psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
+      ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
     }
     if (tk_consume('=')) {
       member->initializer = parse_prepared_conditional();

@@ -20,7 +20,7 @@ static void require_callbacks(
   }
 }
 
-node_t *ps_parse_local_declaration_syntax(
+node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks) {
   require_callbacks(callbacks);
   if (curtok()->kind == TK_STATIC_ASSERT) {
@@ -35,7 +35,7 @@ node_t *ps_parse_local_declaration_syntax(
   int is_typedef = curtok()->kind == TK_TYPEDEF;
   if (is_typedef) tk_set_current_token(curtok()->next);
   psx_parsed_decl_specifier_t specifier;
-  ps_parse_decl_specifier_syntax_ex(&specifier, NULL);
+  psx_parse_decl_specifier_syntax_ex(&specifier, NULL);
   ps_prepare_decl_specifier_alignments(&specifier);
   int standalone_tag =
       specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
@@ -60,7 +60,7 @@ node_t *ps_parse_local_declaration_syntax(
                   PS_MAX_DECLARATOR_COUNT);
     }
     psx_parsed_declarator_t declarator =
-        ps_parse_declarator_syntax_tree();
+        psx_parse_declarator_syntax_tree();
     ps_parse_runtime_declarator_expressions(&declarator);
     if (!declarator.identifier) {
       ps_diag_ctx(curtok(), "decl", "%s",
@@ -69,17 +69,17 @@ node_t *ps_parse_local_declaration_syntax(
     }
 
     psx_parsed_initializer_t initializer;
-    ps_prepare_optional_initializer_syntax(&initializer);
+    psx_prepare_optional_initializer_syntax(&initializer);
     callbacks->begin_declarator(
         declaration_context, &declarator, &initializer);
     if (initializer.has_initializer) {
       token_t *assign_tok = initializer.assign_tok;
       tk_expect('=');
-      ps_parse_initializer_syntax_value(&initializer, assign_tok);
+      psx_parse_initializer_syntax_value(&initializer, assign_tok);
     }
     callbacks->finish_declarator(
         declaration_context, &initializer);
-    ps_dispose_declarator_syntax(&declarator);
+    psx_dispose_declarator_syntax(&declarator);
     if (!tk_consume(',')) break;
   }
   tk_expect(';');

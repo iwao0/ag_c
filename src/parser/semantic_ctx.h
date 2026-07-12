@@ -3,14 +3,15 @@
 
 #include "core.h"
 #include "function_public.h"
+#include "local_registry.h"
 #include "tag_member_public.h"
 #include "type.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
-void psx_ctx_reset_function_scope(void);
-void psx_ctx_reset_translation_unit_scope(void);
-void psx_ctx_reset_function_names(void);
+void ps_ctx_reset_function_scope(void);
+void ps_ctx_reset_translation_unit_scope(void);
+void ps_ctx_reset_function_names(void);
 /* 各 parse 開始時に呼ぶソフトリセット: 関数情報は残し、is_defined のみクリア。 */
 void ps_ctx_reset_function_diag_state(void);
 /* タグの完全型定義状態をソフトリセット (member_count を 0 に戻す)。 */
@@ -21,12 +22,15 @@ void psx_ctx_register_goto_ref(char *name, int len, token_t *tok);
 void psx_ctx_register_label_def(char *name, int len, token_t *tok);
 void psx_ctx_validate_goto_refs(void);
 void ps_ctx_record_unsupported_gnu_extension_warning(const token_t *tok, const char *name);
-void psx_ctx_emit_deferred_parser_warnings(void);
+void ps_ctx_emit_deferred_parser_warnings(void);
 
 bool ps_ctx_has_tag_type(token_kind_t kind, char *name, int len);
+psx_type_t *ps_ctx_clone_tag_type_at(
+    token_kind_t kind, char *name, int len,
+    psx_local_lookup_point_t point);
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count);
-void ps_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
+void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align);
 int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
                               int is_complete, int member_count,
@@ -44,12 +48,12 @@ void ps_ctx_attach_aggregate_definitions(psx_type_t *type);
 void ps_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
 /* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
  * m->decl_type は正本として必須。レイアウトcacheはdecl_typeから同期する。 */
-void ps_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
+void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
                             const tag_member_info_t *m);
 /* canonical member descriptorを現在のtag scopeへ新規登録する。
  * 名前付きmemberの同一scope重複は0を返し、既存descriptorを変更しない。
  * 無名aggregate placeholder (m->len == 0) は複数登録できる。 */
-int ps_ctx_register_tag_member(
+int psx_ctx_register_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *m, int *out_created);
 /* canonical member descriptor群を原子的に登録する。全descriptorと重複を
@@ -60,10 +64,13 @@ int ps_ctx_register_tag_members(
     int *out_conflict_index);
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
-int ps_ctx_define_enum_const(char *name, int len, long long value);
+int psx_ctx_define_enum_const(char *name, int len, long long value);
 int ps_ctx_register_enum_const(
     char *name, int len, long long value, int *out_created);
 bool ps_ctx_find_enum_const(char *name, int len, long long *out_value);
+bool ps_ctx_find_enum_const_at(
+    char *name, int len, psx_local_lookup_point_t point,
+    long long *out_value);
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len);
 /* typedef の型記述子。define/find はこの 1 構造体で受け渡す (旧 _ex/_ex2/_ex3 の
  * フィールド堆積をまとめたもの)。array_dims は最大 8 次元、array_dims[0] が最も外側。
@@ -114,7 +121,7 @@ static inline psx_decl_funcptr_sig_t ps_ctx_typedef_funcptr_sig(
 
 /* typedef 名を登録する。info->decl_type は正本として必須。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = decl_type欠落または型衝突。 */
-int ps_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
+int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
 int ps_ctx_register_typedef_name(
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared);
@@ -123,13 +130,16 @@ int ps_ctx_register_typedef_name(
 bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
 bool ps_ctx_find_typedef_decl_type(
     char *name, int len, const psx_type_t **out_type);
+bool ps_ctx_find_typedef_decl_type_at(
+    char *name, int len, psx_local_lookup_point_t point,
+    const psx_type_t **out_type);
 int ps_ctx_has_typedef_in_current_scope(char *name, int len);
 // canonical decl_typeからポインタ段数を返す。非ポインタは0。
-int ps_ctx_get_typedef_pointer_levels(char *name, int len);
+int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 void psx_ctx_define_function_name(char *name, int len);
-void ps_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
+void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);
 // 関数戻り値の浮動小数点種別 (float/double) を取得する。
 // `(int)func()` キャストで FP→int 変換 (fcvtzs) を挿入するために必要。
@@ -146,17 +156,17 @@ int ps_ctx_track_function_defined(char *name, int len);
 /* 戻り値型が void かどうかを問い合わせる。代入や初期化での
  * void 値使用 (C11 6.5.16 制約違反) の検出に使う。 */
 bool psx_ctx_is_function_ret_void(char *name, int len);
-const psx_type_t *ps_ctx_get_function_ret_type(char *name, int len);
+const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
 /* 完全な canonical 関数型を初回登録し、再宣言時は同じ型か照合する。 */
 int ps_ctx_register_function_type(char *name, int len,
                                    const psx_type_t *function_type);
-int ps_ctx_track_function_type(char *name, int len,
+int psx_ctx_track_function_type(char *name, int len,
                                 const psx_type_t *function_type);
 const psx_type_t *ps_ctx_get_function_type(char *name, int len);
 /* 関数の戻り値がポインタ型 (`int *f(void)` 等) ならば 1 を返す。 */
-int ps_ctx_get_function_ret_is_pointer(char *name, int len);
+int psx_ctx_get_function_ret_is_pointer(char *name, int len);
 int psx_ctx_get_function_ret_is_funcptr(char *name, int len);
-psx_decl_funcptr_sig_t ps_ctx_get_function_ret_funcptr_sig(char *name, int len);
+psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len);
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等)。未登録は TK_EOF。 */
 token_kind_t psx_ctx_get_function_ret_token_kind(char *name, int len);
 /* 戻り値型の unsigned 性。`unsigned` は TK_INT に潰れるため別管理。 */
@@ -170,7 +180,7 @@ int psx_ctx_get_function_ret_pointee_array_first_dim(char *name, int len);
 int psx_ctx_get_function_ret_pointee_array_second_dim(char *name, int len);
 /* 戻り値型のポインタ段数 (`int *g()`=1, `int **g()`=2, 非ポインタ=0)。多段ポインタ戻り
  * `int **g(); **g()` の deref を正しい幅で組むのに使う。 */
-int ps_ctx_get_function_ret_pointer_levels(char *name, int len);
+int psx_ctx_get_function_ret_pointer_levels(char *name, int len);
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len);
 

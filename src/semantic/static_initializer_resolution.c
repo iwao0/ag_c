@@ -3,7 +3,6 @@
 #include "declaration_resolution.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
-#include "semantic_pass.h"
 
 #include <string.h>
 
@@ -39,8 +38,6 @@ void psx_resolve_static_initializer(
     if (resolution->initializer->kind != ND_INIT_LIST) return;
     if (resolution->type->kind == PSX_TYPE_ARRAY ||
         ps_type_is_tag_aggregate(resolution->type)) {
-      resolution->initializer = psx_semantic_analyze_initializer_syntax(
-          resolution->initializer, request->diag_tok);
       resolution->is_aggregate_initializer = 1;
       resolution->status = PSX_STATIC_INITIALIZER_OK;
       return;
@@ -58,9 +55,5 @@ void psx_resolve_static_initializer(
     resolution->kind = PSX_DECL_INIT_EXPR;
   }
 
-  resolution->initializer = psx_semantic_analyze_expression(
-      resolution->initializer,
-      resolution->initializer->tok ? resolution->initializer->tok
-                                   : request->diag_tok);
   resolution->status = PSX_STATIC_INITIALIZER_OK;
 }

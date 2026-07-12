@@ -22,7 +22,7 @@ int psx_parse_alignas_value(void) {
   return val;
 }
 
-int ps_eval_parsed_alignas_value(token_t *start, token_t *end) {
+int psx_eval_parsed_alignas_value(token_t *start, token_t *end) {
   if (!start || !end) return 1;
   token_t *saved_token = curtok();
   set_curtok(start);
@@ -34,7 +34,7 @@ int ps_eval_parsed_alignas_value(token_t *start, token_t *end) {
     value = elem_size;
     set_curtok(end);
   } else {
-    long long parsed = ps_eval_parsed_enum_const_expr(start, end);
+    long long parsed = psx_eval_parsed_enum_const_expr(start, end);
     value = parsed > 0 ? (int)parsed : 1;
   }
   if (curtok() != end) set_curtok(end);

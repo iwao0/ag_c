@@ -11,7 +11,7 @@
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
-void ps_prepare_optional_initializer_syntax(
+void psx_prepare_optional_initializer_syntax(
     psx_parsed_initializer_t *out) {
   if (!out) return;
   *out = (psx_parsed_initializer_t){0};
@@ -21,7 +21,7 @@ void ps_prepare_optional_initializer_syntax(
   out->value_tok = curtok()->next;
 }
 
-void ps_parse_initializer_syntax_value(
+void psx_parse_initializer_syntax_value(
     psx_parsed_initializer_t *out, token_t *assign_tok) {
   if (!out) return;
   *out = (psx_parsed_initializer_t){
@@ -33,7 +33,7 @@ void ps_parse_initializer_syntax_value(
   };
   out->value = out->kind == PSX_DECL_INIT_LIST
                    ? psx_parse_initializer_syntax_list()
-                   : ps_expr_assign();
+                   : psx_expr_assign();
 }
 
 node_t *psx_parse_initializer_syntax_list(void) {
@@ -80,7 +80,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
           token_ident_t *current_member = tk_consume_ident();
           if (!current_member) {
             free(entries);
-            psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+            ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
           }
           if (!member) member = current_member;
           designators[designator_count++] = (psx_initializer_designator_t){
@@ -91,14 +91,14 @@ node_t *psx_parse_initializer_syntax_list(void) {
           };
         } else {
           tk_expect('[');
-          node_t *index_expr = ps_expr_assign();
+          node_t *index_expr = psx_expr_assign();
           node_t *range_end_expr = NULL;
           int is_range = 0;
           if (curtok()->kind == TK_ELLIPSIS) {
             ps_ctx_record_unsupported_gnu_extension_warning(
                 curtok(), "array range designator");
             tk_set_current_token(curtok()->next);
-            range_end_expr = ps_expr_assign();
+            range_end_expr = psx_expr_assign();
             is_range = 1;
           }
           tk_expect(']');
@@ -116,7 +116,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
 
       node_t *value = curtok()->kind == TK_LBRACE
                           ? psx_parse_initializer_syntax_list()
-                          : ps_expr_assign();
+                          : psx_expr_assign();
       entries[count++] = (psx_initializer_entry_t){
           .value = value,
           .member_name = member ? member->str : NULL,

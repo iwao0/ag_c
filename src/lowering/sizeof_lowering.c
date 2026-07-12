@@ -9,7 +9,7 @@ node_t *lower_sizeof_query_expression(
   if (query->runtime_size_expr) {
     result = query->runtime_size_expr;
   } else if (query->runtime_size_slot != 0) {
-    node_t *slot = psx_node_new_unsigned_lvar_typed(
+    node_t *slot = ps_node_new_unsigned_lvar_typed(
         query->runtime_size_slot, 8);
     result = ps_node_new_integer_cast_result(slot, NULL, 8, 1, 0);
   } else {

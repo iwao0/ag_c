@@ -22,7 +22,7 @@ typedef struct {
   node_t *(*finish_declaration)(void *declaration_context);
 } psx_local_declaration_callbacks_t;
 
-node_t *ps_parse_local_declaration_syntax(
+node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks);
 
 #endif

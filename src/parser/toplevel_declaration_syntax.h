@@ -32,12 +32,12 @@ typedef struct {
   void (*finish_declaration)(void *declaration_context);
 } psx_toplevel_declaration_callbacks_t;
 
-void ps_parse_toplevel_declaration_syntax(
+void psx_parse_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);
-void ps_parse_toplevel_declaration_head_syntax(
+void psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
-void ps_finish_toplevel_declaration_syntax(
+void psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);
 void ps_dispose_toplevel_declaration_syntax(

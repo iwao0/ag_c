@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-void ps_move_toplevel_declaration_head_to_function_definition(
+void psx_move_toplevel_declaration_head_to_function_definition(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_parsed_function_definition_t *definition) {
   if (!declaration || !definition || declaration->declarator_count != 1)
@@ -26,7 +26,7 @@ void ps_move_toplevel_declaration_head_to_function_definition(
 void ps_dispose_function_definition_header_syntax(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return;
-  ps_dispose_declarator_syntax(&definition->declarator);
+  psx_dispose_declarator_syntax(&definition->declarator);
   ps_dispose_decl_specifier_syntax(&definition->return_specifier);
   memset(definition, 0, sizeof(*definition));
 }

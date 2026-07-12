@@ -2,8 +2,8 @@
 #define FRONTEND_DECLARATION_REGISTRATION_H
 
 #include "../parser/ast.h"
-#include "../semantic/aggregate_member_resolution.h"
-#include "../semantic/tag_declaration_resolution.h"
+#include "aggregate_member_resolution.h"
+#include "tag_declaration_resolution.h"
 
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok);

@@ -18,15 +18,23 @@ void psx_resolve_identifier(
   memset(resolution, 0, sizeof(*resolution));
   if (!request || !request->name || request->name_len <= 0) return;
 
-  resolution->local =
-      ps_decl_find_lvar(request->name, request->name_len);
+  resolution->local = request->has_local_lookup_point
+      ? ps_local_registry_find_visible(
+            request->name, request->name_len,
+            request->local_lookup_point)
+      : ps_decl_find_lvar(request->name, request->name_len);
   if (resolution->local) {
     resolution->kind = PSX_IDENTIFIER_LOCAL;
     return;
   }
-  if (ps_ctx_find_enum_const(
-          request->name, request->name_len,
-          &resolution->enum_value)) {
+  int has_enum = request->has_local_lookup_point
+      ? ps_ctx_find_enum_const_at(
+            request->name, request->name_len,
+            request->local_lookup_point, &resolution->enum_value)
+      : ps_ctx_find_enum_const(
+            request->name, request->name_len,
+            &resolution->enum_value);
+  if (has_enum) {
     resolution->kind = PSX_IDENTIFIER_ENUM_CONSTANT;
     return;
   }

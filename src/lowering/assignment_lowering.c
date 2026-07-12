@@ -37,7 +37,7 @@ static node_t *materialize_lvalue_address_once(node_t *target,
   if (!target || target->kind != ND_DEREF || !target->lhs) return target;
   node_t *address = target->lhs;
   char *name = new_compound_assignment_temp_name();
-  lvar_t *temp = psx_decl_register_lvar_sized(
+  lvar_t *temp = ps_decl_register_lvar_sized(
       name, (int)strlen(name), 8, 8, 0);
   psx_type_t *address_type = ps_node_get_type(address);
   if (address_type) ps_local_registry_set_decl_type(temp, address_type);

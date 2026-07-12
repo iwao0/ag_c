@@ -32,7 +32,7 @@ typedef struct {
 
 // トップレベル項目のストリーミングパース。frontendはitemを逐次適用する。
 // 1 関数ぶんの AST だけを保持して codegen→解放できるので、AST のピークメモリを抑える。
-void psx_parser_stream_begin(
+void ps_parser_stream_begin(
     psx_parser_stream_t *stream,
     tokenizer_context_t *tk_ctx, token_t *start,
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations);
@@ -41,7 +41,7 @@ int ps_parse_next_toplevel_item(
 node_t *ps_parse_function_definition_body(
     psx_parser_stream_t *stream, node_func_t *function,
     const psx_local_declaration_callbacks_t *local_declarations);
-void psx_parser_stream_end(psx_parser_stream_t *stream);
+void ps_parser_stream_end(psx_parser_stream_t *stream);
 
 // 単一の式をパースしてASTのルートを返す
 node_t *ps_expr(void);

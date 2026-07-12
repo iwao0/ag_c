@@ -31,7 +31,7 @@ void ps_diag_ctx(token_t *tok, const char *rule, const char *fmt, ...) {
   free(detail);
 }
 
-void psx_diag_missing(token_t *tok, const char *what) {
+void ps_diag_missing(token_t *tok, const char *what) {
   diag_emit_tokf(DIAG_ERR_PARSER_MISSING_ITEM, tok,
                  diag_message_for(DIAG_ERR_PARSER_MISSING_ITEM), what);
 }
@@ -41,7 +41,7 @@ void psx_diag_undefined_with_name(token_t *tok, const char *kind, const char *na
                  diag_message_for(DIAG_ERR_PARSER_UNDEFINED_WITH_KIND), kind, len, name);
 }
 
-void psx_diag_duplicate_with_name(token_t *tok, const char *kind, const char *name, int len) {
+void ps_diag_duplicate_with_name(token_t *tok, const char *kind, const char *name, int len) {
   diag_emit_tokf(DIAG_ERR_PARSER_DUPLICATE_WITH_KIND, tok,
                  diag_message_for(DIAG_ERR_PARSER_DUPLICATE_WITH_KIND), kind, len, name);
 }

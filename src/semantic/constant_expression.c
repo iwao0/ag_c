@@ -23,6 +23,35 @@ long long psx_eval_const_int(node_t *node, int *ok) {
       long long value = psx_eval_const_int(node->lhs, ok);
       return !ok || *ok ? -value : 0;
     }
+    case ND_SIZEOF_QUERY: {
+      node_sizeof_query_t *query = (node_sizeof_query_t *)node;
+      if (query->runtime_size_expr || query->runtime_size_slot != 0 ||
+          query->resolved_size <= 0) {
+        if (ok) *ok = 0;
+        return 0;
+      }
+      return query->resolved_size;
+    }
+    case ND_ALIGNOF_QUERY: {
+      node_alignof_query_t *query = (node_alignof_query_t *)node;
+      if (query->resolved_alignment <= 0) {
+        if (ok) *ok = 0;
+        return 0;
+      }
+      return query->resolved_alignment;
+    }
+    case ND_GENERIC_SELECTION: {
+      node_generic_selection_t *selection =
+          (node_generic_selection_t *)node;
+      if (selection->selected_index < 0 ||
+          selection->selected_index >= selection->association_count) {
+        if (ok) *ok = 0;
+        return 0;
+      }
+      return psx_eval_const_int(
+          selection->associations[selection->selected_index].expression,
+          ok);
+    }
     case ND_GVAR: {
       node_gvar_t *ref = (node_gvar_t *)node;
       global_var_t *global = ps_find_global_var(ref->name, ref->name_len);
@@ -115,7 +144,7 @@ double psx_eval_const_fp(node_t *node, int *ok) {
   switch (node->kind) {
     case ND_NUM: {
       node_num_t *number = (node_num_t *)node;
-      return node->fp_kind != TK_FLOAT_KIND_NONE
+      return ps_node_value_fp_kind(node) != TK_FLOAT_KIND_NONE
                  ? number->fval : (double)number->val;
     }
     case ND_CAST:
