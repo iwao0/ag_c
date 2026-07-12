@@ -39,6 +39,7 @@ struct tag_type_t {
   char *name;
   int len;
   int member_count;
+  int is_complete;
   int size;
   int align;       // struct/union のアラインメント (_Alignof 用、agg_align)。0 = 未設定。
   int scope_depth;
@@ -60,6 +61,34 @@ struct tag_member_t {
   int decl_order;
   int scope_depth;
 };
+
+static bool get_tag_member_info_impl(
+    token_kind_t kind, char *name, int len, int scope_depth,
+    int index, tag_member_info_t *out);
+
+static void refresh_cached_tag_definition(tag_type_t *tag) {
+  if (!tag || !tag->definition) return;
+  psx_aggregate_definition_t *definition = tag->definition;
+  definition->tag_kind = tag->kind;
+  definition->tag_name = tag->name;
+  definition->tag_len = tag->len;
+  definition->size = tag->size;
+  definition->align = tag->align;
+  definition->member_count = tag->member_count;
+  free(definition->members);
+  definition->members = NULL;
+  if (definition->member_count <= 0) return;
+  definition->members = calloc(
+      (size_t)definition->member_count, sizeof(tag_member_info_t));
+  for (int i = 0; i < definition->member_count; i++) {
+    if (!get_tag_member_info_impl(
+            tag->kind, tag->name, tag->len, tag->scope_depth,
+            i, &definition->members[i])) {
+      definition->member_count = i;
+      break;
+    }
+  }
+}
 
 typedef struct enum_const_t enum_const_t;
 struct enum_const_t {
@@ -497,6 +526,8 @@ void psx_ctx_reset_tag_diag_state(void) {
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_type_t *t = tag_types_by_bucket[i]; t; t = t->next_hash) {
       t->member_count = 0;
+      t->is_complete = 0;
+      t->definition = NULL;
     }
   }
 }
@@ -672,6 +703,19 @@ void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len
 
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align) {
+  int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
+  if (!psx_ctx_register_tag_type(kind, name, len, is_complete,
+                                 member_count, tag_size, tag_align)) {
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, NULL,
+                   "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
+                   len, name);
+  }
+}
+
+int psx_ctx_register_tag_type(token_kind_t kind, char *name, int len,
+                              int is_complete, int member_count,
+                              int tag_size, int tag_align) {
+  if (!name || len <= 0) return 0;
   tag_type_t *existing = find_tag_type(kind, name, len);
   /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
    * 内側スコープに同名タグを別レイアウトで宣言した場合 (`struct S{int a;}` 外側 → ブロック内
@@ -681,20 +725,13 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
     /* C11 6.7.2.1p1 / 6.7.2.2p2 / 6.7.2.3p3: 同一スコープでの完全型タグの再定義は不可。
      * 既存もメンバを持っている (= 完全型) のに、今回も新しいメンバを持っている (= 完全型) なら
      * 二重定義。一方が前方宣言なら従来どおり update。 */
-    if (existing->member_count > 0 && member_count > 0) {
-      /* psx_diag は ctx 経由でしか呼べない (semantic_ctx は diag 抽象を持たない) ため
-       * フラグだけ立てて呼び出し側で診断する案もあるが、ここでは diag_emit_tokf を直接使う。 */
-      /* 実装簡略化: 検出専用の API を別 fn に分けるのでなく、ここで diag_emit を呼ぶ。
-       * caller (struct_layout / enum_const) は curtok() 位置で診断する。 */
-      diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, NULL,
-                     "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
-                     len, name);
-      return;
-    }
+    if (existing->is_complete && is_complete) return 0;
     if (member_count > existing->member_count) existing->member_count = member_count;
     if (tag_size > existing->size) existing->size = tag_size;
     if (tag_align > existing->align) existing->align = tag_align;
-    return;
+    if (is_complete) existing->is_complete = 1;
+    refresh_cached_tag_definition(existing);
+    return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
   tag_type_t *t = calloc(1, sizeof(tag_type_t));
@@ -702,21 +739,40 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
   t->name = name;
   t->len = len;
   t->member_count = member_count;
+  t->is_complete = is_complete ? 1 : 0;
   t->size = tag_size;
   t->align = tag_align;
   t->scope_depth = tag_scope_depth;
   t->next_hash = tag_types_by_bucket[bucket];
   tag_types_by_bucket[bucket] = t;
+  return 1;
+}
+
+int psx_ctx_current_tag_scope_depth(void) {
+  return tag_scope_depth;
+}
+
+int psx_ctx_find_tag_kind_at_current_scope(
+    char *name, int len, token_kind_t *out_kind) {
+  if (!name || len <= 0) return 0;
+  for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (tag_type_t *tag = tag_types_by_bucket[i]; tag;
+         tag = tag->next_hash) {
+      if (tag->scope_depth != tag_scope_depth || tag->len != len ||
+          strncmp(tag->name, name, (size_t)len) != 0) {
+        continue;
+      }
+      if (out_kind) *out_kind = tag->kind;
+      return 1;
+    }
+  }
+  return 0;
 }
 
 int ps_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type(kind, name, len);
   return t ? t->member_count : -1;
 }
-
-static bool get_tag_member_info_impl(token_kind_t kind, char *name, int len,
-                                     int scope_depth, int index,
-                                     tag_member_info_t *out);
 
 psx_aggregate_definition_t *psx_ctx_get_tag_definition(
     token_kind_t kind, char *name, int len) {
@@ -971,7 +1027,9 @@ static enum_const_t *find_enum_const_in_current_scope(char *name, int len) {
 /* enum 定数を登録する。
  * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
  * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
-int psx_ctx_define_enum_const(char *name, int len, long long value) {
+int psx_ctx_register_enum_const(
+    char *name, int len, long long value, int *out_created) {
+  if (out_created) *out_created = 0;
   enum_const_t *existing = find_enum_const_in_current_scope(name, len);
   if (existing) {
     return 0;
@@ -984,7 +1042,12 @@ int psx_ctx_define_enum_const(char *name, int len, long long value) {
   e->scope_depth = tag_scope_depth;
   e->next_hash = enum_consts_by_bucket[bucket];
   enum_consts_by_bucket[bucket] = e;
+  if (out_created) *out_created = 1;
   return 1;
+}
+
+int psx_ctx_define_enum_const(char *name, int len, long long value) {
+  return psx_ctx_register_enum_const(name, len, value, NULL);
 }
 
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
@@ -992,6 +1055,10 @@ bool psx_ctx_find_enum_const(char *name, int len, long long *out_value) {
   if (!e) return false;
   if (out_value) *out_value = e->value;
   return true;
+}
+
+int psx_ctx_has_enum_const_in_current_scope(char *name, int len) {
+  return find_enum_const_in_current_scope(name, len) != NULL;
 }
 
 // 任意のスコープから名前一致の typedef を返す。なければ NULL。
@@ -1017,6 +1084,10 @@ static typedef_name_t *find_typedef_in_current_scope(char *name, int len) {
   return NULL;
 }
 
+int psx_ctx_has_typedef_in_current_scope(char *name, int len) {
+  return find_typedef_in_current_scope(name, len) != NULL;
+}
+
 static void ctx_type_refresh_tag_completeness(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
@@ -1039,7 +1110,11 @@ static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *i
       t, ctx_type_clone_persistent(psx_ctx_typedef_decl_type(info)));
 }
 
-int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info) {
+int psx_ctx_register_typedef_name(
+    char *name, int len, const psx_typedef_info_t *info,
+    int *out_created, int *out_redeclared) {
+  if (out_created) *out_created = 0;
+  if (out_redeclared) *out_redeclared = 0;
   if (!info || !psx_ctx_typedef_decl_type(info)) return 0;
   typedef_name_t *existing = find_typedef_in_current_scope(name, len);
   /* C11 6.7p3: typedef は同じ型なら再宣言可。違う型なら error。
@@ -1049,6 +1124,7 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
     const psx_type_t *new_decl_type = psx_ctx_typedef_decl_type(info);
     const psx_type_t *existing_decl_type = typedef_record_decl_type(existing);
     if (!psx_type_shape_matches(existing_decl_type, new_decl_type)) return 0;
+    if (out_redeclared) *out_redeclared = 1;
     return 1;  /* 同じ型なら登録済みのままで OK */
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
@@ -1059,7 +1135,13 @@ int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *i
   t->next_hash = typedefs_by_bucket[bucket];
   typedefs_by_bucket[bucket] = t;
   assign_typedef_fields(t, info);
+  if (out_created) *out_created = 1;
   return 1;
+}
+
+int psx_ctx_define_typedef_name(
+    char *name, int len, const psx_typedef_info_t *info) {
+  return psx_ctx_register_typedef_name(name, len, info, NULL, NULL);
 }
 
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {

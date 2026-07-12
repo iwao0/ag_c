@@ -1,8 +1,10 @@
 #ifndef LOWERING_GLOBAL_OBJECT_LOWERING_H
 #define LOWERING_GLOBAL_OBJECT_LOWERING_H
 
+#include "../parser/ast.h"
 #include "../parser/symtab.h"
 #include "../semantic/global_declaration_plan.h"
+#include "../semantic/global_declaration_resolution.h"
 
 typedef struct {
   char *name;
@@ -22,5 +24,23 @@ typedef struct {
 int lower_global_object_declaration(
     const psx_global_object_request_t *request,
     psx_global_object_result_t *result);
+
+typedef struct {
+  char *name;
+  int name_len;
+  const psx_type_t *type;
+  int is_extern_decl;
+  int is_static;
+  const psx_global_declaration_resolution_t *resolution;
+} psx_resolved_global_object_request_t;
+
+int lower_resolved_global_object_declaration(
+    const psx_resolved_global_object_request_t *request,
+    psx_global_object_result_t *result);
+
+int lower_global_declaration_initializer(
+    global_var_t *global, psx_type_t *type,
+    psx_decl_init_kind_t initializer_kind, node_t *initializer,
+    token_t *diag_tok);
 
 #endif

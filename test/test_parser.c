@@ -8,12 +8,17 @@
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/semantic_pass.h"
 #include "../src/semantic/declaration_resolution.h"
+#include "../src/semantic/enum_constant_resolution.h"
 #include "../src/semantic/function_declaration_plan.h"
 #include "../src/semantic/function_declaration_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/global_declaration_plan.h"
+#include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
+#include "../src/semantic/parameter_declaration_resolution.h"
+#include "../src/semantic/tag_declaration_resolution.h"
+#include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
 #include "../src/lowering/local_object_lowering.h"
 #include "../src/lowering/parameter_lowering.h"
@@ -939,6 +944,51 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_TYPE_STRUCT,
             psx_lvar_get_decl_type(lowered.var)->kind);
 
+  psx_declarator_shape_t vla_parameter_shape;
+  psx_declarator_shape_init(&vla_parameter_shape);
+  ASSERT_TRUE(psx_declarator_shape_append_vla_array(
+      &vla_parameter_shape));
+  psx_parameter_declaration_resolution_request_t parameter_request = {
+      .type = {
+          .base_kind = TK_INT,
+          .elem_size = 4,
+          .declarator_shape = &vla_parameter_shape,
+      },
+      .is_array_declarator = 1,
+      .inner_dimension_count = 1,
+  };
+  parameter_request.inner_dimensions[0].source_name = (char *)"n";
+  parameter_request.inner_dimensions[0].source_name_len = 1;
+  psx_parameter_declaration_resolution_t parameter_resolution;
+  ASSERT_TRUE(psx_resolve_parameter_declaration(
+      &parameter_request, &parameter_resolution));
+  ASSERT_EQ(PSX_PARAMETER_LOWER_VLA,
+            parameter_resolution.lowering_kind);
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER,
+            parameter_resolution.storage.kind);
+  ASSERT_EQ(4, parameter_resolution.element_size);
+  ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
+
+  psx_decl_reset_locals();
+  lvar_t *dimension = psx_decl_register_lvar_sized(
+      (char *)"n", 1, 4, 4, 0);
+  dimension->is_param = 1;
+  psx_parameter_lowering_result_t resolved_lowered;
+  ASSERT_TRUE(lower_resolved_parameter_declaration(
+      &(psx_resolved_parameter_lowering_request_t){
+          .name = (char *)"values",
+          .name_len = 6,
+          .resolution = &parameter_resolution,
+      },
+      &resolved_lowered));
+  ASSERT_TRUE(resolved_lowered.var != NULL);
+  ASSERT_TRUE(resolved_lowered.type_attached);
+  ASSERT_TRUE(resolved_lowered.var->is_param);
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            psx_lvar_get_decl_type(resolved_lowered.var)->kind);
+  ASSERT_EQ(dimension->offset,
+            ps_lvar_vla_row_stride_src_offset(resolved_lowered.var));
+
   psx_type_t *parameter_types[2] = {integer, pointer};
   psx_function_declaration_plan_t function_plan = {0};
   ASSERT_TRUE(psx_plan_function_declaration(
@@ -1053,13 +1103,25 @@ static void test_global_declaration_storage_plan_boundary() {
   ASSERT_TRUE(plan.is_incomplete_array);
   ASSERT_EQ(0, plan.storage_size);
 
-  psx_global_object_result_t first = {0};
-  ASSERT_TRUE(lower_global_object_declaration(
-      &(psx_global_object_request_t){
+  psx_global_declaration_resolution_t first_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = incomplete,
           .is_extern_decl = 1,
+      },
+      &first_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, first_resolution.status);
+  ASSERT_TRUE(first_resolution.existing == NULL);
+  psx_global_object_result_t first = {0};
+  ASSERT_TRUE(lower_resolved_global_object_declaration(
+      &(psx_resolved_global_object_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = incomplete,
+          .is_extern_decl = 1,
+          .resolution = &first_resolution,
       },
       &first));
   ASSERT_TRUE(first.global != NULL);
@@ -1069,12 +1131,25 @@ static void test_global_declaration_storage_plan_boundary() {
 
   psx_type_t *complete = psx_type_new_array(
       integer, 3, 12, 4, 0);
-  psx_global_object_result_t merged = {0};
-  ASSERT_TRUE(lower_global_object_declaration(
-      &(psx_global_object_request_t){
+  psx_global_declaration_resolution_t merged_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = complete,
+      },
+      &merged_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, merged_resolution.status);
+  ASSERT_EQ(first.global, merged_resolution.existing);
+  ASSERT_TRUE(merged_resolution.replace_existing_type);
+  ASSERT_TRUE(merged_resolution.clear_existing_extern);
+  psx_global_object_result_t merged = {0};
+  ASSERT_TRUE(lower_resolved_global_object_declaration(
+      &(psx_resolved_global_object_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = complete,
+          .resolution = &merged_resolution,
       },
       &merged));
   ASSERT_EQ(first.global, merged.global);
@@ -1083,7 +1158,36 @@ static void test_global_declaration_storage_plan_boundary() {
   ASSERT_EQ(12, merged.global->type_size);
   ASSERT_EQ(3, psx_gvar_get_decl_type(merged.global)->array_len);
 
+  psx_global_declaration_resolution_t rejected_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = (char *)"__boundary_incomplete",
+          .name_len = 21,
+          .type = incomplete,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT,
+            rejected_resolution.status);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = (char *)"__boundary_incomplete",
+          .name_len = 21,
+          .type = incomplete,
+          .has_initializer = 1,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, rejected_resolution.status);
+
   psx_type_t *pointer = psx_type_new_pointer(integer, 4);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = pointer,
+      },
+      &rejected_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPE_CONFLICT,
+            rejected_resolution.status);
   ASSERT_TRUE(psx_plan_global_object_storage(pointer, &plan));
   ASSERT_EQ(8, plan.storage_size);
   psx_global_object_result_t internal = {0};
@@ -1097,6 +1201,221 @@ static void test_global_declaration_storage_plan_boundary() {
       &internal));
   ASSERT_TRUE(internal.global->is_static);
   ASSERT_EQ(8, internal.global->type_size);
+}
+
+static void test_tag_declaration_resolution_boundary() {
+  printf("test_tag_declaration_resolution_boundary...\n");
+  ps_reset_translation_unit_state();
+  psx_tag_declaration_resolution_request_t request = {
+      .kind = TK_STRUCT,
+      .name = (char *)"__TagBoundary",
+      .name_len = 13,
+      .mode = PSX_TAG_DECLARATION_FORWARD,
+  };
+  psx_tag_declaration_resolution_t resolution;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.registered);
+  ASSERT_EQ(0, resolution.scope_depth);
+
+  request.mode = PSX_TAG_DECLARATION_REFERENCE;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(!resolution.registered);
+  psx_aggregate_definition_t *cached_definition =
+      psx_ctx_get_tag_definition(
+          TK_STRUCT, (char *)"__TagBoundary", 13);
+  ASSERT_TRUE(cached_definition != NULL);
+  ASSERT_EQ(0, cached_definition->align);
+
+  request.mode = PSX_TAG_DECLARATION_DEFINITION;
+  request.alignment = 1;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.registered);
+  ASSERT_EQ(cached_definition,
+            psx_ctx_get_tag_definition(
+                TK_STRUCT, (char *)"__TagBoundary", 13));
+  ASSERT_EQ(1, cached_definition->align);
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_REDEFINITION, resolution.status);
+
+  request.kind = TK_UNION;
+  request.mode = PSX_TAG_DECLARATION_FORWARD;
+  request.alignment = 0;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
+
+  psx_ctx_enter_block_scope();
+  request.kind = TK_STRUCT;
+  request.mode = PSX_TAG_DECLARATION_FORWARD;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.registered);
+  ASSERT_EQ(1, resolution.scope_depth);
+  request.mode = PSX_TAG_DECLARATION_DEFINITION;
+  request.alignment = 1;
+  psx_resolve_tag_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
+  ASSERT_EQ(1, resolution.scope_depth);
+  psx_ctx_leave_block_scope();
+  ASSERT_EQ(0, ps_ctx_get_tag_scope_depth(
+                   TK_STRUCT, (char *)"__TagBoundary", 13));
+}
+
+static void test_typedef_declaration_resolution_boundary() {
+  printf("test_typedef_declaration_resolution_boundary...\n");
+  ps_reset_translation_unit_state();
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_typedef_declaration_resolution_request_t request = {
+      .name = (char *)"__TypeBoundary",
+      .name_len = 14,
+      .type = integer,
+  };
+  psx_typedef_declaration_resolution_t resolution;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.created);
+  ASSERT_EQ(0, resolution.scope_depth);
+
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.redeclared);
+
+  psx_type_t *long_type = psx_type_new_integer(TK_LONG, 8, 0);
+  request.type = long_type;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT, resolution.status);
+
+  psx_ctx_enter_block_scope();
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
+  ASSERT_TRUE(resolution.created);
+  ASSERT_EQ(1, resolution.scope_depth);
+  psx_ctx_leave_block_scope();
+
+  psx_global_object_result_t object;
+  ASSERT_TRUE(lower_global_object_declaration(
+      &(psx_global_object_request_t){
+          .name = (char *)"__TypeObject",
+          .name_len = 12,
+          .type = integer,
+      },
+      &object));
+  request.name = (char *)"__TypeObject";
+  request.name_len = 12;
+  request.type = integer;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT,
+            resolution.status);
+
+  psx_function_declaration_resolution_t function_resolution;
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = (char *)"__TypeFunction",
+          .name_len = 14,
+          .return_type = integer,
+      },
+      &function_resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
+  request.name = (char *)"__TypeFunction";
+  request.name_len = 14;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_FUNCTION_NAME_CONFLICT,
+            resolution.status);
+
+  ASSERT_TRUE(psx_ctx_define_enum_const(
+      (char *)"__TypeEnum", 10, 1));
+  request.name = (char *)"__TypeEnum";
+  request.name_len = 10;
+  psx_resolve_typedef_declaration(&request, &resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_ENUM_NAME_CONFLICT,
+            resolution.status);
+}
+
+static void test_enum_constant_resolution_boundary() {
+  printf("test_enum_constant_resolution_boundary...\n");
+  ps_reset_translation_unit_state();
+  psx_enum_constant_resolution_request_t request = {
+      .name = (char *)"__EnumBoundary",
+      .name_len = 14,
+      .value = 7,
+  };
+  psx_enum_constant_resolution_t resolution;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OK, resolution.status);
+  ASSERT_TRUE(resolution.created);
+  ASSERT_EQ(0, resolution.scope_depth);
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_DUPLICATE, resolution.status);
+
+  psx_ctx_enter_block_scope();
+  request.value = 11;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OK, resolution.status);
+  ASSERT_TRUE(resolution.created);
+  ASSERT_EQ(1, resolution.scope_depth);
+  long long value = 0;
+  ASSERT_TRUE(psx_ctx_find_enum_const(
+      (char *)"__EnumBoundary", 14, &value));
+  ASSERT_EQ(11, value);
+  psx_ctx_leave_block_scope();
+  ASSERT_TRUE(psx_ctx_find_enum_const(
+      (char *)"__EnumBoundary", 14, &value));
+  ASSERT_EQ(7, value);
+
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_global_object_result_t object;
+  ASSERT_TRUE(lower_global_object_declaration(
+      &(psx_global_object_request_t){
+          .name = (char *)"__EnumObject",
+          .name_len = 12,
+          .type = integer,
+      },
+      &object));
+  request.name = (char *)"__EnumObject";
+  request.name_len = 12;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT, resolution.status);
+
+  psx_function_declaration_resolution_t function_resolution;
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = (char *)"__EnumFunction",
+          .name_len = 14,
+          .return_type = integer,
+      },
+      &function_resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
+  request.name = (char *)"__EnumFunction";
+  request.name_len = 14;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_FUNCTION_NAME_CONFLICT, resolution.status);
+
+  psx_typedef_declaration_resolution_t typedef_resolution;
+  psx_resolve_typedef_declaration(
+      &(psx_typedef_declaration_resolution_request_t){
+          .name = (char *)"__EnumType",
+          .name_len = 10,
+          .type = integer,
+      },
+      &typedef_resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, typedef_resolution.status);
+  request.name = (char *)"__EnumType";
+  request.name_len = 10;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT, resolution.status);
+
+  psx_ctx_enter_block_scope();
+  psx_decl_enter_scope();
+  ASSERT_TRUE(psx_decl_register_lvar_sized(
+      (char *)"__EnumLocal", 11, 4, 4, 0) != NULL);
+  request.name = (char *)"__EnumLocal";
+  request.name_len = 11;
+  psx_resolve_enum_constant(&request, &resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT, resolution.status);
+  psx_decl_leave_scope();
+  psx_ctx_leave_block_scope();
 }
 
 static void test_initializer_resolution_boundary() {
@@ -10610,6 +10929,20 @@ static void test_parse_invalid() {
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
   expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
   expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
+  expect_parse_fail("struct S; union S; int main(void) { return 0; }");
+  expect_parse_fail("struct E {}; struct E {}; int main(void) { return 0; }");
+  expect_parse_ok("typedef int X; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail("typedef int X; typedef long X; int main(void) { return 0; }");
+  expect_parse_fail("int X; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail("int f(void); typedef int f; int main(void) { return 0; }");
+  expect_parse_fail("enum E { X }; typedef int X; int main(void) { return 0; }");
+  expect_parse_fail("int main(void) { int x; typedef int x; return 0; }");
+  expect_parse_fail("int X; enum E { X }; int main(void) { return 0; }");
+  expect_parse_fail("int f(void); enum E { f }; int main(void) { return 0; }");
+  expect_parse_fail("typedef int T; enum E { T }; int main(void) { return 0; }");
+  expect_parse_fail("int main(void) { int x; enum E { x }; return 0; }");
+  expect_parse_ok("int X; int main(void) { enum E { X }; return 0; }");
+  expect_parse_ok("typedef int T; int main(void) { enum E { T }; return 0; }");
   expect_parse_ok("main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
   expect_parse_fail("main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }"); // 非同種非スカラ型cast未対応
   expect_parse_fail("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }"); // 同サイズでも別タグは互換structではない
@@ -11165,6 +11498,9 @@ int main() {
   test_vla_lowering_request_boundary();
   test_parameter_declaration_storage_plan_boundary();
   test_global_declaration_storage_plan_boundary();
+  test_tag_declaration_resolution_boundary();
+  test_typedef_declaration_resolution_boundary();
+  test_enum_constant_resolution_boundary();
   test_initializer_resolution_boundary();
   test_local_initializer_parse_lowering_boundary();
   test_static_data_initializer_boundary();

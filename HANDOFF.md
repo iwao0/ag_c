@@ -1,8 +1,153 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1064: 関数宣言・定義登録のsemantic resolution統合）
+最終更新: 2026-07-12（続き1069: enum定数登録のsemantic resolution統合）
 
 ## 現状
+- 続き1069: **enumeratorの名前衝突判定と登録をsemantic resolutionへ統合した。**
+
+  `psx_resolve_enum_constant()`を追加し、enumeratorが属するordinary identifier namespaceを
+  scope-awareに検査する。file scopeではglobal object/function/typedef、block scopeではcurrent
+  local/typedef、全scopeでcurrent enumeratorとの衝突をstatus化し、外側scopeの同名globalやtypedefは
+  block enumからshadowできる規則を維持した。
+
+  contextにはatomic `psx_ctx_register_enum_const()`を追加し、旧`psx_ctx_define_enum_const()`は
+  互換wrapperになった。`enum_constant_declaration.c`がsemantic statusをparser診断へ変換し、
+  `enum_const.c`は構文解析と定数式評価の後にresolved operationを呼ぶだけになった。production
+  parserからcontextへの直接enumerator登録は0件になった。
+
+  boundary testでは新規登録、同一scope重複、inner scope shadowと復元、global/function/typedef/current
+  localとの衝突を検証した。parser acceptance/rejectionにもfile scope衝突、local衝突、block enumからの
+  outer global/typedef shadowを追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - production parserの`psx_ctx_define_enum_const`直接call = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はaggregate memberの重複判定、layout情報、tag member登録をsemantic resolutionへ移し、
+  `struct_layout.c`から`psx_ctx_add_tag_member()`の直接更新を外す。
+
+- 続き1068: **top-level/local/statementのtypedef登録をsemantic resolutionへ統合した。**
+
+  `psx_resolve_typedef_declaration()`を追加し、canonical typeを唯一の登録入力として、新規登録、
+  同一scope・同型再宣言、異型再宣言をstatus化した。typedefが属するordinary identifier namespace
+  もresolverで検査し、file scopeのglobal/function、current blockのlocal object、current scopeの
+  enumeratorとの名前衝突を拒否する。inner scopeでは外側typedefと異なる型のshadowを許可する。
+
+  contextにはcreated/redeclaredを返すatomic `psx_ctx_register_typedef_name()`を追加し、旧
+  `psx_ctx_define_typedef_name()`は互換wrapperになった。`typedef_declaration.c`がsemantic statusを
+  parser診断へ変換し、production parserからcontextへの直接typedef登録は0件になった。
+
+  local/statement経路がcanonical typeを作った後に再構築していた`psx_typedef_info_t`のbase kind、
+  pointer、array dimensions、sizeof、funcptr mirrorは、context登録時に全て未使用だったため削除した。
+  `decl_array_suffix_t`と空のpointer-depth補正も不要になり、`decl.c`は1,967行、`stmt.c`は738行に
+  縮小した。long double identityもcanonical typeへ直接保持する。
+
+  boundary testでは新規/同型再宣言/異型衝突/inner shadowとglobal/function/enum衝突を検証し、
+  parser rejectionにはfile object、function、enumerator、local objectとの衝突を追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - production parserの`psx_ctx_define_typedef_name`直接call = **0件**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はenumerator登録をordinary identifier namespace対応の`enum_constant_resolution`へ移し、
+  typedef/global/function/localとの衝突判定を同じsemantic規則へ統一する。
+
+- 続き1067: **tagのreference、forward declaration、definition登録をsemantic operationへ統合した。**
+
+  `psx_resolve_tag_declaration()`を追加し、既存tag参照、standalone forwardによる現在scopeへの
+  宣言、完全定義登録を明示modeで扱う。同一scopeでの完全型再定義と、struct/union/enumの
+  kind衝突はstatusとして返す。`tag_declaration.c`はstatusをparser診断へ変換する共有adapterで、
+  `parser.c`、`decl.c`、`stmt.c`、`struct_layout.c`の全経路がこれを使う。
+
+  context tag recordへ明示`is_complete`を追加した。従来の`member_count > 0`推測では空struct/union
+  定義を完全型として扱えず再定義を見逃すため、atomic `psx_ctx_register_tag_type()`がdefinition
+  intentを直接受け取る。旧`psx_ctx_define_tag_type*()`は互換wrapperとしてのみ残り、production
+  parserからの直接callは0件になった。
+
+  forward時に取得済みの`aggregate_definition` cacheも、後の完全定義登録時に同じcache objectを
+  in-place更新する。typedefやcanonical typeが先に保持したdefinition pointerから、完成後のsize、
+  alignment、member列が見える。nested member内の未知tag pointerも同じreference resolverで
+  incomplete tagを登録する。
+
+  boundary testではreference再利用、inner-scope forward shadow、空tag完全定義、二重定義、kind
+  conflict、forward後のcached definition更新を検証した。parser rejectionにもkind conflictと
+  空tag再定義を追加した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - production parserの`psx_ctx_define_tag_type*`直接call = **0件**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はtop-level/local/statementの3経路に分散するtypedef名前衝突・同型再宣言・登録処理を
+  `typedef_declaration_resolution`へ統合する。
+
+- 続き1066: **global objectの名前・型解決とregistry更新をsemantic/loweringへ分離した。**
+
+  `psx_resolve_global_declaration()`を追加し、incomplete object制約、function/typedef/enumとの
+  名前空間衝突、global再宣言の型互換性、extern宣言からdefinitionへの遷移、incomplete arrayから
+  complete arrayへの型置換方針を、registryを変更せずstatusとplanで返すようにした。
+
+  `lower_resolved_global_object_declaration()`は解決済みplanだけを適用してglobal symbolを生成・更新
+  する。従来`global_object_lowering.c`にあった型互換判定と名前検索はsemantic層へ移した。
+  static initializerは`lower_global_declaration_initializer()` facadeを通し、`parser.c`から
+  `static_data_initializer.h`への直接依存を削除した。
+
+  top-level canonical type構築も独自のbuiltin/tag/typedef再構築を削除し、local/parameterと同じ
+  `psx_resolve_decl_type()`へ統一した。parserはparsed spec/declarator、initializer有無をrequestへ
+  詰め、semantic statusを診断へ変換してresolved loweringを呼ぶだけになった。
+
+  boundary testではextern incomplete arrayの初回登録、complete definitionによる型置換とextern解除、
+  initializerなしincomplete definitionの拒否、initializer付き許可、再宣言型衝突を直接検証した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はtag declaration/definitionのscope lookup、再定義判定、layout登録をsemantic resolutionへ移し、
+  `parser.c`の`psx_ctx_define_tag_type*()`直接更新を削除する。
+
+- 続き1065: **parameter宣言をparse、semantic resolution、loweringの三段階へ分離した。**
+
+  `psx_resolve_parameter_declaration()`を追加し、parsed declaration specifierとdeclarator
+  shapeからcanonical parameter type、ABI storage plan、通常/VLA lowering方針、runtime inner
+  dimensionを一度に解決する。parameter固有のbase type再構築、leaf aggregate判定、VLA分岐は
+  `parser.c`から削除した。
+
+  `lower_resolved_parameter_declaration()`は解決済みstorage planをそのまま使い、通常parameterと
+  VLA parameterをlowering層で選択する。parserはsemantic request adapter、診断、生成された
+  parameter nodeのargs追加だけを担当する。無名prototype parameterも同じresolverで型を作る。
+  `parser.c`は2,631行になった。
+
+  boundary testではruntime VLA parameterがcanonical pointer typeとVLA lowering方針へ解決され、
+  lowering後にpreceding parameter由来のstride sourceを持つことを直接確認した。
+
+  確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - `git diff --check` = **clean**
+  - full E2Eは正本化完了境界まで保留
+
+  次はtop-level objectのcanonical type validation、symbol登録、initializer loweringを一つの
+  declaration resolution/lowering境界へまとめ、`parser.c`からglobal registryとstatic-data
+  loweringの直接操作を外す。
+
 - 続き1064: **prototype、definition、重複定義の登録を同じsemantic operationへ統合した。**
 
   `psx_function_declaration_resolution_request_t`へ`is_definition`を追加し、canonical function

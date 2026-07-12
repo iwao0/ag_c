@@ -19,14 +19,17 @@
 #include "ret_pointee_array.h"
 #include "stmt.h"
 #include "struct_layout.h"
+#include "tag_declaration.h"
+#include "typedef_declaration.h"
 #include "type.h"
 #include "type_name.h"
 #include "../diag/diag.h"
 #include "../lowering/global_object_lowering.h"
 #include "../lowering/parameter_lowering.h"
-#include "../lowering/static_data_initializer.h"
-#include "../lowering/vla_lowering.h"
+#include "../semantic/declaration_resolution.h"
 #include "../semantic/function_declaration_resolution.h"
+#include "../semantic/global_declaration_resolution.h"
+#include "../semantic/parameter_declaration_resolution.h"
 #include "../tokenizer/tokenizer.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
@@ -385,15 +388,12 @@ typedef struct {
   node_func_t *func_node;
 } psx_function_signature_t;
 
-static void validate_toplevel_object_type(
-    const toplevel_decl_spec_t *spec, const psx_type_t *type);
 static void register_toplevel_function_prototype(const toplevel_decl_spec_t *spec,
                                                  toplevel_declarator_head_t head);
 static void register_function_signature(const psx_function_signature_t *sig);
-static global_var_t *register_toplevel_object_from_declarator(
+static global_var_t *resolve_and_lower_toplevel_object(
     const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head,
     psx_type_t *canonical_type);
-static int current_toplevel_extern_flag(const toplevel_decl_spec_t *spec);
 static inline token_t *curtok(void);
 static inline void set_curtok(token_t *tok);
 
@@ -509,18 +509,15 @@ static void resolve_toplevel_tag_decl_layout_or_ref(toplevel_decl_spec_t *spec) 
     int tag_align = 0;
     member_count = psx_parse_tag_definition_body(spec->tag_kind, spec->tag_name,
                                                  spec->tag_len, &tag_size, &tag_align);
-    psx_ctx_define_tag_type_with_layout(spec->tag_kind, spec->tag_name,
-                                        spec->tag_len, member_count, tag_size, tag_align);
+    psx_apply_parsed_tag_declaration(
+        spec->tag_kind, spec->tag_name, spec->tag_len,
+        PSX_TAG_DECLARATION_DEFINITION, member_count, tag_size,
+        tag_align, curtok());
     return;
   }
-  if (psx_ctx_has_tag_type(spec->tag_kind, spec->tag_name, spec->tag_len)) return;
-  if (spec->is_typedef &&
-      psx_ctx_is_tag_aggregate_kind(spec->tag_kind)) {
-    psx_ctx_define_tag_type(spec->tag_kind, spec->tag_name, spec->tag_len);
-    return;
-  }
-  /* 未完了タグの前方宣言 (`enum E *e;` / `struct S *s;` 等)。`enum E;` と同様に登録する。 */
-  psx_ctx_define_tag_type(spec->tag_kind, spec->tag_name, spec->tag_len);
+  psx_apply_parsed_tag_declaration(
+      spec->tag_kind, spec->tag_name, spec->tag_len,
+      PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0, curtok());
 }
 
 static void parse_toplevel_tag_head(token_kind_t *out_kind, char **out_name, int *out_len) {
@@ -1180,15 +1177,9 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
                             ? psx_parse_initializer_syntax_list()
                             : psx_expr_assign();
   psx_type_t *type = psx_gvar_get_decl_type(gv);
-  if (!lower_static_declaration_initializer(
-          &(psx_static_declaration_initializer_request_t){
-              .global = gv,
-              .type = type,
-              .initializer_kind = initializer_kind,
-              .initializer = initializer,
-              .diag_tok = initializer_tok ? initializer_tok : assign_tok,
-          },
-          NULL)) {
+  if (!lower_global_declaration_initializer(
+          gv, type, initializer_kind, initializer,
+          initializer_tok ? initializer_tok : assign_tok)) {
     psx_diag_ctx(initializer_tok, "static-init", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
@@ -1206,18 +1197,7 @@ static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
     return;
   }
   psx_type_t *canonical_type = build_toplevel_derived_typedef_type(spec, head);
-  const psx_type_t *value_type = canonical_type;
-  while (value_type && value_type->kind == PSX_TYPE_ARRAY)
-    value_type = value_type->base;
-  if (spec->tag_kind != TK_EOF && value_type &&
-      value_type->kind != PSX_TYPE_POINTER &&
-      ps_ctx_get_tag_member_count(spec->tag_kind, spec->tag_name,
-                                  spec->tag_len) <= 0) {
-    psx_diag_ctx(curtok(), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
-  }
-  validate_toplevel_object_type(spec, canonical_type);
-  global_var_t *gv = register_toplevel_object_from_declarator(
+  global_var_t *gv = resolve_and_lower_toplevel_object(
       spec, head, canonical_type);
   /* _Generic 用: 先頭宣言子の型を name 抜きでトークン文字列化する。
    * 正本は finalize 後に gv->decl_type へ付ける。 */
@@ -1246,17 +1226,6 @@ static toplevel_declarator_head_t new_toplevel_declarator_head(void) {
   return out;
 }
 
-static void validate_toplevel_object_type(
-    const toplevel_decl_spec_t *spec, const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || type->array_len > 0 ||
-      spec->is_extern) return;
-  /* C11 6.7.6.2p1: 初期化子がある場合、配列のサイズは初期化子から推論できる。
-   * 後段の apply_toplevel_object_initializer で type_size を再計算する。 */
-  if (curtok() && curtok()->kind == TK_ASSIGN) return;
-  psx_diag_ctx(curtok(), "decl", "%s",
-               diag_message_for(DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
-}
-
 static void finalize_toplevel_object_declarator(const toplevel_decl_spec_t *spec, global_var_t *gv) {
   if (spec->is_extern) {
     consume_toplevel_extern_initializer_if_any();
@@ -1266,18 +1235,67 @@ static void finalize_toplevel_object_declarator(const toplevel_decl_spec_t *spec
   apply_toplevel_object_initializer(gv);
 }
 
-static global_var_t *register_toplevel_object_from_declarator(
+static void diagnose_toplevel_global_resolution(
+    token_ident_t *name, psx_global_declaration_status_t status) {
+  switch (status) {
+    case PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT:
+      psx_diag_ctx(curtok(), "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+      return;
+    case PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT:
+      psx_diag_ctx(curtok(), "decl",
+                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+                   name->len, name->str);
+      return;
+    case PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT:
+      psx_diag_ctx(curtok(), "decl",
+                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
+                   name->len, name->str);
+      return;
+    case PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT:
+      psx_diag_ctx(curtok(), "decl",
+                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
+                   name->len, name->str);
+      return;
+    case PSX_GLOBAL_DECLARATION_TYPE_CONFLICT:
+      psx_diag_ctx(
+          curtok(), "decl",
+          "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
+          name->len, name->str);
+      return;
+    default:
+      psx_diag_ctx(curtok(), "decl",
+                   "canonical global declaration resolution failed for '%.*s'",
+                   name->len, name->str);
+  }
+}
+
+static global_var_t *resolve_and_lower_toplevel_object(
     const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head,
     psx_type_t *canonical_type) {
+  psx_global_declaration_resolution_t resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = head.name->str,
+          .name_len = head.name->len,
+          .type = canonical_type,
+          .is_extern_decl = spec->is_extern,
+          .has_initializer = curtok()->kind == TK_ASSIGN,
+      },
+      &resolution);
+  if (resolution.status != PSX_GLOBAL_DECLARATION_OK)
+    diagnose_toplevel_global_resolution(head.name, resolution.status);
+
   psx_global_object_result_t result = {0};
-  if (!lower_global_object_declaration(
-          &(psx_global_object_request_t){
+  if (!lower_resolved_global_object_declaration(
+          &(psx_resolved_global_object_request_t){
               .name = head.name->str,
               .name_len = head.name->len,
               .type = canonical_type,
-              .is_extern_decl = current_toplevel_extern_flag(spec),
+              .is_extern_decl = spec->is_extern,
               .is_static = spec->is_static,
-              .diag_tok = curtok(),
+              .resolution = &resolution,
           },
           &result)) {
     psx_diag_ctx(curtok(), "decl",
@@ -1285,10 +1303,6 @@ static global_var_t *register_toplevel_object_from_declarator(
                  head.name->len, head.name->str);
   }
   return result.global;
-}
-
-static int current_toplevel_extern_flag(const toplevel_decl_spec_t *spec) {
-  return spec->is_extern ? 1 : 0;
 }
 
 static void consume_toplevel_extern_initializer_if_any(void) {
@@ -1305,61 +1319,34 @@ static void define_toplevel_typedef_from_declarator(const toplevel_decl_spec_t *
 
 static void register_toplevel_typedef_name(
     token_ident_t *name, psx_type_t *derived_type) {
-  psx_typedef_info_t _ti = {0};
-  psx_ctx_typedef_set_decl_type(&_ti, derived_type);
-  if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
-    psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
-  }
-}
-
-static psx_type_t *toplevel_typedef_base_type(
-    const toplevel_decl_spec_t *spec) {
-  if (!spec) return NULL;
-  if (spec->base_decl_type)
-    return psx_type_clone(spec->base_decl_type);
-  if (psx_ctx_is_tag_aggregate_kind(spec->tag_kind)) {
-    int scope_depth = ps_ctx_get_tag_scope_depth(
-        spec->tag_kind, spec->tag_name, spec->tag_len);
-    return psx_type_new_tag(spec->tag_kind, spec->tag_name, spec->tag_len,
-                            scope_depth >= 0 ? scope_depth + 1 : 0,
-                            spec->elem_size);
-  }
-  if (spec->is_complex) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
-    type->fp_kind = spec->fp_kind != TK_FLOAT_KIND_NONE
-                        ? spec->fp_kind
-                        : TK_FLOAT_KIND_DOUBLE;
-    type->size = spec->elem_size;
-    type->align = spec->elem_size >= 8 ? 8 : spec->elem_size;
-    return type;
-  }
-  if (spec->fp_kind != TK_FLOAT_KIND_NONE)
-    return psx_type_new_float(spec->fp_kind, spec->elem_size);
-  if (spec->base_kind == TK_VOID) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
-    type->scalar_kind = TK_VOID;
-    return type;
-  }
-  return psx_type_new_integer(spec->base_kind, spec->elem_size,
-                              spec->is_unsigned);
+  psx_apply_parsed_typedef_declaration(
+      name->str, name->len, derived_type, curtok());
 }
 
 static psx_type_t *build_toplevel_derived_typedef_type(
     const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head) {
   if (!spec) return NULL;
-
-  psx_type_t *type = toplevel_typedef_base_type(spec);
-  if (!type) return NULL;
-  if (spec->type_spec.is_atomic) type->is_atomic = 1;
-  if (spec->type_spec.is_long_long) type->is_long_long = 1;
-  if (!spec->base_decl_type)
-    type->is_plain_char = spec->type_spec.is_plain_char ? 1 : 0;
-  if (spec->type_spec.is_long_double || spec->is_long_double)
-    type->is_long_double = 1;
-  psx_type_set_decl_spec_qualifiers(
-      type, type->is_const_qualified || spec->pointee_const,
-      type->is_volatile_qualified || spec->pointee_volatile);
-  return psx_type_apply_declarator_shape(type, &head.declarator_shape);
+  return psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_kind = spec->base_kind,
+          .elem_size = spec->elem_size,
+          .fp_kind = spec->fp_kind,
+          .tag_kind = spec->tag_kind,
+          .tag_name = spec->tag_name,
+          .tag_len = spec->tag_len,
+          .is_unsigned = spec->is_unsigned,
+          .is_complex = spec->is_complex,
+          .is_const_qualified = spec->pointee_const,
+          .is_volatile_qualified = spec->pointee_volatile,
+          .is_atomic = spec->type_spec.is_atomic,
+          .is_long_long = spec->type_spec.is_long_long,
+          .is_plain_char = spec->type_spec.is_plain_char,
+          .override_plain_char = spec->base_decl_type == NULL,
+          .is_long_double =
+              spec->type_spec.is_long_double || spec->is_long_double,
+          .base_decl_type = spec->base_decl_type,
+          .declarator_shape = &head.declarator_shape,
+      });
 }
 
 static void apply_toplevel_typedef_from_head(const toplevel_decl_spec_t *spec,
@@ -1637,7 +1624,9 @@ static void parse_toplevel_tag_decl(void) {
     int tag_size = 0;
     int tag_align = 0;
     member_count = psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size, &tag_align);
-    psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size, tag_align);
+    psx_apply_parsed_tag_declaration(
+        tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_DEFINITION,
+        member_count, tag_size, tag_align, curtok());
     if (tk_consume(';')) return;
     psx_type_spec_result_t tag_type_spec;
     psx_type_spec_result_reset(&tag_type_spec);
@@ -1649,12 +1638,14 @@ static void parse_toplevel_tag_decl(void) {
     return;
   }
   if (tk_consume(';')) {
-    psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
+    psx_apply_parsed_tag_declaration(
+        tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_FORWARD,
+        0, 0, 0, curtok());
     return;
   }
-  if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-    psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
-  }
+  psx_apply_parsed_tag_declaration(
+      tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_REFERENCE,
+      0, 0, 0, curtok());
   psx_type_spec_result_t tag_type_spec;
   psx_type_spec_result_reset(&tag_type_spec);
   skip_post_type_cv_qualifiers_into(&tag_type_spec);
@@ -2047,155 +2038,48 @@ static int consume_param_declarator_suffix(
   return 1;
 }
 
-static psx_parameter_vla_lowering_result_t lower_parameter_vla_from_state(
-    token_ident_t *param, int element_size,
+static int resolve_parameter_decl(
+    const param_decl_spec_t *ds,
     const param_declarator_state_t *decl_state,
-    token_ident_t *fallback_inner_dimension,
-    const psx_type_t *canonical_type) {
-  psx_parameter_vla_lowering_request_t request = {
-      .name = param->str,
-      .name_len = param->len,
-      .element_size = element_size,
-      .type = canonical_type,
-      .diag_tok = curtok(),
+    int is_pointer_declarator, int is_array_declarator,
+    int has_function_suffix,
+    psx_parameter_declaration_resolution_t *resolution) {
+  psx_parameter_declaration_resolution_request_t request = {
+      .type = {
+          .base_kind = ds->base_type_kind,
+          .elem_size = psx_ctx_is_tag_aggregate_kind(ds->tag_kind)
+                           ? ds->struct_size
+                           : ds->elem_size,
+          .fp_kind = ds->fp_kind,
+          .tag_kind = ds->tag_kind,
+          .tag_name = ds->tag_name,
+          .tag_len = ds->tag_len,
+          .is_unsigned = ds->is_unsigned,
+          .is_complex = ds->is_complex,
+          .is_const_qualified = ds->type_spec.is_const_qualified,
+          .is_volatile_qualified = ds->type_spec.is_volatile_qualified,
+          .is_atomic = ds->type_spec.is_atomic,
+          .is_long_long = ds->type_spec.is_long_long,
+          .is_plain_char = ds->type_spec.is_plain_char,
+          .override_plain_char = ds->base_decl_type == NULL,
+          .is_long_double = ds->type_spec.is_long_double,
+          .base_decl_type = ds->base_decl_type,
+          .declarator_shape = &decl_state->declarator_shape,
+      },
+      .is_pointer_declarator = is_pointer_declarator,
+      .is_array_declarator = is_array_declarator,
+      .has_function_suffix = has_function_suffix,
+      .inner_dimension_count = decl_state->inner_dim_count,
   };
-  request.inner_dimension_count =
-      decl_state ? decl_state->inner_dim_count : 0;
-  for (int i = 0; i < request.inner_dimension_count; i++) {
-    request.inner_dimensions[i].constant =
-        decl_state->inner_dim_consts[i];
+  for (int i = 0; i < decl_state->inner_dim_count; i++) {
+    request.inner_dimensions[i].constant = decl_state->inner_dim_consts[i];
     token_ident_t *source = decl_state->inner_dim_idents[i];
     if (source) {
       request.inner_dimensions[i].source_name = source->str;
       request.inner_dimensions[i].source_name_len = source->len;
     }
   }
-  if (request.inner_dimension_count == 0 && fallback_inner_dimension) {
-    request.inner_dimension_count = 1;
-    request.inner_dimensions[0].source_name =
-        fallback_inner_dimension->str;
-    request.inner_dimensions[0].source_name_len =
-        fallback_inner_dimension->len;
-  }
-  return lower_parameter_vla_declaration(&request);
-}
-
-static int parameter_state_has_runtime_inner_dimension(
-    const param_declarator_state_t *state) {
-  if (!state) return 0;
-  for (int i = 0; i < state->inner_dim_count; i++) {
-    if (state->inner_dim_consts[i] <= 0 && state->inner_dim_idents[i])
-      return 1;
-  }
-  return 0;
-}
-
-static const psx_type_t *parameter_decl_leaf_type(
-    const psx_type_t *type) {
-  while (type && (type->kind == PSX_TYPE_POINTER ||
-                  type->kind == PSX_TYPE_ARRAY)) {
-    type = type->base;
-  }
-  return type;
-}
-
-static lvar_t *register_param_lvar(
-    token_ident_t *param,
-    const param_declarator_state_t *decl_state,
-    int param_is_ptr, int param_is_array_declarator,
-    int param_has_func_suffix,
-    token_ident_t *param_inner_first_dim_ident,
-    const psx_type_t *canonical_type, int *out_type_attached) {
-  if (out_type_attached) *out_type_attached = 0;
-  const psx_type_t *leaf = parameter_decl_leaf_type(canonical_type);
-  int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);
-  int element_size = ps_type_sizeof(leaf);
-  if (element_size <= 0) element_size = 8;
-  if (param_is_array_declarator && !leaf_is_aggregate && !param_is_ptr) {
-    psx_parameter_vla_lowering_result_t result =
-        lower_parameter_vla_from_state(
-            param, element_size, decl_state,
-            param_inner_first_dim_ident, canonical_type);
-    if (out_type_attached) *out_type_attached = result.type_attached;
-    return result.var;
-  }
-  if (param_is_ptr && param_is_array_declarator &&
-      !leaf_is_aggregate && !param_has_func_suffix &&
-      (param_inner_first_dim_ident != NULL ||
-       parameter_state_has_runtime_inner_dimension(decl_state))) {
-    psx_parameter_vla_lowering_result_t result =
-        lower_parameter_vla_from_state(
-            param, element_size, decl_state,
-            param_inner_first_dim_ident, canonical_type);
-    if (out_type_attached) *out_type_attached = result.type_attached;
-    return result.var;
-  }
-
-  psx_parameter_lowering_result_t result = {0};
-  if (!lower_parameter_declaration(
-          &(psx_parameter_lowering_request_t){
-              .name = param->str,
-              .name_len = param->len,
-              .type = canonical_type,
-          },
-          &result)) {
-    psx_diag_ctx(curtok(), "param",
-                 "canonical parameter storage planning failed for '%.*s'",
-                 param->len, param->str);
-  }
-  if (out_type_attached) *out_type_attached = result.type_attached;
-  return result.var;
-}
-
-static psx_type_t *param_decl_base_type(const param_decl_spec_t *ds) {
-  if (!ds) return NULL;
-  if (ds->base_decl_type) return psx_type_clone(ds->base_decl_type);
-  if (psx_ctx_is_tag_aggregate_kind(ds->tag_kind)) {
-    int scope_depth = ps_ctx_get_tag_scope_depth(
-        ds->tag_kind, ds->tag_name, ds->tag_len);
-    return psx_type_new_tag(ds->tag_kind, ds->tag_name, ds->tag_len,
-                            scope_depth >= 0 ? scope_depth + 1 : 0,
-                            ds->struct_size);
-  }
-  if (ds->is_complex) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
-    type->fp_kind = ds->fp_kind != TK_FLOAT_KIND_NONE
-                        ? ds->fp_kind
-                        : TK_FLOAT_KIND_DOUBLE;
-    type->size = ds->elem_size;
-    type->align = ds->elem_size >= 8 ? 8 : ds->elem_size;
-    return type;
-  }
-  if (ds->fp_kind != TK_FLOAT_KIND_NONE)
-    return psx_type_new_float(ds->fp_kind, ds->elem_size);
-  if (ds->base_type_kind == TK_VOID) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
-    type->scalar_kind = TK_VOID;
-    return type;
-  }
-  return psx_type_new_integer(ds->base_type_kind, ds->elem_size,
-                              ds->is_unsigned);
-}
-
-static psx_type_t *param_canonical_decl_type(
-    const param_decl_spec_t *ds, const param_declarator_state_t *decl_state) {
-  psx_type_t *type = param_decl_base_type(ds);
-  if (type) {
-    if (ds->type_spec.is_atomic) type->is_atomic = 1;
-    if (ds->type_spec.is_long_long) type->is_long_long = 1;
-    if (!ds->base_decl_type)
-      type->is_plain_char = ds->type_spec.is_plain_char ? 1 : 0;
-    if (ds->type_spec.is_long_double)
-      type->is_long_double = 1;
-    psx_type_set_decl_spec_qualifiers(
-        type,
-        type->is_const_qualified || ds->type_spec.is_const_qualified,
-        type->is_volatile_qualified || ds->type_spec.is_volatile_qualified);
-  }
-  if (decl_state)
-    type = psx_type_apply_declarator_shape(
-        type, &decl_state->declarator_shape);
-  return psx_type_adjust_parameter_type(type);
+  return psx_resolve_parameter_declaration(&request, resolution);
 }
 
 static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int count_unnamed) {
@@ -2212,10 +2096,6 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
       psx_declarator_shape_count_ops(
           &param_decl_state.declarator_shape, PSX_DECL_OP_POINTER) > 0 ||
       param_has_func_suffix;
-  token_ident_t *param_inner_first_dim_ident =
-      param_decl_state.inner_dim_count > 0
-          ? param_decl_state.inner_dim_idents[0]
-          : NULL;
   if (!param) {
     // int f(void) の "void" は仮引数0件として扱う（C11 6.7.6.3）。
     if (ds.base_type_kind == TK_VOID && ds.tag_kind == TK_EOF && !ds.saw_typedef_name &&
@@ -2238,9 +2118,15 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
           *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
           node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
         }
-        psx_type_t *placeholder_type =
-            param_canonical_decl_type(&ds, &param_decl_state);
-        node_t *ph = psx_node_new_param_placeholder(placeholder_type);
+        psx_parameter_declaration_resolution_t resolution;
+        if (!resolve_parameter_decl(
+                &ds, &param_decl_state, param_is_ptr,
+                param_is_array_declarator, param_has_func_suffix,
+                &resolution)) {
+          psx_diag_ctx(curtok(), "param", "%s",
+                       "canonical parameter declaration resolution failed");
+        }
+        node_t *ph = psx_node_new_param_placeholder(resolution.type);
         node->args[(*nargs)++] = ph;
       }
       return 1;
@@ -2252,22 +2138,30 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
     *arg_cap = pda_next_cap(*arg_cap, *nargs + 1);
     node->args = pda_xreallocarray(node->args, (size_t)(*arg_cap), sizeof(node_t *));
   }
-  psx_type_t *canonical_param_type =
-      param_canonical_decl_type(&ds, &param_decl_state);
-  int type_attached = 0;
-  lvar_t *var = register_param_lvar(param, &param_decl_state,
-                                     param_is_ptr, param_is_array_declarator,
-                                     param_has_func_suffix,
-                                     param_inner_first_dim_ident,
-                                     canonical_param_type, &type_attached);
-  var->is_param = 1;
-  if (canonical_param_type && !type_attached) {
-    psx_type_copy_vla_runtime_metadata(
-        canonical_param_type, psx_lvar_get_decl_type(var));
-    psx_decl_set_lvar_decl_type(var, canonical_param_type);
+  psx_parameter_declaration_resolution_t resolution;
+  if (!resolve_parameter_decl(
+          &ds, &param_decl_state, param_is_ptr,
+          param_is_array_declarator, param_has_func_suffix,
+          &resolution)) {
+    psx_diag_ctx(curtok(), "param",
+                 "canonical parameter declaration resolution failed for '%.*s'",
+                 param->len, param->str);
+  }
+  psx_parameter_lowering_result_t lowered;
+  if (!lower_resolved_parameter_declaration(
+          &(psx_resolved_parameter_lowering_request_t){
+              .name = param->str,
+              .name_len = param->len,
+              .resolution = &resolution,
+              .diag_tok = curtok(),
+          },
+          &lowered)) {
+    psx_diag_ctx(curtok(), "param",
+                 "canonical parameter lowering failed for '%.*s'",
+                 param->len, param->str);
   }
   // args[] には宣言型を正本にした ND_LVAR を格納する。
-  node_t *param_node = psx_node_new_param_lvar_for(var);
+  node_t *param_node = psx_node_new_param_lvar_for(lowered.var);
   node->args[(*nargs)++] = param_node;
   return 0;
 }
@@ -2444,9 +2338,13 @@ static void resolve_func_ret_tag_spec(token_kind_t *ret_kind, token_ident_t **re
     int tag_size = 0;
     int tag_align = 0;
     member_count = psx_parse_tag_definition_body(*ret_kind, tag->str, tag->len, &tag_size, &tag_align);
-    psx_ctx_define_tag_type_with_layout(*ret_kind, tag->str, tag->len, member_count, tag_size, tag_align);
-  } else if (!psx_ctx_has_tag_type(*ret_kind, tag->str, tag->len)) {
-    psx_ctx_define_tag_type(*ret_kind, tag->str, tag->len);
+    psx_apply_parsed_tag_declaration(
+        *ret_kind, tag->str, tag->len, PSX_TAG_DECLARATION_DEFINITION,
+        member_count, tag_size, tag_align, curtok());
+  } else {
+    psx_apply_parsed_tag_declaration(
+        *ret_kind, tag->str, tag->len, PSX_TAG_DECLARATION_REFERENCE,
+        0, 0, 0, curtok());
   }
 }
 

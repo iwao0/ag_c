@@ -7,6 +7,8 @@
 #include "node_utils.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
+#include "tag_declaration.h"
+#include "typedef_declaration.h"
 #include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../lowering/initializer_lowering.h"
@@ -282,19 +284,6 @@ typedef struct {
   int is_extern_decl;
   const psx_type_t *base_decl_type;
 } local_decl_spec_t;
-typedef struct {
-  int arr_total;
-  int is_array;
-  int has_incomplete_array;
-  // 最初の `[N]` の N。複数次元 `typedef int M[3][4]` で
-  // 仮引数 `M *p` の mid_stride を求める際に使う (= sizeof_size / first_dim)。
-  // 不完全配列や 1 次元のみのときは 0。
-  int first_dim;
-  // 多次元 typedef 用: 解析した各次元のサイズを左から順に保持。
-  // dim_count = 解析した `[N]` の個数。上限 8。
-  int dims[8];
-  int dim_count;
-} decl_array_suffix_t;
 typedef struct decl_declarator_state_t decl_declarator_state_t;
 static int parse_local_decl_spec(local_decl_spec_t *out);
 static int parse_local_decl_spec_from_typedef(local_decl_spec_t *out);
@@ -310,14 +299,13 @@ static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_s
                                             int *base_pointer_levels,
                                             const psx_type_t **base_decl_type,
                                             psx_type_spec_result_t *type_spec);
-static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr,
+static void define_local_typedef_from_declarator(token_ident_t *name,
                                                  token_kind_t base_kind, int elem_size,
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
                                                  int td_is_unsigned, int td_is_long_double,
                                                  int td_is_complex,
-                                                 int decl_added_pointer,
                                                  const psx_type_t *base_decl_type,
                                                  const decl_declarator_state_t *decl_state);
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
@@ -1055,28 +1043,6 @@ static int decl_leading_array_has_vla(
     if (op->is_vla_array) return 1;
   }
   return 0;
-}
-
-static decl_array_suffix_t decl_array_suffix_from_shape(
-    const psx_declarator_shape_t *shape) {
-  decl_array_suffix_t out = {0};
-  out.arr_total = 1;
-  if (!shape) return out;
-  for (int i = 0; i < shape->count; i++) {
-    const psx_declarator_op_t *op = &shape->ops[i];
-    if (op->kind != PSX_DECL_OP_ARRAY) continue;
-    out.is_array = 1;
-    if (op->is_incomplete_array) {
-      out.has_incomplete_array = 1;
-    } else {
-      out.arr_total *= op->array_len;
-      if (out.dim_count == 0) out.first_dim = op->array_len;
-    }
-    if (out.dim_count < 8) out.dims[out.dim_count] = op->array_len;
-    out.dim_count++;
-  }
-  if (out.dim_count > 8) out.dim_count = 8;
-  return out;
 }
 
 void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
@@ -1906,9 +1872,9 @@ static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_s
     }
     *tag_name = tag->str;
     *tag_len = tag->len;
-    if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
-      psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
-    }
+    psx_apply_parsed_tag_declaration(
+        *tag_kind, *tag_name, *tag_len,
+        PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0, curtok());
     *elem_size = psx_ctx_get_tag_size(*tag_kind, *tag_name, *tag_len);
     return;
   }
@@ -1941,62 +1907,15 @@ static void resolve_local_typedef_decl_spec(token_kind_t *base_kind, int *elem_s
                  diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
 }
 
-static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr,
+static void define_local_typedef_from_declarator(token_ident_t *name,
                                                  token_kind_t base_kind, int elem_size,
                                                  tk_float_kind_t fp_kind,
                                                  token_kind_t tag_kind, char *tag_name, int tag_len,
                                                  int td_pointee_const, int td_pointee_volatile,
                                                  int td_is_unsigned, int td_is_long_double,
                                                  int td_is_complex,
-                                                 int decl_added_pointer,
                                                  const psx_type_t *base_decl_type,
                                                  const decl_declarator_state_t *decl_state) {
-  /* 配列要素がポインタの typedef (`typedef BinOp OpArr3[3]`): base が pointer typedef だが
-   * declarator は `*` を追加していない (decl_added_pointer=0)。この場合の typedef は
-   * 「pointer 配列」なので is_array=1、要素サイズはポインタサイズ (8)、sizeof_size=8*N。
-   * 通常の「pointer typedef + 配列 suffix なし」(`BinOp f`) は arr.is_array=0 なので影響なし。
-   * 直書きの「array of pointer typedef」(`typedef int *IP[5]`) も同じ扱い: declarator に
-   * `*` と `[N]` の両方があり、結果は「N 個の int* 配列」。修正前はこの形が is_array=0 /
-   * sizeof=8 で「単一ポインタ」と解釈され、`IP a; a[0] = &g; *a[0]` が SIGSEGV していた。 */
-  int base_is_ptr_only = (is_ptr && !decl_added_pointer);
-  decl_array_suffix_t arr = decl_array_suffix_from_shape(
-      decl_state ? &decl_state->declarator_shape : NULL);
-  int decl_has_array_with_ptr = (is_ptr && decl_added_pointer && arr.is_array);
-  int elem_unit_size = is_ptr ? 8 : elem_size;
-  int typedef_sizeof = elem_unit_size;
-  if (!is_ptr && arr.has_incomplete_array) typedef_sizeof = 0;
-  else if (!is_ptr && arr.is_array && arr.arr_total > 0) typedef_sizeof *= arr.arr_total;
-  else if (base_is_ptr_only && arr.is_array && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
-  else if (decl_has_array_with_ptr && arr.arr_total > 0) typedef_sizeof = 8 * arr.arr_total;
-  token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
-  // `typedef int row_t[3]` のように配列型を typedef した場合は is_array=1 で記録する。
-  // 不完全配列 `typedef int A[]` も is_array=1 (sizeof_size は 0)。
-  // `typedef BinOp OpArr3[3]` (ポインタ要素配列) も is_array=1。
-  // `typedef int *IP[5]` (decl_has_array_with_ptr) も同様に is_array=1。
-  int td_is_array = ((!is_ptr || base_is_ptr_only || decl_has_array_with_ptr) &&
-                     (arr.is_array || arr.has_incomplete_array)) ? 1 : 0;
-  int td_first_dim = td_is_array ? arr.first_dim : 0;
-  int td_dim_count = td_is_array ? arr.dim_count : 0;
-  int typedef_is_funcptr =
-      decl_state && decl_state->trailing_func_suffix &&
-      (is_ptr || decl_state->had_paren_group);
-  psx_typedef_info_t _ti = {0};
-  _ti.base_kind = stored_base_kind;
-  _ti.elem_size = elem_size;
-  _ti.fp_kind = fp_kind;
-  _ti.tag_kind = tag_kind;
-  _ti.tag_name = tag_name;
-  _ti.tag_len = tag_len;
-  _ti.is_pointer = (is_ptr || typedef_is_funcptr) ? 1 : 0;
-  _ti.sizeof_size = typedef_sizeof;
-  _ti.pointee_const_qualified = td_pointee_const;
-  _ti.pointee_volatile_qualified = td_pointee_volatile;
-  _ti.is_unsigned = td_is_unsigned;
-  _ti.is_long_double = (!is_ptr && !td_is_array && td_is_long_double) ? 1 : 0;
-  _ti.is_array = td_is_array;
-  _ti.array_first_dim = td_first_dim;
-  _ti.array_dim_count = td_dim_count;
-  for (int i = 0; i < td_dim_count && i < 8; i++) _ti.array_dims[i] = arr.dims[i];
   psx_type_t *canonical_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_kind = base_kind,
@@ -2009,38 +1928,12 @@ static void define_local_typedef_from_declarator(token_ident_t *name, int is_ptr
           .is_complex = td_is_complex,
           .is_const_qualified = td_pointee_const,
           .is_volatile_qualified = td_pointee_volatile,
+          .is_long_double = td_is_long_double,
           .base_decl_type = base_decl_type,
           .declarator_shape = &decl_state->declarator_shape,
       });
-  if (canonical_type) {
-    psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
-
-    _ti.is_pointer = canonical_type->kind == PSX_TYPE_POINTER;
-    _ti.sizeof_size = ps_type_sizeof(canonical_type);
-    _ti.is_array = canonical_type->kind == PSX_TYPE_ARRAY;
-    const psx_type_t *array_type =
-        canonical_type->kind == PSX_TYPE_ARRAY
-            ? canonical_type
-            : (canonical_type->kind == PSX_TYPE_POINTER && canonical_type->base &&
-                       canonical_type->base->kind == PSX_TYPE_ARRAY
-                   ? canonical_type->base
-                   : NULL);
-    _ti.array_dim_count = 0;
-    _ti.array_first_dim = 0;
-    for (const psx_type_t *cur = array_type;
-         cur && cur->kind == PSX_TYPE_ARRAY && _ti.array_dim_count < 8;
-         cur = cur->base) {
-      _ti.array_dims[_ti.array_dim_count++] = cur->array_len;
-    }
-    if (_ti.array_dim_count > 0) _ti.array_first_dim = _ti.array_dims[0];
-  }
-  if (typedef_is_funcptr) {
-    _ti.is_funcptr = 1;
-    _ti.fp_kind = TK_FLOAT_KIND_NONE;
-  }
-  if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
-    psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
-  }
+  psx_apply_parsed_typedef_declaration(
+      name->str, name->len, canonical_type, curtok());
 }
 
 static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem_size,
@@ -2062,13 +1955,12 @@ static void parse_local_typedef_declarator_list(token_kind_t base_kind, int elem
         &decl_state, &is_ptr, &ptr_const_mask, &ptr_volatile_mask, &ptr_levels);
     /* declarator が `*` を 1 つでも追加していれば decl_added_pointer=1。is_ptr が base 由来
      * のみか declarator 由来かを判別する (ptr_levels は declarator 側の `*` 個数を持つ)。 */
-    int decl_added_ptr = (ptr_levels > 0) ? 1 : 0;
-    define_local_typedef_from_declarator(name, is_ptr,
+    define_local_typedef_from_declarator(name,
                                          base_kind, elem_size, fp_kind,
                                          tag_kind, tag_name, tag_len,
                                          td_pointee_const, td_pointee_volatile,
                                          td_is_unsigned, td_is_long_double, td_is_complex,
-                                         decl_added_ptr, base_decl_type,
+                                         base_decl_type,
                                          &decl_state);
     if (!tk_consume(',')) break;
   }

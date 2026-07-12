@@ -3,6 +3,7 @@
 
 #include "../parser/lvar_public.h"
 #include "../semantic/parameter_declaration_plan.h"
+#include "../semantic/parameter_declaration_resolution.h"
 
 typedef struct {
   char *name;
@@ -18,6 +19,17 @@ typedef struct {
 
 int lower_parameter_declaration(
     const psx_parameter_lowering_request_t *request,
+    psx_parameter_lowering_result_t *result);
+
+typedef struct {
+  char *name;
+  int name_len;
+  const psx_parameter_declaration_resolution_t *resolution;
+  token_t *diag_tok;
+} psx_resolved_parameter_lowering_request_t;
+
+int lower_resolved_parameter_declaration(
+    const psx_resolved_parameter_lowering_request_t *request,
     psx_parameter_lowering_result_t *result);
 
 #endif

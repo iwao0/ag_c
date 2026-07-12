@@ -28,6 +28,12 @@ void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len);
 void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count);
 void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                                          int member_count, int tag_size, int tag_align);
+int psx_ctx_register_tag_type(token_kind_t kind, char *name, int len,
+                              int is_complete, int member_count,
+                              int tag_size, int tag_align);
+int psx_ctx_current_tag_scope_depth(void);
+int psx_ctx_find_tag_kind_at_current_scope(
+    char *name, int len, token_kind_t *out_kind);
 int psx_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 int psx_ctx_get_tag_align(token_kind_t kind, char *name, int len);
 psx_aggregate_definition_t *psx_ctx_get_tag_definition(
@@ -43,7 +49,10 @@ void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
 /* enum 定数を登録する。重複なら 0、新規なら 1 を返す。
  * 呼び出し元で 0 のとき診断を出す。 */
 int psx_ctx_define_enum_const(char *name, int len, long long value);
+int psx_ctx_register_enum_const(
+    char *name, int len, long long value, int *out_created);
 bool psx_ctx_find_enum_const(char *name, int len, long long *out_value);
+int psx_ctx_has_enum_const_in_current_scope(char *name, int len);
 /* typedef の型記述子。define/find はこの 1 構造体で受け渡す (旧 _ex/_ex2/_ex3 の
  * フィールド堆積をまとめたもの)。array_dims は最大 8 次元、array_dims[0] が最も外側。
  * pointer_levels / scope_depth は別 API・内部管理なのでここには含めない。 */
@@ -94,9 +103,13 @@ static inline psx_decl_funcptr_sig_t psx_ctx_typedef_funcptr_sig(
 /* typedef 名を登録する。info->decl_type は正本として必須。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = decl_type欠落または型衝突。 */
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
+int psx_ctx_register_typedef_name(
+    char *name, int len, const psx_typedef_info_t *info,
+    int *out_created, int *out_redeclared);
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */
 bool psx_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
+int psx_ctx_has_typedef_in_current_scope(char *name, int len);
 // canonical decl_typeからポインタ段数を返す。非ポインタは0。
 int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);

@@ -10,6 +10,7 @@
 #include "config_runtime.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
+#include "tag_declaration.h"
 #include "type.h"
 #include "../diag/diag.h"
 #include "../semantic/constant_expression.h"
@@ -409,11 +410,17 @@ int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_na
         int nested_align = 0;
         nested_n = psx_parse_tag_definition_body(member_tag_kind, member_tag_name, member_tag_len,
                                                  &nested_sz, &nested_align);
-        psx_ctx_define_tag_type_with_layout(member_tag_kind, member_tag_name, member_tag_len,
-                                            nested_n, nested_sz, nested_align);
+        psx_apply_parsed_tag_declaration(
+            member_tag_kind, member_tag_name, member_tag_len,
+            PSX_TAG_DECLARATION_DEFINITION, nested_n, nested_sz,
+            nested_align, curtok());
       } else if (!psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {
         if (curtok()->kind != TK_MUL) {
           psx_diag_undefined_with_name(curtok(), diag_text_for(DIAG_TEXT_TAG_TYPE_SUFFIX), member_tag_name, member_tag_len);
+        } else {
+          psx_apply_parsed_tag_declaration(
+              member_tag_kind, member_tag_name, member_tag_len,
+              PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0, curtok());
         }
       }
       if (psx_ctx_has_tag_type(member_tag_kind, member_tag_name, member_tag_len)) {

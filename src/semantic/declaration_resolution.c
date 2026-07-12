@@ -46,8 +46,12 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
   psx_type_t *type = resolve_decl_base_type(request);
   if (!type) return NULL;
 
-  if (request->is_const_qualified) type->is_const_qualified = 1;
-  if (request->is_volatile_qualified) type->is_volatile_qualified = 1;
+  if (request->is_const_qualified || request->is_volatile_qualified) {
+    psx_type_set_decl_spec_qualifiers(
+        type,
+        type->is_const_qualified || request->is_const_qualified,
+        type->is_volatile_qualified || request->is_volatile_qualified);
+  }
   if (request->is_atomic) type->is_atomic = 1;
   if (request->is_long_long) type->is_long_long = 1;
   if (request->override_plain_char) {

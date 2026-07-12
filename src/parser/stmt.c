@@ -12,6 +12,8 @@
 #include "node_utils.h"
 #include "semantic_ctx.h"
 #include "struct_layout.h"
+#include "tag_declaration.h"
+#include "typedef_declaration.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -191,9 +193,14 @@ static int parse_decl_type_spec(int *elem_size, tk_float_kind_t *fp_kind,
       int tag_size = 0;
       int tag_align = 0;
       member_count = psx_parse_tag_definition_body(*tag_kind, *tag_name, *tag_len, &tag_size, &tag_align);
-      psx_ctx_define_tag_type_with_layout(*tag_kind, *tag_name, *tag_len, member_count, tag_size, tag_align);
-    } else if (!psx_ctx_has_tag_type(*tag_kind, *tag_name, *tag_len)) {
-      psx_ctx_define_tag_type(*tag_kind, *tag_name, *tag_len);
+      psx_apply_parsed_tag_declaration(
+          *tag_kind, *tag_name, *tag_len,
+          PSX_TAG_DECLARATION_DEFINITION, member_count, tag_size,
+          tag_align, curtok());
+    } else {
+      psx_apply_parsed_tag_declaration(
+          *tag_kind, *tag_name, *tag_len,
+          PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0, curtok());
     }
     while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
       set_curtok(curtok()->next);
@@ -251,7 +258,6 @@ static void parse_typedef_decl(void) {
     int is_ptr = is_pointer_base;
     stmt_typedef_declarator_state_t decl_state = {0};
     token_ident_t *name = parse_typedef_name_decl(&decl_state, &is_ptr);
-    token_kind_t stored_base_kind = (td_is_unsigned && base_kind == TK_INT) ? TK_UNSIGNED : base_kind;
     psx_type_t *canonical_type = stmt_typedef_base_type(
         base_kind, elem_size, fp_kind, tag_kind, tag_name, tag_len,
         td_is_unsigned, type_state.type_spec.is_complex,
@@ -262,48 +268,10 @@ static void parse_typedef_decl(void) {
     }
     canonical_type = psx_type_apply_declarator_shape(
         canonical_type, &decl_state.declarator_shape);
-    psx_typedef_info_t _ti = {0};
-    _ti.base_kind = stored_base_kind;
-    _ti.elem_size = elem_size;
-    _ti.fp_kind = fp_kind;
-    _ti.tag_kind = tag_kind;
-    _ti.tag_name = tag_name;
-    _ti.tag_len = tag_len;
-    _ti.is_pointer = canonical_type && canonical_type->kind == PSX_TYPE_POINTER;
-    _ti.sizeof_size = ps_type_sizeof(canonical_type);
-    _ti.pointee_const_qualified = td_pointee_const;
-    _ti.pointee_volatile_qualified = td_pointee_volatile;
-    _ti.is_unsigned = td_is_unsigned;
-    _ti.is_array = canonical_type && canonical_type->kind == PSX_TYPE_ARRAY;
-    const psx_type_t *array_type = _ti.is_array
-                                       ? canonical_type
-                                       : (_ti.is_pointer && canonical_type->base &&
-                                                  canonical_type->base->kind == PSX_TYPE_ARRAY
-                                              ? canonical_type->base
-                                              : NULL);
-    for (const psx_type_t *cur = array_type;
-         cur && cur->kind == PSX_TYPE_ARRAY && _ti.array_dim_count < 8;
-         cur = cur->base) {
-      _ti.array_dims[_ti.array_dim_count++] = cur->array_len;
-    }
-    if (_ti.array_dim_count > 0) _ti.array_first_dim = _ti.array_dims[0];
-    psx_ctx_typedef_set_decl_type(&_ti, canonical_type);
-    const psx_type_t *function_type = psx_type_find_function(canonical_type);
-    if (function_type && canonical_type->kind != PSX_TYPE_FUNCTION) {
-      _ti.is_funcptr = 1;
-      _ti.fp_kind = TK_FLOAT_KIND_NONE;
-    }
-    if (!psx_ctx_define_typedef_name(name->str, name->len, &_ti)) {
-      psx_diag_duplicate_with_name(curtok(), "typedef", name->str, name->len);
-    }
-    /* 多段ポインタ typedef (`typedef int **PP`) の段数を記録する。関数ポインタ
-     * typedef では戻り値ポインタの `*` を除き、関数ポインタオブジェクトを指す段数だけを
-     * 保存する (`int *(*G)(void)` は 1、`int (**PP)(int)` は 2)。 */
-    int td_ptr_levels = function_type
-                            ? decl_state.funcptr_object_pointer_levels
-                            : psx_type_pointer_depth(canonical_type);
-    if (_ti.is_pointer && td_ptr_levels >= 2) {
-    }
+    if (canonical_type && type_state.type_spec.is_long_double)
+      canonical_type->is_long_double = 1;
+    psx_apply_parsed_typedef_declaration(
+        name->str, name->len, canonical_type, curtok());
     if (!tk_consume(',')) break;
   }
   tk_expect(';');
@@ -406,7 +374,9 @@ static node_t *parse_decl_like_stmt(void) {
       int tag_size = 0;
       int tag_align = 0;
       member_count = psx_parse_tag_definition_body(tag_kind, tag_name, tag_len, &tag_size, &tag_align);
-      psx_ctx_define_tag_type_with_layout(tag_kind, tag_name, tag_len, member_count, tag_size, tag_align);
+      psx_apply_parsed_tag_declaration(
+          tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_DEFINITION,
+          member_count, tag_size, tag_align, curtok());
       if (tk_consume(';')) {
         return psx_node_new_num(0);
       }
@@ -431,12 +401,14 @@ static node_t *parse_decl_like_stmt(void) {
                                                       0);
     }
     if (tk_consume(';')) {
-      psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
+      psx_apply_parsed_tag_declaration(
+          tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_FORWARD,
+          0, 0, 0, curtok());
       return psx_node_new_num(0);
     }
-    if (!psx_ctx_has_tag_type(tag_kind, tag_name, tag_len)) {
-      psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
-    }
+    psx_apply_parsed_tag_declaration(
+        tag_kind, tag_name, tag_len, PSX_TAG_DECLARATION_REFERENCE,
+        0, 0, 0, curtok());
     while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE) {
       if (curtok()->kind == TK_CONST) tag_path_saw_const = 1;
       if (curtok()->kind == TK_VOLATILE) tag_path_saw_volatile = 1;

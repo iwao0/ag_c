@@ -1,7 +1,7 @@
 #include "enum_const.h"
+#include "enum_constant_declaration.h"
 #include "diag.h"
 #include "semantic_ctx.h"
-#include "symtab.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 
@@ -260,31 +260,8 @@ int psx_parse_enum_members(void) {
     if (tk_consume('=')) {
       value = psx_parse_enum_const_expr();
     }
-    /* C11 6.7p4: 通常の identifier と同じ名前空間。同名のグローバル変数 / 関数 / typedef が
-     * 既にあれば衝突。`int B = 10; enum E { B = 5 };` 等。 */
-    if (ps_find_global_var(enumerator->str, enumerator->len)) {
-      psx_diag_ctx(curtok(), "enum",
-                   "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
-                   enumerator->len, enumerator->str);
-    }
-    if (ps_ctx_has_function_name(enumerator->str, enumerator->len)) {
-      psx_diag_ctx(curtok(), "enum",
-                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
-                   enumerator->len, enumerator->str);
-    }
-    {
-      psx_typedef_info_t _ti;
-      if (psx_ctx_find_typedef_name(enumerator->str, enumerator->len, &_ti)) {
-        psx_diag_ctx(curtok(), "enum",
-                     "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
-                     enumerator->len, enumerator->str);
-      }
-    }
-    if (!psx_ctx_define_enum_const(enumerator->str, enumerator->len, value)) {
-      /* 同一スコープで同名 enum 定数が既に登録されている (C11 6.7.2.2)。 */
-      psx_diag_duplicate_with_name(curtok(), "enum constant",
-                                   enumerator->str, enumerator->len);
-    }
+    psx_apply_parsed_enum_constant(
+        enumerator->str, enumerator->len, value, curtok());
     next_value = value + 1;
     member_count++;
     if (tk_consume('}')) break;
