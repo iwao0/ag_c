@@ -1,9 +1,12 @@
 #include "declaration_syntax.h"
 
 #include "aggregate_member_syntax.h"
+#include "alignas_value.h"
 #include "anon_tag.h"
 #include "declarator_syntax.h"
 #include "diag.h"
+#include "enum_const.h"
+#include "expr.h"
 #include "function_parameter_syntax.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -52,6 +55,20 @@ static token_t *find_declaration_expression_end(
   return NULL;
 }
 
+static psx_parsed_const_expr_t make_parsed_const_expr(
+    token_t *start, token_t *end) {
+  psx_parsed_const_expr_t expression = {
+      .start = start,
+      .end = end,
+  };
+  if (start && start->kind == TK_IDENT && start->next == end) {
+    token_ident_t *identifier = (token_ident_t *)start;
+    expression.identifier_name = identifier->str;
+    expression.identifier_name_len = identifier->len;
+  }
+  return expression;
+}
+
 static void consume_declaration_alignas(
     void *context, psx_type_spec_result_t *result) {
   (void)result;
@@ -69,8 +86,10 @@ static void consume_declaration_alignas(
     ps_diag_ctx(current_token(), "declaration-syntax",
                  "unterminated declaration alignas");
   }
-  specifier->alignas_expressions[specifier->alignas_expression_count++] =
-      (psx_parsed_const_expr_t){.start = start, .end = end};
+  psx_parsed_const_expr_t *expression =
+      &specifier->alignas_expressions[
+          specifier->alignas_expression_count++];
+  *expression = make_parsed_const_expr(start, end);
   tk_set_current_token(end);
   tk_expect(')');
 }
@@ -80,10 +99,10 @@ static void diagnose_declarator_too_complex(void *context, token_t *tok) {
   ps_diag_ctx(tok, "declaration-syntax", "declarator is too complex");
 }
 
-int ps_parse_type_name_syntax_at(
+static int parse_type_name_syntax_at(
     token_t *start,
     const psx_decl_specifier_syntax_options_t *options,
-    psx_parsed_type_name_t *out) {
+    int prepare_constant_bounds, psx_parsed_type_name_t *out) {
   if (!start || !out) return 0;
   *out = (psx_parsed_type_name_t){0};
   token_t *saved = current_token();
@@ -97,8 +116,9 @@ int ps_parse_type_name_syntax_at(
       type_start->next->kind == TK_LPAREN) {
     out->atomic_inner = calloc(1, sizeof(*out->atomic_inner));
     if (!out->atomic_inner ||
-        !ps_parse_type_name_syntax_at(
-            type_start->next->next, options, out->atomic_inner) ||
+        !parse_type_name_syntax_at(
+            type_start->next->next, options, prepare_constant_bounds,
+            out->atomic_inner) ||
         !out->atomic_inner->end ||
         out->atomic_inner->end->kind != TK_RPAREN) {
       ps_dispose_type_name_syntax(out);
@@ -117,9 +137,25 @@ int ps_parse_type_name_syntax_at(
   }
 
   out->declarator = psx_parse_abstract_declarator_syntax_tree();
+  if (prepare_constant_bounds)
+    ps_prepare_constant_declarator_expressions(&out->declarator);
   out->end = current_token();
   tk_set_current_token(saved);
   return 1;
+}
+
+int ps_parse_type_name_syntax_at(
+    token_t *start,
+    const psx_decl_specifier_syntax_options_t *options,
+    psx_parsed_type_name_t *out) {
+  return parse_type_name_syntax_at(start, options, 1, out);
+}
+
+int ps_parse_runtime_type_name_syntax_at(
+    token_t *start,
+    const psx_decl_specifier_syntax_options_t *options,
+    psx_parsed_type_name_t *out) {
+  return parse_type_name_syntax_at(start, options, 0, out);
 }
 
 void ps_dispose_type_name_syntax(psx_parsed_type_name_t *type_name) {
@@ -208,10 +244,8 @@ static int consume_declarator_suffix(
       declarator->array_bounds[declarator->array_bound_count++] =
           (psx_parsed_array_bound_t){
               .declarator_op_index = op_index,
-              .expression = {
-                  .start = expression_start,
-                  .end = expression_end,
-              },
+              .expression = make_parsed_const_expr(
+                  expression_start, expression_end),
               .has_static = has_static,
               .is_const_qualified = is_const,
               .is_volatile_qualified = is_volatile,
@@ -324,9 +358,11 @@ static psx_parsed_declarator_t parse_declarator_syntax_tree(
       &declarator.pointer_levels);
   if (!is_abstract && tk_consume(':')) {
     declarator.has_bitfield = 1;
-    declarator.bit_width_expression.start = current_token();
-    declarator.bit_width_expression.end = find_declaration_expression_end(
-        current_token(), TK_COMMA, TK_SEMI);
+    token_t *start = current_token();
+    token_t *end = find_declaration_expression_end(
+        start, TK_COMMA, TK_SEMI);
+    declarator.bit_width_expression =
+        make_parsed_const_expr(start, end);
     if (!declarator.bit_width_expression.end) {
       ps_diag_ctx(current_token(), "declaration-syntax",
                    "unterminated bit-field width");
@@ -343,11 +379,6 @@ psx_parsed_declarator_t ps_parse_declarator_syntax_tree(void) {
   return parse_declarator_syntax_tree(0, NULL, NULL, NULL, 0);
 }
 
-psx_parsed_declarator_t
-psx_parse_function_definition_declarator_syntax_tree(void) {
-  return parse_declarator_syntax_tree(0, NULL, NULL, NULL, 1);
-}
-
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void) {
   return parse_declarator_syntax_tree(1, NULL, NULL, NULL, 0);
 }
@@ -357,6 +388,58 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
   return parse_declarator_syntax_tree(
       0, is_parameter_grouping_parenthesis,
       is_typedef_name, context, 0);
+}
+
+void ps_parse_runtime_declarator_expressions(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator) return;
+  token_t *saved = current_token();
+  for (int i = 0; i < declarator->array_bound_count; i++) {
+    psx_parsed_const_expr_t *expression =
+        &declarator->array_bounds[i].expression;
+    if (expression->node || !expression->start || !expression->end) continue;
+    tk_set_current_token(expression->start);
+    expression->node = ps_expr_assign();
+    if (current_token() != expression->end) {
+      ps_diag_ctx(current_token(), "declaration-syntax",
+                   "runtime array bound was not fully consumed");
+    }
+  }
+  tk_set_current_token(saved);
+}
+
+void ps_prepare_constant_declarator_expressions(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator) return;
+  for (int i = 0; i < declarator->array_bound_count; i++) {
+    psx_parsed_const_expr_t *expression =
+        &declarator->array_bounds[i].expression;
+    if (expression->has_constant_value) continue;
+    expression->constant_value = ps_eval_parsed_enum_const_expr(
+        expression->start, expression->end);
+    expression->has_constant_value = 1;
+  }
+  if (declarator->has_bitfield &&
+      !declarator->bit_width_expression.has_constant_value) {
+    psx_parsed_const_expr_t *expression =
+        &declarator->bit_width_expression;
+    expression->constant_value = ps_eval_parsed_enum_const_expr(
+        expression->start, expression->end);
+    expression->has_constant_value = 1;
+  }
+}
+
+void ps_prepare_decl_specifier_alignments(
+    psx_parsed_decl_specifier_t *specifier) {
+  if (!specifier) return;
+  for (int i = 0; i < specifier->alignas_expression_count; i++) {
+    psx_parsed_const_expr_t *expression =
+        &specifier->alignas_expressions[i];
+    if (expression->has_constant_value) continue;
+    expression->constant_value = ps_eval_parsed_alignas_value(
+        expression->start, expression->end);
+    expression->has_constant_value = 1;
+  }
 }
 
 static void parse_tag_specifier(psx_parsed_decl_specifier_t *specifier) {

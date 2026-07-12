@@ -1,5 +1,4 @@
 #include "static_local_lowering.h"
-#include "../semantic/local_type_state.h"
 
 #include "static_data_initializer.h"
 #include "../parser/local_registry.h"
@@ -72,18 +71,12 @@ lvar_t *lower_static_local_object(
   global->name_len = mangled_len;
   ps_register_global_var(global);
 
-  lvar_t *alias = calloc(1, sizeof(*alias));
+  lvar_t *alias = ps_local_registry_create_static_alias(
+      request->name, request->name_len,
+      request->alias_size, request->alias_element_size,
+      mangled, mangled_len);
   if (!alias) return NULL;
-  alias->name = request->name;
-  alias->len = request->name_len;
-  alias->size = request->alias_size;
-  alias->elem_size = request->alias_element_size;
-  alias->is_static_local = 1;
-  alias->static_global_name = mangled;
-  alias->static_global_name_len = mangled_len;
-  ps_decl_attach_lvar_current_region(alias);
-  psx_decl_set_lvar_decl_type(alias, request->type);
-  ps_local_registry_add(alias);
+  ps_local_registry_set_decl_type(alias, request->type);
   return alias;
 }
 

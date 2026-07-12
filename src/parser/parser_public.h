@@ -17,7 +17,7 @@
  *   - tag_member_info_t + ps_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
  *
- * 非公開: tokenizer 内部、parser 自体の解析関数 (ps_program 等)、
+ * 非公開: tokenizer 内部、parser 自体の解析関数、
  * decl 登録系 (psx_decl_register_lvar_*)、semantic_ctx の登録系 setter。
  * これら internal シンボルは外部から見えるが「契約上」非公開扱いとし、
  * IR / arch から直接 include しないことで境界を担保する。

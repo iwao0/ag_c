@@ -4,14 +4,13 @@
 #include "diag.h"
 #include "expr.h"
 #include "initializer_syntax.h"
+#include "lvar_internal.h"
 #include "node_utils.h"
 #include "ret_pointee_array.h"
 #include "semantic_ctx.h"
-#include "static_assert_declaration.h"
 #include "config_runtime.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
-#include "../semantic/declaration_application.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -21,7 +20,6 @@
 static char *current_funcname;
 static int current_funcname_len;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
-static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 void ps_decl_set_current_funcname(char *name, int len) {
   current_funcname = name;
@@ -217,6 +215,11 @@ int ps_lvar_vla_row_stride_frame_off(const lvar_t *var) {
   return psx_type_pointer_view_vla_row_stride_frame_off(type);
 }
 
+int ps_lvar_vla_strides_remaining(const lvar_t *var) {
+  const psx_type_t *type = lvar_public_decl_type(var);
+  return ps_type_pointer_view_vla_strides_remaining(type);
+}
+
 int ps_lvar_vla_row_stride_elem_size(const lvar_t *var) {
   const psx_type_t *type = lvar_public_decl_type(var);
   return ps_type_vla_row_stride_elem_size(type);
@@ -257,15 +260,6 @@ void psx_decl_reset_translation_unit_state(void) {
 
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
-
-static node_t *parse_typedef_declaration_local(void);
-static void parse_local_extern_declarator_list(
-    const psx_declaration_phase_t *phase);
-static void define_local_typedef_from_declarator(token_ident_t *name,
-                                                 const psx_type_t *base_decl_type,
-                                                 const psx_parsed_declarator_t *declarator);
-static void parse_local_typedef_declarator_list(
-    const psx_type_t *base_decl_type);
 
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind) {
@@ -557,7 +551,7 @@ node_t *ps_decl_bind_initializer_for_var(
       ps_lvar_is_array(var) || ps_lvar_is_tag_aggregate(var)
           ? ps_node_new_lvar_object_ref_for(var)
           : ps_node_new_lvar_expr_ref_for(var, is_pointer);
-  return ps_node_new_decl_initializer(
+  return ps_node_new_raw_decl_initializer(
       target, initializer, initializer_kind, init_tok);
 }
 
@@ -571,246 +565,4 @@ node_t *ps_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
   token_t *init_tok = curtok();
   return ps_decl_bind_initializer_for_var(
       var, is_pointer, ps_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
-}
-
-static void parse_local_initializer(
-    void *context, psx_type_t *type,
-    psx_parsed_initializer_t *initializer) {
-  (void)context;
-  (void)type;
-  if (!initializer || !initializer->has_initializer) return;
-  token_t *assign_tok = initializer->assign_tok;
-  tk_expect('=');
-  ps_parse_initializer_syntax_value(initializer, assign_tok);
-}
-
-
-static node_t *parse_local_declaration_after_type(
-    const psx_declaration_phase_t *phase) {
-  if (!phase || phase->state != PSX_DECLARATION_PHASE_RESOLVED_TYPE ||
-      !phase->base_type) {
-    ps_diag_ctx(curtok(), "decl",
-                 "local declaration phase is not resolved");
-  }
-  node_t *init_chain = NULL;
-  const psx_type_t *base_decl_type = phase->base_type;
-  int alignas_val = phase->requested_alignment;
-  int decl_is_static = phase->syntax.type_spec.is_static ? 1 : 0;
-
-  int declarator_count = 0;
-  for (;;) {
-    declarator_count++;
-    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx(curtok(), "decl",
-                   diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-                   PS_MAX_DECLARATOR_COUNT);
-    }
-    psx_parsed_declarator_t declarator =
-        ps_parse_declarator_syntax_tree();
-    token_ident_t *tok = declarator.identifier;
-    if (!tok) {
-      ps_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-    }
-    psx_runtime_declarator_application_t applied;
-    psx_apply_runtime_parsed_declarator(&declarator, &applied);
-    psx_type_t *canonical_type = psx_apply_runtime_declarator_type(
-        base_decl_type, &applied);
-    ps_dispose_declarator_syntax(&declarator);
-    /* 関数内ローカル関数プロトタイプ宣言 (`int f1(char *);`) は暗黙extern。
-     * canonical typeがfunctionそのものならobject storageを作らない。 */
-    if (tok && canonical_type && canonical_type->kind == PSX_TYPE_FUNCTION) {
-      /* 初期化子は許されないが防御的に skip、次の declarator または `;` へ。 */
-      if (curtok()->kind == TK_ASSIGN) {
-        set_curtok(curtok()->next);
-        ps_expr_assign();
-      }
-      if (curtok()->kind == TK_COMMA) {
-        set_curtok(curtok()->next);
-        continue;
-      }
-      tk_expect(';');
-      return init_chain ? init_chain : ps_node_new_num(0);
-    }
-
-    if (decl_is_static) {
-      psx_parsed_initializer_t initializer;
-      ps_prepare_optional_initializer_syntax(&initializer);
-      psx_static_local_declaration_pipeline_result_t static_result;
-      if (!psx_apply_static_local_declaration_pipeline(
-              &(psx_static_local_declaration_pipeline_request_t){
-                  .function_name = current_funcname,
-                  .function_name_len = current_funcname_len,
-                  .name = tok->str,
-                  .name_len = tok->len,
-                  .type = canonical_type,
-                  .initializer = &initializer,
-                  .parse_initializer = parse_local_initializer,
-                  .diag_tok = (token_t *)tok,
-              },
-              &static_result)) {
-        ps_diag_ctx((token_t *)tok, "decl",
-                     "static local declaration pipeline failed for '%.*s'",
-                     tok->len, tok->str);
-      }
-      if (!tk_consume(',')) break;
-      continue;
-    }
-
-    psx_parsed_initializer_t initializer;
-    ps_prepare_optional_initializer_syntax(&initializer);
-    psx_automatic_local_declaration_pipeline_result_t local_result;
-    if (!psx_apply_automatic_local_declaration_pipeline(
-            &(psx_automatic_local_declaration_pipeline_request_t){
-                .name = tok->str,
-                .name_len = tok->len,
-                .type = canonical_type,
-                .application = &applied,
-                .requested_alignment = alignas_val,
-                .initializer = &initializer,
-                .parse_initializer = parse_local_initializer,
-                .diag_tok = (token_t *)tok,
-            },
-            &local_result)) {
-      ps_diag_ctx((token_t *)tok, "decl",
-                   "automatic local declaration pipeline failed for '%.*s'",
-                   tok->len, tok->str);
-    }
-    if (local_result.initialization) {
-      init_chain = init_chain
-                       ? ps_node_new_binary(
-                             ND_COMMA, init_chain,
-                             local_result.initialization)
-                       : local_result.initialization;
-    }
-    if (!tk_consume(',')) break;
-  }
-
-  tk_expect(';');
-  return init_chain ? init_chain : ps_node_new_num(0);
-}
-
-node_t *psx_decl_parse_declaration(void) {
-  if (curtok()->kind == TK_TYPEDEF) {
-    return parse_typedef_declaration_local();
-  }
-
-  if (curtok()->kind == TK_STATIC_ASSERT) {
-    psx_parse_static_assert_declaration();
-    return ps_node_new_num(0);
-  }
-
-  psx_declaration_phase_t phase;
-  psx_parse_declaration_phase_syntax(&phase, NULL);
-  int standalone_tag =
-      phase.syntax.source == PSX_PARSED_DECL_TYPE_TAG &&
-      curtok()->kind == TK_SEMI;
-  if (!psx_apply_declaration_phase(&phase, standalone_tag)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
-  }
-
-  if (phase.state == PSX_DECLARATION_PHASE_STANDALONE_TAG) {
-    tk_expect(';');
-    psx_dispose_declaration_phase(&phase);
-    return ps_node_new_num(0);
-  }
-
-  if (phase.syntax.type_spec.is_extern) {
-    // ローカルextern宣言: グローバルテーブルに登録してローカル変数は作らない
-    parse_local_extern_declarator_list(&phase);
-    tk_expect(';');
-    psx_dispose_declaration_phase(&phase);
-    return ps_node_new_num(0);
-  }
-
-  node_t *declaration = parse_local_declaration_after_type(&phase);
-  psx_dispose_declaration_phase(&phase);
-  return declaration;
-}
-
-static void parse_local_extern_declarator_list(
-    const psx_declaration_phase_t *phase) {
-  if (!phase || !phase->base_type) return;
-  int declarator_count = 0;
-  for (;;) {
-    declarator_count++;
-    if (declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx(curtok(), "decl",
-                   diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-                   PS_MAX_DECLARATOR_COUNT);
-    }
-    psx_parsed_declarator_t declarator =
-        ps_parse_declarator_syntax_tree();
-    token_ident_t *name = declarator.identifier;
-    if (!name) {
-      ps_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-    }
-    psx_runtime_declarator_application_t applied;
-    psx_apply_runtime_parsed_declarator(&declarator, &applied);
-    psx_type_t *canonical_type = psx_apply_runtime_declarator_type(
-        phase->base_type, &applied);
-    ps_dispose_declarator_syntax(&declarator);
-    psx_parsed_initializer_t initializer;
-    ps_prepare_optional_initializer_syntax(&initializer);
-    psx_block_extern_declaration_pipeline_result_t result;
-    if (!psx_apply_block_extern_declaration_pipeline(
-            &(psx_block_extern_declaration_pipeline_request_t){
-                .name = name->str,
-                .name_len = name->len,
-                .type = canonical_type,
-                .has_initializer = initializer.has_initializer,
-                .diag_tok = (token_t *)name,
-            },
-            &result)) {
-      ps_diag_ctx((token_t *)name, "decl",
-                   "block extern declaration pipeline failed for '%.*s'",
-                   name->len, name->str);
-    }
-    if (curtok()->kind != TK_COMMA) break;
-    set_curtok(curtok()->next);
-  }
-}
-
-static node_t *parse_typedef_declaration_local(void) {
-  set_curtok(curtok()->next); // consume typedef
-  psx_declaration_phase_t phase;
-  psx_parse_declaration_phase_syntax(&phase, NULL);
-  if (!psx_apply_declaration_phase(&phase, 0)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED, curtok(), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_TYPE_NAME_REQUIRED));
-  }
-  parse_local_typedef_declarator_list(phase.base_type);
-  tk_expect(';');
-  psx_dispose_declaration_phase(&phase);
-  return ps_node_new_num(0);
-}
-
-static void define_local_typedef_from_declarator(token_ident_t *name,
-                                                 const psx_type_t *base_decl_type,
-                                                 const psx_parsed_declarator_t *declarator) {
-  psx_runtime_declarator_application_t applied;
-  psx_apply_runtime_parsed_declarator(declarator, &applied);
-  psx_type_t *canonical_type = psx_apply_runtime_declarator_type(
-      base_decl_type, &applied);
-  psx_apply_parsed_typedef_declaration(
-      name->str, name->len, canonical_type, curtok());
-}
-
-static void parse_local_typedef_declarator_list(
-    const psx_type_t *base_decl_type) {
-  for (;;) {
-    psx_parsed_declarator_t declarator =
-        ps_parse_declarator_syntax_tree();
-    token_ident_t *name = declarator.identifier;
-    if (!name) {
-      ps_diag_ctx(curtok(), "decl", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-    }
-    define_local_typedef_from_declarator(
-        name, base_decl_type, &declarator);
-    ps_dispose_declarator_syntax(&declarator);
-    if (!tk_consume(',')) break;
-  }
 }

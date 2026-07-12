@@ -535,7 +535,7 @@ void ps_ctx_reset_tag_diag_state(void) {
 }
 
 /* 各 parse 開始時に呼ぶ、関数名テーブルの「ソフトリセット」: 累積状態 (関数情報) は残し、
- * 同一 parse 内でのみ意味を持つ is_defined のみクリアする。これにより同一プロセス内で複数回 ps_program_from
+ * 同一 parse 内でのみ意味を持つ is_defined のみクリアする。これにより同一プロセス内で複数回frontend parseを
  * を呼ぶユニットテストで前回パースの "function defined" 状態が今回パースに漏れない。 */
 void ps_ctx_reset_function_diag_state(void) {
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {

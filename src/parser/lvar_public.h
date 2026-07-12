@@ -4,10 +4,29 @@
 #include "core.h"
 
 typedef struct lvar_t lvar_t;
+typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
+
+typedef struct {
+  const char *name;
+  int name_len;
+  unsigned scope_seq;
+  int is_used;
+  int is_unevaluated_used;
+  int is_address_taken;
+  int is_initialized;
+  int suppress_unreachable_warnings;
+  int is_param;
+  int is_array;
+  int is_static_local;
+  psx_lvar_usage_region_t *decl_region;
+} psx_lvar_registry_view_t;
 
 lvar_t *ps_lvar_next_all(const lvar_t *var);
 lvar_t *ps_lvar_find_owner(lvar_t *head, int offset);
+psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var);
 
+const char *ps_lvar_name(const lvar_t *var);
+int ps_lvar_name_len(const lvar_t *var);
 int ps_lvar_offset(const lvar_t *var);
 int ps_lvar_decl_sizeof(const lvar_t *var, int fallback_size);
 int ps_lvar_storage_size(const lvar_t *var, int fallback_size);
@@ -32,6 +51,7 @@ tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var);
 psx_decl_funcptr_sig_t ps_lvar_funcptr_sig(const lvar_t *src);
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var);
+int ps_lvar_vla_strides_remaining(const lvar_t *var);
 int ps_lvar_vla_row_stride_elem_size(const lvar_t *var);
 int ps_lvar_vla_row_stride_src_offset(const lvar_t *var);
 int ps_lvar_vla_param_inner_dim_count(const lvar_t *var);

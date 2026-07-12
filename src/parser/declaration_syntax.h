@@ -8,10 +8,16 @@
 typedef struct psx_parsed_aggregate_body_t psx_parsed_aggregate_body_t;
 typedef struct psx_parsed_function_parameters_t
     psx_parsed_function_parameters_t;
+typedef struct node_t node_t;
 
 typedef struct {
   token_t *start;
   token_t *end;
+  node_t *node;
+  long long constant_value;
+  int has_constant_value;
+  char *identifier_name;
+  int identifier_name_len;
 } psx_parsed_const_expr_t;
 
 typedef enum {
@@ -99,15 +105,23 @@ void ps_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options);
 psx_parsed_declarator_t ps_parse_declarator_syntax_tree(void);
-psx_parsed_declarator_t
-psx_parse_function_definition_declarator_syntax_tree(void);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void);
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
+void ps_parse_runtime_declarator_expressions(
+    psx_parsed_declarator_t *declarator);
+void ps_prepare_constant_declarator_expressions(
+    psx_parsed_declarator_t *declarator);
+void ps_prepare_decl_specifier_alignments(
+    psx_parsed_decl_specifier_t *specifier);
 void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
 void ps_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);
 int ps_parse_type_name_syntax_at(
+    token_t *start,
+    const psx_decl_specifier_syntax_options_t *options,
+    psx_parsed_type_name_t *out);
+int ps_parse_runtime_type_name_syntax_at(
     token_t *start,
     const psx_decl_specifier_syntax_options_t *options,
     psx_parsed_type_name_t *out);

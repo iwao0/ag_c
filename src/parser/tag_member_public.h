@@ -46,7 +46,7 @@ typedef struct tag_member_info_t {
   /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
    * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。`s.p[i]` の subscript 結果に
    * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
-   * build_subscript_deref / build_unary_deref_node に伝える。 */
+   * subscript / unary deref lowering に伝える。 */
   int ptr_array_pointee_bytes;
   int is_funcptr;
   psx_decl_funcptr_sig_t funcptr_sig;

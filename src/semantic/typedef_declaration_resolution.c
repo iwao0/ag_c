@@ -34,7 +34,7 @@ void psx_resolve_typedef_declaration(
     }
   } else {
     lvar_t *local = ps_decl_find_lvar(request->name, request->name_len);
-    if (local && local->scope_seq ==
+    if (local && ps_lvar_registry_view(local).scope_seq ==
                      ps_local_registry_current_scope_seq()) {
       resolution->status = PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT;
       return;

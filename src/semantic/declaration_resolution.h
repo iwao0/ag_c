@@ -5,14 +5,6 @@
 #include "../parser/declaration_syntax.h"
 #include "../parser/type.h"
 
-typedef void (*psx_apply_decl_tag_action_fn)(
-    const psx_parsed_tag_action_t *action, void *context);
-
-typedef struct {
-  psx_apply_decl_tag_action_fn apply_tag_action;
-  void *context;
-} psx_decl_syntax_resolution_context_t;
-
 typedef struct {
   token_kind_t base_kind;
   int elem_size;
@@ -40,10 +32,22 @@ typedef struct {
   int entries_initialize_outer_elements;
 } psx_incomplete_array_resolution_t;
 
+typedef struct {
+  int declarator_op_index;
+  node_t *expression;
+  long long constant_value;
+  int is_constant;
+} psx_runtime_array_bound_t;
+
+typedef struct {
+  psx_declarator_shape_t shape;
+  psx_runtime_array_bound_t array_bounds[24];
+  int array_bound_count;
+} psx_runtime_declarator_application_t;
+
 psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request);
 psx_type_t *psx_resolve_decl_specifier_syntax(
-    const psx_parsed_decl_specifier_t *specifier,
-    const psx_decl_syntax_resolution_context_t *context);
+    const psx_parsed_decl_specifier_t *specifier);
 int psx_resolve_incomplete_array_type(
     psx_type_t *type, const psx_incomplete_array_resolution_t *request);
 int psx_resolve_incomplete_array_initializer(

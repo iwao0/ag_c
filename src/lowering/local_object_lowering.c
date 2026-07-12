@@ -1,5 +1,4 @@
 #include "local_object_lowering.h"
-#include "../semantic/local_type_state.h"
 
 #include "local_storage.h"
 #include "../parser/local_registry.h"
@@ -37,7 +36,7 @@ int lower_complete_local_object(
       request->name, request->name_len, offset, result->storage_size,
       result->element_size, result->is_array, result->alignment);
   if (!result->var) return 0;
-  psx_decl_set_lvar_decl_type(result->var, request->type);
+  ps_local_registry_set_decl_type(result->var, request->type);
   result->type_attached = 1;
   return 1;
 }
@@ -56,7 +55,7 @@ int declare_incomplete_local_object(
       request->name, request->name_len, 0, 0,
       element_size, 1, request->requested_alignment);
   if (!result->var) return 0;
-  psx_decl_set_lvar_decl_type(result->var, request->type);
+  ps_local_registry_set_decl_type(result->var, request->type);
   result->element_size = element_size;
   result->is_array = 1;
   result->type_attached = 1;
@@ -80,7 +79,7 @@ int complete_declared_local_object(
   ps_local_registry_update_storage_object(
       var, offset, result->storage_size, result->element_size,
       1, result->alignment);
-  psx_decl_set_lvar_decl_type(var, request->type);
+  ps_local_registry_set_decl_type(var, request->type);
   result->var = var;
   result->type_attached = 1;
   return 1;

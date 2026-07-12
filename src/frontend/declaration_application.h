@@ -1,10 +1,10 @@
-#ifndef SEMANTIC_DECLARATION_APPLICATION_H
-#define SEMANTIC_DECLARATION_APPLICATION_H
+#ifndef FRONTEND_DECLARATION_APPLICATION_H
+#define FRONTEND_DECLARATION_APPLICATION_H
 
 #include "../parser/function_parameter_syntax.h"
+#include "../parser/aggregate_member_syntax.h"
 #include "../parser/ast.h"
-#include "aggregate_member_resolution.h"
-#include "tag_declaration_resolution.h"
+#include "../semantic/declaration_resolution.h"
 
 typedef enum {
   PSX_DECLARATION_PHASE_EMPTY = 0,
@@ -20,22 +20,9 @@ typedef struct {
   psx_declaration_phase_state_t state;
 } psx_declaration_phase_t;
 
-typedef struct {
-  int declarator_op_index;
-  node_t *expression;
-  long long constant_value;
-  int is_constant;
-} psx_runtime_array_bound_t;
-
-typedef struct {
-  psx_declarator_shape_t shape;
-  psx_runtime_array_bound_t array_bounds[24];
-  int array_bound_count;
-} psx_runtime_declarator_application_t;
-
-void psx_parse_declaration_phase_syntax(
+void psx_begin_declaration_phase(
     psx_declaration_phase_t *phase,
-    const psx_decl_specifier_syntax_options_t *options);
+    psx_parsed_decl_specifier_t *syntax);
 int psx_apply_declaration_phase(
     psx_declaration_phase_t *phase, int standalone_tag);
 void psx_dispose_declaration_phase(psx_declaration_phase_t *phase);
@@ -68,18 +55,9 @@ void psx_apply_parsed_function_parameters(
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 
-void psx_apply_parsed_typedef_declaration(
-    char *name, int name_len, const psx_type_t *type, token_t *diag_tok);
-void psx_apply_parsed_enum_constant(
-    char *name, int name_len, long long value, token_t *diag_tok);
-void psx_apply_parsed_tag_declaration(
-    token_kind_t kind, char *name, int name_len,
-    psx_tag_declaration_mode_t mode, int member_count,
-    int size, int alignment, token_t *diag_tok);
-int psx_apply_aggregate_member_declaration(
-    psx_aggregate_layout_state_t *layout,
-    const psx_aggregate_member_declaration_request_t *request,
-    token_t *diag_tok);
-void psx_apply_static_assert(node_t *condition, token_t *diag_tok);
-
+int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body);
+int psx_apply_parsed_aggregate_body_layout(
+    psx_parsed_aggregate_body_t *body,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int *out_size, int *out_align);
 #endif

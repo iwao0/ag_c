@@ -1,0 +1,89 @@
+#include "local_declaration_syntax.h"
+
+#include "config_runtime.h"
+#include "diag.h"
+#include "node_utils.h"
+#include "static_assert_declaration.h"
+#include "../diag/diag.h"
+#include "../diag/error_catalog.h"
+#include "../tokenizer/tokenizer.h"
+
+static token_t *curtok(void) { return tk_get_current_token(); }
+
+static void require_callbacks(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  if (!callbacks || !callbacks->apply_static_assert ||
+      !callbacks->begin_declaration || !callbacks->begin_declarator ||
+      !callbacks->finish_declarator || !callbacks->finish_declaration) {
+    ps_diag_ctx(curtok(), "local-declaration-syntax",
+                "local declaration application callbacks are required");
+  }
+}
+
+node_t *ps_parse_local_declaration_syntax(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  require_callbacks(callbacks);
+  if (curtok()->kind == TK_STATIC_ASSERT) {
+    psx_parsed_static_assert_declaration_t assertion;
+    psx_parse_static_assert_syntax(&assertion);
+    callbacks->apply_static_assert(
+        callbacks->context, assertion.condition,
+        assertion.diagnostic_token);
+    return ps_node_new_num(0);
+  }
+
+  int is_typedef = curtok()->kind == TK_TYPEDEF;
+  if (is_typedef) tk_set_current_token(curtok()->next);
+  psx_parsed_decl_specifier_t specifier;
+  ps_parse_decl_specifier_syntax_ex(&specifier, NULL);
+  ps_prepare_decl_specifier_alignments(&specifier);
+  int standalone_tag =
+      specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
+      curtok()->kind == TK_SEMI;
+  void *declaration_context = callbacks->begin_declaration(
+      callbacks->context, &specifier, is_typedef, standalone_tag);
+
+  if (standalone_tag) {
+    tk_expect(';');
+    node_t *result =
+        callbacks->finish_declaration(declaration_context);
+    ps_dispose_decl_specifier_syntax(&specifier);
+    return result;
+  }
+
+  int declarator_count = 0;
+  for (;;) {
+    if (++declarator_count > PS_MAX_DECLARATOR_COUNT) {
+      ps_diag_ctx(curtok(), "decl",
+                  diag_message_for(
+                      DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
+                  PS_MAX_DECLARATOR_COUNT);
+    }
+    psx_parsed_declarator_t declarator =
+        ps_parse_declarator_syntax_tree();
+    ps_parse_runtime_declarator_expressions(&declarator);
+    if (!declarator.identifier) {
+      ps_diag_ctx(curtok(), "decl", "%s",
+                  diag_message_for(
+                      DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
+    }
+
+    psx_parsed_initializer_t initializer;
+    ps_prepare_optional_initializer_syntax(&initializer);
+    callbacks->begin_declarator(
+        declaration_context, &declarator, &initializer);
+    if (initializer.has_initializer) {
+      token_t *assign_tok = initializer.assign_tok;
+      tk_expect('=');
+      ps_parse_initializer_syntax_value(&initializer, assign_tok);
+    }
+    callbacks->finish_declarator(
+        declaration_context, &initializer);
+    ps_dispose_declarator_syntax(&declarator);
+    if (!tk_consume(',')) break;
+  }
+  tk_expect(';');
+  node_t *result = callbacks->finish_declaration(declaration_context);
+  ps_dispose_decl_specifier_syntax(&specifier);
+  return result;
+}

@@ -1,6 +1,6 @@
 #include "assignment_lowering.h"
-#include "../semantic/local_type_state.h"
 #include "../parser/decl.h"
+#include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,7 +40,7 @@ static node_t *materialize_lvalue_address_once(node_t *target,
   lvar_t *temp = psx_decl_register_lvar_sized(
       name, (int)strlen(name), 8, 8, 0);
   psx_type_t *address_type = ps_node_get_type(address);
-  if (address_type) psx_decl_set_lvar_decl_type(temp, address_type);
+  if (address_type) ps_local_registry_set_decl_type(temp, address_type);
 
   node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp, 1);
   *prefix = ps_node_new_assign(temp_lhs, address);

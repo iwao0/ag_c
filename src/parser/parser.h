@@ -2,31 +2,46 @@
 #define PARSER_H
 
 #include "ast.h"
+#include "function_definition_syntax.h"
+#include "local_declaration_syntax.h"
+#include "static_assert_declaration.h"
+#include "toplevel_declaration_syntax.h"
 #include "../tokenizer/token.h"
 #include "../tokenizer/tokenizer.h"
 
-// プログラム全体をパースする（複数の文を返す）
-node_t **ps_program(void);
-// 先頭トークンを明示指定してプログラム全体をパースする
-node_t **ps_program_from(token_t *start);
-// Tokenizerコンテキストを明示してプログラム全体をパースする
-node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start);
-
 typedef struct {
   tokenizer_context_t *tk_ctx;
-} ps_stream_t;
+  const psx_toplevel_declaration_callbacks_t *toplevel_declarations;
+} psx_parser_stream_t;
 
-// 関数ごとストリーミングパース。ps_stream_begin で開始し、ps_next_function を
-// EOF (NULL 返却) まで繰り返すと、関数定義 AST を 1 つずつ返す。非関数のトップレベル
-// 宣言 (グローバル変数・typedef・タグ) は呼び出し中に副作用として処理される。
+typedef enum {
+  PSX_TOPLEVEL_ITEM_EOF = 0,
+  PSX_TOPLEVEL_ITEM_FUNCTION_HEADER,
+  PSX_TOPLEVEL_ITEM_STATIC_ASSERT,
+  PSX_TOPLEVEL_ITEM_DECLARATION,
+} psx_toplevel_item_kind_t;
+
+typedef struct {
+  psx_toplevel_item_kind_t kind;
+  union {
+    psx_parsed_function_definition_t function_header;
+    psx_parsed_static_assert_declaration_t static_assertion;
+    psx_parsed_toplevel_declaration_t declaration;
+  } value;
+} psx_parsed_toplevel_item_t;
+
+// トップレベル項目のストリーミングパース。frontendはitemを逐次適用する。
 // 1 関数ぶんの AST だけを保持して codegen→解放できるので、AST のピークメモリを抑える。
-void ps_stream_begin(ps_stream_t *stream, tokenizer_context_t *tk_ctx, token_t *start);
-node_t *ps_next_function(ps_stream_t *stream);
-void ps_stream_end(ps_stream_t *stream);
-// 直前に ps_next_function で取り出した関数の codegen 後に呼び、その関数の AST
-// (parser arena) を解放する。次の ps_next_function は新たに arena を使う。
-void ps_free_processed_ast(void);
-void ps_reset_translation_unit_state(void);
+void psx_parser_stream_begin(
+    psx_parser_stream_t *stream,
+    tokenizer_context_t *tk_ctx, token_t *start,
+    const psx_toplevel_declaration_callbacks_t *toplevel_declarations);
+int ps_parse_next_toplevel_item(
+    psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item);
+node_t *ps_parse_function_definition_body(
+    psx_parser_stream_t *stream, node_func_t *function,
+    const psx_local_declaration_callbacks_t *local_declarations);
+void psx_parser_stream_end(psx_parser_stream_t *stream);
 
 // 単一の式をパースしてASTのルートを返す
 node_t *ps_expr(void);

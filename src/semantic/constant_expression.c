@@ -19,6 +19,10 @@ long long psx_eval_const_int(node_t *node, int *ok) {
         return 0;
       }
       return psx_eval_const_int(node->lhs, ok);
+    case ND_UNARY_NEGATE: {
+      long long value = psx_eval_const_int(node->lhs, ok);
+      return !ok || *ok ? -value : 0;
+    }
     case ND_GVAR: {
       node_gvar_t *ref = (node_gvar_t *)node;
       global_var_t *global = ps_find_global_var(ref->name, ref->name_len);
@@ -116,6 +120,10 @@ double psx_eval_const_fp(node_t *node, int *ok) {
     }
     case ND_CAST:
       return psx_eval_const_fp(node->lhs, ok);
+    case ND_UNARY_NEGATE: {
+      double value = psx_eval_const_fp(node->lhs, ok);
+      return !ok || *ok ? -value : 0.0;
+    }
     case ND_ADD: {
       double left = psx_eval_const_fp(node->lhs, ok);
       if (ok && !*ok) return 0.0;

@@ -3,6 +3,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/node_vla_public.h"
 
+
 static int is_pointer_arithmetic_operand(node_t *node) {
   if (ps_node_is_pointer(node)) return 1;
 

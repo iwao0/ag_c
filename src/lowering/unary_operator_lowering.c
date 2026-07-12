@@ -1,0 +1,35 @@
+#include "unary_operator_lowering.h"
+
+#include "../parser/node_utils.h"
+
+node_t *lower_unary_negate_expression(node_t *node) {
+  if (!node || node->kind != ND_UNARY_NEGATE || !node->lhs) return node;
+  psx_type_t *operand_type = ps_node_get_type(node->lhs);
+  if (operand_type && operand_type->kind == PSX_TYPE_FLOAT) {
+    node_t *negated = ps_node_new_binary(ND_FNEG, node->lhs, NULL);
+    negated->type = node->type;
+    negated->fp_kind = operand_type->fp_kind;
+    return negated;
+  }
+  node_t *negated = ps_node_new_binary(
+      ND_SUB, ps_node_new_num(0), node->lhs);
+  negated->type = node->type;
+  return negated;
+}
+
+node_t *lower_complex_part_expression(node_t *node) {
+  if (!node || (node->kind != ND_CREAL && node->kind != ND_CIMAG) ||
+      !node->lhs) {
+    return node;
+  }
+  psx_type_t *operand_type = ps_node_get_type(node->lhs);
+  if (!operand_type || operand_type->kind == PSX_TYPE_COMPLEX) return node;
+  if (node->kind == ND_CREAL) return node->lhs;
+  if (operand_type->kind == PSX_TYPE_FLOAT) return node;
+  int size = ps_type_sizeof(node->type);
+  if (size <= 0) size = 4;
+  return ps_node_new_integer_cast_result(
+      ps_node_new_num(0), node->type, size,
+      ps_type_is_unsigned(node->type),
+      node->type && node->type->is_long_long);
+}

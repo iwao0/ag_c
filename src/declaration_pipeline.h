@@ -1,14 +1,10 @@
 #ifndef DECLARATION_PIPELINE_H
 #define DECLARATION_PIPELINE_H
 
-#include "semantic/declaration_application.h"
+#include "frontend/declaration_application.h"
 #include "parser/declaration_syntax.h"
 #include "parser/initializer_syntax.h"
 #include "parser/symtab.h"
-
-typedef void (*psx_parse_declaration_initializer_fn)(
-    void *context, psx_type_t *type,
-    psx_parsed_initializer_t *initializer);
 
 typedef struct {
   char *name;
@@ -18,8 +14,6 @@ typedef struct {
   int is_static;
   int is_thread_local;
   psx_parsed_initializer_t *initializer;
-  psx_parse_declaration_initializer_fn parse_initializer;
-  void *parse_context;
   token_t *diag_tok;
 } psx_global_declaration_pipeline_request_t;
 
@@ -30,6 +24,12 @@ typedef struct {
 } psx_global_declaration_pipeline_result_t;
 
 int psx_apply_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result);
+int psx_begin_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result);
+int psx_finish_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result);
 
@@ -63,9 +63,24 @@ typedef struct {
   psx_type_t *return_type;
 } psx_function_definition_pipeline_result_t;
 
-int psx_apply_function_definition_pipeline(
+typedef struct {
+  const psx_type_t *base_type;
+  psx_runtime_declarator_application_t application;
+  psx_function_definition_pipeline_result_t *result;
+  int primary_function_op_index;
+  int parameter_count;
+  int args_capacity;
+} psx_function_definition_pipeline_state_t;
+
+int psx_begin_function_definition_pipeline(
     const psx_function_definition_pipeline_request_t *request,
-    psx_function_definition_pipeline_result_t *result);
+    psx_function_definition_pipeline_result_t *result,
+    psx_function_definition_pipeline_state_t *state);
+int psx_apply_function_definition_parameter_pipeline(
+    psx_function_definition_pipeline_state_t *state,
+    psx_parsed_function_parameter_t *parameter);
+int psx_finish_function_definition_pipeline(
+    psx_function_definition_pipeline_state_t *state);
 
 typedef struct {
   char *function_name;
@@ -74,8 +89,6 @@ typedef struct {
   int name_len;
   psx_type_t *type;
   psx_parsed_initializer_t *initializer;
-  psx_parse_declaration_initializer_fn parse_initializer;
-  void *parse_context;
   token_t *diag_tok;
 } psx_static_local_declaration_pipeline_request_t;
 
@@ -89,6 +102,12 @@ typedef struct {
 int psx_apply_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result);
+int psx_begin_static_local_declaration_pipeline(
+    const psx_static_local_declaration_pipeline_request_t *request,
+    psx_static_local_declaration_pipeline_result_t *result);
+int psx_finish_static_local_declaration_pipeline(
+    const psx_static_local_declaration_pipeline_request_t *request,
+    psx_static_local_declaration_pipeline_result_t *result);
 
 typedef struct {
   char *name;
@@ -97,8 +116,6 @@ typedef struct {
   const psx_runtime_declarator_application_t *application;
   int requested_alignment;
   psx_parsed_initializer_t *initializer;
-  psx_parse_declaration_initializer_fn parse_initializer;
-  void *parse_context;
   token_t *diag_tok;
 } psx_automatic_local_declaration_pipeline_request_t;
 
@@ -111,6 +128,14 @@ typedef struct {
 int psx_apply_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_automatic_local_declaration_pipeline_result_t *result);
+int psx_begin_automatic_local_declaration_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result,
+    int *storage_kind);
+int psx_finish_automatic_local_declaration_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result,
+    int storage_kind);
 
 typedef struct {
   char *name;

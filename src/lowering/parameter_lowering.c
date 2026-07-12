@@ -4,7 +4,6 @@
 #include "vla_lowering.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
-#include "../semantic/local_type_state.h"
 #include <string.h>
 
 static int lower_parameter_with_plan(
@@ -22,9 +21,9 @@ static int lower_parameter_with_plan(
       result->storage.storage_size, result->storage.element_size,
       0, result->storage.alignment);
   if (!result->var) return 0;
-  result->var->is_param = 1;
-  result->var->is_byref_param = result->storage.is_byref ? 1 : 0;
-  psx_decl_set_lvar_decl_type(result->var, type);
+  ps_local_registry_mark_parameter(
+      result->var, result->storage.is_byref);
+  ps_local_registry_set_decl_type(result->var, type);
   result->type_attached = 1;
   return 1;
 }

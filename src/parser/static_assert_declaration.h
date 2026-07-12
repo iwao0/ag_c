@@ -10,6 +10,5 @@ typedef struct {
 
 void psx_parse_static_assert_syntax(
     psx_parsed_static_assert_declaration_t *declaration);
-void psx_parse_static_assert_declaration(void);
 
 #endif

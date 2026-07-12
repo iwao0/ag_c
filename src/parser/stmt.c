@@ -1,4 +1,5 @@
 #include "stmt.h"
+#include "lvar_internal.h"
 #include "arena.h"
 #include "core.h"
 #include "decl.h"
@@ -29,6 +30,7 @@ static node_t *parse_stmt_label(void);
 static node_t *block_item(void);
 static int is_decl_like_start_stmt(void);
 static node_t *parse_decl_like_stmt(void);
+static const psx_local_declaration_callbacks_t *active_local_declarations;
 
 static int is_label_start_stmt(void) {
   return curtok()->kind == TK_IDENT && curtok()->next &&
@@ -45,7 +47,7 @@ static int is_decl_like_start_stmt(void) {
 }
 
 static node_t *parse_decl_like_stmt(void) {
-  return psx_decl_parse_declaration();
+  return ps_parse_local_declaration_syntax(active_local_declarations);
 }
 
 static node_t *block_item(void) {
@@ -345,6 +347,12 @@ static node_t *parse_stmt_label(void) {
   return (node_t *)node;
 }
 
-node_t *psx_stmt_stmt(void) {
-  return stmt_internal();
+node_t *psx_stmt_stmt(
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  const psx_local_declaration_callbacks_t *previous =
+      active_local_declarations;
+  active_local_declarations = local_declarations;
+  node_t *result = stmt_internal();
+  active_local_declarations = previous;
+  return result;
 }

@@ -1,5 +1,4 @@
 #include "vla_lowering.h"
-#include "../semantic/local_type_state.h"
 
 #include "frame_layout.h"
 #include "local_storage.h"
@@ -32,7 +31,7 @@ static void attach_canonical_vla_type(
   if (!resolved) return;
   ps_type_copy_vla_runtime_metadata(
       resolved, ps_lvar_get_decl_type(result->var));
-  psx_decl_set_lvar_decl_type(result->var, resolved);
+  ps_local_registry_set_decl_type(result->var, resolved);
   result->type_attached = 1;
 }
 
@@ -59,10 +58,11 @@ psx_vla_lowering_result_t lower_vla_declaration(
   result.var = create_vla_storage(
       request->name, request->name_len, layout.storage_size,
       request->element_size, 1, request->requested_alignment);
+  int var_offset = ps_lvar_offset(result.var);
   if (layout.row_stride_relative_offset > 0)
-    row_stride_offset = result.var->offset + layout.row_stride_relative_offset;
+    row_stride_offset = var_offset + layout.row_stride_relative_offset;
   if (count >= 3) remaining_strides = layout.subsequent_stride_count;
-  psx_decl_set_lvar_vla_descriptor(
+  ps_local_registry_set_vla_descriptor(
       result.var, outer_stride, row_stride_offset,
       remaining_strides, 0, 0);
 
@@ -88,14 +88,14 @@ psx_vla_lowering_result_t lower_vla_declaration(
     alloc_rhs = outer;
   }
   result.init = ps_node_new_vla_alloc(
-      result.var->offset, row_stride_offset, alloc_lhs, alloc_rhs);
+      var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
 
   for (int level = 1; level < count - 1; level++) {
     node_t *stride = ps_node_new_num(request->element_size);
     for (int i = count - 1; i >= level + 1; i--)
       stride = ps_node_new_binary(ND_MUL, stride, request->dimensions[i]);
     node_t *slot = ps_node_new_lvar_typed(
-        frame_layout_vla_stride_offset(result.var->offset, level), 8);
+        frame_layout_vla_stride_offset(var_offset, level), 8);
     result.init = append_init(
         result.init, ps_node_new_assign(slot, stride));
   }
@@ -118,8 +118,8 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
       request->name, request->name_len, layout.storage_size,
       request->element_size, 0, request->requested_alignment);
   int row_stride_offset =
-      result.var->offset + layout.row_stride_relative_offset;
-  psx_decl_set_lvar_vla_descriptor(
+      ps_lvar_offset(result.var) + layout.row_stride_relative_offset;
+  ps_local_registry_set_vla_descriptor(
       result.var, 0, row_stride_offset, 0, 0, request->element_size);
 
   node_t *slot = ps_node_new_lvar_typed(row_stride_offset, 8);
@@ -184,24 +184,24 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
       if (dimension->constant > 0 || !dimension->source_name) continue;
       lvar_t *source = ps_decl_find_lvar(
           dimension->source_name, dimension->source_name_len);
-      if (!source || !source->is_param) {
+      if (!source || !ps_lvar_is_param(source)) {
         ps_diag_ctx(
             request->diag_tok, "param",
             diag_message_for(
                 DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
             dimension->source_name_len, dimension->source_name);
       }
-      source_offsets[i] = source->offset;
+      source_offsets[i] = ps_lvar_offset(source);
     }
 
-    psx_decl_set_lvar_vla_descriptor(
-        result.var, 0, result.stride_storage->offset,
+    ps_local_registry_set_vla_descriptor(
+        result.var, 0, ps_lvar_offset(result.stride_storage),
         count - 1, 0, request->element_size);
-    psx_decl_set_lvar_vla_param_inner_dims(
+    ps_local_registry_set_vla_param_inner_dims(
         result.var, constants, source_offsets, count);
     if (count == 1 && constants[0] == 0) {
-      psx_decl_set_lvar_vla_descriptor(
-          result.var, 0, result.stride_storage->offset, 0,
+      ps_local_registry_set_vla_descriptor(
+          result.var, 0, ps_lvar_offset(result.stride_storage), 0,
           source_offsets[0], request->element_size);
     }
   }
@@ -210,6 +210,6 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   attach_canonical_vla_type(&attached, request->type);
   result.type_attached = attached.type_attached;
   /* Keep the current name ineligible while resolving preceding parameters. */
-  result.var->is_param = 1;
+  ps_local_registry_mark_parameter(result.var, 0);
   return result;
 }

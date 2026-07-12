@@ -1,7 +1,7 @@
 /* fp 宣言 (`typedef long double` / `double` グローバル) の直後に来る tag グローバルが、
  * 前の宣言の decl-spec fp_kind を引き継いでしまう汚染バグの回帰テスト。
  *
- * 原因: トップレベル dispatcher (ps_next_function) は tag キーワード始まりの宣言を
+ * 原因: 旧トップレベル dispatcherは tag キーワード始まりの宣言を
  * parse_toplevel_tag_decl へ直接回し、その前に reset_toplevel_decl_spec_state を呼ばな
  * かった。そのため g_toplevel_decl_fp_kind が前宣言 (例: `typedef long double max_align_t;`
  * = stddef.h 経由で string.h 等から間接 include) の DOUBLE のまま残り、ここで宣言する

@@ -1,6 +1,7 @@
 #include "codegen_backend.h"
 #include "config/config.h"
 #include "parser/parser.h"
+#include "frontend/translation_unit.h"
 #include "parser/config_runtime.h"
 #include "tokenizer/tokenizer.h"
 #include "preprocess/preprocess.h"
@@ -153,7 +154,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
 #endif
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
-  ps_reset_translation_unit_state();
+  psx_frontend_reset_translation_unit_state();
 
   char *source = (char *)(long)source_addr;
   wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
@@ -178,9 +179,9 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
     wasm32_module_begin();
   }
 
-  ps_stream_t stream = {0};
-  ps_stream_begin(&stream, tk_ctx, tok);
-  for (node_t *fn; (fn = ps_next_function(&stream)) != NULL; ) {
+  psx_frontend_stream_t stream = {0};
+  psx_frontend_stream_begin(&stream, tk_ctx, tok);
+  for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode)) {
       clear_output_callback();
       gen_set_simple_formatter(0);
@@ -188,9 +189,9 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
       wasm32_obj_capture_output(0);
       return -3;
     }
-    ps_free_processed_ast();
+    psx_frontend_free_processed_ast();
   }
-  ps_stream_end(&stream);
+  psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
   if (object_mode) {
@@ -295,11 +296,11 @@ int main(int argc, char **argv) {
   // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
   // 回す。全関数の AST・IR を同時保持しないので、ピークメモリが「ファイル全体」でなく
   // 「最大の 1 関数 + 永続テーブル + トークンウィンドウ」になる (8MB 級のタイト環境向け)。
-  // 非関数のトップレベル宣言は ps_next_function 内で副作用処理され、データセクションは末尾。
+  // 非関数のトップレベル宣言はfrontend item driverが逐次適用し、データセクションは末尾。
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
-  ps_stream_t stream = {0};
-  ps_stream_begin(&stream, tk_ctx, tok);
-  for (node_t *fn; (fn = ps_next_function(&stream)) != NULL; ) {
+  psx_frontend_stream_t stream = {0};
+  psx_frontend_stream_begin(&stream, tk_ctx, tok);
+  for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
     if (!wasm_emit_function_direct(fn, wasm_object_mode)) {
 #else
@@ -312,9 +313,9 @@ int main(int argc, char **argv) {
       free(source);
       return 1;
     }
-    ps_free_processed_ast();  // この関数の AST (parser arena) を解放
+    psx_frontend_free_processed_ast();
   }
-  ps_stream_end(&stream);
+  psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
 #ifdef AGC_TARGET_WASM32

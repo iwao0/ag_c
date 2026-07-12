@@ -3,27 +3,22 @@
 #include "arena.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"
-#include "../semantic/semantic_pass.h"
 #include "static_assert_declaration.h"
 #include "decl.h"
 #include "core.h"
 #include "alignas_value.h"
-#include "anon_tag.h"
 #include "array_suffixes.h"
 #include "diag.h"
 #include "declarator_syntax.h"
-#include "../semantic/declaration_application.h"
 #include "dynarray.h"
 #include "enum_const.h"
 #include "expr.h"
 #include "global_registry.h"
-#include "initializer_syntax.h"
+#include "lvar_internal.h"
 #include "ret_pointee_array.h"
 #include "stmt.h"
-#include "struct_layout.h"
 #include "type.h"
 #include "../diag/diag.h"
-#include "../declaration_pipeline.h"
 #include "../tokenizer/tokenizer.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
@@ -212,88 +207,12 @@ psx_float_lit_view_t ps_float_lit_view(const float_lit_t *lit) {
   };
 }
 
-typedef struct {
-  psx_declaration_phase_t phase;
-  token_t *typespec_start;
-  int is_extern;
-  int is_static;
-  int is_thread_local;
-  int is_typedef;
-} toplevel_decl_spec_t;
-
-static node_t *funcdef(void);
-static void parse_toplevel_decl_after_type(const toplevel_decl_spec_t *spec);
-static int has_next_toplevel_declarator(void);
-typedef psx_parsed_declarator_t toplevel_declarator_head_t;
-static toplevel_declarator_head_t parse_toplevel_declarator_head(const toplevel_decl_spec_t *spec,
-                                                                 int require_name);
-static void parse_toplevel_declarator_stmt(const toplevel_decl_spec_t *spec,
-                                           void (*apply)(const toplevel_decl_spec_t *,
-                                                         toplevel_declarator_head_t));
-static void parse_toplevel_declarator_list_with_apply(const toplevel_decl_spec_t *spec,
-                                                      void (*apply)(const toplevel_decl_spec_t *,
-                                                                    toplevel_declarator_head_t));
-static void apply_toplevel_typedef_from_head(const toplevel_decl_spec_t *spec,
-                                             toplevel_declarator_head_t head);
-static void define_toplevel_typedef_from_declarator(const toplevel_decl_spec_t *spec,
-                                                    toplevel_declarator_head_t head);
-static void register_toplevel_typedef_name(
-    token_ident_t *name, psx_type_t *derived_type);
-static psx_type_t *resolve_toplevel_declarator_type(
-    const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head);
-static void guard_toplevel_declarator_count(int declarator_count);
-static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
-                                            toplevel_declarator_head_t head);
-static void parse_toplevel_object_initializer(
-    void *context, psx_type_t *type,
-    psx_parsed_initializer_t *initializer);
-static int parse_toplevel_declaration_like(void);
-static void parse_toplevel_decl_spec(toplevel_decl_spec_t *spec);
-static void dispose_toplevel_decl_spec(toplevel_decl_spec_t *spec);
-static int is_toplevel_decl_like_start(token_t *tok);
-static void consume_toplevel_typedef_storage_class(toplevel_decl_spec_t *spec);
-static void reset_toplevel_decl_spec_state(toplevel_decl_spec_t *spec);
-static void parse_toplevel_tag_decl(void);
-static void emit_decl_name_required_diag(void);
-static int is_toplevel_function_signature(token_t *tok);
-static int is_tag_return_function_signature(token_t *tok);
-static void parse_func_decl_spec(psx_declaration_phase_t *phase);
-static token_t *skip_decl_prefix_lookahead(token_t *t);
 static token_kind_t parse_atomic_type_specifier(void);
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out);
 static void skip_cv_qualifiers_into_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
-typedef struct {
-  token_ident_t *name;
-  const char *diag_context;
-  psx_type_t *return_type;
-  int is_variadic;
-  int is_definition;
-  int nargs;
-  node_t **args;
-  node_func_t *func_node;
-} psx_function_signature_t;
-
-static void register_toplevel_function_prototype(
-    token_ident_t *name, const psx_type_t *function_type);
-static void register_function_signature(const psx_function_signature_t *sig);
 static inline token_t *curtok(void);
 static inline void set_curtok(token_t *tok);
-
-static void reset_toplevel_decl_spec_state(toplevel_decl_spec_t *spec) {
-  /* tag/typedefを含む全経路でstorage classを宣言ごとに初期化する。 */
-  memset(spec, 0, sizeof(*spec));
-}
-
-void ps_reset_translation_unit_state(void) {
-  ps_global_registry_reset_translation_unit();
-  psx_anon_tag_reset_translation_unit_state();
-  psx_expr_reset_translation_unit_state();
-  psx_decl_reset_translation_unit_state();
-  psx_ctx_reset_translation_unit_scope();
-  pragma_pack_reset();
-  arena_free_all();
-}
 
 bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -416,41 +335,6 @@ void psx_consume_pointer_prefix(int *is_ptr) {
   (void)psx_consume_pointer_prefix_counted(is_ptr);
 }
 
-static token_t *skip_decl_prefix_lookahead(token_t *t) {
-  while (t && psx_is_decl_prefix_token(t->kind)) {
-    if (t->kind == TK_ALIGNAS) {
-      t = t->next;
-      if (!t || t->kind != TK_LPAREN) return t;
-      int depth = 1;
-      t = t->next;
-      while (t && depth > 0) {
-        if (t->kind == TK_LPAREN) depth++;
-        else if (t->kind == TK_RPAREN) depth--;
-        t = t->next;
-      }
-      continue;
-    }
-    if (t->kind == TK_ATOMIC && t->next && t->next->kind == TK_LPAREN) {
-      int depth = 0;
-      t = t->next;
-      while (t) {
-        if (t->kind == TK_LPAREN) depth++;
-        else if (t->kind == TK_RPAREN) {
-          depth--;
-          if (depth == 0) {
-            t = t->next;
-            break;
-          }
-        }
-        t = t->next;
-      }
-      continue;
-    }
-    t = t->next;
-  }
-  return t;
-}
-
 static token_kind_t parse_atomic_type_specifier(void) {
   if (curtok()->kind != TK_ATOMIC) return TK_EOF;
   set_curtok(curtok()->next);
@@ -472,39 +356,6 @@ static token_kind_t parse_atomic_type_specifier(void) {
   }
   tk_expect(')');
   return inner;
-}
-
-/* 先頭の storage-class / cv 修飾子を読み飛ばした先に tag キーワード
- * (struct/union/enum) が来るか先読みする。`static struct S g` のように
- * 修飾子が tag の前にある形を判定する。builtin 型 (`static int`) は
- * psx_consume_type_kind_ex が内部で skip するためここでは対象にしない。 */
-static void parse_toplevel_decl_spec(toplevel_decl_spec_t *spec) {
-  reset_toplevel_decl_spec_state(spec);
-  consume_toplevel_typedef_storage_class(spec);
-  psx_parse_declaration_phase_syntax(&spec->phase, NULL);
-  const psx_type_spec_result_t *type_spec =
-      &spec->phase.syntax.type_spec;
-  spec->is_extern = type_spec->is_extern ? 1 : 0;
-  spec->is_static = type_spec->is_static ? 1 : 0;
-  spec->is_thread_local = type_spec->is_thread_local ? 1 : 0;
-  int standalone_tag =
-      spec->phase.syntax.source == PSX_PARSED_DECL_TYPE_TAG &&
-      curtok()->kind == TK_SEMI;
-  if (!psx_apply_declaration_phase(&spec->phase, standalone_tag)) {
-    ps_diag_ctx(curtok(), "decl",
-                 "canonical top-level base type resolution failed");
-  }
-}
-
-static void dispose_toplevel_decl_spec(toplevel_decl_spec_t *spec) {
-  if (!spec) return;
-  psx_dispose_declaration_phase(&spec->phase);
-}
-
-static void consume_toplevel_typedef_storage_class(toplevel_decl_spec_t *spec) {
-  if (curtok()->kind != TK_TYPEDEF) return;
-  spec->is_typedef = 1;
-  set_curtok(curtok()->next);
 }
 
 // 現在のトークンが #pragma pack マーカーなら対応する関数を呼んで消費し true を返す。
@@ -536,478 +387,72 @@ bool psx_try_consume_pragma_pack_marker(void) {
 }
 
 // program = funcdef*
-void ps_stream_begin(ps_stream_t *stream, tokenizer_context_t *tk_ctx, token_t *start) {
+void psx_parser_stream_begin(
+    psx_parser_stream_t *stream,
+    tokenizer_context_t *tk_ctx, token_t *start,
+    const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
   if (stream) {
     stream->tk_ctx = tk_ctx;
+    stream->toplevel_declarations = toplevel_declarations;
   }
   if (tk_ctx) {
     tk_set_current_token_ctx(tk_ctx, start);
   }
   tk_set_current_token(start);
-  /* 翻訳単位境界で関数名テーブルを初期化。
-   * テストが同プロセスで複数プログラムを処理しても前回の登録が漏れないようにする。 */
-  psx_ctx_reset_function_names();
 }
 
-node_t *ps_next_function(ps_stream_t *stream) {
+int ps_parse_next_toplevel_item(
+    psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
+  if (!item) return 0;
+  *item = (psx_parsed_toplevel_item_t){0};
   while (!tk_at_eof()) {
     if (psx_try_consume_pragma_pack_marker()) continue;
-    if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-      if (!is_tag_return_function_signature(curtok())) {
-        parse_toplevel_tag_decl();
-        continue;
+    if (curtok()->kind == TK_STATIC_ASSERT) {
+      item->kind = PSX_TOPLEVEL_ITEM_STATIC_ASSERT;
+      psx_parse_static_assert_syntax(&item->value.static_assertion);
+      if (stream && stream->tk_ctx) {
+        tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
       }
-      // struct/union Tag func(...) — 戻り値型がタグ型の関数定義: funcdef() へ fall through
+      return 1;
     }
-    if (parse_toplevel_declaration_like()) {
-      continue;
+    psx_parsed_toplevel_declaration_t declaration;
+    ps_parse_toplevel_declaration_head_syntax(&declaration);
+    psx_skip_gnu_attributes();
+    if (!declaration.is_standalone_tag && curtok()->kind == TK_LBRACE) {
+      psx_parsed_declarator_t *declarator = &declaration.declarators[0];
+      if (declaration.is_typedef ||
+          declarator->function_suffix_count <= 0) {
+        ps_diag_ctx(declarator->diagnostic_token, "funcdef", "%s",
+                    diag_message_for(
+                        DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+      }
+      item->kind = PSX_TOPLEVEL_ITEM_FUNCTION_HEADER;
+      ps_move_toplevel_declaration_head_to_function_definition(
+          &declaration, &item->value.function_header);
+    } else {
+      item->kind = PSX_TOPLEVEL_ITEM_DECLARATION;
+      item->value.declaration = declaration;
+      ps_finish_toplevel_declaration_syntax(
+          &item->value.declaration,
+          stream ? stream->toplevel_declarations : NULL);
     }
-    node_t *fn = funcdef();
-    if (!fn) continue; // 関数プロトタイプ宣言はASTへ載せない
     if (stream && stream->tk_ctx) {
       tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
     }
-    return fn;
+    return 1;
   }
   if (stream && stream->tk_ctx) {
     tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
   }
-  return NULL;
+  item->kind = PSX_TOPLEVEL_ITEM_EOF;
+  return 0;
 }
 
-void ps_stream_end(ps_stream_t *stream) {
-  psx_ctx_emit_deferred_parser_warnings();
+void psx_parser_stream_end(psx_parser_stream_t *stream) {
   if (stream) {
     stream->tk_ctx = NULL;
+    stream->toplevel_declarations = NULL;
   }
-}
-
-void ps_free_processed_ast(void) {
-  /* 直前に処理した関数 (および直前の非関数トップレベル宣言) の AST を解放する。
-   * AST ノードは全て parser arena 上にあり、関数間で参照されない (永続データ —
-   * 文字列ラベル・グローバル名・mangled static-local 名等 — は arena 外)。
-   * codegen が IR 経由で AST の funcname を alias するため、必ず 1 関数の codegen を
-   * 終えてから呼ぶこと。 */
-  arena_free_all();
-}
-
-node_t **ps_program_ctx(tokenizer_context_t *tk_ctx, token_t *start) {
-  ps_stream_t stream = {0};
-  ps_stream_begin(&stream, tk_ctx, start);
-  int cap = 16;
-  node_t **codes = calloc(cap, sizeof(node_t*));
-  int i = 0;
-  node_t *fn;
-  while ((fn = ps_next_function(&stream)) != NULL) {
-    if (i >= cap - 1) { // NULL終端用
-      cap = pda_next_cap(cap, i + 2);
-      codes = pda_xreallocarray(codes, (size_t)cap, sizeof(node_t *));
-    }
-    codes[i++] = fn;
-  }
-  codes[i] = NULL;
-  psx_semantic_analyze_program(codes);
-  ps_stream_end(&stream);
-  return codes;
-}
-
-node_t **ps_program_from(token_t *start) {
-  /* 新しいコンパイル開始時に、前回のパースが残した診断フラグをクリアする。
-   * これは「同一プロセス内で複数回 ps_program_from を呼ぶ」ユニットテスト用のリセット
-   * (実コンパイルは 1 ファイル 1 プロセスなので影響なし)。これがないと前回パースの
-   * `int g=1;` の has_init=1 や前回 funcdef の is_defined=1 が次回パースに漏れて、
-   * 重複定義チェック等が誤って発火する。 */
-  psx_global_registry_reset_diag_state();
-  ps_ctx_reset_function_diag_state();
-  ps_ctx_reset_tag_diag_state();
-  return ps_program_ctx(NULL, start);
-}
-
-node_t **ps_program(void) {
-  return ps_program_ctx(NULL, tk_get_current_token());
-}
-
-/* 型 spec (builtin / typedef 名 / タグ) の直後 t から、関数宣言子のシグネチャかを判定する。
- * `*name(` / `(*f())(...)` (関数ポインタ・配列へのポインタ戻り) / `(name)(...)` を扱う。
- * builtin/typedef/tag のどの戻り型でも同一なので共有する (tag 版に `(*...)` が無かったため
- * `struct S (*f())[3]` が変数と誤判定され E2006 になっていた)。 */
-static int is_function_declarator_sig(token_t *t) {
-  while (t && (t->kind == TK_MUL || t->kind == TK_CONST || t->kind == TK_VOLATILE)) t = t->next;
-  if (!t) return 0;
-  if (t->kind == TK_IDENT) {
-    return t->next && t->next->kind == TK_LPAREN;
-  }
-  // function declarator returning function pointer / pointer-to-array:
-  //   int (*f(void))(int)  /  int (*f(void))[3]  /  int (*(*f(void))(int))[3]
-  if (t->kind == TK_LPAREN && t->next && t->next->kind == TK_MUL) {
-    int depth = 0;
-    int saw_name = 0;
-    int saw_param = 0;
-    token_t *u = t;
-    while (u) {
-      if (u->kind == TK_LPAREN) {
-        if (depth >= 1 && saw_name && !saw_param) saw_param = 1;
-        depth++;
-      } else if (u->kind == TK_RPAREN) {
-        depth--;
-        if (depth == 0) {
-          u = u->next;
-          break;
-        }
-      } else if (depth >= 1 && !saw_name && u->kind == TK_IDENT) {
-        // name must be followed by a parameter list: f(...)
-        if (u->next && u->next->kind == TK_LPAREN) {
-          saw_name = 1;
-        }
-      }
-      u = u->next;
-    }
-    if (!saw_name || !saw_param || !u) return 0;
-    return u->kind == TK_LPAREN || u->kind == TK_LBRACKET;
-  }
-  // parenthesized function declarator name: int (f)(...)
-  if (t->kind == TK_LPAREN) {
-    int depth = 0;
-    while (t && t->kind == TK_LPAREN) {
-      depth++;
-      t = t->next;
-    }
-    if (!t || t->kind != TK_IDENT) return 0;
-    t = t->next;
-    while (depth-- > 0) {
-      if (!t || t->kind != TK_RPAREN) return 0;
-      t = t->next;
-    }
-    return t && t->kind == TK_LPAREN;
-  }
-  return 0;
-}
-
-/* 型指定子の後、宣言子列にトップレベル `,` があるか (`int f(int), g(int), a;` 等)。
- * 関数定義 `int main() {` は `)` の次が `{` なので偽。単一プロトタイプ `int f(int);` も偽。 */
-static int toplevel_decl_has_comma_separated_declarators(token_t *tok) {
-  token_t *t = skip_decl_prefix_lookahead(tok);
-  if (!t) return 0;
-  if (psx_ctx_is_tag_keyword(t->kind)) {
-    t = t->next;
-    if (t && t->kind == TK_IDENT) t = t->next;
-  } else if (psx_ctx_is_type_token(t->kind)) {
-    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
-  } else if (psx_ctx_is_typedef_name_token(t)) {
-    t = t->next;
-  } else {
-    return 0;
-  }
-  if (!t) return 0;
-  int depth = 0;
-  for (; t && t->kind != TK_EOF; t = t->next) {
-    if (depth == 0 && t->kind == TK_SEMI) return 0;
-    if (depth == 0 && t->kind == TK_LBRACE) return 0;
-    if (depth == 0 && t->kind == TK_COMMA) return 1;
-    if (t->kind == TK_LPAREN || t->kind == TK_LBRACKET) depth++;
-    else if (t->kind == TK_RPAREN || t->kind == TK_RBRACKET) depth--;
-  }
-  return 0;
-}
-
-static int is_toplevel_function_signature(token_t *tok) {
-  if (!tok) return 0;
-  token_t *t = skip_decl_prefix_lookahead(tok);
-  if (!t) return 0;
-  /* タグ戻り型 (`static struct S *g(void){...}`): storage class を飛ばした後がタグ
-   * キーワードなら専用判定へ委譲する。これがないと struct/union/enum はここで弾かれ、
-   * `static struct S *g()` がオブジェクト宣言と誤判定され `;` 期待で E2006 になっていた。 */
-  if (psx_ctx_is_tag_keyword(t->kind)) {
-    return is_tag_return_function_signature(t);
-  }
-  if (psx_ctx_is_type_token(t->kind)) {
-    // 複合型キーワード（unsigned long 等）を全てスキップ
-    while (t && psx_ctx_is_type_token(t->kind)) t = t->next;
-  } else if (psx_ctx_is_typedef_name_token(t)) {
-    t = t->next; // typedef 名は1トークン
-  } else {
-    return 0;
-  }
-  return is_function_declarator_sig(t);
-}
-
-// struct/union Tag [*] ident ( のパターンを検出（戻り値型がタグ型の関数定義）
-static int is_tag_return_function_signature(token_t *tok) {
-  if (!tok || !psx_ctx_is_tag_keyword(tok->kind)) return 0;
-  token_t *t = tok->next; // skip struct/union keyword
-  if (!t) return 0;
-  if (t->kind == TK_IDENT) t = t->next; // optional tag name
-  if (!t) return 0;
-  if (t->kind == TK_LBRACE) {
-    int depth = 1;
-    t = t->next;
-    while (t && depth > 0) {
-      if (t->kind == TK_LBRACE) depth++;
-      else if (t->kind == TK_RBRACE) depth--;
-      t = t->next;
-    }
-    if (!t) return 0;
-  }
-  /* タグ名/本体の後は builtin/typedef と同じ宣言子判定。これで `struct S (*f())[3]`
-   * (配列へのポインタ戻り) や `struct S (*f())(int)` (関数ポインタ戻り) も検出できる。 */
-  return is_function_declarator_sig(t);
-}
-
-static void parse_toplevel_declarator_list(const toplevel_decl_spec_t *spec) {
-  parse_toplevel_declarator_list_with_apply(
-      spec, apply_toplevel_object_from_head);
-}
-
-static void parse_toplevel_declarator_list_with_apply(const toplevel_decl_spec_t *spec,
-                                                      void (*apply)(const toplevel_decl_spec_t *,
-                                                                    toplevel_declarator_head_t)) {
-  int declarator_count = 0;
-  for (;;) {
-    declarator_count++;
-    guard_toplevel_declarator_count(declarator_count);
-    toplevel_declarator_head_t head =
-        parse_toplevel_declarator_head(spec, 1);
-    apply(spec, head);
-    ps_dispose_declarator_syntax(&head);
-    if (!has_next_toplevel_declarator()) break;
-  }
-}
-
-static void guard_toplevel_declarator_count(int declarator_count) {
-  if (declarator_count <= PS_MAX_DECLARATOR_COUNT) return;
-  ps_diag_ctx(curtok(), "decl",
-               diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
-               PS_MAX_DECLARATOR_COUNT);
-}
-
-static void parse_toplevel_object_initializer(
-    void *context, psx_type_t *type,
-    psx_parsed_initializer_t *initializer) {
-  (void)context;
-  if (!initializer || !initializer->has_initializer) return;
-  token_t *assign_tok = initializer->assign_tok;
-  tk_expect('=');
-  /* ファイルスコープの複合リテラル初期化子 `T g = (T){...};` は `T g = {...};` と
-   * 等価 (C11 6.5.2.5)。先頭の `(型)` を読み飛ばして既存の brace 初期化経路に渡す。
-   * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。
-   * ただし変数がポインタの場合 (`int *p = (int[]){...}`)、cast 型と変数型が違うため strip
-   * してしまうと「ポインタを brace 初期化子で初期化」と解釈され先頭要素値がポインタスロット
-   * に書き込まれて SIGBUS になる。集約 (配列 / struct 値 / union 値) のときだけ strip し、
-   * ポインタ・スカラ変数では式経路 (ps_expr_assign) で compound literal 経路に乗せて hidden
-   * gvar を作る。スカラ変数 `int g = (int){5}` は式経路の compound literal 短絡
-   * (expr.c の `!is_arr && !want_addr && ND_NUM` 分岐) が ND_NUM を直接返すので動作する。 */
-  if (curtok()->kind == TK_LPAREN) {
-    token_t *t = curtok()->next;
-    int depth = 1;
-    while (t && depth > 0) {
-      if (t->kind == TK_LPAREN) depth++;
-      else if (t->kind == TK_RPAREN) { depth--; if (depth == 0) break; }
-      t = t->next;
-    }
-    if (t && t->kind == TK_RPAREN && t->next && t->next->kind == TK_LBRACE) {
-      /* strip 判定: 集約 (配列 / struct 値 / union 値) なら常に OK。ポインタ・スカラ var では、
-       * brace が単一文字列 (`char *p = (char[6]){"hi"}` の "hi" のような形) ならポインタ初期化
-       * として等価なので strip OK。複数値の `int *p = (int[]){10,20,30}` 形は strip すると先頭
-       * 要素値がポインタスロットに書き込まれて SIGBUS なので skip し、式経路で compound literal
-       * を hidden gvar に materialize させる。 */
-      int target_is_aggregate =
-          type && (type->kind == PSX_TYPE_ARRAY || ps_type_is_tag_aggregate(type));
-      int may_strip = target_is_aggregate;
-      if (!may_strip) {
-        token_t *brace_open = t->next;            /* '{' */
-        token_t *first = brace_open->next;        /* 中身先頭 */
-        if (first && first->kind == TK_STRING && first->next &&
-            first->next->kind == TK_RBRACE) {
-          may_strip = 1;  /* {"str"} 単一文字列 → ポインタ初期化と等価 */
-        }
-      }
-      if (may_strip) {
-        set_curtok(t->next);  /* `(型)` を捨てて `{` から始める */
-      }
-    }
-  }
-  ps_parse_initializer_syntax_value(initializer, assign_tok);
-}
-
-static void apply_toplevel_object_from_head(const toplevel_decl_spec_t *spec,
-                                            toplevel_declarator_head_t head) {
-  psx_type_t *canonical_type = resolve_toplevel_declarator_type(spec, head);
-  psx_parsed_initializer_t initializer;
-  ps_prepare_optional_initializer_syntax(&initializer);
-  if (canonical_type && canonical_type->kind == PSX_TYPE_FUNCTION) {
-    register_toplevel_function_prototype(head.identifier, canonical_type);
-    parse_toplevel_object_initializer(NULL, canonical_type, &initializer);
-    return;
-  }
-  psx_global_declaration_pipeline_result_t result;
-  if (!psx_apply_global_declaration_pipeline(
-          &(psx_global_declaration_pipeline_request_t){
-              .name = head.identifier->str,
-              .name_len = head.identifier->len,
-              .type = canonical_type,
-              .is_extern_decl = spec->is_extern,
-              .is_static = spec->is_static,
-              .is_thread_local = spec->is_thread_local,
-              .initializer = &initializer,
-              .parse_initializer = parse_toplevel_object_initializer,
-              .diag_tok = (token_t *)head.identifier,
-          },
-          &result)) {
-    ps_diag_ctx((token_t *)head.identifier, "decl",
-                 "global declaration pipeline failed");
-  }
-}
-
-static toplevel_declarator_head_t parse_toplevel_declarator_head(
-    const toplevel_decl_spec_t *spec, int require_name) {
-  (void)spec;
-  toplevel_declarator_head_t out =
-      ps_parse_declarator_syntax_tree();
-  if (!out.identifier && require_name) emit_decl_name_required_diag();
-  return out;
-}
-
-static void define_toplevel_typedef_from_declarator(const toplevel_decl_spec_t *spec,
-                                                    toplevel_declarator_head_t head) {
-  register_toplevel_typedef_name(
-      head.identifier, resolve_toplevel_declarator_type(spec, head));
-}
-
-static void register_toplevel_typedef_name(
-    token_ident_t *name, psx_type_t *derived_type) {
-  psx_apply_parsed_typedef_declaration(
-      name->str, name->len, derived_type, curtok());
-}
-
-static psx_type_t *resolve_toplevel_declarator_type(
-    const toplevel_decl_spec_t *spec, toplevel_declarator_head_t head) {
-  if (!spec) return NULL;
-  return psx_apply_parsed_declarator_type(
-      spec->phase.base_type, &head);
-}
-
-static void apply_toplevel_typedef_from_head(const toplevel_decl_spec_t *spec,
-                                             toplevel_declarator_head_t head) {
-  define_toplevel_typedef_from_declarator(spec, head);
-}
-
-static int has_next_toplevel_declarator(void) {
-  return tk_consume(',');
-}
-
-static void register_function_signature(const psx_function_signature_t *sig) {
-  token_ident_t *tok = sig->name;
-  psx_type_t *param_types[16] = {0};
-  int tracked_param_count = sig->nargs > 16 ? 16 : sig->nargs;
-  for (int i = 0; i < tracked_param_count; i++)
-    param_types[i] = sig->args ? ps_node_get_type(sig->args[i]) : NULL;
-  if (!psx_apply_function_declaration_pipeline(
-      &(psx_function_declaration_pipeline_request_t){
-          .name = tok->str,
-          .name_len = tok->len,
-          .return_type = sig->return_type,
-          .parameter_types = param_types,
-          .parameter_count = sig->nargs,
-          .is_variadic = sig->is_variadic,
-          .is_definition = sig->is_definition,
-          .function_node = sig->func_node,
-          .diag_context = sig->diag_context,
-          .diag_tok = (token_t *)tok,
-      })) {
-    ps_diag_ctx((token_t *)tok, sig->diag_context,
-                 "function declaration pipeline failed");
-  }
-}
-
-/* `int f(int), g(int), a;` のf/gは、共通declarator syntaxから得た
- * canonical function typeをそのままsemantic declarationへ渡す。 */
-static void register_toplevel_function_prototype(
-    token_ident_t *tok, const psx_type_t *function_type) {
-  if (!tok || !function_type || function_type->kind != PSX_TYPE_FUNCTION)
-    return;
-  if (!psx_apply_function_declaration_pipeline(
-      &(psx_function_declaration_pipeline_request_t){
-          .name = tok->str,
-          .name_len = tok->len,
-          .return_type = function_type->base,
-          .parameter_types = function_type->param_types,
-          .parameter_count = function_type->param_count,
-          .is_variadic = function_type->is_variadic_function,
-          .diag_context = "decl",
-          .diag_tok = (token_t *)tok,
-      })) {
-    ps_diag_ctx((token_t *)tok, "decl",
-                 "function declaration pipeline failed");
-  }
-}
-
-static void emit_decl_name_required_diag(void) {
-  diag_emit_tokf(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, curtok(), "%s",
-                 diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
-}
-
-static void parse_toplevel_decl_after_type(const toplevel_decl_spec_t *spec) {
-  if (spec->is_typedef) {
-    parse_toplevel_declarator_stmt(spec, apply_toplevel_typedef_from_head);
-    return;
-  }
-  /* typedefのpointer/array/function構造はbase_decl_typeに保持される。 */
-  parse_toplevel_declarator_stmt(spec, apply_toplevel_object_from_head);
-}
-
-static void parse_toplevel_declarator_stmt(const toplevel_decl_spec_t *spec,
-                                           void (*apply)(const toplevel_decl_spec_t *,
-                                                         toplevel_declarator_head_t)) {
-  parse_toplevel_declarator_list_with_apply(spec, apply);
-  tk_expect(';');
-}
-
-static int parse_toplevel_declaration_like(void) {
-  if (curtok()->kind == TK_STATIC_ASSERT) {
-    psx_parse_static_assert_declaration();
-    return 1;
-  }
-  if (psx_ctx_is_tag_keyword(curtok()->kind)) {
-    // struct/union/enum 開始は ps_program() 側の専用経路で処理する。
-    return 0;
-  }
-  if (is_toplevel_decl_like_start(curtok()) &&
-      (!is_toplevel_function_signature(curtok()) ||
-       toplevel_decl_has_comma_separated_declarators(curtok()))) {
-    /* _Generic 用: 型シグネチャ文字列化のため型開始トークンを記録 (オブジェクト宣言のみ)。 */
-    token_t *typespec_start = (curtok()->kind == TK_TYPEDEF) ? NULL : curtok();
-    toplevel_decl_spec_t spec;
-    parse_toplevel_decl_spec(&spec);
-    spec.typespec_start = typespec_start;
-    parse_toplevel_decl_after_type(&spec);
-    dispose_toplevel_decl_spec(&spec);
-    return 1;
-  }
-  return 0;
-}
-
-static int is_toplevel_decl_like_start(token_t *tok) {
-  if (!tok) return 0;
-  return tok->kind == TK_TYPEDEF ||
-         psx_ctx_is_type_token(tok->kind) ||
-         psx_is_decl_prefix_token(tok->kind) ||
-         psx_ctx_is_typedef_name_token(tok);
-}
-
-
-static void parse_toplevel_tag_decl(void) {
-  toplevel_decl_spec_t spec;
-  token_t *typespec_start = curtok();
-  parse_toplevel_decl_spec(&spec);
-  spec.typespec_start = typespec_start;
-  if (spec.phase.state == PSX_DECLARATION_PHASE_STANDALONE_TAG) {
-    tk_expect(';');
-    dispose_toplevel_decl_spec(&spec);
-    return;
-  }
-  parse_toplevel_declarator_list(&spec);
-  tk_expect(';');
-  dispose_toplevel_decl_spec(&spec);
 }
 
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out) {
@@ -1246,31 +691,14 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
 }
 
 
-static int is_func_ret_typedef_name(token_t *token, void *context) {
-  (void)context;
-  return psx_ctx_is_typedef_name_token(token);
-}
-
-static void parse_func_decl_spec(psx_declaration_phase_t *phase) {
-  psx_parse_declaration_phase_syntax(
-      phase,
-      &(psx_decl_specifier_syntax_options_t){
-          .is_typedef_name = is_func_ret_typedef_name,
-          .allow_implicit_int = 1,
-      });
-  if (!psx_apply_declaration_phase(phase, 0)) {
-    ps_diag_ctx(curtok(), "funcdef", "%s",
-                 "canonical function return base type resolution failed");
-  }
-}
-
 // funcdef = "int"? ident "(" params? ")" (";" | "{" stmt* "}")
 // params  = "int"? ident ("," "int"? ident)*
 /* 関数本体の `{ ... }` を 1 つの node_block_t にパースする。
  * 既に opening `{` は呼出側が consume 済みの前提。block scope を enter / leave し、
  * 後段 semantic pass 用に各 statement の診断 token / usage region を保持する。
  * pragma pack マーカーは透過に消費する。 */
-static node_block_t *parse_funcdef_body_block(void) {
+static node_block_t *parse_funcdef_body_block(
+    const psx_local_declaration_callbacks_t *local_declarations) {
   ps_ctx_enter_block_scope();
   node_block_t *body = arena_alloc(sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
@@ -1286,7 +714,7 @@ static node_block_t *parse_funcdef_body_block(void) {
     }
     token_t *stmt_tok = curtok();
     psx_lvar_usage_region_t *region = psx_decl_begin_lvar_usage_region();
-    body->body[i] = psx_stmt_stmt();
+    body->body[i] = psx_stmt_stmt(local_declarations);
     psx_decl_end_lvar_usage_region(region);
     if (body->body[i]) {
       body->body[i]->tok = stmt_tok;
@@ -1299,117 +727,20 @@ static node_block_t *parse_funcdef_body_block(void) {
   return body;
 }
 
-static node_t *funcdef(void) {
-  psx_declaration_phase_t return_phase;
-  parse_func_decl_spec(&return_phase);
-  int fn_is_static =
-      return_phase.syntax.type_spec.is_static ? 1 : 0;
-  int saw_implicit_int_return =
-      return_phase.syntax.source ==
-      PSX_PARSED_DECL_TYPE_IMPLICIT_INT;
-  // 関数ごとにローカル変数テーブルをリセット
-  psx_decl_reset_locals();
-  psx_ctx_reset_function_scope();
-
-  psx_parsed_declarator_t declarator =
-      psx_parse_function_definition_declarator_syntax_tree();
-  if (!declarator.identifier || declarator.function_suffix_count <= 0) {
-    ps_diag_ctx(declarator.diagnostic_token, "funcdef", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
-  }
-  psx_function_definition_pipeline_result_t definition;
-  if (!psx_apply_function_definition_pipeline(
-          &(psx_function_definition_pipeline_request_t){
-              .base_type = return_phase.base_type,
-              .declarator = &declarator,
-          },
-          &definition)) {
-    ps_diag_ctx(declarator.diagnostic_token, "funcdef",
-                 "function definition pipeline failed");
-  }
-  psx_skip_gnu_attributes();
-  token_ident_t *tok = declarator.identifier;
-  int is_variadic = definition.is_variadic;
-  int has_unnamed_param = definition.has_unnamed_parameter;
-  node_t **args = definition.args;
-  int nargs = definition.nargs;
-  psx_type_t *return_type = definition.return_type;
-  ps_dispose_declarator_syntax(&declarator);
-  psx_dispose_declaration_phase(&return_phase);
-  if (!return_type) {
-    ps_diag_ctx(curtok(), "funcdef", "%s",
-                 "canonical function return type construction failed");
-  }
-  int ret_is_ptr = return_type->kind == PSX_TYPE_POINTER;
-  tk_float_kind_t ret_fp_kind =
-      return_type->kind == PSX_TYPE_FLOAT ||
-              return_type->kind == PSX_TYPE_COMPLEX
-          ? return_type->fp_kind
-          : TK_FLOAT_KIND_NONE;
-  int ret_is_complex = return_type->kind == PSX_TYPE_COMPLEX;
-  node_func_t *node = arena_alloc(sizeof(node_func_t));
-  node->base.kind = ND_FUNCDEF;
-  node->base.tok = (token_t *)tok;
-  node->base.is_implicit_int_return = saw_implicit_int_return ? 1 : 0;
-  /* 戻り型の fp_kind をノードへ記録。IR builder の ir_type_from_node が
-   * 関数の戻り型 (IR_TY_F32/F64) を決定し、callee が fp レジスタで返すために必要。
-   * ただし `double *g()` のようにポインタを返す関数は戻り値が x0 のポインタ値なので
-   * fp_kind を立ててはいけない (立てると funcall が d0 から読み SIGSEGV)。pointee が
-   * fp であることは別途 ret_token_kind 経由 (ps_node_pointee_fp_kind) で扱う。 */
-  node->base.fp_kind = ret_is_ptr ? TK_FLOAT_KIND_NONE : ret_fp_kind;
-  node->base.is_complex = ret_is_complex;
-  node->funcname = tok->str;
-  node->funcname_len = tok->len;
-  psx_function_signature_t sig = {0};
-  sig.name = tok;
-  sig.diag_context = "funcdef";
-  sig.is_variadic = is_variadic;
-  sig.nargs = nargs;
-  sig.args = args;
-  sig.func_node = node;
-  sig.return_type = return_type;
-  sig.is_definition = curtok()->kind != TK_SEMI;
-  register_function_signature(&sig);
-  ps_decl_set_current_funcname(tok->str, tok->len); // __func__ / static local mangle 用
-  node->is_static = fn_is_static;
-  node->args = args;
-  node->is_variadic = is_variadic;
-  node->nargs = nargs;
-  // 可変長引数関数: ローカル変数スペースを引数レジスタ保存領域の後ろに移動する
-  if (node->is_variadic) {
-    psx_decl_reserve_variadic_regs();
-  }
-
-  // 関数プロトタイプ宣言（本体なし）
-  if (tk_consume(';')) {
-    /* __func__ 用に立てた現在関数名を NULL に戻す。プロトタイプの後はファイルスコープ
-     * なので、ここを残すと後続のファイルスコープ複合リテラル `&(int){5}` 等が「関数内」と
-     * 誤判定されローカル lvar 経路に乗ってしまう (assert.h の宣言後に顕在化)。 */
-    ps_decl_set_current_funcname(NULL, 0);
-    return NULL;
-  }
-  if (has_unnamed_param) {
-    // 関数定義の仮引数では識別子必須。
-    psx_diag_missing(curtok(), diag_text_for(DIAG_TEXT_PARAMETER));
-  }
-  // 関数本体 (ブロック)
+node_t *ps_parse_function_definition_body(
+    psx_parser_stream_t *stream, node_func_t *function,
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  if (!function) return NULL;
   tk_expect('{');
-  node_block_t *body = parse_funcdef_body_block();
-  node->base.rhs = (node_t *)body;
+  function->base.rhs =
+      (node_t *)parse_funcdef_body_block(local_declarations);
   psx_ctx_validate_goto_refs();
-
-  /* IR builder (Phase 4d-1〜) が関数ごとの lvar リストを必要とするため、
-   * 関数解析完了時点の all_locals 先頭を node に保存しておく。
-   * psx_decl_reset_locals は次の関数開始時に呼ばれるが、それは静的変数を
-   * NULL に戻すだけで、既存 lvar_t は arena/calloc されたまま残る。 */
-  node->lvars = ps_decl_get_locals();
-
-  /* 関数本体を抜けたらファイルスコープに戻る。現在関数名を NULL に戻し、関数間の
-   * ファイルスコープ宣言が「関数内」と誤判定されないようにする。 */
+  function->lvars = ps_decl_get_locals();
   ps_decl_set_current_funcname(NULL, 0);
-
-  psx_semantic_analyze_function((node_t *)node, curtok());
-  return (node_t *)node;
+  if (stream && stream->tk_ctx) {
+    tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
+  }
+  return (node_t *)function;
 }
 
 // expr = assign ("," assign)*

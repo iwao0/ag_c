@@ -1,9 +1,7 @@
 /* タグ戻り型 + `(*...)` を含む複雑な宣言子の関数。`struct P (*f())[3]` (配列へのポインタ戻り) /
- * `struct R (*f())(int)` (関数ポインタ戻り) (C11 6.7.6)。is_tag_return_function_signature が
- * `(*...)` 宣言子を扱わず (`(` の後に IDENT を期待し `*` で return 0)、変数宣言と誤判定して
- * E2006 になっていた (builtin の `int (*f())[3]` は is_toplevel_function_signature が扱えていた)。
- * 両関数の宣言子判定を共有ヘルパ is_function_declarator_sig に抽出し、タグ戻りでも `(*f())[N]` /
- * `(*f())(...)` を検出する。 */
+ * `struct R (*f())(int)` (関数ポインタ戻り) (C11 6.7.6)。旧トップレベル先読みが
+ * `(*...)` 宣言子を扱えず、変数宣言と誤判定して E2006 になっていた。
+ * 現在は宣言子を一度だけ構文解析し、直後の`{`で関数定義を分類する。 */
 #include <assert.h>
 
 struct P { int x, y; };

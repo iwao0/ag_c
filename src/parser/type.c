@@ -75,6 +75,112 @@ psx_type_t *ps_type_new_float(tk_float_kind_t fp_kind, int size) {
   return type;
 }
 
+static int type_integer_promotion_size(const psx_type_t *type) {
+  int size = ps_type_sizeof(type);
+  if (size <= 0) return 4;
+  return size < 4 ? 4 : size;
+}
+
+int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
+  if (!type || (type->kind != PSX_TYPE_BOOL &&
+                type->kind != PSX_TYPE_INTEGER)) {
+    return 0;
+  }
+  return ps_type_sizeof(type) >= 4 && ps_type_is_unsigned(type);
+}
+
+psx_type_t *ps_type_usual_arithmetic_result(
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    tk_float_kind_t fallback_fp_kind, int force_complex) {
+  int result_is_complex =
+      force_complex ||
+      (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
+      (rhs && rhs->kind == PSX_TYPE_COMPLEX);
+  if (result_is_complex) {
+    tk_float_kind_t fp = fallback_fp_kind;
+    if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
+    if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
+    if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
+    int size = fp == TK_FLOAT_KIND_FLOAT ? 8 : 16;
+    psx_type_t *type = ps_type_new(PSX_TYPE_COMPLEX);
+    type->fp_kind = fp;
+    type->size = size;
+    type->align = size >= 8 ? 8 : 4;
+    return type;
+  }
+
+  if ((lhs && lhs->kind == PSX_TYPE_FLOAT) ||
+      (rhs && rhs->kind == PSX_TYPE_FLOAT) ||
+      fallback_fp_kind != TK_FLOAT_KIND_NONE) {
+    tk_float_kind_t fp = fallback_fp_kind;
+    if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
+    if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
+    if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
+    psx_type_t *type = ps_type_new_float(
+        fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
+      type->is_long_double = 1;
+    return type;
+  }
+
+  int lhs_size = type_integer_promotion_size(lhs);
+  int rhs_size = type_integer_promotion_size(rhs);
+  int lhs_unsigned = ps_type_integer_promotion_is_unsigned(lhs);
+  int rhs_unsigned = ps_type_integer_promotion_is_unsigned(rhs);
+  int result_unsigned;
+  if (lhs_unsigned == rhs_unsigned) {
+    result_unsigned = lhs_unsigned;
+  } else {
+    int unsigned_size = lhs_unsigned ? lhs_size : rhs_size;
+    int signed_size = lhs_unsigned ? rhs_size : lhs_size;
+    result_unsigned = unsigned_size >= signed_size;
+  }
+  int size = lhs_size > rhs_size ? lhs_size : rhs_size;
+  psx_type_t *type = ps_type_new_integer(TK_EOF, size, result_unsigned);
+  type->is_long_long =
+      (lhs && lhs->is_long_long) || (rhs && rhs->is_long_long);
+  return type;
+}
+
+psx_type_t *ps_type_binary_result(
+    psx_type_binary_op_t op, const psx_type_t *lhs,
+    const psx_type_t *rhs) {
+  if (op == PSX_TYPE_BINARY_COMMA)
+    return ps_type_clone(rhs);
+  if (op == PSX_TYPE_BINARY_COMPARE || op == PSX_TYPE_BINARY_LOGICAL)
+    return ps_type_new_integer(TK_INT, 4, 0);
+  if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
+    return ps_type_usual_arithmetic_result(
+        lhs, NULL, TK_FLOAT_KIND_NONE, 0);
+
+  int lhs_pointer = ps_type_is_pointer(lhs);
+  int rhs_pointer = ps_type_is_pointer(rhs);
+  if (op == PSX_TYPE_BINARY_ADD && lhs_pointer != rhs_pointer)
+    return ps_type_clone(lhs_pointer ? lhs : rhs);
+  if (op == PSX_TYPE_BINARY_SUB) {
+    if (lhs_pointer && rhs_pointer)
+      return ps_type_new_integer(TK_LONG, 8, 0);
+    if (lhs_pointer) return ps_type_clone(lhs);
+  }
+  return ps_type_usual_arithmetic_result(
+      lhs, rhs, TK_FLOAT_KIND_NONE,
+      (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
+          (rhs && rhs->kind == PSX_TYPE_COMPLEX));
+}
+
+psx_type_t *ps_type_conditional_result(
+    const psx_type_t *then_type, const psx_type_t *else_type) {
+  if (ps_type_is_pointer(then_type)) return ps_type_clone(then_type);
+  if (ps_type_is_pointer(else_type)) return ps_type_clone(else_type);
+  if (then_type && else_type && then_type->kind == else_type->kind &&
+      ps_type_is_tag_aggregate(then_type))
+    return ps_type_clone(then_type);
+  return ps_type_usual_arithmetic_result(
+      then_type, else_type, TK_FLOAT_KIND_NONE,
+      (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
+          (else_type && else_type->kind == PSX_TYPE_COMPLEX));
+}
+
 psx_type_t *ps_type_new_pointer(psx_type_t *base, int deref_size) {
   psx_type_t *type = ps_type_new(PSX_TYPE_POINTER);
   type->base = base;
@@ -1506,6 +1612,35 @@ int ps_type_generic_matches(const psx_type_t *control,
                                           association_sig.function);
   }
   return ps_type_shape_matches(control_function, association_function);
+}
+
+psx_type_t *ps_type_generic_control(const psx_type_t *control) {
+  psx_type_t *type = ps_type_clone(control);
+  if (!type) return NULL;
+  if (type->kind == PSX_TYPE_ARRAY) {
+    int deref_size = ps_type_sizeof(type->base);
+    type = ps_type_new_pointer(type->base, deref_size);
+  } else if (type->kind == PSX_TYPE_FUNCTION) {
+    type = ps_type_new_pointer(type, 0);
+  }
+  psx_type_normalize_integer_identity(type);
+  return type;
+}
+
+int ps_type_generic_select_index(
+    const psx_type_t *control, psx_type_t *const *association_types,
+    const unsigned char *is_default, int association_count) {
+  psx_type_t *normalized = ps_type_generic_control(control);
+  if (!normalized || !association_types || association_count <= 0) return -1;
+  int default_index = -1;
+  for (int i = 0; i < association_count; i++) {
+    if (is_default && is_default[i]) {
+      if (default_index < 0) default_index = i;
+      continue;
+    }
+    if (ps_type_generic_matches(normalized, association_types[i])) return i;
+  }
+  return default_index;
 }
 
 int ps_type_is_tag_aggregate(const psx_type_t *type) {

@@ -6,6 +6,8 @@
 #include "type.h"
 struct lvar_t;
 struct psx_lvar_usage_region_t;
+struct psx_parsed_type_name_t;
+struct tag_member_info_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
  * symtab 型を使うファイルは symtab.h を個別に include すること。 */
@@ -52,6 +54,13 @@ typedef enum {
   ND_FUNCDEF, // 関数定義
   ND_FUNCALL, // 関数呼び出し
   ND_FUNCREF, // 関数シンボル参照（関数ポインタ値）
+  ND_UNARY_NEGATE, // raw unary -operand。semantic lowering 前のみ存在する。
+  ND_UNARY_DEREF, // raw unary *operand。semantic lowering 前のみ存在する。
+  ND_SUBSCRIPT, // raw 添字式 base[index]。semantic lowering 前のみ存在する。
+  ND_MEMBER_ACCESS, // raw base.member/base->member。semantic lowering 前のみ存在する。
+  ND_GENERIC_SELECTION, // raw _Generic selection。semantic lowering 前のみ存在する。
+  ND_SIZEOF_QUERY, // raw sizeof(type/expression)。semantic lowering 前のみ存在する。
+  ND_ALIGNOF_QUERY, // raw _Alignof(type)。semantic lowering 前のみ存在する。
   ND_DEREF,   // 間接参照 (*p)
   ND_ADDR,    // アドレス取得 (&x)
   ND_STRING,  // 文字列リテラル
@@ -66,6 +75,7 @@ typedef enum {
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
   ND_CAST,       // 明示 cast wrapper。pointer cast では pointee metadata を保持し、
                  // integer cast では operand を壊さず result 幅/signedness を保持する。
+  ND_COMPOUND_LITERAL, // prepared syntax; semantic loweringでobjectを実体化
   ND_INIT_LIST, // raw braced initializer syntax
   ND_DECL_INIT, // raw declaration initializer, lowered after semantic resolution
   ND_CREAL,       // GNU __real__ x: 複素数 lhs の実部 (実数なら lhs)。fp_kind=結果型。
@@ -75,6 +85,12 @@ typedef enum {
 
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
+typedef struct {
+  struct psx_parsed_type_name_t *syntax;
+  psx_type_t *bound_base_type;
+  psx_type_t *resolved_type;
+} psx_type_name_ref_t;
+
 typedef enum {
   PSX_DECL_INIT_EXPR,
   PSX_DECL_INIT_LIST,
@@ -111,12 +127,10 @@ typedef struct {
 /* Expression-local state that cannot be represented by the canonical type,
  * such as array/VLA dereference cursors. */
 typedef struct {
-  int deref_size;
   int inner_stride;
   int next_stride;
   int extra_strides[5];
   unsigned char extra_strides_count;
-  unsigned char has_deref_size;
   unsigned char has_stride;
   unsigned char is_scalar_ptr_member_lvalue;
   unsigned char subscript_uses_base_address;
@@ -155,6 +169,7 @@ struct node_t {
   unsigned int widen_zext_i64 : 1;
   unsigned int is_source_cast : 1;
   unsigned int is_source_compound_assignment : 1;
+  unsigned int has_shift_unsigned_override : 1;
 
   /* Canonical semantic type. Scalar bit fields above are one-way lowering and
    * diagnostic projections; semantic type queries do not reconstruct from them. */
@@ -166,6 +181,66 @@ typedef struct {
   node_t base;
   psx_decl_init_kind_t init_kind;
 } node_decl_init_t;
+
+typedef struct {
+  node_t base;
+  psx_type_name_ref_t type_name;
+  psx_type_t *object_type;
+  unsigned char requires_addressable_object;
+  unsigned char has_file_scope_storage;
+} node_compound_literal_t;
+
+typedef struct {
+  node_t base;
+  psx_type_name_ref_t type_name;
+} node_source_cast_t;
+
+typedef struct {
+  node_t base;
+  char *member_name;
+  int member_name_len;
+  struct tag_member_info_t *resolved_member;
+  token_kind_t base_tag_kind;
+  char *base_tag_name;
+  int base_tag_name_len;
+  int base_object_size;
+  unsigned char from_pointer;
+  unsigned char base_is_pointer;
+} node_member_access_t;
+
+typedef struct {
+  psx_type_t *type;
+  psx_type_name_ref_t type_name;
+  node_t *expression;
+  token_t *tok;
+  unsigned char is_default;
+} psx_generic_association_t;
+
+typedef struct {
+  node_t base;
+  node_t *control;
+  psx_generic_association_t *associations;
+  int association_count;
+  int selected_index;
+} node_generic_selection_t;
+
+typedef struct {
+  node_t base;
+  node_t *operand;
+  psx_type_t *queried_type;
+  psx_type_name_ref_t type_name;
+  node_t *runtime_size_expr;
+  int resolved_size;
+  int runtime_size_slot;
+  unsigned char is_type_name;
+  unsigned char evaluates_vla_operand;
+} node_sizeof_query_t;
+
+typedef struct {
+  node_t base;
+  psx_type_name_ref_t type_name;
+  int resolved_alignment;
+} node_alignof_query_t;
 
 typedef struct {
   node_t base;
@@ -232,11 +307,11 @@ struct node_func_t {
   node_t **args;    // 引数/仮引数の動的配列
   int nargs;        // 引数の数
   node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
+  psx_type_t *function_type; // bound canonical callable type
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
   int is_variadic;  // 1: 可変長引数関数 (funcdef時のみ)
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
-  psx_decl_funcptr_sig_t ret_funcptr_sig;
   // 関数定義のローカル変数連結リスト (next_all で辿る)。
   // 関数解析完了時に保存し、IR builder 等が後段で参照する。
   // 既存 AST 直 codegen には影響しない (未参照のまま動く)。
@@ -247,6 +322,7 @@ struct node_func_t {
 typedef struct node_funcref_t node_funcref_t;
 struct node_funcref_t {
   node_t base;
+  psx_type_t *function_type; // bound canonical function type
   char *funcname;
   int funcname_len;
 };

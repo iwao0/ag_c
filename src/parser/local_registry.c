@@ -1,6 +1,10 @@
 #include "local_registry.h"
 
+#include "decl.h"
 #include "diag.h"
+#include "lvar_internal.h"
+#include "node_utils.h"
+#include "type.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -120,6 +124,51 @@ lvar_t *ps_local_registry_create_storage_object(
   return var;
 }
 
+lvar_t *ps_local_registry_create_type_binding(
+    char *name, int name_len, const psx_type_t *type) {
+  if (!name || name_len <= 0 || !type) return NULL;
+  lvar_t *previous = ps_decl_find_lvar(name, name_len);
+  if (previous &&
+      previous->scope_seq == ps_local_registry_current_scope_seq()) {
+    psx_diag_duplicate_with_name(
+        tk_get_current_token(), "parameter", name, name_len);
+  }
+  lvar_t *var = calloc(1, sizeof(*var));
+  if (!var) return NULL;
+  var->name = name;
+  var->len = name_len;
+  var->scope_seq = current_scope_seq;
+  var->decl_type = ps_type_clone_persistent(type);
+  var->size = ps_type_sizeof(type);
+  var->elem_size = ps_type_deref_size(type);
+  var->is_param = 1;
+  var->next = locals;
+  locals = var;
+  unsigned bucket = name_hash(name, name_len);
+  var->next_hash = lvars_by_bucket[bucket];
+  lvars_by_bucket[bucket] = var;
+  return var;
+}
+
+lvar_t *ps_local_registry_create_static_alias(
+    char *name, int name_len, int storage_size, int element_size,
+    char *global_name, int global_name_len) {
+  if (!name || name_len <= 0 || !global_name || global_name_len <= 0)
+    return NULL;
+  lvar_t *var = calloc(1, sizeof(*var));
+  if (!var) return NULL;
+  var->name = name;
+  var->len = name_len;
+  var->size = storage_size;
+  var->elem_size = element_size;
+  var->is_static_local = 1;
+  var->static_global_name = global_name;
+  var->static_global_name_len = global_name_len;
+  ps_decl_attach_lvar_current_region(var);
+  ps_local_registry_add(var);
+  return var;
+}
+
 void ps_local_registry_update_storage_object(
     lvar_t *var, int offset, int storage_size,
     int element_size, int is_array, int alignment) {
@@ -135,6 +184,121 @@ void ps_local_registry_update_storage_object(
   lvars_by_offset[bucket] = var;
 }
 
+void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
+  if (!var) return;
+  var->is_param = 1;
+  var->is_byref_param = is_byref ? 1 : 0;
+}
+
+static void clear_array_stride_cache(lvar_t *var) {
+  if (!var) return;
+  var->outer_stride = 0;
+  var->mid_stride = 0;
+  var->extra_strides_count = 0;
+  if (var->extra_strides) {
+    for (int i = 0; i < 5; i++) var->extra_strides[i] = 0;
+  }
+}
+
+static void sync_array_stride_cache(lvar_t *var) {
+  if (!var) return;
+  int outer = 0;
+  int mid = 0;
+  int extras[5] = {0};
+  int extra_count = 0;
+  clear_array_stride_cache(var);
+  if (!ps_type_decl_array_stride_metadata(
+          var->decl_type, &outer, &mid, extras, &extra_count)) {
+    return;
+  }
+  var->outer_stride = outer;
+  var->mid_stride = mid;
+  if (extra_count > 0 && !var->extra_strides)
+    var->extra_strides = calloc(5, sizeof(int));
+  var->extra_strides_count = (unsigned char)extra_count;
+  for (int i = 0; i < extra_count; i++)
+    var->extra_strides[i] = extras[i];
+}
+
+static void sync_type_cache(lvar_t *var) {
+  if (!var || !var->decl_type) return;
+  const psx_type_t *type = var->decl_type;
+  var->is_array = type->kind == PSX_TYPE_ARRAY;
+  var->is_vla = type->is_vla ? 1 : 0;
+  sync_array_stride_cache(var);
+}
+
+void ps_local_registry_set_decl_type(
+    lvar_t *var, const psx_type_t *decl_type) {
+  if (!var || !decl_type) return;
+  var->decl_type = ps_type_clone_persistent(decl_type);
+  sync_type_cache(var);
+}
+
+void ps_local_registry_set_vla_descriptor(
+    lvar_t *var, int outer_stride, int row_stride_frame_off,
+    int strides_remaining, int row_stride_src_offset,
+    int row_stride_elem_size) {
+  if (!var) return;
+  psx_type_t *type = ps_lvar_get_decl_type(var);
+  var->is_vla = 1;
+  var->outer_stride = outer_stride;
+  var->vla_row_stride_frame_off = row_stride_frame_off;
+  var->vla_strides_remaining = strides_remaining;
+  var->vla_row_stride_src_offset = row_stride_src_offset;
+  var->vla_row_stride_elem_size = (short)row_stride_elem_size;
+  if (!type) return;
+  if (var->is_array && type->kind != PSX_TYPE_POINTER) {
+    psx_type_t *vla = ps_type_new_vla_object_view(
+        type, outer_stride, row_stride_frame_off, strides_remaining);
+    if (vla) {
+      var->decl_type = vla;
+      type = vla;
+    }
+  } else if (!var->is_array && type->kind == PSX_TYPE_POINTER &&
+             row_stride_frame_off != 0 && type->base &&
+             type->base->kind != PSX_TYPE_ARRAY) {
+    int elem_size = row_stride_elem_size > 0
+                        ? row_stride_elem_size
+                        : ps_type_sizeof(type->base);
+    if (elem_size > 0) {
+      psx_type_t *row = ps_type_new_array(
+          type->base, 0, 0, elem_size, 1);
+      row->base_deref_size = elem_size;
+      row->outer_stride = elem_size;
+      type->base = row;
+      type->deref_size = 0;
+      type->base_deref_size = elem_size;
+    }
+  }
+  type->outer_stride = outer_stride;
+  ps_type_set_vla_runtime_descriptor(
+      type, row_stride_frame_off, strides_remaining,
+      row_stride_src_offset, row_stride_elem_size);
+}
+
+void ps_local_registry_set_vla_param_inner_dims(
+    lvar_t *var, const int *inner_dim_consts,
+    const int *inner_dim_src_offsets, int inner_dim_count) {
+  if (!var) return;
+  if (inner_dim_count < 0) inner_dim_count = 0;
+  if (inner_dim_count > 7) inner_dim_count = 7;
+  var->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
+  for (int i = 0; i < 7; i++) {
+    var->vla_param_inner_dim_consts[i] =
+        (i < inner_dim_count && inner_dim_consts)
+            ? (short)inner_dim_consts[i]
+            : 0;
+    var->vla_param_inner_dim_src_offsets[i] =
+        (i < inner_dim_count && inner_dim_src_offsets)
+            ? inner_dim_src_offsets[i]
+            : 0;
+  }
+  ps_type_set_vla_param_inner_dims(
+      ps_lvar_get_decl_type(var), inner_dim_consts,
+      inner_dim_src_offsets, inner_dim_count);
+}
+
 lvar_t *ps_lvar_next_all(const lvar_t *var) {
   return var ? var->next_all : NULL;
 }
@@ -148,8 +312,35 @@ lvar_t *ps_lvar_find_owner(lvar_t *head, int offset) {
   return NULL;
 }
 
+psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
+  if (!var) return (psx_lvar_registry_view_t){0};
+  return (psx_lvar_registry_view_t){
+      .name = var->name,
+      .name_len = var->len,
+      .scope_seq = var->scope_seq,
+      .is_used = var->is_used,
+      .is_unevaluated_used = var->is_unevaluated_used,
+      .is_address_taken = var->is_address_taken,
+      .is_initialized = var->is_initialized,
+      .suppress_unreachable_warnings =
+          var->suppress_unreachable_warnings,
+      .is_param = var->is_param,
+      .is_array = var->is_array,
+      .is_static_local = var->is_static_local,
+      .decl_region = var->decl_region,
+  };
+}
+
 int ps_lvar_offset(const lvar_t *var) {
   return var ? var->offset : 0;
+}
+
+const char *ps_lvar_name(const lvar_t *var) {
+  return var ? var->name : NULL;
+}
+
+int ps_lvar_name_len(const lvar_t *var) {
+  return var ? var->len : 0;
 }
 
 void ps_local_registry_reset(void) {

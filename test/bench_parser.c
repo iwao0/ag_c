@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/frontend/translation_unit.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -49,7 +50,7 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
-  node_t **code = ps_program();
+  node_t **code = psx_frontend_program();
   clock_gettime(CLOCK_MONOTONIC, &t_par1);
 
   size_t funcs = count_funcs(code);

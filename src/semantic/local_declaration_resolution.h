@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_LOCAL_DECLARATION_RESOLUTION_H
 #define SEMANTIC_LOCAL_DECLARATION_RESOLUTION_H
 
-#include "declaration_application.h"
+#include "declaration_resolution.h"
 
 #define PSX_LOCAL_DECLARATION_MAX_VLA_DIMS 8
 

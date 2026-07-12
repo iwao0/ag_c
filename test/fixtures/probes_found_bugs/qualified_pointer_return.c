@@ -1,9 +1,9 @@
 /* `*` の後にポインタ修飾子が付く戻り型 `int *const f()` / `int *volatile f()`
- * (const/volatile-qualified pointer return) (C11 6.7.6.1)。is_toplevel_function_signature の
- * 先読みと parse_pointer_suffix_flags が `*` の後の const/volatile を飛ばさず、関数と
+ * (const/volatile-qualified pointer return) (C11 6.7.6.1)。旧トップレベル先読みと
+ * pointer suffix解析が `*` の後の const/volatile を飛ばさず、関数と
  * 認識されずオブジェクト宣言と誤判定して E2006 (`;` 期待、実際 '{') になっていた。
  * `const int *f()` (pointer to const) は動作。lookahead と suffix 解析の両方で `*` の後の
- * const/volatile を読み飛ばして直す (ag_c は値の正しさのみ対象なので修飾子は捨てる)。 */
+ * const/volatile を読み飛ばす。現在の分類は構文解析済み宣言子を正本にする。 */
 #include <assert.h>
 
 static int x = 42;

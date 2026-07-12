@@ -17,6 +17,22 @@ typedef enum {
   PSX_TYPE_COMPLEX,
 } psx_type_kind_t;
 
+typedef enum {
+  PSX_TYPE_BINARY_COMMA = 0,
+  PSX_TYPE_BINARY_ADD,
+  PSX_TYPE_BINARY_SUB,
+  PSX_TYPE_BINARY_MUL,
+  PSX_TYPE_BINARY_DIV,
+  PSX_TYPE_BINARY_MOD,
+  PSX_TYPE_BINARY_BITAND,
+  PSX_TYPE_BINARY_BITXOR,
+  PSX_TYPE_BINARY_BITOR,
+  PSX_TYPE_BINARY_SHL,
+  PSX_TYPE_BINARY_SHR,
+  PSX_TYPE_BINARY_COMPARE,
+  PSX_TYPE_BINARY_LOGICAL,
+} psx_type_binary_op_t;
+
 typedef struct psx_type_t psx_type_t;
 struct tag_member_info_t;
 
@@ -118,6 +134,15 @@ psx_type_t *ps_type_new_integer(token_kind_t scalar_kind, int size, int is_unsig
 psx_type_t *ps_type_new_enum(char *tag_name, int tag_len,
                               int tag_scope_depth_p1, int size);
 psx_type_t *ps_type_new_float(tk_float_kind_t fp_kind, int size);
+psx_type_t *ps_type_usual_arithmetic_result(
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    tk_float_kind_t fallback_fp_kind, int force_complex);
+int ps_type_integer_promotion_is_unsigned(const psx_type_t *type);
+psx_type_t *ps_type_binary_result(
+    psx_type_binary_op_t op, const psx_type_t *lhs,
+    const psx_type_t *rhs);
+psx_type_t *ps_type_conditional_result(
+    const psx_type_t *then_type, const psx_type_t *else_type);
 psx_type_t *ps_type_new_pointer(psx_type_t *base, int deref_size);
 psx_type_t *ps_type_new_function(psx_type_t *return_type,
                                   psx_decl_funcptr_sig_t sig);
@@ -221,7 +246,11 @@ const struct tag_member_info_t *ps_type_find_aggregate_member(
     const char *member_name, int member_len);
 int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
 int ps_type_generic_matches(const psx_type_t *control,
-                             const psx_type_t *association);
+                            const psx_type_t *association);
+psx_type_t *ps_type_generic_control(const psx_type_t *control);
+int ps_type_generic_select_index(
+    const psx_type_t *control, psx_type_t *const *association_types,
+    const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
 int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type);
 unsigned int ps_type_pointer_view_structural_qual_mask(

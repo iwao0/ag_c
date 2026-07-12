@@ -1,10 +1,10 @@
 /* `static struct S *f(...) {...}` 等、storage class (static/extern) を伴うタグ戻り型の
- * 関数定義 (C11 6.7.1 / 6.9.1)。is_toplevel_function_signature と parse_func_decl_spec が
- * どちらも「タグキーワードの前にある storage class」を飛ばしておらず、`static struct S *g()`
+ * 関数定義 (C11 6.7.1 / 6.9.1)。旧トップレベル先読みが
+ * 「タグキーワードの前にある storage class」を飛ばしておらず、`static struct S *g()`
  * がオブジェクト宣言と誤判定 (E2006 `;` 期待) / 戻り型が implicit int に化けて E3064 に
  * なっていた。`static int *g()` (builtin) や非 static の `struct S *g()` は動いていた。
- * 修正: 両関数で storage class の直後がタグキーワードなら storage class を消費してから
- * タグ経路へ入る。pointer/値返し、struct/union/enum、引数あり/なしを網羅。 */
+ * 現在は宣言指定子と宣言子を一度だけ構文解析して分類する。
+ * pointer/値返し、struct/union/enum、引数あり/なしを網羅。 */
 #include <assert.h>
 
 struct P { int x, y; };

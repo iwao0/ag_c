@@ -1,0 +1,67 @@
+#include "identifier_resolution.h"
+
+#include "../parser/decl.h"
+#include "../parser/semantic_ctx.h"
+
+#include <string.h>
+
+global_var_t *psx_resolve_global_object_symbol(
+    char *name, int name_len) {
+  if (!name || name_len <= 0) return NULL;
+  return ps_find_global_var(name, name_len);
+}
+
+void psx_resolve_identifier(
+    const psx_identifier_resolution_request_t *request,
+    psx_identifier_resolution_t *resolution) {
+  if (!resolution) return;
+  memset(resolution, 0, sizeof(*resolution));
+  if (!request || !request->name || request->name_len <= 0) return;
+
+  resolution->local =
+      ps_decl_find_lvar(request->name, request->name_len);
+  if (resolution->local) {
+    resolution->kind = PSX_IDENTIFIER_LOCAL;
+    return;
+  }
+  if (ps_ctx_find_enum_const(
+          request->name, request->name_len,
+          &resolution->enum_value)) {
+    resolution->kind = PSX_IDENTIFIER_ENUM_CONSTANT;
+    return;
+  }
+
+  resolution->global = psx_resolve_global_object_symbol(
+      request->name, request->name_len);
+  int has_function =
+      ps_ctx_has_function_name(request->name, request->name_len);
+  if (request->is_call) {
+    if (resolution->global) {
+      resolution->kind = PSX_IDENTIFIER_GLOBAL_OBJECT;
+      return;
+    }
+    if (!has_function) {
+      resolution->kind = PSX_IDENTIFIER_UNDECLARED_CALL;
+      return;
+    }
+    resolution->kind = PSX_IDENTIFIER_FUNCTION;
+    resolution->function_type = ps_ctx_get_function_type(
+        request->name, request->name_len);
+    resolution->is_variadic = ps_ctx_get_function_is_variadic(
+        request->name, request->name_len,
+        &resolution->parameter_count) ? 1 : 0;
+    return;
+  }
+
+  if (has_function) {
+    resolution->kind = PSX_IDENTIFIER_FUNCTION;
+    resolution->function_type = ps_ctx_get_function_type(
+        request->name, request->name_len);
+    return;
+  }
+  if (resolution->global) {
+    resolution->kind = PSX_IDENTIFIER_GLOBAL_OBJECT;
+    return;
+  }
+  resolution->kind = PSX_IDENTIFIER_UNDEFINED;
+}

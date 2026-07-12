@@ -3,7 +3,6 @@
 #include "expr.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
-#include "../semantic/declaration_application.h"
 #include "../tokenizer/tokenizer.h"
 
 #include <string.h>
@@ -33,11 +32,4 @@ void psx_parse_static_assert_syntax(
   tk_set_current_token(current_token()->next);
   tk_expect(')');
   tk_expect(';');
-}
-
-void psx_parse_static_assert_declaration(void) {
-  psx_parsed_static_assert_declaration_t declaration;
-  psx_parse_static_assert_syntax(&declaration);
-  psx_apply_static_assert(
-      declaration.condition, declaration.diagnostic_token);
 }

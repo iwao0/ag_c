@@ -102,11 +102,8 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
 }
 
 psx_type_t *psx_resolve_decl_specifier_syntax(
-    const psx_parsed_decl_specifier_t *specifier,
-    const psx_decl_syntax_resolution_context_t *context) {
+    const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
-  if (context && context->apply_tag_action)
-    context->apply_tag_action(&specifier->tag_action, context->context);
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
   psx_decl_type_request_t request = {

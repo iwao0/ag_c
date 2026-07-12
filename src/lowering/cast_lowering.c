@@ -1,9 +1,9 @@
 #include "cast_lowering.h"
-#include "../semantic/local_type_state.h"
 #include "../diag/diag.h"
 #include "../parser/config_runtime.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include <stdio.h>
@@ -200,7 +200,7 @@ static node_t *lower_aggregate_cast(node_t *operand,
   char *temp_name = new_aggregate_temp_name();
   lvar_t *temp = psx_decl_register_lvar_sized(
       temp_name, (int)strlen(temp_name), object_size, object_size, 0);
-  psx_decl_set_lvar_decl_type(temp, view.target);
+  ps_local_registry_set_decl_type(temp, view.target);
 
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for(temp, member.offset, &member);

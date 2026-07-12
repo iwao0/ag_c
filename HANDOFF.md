@@ -30067,6 +30067,7 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
   - `./build/test_parser` = **OK: All unit tests passed**。
   - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+
 - 次:
   - `parser/decl.h`が公開している`semantic/local_type_state.h`依存をDTO境界へ置き換える。
   - declaration application内に残るtoken cursor操作をsyntax側へ戻す。
@@ -30102,3 +30103,1388 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - declaration application内に残るtoken cursor操作をsyntax DTO生成へ戻す。
   - `parser/decl.h`のlvar storage/cache field公開をregistry viewへ縮める。
   - syntax DTOがsemantic/lowering stateを直接保持していないか継続監査する。
+
+### このセッション（続き1034）: declaration applicationからtoken cursor再parseを除去した
+- runtime array bound syntax:
+  - `psx_parsed_const_expr_t`にprepared AST `node`を追加した。
+  - `ps_parse_runtime_declarator_expressions()`をparser syntax APIとして追加し、local、extern、
+    typedef、function definitionのruntime適用前にarray boundをAST化する。
+  - `semantic/declaration_application.c`のcursor save/restoreと`ps_expr_assign()`再parseを削除した。
+- parameter timing:
+  - function parameter VLAは先行parameter登録後でなければbound識別子を解決できない。
+  - function definition pipeline requestへparser-owned preparation callbackを追加し、parameterを
+    順番にlower/registerする直前に各declaratorを準備するようにした。
+  - outer declarator syntax時点でparameterへ再帰準備する誤った早期評価は行わない。
+- declaration phase:
+  - semantic module内の`psx_parse_declaration_phase_syntax()`を廃止した。
+  - parserが`psx_parsed_decl_specifier_t`を生成し、`psx_begin_declaration_phase()`が
+    ownershipを受け取ってapply可能なphaseへ遷移する二段境界にした。
+- `_Alignas` preparation:
+  - DTOにprepared constant valueとflagを追加した。
+  - `ps_prepare_decl_specifier_alignments()`が正しいsymbol timingで値を準備し、applicationと
+    struct layoutはprepared valueだけを読む。
+  - aggregate内の先行enumを参照する`_Alignas`はmember layoutを順番適用する時点で準備する。
+- boundary audit:
+  - declaration applicationからtokenizer、expression parser、alignas parserへの依存は0件。
+  - 旧declaration phase parse APIの参照は0件。
+  - runtime DTO境界testでapplication前にarray bound ASTが存在し、cursorが不変なことを確認した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - parameter VLAとaggregate内enum/alignmentを含む`./build/test_parser`は
+    **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `semantic/function_parameter_resolution.c`に残るtoken範囲の定数式再評価をprepared DTOへ移す。
+  - bit-field widthとconstant array boundも同じprepared expression契約へ統一する。
+  - `parser/decl.h`のlvar storage/cache field公開をregistry viewへ縮める。
+
+### このセッション（続き1035）: constant declarator expressionをprepared DTOへ統一した
+- constant expression DTO:
+  - `ps_prepare_constant_declarator_expressions()`をparser APIとして追加した。
+  - constant array boundとbit-field widthをtoken範囲から一度評価し、
+    `constant_value + has_constant_value`としてsyntax DTOへ保持する。
+  - type-name declaratorとtop-level declaratorはparser stageでouter expressionを準備する。
+- semantic resolution:
+  - `semantic/function_parameter_resolution.c`から`parser/enum_const.h`と
+    `ps_eval_parsed_enum_const_expr()`呼出を削除した。
+  - semantic resolverはprepared flagを検証し、DTOのconstant valueをcanonical shapeへ適用するだけになった。
+  - 未準備DTOはtokenを再parseせず、境界違反として診断する。
+- parameter ordering:
+  - `psx_decl_syntax_resolution_context_t`へconstant preparation callbackを追加した。
+  - parameter base type/tag actionを適用した直後、declarator resolution前にparser callbackを呼ぶ。
+  - parameter specifierで定義されたtag/enumと後続declarator expressionの順序を維持する。
+- aggregate ordering:
+  - aggregate body syntax取得時にはarray bound、bit-field、alignmentを未準備のまま保持する。
+  - member layoutを順番に適用する時点で準備し、先行enum constantを参照できる。
+  - boundary testでsyntax直後は未準備、layout後はarray bound=5、bit-field width=3、
+    alignment=8になることを直接確認した。
+- boundary audit:
+  - `src/semantic/`からtoken-range enum evaluatorを呼ぶ箇所は0件。
+  - function parameter resolverからenum parser headerへの依存は0件。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - aggregate/parameter/type-name declarator coverageを含む`./build/test_parser`は
+    **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parser syntax DTOに残るraw token rangeが後段で再解釈されていないか全件監査する。
+  - `parser/decl.h`のlvar storage/cache field公開をregistry viewへ縮める。
+  - declaration applicationのtag/aggregate callback依存をfrontend orchestrationへ移す。
+
+### このセッション（続き1036）: raw token rangeの後段意味再解釈を廃止した
+- audit:
+  - syntax DTOの`start/end`参照をsemantic、lowering、declaration pipelineで全件監査した。
+  - 唯一残っていた意味判定は、parameter VLA inner dimensionが単一identifierかを
+    `start->next == end`で判定するdeclaration pipeline処理だった。
+- syntax projection:
+  - `psx_parsed_const_expr_t`へ`identifier_name`と`identifier_name_len`を追加した。
+  - syntax capture時に式が単一identifierなら名前をDTOへ投影する。
+  - declaration pipelineはtoken kind、隣接token、end tokenを調べず、projectionだけを読む。
+- boundary:
+  - parser外でraw expression `end` tokenを参照する箇所は0件。
+  - parser外でtoken adjacencyから式の意味を判定する箇所は0件。
+  - parser外に残るexpression `start`参照はsource diagnostic位置だけ。
+  - parser内では遅延AST/constant準備のため`start/end` source spanを維持する。
+- coverage:
+  - runtime declarator boundary testで`matrix[n][4]`の最初のboundがidentifier `n`へ投影され、
+    定数bound `4`にはidentifier projectionがないことを直接確認した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `parser/decl.h`のlvar storage/cache field公開をregistry viewへ縮める。
+  - declaration applicationのtag/aggregate callback依存をfrontend orchestrationへ移す。
+  - parser AST constructionとsemantic type attachmentの残存混在を監査する。
+
+### このセッション（続き1037）: `lvar_t`をopaque registry objectへ移行した
+- registry mutation API:
+  - `ps_local_registry_mark_parameter()`を追加し、normal/VLA parameterのflag更新をregistryへ集約した。
+  - `ps_local_registry_create_static_alias()`を追加し、static-local aliasの確保、identity、storage、
+    backing global名、usage region登録を一操作にした。
+  - lowering側の`lvar_t`直接確保とparameter/static alias field書込みを削除した。
+- public read model:
+  - `psx_lvar_registry_view_t`と`ps_lvar_registry_view()`を追加した。
+  - name、scope sequence、usage/initialization flags、parameter/array/static state、decl regionを
+    read-only snapshotとしてsemantic diagnosticsへ渡す。
+  - typedef/enum namespace衝突判定とunused/uninitialized/stack-address診断をview/accessorへ移した。
+  - VLA loweringのframe offsetとpreceding parameter判定を`ps_lvar_offset()` / `ps_lvar_is_param()`へ移した。
+- opaque type boundary:
+  - `struct lvar_t`本体を`parser/decl.h`から新規`parser/lvar_internal.h`へ移した。
+  - `parser/local_registry.h`は`lvar_public.h`のforward typeだけに依存する。
+  - complete typeはlocal registry、parser AST owner、semantic local type-state owner、synthetic unit testだけが
+    `lvar_internal.h`を明示includeする。
+- boundary audit:
+  - public parser header内の`struct lvar_t`定義は0件。
+  - parser外のregistry/cache field直接参照は、意図的なownerである
+    `semantic/local_type_state.c`を除いて0件。
+  - parser外の直接`lvar_t`確保は0件。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `semantic/local_type_state.c`のmutationをregistry-owned type-state APIへ統合する。
+  - declaration applicationのtag/aggregate callback依存をfrontend orchestrationへ移す。
+  - parser AST constructionとsemantic type attachmentの残存混在を監査する。
+
+### このセッション（続き1038）: local type-state mutationをregistry ownerへ統合した
+- ownership correction:
+  - `semantic/local_type_state.c/.h`を削除した。
+  - 同モジュールが持っていたdecl type clone、array stride cache同期、VLA runtime descriptor、
+    VLA parameter inner dimension更新を`parser/local_registry.c`へ移した。
+  - これらは型解決ではなくopaque `lvar_t`内部状態の更新なので、registry ownerが一貫して管理する。
+- registry API:
+  - `ps_local_registry_set_decl_type()`を追加した。
+  - `ps_local_registry_set_vla_descriptor()`を追加した。
+  - `ps_local_registry_set_vla_param_inner_dims()`を追加した。
+  - declaration pipeline、lowering、unit testは旧`psx_decl_set_lvar_*` APIではなくregistry APIを使用する。
+- dependency cleanup:
+  - declaration pipeline/lowering/testから`semantic/local_type_state.h` includeを削除した。
+  - `Makefile`の`semantic/local_type_state.o`を削除した。
+  - `local_registry.h`は`psx_type_t`をforward declarationし、complete typeを公開しない。
+- boundary audit:
+  - `local_type_state`と旧`psx_decl_set_lvar_*`参照は`Makefile`、`src`、`test`で0件。
+  - parser外から`lvar_t`のtype/VLA/stride cache fieldを直接更新する箇所は0件。
+  - `lvar_internal.h`のproduction consumerはparser owner内だけになった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - declaration applicationのtag/aggregate callback依存をfrontend orchestrationへ移す。
+  - parser AST constructionとsemantic type attachmentの残存混在を監査する。
+  - `lvar_internal.h`を必要とするparser owner間でもread/write責務をさらに狭められるか監査する。
+
+### このセッション（続き1039）: declaration syntax適用callbackを廃止した
+- semantic resolver boundary:
+  - `psx_decl_syntax_resolution_context_t`とtag/constant preparation callbackを削除した。
+  - `psx_resolve_decl_specifier_syntax()`はtag定義を適用せず、登録済みsemantic environmentから
+    canonical base typeを構築するだけになった。
+  - `psx_resolve_declarator_syntax()`はarray bound/bit-fieldのprepared valueをshapeへ反映するだけになり、
+    nested function parameter syntaxを再帰適用しない。
+- application orchestration:
+  - `psx_apply_parsed_decl_specifier()`がtag actionを明示適用してからsemantic resolverを呼ぶ。
+  - `psx_apply_parsed_declarator()`がpure declarator resolution後にfunction suffixを列挙し、
+    nested parameter applicationを明示的に行う。
+  - `psx_apply_parsed_function_parameters()`へscope、specifier application、constant preparation、
+    nested declarator application、parameter adjustmentの順序を移した。
+  - semantic側の`psx_resolve_function_parameter_types()`を削除した。
+- boundary coverage:
+  - declaration phase testでpure `psx_resolve_decl_specifier_syntax()`を直接呼んでも
+    struct definition/member registryが変化しないことを確認する。
+  - 続いてapplication phaseを実行した場合だけtag definitionとaggregate definitionが登録される。
+  - nested function pointer parameter、aggregate member内tag/enum、parameter declaratorの既存coverageも通過した。
+- boundary audit:
+  - syntax resolution context、tag callback、constant preparation callback参照は`src`/`test`で0件。
+  - semantic resolverからaggregate body layoutを呼ぶ箇所は0件。
+  - aggregate body layout呼出はdeclaration application orchestrationだけに残る。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `semantic/declaration_application.c`自体をfrontend orchestration ownershipへ移せるよう、
+    diagnostics wrapperとpure semantic resultの残存混在を分割する。
+  - parser AST constructionとsemantic type attachmentの残存混在を監査する。
+  - `struct_layout.c`がsemantic applicationをincludeする逆依存を解消する。
+
+### このセッション（続き1040）: parser `struct_layout`の逆依存を削除した
+- dead mixed-phase API removal:
+  - `psx_parse_tag_definition_body()`と`psx_parse_struct_or_union_members_layout()`は
+    定義以外の呼出がなく、parse直後にsemantic layoutを実行する旧入口だったため削除した。
+  - `parser/struct_layout.c/.h`をモジュールごと削除し、Makefileからobjectを除いた。
+- aggregate application ownership:
+  - 実際に使用されるbody DTO適用処理を`psx_apply_parsed_aggregate_body_layout()`として
+    `semantic/declaration_application.c/.h`へ移した。
+  - aggregate item順にstatic assert、specifier/tag、alignment、constant declarator、member resolutionを
+    適用するorchestrationがparser配下に存在しない構造になった。
+  - alignment取得は重複したfield walkをやめ、既存`psx_apply_parsed_decl_alignment()`へ統一した。
+- dependency cleanup:
+  - `parser/struct_layout -> semantic/declaration_application`の逆依存を削除した。
+  - `parser/parser.c`とunit testから`struct_layout.h` includeを削除した。
+  - 旧関数名と削除headerのproduction/test参照は0件。
+- coverage:
+  - aggregate body phase testは新owner APIを直接使用する。
+  - nested struct/enum、deferred typedef、array bound、bit-field、`_Alignas`、function pointer memberを含む
+    sequential application coverageがそのまま通過した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parser配下に残る`semantic/declaration_application.h` include 6モジュールを用途別に分解する。
+  - declaration applicationのdiagnostic wrapperとorchestrationを分け、semantic result APIとの境界を明示する。
+  - parser AST constructionとsemantic type attachmentの残存混在を監査する。
+
+### このセッション（続き1041）: declaration applicationをfrontend ownerへ移した
+- parse-only cleanup:
+  - `parser/enum_const.c`からenum body evaluation/registrationを移し、syntax captureとconstant parserだけにした。
+  - 未使用のparse-and-apply API `psx_parse_enum_members()`を削除した。
+  - `parser/static_assert_declaration.c`からapply処理と`psx_parse_static_assert_declaration()`を削除した。
+  - top-level/local declaration orchestrationがstatic assert syntax DTOを受け取り、application APIを明示的に呼ぶ。
+- frontend ownership:
+  - `semantic/declaration_application.c/.h`を新規`frontend/declaration_application.c/.h`へ移した。
+  - parserの`expr.c`、`decl.c`、`parser.c`はsemantic resolverを直接includeせず、frontend orchestrationを呼ぶ。
+  - Makefileのsource discoveryに`src/frontend/*.c`を追加し、parser test objectもfrontend pathへ更新した。
+- dependency direction:
+  - runtime declarator application DTOを`semantic/declaration_resolution.h`へ移した。
+  - `semantic/local_declaration_resolution.h`はfrontend headerではなくsemantic resolution DTOに依存する。
+  - semanticからfrontendへのincludeは0件。
+  - parserからsemanticへの直接includeはtranslation-unit `semantic_pass.h`の1件だけになった。
+- enum application:
+  - sequential enum initializer評価とconstant registrationは`psx_apply_parsed_enum_body()`としてfrontend ownerへ移した。
+  - prior enumerator参照の順序とtoken cursor保存/復元を維持した。
+- boundary audit:
+  - 旧`semantic/declaration_application` path、enum/static-assert parse-and-apply API、
+    parser `struct_layout` pathのproduction/test参照は0件。
+  - parser内のfrontend declaration application consumerは`expr.c`、`decl.c`、`parser.c`の3件。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parser entrypointからtranslation-unit semantic pass実行をfrontend driverへ移す。
+  - frontend declaration application内のdiagnostic wrapperとorchestrationを分割する。
+  - enum initializerのraw token range再評価をprepared semantic expressionへ置き換える。
+
+### このセッション（続き1042）: translation-unit semantic passをfrontend driverへ移した
+- parse-only parser API:
+  - `ps_program*()`を`ps_parse_program*()`へ改名し、parser APIがsemantic pass前ASTを返すことを明示した。
+  - `funcdef()`から`psx_semantic_analyze_function()`呼出を削除した。
+  - `ps_parse_program_ctx()`から`psx_semantic_analyze_program()`呼出を削除した。
+  - parser配下からsemantic header includeとsemantic pass呼出はともに0件になった。
+- frontend translation-unit driver:
+  - 新規`frontend/translation_unit.c/.h`を追加した。
+  - `psx_frontend_next_function()`は1関数をparseした直後にfunction semantic passを実行する。
+  - `psx_frontend_program*()`は同じstreaming順序で各関数をparse/analyzeし、最後にprogram finalizeを実行する。
+  - native/Wasm mainのstreaming compile loopをfrontend APIへ切り替えた。
+- ordering correction:
+  - 初期実装ではbatch parse完了後に全関数をanalyzeしたため、current local registry/usage eventが
+    後続関数に上書きされることをparser testが検出した。
+  - batch frontendもparse -> analyzeを関数ごとに行う実装へ修正し、streaming compileと同じ順序に統一した。
+  - program collection中のallocation failureでも`ps_stream_end()`を必ず呼ぶ。
+- boundary coverage:
+  - `test_translation_unit_frontend_boundary`を追加した。
+  - parse-only APIではcompound assignmentのsource markerと`TK_PLUSEQ`が残る。
+  - frontend APIでは同じAST箇所がsemantic loweringされ、markerが消えてrhsが`ND_ADD`になる。
+  - parser benchmarkはsemanticを含まない`ps_parse_program()`を使用する。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - 新規frontend boundaryを含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - frontend declaration application内のdiagnostic wrapperとorchestrationを分割する。
+  - enum initializerのraw token range再評価をprepared semantic expressionへ置き換える。
+  - parser内でAST construction時にcanonical typeをattachしている残存箇所を監査する。
+
+### このセッション（続き1043）: declaration registration診断をorchestrationから分離した
+- dedicated registration boundary:
+  - 新規`frontend/declaration_registration.c/.h`を追加した。
+  - typedef、enum constant、tag、aggregate member、static assertの5つのapplication wrapperを移した。
+  - 各wrapperはsemantic resolver requestを構築し、result statusをsource diagnosticへ変換する責務だけを持つ。
+- orchestration cleanup:
+  - `frontend/declaration_application.c`にはenum/aggregate bodyの逐次適用、tag action、declaration phase、
+    declarator/function parameter applicationだけを残した。
+  - enum bodyやaggregate bodyは複数のsyntax DTOを順序立てて適用するためorchestration ownerに維持した。
+  - application implementationは必要なregistration APIを専用header経由で呼ぶ。
+- interface reduction:
+  - `declaration_application.h`から5つのregistration API宣言を削除した。
+  - aggregate/tag resolution status型のincludeをapplication public headerから削除した。
+  - parserの`decl.c`/`parser.c`はapplicationとregistrationの用途を明示して別々にincludeする。
+  - `expr.c`はregistrationを必要とせずapplication headerだけに依存する。
+- boundary audit:
+  - application moduleからtypedef/enum/static-assert result型とresolver header依存は0件。
+  - registration APIがapplication public headerへ漏れる箇所は0件。
+  - module sizeはapplication 376行、registration 180行、各header 63行/22行。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - enum initializerのraw token range再評価をprepared semantic expressionへ置き換える。
+  - parser内でAST construction時にcanonical typeをattachしている残存箇所を監査する。
+  - parser entrypoint内のfrontend application呼出をtranslation-unit driverへ段階的に引き上げる。
+
+### このセッション（続き1044）: enum initializerのraw token再parseを廃止した
+- prepared enum expression DTO:
+  - `psx_parsed_enum_expr_t`を追加し、value、identifier、unary、binary、conditionalを表現する。
+  - operator、literal value、identifier projection、diagnostic token、child expressionだけを保持する。
+  - enum body syntax parse時にinitializerを一度だけprecedence treeへ変換する。
+- deferred semantic evaluation:
+  - `ps_eval_prepared_enum_const_expr()`を追加した。
+  - identifier leafはapplication時点のenum constant registryから解決するため、先行enumerator参照を維持する。
+  - arithmetic、comparison、equality、bitwise、shift、logical、unary、ternaryをtreeから評価する。
+  - enum bodyは各memberを評価・登録してから次memberへ進む。
+- token-range removal:
+  - `psx_parsed_enum_member_t`から`initializer_start`/`initializer_end`を削除した。
+  - `find_enum_initializer_end()`を削除した。
+  - frontend enum applicationからtoken cursor保存/復元と`ps_eval_parsed_enum_const_expr(start,end)`呼出を削除した。
+  - prepared treeはenum body disposal時に再帰解放する。
+- boundary coverage:
+  - aggregate body phase testで`PhaseEnumNext = PhaseEnumZero + 2`がapplication前に
+    binary `+`、identifier `PhaseEnumZero`、literal `2`のtreeとして保持されることを直接確認した。
+  - 同時点ではenum registryが未変更で、layout application後に値3/5が登録される既存境界も維持した。
+  - arithmetic/comparison/logical/bitwise/shift/ternaryと先行enumerator参照の既存program coverageが通過した。
+- boundary audit:
+  - enum initializer token range fieldとrange finderは`src`/`test`で0件。
+  - frontend declaration applicationからtoken cursor APIとraw token evaluator呼出は0件。
+  - raw token evaluatorはdeclarator/alignas準備経路には残るが、enum body経路では使用しない。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - prepared tree直接検証を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - enum prepared expressionの評価責務をparser DTO moduleからsemantic constant resolutionへ移す。
+  - parser内でAST construction時にcanonical typeをattachしている残存箇所を監査する。
+  - parser entrypoint内のfrontend application呼出をtranslation-unit driverへ段階的に引き上げる。
+
+### このセッション（続き1045）: prepared enum expression評価をsemantic ownerへ移した
+- semantic ownership:
+  - `psx_resolve_prepared_enum_const_expr()`を`semantic/enum_constant_resolution.c`へ追加した。
+  - prepared treeのidentifier lookup、unary/binary/conditional評価、未定義identifier診断を移した。
+  - enum constant登録とinitializer評価が同じsemantic resolver moduleでregistryを参照する。
+- parser cleanup:
+  - `parser/enum_const.c`から`ps_eval_prepared_enum_const_expr()`実装を削除した。
+  - `parser/enum_const.h`からprepared evaluator APIを削除し、DTO定義とparse/dispose APIだけを残した。
+  - parser内に残る即時constant parserはcase/declarator/alignas用で、prepared enum body評価には関与しない。
+- interface boundary:
+  - `semantic/enum_constant_resolution.h`は`struct psx_parsed_enum_expr_t`をforward declarationするだけで、
+    parser DTO headerを公開includeしない。
+  - semantic implementationだけがDTO定義、semantic ctx、enum diagnostic catalogへ依存する。
+  - frontend enum applicationはsemantic evaluatorを呼び、得た値をregistration APIへ渡す。
+- boundary audit:
+  - 旧`ps_eval_prepared_enum_const_expr`参照は`src`/`test`で0件。
+  - prepared enum evaluatorはsemantic implementationにのみ存在する。
+  - parser enum DTO moduleからprepared identifier registry lookupは0件。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - prepared tree/逐次enum coverageを含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parser内でAST construction時にcanonical typeをattachしている残存箇所を監査する。
+  - parser entrypoint内のfrontend application呼出をtranslation-unit driverへ段階的に引き上げる。
+  - enum用prepared expression parserとlegacy immediate constant parserの重複grammarを統合する。
+
+### このセッション（続き1046）: 派生expression型のmaterializationをsemantic passへ移した
+- parser cleanup:
+  - comma、conditional、direct call、indirect callのAST生成時に呼んでいた
+    `ps_node_materialize_type()`を`parser/expr.c`から削除した。
+  - parserはこれらの式について構文形状とsymbol/call情報だけを構築し、派生型を確定しない。
+- semantic ownership:
+  - expression treeのcanonical type materializationは、全nodeを巡回する
+    `semantic_visit_node()`経路が一元的に担当する。
+  - `ps_node_get_type()`のlazy derivationは個別resolverが型を問い合わせる場合の読み取り境界として維持した。
+- retained parser typing:
+  - 整数・浮動小数・文字列リテラルの固有型と、既に解決済みのcompound literal request型は
+    構文生成時に一意な情報なのでparser側に維持した。
+  - comma、conditional、callのようにchild/symbolのsemantic typeから導出する型とは区別した。
+- boundary coverage:
+  - `test_expression_type_materialization_boundary()`を追加した。
+  - raw parse直後はconditional/comma nodeの`type == NULL`を確認し、
+    `psx_semantic_analyze_expression()`後に両方がcanonical integer型になることを確認した。
+- boundary audit:
+  - `parser/expr.c`内の`ps_node_materialize_type()`呼出は0件。
+  - parser subtreeにはAPI定義だけが残り、実際のexpression tree materializationはsemantic passから行う。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - 新規materialization boundaryを含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parser entrypoint内のfrontend declaration application呼出をtranslation-unit driverへ段階的に引き上げる。
+  - call nodeへparserが投影しているABI metadataを監査し、canonical callable typeからsemantic側で生成する。
+  - enum用prepared expression parserとlegacy immediate constant parserの重複grammarを統合する。
+
+### このセッション（続き1047）: top-level declarationを逐次syntax item境界へ移し始めた
+- top-level item stream:
+  - `ps_parse_next_toplevel_item()`と`psx_parsed_toplevel_item_t`を追加した。
+  - item kindはfunction、static assert、declaration、EOFを明示する。
+  - parserは非関数項目を内部で適用して読み飛ばすのではなく、syntax itemとしてfrontendへ返す。
+- static assert separation:
+  - top-level `_Static_assert`はparserでcondition ASTとdiagnostic tokenだけをDTO化する。
+  - `frontend/translation_unit.c`がitemを受けて`psx_apply_static_assert()`を呼ぶ。
+  - 偽条件でもparser-only item parseは成功し、frontend適用まで診断しない境界テストを追加した。
+- declaration syntax DTO:
+  - 新規`parser/toplevel_declaration_syntax.c/.h`に
+    `psx_parsed_toplevel_declaration_t`とparse/dispose APIを追加した。
+  - decl specifier、declarator list、storage class、typedef、standalone tagを保持する。
+  - parserはcanonical base/declarator type、global storage、typedef/tag/function registryを変更しない。
+- frontend application:
+  - 新規`frontend/toplevel_declaration.c/.h`がdecl specifier/declaratorのcanonical type解決と、
+    typedef、tag、function prototype、global objectのregistration/pipeline適用を担当する。
+  - typedef-nameの構文曖昧性があるため、translation-unit driverは各declaration itemを適用してから
+    parserへ次itemを要求する逐次契約にした。
+- migrated declarations:
+  - initializerを持たないtypedef、standalone struct/union/enum、global object、
+    comma-separated declarator、単一/複数function prototypeをitem経路へ移した。
+  - function definitionとの判定はbalanced declarator suffix後の`;`/`{`を先読みする。
+- intentionally remaining mixed path:
+  - initializer付きglobalは、target canonical typeに依存するcompound-literal initializer正規化があるため
+    旧parse/application経路に残した。raw token rangeをDTOへ持たせる一時対応は入れていない。
+  - function definitionはbody parse前のsignature/local parameter登録が必要なため、次段のfunction syntax DTO対象。
+- boundary coverage:
+  - `test_toplevel_static_assert_frontend_boundary()`を追加した。
+  - `test_toplevel_declaration_frontend_boundary()`でtypedef、tag、prototype、globalがparse時には未登録、
+    frontend application後にだけregistryへ現れることを確認した。
+  - typedefを適用した後に、そのtypedef名を使う次itemがparseできる逐次順序も直接確認した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規top-level item境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - initializer syntaxをtarget type非依存で保持し、initializer付きglobalも同じdeclaration itemへ統合する。
+  - function definition headerをsyntax DTO化し、function declaration/parameter applicationをfrontendへ移す。
+  - 旧`ps_next_function`/`ps_parse_program*` compatibility APIをitem/frontend APIへ置換して削除する。
+
+### このセッション（続き1048）: initialized globalとcompound literal実体化をparserから分離した
+- prepared top-level initializers:
+  - `psx_parsed_toplevel_declaration_t`にdeclaratorごとの`psx_parsed_initializer_t`配列を追加した。
+  - parserは`=`の有無に関係なくinitializer expression/listをsyntax ASTとして一度だけparseする。
+  - frontend applicationがcanonical declarator typeとprepared initializerをglobal pipelineへ渡す。
+- dispatcher unification:
+  - initializer有無のtoken先読み分岐を削除し、typedef、tag、global object、prototypeを
+    すべて`PSX_TOPLEVEL_ITEM_DECLARATION`経路へ統合した。
+  - 旧`toplevel_decl_spec_t`、top-level parse-and-apply、compound initializer token strip、
+    tag/object/typedef専用dispatcherを`parser.c`から削除した。
+  - `parser.c`に残るdeclaration applicationはfunction definition header/signature系だけになった。
+- compound literal syntax node:
+  - `ND_COMPOUND_LITERAL`と`node_compound_literal_t`を追加した。
+  - object canonical type、initializer list、addressable-object要求、file/local storage区分を保持する。
+  - `expr.c`はcompound literal parse時にglobal/local declaration pipelineを実行しなくなった。
+  - raw parse直後は専用nodeで、hidden global/local registryは変更されない。
+- semantic lowering ownership:
+  - 新規`lowering/compound_literal_lowering.c/.h`がhidden global/local objectを生成する。
+  - local loweringで新たに生成された`ND_DECL_INIT` treeを同じsemantic lowering passで再走査し、
+    IRへraw declaration initializerを漏らさない。
+  - `&(compound literal)`はaddress要求を専用nodeへ吸収し、配列/スカラで二重`ND_ADDR`を作らない。
+  - file-scope hidden symbolは既存互換の`__compound_lit_N`、local hidden objectは
+    aggregate-rvalue temporaryと衝突しない`__compound_object_N`を使用する。
+- frontend normalization:
+  - aggregate targetを同型compound literal expressionで初期化する場合、frontendがprepared
+    initializer listへ正規化する。
+  - pointer targetのarray compound literalはexpressionのままsemantic loweringし、hidden globalの
+    addressをstatic initializerへ渡す。
+- boundary coverage:
+  - raw `(int){3}`が`ND_COMPOUND_LITERAL`で、semantic後に既存lowered treeになることを確認した。
+  - initialized scalar globalがparse時未登録で、frontend application後に登録されることを確認した。
+  - file-scope pointer compound initializerでmain/hidden globalがparse時には両方未登録、
+    frontend application後に両方生成されることを確認した。
+- 実行確認:
+  - global aggregate compound initializer、global pointer-to-array compound initializer、
+    local scalar compound literal、local array subscriptの4分割probeがcompile/runともexit 0。
+  - 上記を組み合わせたprobeも`build/ag_c -> clang -> executable`でexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規initializer/compound境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - function definition headerをsyntax DTO化し、parameter/function signature applicationをfrontendへ移す。
+  - frontend streamにfunction header applicationとbody parseの逐次契約を導入する。
+  - 旧`ps_next_function`/`ps_parse_program*` compatibility APIをitem/frontend APIへ置換して削除する。
+
+### このセッション（続き1049）: function definition header applicationをfrontendへ移した
+- function header syntax DTO:
+  - 新規`parser/function_definition_syntax.c/.h`に`psx_parsed_function_definition_t`を追加した。
+  - return specifier、function declarator、parameter syntax、storage class、implicit-int markerを保持する。
+  - outer declaratorと各parameter declaratorのruntime expressionをparserでprepared AST化する。
+- callback removal:
+  - `psx_function_definition_pipeline_request_t`から
+    `prepare_runtime_declarator` parser callbackを削除した。
+  - function definition pipelineはprepared declarator DTOだけを消費し、semantic/applicationから
+    parser callbackを呼ぶ逆依存をなくした。
+- frontend header application:
+  - 新規`frontend/function_definition.c/.h`がreturn/parameter canonical type解決、parameter storage lowering、
+    function node生成、signature登録、variadic register reservationを担当する。
+  - parameter type配列は実parameter数で動的確保し、旧16要素固定配列へ`nargs > 16`を渡す
+    範囲外読みの可能性も除去した。
+- parse/apply/body handshake:
+  - parser itemに`PSX_TOPLEVEL_ITEM_FUNCTION_HEADER`を追加した。
+  - frontend driverは`parse header -> apply header -> parse body -> semantic analyze`の順で逐次処理する。
+  - `ps_parse_function_definition_body()`は登録済みparameter/function scopeを使ってbody syntaxだけをparseする。
+  - body parse後のgoto検証、function-owned lvar list保存、file-scope復帰をこのAPIが担当する。
+- prototype fallback:
+  - 複雑なdeclarator先読みがprototypeをdefinitionと判定しても、header parse後の実トークン`;`を正本にする。
+  - prepared return specifier/declaratorをtop-level declaration DTOへownership transferし、再parseせずprototype適用する。
+- legacy API removal:
+  - `ps_next_function()`と`ps_parse_program()`/`_from()`/`_ctx()`を削除した。
+  - 完成済みfunction ASTをparserから直接返す旧経路はなく、top-level item/frontend driverが唯一のtranslation-unit経路。
+  - parser benchmarkもfrontend translation-unit APIへ移した。
+- boundary coverage:
+  - parameter付きfunction header parse時にはfunction registryが未登録であることを確認した。
+  - frontend header application/body parse後にcanonical signatureとparameter localが存在することを確認した。
+  - raw bodyのcompound assignment markerがsemantic前に残り、frontend semantic後にlowerされる既存境界も維持した。
+- 実行確認:
+  - typedef return、static function、17 parameterのdefinition/callを含むprobeが
+    `build/ag_c -> clang -> executable`でexit 0。
+  - compound literal/global/localを組み合わせた既存probeもheader handshake移行後にexit 0。
+- boundary audit:
+  - translation-unit parser modulesから`psx_apply_*`、declaration pipeline、frontend/semantic includeは0件。
+  - 旧`ps_parse_program`/`ps_next_function`/completed-function item参照は`src`/`test`で0件。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規function header境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_stream_t`とtranslation-unit reset ownershipをparserからfrontend contextへ移す。
+  - parserに残るlocal declaration parse-and-applyをsyntax statement DTOへ分離する。
+  - top-level function/declaration先読みを単一のdeclaration syntax parserへ統合する。
+
+### このセッション（続き1050）: translation-unit stream/reset ownershipをfrontendへ移した
+- frontend stream context:
+  - `psx_frontend_stream_t`を追加し、内部にtoken cursor専用の`psx_parser_stream_t`を保持する。
+  - `psx_frontend_stream_begin()` / `_next_function()` / `_end()`をtranslation-unitの正規stream APIにした。
+  - mainのnative/Wasm streaming codegenとfrontend batch driverを新contextへ移した。
+- lifecycle ownership:
+  - function-name registry reset、global/function/tag diagnostic state resetをfrontend beginへ移した。
+  - deferred parser warning flushをfrontend endへ移した。
+  - global registry、anonymous tag、expression counter、local/declaration lowering state、semantic scope、
+    pragma pack、arenaのtranslation-unit resetを`psx_frontend_reset_translation_unit_state()`へ移した。
+  - processed function AST解放を`psx_frontend_free_processed_ast()`へ移した。
+- parser stream reduction:
+  - `ps_stream_t`を`psx_parser_stream_t`へ改名した。
+  - parser begin/endはtokenizer context/current tokenの設定と解放だけを担当する。
+  - parser moduleからtranslation-unit reset、diagnostic reset、warning flush、arena lifecycle APIを削除した。
+  - parser translation-unit modulesからreset/application/frontend/semantic参照は0件。
+- call-site migration:
+  - main、frontend batch、parser boundary tests、benchmarkを新APIへ移した。
+  - 旧`ps_stream_*`、`ps_reset_translation_unit_state`、`ps_prepare_program_parse`、
+    `ps_free_processed_ast`参照は`src`/`test`で0件。
+- boundary coverage:
+  - 先行translation unitで登録したfunctionがraw parser stream begin後も保持されることを確認した。
+  - 同じregistryがfrontend stream begin時に初期化されることを確認し、lifecycle ownerを直接固定した。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規stream lifecycle境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - 17 parameter/function header実行probe = exit 0。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parserに残るlocal declaration parse-and-applyをsyntax statement DTOへ分離する。
+  - top-level function/declaration先読みを単一のdeclaration syntax parserへ統合する。
+  - parser/semantic context registryのread/write API ownershipをfrontend/semanticへさらに分離する。
+
+### このセッション（続き1051）: local declarationをsyntax/frontend二段階契約へ分離した
+- two-phase local storage pipeline:
+  - automatic/static local pipelineを`begin`と`finish`に分けた。
+  - `begin`は宣言子のcanonical typeを受けてsymbol/storageを初期化子parse前に登録し、
+    `finish`はprepared initializerを使って不完全配列の完成とinitializer loweringを行う。
+  - これにより`int self = sizeof self, next = self;`のpoint-of-declarationを維持した。
+- parser syntax protocol:
+  - 新規`parser/local_declaration_syntax.c/.h`がblock-scope declaration grammar、
+    declarator runtime expression、initializer syntaxのparseだけを担当する。
+  - declaratorごとに`begin_declarator -> parse initializer -> finish_declarator`を呼ぶcallback契約を追加した。
+  - statement parserはfunction bodyから渡されたcallbackをstatement expressionを含む再帰parse中も保持する。
+- frontend application:
+  - 新規`frontend/local_declaration.c/.h`がspecifier/declarator canonical type適用、typedef、block extern、
+    function prototype、automatic/static local storage、initializer確定を担当する。
+  - block-scopeの暗黙extern function prototypeもfunction declaration pipelineへ登録するようになった。
+- mixed parser path removal:
+  - `decl.c`から`psx_decl_parse_declaration`、local extern/typedef/automatic/static parse-and-apply実装を削除した。
+  - 旧local declaration関数の参照は`src`/`test`で0件。
+  - static/automatic pipeline requestからparser initializer callbackとcontextを削除した。
+- boundary coverage / execution probe:
+  - 自己参照、同一宣言内の先行変数参照、複数local typedef、static local、block function prototypeを
+    1つのfrontend boundary testで固定した。
+  - 同内容のnative probeを`build/ag_c -> clang -> executable`で確認し、exit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 発見した既存回帰（未修正、次の最優先）:
+  - top-level declaration DTO化後、global storage登録より先にinitializer全体をparseするため、
+    `int global_self = sizeof global_self;`が未定義識別子`E3066`になる。
+  - localと同じ`begin declarator -> parse initializer -> finish declarator`契約をtop-levelにも導入し、
+    global pipelineの残存parser callbackを削除する必要がある。
+- 次:
+  - top-level declarationを二段階stream applicationへ移し、file-scope point-of-declarationを修復する。
+  - function/declaration先読みを単一のdeclaration syntax parserへ統合する。
+
+### このセッション（続き1052）: file-scope point-of-declarationを二段階適用で修復した
+- confirmed regression:
+  - `int global_self = sizeof global_self;`が、top-level DTO全体のparse後までglobalを登録しないため
+    未定義識別子`E3066`になっていた。
+  - これは診断だけの問題ではなく、1048のtop-level DTO化で生じた実動作回帰だった。
+- two-phase global pipeline:
+  - global declaration pipelineを`psx_begin_global_declaration_pipeline()`と
+    `psx_finish_global_declaration_pipeline()`へ分割した。
+  - beginはdeclaration resolutionとglobal storage登録、finishはthread-local属性とprepared initializerの
+    static resolution/loweringを担当する。
+  - global/static/automatic pipeline requestに残っていたparser initializer callback/contextを全削除した。
+- streaming syntax/application contract:
+  - `psx_toplevel_declaration_callbacks_t`を追加し、top-level syntax parserが宣言子ごとに
+    `begin declarator -> parse initializer -> finish declarator`を呼ぶようにした。
+  - frontend streamは`psx_frontend_toplevel_declaration_callbacks()`をparser streamへ渡し、
+    typedef/function/globalをpoint-of-declarationの位置で逐次登録する。
+  - raw parser streamはcallbackなしでDTOだけを返せるため、parse/application境界テストは維持した。
+  - function-headerからprototypeへfallbackしたDTOは従来どおり後段applicationで処理する。
+- regression coverage:
+  - 単一globalの自己`sizeof`と、カンマ区切り各宣言子の自己`sizeof`をunit testに追加した。
+  - `int global_self = sizeof global_self;`のnative probeを
+    `build/ag_c -> clang -> executable`で確認し、exit 0。
+- dependency/legacy audit:
+  - parser local/top-level syntax modulesからfrontend/semantic/declaration pipeline includeと
+    `psx_apply_*`参照は0件。
+  - 旧`psx_parse_declaration_initializer_fn`、`.parse_initializer`、`.parse_context`参照は0件。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規point-of-declaration境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - top-level function/declarationの複雑な先読みを、単一declaration syntax parserの結果による判定へ置換する。
+  - parserが式parse中にsymbol registryへ依存する箇所を洗い、純syntax ASTからresolveする境界を広げる。
+
+### このセッション（続き1053）: top-level declaration/function分類の手書き先読みを削除した
+- single-parse classification:
+  - top-level declaration syntaxを`head`と`finish`に分けた。
+  - declaration specifierと第1declaratorを一度だけparseし、GNU attribute消費後の次tokenが`{`なら
+    function definition、それ以外ならdeclarationとして残りのinitializer/declaratorをparseする。
+  - function definition時はhead DTOのspecifier/declarator ownershipをfunction header DTOへ移す。
+  - prototypeをfunction headerとしてparseしてからdeclarationへ戻す旧fallbackは廃止した。
+- deleted lookahead scanners:
+  - `is_toplevel_function_signature`
+  - `is_tag_return_function_signature`
+  - `toplevel_function_signature_is_declaration`
+  - `toplevel_decl_has_comma_separated_declarators`
+  - `is_function_declarator_sig` / `skip_decl_prefix_lookahead`
+  - 旧function-header parser、header-to-declaration逆変換、未使用のfunction-definition専用declarator wrapper
+  - 上記symbol参照は`src`/`test`で0件。
+- syntax/application preservation:
+  - declaration分類後は1052の宣言子単位callbackを使うため、file-scope point-of-declarationを維持する。
+  - raw parser streamはhead DTO分類だけを行い、frontend applicationを遅延できる境界も維持する。
+  - implicit-int function definitionはtop-level specifier headの明示optionで扱う。
+- boundary coverage:
+  - function pointer戻りprototype/definition、配列へのポインタを返すタグ型prototype/definition、
+    parenthesized function name、複数prototype/objectのカンマ宣言をraw item kindで直接確認した。
+  - function pointer戻り、タグ値戻り、parenthesized mainを組み合わせたnative probeが
+    `build/ag_c -> clang -> executable`でexit 0。
+- cleanup effect:
+  - `parser.c`は先読み削除により994行から765行になった。
+  - 過去repro fixtureの説明を削除済みhelper名ではなく旧手書き先読みの問題として更新した。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規single-parse分類境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - function parameter declaratorのruntime expression準備とparameter登録順序を分離し、
+    `void f(int n, int a[n])`のparameter point-of-declarationを明示契約にする。
+  - expression parser内のsymbol解決をprepared identifier syntaxからsemantic resolveへ段階的に移す。
+
+### このセッション（続き1054）: function parameterのpoint-of-declarationを逐次適用にした
+- confirmed regressions:
+  - fresh processで`test/fixtures/vla_param/basic_access.c`をcompileすると、definitionの`int a[n]`を
+    parameter `n`登録前にexpression parseして未定義識別子`E3066`になっていた。
+  - `int sum(int n, int values[n]);` prototypeは`n`を定数評価して未定義列挙子`E3064`になっていた。
+  - parser unit suiteの既存VLA metadataテストはtranslation-unit reset付きの順序境界を直接固定していなかった。
+- function definition pipeline split:
+  - 一括`psx_apply_function_definition_pipeline()`を削除した。
+  - `begin`でouter function declaratorを準備し、frontendが各parameterについて
+    `runtime expression prepare -> parameter resolve/lower/register`を宣言順に実行し、`finish`でfunction typeを確定する。
+  - function syntax DTO生成時の全parameter一括runtime prepareを削除した。
+  - これにより後続VLA parameterの境界式から先行parameter lvarとframe offsetを参照できる。
+- prototype parameter scope:
+  - local registryにstorageを持たずscope終了時に検索対象から外れる
+    `ps_local_registry_create_type_binding()`を追加した。
+  - prototype parameter applicationも宣言順にruntime expressionを準備し、canonical adjusted typeを
+    type bindingとして登録してから次parameterへ進む。
+  - prototype parameter type配列を16要素固定からparameter数に応じた動的配列へ変更した。
+- boundary coverage:
+  - prototypeとdefinitionの両方に`int t[][m][3][k]`を置き、canonical VLA parameter typeが
+    `m`/`k`の実frame offsetと定数次元3を保持することをtranslation-unit reset付きunit testで確認した。
+- execution probes:
+  - `test/fixtures/vla_param/basic_access.c` = `build/ag_c -> clang -> executable`でexit 0。
+  - `test/fixtures/probes_found_bugs/vla_3d4d_param.c` = 同じくexit 0。
+  - VLA parameter prototype + definition + callの専用probe = 同じくexit 0。
+- legacy audit:
+  - 旧one-shot function definition pipeline、全parameter一括runtime prepare、16要素固定parameter type配列の参照は0件。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規parameter point-of-declaration境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - expression parserがidentifierを即時lvar/global/functionへ解決する箇所をsyntax identifier nodeへ分離する。
+  - prototype専用type bindingを将来のsemantic scope APIへ統合し、expression parserのlocal registry依存を減らす。
+
+### このセッション（続き1055）: expression identifier分類をsemantic resolverへ移した
+- semantic identifier resolution:
+  - 新規`semantic/identifier_resolution.c/.h`にlocal、enum constant、global object、function、
+    undeclared call、undefinedの分類とsymbol lookupを集約した。
+  - call分類はglobal function-pointer objectを直接functionより優先し、declared functionの
+    fixed parameter数/variadic情報も構造化結果として返す。
+  - static-local内部名などmetadata用途向けにglobal object symbol lookup APIも同moduleへ置いた。
+- parser reduction:
+  - `expr.c`の通常primary identifier pathからlocal/global/enum/function registry lookupを削除した。
+  - function callのimplicit declaration markerとargument count検査はsemantic resolution結果だけを消費する。
+  - `sizeof(array/VLA)`とstatic-local array metadataの特殊経路も同resolverへ移した。
+  - `expr.c`内の`ps_decl_find_lvar`、`ps_find_global_var`、`ps_ctx_find_enum_const`、
+    `ps_ctx_has_function_name`、`ps_ctx_get_function_is_variadic`直接参照は0件。
+- boundary coverage:
+  - local、enum constant、global object、global function-pointer call、declared function、
+    undeclared call、undefinedをresolver unit boundaryで分類した。
+  - declared function callのparameter count/variadic metadataも確認した。
+- execution probe:
+  - local、enum、global、直接function call、global function-pointer callを組み合わせたprobeが
+    `build/ag_c -> clang -> executable`でexit 0。
+- 次段audit:
+  - identifierを完全なunresolved syntax nodeにする前に、`expr.c`にはpointer arithmetic、member/subscript、
+    `sizeof`等のparser-time type-directed queryが15箇所残る。
+  - 次はpostfix/member/subscriptの型依存構築をsemantic transformへ移し、`ND_IDENTIFIER`を
+    semantic pass冒頭でresolveできる順序を作る。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - identifier resolution境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+
+### このセッション（続き1056）: member accessとoperand型制約をsemantic resolverへ移した
+- member access resolution:
+  - 新規`semantic/member_access_resolution.c/.h`へ`.`/`->`のbase妥当性、tag identity、
+    canonical aggregate member lookup、legacy scoped tag fallbackを移した。
+  - resolverはbase tag/pointer viewとmember descriptorを構造化して返し、parserはrvalue aggregateの
+    temporary materializationと既存member deref AST構築だけを担当する。
+  - `expr.c`から`ps_type_find_aggregate_member`、`ps_ctx_find_tag_member_info*`直接参照を削除した。
+- expression operand resolution:
+  - 新規`semantic/expression_operand_resolution.c/.h`へ単項derefのpointer/void-pointer制約を移した。
+  - subscriptのpointer operand制約と`3[arr]` -> `arr[3]` operand正規化も同resolverへ移した。
+  - parserは解決済みbase/indexを使って既存stride ASTを構築する。
+- boundary coverage:
+  - canonical member成功、`.`baseへの不正`->`、missing memberをresolver unit boundaryで確認した。
+  - pointer/non-pointer deref、swapped subscript、両辺scalar subscriptも直接確認した。
+- execution probe:
+  - nested struct member、array member、scalar pointer member、`1[p]`、単項`*`を組み合わせたprobeが
+    `build/ag_c -> clang -> executable`でexit 0。
+- remaining parser-time type work:
+  - `expr.c`の対象type queryは15件から10件へ減った。
+  - subscriptのstride計算と`ND_DEREF`生成はまだparse中なので、完全なparse/resolve/lower分離ではない。
+  - 次はraw `ND_SUBSCRIPT`を追加し、canonical result typeだけをsemantic materializationで提供し、
+    stride/deref AST生成をsemantic loweringへ移す。
+- 確認:
+  - warningなしで`build/test_parser`、`build/ag_c`、`build/bench_parser`をビルドした。
+  - 新規member/operand resolver境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+
+### このセッション（続き1057）: raw subscript syntaxをsemantic/loweringへ分離した
+- raw syntax:
+  - `ND_SUBSCRIPT`を追加し、parserは`left[right]`の左右と`[` tokenだけを保持するようにした。
+  - raw node constructorはpostfix chainの型参照用にcanonical result typeだけをmaterializeする。
+  - `a[0][1]`はparse直後に二段の`ND_SUBSCRIPT`として残り、`1[a]`もsource operand順を保持する。
+- semantic resolution:
+  - pointer/array operand制約とC11の`a[b] == b[a]`正規化を`semantic_pass.c`へ移した。
+  - assignment validationがlowering前の`ND_SUBSCRIPT`をlvalueとして扱うようにした。
+- lowering:
+  - 新規`lowering/subscript_lowering.c/.h`へ固定配列、pointer-to-array、member array、
+    scalar pointer member、多次元VLAのstride計算とbase-address選択を移した。
+  - semantic lowering passが子式を先にlowerした後、raw `ND_SUBSCRIPT`を既存`ND_DEREF` ASTへ変換する。
+  - `expr.c`から旧stride計算、VLA runtime stride load、subscript `ND_DEREF`生成を削除した。
+- boundary coverage:
+  - parser unit testでraw二段subscript、canonical result type、semantic後の`ND_DEREF`化、
+    `1[a]`のsemantic正規化を直接確認した。
+  - `expr.c`の対象type-directed queryは10件から4件へ減り、subscript stride queryは0件になった。
+- execution probes:
+  - `test/fixtures/probes_found_bugs/vla_3d4d_param.c` = `build/ag_c -> clang -> executable`でexit 0。
+  - nested member、member array、scalar pointer member、`1[p]`、単項derefの複合probeもexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規subscript境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - 単項`*`をraw unary dereference syntaxにし、operand制約と`ND_DEREF` metadata生成を
+    semantic/loweringへ移してparserの残るoperand type queryを減らす。
+  - `_Generic`/`sizeof`のparse-time type queryをsemantic type-query nodeへ分離する。
+
+### このセッション（続き1058）: unary dereferenceをraw syntaxとsemantic loweringへ分離した
+- raw syntax:
+  - `ND_UNARY_DEREF`を追加し、parserは`*operand`と演算子tokenだけを保持するようにした。
+  - raw constructorはnested deref、member access、`sizeof`/`_Generic`、間接callのparse継続に必要な
+    canonical result typeだけをmaterializeする。
+  - comma assignment targetと`(*fp)()` callable抽出はraw indirectionも扱うようにした。
+- semantic resolution:
+  - deref operandのpointer/void-pointer制約を`semantic_pass.c`で子式変換後に適用する。
+  - canonical typeが存在する場合、resolverはnode kind fallbackでなくcanonical typeを正本として判定する。
+    これにより一段pointerへの過剰なnested derefも見逃さない。
+  - raw unary derefをassignment/inc-decのmodifiable lvalue判定に追加した。
+- lowering:
+  - 新規`lowering/unary_deref_lowering.c/.h`がraw nodeを既存metadata付き`ND_DEREF`へ変換する。
+  - semantic lowering passはoperandを先にlowerしてからunary deref metadataを生成する。
+  - parserから`psx_resolve_deref_operand()`と`ps_node_new_unary_deref_for()`の直接呼び出しを削除した。
+- boundary coverage:
+  - raw `**q`の二段nodeとcanonical intermediate/result type、semantic後の二段`ND_DEREF`化を確認した。
+  - raw `*p = 7`がsemantic後に既存assignment targetへlowerされることを確認した。
+  - 旧unit testの`int a`に対する不正な`*a`許容を廃止し、実際の`int *a`型で検証するよう修正した。
+- diagnostics:
+  - `should_reject/deref_int.c`はsemantic診断`E3064`でexit 1。
+  - `should_reject/void_ptr_deref.c`もvoid-pointer専用`E3064`でexit 1。
+- execution probes:
+  - `ptr_to_funcptr_direct_deref.c`、`funcptr_apply_multi.c`、`ptr_to_array_deref.c`、
+    `multilevel_pointer_typedef.c`、`pointer_to_vla.c`はすべて`build/ag_c -> clang -> executable`でexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規unary deref境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `_Generic` control expressionのparse-time選択をraw generic selection node + semantic resolveへ移す。
+  - `sizeof`のparse-time type queryをraw type-query node + semantic foldへ移す。
+
+### このセッション（続き1059）: `_Generic`をraw syntaxとsemantic type selectionへ分離した
+- raw syntax:
+  - `ND_GENERIC_SELECTION`、control expression、association DTO配列を追加した。
+  - parserはcontrolと全associationをsource順に保持し、選択式を返さなくなった。
+  - control expressionはunevaluated contextでparseし、association型はcanonical typeとして保持する。
+- parser simplification:
+  - complex cast control専用のtoken rewind、allocator pin/unpin、二重parenthesis lookaheadを削除した。
+  - parser内の`generic_control_type()`と`ps_type_generic_matches()`直接呼び出しを削除した。
+  - `expr.c`の対象type-directed queryは4件から3件へ減った。
+- canonical type selection:
+  - array/function decayとinteger identity正規化を`ps_type_generic_control()`へ集約した。
+  - association選択は`ps_type_generic_select_index()`を唯一のcanonical algorithmとして、
+    node type materializationとsemantic passの両方から利用する。
+  - semantic passでdefault重複、互換型association重複、一致なしを診断する。
+- pointer-returning lowering foundation:
+  - semantic lowering passを`node_t *`返却APIへ変更し、block body、function argument/callee、
+    control node、initializer/designatorの親pointerを変換結果で更新するようにした。
+  - arbitrary derived nodeを`*node = *selected`で部分コピーする方式を廃止した。
+  - expression/initializer semantic APIも変換後root pointerを返し、static initializerとprogram配列が保持する。
+- generic lowering:
+  - 新規`lowering/generic_selection_lowering.c/.h`はsemanticが確定したassociation expression pointerを返す。
+  - controlと非選択associationはloweringされず、複合リテラル実体化やruntime副作用を起こさない。
+  - generic selectionがlvalueを選ぶ場合はassignment/inc-decのvalue categoryを選択式から引き継ぐ。
+  - discarded controlのunevaluated usage eventはsemantic resolverで保持する。
+- boundary/diagnostic coverage:
+  - raw nodeのcontrol、2 association、default marker、未選択状態とsemantic後のselected `ND_ADD`を確認した。
+  - 互換型association重複とdefault重複をcompile-fail testへ追加した。
+- execution probes:
+  - `generic_semantic_selection.c`を追加し、selected lvalue assignment、controlの非評価、
+    nonselected associationの非評価を`build/ag_c -> clang -> executable`で確認してexit 0。
+  - long/long long、char identity、complex derived type、deref FP、function pointer、
+    function-returning-array pointer、multi-level const pointerの既存7 probeもすべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規generic境界と重複診断を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `sizeof` expressionをraw type-query node + semantic constant foldへ移す。
+  - compound literal等に残るin-place node mutationをpointer-returning loweringへ順次統一する。
+
+### このセッション（続き1060）: `sizeof`をraw queryとsemantic/runtime loweringへ分離した
+- raw syntax:
+  - `ND_SIZEOF_QUERY`を追加し、parserはexpression operandまたはtype-nameの
+    base type、declarator shape、array bound ASTを保持するようにした。
+  - expression operandはunevaluated contextのまま保存し、parser内のVLA識別子scan、
+    subscript token lookahead、runtime slot選択、定数`ND_NUM`生成を削除した。
+  - type-nameは新規`ps_parse_runtime_type_name_syntax_at()`でarray boundを定数化せず保持し、
+    `sizeof(int[n])`を列挙定数parserへ誤送出しなくなった。
+- semantic resolution:
+  - fixed type-nameはsemanticでdeclarator shapeを完成し、canonical typeの`ps_type_sizeof()`へ集約した。
+  - VLA type-nameはbound ASTを通常のsemantic式経路で処理し、宣言子を内側から適用して
+    unsigned 8-byteのruntime size expressionを構築する。
+  - `sizeof(int (*[n])[m])`ではpointer適用時に内側size依存を切り、正しく`n * 8`を生成する。
+  - VLA object/subscriptはowner canonical descriptorとAST subscript depthから保存済みsize/stride slotを選ぶ。
+  - incomplete array compound literalはinitializerから型を完成するが、sizeofのためだけにobjectを実体化しない。
+  - 明示的`&a`と暗黙のarray addressを`is_explicit_addr_expr`で区別し、`sizeof(&a)`を常にpointer sizeとした。
+  - `&(array compound literal)`は`requires_addressable_object`のpointer typeを優先する。
+  - type-nameの負の定数array boundはsemanticで従来どおり拒否し、zero-length extension warningも維持した。
+- lowering:
+  - 新規`lowering/sizeof_lowering.c/.h`がfixed queryを`ND_NUM`、VLA objectを保存slot load、
+    VLA type-nameをruntime size expressionへ変換する。
+  - VLA subscript operandはsizeに必要なindex副作用だけをsource順に残し、それ以外のoperand評価を捨てる。
+  - static assert frontendはconstant evaluation前にsemantic expression analysisを通す。
+- boundary/fixture coverage:
+  - parser unit testでraw expression/type-name query、unevaluated usage、deferred shape/bound AST、
+    semantic後のfixed fold、明示的array addressのpointer sizeを確認した。
+  - `sizeof_vla_type_name.c`を追加し、単一/多次元VLA型名、array-of-pointer declarator、bound副作用を確認した。
+  - expression VLA 6件、fixed/compound/string/side-effect sizeof 8件を
+    `build/ag_c -> clang -> executable`で確認し、すべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規sizeof境界と負bound診断を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - type-nameのbase specifier適用もraw DTOとしてsemanticへ移し、cast/compound literal/`_Alignof`と
+    共通のtype-name resolve境界へ統合する。
+  - compound literal loweringの残るin-place mutationをpointer-returning APIへ統一する。
+
+### このセッション（続き1061）: expression type-nameを共通syntax/binding/resolve境界へ移した
+- common type-name DTO:
+  - `psx_type_name_ref_t`を追加し、parsed syntax、lexical base binding、resolved canonical typeを
+    それぞれ別フィールドで保持するようにした。
+  - 新規`semantic/type_name_resolution.c/.h`がscope中のbase binding snapshotと、
+    後段のdeclarator/canonical type resolutionを担当する。
+  - function/block scopeのtag/typedef registryはparse終了時に破棄されるため、base bindingだけは
+    syntax採用直後に保存し、declarator適用と型比較/size計算はsemantic passまで遅延する。
+- migrated expressions:
+  - `sizeof(type-name)`はparserでbase typeを直接適用せず、runtime boundを含むtype-name syntaxを保持する。
+  - `_Generic` associationはparserでcanonical type/identity正規化を行わず、semanticで解決・比較する。
+  - `_Alignof`は新規`ND_ALIGNOF_QUERY`としてraw ASTに残り、semantic resolve後に
+    `lowering/alignof_lowering.c/.h`で`ND_NUM`へ変換する。
+- speculative parse fix:
+  - cast parserのcompound-literal判定をsyntax-only lookaheadへ変更した。
+  - `(struct Inline {...}){...}`をcompound literalと判定するだけの段階でtag定義を適用し、
+    primary parserでも再適用してduplicate member/tag診断になる二重意味処理を除去した。
+  - type-name候補のbindingはcapture時ではなく、その候補を実際に採用した直後だけ行う。
+- boundary/fixture coverage:
+  - unit testで`sizeof`、`_Generic`、`_Alignof`がraw段階でsyntaxを持ちresolved typeを持たず、
+    semantic後にのみcanonical type/定数結果を得ることを確認した。
+  - `deferred_type_name_binding.c`を追加し、global/local tag shadowing、local typedef、
+    3種類のtype-name expression、inline tag compound literalを実行確認した。
+  - `generic_semantic_selection.c`、`sizeof_vla_type_name.c`、
+    `compound_literal_array_addr_sizeof.c`も再確認し、すべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規raw type-name境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- remaining parser dependency:
+  - `expr.c`でcanonical type-nameを直接作る経路はcast/compound literal共通の
+    `parse_parenthesized_type_name()` 1本だけになった。
+  - cast result typeをadditive/member/call等の後続parserが問い合わせるため、次はsource castに
+    type-name refとparser projectionを分けて持たせ、残るtype-directed parse queryをraw化する。
+
+### このセッション（続き1062）: cast/compound literalもtype-name ref正本へ移した
+- raw source cast:
+  - `node_source_cast_t`を追加し、source castはtarget canonical typeでなく`psx_type_name_ref_t`を保持する。
+  - parserは通常のcastではtarget typeをmaterializeせず、semantic transformがrefから解決する。
+  - deref/subscript/member/call等の後続構文が型を必要とした場合だけ、`ps_node_get_type()`が
+    同じrefからprojectionをlazy materializeする。
+  - loweringがnumeric nodeを同じarena slotへ上書きする既存契約を守るため、source cast slotは
+    `node_num_t`サイズで確保し、`_Static_assert`でサイズ条件を固定した。
+- raw compound literal:
+  - `node_compound_literal_t`もtype-name refを保持し、parse直後は`object_type`/`base.type`を持たない。
+  - semanticまたはpostfix parseが型を要求した時点でrefを解決し、compound object専用canonical cloneを作る。
+  - incomplete array initializerによる型完成はこのobject cloneだけを更新し、syntax bindingと分離した。
+- parser cleanup:
+  - `parse_canonical_type_name_at()`を削除した。
+  - `expr.c`内の`psx_apply_parsed_type_name()`/`psx_apply_parsed_decl_specifier()`直接呼び出しは0件になった。
+  - `parse_parenthesized_type_name()`はsyntax capture + lexical bindingのみを行い、cast/compoundの共通DTOを返す。
+- boundary/probe coverage:
+  - unit testでplain source castとcompound literalがraw段階ではcanonical typeを持たず、
+    type-name syntax/bound baseだけを保持することを確認した。
+  - scalar/FP/tag/pointer-to-array cast、cast後deref/call、array/struct compound literal、
+    compound address/member、local typedef function pointerを含む12 probeを実行し、すべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - 新規raw cast/compound境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - parserに残る直接type queryは単項`__real__/__imag__`と浮動小数単項minus、および
+    struct rvalue temporary size fallbackに限定された。
+  - 次はraw unary real/imag/negate nodeとsemantic result typingへ移し、`expr.c`の
+    `ps_node_get_type()`直接利用を0にする。
+
+### このセッション（続き1063）: unary演算子の型付けをsemantic境界へ移した
+- raw unary syntax:
+  - `ND_UNARY_NEGATE`を追加し、parserは単項minusのoperand/tokenだけを保持する。
+  - `__real__`/`__imag__`もparserではoperandだけを持つraw `ND_CREAL`/`ND_CIMAG`として生成する。
+  - `expr.c`から`ps_node_get_type()`、`ps_node_type_size()`、FP種別問い合わせhelperをすべて除去し、
+    parser内の直接type queryを0件にした。
+- semantic typing/lowering:
+  - semantic passがoperandを先に解決し、arithmetic operandの検証、integer promotion、
+    complex component型の確定を行う。
+  - 新規`lowering/unary_operator_lowering.c/.h`がscalar FP minusを`ND_FNEG`、
+    integer/complex minusをtyped `0 - operand`へ変換する。
+  - complex unary minusをscalar `ND_FNEG`へ誤変換していた既存経路を除去し、実部・虚部をともに反転する。
+  - non-complex `__real__`はoperandへ、integer `__imag__`は同じcanonical integer型のzeroへlowerする。
+- constant expression/member size:
+  - `psx_eval_const_int()`/`psx_eval_const_fp()`がraw `ND_UNARY_NEGATE`を評価し、
+    負array boundをVLAへ誤分類しないようにした。
+  - member resolverがcanonical base object sizeを返し、struct rvalue temporary生成時の
+    parser type queryと未解決時の8-byte fallbackを廃止した。
+- boundary/fixture coverage:
+  - unit testでraw integer/FP minusとraw real/imagがparse直後に型を持たず、semantic後に
+    `ND_SUB`/`ND_FNEG`/component type/typed zeroへ変換されることを確認した。
+  - pointerへの単項minusと`__real__`をsemantic compile-fail caseとして追加した。
+  - `unary_semantic_resolution.c`を追加し、負のzero、complex unary minus、integer real/imag、
+    `long` result widthを実行確認した。
+  - complex conversion、complex by-value ABI、complex subtraction、function pointer経由の
+    struct return/member、large struct returnの既存5 probeもすべてexit 0。
+- 確認:
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**。
+  - `expr.c`の`ps_node_get_type()`/`ps_node_type_size()`/旧FP helper検索 = 0件。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `node_utils.c`に残るexpression kind別lazy type projectionを棚卸しし、parser都合のprojectionと
+    semantic canonical result materializationを分離・集約する。
+  - parse後も型付け前ASTを直接読む利用箇所を減らし、semantic passを唯一のtyped AST入口に近づける。
+
+### このセッション（続き1064）: source binary expressionをraw syntaxへ移した
+- raw/typed constructor split:
+  - `ps_node_new_raw_binary()`を追加し、`expr.c`が作るsource binary/commaは型・幅・符号を持たない
+    raw ASTとして生成するようにした。
+  - `ps_node_new_binary()`はsemantic lowering/IR向けのtyped constructorとして残し、source parseと
+    lowering生成物の責務を分けた。
+  - `expr.c`内の`ps_node_new_binary()`呼び出しは0件になった。
+- semantic materialization:
+  - semantic passがbinary/comma/ternaryの子を先に解決し、その後にcanonical result typeを
+    明示的にmaterializeする。
+  - unit testで`p + 2`と`i + d`がparse直後は`type == NULL`、semantic後はそれぞれpointerと
+    double result typeを持つことを確認した。
+- canonical usual arithmetic conversion:
+  - node固有だったusual arithmetic conversion実装を`type.c`の
+    `ps_type_usual_arithmetic_result()`へ集約した。
+  - integer promotionの符号判定も`ps_type_integer_promotion_is_unsigned()`として同じ型規則層へ移した。
+  - unsigned char + short、unsigned int + signed long、complex float + doubleのcanonical resultを
+    pure type APIのunit testで固定した。
+  - complex float + doubleでFP kindだけdouble、sizeは8のままになり得た不整合を修正し、
+    complex double resultを16 bytesに統一した。
+- shift type/lowering state:
+  - source shift result typeをlhsそのものではなくlhsのinteger promotion resultとして確定する。
+  - `unsigned char >> n`はsigned int、`unsigned int >> n`はunsigned intになる。
+  - cast loweringのtrunc/sign-extension shiftはcanonical typeとは別の実行モードを必要とするため、
+    `has_shift_unsigned_override`を追加し、2回目のsemantic walkでもASR/LSR指定を保持する。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - raw binary/UAC/shift override境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - signed sub-int cast、shift lhs promotion、wide signed/unsigned比較、narrow bitwise promotion、
+    3D array/struct pointer arithmetic、complex add/mulの既存8 probeがすべてexit 0。
+  - mixed complex float/double conversion probeもexit 0。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - function call resultとidentifier/function referenceに残るlazy type projectionをsemantic resolveへ移す。
+  - ternary/commaのparser後projection利用を棚卸しし、semantic前に型を要求するpostfix/member経路を
+    syntax DTOまたはresolver queryへ置き換える。
+
+### このセッション（続き1065）: function call/referenceをcanonical function typeへ束縛した
+- canonical callable binding:
+  - `node_func_t`と`node_funcref_t`に`function_type`を追加し、call result typeとcallable typeを
+    別フィールドで保持するようにした。
+  - identifier resolverがdirect function identifierのcanonical `PSX_TYPE_FUNCTION`を返し、
+    parserはdirect call/function referenceへそのcloneを束縛する。
+  - bare `ND_FUNCREF`からcall postfixへ変換する場合も同じfunction type bindingを引き継ぐ。
+  - indirect callはsemantic passがcallee canonical type内のfunction typeを見つけて束縛する。
+- semantic result typing:
+  - semantic passがbound function typeの`base`をcall result canonical typeとしてcloneする。
+  - function referenceはsemanticでpointer-to-function canonical typeへmaterializeする。
+  - canonical callable typeがない明示的callはsemantic errorにし、implicit function declarationだけ
+    明示的な`int` fallbackを残した。
+  - loweringのargument conversionはcall nodeに束縛済みのfunction typeを第一正本として使う。
+- parser/legacy cleanup:
+  - indirect callのFP/complex return metadataをparserがcalleeから手動コピーする処理を削除した。
+  - canonical indirect return typeにcallee自身の`funcptr_sig`を上書きする処理を削除した。
+  - pointer-to-array call resultは構造的`pointer -> array -> element` shapeだけを持ち、余計な
+    callable payloadを持たない契約へunit testを更新した。
+  - `int fp; fp(1);`を成功例にしていた旧unit testを正しいfunction-pointer宣言へ修正し、
+    noncallable object呼び出しをcompile-fail caseへ追加した。
+- boundary/ABI coverage:
+  - direct call、bare function reference、local function-pointer indirect callがparse直後は
+    function bindingのみを持ちresult typeはNULL、semantic後にのみresult typeを得ることを確認した。
+  - indirect FP/member FP、complex by-value、aggregate return、pointer-to-array/2D-array return、
+    function-pointer return call/chain、small/large struct member returnの既存10 probeがすべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - canonical callable境界とnoncallable診断を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `expr.c`のcall return用FP/pointee/complex metadata query = 0件。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - postfix/member parserがsemantic前にcallee/aggregate shapeを必要とする経路をsyntax DTOまたは
+    canonical binding queryへ分離する。
+  - `type_from_funcptr_callee_type()`のlegacy return-shape reconstruction fallbackを利用箇所ごとに
+    canonical function typeへ移し、最終的に削除する。
+
+### このセッション（続き1066）: member access/postfix callをraw syntaxとsemantic shapeへ分離した
+- raw member syntax:
+  - `ND_MEMBER_ACCESS`と`node_member_access_t`を追加し、parserはbase、member名、`.`/`->`、tokenだけを保持する。
+  - parser内のtag lookup、member存在/基底型診断、member type projection、address+deref生成を削除した。
+  - nested member、member subscript、member function callもraw nodeを連ねるだけでparseする。
+- semantic member binding:
+  - semantic passがbaseを先に型付けし、`psx_resolve_member_access()`でcanonical member descriptorを束縛する。
+  - member `decl_type`をresult canonical typeとしてcloneし、aggregate objectのconst/volatile qualifierと
+    bitfield width/offset/signed stateをsemantic nodeへ反映する。
+  - invalid `.`/`->` base、member not found、bitfield address診断をsemantic phaseへ移した。
+  - raw memberをmodifiable lvalueとしてassignment/inc-dec検証が扱えるようにした。
+- member lowering:
+  - 新規`lowering/member_access_lowering.c/.h`がmember offset addressとtyped `ND_DEREF`を生成する。
+  - function call/ternaryのaggregate rvalue temporary生成をparserからloweringへ移し、
+    `(tmp=base,tmp)` materializationをsemantic後に行う。
+  - function解析後のlvar refreshがlowering生成temporaryを既存どおり回収する。
+- callable postfix normalization:
+  - parserのfunction-pointer signature/pointer-level問い合わせによるderef除去を削除した。
+  - semantic passがcallee deref chainの底を先に型付けし、canonical functionまでのpointer depthから
+    実ロードに必要な`depth-1`個だけを残す。
+  - `*fp`/`**fp`のfunction-designator derefはno-op、`*pp`のpointer-to-function-pointer derefは
+    実ロードとして保持する。
+  - callable判定は任意深さの`ps_type_find_function()`でなく、functionまたは直下がfunctionのpointerだけを受理する。
+- boundary/diagnostic coverage:
+  - `object.value`がparse直後は未解決`ND_MEMBER_ACCESS`、semantic/lowering後はtyped `ND_DEREF`になることを確認した。
+  - pointer-to-function-pointer直接呼び出しとbitfield address取得をcompile-fail caseへ追加した。
+  - `expr.c`からmember resolver/declaration temporary pipeline依存を削除し、postfix/member/callの
+    node type/shape metadata queryを0件にした。
+- execution probes:
+  - dot/arrow、member function pointer/FP return、function/ternary aggregate rvalue、2D-array/pointer member、
+    nested ptr/subscript member、bitfield read/write、compound-literal member lvalueの12 probeがすべてexit 0。
+  - explicit `*fp`/`**fp` callを含むprobeと、pointer-to-function-pointer実ロード、function-pointer return chain、
+    member callを含む追加7 probeもすべてexit 0。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - raw member/callable normalization境界を含む`./build/test_parser` = **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_new_unary_deref_syntax_for()`/`ps_node_new_subscript_syntax_for()`がraw node生成時に行う
+    lazy type projectionを削除し、constructorを純粋syntax化する。
+  - semantic path外に残る`type_from_funcptr_callee_type()` legacy reconstruction利用を棚卸しして削除する。
+
+### このセッション（続き1067）: deref/subscript/assignmentと間接callのlazy型再構成を縮小した
+- raw expression constructors:
+  - `ps_node_new_unary_deref_syntax_for()`と`ps_node_new_subscript_syntax_for()`はoperandだけを保持し、
+    parse中にresult typeやscalar metadataをmaterializeしない純粋syntax constructorになった。
+  - source assignment用に`ps_node_new_raw_assign()`を追加し、parserの単純代入・複合代入はlhs typeを
+    constructorから問い合わせない。既存`ps_node_new_assign()`はlowering用typed constructorとして残した。
+- canonical operand resolution:
+  - semantic operand resolverがderefをcanonical pointer、subscriptをcanonical pointer/arrayだけから解決する。
+  - node上の`deref_size`、array flag等へ戻るlegacy fallbackを削除した。
+  - semantic passが`ND_ASSIGN`のresult canonical typeを解決済みlhsからmaterializeする。
+- indirect function call cleanup:
+  - `type_from_funcptr_callee_type()`と`type_from_indirect_funcall()`を削除した。
+  - `funcptr_sig.return_shape`、tag identity、scalar width、pointee-array metadataからcall result型を
+    推測・再構成するhelper一式も削除した。
+  - canonical function typeを持たない間接callはsemantic前には型なしのままとし、semantic passが
+    calleeの`PSX_TYPE_FUNCTION`を`function_type`へ束縛した後、その`base`だけからresult型を得る。
+  - unit testの旧metadata-only call casesを、canonical function typeなしでは型を作らない契約へ更新した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`をビルドした。
+  - raw deref/subscript/assignment境界とcanonical callable境界を含む`./build/test_parser` =
+    **OK: All unit tests passed**。
+  - pointer-to-pointer/member/subscript、多次元array decay、明示的function deref、function-pointer return、
+    FP/large struct/pointer-to-2D-array returnを含む既存8 probeがcompile/link/runすべてexit 0。
+  - legacy indirect call reconstruction helper検索 = 0件、`git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_get_type()`に残るraw `ND_UNARY_DEREF`/`ND_SUBSCRIPT` lazy projectionを、semantic-before-queryが
+    全利用箇所で成立することを確認しながら削除する。
+  - declaration initializer等、source AST constructorがtarget typeを直接materializeする残存経路を棚卸しする。
+
+### このセッション（続き1068）: raw deref/subscriptの型付け入口をsemanticへ一本化した
+- semantic indirection result:
+  - `psx_resolve_indirection_result_type()`を追加し、解決済みoperandのcanonical pointer/array `base`から
+    deref/subscript result typeをcloneする責務をsemantic operand resolverへ置いた。
+  - semantic passはoperandの妥当性と左右入れ替えを解決した後、result canonical typeを明示的に設定する。
+- lazy projection removal:
+  - `ps_node_get_type()`のraw `ND_UNARY_DEREF`/`ND_SUBSCRIPT` caseを削除した。
+  - raw nodeに`ps_node_get_type()`を直接呼んでもNULLのままであり、semantic passを通した後だけ型を持つ
+    契約をunit testで固定した。
+  - lowering用typed `ND_DEREF` constructorと、canonical/legacy storage metadataを扱う既存lowering helperは
+    source AST型付けとは分離したまま維持している。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - 続き1067と同じderef/subscript/call return系8 probeがcompile/link/runすべてexit 0。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - source declaration initializer constructorのtarget type materializationをraw/typedに分割する。
+  - `ps_node_get_type()`に残るbinary/ternary/unary等のlazy caseについて、source raw nodeから到達不能に
+    なったものをsemantic result APIへ移し、utility switchを縮小する。
+
+### このセッション（続き1069）: declaration initializerをraw source nodeへ統一した
+- raw constructor API:
+  - source専用だった`ps_node_new_decl_initializer()`とlist版を
+    `ps_node_new_raw_decl_initializer()` / `ps_node_new_raw_decl_initializer_list()`へ改名した。
+  - constructorがtargetへ`ps_node_get_type()`を呼び、`ND_DECL_INIT.type`をparse時に設定する処理を削除した。
+  - parserとunit testをraw APIへ移し、旧API利用は0件になった。
+- semantic/lowering boundary:
+  - semantic passがtarget expressionを先に解決し、そのcanonical typeをcloneして`ND_DECL_INIT.type`へ設定する。
+  - initializer loweringは従来どおりtyped `ND_ASSIGN`を生成し、source initializer nodeとlowered assignmentの
+    constructor責務を分離した。
+  - targetが型付きでもraw declaration initializer自身は型を持たず、`ps_node_get_type()`もNULLを返すことを
+    unit testで固定した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - complex/scalar normalization、3D array、nested designated struct、aggregate copy、union array、2D string、
+    array+struct designatorの既存8 probeがcompile/link/runすべてexit 0。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_get_type()`に残るsource binary/ternary/unary lazy result materializationをsemantic resolverへ移す。
+  - typed lowering constructorが必要なprojectionとsource raw node用caseを分類し、utility switchの責務を縮小する。
+
+### このセッション（続き1070）: unary arithmetic result型をsemantic resolverへ移した
+- semantic result API:
+  - `psx_resolve_arithmetic_unary_result_type()`を追加し、`ND_UNARY_NEGATE`、`ND_CREAL`、`ND_CIMAG`の
+    result canonical typeをoperand typeだけから解決するようにした。
+  - unary minusのinteger promotion、float/complex保持、complex real/imagのcomponent FP type、
+    non-complex real/imagの同型結果をsemantic operand resolverへ集約した。
+- lazy projection removal:
+  - `node_utils.c`の`type_from_unary_negate_operand()`と`type_from_complex_part_operand()`を削除した。
+  - `ps_node_get_type()`からraw unary 3種のcaseを削除し、semantic passがresult typeを直接設定する。
+  - parse直後のraw integer/FP negateとcomplex real nodeへgetterを呼んでもNULLのままであることを
+    unit testで固定した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - unary semantic、complex float/double conversion、complex by-value ABI、complex brace init、negative FP、
+    generic complex derived typeの既存6 probeがcompile/link/runすべてexit 0。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - source binary/comma/ternaryのresult型規則をsemantic expression resolverへ移し、
+    `ps_node_get_type()`の最大のlazy case群を削除する。
+  - source cast/compound literal/generic selectionに残るtype-name/selection projectionは、postfix parseからの
+    lazy binding利用が本当に消えたかを先に監査してからsemantic-only化する。
+
+### このセッション（続き1071）: binary/comma/ternary result型をpure type APIへ移した
+- canonical type rules:
+  - `psx_type_binary_op_t`、`ps_type_binary_result()`、`ps_type_conditional_result()`を`type.c/.h`へ追加した。
+  - comparison/logicalの`int`結果、shift lhs promotion、usual arithmetic conversion、pointer+integer、
+    pointer-pointer differenceのsigned 8-byte結果、comma rhs、pointer/aggregate/arithmetic conditionalを
+    node metadataに依存せずcanonical typeだけから決定する。
+  - node kindからtype operationへの変換は`ps_node_binary_type_op()`へ一本化し、semantic resolverと
+    typed `ps_node_new_binary()`が同じpure type APIを使う。
+- semantic-only source typing:
+  - `psx_resolve_binary_result_type()`、`psx_resolve_conditional_result_type()`、
+    `psx_resolve_sequence_result_type()`をsemantic operand resolverへ追加した。
+  - semantic passがbinary/comma/ternary/statement-expressionの子を先に解決してresult typeを束縛する。
+  - `ps_node_get_type()`からbinary/comma/ternary/statement-expressionのlazy caseを削除した。
+  - raw source add/comma/ternaryと手作り未型付けnodeへgetterを呼んでもNULLのまま、typed constructorは
+    pure APIから型を持つ契約へunit testを更新した。
+- canonical binding synchronization:
+  - semantic pass内に`semantic_bind_result_type()`を追加し、canonical typeの束縛と移行中のscalar派生metadata
+    同期を一箇所に集約した。今回までに移したinitializer、deref/subscript、unary、binary/conditionalも統一した。
+- address-of gap/root fix:
+  - pointer difference probeで、`&g_arr[i]`が`ND_ADDR(ND_SUBSCRIPT)`のままcanonical typeを持たず、
+    byte differenceをelement strideで割れない穴が露出した。
+  - `psx_resolve_address_result_type()`を追加し、semantic passが未型付けraw `ND_ADDR`をoperand canonical typeから
+    pointer型へ束縛するよう修正した。明示castされた`char*`だけ動くmetadata fallback依存を除去した。
+  - `&p[0]`がraw段階では未型付け、semantic後は`pointer<int>` / deref size 4になる境界テストを追加した。
+  - local `p-p`が`ND_DIV`へlowerされsigned 8-byte結果を持つこと、global pointer differenceが要素単位になることも固定した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - 3D pointer arithmetic、global ptrdiff、integer+pointer、shift promotion、narrow bitwise、usual arithmetic ternary、
+    pointer/aggregate/sub-int ternary、complex conversionの既存10 probeがcompile/link/runすべてexit 0。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - pre/post inc-decのresult型をsemantic resolverへ移し、残る単純operand projectionを削除する。
+  - source cast/compound literal/generic selection/function referenceのlazy type-name/binding projectionを監査し、
+    postfix parseがsemantic前型を必要としなくなっているものからsemantic-only化する。
+
+### このセッション（続き1072）: inc-decの型付けと診断をsemanticへ移した
+- raw parser boundary:
+  - pre/post `++`/`--` constructorからlvalue/const診断を削除し、operandとoperator tokenだけを保持するようにした。
+  - parser専用だった`psx_node_expect_incdec_target()`は宣言・実装とも削除した。
+  - parse直後の4種類のinc-dec nodeは型を持たず、`ps_node_get_type()`もNULLを返す契約をunit testで固定した。
+- semantic resolution:
+  - `psx_resolve_incdec_result_type()`を追加し、解決済みoperandがreal arithmeticまたはpointerの場合だけ
+    canonical typeをcloneする。
+  - semantic passがmodifiable lvalue、const、operand typeを検証してresult型を束縛する。
+  - struct/complex/const operandをsemantic compile-fail caseへ追加した。
+  - `ps_node_get_type()`からpre/post inc-decのlazy operand projectionを削除した。
+- 確認:
+  - parser全unit test成功。
+  - float、struct pointer、char pointer post-inc deref、short post-inc、unevaluated sizeof post-inc、
+    struct pointer array/member、statement expression、index side effectの既存8 probeがcompile/link/runすべてexit 0。
+
+### このセッション（続き1073）: cast/compound literal/generic selectionをsemantic-only化した
+- source cast:
+  - semantic passがtype-name refを解決し、target canonical typeをcloneしてsource castへ束縛する。
+  - `ps_node_get_type()`のsource cast type-name解決caseを削除した。
+  - parser-only function-pointer cast testもraw getter NULL、semantic後にcanonical function typeありへ更新した。
+- compound literal:
+  - semantic passがtype-name refから専用`object_type` cloneを生成し、aggregate definitionをattachする。
+  - expression resultはobject type clone、addressable要求時はsemantic address resultとして束縛する。
+  - parserのcompound address処理に残っていた、semantic前`object_type`を仮定する到達不能分岐を削除した。
+  - `ps_node_get_type()`のcompound object/type-name materialization caseを削除した。
+- generic selection:
+  - association typeとexpressionをsemanticで解決した後、選択expressionのcanonical type cloneをresultへ束縛する。
+  - `ps_node_get_type()`のassociation選択/lazy result caseを削除した。
+- exposed lowering bug/root fix:
+  - file-scope scalar compound literalが`ND_NUM`へlowerされる際、共通`node_t`部分だけをcopyして
+    `node_num_t.val`が元compound payloadの残骸になる既存slot overwrite bugが露出した。
+  - `lower_compound_literal_expression()`が`ND_NUM`を完全サイズでcopyするよう修正し、
+    `node_compound_literal_t` slot size条件を`_Static_assert`で固定した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - deferred type-name、generic selection/complex/function designator、function-pointer/pointer-to-array cast、
+    array/struct/file-scope scalar compound literal、compound addressの既存10 probeがcompile/link/runすべてexit 0。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_get_type()`に残るdirect call/function definition/function reference projectionを監査し、
+    semantic binding済み`function_type`を唯一の入口にする。
+  - `ps_node_type_size()`等のnode metadata fallbackは、typed AST/IR consumerだけに限定できるか別途棚卸しする。
+
+### このセッション（続き1074）: function系lazy projectionとreturn signature cacheを削除した
+- canonical function definition binding:
+  - function declaration pipelineがdefinition nodeへ計画済みcanonical `PSX_TYPE_FUNCTION`をcloneして
+    `function_type`へ束縛するようにした。
+  - definitionの`base.type`は`function_type->base`のcloneとして設定し、full signatureとreturn projectionの
+    関係を明示した。
+- call/reference semantic binding:
+  - direct call/referenceはidentifier resolution時の`function_type` binding、indirect callはcallee canonical型だけを使う。
+  - semantic resolver内のfuncname registry再検索fallbackを削除した。
+  - function referenceはsource tokenを保持し、semanticでpointer-to-function canonical型を生成する。
+  - call argument conversion loweringも束縛済み`call->function_type`だけを使い、callee/name fallbackを削除した。
+- getter cleanup:
+  - `type_from_direct_funcall()`、`type_from_funcref()`と専用arena clone helperを削除した。
+  - `ps_node_get_type()`のfunction call/definition/reference lazy switchを削除した。
+  - これにより`ps_node_get_type()`は既に束縛済みの`node->type`を返し、移行中の派生metadataを同期するだけのaccessorになった。
+  - materializationを行わなくなった`ps_node_materialize_type()`を削除し、semantic visitor/IR builderはgetterを直接使う。
+- return function-pointer source of truth:
+  - legacy `node_func_t.ret_funcptr_sig` fieldとsetterを削除した。
+  - `ps_node_funcdef_ret_funcptr_sig()`は`function_type->base`のcanonical shapeからだけsignatureをprojectionする。
+  - canonical return typeをbaseなしplaceholder pointerへ上書きしていたsetter副作用も消えた。
+- boundary/tests:
+  - raw手作りcall/referenceはbindingだけではresult型を持たず、semantic後に型を得る契約へunit testを更新した。
+  - function definitionがfull `function_type`を持ち、そのbaseと`base.type`がshape一致することを固定した。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - function-pointer return chain/ptrptr、FP/pointer-to-2D-array/large struct return、explicit deref、complex ABI、
+    member FP、variadic indirect、returned funcptr argument conversionの既存10 probeがcompile/link/runすべてexit 0。
+  - `ps_node_get_type()`未型付けkind switch = 0件、legacy function result reconstruction/cache symbol検索 = 0件。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_type_size()`、pointer/qualifier/tag/stride helperに残るnode-kind metadata fallbackを分類し、
+    semantic前互換fallbackとtyped AST/IR projectionを分ける。
+  - canonical typeが必ずあるtyped AST入口を前提にできるhelperからfallbackを削除し、正本化の残件を定量化する。
+
+### このセッション（続き1075）: node value/type metadataのkind fallbackをcanonical projectionへ統一した
+- value type projection:
+  - `ps_node_type_size()`、`ps_node_storage_type_size()`、`ps_node_deref_size()`、`ps_node_is_pointer()`を
+    `node->type` / `psx_type_t`からの直接projectionにし、binary/ternary/comma/statement-expression/inc-dec/
+    call/literalを子nodeや旧scalar metadataから再構成するkind switchを削除した。
+  - 上記で不要になった`node_value_view_*`と`psx_expr_type_state_t.deref_size/has_deref_size`も削除した。
+- pointer/scalar projection:
+  - pointer qualifier depth、base deref size、pointer-to-array bytes、const/volatile qual mask、pointeeの
+    unsigned/bool/void/const/volatile/FP kind、scalarのunsigned/long long/plain char/long double、
+    VLA row slot/remaining stridesをcanonical typeからのprojectionに統一した。
+  - raw `ND_STMT_EXPR`がrhsの型を透過する旧テスト2件は、rawで未解決、semantic analyze後に
+    canonical result型からpointer/pointee FPを得る境界テストへ変更した。
+- 残るnode kind switchの分類:
+  - `pointer_stride_metadata()`とtag identity/scopeの未型付け子node fallbackは次のtype-derived削除対象。
+  - scalar conversion/shift signednessのoverride、bitfield、subscript base-address、array/VLA cursorは
+    canonical C typeとは別のexpression-local lowering stateなので、同じ作業として機械的に削除しない。
+- 確認:
+  - `make -j4 build/test_parser build/ag_c`成功。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - 3D array row/pointer-array arithmetic、pointer-to-array `+1`、3D/mixed/double VLA、qualified pointer return、
+    multilevel FP pointee、function-pointer pointer-to-2D-array return、char pointer post-inc derefの既存10 probeが
+    compile/link/runすべてexit 0。
+  - 全native/Wasm E2Eは正本化完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `ps_node_pointer_stride_metadata()`のtype/expr-state直接projection後に残るkind再帰を削除する。
+  - `ps_node_get_tag_type()` / `ps_node_get_tag_scope_depth()`をcanonical tag type projectionに限定し、
+    semantic前member accessが必要とするtag解決が残っていればsemantic resolver側の束縛漏れとして直す。
