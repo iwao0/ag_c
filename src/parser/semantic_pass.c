@@ -302,9 +302,7 @@ static void semantic_transform_node(node_t *node, node_func_t *current_func,
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
       semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      if (init->init_kind == PSX_DECL_INIT_ARRAY_LIST ||
-          init->init_kind == PSX_DECL_INIT_STRUCT_LIST ||
-          init->init_kind == PSX_DECL_INIT_UNION_LIST) {
+      if (init->init_kind == PSX_DECL_INIT_LIST) {
         semantic_transform_initializer_syntax(
             node->rhs, current_func, fallback_diag_tok);
       } else {

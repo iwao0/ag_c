@@ -42,6 +42,9 @@ static int test_vla_layout(void) {
   ASSERT_EQ(32, three_dim.storage_size);
   ASSERT_EQ(1, three_dim.subsequent_stride_count);
   ASSERT_EQ(56, frame_layout_vla_stride_offset(32, 1));
+  frame_vla_layout_t pointer_vla = frame_layout_pointer_vla_storage();
+  ASSERT_EQ(16, pointer_vla.storage_size);
+  ASSERT_EQ(8, pointer_vla.row_stride_relative_offset);
   ASSERT_EQ(40, frame_layout_pointer_vla_stride_offset(32));
   return 0;
 }

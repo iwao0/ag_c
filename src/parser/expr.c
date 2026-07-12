@@ -13,7 +13,10 @@
 #include "type.h"
 #include "type_name.h"
 #include "../lowering/cast_lowering.h"
+#include "../lowering/global_object_lowering.h"
+#include "../lowering/local_object_lowering.h"
 #include "../lowering/static_data_initializer.h"
+#include "../semantic/declaration_resolution.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
@@ -1322,7 +1325,7 @@ static psx_type_t *compound_pointer_elem_array_decay_type(token_kind_t cast_kind
                                                           int cast_is_unsigned,
                                                           int cast_array_count,
                                                           int cast_ptr_array_pointee_bytes) {
-  if (cast_array_count <= 0) return NULL;
+  if (cast_array_count == 0) return NULL;
   int pointee_size = cast_elem_size > 0 ? cast_elem_size : 8;
   psx_type_t *pointee = NULL;
   if (psx_ctx_is_tag_aggregate_kind(cast_tag_kind)) {
@@ -1434,16 +1437,17 @@ static psx_type_t *compound_literal_object_type(
     object = psx_type_new_pointer(object, ps_type_sizeof(object));
   }
 
-  if (cast_array_count > 0) {
+  if (cast_array_count != 0) {
     if (compound_array_decay_type && compound_array_decay_type->base)
       object = compound_array_decay_type->base;
     int dims[8] = {0};
     int dim_count = cast_array_dim_count > 0 ? cast_array_dim_count : 1;
     if (dim_count > 8) dim_count = 8;
     if (cast_array_dim_count > 0 && cast_array_dims) {
-      for (int i = 0; i < dim_count; i++) dims[i] = cast_array_dims[i];
+      for (int i = 0; i < dim_count; i++)
+        dims[i] = cast_array_dims[i] > 0 ? cast_array_dims[i] : 0;
     } else {
-      dims[0] = cast_array_count;
+      dims[0] = cast_array_count > 0 ? cast_array_count : 0;
     }
     object = psx_type_wrap_array_dims(object, dims, dim_count);
   }
@@ -1463,6 +1467,12 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                 int compound_addr_context,
                                                 expr_parse_ctx_t *ctx) {
   set_curtok(after_rparen);
+  char *current_funcname = NULL;
+  int current_funcname_len = 0;
+  psx_decl_get_current_funcname(&current_funcname, &current_funcname_len);
+  (void)current_funcname_len;
+  token_t *initializer_tok = curtok();
+  node_t *initializer = psx_parse_initializer_syntax_list();
   int cl_is_complex = cast_is_complex;
   int cl_ptr_array_pointee_bytes = cast_ptr_array_pointee_bytes;
   int base_elem = cast_elem_size > 0 ? cast_elem_size : 8;
@@ -1472,46 +1482,17 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
     local_array_dim_count = cast_array_dim_count > 8 ? 8 : cast_array_dim_count;
     for (int i = 0; i < local_array_dim_count; i++) local_array_dims[i] = cast_array_dims[i];
   }
-  // `(T[]){...}` / `(T *[]){...}` の空サイズは初期化子から要素数を推定する。
-  if (cast_array_count < 0) {
-    long long inferred = 0;
-    // 特例: `(char[]){"abc" "def" ...}` のように波括弧で文字列リテラル列を
-    // 包んでいる場合は、文字列内容長 + 1 を要素数として採用する。
-    if (base_elem == 1 && after_rparen && after_rparen->kind == TK_LBRACE) {
-      token_t *t = after_rparen->next;
-      if (t && t->kind == TK_STRING) {
-        long long total = 0;
-        token_t *cur = t;
-        while (cur && cur->kind == TK_STRING) {
-          total += ((token_string_t *)cur)->len;
-          cur = cur->next;
-        }
-        if (cur && cur->kind == TK_RBRACE) {
-          inferred = total + 1; // 終端 NUL
-        }
-      }
-    }
-    if (inferred <= 0) {
-      inferred = psx_initializer_syntax_count_brace_elements(after_rparen);
-    }
-    if (inferred <= 0) {
-      psx_diag_ctx(curtok(), "expr",
-                   "複合リテラル `(T[]){...}` の要素数を初期化子から推定できません");
-      cast_array_count = 1;
-    } else {
-      cast_array_count = (int)inferred;
-      local_array_dims[0] = cast_array_count;
-      local_array_dim_count = 1;
-    }
-  }
   /* `(int (*[N])(args)){f1, f2, ...}` や `(int *[N]){&x, &y}` のように
    * 要素がポインタの配列 compound literal は、配列実体 (N * 8 byte) として登録する。
    * cast_is_ptr=1 + cast_array_count>0 で識別。 */
-  int is_pointer_elem_array = (cast_is_ptr && cast_array_count > 0) ? 1 : 0;
-  int is_arr = ((!cast_is_ptr && cast_array_count > 0) || is_pointer_elem_array) ? 1 : 0;
+  int is_pointer_elem_array = (cast_is_ptr && cast_array_count != 0) ? 1 : 0;
+  int is_arr = ((!cast_is_ptr && cast_array_count != 0) || is_pointer_elem_array) ? 1 : 0;
   if (is_pointer_elem_array) base_elem = 8;
-  int var_size = is_pointer_elem_array ? (8 * cast_array_count)
-                : (cast_is_ptr ? 8 : (is_arr ? base_elem * cast_array_count : base_elem));
+  int array_count_for_storage = cast_array_count > 0 ? cast_array_count : 0;
+  int var_size = is_pointer_elem_array ? (8 * array_count_for_storage)
+                : (cast_is_ptr ? 8
+                               : (is_arr ? base_elem * array_count_for_storage
+                                         : base_elem));
   psx_type_t *compound_array_decay_type =
       is_pointer_elem_array
           ? compound_pointer_elem_array_decay_type(cast_kind, cast_tag_kind,
@@ -1521,11 +1502,7 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
                                                    cast_array_count,
                                                    cast_ptr_array_pointee_bytes)
           : NULL;
-  /* `(double _Complex){re, im}` 等の複素数 compound literal: {実部, 虚部} で
-   * base_elem*2 バイト。is_complex を立てて psx_decl_parse_initializer_for_var の
-   * 複素数 brace 経路に乗せる。 */
-  int cl_complex_scalar = (cl_is_complex && !is_arr && !cast_is_ptr) ? 1 : 0;
-  if (cl_complex_scalar) var_size = base_elem * 2;
+  if (cl_is_complex && !is_arr && !cast_is_ptr) var_size = base_elem * 2;
   psx_type_t *compound_object_type = compound_literal_object_type(
       cast_kind, cast_is_ptr, cast_tag_kind, cast_tag_name, cast_tag_len,
       cast_elem_size, cast_fp_kind, cast_array_count,
@@ -1533,82 +1510,78 @@ static node_t *parse_compound_literal_from_type(token_kind_t cast_kind, int cast
       cast_is_unsigned, cast_is_long_double, cast_is_complex,
       cast_ptr_array_pointee_bytes, compound_array_decay_type);
   psx_ctx_attach_aggregate_definitions(compound_object_type);
+  if (compound_object_type && compound_object_type->kind == PSX_TYPE_ARRAY &&
+      compound_object_type->array_len <= 0 && !compound_object_type->is_vla) {
+    if (!psx_resolve_incomplete_array_initializer(
+            compound_object_type, PSX_DECL_INIT_LIST, initializer)) {
+      psx_diag_ctx(initializer_tok, "compound-literal",
+                   "複合リテラル `(T[]){...}` の要素数を初期化子から推定できません");
+    }
+  }
+  if (compound_object_type) var_size = ps_type_sizeof(compound_object_type);
   char *tmp_name = new_compound_lit_name();
-  char *current_funcname = NULL;
-  int current_funcname_len = 0;
-  psx_decl_get_current_funcname(&current_funcname, &current_funcname_len);
-  (void)current_funcname_len;
   if (current_funcname == NULL) {
     int want_addr = compound_addr_context;
-    /* struct/union/配列のファイルスコープ複合リテラル `&(struct S){3,4}` /
-     * `&(int[3]){1,2,3}[0]` は raw initializer syntax を static-data lowering へ渡し、
-     * アドレス可能な gvar 実体として生成する。 */
-    int cl_is_aggregate = is_arr || psx_ctx_is_tag_aggregate_kind(cast_tag_kind);
-    if (cl_is_aggregate) {
-      global_var_t *gv = calloc(1, sizeof(global_var_t));
-      gv->name = tmp_name;
-      gv->name_len = (int)strlen(tmp_name);
-      gv->type_size = var_size;
-      if (compound_object_type)
-        psx_decl_set_gvar_decl_type(gv, compound_object_type);
-      /* 匿名複合リテラルは内部リンケージ (.global を出さない)。`___compound_lit_N` は
-       * namespace 対象外 (__ 始まり) なので、.global だと別 fixture とリンク衝突する。 */
-      gv->is_static = 1;
-      gv->has_init = 1;
-      token_t *init_tok = curtok();
-      node_t *syntax = psx_parse_initializer_syntax_list();
-      if (!lower_static_object_initializer(
-              gv, compound_object_type,
-              (node_init_list_t *)syntax, init_tok)) {
-        psx_diag_ctx(init_tok, "compound-literal", "%s",
-                     diag_message_for(
-                         DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-      }
-      psx_register_global_var(gv);
-      if (is_arr) {
-        /* 配列複合リテラルはポインタへ decay。ND_ADDR で包み subscript / `&` を通す。 */
-        return apply_postfix(psx_node_new_compound_gvar_array_addr_for(
-            gv, cl_ptr_array_pointee_bytes, cast_elem_size, var_size,
-            compound_array_decay_type), ctx);
-      }
-      node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
-      return apply_postfix((node_t *)gvar_node, ctx);
-    }
-    tk_expect('{');
-    node_t *init_expr = psx_expr_assign();
-    tk_expect('}');
+    token_t *init_tok = initializer_tok;
+    node_init_list_t *list = (node_init_list_t *)initializer;
     /* `&(int){5}` のように `&` のオペランドなら、ND_NUM への短絡 (アドレス取得不能)
-     * を避けて下の gvar 実体化経路へ進む。 */
-    if (!is_arr && !want_addr && init_expr && init_expr->kind == ND_NUM) {
-      return apply_postfix(init_expr, ctx);
+     * を避けてgvar実体化経路へ進む。 */
+    if (!is_arr && !want_addr &&
+        !psx_ctx_is_tag_aggregate_kind(cast_tag_kind) &&
+        list->entry_count == 1 &&
+        list->entries[0].designator_count == 0 &&
+        list->entries[0].value &&
+        list->entries[0].value->kind == ND_NUM) {
+      return apply_postfix(list->entries[0].value, ctx);
     }
-    global_var_t *gv = calloc(1, sizeof(global_var_t));
-    gv->name = tmp_name;
-    gv->name_len = (int)strlen(tmp_name);
-    gv->type_size = var_size;
-    if (compound_object_type)
-      psx_decl_set_gvar_decl_type(gv, compound_object_type);
-    gv->is_static = 1;  /* 匿名複合リテラルは内部リンケージ (.global を出さない) */
-    if (init_expr && init_expr->kind == ND_NUM) {
-      node_num_t *n = (node_num_t *)init_expr;
-      gv->has_init = 1;
-      if (cast_fp_kind != TK_FLOAT_KIND_NONE) {
-        /* `&(double){2.5}` 等の浮動小数複合リテラル: emit は fp スカラを fval から
-         * IEEE-754 で出力する。整数リテラルで書かれていても (`(double){3}`) 宣言型を優先。 */
-        gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
-      } else {
-        gv->init_val = n->val;
-      }
+    psx_global_object_result_t object = {0};
+    if (!lower_global_object_declaration(
+            &(psx_global_object_request_t){
+                .name = tmp_name,
+                .name_len = (int)strlen(tmp_name),
+                .type = compound_object_type,
+                .is_static = 1,
+                .diag_tok = init_tok,
+            },
+            &object) ||
+        !lower_static_declaration_initializer(
+            &(psx_static_declaration_initializer_request_t){
+                .global = object.global,
+                .type = psx_gvar_get_decl_type(object.global),
+                .initializer_kind = PSX_DECL_INIT_LIST,
+                .initializer = initializer,
+                .diag_tok = init_tok,
+            },
+            NULL)) {
+      psx_diag_ctx(init_tok, "compound-literal", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    psx_register_global_var(gv);
+    global_var_t *gv = object.global;
+    var_size = ps_type_sizeof(psx_gvar_get_decl_type(gv));
+    if (is_arr) {
+      return apply_postfix(psx_node_new_compound_gvar_array_addr_for(
+          gv, cl_ptr_array_pointee_bytes, cast_elem_size, var_size,
+          compound_array_decay_type), ctx);
+    }
     node_gvar_t *gvar_node = (node_gvar_t *)psx_node_new_gvar_for(gv);
     return apply_postfix((node_t *)gvar_node, ctx);
   }
-  lvar_t *var = psx_decl_register_lvar_sized(tmp_name, (int)strlen(tmp_name),
-                                             var_size, cl_complex_scalar ? var_size : base_elem, is_arr);
-  if (compound_object_type)
-    psx_decl_set_lvar_decl_type(var, compound_object_type);
-  node_t *init = psx_decl_parse_initializer_for_var(var, cast_is_ptr);
+  psx_local_object_result_t object = {0};
+  if (!lower_complete_local_object(
+          &(psx_local_object_request_t){
+              .name = tmp_name,
+              .name_len = (int)strlen(tmp_name),
+              .type = compound_object_type,
+          },
+          &object)) {
+    psx_diag_ctx(initializer_tok, "compound-literal",
+                 "compound literal local storage lowering failed");
+  }
+  lvar_t *var = object.var;
+  var_size = object.storage_size;
+  node_t *init = psx_decl_bind_initializer_for_var(
+      var, cast_is_ptr, initializer, PSX_DECL_INIT_LIST, initializer_tok);
   node_t *ref;
   if (is_arr) {
     ref = psx_node_new_compound_lvar_array_addr_for(

@@ -1,6 +1,8 @@
 #include "local_registry.h"
 
+#include "diag.h"
 #include "../lowering/local_storage.h"
+#include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -67,6 +69,18 @@ static void index_remove(lvar_t *var) {
   }
 }
 
+static void offset_index_remove(lvar_t *var) {
+  unsigned bucket = offset_hash(var->offset);
+  lvar_t **cursor = &lvars_by_offset[bucket];
+  while (*cursor) {
+    if (*cursor == var) {
+      *cursor = var->next_offhash;
+      return;
+    }
+    cursor = &(*cursor)->next_offhash;
+  }
+}
+
 unsigned psx_local_registry_current_scope_seq(void) {
   return current_scope_seq;
 }
@@ -78,6 +92,65 @@ void psx_local_registry_add(lvar_t *var) {
   all_locals = var;
   locals = var;
   index_add(var);
+}
+
+lvar_t *psx_local_registry_create_storage_object(
+    char *name, int name_len, int offset, int storage_size,
+    int element_size, int is_array, int alignment) {
+  lvar_t *previous = psx_decl_find_lvar(name, name_len);
+  if (previous &&
+      previous->scope_seq == psx_local_registry_current_scope_seq()) {
+    psx_diag_duplicate_with_name(
+        tk_get_current_token(), "variable", name, name_len);
+  }
+
+  lvar_t *var = calloc(1, sizeof(*var));
+  if (!var) return NULL;
+  var->name = name;
+  var->len = name_len;
+  var->offset = offset;
+  var->size = storage_size;
+  var->elem_size = element_size;
+  var->is_array = is_array ? 1 : 0;
+  var->align_bytes = alignment;
+  var->decl_type = psx_type_new_storage_object(
+      storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
+      TK_EOF, NULL, 0, 0, 0);
+  psx_decl_attach_lvar_current_region(var);
+  psx_local_registry_add(var);
+  return var;
+}
+
+void psx_local_registry_update_storage_object(
+    lvar_t *var, int offset, int storage_size,
+    int element_size, int is_array, int alignment) {
+  if (!var) return;
+  offset_index_remove(var);
+  var->offset = offset;
+  var->size = storage_size;
+  var->elem_size = element_size;
+  var->is_array = is_array ? 1 : 0;
+  var->align_bytes = alignment;
+  unsigned bucket = offset_hash(offset);
+  var->next_offhash = lvars_by_offset[bucket];
+  lvars_by_offset[bucket] = var;
+}
+
+lvar_t *psx_decl_register_lvar_sized_align(
+    char *name, int len, int size, int elem_size, int is_array, int align) {
+  int offset = local_storage_allocate(size, align);
+  return psx_local_registry_create_storage_object(
+      name, len, offset, size, elem_size, is_array, align);
+}
+
+lvar_t *psx_decl_register_lvar_sized(
+    char *name, int len, int size, int elem_size, int is_array) {
+  return psx_decl_register_lvar_sized_align(
+      name, len, size, elem_size, is_array, 0);
+}
+
+lvar_t *psx_decl_register_lvar(char *name, int len) {
+  return psx_decl_register_lvar_sized(name, len, 8, 8, 0);
 }
 
 lvar_t *ps_lvar_next_all(const lvar_t *var) {

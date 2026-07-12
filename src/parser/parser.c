@@ -20,11 +20,11 @@
 #include "struct_layout.h"
 #include "type.h"
 #include "../diag/diag.h"
-#include "../semantic/constant_expression.h"
-#include "../semantic/declaration_resolution.h"
+#include "../lowering/global_object_lowering.h"
+#include "../lowering/parameter_lowering.h"
 #include "../lowering/static_data_initializer.h"
+#include "../lowering/vla_lowering.h"
 #include "../tokenizer/tokenizer.h"
-#include "../tokenizer/literals.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -1341,122 +1341,6 @@ static int is_tag_return_function_signature(token_t *tok) {
   return is_function_declarator_sig(t);
 }
 
-static global_var_t *find_global_var_by_name(char *name, int len) {
-  return ps_find_global_var(name, len);
-}
-
-static int effective_toplevel_tag_object_size(token_kind_t kind, char *name, int len, int fallback) {
-  if (kind != TK_STRUCT) return fallback;
-  int n = ps_ctx_get_tag_member_count(kind, name, len);
-  if (n <= 0) return fallback;
-  int max_end = 0;
-  int max_align = 1;
-  for (int i = 0; i < n; i++) {
-    tag_member_info_t mi = {0};
-    if (!ps_ctx_get_tag_member_info(kind, name, len, i, &mi)) break;
-    if (ps_tag_member_is_unnamed_aggregate(&mi)) {
-      continue;
-    }
-    int end = mi.offset + ps_tag_member_decl_storage_size(&mi);
-    if (end > max_end) max_end = end;
-    int member_align = ps_tag_member_decl_value_size(&mi);
-    if (ps_tag_member_is_tag_aggregate(&mi)) {
-      token_kind_t member_tag_kind = TK_EOF;
-      char *member_tag_name = NULL;
-      int member_tag_len = 0;
-      ps_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
-                                       &member_tag_len, NULL);
-      int tag_align = psx_ctx_get_tag_align(member_tag_kind, member_tag_name,
-                                            member_tag_len);
-      if (tag_align > 0) member_align = tag_align;
-    }
-    if (member_align > 8) member_align = 8;
-    if (member_align > max_align) max_align = member_align;
-  }
-  if (max_align > 1 && max_end > 0) max_end = (max_end + max_align - 1) / max_align * max_align;
-  return max_end > 0 ? max_end : fallback;
-}
-
-static global_var_t *register_toplevel_global_decl(const toplevel_decl_spec_t *spec,
-                                                   char *name, int len, int is_ptr,
-                                                   int is_array, int arr_total, int is_extern_decl,
-                                                   int has_incomplete_array,
-                                                   const psx_type_t *decl_type) {
-  /* 同名関数とのコンフリクト検出 (C11 6.7p4: 関数と変数は同じ名前空間)。
-   * `int foo(int){...} int foo;` のように関数として登録済みなら違法。 */
-  if (ps_ctx_has_function_name(name, len)) {
-    psx_diag_ctx(curtok(), "decl",
-                 "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
-                 len, name);
-  }
-  /* 同名 typedef とのコンフリクト検出 (C11 6.7p4)。
-   * `typedef int T; int T = 5;` — typedef name と通常の identifier は同じ名前空間。 */
-  {
-    psx_typedef_info_t _ti;
-    if (psx_ctx_find_typedef_name(name, len, &_ti)) {
-      psx_diag_ctx(curtok(), "decl",
-                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
-                   len, name);
-    }
-  }
-  /* 同名 enum 定数とのコンフリクト検出 (C11 6.7p4)。
-   * `enum E { A = 5 }; int A = 10;` — enum 定数は通常の identifier と同じ名前空間。 */
-  {
-    long long ev;
-    if (psx_ctx_find_enum_const(name, len, &ev)) {
-      psx_diag_ctx(curtok(), "decl",
-                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
-                   len, name);
-    }
-  }
-  /* C11 6.9.2 / 6.7p4: 同名グローバル変数の重複宣言。型互換性 (type_size + fp_kind +
-   * tag_kind + is_array) を確認し、不一致なら E3064。一致なら既存を返して merge する。
-   * extern → 非 extern (定義) の場合は is_extern_decl をクリアして通常 data 出力に切り替える。
-   * 両方に初期化があれば apply_toplevel_object_initializer の `=` 検出時に重複定義エラー。 */
-  int elem_store_size =
-      is_ptr ? 8
-             : effective_toplevel_tag_object_size(spec->tag_kind,
-                                                  spec->tag_name,
-                                                  spec->tag_len,
-                                                  spec->elem_size);
-  int new_type_size = has_incomplete_array ? 0
-                       : (is_array ? (elem_store_size * arr_total) : elem_store_size);
-  global_var_t *existing = find_global_var_by_name(name, len);
-  if (existing) {
-    const psx_type_t *existing_type = psx_gvar_get_decl_type(existing);
-    int type_compatible = psx_type_shape_matches(existing_type, decl_type);
-    if (!type_compatible && existing_type && decl_type &&
-        existing_type->kind == PSX_TYPE_ARRAY &&
-        decl_type->kind == PSX_TYPE_ARRAY &&
-        (existing_type->array_len == 0 || decl_type->array_len == 0)) {
-      type_compatible = psx_type_shape_matches(existing_type->base,
-                                               decl_type->base);
-    }
-    if (!type_compatible) {
-      psx_diag_ctx(curtok(), "decl",
-                   "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
-                   len, name);
-    }
-    if (existing->is_extern_decl && !is_extern_decl) {
-      existing->is_extern_decl = 0;
-      if (existing->type_size == 0 && new_type_size > 0) {
-        psx_decl_set_gvar_type_size(existing, new_type_size);
-      }
-    }
-    return existing;
-  }
-  global_var_t *gv = calloc(1, sizeof(global_var_t));
-  gv->name = name;
-  gv->name_len = len;
-  gv->type_size = new_type_size;
-  gv->is_extern_decl = is_extern_decl;
-  /* static (内部リンケージ): codegen で .global を抑制し、暫定定義を .comm でなく
-   * .zerofill (ローカル) に出す。extern 宣言のみのときは linkage 対象外。 */
-  gv->is_static = is_extern_decl ? 0 : spec->is_static;
-  psx_register_global_var(gv);
-  return gv;
-}
-
 void psx_skip_func_suffix_groups_ex(int *out_has_func_suffix,
                                     psx_funcptr_signature_t *sig) {
   psx_funcptr_signature_reset(sig);
@@ -1529,50 +1413,9 @@ static void guard_toplevel_declarator_count(int declarator_count) {
                PS_MAX_DECLARATOR_COUNT);
 }
 
-/* C11 6.7.6.2p1: `T a[] = {...}` の要素数を初期化子から確定する。
- * init_count は flat scalar slots なので、struct 配列と多次元配列では要素境界へ丸める。 */
-void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap) {
-  psx_gvar_view_t view = psx_gvar_view(gv);
-  if (!gv || view.type_size != 0 || !view.is_array ||
-      view.deref_size <= 0 || gv->init_count <= 0) {
-    return;
-  }
-  if (ps_gvar_is_struct_aggregate(gv)) {
-    /* `struct P a[] = {1,2,3,4}`: init_count is flat scalar slots, while
-     * type_size must be inferred in struct elements. */
-    int elem_slots = ps_tag_flat_slot_count(view.tag_kind, view.tag_name, view.tag_len);
-    if (elem_slots < 1) elem_slots = 1;
-    int outer_dim = (gv->init_count + elem_slots - 1) / elem_slots;
-    int total_slots = outer_dim * elem_slots;
-    psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
-    psx_decl_set_gvar_type_size(gv, outer_dim * view.deref_size);
-  } else if (view.outer_stride > view.deref_size) {
-    /* `int a[][3][5]={{...},{...}}`: 外側次元を内側 slab (outer_stride) から推論。 */
-    int inner_slots = view.outer_stride / view.deref_size;
-    if (inner_slots > 0) {
-      int outer_dim = (gv->init_count + inner_slots - 1) / inner_slots;
-      int total_slots = outer_dim * inner_slots;
-      psx_gvar_init_slots_pad_zeros(gv, cap, total_slots);
-      psx_decl_set_gvar_type_size(gv, total_slots * view.deref_size);
-    } else {
-      psx_decl_set_gvar_type_size(gv, gv->init_count * view.deref_size);
-    }
-  } else {
-    psx_decl_set_gvar_type_size(gv, gv->init_count * view.deref_size);
-  }
-}
-
 static void apply_toplevel_object_initializer(global_var_t *gv) {
   token_t *assign_tok = curtok();
   if (!tk_consume('=')) return;
-  /* C11 6.9.2: 同名グローバル変数の二重定義検出。register_toplevel_global_decl が merge して
-   * 既存 gvar を返すため、`int g = 1; int g = 2;` の 2 度目の `=` 時には gv->has_init が
-   * すでに 1 になっている。 */
-  if (gv->has_init) {
-    psx_diag_ctx(curtok(), "decl",
-                 "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
-                 gv->name_len, gv->name);
-  }
   /* ファイルスコープの複合リテラル初期化子 `T g = (T){...};` は `T g = {...};` と
    * 等価 (C11 6.5.2.5)。先頭の `(型)` を読み飛ばして既存の brace 初期化経路に渡す。
    * `)` の直後が `{` であることを先読みして複合リテラルだけを対象にする。
@@ -1611,149 +1454,26 @@ static void apply_toplevel_object_initializer(global_var_t *gv) {
       }
     }
   }
-  // `T arr[N] = {a,b,c,...}` 形式のグローバル配列初期化子。
-  // 1D と多次元 (ネスト brace) の両方を flat 化して保持する。
-  node_t *init_expr = NULL;
-  if (curtok()->kind == TK_LBRACE) {
-    gv->has_init = 1;
-    psx_type_t *type = psx_gvar_get_decl_type(gv);
-    psx_ctx_attach_aggregate_definitions(type);
-    if (type && type->kind == PSX_TYPE_ARRAY &&
-        type->array_len <= 0 && !type->is_vla) {
-      long long initializer_count =
-          psx_initializer_syntax_infer_array_count(
-              assign_tok, ps_type_deref_size(type));
-      int entries_initialize_outer_elements =
-          psx_initializer_syntax_first_element_is_brace(assign_tok) ||
-          psx_initializer_syntax_has_top_level_index_designator(assign_tok);
-      if (!psx_resolve_incomplete_array_type(
-              type,
-              &(psx_incomplete_array_resolution_t){
-                  .initializer_count = initializer_count,
-                  .entries_initialize_outer_elements =
-                      entries_initialize_outer_elements,
-              })) {
-        psx_diag_ctx(curtok(), "decl", "%s",
-                     diag_message_for(
-                         DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
-      }
-      psx_decl_set_gvar_type_size(gv, ps_type_sizeof(type));
-    }
-    token_t *init_tok = curtok();
-    node_t *syntax = psx_parse_initializer_syntax_list();
-    if (type && (type->kind == PSX_TYPE_ARRAY ||
-                 ps_type_is_tag_aggregate(type))) {
-      if (!lower_static_object_initializer(
-              gv, type, (node_init_list_t *)syntax, init_tok)) {
-        psx_diag_ctx(init_tok, "static-init", "%s",
-                     diag_message_for(
-                         DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
-      }
-      return;
-    }
-    node_init_list_t *list = (node_init_list_t *)syntax;
-    if (list->entry_count != 1 ||
-        list->entries[0].designator_count > 0 ||
-        !list->entries[0].value ||
-        list->entries[0].value->kind == ND_INIT_LIST) {
-      psx_diag_ctx(init_tok, "static-init", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
-    }
-    init_expr = list->entries[0].value;
-  }
-  if (!init_expr) {
-    init_expr = psx_expr_assign();
-    psx_semantic_analyze_expression(init_expr,
-                                    init_expr ? init_expr->tok : curtok());
-  }
-  /* `int g = -42;` のように unary minus を含む式は ND_NUM ではなく
-   * ND_SUB(0, 42) になる。const 畳み込みできる式は折りたたんで init_val に格納する。 */
-  int const_ok = 1;
-  long long folded = init_expr ? psx_eval_const_int(init_expr, &const_ok) : 0;
-  psx_gvar_view_t init_view = psx_gvar_view(gv);
-  /* グローバル double/float 用の定数式畳み込み (`double v = 1.5 + 2.5;`)。
-   * 各 ND_NUM の fval を取り、ND_ADD/SUB/MUL/DIV/単項マイナスを再帰評価する。 */
-  int fp_const_ok = (init_view.fp_kind != TK_FLOAT_KIND_NONE);
-  double fp_folded = 0.0;
-  if (fp_const_ok && init_expr) {
-    fp_folded = psx_eval_const_fp(init_expr, &fp_const_ok);
-  }
-  if (init_expr && init_expr->kind == ND_NUM) {
-    gv->has_init = 1;
-    node_num_t *n = (node_num_t *)init_expr;
-    gv->init_val = n->val;
-    /* グローバル変数が浮動小数スカラなら fval をビット出力用に保存する。
-     * `double v = 3;` のように整数リテラルでも、宣言型 fp_kind を優先する。 */
-    if (init_view.fp_kind != TK_FLOAT_KIND_NONE) {
-      gv->fval = (n->base.fp_kind != TK_FLOAT_KIND_NONE) ? n->fval : (double)n->val;
-    }
-  } else if (init_expr && init_view.fp_kind != TK_FLOAT_KIND_NONE && fp_const_ok) {
-    /* 浮動小数の定数式 (`1.5 + 2.5`): fp_folded を fval に保存。 */
-    gv->has_init = 1;
-    gv->fval = fp_folded;
-  } else if (init_expr && const_ok) {
-    gv->has_init = 1;
-    gv->init_val = folded;
-  } else if (init_expr &&
-             (init_expr->kind == ND_ADDR || init_expr->kind == ND_GVAR ||
-              init_expr->kind == ND_ADD || init_expr->kind == ND_SUB ||
-              init_expr->kind == ND_CAST)) {
-    /* `int *p = &x;` / `int *p = a + 1;` / `int *p = &a[1];` 等の
-     * グローバル/配列アドレス + オフセット初期化。 */
-    char *asym = NULL; int asym_len = 0; long long aoff = 0;
-    if (psx_resolve_static_address_constant(
-            init_expr, &asym, &asym_len, &aoff)) {
-      gv->has_init = 1;
-      gv->init_symbol = asym;
-      gv->init_symbol_len = asym_len;
-      gv->init_symbol_offset = aoff;
-    }
-  } else if (init_expr && init_expr->kind == ND_FUNCREF) {
-    /* `int (*gp)(int,int) = add;` グローバル関数ポインタ初期化。
-     * codegen は init_symbol を `.quad _<funcname>` として出力する。 */
-    node_funcref_t *fr = (node_funcref_t *)init_expr;
-    gv->has_init = 1;
-    gv->init_symbol = fr->funcname;
-    gv->init_symbol_len = fr->funcname_len;
-  } else if (init_expr && init_expr->kind == ND_STRING) {
-    node_string_t *s = (node_string_t *)init_expr;
-    psx_gvar_view_t view = psx_gvar_view(gv);
-    /* `char *p = "...";` のようなポインタ変数 (配列ではない) では、
-     * 文字列ラベル `.LCn` のアドレスを `.quad` で書き出す。 */
-    if (!view.is_array && view.type_size == 8) {
-      gv->has_init = 1;
-      gv->init_symbol = s->string_label;
-      gv->init_symbol_len = -1;  /* sentinel: emit raw label (no `_` prefix) */
-    } else {
-      /* C11 6.7.6.2p1 + 6.7.9p14: `char a[] = "...";` / `unsigned short a[] = u"..";` /
-       * `T a[] = U".."`/`L".."` 形式。文字列の各コード単位と null 終端を init_values へ展開し
-       * type_size を確定する。要素幅 (elem) が文字列の char_width (char/u8=1, u=2, U/L=4) と
-       * 一致するときのみ (ASCII 内容のみ。非 ASCII の UTF-8→UTF-16/32 デコードは未対応)。
-       * emit (emit_one_global_var) は deref_size 幅で .byte/.short/.long 出力する。 */
-      int elem = view.deref_size > 0 ? view.deref_size : 1;
-      int cw = s->char_width > 0 ? (int)s->char_width : 1;
-      if (elem == cw) {
-        int total = s->byte_len + 1; /* null 終端を含む (要素数) */
-        gv->has_init = 1;
-        psx_gvar_init_slots_alloc(gv, total, 0);
-        string_lit_t *lit = psx_find_string_lit_by_label(s->string_label);
-        if (lit) {
-          /* lit->str はソースのまま (raw)。エスケープシーケンスをデコードして
-           * 各コード単位を格納する (ローカル `a[]=".."` と同じ処理)。これがないと
-           * グローバル `char g[]="a\tb"` が `\` と `t` をそのまま書いて壊れていた。 */
-          psx_gvar_init_slots_write_string_units(gv, 0, lit->str, lit->len,
-                                                 elem, s->byte_len);
-        }
-        psx_gvar_init_slot_write(gv, s->byte_len, 0, 0.0, NULL, 0);
-        gv->init_count = total;
-        psx_decl_finalize_gvar_inferred_array_size(gv, NULL);
-      }
-    }
-  }
-  /* C11 6.3.1.2: _Bool スカラの初期化子は 0/1 に正規化する (`_Bool b = 5;` → 1)。 */
-  if (ps_gvar_is_bool_scalar(gv) && gv->has_init) {
-    gv->init_val = (gv->init_val != 0) ? 1 : 0;
+  token_t *initializer_tok = curtok();
+  psx_decl_init_kind_t initializer_kind =
+      curtok()->kind == TK_LBRACE ? PSX_DECL_INIT_LIST
+                                  : PSX_DECL_INIT_EXPR;
+  node_t *initializer = initializer_kind == PSX_DECL_INIT_LIST
+                            ? psx_parse_initializer_syntax_list()
+                            : psx_expr_assign();
+  psx_type_t *type = psx_gvar_get_decl_type(gv);
+  if (!lower_static_declaration_initializer(
+          &(psx_static_declaration_initializer_request_t){
+              .global = gv,
+              .type = type,
+              .initializer_kind = initializer_kind,
+              .initializer = initializer,
+              .diag_tok = initializer_tok ? initializer_tok : assign_tok,
+          },
+          NULL)) {
+    psx_diag_ctx(initializer_tok, "static-init", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
 }
 
@@ -1902,14 +1622,25 @@ static void finalize_toplevel_object_declarator(const toplevel_decl_spec_t *spec
 static global_var_t *register_toplevel_object_from_declarator(const toplevel_decl_spec_t *spec,
                                                               toplevel_declarator_head_t head,
                                                               toplevel_array_suffix_t arr) {
+  (void)arr;
   psx_type_t *canonical_type = build_toplevel_derived_typedef_type(
       spec, head, NULL, 0);
-  global_var_t *gv = register_toplevel_global_decl(
-      spec, head.name->str, head.name->len, head.is_ptr,
-      arr.is_array, arr.arr_total, current_toplevel_extern_flag(spec),
-      arr.has_incomplete_array, canonical_type);
-  if (gv && canonical_type) psx_decl_set_gvar_decl_type(gv, canonical_type);
-  return gv;
+  psx_global_object_result_t result = {0};
+  if (!lower_global_object_declaration(
+          &(psx_global_object_request_t){
+              .name = head.name->str,
+              .name_len = head.name->len,
+              .type = canonical_type,
+              .is_extern_decl = current_toplevel_extern_flag(spec),
+              .is_static = spec->is_static,
+              .diag_tok = curtok(),
+          },
+          &result)) {
+    psx_diag_ctx(curtok(), "decl",
+                 "canonical global storage planning failed for '%.*s'",
+                 head.name->len, head.name->str);
+  }
+  return result.global;
 }
 
 static int current_toplevel_extern_flag(const toplevel_decl_spec_t *spec) {
@@ -2181,7 +1912,7 @@ static void parse_func_param_list_only(int *out_is_variadic, int *out_has_unname
 
 static void register_function_signature(const psx_function_signature_t *sig) {
   token_ident_t *tok = sig->name;
-  if (find_global_var_by_name(tok->str, tok->len)) {
+  if (ps_find_global_var(tok->str, tok->len)) {
     psx_diag_ctx(curtok(), sig->diag_context,
                  "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
                  tok->len, tok->str);
@@ -2962,221 +2693,91 @@ static token_ident_t *parse_param_declarator_name_recursive(param_declarator_sta
   return name;
 }
 
-static lvar_t *register_param_stride_slot(token_ident_t *param, int byte_size) {
-  char name_buf[64];
-  int name_len = snprintf(name_buf, sizeof(name_buf), "__rs_%.*s", param->len, param->str);
-  char *name = arena_alloc((size_t)name_len + 1);
-  memcpy(name, name_buf, (size_t)name_len);
-  name[name_len] = '\0';
-  return psx_decl_register_lvar_sized(name, name_len, byte_size, 8, 0);
-}
-
-static int attach_param_runtime_stride(lvar_t *var, token_ident_t *param,
-                                       token_ident_t *dim_ident, int elem_size) {
-  lvar_t *src = psx_decl_find_lvar(dim_ident->str, dim_ident->len);
-  if (!src || !src->is_param) {
-    psx_diag_ctx(curtok(), "param",
-                 diag_message_for(DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
-                 dim_ident->len, dim_ident->str);
-    return 0;
-  }
-  lvar_t *rs = register_param_stride_slot(param, 8);
-  psx_decl_set_lvar_vla_descriptor(var, var->outer_stride,
-                                   rs->offset, 0, src->offset, elem_size);
-  return 1;
-}
-
-/* 仮引数 VLA / 多次元配列宣言子の lvar 登録 (`int a[n]` / `int a[][N]` /
- * `int a[][N][M]` / VLA dim that's another param 等)。
- * C11 6.7.6.3p7 により int *a として扱われるが、pointee が配列の場合は
- * outer_stride / mid_stride 等を立てて `a[i]` の steping を pointee 全体に揃える。 */
-static lvar_t *register_vla_array_param(token_ident_t *param, param_decl_spec_t *ds,
-                                         const param_declarator_state_t *decl_state,
-                                         int inner_first_dim,
-                                         token_ident_t *inner_first_dim_ident) {
-  // size=8 (pointer), elem_size=実際の要素サイズ
-  lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, ds->elem_size, 0);
-  /* 全 inner dim が定数 (N-D const inner、`int t[][2][3][4]` 等): outer/mid/extra strides を立てる。
-   * 3D 以下は既存挙動を維持。4D 以上は N-D 一般経路 (下記) で extra_strides まで設定する。 */
-  int inner_dim_count = decl_state ? decl_state->inner_dim_count : 0;
-  int all_inner_const = (inner_dim_count >= 1);
-  for (int i = 0; i < inner_dim_count; i++) {
-    if (decl_state->inner_dim_consts[i] <= 0) { all_inner_const = 0; break; }
-  }
-  if (inner_first_dim > 0 && all_inner_const) {
-    return var;
-  }
-  /* N-D VLA 仮引数 (内側 dim に runtime / 混在 const-VLA 含む)。stride スロットを (N-1)*8 バイト
-   * 確保し、関数 entry で emit_vla_row_stride_for_params が各 level の stride を計算・store する。
-   * 内側 dim 情報を lvar に保存して emit が読めるようにする。 */
-  if (inner_dim_count >= 1) {
-    int n_inner = inner_dim_count;
-    /* stride スロット (__rs_<param>) を 8*n_inner バイト確保。先頭 8 バイトが level 0 (vla_row)、
-     * 次が level 1、...、最後が level n_inner-1。subscript chain は vla_row を +=8 シフト。 */
-    lvar_t *rs = register_param_stride_slot(param, 8 * n_inner);
-    psx_decl_set_lvar_vla_descriptor(var, var->outer_stride,
-                                     rs->offset, n_inner - 1, 0, ds->elem_size);
-    /* 内側 dim 情報を保存。emit_vla_row_stride_for_params がこれを読んで stride を計算する。 */
-    int inner_dim_src_offsets[7] = {0};
-    for (int i = 0; i < n_inner; i++) {
-      if (decl_state->inner_dim_consts[i] <= 0 && decl_state->inner_dim_idents[i]) {
-        lvar_t *src = psx_decl_find_lvar(decl_state->inner_dim_idents[i]->str,
-                                         decl_state->inner_dim_idents[i]->len);
-        if (!src || !src->is_param) {
-          psx_diag_ctx(curtok(), "param",
-                       diag_message_for(DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
-                       decl_state->inner_dim_idents[i]->len,
-                       decl_state->inner_dim_idents[i]->str);
-          return var;
-        }
-        inner_dim_src_offsets[i] = src->offset;
-      } else {
-        inner_dim_src_offsets[i] = 0;  /* const dim */
-      }
+static psx_parameter_vla_lowering_result_t lower_parameter_vla_from_state(
+    token_ident_t *param, int element_size,
+    const param_declarator_state_t *decl_state,
+    token_ident_t *fallback_inner_dimension,
+    const psx_type_t *canonical_type) {
+  psx_parameter_vla_lowering_request_t request = {
+      .name = param->str,
+      .name_len = param->len,
+      .element_size = element_size,
+      .type = canonical_type,
+      .diag_tok = curtok(),
+  };
+  request.inner_dimension_count =
+      decl_state ? decl_state->inner_dim_count : 0;
+  for (int i = 0; i < request.inner_dimension_count; i++) {
+    request.inner_dimensions[i].constant =
+        decl_state->inner_dim_consts[i];
+    token_ident_t *source = decl_state->inner_dim_idents[i];
+    if (source) {
+      request.inner_dimensions[i].source_name = source->str;
+      request.inner_dimensions[i].source_name_len = source->len;
     }
-    psx_decl_set_lvar_vla_param_inner_dims(var, decl_state->inner_dim_consts,
-                                           inner_dim_src_offsets, n_inner);
-    /* 2D 後方互換: 旧 vla_row_stride_src_offset も先頭 runtime dim から立てる
-     * (既存 emit が 2D ではこれを参照する。N-D 経路では使わない)。 */
-    if (n_inner == 1 && decl_state->inner_dim_consts[0] == 0) {
-      psx_decl_set_lvar_vla_descriptor(var, var->outer_stride,
-                                       var->vla_row_stride_frame_off,
-                                       var->vla_strides_remaining,
-                                       inner_dim_src_offsets[0],
-                                       ds->elem_size);
-    }
-    return var;
   }
-  if (!inner_first_dim_ident) return var;
-  /* C99 6.7.6.3p7 VLA-as-param: `int g[n][m]` の内側 dim が他のパラメータ。
-   * row stride スロットを確保し、関数 entry で
-   *   *[rs_slot] = *[src_param] * elem_size
-   * を計算する。これにより subscript の vla_rsf 経路 (expr.c) が
-   * runtime stride を読んで `g[i]` を正しく steping できる。 */
-  attach_param_runtime_stride(var, param, inner_first_dim_ident, ds->elem_size);
-  return var;
+  if (request.inner_dimension_count == 0 && fallback_inner_dimension) {
+    request.inner_dimension_count = 1;
+    request.inner_dimensions[0].source_name =
+        fallback_inner_dimension->str;
+    request.inner_dimensions[0].source_name_len =
+        fallback_inner_dimension->len;
+  }
+  return lower_parameter_vla_declaration(&request);
 }
 
-/* 仮引数宣言子の形式 (funcptr-array / VLA / struct array / >16B byref struct /
- * ≤16B struct value / struct pointer / scalar pointer / typedef-array decay /
- * plain scalar) に応じて lvar_t を登録する。
- * 各分岐は parse_param_declarator_name の出力 (is_ptr / is_array_declarator /
- * inner dims / func_suffix etc) と param_decl_spec_t を使って判別する。 */
-static lvar_t *register_param_lvar(token_ident_t *param, const param_decl_spec_t *ds_in,
-                                    const param_declarator_state_t *decl_state,
-                                    int param_is_ptr, int param_is_array_declarator,
-                                    int param_ptr_levels, int param_has_func_suffix,
-                                    int param_inner_first_dim,
-                                    token_ident_t *param_inner_first_dim_ident) {
-  /* register_vla_array_param / apply_typedef_array_pointee_strides は ds を非const
-   * の param_decl_spec_t * で受け取るため、内部的にキャストする。値は変更しない。 */
-  param_decl_spec_t *ds = (param_decl_spec_t *)ds_in;
-  if (param_is_array_declarator && param_is_ptr && param_has_func_suffix &&
-      ds->tag_kind == TK_EOF) {
-    /* `int (*ops[])(int)` 形式の関数ポインタ配列パラメータ。
-     * C11 6.7.6.3p7 で配列 → ポインタへ adjust される (= `int (**ops)(int)` 相当)。
-     * 各要素は関数ポインタ (8 byte) なので elem_size=8 で登録。
-     * pointer_qual_levels=1 で lvar_is_pointer (expr.c) を発火させ、subscript 経路を動かす。 */
-    return psx_decl_register_lvar_sized_align(
-        param->str, param->len, 8, 8, 0, 0);
+static int parameter_state_has_runtime_inner_dimension(
+    const param_declarator_state_t *state) {
+  if (!state) return 0;
+  for (int i = 0; i < state->inner_dim_count; i++) {
+    if (state->inner_dim_consts[i] <= 0 && state->inner_dim_idents[i])
+      return 1;
   }
+  return 0;
+}
+
+static lvar_t *register_param_lvar(
+    token_ident_t *param, const param_decl_spec_t *ds,
+    const param_declarator_state_t *decl_state,
+    int param_is_ptr, int param_is_array_declarator,
+    int param_has_func_suffix,
+    token_ident_t *param_inner_first_dim_ident,
+    const psx_type_t *canonical_type, int *out_type_attached) {
+  if (out_type_attached) *out_type_attached = 0;
   if (param_is_array_declarator && ds->tag_kind == TK_EOF && !param_is_ptr) {
-    /* 仮引数 VLA / 多次元配列宣言子 (`int a[n]` / `int a[][N]` 等)。
-     * C11 6.7.6.3p7 により pointer (or pointer-to-array) に adjust される。 */
-    return register_vla_array_param(param, ds, decl_state, param_inner_first_dim,
-                                     param_inner_first_dim_ident);
+    psx_parameter_vla_lowering_result_t result =
+        lower_parameter_vla_from_state(
+            param, ds->elem_size, decl_state,
+            param_inner_first_dim_ident, canonical_type);
+    if (out_type_attached) *out_type_attached = result.type_attached;
+    return result.var;
   }
-  if (param_is_array_declarator && ds->tag_kind != TK_EOF && !param_is_ptr) {
-    /* struct/union 配列パラメータ `struct V arr[]` は C11 6.7.6.3p7 で
-     * `struct V *arr` に adjust される。tag_kind を保持しつつ pointer 扱い。 */
-    return psx_decl_register_lvar_sized_align(
-        param->str, param->len, 8, ds->struct_size, 0, 0);
+  if (param_is_ptr && param_is_array_declarator &&
+      ds->tag_kind == TK_EOF && !param_has_func_suffix &&
+      (param_inner_first_dim_ident != NULL ||
+       parameter_state_has_runtime_inner_dimension(decl_state))) {
+    psx_parameter_vla_lowering_result_t result =
+        lower_parameter_vla_from_state(
+            param, ds->elem_size, decl_state,
+            param_inner_first_dim_ident, canonical_type);
+    if (out_type_attached) *out_type_attached = result.type_attached;
+    return result.var;
   }
-  if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 16) {
-    // >16バイト構造体の値渡し → ABI: アドレス渡し（byref）
-    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, ds->struct_size, 0, 0);
-    var->is_byref_param = 1;
-    return var;
+
+  psx_parameter_lowering_result_t result = {0};
+  if (!lower_parameter_declaration(
+          &(psx_parameter_lowering_request_t){
+              .name = param->str,
+              .name_len = param->len,
+              .type = canonical_type,
+          },
+          &result)) {
+    psx_diag_ctx(curtok(), "param",
+                 "canonical parameter storage planning failed for '%.*s'",
+                 param->len, param->str);
   }
-  if (ds->tag_kind != TK_EOF && !param_is_ptr && ds->struct_size > 0) {
-    // ≤16バイト構造体の値渡し → ABI: レジスタ渡し（1 or 2レジスタ）
-    return psx_decl_register_lvar_sized_align(
-        param->str, param->len, ds->struct_size, ds->struct_size, 0, 8);
-  }
-  if (ds->tag_kind != TK_EOF && param_is_ptr) {
-    /* struct/union へのポインタ仮引数。`a[i]` / `a+i` のスケーリングに pointee
-     * (= struct サイズ) が必要なので deref_size に struct_size を入れる。多段
-     * ポインタ (`struct N **a`) の pointee はポインタ (8) なので除外する。
-     * 修正前は常に 8 で、4 バイト構造体の subscript が誤スケールしていた。 */
-    int pointee = (param_ptr_levels <= 1 && ds->struct_size > 0) ? ds->struct_size : 8;
-    lvar_t *var = psx_decl_register_lvar_sized_align(param->str, param->len, 8, pointee, 0, 0);
-    /* 多段の struct ポインタ仮引数 (`struct N **root`): pointer_qual_levels を
-     * declarator の段数で立てる。これがないと build_unary_deref_node の `*root` で
-     * is_tag_pointer 伝播が pql>=2 を要求して 0 にクリアしてしまい、続く
-     * `(*root)->m` が E3005 になる。単段 struct ポインタは従来どおり pql 未設定。 */
-    /* `struct V (*p)[N]` 配列へのポインタ仮引数: 上の is_tag_pointer=1 のままだと
-     * 1 要素 (struct サイズ) ずつしか進まず行を跨げない。outer_stride を 1 行 (N 要素)
-     * に設定し is_tag_pointer をクリアして、ローカルの `struct V (*p)[N]` と同じ
-     * 「配列へのポインタ」表現にする (`p[i][j].m` が正しくスケールする)。 */
-    return var;
-  }
-  if (param_is_ptr && ds->tag_kind == TK_EOF) {
-    int pointer_array_outer_dim = decl_state ? decl_state->pointer_array_outer_dim : 0;
-    if (param_is_array_declarator && ds->base_is_pointer &&
-        param_inner_first_dim > 0 && !param_has_func_suffix) {
-      int elem_store_size = (ds->elem_size > 0 && ds->elem_size < 8) ? 8 : ds->elem_size;
-      if (elem_store_size <= 0) elem_store_size = 8;
-      return psx_decl_register_lvar_sized(
-          param->str, param->len, 8, elem_store_size, 0);
-    }
-	    if (param_is_array_declarator && pointer_array_outer_dim > 0 &&
-	        param_inner_first_dim > 0 && !param_has_func_suffix) {
-	      return psx_decl_register_lvar_sized(
-	          param->str, param->len, 8, 8, 0);
-	    }
-    /* スカラー型へのポインタ仮引数（int *p, char *p, int **pp など）。
-     * typedef struct のように typedef 実体サイズがある場合は、最内 pointee
-     * サイズとしてそれを使う。これがないと `T **pp; (*pp)[i]` のスケールが
-     * sizeof(T) ではなく 8 になり、wasm32 の self-host リンカで import 配列が壊れる。 */
-    int base_pointee_size = (ds->typedef_sizeof_size > 0 &&
-                             (ds->typedef_is_array || !ds->base_is_pointer))
-                                ? ds->typedef_sizeof_size
-                                : ds->elem_size;
-    int pointee_size = (param_ptr_levels >= 2) ? 8 : base_pointee_size;
-    int lvar_elem_size = (param_ptr_levels == 1 && ds->typedef_is_array)
-                             ? ds->elem_size
-                             : pointee_size;
-    lvar_t *var = psx_decl_register_lvar_sized(param->str, param->len, 8, lvar_elem_size, 0);
-    /* `int (*a)[N]` / `int (*a)[N][M]` のように pointee が配列の場合、
-     * captured inner dims を使って outer_stride / mid_stride を設定する。 */
-    if (param_is_array_declarator && param_inner_first_dim_ident != NULL) {
-      /* pointer-to-VLA 仮引数 `int (*a)[n]` (n は先行パラメータ)。行ストライド n*elem は
-       * 実行時値なので、row stride スロットを確保し関数 entry で *[rs] = *[n]*elem を計算する
-       * (register_vla_array_param と同じ機構を再利用)。subscript は vla_row_stride_frame_off を
-       * 実行時参照する。outer_stride は 0 のまま (実行時経路)。 */
-      attach_param_runtime_stride(var, param, param_inner_first_dim_ident, ds->elem_size);
-    }
-    return var;
-  }
-  if (!param_is_ptr && ds->tag_kind == TK_EOF && ds->typedef_is_array &&
-      ds->typedef_sizeof_size > 0) {
-    /* `typedef int Vec3[3]; int sum(Vec3 v)` の仮引数:
-     * C11 6.7.6.3p7 により配列型は pointer に adjust される (decay 先頭要素ポインタ)。 */
-    return psx_decl_register_lvar_sized(
-        param->str, param->len, 8, ds->elem_size, 0);
-  }
-  if (!param_is_ptr && ds->tag_kind == TK_EOF && ds->is_complex) {
-    /* `double _Complex` / `float _Complex` 仮引数: {re,im} を持つので 2*half バイトで
-     * 登録する (8 のままだと double complex で次の仮引数スロットと重なり im が壊れる)。 */
-    int half = (ds->fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
-    return psx_decl_register_lvar_sized_align(
-        param->str, param->len, 2 * half, 2 * half, 0, 8);
-  }
-  // スカラー型仮引数（既存の動作）
-  {
-    return psx_decl_register_lvar_sized(
-        param->str, param->len, ds->elem_size, ds->elem_size, 0);
-  }
+  if (out_type_attached) *out_type_attached = result.type_attached;
+  return result.var;
 }
 
 static psx_type_t *param_decl_base_type(const param_decl_spec_t *ds) {
@@ -3297,13 +2898,14 @@ static int parse_param_decl(node_func_t *node, int *nargs, int *arg_cap, int cou
   }
   psx_type_t *canonical_param_type =
       param_canonical_decl_type(&ds, &param_decl_state);
+  int type_attached = 0;
   lvar_t *var = register_param_lvar(param, &ds, &param_decl_state,
                                      param_is_ptr, param_is_array_declarator,
-                                     param_ptr_levels, param_has_func_suffix,
-                                     param_inner_first_dim,
-                                     param_inner_first_dim_ident);
+                                     param_has_func_suffix,
+                                     param_inner_first_dim_ident,
+                                     canonical_param_type, &type_attached);
   var->is_param = 1;
-  if (canonical_param_type) {
+  if (canonical_param_type && !type_attached) {
     psx_type_copy_vla_runtime_metadata(
         canonical_param_type, psx_lvar_get_decl_type(var));
     psx_decl_set_lvar_decl_type(var, canonical_param_type);

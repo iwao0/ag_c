@@ -7,6 +7,7 @@
 #include "core.h"
 #include "lvar_public.h"
 #include "symtab.h"
+#include "../semantic/local_type_state.h"
 
 typedef struct {
   char *name;
@@ -149,21 +150,8 @@ void psx_decl_attach_lvar_current_region(lvar_t *var);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
-void psx_decl_set_lvar_vla_descriptor(lvar_t *var,
-                                      int outer_stride,
-                                      int row_stride_frame_off,
-                                      int strides_remaining,
-                                      int row_stride_src_offset,
-                                      int row_stride_elem_size);
-void psx_decl_set_lvar_vla_param_inner_dims(lvar_t *var,
-                                            const int *inner_dim_consts,
-                                            const int *inner_dim_src_offsets,
-                                            int inner_dim_count);
-void psx_decl_set_lvar_type_sig(lvar_t *var, char *type_sig);
 void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size);
 void psx_decl_set_gvar_decl_type(global_var_t *gv,
-                                 const psx_type_t *decl_type);
-void psx_decl_set_lvar_decl_type(lvar_t *var,
                                  const psx_type_t *decl_type);
 void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig);
 void psx_decl_set_current_funcname(char *name, int len);
@@ -183,16 +171,14 @@ node_t *psx_decl_parse_declaration_after_type_ex(int elem_size, tk_float_kind_t 
                                                  int is_const_qualified, int is_volatile_qualified,
                                                  int decl_is_unsigned_hint,
                                                  const psx_type_spec_result_t *type_spec,
-                                                 const int *td_array_dims, int td_array_dim_count,
-                                                 int td_array_elem_size, int td_is_array,
-                                                 int td_is_long_double, int base_pointer_levels,
                                                  const psx_type_t *base_decl_type,
                                                  token_t *typespec_start,
-                                                 int decl_base_is_void,
-                                                 int decl_base_is_bool);
+                                                 int decl_base_is_void);
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
+node_t *psx_decl_bind_initializer_for_var(
+    lvar_t *var, int is_pointer, node_t *initializer,
+    psx_decl_init_kind_t initializer_kind, token_t *init_tok);
 
-void psx_decl_finalize_gvar_inferred_array_size(global_var_t *gv, int *cap);
 
 void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
                                           psx_lvar_usage_region_t *region);

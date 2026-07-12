@@ -29,6 +29,11 @@ frame_vla_layout_t frame_layout_vla_storage(int dim_count, int inner_is_const) {
   return layout;
 }
 
+frame_vla_layout_t frame_layout_pointer_vla_storage(void) {
+  frame_vla_layout_t layout = {16, 8, 0};
+  return layout;
+}
+
 int frame_layout_vla_stride_offset(int base_offset, int level) {
   return base_offset + 16 + 8 * level;
 }

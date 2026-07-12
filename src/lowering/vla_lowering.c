@@ -1,13 +1,38 @@
 #include "vla_lowering.h"
 
 #include "frame_layout.h"
+#include "local_storage.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
+#include "../parser/type.h"
 #include "../diag/diag.h"
+#include <stdlib.h>
+#include <string.h>
 
 static node_t *append_init(node_t *chain, node_t *node) {
   return chain ? psx_node_new_binary(ND_COMMA, chain, node) : node;
+}
+
+static lvar_t *create_vla_storage(
+    char *name, int name_len, int storage_size, int element_size,
+    int is_array, int alignment) {
+  int offset = local_storage_allocate(storage_size, alignment);
+  return psx_local_registry_create_storage_object(
+      name, name_len, offset, storage_size, element_size,
+      is_array, alignment);
+}
+
+static void attach_canonical_vla_type(
+    psx_vla_lowering_result_t *result, const psx_type_t *type) {
+  if (!result || !result->var || !type) return;
+  psx_type_t *resolved = psx_type_clone(type);
+  if (!resolved) return;
+  psx_type_copy_vla_runtime_metadata(
+      resolved, psx_lvar_get_decl_type(result->var));
+  psx_decl_set_lvar_decl_type(result->var, resolved);
+  result->type_attached = 1;
 }
 
 psx_vla_lowering_result_t lower_vla_declaration(
@@ -30,9 +55,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
     outer_stride = (int)request->const_values[1] * request->element_size;
   }
 
-  result.var = psx_decl_register_lvar_sized_align(
+  result.var = create_vla_storage(
       request->name, request->name_len, layout.storage_size,
-      request->element_size, 1, 0);
+      request->element_size, 1, request->requested_alignment);
   if (layout.row_stride_relative_offset > 0)
     row_stride_offset = result.var->offset + layout.row_stride_relative_offset;
   if (count >= 3) remaining_strides = layout.subsequent_stride_count;
@@ -73,5 +98,117 @@ psx_vla_lowering_result_t lower_vla_declaration(
     result.init = append_init(
         result.init, psx_node_new_assign(slot, stride));
   }
+  attach_canonical_vla_type(&result, request->type);
+  return result;
+}
+
+psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
+    const psx_pointer_vla_lowering_request_t *request) {
+  psx_vla_lowering_result_t result = {0};
+  if (!request || !request->name || request->name_len <= 0 ||
+      request->element_size <= 0 || !request->row_dimension) {
+    psx_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  }
+
+  frame_vla_layout_t layout = frame_layout_pointer_vla_storage();
+  result.var = create_vla_storage(
+      request->name, request->name_len, layout.storage_size,
+      request->element_size, 0, request->requested_alignment);
+  int row_stride_offset =
+      result.var->offset + layout.row_stride_relative_offset;
+  psx_decl_set_lvar_vla_descriptor(
+      result.var, 0, row_stride_offset, 0, 0, request->element_size);
+
+  node_t *slot = psx_node_new_lvar_typed(row_stride_offset, 8);
+  node_t *stride = psx_node_new_binary(
+      ND_MUL, request->row_dimension,
+      psx_node_new_num(request->element_size));
+  result.init = (node_t *)psx_node_new_assign(slot, stride);
+  attach_canonical_vla_type(&result, request->type);
+  return result;
+}
+
+static char *parameter_stride_storage_name(
+    const char *name, int name_len, int *out_len) {
+  static const char prefix[] = "__rs_";
+  int prefix_len = (int)sizeof(prefix) - 1;
+  int length = prefix_len + name_len;
+  char *result = malloc((size_t)length + 1);
+  if (!result) return NULL;
+  memcpy(result, prefix, (size_t)prefix_len);
+  memcpy(result + prefix_len, name, (size_t)name_len);
+  result[length] = '\0';
+  if (out_len) *out_len = length;
+  return result;
+}
+
+psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
+    const psx_parameter_vla_lowering_request_t *request) {
+  psx_parameter_vla_lowering_result_t result = {0};
+  int count = request ? request->inner_dimension_count : 0;
+  if (!request || !request->name || request->name_len <= 0 ||
+      request->element_size <= 0 || count < 0 ||
+      count > PSX_VLA_PARAM_MAX_INNER_DIMS) {
+    psx_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+  }
+
+  result.var = create_vla_storage(
+      request->name, request->name_len, 8, request->element_size, 0, 0);
+
+  int has_runtime_dimension = 0;
+  for (int i = 0; i < count; i++) {
+    if (request->inner_dimensions[i].constant <= 0) {
+      has_runtime_dimension = 1;
+      break;
+    }
+  }
+
+  if (has_runtime_dimension) {
+    int stride_name_len = 0;
+    char *stride_name = parameter_stride_storage_name(
+        request->name, request->name_len, &stride_name_len);
+    result.stride_storage = create_vla_storage(
+        stride_name, stride_name_len, 8 * count, 8, 0, 0);
+
+    int constants[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
+    int source_offsets[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
+    for (int i = 0; i < count; i++) {
+      const psx_parameter_vla_dimension_t *dimension =
+          &request->inner_dimensions[i];
+      constants[i] = dimension->constant;
+      if (dimension->constant > 0 || !dimension->source_name) continue;
+      lvar_t *source = psx_decl_find_lvar(
+          dimension->source_name, dimension->source_name_len);
+      if (!source || !source->is_param) {
+        psx_diag_ctx(
+            request->diag_tok, "param",
+            diag_message_for(
+                DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
+            dimension->source_name_len, dimension->source_name);
+      }
+      source_offsets[i] = source->offset;
+    }
+
+    psx_decl_set_lvar_vla_descriptor(
+        result.var, 0, result.stride_storage->offset,
+        count - 1, 0, request->element_size);
+    psx_decl_set_lvar_vla_param_inner_dims(
+        result.var, constants, source_offsets, count);
+    if (count == 1 && constants[0] == 0) {
+      psx_decl_set_lvar_vla_descriptor(
+          result.var, 0, result.stride_storage->offset, 0,
+          source_offsets[0], request->element_size);
+    }
+  }
+
+  psx_vla_lowering_result_t attached = {.var = result.var};
+  attach_canonical_vla_type(&attached, request->type);
+  result.type_attached = attached.type_attached;
+  /* Keep the current name ineligible while resolving preceding parameters. */
+  result.var->is_param = 1;
   return result;
 }

@@ -27737,3 +27737,474 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - local aggregate initializerに残るparser内のspecial-case loweringをcanonical initializer planへ寄せる。
   - declaration parserに残るobject construction/registrationをrequest化する。
   - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1009）: local brace initializerをraw syntax経路へ一本化した
+- parser/semantic/lowering boundary:
+  - local scalar/aggregate array、struct、unionの全brace initializerを、形状の先読み判定なしで
+    `psx_parse_initializer_syntax_list()`から`ND_DECL_INIT/ND_INIT_LIST`へ変換するよう統一した。
+  - semantic passがinitializer内の式を解決した後、`initializer_lowering.c`がcanonical type上で
+    zero-fill、brace elision、designator、member/array storeを生成する。
+  - struct copyとunion非brace extensionは別の非brace経路として維持した。
+- diagnostic ownership:
+  - union先頭配列メンバの非brace初期化を無効化するconfig判定と`E3075`診断を
+    token-driven parserからtyped initializer loweringへ移した。
+- parser cleanup:
+  - `parse_array_braced_init()`、`parse_struct_initializer()`、`parse_union_initializer()`、
+    member/nested designator/multidimensional brace helperの相互再帰群を削除した。
+  - 新旧経路の選別専用だった4つのinitializer token-peek APIと、
+    `psx_initializer_lowering_supports_flat_brace_elision()`も削除した。
+  - 合計約1,900行を削除し、`decl.c`は5,080行から3,342行になった。
+- char array regression/fix:
+  - 旧`char a[]={"text"}`特例の削除後、1D char arrayのstride=1により文字列がscalar storeへ
+    落ちる退行がWasm E2Eで6件検出された。
+  - 単一・非designated stringのbrace listをtyped character-array string loweringへ直接渡し、
+    inferred/explicit array、連結文字列、compound literalを共通修正した。
+- boundary test:
+  - function-pointer memberを持つstructの`{0,7}`を直接parseし、parser直後は
+    `ND_DECL_INIT/ND_INIT_LIST`、semantic pass後はlowered assignment列になることを固定した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1203 compiled, 1203 executed**。
+  - `git diff --check` = clean。
+- 次:
+  - struct copy/union非brace初期化もraw semantic requestとしてparser外へ移す。
+  - declaration parserに残るlocal object construction/registrationをrequest化する。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1010）: aggregate単一式初期化をtyped loweringへ移した
+- raw initializer kinds:
+  - `PSX_DECL_INIT_STRUCT_EXPR`と`PSX_DECL_INIT_UNION_EXPR`を追加した。
+  - parserは非brace rhsを通常の式ASTとして読むだけで、型互換判定やcopy/store生成を行わない。
+  - semantic passがrhsを型付けした後、initializer loweringがcanonical lhs/rhs typeを解決する。
+- struct expression lowering:
+  - struct kind、size、tag identity/scopeをcanonical `psx_type_t`から比較する。
+  - 同型なら単一のaggregate `ND_ASSIGN`へloweringし、lvar/gvar/deref/cast/comma/ternary/function callは
+    IRの既存`materialize_aggregate_expr_to()`経路へ統一した。
+  - 不一致は従来どおり`E3034`を出す。
+- union expression lowering:
+  - 同型union式はaggregate assignmentへ統一した。
+  - scalar extensionはcanonical aggregate definitionの先頭named memberへassignmentを生成する。
+  - 初期化対象memberを解決できない場合は従来どおり`E3035`を出す。
+- parser cleanup:
+  - `parse_struct_copy_initializer()`、`parse_union_initializer_no_brace()`、
+    `build_struct_copy_from_value()`、per-member/byte-copy chain、legacy tag identity照合を削除した。
+  - `decl.c`は3,342行から3,036行になった。
+- boundary test:
+  - function-pointer memberを持つstructの同型式がparser直後に`PSX_DECL_INIT_STRUCT_EXPR`、
+    semantic後にaggregate `ND_ASSIGN`となることを確認した。
+  - union scalar式が`PSX_DECL_INIT_UNION_EXPR`から先頭member assignmentになることを確認した。
+  - 旧per-member copy列を固定していたAST形状テストをaggregate assignment境界へ更新した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1203 compiled, 1203 executed**。
+  - `git diff --check` = clean。
+- 次:
+  - declaration parserに残るlocal object construction/registrationをrequest化する。
+  - scalar/complex initializer parsingに残る型別分岐をraw syntax/semantic requestへ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1011）: complete local object登録をrequest化した
+- registry boundary:
+  - `psx_local_registry_create_storage_object()`を追加した。
+  - same-scope duplicate check、`lvar_t` allocation、usage region、registry insertionを
+    `local_registry`へ移した。
+  - `psx_decl_register_lvar_sized_align()`はoffset allocationとlow-level registry callだけを行う
+    compatibility wrapperになった。
+- local object lowering:
+  - `src/lowering/local_object_lowering.{c,h}`を追加した。
+  - `psx_local_object_request_t/result_t`がcanonical type、name、requested alignmentを受け渡す。
+  - complete array/object plan、effective alignment、frame offset、registry registration、
+    persistent canonical type attachmentを一括して所有する。
+  - parserのcomplete array/object二分岐を単一の`lower_complete_local_object()` callへ置換した。
+  - parser後段のcanonical type再投影は、まだ型が保存されていないVLA/legacy経路だけに限定した。
+- boundary test:
+  - canonical `int[2][3]`とrequested alignment 32から、storage size 24、scalar element size 4、
+    aligned offset、registry entry、persistent canonical shapeを直接確認した。
+- scale:
+  - `decl.c`は3,036行から3,009行になった。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `./build/test_wasm32_e2e` = **1203 compiled, 1203 executed**。
+- 次:
+  - compatibility wrapper (`psx_decl_register_lvar_sized*`)の実装を`decl.c`からregistry/loweringへ移す。
+  - VLA/pointer-to-VLA registrationをrequest boundaryへ寄せる。
+  - scalar/complex initializer parsingに残る型別分岐をraw syntax/semantic requestへ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1012）: VLA storage/type stateをparser外へ移した
+- local registry ownership:
+  - `psx_decl_register_lvar_sized_align()`、`psx_decl_register_lvar_sized()`、
+    `psx_decl_register_lvar()`の互換API実装を`decl.c`から`local_registry.c`へ移した。
+  - offset allocationとlow-level registry insertionはparser実装から消えた。
+- VLA lowering boundary:
+  - `psx_vla_lowering_request_t`へcanonical typeとrequested alignmentを追加した。
+  - 通常VLA loweringがstorage allocation、runtime descriptor、canonical type attachmentを所有する。
+  - `psx_pointer_vla_lowering_request_t`と`lower_pointer_to_vla_declaration()`を追加した。
+  - parserに直書きされていたpointer-to-VLAの16-byte storage、+8 stride sidecar、
+    `dimension * element_size` store生成を`vla_lowering.c`へ移した。
+  - pointer-to-VLA layoutは`frame_layout_pointer_vla_storage()`で明示した。
+- canonical type attachment:
+  - lowering resultへ`type_attached`を追加し、persistent cloneと元typeのpointer identity比較で
+    attachment済みか判定していた重複投影を廃止した。
+  - VLA runtime metadataはlowering内でcanonical type cloneへ統合してからlvarへ保存する。
+- semantic type state:
+  - `src/semantic/local_type_state.{c,h}`を追加した。
+  - canonical lvar type attachment、legacy stride cache同期、VLA descriptor、parameter inner dims、
+    type signature setterの実装を`decl.c`からsemantic moduleへ移した。
+  - 互換API名は既存caller向けに維持し、宣言元はsemantic headerへ移した。
+- boundary test:
+  - 通常VLAのcanonical type attachmentとrequested alignmentを確認した。
+  - pointer-to-VLA requestからstorage 16、decl sizeof 8、+8 sidecar、canonical pointer type、
+    stride assignment ASTが生成されることを直接確認した。
+  - frame layout testでpointer-to-VLA layoutの16/+8契約を固定した。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_frame_layout` = **frame layout tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - parameter VLA registration/stride slot生成をparser.cからrequest boundaryへ移す。
+  - scalar/complex initializer parsingに残る型別分岐をraw syntax/semantic requestへ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1013）: parameter VLA登録をlowering requestへ移した
+- parameter VLA lowering:
+  - `psx_parameter_vla_dimension_t`、`psx_parameter_vla_lowering_request_t/result_t`、
+    `lower_parameter_vla_declaration()`を`vla_lowering`へ追加した。
+  - 主parameterの8-byte storage、`__rs_<name>` stride storage、runtime次元名から
+    先行parameter offsetへの解決、VLA descriptor/inner dims、canonical type attachmentを一括所有する。
+  - hidden stride名は固定64-byte bufferではなくparameter名長に合わせて生成する。
+- parser boundary:
+  - `register_param_stride_slot()`、`attach_param_runtime_stride()`、
+    `register_vla_array_param()`を`parser.c`から削除した。
+  - parser private declarator stateをtyped dimension requestへ写すadapterだけを残した。
+  - `parser.c`から`psx_decl_set_lvar_vla_descriptor()`と
+    `psx_decl_set_lvar_vla_param_inner_dims()`の直接呼び出しがなくなった。
+  - parameter canonical type再投影もlowering resultの`type_attached`で一度だけ行う。
+- N-D pointer-to-VLA parameter:
+  - 旧経路はfirst inner dimensionだけがruntimeかを見ていた。
+  - 全inner dimensionsを走査し、`int (*p)[3][n]`型の後段runtime dimensionも
+    parameter VLA loweringへ渡すようにした。
+- name resolution order:
+  - runtime dimensionを先行parameterとして解決し終えるまで、現在登録中のlvarを
+    `is_param`にしない。current parameterの自己参照名を先行parameterと誤認しない。
+- boundary test:
+  - runtime/constant/runtimeの3 inner dimensionsを直接loweringした。
+  - parameter storage 8、stride storage 24、`__rs_tensor` registry entry、先行parameter offsets、
+    canonical pointer type、VLA inner dimension metadataを確認した。
+- scale:
+  - `parser.c`は3,972行から3,929行になった。
+- 確認:
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - `register_param_lvar()`に残るABI/storage分岐をtyped parameter lowering requestへ移す。
+  - scalar/complex initializer parsingに残る型別分岐をraw syntax/semantic requestへ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1014）: 一般parameter storage/ABI分類をcanonical planへ移した
+- semantic parameter plan:
+  - `src/semantic/parameter_declaration_plan.{c,h}`を追加した。
+  - adjusted canonical parameter typeからscalar、pointer、small aggregate value、
+    large aggregate byref、complexを分類する。
+  - planがstorage size、element size、alignment、byref flagを決定する。
+  - pointer/array decay/function pointer/typedef array/tag pointerのpointee sizeは
+    parserフラグではなくcanonical typeのstructural deref sizeから得る。
+- parameter lowering:
+  - `src/lowering/parameter_lowering.{c,h}`を追加した。
+  - typed requestからstorage allocation、registry registration、parameter/byref flag、
+    persistent canonical type attachmentを一括して行う。
+- parser cleanup:
+  - `register_param_lvar()`にあったfuncptr array、tag array、small/large struct、tag pointer、
+    multi-level pointer、typedef array、complex、scalarごとのstorage登録分岐を削除した。
+  - parser側の登録経路はparameter VLA requestと一般canonical parameter requestの二つだけになった。
+  - `parser.c`から`psx_decl_register_lvar*()`呼び出しと`is_byref_param`直接設定が消えた。
+- boundary test:
+  - scalar 4/4、pointer 8/4、small aggregate 12/12 align 8、
+    large aggregate 8/24 byref、double complex 16/16 align 8のplanを直接確認した。
+  - large aggregate loweringが8-byte ABI storage、24-byte element view、byref flag、
+    canonical struct typeを登録することを確認した。
+- scale:
+  - `parser.c`は3,929行から3,845行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - scalar/complex initializer parsingに残る型別分岐をraw syntax/semantic requestへ寄せる。
+  - parser top-levelのglobal storage/ABI projectionをsemantic/lowering boundaryへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1015）: 全local initializerをLIST/EXPRのraw二形へ統一した
+- raw AST boundary:
+  - `PSX_DECL_INIT_LIST`をbrace initializerの唯一のraw kindにした。
+  - `PSX_DECL_INIT_COMPLEX`、`PSX_DECL_INIT_ARRAY_LIST`、
+    `PSX_DECL_INIT_STRUCT_LIST`、`PSX_DECL_INIT_UNION_LIST`を削除した。
+  - array/struct/union/complex/scalarのどれでもparser直後は同じ
+    `ND_DECL_INIT -> ND_INIT_LIST`形になる。
+  - non-brace側も`PSX_DECL_INIT_EXPR`へ統一し、`PSX_DECL_INIT_SCALAR`、
+    `PSX_DECL_INIT_ARRAY_EXPR`、`PSX_DECL_INIT_STRUCT_EXPR`、
+    `PSX_DECL_INIT_UNION_EXPR`を削除した。
+- parser cleanup:
+  - `parse_scalar_brace_initializer()`、`parse_array_scalar_initializer_list()`、
+    `parse_array_initializer()`を削除した。
+  - complex用のtoken-driven `{re, im}` parserと、scalar用の一要素brace診断を削除した。
+  - `psx_decl_parse_initializer_for_var()`はbraceなら型によらず
+    `psx_parse_initializer_syntax_list()`を一度呼ぶだけになった。
+  - non-braceなら型によらず`psx_expr_assign()`を一度呼ぶだけになり、
+    parser内のinitializer型別dispatchがなくなった。
+- typed lowering:
+  - semantic passは`PSX_DECL_INIT_LIST`の全entry expression/designatorを解決する。
+  - initializer loweringがlvarのcanonical typeを正本としてarray/struct/union/complex/scalarを選ぶ。
+  - scalarの一要素・designatorなし制約とcomplexの1〜2要素・designatorなし制約を
+    typed lowering側へ移した。
+  - complex listはcanonical complex sizeからreal/imag slot幅を決め、省略imagを0で埋める。
+  - expr loweringもcanonical typeからarray zero-fill、struct copy、union copy/scalar extension、
+    scalar/complex assignmentを選ぶ。
+- boundary test:
+  - struct、scalar `{7,}`、complex `{3,4}`がparser直後にすべて
+    `PSX_DECL_INIT_LIST`となることを確認した。
+  - struct copy、union scalar、array expressionがparser直後にすべて
+    `PSX_DECL_INIT_EXPR`となることを確認した。
+  - semantic後はstruct store列、scalar assignment、complex real/imag assignmentへ
+    それぞれ異なる形でloweringされることを確認した。
+- scale:
+  - `decl.c`は2,889行から2,811行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - parser top-levelのglobal storage/ABI projectionをsemantic/lowering boundaryへ移す。
+  - local declaration spec/declarator stateからcanonical typeを組み立てる境界をさらに前段へ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1016）: global object登録をcanonical loweringへ移した
+- semantic global plan:
+  - `src/semantic/global_declaration_plan.{c,h}`を追加した。
+  - canonical global typeからstorage sizeとincomplete array状態を決定する。
+  - parser側の`is_ptr`/`is_array`/`arr_total`やtag size再計算をstorage正本に使わない。
+- global lowering:
+  - `src/lowering/global_object_lowering.{c,h}`を追加した。
+  - typed requestがname、canonical type、storage class、diagnostic tokenを受ける。
+  - function/typedef/enumとの名前衝突、global再宣言互換性、externからdefinitionへのmerge、
+    allocation、registry登録、canonical type attachmentを一括所有する。
+  - incomplete externからcomplete array definitionへ移るとtypeとstorage sizeを昇格する。
+  - complete declarationの後にincomplete externが来てもcanonical typeをdowngradeしない。
+- parser cleanup:
+  - `effective_toplevel_tag_object_size()`と`register_toplevel_global_decl()`を削除した。
+  - `register_toplevel_object_from_declarator()`はcanonical typeを構築し、
+    `lower_global_object_declaration()`を一度呼ぶだけになった。
+- boundary test:
+  - incomplete `int[]` planがsize 0/incompleteになることを確認した。
+  - extern incompleteからcomplete `int[3]`へのmergeで同一global、size 12、array len 3、
+    extern解除になることを確認した。
+  - pointer planがsize 8、static pointer登録がstatic linkageを保持することを確認した。
+- scale:
+  - `parser.c`は3,845行から3,741行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - global initializerのsyntax/semantic/lowering境界をさらに分離する。
+  - `decl.c`に残るglobal type state更新をsemantic helperへ移す。
+  - local/top-level declaratorからcanonical typeを構築する境界を前段へ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1017）: global initializerをraw ASTからtyped loweringへ一本化した
+- raw boundary:
+  - `apply_toplevel_object_initializer()`は`=`の後を`PSX_DECL_INIT_LIST`または
+    `PSX_DECL_INIT_EXPR`として一度だけparseする。
+  - canonical global typeとraw initializerを
+    `psx_static_declaration_initializer_request_t`へ渡す単一経路にした。
+  - aggregate compound literalをbrace initializerへ正規化するsyntax処理だけをparserに残した。
+- semantic incomplete-array completion:
+  - `psx_resolve_incomplete_array_initializer()`を追加した。
+  - token列を再走査せず、raw list entry、top-level index/range designator、nested list、
+    string nodeから外側配列長を決定する。
+  - flat aggregate listはcanonical element typeのscalar slot数で外側要素数へ変換する。
+  - `char[] = "..."`と`char *[] = {"..."}`をcanonical element type/文字幅で区別する。
+- typed static-data lowering:
+  - `lower_static_declaration_initializer()`を追加した。
+  - duplicate definition、aggregate definition attachment、incomplete type completion、
+    semantic analyze、integer/floating constant、static address、function reference、string、
+    aggregate slot lowering、`_Bool`正規化を所有する。
+  - 既存`lower_static_object_initializer()`をaggregate内部処理として再利用する。
+- parser cleanup:
+  - global initializer内の型別dispatch、定数式評価、address constant解決、文字列slot生成、
+    `global_var_t`初期値フィールド直接更新を削除した。
+  - productionから不要になった`psx_decl_finalize_gvar_inferred_array_size()`を削除した。
+- boundary test:
+  - incomplete `int[]` + flat LISTがarray len 3、size 12、3 slotsへ完成することを確認した。
+  - incomplete `char *[]` + 単一string LISTがarray len 1、size 8、string symbol slotになることを確認した。
+- scale:
+  - `parser.c`は3,741行から3,574行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - `decl.c`のstatic local/compound literal global生成に残るtoken-based initializer推論を
+    同じraw AST completionへ統合する。
+  - `decl.c`に残るglobal allocation/type state更新をglobal object loweringへ寄せる。
+  - local/top-level declaratorからcanonical typeを構築する境界を前段へ寄せる。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1018）: static localとfile-scope compound literalを共有loweringへ移した
+- static local declaration lowering:
+  - `psx_static_local_declaration_request_t/result_t`と
+    `lower_static_local_declaration()`を追加した。
+  - canonical type、raw LIST/EXPR initializer、alias metadataを受け、backing global確保、
+    static-data initializer、mangled global登録、local alias登録を一括所有する。
+  - incomplete array completion後のcanonical typeをbacking globalとaliasの両方へ投影する。
+- static local parser cleanup:
+  - scalar、pointer、scalar/pointer array、typedef array、struct/union、aggregate arrayを
+    すべて共通declaration loweringへ接続した。
+  - scalar helperのtoken先読み、integer/floating/address constant評価を削除した。
+  - array helperの文字列slot生成、brace lowering、incomplete length token推論を削除した。
+  - aggregate helperのtag type再構築、backing global直接確保、initializer loweringを削除した。
+  - static localは一般宣言のtoken-based事前array completionを通さず、raw AST completionだけを使う。
+- file-scope compound literal:
+  - aggregate/scalarで分かれていた2本の`global_var_t`直接生成を削除した。
+  - raw brace LISTを一度だけparseし、global object lowering + static declaration initializerへ渡す。
+  - incomplete array compound literalは長さ0のcanonical arrayとして登録後、raw ASTから完成する。
+  - 非address contextの単純scalar `ND_NUM`短絡だけはsyntax optimizationとして維持した。
+- local extern:
+  - legacy size/tag引数と直接global allocationを削除し、canonical typeを
+    `lower_global_object_declaration()`へ渡す経路にした。
+- boundary test:
+  - incomplete static local `int[]` + raw LISTからarray len 3/size 12へ完成することを確認した。
+  - backing globalがmangled名でregistryに入り、aliasとglobalが完成済みcanonical typeを持つことを確認した。
+- scale:
+  - `decl.c`は続き1015時点の2,811行から2,623行になった。
+  - `expr.c`は3,407行から3,400行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - auto local incomplete arrayのtoken-based事前推論をraw declaration initializerへ統合する。
+  - 関数内compound literalのarray length推論とlocal registrationをcanonical requestへ移す。
+  - scalar array static helperに残るlegacy element/次元引数からのtype構築をouter canonical typeへ統合する。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1019）: auto local不完全配列をsymbol宣言/type完成/storage確定の三段へ分離した
+- declaration order:
+  - Cのscope規則に合わせ、不完全配列の宣言symbolをinitializer parseより先にlocal registryへ登録する。
+  - raw LIST/EXPR initializerをparseし、`psx_resolve_incomplete_array_initializer()`で
+    canonical array typeを完成してからframe storageを確保する。
+  - storage確定後、既にparse済みのraw initializerを同じlvar targetへ`ND_DECL_INIT`として結合する。
+- local object lowering:
+  - `declare_incomplete_local_object()`を追加し、storage未確定のarray symbolとcanonical typeを登録する。
+  - `complete_declared_local_object()`を追加し、完成型からstorage size/leaf element/alignmentをplanし、
+    frame offset確保と既存symbol更新を行う。
+  - 完全型の従来経路`lower_complete_local_object()`とは責務を分けた。
+- registry support:
+  - `psx_local_registry_update_storage_object()`を追加した。
+  - placeholder offset indexを外して完成offsetへ再登録し、name identityは維持する。
+- parser cleanup:
+  - 通常のauto local不完全配列にあったinitializer token count、first brace、index designatorの
+    三重先読みを削除した。
+  - initializer parseとtarget bindingを`bind_decl_initializer_for_var()`で分離した。
+  - `_Generic`用type signatureの終端は、initializerを先にparseした場合も元の`=` tokenを使う。
+- boundary test:
+  - incomplete symbolがsize 0でregistryに入り、同一lvar identityのままsize 12/array len 3へ
+    storage completionされることを確認した。
+  - `int *a[]={(int *)a};`がparseでき、宣言中symbolがinitializer内から見えることを確認した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 残るtoken inference:
+  - `register_multidim_array_lvar_from_dims()`の未消費`[` suffix互換fallbackに2参照だけ残る。
+  - 通常declarator operator列を通るauto/static/global不完全配列はraw AST completionへ移行済み。
+- 次:
+  - 未消費`[` suffix互換fallbackをdeclarator operator列へ統合して削除する。
+  - 関数内compound literalのarray length推論とlocal registrationをcanonical requestへ移す。
+  - scalar array static helperに残るlegacy element/次元引数からのtype構築をouter canonical typeへ統合する。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1020）: function-scope compound literalと最後のtoken initializer推論をcanonical化した
+- function-scope compound literal:
+  - file/function scopeを問わずbrace initializerを一度だけraw `PSX_DECL_INIT_LIST`としてparseする。
+  - incomplete `(T[]){...}` / `(T *[]){...}`を長さ0のcanonical arrayとして構築し、
+    `psx_resolve_incomplete_array_initializer()`でraw ASTから完成する。
+  - 完成typeを`lower_complete_local_object()`へ渡し、legacy `var_size` lvar登録を削除した。
+  - `psx_decl_bind_initializer_for_var()`をparser-internal API化し、parse済みLISTを登録済みlvarへ結合する。
+- declarator fallback removal:
+  - declarator parserが全`[]`をoperator列へ取り込む現在の設計に合わせ、後段の未消費
+    `tk_consume('[')`互換fallbackを削除した。
+  - `register_multidim_array_lvar*()`、trailing suffix token parser、VLA token peek、
+    旧1D VLA wrapperを削除した。
+  - complete array、incomplete array、N-D VLA、pointer-to-VLAはそれぞれ既存canonical loweringだけを通る。
+- initializer syntax cleanup:
+  - `psx_initializer_syntax_count_brace_elements()`、
+    `psx_initializer_syntax_infer_array_count()`、
+    `psx_initializer_syntax_first_element_is_brace()`、
+    `psx_initializer_syntax_has_top_level_index_designator()`を削除した。
+  - `initializer_syntax.c`はraw LIST/designator/expression parserだけになった。
+- boundary test:
+  - function-scope `(int[]){1,2,3}`が12 bytesへ完成することを確認した。
+  - `(char[]){"abc"}`が4 bytes、`(int *[]){0,0}`が16 bytesへ完成することを確認した。
+- scale:
+  - `decl.c`は2,677行から2,462行になった。
+  - `expr.c`は3,400行から3,380行になった。
+  - `initializer_syntax.c`は117行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - scalar array static helperに残るlegacy element/次元引数からのtype構築をouter canonical typeへ統合する。
+  - compound literal type constructionのlegacy cast fieldsをcanonical type-name resultへ置換する。
+  - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1021）: static local arrayとlocal typedef arrayの型判定をcanonical typeへ統合した
+- static local array:
+  - scalar/pointer/typedef/aggregateごとに分かれていたstatic array helperを1本の
+    `try_lower_static_local_array(tok, canonical_type)`へ統合した。
+  - array chainとleaf kind/sizeは`psx_type_t`から読み、legacy element size、dims、unsigned/bool、
+    pointer pointeeの各引数から型を再構築する経路を削除した。
+  - raw LIST/string EXPR initializerは共通の`lower_static_local_declaration()`へ渡す。
+- local typedef declaration:
+  - `local_decl_spec_t`の`td_array_dims[]` / `td_array_dim_count` / `td_array_elem_size` /
+    `td_is_array` / typedef pointer-level / long-double複製を削除した。
+  - `psx_decl_parse_declaration_after_type_ex()`からこれらtypedef専用引数を削除し、
+    declarator shapeを適用した後のcanonical typeの`kind` / `sizeof` / `deref_size`で判定する。
+  - pointer-element array typedefの`is_pointer`事後補正も削除し、canonical top-level kindを使う。
+  - static scalar/aggregateの分岐、void object診断、VLA leaf sizeもcanonical type由来へ変更した。
+- cleanup:
+  - `static_local_scalar_type()` / `static_local_array_type()`と旧static array helper群を削除した。
+  - `decl.c`は2,462行から2,075行になった。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c_wasm`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**。
+  - `git diff --check` = clean。
+  - 全Wasm E2Eは続き1011で**1203/1203**確認済み。今回はfocused suiteのみ実行した。
+- 次:
+  - `parser.c`のtop-level typedef登録に残る`td_array_dims[]`複製をcanonical type由来へ統合する。
+  - compound literal type constructionのlegacy cast fieldsをcanonical type-name resultへ置換する。
+  - parserに残るdeclaration ABI projectionとdiagnostic ownershipをsemantic/loweringへ移す。
+  - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。

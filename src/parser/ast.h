@@ -76,12 +76,8 @@ typedef enum {
 // 抽象構文木のノードの型
 typedef struct node_t node_t;
 typedef enum {
-  PSX_DECL_INIT_SCALAR,
-  PSX_DECL_INIT_COMPLEX,
-  PSX_DECL_INIT_ARRAY_EXPR,
-  PSX_DECL_INIT_ARRAY_LIST,
-  PSX_DECL_INIT_STRUCT_LIST,
-  PSX_DECL_INIT_UNION_LIST,
+  PSX_DECL_INIT_EXPR,
+  PSX_DECL_INIT_LIST,
 } psx_decl_init_kind_t;
 
 typedef enum {

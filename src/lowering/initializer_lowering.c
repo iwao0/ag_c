@@ -1,6 +1,7 @@
 #include "initializer_lowering.h"
 
 #include "../parser/lvar_public.h"
+#include "../parser/config_runtime.h"
 #include "../parser/node_utils.h"
 #include "../parser/literal_public.h"
 #include "../parser/symtab.h"
@@ -48,31 +49,6 @@ int psx_initializer_lowering_supports_recursive_aggregate(
       return 0;
   }
   return 1;
-}
-
-static int type_contains_function_pointer(const psx_type_t *type) {
-  if (!type) return 0;
-  if (ps_decl_funcptr_sig_has_payload(ps_type_funcptr_signature(type)))
-    return 1;
-  if (type->kind == PSX_TYPE_POINTER) return 0;
-  if (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_FUNCTION) {
-    return type_contains_function_pointer(type->base);
-  }
-  if (ps_type_is_tag_aggregate(type) && type->aggregate_definition) {
-    const psx_aggregate_definition_t *definition = type->aggregate_definition;
-    for (int i = 0; i < definition->member_count; i++) {
-      if (type_contains_function_pointer(
-              ps_tag_member_decl_type(&definition->members[i])))
-        return 1;
-    }
-  }
-  return 0;
-}
-
-int psx_initializer_lowering_supports_flat_brace_elision(
-    const psx_type_t *type) {
-  return psx_initializer_lowering_supports_recursive_aggregate(type) &&
-         !type_contains_function_pointer(type);
 }
 
 static node_t *new_array_elem_assign(lvar_t *var, int idx, node_t *value) {
@@ -329,6 +305,17 @@ static node_t *lower_array_list_initializer(node_decl_init_t *initializer) {
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   psx_type_t *type = psx_lvar_get_decl_type(var);
+  if (type && type->kind == PSX_TYPE_ARRAY && list->entry_count == 1) {
+    psx_initializer_entry_t *entry = &list->entries[0];
+    if (entry->value && entry->value->kind == ND_STRING &&
+        entry->designator_count == 0 && !entry->has_index &&
+        !entry->has_member) {
+      node_t *lowered = lower_typed_character_array_string(
+          var, type, 0, (node_string_t *)entry->value, NULL,
+          entry->tok ? entry->tok : initializer->base.tok);
+      if (lowered) return lowered;
+    }
+  }
   if (type_has_aggregate_leaf(type)) {
     node_t *chain = append_typed_object_zero_fill(var, type, NULL);
     return lower_typed_initializer_list(
@@ -888,6 +875,11 @@ static node_t *lower_typed_aggregate_initializer_list(
     psx_type_t *first_type = ps_tag_member_decl_type_mut(first);
     if (!has_designator && first_type &&
         first_type->kind == PSX_TYPE_ARRAY) {
+      if (!ps_get_enable_union_array_member_nonbrace_init()) {
+        psx_diag_ctx(fallback_tok, "decl", "%s",
+                     diag_message_for(
+                         DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
+      }
       return lower_typed_array_initializer_list(
           var, first_type, relative_offset + first->offset,
           list, chain, fallback_tok);
@@ -1052,71 +1044,183 @@ static node_t *lower_union_list_initializer(node_decl_init_t *initializer) {
   return chain;
 }
 
+static int aggregate_types_compatible(const psx_type_t *target,
+                                      const psx_type_t *value) {
+  if (!target || !value || !ps_type_is_tag_aggregate(target) ||
+      !ps_type_is_tag_aggregate(value)) return 0;
+  if (target->kind != value->kind ||
+      ps_type_sizeof(target) != ps_type_sizeof(value)) return 0;
+  if (target->tag_len > 0 || value->tag_len > 0) {
+    return target->tag_len == value->tag_len && target->tag_name &&
+           value->tag_name &&
+           memcmp(target->tag_name, value->tag_name,
+                  (size_t)target->tag_len) == 0;
+  }
+  if (target->aggregate_definition && value->aggregate_definition)
+    return target->aggregate_definition == value->aggregate_definition;
+  return target->tag_scope_depth_p1 == value->tag_scope_depth_p1;
+}
+
+static node_t *new_decl_initializer_assign(node_t *target, node_t *value,
+                                           token_t *tok) {
+  node_t *assign = psx_node_new_assign(target, value);
+  assign->is_decl_initializer = 1;
+  assign->tok = tok;
+  return assign;
+}
+
+static node_t *lower_aggregate_expr_initializer(
+    node_decl_init_t *initializer, int allow_union_scalar) {
+  lvar_t *var = psx_node_lvar_symbol(initializer->base.lhs);
+  psx_type_t *target_type = var ? psx_lvar_get_decl_type(var) : NULL;
+  psx_type_t *value_type = ps_node_get_type(initializer->base.rhs);
+  token_t *tok = initializer->base.tok;
+  if (!var || !target_type) return NULL;
+
+  if (aggregate_types_compatible(target_type, value_type)) {
+    return new_decl_initializer_assign(
+        initializer->base.lhs, initializer->base.rhs, tok);
+  }
+  if (!allow_union_scalar) {
+    psx_diag_ctx(tok, "decl", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
+  }
+
+  psx_aggregate_definition_t *definition =
+      target_type->aggregate_definition;
+  if (!definition) {
+    psx_diag_ctx(tok, "decl", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  }
+  for (int i = 0; i < definition->member_count; i++) {
+    tag_member_info_t *member = &definition->members[i];
+    if (member->len <= 0) continue;
+    node_t *target = psx_node_new_tag_member_lvar_ref_for(
+        var, member->offset, member);
+    return new_decl_initializer_assign(
+        target, initializer->base.rhs, tok);
+  }
+  psx_diag_ctx(tok, "decl", "%s",
+               diag_message_for(
+                   DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  return NULL;
+}
+
+static int initializer_entry_is_plain_scalar(
+    const psx_initializer_entry_t *entry) {
+  return entry && entry->value && entry->value->kind != ND_INIT_LIST &&
+         entry->designator_count == 0 && !entry->has_index &&
+         !entry->has_member;
+}
+
+static node_t *lower_scalar_list_initializer(
+    node_decl_init_t *initializer) {
+  node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
+  if (list->entry_count != 1 ||
+      !initializer_entry_is_plain_scalar(&list->entries[0])) {
+    psx_diag_ctx(initializer->base.tok, "decl", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+  }
+  return new_decl_initializer_assign(
+      initializer->base.lhs, list->entries[0].value,
+      initializer->base.tok);
+}
+
+static node_t *lower_complex_list_initializer(
+    node_decl_init_t *initializer, lvar_t *var) {
+  node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
+  if (list->entry_count < 1 || list->entry_count > 2) {
+    psx_diag_ctx(initializer->base.tok, "decl", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+  }
+  for (int i = 0; i < list->entry_count; i++) {
+    if (!initializer_entry_is_plain_scalar(&list->entries[i])) {
+      psx_diag_ctx(initializer->base.tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
+    }
+  }
+
+  int complex_size = ps_lvar_decl_sizeof(
+      var, ps_lvar_storage_size(var, 0));
+  int half = complex_size > 0 ? complex_size / 2 : 8;
+  node_t *real_lhs = psx_node_new_lvar_fp_slot_for(
+      var, ps_lvar_offset(var), half);
+  node_t *imag_lhs = psx_node_new_lvar_fp_slot_for(
+      var, ps_lvar_offset(var) + half, half);
+  node_t *real_assign = new_decl_initializer_assign(
+      real_lhs, list->entries[0].value, initializer->base.tok);
+  node_t *imag_assign = new_decl_initializer_assign(
+      imag_lhs,
+      list->entry_count > 1
+          ? list->entries[1].value
+          : psx_node_new_num(0),
+      initializer->base.tok);
+  return psx_node_new_binary(ND_COMMA, real_assign, imag_assign);
+}
+
+static node_t *lower_typed_list_initializer(
+    node_decl_init_t *initializer) {
+  if (!initializer || initializer->base.rhs->kind != ND_INIT_LIST)
+    return NULL;
+  lvar_t *var = psx_node_lvar_symbol(initializer->base.lhs);
+  psx_type_t *type = var ? psx_lvar_get_decl_type(var) : NULL;
+  if (!var || !type) return NULL;
+  if (type->kind == PSX_TYPE_ARRAY)
+    return lower_array_list_initializer(initializer);
+  if (type->kind == PSX_TYPE_STRUCT)
+    return lower_struct_list_initializer(initializer);
+  if (type->kind == PSX_TYPE_UNION)
+    return lower_union_list_initializer(initializer);
+  if (type->kind == PSX_TYPE_COMPLEX)
+    return lower_complex_list_initializer(initializer, var);
+  return lower_scalar_list_initializer(initializer);
+}
+
+static node_t *lower_typed_expr_initializer(
+    node_decl_init_t *initializer) {
+  lvar_t *var = psx_node_lvar_symbol(initializer->base.lhs);
+  psx_type_t *type = var ? psx_lvar_get_decl_type(var) : NULL;
+  if (!var || !type) return NULL;
+  if (type->kind == PSX_TYPE_ARRAY) {
+    return lower_array_expr_initializer(
+        initializer->base.lhs, initializer->base.rhs,
+        initializer->base.tok);
+  }
+  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
+    return lower_aggregate_expr_initializer(
+        initializer, type->kind == PSX_TYPE_UNION);
+  }
+  return new_decl_initializer_assign(
+      initializer->base.lhs, initializer->base.rhs,
+      initializer->base.tok);
+}
+
 void lower_decl_initializer(node_t *node) {
   if (!node || node->kind != ND_DECL_INIT || !node->lhs || !node->rhs) return;
 
   psx_decl_init_kind_t init_kind = ((node_decl_init_t *)node)->init_kind;
   token_t *tok = node->tok;
-  if (init_kind == PSX_DECL_INIT_SCALAR) {
-    node_t *assign = psx_node_new_assign(node->lhs, node->rhs);
-    assign->is_decl_initializer = 1;
-    assign->tok = tok;
-    *node = *assign;
-    return;
-  }
-
-  if (init_kind == PSX_DECL_INIT_ARRAY_EXPR) {
-    node_t *lowered = lower_array_expr_initializer(node->lhs, node->rhs, tok);
+  if (init_kind == PSX_DECL_INIT_EXPR) {
+    node_t *lowered = lower_typed_expr_initializer(
+        (node_decl_init_t *)node);
     if (!lowered) return;
     *node = *lowered;
     node->tok = tok;
     return;
   }
 
-  if (init_kind == PSX_DECL_INIT_ARRAY_LIST) {
-    node_t *lowered = lower_array_list_initializer((node_decl_init_t *)node);
+  if (init_kind == PSX_DECL_INIT_LIST) {
+    node_t *lowered = lower_typed_list_initializer(
+        (node_decl_init_t *)node);
     if (!lowered) return;
     *node = *lowered;
     node->tok = tok;
     return;
   }
 
-  if (init_kind == PSX_DECL_INIT_STRUCT_LIST) {
-    node_t *lowered = lower_struct_list_initializer((node_decl_init_t *)node);
-    if (!lowered) return;
-    *node = *lowered;
-    node->tok = tok;
-    return;
-  }
-
-  if (init_kind == PSX_DECL_INIT_UNION_LIST) {
-    node_t *lowered = lower_union_list_initializer((node_decl_init_t *)node);
-    if (!lowered) return;
-    *node = *lowered;
-    node->tok = tok;
-    return;
-  }
-
-  if (init_kind != PSX_DECL_INIT_COMPLEX || node->rhs->kind != ND_COMMA) return;
-
-  lvar_t *var = psx_node_lvar_symbol(node->lhs);
-  if (!var) return;
-
-  int complex_size = ps_lvar_decl_sizeof(
-      var, ps_lvar_storage_size(var, 0));
-  int half = complex_size > 0 ? complex_size / 2 : 8;
-  node_t *real_lhs = psx_node_new_lvar_fp_slot_for(var, ps_lvar_offset(var), half);
-  node_t *imag_lhs = psx_node_new_lvar_fp_slot_for(var, ps_lvar_offset(var) + half, half);
-  node_t *real_assign = psx_node_new_assign(real_lhs, node->rhs->lhs);
-  node_t *imag_assign = psx_node_new_assign(
-      imag_lhs, node->rhs->rhs ? node->rhs->rhs : psx_node_new_num(0));
-
-  real_assign->is_decl_initializer = 1;
-  real_assign->tok = node->tok;
-  imag_assign->is_decl_initializer = 1;
-  imag_assign->tok = node->tok;
-
-  node_t *lowered = psx_node_new_binary(ND_COMMA, real_assign, imag_assign);
-  *node = *lowered;
-  node->tok = tok;
 }

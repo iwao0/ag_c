@@ -1,5 +1,7 @@
 #include "declaration_resolution.h"
 
+#include "constant_expression.h"
+
 #include "../parser/semantic_ctx.h"
 #include "../parser/tag_member_public.h"
 
@@ -117,4 +119,80 @@ int psx_resolve_incomplete_array_type(
   }
   if (outer_count <= 0 || outer_count > INT_MAX) return 0;
   return psx_type_complete_array(type, (int)outer_count);
+}
+
+static long long initializer_string_count(
+    const psx_type_t *array_type, node_t *initializer) {
+  if (!array_type || !array_type->base || !initializer ||
+      initializer->kind != ND_STRING)
+    return 0;
+  const node_string_t *string = (const node_string_t *)initializer;
+  int width = (int)string->char_width;
+  if (width <= 0) width = 1;
+  if (ps_type_sizeof(array_type->base) != width) return 0;
+  return (long long)string->byte_len + 1;
+}
+
+static long long initializer_list_count(
+    const node_init_list_t *list, int *entries_initialize_outer_elements) {
+  if (!list || !entries_initialize_outer_elements) return 0;
+  if (list->entry_count == 1 && list->entries[0].designator_count == 0) {
+    node_t *value = list->entries[0].value;
+    if (value && value->kind == ND_STRING) return -1;
+  }
+
+  long long cursor = 0;
+  long long max_index = -1;
+  for (int i = 0; i < list->entry_count; i++) {
+    const psx_initializer_entry_t *entry = &list->entries[i];
+    if (entry->value && entry->value->kind == ND_INIT_LIST)
+      *entries_initialize_outer_elements = 1;
+    if (entry->designator_count > 0 &&
+        entry->designators[0].kind == PSX_INIT_DESIGNATOR_INDEX) {
+      int ok = 1;
+      long long index = psx_eval_const_int(
+          entry->designators[0].index_expr, &ok);
+      if (!ok || index < 0) return 0;
+      long long end = index;
+      if (entry->designators[0].is_range) {
+        end = psx_eval_const_int(
+            entry->designators[0].range_end_expr, &ok);
+        if (!ok || end < index) return 0;
+      }
+      cursor = end;
+      *entries_initialize_outer_elements = 1;
+    }
+    if (cursor > max_index) max_index = cursor;
+    cursor++;
+  }
+  return max_index + 1;
+}
+
+int psx_resolve_incomplete_array_initializer(
+    psx_type_t *type, psx_decl_init_kind_t initializer_kind,
+    node_t *initializer) {
+  if (!type || type->kind != PSX_TYPE_ARRAY || type->array_len > 0 ||
+      type->is_vla || !initializer)
+    return 0;
+
+  long long count = 0;
+  int entries_initialize_outer_elements = 0;
+  if (initializer_kind == PSX_DECL_INIT_EXPR) {
+    count = initializer_string_count(type, initializer);
+  } else if (initializer_kind == PSX_DECL_INIT_LIST &&
+             initializer->kind == ND_INIT_LIST) {
+    node_init_list_t *list = (node_init_list_t *)initializer;
+    count = initializer_list_count(
+        list, &entries_initialize_outer_elements);
+    if (count < 0) {
+      count = initializer_string_count(type, list->entries[0].value);
+      if (count <= 0) count = list->entry_count;
+    }
+  }
+  return psx_resolve_incomplete_array_type(
+      type, &(psx_incomplete_array_resolution_t){
+                .initializer_count = count,
+                .entries_initialize_outer_elements =
+                    entries_initialize_outer_elements,
+            });
 }

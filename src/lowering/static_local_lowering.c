@@ -1,6 +1,8 @@
 #include "static_local_lowering.h"
 
+#include "static_data_initializer.h"
 #include "../parser/local_registry.h"
+#include "../parser/node_utils.h"
 #include "../parser/symtab.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,29 +86,50 @@ lvar_t *lower_static_local_object(
   return alias;
 }
 
-lvar_t *lower_static_local_scalar(
-    const psx_static_local_scalar_request_t *request) {
+int lower_static_local_declaration(
+    const psx_static_local_declaration_request_t *request,
+    psx_static_local_declaration_result_t *result) {
+  if (result) *result = (psx_static_local_declaration_result_t){0};
   if (!request || !request->name || request->name_len <= 0 ||
-      request->storage_size <= 0 || !request->type) return NULL;
+      !request->type || request->alias_element_size <= 0)
+    return 0;
+
   global_var_t *global = calloc(1, sizeof(*global));
-  if (!global) return NULL;
-  global->type_size = request->storage_size;
-  global->has_init = request->has_initializer ? 1 : 0;
-  global->init_val = request->integer_value;
-  global->fval = request->floating_value;
-  global->init_symbol = request->symbol;
-  global->init_symbol_len = request->symbol_len;
-  global->init_symbol_offset = request->symbol_offset;
-  return lower_static_local_object(
+  if (!global) return 0;
+  global->type_size = ps_type_sizeof(request->type);
+  psx_static_local_prepare_global(global, request->type);
+
+  psx_static_declaration_initializer_result_t initializer_result = {0};
+  if (request->has_initializer &&
+      !lower_static_declaration_initializer(
+          &(psx_static_declaration_initializer_request_t){
+              .global = global,
+              .type = psx_gvar_get_decl_type(global),
+              .initializer_kind = request->initializer_kind,
+              .initializer = request->initializer,
+              .diag_tok = request->diag_tok,
+          },
+          &initializer_result)) {
+    return 0;
+  }
+
+  lvar_t *alias = lower_static_local_object(
       &(psx_static_local_object_request_t){
-          .kind = PSX_STATIC_LOCAL_SCALAR,
+          .kind = request->kind,
           .function_name = request->function_name,
           .function_name_len = request->function_name_len,
           .name = request->name,
           .name_len = request->name_len,
           .global = global,
-          .alias_size = request->storage_size,
-          .alias_element_size = request->element_size,
-          .type = request->type,
+          .alias_size = request->alias_size,
+          .alias_element_size = request->alias_element_size,
+          .type = psx_gvar_get_decl_type(global),
       });
+  if (!alias) return 0;
+  if (result) {
+    result->global = global;
+    result->alias = alias;
+    result->type_completed = initializer_result.type_completed;
+  }
+  return 1;
 }

@@ -2,6 +2,7 @@
 #include "../src/parser/parser_public.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/expr.h"
+#include "../src/parser/global_registry.h"
 #include "../src/parser/node_utils.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
@@ -9,8 +10,14 @@
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
+#include "../src/semantic/global_declaration_plan.h"
+#include "../src/semantic/parameter_declaration_plan.h"
+#include "../src/lowering/global_object_lowering.h"
+#include "../src/lowering/local_object_lowering.h"
+#include "../src/lowering/parameter_lowering.h"
 #include "../src/lowering/vla_lowering.h"
 #include "../src/lowering/static_data_initializer.h"
+#include "../src/lowering/static_local_lowering.h"
 #include "../src/pragma_pack.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <assert.h>
@@ -384,6 +391,18 @@ static void test_expr_compound_literal_array_subscript() {
   ASSERT_EQ(ND_COMMA, node->kind);
   // rhs が添字アクセス結果 (ND_DEREF)
   ASSERT_EQ(ND_DEREF, node->rhs->kind);
+
+  node_t *inferred = parse_expr_input("(int[]){1,2,3}");
+  ASSERT_EQ(ND_COMMA, inferred->kind);
+  ASSERT_EQ(12, psx_node_compound_literal_array_size(inferred));
+
+  node_t *string_inferred = parse_expr_input("(char[]){\"abc\"}");
+  ASSERT_EQ(ND_COMMA, string_inferred->kind);
+  ASSERT_EQ(4, psx_node_compound_literal_array_size(string_inferred));
+
+  node_t *pointer_inferred = parse_expr_input("(int *[]){0,0}");
+  ASSERT_EQ(ND_COMMA, pointer_inferred->kind);
+  ASSERT_EQ(16, psx_node_compound_literal_array_size(pointer_inferred));
 }
 
 static void test_expr_add_sub() {
@@ -541,10 +560,13 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   complex_type->align = 8;
   psx_decl_set_lvar_decl_type(value, complex_type);
 
-  node_t *raw = psx_node_new_decl_initializer(
+  psx_initializer_entry_t *complex_entries =
+      calloc(2, sizeof(*complex_entries));
+  complex_entries[0].value = psx_node_new_num(3);
+  complex_entries[1].value = psx_node_new_num(4);
+  node_t *raw = psx_node_new_decl_initializer_list(
       psx_node_new_lvar_expr_ref_for(value, 0),
-      psx_node_new_binary(ND_COMMA, psx_node_new_num(3), psx_node_new_num(4)),
-      PSX_DECL_INIT_COMPLEX, NULL);
+      PSX_DECL_INIT_LIST, complex_entries, 2, NULL);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
 
   psx_semantic_analyze_expression(raw, NULL);
@@ -562,10 +584,12 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   float_complex_type->size = 8;
   float_complex_type->align = 4;
   psx_decl_set_lvar_decl_type(float_value, float_complex_type);
-  raw = psx_node_new_decl_initializer(
+  complex_entries = calloc(2, sizeof(*complex_entries));
+  complex_entries[0].value = psx_node_new_num(1);
+  complex_entries[1].value = psx_node_new_num(2);
+  raw = psx_node_new_decl_initializer_list(
       psx_node_new_lvar_expr_ref_for(float_value, 0),
-      psx_node_new_binary(ND_COMMA, psx_node_new_num(1), psx_node_new_num(2)),
-      PSX_DECL_INIT_COMPLEX, NULL);
+      PSX_DECL_INIT_LIST, complex_entries, 2, NULL);
   psx_semantic_analyze_expression(raw, NULL);
   ASSERT_EQ(4, ((node_lvar_t *)raw->rhs->lhs)->offset -
                    ((node_lvar_t *)raw->lhs->lhs)->offset);
@@ -579,7 +603,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
       psx_type_new_array(psx_type_new_integer(TK_INT, 4, 0), 3, 12, 4, 0));
   raw = psx_node_new_decl_initializer(
       psx_node_new_lvar_object_ref_for(array), psx_node_new_num(7),
-      PSX_DECL_INIT_ARRAY_EXPR, NULL);
+      PSX_DECL_INIT_EXPR, NULL);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
 
   psx_semantic_analyze_expression(raw, NULL);
@@ -599,7 +623,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   entries[0].has_index = 1;
   entries[1].value = psx_node_new_num(9);
   raw = psx_node_new_decl_initializer_list(
-      psx_node_new_lvar_object_ref_for(array), PSX_DECL_INIT_ARRAY_LIST,
+      psx_node_new_lvar_object_ref_for(array), PSX_DECL_INIT_LIST,
       entries, 2, NULL);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
@@ -677,22 +701,92 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(4, object_plan.storage_size);
   ASSERT_EQ(4, object_plan.element_size);
   ASSERT_TRUE(!psx_plan_complete_object_storage(vla, &object_plan));
+
+  psx_decl_reset_locals();
+  psx_local_object_result_t lowered = {0};
+  ASSERT_TRUE(lower_complete_local_object(
+      &(psx_local_object_request_t){
+          .name = (char *)"matrix",
+          .name_len = 6,
+          .type = matrix,
+          .requested_alignment = 32,
+      },
+      &lowered));
+  ASSERT_TRUE(lowered.var != NULL);
+  ASSERT_EQ(24, lowered.storage_size);
+  ASSERT_EQ(4, lowered.element_size);
+  ASSERT_EQ(32, lowered.alignment);
+  ASSERT_EQ(1, lowered.is_array);
+  ASSERT_EQ(0, ps_lvar_offset(lowered.var) % 32);
+  psx_type_t *stored_type = psx_lvar_get_decl_type(lowered.var);
+  ASSERT_TRUE(stored_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, stored_type->kind);
+  ASSERT_EQ(24, ps_type_sizeof(stored_type));
+  ASSERT_EQ(2, stored_type->array_len);
+  ASSERT_TRUE(stored_type->base != NULL);
+  ASSERT_EQ(3, stored_type->base->array_len);
+  ASSERT_EQ(lowered.var, psx_decl_find_lvar((char *)"matrix", 6));
+
+  psx_decl_reset_locals();
+  psx_type_t *deferred_type =
+      psx_type_new_array(psx_type_new_integer(TK_INT, 4, 0), 0, 0, 4, 0);
+  psx_local_object_result_t declared = {0};
+  ASSERT_TRUE(declare_incomplete_local_object(
+      &(psx_local_object_request_t){
+          .name = (char *)"deferred",
+          .name_len = 8,
+          .type = deferred_type,
+      },
+      &declared));
+  ASSERT_TRUE(declared.var != NULL);
+  ASSERT_EQ(0, declared.var->size);
+  ASSERT_EQ(declared.var,
+            psx_decl_find_lvar((char *)"deferred", 8));
+  ASSERT_TRUE(psx_resolve_incomplete_array_type(
+      deferred_type,
+      &(psx_incomplete_array_resolution_t){
+          .initializer_count = 3,
+      }));
+  psx_local_object_result_t completed = {0};
+  ASSERT_TRUE(complete_declared_local_object(
+      declared.var,
+      &(psx_local_object_request_t){
+          .name = (char *)"deferred",
+          .name_len = 8,
+          .type = deferred_type,
+      },
+      &completed));
+  ASSERT_EQ(declared.var, completed.var);
+  ASSERT_EQ(12, completed.storage_size);
+  ASSERT_EQ(12, completed.var->size);
+  ASSERT_EQ(3, psx_lvar_get_decl_type(completed.var)->array_len);
+
+  expect_parse_ok(
+      "int main(void){ int *a[]={(int *)a}; return sizeof(a)==8; }");
 }
 
 static void test_vla_lowering_request_boundary() {
   printf("test_vla_lowering_request_boundary...\n");
   psx_decl_reset_locals();
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *vla_type = psx_type_new_array(integer, 0, 0, 4, 1);
   psx_vla_lowering_request_t request = {0};
   request.name = (char *)"v";
   request.name_len = 1;
   request.element_size = 4;
   request.dimensions[0] = psx_node_new_num(3);
   request.dimension_count = 1;
+  request.type = vla_type;
+  request.requested_alignment = 16;
   psx_vla_lowering_result_t result = lower_vla_declaration(&request);
   ASSERT_TRUE(result.var != NULL);
   ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
   ASSERT_EQ(4, ps_lvar_array_scalar_element_size(result.var));
+  ASSERT_TRUE(result.type_attached);
+  ASSERT_EQ(0, ps_lvar_offset(result.var) % 16);
+  ASSERT_EQ(PSX_TYPE_ARRAY, psx_lvar_get_decl_type(result.var)->kind);
+  ASSERT_TRUE(psx_lvar_get_decl_type(result.var)->is_vla);
 
   psx_decl_reset_locals();
   request.name = (char *)"m";
@@ -700,12 +794,205 @@ static void test_vla_lowering_request_boundary() {
   request.dimensions[1] = psx_node_new_num(3);
   request.dimensions[2] = psx_node_new_num(4);
   request.dimension_count = 3;
+  request.type = NULL;
+  request.requested_alignment = 0;
   result = lower_vla_declaration(&request);
   ASSERT_EQ(32, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(ND_COMMA, result.init->kind);
   ASSERT_EQ(ND_VLA_ALLOC, result.init->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, result.init->rhs->kind);
   ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(result.var) > 0);
+
+  psx_decl_reset_locals();
+  node_t *row_dimension = psx_node_new_num(5);
+  psx_type_t *row_type = psx_type_new_array(integer, 0, 0, 4, 1);
+  psx_type_t *pointer_type = psx_type_new_pointer(row_type, 0);
+  result = lower_pointer_to_vla_declaration(
+      &(psx_pointer_vla_lowering_request_t){
+          .name = (char *)"p",
+          .name_len = 1,
+          .element_size = 4,
+          .row_dimension = row_dimension,
+          .type = pointer_type,
+          .requested_alignment = 32,
+      });
+  ASSERT_TRUE(result.var != NULL);
+  ASSERT_TRUE(result.type_attached);
+  ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
+  ASSERT_EQ(8, ps_lvar_decl_sizeof(result.var, 0));
+  ASSERT_EQ(0, ps_lvar_offset(result.var) % 32);
+  ASSERT_EQ(PSX_TYPE_POINTER, psx_lvar_get_decl_type(result.var)->kind);
+  ASSERT_EQ(ps_lvar_offset(result.var) + 8,
+            ps_lvar_vla_row_stride_frame_off(result.var));
+  ASSERT_EQ(ND_ASSIGN, result.init->kind);
+  ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(result.var),
+            as_lvar(result.init->lhs)->offset);
+  ASSERT_EQ(ND_MUL, result.init->rhs->kind);
+  ASSERT_EQ(row_dimension, result.init->rhs->lhs);
+  ASSERT_EQ(4, as_num(result.init->rhs->rhs)->val);
+
+  psx_decl_reset_locals();
+  lvar_t *n = psx_decl_register_lvar_sized(
+      (char *)"n", 1, 4, 4, 0);
+  lvar_t *k = psx_decl_register_lvar_sized(
+      (char *)"k", 1, 4, 4, 0);
+  n->is_param = 1;
+  k->is_param = 1;
+  psx_type_t *parameter_type = psx_type_new_pointer(
+      psx_type_new_array(integer, 0, 0, 4, 1), 0);
+  psx_parameter_vla_lowering_request_t parameter_request = {
+      .name = (char *)"tensor",
+      .name_len = 6,
+      .element_size = 4,
+      .inner_dimension_count = 3,
+      .type = parameter_type,
+  };
+  parameter_request.inner_dimensions[0].source_name = (char *)"n";
+  parameter_request.inner_dimensions[0].source_name_len = 1;
+  parameter_request.inner_dimensions[1].constant = 3;
+  parameter_request.inner_dimensions[2].source_name = (char *)"k";
+  parameter_request.inner_dimensions[2].source_name_len = 1;
+  psx_parameter_vla_lowering_result_t parameter_result =
+      lower_parameter_vla_declaration(&parameter_request);
+  ASSERT_TRUE(parameter_result.var != NULL);
+  ASSERT_TRUE(parameter_result.stride_storage != NULL);
+  ASSERT_TRUE(parameter_result.type_attached);
+  ASSERT_TRUE(parameter_result.var->is_param);
+  ASSERT_EQ(8, ps_lvar_storage_size(parameter_result.var, 0));
+  ASSERT_EQ(24, ps_lvar_storage_size(
+                    parameter_result.stride_storage, 0));
+  ASSERT_EQ(parameter_result.stride_storage,
+            psx_decl_find_lvar((char *)"__rs_tensor", 11));
+  ASSERT_EQ(parameter_result.stride_storage->offset,
+            ps_lvar_vla_row_stride_frame_off(parameter_result.var));
+  ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(
+                   parameter_result.var));
+  ASSERT_EQ(n->offset, ps_lvar_vla_param_inner_dim_src_offset(
+                           parameter_result.var, 0));
+  ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_const(
+                   parameter_result.var, 1));
+  ASSERT_EQ(k->offset, ps_lvar_vla_param_inner_dim_src_offset(
+                           parameter_result.var, 2));
+  ASSERT_EQ(PSX_TYPE_POINTER,
+            psx_lvar_get_decl_type(parameter_result.var)->kind);
+}
+
+static void test_parameter_declaration_storage_plan_boundary() {
+  printf("test_parameter_declaration_storage_plan_boundary...\n");
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_parameter_storage_plan_t plan = {0};
+  ASSERT_TRUE(psx_plan_parameter_storage(integer, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_SCALAR, plan.kind);
+  ASSERT_EQ(4, plan.storage_size);
+  ASSERT_EQ(4, plan.element_size);
+
+  psx_type_t *pointer = psx_type_new_pointer(integer, 4);
+  ASSERT_TRUE(psx_plan_parameter_storage(pointer, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, plan.kind);
+  ASSERT_EQ(8, plan.storage_size);
+  ASSERT_EQ(4, plan.element_size);
+
+  psx_type_t *small_aggregate = psx_type_new_tag(
+      TK_STRUCT, (char *)"SmallParam", 10, 0, 12);
+  ASSERT_TRUE(psx_plan_parameter_storage(small_aggregate, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE, plan.kind);
+  ASSERT_EQ(12, plan.storage_size);
+  ASSERT_EQ(12, plan.element_size);
+  ASSERT_EQ(8, plan.alignment);
+  ASSERT_TRUE(!plan.is_byref);
+
+  psx_type_t *large_aggregate = psx_type_new_tag(
+      TK_STRUCT, (char *)"LargeParam", 10, 0, 24);
+  ASSERT_TRUE(psx_plan_parameter_storage(large_aggregate, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF, plan.kind);
+  ASSERT_EQ(8, plan.storage_size);
+  ASSERT_EQ(24, plan.element_size);
+  ASSERT_TRUE(plan.is_byref);
+
+  psx_type_t *complex = psx_type_new(PSX_TYPE_COMPLEX);
+  complex->size = 16;
+  complex->align = 8;
+  complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  ASSERT_TRUE(psx_plan_parameter_storage(complex, &plan));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
+  ASSERT_EQ(16, plan.storage_size);
+  ASSERT_EQ(16, plan.element_size);
+  ASSERT_EQ(8, plan.alignment);
+
+  psx_decl_reset_locals();
+  psx_parameter_lowering_result_t lowered = {0};
+  ASSERT_TRUE(lower_parameter_declaration(
+      &(psx_parameter_lowering_request_t){
+          .name = (char *)"value",
+          .name_len = 5,
+          .type = large_aggregate,
+      },
+      &lowered));
+  ASSERT_TRUE(lowered.var != NULL);
+  ASSERT_TRUE(lowered.type_attached);
+  ASSERT_TRUE(lowered.var->is_param);
+  ASSERT_TRUE(lowered.var->is_byref_param);
+  ASSERT_EQ(8, lowered.var->size);
+  ASSERT_EQ(24, lowered.var->elem_size);
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            psx_lvar_get_decl_type(lowered.var)->kind);
+}
+
+static void test_global_declaration_storage_plan_boundary() {
+  printf("test_global_declaration_storage_plan_boundary...\n");
+  psx_global_registry_reset_translation_unit();
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *incomplete = psx_type_new_array(
+      integer, 0, 0, 4, 0);
+  psx_global_storage_plan_t plan = {0};
+  ASSERT_TRUE(psx_plan_global_object_storage(incomplete, &plan));
+  ASSERT_TRUE(plan.is_incomplete_array);
+  ASSERT_EQ(0, plan.storage_size);
+
+  psx_global_object_result_t first = {0};
+  ASSERT_TRUE(lower_global_object_declaration(
+      &(psx_global_object_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = incomplete,
+          .is_extern_decl = 1,
+      },
+      &first));
+  ASSERT_TRUE(first.global != NULL);
+  ASSERT_TRUE(first.created);
+  ASSERT_TRUE(first.global->is_extern_decl);
+  ASSERT_EQ(0, first.global->type_size);
+
+  psx_type_t *complete = psx_type_new_array(
+      integer, 3, 12, 4, 0);
+  psx_global_object_result_t merged = {0};
+  ASSERT_TRUE(lower_global_object_declaration(
+      &(psx_global_object_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = complete,
+      },
+      &merged));
+  ASSERT_EQ(first.global, merged.global);
+  ASSERT_TRUE(!merged.created);
+  ASSERT_TRUE(!merged.global->is_extern_decl);
+  ASSERT_EQ(12, merged.global->type_size);
+  ASSERT_EQ(3, psx_gvar_get_decl_type(merged.global)->array_len);
+
+  psx_type_t *pointer = psx_type_new_pointer(integer, 4);
+  ASSERT_TRUE(psx_plan_global_object_storage(pointer, &plan));
+  ASSERT_EQ(8, plan.storage_size);
+  psx_global_object_result_t internal = {0};
+  ASSERT_TRUE(lower_global_object_declaration(
+      &(psx_global_object_request_t){
+          .name = (char *)"__boundary_static",
+          .name_len = 17,
+          .type = pointer,
+          .is_static = 1,
+      },
+      &internal));
+  ASSERT_TRUE(internal.global->is_static);
+  ASSERT_EQ(8, internal.global->type_size);
 }
 
 static void test_initializer_resolution_boundary() {
@@ -764,6 +1051,129 @@ static void test_initializer_resolution_boundary() {
   ASSERT_EQ(3, psx_initializer_leaf_cursor_after_target(
                    &leaves, &target));
   psx_initializer_scalar_leaf_list_dispose(&leaves);
+}
+
+static void test_local_initializer_parse_lowering_boundary() {
+  printf("test_local_initializer_parse_lowering_boundary...\n");
+  psx_decl_reset_locals();
+
+  psx_type_t *integer = psx_type_new_integer(TK_INT, 4, 0);
+  psx_decl_funcptr_sig_t signature = {0};
+  signature.function.callable.return_shape.int_width = 4;
+  psx_type_t *function_pointer = psx_type_attach_funcptr_signature(
+      psx_type_new_pointer(integer, 4), signature);
+  tag_member_info_t members[2] = {
+      {.name = (char *)"fn", .len = 2, .offset = 0,
+       .type_size = 8, .decl_type = function_pointer},
+      {.name = (char *)"value", .len = 5, .offset = 8,
+       .type_size = 4, .decl_type = integer},
+  };
+  psx_aggregate_definition_t definition = {
+      .tag_kind = TK_STRUCT,
+      .tag_name = (char *)"LocalInitBoundary",
+      .tag_len = 17,
+      .size = 16,
+      .align = 8,
+      .member_count = 2,
+      .members = members,
+  };
+  psx_type_t *aggregate = psx_type_new_tag(
+      TK_STRUCT, definition.tag_name, definition.tag_len, 0, 16);
+  aggregate->aggregate_definition = &definition;
+
+  lvar_t *object = psx_decl_register_lvar_sized(
+      (char *)"object", 6, 16, 16, 0);
+  psx_decl_set_lvar_decl_type(object, aggregate);
+  token_t *tokens = tk_tokenize((char *)"{0, 7}");
+  tk_set_current_token(tokens);
+
+  node_t *raw = psx_decl_parse_initializer_for_var(object, 0);
+  ASSERT_EQ(ND_DECL_INIT, raw->kind);
+  ASSERT_EQ(PSX_DECL_INIT_LIST,
+            ((node_decl_init_t *)raw)->init_kind);
+  ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
+  ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
+  ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+
+  psx_semantic_analyze_expression(raw, NULL);
+  ASSERT_TRUE(raw->kind != ND_DECL_INIT);
+
+  lvar_t *source = psx_decl_register_lvar_sized(
+      (char *)"source", 6, 16, 16, 0);
+  psx_decl_set_lvar_decl_type(source, aggregate);
+  tokens = tk_tokenize((char *)"source");
+  tk_set_current_token(tokens);
+  raw = psx_decl_parse_initializer_for_var(object, 0);
+  ASSERT_EQ(ND_DECL_INIT, raw->kind);
+  ASSERT_EQ(PSX_DECL_INIT_EXPR,
+            ((node_decl_init_t *)raw)->init_kind);
+  ASSERT_EQ(ND_LVAR, raw->rhs->kind);
+  psx_semantic_analyze_expression(raw, NULL);
+  ASSERT_EQ(ND_ASSIGN, raw->kind);
+  ASSERT_TRUE(raw->is_decl_initializer);
+
+  tag_member_info_t union_members[1] = {
+      {.name = (char *)"value", .len = 5, .offset = 0,
+       .type_size = 4, .decl_type = integer},
+  };
+  psx_aggregate_definition_t union_definition = {
+      .tag_kind = TK_UNION,
+      .tag_name = (char *)"LocalUnionBoundary",
+      .tag_len = 18,
+      .size = 4,
+      .align = 4,
+      .member_count = 1,
+      .members = union_members,
+  };
+  psx_type_t *union_type = psx_type_new_tag(
+      TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 4);
+  union_type->aggregate_definition = &union_definition;
+  lvar_t *union_object = psx_decl_register_lvar_sized(
+      (char *)"u", 1, 4, 4, 0);
+  psx_decl_set_lvar_decl_type(union_object, union_type);
+  tokens = tk_tokenize((char *)"9");
+  tk_set_current_token(tokens);
+  raw = psx_decl_parse_initializer_for_var(union_object, 0);
+  ASSERT_EQ(ND_DECL_INIT, raw->kind);
+  ASSERT_EQ(PSX_DECL_INIT_EXPR,
+            ((node_decl_init_t *)raw)->init_kind);
+  psx_semantic_analyze_expression(raw, NULL);
+  ASSERT_EQ(ND_ASSIGN, raw->kind);
+  ASSERT_TRUE(raw->is_decl_initializer);
+  ASSERT_EQ(9, as_num(raw->rhs)->val);
+
+  lvar_t *scalar = psx_decl_register_lvar_sized(
+      (char *)"scalar", 6, 4, 4, 0);
+  psx_decl_set_lvar_decl_type(scalar, integer);
+  tokens = tk_tokenize((char *)"{7,}");
+  tk_set_current_token(tokens);
+  raw = psx_decl_parse_initializer_for_var(scalar, 0);
+  ASSERT_EQ(ND_DECL_INIT, raw->kind);
+  ASSERT_EQ(PSX_DECL_INIT_LIST,
+            ((node_decl_init_t *)raw)->init_kind);
+  ASSERT_EQ(1, ((node_init_list_t *)raw->rhs)->entry_count);
+  psx_semantic_analyze_expression(raw, NULL);
+  ASSERT_EQ(ND_ASSIGN, raw->kind);
+  ASSERT_EQ(7, as_num(raw->rhs)->val);
+
+  psx_type_t *complex_type = psx_type_new(PSX_TYPE_COMPLEX);
+  complex_type->size = 16;
+  complex_type->align = 8;
+  complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  lvar_t *complex_value = psx_decl_register_lvar_sized(
+      (char *)"complex", 7, 16, 16, 0);
+  psx_decl_set_lvar_decl_type(complex_value, complex_type);
+  tokens = tk_tokenize((char *)"{3, 4}");
+  tk_set_current_token(tokens);
+  raw = psx_decl_parse_initializer_for_var(complex_value, 0);
+  ASSERT_EQ(ND_DECL_INIT, raw->kind);
+  ASSERT_EQ(PSX_DECL_INIT_LIST,
+            ((node_decl_init_t *)raw)->init_kind);
+  ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
+  psx_semantic_analyze_expression(raw, NULL);
+  ASSERT_EQ(ND_COMMA, raw->kind);
+  ASSERT_EQ(ND_ASSIGN, raw->lhs->kind);
+  ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
 }
 
 static void test_static_data_initializer_boundary() {
@@ -851,6 +1261,103 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(0, psx_gvar_init_slot_view(&union_global, 0).value);
   ASSERT_EQ(7, psx_gvar_init_slot_view(&union_global, 1).value);
   ASSERT_EQ(1, psx_gvar_union_init_slot_ordinal(&union_global, 0));
+
+  psx_type_t *incomplete = psx_type_new_array(integer, 0, 0, 4, 0);
+  global_var_t inferred_global = {0};
+  psx_decl_set_gvar_decl_type(&inferred_global, incomplete);
+  psx_type_t *inferred_type = psx_gvar_get_decl_type(&inferred_global);
+  psx_initializer_entry_t inferred_entries[3] = {
+      {.value = (node_t *)&one},
+      {.value = (node_t *)&two},
+      {.value = (node_t *)&seven},
+  };
+  node_init_list_t inferred_list = {0};
+  inferred_list.base.kind = ND_INIT_LIST;
+  inferred_list.entries = inferred_entries;
+  inferred_list.entry_count = 3;
+  psx_static_declaration_initializer_result_t inferred_result = {0};
+  ASSERT_TRUE(lower_static_declaration_initializer(
+      &(psx_static_declaration_initializer_request_t){
+          .global = &inferred_global,
+          .type = inferred_type,
+          .initializer_kind = PSX_DECL_INIT_LIST,
+          .initializer = (node_t *)&inferred_list,
+      },
+      &inferred_result));
+  ASSERT_EQ(1, inferred_result.type_completed);
+  ASSERT_EQ(1, inferred_result.initialized);
+  ASSERT_EQ(3, inferred_type->array_len);
+  ASSERT_EQ(12, inferred_global.type_size);
+  ASSERT_EQ(3, inferred_global.init_count);
+  ASSERT_EQ(7, psx_gvar_init_slot_view(&inferred_global, 2).value);
+
+  psx_type_t *char_type = psx_type_new_integer(TK_CHAR, 1, 0);
+  psx_type_t *char_pointer = psx_type_new_pointer(char_type, 1);
+  psx_type_t *pointer_array = psx_type_new_array(char_pointer, 0, 0, 8, 0);
+  global_var_t pointer_array_global = {0};
+  psx_decl_set_gvar_decl_type(&pointer_array_global, pointer_array);
+  psx_type_t *pointer_array_type =
+      psx_gvar_get_decl_type(&pointer_array_global);
+  node_string_t string = {0};
+  string.base.kind = ND_STRING;
+  string.string_label = (char *)".Lboundary";
+  string.char_width = TK_CHAR_WIDTH_CHAR;
+  psx_initializer_entry_t pointer_entry = {
+      .value = (node_t *)&string,
+  };
+  node_init_list_t pointer_list = {0};
+  pointer_list.base.kind = ND_INIT_LIST;
+  pointer_list.entries = &pointer_entry;
+  pointer_list.entry_count = 1;
+  ASSERT_TRUE(lower_static_declaration_initializer(
+      &(psx_static_declaration_initializer_request_t){
+          .global = &pointer_array_global,
+          .type = pointer_array_type,
+          .initializer_kind = PSX_DECL_INIT_LIST,
+          .initializer = (node_t *)&pointer_list,
+      },
+      NULL));
+  ASSERT_EQ(1, pointer_array_type->array_len);
+  ASSERT_EQ(8, pointer_array_global.type_size);
+  ASSERT_EQ(1, pointer_array_global.init_count);
+  psx_gvar_init_slot_t pointer_slot =
+      psx_gvar_init_slot_view(&pointer_array_global, 0);
+  ASSERT_TRUE(pointer_slot.symbol == string.string_label);
+  ASSERT_EQ(-1, pointer_slot.symbol_len);
+
+  psx_global_registry_reset_translation_unit();
+  psx_decl_reset_locals();
+  psx_static_local_lowering_reset();
+  psx_type_t *static_incomplete =
+      psx_type_new_array(integer, 0, 0, 4, 0);
+  psx_static_local_declaration_result_t static_result = {0};
+  ASSERT_TRUE(lower_static_local_declaration(
+      &(psx_static_local_declaration_request_t){
+          .kind = PSX_STATIC_LOCAL_ARRAY,
+          .function_name = (char *)"boundary",
+          .function_name_len = 8,
+          .name = (char *)"values",
+          .name_len = 6,
+          .alias_element_size = 4,
+          .type = static_incomplete,
+          .has_initializer = 1,
+          .initializer_kind = PSX_DECL_INIT_LIST,
+          .initializer = (node_t *)&inferred_list,
+      },
+      &static_result));
+  ASSERT_TRUE(static_result.global != NULL);
+  ASSERT_TRUE(static_result.alias != NULL);
+  ASSERT_EQ(1, static_result.type_completed);
+  ASSERT_TRUE(ps_find_global_var(
+      static_result.alias->static_global_name,
+      static_result.alias->static_global_name_len) == static_result.global);
+  psx_type_t *static_global_type =
+      psx_gvar_get_decl_type(static_result.global);
+  psx_type_t *static_alias_type =
+      psx_lvar_get_decl_type(static_result.alias);
+  ASSERT_EQ(3, static_global_type->array_len);
+  ASSERT_EQ(12, ps_type_sizeof(static_global_type));
+  ASSERT_EQ(3, static_alias_type->array_len);
 }
 
 static void test_expr_mul_div() {
@@ -2764,7 +3271,7 @@ static void test_type_decl() {
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
@@ -2772,21 +3279,23 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
-  ASSERT_EQ(ND_TERNARY, body->body[3]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
+  ASSERT_EQ(ND_TERNARY, body->body[3]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
   parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[2]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
@@ -2794,7 +3303,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[3]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
   parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={7}; return 0; }");
@@ -2813,14 +3322,15 @@ static void test_type_decl() {
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
-  ASSERT_EQ(ND_COMMA, body->body[2]->kind);
+  ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
+  ASSERT_EQ(ND_COMMA, body->body[2]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
@@ -6964,16 +7474,6 @@ static void test_type_metadata_bridge() {
       psx_type_new_array(psx_type_new_integer(TK_INT, 4, 0), 3, 12, 4, 0);
   ASSERT_TRUE(!ps_gvar_array_element_is_bool(&tmp_int_array_decl_type_wins));
 
-  global_var_t tmp_arr_stale_inferred_size_gv = {0};
-  tmp_arr_stale_inferred_size_gv.type_size = 77;
-  tmp_arr_stale_inferred_size_gv.init_count = 3;
-  tmp_arr_stale_inferred_size_gv.decl_type =
-      psx_type_new_array(psx_type_new_integer(TK_INT, 4, 0), 0, 0, 4, 0);
-  int tmp_arr_stale_inferred_cap = 0;
-  psx_decl_finalize_gvar_inferred_array_size(&tmp_arr_stale_inferred_size_gv,
-                                             &tmp_arr_stale_inferred_cap);
-  ASSERT_EQ(12, tmp_arr_stale_inferred_size_gv.type_size);
-
   global_var_t tmp_gv_scalar_decl_type_wins = {0};
   psx_type_t *tmp_gv_scalar_canonical =
       psx_type_new_integer(TK_INT, 4, 0);
@@ -10541,7 +11041,10 @@ int main() {
   test_complex_initializer_semantic_lowering_boundary();
   test_local_declaration_storage_plan_boundary();
   test_vla_lowering_request_boundary();
+  test_parameter_declaration_storage_plan_boundary();
+  test_global_declaration_storage_plan_boundary();
   test_initializer_resolution_boundary();
+  test_local_initializer_parse_lowering_boundary();
   test_static_data_initializer_boundary();
   test_expr_mul_div();
   test_expr_mod();

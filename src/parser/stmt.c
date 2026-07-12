@@ -425,11 +425,10 @@ static node_t *parse_decl_like_stmt(void) {
       return psx_decl_parse_declaration_after_type_ex(tag_size, TK_FLOAT_KIND_NONE, tag_kind, tag_name,
                                                       tag_len, 0, tag_path_saw_const,
                                                       tag_path_saw_volatile, 0,
-                                                      &tag_type_spec, NULL, 0,
-                                                      0, 0, 0, 0,
+                                                      &tag_type_spec,
                                                       NULL,
                                                       NULL,
-                                                      0, 0);
+                                                      0);
     }
     if (tk_consume(';')) {
       psx_ctx_define_tag_type(tag_kind, tag_name, tag_len);
@@ -456,11 +455,10 @@ static node_t *parse_decl_like_stmt(void) {
     return psx_decl_parse_declaration_after_type_ex(elem_size,
                                                     TK_FLOAT_KIND_NONE, tag_kind, tag_name, tag_len, 0,
                                                     tag_path_saw_const, tag_path_saw_volatile, 0,
-                                                    &tag_type_spec, NULL, 0,
-                                                    0, 0, 0, 0,
+                                                    &tag_type_spec,
                                                     NULL,
                                                     NULL,
-                                                    0, 0);
+                                                    0);
   }
 
   return NULL;

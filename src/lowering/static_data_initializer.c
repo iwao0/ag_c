@@ -2,10 +2,13 @@
 
 #include "../diag/diag.h"
 #include "../parser/diag.h"
+#include "../parser/decl.h"
 #include "../parser/literal_public.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 #include "../parser/semantic_pass.h"
 #include "../semantic/constant_expression.h"
+#include "../semantic/declaration_resolution.h"
 #include "../semantic/initializer_resolution.h"
 #include "../tokenizer/literals.h"
 
@@ -303,4 +306,135 @@ int lower_static_scalar_array_initializer(
   if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
   return lower_static_object_initializer(
       global, type, initializer, fallback_tok);
+}
+
+static int lower_static_string_expression(
+    global_var_t *global, psx_type_t *type, node_string_t *string) {
+  if (!global || !type || !string) return 0;
+  if (type->kind == PSX_TYPE_POINTER) {
+    global->init_symbol = string->string_label;
+    global->init_symbol_len = -1;
+    return 1;
+  }
+  if (type->kind != PSX_TYPE_ARRAY) return 0;
+
+  psx_type_t *element = type;
+  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
+  int element_size = ps_type_sizeof(element);
+  int char_width = (int)string->char_width;
+  if (char_width <= 0) char_width = 1;
+  if (element_size != char_width) return 0;
+
+  int total = string->byte_len + 1;
+  psx_gvar_init_slots_alloc(global, total, 0);
+  string_lit_t *literal = psx_find_string_lit_by_label(string->string_label);
+  if (literal) {
+    psx_gvar_init_slots_write_string_units(
+        global, 0, literal->str, literal->len,
+        element_size, string->byte_len);
+  }
+  psx_gvar_init_slot_write(global, string->byte_len, 0, 0.0, NULL, 0);
+  global->init_count = total;
+  return 1;
+}
+
+static int lower_static_scalar_expression(
+    global_var_t *global, psx_type_t *type, node_t *initializer) {
+  if (!global || !type || !initializer) return 0;
+  if (initializer->kind == ND_STRING)
+    return lower_static_string_expression(
+        global, type, (node_string_t *)initializer);
+
+  int integer_ok = 1;
+  long long integer = psx_eval_const_int(initializer, &integer_ok);
+  if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX) {
+    int floating_ok = 1;
+    double floating = psx_eval_const_fp(initializer, &floating_ok);
+    if (floating_ok) {
+      global->fval = floating;
+      return 1;
+    }
+  }
+  if (integer_ok) {
+    global->init_val = type->kind == PSX_TYPE_BOOL ? integer != 0 : integer;
+    return 1;
+  }
+
+  char *symbol = NULL;
+  int symbol_len = 0;
+  long long offset = 0;
+  if (psx_resolve_static_address_constant(
+          initializer, &symbol, &symbol_len, &offset)) {
+    global->init_symbol = symbol;
+    global->init_symbol_len = symbol_len;
+    global->init_symbol_offset = offset;
+    return 1;
+  }
+  if (initializer->kind == ND_FUNCREF) {
+    node_funcref_t *function = (node_funcref_t *)initializer;
+    global->init_symbol = function->funcname;
+    global->init_symbol_len = function->funcname_len;
+    return 1;
+  }
+  return 0;
+}
+
+int lower_static_declaration_initializer(
+    const psx_static_declaration_initializer_request_t *request,
+    psx_static_declaration_initializer_result_t *result) {
+  if (result) *result = (psx_static_declaration_initializer_result_t){0};
+  if (!request || !request->global || !request->type ||
+      !request->initializer)
+    return 0;
+
+  global_var_t *global = request->global;
+  psx_type_t *type = request->type;
+  token_t *tok = request->diag_tok;
+  if (global->has_init) {
+    psx_diag_ctx(tok, "decl",
+                 "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
+                 global->name_len, global->name);
+  }
+
+  psx_ctx_attach_aggregate_definitions(type);
+  if (type->kind == PSX_TYPE_ARRAY && type->array_len <= 0 && !type->is_vla) {
+    if (!psx_resolve_incomplete_array_initializer(
+            type, request->initializer_kind, request->initializer)) {
+      psx_diag_ctx(tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    }
+    psx_decl_set_gvar_type_size(global, ps_type_sizeof(type));
+    if (result) result->type_completed = 1;
+  }
+
+  node_t *initializer = request->initializer;
+  if (request->initializer_kind == PSX_DECL_INIT_LIST) {
+    if (initializer->kind != ND_INIT_LIST) return 0;
+    if (type->kind == PSX_TYPE_ARRAY || ps_type_is_tag_aggregate(type)) {
+      if (!lower_static_object_initializer(
+              global, type, (node_init_list_t *)initializer, tok))
+        return 0;
+      global->has_init = 1;
+      if (result) result->initialized = 1;
+      return 1;
+    }
+    node_init_list_t *list = (node_init_list_t *)initializer;
+    if (list->entry_count != 1 ||
+        list->entries[0].designator_count > 0 ||
+        !list->entries[0].value ||
+        list->entries[0].value->kind == ND_INIT_LIST) {
+      psx_diag_ctx(tok, "static-init", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+    }
+    initializer = list->entries[0].value;
+  }
+
+  psx_semantic_analyze_expression(
+      initializer, initializer->tok ? initializer->tok : tok);
+  if (!lower_static_scalar_expression(global, type, initializer)) return 0;
+  global->has_init = 1;
+  if (result) result->initialized = 1;
+  return 1;
 }
