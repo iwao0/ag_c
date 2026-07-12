@@ -17,7 +17,7 @@ static unsigned gvar_name_hash(const char *name, int len) {
   return h & (GVAR_HASH_BUCKETS - 1u);
 }
 
-void psx_register_global_var(global_var_t *gv) {
+void ps_register_global_var(global_var_t *gv) {
   gv->next = global_vars;
   global_vars = gv;
   unsigned h = gvar_name_hash(gv->name, gv->name_len);
@@ -44,7 +44,7 @@ global_var_t *ps_find_global_var(char *name, int len) {
   return NULL;
 }
 
-string_lit_t *psx_find_string_lit_by_label(char *label) {
+string_lit_t *ps_find_string_lit_by_label(char *label) {
   if (!label) return NULL;
   for (string_lit_t *lit = string_literals; lit; lit = lit->next) {
     if (strcmp(lit->label, label) == 0) return lit;
@@ -71,7 +71,7 @@ bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
 bool ps_has_string_literals(void) { return string_literals != NULL; }
 bool ps_has_float_literals(void) { return float_literals != NULL; }
 
-void psx_global_registry_reset_translation_unit(void) {
+void ps_global_registry_reset_translation_unit(void) {
   global_vars = NULL;
   string_literals = NULL;
   float_literals = NULL;

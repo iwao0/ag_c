@@ -346,7 +346,7 @@ void psx_resolve_aggregate_member_declaration(
 
   int conflict_index = -1;
   if (batch_count > 0 &&
-      !psx_ctx_register_tag_members(
+      !ps_ctx_register_tag_members(
           request->target_tag_kind, request->target_tag_name,
           request->target_tag_name_len, batch, batch_count,
           &conflict_index)) {

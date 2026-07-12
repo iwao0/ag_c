@@ -8,13 +8,13 @@
 
 static int global_types_compatible(
     const psx_type_t *existing, const psx_type_t *incoming) {
-  if (psx_type_shape_matches(existing, incoming)) return 1;
+  if (ps_type_shape_matches(existing, incoming)) return 1;
   if (!existing || !incoming || existing->kind != PSX_TYPE_ARRAY ||
       incoming->kind != PSX_TYPE_ARRAY ||
       (existing->array_len > 0 && incoming->array_len > 0)) {
     return 0;
   }
-  return psx_type_shape_matches(existing->base, incoming->base);
+  return ps_type_shape_matches(existing->base, incoming->base);
 }
 
 static int is_incomplete_object_type(const psx_type_t *type) {
@@ -50,13 +50,13 @@ void psx_resolve_global_declaration(
     return;
   }
   psx_typedef_info_t typedef_info;
-  if (psx_ctx_find_typedef_name(
+  if (ps_ctx_find_typedef_name(
           request->name, request->name_len, &typedef_info)) {
     resolution->status = PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
     return;
   }
   long long enum_value = 0;
-  if (psx_ctx_find_enum_const(
+  if (ps_ctx_find_enum_const(
           request->name, request->name_len, &enum_value)) {
     resolution->status = PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
     return;
@@ -66,7 +66,7 @@ void psx_resolve_global_declaration(
       request->name, request->name_len);
   if (resolution->existing) {
     const psx_type_t *existing_type =
-        psx_gvar_get_decl_type(resolution->existing);
+        ps_gvar_get_decl_type(resolution->existing);
     if (!global_types_compatible(existing_type, request->type)) {
       resolution->status = PSX_GLOBAL_DECLARATION_TYPE_CONFLICT;
       return;

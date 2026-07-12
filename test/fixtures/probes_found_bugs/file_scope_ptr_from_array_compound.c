@@ -4,7 +4,7 @@
 // 書き込まれて実行時 SIGBUS。
 //
 // 修正: 集約 (配列 / struct 値 / union 値) のときだけ strip し、ポインタ・スカラ var では
-// 式経路 (psx_expr_assign) で compound literal を hidden gvar に materialize させる。
+// 式経路 (ps_expr_assign) で compound literal を hidden gvar に materialize させる。
 // ただしポインタ var + 単一文字列 `char *p = (char[N]){"str"}` 形は等価なので例外的に strip
 // を許す (peek で TK_STRING + 単一要素を判定)。
 #include <assert.h>

@@ -9,7 +9,7 @@
  *       で carry する。最終要素の load 幅もこの carry 値を使う (2D 以上は base が ND_ADDR で
  *       なく中間 ND_DEREF なので gv を引けない)。
  *   (3) 括弧内配列 `(*t[2][2])` の paren_array_mul は積(4)のみで個別 dims を捨てていた。
- *       psx_parse_array_suffixes_capture_dims で {2,2} を捕捉し多次元ストライドを設定。 */
+ *       ps_parse_array_suffixes_capture_dims で {2,2} を捕捉し多次元ストライドを設定。 */
 #include <assert.h>
 
 int w = 1, x = 2, y = 3, z = 4;

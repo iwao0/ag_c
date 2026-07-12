@@ -11,17 +11,17 @@ int psx_plan_function_declaration(
   }
   memset(plan, 0, sizeof(*plan));
   const psx_type_t *returned_function =
-      psx_type_find_function(request->return_type);
+      ps_type_find_function(request->return_type);
   if (returned_function) {
     plan->returns_function_pointer = 1;
     plan->returned_funcptr_signature =
         ps_type_funcptr_signature(request->return_type);
   }
-  psx_type_t *function_type = psx_type_new_function(
-      psx_type_clone(request->return_type),
+  psx_type_t *function_type = ps_type_new_function(
+      ps_type_clone(request->return_type),
       plan->returned_funcptr_signature);
   if (!function_type) return 0;
-  psx_type_set_function_params(
+  ps_type_set_function_params(
       function_type, request->parameter_types,
       request->parameter_count, request->is_variadic);
   plan->function_type = function_type;

@@ -35,7 +35,18 @@ typedef enum {
   PSX_PARSED_DECL_TYPE_BUILTIN,
   PSX_PARSED_DECL_TYPE_TAG,
   PSX_PARSED_DECL_TYPEDEF_NAME,
+  PSX_PARSED_DECL_TYPE_IMPLICIT_INT,
 } psx_parsed_decl_type_source_t;
+
+typedef int (*psx_decl_typedef_name_predicate_t)(
+    token_t *token, void *context);
+
+typedef struct {
+  psx_decl_typedef_name_predicate_t is_typedef_name;
+  void (*diagnose_complex_requires_float)(void *context, token_t *token);
+  void *context;
+  int allow_implicit_int;
+} psx_decl_specifier_syntax_options_t;
 
 typedef struct {
   psx_parsed_decl_type_source_t source;
@@ -50,6 +61,10 @@ typedef struct {
 typedef struct {
   int declarator_op_index;
   psx_parsed_const_expr_t expression;
+  int has_static;
+  int is_const_qualified;
+  int is_volatile_qualified;
+  int is_restrict_qualified;
 } psx_parsed_array_bound_t;
 
 typedef struct {
@@ -70,11 +85,32 @@ typedef struct {
   int function_suffix_count;
 } psx_parsed_declarator_t;
 
+typedef struct psx_parsed_type_name_t {
+  psx_parsed_decl_specifier_t specifier;
+  psx_parsed_declarator_t declarator;
+  struct psx_parsed_type_name_t *atomic_inner;
+  token_t *diagnostic_token;
+  token_t *end;
+} psx_parsed_type_name_t;
+
 void psx_parse_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
-psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void);
-void psx_dispose_decl_specifier_syntax(
+void ps_parse_decl_specifier_syntax_ex(
+    psx_parsed_decl_specifier_t *specifier,
+    const psx_decl_specifier_syntax_options_t *options);
+psx_parsed_declarator_t ps_parse_declarator_syntax_tree(void);
+psx_parsed_declarator_t
+psx_parse_function_definition_declarator_syntax_tree(void);
+psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void);
+psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
+    psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
+void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
-void psx_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);
+void ps_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);
+int ps_parse_type_name_syntax_at(
+    token_t *start,
+    const psx_decl_specifier_syntax_options_t *options,
+    psx_parsed_type_name_t *out);
+void ps_dispose_type_name_syntax(psx_parsed_type_name_t *type_name);
 
 #endif

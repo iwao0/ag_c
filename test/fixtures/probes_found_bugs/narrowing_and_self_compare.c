@@ -2,7 +2,7 @@
 //
 // 修正:
 // (a) 整数変数を浮動小数点リテラルで初期化 `int x = 1.5;` (clang -Wliteral-conversion 相当)。
-//     psx_decl_parse_initializer_for_var のスカラ非ポインタ非タグ分岐で init_expr が ND_NUM
+//     ps_decl_parse_initializer_for_var のスカラ非ポインタ非タグ分岐で init_expr が ND_NUM
 //     かつ fp_kind != NONE かつ fval に小数部があれば W3001 warning。
 //     ・var->fp_kind != NONE (`double d = 1.5;`) は対象外。
 //     ・整数値の暗黙変換 (`int x = 2.0;`) は値が等価なので警告しない (fval == (long long)fval)。

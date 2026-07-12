@@ -30,7 +30,7 @@ int psx_resolve_parameter_declaration(
   memset(resolution, 0, sizeof(*resolution));
   resolution->type = psx_resolve_decl_type(&request->type);
   if (!resolution->type) return 0;
-  resolution->type = psx_type_adjust_parameter_type(resolution->type);
+  resolution->type = ps_type_adjust_parameter_type(resolution->type);
   if (!resolution->type ||
       !psx_plan_parameter_storage(resolution->type,
                                   &resolution->storage)) {

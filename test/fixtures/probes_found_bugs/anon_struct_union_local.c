@@ -3,7 +3,7 @@
 // parse_decl_like_stmt が無名タグ名をスタックローカルバッファ char anon_buf[32]
 // に格納しており、宣言文の解析後に解放されるため、lvar とタグ登録の tag_name が
 // dangling ポインタになり、後の `u.member` でタグ検索が失敗していた。
-// 修正: 永続確保する psx_make_anonymous_tag_name を使う (typedef 経路と同じ)。
+// 修正: 永続確保する ps_make_anonymous_tag_name を使う (typedef 経路と同じ)。
 // 修正前: E3064 でコンパイル失敗
 // 期待: exit=42
 #include <assert.h>

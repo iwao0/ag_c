@@ -5,6 +5,7 @@
 #include "../parser/symtab.h"
 #include "../semantic/global_declaration_plan.h"
 #include "../semantic/global_declaration_resolution.h"
+#include "../semantic/static_initializer_resolution.h"
 
 typedef struct {
   char *name;
@@ -38,9 +39,9 @@ int lower_resolved_global_object_declaration(
     const psx_resolved_global_object_request_t *request,
     psx_global_object_result_t *result);
 
-int lower_global_declaration_initializer(
-    global_var_t *global, psx_type_t *type,
-    psx_decl_init_kind_t initializer_kind, node_t *initializer,
+int lower_resolved_global_declaration_initializer(
+    global_var_t *global,
+    const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok);
 
 #endif

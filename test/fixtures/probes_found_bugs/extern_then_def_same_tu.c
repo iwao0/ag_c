@@ -3,7 +3,7 @@
  *   (1) E3064: storage class フラグ (g_*_is_extern) が宣言間でリセットされず、前の
  *       `extern struct S es;` の extern が次の bare-struct 定義 `struct S es={7};` に漏れ、
  *       finalize が extern 分岐 (consume_toplevel_extern_initializer_if_any) に入り `={7}` の
- *       brace を psx_expr_assign で食べて「数値が必要」。reset_toplevel_decl_spec_state と
+ *       brace を ps_expr_assign で食べて「数値が必要」。reset_toplevel_decl_spec_state と
  *       parse_toplevel_tag_decl で storage class フラグを宣言ごとに 0 クリアして修正。
  *   (2) ASSEMBLE_FAIL (.comm 二重定義): typedef object 経路 (apply_toplevel_typedef_prefix_flags)
  *       が extern を無条件に 0 にしており、`extern T et;` が tentative 定義扱いで `.comm _et` を

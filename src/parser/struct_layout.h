@@ -4,7 +4,7 @@
 #include "aggregate_member_syntax.h"
 #include "core.h"
 
-int psx_apply_parsed_aggregate_body_layout(
+int ps_apply_parsed_aggregate_body_layout(
     const psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align);

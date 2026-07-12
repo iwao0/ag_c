@@ -4,7 +4,7 @@
 // (2) 関数定義のタグ登録が値返し (!ret_is_ptr) のときだけで、ポインタ返しの
 //     タグが記録されていなかった。
 // 修正: ポインタ返しでもタグを登録し、is_tag_pointer は
-//       psx_ctx_get_function_ret_is_pointer から取得する。
+//       ps_ctx_get_function_ret_is_pointer から取得する。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
 #include <assert.h>

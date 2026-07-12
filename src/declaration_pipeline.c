@@ -1,0 +1,769 @@
+#include "declaration_pipeline.h"
+
+#include "diag/diag.h"
+#include "lowering/global_object_lowering.h"
+#include "lowering/local_object_lowering.h"
+#include "lowering/static_local_lowering.h"
+#include "lowering/vla_lowering.h"
+#include "parser/decl.h"
+#include "parser/diag.h"
+#include "semantic/declaration_application.h"
+#include "parser/dynarray.h"
+#include "parser/node_utils.h"
+#include "parser/semantic_ctx.h"
+#include "lowering/parameter_lowering.h"
+#include "semantic/function_declaration_resolution.h"
+#include "semantic/function_parameter_resolution.h"
+#include "semantic/global_declaration_resolution.h"
+#include "semantic/initializer_resolution.h"
+#include "semantic/local_declaration_resolution.h"
+#include "semantic/local_type_state.h"
+#include "semantic/static_initializer_resolution.h"
+#include "semantic/parameter_declaration_resolution.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+void psx_declaration_pipeline_reset_translation_unit_state(void) {
+  psx_static_local_lowering_reset();
+}
+
+static void diagnose_global_declaration(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_status_t status) {
+  switch (status) {
+    case PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT:
+      ps_diag_ctx(request->diag_tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+      return;
+    case PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+                   request->name_len, request->name);
+      return;
+    case PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
+                   request->name_len, request->name);
+      return;
+    case PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
+                   request->name_len, request->name);
+      return;
+    case PSX_GLOBAL_DECLARATION_TYPE_CONFLICT:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
+                   request->name_len, request->name);
+      return;
+    default:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "canonical global declaration resolution failed for '%.*s'",
+                   request->name_len, request->name);
+  }
+}
+
+static void diagnose_static_initializer(
+    token_t *tok, const char *name, int name_len,
+    psx_static_initializer_status_t status) {
+  switch (status) {
+    case PSX_STATIC_INITIALIZER_DUPLICATE_DEFINITION:
+      ps_diag_ctx(tok, "decl",
+                   "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
+                   name_len, name);
+      return;
+    case PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED:
+      ps_diag_ctx(tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      return;
+    case PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST:
+      ps_diag_ctx(tok, "static-init", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+      return;
+    default:
+      ps_diag_ctx(tok, "static-init", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+  }
+}
+
+int psx_apply_global_declaration_pipeline(
+    const psx_global_declaration_pipeline_request_t *request,
+    psx_global_declaration_pipeline_result_t *result) {
+  if (result) *result = (psx_global_declaration_pipeline_result_t){0};
+  if (!request || !result || !request->name || request->name_len <= 0 ||
+      !request->type || !request->initializer) return 0;
+
+  psx_global_declaration_resolution_t resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = request->name,
+          .name_len = request->name_len,
+          .type = request->type,
+          .is_extern_decl = request->is_extern_decl,
+          .has_initializer = request->initializer->has_initializer,
+      },
+      &resolution);
+  if (resolution.status != PSX_GLOBAL_DECLARATION_OK)
+    diagnose_global_declaration(request, resolution.status);
+
+  psx_global_object_result_t lowered = {0};
+  if (!lower_resolved_global_object_declaration(
+          &(psx_resolved_global_object_request_t){
+              .name = request->name,
+              .name_len = request->name_len,
+              .type = request->type,
+              .is_extern_decl = request->is_extern_decl,
+              .is_static = request->is_static,
+              .resolution = &resolution,
+          },
+          &lowered)) {
+    ps_diag_ctx(request->diag_tok, "decl",
+                 "canonical global storage planning failed for '%.*s'",
+                 request->name_len, request->name);
+  }
+  result->global = lowered.global;
+  result->created = lowered.created;
+
+  if (request->parse_initializer)
+    request->parse_initializer(
+        request->parse_context, request->type, request->initializer);
+  if (!request->is_extern_decl) {
+    lowered.global->is_thread_local = request->is_thread_local;
+    if (request->initializer->has_initializer) {
+      psx_static_initializer_resolution_t initializer_resolution;
+      psx_resolve_static_initializer(
+          &(psx_static_initializer_resolution_request_t){
+              .type = request->type,
+              .kind = request->initializer->kind,
+              .initializer = request->initializer->value,
+              .diag_tok = request->initializer->value_tok,
+              .already_initialized = lowered.global->has_init,
+          },
+          &initializer_resolution);
+      if (initializer_resolution.status != PSX_STATIC_INITIALIZER_OK)
+        diagnose_static_initializer(
+            request->initializer->value_tok
+                ? request->initializer->value_tok : request->diag_tok,
+            lowered.global->name, lowered.global->name_len,
+            initializer_resolution.status);
+      if (!lower_resolved_global_declaration_initializer(
+              lowered.global, &initializer_resolution,
+              request->initializer->value_tok)) {
+        ps_diag_ctx(request->initializer->value_tok, "static-init", "%s",
+                     diag_message_for(
+                         DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+      }
+      result->initialized = 1;
+    }
+  }
+  return 1;
+}
+
+static void diagnose_function_declaration(
+    const psx_function_declaration_pipeline_request_t *request,
+    psx_function_declaration_status_t status) {
+  const char *context = request->diag_context ? request->diag_context : "decl";
+  switch (status) {
+    case PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT:
+      ps_diag_ctx(request->diag_tok, context,
+                   "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
+                   request->name_len, request->name);
+      return;
+    case PSX_FUNCTION_DECLARATION_TYPE_CONFLICT:
+      ps_diag_ctx(request->diag_tok, context,
+                   "関数 '%.*s' の型が以前の宣言と異なります (C11 6.7p3-4)",
+                   request->name_len, request->name);
+      return;
+    case PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION:
+      ps_diag_ctx(request->diag_tok, context,
+                   "関数 '%.*s' の重複定義 (C11 6.9p3)",
+                   request->name_len, request->name);
+      return;
+    default:
+      ps_diag_ctx(request->diag_tok, context,
+                   "canonical function declaration resolution failed for '%.*s'",
+                   request->name_len, request->name);
+  }
+}
+
+int psx_apply_function_declaration_pipeline(
+    const psx_function_declaration_pipeline_request_t *request) {
+  if (!request || !request->name || request->name_len <= 0 ||
+      !request->return_type) return 0;
+  psx_function_declaration_resolution_t resolution;
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = request->name,
+          .name_len = request->name_len,
+          .return_type = request->return_type,
+          .parameter_types = request->parameter_types,
+          .parameter_count = request->parameter_count,
+          .is_variadic = request->is_variadic,
+          .is_definition = request->is_definition,
+      },
+      &resolution);
+  if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
+    diagnose_function_declaration(request, resolution.status);
+  if (request->function_node &&
+      resolution.declaration_plan.returns_function_pointer) {
+    ps_node_funcdef_set_ret_funcptr_sig(
+        request->function_node,
+        resolution.declaration_plan.returned_funcptr_signature);
+  }
+  return 1;
+}
+
+static const psx_runtime_array_bound_t *parameter_bound_for_op(
+    const psx_runtime_declarator_application_t *application, int op_index) {
+  for (int i = 0; application && i < application->array_bound_count; i++) {
+    if (application->array_bounds[i].declarator_op_index == op_index)
+      return &application->array_bounds[i];
+  }
+  return NULL;
+}
+
+static int resolve_definition_parameter(
+    const psx_type_t *base_type,
+    const psx_parsed_declarator_t *declarator,
+    const psx_runtime_declarator_application_t *application,
+    psx_parameter_declaration_resolution_t *resolution) {
+  int is_array_declarator = ps_declarator_shape_count_ops(
+      &application->shape, PSX_DECL_OP_ARRAY) > 0;
+  int has_function_suffix = ps_declarator_shape_count_ops(
+      &application->shape, PSX_DECL_OP_FUNCTION) > 0;
+  psx_parameter_declaration_resolution_request_t semantic_request = {
+      .type = {
+          .base_decl_type = base_type,
+          .declarator_shape = &application->shape,
+      },
+      .is_pointer_declarator =
+          ps_declarator_shape_count_ops(
+              &application->shape, PSX_DECL_OP_POINTER) > 0 ||
+          has_function_suffix,
+      .is_array_declarator = is_array_declarator,
+      .has_function_suffix = has_function_suffix,
+  };
+  int skip_outer_array =
+      application->shape.count > 0 &&
+      application->shape.ops[0].kind == PSX_DECL_OP_ARRAY;
+  int saw_array = 0;
+  for (int op_index = 0; op_index < application->shape.count; op_index++) {
+    if (application->shape.ops[op_index].kind != PSX_DECL_OP_ARRAY) continue;
+    if (skip_outer_array && saw_array++ == 0) continue;
+    if (semantic_request.inner_dimension_count >=
+        PSX_PARAMETER_MAX_INNER_DIMS) break;
+    const psx_runtime_array_bound_t *bound =
+        parameter_bound_for_op(application, op_index);
+    psx_parameter_dimension_t *dimension =
+        &semantic_request.inner_dimensions[
+            semantic_request.inner_dimension_count++];
+    if (bound && bound->is_constant) {
+      dimension->constant = (int)bound->constant_value;
+      continue;
+    }
+    for (int i = 0; declarator && i < declarator->array_bound_count; i++) {
+      const psx_parsed_array_bound_t *parsed = &declarator->array_bounds[i];
+      if (parsed->declarator_op_index != op_index) continue;
+      token_t *start = parsed->expression.start;
+      if (start && start->kind == TK_IDENT &&
+          start->next == parsed->expression.end) {
+        token_ident_t *source = (token_ident_t *)start;
+        dimension->source_name = source->str;
+        dimension->source_name_len = source->len;
+      }
+      break;
+    }
+  }
+  return psx_resolve_parameter_declaration(
+      &semantic_request, resolution);
+}
+
+static int append_definition_parameter(
+    psx_function_definition_pipeline_result_t *result, int *capacity,
+    psx_parsed_function_parameter_t *parameter) {
+  psx_type_t *base_type =
+      psx_apply_parsed_decl_specifier(&parameter->specifier);
+  if (!base_type) {
+    ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
+                 "canonical parameter base type resolution failed");
+  }
+  psx_runtime_declarator_application_t applied;
+  psx_apply_runtime_parsed_declarator(
+      &parameter->declarator, &applied);
+  token_ident_t *name = parameter->declarator.identifier;
+  int has_pointer = ps_declarator_shape_count_ops(
+      &applied.shape, PSX_DECL_OP_POINTER) > 0;
+  int has_array = ps_declarator_shape_count_ops(
+      &applied.shape, PSX_DECL_OP_ARRAY) > 0;
+  if (!name && base_type->kind == PSX_TYPE_VOID &&
+      !has_pointer && !has_array && applied.shape.count == 0) {
+    return -1;
+  }
+
+  psx_parameter_declaration_resolution_t resolution;
+  if (!resolve_definition_parameter(
+          base_type, &parameter->declarator, &applied, &resolution)) {
+    ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
+                 "canonical parameter declaration resolution failed");
+  }
+  if (result->nargs >= *capacity) {
+    *capacity = pda_next_cap(*capacity, result->nargs + 1);
+    result->args = pda_xreallocarray(
+        result->args, (size_t)*capacity, sizeof(node_t *));
+  }
+  if (!name) {
+    result->args[result->nargs++] =
+        ps_node_new_param_placeholder(resolution.type);
+    return 1;
+  }
+
+  psx_parameter_lowering_result_t lowered;
+  if (!lower_resolved_parameter_declaration(
+          &(psx_resolved_parameter_lowering_request_t){
+              .name = name->str,
+              .name_len = name->len,
+              .resolution = &resolution,
+              .diag_tok = parameter->declarator.diagnostic_token,
+          },
+          &lowered)) {
+    ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
+                 "canonical parameter lowering failed for '%.*s'",
+                 name->len, name->str);
+  }
+  result->args[result->nargs++] =
+      ps_node_new_param_lvar_for(lowered.var);
+  return 0;
+}
+
+int psx_apply_function_definition_pipeline(
+    const psx_function_definition_pipeline_request_t *request,
+    psx_function_definition_pipeline_result_t *result) {
+  if (result) *result = (psx_function_definition_pipeline_result_t){0};
+  if (!request || !result || !request->base_type || !request->declarator ||
+      !request->declarator->identifier ||
+      request->declarator->function_suffix_count <= 0) return 0;
+
+  psx_parsed_function_suffix_t *primary_suffix =
+      &request->declarator->function_suffixes[0];
+  psx_runtime_declarator_application_t application;
+  psx_apply_runtime_parsed_declarator_ex(
+      request->declarator, &application,
+      primary_suffix->declarator_op_index);
+  if (primary_suffix->declarator_op_index < 0 ||
+      primary_suffix->declarator_op_index >= application.shape.count ||
+      application.shape.ops[primary_suffix->declarator_op_index].kind !=
+          PSX_DECL_OP_FUNCTION) {
+    return 0;
+  }
+
+  int capacity = 16;
+  result->args = calloc((size_t)capacity, sizeof(node_t *));
+  result->is_variadic = primary_suffix->parameters
+                            ? primary_suffix->parameters->is_variadic : 0;
+  if (primary_suffix->parameters) {
+    for (int i = 0; i < primary_suffix->parameters->count; i++) {
+      int applied = append_definition_parameter(
+          result, &capacity, &primary_suffix->parameters->items[i]);
+      if (applied < 0) {
+        if (primary_suffix->parameters->count != 1) {
+          ps_diag_ctx(
+              primary_suffix->parameters->items[i].specifier.diagnostic_token,
+              "param", "void parameter must be the only parameter");
+        }
+        result->nargs = 0;
+        break;
+      }
+      if (applied > 0) result->has_unnamed_parameter = 1;
+    }
+  }
+
+  psx_declarator_op_t *primary =
+      &application.shape.ops[primary_suffix->declarator_op_index];
+  psx_type_t **parameter_types = result->nargs > 0
+      ? calloc((size_t)result->nargs, sizeof(*parameter_types)) : NULL;
+  for (int i = 0; i < result->nargs; i++)
+    parameter_types[i] = ps_node_get_type(result->args[i]);
+  psx_set_resolved_function_parameter_types(
+      primary, parameter_types, result->nargs, result->is_variadic);
+  free(parameter_types);
+
+  result->function_type = psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .base_decl_type = request->base_type,
+          .declarator_shape = &application.shape,
+      });
+  if (!result->function_type ||
+      result->function_type->kind != PSX_TYPE_FUNCTION) return 0;
+  result->return_type = ps_type_clone(result->function_type->base);
+  return result->return_type != NULL;
+}
+
+static int static_local_type_contains_vla(const psx_type_t *type) {
+  for (const psx_type_t *cursor = type; cursor; cursor = cursor->base) {
+    if (cursor->kind == PSX_TYPE_ARRAY && cursor->is_vla) return 1;
+    if (cursor->kind != PSX_TYPE_ARRAY && cursor->kind != PSX_TYPE_POINTER)
+      break;
+  }
+  return 0;
+}
+
+static const psx_type_t *static_local_array_leaf(const psx_type_t *type) {
+  const psx_type_t *leaf = type;
+  while (leaf && leaf->kind == PSX_TYPE_ARRAY) leaf = leaf->base;
+  return leaf;
+}
+
+int psx_apply_static_local_declaration_pipeline(
+    const psx_static_local_declaration_pipeline_request_t *request,
+    psx_static_local_declaration_pipeline_result_t *result) {
+  if (result) *result = (psx_static_local_declaration_pipeline_result_t){0};
+  if (!request || !result || !request->name || request->name_len <= 0 ||
+      !request->type || !request->initializer) return 0;
+  if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
+  if (request->type->kind == PSX_TYPE_VOID) {
+    ps_diag_ctx(request->diag_tok, "decl",
+                 diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
+                 request->name_len, request->name);
+  }
+  if (static_local_type_contains_vla(request->type)) {
+    ps_diag_ctx(request->diag_tok, "decl",
+                 "static local object '%.*s' cannot have variably modified type",
+                 request->name_len, request->name);
+  }
+
+  const psx_type_t *leaf = static_local_array_leaf(request->type);
+  int object_size = ps_type_sizeof(request->type);
+  int leaf_size = ps_type_sizeof(leaf);
+  if (leaf && ps_type_is_tag_aggregate(leaf) && leaf_size <= 0) {
+    ps_diag_ctx(request->diag_tok, "decl", "%s",
+                 diag_message_for(
+                     DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+  }
+  if (request->type->kind == PSX_TYPE_ARRAY) {
+    if (leaf_size <= 0 ||
+        (object_size <= 0 && !request->initializer->has_initializer)) {
+      ps_diag_ctx(request->diag_tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    }
+  } else if (object_size <= 0) {
+    return 0;
+  }
+
+  if (leaf && ps_type_is_tag_aggregate(leaf) && leaf->tag_name &&
+      leaf->tag_len >= 11 &&
+      memcmp(leaf->tag_name, "__anon_tag_", 11) == 0) {
+    ps_ctx_promote_tag_to_file_scope(
+        leaf->tag_kind, leaf->tag_name, leaf->tag_len);
+  }
+
+  psx_static_local_kind_t kind = PSX_STATIC_LOCAL_SCALAR;
+  int alias_size = object_size;
+  int alias_element_size = object_size;
+  if (request->type->kind == PSX_TYPE_ARRAY) {
+    kind = leaf && ps_type_is_tag_aggregate(leaf)
+               ? PSX_STATIC_LOCAL_AGGREGATE_ARRAY
+               : PSX_STATIC_LOCAL_CONSUMED_ARRAY;
+    alias_size = 0;
+    alias_element_size = leaf_size;
+  } else if (ps_type_is_tag_aggregate(request->type)) {
+    kind = PSX_STATIC_LOCAL_AGGREGATE;
+  } else if (request->type->kind == PSX_TYPE_POINTER) {
+    alias_element_size = ps_type_deref_size(request->type);
+    if (alias_element_size <= 0) alias_element_size = object_size;
+  }
+
+  psx_static_local_declaration_result_t storage = {0};
+  if (!lower_static_local_declaration_storage(
+          &(psx_static_local_declaration_request_t){
+              .kind = kind,
+              .function_name = request->function_name,
+              .function_name_len = request->function_name_len,
+              .name = request->name,
+              .name_len = request->name_len,
+              .alias_size = alias_size,
+              .alias_element_size = alias_element_size,
+              .type = request->type,
+          },
+          &storage)) {
+    return 0;
+  }
+  result->global = storage.global;
+  result->alias = storage.alias;
+
+  if (request->parse_initializer)
+    request->parse_initializer(
+        request->parse_context, request->type, request->initializer);
+  if (!request->initializer->has_initializer) return 1;
+
+  psx_static_initializer_resolution_t resolution;
+  psx_resolve_static_initializer(
+      &(psx_static_initializer_resolution_request_t){
+          .type = request->type,
+          .kind = request->initializer->kind,
+          .initializer = request->initializer->value,
+          .diag_tok = request->initializer->value_tok,
+      },
+      &resolution);
+  if (resolution.status != PSX_STATIC_INITIALIZER_OK) {
+    diagnose_static_initializer(
+        request->initializer->value_tok
+            ? request->initializer->value_tok : request->diag_tok,
+        request->name, request->name_len, resolution.status);
+  }
+  if (!lower_static_local_declaration_initializer(
+          storage.global, &resolution, request->initializer->value_tok,
+          &result->type_completed)) {
+    return 0;
+  }
+  if (result->type_completed)
+    psx_decl_set_lvar_decl_type(storage.alias, request->type);
+  result->initialized = 1;
+  return 1;
+}
+
+static void diagnose_local_declaration(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_local_declaration_status_t status) {
+  switch (status) {
+    case PSX_LOCAL_DECLARATION_VOID_OBJECT:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
+                   request->name_len, request->name);
+      return;
+    case PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT:
+      ps_diag_ctx(request->diag_tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+      return;
+    case PSX_LOCAL_DECLARATION_INCOMPLETE_ARRAY_NEEDS_INITIALIZER:
+      ps_diag_ctx(request->diag_tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      return;
+    case PSX_LOCAL_DECLARATION_VLA_INITIALIZER_FORBIDDEN:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "variable length array '%.*s' cannot be initialized",
+                   request->name_len, request->name);
+      return;
+    default:
+      ps_diag_ctx(request->diag_tok, "decl",
+                   "canonical local declaration resolution failed for '%.*s'",
+                   request->name_len, request->name);
+  }
+}
+
+static node_t *append_local_initialization(node_t *chain, node_t *node) {
+  if (!node) return chain;
+  return chain ? ps_node_new_binary(ND_COMMA, chain, node) : node;
+}
+
+int psx_apply_automatic_local_declaration_pipeline(
+    const psx_automatic_local_declaration_pipeline_request_t *request,
+    psx_automatic_local_declaration_pipeline_result_t *result) {
+  if (result)
+    *result = (psx_automatic_local_declaration_pipeline_result_t){0};
+  if (!request || !result || !request->name || request->name_len <= 0 ||
+      !request->type || !request->application || !request->initializer)
+    return 0;
+
+  psx_local_declaration_resolution_t resolution;
+  psx_resolve_local_declaration(
+      &(psx_local_declaration_resolution_request_t){
+          .type = request->type,
+          .application = request->application,
+          .has_initializer = request->initializer->has_initializer,
+      },
+      &resolution);
+  if (resolution.status != PSX_LOCAL_DECLARATION_OK)
+    diagnose_local_declaration(request, resolution.status);
+
+  psx_local_object_result_t object = {0};
+  psx_vla_lowering_result_t vla = {0};
+  switch (resolution.storage_kind) {
+    case PSX_LOCAL_STORAGE_COMPLETE:
+      if (!lower_complete_local_object(
+              &(psx_local_object_request_t){
+                  .name = request->name,
+                  .name_len = request->name_len,
+                  .type = request->type,
+                  .requested_alignment = request->requested_alignment,
+              },
+              &object)) {
+        return 0;
+      }
+      result->var = object.var;
+      result->type_attached = object.type_attached;
+      break;
+    case PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY:
+      if (!declare_incomplete_local_object(
+              &(psx_local_object_request_t){
+                  .name = request->name,
+                  .name_len = request->name_len,
+                  .type = request->type,
+                  .requested_alignment = request->requested_alignment,
+              },
+              &object)) {
+        return 0;
+      }
+      result->var = object.var;
+      result->type_attached = object.type_attached;
+      break;
+    case PSX_LOCAL_STORAGE_VLA_OBJECT: {
+      psx_vla_lowering_request_t lowering = {
+          .name = request->name,
+          .name_len = request->name_len,
+          .element_size = resolution.element_size,
+          .dimension_count = resolution.dimension_count,
+          .type = request->type,
+          .requested_alignment = request->requested_alignment,
+          .diag_tok = request->diag_tok,
+      };
+      for (int i = 0; i < resolution.dimension_count; i++) {
+        lowering.dimensions[i] = resolution.dimensions[i].expression;
+        lowering.const_values[i] =
+            resolution.dimensions[i].constant_value;
+        lowering.is_const[i] = resolution.dimensions[i].is_constant;
+      }
+      vla = lower_vla_declaration(&lowering);
+      result->var = vla.var;
+      result->type_attached = vla.type_attached;
+      result->initialization = vla.init;
+      break;
+    }
+    case PSX_LOCAL_STORAGE_POINTER_TO_VLA:
+      vla = lower_pointer_to_vla_declaration(
+          &(psx_pointer_vla_lowering_request_t){
+              .name = request->name,
+              .name_len = request->name_len,
+              .element_size = resolution.element_size,
+              .row_dimension = resolution.pointer_row_dimension,
+              .type = request->type,
+              .requested_alignment = request->requested_alignment,
+              .diag_tok = request->diag_tok,
+          });
+      result->var = vla.var;
+      result->type_attached = vla.type_attached;
+      result->initialization = vla.init;
+      break;
+  }
+  if (!result->var) return 0;
+
+  if (request->parse_initializer)
+    request->parse_initializer(
+        request->parse_context, request->type, request->initializer);
+
+  if (resolution.storage_kind == PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY) {
+    if (!request->initializer->has_initializer ||
+        !psx_resolve_incomplete_array_initializer(
+            request->type, request->initializer->kind,
+            request->initializer->value)) {
+      ps_diag_ctx(request->initializer->value_tok, "decl", "%s",
+                   diag_message_for(
+                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    }
+    psx_local_object_result_t completed = {0};
+    if (!complete_declared_local_object(
+            result->var,
+            &(psx_local_object_request_t){
+                .name = request->name,
+                .name_len = request->name_len,
+                .type = request->type,
+                .requested_alignment = request->requested_alignment,
+            },
+            &completed)) {
+      return 0;
+    }
+    result->type_attached = completed.type_attached;
+  }
+
+  if (!result->type_attached) {
+    ps_type_copy_vla_runtime_metadata(
+        request->type, ps_lvar_get_decl_type(result->var));
+    psx_decl_set_lvar_decl_type(result->var, request->type);
+    result->type_attached = 1;
+  }
+
+  if (request->initializer->has_initializer) {
+    node_t *initializer = ps_decl_bind_initializer_for_var(
+        result->var, request->type->kind == PSX_TYPE_POINTER,
+        request->initializer->value, request->initializer->kind,
+        request->initializer->value_tok);
+    result->initialization = append_local_initialization(
+        result->initialization, initializer);
+  }
+  return 1;
+}
+
+int psx_apply_block_extern_declaration_pipeline(
+    const psx_block_extern_declaration_pipeline_request_t *request,
+    psx_block_extern_declaration_pipeline_result_t *result) {
+  if (result)
+    *result = (psx_block_extern_declaration_pipeline_result_t){0};
+  if (!request || !result || !request->name || request->name_len <= 0 ||
+      !request->type) return 0;
+  if (request->has_initializer) {
+    ps_diag_ctx(request->diag_tok, "decl",
+                 "block scope extern declaration '%.*s' cannot have an initializer",
+                 request->name_len, request->name);
+  }
+
+  if (request->type->kind == PSX_TYPE_FUNCTION) {
+    if (!psx_apply_function_declaration_pipeline(
+            &(psx_function_declaration_pipeline_request_t){
+                .name = request->name,
+                .name_len = request->name_len,
+                .return_type = request->type->base,
+                .parameter_types = request->type->param_types,
+                .parameter_count = request->type->param_count,
+                .is_variadic = request->type->is_variadic_function,
+                .diag_context = "block-extern",
+                .diag_tok = request->diag_tok,
+            })) {
+      return 0;
+    }
+    result->is_function = 1;
+    return 1;
+  }
+
+  psx_parsed_initializer_t initializer = {0};
+  psx_global_declaration_pipeline_result_t global;
+  if (!psx_apply_global_declaration_pipeline(
+          &(psx_global_declaration_pipeline_request_t){
+              .name = request->name,
+              .name_len = request->name_len,
+              .type = request->type,
+              .is_extern_decl = 1,
+              .initializer = &initializer,
+              .diag_tok = request->diag_tok,
+          },
+          &global)) {
+    return 0;
+  }
+  result->global = global.global;
+  return 1;
+}
+
+lvar_t *psx_apply_temporary_local_declaration_pipeline(
+    const psx_temporary_local_declaration_pipeline_request_t *request) {
+  if (!request || !request->name || request->name_len <= 0 ||
+      !request->type) {
+    return NULL;
+  }
+  psx_local_object_result_t object = {0};
+  if (!lower_complete_local_object(
+          &(psx_local_object_request_t){
+              .name = request->name,
+              .name_len = request->name_len,
+              .type = request->type,
+              .requested_alignment = request->requested_alignment,
+          },
+          &object)) {
+    return NULL;
+  }
+  return object.var;
+}

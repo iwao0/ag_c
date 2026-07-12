@@ -9,7 +9,7 @@ typedef struct {
   int elem_size;
 } psx_ret_pointee_array_t;
 
-#define psx_ret_pointee_array_make(first_dim, second_dim, elem_size)            \
+#define ps_ret_pointee_array_make(first_dim, second_dim, elem_size)            \
   ((psx_ret_pointee_array_t){(first_dim), (second_dim), (elem_size)})
 
 #define psx_ret_pointee_array_has_dims(a) ((a).first_dim > 0)
@@ -64,7 +64,7 @@ static inline void psx_ret_pointee_array_absorb_suffix(int *arr_is_array,
                                                        int elem_size,
                                                        psx_ret_pointee_array_t *out) {
   if (out) {
-    *out = psx_ret_pointee_array_make(first_dim ? *first_dim : 0,
+    *out = ps_ret_pointee_array_make(first_dim ? *first_dim : 0,
                                       (dim_count && *dim_count >= 2 && dims) ? dims[1] : 0,
                                       elem_size);
   }

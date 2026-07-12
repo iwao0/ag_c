@@ -10,10 +10,10 @@ static inline token_t *curtok(void) { return tk_get_current_token(); }
 int psx_parse_array_size_constexpr(void) {
   long long v = psx_parse_enum_const_expr();
   if (v < 0) {
-    psx_diag_ctx(curtok(), "decl", "%s",
+    ps_diag_ctx(curtok(), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   } else if (v == 0) {
-    psx_ctx_record_unsupported_gnu_extension_warning(curtok(), "zero-length array");
+    ps_ctx_record_unsupported_gnu_extension_warning(curtok(), "zero-length array");
   }
   return (int)v;
 }
@@ -39,7 +39,7 @@ int psx_parse_array_suffixes_constexpr_required(int base_mul) {
   return arr_total;
 }
 
-int psx_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_dims,
+int ps_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_dims,
                                           int *out_dim_count) {
   int arr_total = (base_mul > 0) ? base_mul : 1;
   int dc = 0;
@@ -58,11 +58,11 @@ int psx_parse_array_suffixes_capture_dims(int base_mul, int *out_dims, int max_d
 
 int psx_parse_member_array_suffixes(int *out_is_flex_array,
                                     int *out_dim_count, int *out_first_dim) {
-  return psx_parse_member_array_suffixes_ex(out_is_flex_array, out_dim_count,
+  return ps_parse_member_array_suffixes_ex(out_is_flex_array, out_dim_count,
                                             out_first_dim, NULL, 0);
 }
 
-int psx_parse_member_array_suffixes_ex(int *out_is_flex_array,
+int ps_parse_member_array_suffixes_ex(int *out_is_flex_array,
                                        int *out_dim_count, int *out_first_dim,
                                        int *out_dims, int max_dims) {
   int arr_total = 1;

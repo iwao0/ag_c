@@ -6,7 +6,7 @@
 // 「スカラ初期化子に複数要素」と判断され E3064 で reject されていた。
 //
 // 修正: typedef-name 分岐で psx_typedef_info_t::is_array / array_dim_count /
-// array_first_dim / array_dims[] を保存し、psx_parse_member_array_suffixes_ex 後に
+// array_first_dim / array_dims[] を保存し、ps_parse_member_array_suffixes_ex 後に
 // 宣言子に追加 [N] が無ければ typedef の次元情報を取り込む。
 #include <assert.h>
 

@@ -29,14 +29,14 @@ void psx_resolve_function_declaration(
           &resolution->declaration_plan)) {
     return;
   }
-  if (!psx_ctx_register_function_type(
+  if (!ps_ctx_register_function_type(
           request->name, request->name_len,
           resolution->declaration_plan.function_type)) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
   if (request->is_definition &&
-      !psx_ctx_track_function_defined(request->name, request->name_len)) {
+      !ps_ctx_track_function_defined(request->name, request->name_len)) {
     resolution->status = PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION;
     return;
   }

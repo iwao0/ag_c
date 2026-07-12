@@ -7,7 +7,6 @@
 #include "core.h"
 #include "lvar_public.h"
 #include "symtab.h"
-#include "../semantic/local_type_state.h"
 
 typedef struct {
   char *name;
@@ -37,13 +36,13 @@ typedef struct {
   int has_init_fvalues;
 } psx_gvar_view_t;
 
-psx_gvar_view_t psx_gvar_view(const global_var_t *gv);
+psx_gvar_view_t ps_gvar_view(const global_var_t *gv);
 
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 struct lvar_t {
   lvar_t *next;
   lvar_t *next_all;  // 全スコープの変数リスト（未使用チェック・offset検索用）
-  lvar_t *next_hash; // 名前ハッシュ表のチェーン（psx_decl_find_lvar の O(1) 化用）
+  lvar_t *next_hash; // 名前ハッシュ表のチェーン（ps_decl_find_lvar の O(1) 化用）
   lvar_t *next_offhash; // オフセットハッシュ表のチェーン（psx_decl_find_lvar_by_offset 用）
   unsigned scope_seq; // 宣言時スコープの一意連番（同一スコープ重複宣言チェック用）
   char *name;
@@ -119,9 +118,9 @@ typedef enum {
  * decl.c / parser.c で 4 行のパターンが 9 箇所重複していたのを集約する。 */
 
 void psx_decl_reset_locals(void);
-void psx_decl_enter_scope(void);
-void psx_decl_leave_scope(void);
-lvar_t *psx_decl_get_locals(void);
+void ps_decl_enter_scope(void);
+void ps_decl_leave_scope(void);
+lvar_t *ps_decl_get_locals(void);
 void psx_decl_reserve_variadic_regs(void);
 unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
                                                   tk_float_kind_t fp_kind);
@@ -133,38 +132,37 @@ psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *
                                                  int ret_is_data_pointer,
                                                  int ret_is_funcptr,
                                                  int ret_is_complex);
-psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
+psx_decl_funcptr_sig_t ps_decl_make_funcptr_sig_from_kind(
     const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
     tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
     int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array);
-void psx_decl_funcptr_sig_promote_return_to_funcptr(
+void ps_decl_funcptr_sig_promote_return_to_funcptr(
     psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig);
-lvar_t *psx_decl_find_lvar(char *name, int len);
+lvar_t *ps_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
-void psx_decl_replay_lvar_usage_events(lvar_t *all_locals);
+void ps_decl_replay_lvar_usage_events(lvar_t *all_locals);
 void psx_decl_reset_translation_unit_state(void);
 psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void);
 void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region);
-void psx_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
-void psx_decl_attach_lvar_current_region(lvar_t *var);
+void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
+void ps_decl_attach_lvar_current_region(lvar_t *var);
 lvar_t *psx_decl_register_lvar(char *name, int len);
 lvar_t *psx_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *psx_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
-void psx_decl_set_gvar_type_size(global_var_t *gv, int type_size);
-void psx_decl_set_gvar_decl_type(global_var_t *gv,
+void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size);
+void ps_decl_set_gvar_decl_type(global_var_t *gv,
                                  const psx_type_t *decl_type);
-void psx_decl_set_gvar_type_sig(global_var_t *gv, char *type_sig);
-void psx_decl_set_current_funcname(char *name, int len);
+void ps_decl_set_current_funcname(char *name, int len);
 void psx_decl_get_current_funcname(char **out_name, int *out_len);
 
 node_t *psx_decl_parse_declaration(void);
-node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
-node_t *psx_decl_bind_initializer_for_var(
+node_t *ps_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
+node_t *ps_decl_bind_initializer_for_var(
     lvar_t *var, int is_pointer, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok);
 
 
-void psx_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
+void ps_decl_record_lvar_usage_in_region(lvar_t *var, psx_lvar_usage_kind_t kind,
                                           psx_lvar_usage_region_t *region);
 
 #endif

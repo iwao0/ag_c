@@ -4,6 +4,6 @@
 #include "../tokenizer/token.h"
 
 int psx_parse_alignas_value(void);
-int psx_eval_parsed_alignas_value(token_t *start, token_t *end);
+int ps_eval_parsed_alignas_value(token_t *start, token_t *end);
 
 #endif

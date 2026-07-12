@@ -1,7 +1,6 @@
 #include "local_registry.h"
 
 #include "diag.h"
-#include "../lowering/local_storage.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
@@ -81,11 +80,11 @@ static void offset_index_remove(lvar_t *var) {
   }
 }
 
-unsigned psx_local_registry_current_scope_seq(void) {
+unsigned ps_local_registry_current_scope_seq(void) {
   return current_scope_seq;
 }
 
-void psx_local_registry_add(lvar_t *var) {
+void ps_local_registry_add(lvar_t *var) {
   if (!var) return;
   var->next = locals;
   var->next_all = all_locals;
@@ -94,12 +93,12 @@ void psx_local_registry_add(lvar_t *var) {
   index_add(var);
 }
 
-lvar_t *psx_local_registry_create_storage_object(
+lvar_t *ps_local_registry_create_storage_object(
     char *name, int name_len, int offset, int storage_size,
     int element_size, int is_array, int alignment) {
-  lvar_t *previous = psx_decl_find_lvar(name, name_len);
+  lvar_t *previous = ps_decl_find_lvar(name, name_len);
   if (previous &&
-      previous->scope_seq == psx_local_registry_current_scope_seq()) {
+      previous->scope_seq == ps_local_registry_current_scope_seq()) {
     psx_diag_duplicate_with_name(
         tk_get_current_token(), "variable", name, name_len);
   }
@@ -116,12 +115,12 @@ lvar_t *psx_local_registry_create_storage_object(
   var->decl_type = psx_type_new_storage_object(
       storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
       TK_EOF, NULL, 0, 0, 0);
-  psx_decl_attach_lvar_current_region(var);
-  psx_local_registry_add(var);
+  ps_decl_attach_lvar_current_region(var);
+  ps_local_registry_add(var);
   return var;
 }
 
-void psx_local_registry_update_storage_object(
+void ps_local_registry_update_storage_object(
     lvar_t *var, int offset, int storage_size,
     int element_size, int is_array, int alignment) {
   if (!var) return;
@@ -134,23 +133,6 @@ void psx_local_registry_update_storage_object(
   unsigned bucket = offset_hash(offset);
   var->next_offhash = lvars_by_offset[bucket];
   lvars_by_offset[bucket] = var;
-}
-
-lvar_t *psx_decl_register_lvar_sized_align(
-    char *name, int len, int size, int elem_size, int is_array, int align) {
-  int offset = local_storage_allocate(size, align);
-  return psx_local_registry_create_storage_object(
-      name, len, offset, size, elem_size, is_array, align);
-}
-
-lvar_t *psx_decl_register_lvar_sized(
-    char *name, int len, int size, int elem_size, int is_array) {
-  return psx_decl_register_lvar_sized_align(
-      name, len, size, elem_size, is_array, 0);
-}
-
-lvar_t *psx_decl_register_lvar(char *name, int len) {
-  return psx_decl_register_lvar_sized(name, len, 8, 8, 0);
 }
 
 lvar_t *ps_lvar_next_all(const lvar_t *var) {
@@ -170,10 +152,9 @@ int ps_lvar_offset(const lvar_t *var) {
   return var ? var->offset : 0;
 }
 
-void psx_decl_reset_locals(void) {
+void ps_local_registry_reset(void) {
   locals = NULL;
   all_locals = NULL;
-  local_storage_reset();
   lvar_scope_depth = 0;
   memset(lvars_by_bucket, 0, sizeof(lvars_by_bucket));
   memset(lvars_by_offset, 0, sizeof(lvars_by_offset));
@@ -184,7 +165,7 @@ void psx_decl_reset_locals(void) {
   current_usage_region = NULL;
 }
 
-void psx_decl_enter_scope(void) {
+void ps_decl_enter_scope(void) {
   if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
     lvar_scope_stack[lvar_scope_depth] = locals;
     lvar_scope_seq_stack[lvar_scope_depth] = current_scope_seq;
@@ -193,7 +174,7 @@ void psx_decl_enter_scope(void) {
   current_scope_seq = ++next_scope_seq;
 }
 
-void psx_decl_leave_scope(void) {
+void ps_decl_leave_scope(void) {
   if (lvar_scope_depth <= 0) return;
   lvar_scope_depth--;
   if (lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
@@ -205,11 +186,7 @@ void psx_decl_leave_scope(void) {
   }
 }
 
-void psx_decl_reserve_variadic_regs(void) {
-  local_storage_reserve_prefix(64);
-}
-
-lvar_t *psx_decl_get_locals(void) {
+lvar_t *ps_decl_get_locals(void) {
   return all_locals;
 }
 
@@ -225,15 +202,15 @@ void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region) {
   current_usage_region = region->prev;
 }
 
-void psx_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
+void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
   if (region) region->suppress_warnings = 1;
 }
 
-void psx_decl_attach_lvar_current_region(lvar_t *var) {
+void ps_decl_attach_lvar_current_region(lvar_t *var) {
   if (var) var->decl_region = current_usage_region;
 }
 
-void psx_decl_record_lvar_usage_in_region(
+void ps_decl_record_lvar_usage_in_region(
     lvar_t *var, psx_lvar_usage_kind_t kind,
     psx_lvar_usage_region_t *region) {
   if (!var) return;
@@ -248,7 +225,7 @@ void psx_decl_record_lvar_usage_in_region(
   usage_events_tail = event;
 }
 
-void psx_decl_replay_lvar_usage_events(lvar_t *all) {
+void ps_decl_replay_lvar_usage_events(lvar_t *all) {
   for (lvar_t *var = all; var; var = var->next_all) {
     var->is_used = 0;
     var->is_unevaluated_used = 0;
@@ -293,7 +270,7 @@ lvar_t *psx_decl_find_lvar_by_offset(int offset) {
   return NULL;
 }
 
-lvar_t *psx_decl_find_lvar(char *name, int len) {
+lvar_t *ps_decl_find_lvar(char *name, int len) {
   unsigned bucket = name_hash(name, len);
   for (lvar_t *var = lvars_by_bucket[bucket]; var; var = var->next_hash) {
     if (var->len == len && memcmp(var->name, name, (size_t)len) == 0)

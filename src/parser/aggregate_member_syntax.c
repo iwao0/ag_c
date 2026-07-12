@@ -14,7 +14,7 @@ static token_t *current_token(void) { return tk_get_current_token(); }
 static psx_parsed_aggregate_item_t *append_aggregate_item(
     psx_parsed_aggregate_body_t *body) {
   if (body->item_count >= PS_MAX_DECLARATOR_COUNT) {
-    psx_diag_ctx(current_token(), "aggregate-syntax",
+    ps_diag_ctx(current_token(), "aggregate-syntax",
                  "aggregate declaration limit exceeded");
   }
   if (body->item_count == body->item_capacity) {
@@ -32,7 +32,7 @@ static void append_aggregate_declarator(
     psx_parsed_aggregate_member_declaration_t *declaration,
     psx_parsed_declarator_t declarator) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    psx_diag_ctx(current_token(), "aggregate-syntax",
+    ps_diag_ctx(current_token(), "aggregate-syntax",
                  "aggregate declarator limit exceeded");
   }
   if (declaration->declarator_count == declaration->declarator_capacity) {
@@ -47,7 +47,7 @@ static void append_aggregate_declarator(
   declaration->declarators[declaration->declarator_count++] = declarator;
 }
 
-void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
+void ps_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
   if (!body) return;
   memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
@@ -65,7 +65,7 @@ void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
     declaration->pack_alignment = pragma_pack_current_alignment();
     for (;;) {
       psx_parsed_declarator_t declarator =
-          psx_parse_declarator_syntax_tree();
+          ps_parse_declarator_syntax_tree();
       append_aggregate_declarator(declaration, declarator);
       int has_comma = tk_consume(',');
       if (!declarator.identifier && !declarator.has_bitfield && has_comma)
@@ -76,15 +76,15 @@ void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
   }
 }
 
-void psx_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
+void ps_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body) {
   if (!body) return;
   for (int i = 0; i < body->item_count; i++) {
     if (body->items[i].kind == PSX_PARSED_AGGREGATE_MEMBER_DECLARATION) {
       psx_parsed_aggregate_member_declaration_t *declaration =
           &body->items[i].value.member_declaration;
-      psx_dispose_decl_specifier_syntax(&declaration->specifier);
+      ps_dispose_decl_specifier_syntax(&declaration->specifier);
       for (int j = 0; j < declaration->declarator_count; j++)
-        psx_dispose_declarator_syntax(&declaration->declarators[j]);
+        ps_dispose_declarator_syntax(&declaration->declarators[j]);
       free(declaration->declarators);
     }
   }

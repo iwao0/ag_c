@@ -24,7 +24,7 @@ long long psx_eval_const_int(node_t *node, int *ok) {
       global_var_t *global = ps_find_global_var(ref->name, ref->name_len);
       if (global && global->name_len == ref->name_len &&
           memcmp(global->name, ref->name, (size_t)global->name_len) == 0) {
-        const psx_type_t *type = psx_gvar_get_decl_type(global);
+        const psx_type_t *type = ps_gvar_get_decl_type(global);
         if (global->has_init && !global->init_symbol &&
             !global->init_values && !global->init_fvalues && type &&
             type->kind != PSX_TYPE_ARRAY && type->kind != PSX_TYPE_FLOAT &&

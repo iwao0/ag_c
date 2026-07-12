@@ -13,12 +13,12 @@ static long long resolve_designator_index(
   long long index = psx_eval_const_int(expr, &ok);
   token_t *tok = designator_tok ? designator_tok : fallback_tok;
   if (!ok) {
-    psx_diag_ctx(tok, "init", "%s",
+    ps_diag_ctx(tok, "init", "%s",
                  diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
                  diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
   if (index < 0) {
-    psx_diag_ctx(tok, "init", "%s",
+    ps_diag_ctx(tok, "init", "%s",
                  diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
                  diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
@@ -56,7 +56,7 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
     if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
       if (!target.type || target.type->kind != PSX_TYPE_ARRAY ||
           !target.type->base) {
-        psx_diag_ctx(
+        ps_diag_ctx(
             designator->tok ? designator->tok : fallback_tok,
             "init", "%s",
             diag_message_for(
@@ -66,7 +66,7 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       long long index = resolve_designator_index(
           designator->index_expr, designator->tok, fallback_tok);
       if (index >= target.type->array_len) {
-        psx_diag_ctx(designator->tok ? designator->tok : fallback_tok,
+        ps_diag_ctx(designator->tok ? designator->tok : fallback_tok,
                      "init", "%s",
                      diag_message_for(
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
@@ -85,7 +85,7 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
         target.type ? target.type->aggregate_definition : NULL;
     int member_index = aggregate_member_index_by_name(definition, designator);
     if (member_index < 0) {
-      psx_diag_ctx(designator->tok ? designator->tok : fallback_tok,
+      ps_diag_ctx(designator->tok ? designator->tok : fallback_tok,
                    "init", "%s",
                    diag_message_for(
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));

@@ -1,4 +1,5 @@
 #include "assignment_lowering.h"
+#include "../semantic/local_type_state.h"
 #include "../parser/decl.h"
 #include "../parser/node_utils.h"
 #include <stdio.h>
@@ -41,10 +42,10 @@ static node_t *materialize_lvalue_address_once(node_t *target,
   psx_type_t *address_type = ps_node_get_type(address);
   if (address_type) psx_decl_set_lvar_decl_type(temp, address_type);
 
-  node_t *temp_lhs = psx_node_new_lvar_expr_ref_for(temp, 1);
-  *prefix = psx_node_new_assign(temp_lhs, address);
-  return psx_node_clone_lvalue_with_lhs(
-      target, psx_node_new_lvar_expr_ref_for(temp, 1));
+  node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp, 1);
+  *prefix = ps_node_new_assign(temp_lhs, address);
+  return ps_node_clone_lvalue_with_lhs(
+      target, ps_node_new_lvar_expr_ref_for(temp, 1));
 }
 
 void lower_compound_assignment_expression(node_t *node) {
@@ -62,13 +63,13 @@ void lower_compound_assignment_expression(node_t *node) {
       ps_node_is_pointer(target)) {
     int scale = ps_node_deref_size(target);
     if (scale > 1)
-      rhs = psx_node_new_binary(ND_MUL, rhs, psx_node_new_num(scale));
+      rhs = ps_node_new_binary(ND_MUL, rhs, ps_node_new_num(scale));
   }
 
-  node_t *value = psx_node_new_binary(binary_kind, target, rhs);
-  node_t *assign = psx_node_new_assign(target, value);
+  node_t *value = ps_node_new_binary(binary_kind, target, rhs);
+  node_t *assign = ps_node_new_assign(target, value);
   node_t *lowered = prefix
-                        ? psx_node_new_binary(ND_COMMA, prefix, assign)
+                        ? ps_node_new_binary(ND_COMMA, prefix, assign)
                         : assign;
   *node = *lowered;
   node->tok = source_tok;

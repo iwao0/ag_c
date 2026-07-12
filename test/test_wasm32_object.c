@@ -878,7 +878,7 @@ int main(void) {
                                 variadic_extra_needles, 5);
 
   const char *variadic_va_arg_read_needles[] = {
-      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store", "i64.load"};
+      "__ag_va_arg_area", "__stack_pointer", "(i64) -> i32", "i64.store", "i32.load"};
   failures += run_objdump_check("variadic_va_arg_read",
                                 "#include <stdarg.h>\n"
                                 "int first(int n, ...){va_list ap; va_start(ap,n); "

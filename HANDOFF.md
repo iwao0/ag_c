@@ -1,8 +1,496 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1100: top-level declaration specifierの共通syntax化）
+最終更新: 2026-07-12（続き1116: semantic/application ownership移動とdependency方向整理）
 
 ## 現状
+- 続き1116: **semantic validation/applicationをsemantic ownershipへ移し、parserからlowering逆依存を除去した。**
+
+  `parser/semantic_pass.{c,h}`を`semantic/semantic_pass.{c,h}`へ移した。parser本体、static initializer
+  resolution、testsはsemantic APIを明示includeする。parser側compatibility facadeは置かず、build objectも
+  `semantic/semantic_pass.o`を正本とする。
+
+  `parser/declaration_application.{c,h}`も`semantic/declaration_application.{c,h}`へ移した。declaration phase、
+  parsed/runtime declarator、type-name、function parameterのapplicationはsemantic ownershipになり、parserの
+  syntax modulesはDTO生成だけを所有する。移動時にMakefileの旧parser objectが追加列に残ってduplicate symbolに
+  なったため、旧entryを削除してsemantic objectだけをリンクするよう修正した。
+
+  `parser/local_registry.c`からframe allocation/reset/reserve wrapperを`lowering/local_storage.c`へ移した。
+  registryは指定offsetのsymbol作成・更新、scope/index/usage event管理だけを行い、frame allocatorをincludeしない。
+  `psx_local_registry_reset()`を純registry resetとして追加し、統合`psx_decl_reset_locals()`はstorage側が
+  registry + frame layoutを順にresetする。
+
+  結果:
+  - `src/parser/*.c`からlowering header直接include = **0件**
+  - semantic pass/application実体 = `src/semantic/`
+  - structural/implicit conversion lowering実体 = `src/lowering/`
+  - parser unit = **OK: All unit tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - native E2Eは続き1115で**1206/1206**。本ownership move後はparser suiteのみ実行した。
+
+  parser/semantic/loweringの大規模責務分離はここで一区切り。parserに残るsemantic includeはDTOをapplicationへ渡す
+  明示依存と、小さなtypedef/enum/tag/member/static-assert coordinatorである。次は依頼済みの命名規則、
+  `ps_` = parser外へ公開、`psx_` = parser内部専用、をsymbol定義/参照範囲から監査してリネームする。
+
+- 続き1115: **semantic pass内のstructural/implicit-conversion loweringを独立tree walkへ分離した。**
+
+  `lowering/semantic_lowering_pass.{c,h}`を追加した。source cast、aggregate address、pointer arithmetic、
+  compound assignment、declaration initializerのstructural loweringをpostorder tree walkで実行し、
+  call argument/return/assignmentのimplicit value conversionを別lowering walkで実行する。
+  個別`expr/cast/assignment/initializer_lowering` APIとfunction registry参照はこのmoduleが所有する。
+
+  `parser/semantic_pass.c`から4つのlowering header、個別lowering helper、implicit conversion tree walkを削除した。
+  実行順はraw AST semantic validation -> structural lowering -> generated assignmentを含むpost-lowering validation ->
+  type materialization/warnings -> implicit conversion lowering -> usage analysisである。最初にloweringを先行させると
+  `1 += 2`のsource compound-assignment属性が失われてlvalue診断が抜けることをparser compile-fail testで検出し、
+  raw validationを先行する二段validationとして固定した。
+
+  結果:
+  - `semantic_pass.c`の個別lowering header/call = **0件**
+  - structural loweringとimplicit conversion lowering = `lowering/semantic_lowering_pass.c`の独立walk
+  - `semantic_pass.c` = **1,406行**
+  - `semantic_lowering_pass.c` = **224行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はsemantic validation実装を`parser/`から`semantic/`所有へ移し、現在のparser-facing APIは薄いpipeline facadeへ
+  変更する。その後、parser/semantic/loweringのdependency方向を静的監査し、依頼済み`ps_`公開 / `psx_`内部の
+  命名規則監査へ進む。
+
+- 続き1114: **parser.c/decl.c/expr.cからsemantic/lowering headerと直接呼び出しを除去した。**
+
+  declaration applicationへ`psx_apply_parsed_declarator_type()`と
+  `psx_apply_runtime_declarator_type()`を追加した。top-level declarator、automatic/static local、block extern、
+  local typedefのcanonical type構築は、parser側で`psx_resolve_decl_type()`を直接呼ばず、syntax/application
+  boundaryを通る。重複していたshape -> canonical type request組み立ても1実装になった。
+
+  static-local sequence resetは`psx_declaration_pipeline_reset_translation_unit_state()`へ移し、translation-unit
+  lifecycleからlowering moduleを直接呼ぶ依存を外した。未使用だった`constant_expression.h`も`decl.c`から削除した。
+
+  結果:
+  - `parser.c` / `decl.c` / `expr.c`のsemantic/lowering header直接include = **0件**
+  - 同3ファイルの`psx_resolve_*` / `lower_*`直接呼び出し = **0件**
+  - `parser.c` = **1,444行**
+  - `decl.c` = **881行**
+  - `expr.c` = **1,899行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - native E2Eは続き1112で**1206/1206**。本application/lifecycle focused変更後はparser suiteのみ実行した。
+
+  ただし三層分離全体は未完了。`parser/semantic_pass.c`がsemantic analysisとimplicit conversion/cast/
+  assignment/initializer loweringを同じtree walkで実行している。次はこれをsemantic validation/typecheck passと
+  lowering passへ分け、配置も`semantic/`と`lowering/`へ移す。その後parser公開/内部命名規則を監査する。
+
+- 続き1113: **cast/sizeof/_Alignof/_Generic/compound literal共通のtype-nameをsyntax DTOとapplicationへ分離した。**
+
+  `psx_parsed_type_name_t`、`psx_parse_type_name_syntax_at()`、`psx_dispose_type_name_syntax()`を
+  `declaration_syntax`へ追加した。decl specifier、abstract declarator、end tokenを保持し、`_Atomic(type-name)`は
+  inner type-name DTOを再帰保持する。syntax parse前後でglobal token cursorを保存・復元する。
+  type-name内storage class禁止診断もsyntax側が所有するが、公開診断context `[cast]`は維持する。
+
+  `psx_apply_parsed_type_name()`を`declaration_application`へ追加した。specifier/tag/typedefまたはatomic inner typeを
+  applyし、abstract declarator shapeと合わせて`psx_resolve_decl_type()`からcanonical typeを一度だけ構築する。
+  `expr.c`の`parse_canonical_type_name_at()`はsyntax API -> application APIのcoordinatorだけになり、
+  decl specifier apply、declarator shape構築、type semantic resolutionを直接行わない。
+
+  boundary testは`int (*)(double)`についてsyntax parseがcursorを変更せずcommaをend tokenとして保持すること、
+  application後にdouble parameterを持つpointer-to-function canonical typeになることを直接確認する。
+  `expr.c`から`declaration_resolution.h`と未使用だった`cast_lowering.h`依存を削除した。
+
+  結果:
+  - `expr.c`内のtype-name semantic resolution直接呼び出し = **0件**
+  - `expr.c`のsemantic/lowering header直接依存 = **0件**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - native E2Eは続き1112で**1206/1206**。本focused変更後はparser suiteのみ再実行した。
+
+  次は`decl.c`に残るtypedef applicationとtranslation-unit lifecycle dependency、`parser.c`に残る
+  declaration specifier/type applicationを監査する。parser三層分離の直接dependency監査が終わった後、
+  依頼済み`ps_`公開 / `psx_`内部の命名規則を監査する。
+
+- 続き1112: **file-scope/automatic compound literalのstorage・initializer処理をdeclaration pipelineへ統合した。**
+
+  `expr.c`のcompound literalはtype-nameとbrace initializer syntaxを解析した後、解析済み
+  `psx_parsed_initializer_t`を既存pipelineへ渡す。file-scopeではglobal declaration resolution -> static storage ->
+  static initializer semantic resolution -> resolved data lowering、function内ではautomatic local semantic
+  classification -> local storage -> unknown-bound array completion -> initializer bindingを再利用する。
+  compound literal固有処理は匿名名生成、file-scope scalar constantの既存短絡、最終array decay/object参照だけになった。
+
+  `resolve_compound_literal_initializer()`、function内だけのincomplete array completion、global/local storage
+  lowering直接呼び出しを削除した。`expr.c`は`global_object_lowering.h`、`local_object_lowering.h`、
+  `static_initializer_resolution.h`へ直接依存しない。static local alias説明も削除済みhelper名ではなく、
+  declaration pipelineとcanonical decl_typeの現契約へ更新した。
+
+  結果:
+  - `expr.c`内のcompound literal storage/initializer semantic/lowering直接呼び出し = **0件**
+  - compound literal専用static initializer semantic helper = **0件**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次は`expr.c`に残るtype-name canonical resolutionとcast lowering境界を監査し、type-name parse DTO ->
+  semantic type resolution -> cast/sizeof/_Generic利用へ分離する。並行して`decl.c`に残るtypedef applicationと
+  translation-unit lifecycle dependencyを整理する。
+
+- 続き1111: **block extern object/function prototypeを共通declaration pipelineへ統合した。**
+
+  `psx_apply_block_extern_declaration_pipeline()`を追加した。canonical typeがfunctionなら既存のfunction
+  declaration semantic resolutionへreturn/parameter/variadic情報を渡し、objectならglobal declaration
+  resolution -> extern storage登録へ渡す。従来はblock-scope function prototypeを判定後に読み飛ばしており、
+  function registryへ型が登録されていなかった。initializer付きblock externを式として読み捨てる経路も削除し、
+  block scope externの制約違反としてpipeline境界で診断する。
+
+  `decl.c`から`register_local_extern_decl()`と`global_object_lowering.h`依存を削除した。focused testは
+  `extern double __tm_block_declared_fn(int);`がfunction registryへ登録され、double returnとint parameterの
+  canonical typeが保持されることを直接確認する。
+
+  結果:
+  - `decl.c`内のglobal object lowering直接呼び出し = **0件**
+  - block extern function prototypeの未登録経路 = **0件**
+  - `decl.c` = **908行から893行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - native E2Eは直前の続き1110で**1206/1206**。本focused変更後はparser suiteのみ再実行した。
+
+  次は`expr.c`のfile-scope/automatic compound literalが直接行うglobal/local storage、initializer semantic、
+  loweringをdeclaration pipelineへ移す。その後`decl.c`に残るtypedef applicationとtranslation-unit lifecycle
+  dependencyを整理する。
+
+- 続き1110: **automatic localのstorage classificationと適用順序をsemantic result + pipelineへ分離した。**
+
+  `semantic/local_declaration_resolution.{c,h}`を追加した。canonical typeと
+  `psx_runtime_declarator_application_t`を入力に、`COMPLETE` / `INCOMPLETE_ARRAY` /
+  `VLA_OBJECT` / `POINTER_TO_VLA`を返す。VLA runtime dimension列、constant dimension、
+  pointer-to-VLAのrow dimension、leaf element sizeも同じresultから一方向に導出する。
+  semantic resolverはtoken cursor、symbol registry、frame allocationを変更しない。
+
+  automatic local pipelineはsemantic resultに従ってstorage loweringを1つだけ選び、storage登録後に
+  initializer syntax callbackを呼ぶ。不完全配列は仮storage登録 -> initializer parse -> array type completion ->
+  frame storage completion、VLA objectはruntime allocation chain、pointer-to-VLAはrow stride初期化chainを返す。
+  通常initializerはこのchainへ結合する。VLA object initializerはsemantic statusで拒否する。
+
+  `decl.c`から`local_declarator_layout_t`、`decl_vla_dims_t`、array product/VLA検出helper、
+  complete/incomplete/VLA/pointer-to-VLA lowering分岐を削除した。parserはdeclarator syntaxをapplyして
+  canonical typeを作り、pipeline resultのvar/initializationを宣言列へ結合し、type signatureを付けるだけになった。
+  `void *`のpointee incompleteをobject incompleteと誤認しないよう、storage completenessはobject typeで判定し、
+  leaf completenessはarray/VLA lowering時だけ要求する。
+
+  boundary testはstorageを作らずにcomplete object、不完全配列のinitializer有無、VLA object、
+  pointer-to-VLAがそれぞれ正しいsemantic status/storage kind/runtime expressionになることを直接確認する。
+
+  結果:
+  - `decl.c`内のlocal object/VLA/incomplete-array semantic/lowering直接呼び出し = **0件**
+  - local VLA layout mirror/helper = **0件**
+  - `decl.c` = **1,172行から908行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はblock extern object/function prototypeをdeclaration pipelineへ統合し、`decl.c`からglobal object loweringの
+  直接依存を外す。その後`expr.c`のfile-scope/automatic compound literalを同じ宣言pipelineへ移す。
+
+- 続き1109: **static localのscalar/array/aggregate別実装を1つのdeclaration pipelineへ統合した。**
+
+  `decl.c`に重複していた`try_lower_static_local_scalar/array/struct()`とinitializer semantic helperを削除した。
+  canonical typeからstatic local kind、alias size、leaf element sizeをpipeline側で一度だけ導出し、
+  scalar、pointer、array、aggregate、aggregate arrayを同じ経路で扱う。未対応形式をautomatic localへ
+  黙ってfallbackさせる経路はなくし、variably modified typeはstatic storage不適合として診断する。
+
+  `static_local_lowering`はstorage/alias登録とresolved initializer書き込みを別APIへ分割した。
+  pipelineの順序はstorage + local alias登録 -> initializer syntax callback -> static initializer semantic resolution ->
+  resolved data loweringである。これにより`static int *self = &self;`でinitializer解析時に`self`が見え、
+  mangled global自身を指すsymbol relocationを生成できる。lowering層はtoken parser callbackを所有しない。
+
+  storage登録時点では未完成の`static int values[]`について、initializer resolution後にglobal canonical typeと
+  local alias canonical typeの両方を完成型へ同期する。回帰テストは`{1,2,3}`から両方のarray lengthが3、
+  sizeが12になることを直接確認する。
+
+  結果:
+  - `decl.c`内のstatic initializer semantic直接呼び出し = **0件**
+  - scalar/array/struct別static local helper = **0件**
+  - `decl.c` = **1,374行から1,172行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はautomatic localのcomplete/incomplete array、VLA、pointer-to-VLAを1つのlocal declaration
+  semantic resultへまとめ、`decl.c`がstorage lowering分岐を直接選ぶ構造を外す。その後block externと
+  `expr.c`のcompound literal経路をpipelineへ移す。
+
+- 続き1108: **top-level objectとfunction declaration/definitionのsemantic/lowering coordinatorをparser外へ分離した。**
+
+  `declaration_pipeline.{c,h}`を追加し、構文DTOを受け取った後の宣言適用順序を所有させた。
+  global objectはglobal declaration resolution -> storage登録 -> initializer value parse ->
+  static initializer resolution -> resolved initializer loweringの順に処理する。`int *p = &p;`を成立させるため、
+  initializer callbackを呼ぶ前にsymbolがregistryへ存在することをpipelineの契約とし、boundary testで直接確認する。
+
+  function declaration pipelineはfunction name/type registryと再宣言・重複定義診断をsemantic resolutionへ送り、
+  returned function pointer metadataだけをfunction nodeへ投影する。function definition pipelineは
+  neutral parameter DTOをparameter semantic resolution -> parameter loweringへ送り、VLA dimension source、
+  named lvar、unnamed placeholder、canonical parameter type列を組み立て、完成したfunction typeとreturn typeを返す。
+  primary function suffixのdeclarator op indexはpipeline入口で範囲とkindを検証する。
+
+  `parser.c`から旧parameter適用copyと、global/function/parameter declarationに対するsemantic/lowering
+  直接呼び出しを削除した。pipeline headerは使用するdeclarator DTOを直接includeし、include順序に依存しない。
+
+  結果:
+  - `parser.c`内のglobal/function/parameter semantic/lowering直接呼び出し = **0件**
+  - function definition parameterの旧apply helper = **0件**
+  - `parser.c` = **1,844行から1,450行**
+  - `declaration_pipeline.c` = **394行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次は`decl.c`に残るautomatic local / static local / block extern / VLAの適用順序を
+  local declaration pipelineへ移す。特にstatic localのscalar/array/struct別lowering分岐と、
+  initializer semantic resolutionの重複を先に統合する。その後`expr.c`のcompound literal経路を分離し、
+  最後に依頼済みの`ps_`公開 / `psx_`内部という命名規則を監査する。
+
+- 続き1107: **function definitionのreturn/direct declaratorとparameter applicationを共通DTOへ統合した。**
+
+  `func_ret_parse_state_t`、function definition専用pointer/suffix callback、first suffixをtoken parse中に
+  特別扱いする`parse_func_declarator()`、旧`parse_function_param_list()` / `parse_param_decl()`を削除した。
+  function definitionも`psx_parse_function_definition_declarator_syntax_tree()`で完全な
+  `psx_parsed_declarator_t`を作る。identifierから外向きの最初のfunction opを宣言対象functionとして選び、
+  それ以外のreturned function pointer等のsuffixは通常のcanonical applicationへ送る。
+
+  primary function parameterはneutral `psx_parsed_function_parameters_t`から順にspecifier/declaratorをapplyし、
+  parameter semantic resolution -> parameter loweringを行う。named parameterはlvar、prototypeのunnamed parameterは
+  canonical type placeholderにし、その解決済みtype列をprimary function opへ一度だけ設定する。
+  full function typeはbase type + complete declarator shapeから構築し、return typeはそのfunction typeのbaseを正本とする。
+  戻りpointer/array/function suffixだけを別shapeへ手作業で再構築する経路はなくなった。
+
+  function definitionではC89互換のimplicit-int parameterを許すsyntax variantを使う。一方、aggregate body等の
+  neutral parameter syntaxは、parse時点で未定義のtypedef identifierもsyntaxとして保持し、apply時に解決する。
+  この区別によりdeferred typedef parameterを早期にsymbol tableで否定しない。
+
+  canonical function parameter typeを設定する処理は
+  `psx_set_resolved_function_parameter_types()`へ集約し、neutral semantic parameter resolutionと
+  function definition applicationが同じfunction-op projectionを使う。
+
+  結果:
+  - `func_ret_parse_state_t` / function専用declarator callback / 旧parameter coordinator = **0件**
+  - declarator parser直接呼び出しは`declaration_syntax.c`内部だけ
+  - `parser.c` = **2,008行から1,844行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  宣言子syntaxの正本化はtop-level、local、parameter、type-name、aggregate member、function definitionで完了。
+  次はtranslation-unit / function-definition declaration coordinatorを`parser.c`から別moduleへ移し、
+  parserがsemantic registry更新とlowering順序を直接管理する範囲を縮める。その後、依頼済みの
+  `ps_`公開 / `psx_`内部という命名規則を監査する。
+
+- 続き1106: **named/unnamed parameterの独自declarator callback/stateを共通syntax DTOへ統合した。**
+
+  `param_declarator_state_t`、nesting別bracket counter、parameter専用pointer/function/array suffix callback、
+  balanced-group skipを削除した。parameterも`psx_parse_parameter_declarator_syntax_tree()`で
+  `psx_parsed_declarator_t`を作り、`psx_apply_runtime_parsed_declarator()`でcanonical shapeとVLA式を得る。
+  function pointer parameter、array parameter、unnamed prototype parameterの分類はshape operatorだけを見る。
+
+  1105で導入したlocal application APIはparameterでも同じ責務だったため、
+  `psx_runtime_declarator_application_t` / `psx_apply_runtime_parsed_declarator()`へ一般化した。
+  parameter VLAのinner dimensionはapplication resultのarray opとbound rangeから導出し、先頭array dimensionの
+  parameter adjustmentを除いた次元だけをparameter resolverへ渡す。runtime sourceが単一identifierなら、
+  token rangeから名前を保持してstride loweringへ接続する。
+
+  共通array suffix syntaxはCのparameter形式`[static N]`、`[const N]`、`[restrict N]`等を認識し、
+  `static`/cv/restrict属性と境界式rangeを分離してDTOへ保持する。旧parameter parserが先頭dimensionを
+  丸ごとskipしていたため隠れていた文法差を共通側で解消した。
+
+  結果:
+  - parameter専用declarator state / callback / balanced skip = **0件**
+  - `parser.c` = **2,192行から2,008行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はfunction definitionの`func_ret_parse_state_t`とfirst function suffix特別扱いを、完全なfunction
+  declarator DTO + parameter applicationへ置換する。これが終われば宣言子の構文正本はtop-level、local、
+  parameter、type-name、function definitionで共通になる。
+
+- 続き1105: **通常local / block extern / block typedefの宣言子を共通syntax DTOへ統合した。**
+
+  `decl.c`独自の`decl_declarator_state_t`、recursive name/pointer parser、array suffix parser、
+  function suffix ownership、pointer-level補正を削除した。3経路とも
+  `psx_parse_declarator_syntax_tree()`で`psx_parsed_declarator_t`を作り、canonical typeを
+  `psx_resolve_decl_type()`から構築する。local function prototypeかfunction pointer objectかの判定も、
+  raw `*`数や括弧フラグではなく完成したcanonical type kindを見る。
+
+  共通syntax DTOのarray boundはtoken rangeのまま保持されるため、local専用application result
+  `psx_local_declarator_application_t`を追加した。`psx_apply_local_parsed_declarator()`が各rangeを
+  application段階でASTへ変換し、定数ならcanonical array length、非定数ならVLA operatorとruntime式へ
+  解決する。元のtoken cursorは保存・復元し、VLA lowering用metadataはこのresultから一方向に導出する。
+  syntax parserがVLA/storage情報を直接持つ経路はなくなった。
+
+  boundary testは`matrix[n][4]`について、syntax段階では両boundが未評価であること、local application後に
+  `n`だけがVLA AST、`4`がcanonical lengthになること、application前後でtoken cursorが変わらないことを確認する。
+
+  結果:
+  - `decl_declarator_state_t` / `consume_direct_declarator_name*` / 独自array parser = **0件**
+  - `decl.c` = **1,640行から1,374行**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はfunction definitionの`func_ret_parse_state_t`とnamed parameterの`param_declarator_state_t`に残る
+  独自declarator callback/stateを共通DTOへ移す。その後、translation-unit coordinatorを`parser.c`外へ
+  移し、依頼済み`ps_`公開 / `psx_`内部の命名監査を行う。
+
+- 続き1104: **top-level宣言子とinitializerをsyntax DTO -> semantic resolution -> loweringへ分離した。**
+
+  top-level object / typedef / function prototypeの宣言子は、専用の名前・pointer・suffix parserを
+  持たず、共通`psx_parsed_declarator_t`をsyntax DTOとして使う。canonical typeは
+  `psx_apply_parsed_declarator()`と`psx_resolve_decl_type()`だけで構築する。function prototypeも
+  一時parameter ASTを作らず、完成したcanonical function typeをsemantic registryへ登録する。
+  `int __phase_fn(int), __phase_object;`のboundary testで、同じ宣言子列からfunction typeとobject typeが
+  正しく別々に解決されることを直接確認する。
+
+  initializerには`psx_parsed_initializer_t`を追加し、有無、expr/list種別、syntax node、assign/value tokenを
+  所有させた。global declaration resolverは`curtok()`からinitializer有無を推測せず、このDTOだけを見る。
+  Cでは`int *p = &p;`のようにinitializer内から宣言中のsymbolが見える必要があるため、
+  `initializer header parse -> object symbol resolve/register -> initializer value parse`を明示した上で、
+  value parse後はsemantic resolutionとloweringを別APIで実行する。
+
+  `semantic/static_initializer_resolution.{c,h}`を追加した。不完全配列の型完成、aggregate definition接続、
+  scalar braceの正規化、initializer式の意味解析はここで行う。`static_data_initializer.c`は
+  解決済み`psx_static_initializer_resolution_t`からslot/symbol/valueを書くだけになり、
+  top-level parserは`psx_resolve_static_initializer()`の後に
+  `lower_resolved_global_declaration_initializer()`を呼ぶ。static localとfile-scope compound literalも
+  caller側で同じsemantic resultを作る形へ移行し、旧parse/resolve/lower一括facadeを削除した。
+  `lowering/`からinitializer semantic analysis / incomplete-array resolutionを呼ぶ参照は0件。
+  automatic-storage compound literalはstatic resolverへ送らず、local initializer経路を維持する。
+  これにより`(double _Complex){re, im}`の2要素表現をscalar braceとして誤判定しない。
+
+  boundary testはsemantic resolutionで不完全配列長だけが3へ完成し、global storageは未変更であること、
+  resolved lowering後に初めて`type_size == 12`とinitializer slotが設定されることを確認する。
+
+  確認:
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はlocal declarationの独自declaratorを共通syntax DTOへ統合する。
+
+- 続き1103: **declaration specifierのsyntax parseとsemantic applicationを明示的なphase objectで分離した。**
+
+  `psx_declaration_phase_t`を`declaration_application`へ追加した。phaseはparsed specifier syntax、
+  apply後のcanonical base type、requested alignment、`SYNTAX` / `RESOLVED_TYPE` /
+  `STANDALONE_TAG`状態を所有する。呼び出し側は
+  `psx_parse_declaration_phase_syntax()`と`psx_apply_declaration_phase()`を別々に呼ぶため、
+  syntax構築中にtag/typedef registryを更新しない境界がコード上で明示された。
+
+  local object、local extern、local typedef、top-level object/typedef/tag、function parameter、
+  function return specifierを同じphase objectへ移行した。`parser.c` / `decl.c`には
+  specifier parse直後の`psx_apply_parsed_decl_specifier()`直接呼び出しは残っていない。
+
+  local固有の`local_decl_spec_t`を削除した。canonical base typeをscalar kind、size、fp kind、
+  tag identity、pointer/qualifier/unsigned flagへ展開して13引数で渡し、後でtype requestへ
+  再構築する経路を廃止した。完成型はphaseのcanonical baseとresolved declarator shapeだけから作る。
+  これに伴い`decl.c`は1,715行から1,595行、`parser.c`は2,248行から2,234行になった。
+
+  boundary testはaggregate syntax parse後・apply前にtag registryが未変更であること、apply後だけ
+  canonical aggregate definitionが登録されること、`_Alignas`評価がapply phaseで行われることを確認する。
+
+  確認:
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - native E2E = **1206/1206**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+
+  次はspecifier単位ではなく、declarator syntax、initializer syntax、storage attributesを含む
+  declaration DTOを作る。parserが宣言子を1件読むたびにresolve/lowerする現在の制御を、
+  `parse declaration syntax -> resolve/typecheck declaration -> lower declaration`へ移す。
+
+- 続き1102: **cast / sizeof / `_Alignof` / `_Generic` / compound literalのtype-nameを共通宣言構文とcanonical typeへ統合し、type-name正本化の節目を完了した。**
+
+  `expr.c`のtype-nameは`psx_parse_decl_specifier_syntax_ex()`、abstract declarator syntax、
+  `psx_resolve_decl_type()`の1経路で完成型を作る。scalar/tag/typedef別parser、整数cast専用specifier、
+  function pointer / pointer-to-array専用abstract declarator、serialized `type_sig`経路を削除した。
+  `_Atomic(type-name)`も再帰的にcanonical typeを作るためderived typeを失わない。
+
+  旧`parser/type_name.{c,h}`とMakefileの`type_name.o`を削除し、
+  `psx_type_normalize_integer_identity()`はcanonical type moduleへ移した。`expr.c`は約3,200行から
+  1,974行になった。`psx_type_name_t`、`psx_type_name_build`、旧個別type-name parserの参照は0件。
+
+  canonical type移行で表面化した問題も正本側で修正した。
+  - cast loweringのsigned/unsigned判定をtoken kindではなくcanonical `is_unsigned`へ統一。
+  - `_Generic`はtop-level cvだけを除去し、pointee qualifierは比較に残す。
+  - `_Imaginary`をcanonical complex typeへ写し、`_Alignof`はcanonical ABI alignmentを使う。
+  - K&R parameterのimplicit intを明示syntax sourceとして扱う。
+  - parameter abstract declaratorの`int()` / `int(int)` / typedef-name / groupingを共通規則で分類する。
+  - GNU attributeをtag specifierとtype-name/declarator先読みで透過する。
+  - `void **`を末端`void`だけで`void *`と誤認せず、直後のpointeeだけでderef可否を判定する。
+
+  匿名static aggregateのscope昇格でtag registryを引き直すとmember情報が失われていたため、
+  expression member lookupとglobal aggregate initializer walkerをcanonical
+  `aggregate_definition`優先へ変更した。nested aggregate、union、bitfield、zero-padding slot計算も
+  definitionを再帰的に引き継ぐ。これによりnative/Wasmの匿名static struct永続化fixtureが通る。
+
+  確認:
+  - `git diff --check` = **clean**
+  - `make test` = **成功**
+  - parser = **OK: All unit tests passed**
+  - preprocess / fuzz / IR Phase 1 / frame layout = **passed**
+  - IR Phase 2 E2E = **82/82**
+  - wasm32 backend = **passed**
+  - wasm32 E2E = **1203 compiled / 1203 executed**
+  - wasm32 object fixture scan = **1180 pass / 0 fail**
+  - native E2E = **1206/1206**
+
+  declaration specifier / declarator / expression type-nameの型正本化はこの節目で完了。
+  次は宣言ごとのparse中即時applicationを明示的なdeclaration phase objectへまとめ、
+  parserからsemantic registry更新とlowering呼び出しを段階的に外す。その後、依頼済みの
+  `ps_`公開 / `psx_`内部というparser関数命名規則を監査してリネームする。
+
+- 続き1101: **function definition/prototypeの戻り値specifierを共通宣言構文とcanonical typeへ統合した。**
+
+  `func_ret_parse_state_t`から`psx_type_spec_result_t`、legacy `psx_type_name_t`、別管理の`base_pointer_shape`を
+  削除し、`psx_parsed_decl_specifier_t`、解決済みcanonical base type、identifier-outward declarator shape
+  だけを所有する。戻り値完成型は`psx_resolve_decl_type()`へcanonical baseとshapeを渡して一度だけ
+  構築する。専用だったtag definition/reference、typedef lookup、pointer qualifier parserは削除した。
+
+  C89互換のimplicit intは、legacy `TK_EOF`の偶然な解釈ではなく
+  `PSX_PARSED_DECL_TYPE_IMPLICIT_INT`としてsyntax DTOに明示する。specifier parserのoptional APIは
+  typedef-name判定callbackを受け、symbol tableに依存するCのtypedef/declarator曖昧性をsyntax moduleの暗黙依存に
+  しない。`main()`の識別子は消費せずimplicit intとしてcanonical `int`へ解決する。
+
+  型割当順の変化により、`test_parameter_declaration_storage_plan_boundary()`が
+  `ps_reset_translation_unit_state()`の`arena_free_all()`後も解放済み`psx_type_t *`を再利用していた
+  潜在use-after-freeが表面化した。reset後にcanonical test typeを再構築するよう修正した。
+
+  境界テストはtypedef const struct pointer、tag pointer、returned function pointerのcanonical parameter、
+  implicit-int returnをfunction typeから直接確認する。
+
+  確認:
+  - `resolve_func_ret_tag_spec` / `resolve_func_ret_typedef` / `parse_pointer_suffix_flags` = **0件**
+  - function return状態のlegacy `type_spec` / `type_name` / `base_pointer_shape` = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次は`expr.c`のcast / sizeof / `_Generic`のtype-nameに残る`base_kind` / `base_size` / `fp_kind` /
+  tag mirrorを、parsed specifier + canonical base + declarator shapeへ統合する。その後、宣言ごとの即時applicationを
+  明示的なphase objectにまとめる。
+
 - 続き1100: **top-levelのobject / typedef / tag宣言を共通宣言構文とcanonical base typeへ統合した。**
 
   `toplevel_decl_spec_t`はbuiltin kind、tag identity/size、typedef metadata、qualifierの個別mirrorを持たず、
@@ -29533,3 +30021,84 @@ ARM64 codegen（`src/arch/arm64_apple*.c`）。ターゲットは Apple Silicon 
   - declarator suffix callbackに残る診断をsyntax diagnostic eventへ整理する。
   - parserに残るdiagnostic ownershipをsemantic/loweringへ移す。
   - 正本化完了後、`ps_`公開/`psx_`内部というparser関数命名規則を監査してリネームする。
+
+### このセッション（続き1031）: parser関数の`ps_`公開/`psx_`内部規則を復元した
+- public parser API:
+  - `src/parser/*.c`で定義され、`src/parser/`外から参照される`psx_`関数を全件監査した。
+  - `.c`定義に加えてpublic headerのinline APIも監査し、宣言、定義、呼出元を同期して
+    合計228関数を`ps_`へ改名した。
+  - 改名先との既存symbol衝突は0件だった。
+  - 型名は関数命名規則の対象外なので、`psx_lvar_usage_region_t`などの`psx_*_t`は維持した。
+- internal parser API:
+  - parser内だけで使われるstatic `ps_`関数は0件だった。
+  - parser外の現行call siteがない`ps_`関数11件は、いずれも`parser.h`または
+    `*_public.h`で公開されているAPIなので`ps_`を維持した。
+- boundary audit:
+  - parser定義symbolとparser外参照symbolの積集合を再検査し、残る`psx_`は
+    関数ではなく型名`psx_lvar_usage_region_t`だけになった。
+  - parser directoryのstatic function一覧を再検査し、`ps_`開始の内部関数がないことを確認した。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - 今回は命名だけの機械的変更なのでnative/Wasm E2Eはまだ再実行していない。
+- 次:
+  - parserに残る小規模semantic coordinatorの所有境界を監査する。
+  - syntax DTOがsemantic/lowering implementation detailを公開していないか確認する。
+  - 構造整理の完了時にnative/Wasmを含む全体テストを実行する。
+
+### このセッション（続き1032）: declaration semantic adapterをparser外へ集約した
+- ownership:
+  - typedef、enum constant、tag、aggregate member、static assertのsemantic resolution呼出と
+    status-to-diagnostic変換を`semantic/declaration_application.{c,h}`へ集約した。
+  - `parser/typedef_declaration.{c,h}`、`parser/enum_constant_declaration.{c,h}`、
+    `parser/tag_declaration.{c,h}`、`parser/aggregate_member_declaration.{c,h}`の8ファイルを削除した。
+  - Makefileから対応する4 parser objectを削除した。
+- syntax/semantic boundary:
+  - static assertのtoken消費とcondition AST生成は`parser/static_assert_declaration.c`に残した。
+  - constant-expression評価、semantic status判定、source診断は
+    `psx_apply_static_assert(condition, diag_tok)`へ移した。
+  - declaration application header guardをparser所有名から
+    `SEMANTIC_DECLARATION_APPLICATION_H`へ修正した。
+- dependency audit:
+  - `src/parser/`から`semantic/*_resolution.h`を直接includeする箇所は0件になった。
+  - `src/parser/`から`psx_resolve_*()`を直接呼ぶ箇所も0件になった。
+  - parserはsyntax DTO生成後に`semantic/declaration_application.h`の適用境界を呼ぶ。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - `./build/test_parser` = **OK: All unit tests passed**。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - `parser/decl.h`が公開している`semantic/local_type_state.h`依存をDTO境界へ置き換える。
+  - declaration application内に残るtoken cursor操作をsyntax側へ戻す。
+  - parserのsyntax DTOがsemantic/lowering implementation detailを保持していないか継続監査する。
+
+### このセッション（続き1033）: local type state依存と`type_sig`並行正本をparserから除去した
+- public dependency:
+  - `parser/decl.h`から`semantic/local_type_state.h`のtransitive includeを削除した。
+  - loweringとdeclaration pipelineの実利用箇所は同headerを明示includeし、parser公開header経由の
+    偶発的依存を廃止した。
+- typed temporary:
+  - struct function-call/ternary rvalueの一時local生成を
+    `psx_apply_temporary_local_declaration_pipeline()`へ移した。
+  - parserはnameとcanonical tag typeをrequestで渡し、storage作成とtype state同期は
+    declaration pipeline/lowering側が行う。
+- canonical `_Generic` type matching:
+  - 複雑な宣言子をtoken文字列化していた`psx_serialize_decl_type_tokens()`を削除した。
+  - `psx_type_t::type_sig`、global/local setter、declaration pipelineの`type_signature` fieldを削除した。
+  - `ps_type_generic_matches()`はtoken spelling shortcutを使わず、canonical type shape、
+    function type、canonical funcptr signatureだけで照合する。
+  - token文字列とcanonical typeという二つの型正本が残る状態を解消した。
+- boundary audit:
+  - `type_sig`関連symbol/fieldの残存は0件。
+  - `src/parser/`から`local_type_state.h`をincludeする箇所は0件。
+  - `src/parser/`からlocal type stateを直接更新する箇所は0件。
+- 確認:
+  - warningなしで`build/test_parser`と`build/ag_c`を再ビルドした。
+  - 複雑なnested funcptr `_Generic` coverageを含む`./build/test_parser`は
+    **OK: All unit tests passed**。
+  - `git diff --check` = clean。
+  - 全native/Wasm E2Eは構造整理完了時にまとめて実行するため、今回は未実施。
+- 次:
+  - declaration application内に残るtoken cursor操作をsyntax DTO生成へ戻す。
+  - `parser/decl.h`のlvar storage/cache field公開をregistry viewへ縮める。
+  - syntax DTOがsemantic/lowering stateを直接保持していないか継続監査する。

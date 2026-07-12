@@ -2,6 +2,7 @@
 #define LOWERING_STATIC_LOCAL_LOWERING_H
 
 #include "../parser/decl.h"
+#include "../semantic/static_initializer_resolution.h"
 
 typedef enum {
   PSX_STATIC_LOCAL_SCALAR,
@@ -33,9 +34,7 @@ typedef struct {
   int alias_size;
   int alias_element_size;
   psx_type_t *type;
-  int has_initializer;
-  psx_decl_init_kind_t initializer_kind;
-  node_t *initializer;
+  const psx_static_initializer_resolution_t *initializer_resolution;
   token_t *diag_tok;
 } psx_static_local_declaration_request_t;
 
@@ -53,5 +52,12 @@ lvar_t *lower_static_local_object(
 int lower_static_local_declaration(
     const psx_static_local_declaration_request_t *request,
     psx_static_local_declaration_result_t *result);
+int lower_static_local_declaration_storage(
+    const psx_static_local_declaration_request_t *request,
+    psx_static_local_declaration_result_t *result);
+int lower_static_local_declaration_initializer(
+    global_var_t *global,
+    const psx_static_initializer_resolution_t *resolution,
+    token_t *diag_tok, int *type_completed);
 
 #endif

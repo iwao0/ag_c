@@ -4,8 +4,8 @@
 // (a) 関数識別子への代入 (`f = 5;`): IR builder 段の "ir build/emit failed" 粗エラーから、
 //     parser 段の明確な E3064 "関数識別子に代入することはできません" に改善。
 // (b) enum 定数と通常 identifier の名前空間衝突 (`enum E{A=5}; int A=10;` や逆順):
-//     register_toplevel_global_decl で psx_ctx_find_enum_const を check、enum 定義側でも
-//     ps_find_global_var / ps_ctx_has_function_name / psx_ctx_find_typedef_name を check。
+//     register_toplevel_global_decl で ps_ctx_find_enum_const を check、enum 定義側でも
+//     ps_find_global_var / ps_ctx_has_function_name / ps_ctx_find_typedef_name を check。
 // (c) 未宣言関数の呼び出し (`undecl_func()`): C99/C11 で implicit function declaration は不可。
 //     build_unqualified_call で ps_ctx_has_function_name と ps_find_global_var の両方に
 //     見つからない場合に W3001 warning。

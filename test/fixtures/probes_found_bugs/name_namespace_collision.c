@@ -5,7 +5,7 @@
 //   - `int bar; int bar(int){...}` (変数名 → 関数名)
 //   - `typedef int T; int T = 5;` (typedef 名 → 変数名)
 // それぞれ E3064 で診断するよう、register_toplevel_global_decl で ps_ctx_has_function_name /
-// psx_ctx_find_typedef_name を、funcdef で find_global_var_by_name を check するように。
+// ps_ctx_find_typedef_name を、funcdef で find_global_var_by_name を check するように。
 // extern + 定義の型互換チェックも register_toplevel_global_decl の merge 経路に統合。
 //
 // 本 fixture は合法形 (同型 extern + 定義、関数だけ宣言、typedef を変数の型として使用) の

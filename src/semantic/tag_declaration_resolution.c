@@ -21,7 +21,7 @@ void psx_resolve_tag_declaration(
   }
 
   token_kind_t current_kind = TK_EOF;
-  if (psx_ctx_find_tag_kind_at_current_scope(
+  if (ps_ctx_find_tag_kind_at_current_scope(
           request->name, request->name_len, &current_kind) &&
       current_kind != request->kind) {
     resolution->status = PSX_TAG_DECLARATION_KIND_CONFLICT;
@@ -29,13 +29,13 @@ void psx_resolve_tag_declaration(
   }
 
   if (request->mode == PSX_TAG_DECLARATION_REFERENCE &&
-      psx_ctx_has_tag_type(
+      ps_ctx_has_tag_type(
           request->kind, request->name, request->name_len)) {
     resolution->status = PSX_TAG_DECLARATION_OK;
   } else {
     int is_complete =
         request->mode == PSX_TAG_DECLARATION_DEFINITION;
-    if (!psx_ctx_register_tag_type(
+    if (!ps_ctx_register_tag_type(
             request->kind, request->name, request->name_len,
             is_complete, request->member_count, request->size,
             request->alignment)) {
@@ -49,8 +49,8 @@ void psx_resolve_tag_declaration(
   }
   resolution->scope_depth = ps_ctx_get_tag_scope_depth(
       request->kind, request->name, request->name_len);
-  resolution->size = psx_ctx_get_tag_size(
+  resolution->size = ps_ctx_get_tag_size(
       request->kind, request->name, request->name_len);
-  resolution->alignment = psx_ctx_get_tag_align(
+  resolution->alignment = ps_ctx_get_tag_align(
       request->kind, request->name, request->name_len);
 }

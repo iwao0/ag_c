@@ -54,7 +54,7 @@ struct global_var_t {
 };
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は
  * 呼び出し前に設定済みであること。各登録経路はこれを通すこと。 */
-void psx_register_global_var(global_var_t *gv);
+void ps_register_global_var(global_var_t *gv);
 
 // 文字列リテラルテーブル（連結リスト）
 struct string_lit_t {
@@ -66,7 +66,7 @@ struct string_lit_t {
   tk_string_prefix_kind_t str_prefix_kind;
 };
 void psx_register_string_lit(string_lit_t *lit);
-string_lit_t *psx_find_string_lit_by_label(char *label);
+string_lit_t *ps_find_string_lit_by_label(char *label);
 
 // 浮動小数点リテラルテーブル（連結リスト）
 // フィールドはアライメント降順 (8→4) に並べて内部パディングを除いている。

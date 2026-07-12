@@ -3,22 +3,17 @@
 
 #include "../parser/ast.h"
 #include "../parser/symtab.h"
-
-typedef struct {
-  global_var_t *global;
-  psx_type_t *type;
-  psx_decl_init_kind_t initializer_kind;
-  node_t *initializer;
-  token_t *diag_tok;
-} psx_static_declaration_initializer_request_t;
+#include "../semantic/static_initializer_resolution.h"
 
 typedef struct {
   int type_completed;
   int initialized;
 } psx_static_declaration_initializer_result_t;
 
-int lower_static_declaration_initializer(
-    const psx_static_declaration_initializer_request_t *request,
+int lower_resolved_static_initializer(
+    global_var_t *global,
+    const psx_static_initializer_resolution_t *resolution,
+    token_t *diag_tok,
     psx_static_declaration_initializer_result_t *result);
 
 int lower_static_object_initializer(

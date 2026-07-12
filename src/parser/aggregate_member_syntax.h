@@ -31,7 +31,7 @@ struct psx_parsed_aggregate_body_t {
   int item_capacity;
 };
 
-void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body);
-void psx_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body);
+void ps_parse_aggregate_body(psx_parsed_aggregate_body_t *body);
+void ps_dispose_parsed_aggregate_body(psx_parsed_aggregate_body_t *body);
 
 #endif

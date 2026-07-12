@@ -9,36 +9,36 @@
 
 static psx_type_t *resolve_decl_base_type(
     const psx_decl_type_request_t *request) {
-  if (request->base_decl_type) return psx_type_clone(request->base_decl_type);
+  if (request->base_decl_type) return ps_type_clone(request->base_decl_type);
   if (request->typedef_name) {
     const psx_type_t *typedef_type = NULL;
-    if (!psx_ctx_find_typedef_decl_type(
+    if (!ps_ctx_find_typedef_decl_type(
             request->typedef_name, request->typedef_name_len,
             &typedef_type))
       return NULL;
-    return psx_type_clone(typedef_type);
+    return ps_type_clone(typedef_type);
   }
   int elem_size = request->elem_size;
   if (request->tag_kind == TK_ENUM) {
     if (elem_size <= 0) elem_size = 4;
     int scope_depth = ps_ctx_get_tag_scope_depth(
         request->tag_kind, request->tag_name, request->tag_len);
-    return psx_type_new_enum(
+    return ps_type_new_enum(
         request->tag_name, request->tag_len,
         scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
   }
-  if (psx_ctx_is_tag_aggregate_kind(request->tag_kind)) {
+  if (ps_ctx_is_tag_aggregate_kind(request->tag_kind)) {
     if (elem_size <= 0) {
-      elem_size = psx_ctx_get_tag_size(
+      elem_size = ps_ctx_get_tag_size(
           request->tag_kind, request->tag_name, request->tag_len);
       if (elem_size < 0) elem_size = 0;
     }
     int scope_depth = ps_ctx_get_tag_scope_depth(
         request->tag_kind, request->tag_name, request->tag_len);
-    psx_type_t *type = psx_type_new_tag(
+    psx_type_t *type = ps_type_new_tag(
         request->tag_kind, request->tag_name, request->tag_len,
         scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
-    type->aggregate_definition = psx_ctx_get_tag_definition(
+    type->aggregate_definition = ps_ctx_get_tag_definition(
         request->tag_kind, request->tag_name, request->tag_len);
     if (type->aggregate_definition && type->aggregate_definition->align > 0)
       type->align = type->aggregate_definition->align;
@@ -56,7 +56,7 @@ static psx_type_t *resolve_decl_base_type(
       fp_kind = TK_FLOAT_KIND_DOUBLE;
   }
   if (request->is_complex) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_COMPLEX);
+    psx_type_t *type = ps_type_new(PSX_TYPE_COMPLEX);
     type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
                         ? fp_kind
                         : TK_FLOAT_KIND_DOUBLE;
@@ -65,14 +65,14 @@ static psx_type_t *resolve_decl_base_type(
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {
-    return psx_type_new_float(fp_kind, elem_size);
+    return ps_type_new_float(fp_kind, elem_size);
   }
   if (request->base_kind == TK_VOID) {
-    psx_type_t *type = psx_type_new(PSX_TYPE_VOID);
+    psx_type_t *type = ps_type_new(PSX_TYPE_VOID);
     type->scalar_kind = TK_VOID;
     return type;
   }
-  return psx_type_new_integer(
+  return ps_type_new_integer(
       request->base_kind, elem_size, request->is_unsigned);
 }
 
@@ -82,7 +82,7 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
   if (!type) return NULL;
 
   if (request->is_const_qualified || request->is_volatile_qualified) {
-    psx_type_set_decl_spec_qualifiers(
+    ps_type_set_decl_spec_qualifiers(
         type,
         type->is_const_qualified || request->is_const_qualified,
         type->is_volatile_qualified || request->is_volatile_qualified);
@@ -94,10 +94,10 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
   }
   if (request->is_long_double) type->is_long_double = 1;
   if (request->declarator_shape) {
-    type = psx_type_apply_declarator_shape(
+    type = ps_type_apply_declarator_shape(
         type, request->declarator_shape);
   }
-  psx_ctx_attach_aggregate_definitions(type);
+  ps_ctx_attach_aggregate_definitions(type);
   return type;
 }
 
@@ -135,6 +135,9 @@ psx_type_t *psx_resolve_decl_specifier_syntax(
     case PSX_PARSED_DECL_TYPEDEF_NAME:
       request.typedef_name = specifier->typedef_name->str;
       request.typedef_name_len = specifier->typedef_name->len;
+      break;
+    case PSX_PARSED_DECL_TYPE_IMPLICIT_INT:
+      request.base_kind = TK_INT;
       break;
     default:
       return NULL;
@@ -198,7 +201,7 @@ int psx_resolve_incomplete_array_type(
     outer_count = (outer_count + slots - 1) / slots;
   }
   if (outer_count <= 0 || outer_count > INT_MAX) return 0;
-  return psx_type_complete_array(type, (int)outer_count);
+  return ps_type_complete_array(type, (int)outer_count);
 }
 
 static long long initializer_string_count(

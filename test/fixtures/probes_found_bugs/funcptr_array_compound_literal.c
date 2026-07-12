@@ -11,7 +11,7 @@
 //   (cast_is_ptr=1 && cast_array_count>0) を識別し、is_arr=1, base_elem=8,
 //   var_size=N*8 で lvar を配列実体として登録。is_tag_pointer=0,
 //   base_deref_size=8 はローカル `int (*ops[N])(args)` 経路 (decl.c:2259) と同じ。
-// - psx_decl_parse_initializer_for_var は var->is_array=1 で自動的に
+// - ps_decl_parse_initializer_for_var は var->is_array=1 で自動的に
 //   parse_array_initializer に流れる (decl.c:1806、既存経路)。
 // - parse_array_initializer に拡張: `int arr[N] = (T[N]){...}` 形式
 //   (=右辺が ND_COMMA(init, ND_ADDR(lvar))) を検出し、compound literal の lvar

@@ -17,7 +17,7 @@ static int lower_parameter_with_plan(
 
   int offset = local_storage_allocate(
       result->storage.storage_size, result->storage.alignment);
-  result->var = psx_local_registry_create_storage_object(
+  result->var = ps_local_registry_create_storage_object(
       name, name_len, offset,
       result->storage.storage_size, result->storage.element_size,
       0, result->storage.alignment);

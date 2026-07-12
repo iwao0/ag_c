@@ -1,5 +1,5 @@
 // struct の 2D 配列を多重ネスト brace で初期化
-// 修正前: parse_array_init_chunk の最内側ループは psx_expr_assign で
+// 修正前: parse_array_init_chunk の最内側ループは ps_expr_assign で
 // 数値を読むのみで、struct 要素の `{1, 2}` 形式 (= ネスト brace) を受け
 // られなかった (E3064: 数値が必要です ('{')).
 //

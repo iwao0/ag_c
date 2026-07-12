@@ -29,14 +29,12 @@ typedef struct {
 typedef struct {
   void *context;
   void (*consume_alignas)(void *context, psx_type_spec_result_t *result);
+  void (*diagnose_complex_requires_float)(void *context, token_t *token);
 } psx_type_spec_syntax_t;
 
 token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out);
 token_kind_t psx_consume_type_kind_with_syntax_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
-/* _Generic 用: [start, end) のトークン綴りを単一スペースで連結 (skip は除外)。'(' を
- * 含まない単純型は NULL。複雑な派生型 (関数ポインタ/ネスト宣言子) の型照合に使う。 */
-char *psx_serialize_decl_type_tokens(token_t *start, token_t *end, token_t *skip);
 void psx_consume_pointer_prefix(int *is_ptr);
 // `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。
 int psx_consume_pointer_prefix_counted(int *is_ptr);
@@ -97,8 +95,8 @@ int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
 psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
     psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
     int copy_variadic);
-int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
-psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
+int ps_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
+psx_funcptr_type_shape_t ps_funcptr_returned_func_as_type_shape(
     psx_funcptr_returned_func_t ret);
 psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
     psx_funcptr_type_shape_t fn);

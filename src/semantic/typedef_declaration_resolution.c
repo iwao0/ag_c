@@ -17,8 +17,8 @@ void psx_resolve_typedef_declaration(
   if (!request || !request->name || request->name_len <= 0 ||
       !request->type) return;
 
-  int scope_depth = psx_ctx_current_tag_scope_depth();
-  if (psx_ctx_has_enum_const_in_current_scope(
+  int scope_depth = ps_ctx_current_tag_scope_depth();
+  if (ps_ctx_has_enum_const_in_current_scope(
           request->name, request->name_len)) {
     resolution->status = PSX_TYPEDEF_DECLARATION_ENUM_NAME_CONFLICT;
     return;
@@ -33,17 +33,17 @@ void psx_resolve_typedef_declaration(
       return;
     }
   } else {
-    lvar_t *local = psx_decl_find_lvar(request->name, request->name_len);
+    lvar_t *local = ps_decl_find_lvar(request->name, request->name_len);
     if (local && local->scope_seq ==
-                     psx_local_registry_current_scope_seq()) {
+                     ps_local_registry_current_scope_seq()) {
       resolution->status = PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT;
       return;
     }
   }
 
   psx_typedef_info_t info = {0};
-  psx_ctx_typedef_set_decl_type(&info, (psx_type_t *)request->type);
-  if (!psx_ctx_register_typedef_name(
+  ps_ctx_typedef_set_decl_type(&info, (psx_type_t *)request->type);
+  if (!ps_ctx_register_typedef_name(
           request->name, request->name_len, &info,
           &resolution->created, &resolution->redeclared)) {
     resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;

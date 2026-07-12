@@ -79,7 +79,7 @@ static node_t *parse_stmt_label(void);
 
 static node_t *stmt_internal(void) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
-  if (tk_consume(';')) return psx_node_new_num(0);
+  if (tk_consume(';')) return ps_node_new_num(0);
   if (curtok()->kind == TK_LBRACE) return parse_stmt_block();
   if (is_label_start_stmt()) return parse_stmt_label();
   if (is_decl_like_start_stmt()) return parse_decl_like_stmt();
@@ -105,8 +105,8 @@ static node_t *stmt_internal(void) {
 
 static node_t *parse_stmt_block(void) {
   tk_consume('{');
-  psx_ctx_enter_block_scope();
-  psx_decl_enter_scope();
+  ps_ctx_enter_block_scope();
+  ps_decl_enter_scope();
   node_block_t *node = arena_alloc(sizeof(node_block_t));
   node->base.kind = ND_BLOCK;
   int i = 0;
@@ -130,8 +130,8 @@ static node_t *parse_stmt_block(void) {
     i++;
   }
   node->body[i] = NULL;
-  psx_decl_leave_scope();
-  psx_ctx_leave_block_scope();
+  ps_decl_leave_scope();
+  ps_ctx_leave_block_scope();
   return (node_t *)node;
 }
 
@@ -168,7 +168,7 @@ node_t *psx_parse_statement_expression(void) {
       if (is_stmt_expr_value_stmt(b->body[i])) value = b->body[i];
     }
   }
-  if (!value) value = psx_node_new_num(0);
+  if (!value) value = ps_node_new_num(0);
   node_t *node = calloc(1, sizeof(node_t));
   node->kind = ND_STMT_EXPR;
   node->lhs = block;
@@ -245,7 +245,7 @@ static node_t *parse_stmt_for(void) {
   if (!tk_consume(';')) {
     if (is_decl_like_start_stmt()) {
       for_has_decl = 1;
-      psx_decl_enter_scope();
+      ps_decl_enter_scope();
       node->init = parse_decl_like_stmt();
     } else {
       node->init = ps_expr();
@@ -261,7 +261,7 @@ static node_t *parse_stmt_for(void) {
     tk_expect(')');
   }
   node->base.rhs = stmt_internal();
-  if (for_has_decl) psx_decl_leave_scope();
+  if (for_has_decl) ps_decl_leave_scope();
   return (node_t *)node;
 }
 

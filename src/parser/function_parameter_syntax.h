@@ -17,6 +17,9 @@ struct psx_parsed_function_parameters_t {
 
 void psx_parse_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
+void psx_parse_function_parameters_syntax_ex(
+    psx_parsed_function_parameters_t *parameters,
+    int allow_implicit_int);
 void psx_dispose_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
 

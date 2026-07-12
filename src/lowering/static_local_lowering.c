@@ -1,4 +1,5 @@
 #include "static_local_lowering.h"
+#include "../semantic/local_type_state.h"
 
 #include "static_data_initializer.h"
 #include "../parser/local_registry.h"
@@ -18,7 +19,7 @@ void psx_static_local_prepare_global(global_var_t *global,
                                      const psx_type_t *type) {
   if (!global || !type) return;
   global->is_static = 1;
-  if (!global->decl_type) psx_decl_set_gvar_decl_type(global, type);
+  if (!global->decl_type) ps_decl_set_gvar_decl_type(global, type);
 }
 
 static char *mangle_static_local_name(
@@ -69,7 +70,7 @@ lvar_t *lower_static_local_object(
   psx_static_local_prepare_global(global, request->type);
   global->name = mangled;
   global->name_len = mangled_len;
-  psx_register_global_var(global);
+  ps_register_global_var(global);
 
   lvar_t *alias = calloc(1, sizeof(*alias));
   if (!alias) return NULL;
@@ -80,13 +81,13 @@ lvar_t *lower_static_local_object(
   alias->is_static_local = 1;
   alias->static_global_name = mangled;
   alias->static_global_name_len = mangled_len;
-  psx_decl_attach_lvar_current_region(alias);
+  ps_decl_attach_lvar_current_region(alias);
   psx_decl_set_lvar_decl_type(alias, request->type);
-  psx_local_registry_add(alias);
+  ps_local_registry_add(alias);
   return alias;
 }
 
-int lower_static_local_declaration(
+int lower_static_local_declaration_storage(
     const psx_static_local_declaration_request_t *request,
     psx_static_local_declaration_result_t *result) {
   if (result) *result = (psx_static_local_declaration_result_t){0};
@@ -99,20 +100,6 @@ int lower_static_local_declaration(
   global->type_size = ps_type_sizeof(request->type);
   psx_static_local_prepare_global(global, request->type);
 
-  psx_static_declaration_initializer_result_t initializer_result = {0};
-  if (request->has_initializer &&
-      !lower_static_declaration_initializer(
-          &(psx_static_declaration_initializer_request_t){
-              .global = global,
-              .type = psx_gvar_get_decl_type(global),
-              .initializer_kind = request->initializer_kind,
-              .initializer = request->initializer,
-              .diag_tok = request->diag_tok,
-          },
-          &initializer_result)) {
-    return 0;
-  }
-
   lvar_t *alias = lower_static_local_object(
       &(psx_static_local_object_request_t){
           .kind = request->kind,
@@ -123,13 +110,43 @@ int lower_static_local_declaration(
           .global = global,
           .alias_size = request->alias_size,
           .alias_element_size = request->alias_element_size,
-          .type = psx_gvar_get_decl_type(global),
+          .type = ps_gvar_get_decl_type(global),
       });
   if (!alias) return 0;
   if (result) {
     result->global = global;
     result->alias = alias;
-    result->type_completed = initializer_result.type_completed;
   }
+  return 1;
+}
+
+int lower_static_local_declaration_initializer(
+    global_var_t *global,
+    const psx_static_initializer_resolution_t *resolution,
+    token_t *diag_tok, int *type_completed) {
+  if (type_completed) *type_completed = 0;
+  if (!global || !resolution) return 0;
+  psx_static_declaration_initializer_result_t initializer_result = {0};
+  if (!lower_resolved_static_initializer(
+          global, resolution, diag_tok, &initializer_result)) {
+    return 0;
+  }
+  if (type_completed)
+    *type_completed = initializer_result.type_completed;
+  return 1;
+}
+
+int lower_static_local_declaration(
+    const psx_static_local_declaration_request_t *request,
+    psx_static_local_declaration_result_t *result) {
+  psx_static_local_declaration_result_t lowered = {0};
+  if (!lower_static_local_declaration_storage(request, &lowered)) return 0;
+  if (request->initializer_resolution &&
+      !lower_static_local_declaration_initializer(
+          lowered.global, request->initializer_resolution,
+          request->diag_tok, &lowered.type_completed)) {
+    return 0;
+  }
+  if (result) *result = lowered;
   return 1;
 }

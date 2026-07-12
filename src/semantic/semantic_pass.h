@@ -1,7 +1,7 @@
-#ifndef PARSER_SEMANTIC_PASS_H
-#define PARSER_SEMANTIC_PASS_H
+#ifndef SEMANTIC_SEMANTIC_PASS_H
+#define SEMANTIC_SEMANTIC_PASS_H
 
-#include "ast.h"
+#include "../parser/ast.h"
 #include "../tokenizer/token.h"
 
 void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_tok);

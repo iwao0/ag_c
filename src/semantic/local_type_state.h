@@ -15,6 +15,5 @@ void psx_decl_set_lvar_vla_descriptor(
 void psx_decl_set_lvar_vla_param_inner_dims(
     lvar_t *var, const int *inner_dim_consts,
     const int *inner_dim_src_offsets, int inner_dim_count);
-void psx_decl_set_lvar_type_sig(lvar_t *var, char *type_sig);
 
 #endif

@@ -2,7 +2,7 @@
 // 後段でアセンブラ/リンカが duplicate symbol を出すまで気づけなかった。
 //
 // 修正: func_name_t に is_defined フラグを追加。funcdef の本体パース直前
-// (proto `;` を弾いた後) で psx_ctx_track_function_defined を呼び、初回は記録、
+// (proto `;` を弾いた後) で ps_ctx_track_function_defined を呼び、初回は記録、
 // 2 度目なら E3064。本 fixture は「合法な再宣言 + 1 度の定義」が false-positive で
 // 弾かれないことの回帰確認。
 #include <assert.h>

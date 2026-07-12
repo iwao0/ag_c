@@ -1,22 +1,16 @@
 #include "semantic_pass.h"
-#include "decl.h"
-#include "diag.h"
-#include "dynarray.h"
-#include "node_utils.h"
-#include "semantic_ctx.h"
+#include "../parser/decl.h"
+#include "../parser/diag.h"
+#include "../parser/dynarray.h"
+#include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 #include "../diag/diag.h"
-#include "../lowering/expr_lowering.h"
-#include "../lowering/cast_lowering.h"
-#include "../lowering/assignment_lowering.h"
-#include "../lowering/initializer_lowering.h"
+#include "../lowering/semantic_lowering_pass.h"
 #include <string.h>
 
 static void semantic_visit_node(node_t *node);
 static void semantic_transform_node(node_t *node, node_func_t *current_func,
                                     const token_t *fallback_diag_tok);
-static void semantic_lower_implicit_conversions(
-    node_t *node, node_func_t *current_func,
-    const token_t *fallback_diag_tok);
 static void semantic_warn_node(node_t *node, node_func_t *current_func,
                                const token_t *fallback_diag_tok);
 static void semantic_validate_control_flow(node_t *node, const token_t *fallback_diag_tok,
@@ -73,7 +67,7 @@ static semantic_return_type_view_t semantic_return_type_view(node_func_t *fn) {
   if (!type) return view;
   view.fp_kind = ps_node_value_fp_kind((node_t *)fn);
   view.is_void = type->kind == PSX_TYPE_VOID;
-  view.is_pointer = psx_type_is_pointer(type);
+  view.is_pointer = ps_type_is_pointer(type);
   view.aggregate_size = ps_node_aggregate_value_size((node_t *)fn);
   return view;
 }
@@ -162,7 +156,7 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
   if (ret.is_pointer && node->lhs->kind == ND_NUM) {
     node_num_t *num = (node_num_t *)node->lhs;
     if (num->val != 0) {
-      psx_diag_ctx((token_t *)tok, "return",
+      ps_diag_ctx((token_t *)tok, "return",
                    "ポインタを返す関数から非ゼロ整数定数 (%lld) を返却できません (C11 6.8.6.4)",
                    num->val);
     }
@@ -178,64 +172,6 @@ static void semantic_transform_node_array(node_t **nodes, node_func_t *current_f
   }
 }
 
-static void semantic_lower_additive_expression(node_t *node) {
-  if (!node ||
-      (node->source_op != TK_PLUS && node->source_op != TK_MINUS)) {
-    return;
-  }
-  if (node->kind != ND_ADD && node->kind != ND_SUB) return;
-
-  token_t *source_tok = node->tok;
-  node_t *lowered = lower_additive_expression(node->kind, node->lhs, node->rhs);
-  if (!lowered || lowered == node) return;
-  *node = *lowered;
-  node->tok = source_tok;
-}
-
-static void semantic_lower_source_cast(node_t *node,
-                                       const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast) return;
-  lower_source_cast_expression(node, (token_t *)fallback_diag_tok);
-}
-
-static const psx_type_t *semantic_call_function_type(node_func_t *call) {
-  if (!call) return NULL;
-  if (call->callee) {
-    psx_type_t *callee_type = ps_node_get_type(call->callee);
-    psx_type_complete_function_params(callee_type);
-    return psx_type_find_function(callee_type);
-  }
-  if (call->funcname && call->funcname_len > 0) {
-    return psx_ctx_get_function_type(call->funcname, call->funcname_len);
-  }
-  return NULL;
-}
-
-static void semantic_lower_call_arguments(node_func_t *call,
-                                          const token_t *fallback_diag_tok) {
-  const psx_type_t *function = semantic_call_function_type(call);
-  if (!call || !function || function->kind != PSX_TYPE_FUNCTION) return;
-  int count = call->nargs < function->param_count
-                  ? call->nargs : function->param_count;
-  if (count > 16) count = 16;
-  for (int i = 0; i < count; i++) {
-    psx_type_t *target = function->param_types[i];
-    call->args[i] = lower_implicit_value_conversion(
-        call->args[i], target,
-        call->base.tok ? call->base.tok : (token_t *)fallback_diag_tok);
-  }
-}
-
-static void semantic_lower_assignment_conversion(
-    node_t *node, const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) {
-    return;
-  }
-  node->rhs = lower_implicit_value_conversion(
-      node->rhs, ps_node_get_type(node->lhs),
-      node->tok ? node->tok : (token_t *)fallback_diag_tok);
-}
-
 static void semantic_validate_assignment(node_t *node,
                                          const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
@@ -246,22 +182,22 @@ static void semantic_validate_assignment(node_t *node,
     if (node->rhs->kind == ND_FUNCALL) {
       node_func_t *fn = (node_func_t *)node->rhs;
       if (!fn->callee && fn->funcname) {
-        psx_diag_ctx(tok, "assign",
+        ps_diag_ctx(tok, "assign",
                      "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
                      fn->funcname_len, fn->funcname);
       }
     }
-    psx_diag_ctx(tok, "assign",
+    ps_diag_ctx(tok, "assign",
                  "void 戻り値関数の結果は代入/初期化に使えません (C11 6.5.16)");
   }
 
   if (node->is_decl_initializer) {
     psx_type_t *lhs_type = ps_node_get_type(node->lhs);
-    int lhs_is_pointer = lhs_type && psx_type_is_pointer(lhs_type);
-    psx_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
+    int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
+    ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
     if (lhs_is_pointer && node->rhs->kind == ND_NUM &&
         ((node_num_t *)node->rhs)->val != 0) {
-      psx_diag_ctx(tok, "init",
+      ps_diag_ctx(tok, "init",
                    "ポインタ変数を非ゼロ整数定数 (%lld) で初期化できません (C11 6.5.16.1)",
                    ((node_num_t *)node->rhs)->val);
     }
@@ -269,15 +205,15 @@ static void semantic_validate_assignment(node_t *node,
         !ps_type_is_tag_aggregate(lhs_type) &&
         lhs_type->kind != PSX_TYPE_ARRAY) {
       if (ps_node_is_pointer(node->rhs)) {
-        psx_diag_ctx(tok, "init",
+        ps_diag_ctx(tok, "init",
                      "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
       if (ps_node_aggregate_value_size(node->rhs) > 0) {
         token_kind_t rhs_tag_kind = TK_EOF;
         ps_node_get_tag_type(node->rhs, &rhs_tag_kind, NULL, NULL, NULL);
-        psx_diag_ctx(tok, "init",
+        ps_diag_ctx(tok, "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
-                     psx_ctx_tag_kind_spelling(rhs_tag_kind));
+                     ps_ctx_tag_kind_spelling(rhs_tag_kind));
       }
     }
   }
@@ -285,13 +221,13 @@ static void semantic_validate_assignment(node_t *node,
   if (!node->is_source_assignment &&
       !node->is_source_compound_assignment) return;
   if (node->lhs->kind == ND_FUNCREF) {
-    psx_diag_ctx(tok, "assign",
+    ps_diag_ctx(tok, "assign",
                  "関数識別子に代入することはできません (C11 6.5.16p2)");
   }
-  psx_node_expect_lvalue_at(node->lhs, "=", tok);
-  psx_node_reject_const_assign_at(node->lhs, "=", tok);
+  ps_node_expect_lvalue_at(node->lhs, "=", tok);
+  ps_node_reject_const_assign_at(node->lhs, "=", tok);
   if (node->is_source_assignment)
-    psx_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
+    ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
 }
 
 static void semantic_transform_node(node_t *node, node_func_t *current_func,
@@ -308,7 +244,6 @@ static void semantic_transform_node(node_t *node, node_func_t *current_func,
       } else {
         semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
       }
-      lower_decl_initializer(node);
       semantic_validate_assignment(node, fallback_diag_tok);
       break;
     }
@@ -347,79 +282,7 @@ static void semantic_transform_node(node_t *node, node_func_t *current_func,
     default:
       semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
       semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
-      semantic_lower_source_cast(node, fallback_diag_tok);
-      lower_aggregate_address_expression(node);
-      semantic_lower_additive_expression(node);
       semantic_validate_assignment(node, fallback_diag_tok);
-      lower_compound_assignment_expression(node);
-      break;
-  }
-}
-
-static void semantic_lower_implicit_conversions(
-    node_t *node, node_func_t *current_func,
-    const token_t *fallback_diag_tok) {
-  if (!node) return;
-  switch (node->kind) {
-    case ND_BLOCK: {
-      node_t **body = ((node_block_t *)node)->body;
-      if (body) {
-        for (int i = 0; body[i]; i++)
-          semantic_lower_implicit_conversions(body[i], current_func,
-                                              fallback_diag_tok);
-      }
-      break;
-    }
-    case ND_FUNCDEF: {
-      node_func_t *fn = (node_func_t *)node;
-      for (int i = 0; i < fn->nargs; i++)
-        semantic_lower_implicit_conversions(fn->args[i], fn,
-                                            fallback_diag_tok);
-      semantic_lower_implicit_conversions(node->rhs, fn,
-                                          fallback_diag_tok);
-      break;
-    }
-    case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
-      semantic_lower_implicit_conversions(call->callee, current_func,
-                                          fallback_diag_tok);
-      for (int i = 0; i < call->nargs; i++)
-        semantic_lower_implicit_conversions(call->args[i], current_func,
-                                            fallback_diag_tok);
-      semantic_lower_call_arguments(call, fallback_diag_tok);
-      break;
-    }
-    case ND_IF:
-    case ND_FOR:
-    case ND_TERNARY: {
-      node_ctrl_t *ctrl = (node_ctrl_t *)node;
-      semantic_lower_implicit_conversions(ctrl->init, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_implicit_conversions(node->lhs, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_implicit_conversions(node->rhs, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_implicit_conversions(ctrl->inc, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_implicit_conversions(ctrl->els, current_func,
-                                          fallback_diag_tok);
-      break;
-    }
-    case ND_RETURN:
-      semantic_lower_implicit_conversions(node->lhs, current_func,
-                                          fallback_diag_tok);
-      if (current_func && node->lhs) {
-        node->lhs = lower_implicit_value_conversion(
-            node->lhs, ps_node_get_type((node_t *)current_func),
-            node->tok ? node->tok : (token_t *)fallback_diag_tok);
-      }
-      break;
-    default:
-      semantic_lower_implicit_conversions(node->lhs, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_implicit_conversions(node->rhs, current_func,
-                                          fallback_diag_tok);
-      semantic_lower_assignment_conversion(node, fallback_diag_tok);
       break;
   }
 }
@@ -434,7 +297,7 @@ static int semantic_fp_literal_fractional_part_known(double f) {
 static tk_float_kind_t semantic_node_fp_kind(node_t *node) {
   if (!node) return TK_FLOAT_KIND_NONE;
   psx_type_t *type = ps_node_get_type(node);
-  if (type && !psx_type_is_pointer(type) &&
+  if (type && !ps_type_is_pointer(type) &&
       (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
     return type->fp_kind != TK_FLOAT_KIND_NONE ? type->fp_kind : TK_FLOAT_KIND_DOUBLE;
   }
@@ -475,7 +338,7 @@ static void semantic_warn_decl_initializer_constant_overflow(node_t *lhs, node_t
   long long min_signed = -(1LL << (bits - 1));
   long long max_unsigned = (1LL << bits) - 1;
   int out_of_range;
-  if (psx_node_integer_value_is_unsigned(lhs)) {
+  if (ps_node_integer_value_is_unsigned(lhs)) {
     out_of_range = (v < 0 || v > max_unsigned);
     if (v < 0 && v >= min_signed) out_of_range = 0;
   } else {
@@ -500,7 +363,7 @@ static void semantic_warn_assignment(node_t *node, const token_t *fallback_diag_
    * node_lvar_t::var を使って source lvar identity で判定する。 */
   if (node->is_source_assignment &&
       lhs && lhs->kind == ND_LVAR && rhs && rhs->kind == ND_LVAR &&
-      psx_node_lvar_symbol(lhs) && psx_node_lvar_symbol(lhs) == psx_node_lvar_symbol(rhs)) {
+      ps_node_lvar_symbol(lhs) && ps_node_lvar_symbol(lhs) == ps_node_lvar_symbol(rhs)) {
     diag_warn_tokf(DIAG_WARN_PARSER_SELF_ASSIGN, tok,
                    "変数を自身に代入しています (タイプミスの可能性)");
   }
@@ -545,7 +408,7 @@ static void semantic_warn_return(node_t *node, node_func_t *current_func,
 
   if (ret.is_pointer && node->lhs->kind == ND_ADDR && node->lhs->lhs &&
       node->lhs->lhs->kind == ND_LVAR) {
-    lvar_t *src = psx_node_lvar_symbol(node->lhs->lhs);
+    lvar_t *src = ps_node_lvar_symbol(node->lhs->lhs);
     if (src && !src->is_static_local) {
       const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
       diag_warn_tokf(DIAG_WARN_PARSER_RETURN_STACK_ADDRESS, tok,
@@ -594,8 +457,8 @@ static void semantic_source_compare_operands(node_t *node, node_t **out_lhs, nod
 static int semantic_nodes_identity_equal(node_t *lhs, node_t *rhs) {
   if (!lhs || !rhs || lhs->kind != rhs->kind) return 0;
   if (lhs->kind == ND_LVAR) {
-    lvar_t *lv = psx_node_lvar_symbol(lhs);
-    return lv && lv == psx_node_lvar_symbol(rhs);
+    lvar_t *lv = ps_node_lvar_symbol(lhs);
+    return lv && lv == ps_node_lvar_symbol(rhs);
   }
   if (lhs->kind == ND_GVAR) {
     node_gvar_t *lg = (node_gvar_t *)lhs;
@@ -643,7 +506,7 @@ static int semantic_tuz_is_zero_literal(node_t *n) {
 }
 
 static int semantic_tuz_is_unsigned_integer(node_t *n) {
-  return psx_node_integer_value_is_unsigned(n);
+  return ps_node_integer_value_is_unsigned(n);
 }
 
 static void semantic_warn_tautological_unsigned_zero(node_t *lhs, node_t *rhs, const char *op,
@@ -735,7 +598,7 @@ static void semantic_warn_comparison(node_t *node, const token_t *fallback_diag_
 static int semantic_int_const_overflow_is_int_literal(node_t *node) {
   if (!node || node->kind != ND_NUM) return 0;
   if (semantic_node_fp_kind(node) != TK_FLOAT_KIND_NONE) return 0;
-  if (psx_node_integer_value_is_unsigned(node)) return 0;
+  if (ps_node_integer_value_is_unsigned(node)) return 0;
   node_num_t *num = (node_num_t *)node;
   if (num->int_is_long || num->int_is_long_long) return 0;
   return num->val >= -2147483648LL && num->val <= 2147483647LL;
@@ -1056,13 +919,13 @@ static void semantic_validate_control_flow(node_t *node, const token_t *fallback
   switch (node->kind) {
     case ND_BREAK:
       if (loop_depth == 0 && switch_depth == 0) {
-        psx_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_BREAK),
+        ps_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_BREAK),
                          diag_text_for(DIAG_TEXT_LOOP_OR_SWITCH_SCOPE));
       }
       return;
     case ND_CONTINUE:
       if (loop_depth == 0) {
-        psx_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_CONTINUE),
+        ps_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_CONTINUE),
                          diag_text_for(DIAG_TEXT_LOOP_SCOPE));
       }
       return;
@@ -1107,14 +970,14 @@ static void semantic_validate_control_flow(node_t *node, const token_t *fallback
       return;
     case ND_CASE:
       if (switch_depth == 0) {
-        psx_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_CASE),
+        ps_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_CASE),
                          diag_text_for(DIAG_TEXT_SWITCH_SCOPE));
       }
       semantic_validate_control_flow(node->rhs, fallback_diag_tok, loop_depth, switch_depth);
       return;
     case ND_DEFAULT:
       if (switch_depth == 0) {
-        psx_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_DEFAULT),
+        ps_diag_only_in((token_t *)tok, diag_text_for(DIAG_TEXT_DEFAULT),
                          diag_text_for(DIAG_TEXT_SWITCH_SCOPE));
       }
       semantic_validate_control_flow(node->rhs, fallback_diag_tok, loop_depth, switch_depth);
@@ -1191,7 +1054,7 @@ static int semantic_stmt_is_switch_label(node_t *node) {
 
 static void semantic_suppress_lvar_regions_in_node(node_t *node) {
   if (!node) return;
-  psx_decl_suppress_lvar_usage_region(node->usage_region);
+  ps_decl_suppress_lvar_usage_region(node->usage_region);
 
   switch (node->kind) {
     case ND_BLOCK: {
@@ -1351,9 +1214,9 @@ static node_t *semantic_assigned_lvar_from_target(node_t *target) {
 static void semantic_record_initialized_lvar(node_t *target,
                                              psx_lvar_usage_region_t *region) {
   node_t *lvar = semantic_assigned_lvar_from_target(target);
-  lvar_t *var = psx_node_lvar_symbol(lvar);
+  lvar_t *var = ps_node_lvar_symbol(lvar);
   if (var) {
-    psx_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_INITIALIZED, region);
+    ps_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_INITIALIZED, region);
   }
 }
 
@@ -1365,14 +1228,14 @@ static void semantic_record_address_taken_from_operand(node_t *operand,
     return;
   }
   if (operand->kind == ND_LVAR) {
-    lvar_t *var = psx_node_lvar_symbol(operand);
-    if (var) psx_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+    lvar_t *var = ps_node_lvar_symbol(operand);
+    if (var) ps_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
     return;
   }
   if (operand->kind == ND_ADDR && operand->lhs) {
     if (operand->lhs->kind == ND_LVAR) {
-      lvar_t *var = psx_node_lvar_symbol(operand->lhs);
-      if (var) psx_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+      lvar_t *var = ps_node_lvar_symbol(operand->lhs);
+      if (var) ps_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
       return;
     }
     semantic_record_address_taken_from_operand(operand->lhs, region);
@@ -1380,8 +1243,8 @@ static void semantic_record_address_taken_from_operand(node_t *operand,
   }
   if (operand->kind == ND_DEREF) {
     node_t *lvar = semantic_assigned_aggregate_lvar_from_member_addr(operand->lhs);
-    lvar_t *var = psx_node_lvar_symbol(lvar);
-    if (var) psx_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+    lvar_t *var = ps_node_lvar_symbol(lvar);
+    if (var) ps_decl_record_lvar_usage_in_region(var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
   }
 }
 
@@ -1397,7 +1260,7 @@ static void semantic_collect_lvar_usage_events(node_t *node,
   psx_lvar_usage_region_t *region = node->usage_region ? node->usage_region : inherited_region;
 
   if (node->records_lvar_usage && node->usage_lvar) {
-    psx_decl_record_lvar_usage_in_region(
+    ps_decl_record_lvar_usage_in_region(
         node->usage_lvar,
         node->lvar_usage_unevaluated ? PSX_LVAR_USAGE_UNEVALUATED : PSX_LVAR_USAGE_EVALUATED,
         region);
@@ -1472,9 +1335,9 @@ static void semantic_record_preinitialized_locals(node_func_t *func) {
   if (!func) return;
   for (lvar_t *v = func->lvars; v; v = v->next_all) {
     if (v->is_param) {
-      psx_decl_record_lvar_usage_in_region(v, PSX_LVAR_USAGE_INITIALIZED, NULL);
+      ps_decl_record_lvar_usage_in_region(v, PSX_LVAR_USAGE_INITIALIZED, NULL);
     } else if (v->is_static_local) {
-      psx_decl_record_lvar_usage_in_region(v, PSX_LVAR_USAGE_INITIALIZED, v->decl_region);
+      ps_decl_record_lvar_usage_in_region(v, PSX_LVAR_USAGE_INITIALIZED, v->decl_region);
     }
   }
 }
@@ -1484,16 +1347,18 @@ void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_to
     node_func_t *fn = (node_func_t *)func;
     semantic_validate_control_flow(func, fallback_diag_tok, 0, 0);
     semantic_transform_node(func, fn, fallback_diag_tok);
+    psx_lower_semantic_tree(func, fallback_diag_tok);
+    semantic_transform_node(func, fn, fallback_diag_tok);
     /* Lowering may introduce typed temporaries. Refresh the function-owned
      * list before usage analysis and before the IR builder consumes it. */
-    fn->lvars = psx_decl_get_locals();
+    fn->lvars = ps_decl_get_locals();
     semantic_visit_node(func);
     semantic_warn_node(func, fn, fallback_diag_tok);
     semantic_check_unreachable_in_node(func, fallback_diag_tok);
-    semantic_lower_implicit_conversions(func, fn, fallback_diag_tok);
+    psx_lower_implicit_conversions(func, fn, fallback_diag_tok);
     semantic_collect_lvar_usage_events(func, NULL);
     semantic_record_preinitialized_locals(fn);
-    psx_decl_replay_lvar_usage_events(fn->lvars);
+    ps_decl_replay_lvar_usage_events(fn->lvars);
     semantic_warn_unused_uninitialized_locals(fn, fallback_diag_tok);
   } else {
     semantic_visit_node(func);
@@ -1503,12 +1368,18 @@ void psx_semantic_analyze_function(node_t *func, const token_t *fallback_diag_to
 void psx_semantic_analyze_expression(node_t *expr,
                                      const token_t *fallback_diag_tok) {
   semantic_transform_node(expr, NULL, fallback_diag_tok);
+  psx_lower_semantic_tree(expr, fallback_diag_tok);
+  semantic_transform_node(expr, NULL, fallback_diag_tok);
   semantic_visit_node(expr);
-  semantic_lower_implicit_conversions(expr, NULL, fallback_diag_tok);
+  psx_lower_implicit_conversions(expr, NULL, fallback_diag_tok);
 }
 
 void psx_semantic_analyze_initializer_syntax(
     node_t *syntax, const token_t *fallback_diag_tok) {
+  semantic_transform_initializer_syntax(
+      syntax, NULL, fallback_diag_tok);
+  psx_lower_semantic_initializer_syntax(
+      syntax, fallback_diag_tok);
   semantic_transform_initializer_syntax(
       syntax, NULL, fallback_diag_tok);
 }
@@ -1518,6 +1389,8 @@ void psx_semantic_analyze_program(node_t **program) {
     for (int i = 0; program[i]; i++) {
       if (program[i]->kind != ND_FUNCDEF) {
         semantic_transform_node(program[i], NULL, program[i]->tok);
+        psx_lower_semantic_tree(program[i], program[i]->tok);
+        semantic_transform_node(program[i], NULL, program[i]->tok);
       }
     }
   }
@@ -1525,7 +1398,7 @@ void psx_semantic_analyze_program(node_t **program) {
   if (program) {
     for (int i = 0; program[i]; i++) {
       if (program[i]->kind != ND_FUNCDEF) {
-        semantic_lower_implicit_conversions(
+        psx_lower_implicit_conversions(
             program[i], NULL, program[i]->tok);
       }
     }

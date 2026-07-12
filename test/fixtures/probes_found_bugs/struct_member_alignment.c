@@ -5,7 +5,7 @@
 // `struct Outer { struct Inner i; int trail; }` の agg_align が 8 に膨張。結果
 // sizeof(Outer) が 12 ではなく 16 (4 バイト過剰パディング)。
 //
-// 修正: struct/union メンバ (非ポインタ) は psx_ctx_get_tag_align で取得した
+// 修正: struct/union メンバ (非ポインタ) は ps_ctx_get_tag_align で取得した
 // アラインメントを使う (= メンバ内最大スカラのアラインメント)。
 #include <assert.h>
 

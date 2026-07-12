@@ -3,7 +3,7 @@
  *   { struct S {double x; double y;}; struct S s = {1.5, 2.5}; ... }
  *   /* この後は外側 S が見える *\/
  *
- * 以前は psx_ctx_define_tag_type_with_layout が「既存タグがあれば update して return」と
+ * 以前は ps_ctx_define_tag_type_with_layout が「既存タグがあれば update して return」と
  * なっており、内側スコープで同名タグを宣言しても外側タグが上書きされていた (実際は同じ
  * member_count なら update せず存在を継続し、内側変数のメンバ解決が外側タグのレイアウトで
  * 行われていた)。結果、s.x への代入が外側 S のメンバ a/b の位置に入って値が崩壊。

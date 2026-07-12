@@ -37,7 +37,7 @@ int psx_plan_parameter_storage(
     plan->alignment = 8;
     return 1;
   }
-  if (!psx_type_is_scalar(type)) return 0;
+  if (!ps_type_is_scalar(type)) return 0;
   plan->kind = PSX_PARAMETER_STORAGE_SCALAR;
   plan->storage_size = size;
   plan->element_size = size;

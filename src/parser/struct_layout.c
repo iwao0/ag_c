@@ -1,8 +1,7 @@
 #include "struct_layout.h"
-#include "aggregate_member_declaration.h"
 #include "aggregate_member_syntax.h"
 #include "alignas_value.h"
-#include "declaration_application.h"
+#include "../semantic/declaration_application.h"
 #include "diag.h"
 #include "enum_const.h"
 #include "../diag/diag.h"
@@ -18,7 +17,7 @@ int psx_parse_tag_definition_body(token_kind_t tag_kind, char *tag_name, int tag
   return psx_parse_struct_or_union_members_layout(tag_kind, tag_name, tag_len, out_size, out_align);
 }
 
-int psx_apply_parsed_aggregate_body_layout(
+int ps_apply_parsed_aggregate_body_layout(
     const psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align) {
@@ -29,7 +28,9 @@ int psx_apply_parsed_aggregate_body_layout(
   for (int i = 0; i < body->item_count; i++) {
     const psx_parsed_aggregate_item_t *item = &body->items[i];
     if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {
-      psx_apply_parsed_static_assert(&item->value.static_assertion);
+      psx_apply_static_assert(
+          item->value.static_assertion.condition,
+          item->value.static_assertion.diagnostic_token);
       continue;
     }
 
@@ -38,7 +39,7 @@ int psx_apply_parsed_aggregate_body_layout(
     psx_type_t *member_base_type =
         psx_apply_parsed_decl_specifier(&declaration->specifier);
     if (!member_base_type) {
-      psx_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
+      ps_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
                    diag_message_for(
                        DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
@@ -47,7 +48,7 @@ int psx_apply_parsed_aggregate_body_layout(
          j < declaration->specifier.alignas_expression_count; j++) {
       const psx_parsed_const_expr_t *expression =
           &declaration->specifier.alignas_expressions[j];
-      int value = psx_eval_parsed_alignas_value(
+      int value = ps_eval_parsed_alignas_value(
           expression->start, expression->end);
       if (value > requested_alignment) requested_alignment = value;
     }
@@ -85,9 +86,9 @@ int psx_apply_parsed_aggregate_body_layout(
 int psx_parse_struct_or_union_members_layout(token_kind_t tag_kind, char *tag_name, int tag_len,
                                              int *out_size, int *out_align) {
   psx_parsed_aggregate_body_t body;
-  psx_parse_aggregate_body(&body);
-  int member_count = psx_apply_parsed_aggregate_body_layout(
+  ps_parse_aggregate_body(&body);
+  int member_count = ps_apply_parsed_aggregate_body_layout(
       &body, tag_kind, tag_name, tag_len, out_size, out_align);
-  psx_dispose_parsed_aggregate_body(&body);
+  ps_dispose_parsed_aggregate_body(&body);
   return member_count;
 }

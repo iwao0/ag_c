@@ -11,6 +11,31 @@
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
+void ps_prepare_optional_initializer_syntax(
+    psx_parsed_initializer_t *out) {
+  if (!out) return;
+  *out = (psx_parsed_initializer_t){0};
+  if (!curtok() || curtok()->kind != TK_ASSIGN) return;
+  out->has_initializer = 1;
+  out->assign_tok = curtok();
+  out->value_tok = curtok()->next;
+}
+
+void ps_parse_initializer_syntax_value(
+    psx_parsed_initializer_t *out, token_t *assign_tok) {
+  if (!out) return;
+  *out = (psx_parsed_initializer_t){
+      .has_initializer = 1,
+      .kind = curtok()->kind == TK_LBRACE ? PSX_DECL_INIT_LIST
+                                          : PSX_DECL_INIT_EXPR,
+      .assign_tok = assign_tok,
+      .value_tok = curtok(),
+  };
+  out->value = out->kind == PSX_DECL_INIT_LIST
+                   ? psx_parse_initializer_syntax_list()
+                   : ps_expr_assign();
+}
+
 node_t *psx_parse_initializer_syntax_list(void) {
   token_t *brace_tok = curtok();
   tk_expect('{');
@@ -21,7 +46,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
     for (;;) {
       if (count >= PS_MAX_INITIALIZER_ELEMENTS) {
         free(entries);
-        psx_diag_ctx(curtok(), "initializer-syntax",
+        ps_diag_ctx(curtok(), "initializer-syntax",
                      diag_message_for(DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
                      PS_MAX_INITIALIZER_ELEMENTS);
       }
@@ -31,7 +56,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
             entries, sizeof(*entries) * (size_t)next_capacity);
         if (!next) {
           free(entries);
-          psx_diag_ctx(curtok(), "initializer-syntax",
+          ps_diag_ctx(curtok(), "initializer-syntax",
                        "initializer allocation failed");
         }
         entries = next;
@@ -47,7 +72,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
       while (curtok()->kind == TK_DOT || curtok()->kind == TK_LBRACKET) {
         if (designator_count >= 8) {
           free(entries);
-          psx_diag_ctx(curtok(), "initializer-syntax", "%s",
+          ps_diag_ctx(curtok(), "initializer-syntax", "%s",
                        diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
         }
         token_t *designator_tok = curtok();
@@ -66,14 +91,14 @@ node_t *psx_parse_initializer_syntax_list(void) {
           };
         } else {
           tk_expect('[');
-          node_t *index_expr = psx_expr_assign();
+          node_t *index_expr = ps_expr_assign();
           node_t *range_end_expr = NULL;
           int is_range = 0;
           if (curtok()->kind == TK_ELLIPSIS) {
-            psx_ctx_record_unsupported_gnu_extension_warning(
+            ps_ctx_record_unsupported_gnu_extension_warning(
                 curtok(), "array range designator");
             tk_set_current_token(curtok()->next);
-            range_end_expr = psx_expr_assign();
+            range_end_expr = ps_expr_assign();
             is_range = 1;
           }
           tk_expect(']');
@@ -91,7 +116,7 @@ node_t *psx_parse_initializer_syntax_list(void) {
 
       node_t *value = curtok()->kind == TK_LBRACE
                           ? psx_parse_initializer_syntax_list()
-                          : psx_expr_assign();
+                          : ps_expr_assign();
       entries[count++] = (psx_initializer_entry_t){
           .value = value,
           .member_name = member ? member->str : NULL,
