@@ -10,7 +10,6 @@ typedef struct {
 
 struct psx_parsed_function_parameters_t {
   psx_parsed_function_parameter_t *items;
-  psx_type_t *resolved_types[16];
   int count;
   int capacity;
   int is_variadic;

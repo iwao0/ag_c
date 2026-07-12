@@ -101,6 +101,47 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
   return type;
 }
 
+psx_type_t *psx_resolve_decl_specifier_syntax(
+    const psx_parsed_decl_specifier_t *specifier,
+    const psx_decl_syntax_resolution_context_t *context) {
+  if (!specifier) return NULL;
+  if (context && context->apply_tag_action)
+    context->apply_tag_action(&specifier->tag_action, context->context);
+
+  const psx_type_spec_result_t *syntax = &specifier->type_spec;
+  psx_decl_type_request_t request = {
+      .base_kind = TK_EOF,
+      .fp_kind = TK_FLOAT_KIND_NONE,
+      .tag_kind = TK_EOF,
+      .is_unsigned = syntax->is_unsigned,
+      .is_complex = syntax->is_complex,
+      .is_const_qualified = syntax->is_const_qualified,
+      .is_volatile_qualified = syntax->is_volatile_qualified,
+      .is_atomic = syntax->is_atomic,
+      .is_long_long = syntax->is_long_long,
+      .is_plain_char = syntax->is_plain_char,
+      .is_long_double = syntax->is_long_double,
+  };
+  switch (specifier->source) {
+    case PSX_PARSED_DECL_TYPE_BUILTIN:
+      request.base_kind = syntax->kind;
+      request.override_plain_char = syntax->kind == TK_CHAR;
+      break;
+    case PSX_PARSED_DECL_TYPE_TAG:
+      request.tag_kind = specifier->tag_action.kind;
+      request.tag_name = specifier->tag_action.name;
+      request.tag_len = specifier->tag_action.name_len;
+      break;
+    case PSX_PARSED_DECL_TYPEDEF_NAME:
+      request.typedef_name = specifier->typedef_name->str;
+      request.typedef_name_len = specifier->typedef_name->len;
+      break;
+    default:
+      return NULL;
+  }
+  return psx_resolve_decl_type(&request);
+}
+
 static int object_scalar_slots(const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {

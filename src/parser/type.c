@@ -833,7 +833,8 @@ int psx_declarator_shape_append_shape(
         psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
         copy->has_canonical_function_params =
             op->has_canonical_function_params;
-        copy->function_param_types = op->function_param_types;
+        for (int j = 0; j < 16; j++)
+          copy->function_param_types[j] = op->function_param_types[j];
         copy->function_param_count = op->function_param_count;
         copy->function_is_variadic = op->function_is_variadic;
       }

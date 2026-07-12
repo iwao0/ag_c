@@ -774,6 +774,7 @@ static void test_local_declaration_storage_plan_boundary() {
 
   expect_parse_ok(
       "int main(void){ int *a[]={(int *)a}; return sizeof(a)==8; }");
+
 }
 
 static void test_vla_lowering_request_boundary() {
@@ -1323,12 +1324,12 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_TRUE(body.items[1].value.static_assertion.condition != NULL);
   ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
             body.items[2].kind);
-  ASSERT_EQ(PSX_PARSED_MEMBER_TAG_DEFINITION,
+  ASSERT_EQ(PSX_PARSED_TAG_DEFINITION,
             body.items[3].value.member_declaration.specifier
                 .tag_action.action);
   ASSERT_TRUE(body.items[3].value.member_declaration.specifier
                   .tag_action.aggregate_body != NULL);
-  ASSERT_EQ(PSX_PARSED_MEMBER_TAG_DEFINITION,
+  ASSERT_EQ(PSX_PARSED_TAG_DEFINITION,
             body.items[4].value.member_declaration.specifier
                 .tag_action.action);
   ASSERT_TRUE(body.items[4].value.member_declaration.specifier
@@ -3865,6 +3866,15 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(0, as_func(parsed_code[0])->nargs);
+
+  parsed_code = parse_program_input(
+      "typedef void VoidAlias; int no_args(VoidAlias); "
+      "int main(void) { return 0; }");
+  const psx_type_t *no_args_type =
+      psx_ctx_get_function_type((char *)"no_args", 7);
+  ASSERT_TRUE(no_args_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, no_args_type->kind);
+  ASSERT_EQ(0, no_args_type->param_count);
 }
 
 static void test_stmt_if() {
@@ -5112,10 +5122,26 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_sig_f(int x){ return x; } "
-      "int __tm_sig_local(void) { typedef double LocalSigParam; "
+      "int __tm_sig_local(void) { "
+      "struct LocalTag { int value; }; "
+      "_Alignas(16) struct LocalTag aligned_value; "
+      "typedef const struct LocalTag LocalAlias; LocalAlias alias_value; "
+      "typedef double LocalSigParam; "
       "int (*p)(LocalSigParam, int *, ...); return 0; }");
   fn = as_func(parsed_code[1]);
   lvar_t *sig_lvar = find_func_lvar(fn, "p");
+  lvar_t *aligned_value = find_func_lvar(fn, "aligned_value");
+  lvar_t *alias_value = find_func_lvar(fn, "alias_value");
+  ASSERT_TRUE(aligned_value != NULL);
+  ASSERT_TRUE(alias_value != NULL);
+  ASSERT_EQ(0, ps_lvar_offset(aligned_value) % 16);
+  ASSERT_EQ(16, aligned_value->align_bytes);
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            psx_lvar_get_decl_type(aligned_value)->kind);
+  ASSERT_EQ(4, ps_type_sizeof(psx_lvar_get_decl_type(aligned_value)));
+  ASSERT_EQ(PSX_TYPE_STRUCT,
+            psx_lvar_get_decl_type(alias_value)->kind);
+  ASSERT_TRUE(psx_lvar_get_decl_type(alias_value)->is_const_qualified);
   ASSERT_TRUE(sig_lvar != NULL);
   psx_type_t *sig_lvar_type = psx_lvar_get_decl_type(sig_lvar);
   ASSERT_TRUE(sig_lvar_type != NULL);

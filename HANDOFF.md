@@ -1,8 +1,140 @@
 # HANDOFF — ag_c バグ修正セッション
 
-最終更新: 2026-07-12（続き1096: function parameter syntax moduleの物理分離）
+最終更新: 2026-07-12（続き1100: top-level declaration specifierの共通syntax化）
 
 ## 現状
+- 続き1100: **top-levelのobject / typedef / tag宣言を共通宣言構文とcanonical base typeへ統合した。**
+
+  `toplevel_decl_spec_t`はbuiltin kind、tag identity/size、typedef metadata、qualifierの個別mirrorを持たず、
+  `psx_parsed_decl_specifier_t`、解決済み`psx_type_t *`、storage/typedef/standalone-tag attributeだけを所有する。
+  `parse_toplevel_decl_spec()`は`psx_parse_decl_specifier_syntax()`と`psx_apply_parsed_decl_specifier()`を接続し、
+  standalone tagも`psx_apply_parsed_standalone_tag()`経由で適用する。
+
+  top-level typedefの完成型はcanonical base typeとresolved declarator shapeだけから構築する。これにより、
+  top-level専用だったbuiltin/tag/typedef parser、prefix flag投影、tag layout/reference resolverは削除した。
+  parsed specifierのownershipは宣言適用後に`dispose_toplevel_decl_spec()`で閉じる。
+
+  確認:
+  - `git diff --check` = **clean**
+  - `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_backend` = **成功、compiler warning 0**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次の最大対象はfunction definition/prototypeのreturn specifierを保持する`func_ret_parse_state_t`で、ここには
+  builtin/tag/typedef別の解決とlegacy metadataが残る。translation unit全体のparse後resolveではなく、
+  declaration単位で即時applicationしている点も引き続き未完。
+
+- 続き1099: **named function parameterのtype-specifierを共通宣言構文とcanonical base typeへ統合した。**
+
+  `param_decl_spec_t`はbuiltin kind、tag identity/size、typedef flag、fp/complex/unsigned等を個別保持せず、
+  `psx_parsed_decl_specifier_t`と解決済みcanonical base typeだけを所有する。`parse_param_decl_spec()`は
+  `psx_parse_decl_specifier_syntax()`と`psx_apply_parsed_decl_specifier()`を接続するだけになった。
+
+  parameter semantic requestはlegacy field群から`psx_decl_type_request_t`を再構築せず、canonical base typeとresolved
+  declarator shapeだけを渡す。array/function/pointer adjustment、storage plan、VLA lowering判定は従来どおり
+  `semantic/parameter_declaration_resolution.c`が完成型から行う。parameter専用だったtag parserとscalar/typedef lookup
+  resolverを削除し、`parser.c`は137行減、named parameter領域の型情報の正本は`psx_type_t`になった。
+
+  `void` parameter判定もtoken kind/tag/typedef flagの組合せではなくcanonical type kindを見る。これにより
+  `typedef void VoidAlias; int no_args(VoidAlias);`を0引数prototypeとして正しく扱う。boundary testでfunction typeの
+  `param_count == 0`を直接確認した。
+
+  specifier syntaxとnested function suffix parameter syntaxのdisposeをparse callerへ集約し、named、unnamed、`void`、
+  nested/非count parameterの全return経路で解放する。従来はunnamed parameterの一部でnested suffix ownershipが
+  解放されない経路があった。
+
+  確認:
+  - `parse_param_tag_decl_spec()` / `parse_param_scalar_decl_spec()` = **0件**
+  - parameter resolver内の`base_type_kind` / `saw_typedef_name` / `struct_size` mirror = **0件**
+  - `make -j4 build/test_parser && ./build/test_parser` = **OK: All unit tests passed**
+  - `make -j4 build/ag_c_wasm build/test_wasm32_backend && ./build/test_wasm32_backend` =
+    **wasm32 backend tests passed**
+  - compiler warning = **0**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次の最大対象は`toplevel_decl_spec_t`で、builtin/tag/typedef解析、storage flags、tag layout、canonical base metadataを
+  同時保持している。これを`parsed specifier + canonical base type + declaration attributes`へ縮め、その後
+  function return specifier (`func_ret_parse_state_t`)も同じ入口へ移す。translation unit全体のparse後resolveではなく
+  declaration単位の即時applicationである点は引き続き未完。
+
+- 続き1098: **通常local、block typedef、block tag宣言のtype-specifier入口を共通宣言構文へ統合した。**
+
+  `local_decl_spec_t`は`psx_parsed_decl_specifier_t`を所有し、builtin/tag/typedefを個別lookupせず、
+  `psx_parse_decl_specifier_syntax()`でparseした後に`psx_apply_parsed_decl_specifier()`でcanonical base typeを一度だけ
+  解決する。storage/loweringがまだ必要とするsize、fp kind、tag identity、qualifier等はcanonical typeから投影する。
+  宣言処理後はspecifier syntaxを明示disposeするため、nested tag bodyのownershipも宣言単位で閉じる。
+
+  local typedefも同じspecifier parse/apply経路へ移し、独自のbuiltin size解決、typedef metadata展開、tag reference登録、
+  13引数のtypedef declarator helperを削除した。typedefの完成型はcanonical base cloneへdeclarator shapeを適用して作る。
+  `stmt.c`がblock typedefだけを先取りしていた約290行の別parser/resolverも削除し、`psx_decl_parse_declaration()`へ
+  委譲した。
+
+  blockの`struct/union/enum`専用prefix先読み・tag layout分岐も削除した。deferred `_Alignas`式の評価とstandalone tag
+  definition/forward適用を`declaration_application`へ追加し、builtin、typedef、tag definition/reference、
+  `struct T;`、`static/extern/const`付きtag宣言がすべて同じblock declaration入口を通る。`stmt.c`は785行相当から
+  350行、`decl.c`は1921行から1715行になった。
+
+  旧block tag接続用だった公開`psx_decl_parse_declaration_after_type(_ex)`は利用0件になったため削除し、残るlocal
+  declarator適用実体は`decl.c`内static関数へ閉じた。fixtureコメントの旧API名も更新した。
+
+  境界テストはblock内でtag definition、`_Alignas(16) struct`、`typedef const struct`、typedef parameterを持つ
+  variadic function pointerを同時にparseし、alignment、aggregate size/identity、const qualifier、canonical function
+  parameter型を直接確認する。
+
+  確認:
+  - `stmt_decl_type_state_t` / `stmt_typedef_declarator_state_t` / `tag_path_saw_*` = **0件**
+  - `parse_local_decl_spec_from_typedef()` / `resolve_local_typedef_decl_spec()` = **0件**
+  - `psx_decl_parse_declaration_after_type(_ex)` = **0件**
+  - `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_backend` = **成功、compiler warning 0**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次は`parser.c`の`toplevel_decl_spec_t`と`param_decl_spec_t`に残るbuiltin/tag/typedef個別解析を共通specifierへ
+  移す。local側にもcanonical baseから投影した互換fieldと長いinternal declarator適用引数が残るため、top-level移行と
+  並行して`canonical base type + declaration attributes` requestへ縮める。translation unit全体のparse後resolveでは
+  なく宣言単位の即時applicationである点も未完。
+
+- 続き1097: **汎用宣言構文、意味解決、parser側適用を別moduleへ分離した。**
+
+  `declaration_syntax.c`を新設し、declaration specifier、recursive declarator、array/bit-field式範囲、function
+  suffix、tag body構文のparse/dispose実装を`aggregate_member_syntax.c`から移した。同ファイルはaggregate item列の
+  parse/disposeだけになり、352行から93行になった。汎用構文型に残っていた`member`名も`identifier`へ、tag action
+  型も`psx_parsed_tag_action_t`へ改名し、function parameter構文がaggregate member型を借りる名前上の結合も除いた。
+
+  `semantic/function_parameter_resolution.c`を新設し、deferred array bound/bit width、nested function suffix、prototype
+  scope、canonical parameter typeの解決を`struct_layout.c`から移した。declaration specifierからcanonical base typeを
+  作る処理は`semantic/declaration_resolution.c`が所有する。tag definitionのlayout適用だけは明示callbackで受けるため、
+  semantic resolverは`struct_layout`へ依存しない。
+
+  `declaration_application.{c,h}`はparser側のphase coordinatorとして、tag reference/definitionのsource-order適用と
+  semantic resolver呼び出しを接続する。`decl.c` / `expr.c`はaggregate layout headerを参照せず、この適用APIだけを
+  使う。`struct_layout.c`はaggregate layout処理だけになり、286行相当の構文・意味処理を持たない。
+
+  `psx_parsed_function_parameters_t`から意味解決済み`resolved_types`を削除した。canonical parameter型の所有先は
+  `psx_declarator_op_t`へ移し、syntax DTOはtoken/syntax情報だけを保持する。operator間のcopyも埋め込み型配列をcopy
+  するため、syntax objectの寿命へ依存するborrowed pointerは残らない。16件超のparameterは全件typecheckしつつ、
+  canonical型配列とlegacy ABI投影が追跡する先頭16件だけを安全に参照する。
+
+  確認:
+  - `aggregate_member_syntax.c`内のgeneric declaration parse/resolve実装 = **0件**
+  - parser層からsemantic内部`psx_resolve_*_syntax()`を直接呼ぶ箇所 = **declaration_application.cのみ**
+  - `PSX_PARSED_MEMBER_TAG` / `psx_parsed_member_tag` / syntax内`resolved_types` = **0件**
+  - `make -j4 build/test_parser build/ag_c_wasm build/test_wasm32_backend` = **成功、compiler warning 0**
+  - `./build/test_parser` = **OK: All unit tests passed**
+  - `./build/test_wasm32_backend` = **wasm32 backend tests passed**
+  - `git diff --check` = **clean**
+  - full E2Eはparser全体のtype-specifier正本化完了境界まで保留
+
+  次はtop-level/local/parameter/type-nameに残る個別`*_decl_type_state_t`とtype-specifier解析を棚卸しし、
+  `psx_parsed_decl_specifier_t -> psx_resolve_decl_specifier_syntax()`の共通経路へ順番に統合する。現在は汎用moduleが
+  できただけで、translation unit全体をparseしてから一括resolveする構造にはまだなっておらず、各parser経路が
+  parse直後にapplication APIを呼ぶ段階である。最後の大きな境界はこの即時resolveをdeclaration単位の明示phaseへ
+  まとめること。
+
 - 続き1096: **generic function parameter syntaxの型/API/実装をaggregate bodyから分離した。**
 
   `declaration_syntax.h`を新設し、neutral declaration specifier、tag action、array/bit expression範囲、recursive

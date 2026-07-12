@@ -17,7 +17,7 @@
 #include "../lowering/local_object_lowering.h"
 #include "../lowering/static_data_initializer.h"
 #include "../semantic/declaration_resolution.h"
-#include "../semantic/function_parameter_resolution.h"
+#include "declaration_application.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/allocator.h"
@@ -70,7 +70,7 @@ static void parse_expr_function_parameters(
   psx_parsed_function_parameters_t parameters = {0};
   psx_parse_function_parameters_syntax(&parameters);
   psx_declarator_op_t function_op = {.kind = PSX_DECL_OP_FUNCTION};
-  psx_resolve_function_parameters_syntax(
+  psx_apply_parsed_function_parameters(
       &parameters, &function_op, lparen);
   out->count = function_op.function_param_count;
   out->is_variadic = function_op.function_is_variadic;

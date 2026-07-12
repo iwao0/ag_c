@@ -3,7 +3,6 @@
 
 #include "aggregate_member_syntax.h"
 #include "core.h"
-#include "../semantic/function_parameter_resolution.h"
 
 int psx_apply_parsed_aggregate_body_layout(
     const psx_parsed_aggregate_body_t *body,

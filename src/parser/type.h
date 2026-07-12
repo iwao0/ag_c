@@ -45,7 +45,7 @@ typedef struct {
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
   psx_decl_funcptr_sig_t funcptr_sig;
-  psx_type_t **function_param_types;
+  psx_type_t *function_param_types[16];
   int function_param_count;
   int function_is_variadic;
 } psx_declarator_op_t;

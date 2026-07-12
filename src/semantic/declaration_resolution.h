@@ -2,7 +2,16 @@
 #define SEMANTIC_DECLARATION_RESOLUTION_H
 
 #include "../parser/ast.h"
+#include "../parser/declaration_syntax.h"
 #include "../parser/type.h"
+
+typedef void (*psx_apply_decl_tag_action_fn)(
+    const psx_parsed_tag_action_t *action, void *context);
+
+typedef struct {
+  psx_apply_decl_tag_action_fn apply_tag_action;
+  void *context;
+} psx_decl_syntax_resolution_context_t;
 
 typedef struct {
   token_kind_t base_kind;
@@ -32,6 +41,9 @@ typedef struct {
 } psx_incomplete_array_resolution_t;
 
 psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request);
+psx_type_t *psx_resolve_decl_specifier_syntax(
+    const psx_parsed_decl_specifier_t *specifier,
+    const psx_decl_syntax_resolution_context_t *context);
 int psx_resolve_incomplete_array_type(
     psx_type_t *type, const psx_incomplete_array_resolution_t *request);
 int psx_resolve_incomplete_array_initializer(
