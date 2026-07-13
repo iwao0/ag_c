@@ -4700,10 +4700,12 @@ static void test_expr_generic() {
   psx_type_t *synthetic_ret_funcptr_ty =
       ps_lvar_get_decl_type(synthetic_ret_funcptr);
   ASSERT_TRUE(synthetic_ret_funcptr_ty != NULL);
-  ASSERT_EQ(1, synthetic_ret_funcptr_ty->funcptr_sig.function.returned_funcptr.is_funcptr);
-  ASSERT_EQ(1, synthetic_ret_funcptr_ty->funcptr_sig.function.returned_funcptr.type->callable.signature.param_int_mask);
-  ASSERT_EQ(4, synthetic_ret_funcptr_ty->funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
-  ASSERT_EQ(0, synthetic_ret_funcptr_ty->funcptr_sig.function.callable.return_shape.int_width);
+  psx_decl_funcptr_sig_t synthetic_ret_funcptr_canon =
+      ps_type_funcptr_signature(synthetic_ret_funcptr_ty);
+  ASSERT_EQ(1, synthetic_ret_funcptr_canon.function.returned_funcptr.is_funcptr);
+  ASSERT_EQ(1, synthetic_ret_funcptr_canon.function.returned_funcptr.type->callable.signature.param_int_mask);
+  ASSERT_EQ(4, synthetic_ret_funcptr_canon.function.returned_funcptr.type->callable.return_shape.int_width);
+  ASSERT_EQ(0, synthetic_ret_funcptr_canon.function.callable.return_shape.int_width);
   node_t *synthetic_ret_funcptr_ref =
       psx_node_new_lvar_identifier_ref_for(synthetic_ret_funcptr);
   ASSERT_EQ(1, ps_node_funcptr_sig(synthetic_ret_funcptr_ref).function.returned_funcptr.is_funcptr);
@@ -4744,8 +4746,10 @@ static void test_expr_generic() {
   psx_type_t *synthetic_double_ret_funcptr_ty =
       ps_lvar_get_decl_type(synthetic_double_ret_funcptr);
   ASSERT_TRUE(synthetic_double_ret_funcptr_ty != NULL);
+  psx_decl_funcptr_sig_t synthetic_double_ret_funcptr_canon =
+      ps_type_funcptr_signature(synthetic_double_ret_funcptr_ty);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            synthetic_double_ret_funcptr_ty->funcptr_sig.function.returned_funcptr.type->callable.return_shape.fp_kind);
+            synthetic_double_ret_funcptr_canon.function.returned_funcptr.type->callable.return_shape.fp_kind);
   node_t *ret_structural_double_ret_funcptr = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(r, double (*(*)(void))(int): 47, default: 7)");
   ASSERT_EQ(ND_NUM, ret_structural_double_ret_funcptr->kind);
@@ -6742,8 +6746,10 @@ static void test_type_metadata_bridge() {
   ps_local_registry_set_decl_type(funcptr_sync_lvar, funcptr_sync_lvar_type);
   funcptr_sync_lvar_type = ps_lvar_get_decl_type(funcptr_sync_lvar);
   ASSERT_TRUE(funcptr_sync_lvar_type != NULL);
-  ASSERT_EQ(1, funcptr_sync_lvar_type->funcptr_sig.function.callable.signature.param_int_mask);
-  ASSERT_EQ(4, funcptr_sync_lvar_type->funcptr_sig.function.callable.return_shape.int_width);
+  psx_decl_funcptr_sig_t funcptr_sync_lvar_canon =
+      ps_type_funcptr_signature(funcptr_sync_lvar_type);
+  ASSERT_EQ(1, funcptr_sync_lvar_canon.function.callable.signature.param_int_mask);
+  ASSERT_EQ(4, funcptr_sync_lvar_canon.function.callable.return_shape.int_width);
 
   global_var_t funcptr_sync_gvar = {0};
   funcptr_sync_gvar.type_size = 8;
@@ -6759,9 +6765,11 @@ static void test_type_metadata_bridge() {
   ps_decl_set_gvar_decl_type(&funcptr_sync_gvar, funcptr_sync_gvar_type);
   funcptr_sync_gvar_type = ps_gvar_get_decl_type(&funcptr_sync_gvar);
   ASSERT_TRUE(funcptr_sync_gvar_type != NULL);
-  ASSERT_EQ(2, funcptr_sync_gvar_type->funcptr_sig.function.callable.signature.param_fp_mask);
+  psx_decl_funcptr_sig_t funcptr_sync_gvar_canon =
+      ps_type_funcptr_signature(funcptr_sync_gvar_type);
+  ASSERT_EQ(2, funcptr_sync_gvar_canon.function.callable.signature.param_fp_mask);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            funcptr_sync_gvar_type->funcptr_sig.function.callable.return_shape.fp_kind);
+            funcptr_sync_gvar_canon.function.callable.return_shape.fp_kind);
 
   parsed_code = parse_program_input(
       "int __tm_sig_nested_local(void) { "
@@ -6771,14 +6779,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sig_nested_lvar != NULL);
   psx_type_t *sig_nested_lvar_type = ps_lvar_get_decl_type(sig_nested_lvar);
   ASSERT_TRUE(sig_nested_lvar_type != NULL);
-  ASSERT_EQ(1, sig_nested_lvar_type->funcptr_sig.function.returned_funcptr.is_funcptr);
-  ASSERT_EQ(0, sig_nested_lvar_type->funcptr_sig.function.callable.signature.param_int_mask);
-  ASSERT_EQ(1, sig_nested_lvar_type->funcptr_sig.function.returned_funcptr.type->callable.signature.param_int_mask);
-  ASSERT_EQ(4, sig_nested_lvar_type->funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
-  ASSERT_EQ(0, sig_nested_lvar_type->funcptr_sig.function.callable.return_shape.int_width);
   psx_decl_funcptr_sig_t sig_nested_lvar_canon = ps_lvar_funcptr_sig(sig_nested_lvar);
   ASSERT_EQ(1, sig_nested_lvar_canon.function.returned_funcptr.is_funcptr);
+  ASSERT_EQ(0, sig_nested_lvar_canon.function.callable.signature.param_int_mask);
+  ASSERT_EQ(1, sig_nested_lvar_canon.function.returned_funcptr.type->callable.signature.param_int_mask);
   ASSERT_EQ(4, sig_nested_lvar_canon.function.returned_funcptr.type->callable.return_shape.int_width);
+  ASSERT_EQ(0, sig_nested_lvar_canon.function.callable.return_shape.int_width);
   node_lvar_t *sig_nested_lvar_node = as_lvar(psx_node_new_lvar_for(sig_nested_lvar));
   ASSERT_EQ(4, ps_node_funcptr_sig((node_t *)sig_nested_lvar_node)
                    .function.returned_funcptr.type->callable.return_shape.int_width);
@@ -6792,11 +6798,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sig_nested_param != NULL);
   psx_type_t *sig_nested_param_type = ps_lvar_get_decl_type(sig_nested_param);
   ASSERT_TRUE(sig_nested_param_type != NULL);
-  ASSERT_EQ(1, sig_nested_param_type->funcptr_sig.function.returned_funcptr.is_funcptr);
-  ASSERT_EQ(0, sig_nested_param_type->funcptr_sig.function.callable.signature.param_int_mask);
-  ASSERT_EQ(2, sig_nested_param_type->funcptr_sig.function.returned_funcptr.type->callable.signature.param_fp_mask);
-  ASSERT_EQ(4, sig_nested_param_type->funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
-  ASSERT_EQ(0, sig_nested_param_type->funcptr_sig.function.callable.return_shape.int_width);
+  psx_decl_funcptr_sig_t sig_nested_param_canon =
+      ps_type_funcptr_signature(sig_nested_param_type);
+  ASSERT_EQ(1, sig_nested_param_canon.function.returned_funcptr.is_funcptr);
+  ASSERT_EQ(0, sig_nested_param_canon.function.callable.signature.param_int_mask);
+  ASSERT_EQ(2, sig_nested_param_canon.function.returned_funcptr.type->callable.signature.param_fp_mask);
+  ASSERT_EQ(4, sig_nested_param_canon.function.returned_funcptr.type->callable.return_shape.int_width);
+  ASSERT_EQ(0, sig_nested_param_canon.function.callable.return_shape.int_width);
   const psx_type_t *outer_nested_param_function =
       ps_type_find_function(sig_nested_param_type);
   ASSERT_TRUE(outer_nested_param_function != NULL);
@@ -6895,14 +6903,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sig_nested_gvar != NULL);
   psx_type_t *sig_nested_gvar_type = ps_gvar_get_decl_type(sig_nested_gvar);
   ASSERT_TRUE(sig_nested_gvar_type != NULL);
-  ASSERT_EQ(1, sig_nested_gvar_type->funcptr_sig.function.returned_funcptr.is_funcptr);
-  ASSERT_EQ(0, sig_nested_gvar_type->funcptr_sig.function.callable.signature.param_int_mask);
-  ASSERT_EQ(2, sig_nested_gvar_type->funcptr_sig.function.returned_funcptr.type->callable.signature.param_fp_mask);
-  ASSERT_EQ(4, sig_nested_gvar_type->funcptr_sig.function.returned_funcptr.type->callable.return_shape.int_width);
-  ASSERT_EQ(0, sig_nested_gvar_type->funcptr_sig.function.callable.return_shape.int_width);
   psx_decl_funcptr_sig_t sig_nested_gvar_canon = ps_gvar_funcptr_sig(sig_nested_gvar);
   ASSERT_EQ(1, sig_nested_gvar_canon.function.returned_funcptr.is_funcptr);
+  ASSERT_EQ(0, sig_nested_gvar_canon.function.callable.signature.param_int_mask);
+  ASSERT_EQ(2, sig_nested_gvar_canon.function.returned_funcptr.type->callable.signature.param_fp_mask);
   ASSERT_EQ(4, sig_nested_gvar_canon.function.returned_funcptr.type->callable.return_shape.int_width);
+  ASSERT_EQ(0, sig_nested_gvar_canon.function.callable.return_shape.int_width);
   node_t *sig_nested_gvar_node = ps_node_new_gvar_for(sig_nested_gvar);
   ASSERT_EQ(4, ps_node_funcptr_sig(sig_nested_gvar_node)
                    .function.returned_funcptr.type->callable.return_shape.int_width);
@@ -7703,8 +7709,6 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
   typed_deref_flat_ptrptr->pointer_qual_levels = 2;
   typed_deref_flat_ptrptr->base_deref_size = 4;
-  typed_deref_flat_ptrptr->funcptr_sig.function.callable.signature.param_int_mask = 3;
-  typed_deref_flat_ptrptr->funcptr_sig.function.callable.return_shape.is_data_pointer = 1;
   typed_deref_flat_ptrptr_operand_mem.type = typed_deref_flat_ptrptr;
   node_t *typed_deref_flat_ptr =
       ps_node_new_unary_deref_for(&typed_deref_flat_ptrptr_operand_mem);
@@ -9035,7 +9039,6 @@ static void test_type_metadata_bridge() {
   psx_decl_funcptr_sig_t canonical_funcptr_sig = {0};
   canonical_funcptr_sig.function.callable.return_shape.int_width = 4;
   canonical_funcptr.type = ps_type_new_funcptr(canonical_funcptr_sig, 1);
-  canonical_funcptr.type->funcptr_sig.function.callable.return_shape.int_width = 8;
   ASSERT_EQ(4, ps_node_funcptr_sig(&canonical_funcptr).function.callable.return_shape.int_width);
 
   node_t compound_lit_object = {0};
@@ -9337,12 +9340,15 @@ static void test_type_metadata_bridge() {
       &typed_funcptr_array_mem, &typed_funcptr_array_mem,
       ps_node_new_num(0), 8, 0, 0, NULL, 0);
   ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(typed_funcptr_array_elem_node));
+  psx_type_t *typed_funcptr_array_result_type =
+      ps_node_get_type(typed_funcptr_array_elem_node);
+  ASSERT_TRUE(typed_funcptr_array_result_type != NULL);
+  ASSERT_TRUE(ps_type_find_function(typed_funcptr_array_result_type) != NULL);
 
   node_t typed_funcptr_callee_mem = {0};
   typed_funcptr_callee_mem.kind = ND_LVAR;
   typed_funcptr_callee_mem.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
-  typed_funcptr_callee_mem.type->funcptr_sig.function.callable.return_shape.int_width = 8;
   node_func_t typed_indirect_call = {0};
   typed_indirect_call.base.kind = ND_FUNCALL;
   typed_indirect_call.callee = &typed_funcptr_callee_mem;
@@ -9361,7 +9367,6 @@ static void test_type_metadata_bridge() {
   typed_tag_ret_funcptr_callee_mem.kind = ND_LVAR;
   psx_type_t *typed_tag_ret = ps_type_new_tag(TK_STRUCT, "Ret", 3, 7, 4);
   typed_tag_ret_funcptr_callee_mem.type = ps_type_new_pointer(typed_tag_ret, 4);
-  typed_tag_ret_funcptr_callee_mem.type->funcptr_sig.function.callable.signature.param_int_mask = 1u;
   node_func_t typed_tag_ret_indirect_call = {0};
   typed_tag_ret_indirect_call.base.kind = ND_FUNCALL;
   typed_tag_ret_indirect_call.callee = &typed_tag_ret_funcptr_callee_mem;
@@ -9488,8 +9493,6 @@ static void test_type_metadata_bridge() {
   typed_double_ret_callee.kind = ND_LVAR;
   typed_double_ret_callee.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
-  typed_double_ret_callee.type->funcptr_sig.function.callable.return_shape.fp_kind =
-      TK_FLOAT_KIND_DOUBLE;
   node_func_t typed_double_ret_call = {0};
   typed_double_ret_call.base.kind = ND_FUNCALL;
   typed_double_ret_call.callee = &typed_double_ret_callee;
@@ -11434,8 +11437,6 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, double_ptr_to_array_ty->mid_stride);
   ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_pointee_fp_kind(double_ptr_to_array_call));
-  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(
-      double_ptr_to_array_ty->funcptr_sig));
   psx_function_ret_info_t dpa_ret_info =
       ps_ctx_get_function_ret_info("__tm_dp", 7);
   ASSERT_TRUE(dpa_ret_info.is_pointer);
@@ -11468,9 +11469,6 @@ static void test_type_metadata_bridge() {
       ps_type_new_array(manual_ptrarr_inner, 3, 48, 16, 0);
   psx_type_t *manual_ptrarr_ret =
       ps_type_new_pointer(manual_ptrarr_outer, 48);
-  /* A stale compatibility projection must not replace the recursive type. */
-  manual_ptrarr_ret->funcptr_sig.function.callable.return_shape.pointee_array =
-      ps_ret_pointee_array_make(9, 8, 2);
   manual_ptrarr_ret->ptr_array_pointee_bytes = 999;
   manual_ptrarr_ret->outer_stride = 777;
   manual_ptrarr_ret->mid_stride = 555;
@@ -12095,8 +12093,6 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, ps_node_deref_size(indirect_double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             ps_node_pointee_fp_kind(indirect_double_ptr_to_array_call));
-  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(
-      indirect_double_ptr_to_array_ty->funcptr_sig));
   lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
   ASSERT_TRUE(dpa_lvar != NULL);
   const psx_type_t *dpa_function_type =
@@ -12293,8 +12289,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_decl_funcptr_sig_has_payload(fp_sig));
   ASSERT_TRUE(fp_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, fp_info.decl_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_info.decl_type->funcptr_sig.function.callable.return_shape.fp_kind);
-  ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.decl_type->funcptr_sig.function.callable.return_shape.pointee_fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            ps_type_funcptr_signature(fp_info.decl_type)
+                .function.callable.return_shape.fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_NONE,
+            ps_type_funcptr_signature(fp_info.decl_type)
+                .function.callable.return_shape.pointee_fp_kind);
   fp_info.funcptr_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_NONE;
   fp_info.funcptr_sig.function.callable.return_shape.int_width = 4;
   psx_decl_funcptr_sig_t fp_info_canon_sig = ps_tag_member_funcptr_sig(&fp_info);
@@ -12315,13 +12315,6 @@ static void test_type_metadata_bridge() {
   psx_type_t *partial_sig_function = (psx_type_t *)ps_type_find_function(
       partial_sig_member.decl_type);
   ASSERT_TRUE(partial_sig_function != NULL);
-  partial_sig_function->funcptr_sig.function.callable.signature.param_fp_mask =
-      0;
-  partial_sig_function->funcptr_sig.function.callable.signature.param_int_mask =
-      1;
-  partial_sig_function->funcptr_sig.function.callable.return_shape.fp_kind =
-      TK_FLOAT_KIND_NONE;
-  partial_sig_function->funcptr_sig.function.callable.return_shape.int_width = 4;
   ASSERT_EQ(1, ps_type_funcptr_signature(partial_sig_member.decl_type)
                    .function.callable.signature.param_fp_mask);
   ASSERT_EQ(0, ps_type_funcptr_signature(partial_sig_member.decl_type)
@@ -12364,8 +12357,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, fns_info.decl_type->base->base->kind);
   ASSERT_TRUE(fns_info.decl_type->base->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, fns_info.decl_type->base->base->base->kind);
-  ASSERT_EQ(4, fns_info.decl_type->base->funcptr_sig.function.callable.return_shape.int_width);
-  ASSERT_TRUE(fns_info.decl_type->base->funcptr_sig.function.callable.signature.param_int_mask != 0);
+  psx_decl_funcptr_sig_t fns_canon =
+      ps_type_funcptr_signature(fns_info.decl_type);
+  ASSERT_EQ(4, fns_canon.function.callable.return_shape.int_width);
+  ASSERT_TRUE(fns_canon.function.callable.signature.param_int_mask != 0);
 
   parsed_code = parse_program_input(
       "struct TM695Ops { double (*d)(double); }; "
@@ -13026,7 +13021,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp.funcptr_sig.function.callable.return_shape.fp_kind);
   ASSERT_TRUE(td_fp.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, td_fp.decl_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_fp.decl_type->funcptr_sig.function.callable.return_shape.fp_kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            ps_type_funcptr_signature(td_fp.decl_type)
+                .function.callable.return_shape.fp_kind);
   td_fp.funcptr_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_NONE;
   td_fp.funcptr_sig.function.callable.return_shape.int_width = 4;
   psx_decl_funcptr_sig_t td_fp_sig = ps_ctx_typedef_funcptr_sig(&td_fp);
@@ -13285,7 +13282,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, go_node_sig.function.callable.return_shape.is_data_pointer);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, go_node_sig.function.callable.return_shape.fp_kind);
   ASSERT_TRUE(go_def->base.type != NULL);
-  ASSERT_EQ(1, go_def->base.type->funcptr_sig.function.callable.return_shape.is_data_pointer);
+  ASSERT_EQ(1, ps_type_funcptr_signature(go_def->base.type)
+                   .function.callable.return_shape.is_data_pointer);
   go_node_sig = ps_node_funcdef_ret_funcptr_sig(go_def);
   ASSERT_EQ(1, go_node_sig.function.callable.return_shape.is_data_pointer);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, go_node_sig.function.callable.return_shape.fp_kind);

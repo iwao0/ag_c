@@ -206,7 +206,6 @@ static const psx_type_t *call_function_type(node_func_t *call) {
   if (!call) return NULL;
   if (call->function_type &&
       call->function_type->kind == PSX_TYPE_FUNCTION) {
-    ps_type_complete_function_params(call->function_type);
     return call->function_type;
   }
   return NULL;
