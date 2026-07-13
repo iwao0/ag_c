@@ -9016,9 +9016,9 @@ static void test_type_metadata_bridge() {
 
   node_t typed_funcptr_sig = {0};
   typed_funcptr_sig.kind = ND_LVAR;
-  typed_funcptr_sig.type = ps_type_new_pointer(
-      ps_type_new_integer(TK_INT, 4, 0), 8);
-  typed_funcptr_sig.type->funcptr_sig.function.callable.return_shape.int_width = 8;
+  psx_decl_funcptr_sig_t typed_funcptr_legacy_sig = {0};
+  typed_funcptr_legacy_sig.function.callable.return_shape.int_width = 8;
+  typed_funcptr_sig.type = ps_type_new_funcptr(typed_funcptr_legacy_sig, 1);
   ASSERT_EQ(8, ps_node_funcptr_sig(&typed_funcptr_sig).function.callable.return_shape.int_width);
 
   node_t typed_data_ptr_stale_funcptr_sig = {0};
@@ -9313,10 +9313,11 @@ static void test_type_metadata_bridge() {
 
   node_t typed_funcptr_view_mem = {0};
   typed_funcptr_view_mem.kind = ND_LVAR;
-  typed_funcptr_view_mem.type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
-  typed_funcptr_view_mem.type->funcptr_sig.function.callable.signature.param_fp_mask = 1;
-  typed_funcptr_view_mem.type->funcptr_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_DOUBLE;
+  psx_decl_funcptr_sig_t typed_funcptr_view_sig = {0};
+  typed_funcptr_view_sig.function.callable.signature.param_fp_mask = 1;
+  typed_funcptr_view_sig.function.callable.return_shape.fp_kind =
+      TK_FLOAT_KIND_DOUBLE;
+  typed_funcptr_view_mem.type = ps_type_new_funcptr(typed_funcptr_view_sig, 1);
   ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(&typed_funcptr_view_mem));
   ASSERT_EQ(0u, psx_node_funcptr_param_int_mask(&typed_funcptr_view_mem));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
@@ -9326,11 +9327,12 @@ static void test_type_metadata_bridge() {
 
   node_t typed_funcptr_array_mem = {0};
   typed_funcptr_array_mem.kind = ND_DEREF;
+  psx_decl_funcptr_sig_t typed_funcptr_array_sig = {0};
+  typed_funcptr_array_sig.function.callable.signature.param_fp_mask = 1;
   psx_type_t *typed_funcptr_array_elem =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
+      ps_type_new_funcptr(typed_funcptr_array_sig, 1);
   typed_funcptr_array_mem.type =
       ps_type_new_array(typed_funcptr_array_elem, 2, 16, 8, 0);
-  typed_funcptr_array_mem.type->funcptr_sig.function.callable.signature.param_fp_mask = 1;
   node_t *typed_funcptr_array_elem_node = ps_node_new_subscript_deref_for(
       &typed_funcptr_array_mem, &typed_funcptr_array_mem,
       ps_node_new_num(0), 8, 0, 0, NULL, 0);
@@ -11432,8 +11434,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, double_ptr_to_array_ty->mid_stride);
   ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_pointee_fp_kind(double_ptr_to_array_call));
-  ASSERT_EQ(2, double_ptr_to_array_ty->funcptr_sig.function.callable.return_shape.pointee_array.first_dim);
-  ASSERT_EQ(8, double_ptr_to_array_ty->funcptr_sig.function.callable.return_shape.pointee_array.elem_size);
+  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(
+      double_ptr_to_array_ty->funcptr_sig));
   psx_function_ret_info_t dpa_ret_info =
       ps_ctx_get_function_ret_info("__tm_dp", 7);
   ASSERT_TRUE(dpa_ret_info.is_pointer);
@@ -11459,10 +11461,16 @@ static void test_type_metadata_bridge() {
   const char manual_ptrarr_name[] = "__tm_manual_ptrarr_type";
   psx_ctx_define_function_name_with_ret(
       (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1, 0);
+  psx_type_t *manual_ptrarr_element = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *manual_ptrarr_inner =
+      ps_type_new_array(manual_ptrarr_element, 4, 16, 4, 0);
+  psx_type_t *manual_ptrarr_outer =
+      ps_type_new_array(manual_ptrarr_inner, 3, 48, 16, 0);
   psx_type_t *manual_ptrarr_ret =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0), 8);
+      ps_type_new_pointer(manual_ptrarr_outer, 48);
+  /* A stale compatibility projection must not replace the recursive type. */
   manual_ptrarr_ret->funcptr_sig.function.callable.return_shape.pointee_array =
-      ps_ret_pointee_array_make(3, 4, 4);
+      ps_ret_pointee_array_make(9, 8, 2);
   manual_ptrarr_ret->ptr_array_pointee_bytes = 999;
   manual_ptrarr_ret->outer_stride = 777;
   manual_ptrarr_ret->mid_stride = 555;
@@ -11491,6 +11499,15 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(3, manual_ptrarr_info.pointee_array.first_dim);
   ASSERT_EQ(4, manual_ptrarr_info.pointee_array.second_dim);
   ASSERT_EQ(4, manual_ptrarr_info.pointee_array.elem_size);
+
+  psx_decl_funcptr_sig_t manual_ptrarr_sig =
+      ps_type_funcptr_signature(manual_ptrarr_function_type);
+  ASSERT_EQ(3, manual_ptrarr_sig.function.callable.return_shape
+                   .pointee_array.first_dim);
+  ASSERT_EQ(4, manual_ptrarr_sig.function.callable.return_shape
+                   .pointee_array.second_dim);
+  ASSERT_EQ(4, manual_ptrarr_sig.function.callable.return_shape
+                   .pointee_array.elem_size);
 
   const char many_param_name[] = "__tm_many_param_type";
   psx_ctx_define_function_name_with_ret(
@@ -12298,9 +12315,17 @@ static void test_type_metadata_bridge() {
   psx_type_t *partial_sig_function = (psx_type_t *)ps_type_find_function(
       partial_sig_member.decl_type);
   ASSERT_TRUE(partial_sig_function != NULL);
+  partial_sig_function->funcptr_sig.function.callable.signature.param_fp_mask =
+      0;
+  partial_sig_function->funcptr_sig.function.callable.signature.param_int_mask =
+      1;
   partial_sig_function->funcptr_sig.function.callable.return_shape.fp_kind =
       TK_FLOAT_KIND_NONE;
   partial_sig_function->funcptr_sig.function.callable.return_shape.int_width = 4;
+  ASSERT_EQ(1, ps_type_funcptr_signature(partial_sig_member.decl_type)
+                   .function.callable.signature.param_fp_mask);
+  ASSERT_EQ(0, ps_type_funcptr_signature(partial_sig_member.decl_type)
+                   .function.callable.signature.param_int_mask);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             ps_type_funcptr_signature(partial_sig_member.decl_type)
                 .function.callable.return_shape.fp_kind);

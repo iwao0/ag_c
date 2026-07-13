@@ -343,9 +343,12 @@ int main(void) {
   assert(llround(-3.5) == -4);
   assert(llroundf(2.5f) == 3);
   assert(llroundl(-2.5L) == -3);
-  assert(fesetround(FE_UPWARD) != 0);
-  assert(fesetround(FE_DOWNWARD) != 0);
-  assert(fesetround(FE_TOWARDZERO) != 0);
+  assert(fesetround(FE_UPWARD) == 0);
+  assert(rint(2.1) == 3.0 && rint(-2.1) == -2.0);
+  assert(fesetround(FE_DOWNWARD) == 0);
+  assert(rint(2.9) == 2.0 && nearbyint(-2.1) == -3.0);
+  assert(fesetround(FE_TOWARDZERO) == 0);
+  assert(rint(2.9) == 2.0 && rint(-2.9) == -2.0);
   assert(fesetround(FE_TONEAREST) == 0);
   assert(rint(2.5) == 2.0);
   assert(rint(3.5) == 4.0);

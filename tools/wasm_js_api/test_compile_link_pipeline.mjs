@@ -792,7 +792,7 @@ if (linkedStdioStdout !== "   x:007:aa:v8") {
   throw new Error(`instantiated stdio import pipeline stdout mismatch: ${JSON.stringify(linkedStdioStdout)}`);
 }
 if (linkedStdioStderr === "") linkedStdioStderr = linkedStdio.readStderr();
-if (linkedStdioStderr !== "runtime: no error\nruntime: error\n") {
+if (linkedStdioStderr !== "runtime: no error\nruntime: input/output error\n") {
   throw new Error(`instantiated stdio import pipeline stderr mismatch: ${JSON.stringify(linkedStdioStderr)}`);
 }
 
@@ -1527,7 +1527,7 @@ int main(void) {
   if (strcoll("same", "same") != 0) return 2;
   if (n != 5 || strcmp(buf, "hello") != 0) return 3;
   if (need != 6) return 4;
-  if (strerror(5)[0] != 'e') return 5;
+  if (strerror(5)[0] != 'i') return 5;
   if (strcmp(strerror(0), strerror(5)) == 0) return 6;
   return 42;
 }
@@ -2697,7 +2697,8 @@ const jsBasicStdio = await toolchain.instantiateLinkedWasm(jsBasicStdioSource, {
   onStderr: (chunk) => { jsBasicStderr += chunk; },
 });
 const jsBasicStdioResult = jsBasicStdio.instance.exports.main();
-if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDあああ\n�ああ\nああW" || jsBasicStderr !== "ER!あejs: error\nあ: error\n") {
+if (jsBasicStdioResult !== 42 || jsBasicStdout !== "ABCDあああ\n�ああ\nああW" ||
+    jsBasicStderr !== "ER!あejs: bad file descriptor\nあ: bad file descriptor\n") {
   throw new Error(
     `JS basic stdio imports failed: result=${jsBasicStdioResult}, stdout=${JSON.stringify(jsBasicStdout)}, stderr=${JSON.stringify(jsBasicStderr)}`,
   );

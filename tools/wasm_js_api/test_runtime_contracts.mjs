@@ -127,7 +127,8 @@ int main(void) {
   double y = 1.0 - delta;
   double expected = -1.0 / 18014398509481984.0;
   if (fesetround(FE_TONEAREST) != 0 || fegetround() != FE_TONEAREST) return 1;
-  if (fesetround(FE_DOWNWARD) == 0 || fegetround() != FE_TONEAREST) return 2;
+  if (fesetround(FE_DOWNWARD) != 0 || fegetround() != FE_DOWNWARD) return 2;
+  if (fesetround(FE_TONEAREST) != 0 || fegetround() != FE_TONEAREST) return 7;
   if (feclearexcept(FE_DIVBYZERO) != 0 || feraiseexcept(FE_DIVBYZERO) != 0) return 3;
   if (fetestexcept(FE_DIVBYZERO) != FE_DIVBYZERO) return 4;
   if (x * y - 1.0 != 0.0) return 5;

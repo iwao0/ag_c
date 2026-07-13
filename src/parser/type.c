@@ -246,6 +246,7 @@ psx_type_t *ps_type_new_function(psx_type_t *return_type,
   psx_type_t *type = ps_type_new(PSX_TYPE_FUNCTION);
   type->base = return_type;
   ps_decl_funcptr_sig_clone_to(&sig, &type->funcptr_sig);
+  type_sync_function_params_from_signature(type, sig);
   return type;
 }
 
@@ -270,6 +271,11 @@ const psx_type_t *ps_type_find_function(const psx_type_t *type) {
     type = type->base;
   }
   return NULL;
+}
+
+const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
+  const psx_type_t *function = ps_type_find_function(type);
+  return function ? function->base : NULL;
 }
 
 void ps_type_complete_function_params(psx_type_t *type) {
@@ -396,13 +402,8 @@ static void type_function_shape_from_canonical(
   if (!out) return;
   *out = (psx_funcptr_type_shape_t){0};
   if (!function || function->kind != PSX_TYPE_FUNCTION) return;
-  if (function->param_count > 0 || function->is_variadic_function) {
-    type_function_signature_from_canonical(
-        function, &out->callable.signature);
-  } else {
-    out->callable.signature =
-        function->funcptr_sig.function.callable.signature;
-  }
+  type_function_signature_from_canonical(
+      function, &out->callable.signature);
   type_return_shape_from_canonical(
       function->base, &out->callable.return_shape, &out->returned_funcptr);
 }
@@ -414,9 +415,7 @@ void ps_type_get_funcptr_signature(const psx_type_t *type,
   const psx_type_t *function = ps_type_find_function(type);
   if (function) {
     type_function_shape_from_canonical(function, &out->function);
-    return;
   }
-  if (type) ps_decl_funcptr_sig_clone_to(&type->funcptr_sig, out);
 }
 
 psx_decl_funcptr_sig_t ps_type_funcptr_signature(const psx_type_t *type) {
@@ -471,8 +470,6 @@ static psx_type_t *type_return_from_funcptr_shape(
     return_type = ps_type_new_pointer(return_type, deref_size);
     return_type->base_deref_size = deref_size;
     if (psx_ret_pointee_array_has_dims(ret_array)) {
-      return_type->funcptr_sig.function.callable.return_shape.pointee_array =
-          ret_array;
       psx_type_sync_pointer_to_array_metadata_from_base(return_type);
     }
   }
@@ -1598,12 +1595,8 @@ static int type_derivation_to_function_matches(const psx_type_t *a,
 
 static psx_decl_funcptr_sig_t type_generic_function_signature(
     const psx_type_t *type, const psx_type_t *function) {
-  psx_decl_funcptr_sig_t sig = ps_type_funcptr_signature(type);
-  if (function && ps_decl_funcptr_sig_has_payload(function->funcptr_sig)) {
-    sig.function = psx_funcptr_type_shape_merge_missing(
-        sig.function, function->funcptr_sig.function, 1);
-  }
-  return sig;
+  (void)function;
+  return ps_type_funcptr_signature(type);
 }
 
 typedef struct {

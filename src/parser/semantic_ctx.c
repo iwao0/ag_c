@@ -197,9 +197,6 @@ static int ctx_type_pointer_levels(const psx_type_t *type) {
 static psx_ret_pointee_array_t ctx_type_ret_pointee_array(const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_POINTER || !type->base)
     return (psx_ret_pointee_array_t){0};
-  psx_ret_pointee_array_t from_sig =
-      type->funcptr_sig.function.callable.return_shape.pointee_array;
-  if (psx_ret_pointee_array_has_dims(from_sig)) return from_sig;
   if (type->base->kind != PSX_TYPE_ARRAY) return (psx_ret_pointee_array_t){0};
   int first = type->base->array_len;
   int second = 0;
@@ -212,20 +209,8 @@ static psx_ret_pointee_array_t ctx_type_ret_pointee_array(const psx_type_t *type
 }
 
 static void ctx_type_normalize_function_ret_type(psx_type_t *type) {
-  if (!type) return;
-  psx_ret_pointee_array_t ret_array = ctx_type_ret_pointee_array(type);
-  if (!psx_ret_pointee_array_has_dims(ret_array)) return;
-  type->funcptr_sig.function.callable.return_shape.pointee_array = ret_array;
-  if (type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind != PSX_TYPE_ARRAY) {
-    type->base =
-        psx_type_wrap_ret_pointee_array_base(type->base, ret_array);
-    int row_size = ps_type_sizeof(type->base);
-    if (row_size > 0) type->deref_size = row_size;
-  }
+  if (!type || type->kind != PSX_TYPE_POINTER) return;
   psx_type_sync_pointer_to_array_metadata_from_base(type);
-  if (type->base_deref_size <= 0 && ret_array.elem_size > 0)
-    type->base_deref_size = ret_array.elem_size;
 }
 
 static int ctx_type_returns_funcptr(const psx_type_t *type) {
@@ -1590,9 +1575,7 @@ int psx_ctx_get_function_ret_pointer_levels(char *name, int len) {
 
 const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
-  return f && f->function_type && f->function_type->kind == PSX_TYPE_FUNCTION
-             ? f->function_type->base
-             : NULL;
+  return f ? ps_type_function_return_type(f->function_type) : NULL;
 }
 
 int ps_ctx_register_function_type(char *name, int len,

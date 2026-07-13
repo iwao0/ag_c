@@ -16,7 +16,6 @@ static long ag_rt_long_max(void) {
    hold allocation metadata or free-list links. A user pointer has its header
    address in the word immediately before it. */
 static long ag_rt_heap_base;
-static long ag_rt_free_head;
 static long ag_rt_last_block;
 
 static long *ag_rt_block_meta(long header) {
@@ -35,7 +34,6 @@ static void ag_rt_allocator_init(void) {
   if (ag_rt_heap_base) return;
   ag_rt_heap = (ag_rt_heap + 7) & -8L;
   ag_rt_heap_base = ag_rt_heap;
-  ag_rt_free_head = 0;
   ag_rt_last_block = 0;
 }
 
@@ -72,26 +70,6 @@ static int ag_rt_block_layout(long header, long requested, long alignment,
   return 1;
 }
 
-static void ag_rt_free_remove(long header) {
-  long *meta = ag_rt_block_meta(header);
-  long prev = meta[2];
-  long next = meta[3];
-  if (prev) ag_rt_block_meta(prev)[3] = next;
-  else ag_rt_free_head = next;
-  if (next) ag_rt_block_meta(next)[2] = prev;
-  meta[2] = 0;
-  meta[3] = 0;
-}
-
-static void ag_rt_free_insert(long header) {
-  long *meta = ag_rt_block_meta(header);
-  meta[2] = 0;
-  meta[3] = ag_rt_free_head;
-  meta[4] = 0;
-  if (ag_rt_free_head) ag_rt_block_meta(ag_rt_free_head)[2] = header;
-  ag_rt_free_head = header;
-}
-
 static void ag_rt_update_following_prev(long header) {
   long next = header + ag_rt_block_total(header);
   if (next < ag_rt_heap) ag_rt_block_meta(next)[1] = ag_rt_block_total(header);
@@ -118,7 +96,6 @@ static void ag_rt_split_allocated_block(long header, long used_total) {
 
   if (old_next < ag_rt_heap && !ag_rt_block_is_allocated(old_next)) {
     long next_total = ag_rt_block_total(old_next);
-    ag_rt_free_remove(old_next);
     remainder_total += next_total;
     remainder_meta[0] = remainder_total;
     if (ag_rt_last_block == old_next) ag_rt_last_block = remainder;
@@ -126,7 +103,6 @@ static void ag_rt_split_allocated_block(long header, long used_total) {
     ag_rt_last_block = remainder;
   }
   ag_rt_update_following_prev(remainder);
-  ag_rt_free_insert(remainder);
 }
 
 static long ag_rt_coalesce_free_block(long header) {
@@ -135,7 +111,6 @@ static long ag_rt_coalesce_free_block(long header) {
   long next = header + total;
   if (next < ag_rt_heap && !ag_rt_block_is_allocated(next)) {
     long next_total = ag_rt_block_total(next);
-    ag_rt_free_remove(next);
     total += next_total;
     meta[0] = total;
     if (ag_rt_last_block == next) ag_rt_last_block = header;
@@ -144,7 +119,6 @@ static long ag_rt_coalesce_free_block(long header) {
     long prev = header - meta[1];
     if (prev >= ag_rt_heap_base && !ag_rt_block_is_allocated(prev)) {
       long prev_total = ag_rt_block_total(prev);
-      ag_rt_free_remove(prev);
       total += prev_total;
       ag_rt_block_meta(prev)[0] = total;
       if (ag_rt_last_block == header) ag_rt_last_block = prev;
@@ -164,13 +138,16 @@ static long ag_rt_alloc_block(long requested, long alignment) {
   long *meta;
   ag_rt_allocator_init();
 
-  free_block = ag_rt_free_head;
-  while (free_block) {
-    long next_free = ag_rt_block_meta(free_block)[3];
-    if (ag_rt_block_layout(free_block, requested, alignment,
-                           &user_offset, &needed) &&
-        ag_rt_block_total(free_block) >= needed) {
-      ag_rt_free_remove(free_block);
+  /* Free-list links share the allocation metadata words and are fragile under
+     repeated realloc/split/coalesce patterns. The physical block chain already
+     carries every fact needed for first-fit reuse, so scan it directly. */
+  free_block = ag_rt_heap_base;
+  while (free_block < ag_rt_heap) {
+    long free_total = ag_rt_block_total(free_block);
+    if (free_total < AG_RT_MIN_BLOCK_SIZE || free_block > ag_rt_heap - free_total) return 0;
+    if (!ag_rt_block_is_allocated(free_block) &&
+        ag_rt_block_layout(free_block, requested, alignment,
+                           &user_offset, &needed) && free_total >= needed) {
       ag_rt_split_allocated_block(free_block, needed);
       meta = ag_rt_block_meta(free_block);
       meta[2] = requested;
@@ -180,7 +157,7 @@ static long ag_rt_alloc_block(long requested, long alignment) {
           free_block;
       return free_block + user_offset;
     }
-    free_block = next_free;
+    free_block += free_total;
   }
 
   header = ag_rt_heap;
@@ -257,7 +234,7 @@ void __agc_runtime_free(void *ptr) {
   meta[3] = 0;
   meta[4] = 0;
   header = ag_rt_coalesce_free_block(header);
-  ag_rt_free_insert(header);
+  (void)header;
 }
 
 void *__agc_runtime_calloc(unsigned long nmemb_value, unsigned long size_value) {
@@ -310,24 +287,7 @@ void *__agc_runtime_realloc(void *pointer, unsigned long size_value) {
   }
 
   next = header + old_total;
-  if (next < ag_rt_heap && !ag_rt_block_is_allocated(next)) {
-    long next_total = ag_rt_block_total(next);
-    long combined = old_total + next_total;
-    int next_is_tail = next + next_total == ag_rt_heap;
-    if (combined >= needed ||
-        (next_is_tail && ag_rt_memory_span_fits(header, needed))) {
-      ag_rt_free_remove(next);
-      if (combined < needed) {
-        ag_rt_heap = header + needed;
-        combined = needed;
-      }
-      meta[0] = combined | AG_RT_BLOCK_ALLOCATED;
-      meta[2] = requested;
-      if (ag_rt_last_block == next) ag_rt_last_block = header;
-      ag_rt_split_allocated_block(header, needed);
-      return pointer;
-    }
-  } else if (next == ag_rt_heap && ag_rt_memory_span_fits(header, needed)) {
+  if (next == ag_rt_heap && ag_rt_memory_span_fits(header, needed)) {
     ag_rt_heap = header + needed;
     meta[0] = needed | AG_RT_BLOCK_ALLOCATED;
     meta[2] = requested;

@@ -176,6 +176,7 @@ struct hideset_t {
 // ファイル名テーブル: インデックスでファイル名を共有する
 uint16_t tk_filename_intern(const char *name);
 const char *tk_filename_lookup(uint16_t id);
+void tk_filename_reset_translation_unit(void);
 
 // 共通トークン型（最小限の共通フィールド）
 // byte_offset/byte_length は正規化済みUTF-8入力上の0始まりbyte範囲を表す。

@@ -15,7 +15,4 @@ void ps_set_enable_union_array_member_nonbrace_init(bool enable);
 bool ps_get_enable_struct_scalar_pointer_cast(void);
 void ps_set_enable_struct_scalar_pointer_cast(bool enable);
 
-int ps_get_target_pointer_size(void);
-void ps_set_target_pointer_size(int size);
-
 #endif

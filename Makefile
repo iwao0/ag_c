@@ -37,6 +37,7 @@ WASM_LINKER_SELFHOST=build/wasm_linker_selfhost/ag_wasm_link.wasm
 TEST_TOKENIZER=build/test_tokenizer
 TEST_PARSER=build/test_parser
 TEST_E2E=build/test_e2e
+TEST_E2E_SANDBOX=build/test_e2e_sandbox
 TEST_PREPROCESS=build/test_preprocess
 TEST_FUZZ_QUICK=build/test_fuzz_quick
 TEST_IR=build/test_ir
@@ -102,6 +103,14 @@ $(TEST_PARSER): test/test_parser.c $(PARSER_LIB_OBJS) $(TOKENIZER_LIB_OBJS) $(DI
 $(TEST_E2E): test/test_e2e.c $(TARGET)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ test/test_e2e.c
+
+$(TEST_E2E_SANDBOX): test/test_e2e_sandbox.c $(TARGET)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ test/test_e2e_sandbox.c
+
+# Host permission/resource-limit policy varies under CI and desktop sandboxes.
+test-e2e-sandbox: $(TEST_E2E_SANDBOX)
+	$(TEST_E2E_SANDBOX)
 
 $(TEST_PREPROCESS): test/test_preprocess.c $(TARGET)
 	@mkdir -p build
@@ -252,6 +261,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan test-design-invariants generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan test-design-invariants test-e2e-sandbox generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-runtime-contracts test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)

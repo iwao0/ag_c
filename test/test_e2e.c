@@ -1546,68 +1546,6 @@ static int run_ag_c_expect_fail_profiled(const char *input, const char *expected
   return 0;
 }
 
-static int run_ag_c_expect_fail_profiled_with_limits_logfile(const char *input, const char *expected_diag,
-                                                             const char *log_path, size_t max_log_len,
-                                                             rlim_t nofile_limit, rlim_t as_limit_bytes,
-                                                             int consume_fd_count) {
-  pid_t pid = fork();
-  if (pid == 0) {
-    freopen("/dev/null", "w", stdout);
-    freopen(log_path, "w", stderr);
-
-    if (nofile_limit > 0) {
-      struct rlimit rl = {nofile_limit, nofile_limit};
-      (void)setrlimit(RLIMIT_NOFILE, &rl);
-    }
-    int consumed[64];
-    int consumed_n = 0;
-    if (consume_fd_count > 0) {
-      if (consume_fd_count > (int)(sizeof(consumed) / sizeof(consumed[0]))) {
-        consume_fd_count = (int)(sizeof(consumed) / sizeof(consumed[0]));
-      }
-      for (int i = 0; i < consume_fd_count; i++) {
-        int fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
-        if (fd < 0) break;
-        consumed[consumed_n++] = fd;
-      }
-    }
-    if (as_limit_bytes > 0) {
-#ifdef RLIMIT_AS
-      struct rlimit rl_as = {as_limit_bytes, as_limit_bytes};
-      (void)setrlimit(RLIMIT_AS, &rl_as);
-#elif defined(RLIMIT_DATA)
-      struct rlimit rl_data = {as_limit_bytes, as_limit_bytes};
-      (void)setrlimit(RLIMIT_DATA, &rl_data);
-#endif
-    }
-
-    execl("./build/ag_c", "./build/ag_c", input, (char *)NULL);
-    for (int i = 0; i < consumed_n; i++) close(consumed[i]);
-    _exit(1);
-  }
-  if (pid < 0) return -1;
-
-  int status;
-  waitpid(pid, &status, 0);
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 1) return -1;
-  if (expected_diag && expected_diag[0] != '\0') {
-    if (!log_file_contains_substr(log_path, "E")) return -1;
-    if (!log_file_contains_substr(log_path, expected_diag)) return -1;
-  }
-
-  FILE *fp = fopen(log_path, "r");
-  if (!fp) return -1;
-  if (fseek(fp, 0, SEEK_END) != 0) {
-    fclose(fp);
-    return -1;
-  }
-  long sz = ftell(fp);
-  fclose(fp);
-  if (sz < 0) return -1;
-  if ((size_t)sz > max_log_len) return -1;
-  return 0;
-}
-
 static int log_file_contains_substr(const char *path, const char *needle) {
   if (!needle || !*needle) return 1;
   FILE *fp = fopen(path, "r");
@@ -2529,24 +2467,6 @@ int main() {
     }
   }
   {
-    const char *blocked_path = "build/e2e/compile_fail/no_read_input.c";
-    const char *log_path = "build/e2e/logs/compile_fail_no_read_input.log";
-    if (mkdir_p("build/e2e/compile_fail") != 0 || write_source_file(blocked_path, "int main(){return 0;}") != 0) {
-      fprintf(stderr, "Compile-fail setup failed: no_read_input\n");
-      return 1;
-    }
-    if (chmod(blocked_path, 0000) != 0) {
-      fprintf(stderr, "Compile-fail setup failed: cannot chmod 000 (%s)\n", blocked_path);
-      return 1;
-    }
-    int rc = run_ag_c_expect_fail_with_diag(blocked_path, "入力ファイルを読み込めませんでした", log_path);
-    chmod(blocked_path, 0644);
-    if (rc != 0) {
-      fprintf(stderr, "Compile-fail case failed: no_read_input (see %s)\n", log_path);
-      return 1;
-    }
-  }
-  {
     const char *long_path = "build/e2e/compile_fail/huge_single_line.c";
     const char *log_path = "build/e2e/logs/compile_fail_huge_single_line.log";
     if (mkdir_p("build/e2e/compile_fail") != 0 ||
@@ -2584,28 +2504,6 @@ int main() {
         write_parser_decl_width_limit_source(parser_width_path, 1300) != 0 ||
         run_ag_c_expect_fail_profiled(parser_width_path, "E3064", log_path, 1024) != 0) {
       fprintf(stderr, "Compile-fail case failed: parser_decl_width_limit (see %s)\n", log_path);
-      return 1;
-    }
-  }
-  {
-    const char *fd_limit_path = "build/e2e/compile_fail/fd_limit_input.c";
-    const char *log_path = "build/e2e/logs/compile_fail_fd_limit.log";
-    if (mkdir_p("build/e2e/compile_fail") != 0 ||
-        write_source_file(fd_limit_path, "int main() { const int x = 5; x = 10; return 0; }\n") != 0 ||
-        run_ag_c_expect_fail_profiled_with_limits_logfile(fd_limit_path, "E3077", log_path, 1024,
-                                                          32, 0, 0) != 0) {
-      fprintf(stderr, "Compile-fail case failed: fd_limit_input (see %s)\n", log_path);
-      return 1;
-    }
-  }
-  {
-    const char *mem_limit_path = "build/e2e/compile_fail/mem_limit_input.c";
-    const char *log_path = "build/e2e/logs/compile_fail_mem_limit.log";
-    if (mkdir_p("build/e2e/compile_fail") != 0 ||
-        write_source_file(mem_limit_path, "int main() { const int x = 5; x = 10; return 0; }\n") != 0 ||
-        run_ag_c_expect_fail_profiled_with_limits_logfile(mem_limit_path, "E3077", log_path, 1024,
-                                                          0, 64 * 1024 * 1024, 0) != 0) {
-      fprintf(stderr, "Compile-fail case failed: mem_limit_input (see %s)\n", log_path);
       return 1;
     }
   }

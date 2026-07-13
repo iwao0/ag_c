@@ -20,6 +20,7 @@
 #include "ir_builder.h"
 #include "ir.h"
 #include "abi_lowering.h"
+#include "../target_info.h"
 /* Phase C2: parser の公開 API は parser_public.h 1 本に集約。
  * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
  * transitively 取り込む形で内部実装の変更を吸収する)。 */
@@ -149,6 +150,10 @@ static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
+static int target_type_size(ir_type_t type) {
+  return type == IR_TY_PTR ? ag_target_pointer_size() : ir_type_size(type);
+}
+
 /* node の値型から IR の浮動小数型を返すヘルパ。
  * 非浮動小数 (TK_FLOAT_KIND_NONE) なら IR_TY_I32 を返す。
  * 呼び出し側で type_size に応じた整数型 (I8/I16/I32/PTR) に上書きすること。 */
@@ -253,29 +258,20 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
     v.type = target_ty;
     return v;
   }
-  /* pointer <-> integer の幅変換。Wasm では pointer は i32 なので、単に型 tag を
-   * 差し替えると i64 値を i32 local に入れる invalid code になる。 */
-  if (target_ty == IR_TY_PTR &&
-      (v.type == IR_TY_I64 ||
-       ir_type_size(v.type) > ir_type_size(target_ty))) {
-    int dst = ir_func_new_vreg(ctx->f);
-    ir_inst_t *inst = ir_inst_new(IR_TRUNC);
-    inst->dst = ir_val_vreg(dst, target_ty);
-    inst->src1 = v;
-    ir_func_append_inst(ctx->f, inst);
-    return ir_val_vreg(dst, target_ty);
-  }
-  if (v.type == IR_TY_PTR &&
-      (target_ty == IR_TY_I64 ||
-       ir_type_size(target_ty) > ir_type_size(v.type))) {
-    int dst = ir_func_new_vreg(ctx->f);
-    ir_inst_t *inst = ir_inst_new(IR_ZEXT);
-    inst->dst = ir_val_vreg(dst, target_ty);
-    inst->src1 = v;
-    ir_func_append_inst(ctx->f, inst);
-    return ir_val_vreg(dst, target_ty);
-  }
+  /* pointer <-> integer is target-width dependent: pointer is 64-bit on
+   * Apple ARM64 and 32-bit on Wasm. Keeping this decision in the shared IR
+   * builder prevents either backend's ABI from leaking into the other. */
   if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
+    int source_size = target_type_size(v.type);
+    int result_size = target_type_size(target_ty);
+    if (source_size != result_size) {
+      int dst = ir_func_new_vreg(ctx->f);
+      ir_inst_t *inst = ir_inst_new(source_size > result_size ? IR_TRUNC : IR_ZEXT);
+      inst->dst = ir_val_vreg(dst, target_ty);
+      inst->src1 = v;
+      ir_func_append_inst(ctx->f, inst);
+      return ir_val_vreg(dst, target_ty);
+    }
     return ir_val_vreg(v.id, target_ty);
   }
   /* 32 → 64 拡張: source の符号に合わせて SEXT/ZEXT を選ぶ。 */

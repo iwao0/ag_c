@@ -177,6 +177,20 @@ void tk_allocator_recyc_reset(void) {
   recyc_stream_pin = NULL;
 }
 
+void tk_allocator_reset_translation_unit(void) {
+  tk_allocator_set_recyclable(0);
+  tk_allocator_recyc_reset();
+  for (arena_chunk_t *c = arena_head; c; ) {
+    arena_chunk_t *next = c->next;
+    total_chunks--;
+    total_reserved_bytes -= sizeof(arena_chunk_t) + c->cap;
+    free(c);
+    c = next;
+  }
+  arena_head = NULL;
+  next_chunk_hint = 16 * 1024;
+}
+
 /** @brief 入力サイズから次チャンクサイズのヒントを更新する。 */
 void tk_allocator_set_expected_size(size_t bytes) {
   // Heuristic: expected token arena footprint tends to be multiple of input size.

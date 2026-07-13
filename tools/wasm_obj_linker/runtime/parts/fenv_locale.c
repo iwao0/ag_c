@@ -15,7 +15,8 @@ static int ag_rt_fenv_mask(int excepts) {
 }
 
 static int ag_rt_fenv_round_ok(int round) {
-  return round == AG_RT_FE_TONEAREST;
+  return round == AG_RT_FE_TONEAREST || round == AG_RT_FE_UPWARD ||
+         round == AG_RT_FE_DOWNWARD || round == AG_RT_FE_TOWARDZERO;
 }
 
 int __agc_runtime_feclearexcept(int excepts) {
@@ -81,7 +82,7 @@ int __agc_runtime_fesetenv(long envp_addr) {
   envp = (unsigned long long *)ag_rt_ptr(envp_addr);
   if (envp) {
     if (!ag_rt_fenv_round_ok((int)envp[0])) return 1;
-    ag_rt_round_mode = AG_RT_FE_TONEAREST;
+    ag_rt_round_mode = (int)envp[0];
     ag_rt_except_flags = (int)envp[1] & AG_RT_FE_ALL_EXCEPT;
   }
   return 0;

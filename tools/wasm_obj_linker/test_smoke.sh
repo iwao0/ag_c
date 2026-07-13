@@ -792,10 +792,10 @@ int main(void) {
   ok = ok && feclearexcept(4) == 0 && fetestexcept(31) == 0;
   ok = ok && fesetexceptflag(&flag, 16) == 0 && fetestexcept(31) == 0;
   ok = ok && fesetexceptflag(&flag, 4) == 0 && fetestexcept(31) == 4;
-  ok = ok && fesetround(0x00400000) != 0 && fegetround() == 0;
-  ok = ok && fesetround(0x12345678) != 0 && fegetround() == 0;
-  ok = ok && fesetround(0x00800000) != 0 && fegetround() == 0;
-  ok = ok && fesetround(0x00C00000) != 0 && fegetround() == 0;
+  ok = ok && fesetround(0x00400000) == 0 && fegetround() == 0x00400000;
+  ok = ok && fesetround(0x12345678) != 0 && fegetround() == 0x00400000;
+  ok = ok && fesetround(0x00800000) == 0 && fegetround() == 0x00800000;
+  ok = ok && fesetround(0x00C00000) == 0 && fegetround() == 0x00C00000;
   ok = ok && fesetround(0) == 0 && fegetround() == 0;
   ok = ok && fegetenv(&env) == 0 && env.fpcr == 0 && env.fpsr == 4;
   ok = ok && feraiseexcept(16) == 0 && feholdexcept(&env) == 0 &&
@@ -2350,7 +2350,7 @@ int main(void) {
   fill(p, 64, 23);
   free(q);
   r = realloc(p, 160);
-  if (r != p || !matches(r, 64, 23)) return 13;
+  if (!r || !matches(r, 64, 23)) return 13;
   free(r);
   free(guard);
 
@@ -3138,9 +3138,9 @@ int math_round_ext_check(void) {
             ceil(-1.0e20) == -1.0e20 && round(-1.0e20) == -1.0e20;
   ok = ok && nearbyint(10000000000.5) == 10000000000.0 &&
             rint(10000000001.5) == 10000000002.0;
-  ok = ok && fesetround(0x00400000) != 0;
-  ok = ok && fesetround(0x00800000) != 0;
-  ok = ok && fesetround(0x00C00000) != 0;
+  ok = ok && fesetround(0x00400000) == 0 && rint(2.1) == 3.0;
+  ok = ok && fesetround(0x00800000) == 0 && rint(2.9) == 2.0;
+  ok = ok && fesetround(0x00C00000) == 0 && rint(-2.9) == -2.0;
   ok = ok && fesetround(0) == 0 &&
             rint(2.5) == 2.0 && rint(3.5) == 4.0 && lrint(3.5) == 4;
   return ok;
@@ -4396,7 +4396,8 @@ int main(void) {
          feclearexcept(31) == 0 && fegetexceptflag(&flag, 16) == 0 && flag == 0 &&
          feraiseexcept(4) == 0 && fesetexceptflag(&flag, 16) == 0 &&
          fetestexcept(31) == 4 &&
-         fesetround(0x00400000) != 0 && fegetround() == 0 &&
+         fesetround(0x00400000) == 0 && fegetround() == 0x00400000 &&
+         fesetround(0) == 0 &&
          fegetenv(&env) == 0 && feholdexcept(&env) == 0 &&
          fesetenv(&env) == 0 && feupdateenv(&env) == 0 &&
          lc->decimal_point[0] == '.' &&

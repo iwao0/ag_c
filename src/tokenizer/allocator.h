@@ -24,5 +24,7 @@ void tk_allocator_recyc_stream_pin(const void *p);
 void tk_allocator_recyc_stream_unpin(void);
 /** @brief recyclable アリーナを全解放する (コンパイル終了時)。 */
 void tk_allocator_recyc_reset(void);
+/** @brief 永続・recyclable の両アリーナを全解放する (翻訳単位の開始時)。 */
+void tk_allocator_reset_translation_unit(void);
 
 #endif

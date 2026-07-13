@@ -4,7 +4,6 @@ static bool enable_size_compatible_nonscalar_cast = true;
 static bool enable_union_scalar_pointer_cast = true;
 static bool enable_union_array_member_nonbrace_init = true;
 static bool enable_struct_scalar_pointer_cast = true;
-static int target_pointer_size = 8;
 
 bool ps_get_enable_size_compatible_nonscalar_cast(void) {
   return enable_size_compatible_nonscalar_cast;
@@ -36,12 +35,4 @@ bool ps_get_enable_struct_scalar_pointer_cast(void) {
 
 void ps_set_enable_struct_scalar_pointer_cast(bool enable) {
   enable_struct_scalar_pointer_cast = enable;
-}
-
-int ps_get_target_pointer_size(void) {
-  return target_pointer_size;
-}
-
-void ps_set_target_pointer_size(int size) {
-  target_pointer_size = (size == 4) ? 4 : 8;
 }

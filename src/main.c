@@ -1,4 +1,5 @@
 #include "codegen_backend.h"
+#include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
 #include "frontend/translation_unit.h"
@@ -153,7 +154,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
                                       int max_header_total_bytes, int max_include_depth,
                                       int out_addr, int out_cap, int object_mode) {
 #ifdef AGC_TARGET_WASM32
-  ps_set_target_pointer_size(4);
+  ag_target_set_pointer_size(4);
 #endif
   diag_reset_records();
   pp_virtual_headers_clear();
@@ -284,7 +285,7 @@ int agc_wasm_compile_object_virtual(int source_addr, int source_name_addr,
 
 int main(int argc, char **argv) {
 #ifdef AGC_TARGET_WASM32
-  ps_set_target_pointer_size(4);
+  ag_target_set_pointer_size(4);
 #endif
   const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
   const char *input_path = NULL;

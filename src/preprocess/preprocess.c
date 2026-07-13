@@ -1,4 +1,5 @@
 #include "preprocess.h"
+#include "../target_info.h"
 #include "../parser/config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/allocator.h"
@@ -30,6 +31,51 @@ struct macro {
 };
 
 static macro_t *macros;
+
+typedef struct pp_owned_source pp_owned_source_t;
+struct pp_owned_source {
+  pp_owned_source_t *next;
+  char *buf;
+};
+
+static pp_owned_source_t *retired_include_sources;
+
+static void retain_include_source(char *buf) {
+  if (!buf) return;
+  pp_owned_source_t *source = calloc(1, sizeof(*source));
+  if (!source) {
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  }
+  source->buf = buf;
+  source->next = retired_include_sources;
+  retired_include_sources = source;
+}
+
+static void reset_retired_include_sources(void) {
+  while (retired_include_sources) {
+    pp_owned_source_t *source = retired_include_sources;
+    retired_include_sources = source->next;
+    free(source->buf);
+    free(source);
+  }
+}
+
+static void free_macro(macro_t *m) {
+  if (!m) return;
+  free(m->name);
+  for (int i = 0; i < m->num_params; i++) free(m->params[i]);
+  if (m->params && m->params != m->inline_params) free(m->params);
+  free(m);
+}
+
+static void reset_macros(void) {
+  while (macros) {
+    macro_t *m = macros;
+    macros = m->next;
+    free_macro(m);
+  }
+}
 
 static token_pp_t *as_pp(token_t *tok) { return (token_pp_t *)tok; }
 static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
@@ -777,7 +823,7 @@ static void pp_init_predefined_macros(void) {
   add_int_macro("__STDC_VERSION__", 201112LL);
   /* Apple Silicon ARM64 は LP64 (int=4, long/pointer=8)。 */
   add_int_macro("__LP64__", 1);
-  if (ps_get_target_pointer_size() == 4) {
+  if (ag_target_pointer_size() == 4) {
     add_int_macro("__wasm32__", 1);
   }
 
@@ -1666,13 +1712,13 @@ static token_t *handle_define(token_t *tok) {
   return tok;
 }
 
-// マクロを名前で連結リストから外す（freeはしない: name 文字列は他で保持される可能性）。
 static void remove_macro_by_name(const char *name) {
   macro_t *prev = NULL;
   for (macro_t *m = macros; m; prev = m, m = m->next) {
     if (!strcmp(m->name, name)) {
       if (prev) prev->next = m->next;
       else macros = m->next;
+      free_macro(m);
       break;
     }
   }
@@ -1809,6 +1855,7 @@ static token_t *handle_line(token_t *tok) {
       if (new_file) t->file_name_id = tk_filename_intern(new_file);
     }
   }
+  free(new_file);
   return tok;
 }
 
@@ -2208,7 +2255,8 @@ typedef struct pp_include_frame pp_include_frame_t;
 struct pp_include_frame {
   pp_include_frame_t *parent;       // 外側方向 (NULL = 最外ファイルの 1 つ内側)
   tk_token_stream_t  *parent_lex;   // pop 時に s->lex を戻す親 lexer
-  char               *buf;          // 被 include のソースバッファ (pop で free)
+  char               *buf;          // 被 include のソースバッファ
+  int                 buf_owned;    // physical include buffer; virtual source is borrowed
   char               *path_owned;   // normalize 済みパス (pop_include() の後に free)
   token_t            *saved_pb_head; // 親の pushback 列 (指令行の次行頭トークン等)。pop で復元
   const char *saved_input;          // 親 ctx->user_input
@@ -2323,10 +2371,9 @@ static void pps_pop_frame(pp_stream_t *s) {
   s->frames = f->parent;
   pop_include();
   free(f->path_owned);  // pop_include() の後 (include_stack が path を参照するため)
-  /* f->buf は解放しない: 被 include のトークン (識別子・文字列リテラル) の str は buf 内を
-   * 指しており (replace_trigraphs はトリグラフ無しなら入力をそのまま返す)、パーサが typedef 名
-   * やタグ名などをポインタで永続保持するため、コンパイル終了まで生存させる必要がある。
-   * バッチ include_and_splice も buf を解放せずプロセス終了まで保持する。 */
+  /* Tokens and semantic records may still point into a physical include buffer.
+   * Keep it until the next translation unit starts and frontend state is reset. */
+  if (f->buf_owned) retain_include_source(f->buf);
   free(f);
 }
 
@@ -2595,8 +2642,7 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
     if (s->file_override_set) nx->file_name_id = s->file_override;
   }
   if (nx) pps_pushback_one(s, nx);
-  /* new_file は free しない: tk_filename_intern がポインタをそのまま filename_table に
-   * 永続保持するため (バッチ handle_line も free せず table に所有させる)。 */
+  free(new_file);
 }
 
 /* #include をストリーム経路で処理する。バッチ handle_include と同じ順で被 include を解決し、
@@ -2640,6 +2686,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   f->parent                  = s->frames;
   f->parent_lex              = s->lex;
   f->buf                     = buf;
+  f->buf_owned               = g_virtual_headers_enabled ? 0 : 1;
   f->path_owned              = loaded_path;
   f->saved_input             = tk_get_user_input_ctx(g_preprocess_tk_ctx);
   f->saved_filename          = tk_get_filename_ctx(g_preprocess_tk_ctx);
@@ -2651,10 +2698,9 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
    * tokenize 前に push する。深さ/循環制限もここで発火しうる (バッチ同様)。 */
   push_include_or_die(loaded_path);
 
-  /* ctx を被 include に切替。以後 init_token_base が被 include 名で file_name_id を付与し、
-   * 新しい lexer は line_no=1 起算なので line_delta=0 で正しい行番号になる。my_strndup は
-   * tk_filename_intern がポインタ保持するため free しない (バッチ同様)。 */
-  tk_set_filename_ctx(g_preprocess_tk_ctx, my_strndup(loaded_path, strlen(loaded_path)));
+  /* ctx はframe所有のpathを借用する。tokenのfilename tableは文字列をコピーするので、
+   * frame pop後も発行済みfile_name_idは有効なまま。 */
+  tk_set_filename_ctx(g_preprocess_tk_ctx, loaded_path);
   s->line_delta        = 0;
   s->file_override_set = 0;
   s->file_override     = 0;
@@ -2849,6 +2895,12 @@ static void pps_ensure_lookahead(void) {
 token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src) {
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
   g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に
+   * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
+  reset_macros();
+  reset_retired_include_sources();
+  tk_allocator_reset_translation_unit();
+  tk_filename_reset_translation_unit();
   reset_pragma_once_list();
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
@@ -2861,7 +2913,6 @@ token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const 
   include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
   tk_allocator_set_recyclable(0);
-  macros = NULL;
   pp_init_predefined_macros();
   /* 以後の生成は recyclable アリーナ。 */
   tk_allocator_set_recyclable(1);
@@ -2891,7 +2942,7 @@ void pp_stream_close(pp_stream_t *s) {
       s->frames = f->parent;
       pop_include();
       free(f->path_owned);
-      /* f->buf は解放しない (pps_pop_frame 参照: トークン str が buf 内を指す)。 */
+      if (f->buf_owned) retain_include_source(f->buf);
       free(f);
     }
     tk_stream_delete(s->lex);
