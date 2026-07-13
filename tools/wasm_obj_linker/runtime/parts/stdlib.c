@@ -1136,6 +1136,7 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   long len;
   long need;
   long new_cap;
+  char *new_line;
   char *dst;
   int ch;
   long i;
@@ -1162,7 +1163,12 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   if (!*lineptr || (long)*cap < need) {
     new_cap = *cap ? (long)*cap : 128;
     while (new_cap < need) new_cap *= 2;
-    *lineptr = (char *)__agc_runtime_realloc(*lineptr, (unsigned long)new_cap);
+    new_line = (char *)__agc_runtime_realloc(*lineptr, (unsigned long)new_cap);
+    if (!new_line) {
+      ag_rt_set_errno(12);
+      return -1;
+    }
+    *lineptr = new_line;
     *cap = (unsigned long)new_cap;
   }
   dst = *lineptr;

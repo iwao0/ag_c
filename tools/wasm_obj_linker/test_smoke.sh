@@ -951,14 +951,14 @@ int fgetc(FILE *stream);
 int ungetc(int c, FILE *stream);
 long getline(char **lineptr, unsigned long *n, FILE *stream);
 int feof(FILE *stream);
+void free(void *ptr);
 int main(void) {
   FILE *wf = fopen("tmp.txt", "w");
   fwrite("A\nBC", 1, 4, wf);
   fclose(wf);
   FILE *rf = fopen("tmp.txt", "r");
-  char small[2];
-  char *line = small;
-  unsigned long cap = sizeof(small);
+  char *line = 0;
+  unsigned long cap = 0;
   long n1 = getline(&line, &cap, rf);
   int ok1 = n1 == 2 && line[0] == 'A' && line[1] == '\n' && line[2] == 0 && cap >= 3;
   char *line_after_grow = line;
@@ -974,6 +974,7 @@ int main(void) {
   int ok4 = ch == 'A' && pushed == 'Z' && n4 == 2 &&
             line[0] == 'Z' && line[1] == '\n' && line[2] == 0;
   fclose(rf2);
+  free(line);
   return ok1 && ok2 && ok3 && ok4 ? 42 : 1;
 }
 SRC
@@ -2199,6 +2200,7 @@ void *malloc(long size);
 void *calloc(long nmemb, long size);
 void *realloc(void *ptr, long size);
 void *aligned_alloc(long alignment, long size);
+void free(void *ptr);
 int main(void) {
   char *p = malloc(4);
   char *q;
@@ -2232,9 +2234,188 @@ int main(void) {
          bad_align_nonpow2 == 0 && bad_align_size == 0 && bad_align_neg == 0 &&
          ((long)a16 % 16) == 0 && ((long)a32 % 32) == 0 &&
          a16[0] == 'Z' && a16[31] == 'Q' &&
-         zero_calloc != 0 && q != p && q[0] == 'A' && q[1] == 'B' &&
-         q[2] == 'C' && r != q && r[0] == 'A' && r[1] == 'B' &&
+         zero_calloc != 0 && q == p && q[0] == 'A' && q[1] == 'B' &&
+         q[2] == 'C' && r == q && r[0] == 'A' && r[1] == 'B' &&
          realloc(r, -1) == 0 && realloc(r, 0) == 0 ? 42 : 1;
+}
+SRC
+
+cat > "$out_dir/allocator_reuse_state.c" <<'SRC'
+void *malloc(long size);
+void *calloc(long nmemb, long size);
+void *realloc(void *ptr, long size);
+void *aligned_alloc(long alignment, long size);
+void free(void *ptr);
+
+static void fill(char *p, long n, int seed) {
+  long i = 0;
+  while (i < n) {
+    p[i] = (char)(seed + i * 17);
+    i++;
+  }
+}
+
+static int matches(char *p, long n, int seed) {
+  long i = 0;
+  while (i < n) {
+    if (p[i] != (char)(seed + i * 17)) return 0;
+    i++;
+  }
+  return 1;
+}
+
+int main(void) {
+  char *a;
+  char *b;
+  char *c;
+  char *p;
+  char *q;
+  char *r;
+  char *guard;
+  char *piece;
+  char *slots[32];
+  long sizes[32];
+  long i;
+  long round;
+
+  free(0);
+
+  p = malloc(64);
+  if (!p) return 1;
+  fill(p, 64, 3);
+  q = realloc(p, 4096);
+  if (q != p || !matches(q, 64, 3)) return 1;
+  free(q);
+
+  i = 0;
+  while (i < 1000) {
+    p = malloc(64L * 1024L);
+    if (!p) return 1;
+    p[0] = (char)i;
+    p[64L * 1024L - 1] = (char)(i + 1);
+    free(p);
+    i++;
+  }
+
+  a = malloc(256);
+  if (!a) return 2;
+  free(a);
+  b = malloc(256);
+  if (b != a) return 3;
+  free(b);
+  c = malloc(64);
+  piece = malloc(64);
+  if (c != a || !piece || piece == c) return 4;
+  free(c);
+  free(piece);
+
+  a = malloc(64);
+  b = malloc(64);
+  guard = malloc(64);
+  if (!a || !b || !guard) return 5;
+  free(b);
+  free(a);
+  c = malloc(120);
+  if (c != a) return 6;
+  free(c);
+  free(guard);
+
+  a = malloc(64);
+  b = malloc(64);
+  guard = malloc(64);
+  if (!a || !b || !guard) return 7;
+  free(a);
+  free(b);
+  c = malloc(120);
+  if (c != a) return 8;
+  free(c);
+  free(guard);
+
+  p = malloc(256);
+  guard = malloc(64);
+  if (!p || !guard) return 9;
+  fill(p, 64, 11);
+  q = realloc(p, 64);
+  if (q != p || !matches(q, 64, 11)) return 10;
+  piece = malloc(128);
+  if (!piece || (long)piece <= (long)q || (long)piece >= (long)guard) return 11;
+  free(piece);
+  free(q);
+  free(guard);
+
+  p = malloc(64);
+  q = malloc(128);
+  guard = malloc(64);
+  if (!p || !q || !guard) return 12;
+  fill(p, 64, 23);
+  free(q);
+  r = realloc(p, 160);
+  if (r != p || !matches(r, 64, 23)) return 13;
+  free(r);
+  free(guard);
+
+  p = malloc(64);
+  guard = malloc(64);
+  if (!p || !guard) return 14;
+  fill(p, 64, 31);
+  r = realloc(p, 256);
+  if (!r || r == p || !matches(r, 64, 31)) return 15;
+  free(r);
+  free(guard);
+
+  a = aligned_alloc(64, 128);
+  if (!a || ((long)a & 63) != 0) return 16;
+  fill(a, 128, 41);
+  free(a);
+  b = aligned_alloc(64, 64);
+  if (!b || ((long)b & 63) != 0) return 17;
+  b[0] = 7;
+  free(b);
+  c = malloc(32);
+  if (!c) return 18;
+  free(c);
+
+  p = calloc(0, 7);
+  if (!p || calloc(0x7fffffffL, 2) != 0) return 19;
+  free(p);
+
+  p = malloc(64);
+  if (!p) return 20;
+  fill(p, 64, 53);
+  if (malloc(60L * 1024L * 1024L) != 0 || !matches(p, 64, 53)) return 21;
+  free(p);
+
+  round = 0;
+  while (round < 200) {
+    i = 0;
+    while (i < 32) {
+      sizes[i] = ((i * 37 + round * 13) % 4096) + 1;
+      slots[i] = malloc(sizes[i]);
+      if (!slots[i]) return 22;
+      slots[i][0] = (char)(round + i);
+      slots[i][sizes[i] - 1] = (char)(round - i);
+      i++;
+    }
+    i = 0;
+    while (i < 32) {
+      if (slots[i][0] != (char)(round + i) ||
+          slots[i][sizes[i] - 1] != (char)(round - i)) return 23;
+      i += 2;
+    }
+    i = 0;
+    while (i < 32) {
+      free(slots[i]);
+      i += 2;
+    }
+    i = 1;
+    while (i < 32) {
+      free(slots[i]);
+      i += 2;
+    }
+    round++;
+  }
+
+  return 42;
 }
 SRC
 
@@ -3248,6 +3429,8 @@ int main(void) {
   p[0] = 'O';
   p[1] = 'K';
   p[2] = 0;
+  int allocator_ok = p != q && p[0] == 'O' && p[1] == 'K' &&
+                     q[0] == 0 && q[3] == 0 && r[0] == 'A';
   free(p);
   nums[0] = 4;
   nums[1] = 1;
@@ -4495,8 +4678,7 @@ int main(void) {
          atanh(-1.0e-20) < 0.0 &&
          atanh(-1.0e-20) > -2.0e-20 &&
          atoi(" -123x") == -123 &&
-         p != q && p[0] == 'O' && p[1] == 'K' && q[0] == 0 && q[3] == 0 &&
-         r[0] == 'A' &&
+         allocator_ok &&
          wrote == 3 && pos_after_write == 3 &&
          stdout_wrote == 2 && readn == 2 && rb[0] == 'A' && rb[1] == '\n' && ch == 'B' &&
          fd >= 0 && stat_ok == 0 && (st.st_mode & 0170000) == 0100000 &&
@@ -4956,6 +5138,13 @@ grep -q 'main() => i32:42' "$out_dir/linked_wide_io_state.interp"
 wasm-validate "$out_dir/linked_alloc_state.wasm"
 wasm-interp "$out_dir/linked_alloc_state.wasm" --run-all-exports > "$out_dir/linked_alloc_state.interp"
 grep -q 'main() => i32:42' "$out_dir/linked_alloc_state.interp"
+
+"$root/build/ag_c_wasm" -c -o "$out_dir/allocator_reuse_state.o" "$out_dir/allocator_reuse_state.c"
+"$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_allocator_reuse_state.wasm" \
+  "$out_dir/allocator_reuse_state.o"
+wasm-validate "$out_dir/linked_allocator_reuse_state.wasm"
+wasm-interp "$out_dir/linked_allocator_reuse_state.wasm" --run-all-exports > "$out_dir/linked_allocator_reuse_state.interp"
+grep -q 'main() => i32:42' "$out_dir/linked_allocator_reuse_state.interp"
 
 "$root/build/ag_c_wasm" -c -o "$out_dir/qsort_size_state.o" "$out_dir/qsort_size_state.c"
 "$root/build/ag_wasm_link" --no-entry --export=main -o "$out_dir/linked_qsort_size_state.wasm" \
