@@ -2,6 +2,7 @@
 #define PARSER_TYPE_H
 
 #include "core.h"
+#include <stddef.h>
 
 typedef enum {
   PSX_TYPE_INVALID = 0,
@@ -247,6 +248,8 @@ const struct tag_member_info_t *ps_type_find_aggregate_member(
     const char *tag_name, int tag_len,
     const char *member_name, int member_len);
 int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
+int ps_type_format_canonical_signature(const psx_type_t *type,
+                                       char *out, size_t out_size);
 int ps_type_generic_matches(const psx_type_t *control,
                             const psx_type_t *association);
 psx_type_t *ps_type_generic_control(const psx_type_t *control);

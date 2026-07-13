@@ -20,8 +20,9 @@ make test-wasm-linker-selfhost
 ```
 
 `build/wasm_linker_selfhost/ag_wasm_link.wasm` exports `memory`, `malloc`,
-`free`, `main`, `agc_wasm_link_objects`, and
-`agc_wasm_link_objects_with_options`. The API takes object bytes from linear
+`free`, `main`, `agc_wasm_link_objects`,
+`agc_wasm_link_objects_with_options`, and
+`agc_wasm_link_objects_with_export_signatures`. The API takes object bytes from linear
 memory rather than filesystem paths:
 
 ```c
@@ -33,10 +34,20 @@ typedef struct {
 long agc_wasm_link_objects(long inputs, int input_count,
                            long exports, int export_count,
                            int use_stdlib, long out_len);
+
+typedef struct {
+  long name;
+  long signature; /* nullable for a name-only export */
+} agc_link_export_t;
+
+long agc_wasm_link_objects_with_export_signatures(
+    long inputs, int input_count, long exports, int export_count,
+    int use_stdlib, long options, long max_output_bytes, long out_len);
 ```
 
 `inputs` points to an array of `(ptr,len)` object slices. `exports` points to an
-array of C string pointers. The return value is a pointer to the linked wasm
+array of C string pointers in the original API, or `agc_link_export_t` entries
+in the signature-aware API. The return value is a pointer to the linked wasm
 bytes, and `*out_len` receives the byte length.
 
 For JavaScript/TypeScript, use `tools/wasm_obj_linker/ag-wasm-link.js` and
@@ -47,13 +58,21 @@ import { createLinker } from "./tools/wasm_obj_linker/ag-wasm-link.js";
 
 const linker = await createLinker(wasmBytes);
 const linked = linker.link([mainObjectBytes, otherObjectBytes], {
-  exports: ["main"],
+  exports: [{ name: "start", signature: "v()" }, "main"],
   initialMemoryPages: 128,
   maximumMemoryPages: 256,
   stackSize: 2097152,
   maximumTableElements: 4096,
 });
 ```
+
+String exports retain the original name-only behavior. An object export checks
+the function's canonical C type recorded in the `agc.c_signature` object
+section. Common signature atoms are `v`, `b`, `i8`/`u8`, `i16`/`u16`,
+`i32`/`u32`, `lN`/`ulN`, `llN`/`ullN`, `f32`, `f64`, and recursive
+`p<type>` pointers. Function types use `result(param,...)`, so `void (void)` is
+`v()` and `int (int)` is `i32(i32)`. Function pointer types remain structural,
+for example `p<i32(i32)>`.
 
 ## Usage
 
@@ -102,6 +121,8 @@ Supported:
 - Duplicate non-local function/data definitions are rejected.
 - Cross-object function and host import signature mismatches are rejected before
   producing an invalid final wasm.
+- Canonical C function signatures are retained in `agc.c_signature` object
+  metadata for optional export-contract validation.
 - Relocation custom sections must target the matching Code/Data section.
 - Imported object globals used by the current backend, such as `__stack_pointer`.
 - A defined linear memory exported as `memory`; memory pages are sized from the

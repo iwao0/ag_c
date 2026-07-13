@@ -258,11 +258,11 @@ typedef struct ir_block_t {
 /* 関数                                                                */
 /* ------------------------------------------------------------------ */
 
-/* フィールドはアライメント降順 (8→4 バイト) に並べてパディングを除いている
- * (sizeof=88B、並べ替え前は 96B)。 */
+/* フィールドはアライメント降順 (8→4 バイト) に並べる。 */
 typedef struct ir_func_t {
   struct ir_func_t *next;
   char *name;
+  char *c_signature; /* semantic pass由来のcanonical C関数型。backendはparserを再参照しない。 */
   ir_block_t *entry;
   ir_block_t *cur_block;
   ir_block_t *blocks_tail;
@@ -271,6 +271,7 @@ typedef struct ir_func_t {
    * NULL のとき regalloc 未実行 (codegen は全 vreg を frame に置く既存挙動)。 */
   int *vreg_phys_reg;
   int name_len;
+  int c_signature_len;
   int next_vreg_id;
   int next_block_id;
   int frame_size;

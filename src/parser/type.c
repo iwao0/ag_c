@@ -1606,6 +1606,149 @@ static psx_decl_funcptr_sig_t type_generic_function_signature(
   return sig;
 }
 
+typedef struct {
+  char *out;
+  size_t cap;
+  size_t len;
+  int failed;
+} canonical_sig_writer_t;
+
+static void canonical_sig_bytes(canonical_sig_writer_t *w,
+                                const char *s, size_t len) {
+  if (!w || w->failed || !s) return;
+  if (len > (size_t)INT_MAX || w->len > (size_t)INT_MAX - len) {
+    w->failed = 1;
+    return;
+  }
+  if (w->out && w->cap > 0 && w->len < w->cap - 1) {
+    size_t writable = w->cap - 1 - w->len;
+    if (writable > len) writable = len;
+    memcpy(w->out + w->len, s, writable);
+  }
+  w->len += len;
+}
+
+static void canonical_sig_lit(canonical_sig_writer_t *w, const char *s) {
+  canonical_sig_bytes(w, s, strlen(s));
+}
+
+static void canonical_sig_uint(canonical_sig_writer_t *w, unsigned int value) {
+  char digits[16];
+  int count = 0;
+  do {
+    digits[count++] = (char)('0' + value % 10u);
+    value /= 10u;
+  } while (value != 0 && count < (int)sizeof(digits));
+  while (count > 0) canonical_sig_bytes(w, &digits[--count], 1);
+}
+
+static void canonical_sig_type(canonical_sig_writer_t *w,
+                               const psx_type_t *type, int depth) {
+  if (!type || depth > 64) {
+    w->failed = 1;
+    return;
+  }
+  if (type->is_const_qualified) canonical_sig_lit(w, "k");
+  if (type->is_volatile_qualified) canonical_sig_lit(w, "V");
+  if (type->is_atomic) canonical_sig_lit(w, "A");
+
+  switch (type->kind) {
+    case PSX_TYPE_VOID:
+      canonical_sig_lit(w, "v");
+      return;
+    case PSX_TYPE_BOOL:
+      canonical_sig_lit(w, "b");
+      return;
+    case PSX_TYPE_INTEGER: {
+      unsigned int bits = (unsigned int)(ps_type_sizeof(type) > 0
+                                             ? ps_type_sizeof(type) * 8
+                                             : 32);
+      if (type->scalar_kind == TK_ENUM || type->tag_kind == TK_ENUM) {
+        canonical_sig_lit(w, "e{");
+        canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));
+        canonical_sig_lit(w, ":");
+        if (type->tag_len > 0)
+          canonical_sig_bytes(w, type->tag_name, (size_t)type->tag_len);
+        canonical_sig_lit(w, "}");
+      } else if (type->is_plain_char) {
+        canonical_sig_lit(w, "c");
+        canonical_sig_uint(w, bits);
+      } else if (type->is_long_long) {
+        canonical_sig_lit(w, type->is_unsigned ? "ull" : "ll");
+        canonical_sig_uint(w, bits);
+      } else if (type->scalar_kind == TK_LONG) {
+        canonical_sig_lit(w, type->is_unsigned ? "ul" : "l");
+        canonical_sig_uint(w, bits);
+      } else {
+        canonical_sig_lit(w, type->is_unsigned ? "u" : "i");
+        canonical_sig_uint(w, bits);
+      }
+      return;
+    }
+    case PSX_TYPE_FLOAT:
+      canonical_sig_lit(w, "f");
+      canonical_sig_uint(w, (unsigned int)(ps_type_sizeof(type) * 8));
+      return;
+    case PSX_TYPE_COMPLEX:
+      canonical_sig_lit(w, "x");
+      canonical_sig_uint(w, (unsigned int)(ps_type_sizeof(type) * 8));
+      return;
+    case PSX_TYPE_POINTER:
+      canonical_sig_lit(w, "p<");
+      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_lit(w, ">");
+      return;
+    case PSX_TYPE_ARRAY:
+      canonical_sig_lit(w, "a");
+      canonical_sig_uint(w, (unsigned int)(type->array_len > 0 ? type->array_len : 0));
+      canonical_sig_lit(w, "<");
+      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_lit(w, ">");
+      return;
+    case PSX_TYPE_FUNCTION:
+      if (type->param_count < 0 || type->param_count > 16) {
+        w->failed = 1;
+        return;
+      }
+      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_lit(w, "(");
+      for (int i = 0; i < type->param_count && i < 16; i++) {
+        if (i > 0) canonical_sig_lit(w, ",");
+        canonical_sig_type(w, type->param_types[i], depth + 1);
+      }
+      if (type->is_variadic_function) {
+        if (type->param_count > 0) canonical_sig_lit(w, ",");
+        canonical_sig_lit(w, "...");
+      }
+      canonical_sig_lit(w, ")");
+      return;
+    case PSX_TYPE_STRUCT:
+    case PSX_TYPE_UNION:
+      canonical_sig_lit(w, type->kind == PSX_TYPE_STRUCT ? "s{" : "u{");
+      canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));
+      canonical_sig_lit(w, ":");
+      if (type->tag_len > 0)
+        canonical_sig_bytes(w, type->tag_name, (size_t)type->tag_len);
+      canonical_sig_lit(w, "}");
+      return;
+    default:
+      w->failed = 1;
+      return;
+  }
+}
+
+int ps_type_format_canonical_signature(const psx_type_t *type,
+                                       char *out, size_t out_size) {
+  canonical_sig_writer_t writer = {out, out_size, 0, 0};
+  canonical_sig_type(&writer, type, 0);
+  if (out && out_size > 0) {
+    size_t terminator = writer.len < out_size ? writer.len : out_size - 1;
+    out[terminator] = '\0';
+  }
+  if (writer.failed || writer.len > (size_t)INT_MAX) return -1;
+  return (int)writer.len;
+}
+
 int ps_type_generic_matches(const psx_type_t *control,
                              const psx_type_t *association) {
   if (!control || !association) return 0;

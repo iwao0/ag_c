@@ -98,6 +98,20 @@ function callLinkObjectsWithResourceLimits(fn, descPtr, objectCount, exportsPtr,
   ));
 }
 
+function callLinkObjectsWithExportSignatures(fn, descPtr, objectCount, exportsPtr, exportCount,
+                                             useStdlib, optionsPtr, maxOutputBytes, outLenPtr) {
+  return Number(fn(
+    BigInt(descPtr),
+    objectCount,
+    BigInt(exportsPtr),
+    exportCount,
+    useStdlib ? 1 : 0,
+    BigInt(optionsPtr),
+    BigInt(maxOutputBytes),
+    BigInt(outLenPtr),
+  ));
+}
+
 function asU32Option(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 0 || resolved > 0xffffffff) {
@@ -153,6 +167,8 @@ export async function createLinker(wasmSource, options = {}) {
   const linkObjects = instance.exports.agc_wasm_link_objects;
   const linkObjectsWithOptions = instance.exports.agc_wasm_link_objects_with_options;
   const linkObjectsWithResourceLimits = instance.exports.agc_wasm_link_objects_with_resource_limits;
+  const linkObjectsWithExportSignatures =
+    instance.exports.agc_wasm_link_objects_with_export_signatures;
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
   const stderrPtrExport = instance.exports.__agc_runtime_stderr_ptr;
@@ -277,22 +293,45 @@ export async function createLinker(wasmSource, options = {}) {
     if (!Array.isArray(objects) || objects.length === 0) {
       throw new TypeError("objects must be a non-empty array");
     }
-    const exportNames = options.exports ?? ["main"];
-    if (!Array.isArray(exportNames)) throw new TypeError("exports must be an array");
+    const exportEntries = options.exports ?? ["main"];
+    if (!Array.isArray(exportEntries)) throw new TypeError("exports must be an array");
+    const exportSpecs = exportEntries.map((entry, index) => {
+      if (typeof entry === "string") {
+        if (entry.length === 0 || entry.includes("\0")) {
+          throw new TypeError(`exports[${index}] must be a non-empty string without NUL`);
+        }
+        return { name: entry, signature: null };
+      }
+      if (!entry || typeof entry !== "object" || Array.isArray(entry) ||
+          typeof entry.name !== "string" || entry.name.length === 0 || entry.name.includes("\0") ||
+          typeof entry.signature !== "string" || entry.signature.length === 0 ||
+          entry.signature.includes("\0")) {
+        throw new TypeError(
+          `exports[${index}] must be a name string or { name, signature } with non-empty strings without NUL`,
+        );
+      }
+      return { name: entry.name, signature: entry.signature };
+    });
+    const hasSignedExports = exportSpecs.some((entry) => entry.signature !== null);
     const useStdlib = options.useStdlib ?? true;
     const maxOutputBytes = options.maxOutputBytes;
     if (maxOutputBytes !== undefined &&
         (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0 || maxOutputBytes > 0x7fffffff)) {
       throw new RangeError("maxOutputBytes must be an integer from 1 to 2147483647");
     }
-    if (maxOutputBytes !== undefined && typeof linkObjectsWithResourceLimits !== "function") {
+    if (maxOutputBytes !== undefined && typeof linkObjectsWithResourceLimits !== "function" &&
+        typeof linkObjectsWithExportSignatures !== "function") {
       throw new Error("this ag_wasm_link module does not support linked Wasm byte limits");
     }
     const hasLayoutOptions = options.initialMemoryPages !== undefined ||
       options.maximumMemoryPages !== undefined || options.stackSize !== undefined ||
       options.maximumTableElements !== undefined;
-    if (hasLayoutOptions && typeof linkObjectsWithOptions !== "function") {
+    if (hasLayoutOptions && typeof linkObjectsWithOptions !== "function" &&
+        typeof linkObjectsWithExportSignatures !== "function") {
       throw new Error("this ag_wasm_link module does not support memory/table layout options");
+    }
+    if (hasSignedExports && typeof linkObjectsWithExportSignatures !== "function") {
+      throw new Error("this ag_wasm_link module does not support C export signatures");
     }
     const allocations = [];
     let linkedPtr = 0;
@@ -310,20 +349,30 @@ export async function createLinker(wasmSource, options = {}) {
         setU64(descPtr + i * 16 + 8, objectBytes[i].length);
       }
 
-      const exportPtrs = exportNames.map((name) => {
-        if (typeof name !== "string" || name.length === 0) {
-          throw new TypeError("export names must be non-empty strings");
+      const allocatedExports = exportSpecs.map(({ name, signature }) => {
+        const namePtr = allocCString(name);
+        allocations.push(namePtr);
+        let signaturePtr = 0;
+        if (signature !== null) {
+          signaturePtr = allocCString(signature);
+          allocations.push(signaturePtr);
         }
-        const ptr = allocCString(name);
-        allocations.push(ptr);
-        return ptr;
+        return { namePtr, signaturePtr };
       });
-      const exportsPtr = callMalloc(malloc, Math.max(1, exportPtrs.length) * 8);
+      const exportStride = hasSignedExports ? 16 : 8;
+      const exportsPtr = callMalloc(malloc, Math.max(1, allocatedExports.length) * exportStride);
       if (!exportsPtr) throw new Error("ag_wasm_link malloc failed for export names");
       allocations.push(exportsPtr);
       refresh();
-      ensureMemoryRange(memory, exportsPtr, Math.max(1, exportPtrs.length) * 8, "exports");
-      for (let i = 0; i < exportPtrs.length; i++) setU64(exportsPtr + i * 8, exportPtrs[i]);
+      ensureMemoryRange(
+        memory, exportsPtr, Math.max(1, allocatedExports.length) * exportStride, "exports",
+      );
+      for (let i = 0; i < allocatedExports.length; i++) {
+        setU64(exportsPtr + i * exportStride, allocatedExports[i].namePtr);
+        if (hasSignedExports) {
+          setU64(exportsPtr + i * exportStride + 8, allocatedExports[i].signaturePtr);
+        }
+      }
 
       const outLenPtr = callMalloc(malloc, 8);
       if (!outLenPtr) throw new Error("ag_wasm_link malloc failed for output length");
@@ -333,7 +382,8 @@ export async function createLinker(wasmSource, options = {}) {
       setU64(outLenPtr, 0);
 
       let linkerOptionsPtr = 0;
-      if (typeof linkObjectsWithOptions === "function") {
+      if (typeof linkObjectsWithOptions === "function" ||
+          typeof linkObjectsWithExportSignatures === "function") {
         const initialMemoryPages = asU32Option(options.initialMemoryPages, 1024,
                                                "initialMemoryPages");
         const maximumMemoryPages = options.maximumMemoryPages === undefined
@@ -357,21 +407,27 @@ export async function createLinker(wasmSource, options = {}) {
       }
 
       try {
-        if (maxOutputBytes !== undefined) {
+        if (hasSignedExports) {
+          linkedPtr = callLinkObjectsWithExportSignatures(
+            linkObjectsWithExportSignatures, descPtr, objectBytes.length,
+            exportsPtr, allocatedExports.length, useStdlib, linkerOptionsPtr,
+            maxOutputBytes ?? 0, outLenPtr,
+          );
+        } else if (maxOutputBytes !== undefined) {
           linkedPtr = callLinkObjectsWithResourceLimits(
             linkObjectsWithResourceLimits, descPtr, objectBytes.length,
-            exportsPtr, exportPtrs.length, useStdlib, linkerOptionsPtr,
+            exportsPtr, allocatedExports.length, useStdlib, linkerOptionsPtr,
             maxOutputBytes, outLenPtr,
           );
         } else if (typeof linkObjectsWithOptions === "function") {
           linkedPtr = callLinkObjectsWithOptions(
             linkObjectsWithOptions, descPtr, objectBytes.length,
-            exportsPtr, exportPtrs.length, useStdlib, linkerOptionsPtr, outLenPtr,
+            exportsPtr, allocatedExports.length, useStdlib, linkerOptionsPtr, outLenPtr,
           );
         } else {
           linkedPtr = callLinkObjects(
             linkObjects, descPtr, objectBytes.length, exportsPtr,
-            exportPtrs.length, useStdlib, outLenPtr,
+            allocatedExports.length, useStdlib, outLenPtr,
           );
         }
       } catch (err) {

@@ -4,6 +4,7 @@
 #include "core.h"
 #include "type.h"
 #include <stdbool.h>
+#include <stddef.h>
 
 typedef struct {
   token_kind_t token_kind;
@@ -29,6 +30,10 @@ int ps_ctx_is_function_defined(char *name, int len);
 psx_function_ret_info_t ps_ctx_get_function_ret_info(char *name, int len);
 bool ps_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 int ps_ctx_get_function_nargs_fixed(char *name, int len);
+/* Returns the canonical C signature length, or -1 when the function is unknown.
+ * A zero-sized output queries the required length; for example void(void) is v(). */
+int ps_ctx_format_function_signature(char *name, int len,
+                                     char *out, size_t out_size);
 const psx_type_t *ps_ctx_get_function_param_type(char *name, int len,
                                                  int param_idx);
 int ps_ctx_scalar_type_size(token_kind_t kind);

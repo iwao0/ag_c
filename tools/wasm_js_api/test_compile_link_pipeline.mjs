@@ -56,6 +56,111 @@ if (globalStarter.instance.exports.read_value() !== 5) {
   throw new Error("self-host global starter game did not preserve global state");
 }
 
+const signedStarter = await toolchain.instantiateLinkedWasm(
+  "void start(void) {} void update(void) {}\n",
+  {
+    exports: [
+      { name: "start", signature: "v()" },
+      { name: "update", signature: "v()" },
+    ],
+    useStdlib: false,
+  },
+);
+signedStarter.instance.exports.start();
+signedStarter.instance.exports.update();
+
+async function expectSignedExportFailure(source, exportSpec, expectedMessage) {
+  const isolatedToolchain = await freshToolchain();
+  try {
+    isolatedToolchain.compileLinkedWasm(source, {
+      exports: [exportSpec],
+      useStdlib: false,
+    });
+    throw new Error(`signed export unexpectedly linked: ${exportSpec.name}`);
+  } catch (err) {
+    if (err.message.startsWith("signed export unexpectedly linked:") ||
+        !err.message.includes(expectedMessage)) {
+      throw err;
+    }
+  }
+}
+
+await expectSignedExportFailure(
+  "int start(void) { return 0; }\n",
+  { name: "start", signature: "v()" },
+  "export C signature mismatch for start: expected v(), actual i32()",
+);
+await expectSignedExportFailure(
+  "void start(int value) { (void)value; }\n",
+  { name: "start", signature: "v()" },
+  "export C signature mismatch for start: expected v(), actual v(i32)",
+);
+await expectSignedExportFailure(
+  "void start(double value) { (void)value; }\n",
+  { name: "start", signature: "v(i32)" },
+  "export C signature mismatch for start: expected v(i32), actual v(f64)",
+);
+await expectSignedExportFailure(
+  "void start(unsigned int value) { (void)value; }\n",
+  { name: "start", signature: "v(i32)" },
+  "export C signature mismatch for start: expected v(i32), actual v(u32)",
+);
+await expectSignedExportFailure(
+  "int start;\n",
+  { name: "start", signature: "v()" },
+  "signed export refers to a data symbol: start",
+);
+await expectSignedExportFailure(
+  "void host_entry(void); void call_host(void) { host_entry(); }\n",
+  { name: "host_entry", signature: "v()" },
+  "signed export refers to an import-only function: host_entry",
+);
+await expectSignedExportFailure(
+  "extern int external_data; int read_external(void) { return external_data; }\n",
+  { name: "external_data", signature: "v()" },
+  "signed export refers to an undefined data symbol: external_data",
+);
+await expectSignedExportFailure(
+  "void present(void) {}\n",
+  { name: "missing", signature: "v()" },
+  "signed export not found: missing",
+);
+
+const canonicalTypedefExports = await toolchain.instantiateLinkedWasm(`
+typedef void entry_t(void);
+typedef int (*callback_t)(int);
+entry_t typed_start;
+void typed_start(void) {}
+void accept_callback(callback_t callback) { (void)callback; }
+`, {
+  exports: [
+    { name: "typed_start", signature: "v()" },
+    { name: "accept_callback", signature: "v(p<i32(i32)>)" },
+  ],
+  useStdlib: false,
+});
+canonicalTypedefExports.instance.exports.typed_start();
+
+const declarationDefinitionExports = await toolchain.instantiateLinkedWasm([
+  "typedef void entry_t(void); entry_t split_start; void invoke_start(void) { split_start(); }\n",
+  "void split_start(void) {}\n",
+], {
+  exports: [
+    { name: "split_start", signature: "v()" },
+    { name: "invoke_start", signature: "v()" },
+  ],
+  useStdlib: false,
+});
+declarationDefinitionExports.instance.exports.invoke_start();
+
+const legacyStringExport = await toolchain.instantiateLinkedWasm(
+  "int legacy(int value) { return value + 1; }\n",
+  { exports: ["legacy"], useStdlib: false },
+);
+if (legacyStringExport.instance.exports.legacy(41) !== 42) {
+  throw new Error("legacy string export behavior changed");
+}
+
 const virtualHeaderProgram = await toolchain.instantiateLinkedWasm({
   name: "main.c",
   source: '#include "player.h"\nint main(void) { return PLAYER_VALUE; }\n',

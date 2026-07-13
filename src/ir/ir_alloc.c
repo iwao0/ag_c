@@ -141,7 +141,8 @@ ir_module_t *ir_module_new(void) {
 }
 
 /* 関数 1 つ分の IR を解放する (関数ごとストリーミング codegen 用)。
- * 所有しているのは block / inst / inst->args / f->name / f->vreg_phys_reg のみ。
+ * 所有しているのは block / inst / inst->args / f->name / f->c_signature /
+ * f->vreg_phys_reg のみ。
  * inst->sym は gv->name / 文字列ラベル / AST funcname の alias なので解放しない。 */
 void ir_func_free(ir_func_t *f) {
   if (!f) return;
@@ -160,6 +161,7 @@ void ir_func_free(ir_func_t *f) {
     b = bnext;
   }
   free(f->vreg_phys_reg);
+  free(f->c_signature);
   free(f->name);
   free(f);
 }

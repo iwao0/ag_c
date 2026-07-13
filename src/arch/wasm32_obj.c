@@ -63,6 +63,8 @@ typedef struct {
 typedef struct {
   char *name;
   int name_len;
+  char *c_signature;
+  int c_signature_len;
   obj_sig_t sig;
   int imported;
   int defined;
@@ -2194,6 +2196,26 @@ static void emit_linking_section(wb_t *out) {
   free(payload.data);
 }
 
+static void emit_c_signature_section(wb_t *out) {
+  int count = 0;
+  for (int i = 0; i < g_obj.func_count; i++) {
+    if (g_obj.funcs[i].c_signature) count++;
+  }
+  if (count == 0) return;
+
+  wb_t payload = {0};
+  wb_uleb(&payload, 1); /* format version */
+  wb_uleb(&payload, (uint32_t)count);
+  for (int i = 0; i < g_obj.func_count; i++) {
+    obj_func_t *f = &g_obj.funcs[i];
+    if (!f->c_signature) continue;
+    wb_str(&payload, f->name, f->name_len);
+    wb_str(&payload, f->c_signature, f->c_signature_len);
+  }
+  emit_custom_section(out, "agc.c_signature", &payload);
+  free(payload.data);
+}
+
 static void emit_reloc_section(wb_t *out, const char *name, int target_section,
                                obj_reloc_t *relocs, int reloc_count) {
   if (reloc_count == 0) return;
@@ -2262,6 +2284,13 @@ void wasm32_obj_gen_ir_module(ir_module_t *m) {
       free(def_sig.params);
     } else {
       of->sig = def_sig;
+    }
+    if (f->c_signature && f->c_signature_len > 0) {
+      of->c_signature = xrealloc(
+          of->c_signature, (size_t)f->c_signature_len + 1);
+      memcpy(of->c_signature, f->c_signature,
+             (size_t)f->c_signature_len + 1);
+      of->c_signature_len = f->c_signature_len;
     }
     of->defined = 1;
     of->is_static = f->is_static;
@@ -2625,6 +2654,7 @@ void wasm32_obj_end(void) {
   emit_datacount_section(&out);
   emit_code_section(&out);
   emit_data_section(&out);
+  emit_c_signature_section(&out);
   emit_linking_section(&out);
   emit_reloc_section(&out, "reloc.CODE", code_section_index, g_obj.code_relocs, g_obj.code_reloc_count);
   emit_reloc_section(&out, "reloc.DATA", data_section_index, g_obj.data_relocs, g_obj.data_reloc_count);

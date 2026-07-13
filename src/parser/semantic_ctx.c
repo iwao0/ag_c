@@ -1606,6 +1606,13 @@ int ps_ctx_get_function_nargs_fixed(char *name, int len) {
   return f && f->function_type ? f->function_type->param_count : 0;
 }
 
+int ps_ctx_format_function_signature(char *name, int len,
+                                     char *out, size_t out_size) {
+  const psx_type_t *type = ps_ctx_get_function_type(name, len);
+  if (!type) return -1;
+  return ps_type_format_canonical_signature(type, out, out_size);
+}
+
 void psx_ctx_get_function_ret_tag(char *name, int len, token_kind_t *out_tag_kind,
                                   char **out_tag_name, int *out_tag_len) {
   if (out_tag_kind) *out_tag_kind = TK_EOF;

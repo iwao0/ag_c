@@ -3469,6 +3469,24 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     }
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
+  int c_signature_len = ps_ctx_format_function_signature(
+      fn->funcname, fn->funcname_len, NULL, 0);
+  if (c_signature_len < 0) {
+    fail(ctx, "missing canonical C function signature");
+    return 0;
+  }
+  ctx->f->c_signature = malloc((size_t)c_signature_len + 1);
+  if (!ctx->f->c_signature) {
+    fail(ctx, "canonical C function signature allocation failed");
+    return 0;
+  }
+  if (ps_ctx_format_function_signature(
+          fn->funcname, fn->funcname_len, ctx->f->c_signature,
+          (size_t)c_signature_len + 1) != c_signature_len) {
+    fail(ctx, "canonical C function signature changed during IR build");
+    return 0;
+  }
+  ctx->f->c_signature_len = c_signature_len;
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
   if (ps_node_value_is_complex((node_t *)fn)) {
     ctx->f->ret_complex_half =

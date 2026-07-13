@@ -113,6 +113,11 @@ typedef struct {
 } reloc_t;
 
 typedef struct {
+  str_t name;
+  str_t signature;
+} c_signature_t;
+
+typedef struct {
   str_t path;
   type_t *types;
   int type_count;
@@ -133,6 +138,9 @@ typedef struct {
   reloc_t *relocs;
   int reloc_count;
   int reloc_cap;
+  c_signature_t *c_signatures;
+  int c_signature_count;
+  int c_signature_cap;
   int code_section_index;
   int data_section_index;
   int imports_table;
@@ -173,6 +181,11 @@ typedef struct {
   str_t name;
   int func_index;
 } export_func_t;
+
+typedef struct {
+  const char *name;
+  const char *signature;
+} export_spec_t;
 
 enum {
   LINK_OPT_MAX_MEMORY = 1u << 0,
@@ -608,6 +621,23 @@ static void parse_reloc_section(object_t *o, rd_t sec, int is_code) {
   }
 }
 
+static void parse_c_signature_section(object_t *o, rd_t sec) {
+  uint32_t version = rd_uleb(&sec);
+  if (version != 1) die("unsupported agc.c_signature version");
+  uint32_t count = rd_uleb(&sec);
+  for (uint32_t i = 0; i < count; i++) {
+    c_signature_t entry = {rd_str_dup(&sec), rd_str_dup(&sec)};
+    if (str_empty(entry.name) || str_empty(entry.signature))
+      die("invalid agc.c_signature entry");
+    for (int prev = 0; prev < o->c_signature_count; prev++) {
+      if (str_eq(o->c_signatures[prev].name, entry.name))
+        dief("duplicate C signature metadata: %s", entry.name.s);
+    }
+    PUSH(o->c_signatures, o->c_signature_count, o->c_signature_cap, entry);
+  }
+  if (sec.pos != sec.len) die("trailing bytes in agc.c_signature section");
+}
+
 static object_t parse_object_bytes(const char *path, const unsigned char *file, size_t len) {
   if (len < 8 || memcmp(file, "\0asm", 4) != 0) dief("not a wasm object: %s", path);
   object_t o;
@@ -638,6 +668,8 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
         parse_reloc_section(&o, sec, 1);
       } else if (name.len == 10 && memcmp(name.s, "reloc.DATA", 10) == 0) {
         parse_reloc_section(&o, sec, 0);
+      } else if (name.len == 15 && memcmp(name.s, "agc.c_signature", 15) == 0) {
+        parse_c_signature_section(&o, sec);
       }
     }
   }
@@ -2924,11 +2956,62 @@ static void write_output(const char *path, buf_t *out) {
   fclose(f);
 }
 
-static int export_list_contains(const char **export_names, int export_count, const char *name) {
+static int export_list_contains(const export_spec_t *exports, int export_count,
+                                const char *name) {
   for (int i = 0; i < export_count; i++) {
-    if (strcmp(export_names[i], name) == 0) return 1;
+    if (strcmp(exports[i].name, name) == 0) return 1;
   }
   return 0;
+}
+
+static const c_signature_t *find_c_signature(const object_t *obj, str_t name) {
+  for (int i = 0; i < obj->c_signature_count; i++) {
+    if (str_eq(obj->c_signatures[i].name, name)) return &obj->c_signatures[i];
+  }
+  return NULL;
+}
+
+static int find_symbol_kind(object_t *objs, int obj_count, str_t name,
+                            int kind, int require_undefined) {
+  for (int oi = 0; oi < obj_count; oi++) {
+    for (int si = 0; si < objs[oi].symbol_count; si++) {
+      symbol_t *sym = &objs[oi].symbols[si];
+      if (sym->kind != kind || !str_eq(sym->name, name)) continue;
+      if (require_undefined < 0 ||
+          ((sym->flags & SYM_UNDEFINED) != 0) == require_undefined) {
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+static void validate_export_c_signature(const export_spec_t *export_spec,
+                                        object_t *objs, int obj_count) {
+  if (!export_spec->signature) return;
+  str_t name = str_dup(export_spec->name, (int)strlen(export_spec->name));
+  object_t *def_obj = NULL;
+  int def_func = -1;
+  if (!find_defined_func(objs, obj_count, name, &def_obj, &def_func)) {
+    if (find_defined_data(objs, obj_count, name, NULL, NULL, NULL))
+      dief("signed export refers to a data symbol: %s", export_spec->name);
+    if (find_symbol_kind(objs, obj_count, name, SYM_FUNCTION, 1))
+      dief("signed export refers to an import-only function: %s", export_spec->name);
+    if (find_symbol_kind(objs, obj_count, name, SYM_DATA, 1))
+      dief("signed export refers to an undefined data symbol: %s", export_spec->name);
+    dief("signed export not found: %s", export_spec->name);
+  }
+  const c_signature_t *actual = find_c_signature(def_obj, name);
+  if (!actual) dief("C signature metadata not found for export: %s", export_spec->name);
+  if ((int)strlen(export_spec->signature) != actual->signature.len ||
+      memcmp(export_spec->signature, actual->signature.s,
+             (size_t)actual->signature.len) != 0) {
+    fprintf(stderr,
+            "ag_wasm_link: export C signature mismatch for %s: expected %s, actual %s\n",
+            export_spec->name, export_spec->signature, actual->signature.s);
+    exit(1);
+  }
+  (void)def_func;
 }
 
 static void patch_runtime_layout_value(final_data_t *datas, int data_count,
@@ -2957,7 +3040,7 @@ static int has_runtime_layout_value(
   return 0;
 }
 
-static void build_module_into(buf_t *out, const char **export_names, int export_count,
+static void build_module_into(buf_t *out, const export_spec_t *exports, int export_count,
                               object_t *objs, int obj_count, int use_stdlib,
                               const linker_options_t *requested_options,
                               size_t max_output_bytes) {
@@ -2972,7 +3055,7 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
   if (use_stdlib) synthesize_runtime_object(objs, obj_count, &runtime);
   func_t *main_wrapper = NULL;
   maybe_add_main_wrapper(objs, obj_count,
-                         export_list_contains(export_names, export_count, "main") ? "main" : NULL,
+                         export_list_contains(exports, export_count, "main") ? "main" : NULL,
                          &runtime, &main_wrapper);
   if (runtime.func_count > 0 || runtime.data_count > 0) {
     object_t *with_runtime = xmalloc((size_t)(obj_count + 1) * sizeof(*with_runtime));
@@ -2980,6 +3063,8 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
     with_runtime[obj_count++] = runtime;
     objs = with_runtime;
   }
+  for (int ei = 0; ei < export_count; ei++)
+    validate_export_c_signature(&exports[ei], objs, obj_count);
 
   type_t *types = NULL;
   int type_count = 0, type_cap = 0;
@@ -3150,17 +3235,17 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
   int export_func_count = 0, export_func_cap = 0;
   for (int ei = 0; ei < export_count; ei++) {
     for (int prev = 0; prev < ei; prev++) {
-      if (strcmp(export_names[prev], export_names[ei]) == 0) {
-        dief("duplicate export: %s", export_names[ei]);
+      if (strcmp(exports[prev].name, exports[ei].name) == 0) {
+        dief("duplicate export: %s", exports[ei].name);
       }
     }
     int export_func = -1;
-    str_t ex = str_dup(export_names[ei], (int)strlen(export_names[ei]));
+    str_t ex = str_dup(exports[ei].name, (int)strlen(exports[ei].name));
     for (int i = 0; i < def_count; i++) {
       func_t *f = &defs[i].obj->funcs[defs[i].func_index];
       if (str_eq(f->name, ex)) export_func = f->final_index;
     }
-    if (export_func < 0) dief("export not found: %s", export_names[ei]);
+    if (export_func < 0) dief("export not found: %s", exports[ei].name);
     export_func_t ef = {ex, export_func};
     PUSH(export_funcs, export_func_count, export_func_cap, ef);
   }
@@ -3218,11 +3303,11 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
 
 }
 
-static void build_module(const char *out_path, const char **export_names, int export_count,
+static void build_module(const char *out_path, const export_spec_t *exports, int export_count,
                          object_t *objs, int obj_count, int use_stdlib,
                          const linker_options_t *options) {
   buf_t out;
-  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib, options, 0);
+  build_module_into(&out, exports, export_count, objs, obj_count, use_stdlib, options, 0);
   write_output(out_path, &out);
 }
 
@@ -3231,16 +3316,21 @@ typedef struct {
   long len;
 } api_slice_t;
 
+typedef struct {
+  long name;
+  long signature;
+} api_export_t;
+
 static long link_objects_api(long inputs_addr, int input_count,
                              long exports_addr, int export_count,
                              int use_stdlib, long options_addr,
                              long max_output_bytes,
+                             int exports_have_signatures,
                              long out_len_addr) {
   if (!inputs_addr || input_count <= 0 || input_count > 4096 || export_count < 0 || export_count > 4096) {
     die("invalid linker API arguments");
   }
   api_slice_t *inputs = (api_slice_t *)(uintptr_t)inputs_addr;
-  long *export_ptrs = exports_addr ? (long *)(uintptr_t)exports_addr : NULL;
   long *out_len = out_len_addr ? (long *)(uintptr_t)out_len_addr : NULL;
   if (!out_len) die("invalid linker API output length pointer");
 
@@ -3253,17 +3343,29 @@ static long link_objects_api(long inputs_addr, int input_count,
                                  (size_t)inputs[i].len);
   }
 
-  const char **export_names = xmalloc((size_t)(export_count + 1) * sizeof(*export_names));
+  export_spec_t *exports = xmalloc((size_t)(export_count + 1) * sizeof(*exports));
   for (int i = 0; i < export_count; i++) {
-    if (!export_ptrs || !export_ptrs[i]) die("invalid linker API export name");
-    export_names[i] = (const char *)(uintptr_t)export_ptrs[i];
+    if (!exports_addr) die("invalid linker API export name");
+    if (exports_have_signatures) {
+      api_export_t *api_exports = (api_export_t *)(uintptr_t)exports_addr;
+      if (!api_exports[i].name) die("invalid linker API export name");
+      exports[i].name = (const char *)(uintptr_t)api_exports[i].name;
+      exports[i].signature = api_exports[i].signature
+                                   ? (const char *)(uintptr_t)api_exports[i].signature
+                                   : NULL;
+    } else {
+      long *export_ptrs = (long *)(uintptr_t)exports_addr;
+      if (!export_ptrs[i]) die("invalid linker API export name");
+      exports[i].name = (const char *)(uintptr_t)export_ptrs[i];
+      exports[i].signature = NULL;
+    }
   }
 
   buf_t out;
   const linker_options_t *options = options_addr
                                         ? (const linker_options_t *)(uintptr_t)options_addr
                                         : NULL;
-  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib, options,
+  build_module_into(&out, exports, export_count, objs, input_count, use_stdlib, options,
                     max_output_bytes > 0 ? (size_t)max_output_bytes : 0);
   unsigned char *ret = xmalloc(out.len);
   memcpy(ret, out.data, out.len);
@@ -3275,7 +3377,7 @@ long agc_wasm_link_objects(long inputs_addr, int input_count,
                            long exports_addr, int export_count,
                            int use_stdlib, long out_len_addr) {
   return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
-                          use_stdlib, 0, 0, out_len_addr);
+                          use_stdlib, 0, 0, 0, out_len_addr);
 }
 
 long agc_wasm_link_objects_with_options(long inputs_addr, int input_count,
@@ -3283,7 +3385,7 @@ long agc_wasm_link_objects_with_options(long inputs_addr, int input_count,
                                         int use_stdlib, long options_addr,
                                         long out_len_addr) {
   return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
-                          use_stdlib, options_addr, 0, out_len_addr);
+                          use_stdlib, options_addr, 0, 0, out_len_addr);
 }
 
 long agc_wasm_link_objects_with_resource_limits(long inputs_addr, int input_count,
@@ -3292,7 +3394,16 @@ long agc_wasm_link_objects_with_resource_limits(long inputs_addr, int input_coun
                                                 long max_output_bytes,
                                                 long out_len_addr) {
   return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
-                          use_stdlib, options_addr, max_output_bytes, out_len_addr);
+                          use_stdlib, options_addr, max_output_bytes, 0, out_len_addr);
+}
+
+long agc_wasm_link_objects_with_export_signatures(
+    long inputs_addr, int input_count, long exports_addr, int export_count,
+    int use_stdlib, long options_addr, long max_output_bytes,
+    long out_len_addr) {
+  return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
+                          use_stdlib, options_addr, max_output_bytes, 1,
+                          out_len_addr);
 }
 
 static void usage(void) {
@@ -3331,7 +3442,7 @@ static int input_contains(const char **inputs, int count, const char *path) {
 
 int main(int argc, char **argv) {
   const char *out = NULL;
-  const char **export_names = xmalloc(((size_t)argc + 1) * sizeof(char *));
+  export_spec_t *exports = xmalloc(((size_t)argc + 1) * sizeof(*exports));
   int export_count = 0, export_cap = argc + 1;
   int use_stdlib = 1;
   linker_options_t options = default_linker_options();
@@ -3344,10 +3455,12 @@ int main(int argc, char **argv) {
     } else if (strncmp(argv[i], "--export=", 9) == 0) {
       const char *name = argv[i] + 9;
       if (!*name) usage();
-      PUSH(export_names, export_count, export_cap, name);
+      export_spec_t export_spec = {name, NULL};
+      PUSH(exports, export_count, export_cap, export_spec);
     } else if (strcmp(argv[i], "--export") == 0) {
       if (++i >= argc || !argv[i][0]) usage();
-      PUSH(export_names, export_count, export_cap, argv[i]);
+      export_spec_t export_spec = {argv[i], NULL};
+      PUSH(exports, export_count, export_cap, export_spec);
     } else if (strcmp(argv[i], "--no-entry") == 0) {
       /* accepted for wasm-ld-shaped command lines */
     } else if (strcmp(argv[i], "--nostdlib") == 0) {
@@ -3382,6 +3495,6 @@ int main(int argc, char **argv) {
   }
   object_t *objs = xmalloc((size_t)input_count * sizeof(object_t));
   for (int i = 0; i < input_count; i++) objs[i] = parse_object(inputs[i]);
-  build_module(out, export_names, export_count, objs, input_count, use_stdlib, &options);
+  build_module(out, exports, export_count, objs, input_count, use_stdlib, &options);
   return 0;
 }

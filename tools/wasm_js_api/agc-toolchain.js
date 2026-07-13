@@ -113,11 +113,14 @@ function normalizeStdinBytes(input) {
 }
 
 function mergeExports(options, names) {
-  const exportNames = options.exports ?? ["main"];
-  if (!Array.isArray(exportNames)) throw new TypeError("exports must be an array");
-  const merged = exportNames.slice();
+  const exports = options.exports ?? ["main"];
+  if (!Array.isArray(exports)) throw new TypeError("exports must be an array");
+  const merged = exports.slice();
   for (const name of names) {
-    if (!merged.includes(name)) merged.push(name);
+    if (!merged.some((entry) =>
+      (typeof entry === "string" ? entry : entry?.name) === name)) {
+      merged.push(name);
+    }
   }
   return { ...options, exports: merged };
 }

@@ -1,5 +1,12 @@
+export interface AgcWasmSignedExport {
+  name: string;
+  signature: string;
+}
+
+export type AgcWasmExport = string | AgcWasmSignedExport;
+
 export interface AgcWasmLinkOptions {
-  exports?: string[];
+  exports?: AgcWasmExport[];
   useStdlib?: boolean;
   initialMemoryPages?: number;
   maximumMemoryPages?: number;
