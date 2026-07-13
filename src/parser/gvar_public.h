@@ -152,5 +152,9 @@ char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
 psx_decl_funcptr_sig_t ps_gvar_funcptr_sig(const global_var_t *src);
 psx_decl_funcptr_sig_t ps_gvar_funcptr_sig_by_name(char *name, int len);
+void ps_gvar_get_funcptr_sig(const global_var_t *src,
+                             psx_decl_funcptr_sig_t *out);
+void ps_gvar_get_funcptr_sig_by_name(char *name, int len,
+                                     psx_decl_funcptr_sig_t *out);
 
 #endif

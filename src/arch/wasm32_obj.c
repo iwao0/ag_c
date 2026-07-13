@@ -1144,7 +1144,9 @@ static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
   if (!gv) return func_sig_from_ctx(name, name_len);
-  return func_sig_from_funcptr_sig(ps_gvar_funcptr_sig(gv));
+  psx_decl_funcptr_sig_t sig = {0};
+  ps_gvar_get_funcptr_sig(gv, &sig);
+  return func_sig_from_funcptr_sig(sig);
 }
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
@@ -1243,13 +1245,7 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
       sig.nparams = call_nargs;
     }
     if (!i->is_void_call && i->dst.id != IR_VAL_NONE) {
-      if (i->dst.type == IR_TY_PTR ||
-          (i->dst.type == IR_TY_I32 && (sig.result == IR_TY_F32 || sig.result == IR_TY_F64))) {
-        sig.result = IR_TY_I32;
-      } else if (i->dst.type == IR_TY_I64 && sig.result == IR_TY_I32 &&
-                 !i->funcptr_sig.function.callable.return_shape.is_data_pointer) {
-        sig.result = IR_TY_I64;
-      }
+      sig.result = wasm_ir_type(i->dst.type);
     }
     return sig;
   }

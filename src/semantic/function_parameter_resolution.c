@@ -58,6 +58,8 @@ void psx_set_resolved_function_parameter_types(
       ps_type_new(PSX_TYPE_VOID), (psx_decl_funcptr_sig_t){0});
   ps_type_set_function_params(
       projection, parameter_types, parameter_count, is_variadic);
+  psx_decl_funcptr_sig_t projection_sig = {0};
+  ps_type_get_funcptr_signature(projection, &projection_sig);
   function_op->funcptr_sig.function.callable.signature =
-      ps_type_funcptr_signature(projection).function.callable.signature;
+      projection_sig.function.callable.signature;
 }

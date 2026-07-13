@@ -156,6 +156,8 @@ psx_type_t *ps_type_attach_funcptr_signature(
     psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
 void ps_type_complete_function_params(psx_type_t *type);
+void ps_type_get_funcptr_signature(const psx_type_t *type,
+                                   psx_decl_funcptr_sig_t *out);
 psx_decl_funcptr_sig_t ps_type_funcptr_signature(const psx_type_t *type);
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,

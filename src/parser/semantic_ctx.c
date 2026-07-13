@@ -372,7 +372,7 @@ static void ctx_typedef_info_apply_type(psx_typedef_info_t *out,
   int sizeof_size = ps_type_sizeof(type);
   if (sizeof_size > 0) out->sizeof_size = sizeof_size;
   if (has_funcptr_sig) {
-    out->funcptr_sig = ps_decl_funcptr_sig_clone(funcptr_sig);
+    ps_decl_funcptr_sig_clone_to(&funcptr_sig, &out->funcptr_sig);
     out->is_funcptr = 1;
   }
 }
@@ -436,7 +436,7 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
     out->fp_kind = TK_FLOAT_KIND_NONE;
     out->is_bool = 0;
     out->is_unsigned = 0;
-    out->funcptr_sig = ps_decl_funcptr_sig_clone(funcptr_sig);
+    ps_decl_funcptr_sig_clone_to(&funcptr_sig, &out->funcptr_sig);
     out->is_funcptr = 1;
   }
 }
@@ -1519,8 +1519,10 @@ int psx_ctx_get_function_ret_is_funcptr(char *name, int len) {
 
 psx_decl_funcptr_sig_t psx_ctx_get_function_ret_funcptr_sig(char *name, int len) {
   psx_function_ret_info_t info = ps_ctx_get_function_ret_info(name, len);
-  return info.is_funcptr ? ps_decl_funcptr_sig_clone(info.funcptr_sig)
-                         : (psx_decl_funcptr_sig_t){0};
+  psx_decl_funcptr_sig_t sig = {0};
+  if (info.is_funcptr)
+    ps_decl_funcptr_sig_clone_to(&info.funcptr_sig, &sig);
+  return sig;
 }
 
 /* 関数の戻り値型トークン (TK_INT / TK_LONG 等) を返す。未登録なら TK_EOF。

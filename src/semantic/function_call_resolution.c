@@ -19,9 +19,8 @@ void psx_resolve_function_call_type(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE;
 
-  const psx_type_t *function =
-      callable_function_type(bound_function_type);
-  if (!function) function = callable_function_type(callee_type);
+  const psx_type_t *function = callable_function_type(callee_type);
+  if (!function) function = callable_function_type(bound_function_type);
   if (function && function->base) {
     resolution->status = PSX_FUNCTION_CALL_RESOLUTION_OK;
     resolution->function_type = function;
@@ -40,6 +39,6 @@ psx_type_t *psx_resolve_function_reference_type(
     return NULL;
   psx_type_t *type = ps_type_new_pointer(
       ps_type_clone(function_type), 0);
-  type->funcptr_sig = ps_type_funcptr_signature(function_type);
+  ps_type_get_funcptr_signature(function_type, &type->funcptr_sig);
   return type;
 }

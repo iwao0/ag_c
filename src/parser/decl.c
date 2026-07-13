@@ -416,7 +416,7 @@ static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
     psx_funcptr_type_shape_t fn) {
   psx_funcptr_type_shape_t *copy = calloc(1, sizeof(*copy));
   if (!copy) return NULL;
-  *copy = psx_funcptr_type_shape_clone(fn);
+  psx_funcptr_type_shape_clone_to(&fn, copy);
   return copy;
 }
 
@@ -452,15 +452,37 @@ psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
 psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
     psx_funcptr_type_shape_t fn) {
   psx_funcptr_type_shape_t copy = {0};
-  copy.callable = fn.callable;
-  copy.returned_funcptr =
-      psx_funcptr_returned_func_clone(fn.returned_funcptr);
+  psx_funcptr_type_shape_clone_to(&fn, &copy);
   return copy;
+}
+
+void psx_funcptr_type_shape_clone_to(const psx_funcptr_type_shape_t *src,
+                                     psx_funcptr_type_shape_t *out) {
+  if (!out) return;
+  *out = (psx_funcptr_type_shape_t){0};
+  if (!src) return;
+  out->callable = src->callable;
+  out->returned_funcptr.is_funcptr = src->returned_funcptr.is_funcptr;
+  if (src->returned_funcptr.type) {
+    out->returned_funcptr.type = calloc(1, sizeof(*out->returned_funcptr.type));
+    if (out->returned_funcptr.type) {
+      psx_funcptr_type_shape_clone_to(src->returned_funcptr.type,
+                                      out->returned_funcptr.type);
+    }
+  }
+}
+
+void ps_decl_funcptr_sig_clone_to(const psx_decl_funcptr_sig_t *sig,
+                                  psx_decl_funcptr_sig_t *out) {
+  if (!out) return;
+  *out = (psx_decl_funcptr_sig_t){0};
+  if (!sig) return;
+  psx_funcptr_type_shape_clone_to(&sig->function, &out->function);
 }
 
 psx_decl_funcptr_sig_t ps_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig) {
   psx_decl_funcptr_sig_t copy = {0};
-  copy.function = psx_funcptr_type_shape_clone(sig.function);
+  ps_decl_funcptr_sig_clone_to(&sig, &copy);
   return copy;
 }
 

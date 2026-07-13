@@ -1257,9 +1257,10 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = ps_lvar_funcptr_sig(find_owning_lvar(ctx, lv->offset));
+  psx_decl_funcptr_sig_t sig = {0};
+  ps_lvar_get_funcptr_sig(find_owning_lvar(ctx, lv->offset), &sig);
   if (!ps_decl_funcptr_sig_has_payload(sig)) {
-    sig = ps_node_funcptr_sig(node->lhs);
+    ps_node_get_funcptr_sig(node->lhs, &sig);
   }
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
@@ -1306,9 +1307,10 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  psx_decl_funcptr_sig_t sig = ps_gvar_funcptr_sig_by_name(gv->name, gv->name_len);
+  psx_decl_funcptr_sig_t sig = {0};
+  ps_gvar_get_funcptr_sig_by_name(gv->name, gv->name_len, &sig);
   if (!ps_decl_funcptr_sig_has_payload(sig)) {
-    sig = ps_node_funcptr_sig(node->lhs);
+    ps_node_get_funcptr_sig(node->lhs, &sig);
   }
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
@@ -1333,7 +1335,8 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bo = 0;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = ps_node_funcptr_sig(node->lhs);
+  psx_decl_funcptr_sig_t sig = {0};
+  ps_node_get_funcptr_sig(node->lhs, &sig);
   ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
   if (ctx->failed) return ir_val_none();
   if (ps_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
@@ -1386,28 +1389,29 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
   if (!sym || !sig || !ps_decl_funcptr_sig_has_payload(*sig)) return;
   sym->has_funcptr_sig = 1;
-  sym->funcptr_sig = ps_decl_funcptr_sig_clone(*sig);
+  ps_decl_funcptr_sig_clone_to(sig, &sym->funcptr_sig);
 }
 
-static psx_decl_funcptr_sig_t funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee) {
-  if (!callee) return (psx_decl_funcptr_sig_t){0};
-  psx_decl_funcptr_sig_t sig = {0};
-  if (callee->kind == ND_LVAR) {
+static void funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee,
+                                   psx_decl_funcptr_sig_t *out) {
+  if (!out) return;
+  *out = (psx_decl_funcptr_sig_t){0};
+  if (!callee) return;
+  ps_node_get_funcptr_sig(callee, out);
+  if (!ps_decl_funcptr_sig_has_payload(*out) && callee->kind == ND_LVAR) {
     lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    sig = ps_lvar_funcptr_sig(lv);
-  } else if (callee->kind == ND_GVAR) {
+    ps_lvar_get_funcptr_sig(lv, out);
+  } else if (!ps_decl_funcptr_sig_has_payload(*out) &&
+             callee->kind == ND_GVAR) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
-    sig = ps_gvar_funcptr_sig_by_name(gvn->name, gvn->name_len);
+    ps_gvar_get_funcptr_sig_by_name(gvn->name, gvn->name_len, out);
   }
-  if (!ps_decl_funcptr_sig_has_payload(sig)) {
-    sig = ps_node_funcptr_sig(callee);
-  }
-  return sig;
 }
 
 static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, callee);
+  psx_decl_funcptr_sig_t sig = {0};
+  funcptr_sig_for_callee(ctx, callee, &sig);
   attach_funcptr_sig(call, &sig);
 }
 
@@ -1763,7 +1767,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       nargs_fixed = fixed;
     }
   } else {
-    psx_decl_funcptr_sig_t sig = funcptr_sig_for_callee(ctx, fn->callee);
+    psx_decl_funcptr_sig_t sig = {0};
+    funcptr_sig_for_callee(ctx, fn->callee, &sig);
     if (sig.function.callable.signature.is_variadic && sig.function.callable.signature.nargs_fixed < fn->nargs) {
       is_variadic_call = 1;
       nargs_fixed = sig.function.callable.signature.nargs_fixed;
