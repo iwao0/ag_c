@@ -184,7 +184,6 @@ psx_type_t *ps_type_new_pointer(psx_type_t *base) {
   type->base = base;
   type->size = 8;
   type->align = 8;
-  type->pointer_qual_levels = 1;
   return type;
 }
 
@@ -276,11 +275,10 @@ psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
   psx_type_t *type = base;
   for (int level = 1; level <= levels; level++) {
     psx_type_t *ptr = ps_type_new_pointer(type);
-    ptr->pointer_qual_levels = level;
-    ptr->pointer_const_qual_mask =
-        pointer_mask_for_subtree(const_mask, levels, level);
-    ptr->pointer_volatile_qual_mask =
-        pointer_mask_for_subtree(volatile_mask, levels, level);
+    ptr->is_const_qualified =
+        (pointer_mask_for_subtree(const_mask, levels, level) & 1u) ? 1 : 0;
+    ptr->is_volatile_qualified =
+        (pointer_mask_for_subtree(volatile_mask, levels, level) & 1u) ? 1 : 0;
     type = ptr;
   }
   return type;
@@ -485,34 +483,6 @@ int ps_declarator_shape_count_ops(
   return count;
 }
 
-/* is_const/is_volatileはidentifier-outwardのcanonical構造上の修飾位置。
- * pointer_*_qual_maskは旧APIが使う字句順compat viewなので、各連続pointer
- * chainで順番を反転したlocal bitを保持する。 */
-static void type_sync_pointer_compat_qual_masks(psx_type_t *type) {
-  while (type) {
-    if (type->kind != PSX_TYPE_POINTER) {
-      type = type->base;
-      continue;
-    }
-    psx_type_t *chain[24];
-    int count = 0;
-    psx_type_t *cur = type;
-    while (cur && cur->kind == PSX_TYPE_POINTER && count < 24) {
-      chain[count++] = cur;
-      cur = cur->base;
-    }
-    for (int i = 0; i < count; i++) {
-      const psx_type_t *lexical = chain[count - 1 - i];
-      chain[i]->pointer_qual_levels = count - i;
-      chain[i]->pointer_const_qual_mask =
-          lexical->is_const_qualified ? 1u : 0u;
-      chain[i]->pointer_volatile_qual_mask =
-          lexical->is_volatile_qualified ? 1u : 0u;
-    }
-    type = cur;
-  }
-}
-
 psx_type_t *ps_type_apply_declarator_shape(
     psx_type_t *base, const psx_declarator_shape_t *shape) {
   if (!base || !shape) return base;
@@ -523,8 +493,6 @@ psx_type_t *ps_type_apply_declarator_shape(
       type = ps_type_new_pointer(type);
       type->is_const_qualified = op->is_const_qualified;
       type->is_volatile_qualified = op->is_volatile_qualified;
-      type->pointer_const_qual_mask = op->is_const_qualified ? 1u : 0u;
-      type->pointer_volatile_qual_mask = op->is_volatile_qualified ? 1u : 0u;
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       int elem_size = ps_type_sizeof(type);
       if (elem_size <= 0) elem_size = ps_type_deref_size(type);
@@ -542,7 +510,6 @@ psx_type_t *ps_type_apply_declarator_shape(
       }
     }
   }
-  type_sync_pointer_compat_qual_masks(type);
   return type;
 }
 
@@ -1373,9 +1340,11 @@ int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type) {
 static unsigned int type_structural_pointer_qual_mask(const psx_type_t *type,
                                                       int is_volatile) {
   if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return 0;
-  unsigned int self_mask = is_volatile ? type->pointer_volatile_qual_mask
-                                       : type->pointer_const_qual_mask;
-  unsigned int mask = self_mask & 1u;
+  unsigned int mask =
+      (is_volatile ? type->is_volatile_qualified
+                   : type->is_const_qualified)
+          ? 1u
+          : 0u;
   if (type->base->kind == PSX_TYPE_POINTER)
     mask |= type_structural_pointer_qual_mask(type->base, is_volatile) << 1;
   int depth = ps_type_pointer_depth(type);
@@ -1406,35 +1375,8 @@ void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                        int is_const_qualified,
                                        int is_volatile_qualified) {
-  if (!type) return;
-  type->is_const_qualified = is_const_qualified ? 1 : 0;
-  type->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
-
-  psx_type_t *value_type = type;
-  while (value_type &&
-         (value_type->kind == PSX_TYPE_POINTER ||
-          value_type->kind == PSX_TYPE_ARRAY)) {
-    value_type = value_type->base;
-  }
-  if (!value_type || value_type->kind == PSX_TYPE_FUNCTION) return;
-  value_type->is_const_qualified = is_const_qualified ? 1 : 0;
-  value_type->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
-}
-
-void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src) {
-  if (!dst || !src) return;
-  dst->pointer_qual_levels = src->pointer_qual_levels;
-  dst->pointer_const_qual_mask = src->pointer_const_qual_mask;
-  dst->pointer_volatile_qual_mask = src->pointer_volatile_qual_mask;
-  dst->vla_row_stride_frame_off = src->vla_row_stride_frame_off;
-  dst->vla_strides_remaining = src->vla_strides_remaining;
-  dst->vla_row_stride_src_offset = src->vla_row_stride_src_offset;
-  dst->vla_row_stride_elem_size = src->vla_row_stride_elem_size;
-  dst->vla_param_inner_dim_count = src->vla_param_inner_dim_count;
-  for (int i = 0; i < 7; i++) {
-    dst->vla_param_inner_dim_consts[i] = src->vla_param_inner_dim_consts[i];
-    dst->vla_param_inner_dim_src_offsets[i] =
-        src->vla_param_inner_dim_src_offsets[i];
-  }
-  dst->vla_runtime_strides = src->vla_runtime_strides;
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  if (!type || type->kind == PSX_TYPE_FUNCTION) return;
+  if (is_const_qualified) type->is_const_qualified = 1;
+  if (is_volatile_qualified) type->is_volatile_qualified = 1;
 }

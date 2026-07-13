@@ -73,21 +73,7 @@ bool ps_ctx_find_enum_const_at(
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value);
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len);
-/* typedef の型記述子。decl_type が正本で、その他は scalar/tag query 用の projection。
- * pointer_levels / scope_depth は別 API・内部管理なのでここには含めない。 */
 typedef struct {
-  token_kind_t base_kind;
-  int elem_size;
-  tk_float_kind_t fp_kind;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int is_pointer;
-  int sizeof_size;
-  int pointee_const_qualified;
-  int pointee_volatile_qualified;
-  int is_unsigned;
-  int is_long_double;          // typedef した型自体が long double スカラか
   psx_type_t *decl_type;
 } psx_typedef_info_t;
 

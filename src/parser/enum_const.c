@@ -216,16 +216,9 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
           }
         } else if (psx_ctx_is_typedef_name_token(curtok())) {
           token_ident_t *id = (token_ident_t *)curtok();
-          int td_elem = 8;
-          int td_ptr = 0;
           int td_sizeof = 8;
-          psx_typedef_info_t _ti;
-          if (ps_ctx_find_typedef_name(id->str, id->len, &_ti)) {
-            td_elem = _ti.elem_size;
-            td_ptr = _ti.is_pointer;
-          }
-          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof)) sz = td_sizeof;
-          else sz = td_ptr ? 8 : td_elem;
+          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof))
+            sz = td_sizeof;
           set_curtok(curtok()->next);
         } else {
           set_curtok(curtok()->next);

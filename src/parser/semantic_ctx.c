@@ -159,77 +159,11 @@ static const psx_type_t *ctx_type_skip_arrays(const psx_type_t *type) {
   return type;
 }
 
-static const psx_type_t *ctx_type_declarator_leaf(const psx_type_t *type) {
-  while (type && type->base &&
-         (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY ||
-          type->kind == PSX_TYPE_FUNCTION)) {
-    type = type->base;
-  }
-  return type;
-}
-
 static int ctx_type_pointer_levels(const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_ARRAY) return 1;
   if (type->kind != PSX_TYPE_POINTER) return 0;
   return ps_type_pointer_view_structural_qual_levels(type);
-}
-
-static void ctx_typedef_info_apply_type(psx_typedef_info_t *out,
-                                        const psx_type_t *type) {
-  if (!out || !type) return;
-  ps_ctx_typedef_set_decl_type(out, (psx_type_t *)type);
-  int has_function_type = ps_type_find_function(type) != NULL;
-  out->is_pointer = type->kind == PSX_TYPE_POINTER ? 1 : 0;
-  if (type->kind == PSX_TYPE_POINTER && type->base) {
-    out->pointee_const_qualified = type->base->is_const_qualified ? 1 : 0;
-    out->pointee_volatile_qualified = type->base->is_volatile_qualified ? 1 : 0;
-  }
-  const psx_type_t *base = ctx_type_declarator_leaf(type);
-  if (base) {
-    switch (base->kind) {
-      case PSX_TYPE_VOID:
-        out->base_kind = TK_VOID;
-        out->fp_kind = TK_FLOAT_KIND_NONE;
-        out->elem_size = 0;
-        break;
-      case PSX_TYPE_BOOL:
-      case PSX_TYPE_INTEGER:
-        out->base_kind = base->scalar_kind;
-        out->fp_kind = TK_FLOAT_KIND_NONE;
-        out->elem_size = ps_type_sizeof(base);
-        out->is_unsigned = base->is_unsigned ? 1 : 0;
-        break;
-      case PSX_TYPE_FLOAT:
-        out->base_kind = base->fp_kind == TK_FLOAT_KIND_FLOAT ? TK_FLOAT : TK_DOUBLE;
-        out->fp_kind = base->fp_kind;
-        out->elem_size = ps_type_sizeof(base);
-        out->is_long_double = base->is_long_double ? 1 : 0;
-        break;
-      case PSX_TYPE_COMPLEX:
-        out->base_kind = base->fp_kind == TK_FLOAT_KIND_FLOAT ? TK_FLOAT : TK_DOUBLE;
-        out->fp_kind = base->fp_kind;
-        out->elem_size = ps_type_sizeof(base);
-        break;
-      case PSX_TYPE_STRUCT:
-      case PSX_TYPE_UNION:
-        out->base_kind = base->tag_kind;
-        out->tag_kind = base->tag_kind;
-        out->tag_name = base->tag_name;
-        out->tag_len = base->tag_len;
-        out->elem_size = ps_type_sizeof(base);
-        break;
-      default:
-        break;
-    }
-  }
-  if (has_function_type) {
-    out->fp_kind = TK_FLOAT_KIND_NONE;
-    out->is_unsigned = 0;
-    out->is_long_double = 0;
-  }
-  int sizeof_size = ps_type_sizeof(type);
-  if (sizeof_size > 0) out->sizeof_size = sizeof_size;
 }
 
 static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
@@ -241,7 +175,6 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
   out->tag_name = NULL;
   out->tag_len = 0;
   out->is_tag_pointer = 0;
-  out->pointer_qual_levels = 0;
   out->fp_kind = TK_FLOAT_KIND_NONE;
   out->is_bool = 0;
   out->is_unsigned = 0;
@@ -249,10 +182,6 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
   out->array_len = ps_tag_member_decl_array_count(out);
   ps_tag_member_decl_tag_identity(out, &out->tag_kind, &out->tag_name,
                                    &out->tag_len, &out->is_tag_pointer);
-  if (type->kind == PSX_TYPE_POINTER) {
-    out->pointer_qual_levels = ctx_type_pointer_levels(type);
-  }
-
   if (!has_function_type) {
     const psx_type_t *base = type;
     if (base->kind == PSX_TYPE_POINTER && base->base) base = base->base;
@@ -1210,7 +1139,6 @@ bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
     memset(out, 0, sizeof(*out));
     psx_type_t *decl_type = typedef_record_decl_type_mut(t);
     ps_ctx_typedef_set_decl_type(out, decl_type);
-    ctx_typedef_info_apply_type(out, decl_type);
   }
   return true;
 }

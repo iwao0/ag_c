@@ -102,30 +102,19 @@ static int ctx_get_tag_member_info_scoped(token_kind_t tk, char *tn, int tl,
   return ps_ctx_get_tag_member_info(tk, tn, tl, idx, out);
 }
 
-static int type_pointer_depth(const psx_type_t *type) {
-  int depth = 0;
-  while (type && type->kind == PSX_TYPE_POINTER) {
-    depth++;
-    type = type->base;
-  }
-  return depth;
-}
-
 static psx_type_t *type_with_self_qualifiers(psx_type_t *type,
                                              int is_const_qualified,
                                              int is_volatile_qualified) {
   if (!type) return NULL;
   psx_type_t *copy = arena_alloc(sizeof(psx_type_t));
   *copy = *type;
-  if (type_is_pointer_view_type(copy)) {
-    if (is_const_qualified) copy->pointer_const_qual_mask |= 1u;
-    else copy->pointer_const_qual_mask &= ~1u;
-    if (is_volatile_qualified) copy->pointer_volatile_qual_mask |= 1u;
-    else copy->pointer_volatile_qual_mask &= ~1u;
-  } else {
-    copy->is_const_qualified = is_const_qualified ? 1 : 0;
-    copy->is_volatile_qualified = is_volatile_qualified ? 1 : 0;
+  if (copy->kind == PSX_TYPE_ARRAY && copy->base) {
+    copy->base = type_with_self_qualifiers(
+        copy->base, is_const_qualified, is_volatile_qualified);
+    return copy;
   }
+  if (is_const_qualified) copy->is_const_qualified = 1;
+  if (is_volatile_qualified) copy->is_volatile_qualified = 1;
   return copy;
 }
 
@@ -2730,25 +2719,13 @@ static void init_array_addr_canonical_type(node_t *addr,
 static psx_type_t *type_from_address_operand(node_t *operand) {
   psx_type_t *base = ps_node_get_type(operand);
   if (!base) return NULL;
-  psx_type_t *type = ps_type_new_pointer(base);
-  int operand_levels = ps_node_pointer_qual_levels(operand);
-  type->pointer_qual_levels = operand_levels > 0 ? operand_levels + 1 : 1;
-  type->pointer_const_qual_mask = ps_node_pointer_const_qual_mask(operand) << 1;
-  type->pointer_volatile_qual_mask =
-      ps_node_pointer_volatile_qual_mask(operand) << 1;
-  return type;
+  return ps_type_new_pointer(base);
 }
 
 static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type) {
   if (!array_type || array_type->kind != PSX_TYPE_ARRAY || !array_type->base)
     return NULL;
   psx_type_t *ptr = ps_type_new_pointer(array_type->base);
-  if (array_type->base->kind == PSX_TYPE_POINTER) {
-    int base_levels = array_type->base->pointer_qual_levels > 0
-                          ? array_type->base->pointer_qual_levels
-                          : type_pointer_depth(array_type->base);
-    ptr->pointer_qual_levels = base_levels + 1;
-  }
   ptr->vla_row_stride_frame_off =
       psx_type_pointer_view_vla_row_stride_frame_off(array_type);
   ptr->vla_strides_remaining =
@@ -2766,7 +2743,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
       ps_type_pointer_view_structural_ptr_array_pointee_bytes(type);
   int has_structural_stride = ps_type_pointer_view_stride_metadata(
       type, NULL, NULL, NULL, NULL);
-  if (type->kind == PSX_TYPE_ARRAY && type->pointer_qual_levels <= 0) {
+  if (type->kind == PSX_TYPE_ARRAY) {
     return type->base;
   }
   if (type->kind == PSX_TYPE_POINTER && type->base->kind == PSX_TYPE_ARRAY &&
@@ -2785,10 +2762,8 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
     int has_runtime_vla_shape =
         psx_type_pointer_view_vla_row_stride_frame_off(type) != 0 ||
         (type->kind == PSX_TYPE_ARRAY && type->is_vla);
-    int is_array_view =
-        (type->kind == PSX_TYPE_ARRAY && type->pointer_qual_levels == 0) ||
-        ptr_array_pointee_bytes > 0 || has_structural_stride ||
-        has_runtime_vla_shape;
+    int is_array_view = ptr_array_pointee_bytes > 0 ||
+                        has_structural_stride || has_runtime_vla_shape;
     int array_size = ps_type_deref_size(type);
     if (has_structural_stride && type->kind == PSX_TYPE_POINTER &&
         type->base && type->base->kind == PSX_TYPE_ARRAY) {
@@ -2805,23 +2780,9 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
       if (array_len <= 0) array_len = 1;
       psx_type_t *array =
           ps_type_new_array(type->base, array_len, array_size, elem_size, 0);
-      if (type_is_pointer_view_type(type->base)) {
-        array->pointer_qual_levels =
-            type->base->pointer_qual_levels > 0 ? type->base->pointer_qual_levels : 1;
-      }
       psx_type_copy_runtime_vla_stride_metadata(array, type);
       return type_array_with_pointer_element_storage(array);
     }
-  }
-  if (!type_is_pointer_view_type(type->base) && pointer_levels >= 2) {
-    psx_type_t *result = ps_type_new_pointer(type->base);
-    result->pointer_qual_levels = pointer_levels - 1;
-    result->pointer_const_qual_mask =
-        ps_type_pointer_view_structural_qual_mask(type, 0) >> 1;
-    result->pointer_volatile_qual_mask =
-        ps_type_pointer_view_structural_qual_mask(type, 1) >> 1;
-    psx_type_copy_runtime_vla_stride_metadata(result, type);
-    return result;
   }
   return type_array_with_pointer_element_storage(type->base);
 }
@@ -3323,13 +3284,7 @@ psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
                          : NULL;
   if (!base) return NULL;
 
-  psx_type_t *ptr = ps_type_new_pointer(base);
-  if (type) psx_type_copy_pointer_metadata(ptr, type);
-  ptr->pointer_qual_levels = 1;
-  ptr->vla_runtime_strides = (psx_vla_runtime_strides_t){0};
-  ptr->vla_row_stride_frame_off = 0;
-  ptr->vla_strides_remaining = 0;
-  return ptr;
+  return ps_type_new_pointer(base);
 }
 
 int ps_node_bitfield_width(node_t *node) {
@@ -3469,12 +3424,9 @@ void ps_node_reject_const_assign_at(node_t *node, const char *op,
   if (node->kind == ND_LVAR || node->kind == ND_GVAR ||
       node->kind == ND_MEMBER_ACCESS ||
       node->kind == ND_UNARY_DEREF || node->kind == ND_DEREF) {
-    /* ag_c の慣習: ポインタ変数の is_const_qualified は「pointee の const」を
-     * 表す (_Generic の判定等で利用)。「変数自身の const」は
-     * pointer_const_qual_mask の bit 0 で保持される。
-     * したがって p = q を拒否するのはこのビットが立っているときのみ
-     * (`int * const p;` のケース)。非ポインタ変数は従来通り
-     * is_const_qualified を見る (`const int x = 5; x = 10;` を拒否)。 */
+    /* 各再帰型ノードの qualifier はそのノード自身を修飾する。
+     * ポインタ自身の const (`int * const p`) と pointee の const
+     * (`const int *p`) は pointer node と base node に分かれている。 */
     if (node_self_is_const_qualified(node)) {
       diag_emit_tokf(DIAG_ERR_PARSER_CONST_ASSIGNMENT, tok,
                      diag_message_for(DIAG_ERR_PARSER_CONST_ASSIGNMENT));

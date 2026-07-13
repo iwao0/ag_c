@@ -24,7 +24,6 @@ typedef struct tag_member_info_t {
   char *tag_name;
   int tag_len;
   int is_tag_pointer;
-  int pointer_qual_levels;
   int bit_width;
   int bit_offset;
   int bit_is_signed;

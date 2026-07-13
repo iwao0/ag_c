@@ -108,10 +108,6 @@ struct psx_type_t {
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
-  int pointer_qual_levels;
-  unsigned int pointer_const_qual_mask;
-  unsigned int pointer_volatile_qual_mask;
-
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   int vla_row_stride_src_offset;
@@ -232,6 +228,7 @@ int ps_type_generic_select_index(
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
 int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type);
+/* bit 0 is the outermost pointer node; higher bits follow base pointers. */
 unsigned int ps_type_pointer_view_structural_qual_mask(
     const psx_type_t *type, int is_volatile);
 int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
@@ -261,6 +258,4 @@ void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                        int is_const_qualified,
                                        int is_volatile_qualified);
-void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src);
-
 #endif
