@@ -108,7 +108,6 @@ struct psx_type_t {
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
-  int deref_size;
   int pointer_qual_levels;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
@@ -143,7 +142,7 @@ psx_type_t *ps_type_binary_result(
     const psx_type_t *rhs);
 psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type);
-psx_type_t *ps_type_new_pointer(psx_type_t *base, int deref_size);
+psx_type_t *ps_type_new_pointer(psx_type_t *base);
 psx_type_t *ps_type_new_function(psx_type_t *return_type);
 void ps_type_set_function_params(psx_type_t *function_type,
                                   psx_type_t *const *param_types,
@@ -156,7 +155,6 @@ psx_type_t *psx_type_new_storage_object(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int tag_scope_depth_p1, int is_pointer);
 psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
-                                          int top_deref_size,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
@@ -241,7 +239,6 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
 int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
                                               const psx_type_t *src);
-void psx_type_sync_pointer_to_array_metadata_from_base(psx_type_t *type);
 int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,
                                           int *next_stride,

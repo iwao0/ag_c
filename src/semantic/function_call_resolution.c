@@ -37,5 +37,5 @@ psx_type_t *psx_resolve_function_reference_type(
     const psx_type_t *function_type) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION)
     return NULL;
-  return ps_type_new_pointer(ps_type_clone(function_type), 0);
+  return ps_type_new_pointer(ps_type_clone(function_type));
 }

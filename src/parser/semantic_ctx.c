@@ -175,11 +175,6 @@ static int ctx_type_pointer_levels(const psx_type_t *type) {
   return ps_type_pointer_view_structural_qual_levels(type);
 }
 
-static void ctx_type_normalize_function_ret_type(psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_POINTER) return;
-  psx_type_sync_pointer_to_array_metadata_from_base(type);
-}
-
 static void ctx_typedef_info_apply_type(psx_typedef_info_t *out,
                                         const psx_type_t *type) {
   if (!out || !type) return;
@@ -251,7 +246,6 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
   out->is_bool = 0;
   out->is_unsigned = 0;
   out->type_size = ps_tag_member_decl_value_size(out);
-  out->deref_size = ps_tag_member_decl_deref_size(out);
   out->array_len = ps_tag_member_decl_array_count(out);
   ps_tag_member_decl_tag_identity(out, &out->tag_kind, &out->tag_name,
                                    &out->tag_len, &out->is_tag_pointer);
@@ -1136,14 +1130,10 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
     }
   }
   ps_ctx_refresh_type_completeness(type->base);
-  if (type->kind == PSX_TYPE_POINTER && type->base) {
-    int pointee_size = ps_type_sizeof(type->base);
-    if (pointee_size > 0) type->deref_size = pointee_size;
-  } else if (type->kind == PSX_TYPE_ARRAY && type->base) {
+  if (type->kind == PSX_TYPE_ARRAY && type->base) {
     int element_size = ps_type_sizeof(type->base);
     if (element_size > 0) {
       type->elem_size = element_size;
-      type->deref_size = element_size;
       if (type->array_len > 0 && type->array_len <= INT_MAX / element_size)
         type->size = type->array_len * element_size;
     }
@@ -1375,7 +1365,6 @@ int ps_ctx_register_function_type(char *name, int len,
   if (f->function_type)
     return ps_type_shape_matches(f->function_type, function_type);
   f->function_type = ctx_type_clone_persistent(function_type);
-  ctx_type_normalize_function_ret_type(f->function_type->base);
   return 1;
 }
 

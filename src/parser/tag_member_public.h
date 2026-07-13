@@ -19,7 +19,6 @@ typedef struct tag_member_info_t {
   int len;
   int offset;
   int type_size;
-  int deref_size;
   int array_len;
   token_kind_t tag_kind;
   char *tag_name;

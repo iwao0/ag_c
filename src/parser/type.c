@@ -179,12 +179,11 @@ psx_type_t *ps_type_conditional_result(
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }
 
-psx_type_t *ps_type_new_pointer(psx_type_t *base, int deref_size) {
+psx_type_t *ps_type_new_pointer(psx_type_t *base) {
   psx_type_t *type = ps_type_new(PSX_TYPE_POINTER);
   type->base = base;
   type->size = 8;
   type->align = 8;
-  type->deref_size = deref_size;
   type->pointer_qual_levels = 1;
   return type;
 }
@@ -246,7 +245,7 @@ psx_type_t *psx_type_new_storage_object(
 
   psx_type_t *element = value;
   if (is_pointer) {
-    element = ps_type_new_pointer(value, value_size);
+    element = ps_type_new_pointer(value);
   }
   if (!is_array) return element;
 
@@ -271,29 +270,12 @@ static unsigned int pointer_mask_for_subtree(unsigned int mask,
 }
 
 psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
-                                          int top_deref_size,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask) {
   if (levels <= 0) return base;
   psx_type_t *type = base;
-  const psx_type_t *leaf = base;
-  while (leaf && (leaf->kind == PSX_TYPE_POINTER ||
-                  leaf->kind == PSX_TYPE_ARRAY))
-    leaf = leaf->base;
-  int deep_base_size = ps_type_sizeof(leaf);
-  if (deep_base_size <= 0) deep_base_size = ps_type_sizeof(base);
   for (int level = 1; level <= levels; level++) {
-    int deref_size = 8;
-    if (levels == 1) {
-      deref_size = top_deref_size;
-    } else if (level == 1) {
-      deref_size = deep_base_size;
-    } else if (level == levels && top_deref_size > 0) {
-      deref_size = top_deref_size;
-    }
-    if (deref_size <= 0) deref_size = (level == 1) ? ps_type_sizeof(type) : 8;
-    if (deref_size <= 0) deref_size = 8;
-    psx_type_t *ptr = ps_type_new_pointer(type, deref_size);
+    psx_type_t *ptr = ps_type_new_pointer(type);
     ptr->pointer_qual_levels = level;
     ptr->pointer_const_qual_mask =
         pointer_mask_for_subtree(const_mask, levels, level);
@@ -311,7 +293,6 @@ psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size, int ele
   type->size = size;
   type->align = base && base->align > 0 ? base->align : 1;
   type->elem_size = elem_size;
-  type->deref_size = elem_size;
   type->is_vla = is_vla ? 1 : 0;
   return type;
 }
@@ -325,7 +306,6 @@ int ps_type_complete_array(psx_type_t *type, int array_len) {
   type->array_len = array_len;
   type->size = array_len * child_size;
   type->elem_size = child_size;
-  type->deref_size = child_size;
   return 1;
 }
 
@@ -540,11 +520,7 @@ psx_type_t *ps_type_apply_declarator_shape(
   for (int i = shape->count - 1; i >= 0; i--) {
     const psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
-      int deref_size = ps_type_sizeof(type);
-      if (deref_size <= 0) deref_size = ps_type_deref_size(type);
-      if (deref_size <= 0) deref_size = type->elem_size;
-      if (deref_size <= 0) deref_size = 8;
-      type = ps_type_new_pointer(type, deref_size);
+      type = ps_type_new_pointer(type);
       type->is_const_qualified = op->is_const_qualified;
       type->is_volatile_qualified = op->is_volatile_qualified;
       type->pointer_const_qual_mask = op->is_const_qualified ? 1u : 0u;
@@ -573,12 +549,11 @@ psx_type_t *ps_type_apply_declarator_shape(
 psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type) {
   if (!type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    int deref_size = type->base ? ps_type_sizeof(type->base) : type->elem_size;
-    psx_type_t *adjusted = ps_type_new_pointer(type->base, deref_size);
+    psx_type_t *adjusted = ps_type_new_pointer(type->base);
     return adjusted;
   }
   if (type->kind == PSX_TYPE_FUNCTION)
-    return ps_type_new_pointer(type, 0);
+    return ps_type_new_pointer(type);
   return type;
 }
 
@@ -675,8 +650,6 @@ psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
       type_build_array_dim_chain(base, dims, dim_count, leaf_size);
   if (!rebuilt || rebuilt == base) return type;
   owner->base = rebuilt;
-  owner->deref_size = ps_type_sizeof(rebuilt);
-  psx_type_sync_pointer_to_array_metadata_from_base(owner);
   return type;
 }
 
@@ -816,10 +789,10 @@ int ps_type_sizeof(const psx_type_t *type) {
 
 int ps_type_deref_size(const psx_type_t *type) {
   if (!type) return 0;
-  if (type->deref_size > 0) return type->deref_size;
   if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) {
     int s = ps_type_sizeof(type->base);
-    return s > 0 ? s : type->elem_size;
+    if (s > 0) return s;
+    return type->kind == PSX_TYPE_ARRAY ? type->elem_size : 0;
   }
   return 0;
 }
@@ -1087,10 +1060,9 @@ psx_type_t *ps_type_generic_control(const psx_type_t *control) {
   psx_type_t *type = ps_type_clone(control);
   if (!type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    int deref_size = ps_type_sizeof(type->base);
-    type = ps_type_new_pointer(type->base, deref_size);
+    type = ps_type_new_pointer(type->base);
   } else if (type->kind == PSX_TYPE_FUNCTION) {
-    type = ps_type_new_pointer(type, 0);
+    type = ps_type_new_pointer(type);
   }
   ps_type_normalize_integer_identity(type);
   return type;
@@ -1243,14 +1215,6 @@ int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
   dst->is_vla = 1;
   dst->vla_runtime_strides = src->vla_runtime_strides;
   return 1;
-}
-
-void psx_type_sync_pointer_to_array_metadata_from_base(psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_POINTER) return;
-  if (type->base && type->base->kind == PSX_TYPE_ARRAY) {
-    int pointee_size = ps_type_sizeof(type->base);
-    if (pointee_size > 0) type->deref_size = pointee_size;
-  }
 }
 
 static void type_clear_stride_outputs(int *inner_stride, int *next_stride,
@@ -1459,7 +1423,6 @@ void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
 
 void psx_type_copy_pointer_metadata(psx_type_t *dst, const psx_type_t *src) {
   if (!dst || !src) return;
-  dst->deref_size = src->deref_size;
   dst->pointer_qual_levels = src->pointer_qual_levels;
   dst->pointer_const_qual_mask = src->pointer_const_qual_mask;
   dst->pointer_volatile_qual_mask = src->pointer_volatile_qual_mask;

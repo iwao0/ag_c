@@ -72,10 +72,7 @@ psx_type_t *psx_resolve_address_result_type(node_t *operand) {
   psx_type_t *operand_type = ps_node_get_type(operand);
   if (!operand_type) return NULL;
   psx_type_t *base = ps_type_clone(operand_type);
-  int deref_size = ps_type_sizeof(base);
-  if (deref_size <= 0) deref_size = ps_type_deref_size(base);
-  if (deref_size <= 0) deref_size = 8;
-  return ps_type_new_pointer(base, deref_size);
+  return ps_type_new_pointer(base);
 }
 
 psx_type_t *psx_resolve_incdec_result_type(node_t *operand) {

@@ -1925,13 +1925,12 @@ static psx_type_t *type_array_with_pointer_element_storage(psx_type_t *type) {
   }
   int pointer_size = ps_type_sizeof(type->base);
   if (pointer_size <= 0) pointer_size = 8;
-  if (type->elem_size == pointer_size && type->deref_size == pointer_size) {
+  if (type->elem_size == pointer_size) {
     return type;
   }
   psx_type_t *copy = arena_alloc(sizeof(psx_type_t));
   *copy = *type;
   copy->elem_size = pointer_size;
-  copy->deref_size = pointer_size;
   return copy;
 }
 
@@ -2682,9 +2681,8 @@ node_t *ps_node_new_pointer_cast_result(node_t *operand, psx_type_t *cast_type,
           is_unsigned ? TK_UNSIGNED : TK_INT,
           elem_size > 0 ? elem_size : 4, is_unsigned);
     }
-    int deref_size = elem_size > 0 ? elem_size : 8;
     cast_type = ps_type_wrap_pointer_levels(
-        base, pointer_levels, deref_size, 0, 0);
+        base, pointer_levels, 0, 0);
   }
   return annotate_explicit_type(wrap, cast_type);
 }
@@ -2732,10 +2730,7 @@ static void init_array_addr_canonical_type(node_t *addr,
 static psx_type_t *type_from_address_operand(node_t *operand) {
   psx_type_t *base = ps_node_get_type(operand);
   if (!base) return NULL;
-  int deref_size = ps_type_sizeof(base);
-  if (deref_size <= 0) deref_size = ps_node_type_size(operand);
-  if (deref_size <= 0) deref_size = 8;
-  psx_type_t *type = ps_type_new_pointer(base, deref_size);
+  psx_type_t *type = ps_type_new_pointer(base);
   int operand_levels = ps_node_pointer_qual_levels(operand);
   type->pointer_qual_levels = operand_levels > 0 ? operand_levels + 1 : 1;
   type->pointer_const_qual_mask = ps_node_pointer_const_qual_mask(operand) << 1;
@@ -2747,11 +2742,7 @@ static psx_type_t *type_from_address_operand(node_t *operand) {
 static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type) {
   if (!array_type || array_type->kind != PSX_TYPE_ARRAY || !array_type->base)
     return NULL;
-  int elem_size = ps_type_sizeof(array_type->base);
-  if (elem_size <= 0) elem_size = ps_type_deref_size(array_type);
-  if (elem_size <= 0) elem_size = array_type->elem_size;
-  if (elem_size <= 0) elem_size = 8;
-  psx_type_t *ptr = ps_type_new_pointer(array_type->base, elem_size);
+  psx_type_t *ptr = ps_type_new_pointer(array_type->base);
   if (array_type->base->kind == PSX_TYPE_POINTER) {
     int base_levels = array_type->base->pointer_qual_levels > 0
                           ? array_type->base->pointer_qual_levels
@@ -2798,7 +2789,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
         (type->kind == PSX_TYPE_ARRAY && type->pointer_qual_levels == 0) ||
         ptr_array_pointee_bytes > 0 || has_structural_stride ||
         has_runtime_vla_shape;
-    int array_size = type->deref_size;
+    int array_size = ps_type_deref_size(type);
     if (has_structural_stride && type->kind == PSX_TYPE_POINTER &&
         type->base && type->base->kind == PSX_TYPE_ARRAY) {
       int base_size = ps_type_sizeof(type->base);
@@ -2823,12 +2814,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
     }
   }
   if (!type_is_pointer_view_type(type->base) && pointer_levels >= 2) {
-    int deref_size =
-        ps_type_pointer_view_structural_base_deref_size(type);
-    if (deref_size <= 0) deref_size = ps_type_sizeof(type->base);
-    if (deref_size <= 0) deref_size = type->deref_size;
-    if (deref_size <= 0) deref_size = 8;
-    psx_type_t *result = ps_type_new_pointer(type->base, deref_size);
+    psx_type_t *result = ps_type_new_pointer(type->base);
     result->pointer_qual_levels = pointer_levels - 1;
     result->pointer_const_qual_mask =
         ps_type_pointer_view_structural_qual_mask(type, 0) >> 1;
@@ -3192,7 +3178,7 @@ node_t *psx_node_new_member_lvar_ref_for(lvar_t *owner, int member_offset,
     type = ps_type_new_tag(member_tag_kind, member_tag_name, member_tag_len,
                             0, size);
     if (member_is_tag_pointer)
-      type = ps_type_new_pointer(type, size);
+      type = ps_type_new_pointer(type);
   } else {
     type = ps_type_new_integer(TK_INT, size, 0);
   }
@@ -3337,9 +3323,8 @@ psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
                          : NULL;
   if (!base) return NULL;
 
-  psx_type_t *ptr = ps_type_new_pointer(base, ds);
+  psx_type_t *ptr = ps_type_new_pointer(base);
   if (type) psx_type_copy_pointer_metadata(ptr, type);
-  ptr->deref_size = ds;
   ptr->pointer_qual_levels = 1;
   ptr->vla_runtime_strides = (psx_vla_runtime_strides_t){0};
   ptr->vla_row_stride_frame_off = 0;
