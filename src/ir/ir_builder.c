@@ -91,6 +91,21 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
   }
 }
 
+static ir_abi_param_info_t classify_call_param(
+    const node_func_t *call, int param_idx) {
+  const psx_type_t *function_type = call ? call->function_type : NULL;
+  if (function_type && function_type->kind == PSX_TYPE_POINTER)
+    function_type = function_type->base;
+  if (function_type && function_type->kind == PSX_TYPE_FUNCTION &&
+      param_idx >= 0 && param_idx < function_type->param_count) {
+    return ir_abi_classify_param_type(function_type->param_types[param_idx]);
+  }
+  if (call && !call->callee)
+    return ir_abi_classify_function_param(
+        call->funcname, call->funcname_len, param_idx);
+  return (ir_abi_param_info_t){0};
+}
+
 static int find_alloca_vreg(ir_build_ctx_t *ctx, int offset) {
   for (int i = 0; i < ctx->lvar_count; i++) {
     if (ctx->lvar_offset[i] == offset) return ctx->lvar_vreg[i];
@@ -1078,82 +1093,13 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   int rhs_ret_struct_size = aggregate_size_from_node(node->rhs);
   if (node->rhs && node->rhs->kind == ND_FUNCALL &&
       cg_size_needs_indirect_struct(rhs_ret_struct_size)) {
-    node_func_t *callee = (node_func_t *)node->rhs;
-    /* 間接呼び出し (関数ポインタ経由) の struct 戻り値: dst へ直接書く下の最適化は
-     * direct call 専用 (引数処理が簡略版)。間接は汎用 funcall 経路 (build_node_funcall)
-     * に委譲して ret_area を確保・呼び出しさせ、返ってきた area から dst へ memcpy する。
-     * これで `struct Big r = ob(100);` や materialize 経由の `op(100).a` が動く。 */
-    if (callee->callee) {
-      ir_val_t srcp = build_node_funcall(ctx, node->rhs);
-      if (ctx->failed) return ir_val_none();
-      ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-      cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-      cp->src2 = srcp;
-      cp->alloca_size = rhs_ret_struct_size;
-      ir_func_append_inst(ctx->f, cp);
-      return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-    }
-    if (callee->is_variadic || callee->nargs > 8) {
-      fail(ctx, "variadic/many-arg struct-return call");
-      return ir_val_none();
-    }
-    ir_val_t *cargs = NULL;
-    if (callee->nargs > 0) {
-      cargs = calloc((size_t)callee->nargs, sizeof(ir_val_t));
-      for (int i = 0; i < callee->nargs; i++) {
-        node_t *arg = callee->args[i];
-        /* compound literal `(struct V){...}` (ND_COMMA(init, temp lvar)): init を
-         * 評価してから temp lvar を struct ソースとして扱う (主 funcall 経路と同じ)。 */
-        if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
-          node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
-          lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-          int cl_sz = owner_cl ? ps_lvar_storage_size(owner_cl, 0)
-                               : ps_node_storage_type_size(arg->rhs);
-          if (aggregate_size_from_node(arg->rhs) > 0 &&
-              (cl_sz > 8 || cg_size_needs_indirect_struct(cl_sz))) {
-            (void)build_expr(ctx, arg->lhs);
-            if (ctx->failed) return ir_val_none();
-            arg = arg->rhs;
-          }
-        }
-        int arg_full_size = 0;
-        if (arg && arg->kind == ND_LVAR) {
-          lvar_t *owner = find_owning_lvar(ctx, ((node_lvar_t *)arg)->offset);
-          if (owner) arg_full_size = ps_lvar_storage_size(owner, 0);
-          if (arg_full_size == 0) arg_full_size = ps_node_storage_type_size(arg);
-        }
-        if (cg_size_needs_indirect_struct(arg_full_size) &&
-            arg && arg->kind == ND_LVAR) {
-          int src_ptr = address_of_lvar(ctx, ((node_lvar_t *)arg)->offset);
-          if (src_ptr < 0) return ir_val_none();
-          int tmp = ir_func_new_vreg(ctx->f);
-          ir_inst_t *ia = ir_inst_new(IR_ALLOCA);
-          ia->dst = ir_val_vreg(tmp, IR_TY_PTR);
-          ia->alloca_size = arg_full_size;
-          ia->alloca_align = 8;
-          ir_func_append_inst(ctx->f, ia);
-          ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
-          cp->src1 = ir_val_vreg(tmp, IR_TY_PTR);
-          cp->src2 = ir_val_vreg(src_ptr, IR_TY_PTR);
-          cp->alloca_size = arg_full_size;
-          ir_func_append_inst(ctx->f, cp);
-          cargs[i] = ir_val_vreg(tmp, IR_TY_PTR);
-        } else {
-          cargs[i] = build_expr(ctx, arg);
-          if (ctx->failed) return ir_val_none();
-        }
-      }
-    }
-    int v = ir_func_new_vreg(ctx->f);
-    ir_inst_t *call = ir_inst_new(IR_CALL);
-    call->dst = ir_val_vreg(v, IR_TY_I32);
-    call->sym = callee->funcname;
-    call->sym_len = callee->funcname_len;
-    call->args = cargs;
-    call->nargs = callee->nargs;
-    call->ret_struct_size = rhs_ret_struct_size;
-    call->ret_struct_area = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
-    ir_func_append_inst(ctx->f, call);
+    ir_val_t srcp = build_node_funcall(ctx, node->rhs);
+    if (ctx->failed) return ir_val_none();
+    ir_inst_t *cp = ir_inst_new(IR_MEMCPY);
+    cp->src1 = ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
+    cp->src2 = srcp;
+    cp->alloca_size = rhs_ret_struct_size;
+    ir_func_append_inst(ctx->f, cp);
     return ir_val_vreg(dst_ptr_vreg, IR_TY_PTR);
   }
   materialize_aggregate_expr_to(ctx, node->rhs, dst_ptr_vreg, assign_size);
@@ -1422,12 +1368,18 @@ static int func_has_return_funcptr_sig(const node_func_t *fn) {
 static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
                                             const psx_decl_funcptr_sig_t *expected_sig) {
   node_funcref_t *fr = (node_funcref_t *)node;
+  psx_decl_funcptr_sig_t bound_sig = {0};
+  if (!expected_sig || !ps_decl_funcptr_sig_has_payload(*expected_sig)) {
+    bound_sig = ps_type_funcptr_signature(fr->function_type);
+    expected_sig = &bound_sig;
+  }
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
   sym->sym = fr->funcname;
   sym->sym_len = fr->funcname_len;
   sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
+  sym->is_function_symbol = 1;
   attach_funcptr_sig(sym, expected_sig);
   ir_func_append_inst(ctx->f, sym);
   return ir_val_vreg(v, IR_TY_PTR);
@@ -1789,6 +1741,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     cargs = calloc((size_t)(8 * fn->nargs), sizeof(ir_val_t));
     for (int i = 0; i < fn->nargs; i++) {
       node_t *arg = fn->args[i];
+      ir_abi_param_info_t declared_param = {0};
+      if (!fn->callee && i < nargs_fixed) {
+        declared_param = classify_call_param(fn, i);
+      }
       int forced_arg_full_size = 0;
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
        * struct 値引数のときは init (要素ストア) を先に評価してから temp lvar を
@@ -1813,11 +1769,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg && ps_node_value_is_complex(arg)) {
         ir_type_t fp_ty =
             (ps_node_value_fp_kind(arg) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
-        if (!fn->callee && i < nargs_fixed) {
-          ir_abi_param_info_t param = ir_abi_classify_function_param(
-              fn->funcname, fn->funcname_len, i);
-          if (param.param_class == IR_ABI_PARAM_FLOAT) fp_ty = param.type;
-        }
+        if (declared_param.param_class == IR_ABI_PARAM_FLOAT)
+          fp_ty = declared_param.type;
         int half = (fp_ty == IR_TY_F32) ? 4 : 8;
         int slot = ir_func_new_vreg(ctx->f);
         ir_inst_t *al = ir_inst_new(IR_ALLOCA);
@@ -1899,6 +1852,11 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * build_node_funcall が ret_area を確保しそのアドレスを返すので、それを
          * そのまま渡す (新規 area なので memcpy 不要)。 */
         arg_full_size = aggregate_size_from_node(arg);
+      }
+      if (declared_param.param_class == IR_ABI_PARAM_AGGREGATE &&
+          declared_param.source_size > 0) {
+        arg_full_size = declared_param.source_size;
+        if (declared_param.type == IR_TY_PTR) struct_needs_ptr = 1;
       }
       if (arg->kind == ND_FUNCALL && arg_full_size > 8) {
         ir_val_t a = build_expr(ctx, arg);
@@ -2003,20 +1961,19 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
          * 渡される現状実装と整合が取れないため触らない。 */
         if (!fn->callee && i < nargs_fixed) {
-          ir_abi_param_info_t param = ir_abi_classify_function_param(
-              fn->funcname, fn->funcname_len, i);
-          if (param.param_class == IR_ABI_PARAM_FLOAT) {
-            cv = coerce_to_type_ex(ctx, cv, param.type, 0,
+          if (declared_param.param_class == IR_ABI_PARAM_FLOAT) {
+            cv = coerce_to_type_ex(ctx, cv, declared_param.type, 0,
                                    ps_node_conversion_value_is_unsigned(arg));
           } else {
             ir_type_t target =
-                param.param_class == IR_ABI_PARAM_INTEGER ||
-                        (param.param_class == IR_ABI_PARAM_AGGREGATE &&
-                         param.type != IR_TY_PTR)
-                    ? param.type
+                declared_param.param_class == IR_ABI_PARAM_INTEGER ||
+                        (declared_param.param_class == IR_ABI_PARAM_AGGREGATE &&
+                         declared_param.type != IR_TY_PTR)
+                    ? declared_param.type
                     : IR_TY_VOID;
             if (target != IR_TY_VOID) {
-              cv = coerce_to_type_ex(ctx, cv, target, param.is_unsigned,
+              cv = coerce_to_type_ex(ctx, cv, target,
+                                     declared_param.is_unsigned,
                                      ps_node_conversion_value_is_unsigned(arg));
             }
           }
@@ -2057,8 +2014,26 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
+  call->is_implicit_call = fn->base.is_implicit_func_decl ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   if (fn->callee) attach_funcptr_sig_from_callee(ctx, call, fn->callee);
+  if (argc > 0) {
+    call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
+    for (int a = 0; a < argc; a++) {
+      ir_type_t abi_type = cargs[a].type;
+      if (call->sym && a < call->nargs_fixed) {
+        ir_abi_param_info_t param = classify_call_param(fn, a);
+        if (param.param_class == IR_ABI_PARAM_POINTER ||
+            (param.param_class == IR_ABI_PARAM_AGGREGATE &&
+             param.type == IR_TY_PTR)) {
+          abi_type = IR_TY_PTR;
+        } else if (param.type != IR_TY_VOID) {
+          abi_type = param.type;
+        }
+      }
+      call->arg_abi_types[a] = abi_type;
+    }
+  }
   /* _Complex 戻り値 (HFA): 呼び出し後 d0/d1 (s0/s1) を一時 slot に書き戻し、その
    * slot の PTR を複素数値の参照として返す (build_complex_to の ND_DEREF 経路等が
    * 受け取れる)。 */
@@ -3325,8 +3300,8 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
-      ir_abi_param_info_t param = ir_abi_classify_function_param(
-          fn->funcname, fn->funcname_len, i);
+      ir_abi_param_info_t param =
+          ir_abi_classify_param_type(ps_node_get_type(arg));
       int is_pointer =
           ps_node_is_pointer(arg) ||
           ps_node_value_is_pointer_like((node_t *)lv) ||

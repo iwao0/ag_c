@@ -67,7 +67,7 @@ static inline void ps_tag_member_set_decl_type(tag_member_info_t *m,
   if (m) m->decl_type = decl_type;
 }
 
-static inline psx_decl_funcptr_sig_t ps_ctx_tag_member_funcptr_sig(
+static inline psx_decl_funcptr_sig_t ps_tag_member_funcptr_sig(
     const tag_member_info_t *m) {
   if (!m) return (psx_decl_funcptr_sig_t){0};
   const psx_type_t *decl_type = ps_tag_member_decl_type(m);

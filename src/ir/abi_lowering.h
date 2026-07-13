@@ -3,6 +3,8 @@
 
 #include "ir.h"
 
+struct psx_type_t;
+
 typedef enum {
   IR_ABI_PARAM_UNKNOWN = 0,
   IR_ABI_PARAM_INTEGER,
@@ -20,5 +22,7 @@ typedef struct {
 
 ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
                                                     int param_idx);
+ir_abi_param_info_t ir_abi_classify_param_type(
+    const struct psx_type_t *type);
 
 #endif

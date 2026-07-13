@@ -60,6 +60,7 @@ const expectedExports = {
   "./agc-toolchain.js": ["createToolchain", "default"],
   "./agc-wasm.js": ["createCompiler", "default"],
   "./agc-runtime-imports.js": [
+    "AGC_RUNTIME_IMPORT_MANIFEST",
     "createAgcRuntimeImports",
     "createAgcRuntimeMathEnvImports",
     "createAgcRuntimeStdioEnvImports",
@@ -85,6 +86,45 @@ for (const [name, entry] of Object.entries(exportsMap)) {
   }
   if (name === "./agc-runtime-imports.js") {
     const mathEnv = mod.createAgcRuntimeMathEnvImports();
+    const stdioEnv = mod.createAgcRuntimeStdioEnvImports();
+    const manifest = mod.AGC_RUNTIME_IMPORT_MANIFEST;
+    if (!manifest || manifest.version !== 1 || !manifest.namespaces?.env) {
+      throw new Error("runtime import manifest has an invalid shape");
+    }
+    const assertManifestGroup = (groupName, implementation) => {
+      const declared = manifest.namespaces.env[groupName];
+      if (!Array.isArray(declared)) {
+        throw new Error(`runtime import manifest missing env.${groupName}`);
+      }
+      const unique = new Set(declared);
+      if (unique.size !== declared.length) {
+        throw new Error(`runtime import manifest env.${groupName} contains duplicates`);
+      }
+      const actual = Object.keys(implementation).sort();
+      const expected = [...declared].sort();
+      if (actual.join("\n") !== expected.join("\n")) {
+        const missing = expected.filter((entry) => !(entry in implementation));
+        const undeclared = actual.filter((entry) => !unique.has(entry));
+        throw new Error(
+          `runtime import manifest mismatch for env.${groupName}; ` +
+          `missing implementations: ${missing.join(", ") || "none"}; ` +
+          `undeclared imports: ${undeclared.join(", ") || "none"}`,
+        );
+      }
+      for (const importName of expected) {
+        if (typeof implementation[importName] !== "function") {
+          throw new Error(`runtime import ${importName} is not a function`);
+        }
+      }
+    };
+    assertManifestGroup("math", mathEnv);
+    assertManifestGroup("stdio", stdioEnv);
+    const overlap = manifest.namespaces.env.math.filter(
+      (entry) => manifest.namespaces.env.stdio.includes(entry),
+    );
+    if (overlap.length) {
+      throw new Error(`runtime import manifest groups overlap: ${overlap.join(", ")}`);
+    }
     for (const importName of [
       "sin", "sinf", "sinl",
       "sqrt", "sqrtf", "sqrtl",

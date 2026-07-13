@@ -39,13 +39,7 @@ static ir_abi_param_info_t abi_compiler_builtin_param(
   return abi_param_unknown();
 }
 
-ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
-                                                    int param_idx) {
-  ir_abi_param_info_t builtin =
-      abi_compiler_builtin_param(name, name_len, param_idx);
-  if (builtin.param_class != IR_ABI_PARAM_UNKNOWN) return builtin;
-  const psx_type_t *type =
-      ps_ctx_get_function_param_type(name, name_len, param_idx);
+ir_abi_param_info_t ir_abi_classify_param_type(const psx_type_t *type) {
   if (!type) return abi_param_unknown();
 
   ir_abi_param_info_t info = {
@@ -82,4 +76,13 @@ ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
     default:
       return info;
   }
+}
+
+ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
+                                                    int param_idx) {
+  ir_abi_param_info_t builtin =
+      abi_compiler_builtin_param(name, name_len, param_idx);
+  if (builtin.param_class != IR_ABI_PARAM_UNKNOWN) return builtin;
+  return ir_abi_classify_param_type(
+      ps_ctx_get_function_param_type(name, name_len, param_idx));
 }

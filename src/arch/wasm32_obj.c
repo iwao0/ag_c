@@ -308,9 +308,6 @@ static void wb_zero(wb_t *b, int size) {
 
 static obj_data_t *data_for_symbol(char *sym, int sym_len, int *out_addend) {
   if (!sym) return NULL;
-  if (ps_ctx_has_function_name(sym, sym_len >= 0 ? sym_len : (int)strlen(sym))) {
-    obj_unsupported_msg("function address relocation in Wasm object mode");
-  }
   int name_len = sym_len >= 0 ? sym_len : (int)strlen(sym);
   int is_undefined = sym_len >= 0 ? ps_gvar_is_extern_decl_by_name(sym, sym_len) : 0;
   int is_static = sym_len >= 0 ? ps_gvar_is_static_storage_by_name(sym, sym_len) : 0;
@@ -714,11 +711,7 @@ static void collect_local_types(ir_func_t *f, ir_type_t *types, unsigned char *i
             if (i->dst.id >= 0 && i->dst.id < ntypes) {
               obj_sig_t csig = call_sig_from_inst(i);
               if (csig.result != IR_TY_VOID) {
-                psx_function_ret_info_t ret =
-                    i->sym ? ps_ctx_get_function_ret_info(i->sym, i->sym_len)
-                           : (psx_function_ret_info_t){0};
-                int force_result_i32 = i->dst.type == IR_TY_PTR ||
-                                       ret.is_pointer || ret.is_funcptr;
+                int force_result_i32 = i->dst.type == IR_TY_PTR;
                 if (force_result_i32 || forced_i32[i->dst.id]) {
                   changed |= force_vreg_i32(types, forced_i32, ntypes, i->dst);
                 } else if (types[i->dst.id] != csig.result) {
@@ -1024,7 +1017,7 @@ static int collect_param_count(ir_func_t *f) {
       }
     }
   }
-  int declared = f ? ps_ctx_get_function_nargs_fixed(f->name, f->name_len) : 0;
+  int declared = f ? f->nargs_fixed : 0;
   if (declared > count) {
     count = declared;
   }
@@ -1040,67 +1033,13 @@ static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw)
     return f->param_abi_types[idx];
   }
   if (raw == IR_TY_PTR) return IR_TY_PTR;
-  ir_abi_param_info_t param =
-      ir_abi_classify_function_param(f->name, f->name_len, idx);
-  if (param.param_class == IR_ABI_PARAM_POINTER ||
-      param.param_class == IR_ABI_PARAM_AGGREGATE)
-    return IR_TY_PTR;
-  if (param.type != IR_TY_VOID) return param.type;
   return raw;
 }
 
 static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_type_t raw) {
-  if (raw == IR_TY_VOID) return IR_TY_VOID;
-  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info((char *)name, name_len);
-  if (ret.is_pointer || ret.is_funcptr) {
-    return IR_TY_PTR;
-  }
-  if (ret.struct_size > 0) {
-    return ret.struct_size == 8 ? IR_TY_I64 : IR_TY_I32;
-  }
-  if (ret.fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (ret.fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  if (ret.token_kind == TK_VOID) return IR_TY_VOID;
-  if (ret.token_kind == TK_LONG) return IR_TY_I64;
-  if (ret.token_kind != TK_EOF) return IR_TY_I32;
+  (void)name;
+  (void)name_len;
   return raw;
-}
-
-static obj_sig_t func_sig_from_ctx(const char *name, int name_len) {
-  obj_sig_t sig = {0};
-  psx_function_ret_info_t ret = ps_ctx_get_function_ret_info((char *)name, name_len);
-  if (ret.is_pointer || ret.is_funcptr) {
-    sig.result = IR_TY_I32;
-  } else if (ret.struct_size > 0) {
-    sig.result = ret.struct_size == 8
-                   ? IR_TY_I64
-                   : IR_TY_I32;
-  } else if (ret.fp_kind == TK_FLOAT_KIND_FLOAT) {
-    sig.result = IR_TY_F32;
-  } else if (ret.fp_kind >= TK_FLOAT_KIND_DOUBLE) {
-    sig.result = IR_TY_F64;
-  } else if (ret.token_kind == TK_VOID) {
-    sig.result = IR_TY_VOID;
-  } else if (ret.token_kind == TK_LONG) {
-    sig.result = IR_TY_I64;
-  } else {
-    sig.result = IR_TY_I32;
-  }
-
-  int nparams = ps_ctx_get_function_nargs_fixed((char *)name, name_len);
-  if (nparams > 32) nparams = 32;
-  sig.nparams = nparams;
-  if (nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
-    for (int p = 0; p < nparams; p++) {
-      ir_abi_param_info_t param = ir_abi_classify_function_param(
-          (char *)name, name_len, p);
-      if (param.type == IR_TY_PTR) sig.params[p] = IR_TY_I32;
-      else if (param.type != IR_TY_VOID) sig.params[p] = param.type;
-      else sig.params[p] = IR_TY_I32;
-    }
-  }
-  return sig;
 }
 
 static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_mask) {
@@ -1143,7 +1082,9 @@ static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
 }
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
-  if (!gv) return func_sig_from_ctx(name, name_len);
+  if (!gv) obj_unsupported_msg("missing global function-pointer signature in Wasm object mode");
+  (void)name;
+  (void)name_len;
   psx_decl_funcptr_sig_t sig = {0};
   ps_gvar_get_funcptr_sig(gv, &sig);
   return func_sig_from_funcptr_sig(sig);
@@ -1151,12 +1092,17 @@ static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
                                               const char *name, int name_len) {
-  if (!mi) return func_sig_from_ctx(name, name_len);
-  return func_sig_from_funcptr_sig(ps_ctx_tag_member_funcptr_sig(mi));
+  if (!mi) obj_unsupported_msg("missing member function-pointer signature in Wasm object mode");
+  (void)name;
+  (void)name_len;
+  return func_sig_from_funcptr_sig(ps_tag_member_funcptr_sig(mi));
 }
 
 static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
-  if (!inst || !inst->has_funcptr_sig) return func_sig_from_ctx(name, name_len);
+  if (!inst || !inst->has_funcptr_sig)
+    obj_unsupported_msg("missing IR function-pointer signature in Wasm object mode");
+  (void)name;
+  (void)name_len;
   return func_sig_from_funcptr_sig(inst->funcptr_sig);
 }
 
@@ -1208,15 +1154,6 @@ static void collect_func_sig(ir_func_t *f, obj_sig_t *sig) {
       }
     }
   }
-  if (!has_ret_area && ps_ctx_has_function_name(f->name, f->name_len)) {
-    obj_sig_t ctx_sig = func_sig_from_ctx(f->name, f->name_len);
-    if (ctx_sig.nparams == sig->nparams && ctx_sig.nparams > 0) {
-      free(sig->params);
-      *sig = ctx_sig;
-    } else {
-      free(ctx_sig.params);
-    }
-  }
 }
 
 static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
@@ -1255,16 +1192,11 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
     if (has_ret_area) sig.params[0] = IR_TY_I32;
     int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
     for (int a = 0; a < call_nargs; a++) {
-      ir_type_t arg_ty = i->args[a].type;
+      ir_type_t arg_ty = i->arg_abi_types ? i->arg_abi_types[a]
+                                          : i->args[a].type;
       ir_type_t ty = wasm_ir_type(arg_ty);
-      ir_abi_param_info_t param = i->sym
-                                      ? ir_abi_classify_function_param(
-                                            i->sym, i->sym_len, a)
-                                      : (ir_abi_param_info_t){0};
-      if (param.param_class == IR_ABI_PARAM_POINTER || arg_ty == IR_TY_PTR)
+      if (arg_ty == IR_TY_PTR)
         ty = IR_TY_I32;
-      else if (param.type != IR_TY_VOID)
-        ty = wasm_ir_type(param.type);
       sig.params[a + (has_ret_area ? 1 : 0)] = ty;
     }
   }
@@ -1597,7 +1529,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
         case IR_LOAD_SYM:
         case IR_LOAD_TLV_ADDR: {
           if (!i->sym) obj_unsupported_op(i->op);
-          if (i->op == IR_LOAD_SYM && ps_ctx_has_function_name(i->sym, i->sym_len)) {
+          if (i->op == IR_LOAD_SYM && i->is_function_symbol) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
             if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
               target->sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
@@ -2345,8 +2277,7 @@ static void data_write_symbol_addr(obj_data_t *d, psx_gvar_symbol_ref_t ref, int
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(name, name_len);
     if (!target) {
-      target = intern_func(name, name_len);
-      target->sig = func_sig_from_ctx(name, name_len);
+      obj_unsupported_msg("function address reached relocation before its signature");
     }
     uint32_t off = d->bytes.len;
     wb_int_le(&d->bytes, 0, size);
@@ -2381,8 +2312,7 @@ static void data_write_symbol_addr_at(obj_data_t *d, size_t off, psx_gvar_symbol
     if (ref.addend != 0) obj_unsupported_msg("function address addend in Wasm object mode");
     obj_func_t *target = find_func(name, name_len);
     if (!target) {
-      target = intern_func(name, name_len);
-      target->sig = func_sig_from_ctx(name, name_len);
+      obj_unsupported_msg("function address reached relocation before its signature");
     }
     data_write_int_le_at(d, off, 0, size);
     data_add_reloc(d, R_WASM_TABLE_INDEX_I32, off, (int)(target - g_obj.funcs), 0, 0);

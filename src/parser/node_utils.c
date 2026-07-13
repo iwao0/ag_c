@@ -3336,7 +3336,7 @@ node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
   deref->type_state.bit_width = (unsigned char)info->bit_width;
   deref->type_state.bit_offset = (unsigned char)info->bit_offset;
   deref->type_state.bit_is_signed = info->bit_is_signed ? 1 : 0;
-  psx_decl_funcptr_sig_t member_funcptr_sig = ps_ctx_tag_member_funcptr_sig(info);
+  psx_decl_funcptr_sig_t member_funcptr_sig = ps_tag_member_funcptr_sig(info);
   if (ps_decl_funcptr_sig_has_payload(member_funcptr_sig) &&
       member_funcptr_sig.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_NONE &&
       !member_funcptr_sig.function.callable.return_shape.is_data_pointer &&
@@ -3476,7 +3476,7 @@ node_t *ps_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
   psx_type_t *member_type = decl_type;
   if (decl_type) {
     member_type = type_with_funcptr_sig_merged(
-        decl_type, ps_ctx_tag_member_funcptr_sig(info));
+        decl_type, ps_tag_member_funcptr_sig(info));
     int owner_is_const = lvar_self_is_const_qualified(owner);
     int owner_is_volatile = lvar_self_is_volatile_qualified(owner);
     member_type = type_with_self_qualifiers(

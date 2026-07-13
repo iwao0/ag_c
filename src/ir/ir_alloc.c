@@ -150,6 +150,7 @@ void ir_func_free(ir_func_t *f) {
     for (ir_inst_t *i = b->head; i; ) {
       ir_inst_t *inext = i->next;
       free(i->args);   /* IR_CALL の実引数列 (calloc)。NULL なら no-op */
+      free(i->arg_abi_types);
       free(i);
       if (ir_inst_live) ir_inst_live--;
       i = inext;

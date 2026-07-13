@@ -29,6 +29,7 @@
 #include "../src/semantic/function_call_resolution.h"
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/identifier_binding.h"
+#include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
@@ -75,6 +76,14 @@ static void preregister_test_locals(void) {
   }
 }
 
+static void assert_semantic_tree_invariants(node_t *root) {
+  psx_semantic_invariant_failure_t failure;
+  if (psx_semantic_tree_has_canonical_expression_types(root, &failure)) return;
+  fprintf(stderr, "semantic invariant failed: status=%d kind=%d\n",
+          failure.status, failure.node ? failure.node->kind : -1);
+  exit(1);
+}
+
 static node_t *parse_expr_input(const char *input) {
   ps_decl_reset_locals();
   preregister_test_locals();
@@ -84,7 +93,9 @@ static node_t *parse_expr_input(const char *input) {
   ps_decl_set_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
   node_t *expr = ps_expr_from(head);
-  return psx_frontend_analyze_expression(expr, head);
+  node_t *analyzed = psx_frontend_analyze_expression(expr, head);
+  assert_semantic_tree_invariants(analyzed);
+  return analyzed;
 }
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
@@ -96,12 +107,18 @@ static node_t *parse_expr_input_with_existing_locals(const char *input) {
 static node_t *parse_analyzed_expr_input_with_existing_locals(
     const char *input) {
   node_t *expr = parse_expr_input_with_existing_locals(input);
-  return psx_frontend_analyze_expression(expr, expr ? expr->tok : NULL);
+  node_t *analyzed =
+      psx_frontend_analyze_expression(expr, expr ? expr->tok : NULL);
+  assert_semantic_tree_invariants(analyzed);
+  return analyzed;
 }
 
 static node_t **parse_program_input(const char *input) {
   token_t *head = tk_tokenize((char *)input);
-  return psx_frontend_program_from(head);
+  node_t **program = psx_frontend_program_from(head);
+  for (int i = 0; program && program[i]; i++)
+    assert_semantic_tree_invariants(program[i]);
+  return program;
 }
 
 static node_t *parse_raw_function_item(
@@ -12224,13 +12241,13 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.fp_kind);
   ASSERT_EQ(0, dp_info.is_funcptr);
   ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(dp_info.funcptr_sig));
-  psx_decl_funcptr_sig_t dp_sig = ps_ctx_tag_member_funcptr_sig(&dp_info);
+  psx_decl_funcptr_sig_t dp_sig = ps_tag_member_funcptr_sig(&dp_info);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, dp_sig.function.callable.return_shape.pointee_fp_kind);
   ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(dp_sig));
   dp_info.funcptr_sig.function.callable.return_shape.int_width = 8;
   dp_info.is_funcptr = 1;
-  dp_sig = ps_ctx_tag_member_funcptr_sig(&dp_info);
+  dp_sig = ps_tag_member_funcptr_sig(&dp_info);
   ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(dp_sig));
 
   node_t canonical_int_ptr = {0};
@@ -12245,7 +12262,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, fp_info.is_funcptr);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_info.funcptr_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.funcptr_sig.function.callable.return_shape.pointee_fp_kind);
-  psx_decl_funcptr_sig_t fp_sig = ps_ctx_tag_member_funcptr_sig(&fp_info);
+  psx_decl_funcptr_sig_t fp_sig = ps_tag_member_funcptr_sig(&fp_info);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_sig.function.callable.return_shape.pointee_fp_kind);
   ASSERT_TRUE(ps_decl_funcptr_sig_has_payload(fp_sig));
@@ -12255,7 +12272,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_NONE, fp_info.decl_type->funcptr_sig.function.callable.return_shape.pointee_fp_kind);
   fp_info.funcptr_sig.function.callable.return_shape.fp_kind = TK_FLOAT_KIND_NONE;
   fp_info.funcptr_sig.function.callable.return_shape.int_width = 4;
-  psx_decl_funcptr_sig_t fp_info_canon_sig = ps_ctx_tag_member_funcptr_sig(&fp_info);
+  psx_decl_funcptr_sig_t fp_info_canon_sig = ps_tag_member_funcptr_sig(&fp_info);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, fp_info_canon_sig.function.callable.return_shape.fp_kind);
   ASSERT_EQ(0, fp_info_canon_sig.function.callable.return_shape.int_width);
 
@@ -14142,6 +14159,51 @@ static void test_parser_width_limits() {
   free(too_many_inits);
 }
 
+static void test_semantic_canonical_type_invariant() {
+  printf("test_semantic_canonical_type_invariant...\n");
+  psx_frontend_reset_translation_unit_state();
+  node_t **program = parse_program_input(
+      "struct S { int x; int y; }; "
+      "int inc(int x) { return x + 1; } "
+      "int apply(int (*fp)(int), int value) { return fp(value); } "
+      "int main(void) { "
+      "  struct S s = (struct S){.x = 3, .y = 4}; "
+      "  int values[2] = {s.x, s.y}; "
+      "  int (*fp)(int) = inc; "
+      "  int total = 0; "
+      "  for (int i = 0; i < 2; i++) total += values[i]; "
+      "  return _Generic(total, int: apply(fp, total), default: 0); "
+      "}");
+  ASSERT_TRUE(program != NULL);
+  for (int i = 0; program[i]; i++) {
+    psx_semantic_invariant_failure_t failure;
+    ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
+        program[i], &failure));
+    ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
+    ASSERT_TRUE(failure.node == NULL);
+  }
+
+  node_num_t untyped = {0};
+  untyped.base.kind = ND_NUM;
+  psx_semantic_invariant_failure_t failure;
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&untyped, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
+  ASSERT_TRUE(failure.node == (node_t *)&untyped);
+
+  node_t raw_subscript = {.kind = ND_SUBSCRIPT};
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      &raw_subscript, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, failure.status);
+  ASSERT_TRUE(failure.node == &raw_subscript);
+
+  node_t raw_initializer = {.kind = ND_INIT_LIST};
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      &raw_initializer, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, failure.status);
+  ASSERT_TRUE(failure.node == &raw_initializer);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
@@ -14243,6 +14305,7 @@ int main() {
   test_parser_config_matrix();
   test_expr_nest_limits();
   test_parser_width_limits();
+  test_semantic_canonical_type_invariant();
 
   printf("OK: All unit tests passed!\n");
   return 0;

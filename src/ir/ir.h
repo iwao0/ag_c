@@ -178,6 +178,9 @@ typedef struct ir_inst_t {
   /* --- 8 バイト (ポインタ / ir_val_t)。汎用オペランド走査が触るため union 外 --- */
   char *sym;          /* CALL / LOAD_SYM / LOAD_STR のシンボル */
   ir_val_t *args;     /* CALL の実引数列 */
+  /* CALL の宣言上の ABI 型。pointer arithmetic などで args[].type が物理的な
+   * integer 幅になっていても、callee parameter の意味型を backend へ渡す。 */
+  ir_type_t *arg_abi_types;
   /* IR_CALL で戻り値が struct の場合: x8 に渡すバッファのアドレス vreg。
    * ret_struct_size > 0 のときに ret_struct_area が有効。 */
   ir_val_t ret_struct_area;
@@ -206,6 +209,7 @@ typedef struct ir_inst_t {
    * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
    * 有効なので関数アドレスは常に GOT 経由にする。 */
   unsigned char is_got_funcref;
+  unsigned char is_function_symbol;
   unsigned char has_funcptr_sig;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
@@ -230,6 +234,7 @@ typedef struct ir_inst_t {
        * 0/1 のみ。1 のとき args[nargs_fixed..nargs-1] は stack。 */
       unsigned char is_variadic_call;
       unsigned char is_void_call;
+      unsigned char is_implicit_call;
     };
     struct {            /* IR_ATOMIC */
       unsigned char atomic_kind;   /* ir_atomic_kind_t */
