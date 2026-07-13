@@ -106,12 +106,17 @@ static void psx_gvar_view_apply_decl_type(psx_gvar_view_t *view,
   } else {
     int type_deref_size = ps_type_deref_size(type);
     if (type_deref_size > 0) view->deref_size = type_deref_size;
-    if (type->outer_stride > 0) view->outer_stride = type->outer_stride;
-    if (type->mid_stride > 0) view->mid_stride = type->mid_stride;
-    if (type->extra_strides_count > 0) {
-      view->extra_strides_count = type->extra_strides_count;
-      for (int i = 0; i < type->extra_strides_count && i < 5; i++)
-        view->extra_strides[i] = type->extra_strides[i];
+    if (type->vla_runtime_strides.outer_stride > 0)
+      view->outer_stride = type->vla_runtime_strides.outer_stride;
+    if (type->vla_runtime_strides.mid_stride > 0)
+      view->mid_stride = type->vla_runtime_strides.mid_stride;
+    if (type->vla_runtime_strides.extra_strides_count > 0) {
+      view->extra_strides_count =
+          type->vla_runtime_strides.extra_strides_count;
+      for (int i = 0;
+           i < type->vla_runtime_strides.extra_strides_count && i < 5; i++)
+        view->extra_strides[i] =
+            type->vla_runtime_strides.extra_strides[i];
     }
   }
 

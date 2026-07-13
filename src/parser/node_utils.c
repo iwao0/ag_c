@@ -1941,11 +1941,6 @@ static int type_is_pointer_view_type(const psx_type_t *type) {
   return type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
 }
 
-static int type_is_pointer_to_array_type(const psx_type_t *type) {
-  return type && type->kind == PSX_TYPE_POINTER &&
-         type->base && type->base->kind == PSX_TYPE_ARRAY;
-}
-
 static psx_type_t *type_array_with_pointer_element_storage(psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_ARRAY ||
       !type->base || type->base->kind != PSX_TYPE_POINTER) {
@@ -2900,15 +2895,13 @@ static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type) {
   ptr->vla_strides_remaining =
       ps_type_pointer_view_vla_strides_remaining(array_type);
   if (ptr->vla_row_stride_frame_off != 0 || array_type->is_vla)
-    psx_type_copy_pointer_view_stride_metadata(ptr, array_type);
+    psx_type_copy_runtime_vla_stride_metadata(ptr, array_type);
   return ptr;
 }
 
 static psx_type_t *type_from_deref_operand(node_t *operand) {
   psx_type_t *type = ps_node_get_type(operand);
   if (!type_is_pointer_view_type(type) || !type->base) return NULL;
-  if (!operand || !operand->type)
-    psx_type_canonicalize_flat_pointer_to_array(type);
   int pointer_levels = ps_type_pointer_view_structural_qual_levels(type);
   int ptr_array_pointee_bytes =
       ps_type_pointer_view_structural_ptr_array_pointee_bytes(type);
@@ -2929,20 +2922,21 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
       int pointer_elem_size = ps_type_sizeof(type->base);
       if (pointer_elem_size > 0) elem_size = pointer_elem_size;
     }
-    int is_array_view = (type->kind == PSX_TYPE_ARRAY &&
-                        type->pointer_qual_levels == 0) ||
-                        ptr_array_pointee_bytes > 0 ||
-                        has_structural_stride ||
-                        psx_type_pointer_view_raw_array_shape_has_hint(type);
+    int has_runtime_vla_shape =
+        psx_type_pointer_view_vla_row_stride_frame_off(type) != 0 ||
+        (type->kind == PSX_TYPE_ARRAY && type->is_vla);
+    int is_array_view =
+        (type->kind == PSX_TYPE_ARRAY && type->pointer_qual_levels == 0) ||
+        ptr_array_pointee_bytes > 0 || has_structural_stride ||
+        has_runtime_vla_shape;
     int array_size = type->deref_size;
     if (has_structural_stride && type->kind == PSX_TYPE_POINTER &&
         type->base && type->base->kind == PSX_TYPE_ARRAY) {
       int base_size = ps_type_sizeof(type->base);
       if (base_size > array_size) array_size = base_size;
-    } else {
-      int raw_array_size_hint =
-          psx_type_pointer_view_raw_array_size_hint(type);
-      if (raw_array_size_hint > array_size) array_size = raw_array_size_hint;
+    } else if (has_runtime_vla_shape &&
+               type->vla_runtime_strides.outer_stride > array_size) {
+      array_size = type->vla_runtime_strides.outer_stride;
     }
     if (ptr_array_pointee_bytes > array_size)
       array_size = ptr_array_pointee_bytes;
@@ -2961,11 +2955,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
         array->base_deref_size = elem_size;
       }
       array->pointee_fp_kind = type->pointee_fp_kind;
-      array->ptr_array_pointee_bytes =
-          (type_is_pointer_to_array_type(type->base) ||
-           ps_type_is_tag_aggregate(type->base))
-              ? ptr_array_pointee_bytes : 0;
-      psx_type_copy_pointer_view_stride_metadata(array, type);
+      psx_type_copy_runtime_vla_stride_metadata(array, type);
       return type_array_with_pointer_element_storage(array);
     }
   }
@@ -2982,9 +2972,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
     result->pointer_volatile_qual_mask =
         ps_type_pointer_view_structural_qual_mask(type, 1) >> 1;
     result->pointee_fp_kind = type->pointee_fp_kind;
-    result->ptr_array_pointee_bytes =
-        ps_type_pointer_view_structural_ptr_array_pointee_bytes(type);
-    psx_type_copy_pointer_view_stride_metadata(result, type);
+    psx_type_copy_runtime_vla_stride_metadata(result, type);
     return result;
   }
   return type_array_with_pointer_element_storage(type->base);
@@ -3089,16 +3077,16 @@ static psx_type_t *type_from_subscript_base_type(const psx_type_t *base_type,
                                    ? view_vla_strides_remaining - 1
                                    : view_vla_strides_remaining;
   if (row->is_vla || row->vla_row_stride_frame_off != 0) {
-    row->outer_stride = next_deref_size;
+    row->vla_runtime_strides.outer_stride = next_deref_size;
     int n = extra_strides_count;
     if (n < 0) n = 0;
     if (n > 5) n = 5;
     if (n > 0) {
-      row->mid_stride = extra_strides[0];
+      row->vla_runtime_strides.mid_stride = extra_strides[0];
       int shifted = n - 1;
-      row->extra_strides_count = (unsigned char)shifted;
+      row->vla_runtime_strides.extra_strides_count = (unsigned char)shifted;
       for (int i = 0; i < shifted; i++)
-        row->extra_strides[i] = extra_strides[i + 1];
+        row->vla_runtime_strides.extra_strides[i] = extra_strides[i + 1];
     }
   }
   return row;
@@ -3499,11 +3487,7 @@ psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
   ptr->deref_size = ds;
   ptr->base_deref_size = ds;
   ptr->pointer_qual_levels = 1;
-  ptr->ptr_array_pointee_bytes = 0;
-  ptr->outer_stride = 0;
-  ptr->mid_stride = 0;
-  ptr->extra_strides_count = 0;
-  for (int i = 0; i < 5; i++) ptr->extra_strides[i] = 0;
+  ptr->vla_runtime_strides = (psx_vla_runtime_strides_t){0};
   ptr->vla_row_stride_frame_off = 0;
   ptr->vla_strides_remaining = 0;
   return ptr;

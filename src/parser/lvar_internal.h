@@ -30,10 +30,6 @@ struct lvar_t {
   int static_global_name_len;
   int align_bytes;
   int used_count;
-  int outer_stride;
-  int mid_stride;
-  int *extra_strides;
-  unsigned char extra_strides_count;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   psx_type_t *decl_type;

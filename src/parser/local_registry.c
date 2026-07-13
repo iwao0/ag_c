@@ -253,42 +253,11 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
   var->is_byref_param = is_byref ? 1 : 0;
 }
 
-static void clear_array_stride_cache(lvar_t *var) {
-  if (!var) return;
-  var->outer_stride = 0;
-  var->mid_stride = 0;
-  var->extra_strides_count = 0;
-  if (var->extra_strides) {
-    for (int i = 0; i < 5; i++) var->extra_strides[i] = 0;
-  }
-}
-
-static void sync_array_stride_cache(lvar_t *var) {
-  if (!var) return;
-  int outer = 0;
-  int mid = 0;
-  int extras[5] = {0};
-  int extra_count = 0;
-  clear_array_stride_cache(var);
-  if (!ps_type_decl_array_stride_metadata(
-          var->decl_type, &outer, &mid, extras, &extra_count)) {
-    return;
-  }
-  var->outer_stride = outer;
-  var->mid_stride = mid;
-  if (extra_count > 0 && !var->extra_strides)
-    var->extra_strides = calloc(5, sizeof(int));
-  var->extra_strides_count = (unsigned char)extra_count;
-  for (int i = 0; i < extra_count; i++)
-    var->extra_strides[i] = extras[i];
-}
-
 static void sync_type_cache(lvar_t *var) {
   if (!var || !var->decl_type) return;
   const psx_type_t *type = var->decl_type;
   var->is_array = type->kind == PSX_TYPE_ARRAY;
   var->is_vla = type->is_vla ? 1 : 0;
-  sync_array_stride_cache(var);
 }
 
 void ps_local_registry_set_decl_type(
@@ -305,7 +274,6 @@ void ps_local_registry_set_vla_descriptor(
   if (!var) return;
   psx_type_t *type = ps_lvar_get_decl_type(var);
   var->is_vla = 1;
-  var->outer_stride = outer_stride;
   var->vla_row_stride_frame_off = row_stride_frame_off;
   var->vla_strides_remaining = strides_remaining;
   var->vla_row_stride_src_offset = row_stride_src_offset;
@@ -328,13 +296,13 @@ void ps_local_registry_set_vla_descriptor(
       psx_type_t *row = ps_type_new_array(
           type->base, 0, 0, elem_size, 1);
       row->base_deref_size = elem_size;
-      row->outer_stride = elem_size;
+      row->vla_runtime_strides.outer_stride = elem_size;
       type->base = row;
       type->deref_size = 0;
       type->base_deref_size = elem_size;
     }
   }
-  type->outer_stride = outer_stride;
+  type->vla_runtime_strides.outer_stride = outer_stride;
   ps_type_set_vla_runtime_descriptor(
       type, row_stride_frame_off, strides_remaining,
       row_stride_src_offset, row_stride_elem_size);
