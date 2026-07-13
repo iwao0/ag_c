@@ -122,12 +122,11 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
         print_val(s, i->args[k]);
       }
       sink_printf(s, ")");
-      if (i->has_funcptr_sig) {
-        sink_printf(s, " fnptr{fp=%u,int=%u,retw=%u,void=%u}",
-                    (unsigned)i->funcptr_sig.function.callable.signature.param_fp_mask,
-                    (unsigned)i->funcptr_sig.function.callable.signature.param_int_mask,
-                    (unsigned)i->funcptr_sig.function.callable.return_shape.int_width,
-                    (unsigned)i->funcptr_sig.function.callable.return_shape.is_void);
+      if (i->has_callable_sig) {
+        sink_printf(s, " callable{n=%u,ret=%s,var=%u}",
+                    (unsigned)i->callable_sig.param_count,
+                    ir_type_name(i->callable_sig.result),
+                    (unsigned)i->callable_sig.is_variadic);
       }
       break;
     case IR_PARAM:

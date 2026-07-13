@@ -32,24 +32,6 @@ typedef struct tag_member_info_t {
   tk_float_kind_t fp_kind;
   int is_bool;
   int is_unsigned;
-  int outer_stride;
-  /* 3 次元以上の配列メンバ (`char c[2][2][3]` / `int t[2][2][2]`) の中間段ストライド
-   * (1 段目 subscript 後の要素サイズ = 残り次元の総バイト数 / arr_dims[1])。
-   * 2D は 0 (outer_stride / elem_size の 2 段で済む)。3D 以上で inner_deref_size に
-   * 載せて多段 subscript を正しくスケールする。 */
-  int mid_stride;
-  /* 多次元 char 配列メンバ (`char c[2][2][3]`) の各次元サイズ。arr_ndim 段だけ
-   * 有効。グローバル brace init の再帰展開で 1 段ずつ消費する。0 = 非多次元 char
-   * (従来通り outer_stride のみで運用)。 */
-  int arr_dims[8];
-  int arr_ndim;
-  /* array-of-pointer-to-array メンバ (`int (*p[M])[N]`) の各要素ポインタが指す配列の
-   * 全バイト数 (= N * elem)。0 = 通常のポインタ配列。`s.p[i]` の subscript 結果に
-   * pointer-to-array 情報を carry し、`(*s.p[i])[j]` が正しいストライドで添字できるよう
-   * subscript / unary deref lowering に伝える。 */
-  int ptr_array_pointee_bytes;
-  int is_funcptr;
-  psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_t *decl_type;
 } tag_member_info_t;
 

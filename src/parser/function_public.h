@@ -17,12 +17,9 @@ typedef struct {
   int is_unsigned;
   int is_void;
   int is_complex;
-  int is_funcptr;
-  psx_decl_funcptr_sig_t funcptr_sig;
   int pointer_levels;
   int pointee_const_qualified;
   int pointee_volatile_qualified;
-  psx_ret_pointee_array_t pointee_array;
 } psx_function_ret_info_t;
 
 bool ps_ctx_has_function_name(char *name, int len);

@@ -14,7 +14,6 @@
 #ifndef AG_IR_H
 #define AG_IR_H
 
-#include "../parser/core.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -35,6 +34,17 @@ typedef enum {
 
 int ir_type_size(ir_type_t t);
 const char *ir_type_name(ir_type_t t);
+
+#define IR_CALLABLE_MAX_PARAMS 8
+
+/* C の recursive type を ABI lowering した後の callable signature。
+ * parser の型 projection を IR に持ち込まず、backend が必要とする物理型だけを保持する。 */
+typedef struct {
+  ir_type_t result;
+  ir_type_t params[IR_CALLABLE_MAX_PARAMS];
+  unsigned char param_count;
+  unsigned char is_variadic;
+} ir_callable_sig_t;
 
 /* ------------------------------------------------------------------ */
 /* オペコード                                                          */
@@ -203,14 +213,14 @@ typedef struct ir_inst_t {
    *  - IR_RET: src1 は {re,im} を持つスロットの PTR。
    *  - IR_CALL: dst は呼び出し後に d0/d1 を書き戻すスロットの PTR。 */
   unsigned char ret_complex_half;
-  psx_decl_funcptr_sig_t funcptr_sig;
+  ir_callable_sig_t callable_sig;
   /* IR_LOAD_SYM: 関数シンボルのアドレス参照 (関数ポインタ値)。外部関数 (libc 等) の
    * アドレスは Apple ARM64 では GOT 経由 (@GOTPAGE/@GOTPAGEOFF + ldr) が必須で、直接
    * adrp @PAGE だと「does not have address」リンクエラーになる。GOT はローカル定義にも
    * 有効なので関数アドレスは常に GOT 経由にする。 */
   unsigned char is_got_funcref;
   unsigned char is_function_symbol;
-  unsigned char has_funcptr_sig;
+  unsigned char has_callable_sig;
 
   /* --- op ごとに排他なスカラ系メタ (匿名 union で同一メモリを共有) ---
    * 各命令は単一 op で対応アームのみを読み書きする。読み出しは全て op で

@@ -39,86 +39,12 @@ static const psx_type_t *gvar_view_skip_arrays(const psx_type_t *type) {
   return type;
 }
 
-static int gvar_view_array_strides_from_type(const psx_type_t *type,
-                                             int *deref_size,
-                                             int *outer_stride,
-                                             int *mid_stride,
-                                             int *extra_strides,
-                                             int *extra_count) {
-  if (deref_size) *deref_size = 0;
-  if (outer_stride) *outer_stride = 0;
-  if (mid_stride) *mid_stride = 0;
-  if (extra_count) *extra_count = 0;
-  if (extra_strides) {
-    for (int i = 0; i < 5; i++) extra_strides[i] = 0;
-  }
-  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-
-  int strides[10];
-  int n = 0;
-  const psx_type_t *cur = type;
-  while (cur && cur->kind == PSX_TYPE_ARRAY && n < 10) {
-    int stride = cur->base ? ps_type_sizeof(cur->base) : 0;
-    if (stride <= 0) stride = ps_type_deref_size(cur);
-    if (stride <= 0) break;
-    strides[n++] = stride;
-    cur = cur->base;
-  }
-  if (n <= 0) return 0;
-
-  if (deref_size) *deref_size = strides[n - 1];
-  if (n >= 2 && outer_stride) *outer_stride = strides[0];
-  if (n >= 3 && mid_stride) *mid_stride = strides[1];
-  int count = 0;
-  for (int i = 2; i < n - 1 && count < 5; i++) {
-    if (extra_strides) extra_strides[count] = strides[i];
-    count++;
-  }
-  if (extra_count) *extra_count = count;
-  return 1;
-}
-
 static void psx_gvar_view_apply_decl_type(psx_gvar_view_t *view,
                                           const psx_type_t *type) {
   if (!view || !type) return;
   int type_size = ps_type_sizeof(type);
   if (type_size > 0 || type->kind == PSX_TYPE_ARRAY) view->type_size = type_size;
-  view->is_array = type->kind == PSX_TYPE_ARRAY ? 1 : 0;
   view->fp_kind = TK_FLOAT_KIND_NONE;
-  view->deref_size = 0;
-  view->outer_stride = 0;
-  view->mid_stride = 0;
-  view->extra_strides_count = 0;
-  for (int i = 0; i < 5; i++) view->extra_strides[i] = 0;
-  int deref_size = 0;
-  int outer_stride = 0;
-  int mid_stride = 0;
-  int extra_strides[5] = {0};
-  int extra_count = 0;
-  if (gvar_view_array_strides_from_type(type, &deref_size, &outer_stride,
-                                        &mid_stride, extra_strides,
-                                        &extra_count)) {
-    view->deref_size = deref_size;
-    view->outer_stride = outer_stride;
-    view->mid_stride = mid_stride;
-    view->extra_strides_count = (unsigned char)extra_count;
-    for (int i = 0; i < 5; i++) view->extra_strides[i] = extra_strides[i];
-  } else {
-    int type_deref_size = ps_type_deref_size(type);
-    if (type_deref_size > 0) view->deref_size = type_deref_size;
-    if (type->vla_runtime_strides.outer_stride > 0)
-      view->outer_stride = type->vla_runtime_strides.outer_stride;
-    if (type->vla_runtime_strides.mid_stride > 0)
-      view->mid_stride = type->vla_runtime_strides.mid_stride;
-    if (type->vla_runtime_strides.extra_strides_count > 0) {
-      view->extra_strides_count =
-          type->vla_runtime_strides.extra_strides_count;
-      for (int i = 0;
-           i < type->vla_runtime_strides.extra_strides_count && i < 5; i++)
-        view->extra_strides[i] =
-            type->vla_runtime_strides.extra_strides[i];
-    }
-  }
 
   const psx_type_t *base = gvar_view_skip_arrays(type);
   int is_tag_pointer = 0;

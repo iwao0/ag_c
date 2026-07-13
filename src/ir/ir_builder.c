@@ -1328,10 +1328,51 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
+static ir_type_t funcptr_abi_int_type(unsigned width) {
+  return width == 2 ? IR_TY_I64 : IR_TY_I32;
+}
+
 static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
   if (!sym || !sig || !ps_decl_funcptr_sig_has_payload(*sig)) return;
-  sym->has_funcptr_sig = 1;
-  ps_decl_funcptr_sig_clone_to(sig, &sym->funcptr_sig);
+  const psx_funcptr_callable_shape_t *callable = &sig->function.callable;
+  ir_callable_sig_t *abi = &sym->callable_sig;
+  if (callable->return_shape.is_void) abi->result = IR_TY_VOID;
+  else if (callable->return_shape.is_data_pointer) abi->result = IR_TY_PTR;
+  else if (callable->return_shape.fp_kind == TK_FLOAT_KIND_FLOAT)
+    abi->result = IR_TY_F32;
+  else if (callable->return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE)
+    abi->result = IR_TY_F64;
+  else
+    abi->result = callable->return_shape.int_width == 8 ? IR_TY_I64
+                                                        : IR_TY_I32;
+
+  int count = callable->signature.is_variadic
+                  ? callable->signature.nargs_fixed
+                  : 0;
+  if (!callable->signature.is_variadic) {
+    for (int i = 0; i < IR_CALLABLE_MAX_PARAMS; i++) {
+      unsigned fp =
+          (callable->signature.param_fp_mask >> (2 * i)) & 3u;
+      unsigned width =
+          (callable->signature.param_int_mask >> (2 * i)) & 3u;
+      if (fp || width) count = i + 1;
+    }
+  }
+  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
+  abi->param_count = (unsigned char)count;
+  abi->is_variadic = callable->signature.is_variadic ? 1 : 0;
+  for (int i = 0; i < count; i++) {
+    unsigned fp =
+        (callable->signature.param_fp_mask >> (2 * i)) & 3u;
+    unsigned width =
+        (callable->signature.param_int_mask >> (2 * i)) & 3u;
+    abi->params[i] = fp == TK_FLOAT_KIND_FLOAT
+                         ? IR_TY_F32
+                     : fp >= TK_FLOAT_KIND_DOUBLE
+                         ? IR_TY_F64
+                         : funcptr_abi_int_type(width);
+  }
+  sym->has_callable_sig = 1;
 }
 
 static void funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee,

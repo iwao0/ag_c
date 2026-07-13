@@ -1117,12 +1117,22 @@ static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
   return func_sig_from_funcptr_sig(ps_tag_member_funcptr_sig(mi));
 }
 
-static obj_sig_t func_sig_from_ir_funcptr(const ir_inst_t *inst, const char *name, int name_len) {
-  if (!inst || !inst->has_funcptr_sig)
+static obj_sig_t func_sig_from_ir_callable(const ir_inst_t *inst,
+                                           const char *name, int name_len) {
+  if (!inst || !inst->has_callable_sig)
     obj_unsupported_msg("missing IR function-pointer signature in Wasm object mode");
   (void)name;
   (void)name_len;
-  return func_sig_from_funcptr_sig(inst->funcptr_sig);
+  obj_sig_t sig = {
+      .result = inst->callable_sig.result,
+      .nparams = inst->callable_sig.param_count,
+  };
+  if (sig.nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
+    for (int i = 0; i < sig.nparams; i++)
+      sig.params[i] = inst->callable_sig.params[i];
+  }
+  return sig;
 }
 
 static void ensure_func_sig_for_address(char *sym, int sym_len, obj_sig_t sig) {
@@ -1181,8 +1191,8 @@ static obj_sig_t call_sig_from_inst(ir_inst_t *i) {
   if (has_ret_area && call_ret_area(i).id == IR_VAL_NONE) {
     obj_unsupported_msg("aggregate call without return area in Wasm object mode");
   }
-  if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_funcptr_sig) {
-    sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
+  if (!has_ret_area && i->callee.id != IR_VAL_NONE && i->has_callable_sig) {
+    sig = func_sig_from_ir_callable(i, i->sym, i->sym_len);
     if (i->is_void_call || i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID) {
       sig.result = IR_TY_VOID;
     }
@@ -1551,7 +1561,7 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
           if (i->op == IR_LOAD_SYM && i->is_function_symbol) {
             obj_func_t *target = intern_func(i->sym, i->sym_len);
             if (!target->defined && target->sig.nparams == 0 && target->sig.result == IR_TY_VOID) {
-              target->sig = func_sig_from_ir_funcptr(i, i->sym, i->sym_len);
+              target->sig = func_sig_from_ir_callable(i, i->sym, i->sym_len);
             }
             of = &g_obj.funcs[of_index];
             wb_u8(&body, 0x41);

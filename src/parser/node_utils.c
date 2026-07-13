@@ -1542,10 +1542,12 @@ int ps_tag_member_elem_flat_slots(const tag_member_info_t *mi) {
 
 int ps_tag_member_subscript_stride_slots(const tag_member_info_t *mi) {
   int per = ps_tag_member_elem_flat_slots(mi);
-  if (!mi || mi->arr_ndim <= 1) return per;
-  for (int i = 1; i < mi->arr_ndim; i++) {
-    int dim = mi->arr_dims[i];
-    if (dim > 0) per *= dim;
+  const psx_type_t *type = ps_tag_member_decl_type(mi);
+  if (!type || type->kind != PSX_TYPE_ARRAY) return per;
+  type = type->base;
+  while (type && type->kind == PSX_TYPE_ARRAY) {
+    if (type->array_len > 0) per *= type->array_len;
+    type = type->base;
   }
   return per > 0 ? per : 1;
 }

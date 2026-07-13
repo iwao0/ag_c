@@ -23,12 +23,6 @@ typedef struct {
   long long init_symbol_offset;
   double fval;
   tk_float_kind_t fp_kind;
-  int is_array;
-  int deref_size;
-  int outer_stride;
-  int mid_stride;
-  int extra_strides[5];
-  unsigned char extra_strides_count;
   int is_extern_decl;
   int is_static;
   int is_thread_local;

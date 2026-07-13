@@ -365,48 +365,66 @@ static ir_type_t funcptr_int_mask_type(unsigned iw) {
   return iw == 2 ? IR_TY_I64 : IR_TY_I32;
 }
 
+static ir_callable_sig_t callable_sig_from_funcptr_sig(
+    psx_decl_funcptr_sig_t fs) {
+  ir_callable_sig_t abi = {0};
+  const psx_funcptr_callable_shape_t *callable = &fs.function.callable;
+  if (callable->return_shape.is_void) abi.result = IR_TY_VOID;
+  else if (callable->return_shape.is_data_pointer) abi.result = IR_TY_PTR;
+  else if (callable->return_shape.fp_kind == TK_FLOAT_KIND_FLOAT)
+    abi.result = IR_TY_F32;
+  else if (callable->return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE)
+    abi.result = IR_TY_F64;
+  else
+    abi.result = callable->return_shape.int_width == 8 ? IR_TY_I64
+                                                       : IR_TY_I32;
+  int count = callable->signature.is_variadic
+                  ? callable->signature.nargs_fixed
+                  : 0;
+  if (!callable->signature.is_variadic) {
+    for (int i = 0; i < IR_CALLABLE_MAX_PARAMS; i++) {
+      unsigned fp =
+          (callable->signature.param_fp_mask >> (2 * i)) & 3u;
+      unsigned iw =
+          (callable->signature.param_int_mask >> (2 * i)) & 3u;
+      if (fp || iw) count = i + 1;
+    }
+  }
+  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
+  abi.param_count = (unsigned char)count;
+  abi.is_variadic = callable->signature.is_variadic ? 1 : 0;
+  for (int i = 0; i < count; i++) {
+    unsigned fp =
+        (callable->signature.param_fp_mask >> (2 * i)) & 3u;
+    unsigned iw =
+        (callable->signature.param_int_mask >> (2 * i)) & 3u;
+    abi.params[i] = fp == TK_FLOAT_KIND_FLOAT
+                        ? IR_TY_F32
+                    : fp >= TK_FLOAT_KIND_DOUBLE
+                        ? IR_TY_F64
+                        : funcptr_int_mask_type(iw);
+  }
+  return abi;
+}
+
 static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_type_t fallback) {
-  if (!i || !i->has_funcptr_sig || idx < 0 || idx >= 8) return fallback;
-  psx_decl_funcptr_sig_t fs = i->funcptr_sig;
-  unsigned fp = (fs.function.callable.signature.param_fp_mask >> (2 * idx)) & 3u;
-  unsigned iw = (fs.function.callable.signature.param_int_mask >> (2 * idx)) & 3u;
-  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  if (iw != 0) return funcptr_int_mask_type(iw);
-  return fallback;
+  if (!i || !i->has_callable_sig || idx < 0 ||
+      idx >= i->callable_sig.param_count)
+    return fallback;
+  return i->callable_sig.params[idx];
 }
 
 static ir_type_t funcptr_result_type_from_inst(const ir_inst_t *inst) {
-  psx_decl_funcptr_sig_t sig = inst->funcptr_sig;
-  if (sig.function.callable.return_shape.is_void) return IR_TY_VOID;
-  if (sig.function.callable.return_shape.is_data_pointer) return IR_TY_PTR;
-  if (sig.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_FLOAT)
-    return IR_TY_F32;
-  if (sig.function.callable.return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE)
-    return IR_TY_F64;
-  return sig.function.callable.return_shape.int_width == 8 ? IR_TY_I64
-                                                           : IR_TY_I32;
+  return inst && inst->has_callable_sig ? inst->callable_sig.result
+                                        : IR_TY_VOID;
 }
 
 static void record_function_reference_signature(const ir_inst_t *inst) {
-  if (!inst || !inst->sym || !inst->has_funcptr_sig) return;
-  psx_decl_funcptr_sig_t sig = inst->funcptr_sig;
-  int param_count = sig.function.callable.signature.is_variadic
-                        ? sig.function.callable.signature.nargs_fixed
-                        : 0;
-  if (!sig.function.callable.signature.is_variadic) {
-    for (int p = 0; p < 8; p++) {
-      unsigned fp =
-          (sig.function.callable.signature.param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw =
-          (sig.function.callable.signature.param_int_mask >> (2 * p)) & 3u;
-      if (fp || iw) param_count = p + 1;
-    }
-  }
-  if (param_count > 32) param_count = 32;
+  if (!inst || !inst->sym || !inst->has_callable_sig) return;
+  int param_count = inst->callable_sig.param_count;
   ir_type_t param_types[32] = {0};
   for (int p = 0; p < param_count; p++)
-    param_types[p] = funcptr_param_type_from_inst(inst, p, IR_TY_I32);
+    param_types[p] = inst->callable_sig.params[p];
   record_function_signature(
       inst->sym, inst->sym_len, funcptr_result_type_from_inst(inst),
       param_types, param_count);
@@ -1312,9 +1330,9 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     if (returns_aggregate && i->ret_struct_area.id == IR_VAL_NONE) {
       wasm_unsupported_msg("indirect aggregate function call without return area in Wasm backend");
     }
-    psx_decl_funcptr_sig_t fs = i->funcptr_sig;
     int returns_void = returns_aggregate || i->is_void_call ||
-                       fs.function.callable.return_shape.is_void ||
+                       (i->has_callable_sig &&
+                        i->callable_sig.result == IR_TY_VOID) ||
                        i->dst.id == IR_VAL_NONE || i->dst.type == IR_TY_VOID;
     int result_unused = !returns_void && !vreg_used_after(i, i->dst.id);
     const char *ret_ty = returns_void ? NULL : wasm_any_type_or_unsupported(i->dst.type);
@@ -1327,13 +1345,13 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
       ir_type_t arg_ty = raw_arg_ty;
-      int from_funcptr_sig = i->has_funcptr_sig ? 1 : 0;
-      if (from_funcptr_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
+      int from_callable_sig = i->has_callable_sig ? 1 : 0;
+      if (from_callable_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
       int null_ptr_pair_arg =
-          !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
-      else if (!from_funcptr_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
+      else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
       cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
     }
     if (!returns_void) cg_emitf(" (result %s)", ret_ty);
@@ -1344,13 +1362,13 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
       ir_type_t arg_ty = raw_arg_ty;
-      int from_funcptr_sig = i->has_funcptr_sig ? 1 : 0;
-      if (from_funcptr_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
+      int from_callable_sig = i->has_callable_sig ? 1 : 0;
+      if (from_callable_sig) arg_ty = funcptr_param_type_from_inst(i, a, arg_ty);
       int null_ptr_pair_arg =
-          !from_funcptr_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
+          !from_callable_sig && a == 0 && call_nargs >= 2 && i->args[1].type == IR_TY_PTR;
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
-      else if (!from_funcptr_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
+      else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
       cg_emitf(" ");
       emit_val_expr_as(ctx, i->args[a], arg_ty);
     }
@@ -2113,8 +2131,8 @@ static void emit_global_data(global_var_t *gv, void *user) {
     ir_inst_t function_ref = {
         .sym = function_name,
         .sym_len = function_name_len,
-        .funcptr_sig = funcptr_sig,
-        .has_funcptr_sig = 1,
+        .callable_sig = callable_sig_from_funcptr_sig(funcptr_sig),
+        .has_callable_sig = 1,
     };
     record_function_reference_signature(&function_ref);
   }

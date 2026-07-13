@@ -73,8 +73,7 @@ bool ps_ctx_find_enum_const_at(
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value);
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len);
-/* typedef の型記述子。define/find はこの 1 構造体で受け渡す (旧 _ex/_ex2/_ex3 の
- * フィールド堆積をまとめたもの)。array_dims は最大 8 次元、array_dims[0] が最も外側。
+/* typedef の型記述子。decl_type が正本で、その他は scalar/tag query 用の projection。
  * pointer_levels / scope_depth は別 API・内部管理なのでここには含めない。 */
 typedef struct {
   token_kind_t base_kind;
@@ -89,12 +88,6 @@ typedef struct {
   int pointee_volatile_qualified;
   int is_unsigned;
   int is_long_double;          // typedef した型自体が long double スカラか
-  int is_array;                 // typedef した型が配列型 (`typedef int row_t[3]`) か
-  int array_first_dim;          // 最外側 `[N]` の N (多次元の mid_stride 計算用)
-  int array_dim_count;          // 配列次元数 (0 = 非配列/未知)
-  int array_dims[8];            // 各次元サイズ。array_dims[0] が最外側
-  int is_funcptr;               // `typedef struct S * (*fty)()` 等の関数ポインタ typedef
-  psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_t *decl_type;
 } psx_typedef_info_t;
 
