@@ -27,22 +27,14 @@ static void copy_identifier_source_state(
 
 static int is_static_local_array(const lvar_t *var) {
   return var && var->is_static_local && var->static_global_name &&
-         var->elem_size > 0 && var->size == 0 && !ps_lvar_is_vla(var) &&
-         !var->is_param;
+         ps_lvar_is_array(var) && !ps_lvar_is_vla(var) && !var->is_param;
 }
 
 static node_t *materialize_local(
     const node_identifier_t *identifier, lvar_t *var) {
   node_t *node = NULL;
   if (is_static_local_array(var)) {
-    int type_size = var->elem_size;
-    global_var_t *global = psx_resolve_global_object_symbol(
-        var->static_global_name, var->static_global_name_len);
-    if (global) {
-      int storage_size = ps_gvar_storage_size(global, 0);
-      if (storage_size > 0) type_size = storage_size;
-    }
-    node = psx_node_new_static_local_array_addr_for(var, type_size);
+    node = psx_node_new_static_local_array_addr_for(var);
   } else if (ps_lvar_is_array(var) && !ps_lvar_is_vla(var)) {
     node = ps_node_new_lvar_array_addr_for(
         var, ps_lvar_tag_kind(var) != TK_EOF);
@@ -138,7 +130,7 @@ static node_t *materialize_address_operand(
     lvar_t *var = resolution.local;
     node_t *node = NULL;
     if (is_static_local_array(var)) {
-      node = psx_node_new_static_local_gvar_for(var, var->elem_size);
+      node = psx_node_new_static_local_gvar_for(var);
     } else if (ps_lvar_is_array(var)) {
       node = psx_node_new_lvar_object_ref_for(var);
     }

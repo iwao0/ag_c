@@ -1013,7 +1013,6 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
   if (type->kind == PSX_TYPE_ARRAY && type->base) {
     int element_size = ps_type_sizeof(type->base);
     if (element_size > 0) {
-      type->elem_size = element_size;
       if (type->array_len > 0 && type->array_len <= INT_MAX / element_size)
         type->size = type->array_len * element_size;
     }

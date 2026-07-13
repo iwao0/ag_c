@@ -25,11 +25,10 @@ lvar_t *ps_local_registry_create_storage_object(
 lvar_t *ps_local_registry_create_type_binding(
     char *name, int name_len, const psx_type_t *type);
 lvar_t *ps_local_registry_create_static_alias(
-    char *name, int name_len, int storage_size, int element_size,
-    char *global_name, int global_name_len);
+    char *name, int name_len, char *global_name, int global_name_len,
+    const psx_type_t *type);
 void ps_local_registry_update_storage_object(
-    lvar_t *var, int offset, int storage_size,
-    int element_size, int alignment);
+    lvar_t *var, int offset, int storage_size, int alignment);
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
 void ps_local_registry_set_decl_type(
     lvar_t *var, const psx_type_t *decl_type);

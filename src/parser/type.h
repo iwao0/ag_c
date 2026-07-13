@@ -88,7 +88,6 @@ struct psx_type_t {
 
   int size;
   int align;
-  int elem_size;
   int array_len;
 
   token_kind_t scalar_kind;
@@ -181,7 +180,8 @@ psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type);
 psx_type_t *psx_type_rebase_declarator(
     const psx_type_t *derived_type, const psx_type_t *canonical_base,
     int *out_rebased);
-psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size, int elem_size, int is_vla);
+psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size,
+                              int is_vla);
 int ps_type_complete_array(psx_type_t *type, int array_len);
 psx_type_t *ps_type_clone(const psx_type_t *src);
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src);

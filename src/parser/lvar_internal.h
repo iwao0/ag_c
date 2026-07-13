@@ -15,7 +15,6 @@ struct lvar_t {
   int len;
   int offset;
   int size;
-  int elem_size;
   unsigned int is_byref_param : 1;
   unsigned int is_used : 1;
   unsigned int is_unevaluated_used : 1;

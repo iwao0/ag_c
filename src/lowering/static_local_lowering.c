@@ -57,7 +57,7 @@ static char *mangle_static_local_name(
 lvar_t *lower_static_local_object(
     const psx_static_local_object_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->global || !request->type || request->alias_element_size <= 0)
+      !request->global || !request->type)
     return NULL;
   int mangled_len = 0;
   char *mangled = mangle_static_local_name(
@@ -72,11 +72,9 @@ lvar_t *lower_static_local_object(
   ps_register_global_var(global);
 
   lvar_t *alias = ps_local_registry_create_static_alias(
-      request->name, request->name_len,
-      request->alias_size, request->alias_element_size,
-      mangled, mangled_len);
+      request->name, request->name_len, mangled, mangled_len,
+      request->type);
   if (!alias) return NULL;
-  ps_local_registry_set_decl_type(alias, request->type);
   return alias;
 }
 
@@ -85,7 +83,7 @@ int lower_static_local_declaration_storage(
     psx_static_local_declaration_result_t *result) {
   if (result) *result = (psx_static_local_declaration_result_t){0};
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type || request->alias_element_size <= 0)
+      !request->type)
     return 0;
 
   global_var_t *global = calloc(1, sizeof(*global));
@@ -100,8 +98,6 @@ int lower_static_local_declaration_storage(
           .name = request->name,
           .name_len = request->name_len,
           .global = global,
-          .alias_size = request->alias_size,
-          .alias_element_size = request->alias_element_size,
           .type = ps_gvar_get_decl_type(global),
       });
   if (!alias) return 0;

@@ -537,7 +537,6 @@ static int type_array_leaf_element_size(const psx_type_t *type) {
   while (cur && cur->kind == PSX_TYPE_ARRAY && cur->base) {
     if (cur->base->kind != PSX_TYPE_ARRAY) {
       int elem = ps_type_sizeof(cur->base);
-      if (elem <= 0) elem = cur->elem_size;
       return elem;
     }
     cur = cur->base;
@@ -597,7 +596,6 @@ static psx_type_t *type_array_element_type_for_size(psx_type_t *type,
   psx_type_t *cur = type;
   while (cur && cur->kind == PSX_TYPE_ARRAY && cur->base) {
     int elem_size = ps_type_sizeof(cur->base);
-    if (elem_size <= 0) elem_size = cur->elem_size;
     if (elem_size == type_size) return cur->base;
     cur = cur->base;
   }
@@ -1900,22 +1898,6 @@ static int type_is_pointer_view_type(const psx_type_t *type) {
   return type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
 }
 
-static psx_type_t *type_array_with_pointer_element_storage(psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_ARRAY ||
-      !type->base || type->base->kind != PSX_TYPE_POINTER) {
-    return type;
-  }
-  int pointer_size = ps_type_sizeof(type->base);
-  if (pointer_size <= 0) pointer_size = 8;
-  if (type->elem_size == pointer_size) {
-    return type;
-  }
-  psx_type_t *copy = arena_alloc(sizeof(psx_type_t));
-  *copy = *type;
-  copy->elem_size = pointer_size;
-  return copy;
-}
-
 static tk_float_kind_t type_deep_pointee_fp_kind(const psx_type_t *type) {
   if (!type_is_pointer_view_type(type)) return TK_FLOAT_KIND_NONE;
   const psx_type_t *cur = type;
@@ -2469,10 +2451,11 @@ node_t *ps_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size) 
   if (owner) {
     psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
     int rel = offset - owner->offset;
+    int scalar_elem_size = ps_lvar_array_scalar_element_size(owner);
     if (rel == 0 && ps_type_sizeof(owner_type) == type_size)
       type = owner_type;
-    else if (rel >= 0 && owner->elem_size > 0 &&
-             (rel % owner->elem_size) == 0)
+    else if (rel >= 0 && scalar_elem_size > 0 &&
+             (rel % scalar_elem_size) == 0)
       type = type_array_element_type_for_size(owner_type, type_size);
   }
   if (!type) type = ps_type_new_integer(TK_INT, type_size > 0 ? type_size : 8, 0);
@@ -2543,8 +2526,7 @@ node_t *ps_node_new_lvar_expr_ref_for(lvar_t *var, int is_pointer) {
 
 node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
   if (var && var->is_static_local && var->static_global_name) {
-    int sz = var->size > 0 ? var->size : var->elem_size;
-    return psx_node_new_static_local_gvar_for(var, sz);
+    return psx_node_new_static_local_gvar_for(var);
   }
 
   return psx_node_new_lvar_for(var);
@@ -2568,7 +2550,7 @@ node_t *ps_node_new_array_elem_lvar_for(lvar_t *var, int idx) {
       var ? type_array_leaf_element_type(ps_lvar_get_decl_type(var)) : NULL;
   int canonical_elem_size = ps_type_sizeof(elem_type);
   int elem_size = canonical_elem_size > 0 ? canonical_elem_size
-                  : (var ? var->elem_size : 0);
+                  : ps_lvar_array_scalar_element_size(var);
   int offset = var ? var->offset + idx * elem_size : 0;
   if (!elem_type)
     elem_type = ps_type_new_integer(TK_INT, elem_size > 0 ? elem_size : 4,
@@ -2741,7 +2723,7 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
   }
   if (type->kind == PSX_TYPE_POINTER && type->base->kind == PSX_TYPE_ARRAY &&
       pointer_levels <= 1) {
-    return type_array_with_pointer_element_storage(type->base);
+    return type->base;
   }
   if ((!type_is_pointer_view_type(type->base) || ptr_array_pointee_bytes > 0) &&
       pointer_levels <= 1) {
@@ -2772,119 +2754,22 @@ static psx_type_t *type_from_deref_operand(node_t *operand) {
       int array_len = array_size / elem_size;
       if (array_len <= 0) array_len = 1;
       psx_type_t *array =
-          ps_type_new_array(type->base, array_len, array_size, elem_size, 0);
+          ps_type_new_array(type->base, array_len, array_size, 0);
       psx_type_copy_runtime_vla_stride_metadata(array, type);
-      return type_array_with_pointer_element_storage(array);
+      return array;
     }
   }
-  return type_array_with_pointer_element_storage(type->base);
+  return type->base;
 }
 
-static psx_type_t *type_normalize_tag_aggregate_size(psx_type_t *type,
-                                                     int value_size) {
-  if (!ps_type_is_tag_aggregate(type) || value_size <= 0 ||
-      value_size >= ps_type_sizeof(type)) {
-    return type;
-  }
-  psx_type_t *tag = ps_type_new_tag(type->tag_kind, type->tag_name,
-                                     type->tag_len,
-                                     type->tag_scope_depth_p1,
-                                     value_size);
-  psx_type_copy_common_qualifiers(tag, type);
-  return tag;
-}
-
-static psx_type_t *type_from_subscript_base_type(const psx_type_t *base_type,
-                                                 int elem_size,
-                                                 int inner_deref_size,
-                                                 int next_deref_size,
-                                                 const int *extra_strides,
-                                                 int extra_strides_count) {
-  if (!base_type) return NULL;
-  if (base_type->kind == PSX_TYPE_POINTER && base_type->base &&
-      base_type->base->kind == PSX_TYPE_POINTER &&
-      base_type->base->base && base_type->base->base->kind == PSX_TYPE_ARRAY) {
-    int pointer_elem_size = ps_type_sizeof(base_type->base);
-    if (pointer_elem_size > 0 && elem_size == pointer_elem_size) {
-      return base_type->base;
-    }
-  }
-  if (base_type->kind == PSX_TYPE_POINTER && base_type->base &&
-      base_type->base->kind == PSX_TYPE_ARRAY &&
-      (!base_type->base->base || base_type->base->base->kind != PSX_TYPE_ARRAY) &&
-      ps_type_deref_size(base_type->base) <= ps_type_sizeof(base_type->base->base)) {
-    (void)elem_size;
-    (void)next_deref_size;
-    (void)extra_strides;
-    (void)extra_strides_count;
-    return base_type->base;
-  }
-  const psx_type_t *view = base_type;
-  if (view->kind == PSX_TYPE_POINTER && view->base) view = view->base;
-  if (!view || view->kind != PSX_TYPE_ARRAY || !view->base) {
+static psx_type_t *type_from_subscript_base_type(
+    const psx_type_t *base_type) {
+  if (!base_type || !base_type->base) return NULL;
+  if (base_type->kind != PSX_TYPE_POINTER &&
+      base_type->kind != PSX_TYPE_ARRAY) {
     return NULL;
   }
-
-  int base_elem_size = ps_type_sizeof(view->base);
-  int subscript_yields_pointer_element =
-      view->base->kind == PSX_TYPE_POINTER &&
-      base_elem_size > 0 &&
-      ((inner_deref_size > 0 && inner_deref_size == base_elem_size) ||
-       (inner_deref_size <= 0 && elem_size == base_elem_size));
-  int subscript_yields_tag_element =
-      ps_type_is_tag_aggregate(view->base) &&
-      base_elem_size > 0 && elem_size == base_elem_size;
-  int keeps_row = inner_deref_size > 0 && elem_size > inner_deref_size &&
-                  !subscript_yields_pointer_element &&
-                  !subscript_yields_tag_element;
-  if (!keeps_row) {
-    return type_normalize_tag_aggregate_size(view->base, elem_size);
-  }
-
-  int row_elem_size = inner_deref_size > 0 ? inner_deref_size
-                                           : ps_type_sizeof(view->base);
-  if (row_elem_size <= 0) row_elem_size = view->elem_size;
-  if (row_elem_size <= 0) return view->base;
-  if (view->base->kind == PSX_TYPE_ARRAY &&
-      (ps_type_sizeof(view->base) == elem_size ||
-       (ps_type_pointer_view_structural_ptr_array_pointee_bytes(view) > 0 &&
-        ps_type_sizeof(view->base) == row_elem_size))) {
-    return view->base;
-  }
-  int row_len = elem_size / row_elem_size;
-  if (row_len <= 0) row_len = 1;
-  psx_type_t *row_base = view->base;
-  int leaf_size = ps_type_sizeof(view->base);
-  if (view->base && view->base->kind != PSX_TYPE_ARRAY &&
-      leaf_size > 0 && row_elem_size > leaf_size &&
-      (row_elem_size % leaf_size) == 0) {
-    int inner_len = row_elem_size / leaf_size;
-    row_base = ps_type_new_array(view->base, inner_len, row_elem_size,
-                                  leaf_size, view->is_vla);
-  }
-  psx_type_t *row = ps_type_new_array(row_base, row_len, elem_size,
-                                       row_elem_size, view->is_vla);
-  row->vla_row_stride_frame_off =
-      psx_type_pointer_view_vla_row_stride_frame_off(view);
-  int view_vla_strides_remaining =
-      ps_type_pointer_view_vla_strides_remaining(view);
-  row->vla_strides_remaining = view_vla_strides_remaining > 0
-                                   ? view_vla_strides_remaining - 1
-                                   : view_vla_strides_remaining;
-  if (row->is_vla || row->vla_row_stride_frame_off != 0) {
-    row->vla_runtime_strides.outer_stride = next_deref_size;
-    int n = extra_strides_count;
-    if (n < 0) n = 0;
-    if (n > 5) n = 5;
-    if (n > 0) {
-      row->vla_runtime_strides.mid_stride = extra_strides[0];
-      int shifted = n - 1;
-      row->vla_runtime_strides.extra_strides_count = (unsigned char)shifted;
-      for (int i = 0; i < shifted; i++)
-        row->vla_runtime_strides.extra_strides[i] = extra_strides[i + 1];
-    }
-  }
-  return row;
+  return base_type->base;
 }
 
 node_t *ps_node_new_gvar_array_addr_for(global_var_t *gv) {
@@ -2893,9 +2778,9 @@ node_t *ps_node_new_gvar_array_addr_for(global_var_t *gv) {
   return addr;
 }
 
-node_t *psx_node_new_static_local_array_addr_for(lvar_t *var, int gvar_type_size) {
+node_t *psx_node_new_static_local_array_addr_for(lvar_t *var) {
   node_t *addr = new_addr_node(
-      psx_node_new_static_local_gvar_for(var, gvar_type_size));
+      psx_node_new_static_local_gvar_for(var));
   init_array_addr_canonical_type(addr, static_local_backing_decl_type(var));
   return addr;
 }
@@ -3065,9 +2950,8 @@ node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
                                          const int *extra_strides,
                                          int extra_strides_count) {
   psx_type_t *base_type = ps_node_get_type(base);
-  psx_type_t *fixed_result_type = type_from_subscript_base_type(
-      base_type, elem_size, inner_deref_size, next_deref_size,
-      extra_strides, extra_strides_count);
+  psx_type_t *fixed_result_type =
+      type_from_subscript_base_type(base_type);
   int parent_vla_row = ps_node_vla_row_stride_frame_off(base);
   if (base_type && parent_vla_row != 0) {
     int parent_remaining = node_vla_strides_remaining(base);
@@ -3189,8 +3073,7 @@ node_t *psx_node_new_gvar_array_base_for(global_var_t *gv) {
   return (node_t *)node;
 }
 
-node_t *psx_node_new_static_local_gvar_for(lvar_t *var, int type_size) {
-  (void)type_size;
+node_t *psx_node_new_static_local_gvar_for(lvar_t *var) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (var) {

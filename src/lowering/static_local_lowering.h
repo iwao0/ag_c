@@ -20,8 +20,6 @@ typedef struct {
   char *name;
   int name_len;
   global_var_t *global;
-  int alias_size;
-  int alias_element_size;
   const psx_type_t *type;
 } psx_static_local_object_request_t;
 
@@ -31,8 +29,6 @@ typedef struct {
   int function_name_len;
   char *name;
   int name_len;
-  int alias_size;
-  int alias_element_size;
   psx_type_t *type;
   const psx_static_initializer_resolution_t *initializer_resolution;
   token_t *diag_tok;

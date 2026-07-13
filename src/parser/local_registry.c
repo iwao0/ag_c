@@ -173,7 +173,6 @@ lvar_t *ps_local_registry_create_storage_object(
   var->len = name_len;
   var->offset = offset;
   var->size = storage_size;
-  var->elem_size = element_size;
   var->align_bytes = alignment;
   var->decl_type = psx_type_new_storage_object(
       storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
@@ -199,8 +198,6 @@ lvar_t *ps_local_registry_create_type_binding(
   var->scope_seq = current_scope_seq;
   var->declaration_seq = ps_local_registry_register_binding_event();
   var->decl_type = ps_type_clone_persistent(type);
-  var->size = ps_type_sizeof(type);
-  var->elem_size = ps_type_deref_size(type);
   var->is_param = 1;
   var->next = locals;
   var->next_binding = all_bindings;
@@ -213,32 +210,30 @@ lvar_t *ps_local_registry_create_type_binding(
 }
 
 lvar_t *ps_local_registry_create_static_alias(
-    char *name, int name_len, int storage_size, int element_size,
-    char *global_name, int global_name_len) {
-  if (!name || name_len <= 0 || !global_name || global_name_len <= 0)
+    char *name, int name_len, char *global_name, int global_name_len,
+    const psx_type_t *type) {
+  if (!name || name_len <= 0 || !global_name || global_name_len <= 0 ||
+      !type)
     return NULL;
   lvar_t *var = calloc(1, sizeof(*var));
   if (!var) return NULL;
   var->name = name;
   var->len = name_len;
-  var->size = storage_size;
-  var->elem_size = element_size;
   var->is_static_local = 1;
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
+  var->decl_type = ps_type_clone_persistent(type);
   psx_decl_attach_lvar_current_region(var);
   psx_local_registry_add(var);
   return var;
 }
 
 void ps_local_registry_update_storage_object(
-    lvar_t *var, int offset, int storage_size,
-    int element_size, int alignment) {
+    lvar_t *var, int offset, int storage_size, int alignment) {
   if (!var) return;
   offset_index_remove(var);
   var->offset = offset;
   var->size = storage_size;
-  var->elem_size = element_size;
   var->align_bytes = alignment;
   unsigned bucket = offset_hash(offset);
   var->next_offhash = lvars_by_offset[bucket];
@@ -280,7 +275,7 @@ void ps_local_registry_set_vla_descriptor(
                         : ps_type_sizeof(type->base);
     if (elem_size > 0) {
       psx_type_t *row = ps_type_new_array(
-          type->base, 0, 0, elem_size, 1);
+          type->base, 0, 0, 1);
       row->vla_runtime_strides.outer_stride = elem_size;
       type->base = row;
     }

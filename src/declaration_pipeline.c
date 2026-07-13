@@ -503,19 +503,12 @@ int psx_begin_static_local_declaration_pipeline(
   }
 
   psx_static_local_kind_t kind = PSX_STATIC_LOCAL_SCALAR;
-  int alias_size = object_size;
-  int alias_element_size = object_size;
   if (request->type->kind == PSX_TYPE_ARRAY) {
     kind = leaf && ps_type_is_tag_aggregate(leaf)
                ? PSX_STATIC_LOCAL_AGGREGATE_ARRAY
                : PSX_STATIC_LOCAL_CONSUMED_ARRAY;
-    alias_size = 0;
-    alias_element_size = leaf_size;
   } else if (ps_type_is_tag_aggregate(request->type)) {
     kind = PSX_STATIC_LOCAL_AGGREGATE;
-  } else if (request->type->kind == PSX_TYPE_POINTER) {
-    alias_element_size = ps_type_deref_size(request->type);
-    if (alias_element_size <= 0) alias_element_size = object_size;
   }
 
   psx_static_local_declaration_result_t storage = {0};
@@ -526,8 +519,6 @@ int psx_begin_static_local_declaration_pipeline(
               .function_name_len = request->function_name_len,
               .name = request->name,
               .name_len = request->name_len,
-              .alias_size = alias_size,
-              .alias_element_size = alias_element_size,
               .type = request->type,
           },
           &storage)) {
