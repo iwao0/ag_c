@@ -188,6 +188,7 @@ test-wasm-linker-selfhost: check-runtime-symbol-manifest $(WASM_LINKER_SELFHOST)
 
 test-wasm-js-pipeline: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 	@node tools/wasm_js_api/test_compile_link_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
+	@node tools/wasm_js_api/test_resource_limits.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 
 test-wasm-js-e2e: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) $(WASM_RUNTIME)
 	@node tools/wasm_js_api/test_e2e_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) --list-fail

@@ -31,8 +31,11 @@ const char *diag_warn_message_for(diag_warn_id_t id);
  * offsetは0始まり、line/columnは1始まり、endは範囲外終端(exclusive)を表す。
  */
 void diag_reset_records(void);
+int agc_wasm_diagnostic_set_limits(int max_records, int max_bytes);
 int agc_wasm_diagnostic_api_version(void);
 int agc_wasm_diagnostic_count(void);
+int agc_wasm_diagnostic_bytes(void);
+int agc_wasm_diagnostic_limit_kind(void);
 int agc_wasm_diagnostic_severity(int index);
 int agc_wasm_diagnostic_code_ptr(int index);
 int agc_wasm_diagnostic_message_ptr(int index);

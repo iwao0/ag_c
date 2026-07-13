@@ -1,9 +1,18 @@
 import { createCompiler } from "./agc-wasm.js?v=runtime-object";
+import {
+  AgcResourceLimitError,
+  DEFAULT_AGC_RESOURCE_LIMITS,
+  assertResourceLimit,
+  resolveResourceLimits,
+  utf8ByteLength,
+} from "./agc-resource-limits.js";
 import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=runtime-object";
 import { createLinker } from "../wasm_obj_linker/ag-wasm-link.js?v=runtime-object";
 
 const utf8Decoder = new TextDecoder();
 const utf8Encoder = new TextEncoder();
+
+export { AgcResourceLimitError } from "./agc-resource-limits.js";
 
 async function loadBytes(source, label) {
   if (source === undefined || source === null) return null;
@@ -20,15 +29,25 @@ async function loadBytes(source, label) {
   throw new TypeError(`${label} must be a URL, ArrayBuffer, or Uint8Array`);
 }
 
-function normalizeSources(sources) {
+function normalizeSources(sources, resourceLimits) {
   const isNamedSource = (source) => source && typeof source === "object" && !Array.isArray(source);
   const list = typeof sources === "string" || isNamedSource(sources) ? [sources] : sources;
   if (!Array.isArray(list) || list.length === 0) {
     throw new TypeError("sources must be a source or a non-empty source array");
   }
+  assertResourceLimit("maxSources", list.length, resourceLimits.maxSources);
   const names = new Set();
+  let totalSourceBytes = 0;
   for (const [i, source] of list.entries()) {
-    if (typeof source === "string") continue;
+    if (typeof source === "string") {
+      const sourceBytes = utf8ByteLength(source);
+      assertResourceLimit("maxSourceBytes", sourceBytes, resourceLimits.maxSourceBytes);
+      totalSourceBytes += sourceBytes;
+      assertResourceLimit(
+        "maxTotalSourceBytes", totalSourceBytes, resourceLimits.maxTotalSourceBytes,
+      );
+      continue;
+    }
     if (!isNamedSource(source)) {
       throw new TypeError(`sources[${i}] must be a string or { name, source }`);
     }
@@ -41,6 +60,12 @@ function normalizeSources(sources) {
     if (typeof source.source !== "string") {
       throw new TypeError(`sources[${i}].source must be a string`);
     }
+    const sourceBytes = utf8ByteLength(source.source);
+    assertResourceLimit("maxSourceBytes", sourceBytes, resourceLimits.maxSourceBytes);
+    totalSourceBytes += sourceBytes;
+    assertResourceLimit(
+      "maxTotalSourceBytes", totalSourceBytes, resourceLimits.maxTotalSourceBytes,
+    );
     if (names.has(source.name)) {
       throw new TypeError(`duplicate source name: ${source.name}`);
     }
@@ -124,21 +149,49 @@ export async function createToolchain(options) {
   if (!options || options.compilerWasm === undefined || options.linkerWasm === undefined) {
     throw new TypeError("createToolchain requires compilerWasm and linkerWasm");
   }
-  const compiler = await createCompiler(options.compilerWasm, options.compilerOptions);
+  const resourceLimits = resolveResourceLimits(
+    DEFAULT_AGC_RESOURCE_LIMITS,
+    options.limits ?? {},
+  );
+  const compilerOptions = {
+    ...(options.compilerOptions ?? {}),
+    limits: resolveResourceLimits(
+      resourceLimits,
+      options.compilerOptions?.limits ?? {},
+    ),
+  };
+  const compiler = await createCompiler(options.compilerWasm, compilerOptions);
   const linker = await createLinker(options.linkerWasm, options.linkerOptions);
   const runtimeObject = await loadBytes(options.runtimeObject, "runtimeObject");
+  if (runtimeObject) {
+    assertResourceLimit("maxObjectBytes", runtimeObject.length, resourceLimits.maxObjectBytes);
+  }
 
   function compileAndLink(sources, linkOptions, withDiagnostics) {
-    const { headers, headerLimits, ...linkerOptions } = linkOptions;
-    const compileOptions = headers === undefined && headerLimits === undefined
-      ? undefined
-      : { headers: headers ?? {}, headerLimits };
-    const normalizedSources = normalizeSources(sources);
+    const {
+      headers,
+      headerLimits,
+      limits: limitOverrides,
+      maxOutputBytes: _ignoredMaxOutputBytes,
+      ...linkerOptions
+    } = linkOptions;
+    const compileResourceLimits = resolveResourceLimits(resourceLimits, limitOverrides ?? {});
+    const compileOptions = {
+      limits: compileResourceLimits,
+      ...(headers === undefined && headerLimits === undefined
+        ? {}
+        : { headers: headers ?? {}, headerLimits }),
+    };
+    const normalizedSources = normalizeSources(sources, compileResourceLimits);
     const sourceDiagnostics = [];
     const objects = normalizedSources.map((source, i) => {
       try {
         if (!withDiagnostics) return compiler.compileObject(source, compileOptions);
         const result = compiler.compileObjectWithDiagnostics(source, compileOptions);
+        assertResourceLimit(
+          "maxObjectBytes", result.object.length, compileResourceLimits.maxObjectBytes,
+          result.diagnostics,
+        );
         const diagnostics = freezeDiagnosticSnapshots(result.diagnostics, i);
         sourceDiagnostics.push(freezeSourceDiagnosticSnapshot(source, i, diagnostics));
         return result.object;
@@ -158,9 +211,34 @@ export async function createToolchain(options) {
       }
     });
     if ((linkerOptions.useStdlib ?? true) && runtimeObject) {
+      assertResourceLimit(
+        "maxObjectBytes", runtimeObject.length, compileResourceLimits.maxObjectBytes,
+      );
       objects.push(runtimeObject);
     }
-    const wasm = linker.link(objects, linkerOptions);
+    let wasm;
+    try {
+      wasm = linker.link(objects, {
+        ...linkerOptions,
+        maxOutputBytes: compileResourceLimits.maxLinkedWasmBytes,
+      });
+    } catch (err) {
+      if (err?.code !== "AGC_LIMIT_MAX_LINKED_WASM_BYTES") throw err;
+      const diagnostics = withDiagnostics
+        ? Object.freeze(sourceDiagnostics.flatMap((entry) => entry.diagnostics))
+        : Object.freeze([]);
+      const resourceError = new AgcResourceLimitError(
+        "maxLinkedWasmBytes",
+        compileResourceLimits.maxLinkedWasmBytes,
+        err.actual ?? compileResourceLimits.maxLinkedWasmBytes + 1,
+        diagnostics,
+      );
+      if (withDiagnostics) resourceError.sourceDiagnostics = Object.freeze(sourceDiagnostics);
+      throw resourceError;
+    }
+    assertResourceLimit(
+      "maxLinkedWasmBytes", wasm.length, compileResourceLimits.maxLinkedWasmBytes,
+    );
     if (!withDiagnostics) return wasm;
     return Object.freeze({
       wasm,
@@ -263,6 +341,7 @@ export async function createToolchain(options) {
     compileLinkedWasm,
     compileLinkedWasmWithDiagnostics,
     instantiateLinkedWasm,
+    resourceLimits,
   };
 }
 

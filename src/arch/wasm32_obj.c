@@ -40,6 +40,8 @@ typedef struct {
   unsigned char *data;
   uint32_t len;
   uint32_t cap;
+  uint32_t max_len;
+  int overflow;
 } wb_t;
 
 typedef struct {
@@ -124,6 +126,8 @@ typedef struct {
 
 static obj_ctx_t g_obj;
 static wb_t g_obj_capture;
+static uint32_t g_obj_capture_limit;
+static int g_obj_capture_limit_exceeded;
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
@@ -158,17 +162,30 @@ static int name_eq(const char *a, int alen, const char *b, int blen) {
   return alen == blen && a && b && memcmp(a, b, (size_t)alen) == 0;
 }
 
-static void wb_reserve(wb_t *b, size_t add) {
+static int wb_reserve(wb_t *b, size_t add) {
+  if (add > UINT32_MAX || b->len > UINT32_MAX - (uint32_t)add) {
+    b->overflow = 1;
+    return 0;
+  }
   uint32_t need = b->len + (uint32_t)add;
-  if (need <= b->cap) return;
-  uint32_t ncap = b->cap ? b->cap * 2 : 128;
-  while (ncap < need) ncap *= 2;
+  if (b->max_len && need > b->max_len) {
+    b->overflow = 1;
+    return 0;
+  }
+  if (need <= b->cap) return 1;
+  uint32_t ncap = b->cap
+      ? (b->cap > UINT32_MAX / 2 ? UINT32_MAX : b->cap * 2)
+      : 128;
+  while (ncap < need && ncap <= UINT32_MAX / 2) ncap *= 2;
+  if (ncap < need) ncap = need;
+  if (b->max_len && ncap > b->max_len) ncap = b->max_len;
   b->data = xrealloc(b->data, ncap);
   b->cap = ncap;
+  return 1;
 }
 
 static void wb_u8(wb_t *b, unsigned v) {
-  wb_reserve(b, 1);
+  if (!wb_reserve(b, 1)) return;
   b->data[b->len++] = (unsigned char)v;
 }
 
@@ -178,7 +195,7 @@ static void obj_emit_string_literal_byte(unsigned char byte, void *user) {
 
 static void wb_bytes(wb_t *b, const void *p, size_t n) {
   if (n == 0) return;
-  wb_reserve(b, n);
+  if (!wb_reserve(b, n)) return;
   memcpy(b->data + b->len, p, n);
   b->len += (uint32_t)n;
 }
@@ -301,7 +318,7 @@ static void wb_int_le(wb_t *b, uint64_t value, int size) {
 
 static void wb_zero(wb_t *b, int size) {
   if (size < 0) obj_unsupported_msg("negative data size in Wasm object mode");
-  wb_reserve(b, (size_t)size);
+  if (!wb_reserve(b, (size_t)size)) return;
   memset(b->data + b->len, 0, (size_t)size);
   b->len += (uint32_t)size;
 }
@@ -2204,12 +2221,19 @@ void wasm32_obj_capture_output(int enabled) {
   g_obj.capture_output = enabled;
 }
 
+void wasm32_obj_set_capture_limit(size_t max_bytes) {
+  g_obj_capture_limit = max_bytes > UINT32_MAX ? UINT32_MAX : (uint32_t)max_bytes;
+  g_obj_capture_limit_exceeded = 0;
+}
+
+int wasm32_obj_capture_limit_exceeded(void) {
+  return g_obj_capture_limit_exceeded;
+}
+
 unsigned char *wasm32_obj_take_output(size_t *out_len) {
   unsigned char *data = g_obj_capture.data;
   if (out_len) *out_len = g_obj_capture.len;
-  g_obj_capture.data = NULL;
-  g_obj_capture.len = 0;
-  g_obj_capture.cap = 0;
+  g_obj_capture = (wb_t){0};
   return data;
 }
 
@@ -2592,6 +2616,7 @@ void wasm32_obj_end(void) {
   if (ndata > 0) data_section_index = section_index++;
 
   wb_t out = {0};
+  if (g_obj.capture_output) out.max_len = g_obj_capture_limit;
   wb_u32le(&out, 0x6d736100);
   wb_u32le(&out, 1);
   emit_type_section(&out);
@@ -2603,6 +2628,17 @@ void wasm32_obj_end(void) {
   emit_linking_section(&out);
   emit_reloc_section(&out, "reloc.CODE", code_section_index, g_obj.code_relocs, g_obj.code_reloc_count);
   emit_reloc_section(&out, "reloc.DATA", data_section_index, g_obj.data_relocs, g_obj.data_reloc_count);
+
+  if (out.overflow) {
+    free(out.data);
+    if (g_obj.capture_output) {
+      free(g_obj_capture.data);
+      g_obj_capture = (wb_t){0};
+      g_obj_capture_limit_exceeded = 1;
+      return;
+    }
+    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "Wasm object output exceeds addressable size");
+  }
 
   if (g_obj.out && fwrite(out.data, 1, out.len, g_obj.out) != out.len) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to write Wasm object output");

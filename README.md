@@ -135,6 +135,55 @@ console.log(result.sourceDiagnostics[1].diagnostics);
 同じ発生順で重複して通知します。複数sourceではcompile順に通知しますが、callbackのchunk境界は
 diagnostic境界を表さないため、機械処理にはstructured diagnosticsを使用してください。
 
+共有sourceを扱うhostは、`createToolchain()`の`limits`でcompiler/linker共通のresource policyを
+設定できます。同じ`limits`をcompile optionへ渡すと、その呼び出しだけ生成時policyを上書きします。
+上限超過は`AgcResourceLimitError`となり、安定した`code`と`limit`、`max`、`actual`を持ちます。
+
+```js
+const toolchain = await createToolchain({
+  compilerWasm,
+  linkerWasm,
+  runtimeObject,
+  limits: {
+    maxSources: 128,
+    maxSourceBytes: 512 * 1024,
+    maxTotalSourceBytes: 1024 * 1024,
+    maxHeaders: 128,
+    maxHeaderBytes: 512 * 1024,
+    maxTotalHeaderBytes: 1024 * 1024,
+    maxObjectBytes: 8 * 1024 * 1024,
+    maxLinkedWasmBytes: 8 * 1024 * 1024,
+    maxDiagnostics: 1000,
+    maxDiagnosticBytes: 1024 * 1024,
+  },
+});
+```
+
+省略時の既定値は次のとおりです。既存のbytes返却APIとerror APIは変更せず、従来のlinker入力上限、
+16 MiB object出力上限、128件のstructured diagnostic上限、virtual header既定値を引き継ぎます。
+
+| limit | default |
+| --- | ---: |
+| `maxSources` | 4096 |
+| `maxSourceBytes` | 2147483646 |
+| `maxTotalSourceBytes` | 2147483647 |
+| `maxHeaders` | 128 |
+| `maxHeaderBytes` | 1 MiB |
+| `maxTotalHeaderBytes` | 4 MiB |
+| `maxIncludeDepth` | 32 |
+| `maxObjectBytes` | 16 MiB |
+| `maxLinkedWasmBytes` | 2147483647 |
+| `maxDiagnostics` | 128 |
+| `maxDiagnosticBytes` | 1 MiB |
+
+source/header/diagnosticのbytesはUTF-8 byte数です。`maxDiagnosticBytes`は各recordのcode、source name、
+messageの合計を制限します。`maxObjectBytes`は各compiler出力とruntime object、
+`maxLinkedWasmBytes`は最終moduleへ適用されます。旧`headerLimits`を明示した項目は互換性のため
+統一policyより優先され、従来のE1039〜E1042診断を返します。
+
+これらはmemory/outputの上限であり、CPU時間を強制停止しません。信頼できないsourceを処理するhostは
+compileをWeb Worker等で実行し、別途timeout時にWorkerをterminateしてください。
+
 project内headerは`headers`へ明示的に登録します。virtual header modeでは未登録headerを
 OS filesystem、current working directory、networkへfallbackしません。pathは`/`区切りの
 canonicalな相対pathに限定され、絶対path、URL、空segment、`.`、`..`、backslashを拒否します。

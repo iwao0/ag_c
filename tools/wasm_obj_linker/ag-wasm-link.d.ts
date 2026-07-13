@@ -4,6 +4,8 @@ export interface AgcWasmLinkOptions {
   initialMemoryPages?: number;
   maximumMemoryPages?: number;
   stackSize?: number;
+  /** Maximum linked Wasm output bytes. Used internally by the toolchain resource policy. */
+  maxOutputBytes?: number;
   maximumTableElements?: number;
 }
 

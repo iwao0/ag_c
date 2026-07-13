@@ -56,9 +56,9 @@ if (!exportsMap || typeof exportsMap !== "object" || Array.isArray(exportsMap)) 
 }
 
 const expectedExports = {
-  ".": ["createToolchain", "default"],
-  "./agc-toolchain.js": ["createToolchain", "default"],
-  "./agc-wasm.js": ["createCompiler", "default"],
+  ".": ["AgcResourceLimitError", "createToolchain", "default"],
+  "./agc-toolchain.js": ["AgcResourceLimitError", "createToolchain", "default"],
+  "./agc-wasm.js": ["AgcResourceLimitError", "createCompiler", "default"],
   "./agc-runtime-imports.js": [
     "AGC_RUNTIME_IMPORT_MANIFEST",
     "createAgcRuntimeImports",

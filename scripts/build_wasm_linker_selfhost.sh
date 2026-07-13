@@ -26,6 +26,7 @@ mkdir -p "$(dirname "$runtime_obj")"
 AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
   --export=agc_wasm_link_objects \
   --export=agc_wasm_link_objects_with_options \
+  --export=agc_wasm_link_objects_with_resource_limits \
   --export=main \
   --export=__agc_runtime_stdout_ptr \
   --export=__agc_runtime_stdout_len \

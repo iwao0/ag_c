@@ -184,6 +184,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   if (object_mode) {
     wasm32_obj_set_output_file(NULL);
     wasm32_obj_capture_output(1);
+    wasm32_obj_set_capture_limit((size_t)out_cap);
     wasm32_obj_begin();
   } else {
     gen_set_simple_formatter(1);
@@ -210,6 +211,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm32_obj_emit_data_segments();
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
+    if (wasm32_obj_capture_limit_exceeded()) return -2;
     obj_bytes = wasm32_obj_take_output(&obj_len);
     if (!obj_bytes) return -4;
     if (obj_len > (size_t)out_cap) {

@@ -84,6 +84,20 @@ function callLinkObjectsWithOptions(fn, descPtr, objectCount, exportsPtr, export
   ));
 }
 
+function callLinkObjectsWithResourceLimits(fn, descPtr, objectCount, exportsPtr, exportCount,
+                                           useStdlib, optionsPtr, maxOutputBytes, outLenPtr) {
+  return Number(fn(
+    BigInt(descPtr),
+    objectCount,
+    BigInt(exportsPtr),
+    exportCount,
+    useStdlib ? 1 : 0,
+    BigInt(optionsPtr),
+    BigInt(maxOutputBytes),
+    BigInt(outLenPtr),
+  ));
+}
+
 function asU32Option(value, fallback, name) {
   const resolved = value ?? fallback;
   if (!Number.isInteger(resolved) || resolved < 0 || resolved > 0xffffffff) {
@@ -138,6 +152,7 @@ export async function createLinker(wasmSource, options = {}) {
   const free = instance.exports.free;
   const linkObjects = instance.exports.agc_wasm_link_objects;
   const linkObjectsWithOptions = instance.exports.agc_wasm_link_objects_with_options;
+  const linkObjectsWithResourceLimits = instance.exports.agc_wasm_link_objects_with_resource_limits;
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
   const stderrPtrExport = instance.exports.__agc_runtime_stderr_ptr;
@@ -235,10 +250,19 @@ export async function createLinker(wasmSource, options = {}) {
     if (event.kind === "abort" && typeof options.onAbort === "function") options.onAbort(event.status);
   }
 
-  function throwLinkFailure(err) {
+  function throwLinkFailure(err, maxOutputBytes) {
     notifyTermination();
     const diag = readStderr();
     const termination = readTermination();
+    if (diag.includes("AGC_LIMIT_MAX_LINKED_WASM_BYTES")) {
+      const limitError = new RangeError(diag);
+      limitError.name = "AgcResourceLimitError";
+      limitError.code = "AGC_LIMIT_MAX_LINKED_WASM_BYTES";
+      limitError.limit = "maxLinkedWasmBytes";
+      limitError.max = maxOutputBytes;
+      limitError.actual = maxOutputBytes + 1;
+      throw limitError;
+    }
     if (diag) throw new Error(diag);
     if (termination && termination.kind === "exit") {
       throw new Error(`ag_wasm_link exited with status ${termination.status}`);
@@ -256,6 +280,14 @@ export async function createLinker(wasmSource, options = {}) {
     const exportNames = options.exports ?? ["main"];
     if (!Array.isArray(exportNames)) throw new TypeError("exports must be an array");
     const useStdlib = options.useStdlib ?? true;
+    const maxOutputBytes = options.maxOutputBytes;
+    if (maxOutputBytes !== undefined &&
+        (!Number.isSafeInteger(maxOutputBytes) || maxOutputBytes <= 0 || maxOutputBytes > 0x7fffffff)) {
+      throw new RangeError("maxOutputBytes must be an integer from 1 to 2147483647");
+    }
+    if (maxOutputBytes !== undefined && typeof linkObjectsWithResourceLimits !== "function") {
+      throw new Error("this ag_wasm_link module does not support linked Wasm byte limits");
+    }
     const hasLayoutOptions = options.initialMemoryPages !== undefined ||
       options.maximumMemoryPages !== undefined || options.stackSize !== undefined ||
       options.maximumTableElements !== undefined;
@@ -325,19 +357,30 @@ export async function createLinker(wasmSource, options = {}) {
       }
 
       try {
-        linkedPtr = typeof linkObjectsWithOptions === "function"
-          ? callLinkObjectsWithOptions(linkObjectsWithOptions, descPtr, objectBytes.length,
-                                       exportsPtr, exportPtrs.length, useStdlib,
-                                       linkerOptionsPtr, outLenPtr)
-          : callLinkObjects(linkObjects, descPtr, objectBytes.length, exportsPtr,
-                            exportPtrs.length, useStdlib, outLenPtr);
+        if (maxOutputBytes !== undefined) {
+          linkedPtr = callLinkObjectsWithResourceLimits(
+            linkObjectsWithResourceLimits, descPtr, objectBytes.length,
+            exportsPtr, exportPtrs.length, useStdlib, linkerOptionsPtr,
+            maxOutputBytes, outLenPtr,
+          );
+        } else if (typeof linkObjectsWithOptions === "function") {
+          linkedPtr = callLinkObjectsWithOptions(
+            linkObjectsWithOptions, descPtr, objectBytes.length,
+            exportsPtr, exportPtrs.length, useStdlib, linkerOptionsPtr, outLenPtr,
+          );
+        } else {
+          linkedPtr = callLinkObjects(
+            linkObjects, descPtr, objectBytes.length, exportsPtr,
+            exportPtrs.length, useStdlib, outLenPtr,
+          );
+        }
       } catch (err) {
-        throwLinkFailure(err);
+        throwLinkFailure(err, maxOutputBytes);
       }
       refresh();
       const linkedLen = getU64(outLenPtr);
       if (!linkedPtr || linkedLen < 8) {
-        throwLinkFailure();
+        throwLinkFailure(undefined, maxOutputBytes);
       }
       ensureMemoryRange(memory, linkedPtr, linkedLen, "linked wasm");
       return new Uint8Array(u8.slice(linkedPtr, linkedPtr + linkedLen));

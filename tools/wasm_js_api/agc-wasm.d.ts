@@ -10,6 +10,43 @@ export interface AgcWasmCompilerOptions {
   onExit?: (status: number) => void;
   onAbort?: (status: number) => void;
   onTerminate?: (event: AgcWasmTerminationEvent) => void;
+  limits?: Partial<AgcResourceLimits>;
+}
+
+export interface AgcResourceLimits {
+  maxSources: number;
+  maxSourceBytes: number;
+  maxTotalSourceBytes: number;
+  maxHeaders: number;
+  maxHeaderBytes: number;
+  maxTotalHeaderBytes: number;
+  maxIncludeDepth: number;
+  maxObjectBytes: number;
+  maxLinkedWasmBytes: number;
+  maxDiagnostics: number;
+  maxDiagnosticBytes: number;
+}
+
+export type AgcResourceLimitCode =
+  | "AGC_LIMIT_MAX_SOURCES"
+  | "AGC_LIMIT_MAX_SOURCE_BYTES"
+  | "AGC_LIMIT_MAX_TOTAL_SOURCE_BYTES"
+  | "AGC_LIMIT_MAX_HEADERS"
+  | "AGC_LIMIT_MAX_HEADER_BYTES"
+  | "AGC_LIMIT_MAX_TOTAL_HEADER_BYTES"
+  | "AGC_LIMIT_MAX_INCLUDE_DEPTH"
+  | "AGC_LIMIT_MAX_OBJECT_BYTES"
+  | "AGC_LIMIT_MAX_LINKED_WASM_BYTES"
+  | "AGC_LIMIT_MAX_DIAGNOSTICS"
+  | "AGC_LIMIT_MAX_DIAGNOSTIC_BYTES";
+
+export class AgcResourceLimitError extends RangeError {
+  readonly name: "AgcResourceLimitError";
+  readonly code: AgcResourceLimitCode;
+  readonly limit: keyof AgcResourceLimits;
+  readonly max: number;
+  readonly actual: number;
+  readonly diagnostics: readonly AgcDiagnostic[];
 }
 
 export interface AgcWasmTerminationEvent {
@@ -71,6 +108,8 @@ export interface AgcCompileOptions {
   /** Canonical, project-relative virtual paths mapped to UTF-8 C source. */
   headers?: Record<string, string>;
   headerLimits?: AgcVirtualHeaderLimits;
+  /** Per-compile overrides of the compiler/toolchain resource policy. */
+  limits?: Partial<AgcResourceLimits>;
 }
 
 export interface AgcWasmCompiler {
@@ -84,6 +123,7 @@ export interface AgcWasmCompiler {
     initialOutputCap: number;
     useHeapBuffers: boolean;
   };
+  resourceLimits: Readonly<AgcResourceLimits>;
   compileWat(source: AgcCompileInput, options?: AgcCompileOptions): string;
   compileWatWithDiagnostics(source: AgcCompileInput, options?: AgcCompileOptions): AgcWasmWatResult;
   compileObject(source: AgcCompileInput, options?: AgcCompileOptions): Uint8Array;

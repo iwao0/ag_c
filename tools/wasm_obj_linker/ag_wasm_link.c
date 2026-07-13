@@ -47,6 +47,7 @@ typedef struct {
   unsigned char *data;
   size_t len;
   size_t cap;
+  size_t max_len;
 } buf_t;
 
 typedef struct {
@@ -234,9 +235,17 @@ static int str_empty(str_t s) {
 }
 
 static void buf_reserve(buf_t *b, size_t add) {
+  if (add > SIZE_MAX - b->len) die("Wasm output size overflow");
+  if (b->max_len && b->len + add > b->max_len) {
+    die("AGC_LIMIT_MAX_LINKED_WASM_BYTES: linked Wasm byte limit exceeded");
+  }
   if (b->len + add <= b->cap) return;
-  size_t cap = b->cap ? b->cap * 2 : 256;
-  while (cap < b->len + add) cap *= 2;
+  size_t cap = b->cap
+      ? (b->cap > SIZE_MAX / 2 ? SIZE_MAX : b->cap * 2)
+      : 256;
+  while (cap < b->len + add && cap <= SIZE_MAX / 2) cap *= 2;
+  if (cap < b->len + add) cap = b->len + add;
+  if (b->max_len && cap > b->max_len) cap = b->max_len;
   b->data = xrealloc(b->data, cap);
   b->cap = cap;
 }
@@ -2950,7 +2959,8 @@ static int has_runtime_layout_value(
 
 static void build_module_into(buf_t *out, const char **export_names, int export_count,
                               object_t *objs, int obj_count, int use_stdlib,
-                              const linker_options_t *requested_options) {
+                              const linker_options_t *requested_options,
+                              size_t max_output_bytes) {
   linker_options_t options = requested_options ? *requested_options : default_linker_options();
   if ((options.flags & LINK_OPT_MAX_MEMORY) &&
       options.initial_memory_pages > options.maximum_memory_pages) {
@@ -3072,7 +3082,7 @@ static void build_module_into(buf_t *out, const char **export_names, int export_
     if (is_stack_pointer_name(globals[i].name)) globals[i].init_value = stack_top;
   }
 
-  *out = (buf_t){0};
+  *out = (buf_t){.max_len = max_output_bytes};
   buf_u32le(out, 0x6d736100);
   buf_u32le(out, 1);
 
@@ -3212,7 +3222,7 @@ static void build_module(const char *out_path, const char **export_names, int ex
                          object_t *objs, int obj_count, int use_stdlib,
                          const linker_options_t *options) {
   buf_t out;
-  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib, options);
+  build_module_into(&out, export_names, export_count, objs, obj_count, use_stdlib, options, 0);
   write_output(out_path, &out);
 }
 
@@ -3224,6 +3234,7 @@ typedef struct {
 static long link_objects_api(long inputs_addr, int input_count,
                              long exports_addr, int export_count,
                              int use_stdlib, long options_addr,
+                             long max_output_bytes,
                              long out_len_addr) {
   if (!inputs_addr || input_count <= 0 || input_count > 4096 || export_count < 0 || export_count > 4096) {
     die("invalid linker API arguments");
@@ -3252,7 +3263,8 @@ static long link_objects_api(long inputs_addr, int input_count,
   const linker_options_t *options = options_addr
                                         ? (const linker_options_t *)(uintptr_t)options_addr
                                         : NULL;
-  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib, options);
+  build_module_into(&out, export_names, export_count, objs, input_count, use_stdlib, options,
+                    max_output_bytes > 0 ? (size_t)max_output_bytes : 0);
   unsigned char *ret = xmalloc(out.len);
   memcpy(ret, out.data, out.len);
   *out_len = (long)out.len;
@@ -3263,7 +3275,7 @@ long agc_wasm_link_objects(long inputs_addr, int input_count,
                            long exports_addr, int export_count,
                            int use_stdlib, long out_len_addr) {
   return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
-                          use_stdlib, 0, out_len_addr);
+                          use_stdlib, 0, 0, out_len_addr);
 }
 
 long agc_wasm_link_objects_with_options(long inputs_addr, int input_count,
@@ -3271,7 +3283,16 @@ long agc_wasm_link_objects_with_options(long inputs_addr, int input_count,
                                         int use_stdlib, long options_addr,
                                         long out_len_addr) {
   return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
-                          use_stdlib, options_addr, out_len_addr);
+                          use_stdlib, options_addr, 0, out_len_addr);
+}
+
+long agc_wasm_link_objects_with_resource_limits(long inputs_addr, int input_count,
+                                                long exports_addr, int export_count,
+                                                int use_stdlib, long options_addr,
+                                                long max_output_bytes,
+                                                long out_len_addr) {
+  return link_objects_api(inputs_addr, input_count, exports_addr, export_count,
+                          use_stdlib, options_addr, max_output_bytes, out_len_addr);
 }
 
 static void usage(void) {

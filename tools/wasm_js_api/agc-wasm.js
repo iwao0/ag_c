@@ -1,16 +1,20 @@
 import { createAgcRuntimeImports } from "./agc-runtime-imports.js?v=runtime-object";
+import {
+  AgcResourceLimitError,
+  DEFAULT_AGC_RESOURCE_LIMITS,
+  assertResourceLimit,
+  resolveResourceLimits,
+  utf8ByteLength,
+} from "./agc-resource-limits.js";
+
+export { AgcResourceLimitError } from "./agc-resource-limits.js";
 
 const DEFAULT_SOURCE_PTR = 393216;
 const DEFAULT_SOURCE_CAP = 32768;
 const DEFAULT_OUTPUT_PTR = DEFAULT_SOURCE_PTR + DEFAULT_SOURCE_CAP;
 const DEFAULT_OUTPUT_CAP = 98304;
 const DEFAULT_INITIAL_OUTPUT_CAP = 131072;
-const DEFAULT_HEADER_LIMITS = Object.freeze({
-  maxFiles: 128,
-  maxFileBytes: 1024 * 1024,
-  maxTotalBytes: 4 * 1024 * 1024,
-  maxIncludeDepth: 32,
-});
+const DEFAULT_WAT_OUTPUT_LIMIT = 16 * 1024 * 1024;
 
 function asBytes(input) {
   if (input instanceof Uint8Array) return input;
@@ -74,7 +78,7 @@ function positiveInt(value, label, max = 0x7fffffff) {
   return value;
 }
 
-function prepareVirtualHeaders(options, encoder) {
+function prepareVirtualHeaders(options, encoder, resourceLimits) {
   if (!options || (options.headers === undefined && options.headerLimits === undefined)) return null;
   const headers = options.headers ?? {};
   if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
@@ -85,27 +89,40 @@ function prepareVirtualHeaders(options, encoder) {
     throw new TypeError("headerLimits must be an object");
   }
   const limits = {
-    maxFiles: positiveInt(limitsInput.maxFiles ?? DEFAULT_HEADER_LIMITS.maxFiles, "headerLimits.maxFiles"),
+    maxFiles: positiveInt(limitsInput.maxFiles ?? resourceLimits.maxHeaders, "headerLimits.maxFiles"),
     maxFileBytes: positiveInt(
-      limitsInput.maxFileBytes ?? DEFAULT_HEADER_LIMITS.maxFileBytes,
+      limitsInput.maxFileBytes ?? resourceLimits.maxHeaderBytes,
       "headerLimits.maxFileBytes",
     ),
     maxTotalBytes: positiveInt(
-      limitsInput.maxTotalBytes ?? DEFAULT_HEADER_LIMITS.maxTotalBytes,
+      limitsInput.maxTotalBytes ?? resourceLimits.maxTotalHeaderBytes,
       "headerLimits.maxTotalBytes",
     ),
     maxIncludeDepth: positiveInt(
-      limitsInput.maxIncludeDepth ?? DEFAULT_HEADER_LIMITS.maxIncludeDepth,
+      limitsInput.maxIncludeDepth ?? resourceLimits.maxIncludeDepth,
       "headerLimits.maxIncludeDepth", 64,
     ),
   };
-  const entries = Object.entries(headers).map(([path, source]) => {
+  const rawEntries = Object.entries(headers);
+  if (limitsInput.maxFiles === undefined) {
+    assertResourceLimit("maxHeaders", rawEntries.length, limits.maxFiles);
+  }
+  let totalSourceBytes = 0;
+  const entries = rawEntries.map(([path, source]) => {
     if (path.includes("\0")) throw new TypeError("virtual header path must not contain NUL");
     if (typeof source !== "string") {
       throw new TypeError(`virtual header ${JSON.stringify(path)} must contain a string`);
     }
     if (source.includes("\0")) {
       throw new TypeError(`virtual header ${JSON.stringify(path)} must not contain NUL`);
+    }
+    const sourceByteLength = utf8ByteLength(source);
+    if (limitsInput.maxFileBytes === undefined) {
+      assertResourceLimit("maxHeaderBytes", sourceByteLength, limits.maxFileBytes);
+    }
+    totalSourceBytes += sourceByteLength;
+    if (limitsInput.maxTotalBytes === undefined) {
+      assertResourceLimit("maxTotalHeaderBytes", totalSourceBytes, limits.maxTotalBytes);
     }
     return { path: encoder.encode(path), source: encoder.encode(source) };
   });
@@ -180,6 +197,15 @@ function callNoArgVoidFunc(fn) {
   fn();
 }
 
+function callTwoArgNumberFunc(fn, first, second) {
+  try {
+    return Number(fn(BigInt(first), BigInt(second)));
+  } catch (err) {
+    if (err instanceof TypeError) return Number(fn(first, second));
+    throw err;
+  }
+}
+
 function ensureMemoryRange(memory, ptr, len, label) {
   if (ptr < 0 || len < 0 || ptr + len > memory.buffer.byteLength) {
     throw new RangeError(`${label} buffer is outside wasm memory`);
@@ -195,6 +221,10 @@ function compileErrorMessage(code, outputCap) {
 }
 
 export async function createCompiler(wasmSource, options = {}) {
+  const compilerResourceLimits = resolveResourceLimits(
+    DEFAULT_AGC_RESOURCE_LIMITS,
+    options.limits ?? {},
+  );
   const decoder = new TextDecoder();
   let callbackMemory = null;
   const stdoutChunks = [];
@@ -250,6 +280,11 @@ export async function createCompiler(wasmSource, options = {}) {
     endColumn: instance.exports.agc_wasm_diagnostic_end_column,
     endOffset: instance.exports.agc_wasm_diagnostic_end_offset,
   };
+  const diagnosticLimitExports = {
+    set: instance.exports.agc_wasm_diagnostic_set_limits,
+    bytes: instance.exports.agc_wasm_diagnostic_bytes,
+    kind: instance.exports.agc_wasm_diagnostic_limit_kind,
+  };
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
   const stderrPtrExport = instance.exports.__agc_runtime_stderr_ptr;
@@ -266,9 +301,7 @@ export async function createCompiler(wasmSource, options = {}) {
     throw new Error("ag_c wasm module does not export agc_wasm_compile_wat");
   }
 
-  const sourcePtr = options.sourcePtr ?? DEFAULT_SOURCE_PTR;
   const sourceCap = options.sourceCap ?? DEFAULT_SOURCE_CAP;
-  const outputPtr = options.outputPtr ?? DEFAULT_OUTPUT_PTR;
   const outputCap = options.outputCap ?? DEFAULT_OUTPUT_CAP;
   const initialOutputCap = options.initialOutputCap ?? DEFAULT_INITIAL_OUTPUT_CAP;
   const useHeapBuffers = options.useHeapBuffers ?? (
@@ -283,7 +316,37 @@ export async function createCompiler(wasmSource, options = {}) {
   if (initialOutputCap <= 0) {
     throw new RangeError("initialOutputCap must be positive");
   }
+  let sourcePtr = options.sourcePtr ?? DEFAULT_SOURCE_PTR;
+  let outputPtr = options.outputPtr ?? DEFAULT_OUTPUT_PTR;
+  if (!useHeapBuffers && options.sourcePtr === undefined && options.outputPtr === undefined &&
+      typeof malloc === "function" && typeof free === "function") {
+    sourcePtr = callPtrFunc(malloc, sourceCap);
+    if (!sourcePtr) throw new Error("ag_c wasm malloc failed for fixed source buffer");
+    outputPtr = callPtrFunc(malloc, outputCap);
+    if (!outputPtr) {
+      callVoidPtrFunc(free, sourcePtr);
+      throw new Error("ag_c wasm malloc failed for fixed output buffer");
+    }
+    ensureMemoryRange(memory, sourcePtr, sourceCap, "fixed source");
+    ensureMemoryRange(memory, outputPtr, outputCap, "fixed output");
+  }
   const encoder = new TextEncoder();
+
+  function configureDiagnosticLimits(resourceLimits) {
+    if (typeof diagnosticLimitExports.set !== "function") {
+      if (resourceLimits.maxDiagnostics !== DEFAULT_AGC_RESOURCE_LIMITS.maxDiagnostics ||
+          resourceLimits.maxDiagnosticBytes !== DEFAULT_AGC_RESOURCE_LIMITS.maxDiagnosticBytes) {
+        throw new Error("ag_c wasm module does not support diagnostic resource limits");
+      }
+      return;
+    }
+    const rc = callTwoArgNumberFunc(
+      diagnosticLimitExports.set,
+      resourceLimits.maxDiagnostics,
+      resourceLimits.maxDiagnosticBytes,
+    );
+    if (rc !== 0) throw new Error("ag_c wasm rejected diagnostic resource limits");
+  }
 
   function resetDiagnostics() {
     stdoutChunks.length = 0;
@@ -365,6 +428,33 @@ export async function createCompiler(wasmSource, options = {}) {
     return freezeDiagnostics(diagnostics);
   }
 
+  function diagnosticResourceLimitError(resourceLimits, diagnostics = readStructuredDiagnostics()) {
+    if (typeof diagnosticLimitExports.kind !== "function") return null;
+    const kind = callNoArgNumberFunc(diagnosticLimitExports.kind);
+    if (kind === 1) {
+      return new AgcResourceLimitError(
+        "maxDiagnostics",
+        resourceLimits.maxDiagnostics,
+        resourceLimits.maxDiagnostics + 1,
+        diagnostics,
+      );
+    }
+    if (kind === 2) {
+      return new AgcResourceLimitError(
+        "maxDiagnosticBytes",
+        resourceLimits.maxDiagnosticBytes,
+        resourceLimits.maxDiagnosticBytes + 1,
+        diagnostics,
+      );
+    }
+    return null;
+  }
+
+  function throwIfDiagnosticResourceLimitExceeded(resourceLimits) {
+    const error = diagnosticResourceLimitError(resourceLimits);
+    if (error) throw error;
+  }
+
   function readTermination() {
     if (typeof terminationKindExport !== "function" || typeof terminationStatusExport !== "function") {
       return null;
@@ -387,9 +477,11 @@ export async function createCompiler(wasmSource, options = {}) {
     if (event.kind === "abort" && typeof options.onAbort === "function") options.onAbort(event.status);
   }
 
-  function throwCompileFailure(errOrCode, outputCap) {
+  function throwCompileFailure(errOrCode, outputCap, resourceLimits) {
     notifyTermination();
     const diagnostics = readStructuredDiagnostics();
+    const resourceError = diagnosticResourceLimitError(resourceLimits, diagnostics);
+    if (resourceError) throw resourceError;
     const attachDiagnostics = (error) => {
       error.diagnostics = diagnostics;
       return error;
@@ -411,20 +503,23 @@ export async function createCompiler(wasmSource, options = {}) {
   }
 
   function compileWithFixedBuffers(sourceBytes, sourceNameBytes, virtualHeaders,
-                                   compileFn, asText) {
+                                   compileFn, asText, resourceLimits,
+                                   maxOutputBytes, outputLimitName) {
+    configureDiagnosticLimits(resourceLimits);
     if (sourceBytes.length > sourceCap) {
       throw new RangeError(`source is ${sourceBytes.length} bytes; max is ${sourceCap}`);
     }
     if (sourcePtr + sourceCap > memory.buffer.byteLength) {
       throw new RangeError("configured source buffer is outside wasm memory");
     }
-    if (outputPtr + outputCap > memory.buffer.byteLength) {
+    const effectiveOutputCap = Math.min(outputCap, maxOutputBytes);
+    if (outputPtr + effectiveOutputCap > memory.buffer.byteLength) {
       throw new RangeError("configured output buffer is outside wasm memory");
     }
 
     let mem = new Uint8Array(memory.buffer);
     mem.fill(0, sourcePtr, sourcePtr + sourceCap);
-    mem.fill(0, outputPtr, outputPtr + outputCap);
+    mem.fill(0, outputPtr, outputPtr + effectiveOutputCap);
     mem.set(sourceBytes, sourcePtr);
 
     let sourceNameAlloc = 0;
@@ -454,12 +549,19 @@ export async function createCompiler(wasmSource, options = {}) {
         n = callCompile(
           compileFn, sourcePtr, sourceNameAlloc, headerAlloc,
           virtualHeaders?.bytes.length ?? 0, virtualHeaders?.limits,
-          outputPtr, outputCap,
+          outputPtr, effectiveOutputCap,
         );
       } catch (err) {
-        throwCompileFailure(err, outputCap);
+        throwCompileFailure(err, effectiveOutputCap, resourceLimits);
       }
-      if (n < 0) throwCompileFailure(n, outputCap);
+      if (n === -2 && outputLimitName && effectiveOutputCap === maxOutputBytes) {
+        throw new AgcResourceLimitError(
+          outputLimitName, maxOutputBytes, maxOutputBytes + 1,
+          readStructuredDiagnostics(),
+        );
+      }
+      if (n < 0) throwCompileFailure(n, effectiveOutputCap, resourceLimits);
+      throwIfDiagnosticResourceLimitExceeded(resourceLimits);
 
       mem = new Uint8Array(memory.buffer);
       const bytes = mem.slice(outputPtr, outputPtr + n);
@@ -471,13 +573,15 @@ export async function createCompiler(wasmSource, options = {}) {
   }
 
   function compileWithHeapBuffers(sourceBytes, sourceNameBytes, virtualHeaders,
-                                  compileFn, asText) {
+                                  compileFn, asText, resourceLimits,
+                                  maxOutputBytes, outputLimitName) {
+    configureDiagnosticLimits(resourceLimits);
     const sourceAlloc = callPtrFunc(malloc, sourceBytes.length);
     if (!sourceAlloc) throw new Error("ag_c wasm malloc failed for source buffer");
     let sourceNameAlloc = 0;
     let headerAlloc = 0;
     let outputAlloc = 0;
-    let cap = initialOutputCap;
+    let cap = Math.min(initialOutputCap, maxOutputBytes);
     try {
       let mem = new Uint8Array(memory.buffer);
       ensureMemoryRange(memory, sourceAlloc, sourceBytes.length, "source");
@@ -510,18 +614,25 @@ export async function createCompiler(wasmSource, options = {}) {
             outputAlloc, cap,
           );
         } catch (err) {
-          throwCompileFailure(err, cap);
+          throwCompileFailure(err, cap, resourceLimits);
         }
         if (n === -2) {
           callVoidPtrFunc(free, outputAlloc);
           outputAlloc = 0;
-          cap *= 2;
-          if (cap > 16 * 1024 * 1024) {
-            throw new RangeError("ag_c wasm output exceeded 16 MiB");
+          if (cap >= maxOutputBytes) {
+            if (outputLimitName) {
+              throw new AgcResourceLimitError(
+                outputLimitName, maxOutputBytes, maxOutputBytes + 1,
+                readStructuredDiagnostics(),
+              );
+            }
+            throw new RangeError(`ag_c wasm output exceeded ${maxOutputBytes} bytes`);
           }
+          cap = Math.min(cap * 2, maxOutputBytes);
           continue;
         }
-        if (n < 0) throwCompileFailure(n, cap);
+        if (n < 0) throwCompileFailure(n, cap, resourceLimits);
+        throwIfDiagnosticResourceLimitExceeded(resourceLimits);
         mem = new Uint8Array(memory.buffer);
         const bytes = mem.slice(outputAlloc, outputAlloc + n);
         return asText ? decoder.decode(bytes) : bytes;
@@ -536,16 +647,28 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function prepareCompile(input, options, plainExport, namedExport, virtualExport) {
     const normalized = normalizeCompileInput(input);
+    const resourceLimits = resolveResourceLimits(
+      compilerResourceLimits,
+      options?.limits ?? {},
+    );
+    const sourceByteLength = utf8ByteLength(normalized.source);
+    assertResourceLimit("maxSourceBytes", sourceByteLength, resourceLimits.maxSourceBytes);
+    assertResourceLimit(
+      "maxTotalSourceBytes", sourceByteLength, resourceLimits.maxTotalSourceBytes,
+    );
     const sourceBytes = encoder.encode(`${normalized.source}\0`);
     const sourceNameBytes = normalized.name === null
       ? null
       : encoder.encode(`${normalized.name}\0`);
-    const virtualHeaders = prepareVirtualHeaders(options, encoder);
+    const virtualHeaders = prepareVirtualHeaders(options, encoder, resourceLimits);
     if (virtualHeaders) {
       if (typeof virtualExport !== "function") {
         throw new Error("ag_c wasm module does not support virtual headers");
       }
-      return { sourceBytes, sourceNameBytes, virtualHeaders, compileFn: virtualExport };
+      return {
+        sourceBytes, sourceNameBytes, virtualHeaders,
+        compileFn: virtualExport, resourceLimits,
+      };
     }
     if (sourceNameBytes && typeof namedExport !== "function") {
       throw new Error("ag_c wasm module does not support named sources");
@@ -555,6 +678,7 @@ export async function createCompiler(wasmSource, options = {}) {
       sourceNameBytes,
       virtualHeaders: null,
       compileFn: sourceNameBytes ? namedExport : plainExport,
+      resourceLimits,
     };
   }
 
@@ -565,12 +689,14 @@ export async function createCompiler(wasmSource, options = {}) {
     if (useHeapBuffers) {
       return compileWithHeapBuffers(
         prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
-        prepared.compileFn, true,
+        prepared.compileFn, true, prepared.resourceLimits,
+        DEFAULT_WAT_OUTPUT_LIMIT, null,
       );
     }
     return compileWithFixedBuffers(
       prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
-      prepared.compileFn, true,
+      prepared.compileFn, true, prepared.resourceLimits,
+      DEFAULT_WAT_OUTPUT_LIMIT, null,
     );
   }
 
@@ -584,12 +710,14 @@ export async function createCompiler(wasmSource, options = {}) {
     if (useHeapBuffers) {
       return compileWithHeapBuffers(
         prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
-        prepared.compileFn, false,
+        prepared.compileFn, false, prepared.resourceLimits,
+        prepared.resourceLimits.maxObjectBytes, "maxObjectBytes",
       );
     }
     return compileWithFixedBuffers(
       prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
-      prepared.compileFn, false,
+      prepared.compileFn, false, prepared.resourceLimits,
+      prepared.resourceLimits.maxObjectBytes, "maxObjectBytes",
     );
   }
 
@@ -622,6 +750,7 @@ export async function createCompiler(wasmSource, options = {}) {
       columnBase: 1,
       end: "exclusive",
     }),
+    resourceLimits: compilerResourceLimits,
     limits: { sourcePtr, sourceCap, outputPtr, outputCap, initialOutputCap, useHeapBuffers },
   };
 }

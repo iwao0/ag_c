@@ -2,6 +2,7 @@ import type {
   AgcCompileInput,
   AgcCompileOptions,
   AgcDiagnostic,
+  AgcResourceLimits,
   AgcWasmCompiler,
   AgcWasmCompilerOptions,
   AgcWasmObjectResult,
@@ -24,7 +25,11 @@ export interface AgcWasmToolchainOptions {
   runtimeObject?: AgcWasmObjectSource;
   compilerOptions?: AgcWasmCompilerOptions;
   linkerOptions?: AgcWasmLinkerOptions;
+  limits?: Partial<AgcResourceLimits>;
 }
+
+export { AgcResourceLimitError } from "./agc-wasm.js";
+export type { AgcResourceLimitCode, AgcResourceLimits } from "./agc-wasm.js";
 
 export interface AgcToolchainLinkOptions extends AgcWasmLinkOptions, AgcCompileOptions {}
 
@@ -44,6 +49,7 @@ export interface AgcLinkedWasmResult {
 export interface AgcWasmToolchain {
   compiler: AgcWasmCompiler;
   linker: AgcWasmLinker;
+  resourceLimits: Readonly<AgcResourceLimits>;
   compileWat(source: AgcCompileInput, options?: AgcCompileOptions): string;
   compileWatWithDiagnostics(source: AgcCompileInput, options?: AgcCompileOptions): AgcWasmWatResult;
   compileObject(source: AgcCompileInput, options?: AgcCompileOptions): Uint8Array;
