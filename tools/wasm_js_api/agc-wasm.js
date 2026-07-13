@@ -5,6 +5,12 @@ const DEFAULT_SOURCE_CAP = 32768;
 const DEFAULT_OUTPUT_PTR = DEFAULT_SOURCE_PTR + DEFAULT_SOURCE_CAP;
 const DEFAULT_OUTPUT_CAP = 98304;
 const DEFAULT_INITIAL_OUTPUT_CAP = 131072;
+const DEFAULT_HEADER_LIMITS = Object.freeze({
+  maxFiles: 128,
+  maxFileBytes: 1024 * 1024,
+  maxTotalBytes: 4 * 1024 * 1024,
+  maxIncludeDepth: 32,
+});
 
 function asBytes(input) {
   if (input instanceof Uint8Array) return input;
@@ -36,15 +42,111 @@ async function instantiateFromSource(wasmSource, imports = {}) {
   return (await WebAssembly.instantiate(asBytes(wasmSource), imports)).instance;
 }
 
-function callCompile(fn, sourcePtr, outputPtr, outputCap) {
+function callCompile(fn, sourcePtr, sourceNamePtr, headerPtr, headerLen,
+                     headerLimits, outputPtr, outputCap) {
+  let args;
+  if (headerPtr) {
+    args = [
+      sourcePtr, sourceNamePtr, headerPtr, headerLen,
+      headerLimits.maxFiles, headerLimits.maxFileBytes,
+      headerLimits.maxTotalBytes, headerLimits.maxIncludeDepth,
+      outputPtr, outputCap,
+    ];
+  } else if (sourceNamePtr) {
+    args = [sourcePtr, sourceNamePtr, outputPtr, outputCap];
+  } else {
+    args = [sourcePtr, outputPtr, outputCap];
+  }
   try {
-    return Number(fn(BigInt(sourcePtr), BigInt(outputPtr), BigInt(outputCap)));
+    return Number(fn(...args.map((arg) => BigInt(arg))));
   } catch (err) {
     if (err instanceof TypeError) {
-      return Number(fn(sourcePtr, outputPtr, outputCap));
+      return Number(fn(...args));
     }
     throw err;
   }
+}
+
+function positiveInt(value, label, max = 0x7fffffff) {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > max) {
+    throw new RangeError(`${label} must be an integer from 1 to ${max}`);
+  }
+  return value;
+}
+
+function prepareVirtualHeaders(options, encoder) {
+  if (!options || (options.headers === undefined && options.headerLimits === undefined)) return null;
+  const headers = options.headers ?? {};
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
+    throw new TypeError("headers must be an object mapping paths to source strings");
+  }
+  const limitsInput = options.headerLimits ?? {};
+  if (!limitsInput || typeof limitsInput !== "object" || Array.isArray(limitsInput)) {
+    throw new TypeError("headerLimits must be an object");
+  }
+  const limits = {
+    maxFiles: positiveInt(limitsInput.maxFiles ?? DEFAULT_HEADER_LIMITS.maxFiles, "headerLimits.maxFiles"),
+    maxFileBytes: positiveInt(
+      limitsInput.maxFileBytes ?? DEFAULT_HEADER_LIMITS.maxFileBytes,
+      "headerLimits.maxFileBytes",
+    ),
+    maxTotalBytes: positiveInt(
+      limitsInput.maxTotalBytes ?? DEFAULT_HEADER_LIMITS.maxTotalBytes,
+      "headerLimits.maxTotalBytes",
+    ),
+    maxIncludeDepth: positiveInt(
+      limitsInput.maxIncludeDepth ?? DEFAULT_HEADER_LIMITS.maxIncludeDepth,
+      "headerLimits.maxIncludeDepth", 64,
+    ),
+  };
+  const entries = Object.entries(headers).map(([path, source]) => {
+    if (path.includes("\0")) throw new TypeError("virtual header path must not contain NUL");
+    if (typeof source !== "string") {
+      throw new TypeError(`virtual header ${JSON.stringify(path)} must contain a string`);
+    }
+    if (source.includes("\0")) {
+      throw new TypeError(`virtual header ${JSON.stringify(path)} must not contain NUL`);
+    }
+    return { path: encoder.encode(path), source: encoder.encode(source) };
+  });
+  let byteLength = 4;
+  for (const entry of entries) {
+    byteLength += 8 + entry.path.length + 1 + entry.source.length + 1;
+    if (!Number.isSafeInteger(byteLength) || byteLength > 0x7fffffff) {
+      throw new RangeError("virtual header bundle exceeds Wasm32 addressable size");
+    }
+  }
+  const bytes = new Uint8Array(byteLength);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, entries.length, true);
+  let offset = 4;
+  for (const entry of entries) {
+    view.setUint32(offset, entry.path.length, true);
+    view.setUint32(offset + 4, entry.source.length, true);
+    offset += 8;
+    bytes.set(entry.path, offset);
+    offset += entry.path.length + 1;
+    bytes.set(entry.source, offset);
+    offset += entry.source.length + 1;
+  }
+  return { bytes, limits };
+}
+
+function normalizeCompileInput(input) {
+  if (typeof input === "string") return { source: input, name: null };
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new TypeError("source must be a string or { name, source }");
+  }
+  if (typeof input.name !== "string" || input.name.length === 0) {
+    throw new TypeError("source.name must be a non-empty string");
+  }
+  if (input.name.includes("\0")) {
+    throw new TypeError("source.name must not contain NUL");
+  }
+  if (typeof input.source !== "string") {
+    throw new TypeError("source.source must be a string");
+  }
+  return { source: input.source, name: input.name };
 }
 
 function callPtrFunc(fn, arg) {
@@ -130,6 +232,24 @@ export async function createCompiler(wasmSource, options = {}) {
   callbackMemory = memory;
   const compileWatExport = instance.exports.agc_wasm_compile_wat;
   const compileObjectExport = instance.exports.agc_wasm_compile_object;
+  const compileWatNamedExport = instance.exports.agc_wasm_compile_wat_named;
+  const compileObjectNamedExport = instance.exports.agc_wasm_compile_object_named;
+  const compileWatVirtualExport = instance.exports.agc_wasm_compile_wat_virtual;
+  const compileObjectVirtualExport = instance.exports.agc_wasm_compile_object_virtual;
+  const diagnosticExports = {
+    apiVersion: instance.exports.agc_wasm_diagnostic_api_version,
+    count: instance.exports.agc_wasm_diagnostic_count,
+    severity: instance.exports.agc_wasm_diagnostic_severity,
+    codePtr: instance.exports.agc_wasm_diagnostic_code_ptr,
+    messagePtr: instance.exports.agc_wasm_diagnostic_message_ptr,
+    sourceNamePtr: instance.exports.agc_wasm_diagnostic_source_name_ptr,
+    startLine: instance.exports.agc_wasm_diagnostic_start_line,
+    startColumn: instance.exports.agc_wasm_diagnostic_start_column,
+    startOffset: instance.exports.agc_wasm_diagnostic_start_offset,
+    endLine: instance.exports.agc_wasm_diagnostic_end_line,
+    endColumn: instance.exports.agc_wasm_diagnostic_end_column,
+    endOffset: instance.exports.agc_wasm_diagnostic_end_offset,
+  };
   const stdoutPtrExport = instance.exports.__agc_runtime_stdout_ptr;
   const stdoutLenExport = instance.exports.__agc_runtime_stdout_len;
   const stderrPtrExport = instance.exports.__agc_runtime_stderr_ptr;
@@ -184,8 +304,65 @@ export async function createCompiler(wasmSource, options = {}) {
     return stdoutChunks.join("") || readFallbackBuffer(stdoutPtrExport, stdoutLenExport);
   }
 
-  function readDiagnostics() {
+  function readStderrText() {
     return (stderrChunks.join("") || readFallbackBuffer(stderrPtrExport, stderrLenExport)).trim();
+  }
+
+  function readCString(ptr, maxBytes = 1024 * 1024) {
+    ptr = Number(ptr);
+    if (ptr <= 0 || ptr >= memory.buffer.byteLength) return "";
+    const bytes = new Uint8Array(memory.buffer);
+    const limit = Math.min(bytes.length, ptr + maxBytes);
+    let end = ptr;
+    while (end < limit && bytes[end] !== 0) end++;
+    return decoder.decode(bytes.subarray(ptr, end));
+  }
+
+  function diagnosticExportAvailable() {
+    return Object.values(diagnosticExports).every((value) => typeof value === "function") &&
+      callNoArgNumberFunc(diagnosticExports.apiVersion) === 1;
+  }
+
+  function freezeDiagnostic(diagnostic) {
+    return Object.freeze({
+      ...diagnostic,
+      start: Object.freeze({ ...diagnostic.start }),
+      end: Object.freeze({ ...diagnostic.end }),
+      notes: Object.freeze(diagnostic.notes.map(freezeDiagnostic)),
+    });
+  }
+
+  function freezeDiagnostics(diagnostics) {
+    return Object.freeze(diagnostics.map(freezeDiagnostic));
+  }
+
+  function readStructuredDiagnostics() {
+    if (!diagnosticExportAvailable()) return Object.freeze([]);
+    const count = callNoArgNumberFunc(diagnosticExports.count);
+    const diagnostics = [];
+    for (let index = 0; index < count; index++) {
+      const readNumber = (fn) => callPtrFunc(fn, index);
+      const severityNo = readNumber(diagnosticExports.severity);
+      diagnostics.push({
+        severity: severityNo === 1 ? "error" : severityNo === 2 ? "warning" : "note",
+        code: readCString(readNumber(diagnosticExports.codePtr)),
+        message: readCString(readNumber(diagnosticExports.messagePtr)),
+        sourceId: 0,
+        sourceName: readCString(readNumber(diagnosticExports.sourceNamePtr)),
+        start: {
+          line: readNumber(diagnosticExports.startLine),
+          column: readNumber(diagnosticExports.startColumn),
+          offset: readNumber(diagnosticExports.startOffset),
+        },
+        end: {
+          line: readNumber(diagnosticExports.endLine),
+          column: readNumber(diagnosticExports.endColumn),
+          offset: readNumber(diagnosticExports.endOffset),
+        },
+        notes: [],
+      });
+    }
+    return freezeDiagnostics(diagnostics);
   }
 
   function readTermination() {
@@ -212,18 +389,29 @@ export async function createCompiler(wasmSource, options = {}) {
 
   function throwCompileFailure(errOrCode, outputCap) {
     notifyTermination();
-    const diag = readDiagnostics();
-    if (diag) throw new Error(diag);
+    const diagnostics = readStructuredDiagnostics();
+    const attachDiagnostics = (error) => {
+      error.diagnostics = diagnostics;
+      return error;
+    };
+    const diag = readStderrText();
+    if (diag) throw attachDiagnostics(new Error(diag));
     const termination = readTermination();
     if (termination) {
-      if (termination.kind === "exit") throw new Error(`ag_c wasm exited with status ${termination.status}`);
-      if (termination.kind === "abort") throw new Error("ag_c wasm aborted");
+      if (termination.kind === "exit") {
+        throw attachDiagnostics(new Error(`ag_c wasm exited with status ${termination.status}`));
+      }
+      if (termination.kind === "abort") throw attachDiagnostics(new Error("ag_c wasm aborted"));
     }
-    if (typeof errOrCode === "number") throw new Error(compileErrorMessage(errOrCode, outputCap));
+    if (typeof errOrCode === "number") {
+      throw attachDiagnostics(new Error(compileErrorMessage(errOrCode, outputCap)));
+    }
+    if (errOrCode && typeof errOrCode === "object") errOrCode.diagnostics = diagnostics;
     throw errOrCode;
   }
 
-  function compileWithFixedBuffers(sourceBytes, compileFn, asText) {
+  function compileWithFixedBuffers(sourceBytes, sourceNameBytes, virtualHeaders,
+                                   compileFn, asText) {
     if (sourceBytes.length > sourceCap) {
       throw new RangeError(`source is ${sourceBytes.length} bytes; max is ${sourceCap}`);
     }
@@ -239,29 +427,73 @@ export async function createCompiler(wasmSource, options = {}) {
     mem.fill(0, outputPtr, outputPtr + outputCap);
     mem.set(sourceBytes, sourcePtr);
 
-    resetDiagnostics();
-    let n;
+    let sourceNameAlloc = 0;
+    let headerAlloc = 0;
     try {
-      n = callCompile(compileFn, sourcePtr, outputPtr, outputCap);
-    } catch (err) {
-      throwCompileFailure(err, outputCap);
-    }
-    if (n < 0) throwCompileFailure(n, outputCap);
+      if (sourceNameBytes) {
+        if (typeof malloc !== "function" || typeof free !== "function") {
+          throw new Error("named source compilation requires malloc/free exports");
+        }
+        sourceNameAlloc = callPtrFunc(malloc, sourceNameBytes.length);
+        if (!sourceNameAlloc) throw new Error("ag_c wasm malloc failed for source name");
+        ensureMemoryRange(memory, sourceNameAlloc, sourceNameBytes.length, "source name");
+        new Uint8Array(memory.buffer).set(sourceNameBytes, sourceNameAlloc);
+      }
+      if (virtualHeaders) {
+        if (typeof malloc !== "function" || typeof free !== "function") {
+          throw new Error("virtual header compilation requires malloc/free exports");
+        }
+        headerAlloc = callPtrFunc(malloc, virtualHeaders.bytes.length);
+        if (!headerAlloc) throw new Error("ag_c wasm malloc failed for virtual headers");
+        ensureMemoryRange(memory, headerAlloc, virtualHeaders.bytes.length, "virtual headers");
+        new Uint8Array(memory.buffer).set(virtualHeaders.bytes, headerAlloc);
+      }
+      resetDiagnostics();
+      let n;
+      try {
+        n = callCompile(
+          compileFn, sourcePtr, sourceNameAlloc, headerAlloc,
+          virtualHeaders?.bytes.length ?? 0, virtualHeaders?.limits,
+          outputPtr, outputCap,
+        );
+      } catch (err) {
+        throwCompileFailure(err, outputCap);
+      }
+      if (n < 0) throwCompileFailure(n, outputCap);
 
-    mem = new Uint8Array(memory.buffer);
-    const bytes = mem.slice(outputPtr, outputPtr + n);
-    return asText ? decoder.decode(bytes) : bytes;
+      mem = new Uint8Array(memory.buffer);
+      const bytes = mem.slice(outputPtr, outputPtr + n);
+      return asText ? decoder.decode(bytes) : bytes;
+    } finally {
+      if (headerAlloc) callVoidPtrFunc(free, headerAlloc);
+      if (sourceNameAlloc) callVoidPtrFunc(free, sourceNameAlloc);
+    }
   }
 
-  function compileWithHeapBuffers(sourceBytes, compileFn, asText) {
+  function compileWithHeapBuffers(sourceBytes, sourceNameBytes, virtualHeaders,
+                                  compileFn, asText) {
     const sourceAlloc = callPtrFunc(malloc, sourceBytes.length);
     if (!sourceAlloc) throw new Error("ag_c wasm malloc failed for source buffer");
+    let sourceNameAlloc = 0;
+    let headerAlloc = 0;
     let outputAlloc = 0;
     let cap = initialOutputCap;
     try {
       let mem = new Uint8Array(memory.buffer);
       ensureMemoryRange(memory, sourceAlloc, sourceBytes.length, "source");
       mem.set(sourceBytes, sourceAlloc);
+      if (sourceNameBytes) {
+        sourceNameAlloc = callPtrFunc(malloc, sourceNameBytes.length);
+        if (!sourceNameAlloc) throw new Error("ag_c wasm malloc failed for source name");
+        ensureMemoryRange(memory, sourceNameAlloc, sourceNameBytes.length, "source name");
+        new Uint8Array(memory.buffer).set(sourceNameBytes, sourceNameAlloc);
+      }
+      if (virtualHeaders) {
+        headerAlloc = callPtrFunc(malloc, virtualHeaders.bytes.length);
+        if (!headerAlloc) throw new Error("ag_c wasm malloc failed for virtual headers");
+        ensureMemoryRange(memory, headerAlloc, virtualHeaders.bytes.length, "virtual headers");
+        new Uint8Array(memory.buffer).set(virtualHeaders.bytes, headerAlloc);
+      }
 
       for (;;) {
         outputAlloc = callPtrFunc(malloc, cap);
@@ -272,7 +504,11 @@ export async function createCompiler(wasmSource, options = {}) {
         resetDiagnostics();
         let n;
         try {
-          n = callCompile(compileFn, sourceAlloc, outputAlloc, cap);
+          n = callCompile(
+            compileFn, sourceAlloc, sourceNameAlloc, headerAlloc,
+            virtualHeaders?.bytes.length ?? 0, virtualHeaders?.limits,
+            outputAlloc, cap,
+          );
         } catch (err) {
           throwCompileFailure(err, cap);
         }
@@ -292,51 +528,100 @@ export async function createCompiler(wasmSource, options = {}) {
       }
     } finally {
       if (outputAlloc) callVoidPtrFunc(free, outputAlloc);
+      if (headerAlloc) callVoidPtrFunc(free, headerAlloc);
+      if (sourceNameAlloc) callVoidPtrFunc(free, sourceNameAlloc);
       callVoidPtrFunc(free, sourceAlloc);
     }
   }
 
-  function compileWat(source) {
-    const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileWatExport, true);
-    return compileWithFixedBuffers(sourceBytes, compileWatExport, true);
+  function prepareCompile(input, options, plainExport, namedExport, virtualExport) {
+    const normalized = normalizeCompileInput(input);
+    const sourceBytes = encoder.encode(`${normalized.source}\0`);
+    const sourceNameBytes = normalized.name === null
+      ? null
+      : encoder.encode(`${normalized.name}\0`);
+    const virtualHeaders = prepareVirtualHeaders(options, encoder);
+    if (virtualHeaders) {
+      if (typeof virtualExport !== "function") {
+        throw new Error("ag_c wasm module does not support virtual headers");
+      }
+      return { sourceBytes, sourceNameBytes, virtualHeaders, compileFn: virtualExport };
+    }
+    if (sourceNameBytes && typeof namedExport !== "function") {
+      throw new Error("ag_c wasm module does not support named sources");
+    }
+    return {
+      sourceBytes,
+      sourceNameBytes,
+      virtualHeaders: null,
+      compileFn: sourceNameBytes ? namedExport : plainExport,
+    };
   }
 
-  function compileObject(source) {
+  function compileWat(source, options = {}) {
+    const prepared = prepareCompile(
+      source, options, compileWatExport, compileWatNamedExport, compileWatVirtualExport,
+    );
+    if (useHeapBuffers) {
+      return compileWithHeapBuffers(
+        prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
+        prepared.compileFn, true,
+      );
+    }
+    return compileWithFixedBuffers(
+      prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
+      prepared.compileFn, true,
+    );
+  }
+
+  function compileObject(source, options = {}) {
     if (typeof compileObjectExport !== "function") {
       throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
     }
-    const sourceBytes = encoder.encode(`${source}\0`);
-    if (useHeapBuffers) return compileWithHeapBuffers(sourceBytes, compileObjectExport, false);
-    return compileWithFixedBuffers(sourceBytes, compileObjectExport, false);
-  }
-
-  function fixedBuffersAvailable(sourceBytes) {
-    return sourceBytes.length <= sourceCap &&
-           sourcePtr + sourceCap <= memory.buffer.byteLength &&
-           outputPtr + outputCap <= memory.buffer.byteLength;
-  }
-
-  function compileAdaptive(sourceBytes, compileFn, asText) {
-    if (fixedBuffersAvailable(sourceBytes)) {
-      try {
-        return compileWithFixedBuffers(sourceBytes, compileFn, asText);
-      } catch (err) {
-        const message = String(err && err.message ? err.message : err);
-        if (!message.includes("ag_c wasm output exceeded")) throw err;
-      }
+    const prepared = prepareCompile(
+      source, options, compileObjectExport, compileObjectNamedExport, compileObjectVirtualExport,
+    );
+    if (useHeapBuffers) {
+      return compileWithHeapBuffers(
+        prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
+        prepared.compileFn, false,
+      );
     }
-    return compileWithHeapBuffers(sourceBytes, compileFn, asText);
+    return compileWithFixedBuffers(
+      prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
+      prepared.compileFn, false,
+    );
+  }
+
+  function compileWatWithDiagnostics(source, options = {}) {
+    const wat = compileWat(source, options);
+    return { wat, diagnostics: readStructuredDiagnostics() };
+  }
+
+  function compileObjectWithDiagnostics(source, options = {}) {
+    const object = compileObject(source, options);
+    return { object, diagnostics: readStructuredDiagnostics() };
   }
 
   return {
     instance,
     memory,
     compileWat,
+    compileWatWithDiagnostics,
     compileObject,
+    compileObjectWithDiagnostics,
     readStdout,
-    readStderr: readDiagnostics,
+    readStderr: readStderrText,
+    readDiagnostics: readStructuredDiagnostics,
     readTermination,
+    diagnosticCoordinateSystem: Object.freeze({
+      encoding: "utf-8",
+      input: "normalized",
+      offsetBase: 0,
+      lineBase: 1,
+      columnBase: 1,
+      end: "exclusive",
+    }),
     limits: { sourcePtr, sourceCap, outputPtr, outputCap, initialOutputCap, useHeapBuffers },
   };
 }

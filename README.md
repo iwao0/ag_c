@@ -102,6 +102,60 @@ console.log(wasm.byteLength);
 console.log(linked.instance.exports.main());
 ```
 
+名前付きsourceは`{ name, source }`で渡せます。`name`は診断・debug用のopaqueな識別子で、
+JS APIがpathやURLとしてopen/fetchすることはありません。1回の`compileLinkedWasm()`に渡す
+明示nameはcase-sensitiveで一意である必要があり、重複時はコンパイル前に`TypeError`になります。
+
+```js
+const wasm = toolchain.compileLinkedWasm([
+  { name: "main.c", source: mainSource },
+  { name: "player.c", source: playerSource },
+], { exports: ["main"] });
+```
+
+成功時のwarningを結果と一緒に保持する場合は`compileObjectWithDiagnostics()`または
+`compileLinkedWasmWithDiagnostics()`を使います。返されるdiagnostic配列とその要素は、後続の
+compileで変化しないimmutable snapshotです。複数sourceの`diagnostics`はsourceのcompile順、
+各source内の診断発生順に平坦化され、`sourceDiagnostics`からsourceごとの配列も取得できます。
+compile errorの例外にも同じschemaの`error.diagnostics`が付きます。
+`compileLinkedWasmWithDiagnostics()`では、失敗sourceまでのsnapshotが`error.sourceDiagnostics`に残ります。
+
+```js
+const result = toolchain.compileLinkedWasmWithDiagnostics([
+  { name: "main.c", source: mainSource },
+  { name: "player.c", source: playerSource },
+], { exports: ["main"] });
+
+console.log(result.wasm.byteLength);
+console.log(result.diagnostics);
+console.log(result.sourceDiagnostics[1].diagnostics);
+```
+
+`compilerOptions.onStderr`は人向けのtext streamであり、snapshotに含まれるものと同じ診断を
+同じ発生順で重複して通知します。複数sourceではcompile順に通知しますが、callbackのchunk境界は
+diagnostic境界を表さないため、機械処理にはstructured diagnosticsを使用してください。
+
+project内headerは`headers`へ明示的に登録します。virtual header modeでは未登録headerを
+OS filesystem、current working directory、networkへfallbackしません。pathは`/`区切りの
+canonicalな相対pathに限定され、絶対path、URL、空segment、`.`、`..`、backslashを拒否します。
+非canonical pathを正規化しないため、aliasによる重複も作られません。
+
+```js
+const wasm = toolchain.compileLinkedWasm({
+  name: "main.c",
+  source: '#include "player.h"\nint main(void) { return PLAYER_VALUE; }\n',
+}, {
+  headers: { "player.h": "#define PLAYER_VALUE 42\n" },
+  headerLimits: {
+    maxFiles: 128,
+    maxFileBytes: 1024 * 1024,
+    maxTotalBytes: 4 * 1024 * 1024,
+    maxIncludeDepth: 32,
+  },
+  exports: ["main"],
+});
+```
+
 低レベルに compiler だけを使う場合は `tools/wasm_js_api/agc-wasm.js` の
 `createCompiler()`、linker だけを使う場合は `tools/wasm_obj_linker/ag-wasm-link.js` の
 `createLinker()` も使えます。

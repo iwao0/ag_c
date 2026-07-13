@@ -53,6 +53,10 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP: return "Symlink loop detected in include file: %s";
     case DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED: return "#if expression token count limit exceeded";
     case DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED: return "#if expression evaluation step limit exceeded";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED: return "Virtual header count limit exceeded";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED: return "Virtual header file size limit exceeded: %s";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED: return "Virtual header total size limit exceeded";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "Duplicate virtual header path: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "Tokenizer error";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "Unexpected character";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "Token is too long";

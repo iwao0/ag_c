@@ -56,6 +56,18 @@ if (globalStarter.instance.exports.read_value() !== 5) {
   throw new Error("self-host global starter game did not preserve global state");
 }
 
+const virtualHeaderProgram = await toolchain.instantiateLinkedWasm({
+  name: "main.c",
+  source: '#include "player.h"\nint main(void) { return PLAYER_VALUE; }\n',
+}, {
+  headers: { "player.h": "#define PLAYER_VALUE 42\n" },
+  exports: ["main"],
+  useStdlib: false,
+});
+if (virtualHeaderProgram.instance.exports.main() !== 42) {
+  throw new Error("virtual project header did not survive compile/link/instantiate");
+}
+
 const mainObjPath = path.join(outDir, "main_from_compiler_api.o");
 const otherObjPath = path.join(outDir, "other_from_compiler_api.o");
 await writeFile(mainObjPath, mainObj);
@@ -76,6 +88,94 @@ const linked = toolchain.compileLinkedWasm([mainSource, otherSource], {
 });
 if (linked[0] !== 0x00 || linked[1] !== 0x61 || linked[2] !== 0x73 || linked[3] !== 0x6d) {
   throw new Error("pipeline output is not a wasm module");
+}
+
+const namedLinked = toolchain.compileLinkedWasm([
+  { name: "main.c", source: mainSource },
+  { name: "player.c", source: otherSource },
+], {
+  exports: ["main"],
+  useStdlib: false,
+});
+if (namedLinked[0] !== 0x00 || namedLinked[1] !== 0x61 ||
+    namedLinked[2] !== 0x73 || namedLinked[3] !== 0x6d) {
+  throw new Error("named source pipeline output is not a wasm module");
+}
+
+const warningLinked = toolchain.compileLinkedWasmWithDiagnostics([
+  { name: "first.c", source: "int first(void) { int x = 1.5; return x; }\n" },
+  { name: "second.c", source: "int second(void) { int y = 2.5; return y; }\n" },
+], {
+  exports: ["first", "second"],
+  useStdlib: false,
+});
+if (warningLinked.wasm[0] !== 0x00 || warningLinked.wasm[1] !== 0x61 ||
+    warningLinked.wasm[2] !== 0x73 || warningLinked.wasm[3] !== 0x6d) {
+  throw new Error("diagnostic pipeline output is not a wasm module");
+}
+if (warningLinked.sourceDiagnostics.length !== 2 ||
+    warningLinked.sourceDiagnostics[0].sourceName !== "first.c" ||
+    warningLinked.sourceDiagnostics[1].sourceName !== "second.c" ||
+    warningLinked.sourceDiagnostics[0].diagnostics[0]?.code !== "W3010" ||
+    warningLinked.sourceDiagnostics[1].diagnostics[0]?.code !== "W3010") {
+  throw new Error(`source warnings were not retained separately: ${JSON.stringify(warningLinked.sourceDiagnostics)}`);
+}
+if (warningLinked.diagnostics.length !== 2 ||
+    warningLinked.diagnostics[0].sourceId !== 0 || warningLinked.diagnostics[1].sourceId !== 1) {
+  throw new Error(`flattened diagnostic order is unstable: ${JSON.stringify(warningLinked.diagnostics)}`);
+}
+if (!Object.isFrozen(warningLinked.diagnostics) ||
+    !Object.isFrozen(warningLinked.sourceDiagnostics) ||
+    !Object.isFrozen(warningLinked.sourceDiagnostics[0].diagnostics)) {
+  throw new Error("linked diagnostics are not immutable snapshots");
+}
+const linkedWarningSnapshot = JSON.stringify(warningLinked);
+toolchain.compileObject("int after_warnings(void) { return 0; }\n");
+if (JSON.stringify(warningLinked) !== linkedWarningSnapshot) {
+  throw new Error("a later toolchain compile changed linked diagnostic snapshots");
+}
+
+try {
+  toolchain.compileLinkedWasm([
+    { name: "same.c", source: mainSource },
+    { name: "same.c", source: otherSource },
+  ], { useStdlib: false });
+  throw new Error("duplicate source names unexpectedly compiled");
+} catch (err) {
+  if (!(err instanceof TypeError) || !err.message.includes("duplicate source name: same.c")) {
+    throw err;
+  }
+}
+
+try {
+  toolchain.compileLinkedWasm([
+    { name: "main.c", source: mainSource },
+    { name: "player.c", source: "int other(void) { const int x = 1; x = 2; return x; }\n" },
+  ], { useStdlib: false });
+  throw new Error("named semantic error unexpectedly compiled");
+} catch (err) {
+  const diagnostic = err.diagnostics?.[0];
+  if (err.sourceIndex !== 1 || diagnostic?.sourceId !== 1 ||
+      diagnostic?.sourceName !== "player.c" || diagnostic?.code !== "E3077") {
+    throw new Error(`named source identity was not preserved: ${JSON.stringify(err.diagnostics)}`);
+  }
+}
+
+try {
+  toolchain.compileLinkedWasmWithDiagnostics([
+    { name: "warning-before-error.c", source: "int warned(void) { int x = 1.5; return x; }\n" },
+    { name: "linked-error.c", source: "int failed(void) { const int x = 1; x = 2; return x; }\n" },
+  ], { useStdlib: false });
+  throw new Error("diagnostic link error unexpectedly compiled");
+} catch (err) {
+  if (err.message === "diagnostic link error unexpectedly compiled") throw err;
+  if (err.sourceIndex !== 1 || err.diagnostics?.[0]?.code !== "E3077" ||
+      err.sourceDiagnostics?.length !== 2 ||
+      err.sourceDiagnostics[0].diagnostics[0]?.code !== "W3010" ||
+      err.sourceDiagnostics[1].diagnostics[0]?.code !== "E3077" ||
+      !Object.isFrozen(err.sourceDiagnostics)) {
+    throw new Error(`diagnostics before a later source error were lost: ${JSON.stringify(err.sourceDiagnostics)}`);
+  }
 }
 
 const linkedPath = path.join(outDir, "linked_from_wasm_compiler_and_linker.wasm");
@@ -2950,6 +3050,11 @@ try {
   }
   if (message.includes("%*s")) {
     throw new Error(`invalid token diagnostic leaked printf format text: ${JSON.stringify(message)}`);
+  }
+  const diagnostic = err.diagnostics?.[0];
+  if (!diagnostic || diagnostic.code !== "E2028" || diagnostic.severity !== "error" ||
+      diagnostic.sourceId !== 1 || diagnostic.sourceName !== "input.c") {
+    throw new Error(`toolchain error did not preserve structured source identity: ${JSON.stringify(err.diagnostics)}`);
   }
 }
 

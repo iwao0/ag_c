@@ -10,6 +10,168 @@
 
 static const char *g_diag_locale = "ja";
 
+enum {
+  AGC_DIAG_SEVERITY_ERROR = 1,
+  AGC_DIAG_SEVERITY_WARNING = 2,
+  AGC_DIAG_RECORD_CAP = 128,
+  AGC_DIAG_CODE_CAP = 8,
+  AGC_DIAG_MESSAGE_CAP = 2048,
+};
+
+typedef struct {
+  int severity;
+  int start_line;
+  int start_column;
+  int start_offset;
+  int end_line;
+  int end_column;
+  int end_offset;
+  char code[AGC_DIAG_CODE_CAP];
+  char *source_name;
+  char message[AGC_DIAG_MESSAGE_CAP];
+} agc_diag_record_t;
+
+static agc_diag_record_t g_diag_records[AGC_DIAG_RECORD_CAP];
+static int g_diag_record_count;
+
+static void diag_copy_text(char *dst, size_t cap, const char *src) {
+  if (!dst || cap == 0) return;
+  if (!src) src = "";
+  snprintf(dst, cap, "%s", src);
+}
+
+static char *diag_dup_text(const char *src) {
+  if (!src) src = "";
+  size_t len = strlen(src);
+  char *copy = malloc(len + 1);
+  if (!copy) return NULL;
+  memcpy(copy, src, len + 1);
+  return copy;
+}
+
+static int diag_byte_column(const char *input, int offset) {
+  if (!input || offset < 0) return 0;
+  int line_start = offset;
+  while (line_start > 0 && input[line_start - 1] != '\n') line_start--;
+  return offset - line_start + 1;
+}
+
+static void diag_line_column(const char *input, int offset, int *out_line, int *out_column) {
+  int line = 1;
+  int column = 1;
+  if (!input || offset < 0) {
+    line = 0;
+    column = 0;
+  } else {
+    for (int i = 0; i < offset && input[i]; i++) {
+      if (input[i] == '\n') {
+        line++;
+        column = 1;
+      } else {
+        column++;
+      }
+    }
+  }
+  if (out_line) *out_line = line;
+  if (out_column) *out_column = column;
+}
+
+static void diag_store_v(int severity, const char *code, const char *source_name,
+                         int start_line, int start_column, int start_offset,
+                         int end_line, int end_column, int end_offset,
+                         const char *fmt, va_list ap) {
+  if (g_diag_record_count >= AGC_DIAG_RECORD_CAP) return;
+  agc_diag_record_t *record = &g_diag_records[g_diag_record_count++];
+  memset(record, 0, sizeof(*record));
+  record->severity = severity;
+  record->start_line = start_line;
+  record->start_column = start_column;
+  record->start_offset = start_offset;
+  record->end_line = end_line;
+  record->end_column = end_column;
+  record->end_offset = end_offset;
+  diag_copy_text(record->code, sizeof(record->code), code);
+  record->source_name = diag_dup_text(source_name);
+  vsnprintf(record->message, sizeof(record->message), fmt, ap);
+}
+
+static void diag_store_at_v(int severity, const char *code, const char *input,
+                            const char *loc, const char *fmt, va_list ap) {
+  int start_offset = -1;
+  if (input && loc && loc >= input) start_offset = (int)(loc - input);
+  int end_offset = start_offset;
+  if (start_offset >= 0 && input[start_offset]) end_offset++;
+  int start_line = 0;
+  int start_column = 0;
+  int end_line = 0;
+  int end_column = 0;
+  diag_line_column(input, start_offset, &start_line, &start_column);
+  diag_line_column(input, end_offset, &end_line, &end_column);
+  diag_store_v(severity, code, tk_get_filename_ctx(NULL),
+               start_line, start_column, start_offset,
+               end_line, end_column, end_offset, fmt, ap);
+}
+
+static void diag_store_tok_v(int severity, const char *code, const token_t *tok,
+                             const char *fmt, va_list ap) {
+  const char *input = tok && tok->source_input ? tok->source_input : tk_get_user_input_ctx(NULL);
+  int start_offset = tok ? tok->byte_offset : -1;
+  int byte_length = tok && tok->byte_length > 0 ? tok->byte_length : 0;
+  int end_offset = start_offset < 0 ? -1 : start_offset + byte_length;
+  int start_line = tok ? tok->line_no : 0;
+  int start_column = diag_byte_column(input, start_offset);
+  int end_line = start_line;
+  int end_column = start_column ? start_column + byte_length : 0;
+  const char *source_name = tk_filename_lookup(tok ? tok->file_name_id : 0);
+  diag_store_v(severity, code, source_name,
+               start_line, start_column, start_offset,
+               end_line, end_column, end_offset, fmt, ap);
+}
+
+void diag_reset_records(void) {
+  for (int i = 0; i < g_diag_record_count; i++) {
+    free(g_diag_records[i].source_name);
+    g_diag_records[i].source_name = NULL;
+  }
+  g_diag_record_count = 0;
+}
+
+static const agc_diag_record_t *diag_record_at(int index) {
+  if (index < 0 || index >= g_diag_record_count) return NULL;
+  return &g_diag_records[index];
+}
+
+int agc_wasm_diagnostic_api_version(void) { return 1; }
+int agc_wasm_diagnostic_count(void) { return g_diag_record_count; }
+int agc_wasm_diagnostic_severity(int index) {
+  const agc_diag_record_t *record = diag_record_at(index);
+  return record ? record->severity : 0;
+}
+int agc_wasm_diagnostic_code_ptr(int index) {
+  const agc_diag_record_t *record = diag_record_at(index);
+  return record ? (int)(long)record->code : 0;
+}
+int agc_wasm_diagnostic_message_ptr(int index) {
+  const agc_diag_record_t *record = diag_record_at(index);
+  return record ? (int)(long)record->message : 0;
+}
+int agc_wasm_diagnostic_source_name_ptr(int index) {
+  const agc_diag_record_t *record = diag_record_at(index);
+  return record && record->source_name ? (int)(long)record->source_name : 0;
+}
+#define AGC_DIAG_INT_GETTER(name, field)                 \
+  int name(int index) {                                 \
+    const agc_diag_record_t *record = diag_record_at(index); \
+    return record ? record->field : 0;                  \
+  }
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_line, start_line)
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_column, start_column)
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_start_offset, start_offset)
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_line, end_line)
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_column, end_column)
+AGC_DIAG_INT_GETTER(agc_wasm_diagnostic_end_offset, end_offset)
+#undef AGC_DIAG_INT_GETTER
+
 static int is_bidi_control_codepoint(uint32_t cp) {
   if (cp >= 0x202A && cp <= 0x202E) return 1;
   if (cp >= 0x2066 && cp <= 0x2069) return 1;
@@ -272,6 +434,10 @@ static void print_token_actual(const token_t *tok) {
 void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  diag_store_at_v(AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), input, loc, fmt, record_ap);
+  va_end(record_ap);
   int pos = 0;
   if (input && loc && loc >= input) pos = (int)(loc - input);
   if (input) {
@@ -301,6 +467,10 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
 void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  diag_store_tok_v(AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), tok, fmt, record_ap);
+  va_end(record_ap);
   { const char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);
     if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: ", diag_error_code(id));
@@ -316,6 +486,10 @@ void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...)
   if (suppress && suppress[0] && strcmp(suppress, "0") != 0) return;
   va_list ap;
   va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  diag_store_tok_v(AGC_DIAG_SEVERITY_WARNING, diag_warn_code(id), tok, fmt, record_ap);
+  va_end(record_ap);
   { const char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);
     if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no); }
   fprintf(stderr, "%s: %s: ", diag_warn_code(id), diag_text_for(DIAG_TEXT_WARNING));
@@ -333,6 +507,11 @@ void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...)
 void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  diag_store_v(AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), NULL,
+               0, 0, -1, 0, 0, -1, fmt, record_ap);
+  va_end(record_ap);
   fprintf(stderr, "%s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
@@ -343,6 +522,11 @@ void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) {
 void diag_report_internalf(diag_error_id_t id, const char *fmt, ...) {
   va_list ap;
   va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  diag_store_v(AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), NULL,
+               0, 0, -1, 0, 0, -1, fmt, record_ap);
+  va_end(record_ap);
   fprintf(stderr, "%s: ", diag_error_code(id));
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");

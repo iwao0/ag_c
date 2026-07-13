@@ -17,6 +17,62 @@ export interface AgcWasmTerminationEvent {
   status: number;
 }
 
+export interface AgcDiagnosticPosition {
+  /** 1-based line in the normalized UTF-8 compiler input. */
+  readonly line: number;
+  /** 1-based UTF-8 byte column. */
+  readonly column: number;
+  /** 0-based UTF-8 byte offset. */
+  readonly offset: number;
+}
+
+export interface AgcDiagnostic {
+  readonly severity: "error" | "warning" | "note";
+  readonly code: string;
+  readonly message: string;
+  readonly sourceId: number;
+  readonly sourceName: string;
+  readonly start: AgcDiagnosticPosition;
+  /** Exclusive end position. */
+  readonly end: AgcDiagnosticPosition;
+  readonly notes: readonly AgcDiagnostic[];
+}
+
+export interface AgcWasmDiagnosticError extends Error {
+  diagnostics: readonly AgcDiagnostic[];
+}
+
+export interface AgcWasmObjectResult {
+  object: Uint8Array;
+  diagnostics: readonly AgcDiagnostic[];
+}
+
+export interface AgcWasmWatResult {
+  wat: string;
+  diagnostics: readonly AgcDiagnostic[];
+}
+
+export interface AgcNamedSource {
+  /** Diagnostic/debug identity only; it is never fetched or opened by the JS API. */
+  name: string;
+  source: string;
+}
+
+export type AgcCompileInput = string | AgcNamedSource;
+
+export interface AgcVirtualHeaderLimits {
+  maxFiles?: number;
+  maxFileBytes?: number;
+  maxTotalBytes?: number;
+  maxIncludeDepth?: number;
+}
+
+export interface AgcCompileOptions {
+  /** Canonical, project-relative virtual paths mapped to UTF-8 C source. */
+  headers?: Record<string, string>;
+  headerLimits?: AgcVirtualHeaderLimits;
+}
+
 export interface AgcWasmCompiler {
   instance: WebAssembly.Instance;
   memory: WebAssembly.Memory;
@@ -28,11 +84,25 @@ export interface AgcWasmCompiler {
     initialOutputCap: number;
     useHeapBuffers: boolean;
   };
-  compileWat(source: string): string;
-  compileObject(source: string): Uint8Array;
+  compileWat(source: AgcCompileInput, options?: AgcCompileOptions): string;
+  compileWatWithDiagnostics(source: AgcCompileInput, options?: AgcCompileOptions): AgcWasmWatResult;
+  compileObject(source: AgcCompileInput, options?: AgcCompileOptions): Uint8Array;
+  compileObjectWithDiagnostics(
+    source: AgcCompileInput,
+    options?: AgcCompileOptions,
+  ): AgcWasmObjectResult;
   readStdout(): string;
   readStderr(): string;
+  readDiagnostics(): readonly AgcDiagnostic[];
   readTermination(): AgcWasmTerminationEvent | null;
+  diagnosticCoordinateSystem: {
+    encoding: "utf-8";
+    input: "normalized";
+    offsetBase: 0;
+    lineBase: 1;
+    columnBase: 1;
+    end: "exclusive";
+  };
 }
 
 export type AgcWasmSource = string | URL | WebAssembly.Module | ArrayBuffer | Uint8Array;

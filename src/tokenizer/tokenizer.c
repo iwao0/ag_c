@@ -138,25 +138,38 @@ void tk_set_max_token_len_limit_for_test(size_t max_len) {
 }
 
 // 新しいトークンを作成して、curに繋げる
-static void init_token_base(token_t *tok, token_kind_t kind, int line_no) {
+static void init_token_base(token_t *tok, token_kind_t kind, int line_no,
+                            const char *loc, int byte_length) {
   tok->kind = kind;
   tokenizer_context_t *ctx = tk_runtime_ctx();
   tok->file_name_id = tk_filename_intern(ctx ? ctx->current_filename : NULL);
   tok->line_no = line_no;
+  tok->byte_offset = -1;
+  tok->byte_length = byte_length < 0 ? 0 : byte_length;
+  const char *input = tk_get_user_input_ctx(ctx);
+  tok->source_input = input;
+  if (input && loc && loc >= input) {
+    ptrdiff_t offset = loc - input;
+    if ((size_t)offset <= (size_t)INT_MAX) tok->byte_offset = (int)offset;
+  }
 }
 
-static token_t *new_token_simple(token_kind_t kind, token_t *cur, int line_no, bool at_bol, bool has_space) {
+static token_t *new_token_simple(token_kind_t kind, token_t *cur, int line_no,
+                                 bool at_bol, bool has_space, const char *loc,
+                                 int byte_length) {
   token_pp_t *tok = tcalloc(1, sizeof(token_pp_t));
-  init_token_base(&tok->base, kind, line_no);
+  init_token_base(&tok->base, kind, line_no, loc, byte_length);
   tok->base.at_bol = at_bol;
   tok->base.has_space = has_space;
   cur->next = (token_t *)tok;
   return (token_t *)tok;
 }
 
-static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line_no,
+                                      bool at_bol, bool has_space, const char *loc,
+                                      int byte_length) {
   token_ident_t *tok = tcalloc(1, sizeof(token_ident_t));
-  init_token_base(&tok->pp.base, TK_IDENT, line_no);
+  init_token_base(&tok->pp.base, TK_IDENT, line_no, loc, byte_length);
   tok->pp.base.at_bol = at_bol;
   tok->pp.base.has_space = has_space;
   tok->str = str;
@@ -165,11 +178,15 @@ static token_ident_t *new_token_ident(token_t *cur, char *str, int len, int line
   return tok;
 }
 
-static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no,
+                                        bool at_bol, bool has_space, const char *loc,
+                                        int byte_length);
 static token_num_int_t *new_token_num_int(
-    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space,
+    const char *loc, int byte_length);
 static token_num_float_t *new_token_num_float(
-    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space);
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space,
+    const char *loc, int byte_length);
 typedef struct tokenize_flags_t tokenize_flags_t;
 typedef struct tokenize_session_t tokenize_session_t;
 
@@ -204,7 +221,8 @@ static bool tokenize_string_literal(
     int line_no,
     bool at_bol,
     bool has_space) {
-  char *p = *pp;
+  char *token_start = *pp;
+  char *p = token_start;
   int str_prefix = 0;
   tk_string_prefix_kind_t str_prefix_kind = TK_STR_PREFIX_NONE;
   tk_char_width_t str_char_width = TK_CHAR_WIDTH_CHAR;
@@ -236,7 +254,8 @@ static bool tokenize_string_literal(
   }
   int len = checked_span_len(start, p, "文字列リテラル");
   p++; // closing quote
-  token_string_t *st = new_token_string(*cur_io, start, len, line_no, at_bol, has_space);
+  token_string_t *st = new_token_string(*cur_io, start, len, line_no, at_bol, has_space,
+                                        token_start, checked_span_len(token_start, p, "文字列リテラル"));
   st->char_width = str_char_width;
   st->str_prefix_kind = str_prefix_kind;
   *cur_io = (token_t *)st;
@@ -307,7 +326,8 @@ static bool tokenize_char_literal(
   }
   p++; // closing quote
   int len = checked_span_len(start, p, "文字リテラル");
-  token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space);
+  token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space,
+                                           start, len);
   num->base.num_kind = TK_NUM_KIND_INT;
   num->uval = ch;
   num->val = (long long)ch;
@@ -336,14 +356,14 @@ static bool tokenize_punctuator(
   token_kind_t matched_kind = TK_EOF;
   int matched_len = 0;
   if (match_punctuator(p, &matched_kind, &matched_len) && matched_len >= 2) {
-    *cur_io = new_token_simple(matched_kind, *cur_io, line_no, at_bol, has_space);
+    *cur_io = new_token_simple(matched_kind, *cur_io, line_no, at_bol, has_space, p, matched_len);
     *pp = p + matched_len;
     return true;
   }
 
   if (tk_is_punctuator1(*p) || (*p == '.' && !tk_is_digit(p[1]))) {
     token_kind_t kind = punctuator_kind_for_char(*p);
-    *cur_io = new_token_simple(kind, *cur_io, line_no, at_bol, has_space);
+    *cur_io = new_token_simple(kind, *cur_io, line_no, at_bol, has_space, p, 1);
     *pp = p + 1;
     return true;
   }
@@ -389,9 +409,10 @@ static bool tokenize_ident_or_keyword(
   }
 
   if (kw_kind != TK_EOF) {
-    *cur_io = new_token_simple(kw_kind, *cur_io, line_no, at_bol, has_space);
+    *cur_io = new_token_simple(kw_kind, *cur_io, line_no, at_bol, has_space, start, len);
   } else {
-    token_ident_t *id = new_token_ident(*cur_io, id_str, id_len, line_no, at_bol, has_space);
+    token_ident_t *id = new_token_ident(*cur_io, id_str, id_len, line_no, at_bol, has_space,
+                                        start, len);
     *cur_io = (token_t *)id;
   }
   *pp = p;
@@ -455,9 +476,11 @@ static token_t *end_tokenize_session(tokenize_session_t *s, token_t *head_next) 
   return head_next;
 }
 
-static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+static token_string_t *new_token_string(token_t *cur, char *str, int len, int line_no,
+                                        bool at_bol, bool has_space, const char *loc,
+                                        int byte_length) {
   token_string_t *tok = tcalloc(1, sizeof(token_string_t));
-  init_token_base(&tok->pp.base, TK_STRING, line_no);
+  init_token_base(&tok->pp.base, TK_STRING, line_no, loc, byte_length);
   tok->pp.base.at_bol = at_bol;
   tok->pp.base.has_space = has_space;
   tok->str = str;
@@ -467,9 +490,10 @@ static token_string_t *new_token_string(token_t *cur, char *str, int len, int li
 }
 
 static token_num_int_t *new_token_num_int(
-    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space,
+    const char *loc, int byte_length) {
   token_num_int_t *tok = tcalloc(1, sizeof(token_num_int_t));
-  init_token_base(&tok->base.pp.base, TK_NUM, line_no);
+  init_token_base(&tok->base.pp.base, TK_NUM, line_no, loc, byte_length);
   tok->base.pp.base.at_bol = at_bol;
   tok->base.pp.base.has_space = has_space;
   tok->base.str = str;
@@ -479,9 +503,10 @@ static token_num_int_t *new_token_num_int(
 }
 
 static token_num_float_t *new_token_num_float(
-    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space) {
+    token_t *cur, char *str, int len, int line_no, bool at_bol, bool has_space,
+    const char *loc, int byte_length) {
   token_num_float_t *tok = tcalloc(1, sizeof(token_num_float_t));
-  init_token_base(&tok->base.pp.base, TK_NUM, line_no);
+  init_token_base(&tok->base.pp.base, TK_NUM, line_no, loc, byte_length);
   tok->base.pp.base.at_bol = at_bol;
   tok->base.pp.base.has_space = has_space;
   tok->base.str = str;
@@ -503,7 +528,8 @@ static bool tokenize_number_literal(
   tk_parse_number_literal(&p, &parsed);
   int len = checked_span_len(start, p, "数値リテラル");
   if (parsed.fp_kind == TK_FLOAT_KIND_NONE) {
-    token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space);
+    token_num_int_t *num = new_token_num_int(*cur_io, start, len, line_no, at_bol, has_space,
+                                             start, len);
     num->base.num_kind = TK_NUM_KIND_INT;
     num->val = parsed.val;
     num->uval = parsed.uval;
@@ -514,7 +540,8 @@ static bool tokenize_number_literal(
     num->char_prefix_kind = parsed.char_prefix_kind;
     *cur_io = (token_t *)num;
   } else {
-    token_num_float_t *num = new_token_num_float(*cur_io, start, len, line_no, at_bol, has_space);
+    token_num_float_t *num = new_token_num_float(*cur_io, start, len, line_no, at_bol, has_space,
+                                                 start, len);
     num->base.num_kind = TK_NUM_KIND_FLOAT;
     num->fval = parsed.fval;
     num->fp_kind = parsed.fp_kind;
@@ -779,7 +806,7 @@ static token_t *tokenize_one_tolerant_wasm(char **pp, token_t **cur_io, int line
       return *cur_io;
     }
     *pp = p + 1;
-    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space, p, 1);
   }
 
   int chr_prefix = 0;
@@ -792,7 +819,7 @@ static token_t *tokenize_one_tolerant_wasm(char **pp, token_t **cur_io, int line
       return *cur_io;
     }
     *pp = p + 1;
-    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space, p, 1);
   }
 
   if (tk_is_digit(*p) || (*p == '.' && tk_is_digit(p[1]))) {
@@ -801,13 +828,13 @@ static token_t *tokenize_one_tolerant_wasm(char **pp, token_t **cur_io, int line
       return *cur_io;
     }
     *pp = p + 1;
-    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+    return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space, p, 1);
   }
 
   token_t *tok = tokenize_one(pp, cur_io, line_no, at_bol, has_space);
   if (tok) return tok;
   *pp = p + 1;
-  return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space);
+  return new_token_simple(TK_UNKNOWN, *cur_io, line_no, at_bol, has_space, p, 1);
 }
 #endif
 
@@ -819,7 +846,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
   for (;;) {
     s->p = tk_skip_ignored(s->p, &s->at_bol, &s->has_space, &s->line_no);
     if (!*s->p) {
-      new_token_simple(TK_EOF, cur, s->line_no, false, false);
+      new_token_simple(TK_EOF, cur, s->line_no, false, false, s->p, 0);
       s->done = true;
       return head.next;
     }
@@ -846,7 +873,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     if (setjmp(g_tok_tolerate_jmp) != 0) {
       g_tok_jmp_valid = false;
       s->p = tok_start + 1;
-      new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
+      new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space, tok_start, 1);
       return head.next;
     }
     g_tok_jmp_valid = true;
@@ -857,7 +884,7 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     if (tok) return tok;
     /* tokenize_one が false (トークナイズ不能文字): 1 文字を TK_UNKNOWN に。 */
     s->p = tok_start + 1;
-    new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space);
+    new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space, tok_start, 1);
     return head.next;
 #endif
   }

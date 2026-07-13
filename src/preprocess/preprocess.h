@@ -18,4 +18,10 @@ typedef struct pp_stream pp_stream_t;
 token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src);
 void pp_stream_close(pp_stream_t *s);
 
+/** Wasm JS APIから渡されたcompile単位のvirtual header bundleを設定する。 */
+void pp_virtual_headers_configure(const unsigned char *bundle, size_t bundle_len,
+                                  int max_files, int max_file_bytes,
+                                  int max_total_bytes, int max_include_depth);
+void pp_virtual_headers_clear(void);
+
 #endif

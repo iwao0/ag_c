@@ -27,6 +27,24 @@ const char *diag_message_for(diag_error_id_t id);
 const char *diag_warn_message_for(diag_warn_id_t id);
 
 /**
+ * 構造化診断の座標は正規化済みUTF-8入力上のbyte基準。
+ * offsetは0始まり、line/columnは1始まり、endは範囲外終端(exclusive)を表す。
+ */
+void diag_reset_records(void);
+int agc_wasm_diagnostic_api_version(void);
+int agc_wasm_diagnostic_count(void);
+int agc_wasm_diagnostic_severity(int index);
+int agc_wasm_diagnostic_code_ptr(int index);
+int agc_wasm_diagnostic_message_ptr(int index);
+int agc_wasm_diagnostic_source_name_ptr(int index);
+int agc_wasm_diagnostic_start_line(int index);
+int agc_wasm_diagnostic_start_column(int index);
+int agc_wasm_diagnostic_start_offset(int index);
+int agc_wasm_diagnostic_end_line(int index);
+int agc_wasm_diagnostic_end_column(int index);
+int agc_wasm_diagnostic_end_offset(int index);
+
+/**
  * @brief テキストIDに対応するローカライズ済みテキストを取得する。
  * @param id テキストID。
  * @return ローカライズ済みテキスト。未定義時は "unknown.text"。

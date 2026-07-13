@@ -1,7 +1,12 @@
 import type {
+  AgcCompileInput,
+  AgcCompileOptions,
+  AgcDiagnostic,
   AgcWasmCompiler,
   AgcWasmCompilerOptions,
+  AgcWasmObjectResult,
   AgcWasmSource,
+  AgcWasmWatResult,
 } from "./agc-wasm.js";
 import type {
   AgcWasmLinker,
@@ -21,15 +26,44 @@ export interface AgcWasmToolchainOptions {
   linkerOptions?: AgcWasmLinkerOptions;
 }
 
+export interface AgcToolchainLinkOptions extends AgcWasmLinkOptions, AgcCompileOptions {}
+
+export interface AgcSourceDiagnosticSnapshot {
+  readonly sourceId: number;
+  readonly sourceName: string;
+  readonly diagnostics: readonly AgcDiagnostic[];
+}
+
+export interface AgcLinkedWasmResult {
+  readonly wasm: Uint8Array;
+  /** Flattened in source compile order, then diagnostic emission order. */
+  readonly diagnostics: readonly AgcDiagnostic[];
+  readonly sourceDiagnostics: readonly AgcSourceDiagnosticSnapshot[];
+}
+
 export interface AgcWasmToolchain {
   compiler: AgcWasmCompiler;
   linker: AgcWasmLinker;
-  compileWat(source: string): string;
-  compileObject(source: string): Uint8Array;
-  compileLinkedWasm(sources: string | string[], options?: AgcWasmLinkOptions): Uint8Array;
+  compileWat(source: AgcCompileInput, options?: AgcCompileOptions): string;
+  compileWatWithDiagnostics(source: AgcCompileInput, options?: AgcCompileOptions): AgcWasmWatResult;
+  compileObject(source: AgcCompileInput, options?: AgcCompileOptions): Uint8Array;
+  compileObjectWithDiagnostics(
+    source: AgcCompileInput,
+    options?: AgcCompileOptions,
+  ): AgcWasmObjectResult;
+  /** Explicit source names must be unique using case-sensitive comparison. */
+  compileLinkedWasm(
+    sources: AgcCompileInput | AgcCompileInput[],
+    options?: AgcToolchainLinkOptions,
+  ): Uint8Array;
+  /** Explicit source names must be unique using case-sensitive comparison. */
+  compileLinkedWasmWithDiagnostics(
+    sources: AgcCompileInput | AgcCompileInput[],
+    options?: AgcToolchainLinkOptions,
+  ): AgcLinkedWasmResult;
   instantiateLinkedWasm(
-    sources: string | string[],
-    options?: AgcWasmLinkOptions,
+    sources: AgcCompileInput | AgcCompileInput[],
+    options?: AgcToolchainLinkOptions,
     imports?: AgcRuntimeImports,
   ): Promise<{
     wasm: Uint8Array;

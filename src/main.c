@@ -147,23 +147,35 @@ static char *read_file_contents(const char *path) {
   return buf;
 }
 
-static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap,
-                                      int object_mode) {
+static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
+                                      int virtual_bundle_addr, int virtual_bundle_len,
+                                      int max_header_files, int max_header_file_bytes,
+                                      int max_header_total_bytes, int max_include_depth,
+                                      int out_addr, int out_cap, int object_mode) {
 #ifdef AGC_TARGET_WASM32
   ps_set_target_pointer_size(4);
 #endif
+  diag_reset_records();
+  pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
   psx_frontend_reset_translation_unit_state();
 
   char *source = (char *)(long)source_addr;
+  const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
+  if (!source_name[0]) return -1;
+  if (virtual_bundle_addr) {
+    pp_virtual_headers_configure((const unsigned char *)(long)virtual_bundle_addr,
+                                 (size_t)virtual_bundle_len,
+                                 max_header_files, max_header_file_bytes,
+                                 max_header_total_bytes, max_include_depth);
+  }
   wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
   out.buf[0] = '\0';
   unsigned char *obj_bytes = NULL;
   size_t obj_len = 0;
 
-  const char *input_disp = "input.c";
-  tk_set_filename_ctx(tk_get_default_context(), input_disp);
+  tk_set_filename_ctx(tk_get_default_context(), source_name);
   tokenizer_context_t *tk_ctx = tk_get_default_context();
 
   pp_stream_t *pps = NULL;
@@ -218,11 +230,47 @@ static int agc_wasm_compile_to_memory(int source_addr, int out_addr, int out_cap
 }
 
 int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
-  return agc_wasm_compile_to_memory(source_addr, out_addr, out_cap, 0);
+  return agc_wasm_compile_to_memory(source_addr, 0, 0, 0, 0, 0, 0, 0,
+                                    out_addr, out_cap, 0);
 }
 
 int agc_wasm_compile_object(int source_addr, int out_addr, int out_cap) {
-  return agc_wasm_compile_to_memory(source_addr, out_addr, out_cap, 1);
+  return agc_wasm_compile_to_memory(source_addr, 0, 0, 0, 0, 0, 0, 0,
+                                    out_addr, out_cap, 1);
+}
+
+int agc_wasm_compile_wat_named(int source_addr, int source_name_addr,
+                               int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, source_name_addr, 0, 0, 0, 0, 0, 0,
+                                    out_addr, out_cap, 0);
+}
+
+int agc_wasm_compile_object_named(int source_addr, int source_name_addr,
+                                  int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, source_name_addr, 0, 0, 0, 0, 0, 0,
+                                    out_addr, out_cap, 1);
+}
+
+int agc_wasm_compile_wat_virtual(int source_addr, int source_name_addr,
+                                 int bundle_addr, int bundle_len,
+                                 int max_files, int max_file_bytes,
+                                 int max_total_bytes, int max_depth,
+                                 int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, source_name_addr,
+                                    bundle_addr, bundle_len, max_files,
+                                    max_file_bytes, max_total_bytes, max_depth,
+                                    out_addr, out_cap, 0);
+}
+
+int agc_wasm_compile_object_virtual(int source_addr, int source_name_addr,
+                                    int bundle_addr, int bundle_len,
+                                    int max_files, int max_file_bytes,
+                                    int max_total_bytes, int max_depth,
+                                    int out_addr, int out_cap) {
+  return agc_wasm_compile_to_memory(source_addr, source_name_addr,
+                                    bundle_addr, bundle_len, max_files,
+                                    max_file_bytes, max_total_bytes, max_depth,
+                                    out_addr, out_cap, 1);
 }
 
 int main(int argc, char **argv) {

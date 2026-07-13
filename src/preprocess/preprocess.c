@@ -58,7 +58,20 @@ static int include_depth = 0;
 static size_t macro_expand_steps = 0;
 static int include_last_errno = 0;
 
+typedef struct {
+  const char *path;
+  const char *source;
+  size_t source_len;
+} pp_virtual_header_t;
+
+static pp_virtual_header_t *g_virtual_headers;
+static int g_virtual_header_count;
+static int g_virtual_headers_enabled;
+static int g_virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+
 static char *normalize_include_path_or_die(const char *path);
+static char *dirname_dup_or_null(const char *path);
+static char *my_strndup(const char *s, size_t n);
 static size_t if_expr_eval_steps = 0;
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
 static bool g_if_expr_eval = true;
@@ -113,6 +126,183 @@ static void pp_error(diag_error_id_t id, const char *arg) {
   const char *msg = diag_message_for(id);
   if (arg) diag_emit_internalf(id, msg, arg);
   diag_emit_internalf(id, "%s", msg);
+}
+
+void pp_virtual_headers_clear(void) {
+  free(g_virtual_headers);
+  g_virtual_headers = NULL;
+  g_virtual_header_count = 0;
+  g_virtual_headers_enabled = 0;
+  g_virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+}
+
+static uint32_t virtual_bundle_u32(const unsigned char *p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
+         ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+static int virtual_path_is_canonical(const char *path) {
+  if (!path || !path[0] || strlen(path) > PP_MAX_LINE_FILENAME_LEN ||
+      path[0] == '/' || path[0] == '\\' || strchr(path, '\\') || strchr(path, ':')) {
+    return 0;
+  }
+  const char *segment = path;
+  for (const char *p = path; ; p++) {
+    if (*p != '/' && *p != '\0') continue;
+    size_t len = (size_t)(p - segment);
+    if (len == 0 || (len == 1 && segment[0] == '.') ||
+        (len == 2 && segment[0] == '.' && segment[1] == '.')) {
+      return 0;
+    }
+    if (*p == '\0') return 1;
+    segment = p + 1;
+  }
+}
+
+static diag_error_id_t virtual_path_error(const char *path) {
+  if (!path || !path[0]) return DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME;
+  if (strlen(path) > PP_MAX_LINE_FILENAME_LEN) {
+    return DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE;
+  }
+  if (path[0] == '/' || path[0] == '\\' || strchr(path, '\\') || strchr(path, ':')) {
+    return DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH;
+  }
+  const char *segment = path;
+  for (const char *p = path; ; p++) {
+    if (*p != '/' && *p != '\0') continue;
+    size_t len = (size_t)(p - segment);
+    if (len == 0 || (len == 1 && segment[0] == '.')) {
+      return DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH;
+    }
+    if (len == 2 && segment[0] == '.' && segment[1] == '.') {
+      return DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN;
+    }
+    if (*p == '\0') return 0;
+    segment = p + 1;
+  }
+}
+
+static void validate_virtual_path_or_die(const char *path) {
+  diag_error_id_t id = virtual_path_error(path);
+  if (!id) return;
+  if (id == DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH ||
+      id == DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN) {
+    pp_error(id, path);
+  }
+  pp_error(id, NULL);
+}
+
+void pp_virtual_headers_configure(const unsigned char *bundle, size_t bundle_len,
+                                  int max_files, int max_file_bytes,
+                                  int max_total_bytes, int max_include_depth) {
+  pp_virtual_headers_clear();
+  if (!bundle || bundle_len < 4 || max_files < 0 || max_file_bytes < 0 ||
+      max_total_bytes < 0 || max_include_depth <= 0 ||
+      max_include_depth > PP_MAX_INCLUDE_DEPTH) {
+    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+  }
+  uint32_t count = virtual_bundle_u32(bundle);
+  if (count > (uint32_t)max_files || count > (uint32_t)INT_MAX) {
+    pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED, NULL);
+  }
+  pp_virtual_header_t *headers = calloc(count ? count : 1, sizeof(*headers));
+  if (!headers) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+  size_t offset = 4;
+  size_t total = 0;
+  for (uint32_t i = 0; i < count; i++) {
+    if (offset > bundle_len || bundle_len - offset < 8) {
+      free(headers);
+      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    }
+    uint32_t path_len = virtual_bundle_u32(bundle + offset);
+    uint32_t source_len = virtual_bundle_u32(bundle + offset + 4);
+    offset += 8;
+    size_t need = (size_t)path_len + 1 + (size_t)source_len + 1;
+    if (need < (size_t)path_len || offset > bundle_len || need > bundle_len - offset) {
+      free(headers);
+      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    }
+    const char *path = (const char *)(bundle + offset);
+    const char *source = path + path_len + 1;
+    if (path[path_len] != '\0' || source[source_len] != '\0' ||
+        memchr(path, '\0', path_len) || memchr(source, '\0', source_len)) {
+      free(headers);
+      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    }
+    diag_error_id_t path_error = virtual_path_error(path);
+    if (path_error) {
+      free(headers);
+      if (path_error == DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH ||
+          path_error == DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN) {
+        pp_error(path_error, path);
+      }
+      pp_error(path_error, NULL);
+    }
+    if (source_len > (uint32_t)max_file_bytes) {
+      free(headers);
+      pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED, path);
+    }
+    if (source_len > (uint32_t)max_total_bytes ||
+        total > (size_t)max_total_bytes - (size_t)source_len) {
+      free(headers);
+      pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED, NULL);
+    }
+    total += source_len;
+    for (uint32_t j = 0; j < i; j++) {
+      if (!strcmp(headers[j].path, path)) {
+        free(headers);
+        pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH, path);
+      }
+    }
+    headers[i].path = path;
+    headers[i].source = source;
+    headers[i].source_len = source_len;
+    offset += need;
+  }
+  if (offset != bundle_len) {
+    free(headers);
+    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+  }
+  g_virtual_headers = headers;
+  g_virtual_header_count = (int)count;
+  g_virtual_headers_enabled = 1;
+  g_virtual_include_depth_limit = max_include_depth;
+}
+
+static const pp_virtual_header_t *find_virtual_header(const char *path) {
+  for (int i = 0; i < g_virtual_header_count; i++) {
+    if (!strcmp(g_virtual_headers[i].path, path)) return &g_virtual_headers[i];
+  }
+  return NULL;
+}
+
+static const pp_virtual_header_t *resolve_virtual_header(const char *path,
+                                                         const char *current_file,
+                                                         char **out_path) {
+  validate_virtual_path_or_die(path);
+  if (virtual_path_is_canonical(current_file)) {
+    char *dir = dirname_dup_or_null(current_file);
+    if (dir) {
+      size_t len = strlen(dir) + strlen(path) + 1;
+      char *candidate = calloc(len, 1);
+      if (!candidate) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+      snprintf(candidate, len, "%s%s", dir, path);
+      free(dir);
+      validate_virtual_path_or_die(candidate);
+      const pp_virtual_header_t *relative = find_virtual_header(candidate);
+      if (relative) {
+        *out_path = candidate;
+        return relative;
+      }
+      free(candidate);
+    }
+  }
+  const pp_virtual_header_t *direct = find_virtual_header(path);
+  if (direct) {
+    *out_path = my_strndup(path, strlen(path));
+    return direct;
+  }
+  return NULL;
 }
 
 static void validate_include_path_or_die(const char *path, const char *current_file) {
@@ -395,7 +585,15 @@ static char *normalize_include_path_or_die(const char *path) {
 }
 
 static void push_include_or_die(const char *path) {
-  if (include_depth >= PP_MAX_INCLUDE_DEPTH) {
+  if (g_virtual_headers_enabled) {
+    for (include_frame_t *f = include_stack; f; f = f->next) {
+      if (!strcmp(f->path, path)) {
+        pp_error(DIAG_ERR_PREPROCESS_INCLUDE_CYCLE_DETECTED, path);
+      }
+    }
+  }
+  int depth_limit = g_virtual_headers_enabled ? g_virtual_include_depth_limit : PP_MAX_INCLUDE_DEPTH;
+  if (include_depth >= depth_limit) {
     pp_error(DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP, NULL);
   }
   include_frame_t *f = calloc(1, sizeof(include_frame_t));
@@ -518,6 +716,15 @@ static void pragma_once_add(const char *path) {
 }
 
 // === 定義済みマクロ初期化 ===
+static void copy_source_location(token_t *dst, const token_t *src) {
+  if (!dst || !src) return;
+  dst->line_no = src->line_no;
+  dst->file_name_id = src->file_name_id;
+  dst->source_input = src->source_input;
+  dst->byte_offset = src->byte_offset;
+  dst->byte_length = src->byte_length;
+}
+
 static token_t *make_int_token(long long val, token_t *ref) {
   char buf[32];
   snprintf(buf, sizeof(buf), "%lld", val);
@@ -525,8 +732,7 @@ static token_t *make_int_token(long long val, token_t *ref) {
   token_num_int_t *t = tk_allocator_calloc(1, sizeof(token_num_int_t));
   t->base.pp.base.kind = TK_NUM;
   if (ref) {
-    t->base.pp.base.line_no  = ref->line_no;
-    t->base.pp.base.file_name_id = ref->file_name_id;
+    copy_source_location(&t->base.pp.base, ref);
     t->base.pp.base.at_bol   = ref->at_bol;
     t->base.pp.base.has_space = ref->has_space;
   }
@@ -545,8 +751,7 @@ static token_t *make_string_token(const char *s, token_t *ref) {
   token_string_t *t = tk_allocator_calloc(1, sizeof(token_string_t));
   t->pp.base.kind = TK_STRING;
   if (ref) {
-    t->pp.base.line_no   = ref->line_no;
-    t->pp.base.file_name_id = ref->file_name_id;
+    copy_source_location(&t->pp.base, ref);
     t->pp.base.at_bol    = ref->at_bol;
     t->pp.base.has_space = ref->has_space;
   }
@@ -1189,8 +1394,7 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   res->pp.base.kind = TK_STRING;
   res->str = str_buf;
   res->len = len;
-  res->pp.base.file_name_id = macro_tok->file_name_id;
-  res->pp.base.line_no = macro_tok->line_no;
+  copy_source_location(&res->pp.base, macro_tok);
   return (token_t *)res;
 }
 
@@ -1233,8 +1437,7 @@ static token_t *paste_tokens(token_t *tok) {
       tk_set_current_token_ctx(g_preprocess_tk_ctx, saved_token);
 
       merged->next = rhs->next;
-      merged->file_name_id = cur->file_name_id;
-      merged->line_no = cur->line_no;
+      copy_source_location(merged, cur);
       cur = merged;
       prev->next = cur;
     } else {
@@ -1685,8 +1888,7 @@ static token_t *pp_expand_objlike(macro_t *m, token_t *macro_tok, char *name) {
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die();
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
-    t->line_no = macro_tok->line_no;
-    t->file_name_id = macro_tok->file_name_id;
+    copy_source_location(t, macro_tok);
   }
   if (body_copy) {
     body_copy->at_bol = macro_tok->at_bol;
@@ -1860,8 +2062,7 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die();
     as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
-    t->line_no = macro_tok->line_no;
-    t->file_name_id = macro_tok->file_name_id;
+    copy_source_location(t, macro_tok);
   }
   if (body_copy) {
     body_copy->at_bol = macro_tok->at_bol;
@@ -2238,7 +2439,7 @@ static token_t *pps_make_eof(token_t *ref) {
   token_pp_t *t = tk_allocator_calloc(1, sizeof(token_pp_t));
   t->base.kind = TK_EOF;
   t->base.at_bol = true;
-  if (ref) { t->base.line_no = ref->line_no; t->base.file_name_id = ref->file_name_id; }
+  if (ref) copy_source_location(&t->base, ref);
   return (token_t *)t;
 }
 
@@ -2406,15 +2607,25 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   token_t *tok = after_hash->next;  // skip "include"
   char *filename = consume_include_filename(&tok);
   const char *current_file = tk_get_filename_ctx(g_preprocess_tk_ctx);
-  validate_include_path_or_die(filename, current_file);
-  char *normalized = normalize_include_path_or_die(filename);
-  free(filename);
-  filename = normalized;
   char *loaded_path = NULL;
-  char *buf = load_include_with_allowlist_or_die(filename, current_file, &loaded_path);
-  if (!buf) {  // not found / 権限 / symlink loop: 診断して終了 (バッチ include_and_splice 同様)
-    diag_error_id_t id = include_read_failure_diag_id();
-    diag_emit_internalf(id, diag_message_for(id), filename);
+  char *buf = NULL;
+  if (g_virtual_headers_enabled) {
+    const pp_virtual_header_t *header = resolve_virtual_header(filename, current_file, &loaded_path);
+    if (!header) {
+      diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND,
+                          diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND), filename);
+    }
+    buf = (char *)header->source;
+  } else {
+    validate_include_path_or_die(filename, current_file);
+    char *normalized = normalize_include_path_or_die(filename);
+    free(filename);
+    filename = normalized;
+    buf = load_include_with_allowlist_or_die(filename, current_file, &loaded_path);
+    if (!buf) {  // not found / 権限 / symlink loop: 診断して終了
+      diag_error_id_t id = include_read_failure_diag_id();
+      diag_emit_internalf(id, diag_message_for(id), filename);
+    }
   }
   if (!loaded_path) loaded_path = my_strndup(filename, strlen(filename));
   if (pragma_once_seen(loaded_path)) {  // 既に #pragma once 済み: フレームを積まず無視 (バッチ同様)

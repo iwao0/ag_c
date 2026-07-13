@@ -21,16 +21,59 @@ async function loadBytes(source, label) {
 }
 
 function normalizeSources(sources) {
-  if (typeof sources === "string") return [sources];
-  if (!Array.isArray(sources) || sources.length === 0) {
-    throw new TypeError("sources must be a string or a non-empty string array");
+  const isNamedSource = (source) => source && typeof source === "object" && !Array.isArray(source);
+  const list = typeof sources === "string" || isNamedSource(sources) ? [sources] : sources;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new TypeError("sources must be a source or a non-empty source array");
   }
-  for (const [i, source] of sources.entries()) {
-    if (typeof source !== "string") {
-      throw new TypeError(`sources[${i}] must be a string`);
+  const names = new Set();
+  for (const [i, source] of list.entries()) {
+    if (typeof source === "string") continue;
+    if (!isNamedSource(source)) {
+      throw new TypeError(`sources[${i}] must be a string or { name, source }`);
     }
+    if (typeof source.name !== "string" || source.name.length === 0) {
+      throw new TypeError(`sources[${i}].name must be a non-empty string`);
+    }
+    if (source.name.includes("\0")) {
+      throw new TypeError(`sources[${i}].name must not contain NUL`);
+    }
+    if (typeof source.source !== "string") {
+      throw new TypeError(`sources[${i}].source must be a string`);
+    }
+    if (names.has(source.name)) {
+      throw new TypeError(`duplicate source name: ${source.name}`);
+    }
+    names.add(source.name);
   }
-  return sources;
+  return list;
+}
+
+function freezeDiagnosticSnapshot(diagnostic, sourceId = diagnostic.sourceId) {
+  return Object.freeze({
+    ...diagnostic,
+    sourceId,
+    start: Object.freeze({ ...diagnostic.start }),
+    end: Object.freeze({ ...diagnostic.end }),
+    notes: Object.freeze(diagnostic.notes.map((note) => freezeDiagnosticSnapshot(note, sourceId))),
+  });
+}
+
+function freezeDiagnosticSnapshots(diagnostics, sourceId) {
+  return Object.freeze(diagnostics.map((diagnostic) =>
+    freezeDiagnosticSnapshot(diagnostic, sourceId)));
+}
+
+function sourceNameOf(source) {
+  return typeof source === "string" ? "input.c" : source.name;
+}
+
+function freezeSourceDiagnosticSnapshot(source, sourceId, diagnostics) {
+  return Object.freeze({
+    sourceId,
+    sourceName: sourceNameOf(source),
+    diagnostics,
+  });
 }
 
 function hasOwn(obj, name) {
@@ -85,20 +128,53 @@ export async function createToolchain(options) {
   const linker = await createLinker(options.linkerWasm, options.linkerOptions);
   const runtimeObject = await loadBytes(options.runtimeObject, "runtimeObject");
 
-  function compileLinkedWasm(sources, linkOptions = {}) {
-    const objects = normalizeSources(sources).map((source, i) => {
+  function compileAndLink(sources, linkOptions, withDiagnostics) {
+    const { headers, headerLimits, ...linkerOptions } = linkOptions;
+    const compileOptions = headers === undefined && headerLimits === undefined
+      ? undefined
+      : { headers: headers ?? {}, headerLimits };
+    const normalizedSources = normalizeSources(sources);
+    const sourceDiagnostics = [];
+    const objects = normalizedSources.map((source, i) => {
       try {
-        return compiler.compileObject(source);
+        if (!withDiagnostics) return compiler.compileObject(source, compileOptions);
+        const result = compiler.compileObjectWithDiagnostics(source, compileOptions);
+        const diagnostics = freezeDiagnosticSnapshots(result.diagnostics, i);
+        sourceDiagnostics.push(freezeSourceDiagnosticSnapshot(source, i, diagnostics));
+        return result.object;
       } catch (err) {
         err.sourceIndex = i;
+        if (Array.isArray(err.diagnostics)) {
+          err.diagnostics = freezeDiagnosticSnapshots(err.diagnostics, i);
+          if (withDiagnostics) {
+            err.sourceDiagnostics = Object.freeze([
+              ...sourceDiagnostics,
+              freezeSourceDiagnosticSnapshot(source, i, err.diagnostics),
+            ]);
+          }
+        }
         err.message = `source ${i + 1}: ${err.message}`;
         throw err;
       }
     });
-    if ((linkOptions.useStdlib ?? true) && runtimeObject) {
+    if ((linkerOptions.useStdlib ?? true) && runtimeObject) {
       objects.push(runtimeObject);
     }
-    return linker.link(objects, linkOptions);
+    const wasm = linker.link(objects, linkerOptions);
+    if (!withDiagnostics) return wasm;
+    return Object.freeze({
+      wasm,
+      diagnostics: Object.freeze(sourceDiagnostics.flatMap((entry) => entry.diagnostics)),
+      sourceDiagnostics: Object.freeze(sourceDiagnostics),
+    });
+  }
+
+  function compileLinkedWasm(sources, linkOptions = {}) {
+    return compileAndLink(sources, linkOptions, false);
+  }
+
+  function compileLinkedWasmWithDiagnostics(sources, linkOptions = {}) {
+    return compileAndLink(sources, linkOptions, true);
   }
 
   async function instantiateLinkedWasm(sources, linkOptions = {}, imports = {}) {
@@ -178,9 +254,14 @@ export async function createToolchain(options) {
   return {
     compiler,
     linker,
-    compileWat: (source) => compiler.compileWat(source),
-    compileObject: (source) => compiler.compileObject(source),
+    compileWat: (source, compileOptions) => compiler.compileWat(source, compileOptions),
+    compileWatWithDiagnostics: (source, compileOptions) =>
+      compiler.compileWatWithDiagnostics(source, compileOptions),
+    compileObject: (source, compileOptions) => compiler.compileObject(source, compileOptions),
+    compileObjectWithDiagnostics: (source, compileOptions) =>
+      compiler.compileObjectWithDiagnostics(source, compileOptions),
     compileLinkedWasm,
+    compileLinkedWasmWithDiagnostics,
     instantiateLinkedWasm,
   };
 }

@@ -53,6 +53,10 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PREPROCESS_INCLUDE_SYMLINK_LOOP: return "include でシンボリックリンクの循環を検出しました: %s";
     case DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED: return "#if 式のトークン数が上限を超えました";
     case DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED: return "#if 式の評価ステップ数が上限を超えました";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED: return "virtual header件数が上限を超えました";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED: return "virtual headerのファイルサイズが上限を超えました: %s";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED: return "virtual headerの合計サイズが上限を超えました";
+    case DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH: return "virtual header pathが重複しています: %s";
     case DIAG_ERR_TOKENIZER_GENERIC: return "トークナイズエラーです";
     case DIAG_ERR_TOKENIZER_UNEXPECTED_CHAR: return "不正な文字です";
     case DIAG_ERR_TOKENIZER_TOKEN_TOO_LONG: return "トークン長が上限を超えています";

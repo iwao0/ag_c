@@ -178,13 +178,16 @@ uint16_t tk_filename_intern(const char *name);
 const char *tk_filename_lookup(uint16_t id);
 
 // 共通トークン型（最小限の共通フィールド）
-// アライメント降順 (8→4→2→1) に並べてパディングを除き sizeof=16B (並べ替え前は 24B)。
+// byte_offset/byte_length は正規化済みUTF-8入力上の0始まりbyte範囲を表す。
 // token_kind_t は値域が小さい (種別 < 256) ので kind は uint8_t に格納する。読み書きは
 // 列挙値のまま (比較・switch・代入はすべて暗黙変換で安全。&tok->kind を取る箇所は無い)。
 typedef struct token_t token_t;
 struct token_t {
   token_t *next;             // 次の入力トークン
+  const char *source_input;  // byte_offsetが参照する正規化済みUTF-8 source
   int line_no;               // 行番号
+  int byte_offset;           // 入力先頭からtoken先頭までのUTF-8 byte数
+  int byte_length;           // tokenが占めるUTF-8 byte数（EOFは0）
   uint16_t file_name_id;     // ファイル名テーブルのインデックス
   uint8_t kind;              // トークンの型（hot, token_kind_t 値を格納）
   uint8_t at_bol : 1;        // 行頭(Beginning of Line)にあるか
