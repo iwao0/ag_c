@@ -2895,26 +2895,12 @@ static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type) {
                              : ps_type_deref_size(array_type->base);
   if (ptr->base_deref_size <= 0) ptr->base_deref_size = elem_size;
   ptr->pointee_fp_kind = array_type->pointee_fp_kind;
-  int ptr_array_pointee_bytes =
-      ps_type_pointer_view_structural_ptr_array_pointee_bytes(ptr);
-  if (ptr_array_pointee_bytes > 0)
-    ptr->ptr_array_pointee_bytes = ptr_array_pointee_bytes;
-  int inner_stride = 0;
-  int next_stride = 0;
-  int extra_strides[5] = {0};
-  int extra_count = 0;
-  if (ps_type_pointer_view_stride_metadata(ptr, &inner_stride, &next_stride,
-                                            extra_strides, &extra_count)) {
-    ptr->outer_stride = inner_stride;
-    ptr->mid_stride = next_stride;
-    ptr->extra_strides_count = (unsigned char)extra_count;
-    for (int i = 0; i < extra_count && i < 5; i++)
-      ptr->extra_strides[i] = extra_strides[i];
-  }
   ptr->vla_row_stride_frame_off =
       psx_type_pointer_view_vla_row_stride_frame_off(array_type);
   ptr->vla_strides_remaining =
       ps_type_pointer_view_vla_strides_remaining(array_type);
+  if (ptr->vla_row_stride_frame_off != 0 || array_type->is_vla)
+    psx_type_copy_pointer_view_stride_metadata(ptr, array_type);
   return ptr;
 }
 
@@ -3071,7 +3057,7 @@ static psx_type_t *type_from_subscript_base_type(const psx_type_t *base_type,
   if (row_elem_size <= 0) return view->base;
   if (view->base->kind == PSX_TYPE_ARRAY &&
       (ps_type_sizeof(view->base) == elem_size ||
-       (view->ptr_array_pointee_bytes > 0 &&
+       (ps_type_pointer_view_structural_ptr_array_pointee_bytes(view) > 0 &&
         ps_type_sizeof(view->base) == row_elem_size))) {
     return view->base;
   }
@@ -3094,9 +3080,7 @@ static psx_type_t *type_from_subscript_base_type(const psx_type_t *base_type,
   row->base_deref_size = view->base_deref_size > 0
                              ? view->base_deref_size
                              : row_elem_size;
-  row->outer_stride = next_deref_size;
   row->pointee_fp_kind = view->pointee_fp_kind;
-  row->ptr_array_pointee_bytes = view->ptr_array_pointee_bytes;
   row->vla_row_stride_frame_off =
       psx_type_pointer_view_vla_row_stride_frame_off(view);
   int view_vla_strides_remaining =
@@ -3104,19 +3088,18 @@ static psx_type_t *type_from_subscript_base_type(const psx_type_t *base_type,
   row->vla_strides_remaining = view_vla_strides_remaining > 0
                                    ? view_vla_strides_remaining - 1
                                    : view_vla_strides_remaining;
-  int n = extra_strides_count;
-  if (n < 0) n = 0;
-  if (n > 5) n = 5;
-  if (n > 0) {
-    row->mid_stride = extra_strides[0];
-    int shifted = n - 1;
-    row->extra_strides_count = (unsigned char)shifted;
-    for (int i = 0; i < shifted; i++) row->extra_strides[i] = extra_strides[i + 1];
-    for (int i = shifted; i < 5; i++) row->extra_strides[i] = 0;
-  } else {
-    row->mid_stride = 0;
-    row->extra_strides_count = 0;
-    for (int i = 0; i < 5; i++) row->extra_strides[i] = 0;
+  if (row->is_vla || row->vla_row_stride_frame_off != 0) {
+    row->outer_stride = next_deref_size;
+    int n = extra_strides_count;
+    if (n < 0) n = 0;
+    if (n > 5) n = 5;
+    if (n > 0) {
+      row->mid_stride = extra_strides[0];
+      int shifted = n - 1;
+      row->extra_strides_count = (unsigned char)shifted;
+      for (int i = 0; i < shifted; i++)
+        row->extra_strides[i] = extra_strides[i + 1];
+    }
   }
   return row;
 }
@@ -3192,6 +3175,10 @@ static void init_subscript_expr_state(node_t *result, int next_stride,
                                       int extra_count) {
   if (!result || !result->type || result->type->kind != PSX_TYPE_ARRAY) return;
   result->type_state.subscript_uses_base_address = 1;
+  if (!result->type->is_vla &&
+      psx_type_pointer_view_vla_row_stride_frame_off(result->type) == 0) {
+    return;
+  }
   int result_next = extra_count > 0 && extra_strides ? extra_strides[0] : 0;
   int result_extra[5] = {0};
   int result_extra_count = extra_count > 0 ? extra_count - 1 : 0;

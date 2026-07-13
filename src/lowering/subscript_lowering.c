@@ -46,13 +46,7 @@ static node_t *make_scaled_offset(node_t *base, node_t *index,
   if (base_type && base_type->kind == PSX_TYPE_POINTER &&
       base_type->base && base_type->base->kind == PSX_TYPE_ARRAY) {
     int array_size = ps_type_sizeof(base_type->base);
-    int element_stride = ps_type_deref_size(base_type->base);
     if (array_size > 0) elem_size = array_size;
-    inner_stride = element_stride > 0 ? element_stride : 0;
-    next_stride = base_type->base->outer_stride;
-    extra_count = base_type->base->extra_strides_count;
-    for (int i = 0; i < extra_count && i < 5; i++)
-      extra_strides[i] = base_type->base->extra_strides[i];
     canonical_stride = 1;
   }
   if (base_type && base_type->kind == PSX_TYPE_ARRAY &&

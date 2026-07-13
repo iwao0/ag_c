@@ -18,8 +18,7 @@ int psx_plan_function_declaration(
         request->return_type, &plan->returned_funcptr_signature);
   }
   psx_type_t *function_type = ps_type_new_function(
-      ps_type_clone(request->return_type),
-      plan->returned_funcptr_signature);
+      ps_type_clone(request->return_type));
   if (!function_type) return 0;
   ps_type_set_function_params(
       function_type, request->parameter_types,

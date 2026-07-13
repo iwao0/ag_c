@@ -61,7 +61,6 @@ typedef struct {
   unsigned int is_incomplete_array : 1;
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
-  psx_decl_funcptr_sig_t funcptr_sig;
   psx_type_t *function_param_types[16];
   int function_param_count;
   int function_is_variadic;
@@ -144,16 +143,10 @@ psx_type_t *ps_type_binary_result(
 psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type);
 psx_type_t *ps_type_new_pointer(psx_type_t *base, int deref_size);
-psx_type_t *ps_type_new_function(psx_type_t *return_type,
-                                  psx_decl_funcptr_sig_t sig);
+psx_type_t *ps_type_new_function(psx_type_t *return_type);
 void ps_type_set_function_params(psx_type_t *function_type,
                                   psx_type_t *const *param_types,
                                   int param_count, int is_variadic);
-psx_type_t *ps_type_new_funcptr_return_type(psx_decl_funcptr_sig_t sig);
-psx_type_t *ps_type_new_funcptr(psx_decl_funcptr_sig_t sig,
-                                 int object_pointer_levels);
-psx_type_t *ps_type_attach_funcptr_signature(
-    psx_type_t *object_type, psx_decl_funcptr_sig_t sig);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
 void ps_type_get_funcptr_signature(const psx_type_t *type,
@@ -186,8 +179,7 @@ int ps_declarator_shape_append_vla_array(
     psx_declarator_shape_t *shape);
 int psx_declarator_shape_append_array_dims(
     psx_declarator_shape_t *shape, const int *dims, int dim_count);
-int ps_declarator_shape_append_function(
-    psx_declarator_shape_t *shape, psx_decl_funcptr_sig_t sig);
+int ps_declarator_shape_append_function(psx_declarator_shape_t *shape);
 int ps_declarator_shape_append_shape(
     psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix);
 int ps_declarator_shape_count_ops(

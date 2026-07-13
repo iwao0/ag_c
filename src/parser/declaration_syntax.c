@@ -259,7 +259,7 @@ static int consume_declarator_suffix(
   if (current_token()->kind != TK_LPAREN) return 0;
   int op_index = declarator->declarator_shape.count;
   if (!ps_declarator_shape_append_function(
-          &declarator->declarator_shape, (psx_decl_funcptr_sig_t){0})) {
+          &declarator->declarator_shape)) {
     diagnose_declarator_too_complex(context, current_token());
   }
   if (declarator->function_suffix_count >= 24)
