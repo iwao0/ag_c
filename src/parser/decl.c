@@ -260,26 +260,6 @@ void ps_decl_reset_translation_unit_state(void) {
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
-void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
-  if (!gv) return;
-  psx_type_t *type = ps_gvar_get_decl_type(gv);
-  gv->type_size = type_size;
-  if (!type || type_size < 0) return;
-  if (type->kind == PSX_TYPE_ARRAY) {
-    int elem_size = type->elem_size;
-    if (elem_size <= 0 && type->base)
-      elem_size = ps_type_sizeof(type->base);
-    type->size = type_size;
-    if (elem_size > 0 && type_size % elem_size == 0)
-      type->array_len = type_size / elem_size;
-  } else if (type->kind != PSX_TYPE_POINTER) {
-    type->size = type_size;
-    type->align = type_size >= 8 ? 8
-                                 : (type_size >= 4 ? 4
-                                                   : (type_size >= 2 ? 2 : 1));
-  }
-}
-
 node_t *ps_decl_bind_initializer_for_var(
     lvar_t *var, int is_pointer, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok) {

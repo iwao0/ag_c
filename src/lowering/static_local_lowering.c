@@ -90,7 +90,6 @@ int lower_static_local_declaration_storage(
 
   global_var_t *global = calloc(1, sizeof(*global));
   if (!global) return 0;
-  global->type_size = ps_type_sizeof(request->type);
   psx_static_local_prepare_global(global, request->type);
 
   lvar_t *alias = lower_static_local_object(

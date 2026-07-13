@@ -49,7 +49,6 @@ struct global_var_t {
   unsigned int is_static : 1;      // 1: static (内部リンケージ)。.global を出さず .comm でなく .zerofill に。
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
-  int type_size;      // sizeof（グローバルオブジェクト全体サイズ）
   psx_type_t *decl_type;
 };
 /* global_vars への登録 (先頭 prepend + 名前索引へ挿入)。gv->name / gv->name_len は

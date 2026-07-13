@@ -195,11 +195,7 @@ psx_type_t *ps_lvar_get_decl_type(lvar_t *var) {
 }
 
 int ps_gvar_storage_size(const global_var_t *gv, int fallback_size) {
-  int decl_size = ps_gvar_decl_sizeof(gv, 0);
-  int storage_size = gv && gv->type_size > 0 ? gv->type_size : 0;
-  if (storage_size > decl_size) return storage_size;
-  if (decl_size > 0) return decl_size;
-  return storage_size > 0 ? storage_size : fallback_size;
+  return ps_gvar_decl_sizeof(gv, fallback_size);
 }
 
 int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size) {
@@ -695,7 +691,6 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(const global_var_t *gv) {
   const psx_type_t *aggregate_type = gvar_decl_type_view(gv);
   while (aggregate_type && aggregate_type->kind == PSX_TYPE_ARRAY)
     aggregate_type = aggregate_type->base;
-  if (type_size <= 0 && gv) type_size = gv->type_size;
   gvar_aggregate_layout_t layout = {
       .tag_kind = tag_kind,
       .tag_name = tag_name,
@@ -1484,10 +1479,8 @@ int ps_tag_member_flat_slots(const tag_member_info_t *mi) {
   int per = 1;
   if (ps_tag_member_is_tag_aggregate(mi)) {
     const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(mi);
-    token_kind_t tag_kind = leaf ? leaf->tag_kind : mi->tag_kind;
-    char *tag_name = leaf ? leaf->tag_name : mi->tag_name;
-    int tag_len = leaf ? leaf->tag_len : mi->tag_len;
-    per = ps_tag_flat_slot_count(tag_kind, tag_name, tag_len);
+    per = ps_tag_flat_slot_count(leaf->tag_kind, leaf->tag_name,
+                                 leaf->tag_len);
   }
   int count = ps_tag_member_decl_array_count(mi);
   return count > 0 ? count * per : per;

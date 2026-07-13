@@ -27,7 +27,7 @@ static void copy_identifier_source_state(
 
 static int is_static_local_array(const lvar_t *var) {
   return var && var->is_static_local && var->static_global_name &&
-         var->elem_size > 0 && var->size == 0 && !var->is_vla &&
+         var->elem_size > 0 && var->size == 0 && !ps_lvar_is_vla(var) &&
          !var->is_param;
 }
 

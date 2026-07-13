@@ -59,7 +59,6 @@ void psx_decl_attach_lvar_current_region(lvar_t *var);
 lvar_t *ps_decl_register_lvar(char *name, int len);
 lvar_t *ps_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
 lvar_t *ps_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
-void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size);
 void ps_decl_set_gvar_decl_type(global_var_t *gv,
                                  const psx_type_t *decl_type);
 void ps_decl_set_current_funcname(char *name, int len);

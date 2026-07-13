@@ -5,31 +5,15 @@
 #include "type.h"
 #include <stdbool.h>
 
-/* struct/union メンバの全属性を 1 回のクエリで取得する統合 API
- * (docs/code_refactoring_2026 Phase A1)。
- *
- * 既存の 5 つに分散した getter (`_at` / `_bf` / `_fp_kind` / `_is_bool` / `_count`)
- * の wrapper として実装され、呼び出し側で `(tag_kind, tag_name, tag_len)` の
- * 3-tuple を毎回繰り返し渡す冗長性を解消する。
- *
- * 取得失敗 (member 不存在) なら false。bitfield/fp_kind/is_bool は 0 で
- * 初期化されるので、struct メンバが bitfield でないとき bit_width=0 等を返す。 */
+/* struct/union member descriptor. Type-derived properties are queried from
+ * decl_type so this object cannot become a second source of type truth. */
 typedef struct tag_member_info_t {
   char *name;
   int len;
   int offset;
-  int type_size;
-  int array_len;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int is_tag_pointer;
   int bit_width;
   int bit_offset;
   int bit_is_signed;
-  tk_float_kind_t fp_kind;
-  int is_bool;
-  int is_unsigned;
   psx_type_t *decl_type;
 } tag_member_info_t;
 

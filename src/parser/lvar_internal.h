@@ -16,8 +16,6 @@ struct lvar_t {
   int offset;
   int size;
   int elem_size;
-  unsigned int is_array : 1;
-  unsigned int is_vla : 1;
   unsigned int is_byref_param : 1;
   unsigned int is_used : 1;
   unsigned int is_unevaluated_used : 1;
@@ -30,14 +28,7 @@ struct lvar_t {
   int static_global_name_len;
   int align_bytes;
   int used_count;
-  int vla_row_stride_frame_off;
-  int vla_strides_remaining;
   psx_type_t *decl_type;
-  int vla_row_stride_src_offset;
-  short vla_row_stride_elem_size;
-  short vla_param_inner_dim_consts[7];
-  int vla_param_inner_dim_src_offsets[7];
-  unsigned char vla_param_inner_dim_count;
   psx_lvar_usage_region_t *decl_region;
 };
 

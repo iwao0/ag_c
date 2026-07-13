@@ -22,8 +22,6 @@ int lower_resolved_global_object_declaration(
       existing->is_extern_decl = 0;
     if (request->resolution->replace_existing_type)
       ps_decl_set_gvar_decl_type(existing, request->type);
-    if (existing->type_size == 0 && result->storage.storage_size > 0)
-      ps_decl_set_gvar_type_size(existing, result->storage.storage_size);
     result->global = existing;
     return 1;
   }
@@ -32,7 +30,6 @@ int lower_resolved_global_object_declaration(
   if (!global) return 0;
   global->name = request->name;
   global->name_len = request->name_len;
-  global->type_size = result->storage.storage_size;
   global->is_extern_decl = request->is_extern_decl ? 1 : 0;
   global->is_static = request->is_extern_decl ? 0
                                                : (request->is_static ? 1 : 0);

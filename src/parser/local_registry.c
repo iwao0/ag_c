@@ -174,7 +174,6 @@ lvar_t *ps_local_registry_create_storage_object(
   var->offset = offset;
   var->size = storage_size;
   var->elem_size = element_size;
-  var->is_array = is_array ? 1 : 0;
   var->align_bytes = alignment;
   var->decl_type = psx_type_new_storage_object(
       storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
@@ -234,13 +233,12 @@ lvar_t *ps_local_registry_create_static_alias(
 
 void ps_local_registry_update_storage_object(
     lvar_t *var, int offset, int storage_size,
-    int element_size, int is_array, int alignment) {
+    int element_size, int alignment) {
   if (!var) return;
   offset_index_remove(var);
   var->offset = offset;
   var->size = storage_size;
   var->elem_size = element_size;
-  var->is_array = is_array ? 1 : 0;
   var->align_bytes = alignment;
   unsigned bucket = offset_hash(offset);
   var->next_offhash = lvars_by_offset[bucket];
@@ -253,18 +251,10 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
   var->is_byref_param = is_byref ? 1 : 0;
 }
 
-static void sync_type_cache(lvar_t *var) {
-  if (!var || !var->decl_type) return;
-  const psx_type_t *type = var->decl_type;
-  var->is_array = type->kind == PSX_TYPE_ARRAY;
-  var->is_vla = type->is_vla ? 1 : 0;
-}
-
 void ps_local_registry_set_decl_type(
     lvar_t *var, const psx_type_t *decl_type) {
   if (!var || !decl_type) return;
   var->decl_type = ps_type_clone_persistent(decl_type);
-  sync_type_cache(var);
 }
 
 void ps_local_registry_set_vla_descriptor(
@@ -273,20 +263,16 @@ void ps_local_registry_set_vla_descriptor(
     int row_stride_elem_size) {
   if (!var) return;
   psx_type_t *type = ps_lvar_get_decl_type(var);
-  var->is_vla = 1;
-  var->vla_row_stride_frame_off = row_stride_frame_off;
-  var->vla_strides_remaining = strides_remaining;
-  var->vla_row_stride_src_offset = row_stride_src_offset;
-  var->vla_row_stride_elem_size = (short)row_stride_elem_size;
   if (!type) return;
-  if (var->is_array && type->kind != PSX_TYPE_POINTER) {
+  int is_array = ps_lvar_is_array(var);
+  if (is_array && type->kind != PSX_TYPE_POINTER) {
     psx_type_t *vla = ps_type_new_vla_object_view(
         type, outer_stride, row_stride_frame_off, strides_remaining);
     if (vla) {
       var->decl_type = vla;
       type = vla;
     }
-  } else if (!var->is_array && type->kind == PSX_TYPE_POINTER &&
+  } else if (!is_array && type->kind == PSX_TYPE_POINTER &&
              row_stride_frame_off != 0 && type->base &&
              type->base->kind != PSX_TYPE_ARRAY) {
     int elem_size = row_stride_elem_size > 0
@@ -311,17 +297,6 @@ void ps_local_registry_set_vla_param_inner_dims(
   if (!var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
   if (inner_dim_count > 7) inner_dim_count = 7;
-  var->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
-  for (int i = 0; i < 7; i++) {
-    var->vla_param_inner_dim_consts[i] =
-        (i < inner_dim_count && inner_dim_consts)
-            ? (short)inner_dim_consts[i]
-            : 0;
-    var->vla_param_inner_dim_src_offsets[i] =
-        (i < inner_dim_count && inner_dim_src_offsets)
-            ? inner_dim_src_offsets[i]
-            : 0;
-  }
   ps_type_set_vla_param_inner_dims(
       ps_lvar_get_decl_type(var), inner_dim_consts,
       inner_dim_src_offsets, inner_dim_count);
@@ -353,7 +328,7 @@ psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var) {
       .suppress_unreachable_warnings =
           var->suppress_unreachable_warnings,
       .is_param = var->is_param,
-      .is_array = var->is_array,
+      .is_array = ps_lvar_is_array(var),
       .is_static_local = var->is_static_local,
       .decl_region = var->decl_region,
   };

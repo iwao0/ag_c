@@ -76,7 +76,7 @@ psx_gvar_view_t ps_gvar_view(const global_var_t *gv) {
       .name = gv->name,
       .name_len = gv->name_len,
       .tag_kind = TK_EOF,
-      .type_size = gv->type_size,
+      .type_size = 0,
       .init_count = gv->init_count,
       .has_init = gv->has_init,
       .init_val = gv->init_val,

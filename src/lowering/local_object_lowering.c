@@ -78,7 +78,7 @@ int complete_declared_local_object(
       result->storage_size, result->alignment);
   ps_local_registry_update_storage_object(
       var, offset, result->storage_size, result->element_size,
-      1, result->alignment);
+      result->alignment);
   ps_local_registry_set_decl_type(var, request->type);
   result->var = var;
   result->type_attached = 1;

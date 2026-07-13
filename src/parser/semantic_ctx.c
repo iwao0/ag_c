@@ -154,59 +154,11 @@ struct func_name_t {
   int is_defined;
 };
 
-static const psx_type_t *ctx_type_skip_arrays(const psx_type_t *type) {
-  while (type && type->kind == PSX_TYPE_ARRAY && type->base) type = type->base;
-  return type;
-}
-
 static int ctx_type_pointer_levels(const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_ARRAY) return 1;
   if (type->kind != PSX_TYPE_POINTER) return 0;
   return ps_type_pointer_view_structural_qual_levels(type);
-}
-
-static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
-                                           const psx_type_t *type) {
-  if (!out || !type) return;
-  ps_tag_member_set_decl_type(out, (psx_type_t *)type);
-  int has_function_type = ps_type_find_function(type) != NULL;
-  out->tag_kind = TK_EOF;
-  out->tag_name = NULL;
-  out->tag_len = 0;
-  out->is_tag_pointer = 0;
-  out->fp_kind = TK_FLOAT_KIND_NONE;
-  out->is_bool = 0;
-  out->is_unsigned = 0;
-  out->type_size = ps_tag_member_decl_value_size(out);
-  out->array_len = ps_tag_member_decl_array_count(out);
-  ps_tag_member_decl_tag_identity(out, &out->tag_kind, &out->tag_name,
-                                   &out->tag_len, &out->is_tag_pointer);
-  if (!has_function_type) {
-    const psx_type_t *base = type;
-    if (base->kind == PSX_TYPE_POINTER && base->base) base = base->base;
-    base = ctx_type_skip_arrays(base);
-    if (base) {
-      if (ps_type_is_tag_aggregate(base)) {
-        out->tag_kind = base->tag_kind;
-        out->tag_name = base->tag_name;
-        out->tag_len = base->tag_len;
-        out->is_tag_pointer = type->kind == PSX_TYPE_POINTER ? 1 : out->is_tag_pointer;
-      } else if (base->kind == PSX_TYPE_FLOAT || base->kind == PSX_TYPE_COMPLEX) {
-        out->fp_kind = base->fp_kind;
-      } else if (base->kind == PSX_TYPE_BOOL) {
-        out->is_bool = 1;
-        out->is_unsigned = base->is_unsigned ? 1 : out->is_unsigned;
-      } else if (base->kind == PSX_TYPE_INTEGER) {
-        out->is_unsigned = base->is_unsigned ? 1 : 0;
-      }
-    }
-  }
-  if (has_function_type) {
-    out->fp_kind = TK_FLOAT_KIND_NONE;
-    out->is_bool = 0;
-    out->is_unsigned = 0;
-  }
 }
 
 static void tag_member_record_apply_desc(tag_member_t *m,
@@ -812,7 +764,6 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   ps_ctx_refresh_type_completeness(decl_type);
   ps_ctx_attach_aggregate_definitions(decl_type);
   ps_tag_member_set_decl_type(out, decl_type);
-  ctx_tag_member_info_apply_type(out, decl_type);
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
