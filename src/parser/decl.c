@@ -6,7 +6,6 @@
 #include "initializer_syntax.h"
 #include "lvar_internal.h"
 #include "node_utils.h"
-#include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "config_runtime.h"
 #include "../declaration_pipeline.h"
@@ -260,38 +259,6 @@ void ps_decl_reset_translation_unit_state(void) {
 
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
-
-int psx_funcptr_signature_has_payload(psx_funcptr_signature_t sig) {
-  return sig.param_fp_mask || sig.param_int_mask || sig.is_variadic ||
-         sig.nargs_fixed;
-}
-
-int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret) {
-  return ret.int_width ||
-         ret.fp_kind != TK_FLOAT_KIND_NONE ||
-         ret.pointee_fp_kind != TK_FLOAT_KIND_NONE ||
-         ret.is_void || ret.is_data_pointer || ret.is_complex ||
-         psx_ret_pointee_array_has_dims(ret.pointee_array);
-}
-
-int psx_funcptr_callable_shape_has_payload(psx_funcptr_callable_shape_t fn) {
-  return psx_funcptr_signature_has_payload(fn.signature) ||
-         psx_funcptr_return_shape_has_payload(fn.return_shape);
-}
-
-int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
-  return ret.is_funcptr ||
-         (ret.type && psx_funcptr_type_shape_has_payload(*ret.type));
-}
-
-int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn) {
-  return psx_funcptr_callable_shape_has_payload(fn.callable) ||
-         psx_funcptr_returned_func_has_payload(fn.returned_funcptr);
-}
-
-int ps_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig) {
-  return psx_funcptr_type_shape_has_payload(sig.function);
-}
 
 void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size) {
   if (!gv) return;

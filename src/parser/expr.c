@@ -6,7 +6,6 @@
 #include "dynarray.h"
 #include "initializer_syntax.h"
 #include "node_utils.h"
-#include "ret_pointee_array.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
 #include "config_runtime.h"
@@ -963,7 +962,6 @@ static node_string_t *make_string_lit_node(char *str, int len,
   psx_type_t *elem_type =
       ps_type_new_integer(elem_kind, elem_width, elem_is_unsigned);
   snode->base.type = ps_type_new_pointer(elem_type, elem_width);
-  snode->base.type->base_deref_size = elem_width;
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */

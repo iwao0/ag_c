@@ -16,7 +16,6 @@
 #include "expr.h"
 #include "global_registry.h"
 #include "lvar_internal.h"
-#include "ret_pointee_array.h"
 #include "stmt.h"
 #include "type.h"
 #include "../diag/diag.h"

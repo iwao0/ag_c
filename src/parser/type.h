@@ -109,12 +109,10 @@ struct psx_type_t {
   unsigned int is_vla : 1;
 
   int deref_size;
-  int base_deref_size;
   int pointer_qual_levels;
   unsigned int pointer_const_qual_mask;
   unsigned int pointer_volatile_qual_mask;
 
-  tk_float_kind_t pointee_fp_kind;
   int vla_row_stride_frame_off;
   int vla_strides_remaining;
   int vla_row_stride_src_offset;
@@ -152,9 +150,6 @@ void ps_type_set_function_params(psx_type_t *function_type,
                                   int param_count, int is_variadic);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
-void ps_type_get_funcptr_signature(const psx_type_t *type,
-                                   psx_decl_funcptr_sig_t *out);
-psx_decl_funcptr_sig_t ps_type_funcptr_signature(const psx_type_t *type);
 psx_type_t *psx_type_new_storage_object(
     int object_size, int elem_size, int is_array,
     tk_float_kind_t fp_kind, int is_unsigned,
@@ -162,7 +157,6 @@ psx_type_t *psx_type_new_storage_object(
     int tag_scope_depth_p1, int is_pointer);
 psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           int top_deref_size,
-                                          int base_deref_size,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
@@ -247,8 +241,6 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
 int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
                                               const psx_type_t *src);
-psx_type_t *psx_type_wrap_ret_pointee_array_base(
-    psx_type_t *base, psx_ret_pointee_array_t ret_array);
 void psx_type_sync_pointer_to_array_metadata_from_base(psx_type_t *type);
 int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,

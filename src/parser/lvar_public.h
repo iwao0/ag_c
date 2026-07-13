@@ -50,7 +50,6 @@ int ps_lvar_is_union_aggregate(const lvar_t *var);
 int ps_lvar_pointer_qual_levels(const lvar_t *var);
 token_kind_t ps_lvar_tag_kind(const lvar_t *var);
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var);
-psx_decl_funcptr_sig_t ps_lvar_funcptr_sig(const lvar_t *src);
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var);
 int ps_lvar_vla_strides_remaining(const lvar_t *var);

@@ -2,9 +2,8 @@
  * `f()[i][j]` / `(*f())[j]` / `(*(f()+k))[j]` (C11 6.5.2.2)。parse_func_declarator が pointee の
  * 配列次元 `[N]` を読み飛ばしていたため、call ノードに行ストライド (N*elem) 情報が無く base
  * 要素サイズ (4) で誤スケールして SIGSEGV していた (型付き変数へ代入 `int(*p)[N]=f()` は動作)。
- * 修正: parse_func_declarator が先頭 `[N]` を捕捉し ctx に記録 (ret_pointee_array_first_dim)、
- * ps_node_deref_size(ND_FUNCALL)=N*elem を返し、subscript の inner_ds と build_unary_deref_node の
- * `*f()` を要素サイズで解決する。単一次元 `[N]` 対応。 */
+ * 修正: 関数の canonical 戻り値型を pointer(array(...)) として保持し、call / subscript /
+ * unary deref が同じ再帰型から行ストライドと要素サイズを導出する。 */
 #include <assert.h>
 
 static int m[3][3] = {{1, 2, 3}, {4, 5, 6}, {7, 8, 9}};

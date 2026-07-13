@@ -49,14 +49,6 @@ static inline void ps_tag_member_set_decl_type(tag_member_info_t *m,
   if (m) m->decl_type = decl_type;
 }
 
-static inline psx_decl_funcptr_sig_t ps_tag_member_funcptr_sig(
-    const tag_member_info_t *m) {
-  if (!m) return (psx_decl_funcptr_sig_t){0};
-  const psx_type_t *decl_type = ps_tag_member_decl_type(m);
-  return decl_type ? ps_type_funcptr_signature(decl_type)
-                   : (psx_decl_funcptr_sig_t){0};
-}
-
 static inline const psx_type_t *ps_tag_member_decl_value_type(
     const tag_member_info_t *m) {
   const psx_type_t *type = ps_tag_member_decl_type(m);

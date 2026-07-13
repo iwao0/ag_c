@@ -6,25 +6,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-typedef struct {
-  token_kind_t token_kind;
-  tk_float_kind_t fp_kind;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int struct_size;
-  int is_pointer;
-  int is_unsigned;
-  int is_void;
-  int is_complex;
-  int pointer_levels;
-  int pointee_const_qualified;
-  int pointee_volatile_qualified;
-} psx_function_ret_info_t;
-
 bool ps_ctx_has_function_name(char *name, int len);
 int ps_ctx_is_function_defined(char *name, int len);
-psx_function_ret_info_t ps_ctx_get_function_ret_info(char *name, int len);
 bool ps_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed);
 int ps_ctx_get_function_nargs_fixed(char *name, int len);
 /* Returns the canonical C signature length, or -1 when the function is unknown.

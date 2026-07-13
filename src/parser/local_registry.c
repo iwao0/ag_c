@@ -295,11 +295,9 @@ void ps_local_registry_set_vla_descriptor(
     if (elem_size > 0) {
       psx_type_t *row = ps_type_new_array(
           type->base, 0, 0, elem_size, 1);
-      row->base_deref_size = elem_size;
       row->vla_runtime_strides.outer_stride = elem_size;
       type->base = row;
       type->deref_size = 0;
-      type->base_deref_size = elem_size;
     }
   }
   type->vla_runtime_strides.outer_stride = outer_stride;
