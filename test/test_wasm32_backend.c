@@ -682,6 +682,14 @@ int main(void) {
                        "struct Ops ops={sum}; int main(){struct Value v;v.a=1;v.b=2;v.c=3;"
                        "return ops.scalar(0,v,0);}\n",
                        funcptr_struct_value_arg, 2, 6);
+  const char *forward_aggregate_member_pointer_stride[] = {"i32.const 12"};
+  failures += run_case(
+      "forward_aggregate_member_pointer_stride",
+      "struct Item; struct Def{struct Item *items;}; "
+      "struct Item{int a;int b;int c;}; "
+      "int main(){struct Item items[2];struct Def d;d.items=items;"
+      "items[1].c=42;return d.items[1].c;}\n",
+      forward_aggregate_member_pointer_stride, 1, 42);
   const char *funcptr_pointer_return[] = {"(call_indirect (result i32)", "(return (local.get"};
   failures += run_case("funcptr_pointer_return",
                        "int g; int *get(void){return &g;} int main(){int *(*fp)(void); fp=get; "

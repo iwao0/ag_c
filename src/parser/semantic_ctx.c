@@ -4,6 +4,7 @@
 #include "type.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -465,6 +466,16 @@ static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
 
+static void refresh_registered_member_type_completeness(void) {
+  for (int bucket = 0; bucket < PCTX_HASH_BUCKETS; bucket++) {
+    for (tag_member_t *member = tag_members_by_bucket[bucket]; member;
+         member = member->next_hash) {
+      ps_ctx_refresh_type_completeness(
+          tag_member_record_decl_type_mut(member));
+    }
+  }
+}
+
 static unsigned psx_ctx_hash_name(const char *name, int len) {
   // djb2 variant
   unsigned h = 5381u;
@@ -796,6 +807,7 @@ int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
     if (tag_size > existing->size) existing->size = tag_size;
     if (tag_align > existing->align) existing->align = tag_align;
     if (is_complete) existing->is_complete = 1;
+    if (is_complete) refresh_registered_member_type_completeness();
     if (existing->is_complete && !existing->definition)
       (void)ps_ctx_get_tag_definition(kind, name, len);
     else
@@ -818,8 +830,10 @@ int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
   tag_types_by_bucket[bucket] = t;
   t->next_all = all_tag_types;
   all_tag_types = t;
-  if (t->is_complete)
+  if (t->is_complete) {
+    refresh_registered_member_type_completeness();
     (void)ps_ctx_get_tag_definition(kind, name, len);
+  }
   return 1;
 }
 
@@ -1027,6 +1041,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   out->bit_offset = m->bit_offset;
   out->bit_is_signed = m->bit_is_signed;
   psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
+  ps_ctx_refresh_type_completeness(decl_type);
   ps_ctx_attach_aggregate_definitions(decl_type);
   ps_tag_member_set_decl_type(out, decl_type);
   ctx_tag_member_info_apply_type(out, decl_type);
@@ -1276,6 +1291,24 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
     }
   }
   ps_ctx_refresh_type_completeness(type->base);
+  if (type->kind == PSX_TYPE_POINTER && type->base) {
+    int pointee_size = ps_type_sizeof(type->base);
+    if (pointee_size > 0) type->deref_size = pointee_size;
+    int base_deref_size = ps_type_deref_size(type->base);
+    if (type->base->kind == PSX_TYPE_STRUCT ||
+        type->base->kind == PSX_TYPE_UNION)
+      base_deref_size = pointee_size;
+    if (base_deref_size <= 0) base_deref_size = pointee_size;
+    if (base_deref_size > 0) type->base_deref_size = base_deref_size;
+  } else if (type->kind == PSX_TYPE_ARRAY && type->base) {
+    int element_size = ps_type_sizeof(type->base);
+    if (element_size > 0) {
+      type->elem_size = element_size;
+      type->deref_size = element_size;
+      if (type->array_len > 0 && type->array_len <= INT_MAX / element_size)
+        type->size = type->array_len * element_size;
+    }
+  }
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count && i < 16; i++)
       ps_ctx_refresh_type_completeness(type->param_types[i]);
