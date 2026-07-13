@@ -1050,15 +1050,7 @@ static int aggregate_types_compatible(const psx_type_t *target,
       !ps_type_is_tag_aggregate(value)) return 0;
   if (target->kind != value->kind ||
       ps_type_sizeof(target) != ps_type_sizeof(value)) return 0;
-  if (target->tag_len > 0 || value->tag_len > 0) {
-    return target->tag_len == value->tag_len && target->tag_name &&
-           value->tag_name &&
-           memcmp(target->tag_name, value->tag_name,
-                  (size_t)target->tag_len) == 0;
-  }
-  if (target->aggregate_definition && value->aggregate_definition)
-    return target->aggregate_definition == value->aggregate_definition;
-  return target->tag_scope_depth_p1 == value->tag_scope_depth_p1;
+  return ps_type_tag_identity_matches(target, value);
 }
 
 static node_t *new_decl_initializer_assign(node_t *target, node_t *value,

@@ -41,7 +41,8 @@ static node_t *sizeof_type_bound_for_op(
 }
 
 static node_t *widen_size_value(node_t *value) {
-  return ps_node_new_integer_cast_result(value, NULL, 8, 1, 0);
+  return ps_node_new_integer_cast_result(
+      value, ps_type_new_integer(TK_UNSIGNED, 8, 1));
 }
 
 static void resolve_sizeof_type_name(

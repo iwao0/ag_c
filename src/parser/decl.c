@@ -261,24 +261,24 @@ void ps_decl_reset_translation_unit_state(void) {
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
 node_t *ps_decl_bind_initializer_for_var(
-    lvar_t *var, int is_pointer, node_t *initializer,
+    lvar_t *var, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok) {
   node_t *target =
       ps_lvar_is_array(var) || ps_lvar_is_tag_aggregate(var)
           ? psx_node_new_lvar_object_ref_for(var)
-          : ps_node_new_lvar_expr_ref_for(var, is_pointer);
+          : ps_node_new_lvar_expr_ref_for(var);
   return psx_node_new_raw_decl_initializer(
       target, initializer, initializer_kind, init_tok);
 }
 
-node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer) {
+node_t *psx_decl_parse_initializer_for_var(lvar_t *var) {
   if (curtok() && curtok()->kind == TK_LBRACE) {
     token_t *init_tok = curtok();
     node_t *syntax = psx_parse_initializer_syntax_list();
     return ps_decl_bind_initializer_for_var(
-        var, is_pointer, syntax, PSX_DECL_INIT_LIST, init_tok);
+        var, syntax, PSX_DECL_INIT_LIST, init_tok);
   }
   token_t *init_tok = curtok();
   return ps_decl_bind_initializer_for_var(
-      var, is_pointer, psx_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
+      var, psx_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
 }

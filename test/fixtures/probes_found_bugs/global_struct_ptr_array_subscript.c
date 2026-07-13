@@ -13,12 +13,8 @@
  * さらに emit_global_struct_array_init が struct 配列展開 (各要素をメンバ単位に出す)
  * を呼び、ポインタ要素 (8B) を struct (12B) として出力 → unaligned リンクエラー。
  *
- * 修正:
- * (parser/expr.c) グローバル struct ポインタ配列の ND_ADDR に
- *   pointer_qual_levels=1 / base_deref_size=gv->deref_size を立てる (tag_kind!=EOF &&
- *   is_tag_pointer)。build_subscript_deref の「要素はポインタ」分岐に乗り、
- *   `parr[i]` の結果が struct ポインタ値 (deref_size=struct サイズ) として扱われ、
- *   ps_node_get_tag_type が is_tag_pointer=1 を立てて `->` 解決可能。
+ * 現在は canonical type の array(pointer(struct P)) を subscript ごとに辿り、
+ * `parr[i]` の結果を pointer(struct P) として `->` 解決する。
  * (arch/arm64_apple.c) emit_one_global_var の struct 配列分岐に `!gv->is_tag_pointer`
  *   ガードを追加。struct ポインタ配列は scalar emit 経路に流して 8B ポインタとして出力する。 */
 #include <assert.h>

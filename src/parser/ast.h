@@ -205,12 +205,8 @@ typedef struct {
   char *member_name;
   int member_name_len;
   struct tag_member_info_t *resolved_member;
-  token_kind_t base_tag_kind;
-  char *base_tag_name;
-  int base_tag_name_len;
-  int base_object_size;
+  psx_type_t *resolved_object_type;
   unsigned char from_pointer;
-  unsigned char base_is_pointer;
 } node_member_access_t;
 
 typedef struct {

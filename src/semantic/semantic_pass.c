@@ -152,12 +152,11 @@ static void semantic_validate_assignment(node_t *node,
         ps_diag_ctx(tok, "init",
                      "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
-      if (ps_node_aggregate_value_size(node->rhs) > 0) {
-        token_kind_t rhs_tag_kind = TK_EOF;
-        ps_node_get_tag_type(node->rhs, &rhs_tag_kind, NULL, NULL, NULL);
+      if (ps_type_is_tag_aggregate(rhs_type) &&
+          ps_type_sizeof(rhs_type) > 0) {
         ps_diag_ctx(tok, "init",
                      "スカラ変数を %s 値で初期化できません (C11 6.5.16.1)",
-                     ps_ctx_tag_kind_spelling(rhs_tag_kind));
+                     ps_ctx_tag_kind_spelling(rhs_type->tag_kind));
       }
     }
   }
@@ -272,22 +271,14 @@ static void semantic_resolve_member_access(
 
   access->resolved_member = arena_alloc(sizeof(*access->resolved_member));
   *access->resolved_member = resolution.member;
-  access->base_tag_kind = resolution.base_tag_kind;
-  access->base_tag_name = resolution.base_tag_name;
-  access->base_tag_name_len = resolution.base_tag_name_len;
-  access->base_object_size = resolution.base_object_size;
-  access->base_is_pointer = resolution.base_is_pointer ? 1 : 0;
+  access->resolved_object_type =
+      ps_type_clone(resolution.base_object_type);
 
   const psx_type_t *decl_type =
       ps_tag_member_decl_type(access->resolved_member);
   ps_node_bind_type(
       (node_t *)access, decl_type ? ps_type_clone(decl_type) : NULL);
-  psx_type_t *base_type = ps_node_get_type(access->base.lhs);
-  const psx_type_t *object_type = base_type;
-  if (access->from_pointer && object_type &&
-      object_type->kind == PSX_TYPE_POINTER) {
-    object_type = object_type->base;
-  }
+  const psx_type_t *object_type = access->resolved_object_type;
   if (access->base.type && object_type) {
     if (object_type->is_const_qualified)
       access->base.type->is_const_qualified = 1;

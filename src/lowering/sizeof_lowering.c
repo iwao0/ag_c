@@ -11,7 +11,8 @@ node_t *lower_sizeof_query_expression(
   } else if (query->runtime_size_slot != 0) {
     node_t *slot = ps_node_new_unsigned_lvar_typed(
         query->runtime_size_slot, 8);
-    result = ps_node_new_integer_cast_result(slot, NULL, 8, 1, 0);
+    result = ps_node_new_integer_cast_result(
+        slot, ps_type_new_integer(TK_UNSIGNED, 8, 1));
   } else {
     result = ps_node_new_num(query->resolved_size);
   }

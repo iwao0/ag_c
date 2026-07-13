@@ -36,8 +36,7 @@ static node_t *materialize_local(
   if (is_static_local_array(var)) {
     node = psx_node_new_static_local_array_addr_for(var);
   } else if (ps_lvar_is_array(var) && !ps_lvar_is_vla(var)) {
-    node = ps_node_new_lvar_array_addr_for(
-        var, ps_lvar_tag_kind(var) != TK_EOF);
+    node = ps_node_new_lvar_array_addr_for(var);
   } else if (ps_lvar_is_vla(var)) {
     node = psx_node_new_vla_decay_ref_for(var);
   } else {

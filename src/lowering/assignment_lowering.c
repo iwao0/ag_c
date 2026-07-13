@@ -42,10 +42,10 @@ static node_t *materialize_lvalue_address_once(node_t *target,
   psx_type_t *address_type = ps_node_get_type(address);
   if (address_type) ps_local_registry_set_decl_type(temp, address_type);
 
-  node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp, 1);
+  node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp);
   *prefix = ps_node_new_assign(temp_lhs, address);
   return ps_node_clone_lvalue_with_lhs(
-      target, ps_node_new_lvar_expr_ref_for(temp, 1));
+      target, ps_node_new_lvar_expr_ref_for(temp));
 }
 
 void lower_compound_assignment_expression(node_t *node) {

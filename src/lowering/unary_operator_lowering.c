@@ -25,10 +25,6 @@ node_t *lower_complex_part_expression(node_t *node) {
   if (!operand_type || operand_type->kind == PSX_TYPE_COMPLEX) return node;
   if (node->kind == ND_CREAL) return node->lhs;
   if (operand_type->kind == PSX_TYPE_FLOAT) return node;
-  int size = ps_type_sizeof(node->type);
-  if (size <= 0) size = 4;
   return ps_node_new_integer_cast_result(
-      ps_node_new_num(0), node->type, size,
-      ps_type_is_unsigned(node->type),
-      node->type && node->type->is_long_long);
+      ps_node_new_num(0), node->type);
 }

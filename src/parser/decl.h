@@ -8,40 +8,12 @@
 #include "lvar_public.h"
 #include "symtab.h"
 
-typedef struct {
-  char *name;
-  int name_len;
-  token_kind_t tag_kind;
-  char *tag_name;
-  int tag_len;
-  int type_size;
-  int init_count;
-  int has_init;
-  long long init_val;
-  char *init_symbol;
-  int init_symbol_len;
-  long long init_symbol_offset;
-  double fval;
-  tk_float_kind_t fp_kind;
-  int is_extern_decl;
-  int is_static;
-  int is_thread_local;
-  int is_tag_pointer;
-  int has_init_fvalues;
-} psx_gvar_view_t;
-
-psx_gvar_view_t ps_gvar_view(const global_var_t *gv);
-
 typedef enum {
   PSX_LVAR_USAGE_EVALUATED,
   PSX_LVAR_USAGE_UNEVALUATED,
   PSX_LVAR_USAGE_ADDRESS_TAKEN,
   PSX_LVAR_USAGE_INITIALIZED,
 } psx_lvar_usage_kind_t;
-
-/* lvar_t / global_var_t の tag 4 フィールド (kind/name/len/is_tag_pointer)
- * を 1 行で設定するヘルパ (Phase A2 リファクタリング)。
- * decl.c / parser.c で 4 行のパターンが 9 箇所重複していたのを集約する。 */
 
 void ps_decl_reset_locals(void);
 void ps_decl_enter_scope(void);
@@ -64,9 +36,9 @@ void ps_decl_set_gvar_decl_type(global_var_t *gv,
 void ps_decl_set_current_funcname(char *name, int len);
 void ps_decl_get_current_funcname(char **out_name, int *out_len);
 
-node_t *psx_decl_parse_initializer_for_var(lvar_t *var, int is_pointer);
+node_t *psx_decl_parse_initializer_for_var(lvar_t *var);
 node_t *ps_decl_bind_initializer_for_var(
-    lvar_t *var, int is_pointer, node_t *initializer,
+    lvar_t *var, node_t *initializer,
     psx_decl_init_kind_t initializer_kind, token_t *init_tok);
 
 

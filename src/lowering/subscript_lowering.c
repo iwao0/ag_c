@@ -1,8 +1,14 @@
 #include "subscript_lowering.h"
 
 #include "../parser/node_utils.h"
-#include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
+
+static int type_has_tag_aggregate_leaf(const psx_type_t *type) {
+  while (type &&
+         (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY))
+    type = type->base;
+  return ps_type_is_tag_aggregate(type);
+}
 
 static node_t *make_scaled_offset(node_t *base, node_t *index,
                                   int *out_elem_size, int *out_inner_stride,
@@ -14,13 +20,11 @@ static node_t *make_scaled_offset(node_t *base, node_t *index,
   if (base->kind == ND_DEREF &&
       ps_node_pointer_qual_levels(base) == 1 &&
       ps_node_base_deref_size(base) > 0) {
-    token_kind_t tag_kind = TK_EOF;
-    ps_node_get_tag_type(base, &tag_kind, NULL, NULL, NULL);
     if (deref_size == 0 &&
         !(ps_node_is_pointer(base) &&
           !ps_node_scalar_ptr_member_lvalue(base) && base->lhs &&
           base->lhs->kind == ND_ADD &&
-          ps_ctx_is_tag_aggregate_kind(tag_kind))) {
+          type_has_tag_aggregate_leaf(ps_node_get_type(base)))) {
       elem_size = ps_node_base_deref_size(base);
     }
   }

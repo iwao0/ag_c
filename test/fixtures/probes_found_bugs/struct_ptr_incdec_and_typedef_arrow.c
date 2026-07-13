@@ -1,9 +1,9 @@
 // struct ポインタのメンバアクセスでタグが伝播しない2つのバグ。
-// (1) `(++p)->m` / `(p++)->m`: inc/dec の結果が struct タグを継承せず E3005。
-//     ps_node_get_tag_type に ND_PRE_INC/POST_INC/PRE_DEC/POST_DEC が無かった。
+// (1) `(++p)->m` / `(p++)->m`: inc/dec の結果型が伝播せず E3005。
 // (2) typedef した struct ポインタ仮引数 `T *t` (`typedef struct{...} T;`) で
 //     `t->m` が E3005。parse_param_scalar_decl_spec が typedef のタグを NULL で
-//     捨てており、仮引数にタグ・struct_size が伝わっていなかった。
+//     捨てており、仮引数に集約型が伝わっていなかった。
+// 現在はいずれも pointer(struct) の canonical type を式へ伝播する。
 // 修正前: E3005 でコンパイル失敗
 // 期待: exit=42
 #include <assert.h>

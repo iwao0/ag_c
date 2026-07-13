@@ -30,7 +30,5 @@ int ps_node_value_is_pointer_like(node_t *node);
 int ps_node_aggregate_value_size(node_t *node);
 int ps_node_is_unsigned_type(node_t *node);
 int ps_node_deref_decays_to_address(node_t *node);
-void ps_node_get_tag_type(node_t *node, token_kind_t *tag_kind,
-                           char **tag_name, int *tag_len, int *is_tag_pointer);
 
 #endif

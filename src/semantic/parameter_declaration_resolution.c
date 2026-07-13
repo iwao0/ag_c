@@ -20,6 +20,14 @@ static int has_runtime_inner_dimension(
   return 0;
 }
 
+static int request_shape_has(
+    const psx_parameter_declaration_resolution_request_t *request,
+    psx_declarator_op_kind_t kind) {
+  return request && request->type.declarator_shape &&
+         ps_declarator_shape_count_ops(
+             request->type.declarator_shape, kind) > 0;
+}
+
 int psx_resolve_parameter_declaration(
     const psx_parameter_declaration_resolution_request_t *request,
     psx_parameter_declaration_resolution_t *resolution) {
@@ -39,12 +47,13 @@ int psx_resolve_parameter_declaration(
 
   const psx_type_t *leaf = parameter_leaf_type(resolution->type);
   int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);
+  int has_pointer = request_shape_has(request, PSX_DECL_OP_POINTER);
+  int has_array = request_shape_has(request, PSX_DECL_OP_ARRAY);
+  int has_function = request_shape_has(request, PSX_DECL_OP_FUNCTION);
   resolution->element_size = ps_type_sizeof(leaf);
   if (resolution->element_size <= 0) resolution->element_size = 8;
-  if ((request->is_array_declarator && !leaf_is_aggregate &&
-       !request->is_pointer_declarator) ||
-      (request->is_pointer_declarator && request->is_array_declarator &&
-       !leaf_is_aggregate && !request->has_function_suffix &&
+  if ((has_array && !leaf_is_aggregate && !has_pointer && !has_function) ||
+      (has_pointer && has_array && !leaf_is_aggregate && !has_function &&
        has_runtime_inner_dimension(request))) {
     resolution->lowering_kind = PSX_PARAMETER_LOWER_VLA;
   }

@@ -20,7 +20,8 @@ static node_t *annotate(node_t *node, psx_type_t *type) {
 static node_t *fp_to_int(node_t *operand, psx_type_t *type) {
   if (!operand || ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE)
     return operand;
-  return ps_node_new_fp_to_int_cast(operand, 4, type);
+  if (!type) type = ps_type_new_integer(TK_INT, 4, 0);
+  return ps_node_new_fp_to_int_cast(operand, type);
 }
 
 static node_t *lower_value_to_fp(node_t *operand, tk_float_kind_t target) {
@@ -34,7 +35,7 @@ static node_t *lower_value_to_fp(node_t *operand, tk_float_kind_t target) {
            (target >= TK_FLOAT_KIND_DOUBLE))) {
     return annotate(operand, type);
   }
-  return ps_node_new_int_to_fp_cast(operand, target, type);
+  return ps_node_new_int_to_fp_cast(operand, type);
 }
 
 typedef struct {
@@ -92,17 +93,9 @@ static int same_tag_value(node_t *expr, const cast_target_view_t *view) {
     return same_tag_value(ternary->base.rhs, view) &&
            same_tag_value(ternary->els, view);
   }
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_pointer = 0;
-  ps_node_get_tag_type(value, &tag_kind, &tag_name, &tag_len,
-                       &is_tag_pointer);
-  return !is_tag_pointer && tag_kind == view->tag_kind &&
-         tag_len == view->value->tag_len &&
-         strncmp(tag_name ? tag_name : "",
-                 view->value->tag_name ? view->value->tag_name : "",
-                 (size_t)tag_len) == 0;
+  const psx_type_t *value_type = ps_node_get_type(value);
+  return ps_type_is_tag_aggregate(value_type) &&
+         ps_type_tag_identity_matches(value_type, view->value);
 }
 
 static int size_compatible_tag_value(node_t *expr,
@@ -116,11 +109,10 @@ static int size_compatible_tag_value(node_t *expr,
     return size_compatible_tag_value(ternary->base.rhs, view) &&
            size_compatible_tag_value(ternary->els, view);
   }
-  token_kind_t tag_kind = TK_EOF;
-  int is_tag_pointer = 0;
-  ps_node_get_tag_type(value, &tag_kind, NULL, NULL, &is_tag_pointer);
-  int value_size = ps_node_type_size(value);
-  return !is_tag_pointer && tag_kind == view->tag_kind &&
+  const psx_type_t *value_type = ps_node_get_type(value);
+  int value_size = ps_type_sizeof(value_type);
+  return ps_type_is_tag_aggregate(value_type) &&
+         value_type->tag_kind == view->tag_kind &&
          value_size > 0 && view->elem_size > 0 &&
          value_size == view->elem_size;
 }
@@ -142,12 +134,8 @@ static node_t *lower_aggregate_cast(node_t *operand,
     return ps_node_new_aggregate_cast_result(operand, view.target);
   }
 
-  token_kind_t operand_tag_kind = TK_EOF;
-  int operand_is_tag_pointer = 0;
-  ps_node_get_tag_type(operand, &operand_tag_kind, NULL, NULL,
-                       &operand_is_tag_pointer);
-  if (!operand_is_tag_pointer &&
-      ps_ctx_is_tag_aggregate_kind(operand_tag_kind)) {
+  const psx_type_t *operand_type = ps_node_get_type(operand);
+  if (ps_type_is_tag_aggregate(operand_type)) {
     ps_diag_ctx(diag_tok, "cast",
                  diag_message_for(
                      DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
@@ -204,30 +192,22 @@ static node_t *lower_aggregate_cast(node_t *operand,
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for(temp, member.offset, &member);
   node_t *assign = ps_node_new_assign(member_ref, operand);
-  node_t *result = ps_node_new_lvar_expr_ref_for(temp, 0);
+  node_t *result = ps_node_new_lvar_expr_ref_for(temp);
   return ps_node_new_binary(ND_COMMA, assign, result);
 }
 
 static node_t *pointer_result(node_t *operand, cast_target_view_t view) {
-  return ps_node_new_pointer_cast_result(
-      operand, view.target, view.kind, view.tag_kind,
-      view.value ? view.value->tag_name : NULL,
-      view.value ? view.value->tag_len : 0,
-      view.elem_size, view.is_unsigned);
+  return ps_node_new_pointer_cast_result(operand, view.target);
 }
 
-static node_t *integer_result(node_t *operand, cast_target_view_t view,
-                              int size, int is_unsigned, int is_long_long) {
-  return ps_node_new_integer_cast_result(
-      operand, view.target, size, is_unsigned, is_long_long);
+static node_t *integer_result(node_t *operand, cast_target_view_t view) {
+  return ps_node_new_integer_cast_result(operand, view.target);
 }
 
 static node_t *integer_result_ex(node_t *operand, cast_target_view_t view,
-                                 int size, int is_unsigned, int is_long_long,
-                                 int is_plain_char, int widen_zext_i64) {
+                                 int widen_zext_i64) {
   return ps_node_new_integer_cast_result_ex(
-      operand, view.target, size, is_unsigned, is_long_long,
-      is_plain_char, widen_zext_i64);
+      operand, view.target, widen_zext_i64);
 }
 
 static node_t *lower_cast(node_t *operand, cast_target_view_t view,
@@ -258,8 +238,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
         int zext = ps_node_integer_value_is_unsigned(operand) &&
                    ps_node_type_size(operand) >= 1 &&
                    ps_node_type_size(operand) < 8;
-        return integer_result_ex(operand, view, 8, view.is_unsigned,
-                                 view.is_long_long, 0, zext);
+        return integer_result_ex(operand, view, zext);
       }
     }
     if (view.is_pointer &&
@@ -268,17 +247,13 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
          ps_node_pointee_is_void(operand)))
       return pointer_result(operand, view);
 
-    int operand_is_tag_pointer = 0;
-    ps_node_get_tag_type(operand, NULL, NULL, NULL,
-                         &operand_is_tag_pointer);
     if (view.is_pointer && view.elem_size > 0 &&
-        (ps_node_is_pointer(operand) || operand_is_tag_pointer) &&
+        ps_node_is_pointer(operand) &&
         ps_node_pointer_qual_levels(operand) <= 1)
       return pointer_result(operand, view);
     if (!view.is_pointer && view.kind == TK_LONG &&
         ps_node_is_pointer(operand))
-      return integer_result(operand, view, 8, view.is_unsigned,
-                            view.is_long_long);
+      return integer_result(operand, view);
     if (view.is_pointer) return pointer_result(operand, view);
     return annotate(operand, view.target);
   }
@@ -305,7 +280,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
     }
     if (ps_node_type_size(operand) > 4 && !ps_node_is_pointer(operand))
       return ps_node_new_i64_to_i32_trunc_cast(
-          operand, view.target, target_unsigned);
+          operand, view.target);
     int size = ps_node_type_size(operand);
     if (target_unsigned && size >= 1 && size < 4 &&
         ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
@@ -315,7 +290,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
       ps_node_set_unsigned(masked, 1);
       return annotate(masked, view.target);
     }
-    return integer_result(operand, view, 4, target_unsigned, 0);
+    return integer_result(operand, view);
   }
 
   if (view.kind == TK_BOOL)
@@ -348,13 +323,12 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
       node_t *masked = ps_node_new_binary(
           ND_BITAND, operand, ps_node_new_num(mask));
       ps_node_set_unsigned(masked, 1);
-      return integer_result(masked, view, width / 8, 1, 0);
+      return integer_result(masked, view);
     }
     int source_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
     node_t *truncated = ps_node_new_shift_trunc_extend(
         operand, source_width - width, 0);
-    return integer_result_ex(truncated, view, width / 8, 0, 0,
-                             view.is_plain_char, 0);
+    return integer_result_ex(truncated, view, 0);
   }
 
   ps_diag_ctx(diag_tok, "cast", "%s",
@@ -371,8 +345,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
   if (target_type->kind == PSX_TYPE_INTEGER &&
       target_type->scalar_kind == TK_EOF &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE) {
-    int width = ps_type_sizeof(target_type) >= 8 ? 8 : 4;
-    return ps_node_new_fp_to_int_cast(operand, width, NULL);
+    return ps_node_new_fp_to_int_cast(operand, target_type);
   }
   if (target_type->kind == PSX_TYPE_BOOL)
     return annotate(ps_node_new_binary(
@@ -380,9 +353,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
                     target_type);
   if (target_type->kind == PSX_TYPE_INTEGER &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE) {
-    int width = ps_type_sizeof(target_type);
-    if (width <= 0) width = 4;
-    return ps_node_new_fp_to_int_cast(operand, width, target_type);
+    return ps_node_new_fp_to_int_cast(operand, target_type);
   }
   if (target_type->kind == PSX_TYPE_FLOAT)
     return annotate(lower_value_to_fp(operand, target_type->fp_kind),

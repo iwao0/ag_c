@@ -5,13 +5,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int type_tag_identity_matches(
-    const psx_type_t *a, const psx_type_t *b) {
+int ps_type_tag_identity_matches(const psx_type_t *a,
+                                 const psx_type_t *b) {
   if (!a || !b || a->tag_kind != b->tag_kind || a->tag_len != b->tag_len)
     return 0;
+  if (a->aggregate_definition && b->aggregate_definition &&
+      a->aggregate_definition == b->aggregate_definition)
+    return 1;
   if (a->tag_len > 0 &&
       (!a->tag_name || !b->tag_name ||
        strncmp(a->tag_name, b->tag_name, (size_t)a->tag_len) != 0))
+    return 0;
+  if (a->tag_len == 0 &&
+      (a->aggregate_definition || b->aggregate_definition))
     return 0;
   return a->tag_scope_depth_p1 == 0 || b->tag_scope_depth_p1 == 0 ||
          a->tag_scope_depth_p1 == b->tag_scope_depth_p1;
@@ -544,7 +550,7 @@ static int type_matches_canonical_base(const psx_type_t *derived,
   }
   if (canonical->kind == PSX_TYPE_INTEGER &&
       (canonical->scalar_kind == TK_ENUM || derived->scalar_kind == TK_ENUM) &&
-      !type_tag_identity_matches(derived, canonical)) {
+      !ps_type_tag_identity_matches(derived, canonical)) {
     return 0;
   }
   int canonical_size = ps_type_sizeof(canonical);
@@ -795,7 +801,7 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
     case PSX_TYPE_BOOL:
     case PSX_TYPE_INTEGER:
       if ((a->scalar_kind == TK_ENUM || b->scalar_kind == TK_ENUM) &&
-          !type_tag_identity_matches(a, b))
+          !ps_type_tag_identity_matches(a, b))
         return 0;
       return a->scalar_kind == b->scalar_kind && a->size == b->size;
     case PSX_TYPE_FLOAT:
@@ -808,12 +814,7 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
              ps_type_shape_matches(a->base, b->base);
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      return a->tag_kind == b->tag_kind && a->tag_len == b->tag_len &&
-             strncmp(a->tag_name ? a->tag_name : "",
-                     b->tag_name ? b->tag_name : "",
-                     (size_t)a->tag_len) == 0 &&
-             (a->tag_scope_depth_p1 == 0 || b->tag_scope_depth_p1 == 0 ||
-              a->tag_scope_depth_p1 == b->tag_scope_depth_p1);
+      return ps_type_tag_identity_matches(a, b);
     case PSX_TYPE_FUNCTION:
       if (a->param_count != b->param_count ||
           a->is_variadic_function != b->is_variadic_function ||

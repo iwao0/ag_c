@@ -4,7 +4,6 @@
 #include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
-#include "../parser/semantic_ctx.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,19 +26,13 @@ static struct lvar_t *create_aggregate_temporary(
   token_t *tok = access->base.tok
                      ? access->base.tok
                      : (token_t *)fallback_diag_tok;
-  if (access->base_object_size <= 0) {
+  if (!access->resolved_object_type ||
+      ps_type_sizeof(access->resolved_object_type) <= 0) {
     ps_diag_ctx(tok, "member", "aggregate rvalue size resolution failed");
   }
   char *name = new_member_rvalue_name();
   if (!name) ps_diag_ctx(tok, "member", "temporary name allocation failed");
-  int scope_depth = ps_ctx_get_tag_scope_depth(
-      access->base_tag_kind, access->base_tag_name,
-      access->base_tag_name_len);
-  psx_type_t *type = ps_type_new_tag(
-      access->base_tag_kind, access->base_tag_name,
-      access->base_tag_name_len,
-      scope_depth >= 0 ? scope_depth + 1 : 0,
-      access->base_object_size);
+  psx_type_t *type = ps_type_clone(access->resolved_object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
       &(psx_temporary_local_declaration_pipeline_request_t){
           .name = name,
@@ -56,11 +49,11 @@ static node_t *materialize_call_rvalue(
     const token_t *fallback_diag_tok) {
   struct lvar_t *temporary = create_aggregate_temporary(
       access, fallback_diag_tok);
-  node_t *target = ps_node_new_lvar_expr_ref_for(temporary, 0);
+  node_t *target = ps_node_new_lvar_expr_ref_for(temporary);
   node_t *assign = ps_node_new_assign(target, base);
   return ps_node_new_binary(
       ND_COMMA, assign,
-      ps_node_new_lvar_expr_ref_for(temporary, 0));
+      ps_node_new_lvar_expr_ref_for(temporary));
 }
 
 static node_t *materialize_ternary_rvalue(
@@ -73,14 +66,14 @@ static node_t *materialize_ternary_rvalue(
   select->base.kind = ND_TERNARY;
   select->base.lhs = ternary->base.lhs;
   select->base.rhs = ps_node_new_assign(
-      ps_node_new_lvar_expr_ref_for(temporary, 0),
+      ps_node_new_lvar_expr_ref_for(temporary),
       ternary->base.rhs);
   select->els = ps_node_new_assign(
-      ps_node_new_lvar_expr_ref_for(temporary, 0),
+      ps_node_new_lvar_expr_ref_for(temporary),
       ternary->els);
   return ps_node_new_binary(
       ND_COMMA, (node_t *)select,
-      ps_node_new_lvar_expr_ref_for(temporary, 0));
+      ps_node_new_lvar_expr_ref_for(temporary));
 }
 
 node_t *lower_member_access_expression(
@@ -89,12 +82,12 @@ node_t *lower_member_access_expression(
   if (!access || !access->base.lhs || !access->resolved_member)
     return (node_t *)access;
   node_t *base = access->base.lhs;
-  if (!access->from_pointer && !access->base_is_pointer) {
+  if (!access->from_pointer) {
     if (base->kind == ND_FUNCALL) {
       base = materialize_call_rvalue(
           access, base, fallback_diag_tok);
     } else if (base->kind == ND_TERNARY &&
-               access->base_tag_kind != TK_EOF) {
+               access->resolved_object_type) {
       base = materialize_ternary_rvalue(
           access, base, fallback_diag_tok);
     }

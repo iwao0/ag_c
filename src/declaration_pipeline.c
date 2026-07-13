@@ -261,21 +261,11 @@ static int resolve_definition_parameter(
     const psx_parsed_declarator_t *declarator,
     const psx_runtime_declarator_application_t *application,
     psx_parameter_declaration_resolution_t *resolution) {
-  int is_array_declarator = ps_declarator_shape_count_ops(
-      &application->shape, PSX_DECL_OP_ARRAY) > 0;
-  int has_function_suffix = ps_declarator_shape_count_ops(
-      &application->shape, PSX_DECL_OP_FUNCTION) > 0;
   psx_parameter_declaration_resolution_request_t semantic_request = {
       .type = {
           .base_decl_type = base_type,
           .declarator_shape = &application->shape,
       },
-      .is_pointer_declarator =
-          ps_declarator_shape_count_ops(
-              &application->shape, PSX_DECL_OP_POINTER) > 0 ||
-          has_function_suffix,
-      .is_array_declarator = is_array_declarator,
-      .has_function_suffix = has_function_suffix,
   };
   int skip_outer_array =
       application->shape.count > 0 &&
@@ -754,8 +744,7 @@ int psx_finish_automatic_local_declaration_pipeline(
 
   if (request->initializer->has_initializer) {
     node_t *initializer = ps_decl_bind_initializer_for_var(
-        result->var, request->type->kind == PSX_TYPE_POINTER,
-        request->initializer->value, request->initializer->kind,
+        result->var, request->initializer->value, request->initializer->kind,
         request->initializer->value_tok);
     result->initialization = append_local_initialization(
         result->initialization, initializer);

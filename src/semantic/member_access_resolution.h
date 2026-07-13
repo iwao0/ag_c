@@ -19,11 +19,7 @@ typedef struct {
 
 typedef struct {
   psx_member_access_status_t status;
-  token_kind_t base_tag_kind;
-  char *base_tag_name;
-  int base_tag_name_len;
-  int base_is_pointer;
-  int base_object_size;
+  const psx_type_t *base_object_type;
   tag_member_info_t member;
 } psx_member_access_resolution_t;
 

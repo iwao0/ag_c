@@ -19,9 +19,6 @@ typedef enum {
 
 typedef struct {
   psx_decl_type_request_t type;
-  int is_pointer_declarator;
-  int is_array_declarator;
-  int has_function_suffix;
   psx_parameter_dimension_t inner_dimensions[PSX_PARAMETER_MAX_INNER_DIMS];
   int inner_dimension_count;
 } psx_parameter_declaration_resolution_request_t;

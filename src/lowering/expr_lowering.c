@@ -12,13 +12,7 @@ static int is_pointer_arithmetic_operand(node_t *node) {
     int deref_size = ps_node_deref_size(node);
     if (deref_size > 0 && ps_node_type_size(node) > deref_size) return 1;
   }
-
-  token_kind_t tag_kind = TK_EOF;
-  char *tag_name = NULL;
-  int tag_len = 0;
-  int is_tag_pointer = 0;
-  ps_node_get_tag_type(node, &tag_kind, &tag_name, &tag_len, &is_tag_pointer);
-  return is_tag_pointer;
+  return 0;
 }
 
 static node_t *scale_pointer_offset(node_t *pointer, node_t *offset) {

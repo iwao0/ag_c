@@ -117,11 +117,9 @@ static node_t *lower_local_compound_literal(
                 "compound literal local storage lowering failed");
   }
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
-  int is_pointer = type && type->kind == PSX_TYPE_POINTER;
   node_t *reference = is_array
-                          ? ps_node_new_lvar_array_addr_for(object.var, 0)
-                          : ps_node_new_lvar_expr_ref_for(
-                                object.var, is_pointer);
+                          ? ps_node_new_lvar_array_addr_for(object.var)
+                          : ps_node_new_lvar_expr_ref_for(object.var);
   if (compound->requires_addressable_object) {
     reference = is_array
                     ? ps_node_new_explicit_addr_value_for(reference)

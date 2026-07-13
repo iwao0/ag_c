@@ -213,6 +213,8 @@ int ps_type_is_pointer(const psx_type_t *type);
 int ps_type_is_unsigned(const psx_type_t *type);
 int ps_type_is_scalar(const psx_type_t *type);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
+int ps_type_tag_identity_matches(const psx_type_t *a,
+                                 const psx_type_t *b);
 const struct tag_member_info_t *ps_type_find_aggregate_member(
     const psx_type_t *type, token_kind_t tag_kind,
     const char *tag_name, int tag_len,
