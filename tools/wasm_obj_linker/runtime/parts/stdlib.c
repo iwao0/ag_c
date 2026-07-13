@@ -589,27 +589,16 @@ long __agc_runtime_getenv(long name_addr) {
 }
 
 long __agc_runtime_realpath(long path_addr, long resolved_path_addr) {
-  if (!path_addr) return 0;
-  char *path = ag_rt_ptr(path_addr);
-  char *resolved;
-  if (resolved_path_addr) {
-    resolved = ag_rt_ptr(resolved_path_addr);
-  } else {
-    long n = 0;
-    while (path[n]) n++;
-    resolved_path_addr = (long)__agc_runtime_malloc((unsigned long)(n + 1));
-    resolved = ag_rt_ptr(resolved_path_addr);
-  }
-  long i = 0;
-  do {
-    resolved[i] = path[i];
-  } while (path[i++] != 0);
-  return resolved_path_addr;
+  (void)path_addr;
+  (void)resolved_path_addr;
+  ag_rt_set_errno(AG_RT_ENOSYS);
+  return 0;
 }
 
 int __agc_runtime_system(long command_addr) {
-  (void)command_addr;
-  return 0;
+  if (!command_addr) return 0;
+  ag_rt_set_errno(AG_RT_ENOSYS);
+  return -1;
 }
 
 long __agc_runtime_signal(int sig, long handler_addr) {
@@ -631,15 +620,12 @@ int __agc_runtime_raise(int sig) {
 }
 
 long __agc_runtime_time(long tloc_addr) {
-  if (tloc_addr) {
-    long *tloc = (long *)ag_rt_ptr(tloc_addr);
-    *tloc = 0;
-  }
-  return 0;
+  if (tloc_addr) *(long *)ag_rt_ptr(tloc_addr) = -1;
+  return -1;
 }
 
 long __agc_runtime_clock(void) {
-  return 0;
+  return -1;
 }
 
 double __agc_runtime_difftime(long end, long beginning) {
@@ -652,11 +638,9 @@ struct ag_rt_timespec {
 };
 
 int __agc_runtime_timespec_get(long ts_addr, int base) {
-  struct ag_rt_timespec *ts = (struct ag_rt_timespec *)ag_rt_ptr(ts_addr);
-  if (!ts || base != 1) return 0;
-  ts->tv_sec = 0;
-  ts->tv_nsec = 0;
-  return base;
+  (void)ts_addr;
+  (void)base;
+  return 0;
 }
 
 struct ag_rt_tm {
@@ -1095,11 +1079,9 @@ unsigned long __agc_runtime_strftime(long s_addr, unsigned long maxsize, long fo
 
 int __agc_runtime_getrusage(int who, long usage_addr) {
   (void)who;
-  if (usage_addr) {
-    long *usage = (long *)ag_rt_ptr(usage_addr);
-    usage[0] = 0;
-  }
-  return 0;
+  (void)usage_addr;
+  ag_rt_set_errno(AG_RT_ENOSYS);
+  return -1;
 }
 
 static char ag_rt_getline_tmp[AG_RT_FILE_BUF_CAP];
@@ -1179,17 +1161,6 @@ long __agc_runtime_getline(long lineptr_addr, long n_addr, long stream_addr) {
   }
   dst[len] = 0;
   return len;
-}
-
-int __agc_runtime_setjmp(long env_addr) {
-  (void)env_addr;
-  return 0;
-}
-
-void __agc_runtime_longjmp(long env_addr, int val) {
-  (void)env_addr;
-  (void)val;
-  __agc_runtime_abort();
 }
 
 long __agc_runtime___error(void) {

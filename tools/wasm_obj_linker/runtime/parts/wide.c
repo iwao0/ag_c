@@ -455,53 +455,131 @@ double __agc_runtime_wcstold(long nptr_addr, long endptr_addr) {
   return value;
 }
 
-long __agc_runtime_mbrtowc(long pwc_addr, long s_addr, long n, long ps_addr) {
-  (void)ps_addr;
-  if (!s_addr) return 0;
-  if (n == 0) return -2;
-  char *s = ag_rt_ptr(s_addr);
-  int *pwc = (int *)ag_rt_ptr(pwc_addr);
-  unsigned char b0 = (unsigned char)s[0];
-  int wc = 0;
-  long need = 1;
-  if (b0 == 0) {
-    if (pwc) *pwc = 0;
+struct ag_rt_mbstate {
+  unsigned int bytes;
+  unsigned int have;
+  unsigned int need;
+  unsigned int pending;
+  unsigned int kind;
+};
+
+static struct ag_rt_mbstate ag_rt_mbrtowc_state;
+static struct ag_rt_mbstate ag_rt_wcrtomb_state;
+static struct ag_rt_mbstate ag_rt_mbrlen_state;
+static struct ag_rt_mbstate ag_rt_mblen_state;
+static struct ag_rt_mbstate ag_rt_mbtowc_state;
+static struct ag_rt_mbstate ag_rt_wctomb_state;
+static struct ag_rt_mbstate ag_rt_mbrtoc16_state;
+static struct ag_rt_mbstate ag_rt_mbrtoc32_state;
+static struct ag_rt_mbstate ag_rt_c16rtomb_state;
+static struct ag_rt_mbstate ag_rt_mbsrtowcs_state;
+static struct ag_rt_mbstate ag_rt_wcsrtombs_state;
+
+static struct ag_rt_mbstate *ag_rt_mbstate_at(long ps_addr,
+                                               struct ag_rt_mbstate *fallback) {
+  return ps_addr ? (struct ag_rt_mbstate *)ag_rt_ptr(ps_addr) : fallback;
+}
+
+static void ag_rt_mbstate_reset(struct ag_rt_mbstate *state) {
+  state->bytes = 0;
+  state->have = 0;
+  state->need = 0;
+  state->pending = 0;
+  state->kind = 0;
+}
+
+static int ag_rt_utf8_start_need(unsigned int byte) {
+  if (byte < 0x80) return 1;
+  if (byte >= 0xc2 && byte <= 0xdf) return 2;
+  if (byte >= 0xe0 && byte <= 0xef) return 3;
+  if (byte >= 0xf0 && byte <= 0xf4) return 4;
+  return 0;
+}
+
+static int ag_rt_utf8_decode_state(struct ag_rt_mbstate *state, unsigned int *out) {
+  unsigned int b0 = state->bytes & 0xff;
+  unsigned int b1 = (state->bytes >> 8) & 0xff;
+  unsigned int b2 = (state->bytes >> 16) & 0xff;
+  unsigned int b3 = (state->bytes >> 24) & 0xff;
+  unsigned int value = 0;
+  if (state->need == 1) value = b0;
+  else if (state->need == 2) value = ((b0 & 0x1f) << 6) | (b1 & 0x3f);
+  else if (state->need == 3) value = ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f);
+  else value = ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) |
+               ((b2 & 0x3f) << 6) | (b3 & 0x3f);
+  if ((state->need == 2 && value < 0x80) ||
+      (state->need == 3 && value < 0x800) ||
+      (state->need == 4 && value < 0x10000) ||
+      (value >= 0xd800 && value <= 0xdfff) || value > 0x10ffff) {
     return 0;
-  } else if (b0 < 0x80) {
-    wc = b0;
-  } else if ((b0 & 0xe0) == 0xc0) {
-    need = 2;
-    if (n < need) return -2;
-    unsigned char b1 = (unsigned char)s[1];
-    if ((b1 & 0xc0) != 0x80) return -1;
-    wc = ((b0 & 0x1f) << 6) | (b1 & 0x3f);
-  } else if ((b0 & 0xf0) == 0xe0) {
-    need = 3;
-    if (n < need) return -2;
-    unsigned char b1 = (unsigned char)s[1];
-    unsigned char b2 = (unsigned char)s[2];
-    if ((b1 & 0xc0) != 0x80 || (b2 & 0xc0) != 0x80) return -1;
-    wc = ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f);
-  } else if ((b0 & 0xf8) == 0xf0) {
-    need = 4;
-    if (n < need) return -2;
-    unsigned char b1 = (unsigned char)s[1];
-    unsigned char b2 = (unsigned char)s[2];
-    unsigned char b3 = (unsigned char)s[3];
-    if ((b1 & 0xc0) != 0x80 || (b2 & 0xc0) != 0x80 || (b3 & 0xc0) != 0x80) return -1;
-    wc = ((b0 & 0x07) << 18) | ((b1 & 0x3f) << 12) | ((b2 & 0x3f) << 6) | (b3 & 0x3f);
-  } else {
+  }
+  *out = value;
+  return 1;
+}
+
+static long ag_rt_mbrtowc_stateful(long pwc_addr, long s_addr, long n,
+                                   struct ag_rt_mbstate *state) {
+  char *s;
+  long consumed = 0;
+  unsigned int value = 0;
+  if (!s_addr) {
+    ag_rt_mbstate_reset(state);
+    return 0;
+  }
+  s = ag_rt_ptr(s_addr);
+  if (state->kind != 0) {
+    ag_rt_mbstate_reset(state);
+    ag_rt_set_errno(AG_RT_EILSEQ);
     return -1;
   }
-  if (pwc) *pwc = wc;
-  return need;
+  if (state->have == 0) {
+    int need;
+    if (n == 0) return -2;
+    need = ag_rt_utf8_start_need((unsigned char)s[0]);
+    if (!need) {
+      ag_rt_set_errno(AG_RT_EILSEQ);
+      return -1;
+    }
+    state->need = (unsigned int)need;
+  }
+  while (state->have < state->need && consumed < n) {
+    unsigned int byte = (unsigned char)s[consumed];
+    if (state->have > 0 && (byte & 0xc0) != 0x80) {
+      ag_rt_mbstate_reset(state);
+      ag_rt_set_errno(AG_RT_EILSEQ);
+      return -1;
+    }
+    state->bytes |= byte << (state->have * 8);
+    state->have++;
+    consumed++;
+  }
+  if (state->have < state->need) return -2;
+  if (!ag_rt_utf8_decode_state(state, &value)) {
+    ag_rt_mbstate_reset(state);
+    ag_rt_set_errno(AG_RT_EILSEQ);
+    return -1;
+  }
+  ag_rt_mbstate_reset(state);
+  if (pwc_addr) *(int *)ag_rt_ptr(pwc_addr) = (int)value;
+  return value == 0 ? 0 : consumed;
+}
+
+long __agc_runtime_mbrtowc(long pwc_addr, long s_addr, long n, long ps_addr) {
+  return ag_rt_mbrtowc_stateful(pwc_addr, s_addr, n,
+                                ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtowc_state));
 }
 
 long __agc_runtime_wcrtomb(long s_addr, int wc, long ps_addr) {
-  (void)ps_addr;
-  if (!s_addr) return 1;
+  struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_wcrtomb_state);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(state);
+    return 1;
+  }
   char *s = ag_rt_ptr(s_addr);
-  if (wc < 0) return -1;
+  if (wc < 0 || (wc >= 0xd800 && wc <= 0xdfff) || wc > 0x10ffff) {
+    ag_rt_set_errno(AG_RT_EILSEQ);
+    return -1;
+  }
   if (wc <= 0x7f) {
     s[0] = (char)wc;
     return 1;
@@ -528,27 +606,69 @@ long __agc_runtime_wcrtomb(long s_addr, int wc, long ps_addr) {
 }
 
 long __agc_runtime_mbrtoc16(long pc16_addr, long s_addr, long n, long ps_addr) {
-  (void)ps_addr;
-  if (!s_addr) return 0;
-  if (n == 0) return -2;
-  int wc = 0;
-  long r = __agc_runtime_mbrtowc((long)&wc, s_addr, n, 0);
-  if (r < 0) return r;
+  struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtoc16_state);
   unsigned short *pc16 = (unsigned short *)ag_rt_ptr(pc16_addr);
-  if (pc16) *pc16 = (unsigned short)wc;
+  if (!s_addr) {
+    ag_rt_mbstate_reset(state);
+    return 0;
+  }
+  if (state->kind == 1) {
+    if (pc16) *pc16 = (unsigned short)state->pending;
+    ag_rt_mbstate_reset(state);
+    return -3;
+  }
+  int wc = 0;
+  long r = ag_rt_mbrtowc_stateful((long)&wc, s_addr, n, state);
+  if (r < 0) return r;
+  if (wc > 0xffff) {
+    unsigned int scalar = (unsigned int)wc - 0x10000;
+    if (pc16) *pc16 = (unsigned short)(0xd800 + (scalar >> 10));
+    state->pending = 0xdc00 + (scalar & 0x3ff);
+    state->kind = 1;
+  } else if (pc16) {
+    *pc16 = (unsigned short)wc;
+  }
   return r;
 }
 
 long __agc_runtime_c16rtomb(long s_addr, int c16, long ps_addr) {
-  return __agc_runtime_wcrtomb(s_addr, c16, ps_addr);
+  struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_c16rtomb_state);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(state);
+    return 1;
+  }
+  if (state->kind == 2) {
+    unsigned int scalar;
+    if (c16 < 0xdc00 || c16 > 0xdfff) {
+      ag_rt_mbstate_reset(state);
+      ag_rt_set_errno(AG_RT_EILSEQ);
+      return -1;
+    }
+    scalar = 0x10000 + ((state->pending - 0xd800) << 10) +
+             ((unsigned int)c16 - 0xdc00);
+    ag_rt_mbstate_reset(state);
+    return __agc_runtime_wcrtomb(s_addr, (int)scalar, 0);
+  }
+  if (c16 >= 0xd800 && c16 <= 0xdbff) {
+    state->pending = (unsigned int)c16;
+    state->kind = 2;
+    return 0;
+  }
+  if (c16 >= 0xdc00 && c16 <= 0xdfff) {
+    ag_rt_set_errno(AG_RT_EILSEQ);
+    return -1;
+  }
+  return __agc_runtime_wcrtomb(s_addr, c16, 0);
 }
 
 long __agc_runtime_mbrtoc32(long pc32_addr, long s_addr, long n, long ps_addr) {
-  (void)ps_addr;
-  if (!s_addr) return 0;
-  if (n == 0) return -2;
+  struct ag_rt_mbstate *state = ag_rt_mbstate_at(ps_addr, &ag_rt_mbrtoc32_state);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(state);
+    return 0;
+  }
   int wc = 0;
-  long r = __agc_runtime_mbrtowc((long)&wc, s_addr, n, 0);
+  long r = ag_rt_mbrtowc_stateful((long)&wc, s_addr, n, state);
   if (r < 0) return r;
   unsigned int *pc32 = (unsigned int *)ag_rt_ptr(pc32_addr);
   if (pc32) *pc32 = (unsigned int)wc;
@@ -560,16 +680,19 @@ long __agc_runtime_c32rtomb(long s_addr, unsigned int c32, long ps_addr) {
 }
 
 long __agc_runtime_mbrlen(long s_addr, long n, long ps_addr) {
-  return __agc_runtime_mbrtowc(0, s_addr, n, ps_addr);
+  return ag_rt_mbrtowc_stateful(0, s_addr, n,
+                                ag_rt_mbstate_at(ps_addr, &ag_rt_mbrlen_state));
 }
 
 int __agc_runtime_mbsinit(long ps_addr) {
-  (void)ps_addr;
-  return 1;
+  struct ag_rt_mbstate *state;
+  if (!ps_addr) return 1;
+  state = (struct ag_rt_mbstate *)ag_rt_ptr(ps_addr);
+  return state->have == 0 && state->need == 0 && state->pending == 0 && state->kind == 0;
 }
 
 long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_addr) {
-  (void)ps_addr;
+  long state_addr = ps_addr ? ps_addr : (long)&ag_rt_mbsrtowcs_state;
   long *srcp = (long *)ag_rt_ptr(srcp_addr);
   char *src = ag_rt_ptr(*srcp);
   int *dst = dst_addr ? (int *)ag_rt_ptr(dst_addr) : (int *)0;
@@ -577,7 +700,7 @@ long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_ad
   long pos = 0;
   while ((!dst || count < len) && src[pos]) {
     int wc = 0;
-    long r = __agc_runtime_mbrtowc((long)&wc, (long)(src + pos), 4, 0);
+    long r = __agc_runtime_mbrtowc((long)&wc, (long)(src + pos), 4, state_addr);
     if (r < 0) return r;
     if (dst) dst[count] = wc;
     count++;
@@ -593,7 +716,7 @@ long __agc_runtime_mbsrtowcs(long dst_addr, long srcp_addr, long len, long ps_ad
 }
 
 long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_addr) {
-  (void)ps_addr;
+  long state_addr = ps_addr ? ps_addr : (long)&ag_rt_wcsrtombs_state;
   long *srcp = (long *)ag_rt_ptr(srcp_addr);
   int *src = (int *)ag_rt_ptr(*srcp);
   char *dst = dst_addr ? ag_rt_ptr(dst_addr) : (char *)0;
@@ -601,7 +724,7 @@ long __agc_runtime_wcsrtombs(long dst_addr, long srcp_addr, long len, long ps_ad
   long bytes = 0;
   while (src[count]) {
     char tmp[4];
-    long r = __agc_runtime_wcrtomb((long)tmp, src[count], 0);
+    long r = __agc_runtime_wcrtomb((long)tmp, src[count], state_addr);
     if (r < 0) return r;
     if (dst && bytes + r > len) {
       *srcp = (long)(src + count);
@@ -672,24 +795,33 @@ unsigned long __agc_runtime_wcsftime(long dst_addr, unsigned long maxsize, long 
 
 int __agc_runtime_mblen(long s_addr, long n) {
   long r;
-  if (!s_addr) return 0;
-  r = __agc_runtime_mbrtowc(0, s_addr, n, 0);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(&ag_rt_mblen_state);
+    return 0;
+  }
+  r = ag_rt_mbrtowc_stateful(0, s_addr, n, &ag_rt_mblen_state);
   if (r < 0) return -1;
   return (int)r;
 }
 
 int __agc_runtime_mbtowc(long pwc_addr, long s_addr, long n) {
   long r;
-  if (!s_addr) return 0;
-  r = __agc_runtime_mbrtowc(pwc_addr, s_addr, n, 0);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(&ag_rt_mbtowc_state);
+    return 0;
+  }
+  r = ag_rt_mbrtowc_stateful(pwc_addr, s_addr, n, &ag_rt_mbtowc_state);
   if (r < 0) return -1;
   return (int)r;
 }
 
 int __agc_runtime_wctomb(long s_addr, int wc) {
   long r;
-  if (!s_addr) return 0;
-  r = __agc_runtime_wcrtomb(s_addr, wc, 0);
+  if (!s_addr) {
+    ag_rt_mbstate_reset(&ag_rt_wctomb_state);
+    return 0;
+  }
+  r = __agc_runtime_wcrtomb(s_addr, wc, (long)&ag_rt_wctomb_state);
   if (r < 0) return -1;
   return (int)r;
 }
@@ -718,6 +850,11 @@ int __agc_runtime_fputwc(int wc, long stream_addr) {
   char tmp[4];
   long n = __agc_runtime_wcrtomb((long)tmp, wc, 0);
   long i = 0;
+  if (!ag_rt_stream_orientation(stream_addr)) {
+    ag_rt_set_errno(AG_RT_EBADF);
+    return -1;
+  }
+  (void)ag_rt_orient_stream(stream_addr, 1);
   if (n < 0) return -1;
   while (i < n) {
     if (__agc_runtime_fputc((unsigned char)tmp[i], stream_addr) < 0) return -1;
@@ -750,6 +887,11 @@ int __agc_runtime_fgetwc(long stream_addr) {
   int need = ag_rt_utf8_need_from_first(first);
   int i = 1;
   long r;
+  if (!ag_rt_stream_orientation(stream_addr)) {
+    ag_rt_set_errno(AG_RT_EBADF);
+    return -1;
+  }
+  (void)ag_rt_orient_stream(stream_addr, 1);
   if (first < 0 || need < 0) return -1;
   tmp[0] = (char)first;
   while (i < need) {
@@ -805,12 +947,5 @@ int __agc_runtime_fputws(long s_addr, long stream_addr) {
 }
 
 int __agc_runtime_fwide(long stream_addr, int mode) {
-  if (stream_addr && !ag_rt_is_stdout_stream(stream_addr) && !ag_rt_is_stderr_stream(stream_addr) &&
-      !ag_rt_input_stream(stream_addr)) {
-    ag_rt_set_errno(9);
-    return 0;
-  }
-  if (mode > 0) return 1;
-  if (mode < 0) return -1;
-  return 0;
+  return ag_rt_orient_stream(stream_addr, mode);
 }

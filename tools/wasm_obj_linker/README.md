@@ -143,14 +143,14 @@ Supported:
   `puts`/`fputs`/`fputc`/`putchar`/`fflush`/`perror`/`getchar`,
   minimal file I/O stubs including seek/tell/error helpers,
   POSIX-style `open`/`read`/`close`/`fstat` plus `fdopen`,
-  a tiny bump allocator plus small stdlib helpers
+  a reusable free-list allocator plus small stdlib helpers
   (`realloc`, `aligned_alloc`, `atol`, `atoll`, `strtol`, `strtoll`, `strtoull`,
   `rand`, `srand`, `labs`, `llabs`, `div`, `ldiv`, `lldiv`, `atexit`, `at_quick_exit`,
   `exit`, `quick_exit`, `_Exit`, `abort`, `qsort`, `bsearch`, `getenv`, `system`, `imaxabs`,
   `realpath`, `strtoimax`, `strtoumax`, `imaxdiv`),
   `time`/`clock`/`difftime`/`timespec_get`/`gmtime`/`localtime`/`mktime`/`asctime`/`ctime`/
   `strftime`/`wcsftime`, `getrusage`, `getline`,
-  `setjmp`/`longjmp`, `errno` storage, wide-char string and conversion helpers
+  `errno` storage, wide-char string and conversion helpers
   including `wcsspn`/`wcscspn`/`wcspbrk`/`wcstok` and
   `wcstoll`/`wcstoull`/`wcstof`/`wcstold`, restartable multibyte helpers
   (`mbrlen`, `mbsinit`), wide character I/O helpers
@@ -170,11 +170,32 @@ Supported:
   stdio globals, and `__assert_rtn`.
   The linker emits only small ABI bridges for those public symbols.
 
+### Sandbox runtime policy
+
+The default runtime does not expose the host filesystem, process environment,
+process launcher, wall clock, CPU clock, or timezone database. `getenv` therefore
+models an empty environment. Non-null `system`, `realpath`, `getrusage`, and the
+JS-callback runtime's `rename` fail with `ENOSYS`; `time` and `clock` return `-1`,
+and `timespec_get` returns `0`. `localtime` is deliberately the same UTC-only
+conversion as `gmtime` and does not inspect host timezone state.
+
+Streams are immediate, unbuffered in-memory streams. `_IONBF` is accepted by
+`setvbuf`; full and line buffering fail with `ENOSYS`. Stream orientation is
+sticky once selected. Only `FE_TONEAREST` is supported for ordinary Wasm
+floating-point operations; other `fesetround` modes fail instead of claiming to
+affect arithmetic. Software exception flags remain available through the fenv
+flag APIs.
+
+`setjmp` and `longjmp` require compiler-assisted non-local control flow and are
+rejected by the linker with an explicit unsupported-control-flow error. They are
+not mapped to ordinary runtime functions.
+
 ## Smoke Test
 
 ```sh
 make test-wasm-obj-linker
 make test-wasm-linker-selfhost
+make test-wasm-runtime-contracts
 ```
 
 The native linker smoke test covers cross-object direct calls, extern global read/write,

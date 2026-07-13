@@ -11,6 +11,11 @@ typedef struct {
 } wasm_e2e_case_t;
 
 typedef struct {
+  const char *path;
+  const char *diagnostic;
+} wasm_e2e_reject_case_t;
+
+typedef struct {
   const char *category;
   const char *name;
   const char *file_main;
@@ -39,6 +44,18 @@ static const wasm_link2_case_t link2_cases[] = {
      "test/fixtures/probes_found_bugs/extern_funcptr_xtu_main.c",
      "test/fixtures/probes_found_bugs/extern_funcptr_xtu_other.c", 42},
 };
+
+static const wasm_e2e_reject_case_t reject_cases[] = {
+    {"test/fixtures/wasm32/setjmp_stub_ops.c", "setjmp/longjmp require unsupported"},
+};
+
+static const char *expected_rejection(const char *path) {
+  size_t count = sizeof(reject_cases) / sizeof(reject_cases[0]);
+  for (size_t i = 0; i < count; i++) {
+    if (strcmp(reject_cases[i].path, path) == 0) return reject_cases[i].diagnostic;
+  }
+  return NULL;
+}
 
 static const wasm_e2e_case_t cases[] = {
     {"integer", "zero", "test/fixtures/integer/zero.c"},
@@ -795,7 +812,19 @@ static int run_case(const wasm_e2e_case_t *tc, int *executed) {
 
   char cmd[1536];
   snprintf(cmd, sizeof(cmd), "./build/ag_c_wasm %s > %s 2> %s", src_path, wat_path, log_path);
-  if (system(cmd) != 0) {
+  int compile_status = system(cmd);
+  const char *reject_diag = expected_rejection(tc->path);
+  if (reject_diag) {
+    char log[8192];
+    if (compile_status == 0 || slurp(log_path, log, sizeof(log)) != 0 ||
+        !strstr(log, reject_diag)) {
+      fprintf(stderr, "FAIL: ag_c_wasm accepted unsupported case %s\n", case_id);
+      return 1;
+    }
+    *executed = 0;
+    return 0;
+  }
+  if (compile_status != 0) {
     fprintf(stderr, "FAIL: ag_c_wasm %s (see %s)\n", case_id, log_path);
     return 1;
   }

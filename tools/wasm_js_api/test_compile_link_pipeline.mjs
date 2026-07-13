@@ -1229,12 +1229,14 @@ int main(void) {
   if (close(fd_removed) != 0) return 164;
   char iobuf[BUFSIZ];
   if (setvbuf(stdout, NULL, _IONBF, 0) != 0) return 35;
-  if (setvbuf(stderr, iobuf, _IOLBF, sizeof(iobuf)) != 0) return 36;
+  errno = 0;
+  if (setvbuf(stderr, iobuf, _IOLBF, sizeof(iobuf)) == 0 || errno != ENOSYS) return 36;
   if (setvbuf(stdout, iobuf, 99, sizeof(iobuf)) == 0) return 37;
 
   uf = fopen("tmp.txt", "w");
   if (!uf) return 38;
-  if (setvbuf(uf, iobuf, _IOFBF, sizeof(iobuf)) != 0) return 39;
+  errno = 0;
+  if (setvbuf(uf, iobuf, _IOFBF, sizeof(iobuf)) == 0 || errno != ENOSYS) return 39;
   setbuf(uf, NULL);
   if (fputc('1', uf) != '1' || fputc('2', uf) != '2' ||
       fputc(' ', uf) != ' ' || fputc('3', uf) != '3' ||
@@ -1446,7 +1448,7 @@ int main(void) {
   if (!epoch_ok) return 1;
   if (!tm || tm->tm_sec != 1 || tm->tm_min != 1 || tm->tm_hour != 1 ||
       tm->tm_mday != 2 || tm->tm_wday != 5 || tm->tm_yday != 1) return 2;
-  if (timespec_get(&ts, TIME_UTC) != TIME_UTC || ts.tv_sec != 0 || ts.tv_nsec != 0) return 10;
+  if (timespec_get(&ts, TIME_UTC) != 0 || ts.tv_sec != -1 || ts.tv_nsec != -1) return 10;
   if (timespec_get(&ts, 99) != 0) return 11;
   if (strcmp(asctime(tm), "Fri Jan  2 01:01:01 1970\\n") != 0) return 3;
   if (strcmp(ctime(&sample), "Fri Jan  2 01:01:01 1970\\n") != 0) return 4;
@@ -1603,7 +1605,7 @@ int main(void) {
   wchar_t line[8];
   wchar_t text[] = {'O', 0x3042, '\\n', 0};
   if (!fp) return 1;
-  if (fwide(fp, 1) != 1 || fwide(fp, -1) != -1 || fwide(fp, 0) != 0) return 2;
+  if (fwide(fp, 1) != 1 || fwide(fp, -1) != 1 || fwide(fp, 0) != 1) return 2;
   errno = 0;
   if (fwide((FILE *)3, 1) != 0 || errno != EBADF) return 18;
   if (fputwc('A', fp) != 'A') return 3;
@@ -1824,26 +1826,17 @@ int main(void) {
   return 42;
 }
 `;
-const linkedLongjmpFail = await toolchain.instantiateLinkedWasm(linkedLongjmpFailSource, {
-  exports: [
-    "main",
-    "__agc_runtime_termination_kind",
-    "__agc_runtime_termination_status",
-  ],
-  useStdlib: true,
-});
-let linkedLongjmpTrapped = false;
 try {
-  linkedLongjmpFail.instance.exports.main();
-} catch (_) {
-  linkedLongjmpTrapped = true;
-}
-if (!linkedLongjmpTrapped) {
-  throw new Error("linked runtime longjmp() did not trap through abort");
-}
-if (Number(linkedLongjmpFail.instance.exports.__agc_runtime_termination_kind()) !== 2 ||
-    Number(linkedLongjmpFail.instance.exports.__agc_runtime_termination_status()) !== 0) {
-  throw new Error("linked runtime longjmp() did not notify abort termination");
+  toolchain.compileLinkedWasm(linkedLongjmpFailSource, {
+    exports: ["main"],
+    useStdlib: true,
+  });
+  throw new Error("linked runtime longjmp() unexpectedly linked");
+} catch (error) {
+  if (error.message === "linked runtime longjmp() unexpectedly linked" ||
+      !error.message.includes("unsupported C control-flow function")) {
+    throw error;
+  }
 }
 
 toolchain = await freshToolchain();
@@ -3072,8 +3065,8 @@ int main(void) {
   int bad_text[] = {0x110000, 0};
   int partial_bad_text[] = {'P', 0x110000, 0};
   if (fwide((void *)0, 1) != 1) return 1;
-  if (fwide((void *)0, -1) != -1) return 2;
-  if (fwide((void *)0, 0) != 0) return 3;
+  if (fwide((void *)0, -1) != 1) return 2;
+  if (fwide((void *)0, 0) != 1) return 3;
   errno = 0;
   if (fwide((void *)3, 1) != 0 || errno != EBADF) return 21;
   if (fputwc('A', (void *)1) != 'A') return 4;

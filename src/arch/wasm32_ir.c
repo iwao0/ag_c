@@ -3751,6 +3751,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, "(func $setvbuf (param $stream i32) (param $buf i32) (param $mode i64) (param $size i64) (result i32)\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $stream)) (then (return (i32.const -1))))\n");
     wasm_emitf(4, "(if (i32.or (i64.lt_s (local.get $mode) (i64.const 0)) (i64.gt_s (local.get $mode) (i64.const 2))) (then (return (i32.const -1))))\n");
+    wasm_emitf(4, "(if (i64.ne (local.get $mode) (i64.const 2)) (then (return (i32.const -1))))\n");
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
@@ -3868,11 +3869,8 @@ static void emit_minimal_libc_stubs(void) {
   if (has_undefined_function("abort", 5)) {
     wasm_emitf(2, "(func $abort (unreachable))\n");
   }
-  if (has_undefined_function("setjmp", 6)) {
-    wasm_emitf(2, "(func $setjmp (param $env i32) (result i32) (i32.const 0))\n");
-  }
-  if (has_undefined_function("longjmp", 7)) {
-    wasm_emitf(2, "(func $longjmp (param $env i32) (param $val i64) (unreachable))\n");
+  if (has_undefined_function("setjmp", 6) || has_undefined_function("longjmp", 7)) {
+    wasm_unsupported_msg("setjmp/longjmp require unsupported non-local control-flow lowering");
   }
   int needs_format_dec_helper =
       has_undefined_function("snprintf", 8) || has_undefined_function("sprintf", 7);
@@ -4030,7 +4028,8 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("fesetround", 10)) {
     wasm_emitf(2, "(func $fesetround (param $round i64) (result i32)\n");
-    wasm_emitf(4, "(global.set $__ag_fe_round_mode (i32.wrap_i64 (local.get $round)))\n");
+    wasm_emitf(4, "(if (i64.ne (local.get $round) (i64.const 0)) (then (return (i32.const 1))))\n");
+    wasm_emitf(4, "(global.set $__ag_fe_round_mode (i32.const 0))\n");
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
@@ -5051,39 +5050,29 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("system", 6)) {
+    int errno_addr = intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
     wasm_emitf(2, "(func $system (param $command i32) (result i32)\n");
-    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(4, "(if (i32.eqz (local.get $command)) (then (return (i32.const 0))))\n");
+    wasm_emitf(4, "(i32.store (i32.const %d) (i32.const 78))\n", errno_addr);
+    wasm_emitf(4, "(i32.const -1)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("realpath", 8)) {
+    int errno_addr = intern_data_symbol("__ag_stub_errno", 15, 4, 4)->addr;
     wasm_emitf(2, "(func $realpath (param $path i32) (param $resolved i32) (result i32)\n");
-    wasm_emitf(4, "(local $p i32)\n");
-    wasm_emitf(4, "(local $q i32)\n");
-    wasm_emitf(4, "(local $ch i32)\n");
-    wasm_emitf(4, "(if (i32.eqz (local.get $path)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(if (i32.eqz (local.get $resolved)) (then (return (local.get $path))))\n");
-    wasm_emitf(4, "(local.set $p (local.get $path))\n");
-    wasm_emitf(4, "(local.set $q (local.get $resolved))\n");
-    wasm_emitf(4, "(loop $copy_loop\n");
-    wasm_emitf(6, "(local.set $ch (i32.load8_u (local.get $p)))\n");
-    wasm_emitf(6, "(i32.store8 (local.get $q) (local.get $ch))\n");
-    wasm_emitf(6, "(if (i32.eqz (local.get $ch)) (then (return (local.get $resolved))))\n");
-    wasm_emitf(6, "(local.set $p (i32.add (local.get $p) (i32.const 1)))\n");
-    wasm_emitf(6, "(local.set $q (i32.add (local.get $q) (i32.const 1)))\n");
-    wasm_emitf(6, "(br $copy_loop)\n");
-    wasm_emitf(4, ")\n");
-    wasm_emitf(4, "(local.get $resolved)\n");
+    wasm_emitf(4, "(i32.store (i32.const %d) (i32.const 78))\n", errno_addr);
+    wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("time", 4)) {
     wasm_emitf(2, "(func $time (param $tloc i32) (result i64)\n");
-    wasm_emitf(4, "(if (local.get $tloc) (then (i64.store (local.get $tloc) (i64.const 0))))\n");
-    wasm_emitf(4, "(i64.const 0)\n");
+    wasm_emitf(4, "(if (local.get $tloc) (then (i64.store (local.get $tloc) (i64.const -1))))\n");
+    wasm_emitf(4, "(i64.const -1)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("clock", 5)) {
     wasm_emitf(2, "(func $clock (result i64)\n");
-    wasm_emitf(4, "(i64.const 0)\n");
+    wasm_emitf(4, "(i64.const -1)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("difftime", 8)) {
@@ -5104,11 +5093,7 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (has_undefined_function("timespec_get", 12)) {
     wasm_emitf(2, "(func $timespec_get (param $ts i32) (param $base i64) (result i32)\n");
-    wasm_emitf(4, "(if (i64.ne (local.get $base) (i64.const 1)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(if (i32.eqz (local.get $ts)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(i64.store (local.get $ts) (i64.const 0))\n");
-    wasm_emitf(4, "(i64.store (i32.add (local.get $ts) (i32.const 8)) (i64.const 0))\n");
-    wasm_emitf(4, "(i32.const 1)\n");
+    wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
   int needs_signal_handlers =
@@ -6094,11 +6079,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("fwide", 5)) {
+    wasm_emitf(2, "(global $__ag_fwide_orientation (mut i32) (i32.const 0))\n");
     wasm_emitf(2, "(func $fwide (param $stream i32) (param $mode i64) (result i32)\n");
     wasm_emitf(4, "(if (i32.eqz (local.get $stream)) (then (return (i32.const 0))))\n");
-    wasm_emitf(4, "(if (i64.gt_s (local.get $mode) (i64.const 0)) (then (return (i32.const 1))))\n");
-    wasm_emitf(4, "(if (i64.lt_s (local.get $mode) (i64.const 0)) (then (return (i32.const -1))))\n");
-    wasm_emitf(4, "(i32.const 0)\n");
+    wasm_emitf(4, "(if (i32.eqz (global.get $__ag_fwide_orientation)) (then\n");
+    wasm_emitf(6, "(if (i64.gt_s (local.get $mode) (i64.const 0)) (then (global.set $__ag_fwide_orientation (i32.const 1))))\n");
+    wasm_emitf(6, "(if (i64.lt_s (local.get $mode) (i64.const 0)) (then (global.set $__ag_fwide_orientation (i32.const -1))))\n");
+    wasm_emitf(4, "))\n");
+    wasm_emitf(4, "(global.get $__ag_fwide_orientation)\n");
     wasm_emitf(2, ")\n");
   }
   if (has_undefined_function("mbrtoc16", 8)) {

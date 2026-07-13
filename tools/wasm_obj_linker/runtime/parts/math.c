@@ -533,11 +533,40 @@ long double __agc_runtime_fdiml(long double x, long double y) {
 }
 
 double __agc_runtime_fma(double x, double y, double z) {
-  return x * y + z;
+  const double splitter = 134217729.0;
+  double product = x * y;
+  double split_x;
+  double split_y;
+  double x_hi;
+  double x_lo;
+  double y_hi;
+  double y_lo;
+  double product_error;
+  double sum;
+  double sum_virtual;
+  double sum_error;
+  if (!__agc_runtime_isfinite(x) || !__agc_runtime_isfinite(y) ||
+      !__agc_runtime_isfinite(z) || !__agc_runtime_isfinite(product)) {
+    return product + z;
+  }
+  split_x = splitter * x;
+  split_y = splitter * y;
+  if (!__agc_runtime_isfinite(split_x) || !__agc_runtime_isfinite(split_y)) {
+    return product + z;
+  }
+  x_hi = split_x - (split_x - x);
+  x_lo = x - x_hi;
+  y_hi = split_y - (split_y - y);
+  y_lo = y - y_hi;
+  product_error = ((x_hi * y_hi - product) + x_hi * y_lo + x_lo * y_hi) + x_lo * y_lo;
+  sum = product + z;
+  sum_virtual = sum - product;
+  sum_error = (product - (sum - sum_virtual)) + (z - sum_virtual);
+  return sum + (product_error + sum_error);
 }
 
 float __agc_runtime_fmaf(float x, float y, float z) {
-  return (float)__agc_runtime_fma((double)x, (double)y, (double)z);
+  return (float)((double)x * (double)y + (double)z);
 }
 
 long double __agc_runtime_fmal(long double x, long double y, long double z) {

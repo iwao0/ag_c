@@ -824,6 +824,12 @@ static int is_runtime_func_symbol(str_t name) {
   return find_runtime_func_symbol(name) != NULL;
 }
 
+static int is_unsupported_control_flow_symbol(str_t name) {
+  return str_eq_lit(name, "setjmp") || str_eq_lit(name, "longjmp") ||
+         str_eq_lit(name, "__agc_runtime_setjmp") ||
+         str_eq_lit(name, "__agc_runtime_longjmp");
+}
+
 static int runtime_has_data(object_t *runtime, str_t name) {
   for (int i = 0; i < runtime->symbol_count; i++) {
     symbol_t *sym = &runtime->symbols[i];
@@ -2641,6 +2647,10 @@ static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *r
           is_runtime_data_symbol(sym->name) &&
           !find_defined_data(objs, obj_count, sym->name, NULL, NULL, NULL)) {
         add_runtime_data_symbol(runtime, sym->name);
+      } else if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) &&
+                 is_unsupported_control_flow_symbol(sym->name) &&
+                 !find_defined_func(objs, obj_count, sym->name, NULL, NULL)) {
+        dief("unsupported C control-flow function: %s requires compiler support", sym->name.s);
       } else if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) &&
                  is_runtime_func_symbol(sym->name) &&
                  !find_defined_func(objs, obj_count, sym->name, NULL, NULL)) {

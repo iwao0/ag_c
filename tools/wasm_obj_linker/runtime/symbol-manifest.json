@@ -1111,11 +1111,6 @@
         "target": "__agc_runtime_logl"
       },
       {
-        "name": "longjmp",
-        "kind": "bridge",
-        "target": "__agc_runtime_longjmp"
-      },
-      {
         "name": "lrint",
         "kind": "bridge",
         "target": "__agc_runtime_lrint"
@@ -1479,11 +1474,6 @@
         "name": "setbuf",
         "kind": "bridge",
         "target": "__agc_runtime_setbuf"
-      },
-      {
-        "name": "setjmp",
-        "kind": "bridge",
-        "target": "__agc_runtime_setjmp"
       },
       {
         "name": "setlocale",

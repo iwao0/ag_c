@@ -13,7 +13,7 @@ int main(void) {
     if (putc('B', stream) != 'B') return 6;
     if (fputc('Z', 0) != EOF) return 7;
     if (putc('Z', 0) != EOF) return 8;
-    if (setvbuf(stream, buf, _IOFBF, sizeof(buf)) != 0) return 9;
+    if (setvbuf(stream, buf, _IOFBF, sizeof(buf)) != EOF) return 9;
     if (setvbuf(stream, 0, _IONBF, 0) != 0) return 10;
     if (setvbuf(stream, buf, 99, sizeof(buf)) != EOF) return 11;
     if (setvbuf(0, buf, _IOFBF, sizeof(buf)) != EOF) return 12;

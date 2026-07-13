@@ -12,8 +12,8 @@ int main(void) {
     if (putwc(L'Z', 0) != WEOF) return 6;
     if (fputws(L"wide", 0) != WEOF) return 7;
     if (fwide(stream, 1) != 1) return 8;
-    if (fwide(stream, -1) != -1) return 9;
-    if (fwide(stream, 0) != 0) return 10;
+    if (fwide(stream, -1) != 1) return 9;
+    if (fwide(stream, 0) != 1) return 10;
     if (fwide(0, 1) != 0) return 11;
     return 0;
 }

@@ -18,6 +18,7 @@ int *__error(void);
 #define EFBIG  27
 #define ENOMEM 12
 #define ELOOP  62
+#define ENOSYS 78
 #define EILSEQ 92
 
 #endif

@@ -342,6 +342,35 @@ void *__agc_runtime_realloc(void *pointer, unsigned long size_value) {
   return (void *)p;
 }
 
+static void ag_rt_sort_swap(long a, long b, long size, long tmp_addr) {
+  if (a == b) return;
+  __agc_runtime_memcpy(tmp_addr, a, size);
+  __agc_runtime_memcpy(a, b, size);
+  __agc_runtime_memcpy(b, tmp_addr, size);
+}
+
+static void ag_rt_sort_sift_down(long base_addr, long start, long count, long size,
+                                 int (*cmp)(const void *, const void *), long tmp_addr) {
+  long root = start;
+  if (count < 2) return;
+  while (root <= (count - 2) / 2) {
+    long child = root * 2 + 1;
+    long candidate = root;
+    if (cmp((char *)(base_addr + candidate * size),
+            (char *)(base_addr + child * size)) < 0) {
+      candidate = child;
+    }
+    if (child + 1 < count &&
+        cmp((char *)(base_addr + candidate * size),
+            (char *)(base_addr + (child + 1) * size)) < 0) {
+      candidate = child + 1;
+    }
+    if (candidate == root) return;
+    ag_rt_sort_swap(base_addr + root * size, base_addr + candidate * size, size, tmp_addr);
+    root = candidate;
+  }
+}
+
 void __agc_runtime_qsort(
     void *base_pointer, unsigned long nmemb_value, unsigned long size_value,
     int (*compar)(const void *, const void *)) {
@@ -354,20 +383,16 @@ void __agc_runtime_qsort(
   int (*cmp)(const void *, const void *) = compar;
   long tmp_addr = (long)__agc_runtime_malloc((unsigned long)size);
   if (!tmp_addr) return;
-  long i = 0;
-  while (i < nmemb) {
-    long j = i + 1;
-    while (j < nmemb) {
-      long a = base_addr + i * size;
-      long b = base_addr + j * size;
-      if (cmp((char *)a, (char *)b) > 0) {
-        __agc_runtime_memcpy(tmp_addr, a, size);
-        __agc_runtime_memcpy(a, b, size);
-        __agc_runtime_memcpy(b, tmp_addr, size);
-      }
-      j++;
-    }
-    i++;
+  long start = nmemb / 2;
+  while (start > 0) {
+    start--;
+    ag_rt_sort_sift_down(base_addr, start, nmemb, size, cmp, tmp_addr);
+  }
+  long end = nmemb - 1;
+  while (end > 0) {
+    ag_rt_sort_swap(base_addr, base_addr + end * size, size, tmp_addr);
+    ag_rt_sort_sift_down(base_addr, 0, end, size, cmp, tmp_addr);
+    end--;
   }
   __agc_runtime_free((void *)tmp_addr);
 }
@@ -384,12 +409,15 @@ void *__agc_runtime_bsearch(
   if (!key_addr || !base_addr || nmemb <= 0 || size <= 0 || !compar_addr) return 0;
   if (!ag_rt_array_span_ok(base_addr, nmemb, size)) return 0;
   int (*cmp)(const void *, const void *) = compar;
-  long i = 0;
-  while (i < nmemb) {
-    long elem = base_addr + i * size;
+  long low = 0;
+  long high = nmemb;
+  while (low < high) {
+    long mid = low + (high - low) / 2;
+    long elem = base_addr + mid * size;
     int r = cmp((char *)key_addr, (char *)elem);
     if (r == 0) return (void *)elem;
-    i++;
+    if (r < 0) high = mid;
+    else low = mid + 1;
   }
   return 0;
 }

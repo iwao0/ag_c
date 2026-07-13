@@ -59,6 +59,7 @@ static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
 int __agc_runtime_fputs(long s_addr, long stream_addr) {
   char *s = ag_rt_ptr(s_addr);
   long n = __agc_runtime_strlen(s_addr);
+  (void)ag_rt_orient_stream(stream_addr, -1);
   if (ag_rt_is_stderr_stream(stream_addr)) {
     ag_rt_stderr_write_str(s);
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
@@ -71,6 +72,7 @@ int __agc_runtime_fputs(long s_addr, long stream_addr) {
 
 int __agc_runtime_fputc(int c, long stream_addr) {
   char ch = (char)c;
+  (void)ag_rt_orient_stream(stream_addr, -1);
   if (ag_rt_is_stderr_stream(stream_addr)) {
     ag_rt_stderr_write_char(c);
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
@@ -110,7 +112,11 @@ int __agc_runtime_setvbuf(long stream_addr, long buf_addr, int mode, unsigned lo
     ag_rt_set_errno(22);
     return -1;
   }
-  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) return 0;
+  if (ag_rt_is_stdout_stream(stream_addr) || ag_rt_is_stderr_stream(stream_addr)) {
+    if (mode == 2) return 0;
+    ag_rt_set_errno(AG_RT_ENOSYS);
+    return -1;
+  }
   f = ag_rt_input_stream(stream_addr);
   if (!f) {
     ag_rt_set_errno(9);
@@ -119,6 +125,10 @@ int __agc_runtime_setvbuf(long stream_addr, long buf_addr, int mode, unsigned lo
   if (!ag_rt_stream_has_store(f)) {
     f->error = 1;
     ag_rt_set_errno(9);
+    return -1;
+  }
+  if (mode != 2) {
+    ag_rt_set_errno(AG_RT_ENOSYS);
     return -1;
   }
   return 0;
@@ -854,7 +864,8 @@ int __agc_runtime_rename(long oldpath_addr, long newpath_addr) {
     ag_rt_set_errno(22);
     return -1;
   }
-  return 0;
+  ag_rt_set_errno(AG_RT_ENOSYS);
+  return -1;
 }
 #else
 int __agc_runtime_rename(long oldpath_addr, long newpath_addr) {
@@ -940,6 +951,7 @@ long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr
   char *src = ag_rt_ptr(ptr_addr);
   long total = 0;
   struct ag_rt_file *f;
+  (void)ag_rt_orient_stream(stream_addr, -1);
   if (!ag_rt_io_total_size(size, nmemb, &total)) {
     ag_rt_set_errno(22);
     return 0;
@@ -962,6 +974,7 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
   long total = 0;
   long i = 0;
   int ch;
+  (void)ag_rt_orient_stream(stream_addr, -1);
   if (!ag_rt_io_total_size(size, nmemb, &total)) {
     ag_rt_set_errno(22);
     return 0;
@@ -985,6 +998,7 @@ long __agc_runtime_fread(long ptr_addr, long size, long nmemb, long stream_addr)
 
 int __agc_runtime_fgetc(long stream_addr) {
   struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
+  (void)ag_rt_orient_stream(stream_addr, -1);
   return ag_rt_file_read_char(f);
 }
 

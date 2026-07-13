@@ -30,7 +30,23 @@ static long ag_rt_heap = 8 * 1024 * 1024;
 static long ag_rt_memory_limit_bytes = 64L * 1024L * 1024L;
 static char ag_rt_locale_c[] = "C";
 static char ag_rt_decimal_point[] = ".";
-static char ag_rt_strerror[] = "error";
+enum {
+  AG_RT_EPERM = 1,
+  AG_RT_ENOENT = 2,
+  AG_RT_EIO = 5,
+  AG_RT_EBADF = 9,
+  AG_RT_ENOMEM = 12,
+  AG_RT_EACCES = 13,
+  AG_RT_EEXIST = 17,
+  AG_RT_EINVAL = 22,
+  AG_RT_EFBIG = 27,
+  AG_RT_EDOM = 33,
+  AG_RT_ERANGE = 34,
+  AG_RT_ENAMETOOLONG = 36,
+  AG_RT_ELOOP = 62,
+  AG_RT_ENOSYS = 78,
+  AG_RT_EILSEQ = 92,
+};
 #define AG_RT_FILE_BUF_CAP (64 * 1024)
 #ifdef AGC_RUNTIME_JS_CALLBACKS
 #define AG_RT_FILE_STORE_COUNT 1
@@ -41,7 +57,26 @@ static char ag_rt_strerror[] = "error";
 #define AG_RT_FILE_SMALL_BUF_CAP 256
 
 static char *ag_rt_strerror_message(int errnum) {
-  return errnum == 0 ? "no error" : ag_rt_strerror;
+  switch (errnum) {
+    case 0: return "no error";
+    case AG_RT_EPERM: return "operation not permitted";
+    case AG_RT_ENOENT: return "no such file or directory";
+    case AG_RT_EIO: return "input/output error";
+    case AG_RT_EBADF: return "bad file descriptor";
+    case AG_RT_ENOMEM: return "cannot allocate memory";
+    case AG_RT_EACCES: return "permission denied";
+    case AG_RT_EEXIST: return "file exists";
+    case AG_RT_EINVAL: return "invalid argument";
+    case AG_RT_EFBIG: return "file too large";
+    case AG_RT_EDOM: return "numerical argument out of domain";
+    case AG_RT_ERANGE: return "result too large";
+    case AG_RT_ENAMETOOLONG: return "file name too long";
+    case AG_RT_ELOOP: return "too many symbolic links";
+    case AG_RT_ENOSYS: return "function not implemented";
+    case AG_RT_EILSEQ: return "illegal byte sequence";
+    default: return "unknown error";
+  }
+  return "unknown error";
 }
 
 static char ag_rt_file_buf[AG_RT_FILE_BUF_CAP];
@@ -61,6 +96,8 @@ static unsigned long ag_rt_rand_state = 1;
 static int ag_rt_round_mode = 0;
 static int ag_rt_except_flags = 0;
 static int ag_rt_errno_value = 0;
+static int ag_rt_stdout_orientation = 0;
+static int ag_rt_stderr_orientation = 0;
 static long ag_rt_signal_handlers[32];
 static long ag_rt_atexit_handlers[32];
 static int ag_rt_atexit_count = 0;
@@ -88,6 +125,7 @@ struct ag_rt_file {
   int has_ungetc;
   int ungetc_ch;
   int store_index;
+  int orientation;
 };
 
 struct ag_rt_fd {
@@ -115,7 +153,7 @@ struct ag_rt_lconv {
 
 static struct ag_rt_lconv ag_rt_lconv_value = {ag_rt_decimal_point};
 static struct ag_rt_fd ag_rt_fds[8];
-static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1};
+static struct ag_rt_file ag_rt_file_value = {0, 0, 0, 0, 0, 0, -1, 1, 1, 0, 0, -1, 0};
 static struct ag_rt_file ag_rt_files[8];
 static struct ag_rt_file_store ag_rt_file_stores[AG_RT_FILE_STORE_COUNT];
 
@@ -154,6 +192,7 @@ static void ag_rt_file_init(struct ag_rt_file *f, int write_mode, int append_mod
   f->fd_index = fd_index;
   f->is_stdin = is_stdin;
   f->store_index = store_index;
+  f->orientation = 0;
   ag_rt_file_set_pos(f, pos);
 }
 
@@ -198,6 +237,7 @@ static void ag_rt_reset_files(void) {
     ag_rt_files[i].has_ungetc = 0;
     ag_rt_files[i].ungetc_ch = 0;
     ag_rt_files[i].store_index = -1;
+    ag_rt_files[i].orientation = 0;
   }
   ag_rt_file_init(&ag_rt_file_value, 0, 0, 0, -1, 0, 1, -1);
 }
@@ -545,6 +585,24 @@ static struct ag_rt_file *ag_rt_input_stream(long stream_addr) {
     if (stream_addr == (long)&ag_rt_files[i] && ag_rt_files[i].used) return &ag_rt_files[i];
   }
   return 0;
+}
+
+static int *ag_rt_stream_orientation(long stream_addr) {
+  struct ag_rt_file *f;
+  if (ag_rt_is_stdout_stream(stream_addr)) return &ag_rt_stdout_orientation;
+  if (ag_rt_is_stderr_stream(stream_addr)) return &ag_rt_stderr_orientation;
+  f = ag_rt_input_stream(stream_addr);
+  return f ? &f->orientation : 0;
+}
+
+static int ag_rt_orient_stream(long stream_addr, int requested) {
+  int *orientation = ag_rt_stream_orientation(stream_addr);
+  if (!orientation) {
+    ag_rt_set_errno(AG_RT_EBADF);
+    return 0;
+  }
+  if (*orientation == 0 && requested != 0) *orientation = requested > 0 ? 1 : -1;
+  return *orientation;
 }
 
 static void ag_rt_stdout_reset_impl(void) {

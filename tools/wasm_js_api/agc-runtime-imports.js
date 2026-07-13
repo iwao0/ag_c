@@ -260,8 +260,11 @@ const utf8Encoder = new TextEncoder();
 const AGC_JS_ERRNO_ADDR = 16;
 const AGC_ENOENT = 2;
 const AGC_EBADF = 9;
+const AGC_ENOMEM = 12;
+const AGC_EEXIST = 17;
 const AGC_ENAMETOOLONG = 36;
 const AGC_EINVAL = 22;
+const AGC_ENOSYS = 78;
 const AGC_FILE_NAME_CAP = 64;
 
 function defaultGetMemory() {
@@ -875,9 +878,22 @@ function makeStdio(options = {}) {
   const stdinPushback = [];
   let stdinEof = false;
   let stdinError = 0;
+  const streamOrientations = [0, 0, 0];
   const setErrno = (value) => writeMemoryI32(getMemory(), AGC_JS_ERRNO_ADDR, value);
   const getErrno = () => readMemoryI32(getMemory(), AGC_JS_ERRNO_ADDR);
-  const strerrorMessage = (value) => Number(value) === 0 ? "no error" : "error";
+  const strerrorMessage = (value) => {
+    switch (Number(value)) {
+      case 0: return "no error";
+      case AGC_ENOENT: return "no such file or directory";
+      case AGC_EBADF: return "bad file descriptor";
+      case AGC_ENOMEM: return "cannot allocate memory";
+      case AGC_EEXIST: return "file exists";
+      case AGC_EINVAL: return "invalid argument";
+      case AGC_ENAMETOOLONG: return "file name too long";
+      case AGC_ENOSYS: return "function not implemented";
+      default: return "unknown error";
+    }
+  };
 
   function emitStdout(text) {
     const bytes = outputBytes(text);
@@ -909,6 +925,18 @@ function makeStdio(options = {}) {
     if (isKnownStream(stream)) return false;
     setErrno(AGC_EBADF);
     return true;
+  }
+
+  function orientStream(stream, requested) {
+    const index = stream === undefined ? 0 : Number(stream);
+    if (!Number.isInteger(index) || index < 0 || index > 2) {
+      setErrno(AGC_EBADF);
+      return 0;
+    }
+    if (streamOrientations[index] === 0 && requested !== 0) {
+      streamOrientations[index] = requested > 0 ? 1 : -1;
+    }
+    return streamOrientations[index];
   }
 
   function isInputStream(stream) {
@@ -950,12 +978,14 @@ function makeStdio(options = {}) {
   }
 
   function printf(fmt, ...args) {
+    orientStream(1, -1);
     return emitStdout(formatPrintf(getMemory(), fmt, args));
   }
 
   function fprintf(stream, fmt, ...args) {
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
+    orientStream(stream, -1);
     const text = formatPrintf(getMemory(), fmt, args);
     return kind === "stderr" ? emitStderr(text) : emitStdout(text);
   }
@@ -969,17 +999,20 @@ function makeStdio(options = {}) {
   }
 
   function puts(s) {
+    orientStream(1, -1);
     return emitStdout(bytesWithSuffixOutput(readCStringBytes(getMemory(), s), new Uint8Array([10])));
   }
 
   function fputs(s, stream) {
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
+    orientStream(stream, -1);
     const text = bytesToOutput(readCStringBytes(getMemory(), s));
     return kind === "stderr" ? emitStderr(text) : emitStdout(text);
   }
 
   function putchar(c) {
+    orientStream(1, -1);
     emitStdout(rawByteOutput(c));
     return Number(c) | 0;
   }
@@ -987,6 +1020,7 @@ function makeStdio(options = {}) {
   function fputc(c, stream) {
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
+    orientStream(stream, -1);
     const text = rawByteOutput(c);
     if (kind === "stderr") {
       emitStderr(text);
@@ -1059,6 +1093,7 @@ function makeStdio(options = {}) {
     nmemb = Number(nmemb);
     const kind = outputStreamKind(stream);
     if (!kind) return 0n;
+    orientStream(stream, -1);
     const text = bytesToOutput(readMemoryBytes(getMemory(), ptr, total));
     if (kind === "stderr") {
       emitStderr(text);
@@ -1094,6 +1129,7 @@ function makeStdio(options = {}) {
 
   function fread(ptr, size, nmemb, stream) {
     if (rejectInputStream(stream)) return 0n;
+    orientStream(stream, -1);
     const requested = ioTotalSize(size, nmemb);
     if (requested === null) return 0n;
     if (requested === 0) return 0n;
@@ -1112,12 +1148,14 @@ function makeStdio(options = {}) {
 
   function fgetc(stream) {
     if (rejectInputStream(stream)) return -1;
+    orientStream(stream, -1);
     return readStdinByte();
   }
 
   function fgets(s, size, stream) {
     size = Number(size);
     if (rejectInputStream(stream)) return 0;
+    orientStream(stream, -1);
     if (size <= 0) {
       setErrno(AGC_EINVAL);
       return 0;
@@ -1169,6 +1207,7 @@ function makeStdio(options = {}) {
 
   function fgetwc(stream) {
     if (rejectInputStream(stream)) return -1;
+    orientStream(stream, 1);
     return readUtf8CodePoint(stream);
   }
 
@@ -1199,6 +1238,7 @@ function makeStdio(options = {}) {
     }
     const kind = outputStreamKind(stream);
     if (!kind) return -1;
+    orientStream(stream, 1);
     if (kind === "stderr") {
       emitStderr(text);
     } else {
@@ -1236,9 +1276,7 @@ function makeStdio(options = {}) {
   function fwide(stream, mode) {
     if (rejectKnownStream(stream)) return 0;
     mode = Number(mode) | 0;
-    if (mode > 0) return 1;
-    if (mode < 0) return -1;
-    return 0;
+    return orientStream(stream, mode);
   }
 
   function feof(stream) {

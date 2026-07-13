@@ -58,9 +58,9 @@ int main(void) {
     if (err5[0] != 'e' || strcmp(err0, err5) == 0) return 2;
     if (pfputs("xy", stream) != 2 || pfputs("xy", 0) != EOF) return 3;
     if (pfputc('Z', stream) != 'Z' || pfputc('Z', 0) != EOF) return 4;
-    if (ptime(&t) != 0 || t != 0) return 5;
+    if (ptime(&t) != (time_t)-1 || t != (time_t)-1) return 5;
     if ((int)pdifftime(100, 58) != 42) return 6;
-    if (pfesetround(FE_UPWARD) != 0 || pfegetround() != FE_UPWARD) return 7;
+    if (pfesetround(FE_UPWARD) == 0 || pfegetround() != FE_TONEAREST) return 7;
     loc = psetlocale(LC_ALL, "C");
     if (loc[0] != 'C') return 8;
     lc = plocaleconv();

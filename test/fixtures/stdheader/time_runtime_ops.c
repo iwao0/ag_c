@@ -4,20 +4,16 @@
 #include <time.h>
 
 int main(void) {
-    time_t stored = -1;
+    time_t stored = 7;
     time_t now = time(&stored);
-    assert(stored == now);
-    assert(clock() >= 0);
+    assert(now == (time_t)-1);
+    assert(stored == (time_t)-1);
+    assert(clock() == (clock_t)-1);
     assert(difftime((time_t)10, (time_t)3) == 7.0);
-    struct timespec ts = {0, 0};
-    assert(timespec_get(&ts, TIME_UTC) == TIME_UTC);
-#ifdef __wasm32__
-    assert(ts.tv_sec == 0);
-    assert(ts.tv_nsec == 0);
-#else
-    assert(ts.tv_nsec >= 0);
-    assert(ts.tv_nsec < 1000000000L);
-#endif
+    struct timespec ts = {7, 9};
+    assert(timespec_get(&ts, TIME_UTC) == 0);
+    assert(ts.tv_sec == 7);
+    assert(ts.tv_nsec == 9);
     assert(timespec_get(&ts, 0) == 0);
     return 0;
 }
