@@ -175,6 +175,7 @@ const char *diag_message_ja(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID: return "配列指定初期化子の添字が不正です";
     case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "初期化子要素数が多すぎます（上限 %d）";
     case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "void 型のオブジェクトは宣言できません: '%.*s'";
+    case DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN: return "型指定子のない宣言はC11では使用できません";
     case DIAG_ERR_CODEGEN_GENERIC: return "コード生成エラーです";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "コード生成出力に失敗しました";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "代入の左辺値が不正です";

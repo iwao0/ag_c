@@ -43,7 +43,7 @@ if (!largeWat.includes("(return (i32.const 7))")) {
 try {
   stderrChunks.length = 0;
   terminations.length = 0;
-  compiler.compileWat("int main( {\n");
+  compiler.compileWat("int main(void {\n");
   throw new Error("invalid source unexpectedly compiled");
 } catch (err) {
   const message = String(err && err.message ? err.message : err);
@@ -79,6 +79,63 @@ try {
       diagnostic.sourceName !== "player.c" || !diagnostic.message.includes("const")) {
     throw new Error(`semantic error was not structured: ${JSON.stringify(err.diagnostics)}`);
   }
+}
+
+function expectCompileErrorDiagnostics(name, source) {
+  try {
+    compiler.compileObject({ name, source });
+  } catch (err) {
+    if (Array.isArray(err.diagnostics)) return err.diagnostics;
+    throw err;
+  }
+  throw new Error(`${name} unexpectedly compiled`);
+}
+
+const implicitIntDiagnostics = expectCompileErrorDiagnostics(
+  "implicit-int.c",
+  "aaa;\nbb;\n",
+);
+if (implicitIntDiagnostics.length !== 2 ||
+    implicitIntDiagnostics.some((diagnostic) =>
+      diagnostic.code !== "E3088" || diagnostic.sourceName !== "implicit-int.c") ||
+    implicitIntDiagnostics[0].start.line !== 1 || implicitIntDiagnostics[0].start.column !== 1 ||
+    implicitIntDiagnostics[1].start.line !== 2 || implicitIntDiagnostics[1].start.column !== 1) {
+  throw new Error(`implicit int diagnostics did not recover: ${JSON.stringify(implicitIntDiagnostics)}`);
+}
+
+const typedefResult = compiler.compileObjectWithDiagnostics({
+  name: "typedef-name.c",
+  source: "typedef int value_type;\nvalue_type value;\n",
+});
+if (!(typedefResult.object instanceof Uint8Array) || typedefResult.diagnostics.length !== 0) {
+  throw new Error(`typedef name declaration regressed: ${JSON.stringify(typedefResult.diagnostics)}`);
+}
+
+for (const [name, source, expectedLine, expectedColumn] of [
+  ["implicit-return.c", "implicit_return(void) { return 0; }\n", 1, 1],
+  ["old-style-parameter.c", "int old_style(value) { return value; }\n", 1, 15],
+  ["block-implicit-int.c", "int block_scope(void) { static local; return 0; }\n", 1, 32],
+]) {
+  const diagnostics = expectCompileErrorDiagnostics(name, source);
+  if (diagnostics.length !== 1 || diagnostics[0].code !== "E3088" ||
+      diagnostics[0].start.line !== expectedLine ||
+      diagnostics[0].start.column !== expectedColumn) {
+    throw new Error(`${name} C11 mode behavior regressed: ${JSON.stringify(diagnostics)}`);
+  }
+}
+
+const recoveredFunctionDiagnostics = expectCompileErrorDiagnostics(
+  "multiple-functions.c",
+  "int first(void) {\n  int a = ;\n  return a;\n}\n\n" +
+    "int second(void) {\n  int b = ;\n  return b;\n}\n",
+);
+if (recoveredFunctionDiagnostics.length !== 2 ||
+    recoveredFunctionDiagnostics.some((diagnostic) => diagnostic.code !== "E3045") ||
+    recoveredFunctionDiagnostics[0].start.line !== 2 ||
+    recoveredFunctionDiagnostics[1].start.line !== 7) {
+  throw new Error(
+    `independent function diagnostics did not recover: ${JSON.stringify(recoveredFunctionDiagnostics)}`,
+  );
 }
 
 const opaqueSourceName = `https://example.invalid/../${"long-name-".repeat(32)}warning.c`;
@@ -208,7 +265,7 @@ function expectVirtualDiagnostic(source, options, code, sourceName) {
 const headerDiagnostic = expectVirtualDiagnostic(
   "#include \"player.h\"\nint f(void) { return 0; }\n",
   { headers: { "player.h": "int ok;\nint broken = ;\n" } },
-  "E3064",
+  "E3045",
   "player.h",
 );
 if (headerDiagnostic.start.line !== 2 || headerDiagnostic.start.column !== 14) {

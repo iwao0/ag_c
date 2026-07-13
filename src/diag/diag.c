@@ -35,6 +35,7 @@ typedef struct {
 static agc_diag_record_t g_diag_initial_records[AGC_DIAG_DEFAULT_RECORD_LIMIT];
 static agc_diag_record_t *g_diag_records = g_diag_initial_records;
 static int g_diag_record_count;
+static int g_diag_error_count;
 static int g_diag_record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
 static int g_diag_record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT;
 static size_t g_diag_byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT;
@@ -140,6 +141,7 @@ static int diag_store_v(int severity, const char *code, const char *source_name,
   record->source_name = source_copy;
   diag_copy_text(record->message, sizeof(record->message), message);
   g_diag_bytes += text_bytes;
+  if (severity == AGC_DIAG_SEVERITY_ERROR) g_diag_error_count++;
   return 1;
 }
 
@@ -182,6 +184,7 @@ void diag_reset_records(void) {
     g_diag_records[i].source_name = NULL;
   }
   g_diag_record_count = 0;
+  g_diag_error_count = 0;
   g_diag_bytes = 0;
   g_diag_limit_kind = 0;
 }
@@ -203,6 +206,7 @@ int agc_wasm_diagnostic_api_version(void) { return 1; }
 int agc_wasm_diagnostic_count(void) { return g_diag_record_count; }
 int agc_wasm_diagnostic_bytes(void) { return (int)g_diag_bytes; }
 int agc_wasm_diagnostic_limit_kind(void) { return g_diag_limit_kind; }
+int diag_has_error_records(void) { return g_diag_error_count > 0; }
 int agc_wasm_diagnostic_severity(int index) {
   const agc_diag_record_t *record = diag_record_at(index);
   return record ? record->severity : 0;
@@ -539,6 +543,58 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
   fprintf(stderr, "\n");
   va_end(ap);
   exit(1);
+}
+
+int diag_report_atf(diag_error_id_t id, const char *input, const char *loc,
+                    const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  int stored = diag_store_at_v(
+      AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), input, loc, fmt, record_ap);
+  va_end(record_ap);
+  if (!stored && g_diag_limits_enforced) {
+    va_end(ap);
+    return 0;
+  }
+  int pos = 0;
+  if (input && loc && loc >= input) pos = (int)(loc - input);
+  if (input) {
+    size_t width = 0;
+    for (int i = 0; i < pos; i++)
+      width += (size_t)escaped_display_width_for_byte((unsigned char)input[i]);
+    diag_fprint_escaped(stderr, input);
+    fprintf(stderr, "\n%*s", (int)width, "");
+  }
+  fprintf(stderr, "^ %s: ", diag_error_code(id));
+  diag_vfprint_escaped(stderr, fmt, ap);
+  fprintf(stderr, "\n");
+  va_end(ap);
+  return stored;
+}
+
+int diag_report_tokf(diag_error_id_t id, const token_t *tok,
+                     const char *fmt, ...) {
+  va_list ap;
+  va_start(ap, fmt);
+  va_list record_ap;
+  va_copy(record_ap, ap);
+  int stored = diag_store_tok_v(
+      AGC_DIAG_SEVERITY_ERROR, diag_error_code(id), tok, fmt, record_ap);
+  va_end(record_ap);
+  if (!stored && g_diag_limits_enforced) {
+    va_end(ap);
+    return 0;
+  }
+  const char *fn = tk_filename_lookup(tok ? tok->file_name_id : 0);
+  if (tok && fn) fprintf(stderr, "%s:%d: ", fn, tok->line_no);
+  fprintf(stderr, "%s: ", diag_error_code(id));
+  diag_vfprint_escaped(stderr, fmt, ap);
+  print_token_actual(tok);
+  fprintf(stderr, "\n");
+  va_end(ap);
+  return stored;
 }
 
 void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...) {

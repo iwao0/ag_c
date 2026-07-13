@@ -34,41 +34,65 @@ static psx_parsed_function_parameter_t *append_function_parameter(
   return parameter;
 }
 
-void psx_parse_function_parameters_syntax(
+int psx_parse_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters) {
-  psx_parse_function_parameters_syntax_ex(parameters, 0);
+  return psx_parse_function_parameters_syntax_ex(
+      parameters, PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF);
 }
 
-void psx_parse_function_parameters_syntax_ex(
+static void synchronize_function_parameters(void) {
+  int depth = 0;
+  while (current_token()->kind != TK_EOF) {
+    token_kind_t kind = current_token()->kind;
+    tk_ensure_lookahead();
+    if (current_token()->next)
+      tk_set_current_token(current_token()->next);
+    if (kind == TK_LPAREN) {
+      depth++;
+    } else if (kind == TK_RPAREN) {
+      if (depth == 0) return;
+      depth--;
+    }
+  }
+}
+
+int psx_parse_function_parameters_syntax_ex(
     psx_parsed_function_parameters_t *parameters,
-    int allow_implicit_int) {
+    psx_function_parameter_type_mode_t type_mode) {
   tk_expect('(');
-  if (tk_consume(')')) return;
+  if (tk_consume(')')) return 1;
   for (;;) {
     if (current_token()->kind == TK_ELLIPSIS) {
       tk_set_current_token(current_token()->next);
       parameters->is_variadic = 1;
       tk_expect(')');
-      return;
+      return 1;
     }
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters);
-    if (allow_implicit_int) {
-      psx_parse_decl_specifier_syntax_ex(
-          &parameter->specifier,
-          &(psx_decl_specifier_syntax_options_t){
-              .is_typedef_name = is_parameter_typedef_name,
-              .allow_implicit_int = 1,
-          });
-    } else {
-      psx_parse_decl_specifier_syntax(&parameter->specifier);
+    int parsed_specifier = type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
+        ? psx_try_parse_decl_specifier_syntax_ex(
+              &parameter->specifier, NULL)
+        : psx_try_parse_decl_specifier_syntax_ex(
+              &parameter->specifier,
+              &(psx_decl_specifier_syntax_options_t){
+                  .is_typedef_name = is_parameter_typedef_name,
+                  .allow_implicit_int =
+                      type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
+              });
+    if (!parsed_specifier) {
+      diag_report_tokf(
+          DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, current_token(), "%s",
+          diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
+      synchronize_function_parameters();
+      return 0;
     }
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree(
             is_parameter_typedef_name, NULL);
     if (tk_consume(',')) continue;
     tk_expect(')');
-    return;
+    return 1;
   }
 }
 

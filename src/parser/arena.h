@@ -3,8 +3,16 @@
 
 #include <stddef.h>
 
+typedef struct {
+  void *block;
+  size_t used;
+} arena_checkpoint_t;
+
 // ゼロクリア済みメモリを返すアリーナアロケータ
 void *arena_alloc(size_t size);
+
+arena_checkpoint_t arena_checkpoint(void);
+void arena_rollback(arena_checkpoint_t checkpoint);
 
 // アリーナ全体を解放する（プログラム終了時）
 void arena_free_all(void);

@@ -157,6 +157,7 @@ psx_frontend_toplevel_declaration_callbacks(void) {
       .begin_declarator = begin_declarator,
       .finish_declarator = finish_declarator,
       .finish_declaration = finish_declaration,
+      .abort_declaration = finish_declaration,
   };
   return &callbacks;
 }

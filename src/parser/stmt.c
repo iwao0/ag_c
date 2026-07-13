@@ -8,6 +8,7 @@
 #include "enum_const.h"
 #include "expr.h"
 #include "node_utils.h"
+#include "parser_recovery.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -109,6 +110,7 @@ static node_t *parse_stmt_block(void) {
   tk_consume('{');
   ps_ctx_enter_block_scope();
   ps_decl_enter_scope();
+  ps_parser_enter_recovery_block();
   node_block_t *node = arena_alloc(sizeof(node_block_t));
   node->base.kind = ND_BLOCK;
   int i = 0;
@@ -125,6 +127,13 @@ static node_t *parse_stmt_block(void) {
     psx_lvar_usage_region_t *region = psx_decl_begin_lvar_usage_region();
     node->body[i] = block_item();
     psx_decl_end_lvar_usage_region(region);
+    if (ps_parser_has_recoverable_syntax_error()) {
+      node->body[i] = NULL;
+      ps_parser_leave_recovery_block();
+      ps_decl_leave_scope();
+      ps_ctx_leave_block_scope();
+      return NULL;
+    }
     if (node->body[i]) {
       node->body[i]->tok = stmt_tok;
       node->body[i]->usage_region = region;
@@ -132,6 +141,7 @@ static node_t *parse_stmt_block(void) {
     i++;
   }
   node->body[i] = NULL;
+  ps_parser_leave_recovery_block();
   ps_decl_leave_scope();
   ps_ctx_leave_block_scope();
   return (node_t *)node;

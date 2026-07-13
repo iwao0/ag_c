@@ -1436,6 +1436,39 @@ static func_name_t *find_function_name(char *name, int len) {
   return NULL;
 }
 
+void ps_ctx_checkpoint_function_registration(
+    char *name, int len, psx_function_registration_checkpoint_t *checkpoint) {
+  if (!checkpoint) return;
+  *checkpoint = (psx_function_registration_checkpoint_t){0};
+  if (!name || len <= 0) return;
+  func_name_t *function = find_function_name(name, len);
+  if (!function) return;
+  checkpoint->existed = 1;
+  checkpoint->is_defined = function->is_defined;
+  checkpoint->function_type = function->function_type;
+}
+
+void ps_ctx_rollback_function_registration(
+    char *name, int len,
+    const psx_function_registration_checkpoint_t *checkpoint) {
+  if (!checkpoint || !name || len <= 0) return;
+  unsigned bucket = psx_ctx_hash_name(name, len);
+  func_name_t **link = &func_names_by_bucket[bucket];
+  while (*link && ((*link)->len != len ||
+                   strncmp((*link)->name, name, (size_t)len) != 0)) {
+    link = &(*link)->next_hash;
+  }
+  if (!*link) return;
+  if (!checkpoint->existed) {
+    func_name_t *removed = *link;
+    *link = removed->next_hash;
+    free(removed);
+    return;
+  }
+  (*link)->is_defined = checkpoint->is_defined;
+  (*link)->function_type = (psx_type_t *)checkpoint->function_type;
+}
+
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
   func_name_t *existing = find_function_name(name, len);
   if (existing) return;

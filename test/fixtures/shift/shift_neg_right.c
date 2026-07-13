@@ -2,4 +2,4 @@
 // -8 >> 1 == -4 を確認
 // 期待: exit=1
 #include <assert.h>
-main() { assert((-8 >> 1) == -4); return 0; }
+int main() { assert((-8 >> 1) == -4); return 0; }

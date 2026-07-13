@@ -1,4 +1,4 @@
 // 右シフト (符号付き正の値): 32 >> 3 = 4
 // 期待: exit=4
 #include <assert.h>
-main() { assert((32 >> 3) == 4); return 0; }
+int main() { assert((32 >> 3) == 4); return 0; }

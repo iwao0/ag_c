@@ -164,6 +164,17 @@ if (countError.diagnostics.length !== 2) {
   throw new Error(`diagnostic storage grew past its count limit: ${countError.diagnostics.length}`);
 }
 
+const syntaxCountError = expectLimit("AGC_LIMIT_MAX_DIAGNOSTICS", () =>
+  toolchain.compileObjectWithDiagnostics("aaa;\nbbb;\nccc;\n", {
+    limits: { maxDiagnostics: 2 },
+  }));
+if (syntaxCountError.diagnostics.length !== 2 ||
+    syntaxCountError.diagnostics.some((diagnostic) => diagnostic.code !== "E3088")) {
+  throw new Error(
+    `recoverable syntax diagnostics exceeded their count limit: ${JSON.stringify(syntaxCountError.diagnostics)}`,
+  );
+}
+
 const manyWarningDeclarations = Array.from(
   { length: 129 }, (_, index) => `int value_${index} = ${index}.5;`,
 ).join(" ");

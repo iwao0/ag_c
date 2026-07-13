@@ -1,6 +1,7 @@
 #include "../src/parser/parser.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/parser_public.h"
+#include "../src/parser/arena.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/lvar_internal.h"
 #include "../src/parser/expr.h"
@@ -17,6 +18,7 @@
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
@@ -466,9 +468,10 @@ static void expect_parse_fail(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -484,9 +487,10 @@ static void expect_parse_ok(const char *input) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
   int status;
   waitpid(pid, &status, 0);
@@ -550,9 +554,10 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
 
   close(fds[1]);
@@ -590,9 +595,10 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
 
   close(fds[1]);
@@ -625,9 +631,10 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
 
   close(fds[1]);
@@ -660,9 +667,10 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
     dup2(fds[1], STDERR_FILENO);
     close(fds[1]);
     freopen("/dev/null", "w", stdout);
+    diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
     parsed_code = psx_frontend_program_from(head);
-    _exit(0);
+    _exit(diag_has_error_records() ? 1 : 0);
   }
 
   close(fds[1]);
@@ -4488,23 +4496,23 @@ static void test_expr_unary_ops() {
   ASSERT_EQ(ND_NUM, nested_atomic_cast->kind);
   ASSERT_EQ(11, as_num(nested_atomic_cast)->val);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=c?a:(struct S){3}; return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S s=(c?(struct S){3}:b); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}; struct S s=(a,(struct S){9}); return s.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; struct S a={1}, b={2}; int c=1; struct S t=(struct S)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U a={.x=1}, b={.x=2}; int c=1; union U t=(union U)(c?a:b); return t.x; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U a={.x=1}, b={.x=2}; int c=1; union U t=(union U)(c?a:b); return t.x; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
 }
@@ -4594,11 +4602,11 @@ static void test_expr_generic() {
       parse_expr_input("_Generic(1, _Atomic(int): 41, default: 42)");
   ASSERT_EQ(ND_NUM, generic_atomic_scalar->kind);
   expect_parse_ok(
-      "main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
+      "int main(){ int *p=0; return _Generic(p, _Atomic(int *):1, default:2); }");
   expect_parse_ok(
-      "main(){ return _Generic(1, _Atomic(_Atomic(int)):1, default:2); }");
+      "int main(){ return _Generic(1, _Atomic(_Atomic(int)):1, default:2); }");
 
-  parsed_code = parse_program_input("main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
+  parsed_code = parse_program_input("int main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -4607,7 +4615,7 @@ static void test_expr_generic() {
   parsed_code = parse_program_input(
       "typedef int (*fp_t)(int); "
       "int f(int x){ return x; } "
-      "main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
+      "int main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
   node_t *ret_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_fp->kind);
   ASSERT_EQ(ND_NUM, ret_fp->lhs->kind);
@@ -4615,7 +4623,7 @@ static void test_expr_generic() {
 
   parsed_code = parse_program_input(
       "double fd(double x){ return x; } "
-      "main(){ return _Generic(fd, double (*)(double): 17, default: 7); }");
+      "int main(){ return _Generic(fd, double (*)(double): 17, default: 7); }");
   node_t *ret_func_designator = as_block(as_func(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_func_designator->kind);
   ASSERT_EQ(ND_NUM, ret_func_designator->lhs->kind);
@@ -4623,7 +4631,7 @@ static void test_expr_generic() {
 
   parsed_code = parse_program_input(
       "int fg(int x){ return x; } "
-      "main(){ int (*p)(int)=fg; return _Generic((p), int (*)(int): 19, default: 7); }");
+      "int main(){ int (*p)(int)=fg; return _Generic((p), int (*)(int): 19, default: 7); }");
   node_t *ret_parenthesized_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_fp->kind);
   ASSERT_EQ(ND_NUM, ret_parenthesized_fp->lhs->kind);
@@ -4631,7 +4639,7 @@ static void test_expr_generic() {
 
   parsed_code = parse_program_input(
       "int (*__tm_gen_rowfn(void))[3] { return 0; } "
-      "main(){ int (*(*p)(void))[3]=__tm_gen_rowfn; "
+      "int main(){ int (*(*p)(void))[3]=__tm_gen_rowfn; "
       "return _Generic((p), int (*(*)(void))[3]: 23, default: 7); }");
   node_t *ret_parenthesized_nested_fp =
       as_block(as_func(parsed_code[1])->base.rhs)->body[1];
@@ -4642,7 +4650,7 @@ static void test_expr_generic() {
   parsed_code = parse_program_input(
       "int (*__tm_gen_growfn(void))[3] { return 0; } "
       "int (*(*__tm_gen_gfp)(void))[3]; "
-      "main(){ return _Generic((__tm_gen_gfp), int (*(*)(void))[3]: 29, default: 7); }");
+      "int main(){ return _Generic((__tm_gen_gfp), int (*(*)(void))[3]: 29, default: 7); }");
   node_t *ret_parenthesized_global_nested_fp =
       as_block(as_func(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_global_nested_fp->kind);
@@ -4748,165 +4756,165 @@ static void test_expr_generic() {
   ASSERT_EQ(7, as_num(ret_structural_double_ret_funcptr_nomatch)->val);
 
   expect_parse_ok(
-      "main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
+      "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
   expect_parse_ok(
-      "main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
+      "int main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
   parsed_code = parse_program_input(
-      "main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
+      "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
   node_t *ret_struct = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_struct->kind);
   ASSERT_EQ(ND_NUM, ret_struct->lhs->kind);
   ASSERT_EQ(1, as_num(ret_struct->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ struct S{int x;}; struct T{int x;}; return _Generic((struct S){1}, struct T: 1, default: 2); }");
+      "int main(){ struct S{int x;}; struct T{int x;}; return _Generic((struct S){1}, struct T: 1, default: 2); }");
   node_t *ret_struct_nomatch = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_struct_nomatch->kind);
   ASSERT_EQ(ND_NUM, ret_struct_nomatch->lhs->kind);
   ASSERT_EQ(2, as_num(ret_struct_nomatch->lhs)->val);
   expect_parse_ok(
-      "main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
+      "int main(){ int *p=0; return _Generic(p, int[3]: 1, default: 2); }");
   expect_parse_ok(
-      "main(){ double d=1.0; double *p=&d; return _Generic(*p, double:42, default:99); }");
+      "int main(){ double d=1.0; double *p=&d; return _Generic(*p, double:42, default:99); }");
   expect_parse_ok(
-      "main(){ float f=1.0f; float *p=&f; return _Generic(*p, float:11, default:99); }");
+      "int main(){ float f=1.0f; float *p=&f; return _Generic(*p, float:11, default:99); }");
   expect_parse_ok(
-      "main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
+      "int main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
   parsed_code = parse_program_input(
-      "main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }");
+      "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }");
   node_t *ret_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_kind->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_kind->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_kind->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }");
+      "int main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }");
   node_t *ret_ptr_fp = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_fp->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_fp->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_fp->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }");
+      "int main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }");
   node_t *ret_ptr_tag = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_tag->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_tag->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_tag->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
+      "int main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
   node_t *ret_ptr_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_const->lhs)->val);
 
   parsed_code = parse_program_input(
-      "typedef const int *cip_t; main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
+      "typedef const int *cip_t; int main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
   node_t *ret_typedef_const_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_const_ptr->kind);
   ASSERT_EQ(ND_NUM, ret_typedef_const_ptr->lhs->kind);
   ASSERT_EQ(2, as_num(ret_typedef_const_ptr->lhs)->val);
 
   parsed_code = parse_program_input(
-      "typedef volatile int *vip_t; main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }");
+      "typedef volatile int *vip_t; int main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }");
   node_t *ret_typedef_volatile_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_volatile_ptr->kind);
   ASSERT_EQ(ND_NUM, ret_typedef_volatile_ptr->lhs->kind);
   ASSERT_EQ(2, as_num(ret_typedef_volatile_ptr->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }");
+      "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }");
   node_t *ret_ptr_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[5];
   ASSERT_EQ(ND_RETURN, ret_ptr_ptr_kind->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_ptr_kind->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_ptr_kind->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
+      "int main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
   node_t *ret_ptr_unsigned = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_unsigned->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_unsigned->lhs)->val);
 
   parsed_code = parse_program_input(
-      "typedef unsigned int *uip_t; main(){ unsigned int u=0; uip_t pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
+      "typedef unsigned int *uip_t; int main(){ unsigned int u=0; uip_t pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
   node_t *ret_ptr_unsigned_typedef = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned_typedef->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_unsigned_typedef->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_unsigned_typedef->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; int *p=&x; int * const *pp=&p; return _Generic(pp, int**:1, int * const *:2, default:3); }");
+      "int main(){ int x=0; int *p=&x; int * const *pp=&p; return _Generic(pp, int**:1, int * const *:2, default:3); }");
   node_t *ret_ptr_level_const = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_level_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_level_const->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }");
+      "int main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }");
   node_t *ret_ptr_level_volatile = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_volatile->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_level_volatile->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_level_volatile->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }");
+      "int main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }");
   node_t *ret_unsigned_long = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_unsigned_long->kind);
   ASSERT_EQ(ND_NUM, ret_unsigned_long->lhs->kind);
   ASSERT_EQ(2, as_num(ret_unsigned_long->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }");
+      "int main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }");
   node_t *ret_long_signed = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_long_signed->kind);
   ASSERT_EQ(ND_NUM, ret_long_signed->lhs->kind);
   ASSERT_EQ(2, as_num(ret_long_signed->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ return _Generic((1 ? (char)1 : (char)2), char:1, int:2, default:3); }");
+      "int main(){ return _Generic((1 ? (char)1 : (char)2), char:1, int:2, default:3); }");
   node_t *ret_ternary_promoted_char = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_promoted_char->kind);
   ASSERT_EQ(ND_NUM, ret_ternary_promoted_char->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ternary_promoted_char->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ return _Generic((1 ? (long double)1.0 : (double)2.0), long double:4, double:5, default:6); }");
+      "int main(){ return _Generic((1 ? (long double)1.0 : (double)2.0), long double:4, double:5, default:6); }");
   node_t *ret_ternary_long_double = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_long_double->kind);
   ASSERT_EQ(ND_NUM, ret_ternary_long_double->lhs->kind);
   ASSERT_EQ(4, as_num(ret_ternary_long_double->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ return _Generic((long double){1.0}, long double:4, double:5, default:6); }");
+      "int main(){ return _Generic((long double){1.0}, long double:4, double:5, default:6); }");
   node_t *ret_compound_long_double = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_compound_long_double->kind);
   ASSERT_EQ(ND_NUM, ret_compound_long_double->lhs->kind);
   ASSERT_EQ(4, as_num(ret_compound_long_double->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ return _Generic((_Complex double)1, double:5, _Complex double:4, default:6); }");
+      "int main(){ return _Generic((_Complex double)1, double:5, _Complex double:4, default:6); }");
   node_t *ret_complex_cast = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_complex_cast->kind);
   ASSERT_EQ(ND_NUM, ret_complex_cast->lhs->kind);
   ASSERT_EQ(4, as_num(ret_complex_cast->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ _Complex double z=1; return _Generic(z, double:5, _Complex double:4, default:6); }");
+      "int main(){ _Complex double z=1; return _Generic(z, double:5, _Complex double:4, default:6); }");
   node_t *ret_complex_lvar = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_complex_lvar->kind);
   ASSERT_EQ(ND_NUM, ret_complex_lvar->lhs->kind);
   ASSERT_EQ(4, as_num(ret_complex_lvar->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ return _Generic(1, int const:2, default:3); }");
+      "int main(){ return _Generic(1, int const:2, default:3); }");
   node_t *ret_int_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_int_post_const->kind);
   ASSERT_EQ(ND_NUM, ret_int_post_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_int_post_const->lhs)->val);
 
   parsed_code = parse_program_input(
-      "main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }");
+      "int main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }");
   node_t *ret_ptr_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_post_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_post_const->lhs->kind);
@@ -5002,7 +5010,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, a3->kind);
   ASSERT_EQ(8, as_num(a3)->val);
 
-  parsed_code = parse_program_input("main() { int x; return sizeof(x); }");
+  parsed_code = parse_program_input("int main() { int x; return sizeof(x); }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -5014,7 +5022,7 @@ static void test_expr_sizeof() {
   expect_parse_ok_without_message("int main(void){ static int a[3]; return sizeof(a); }", "W3003");
   expect_parse_ok_without_message("int main(void){ int (*p)[3][4]; return sizeof(*p); }", "W3004");
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S); }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -5029,31 +5037,31 @@ static void test_expr_sizeof() {
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(16, as_num(ret->lhs)->val);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; return _Alignof(struct S); }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; return _Alignof(struct S); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(8, as_num(ret->lhs)->val);
 
-  parsed_code = parse_program_input("typedef int A3[3]; main() { return sizeof(A3 (*)[2]); }");
+  parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3 (*)[2]); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(8, as_num(ret->lhs)->val);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; return sizeof(struct S[3]); }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S[3]); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(12, as_num(ret->lhs)->val);
 
-  parsed_code = parse_program_input("typedef int A3[3]; main() { return sizeof(A3[2]); }");
+  parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3[2]); }");
   ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
@@ -5340,7 +5348,7 @@ static void test_funcall() {
   ASSERT_EQ(3, as_num(as_func(node)->args[1])->val);
 
   parsed_code = parse_program_input(
-      "main() { int (*fp)(int); fp(1); }");
+      "int main() { int (*fp)(int); fp(1); }");
   node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, stmt->kind);
   ASSERT_EQ(ND_LVAR, as_func(stmt)->callee->kind);
@@ -5416,7 +5424,7 @@ static void test_funcdef_with_params() {
 
 static void test_stmt_if() {
   printf("test_stmt_if...\n");
-  parsed_code = parse_program_input("main() { if (1) 2; }");
+  parsed_code = parse_program_input("int main() { if (1) 2; }");
   node_t *body = as_func(parsed_code[0])->base.rhs;
   node_t *if_node = as_block(body)->body[0];
 
@@ -5430,7 +5438,7 @@ static void test_stmt_if() {
 
 static void test_stmt_if_else() {
   printf("test_stmt_if_else...\n");
-  parsed_code = parse_program_input("main() { if (1) 2; else 3; }");
+  parsed_code = parse_program_input("int main() { if (1) 2; else 3; }");
   node_t *if_node = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
@@ -5442,7 +5450,7 @@ static void test_stmt_if_else() {
 
 static void test_stmt_while() {
   printf("test_stmt_while...\n");
-  parsed_code = parse_program_input("main() { while (1) 2; }");
+  parsed_code = parse_program_input("int main() { while (1) 2; }");
   node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_WHILE, wh->kind);
@@ -5463,7 +5471,7 @@ static void test_stmt_do_while() {
 
 static void test_stmt_break_continue() {
   printf("test_stmt_break_continue...\n");
-  parsed_code = parse_program_input("main() { while (1) { continue; break; } }");
+  parsed_code = parse_program_input("int main() { while (1) { continue; break; } }");
   node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   node_t *body = wh->rhs;
 
@@ -5503,7 +5511,7 @@ static void test_stmt_for() {
 
 static void test_stmt_for_with_decl_init() {
   printf("test_stmt_for_with_decl_init...\n");
-  parsed_code = parse_program_input("main() { for (int i=0; i<3; i=i+1) i; }");
+  parsed_code = parse_program_input("int main() { for (int i=0; i<3; i=i+1) i; }");
   node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
@@ -5512,7 +5520,7 @@ static void test_stmt_for_with_decl_init() {
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->inc->kind);   // inc: i=i+1
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
 
-  parsed_code = parse_program_input("main() { for (int i=0, j=2; i<j; i=i+1) i; }");
+  parsed_code = parse_program_input("int main() { for (int i=0, j=2; i<j; i=i+1) i; }");
   fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
@@ -5520,7 +5528,7 @@ static void test_stmt_for_with_decl_init() {
 
 static void test_stmt_return() {
   printf("test_stmt_return...\n");
-  parsed_code = parse_program_input("main() { return 42; }");
+  parsed_code = parse_program_input("int main() { return 42; }");
   node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_RETURN, ret->kind);
@@ -5633,7 +5641,7 @@ static void test_stmt_return() {
 
 static void test_stmt_block() {
   printf("test_stmt_block...\n");
-  parsed_code = parse_program_input("main() { { 1; 2; } }");
+  parsed_code = parse_program_input("int main() { { 1; 2; } }");
   node_t *blk = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_BLOCK, blk->kind);
@@ -5646,7 +5654,7 @@ static void test_stmt_block() {
 
 static void test_stmt_goto_label() {
   printf("test_stmt_goto_label...\n");
-  parsed_code = parse_program_input("main() { goto L1; L1: return 42; }");
+  parsed_code = parse_program_input("int main() { goto L1; L1: return 42; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_GOTO, body->body[0]->kind);
   ASSERT_EQ(ND_LABEL, body->body[1]->kind);
@@ -5676,7 +5684,7 @@ static void test_expr_deref_addr() {
 
 static void test_expr_member_access() {
   printf("test_expr_member_access...\n");
-  parsed_code = parse_program_input("main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
+  parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   node_t *assign = body->body[2];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
@@ -5703,7 +5711,7 @@ static void test_expr_member_access() {
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
-      "main() { struct S { u8 a; }; struct S s; return s.a; }");
+      "int main() { struct S { u8 a; }; struct S s; return s.a; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -5719,7 +5727,7 @@ static void test_expr_member_access() {
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
-      "main() { struct S { u8 a; }; struct S s; return (int)s.a; }");
+      "int main() { struct S { u8 a; }; struct S s; return (int)s.a; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -5734,7 +5742,7 @@ static void test_expr_member_access() {
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
-      "main() { struct S { u8 a; }; struct S s; return (signed)s.a; }");
+      "int main() { struct S { u8 a; }; struct S s; return (signed)s.a; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -5747,14 +5755,14 @@ static void test_expr_member_access() {
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
       ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs));
 
-  parsed_code = parse_program_input("main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
+  parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   assign = body->body[4];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
   ASSERT_EQ(ND_DEREF, assign->lhs->kind);
   ASSERT_EQ(4, ps_node_type_size(assign->lhs));
 
-  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
@@ -5847,103 +5855,103 @@ static void test_expr_concat_string() {
 static void test_type_decl() {
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
-  parsed_code = parse_program_input("main() { int x = 5; }");
+  parsed_code = parse_program_input("int main() { int x = 5; }");
   node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_LVAR, stmt->lhs->kind);
   ASSERT_EQ(5, as_num(stmt->rhs)->val);
 
   // int x; → ND_NUM(0) ダミー
-  parsed_code = parse_program_input("main() { int x; }");
+  parsed_code = parse_program_input("int main() { int x; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
   ASSERT_EQ(0, as_num(stmt)->val);
 
   // int a, b=1; → 初期化のある宣言子のみ式木に残る
-  parsed_code = parse_program_input("main() { int a, b=1; }");
+  parsed_code = parse_program_input("int main() { int a, b=1; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_NUM, stmt->rhs->kind);
   ASSERT_EQ(1, as_num(stmt->rhs)->val);
 
-  parsed_code = parse_program_input("main() { int a=1, b=2; }");
+  parsed_code = parse_program_input("int main() { int a=1, b=2; }");
   stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_COMMA, stmt->kind);
 
-  parsed_code = parse_program_input("main() { struct S; union U; enum E; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S; union U; enum E; return 0; }");
   node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_NUM, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { struct S; struct S *p; p=0; return p==0; }");
+  parsed_code = parse_program_input("int main() { struct S; struct S *p; p=0; return p==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; } *p; p=0; return p==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { enum E { A=1, B, C=10 }; return A+B+C; }");
+  parsed_code = parse_program_input("int main() { enum E { A=1, B, C=10 }; return A+B+C; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }");
+  parsed_code = parse_program_input("int main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
+  parsed_code = parse_program_input("int main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
+  parsed_code = parse_program_input("int main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
+  parsed_code = parse_program_input("int main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("typedef int myint; main() { myint x = 3; return x; }");
+  parsed_code = parse_program_input("typedef int myint; int main() { myint x = 3; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("typedef int *intptr; main() { int a=7; intptr p=&a; return *p; }");
+  parsed_code = parse_program_input("typedef int *intptr; int main() { int a=7; intptr p=&a; return *p; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("typedef int (*fp_t)(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
+  parsed_code = parse_program_input("typedef int (*fp_t)(int); int f(int x){ return x+1; } int main() { fp_t p; return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
-  parsed_code = parse_program_input("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } main() { fp_t p; return 0; }");
+  parsed_code = parse_program_input("typedef int (((*fp_t)))(int); int f(int x){ return x+1; } int main() { fp_t p; return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
@@ -5957,13 +5965,13 @@ static void test_type_decl() {
     ASSERT_EQ(0, gv->type_size);
   }
 
-  parsed_code = parse_program_input("main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
+  parsed_code = parse_program_input("int main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("typedef unsigned long long ull; main() { ull v = 5; return v; }");
+  parsed_code = parse_program_input("typedef unsigned long long ull; int main() { ull v = 5; return v; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
@@ -5971,7 +5979,7 @@ static void test_type_decl() {
   /* static ローカル変数はグローバル変数として lowering されるため、
    * 関数本体にはダミーの ND_NUM(0) だけが残る (init はデータセクションで行う)。
    * 続く register/auto/restrict 宣言は通常どおり ND_ASSIGN を生成。 */
-  parsed_code = parse_program_input("main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
+  parsed_code = parse_program_input("int main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -5980,7 +5988,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
   parsed_code = parse_program_input(
-      "main() { const const int x=3; volatile volatile int y=4; int *restrict restrict p=0; return x+y+(p==0); }");
+      "int main() { const const int x=3; volatile volatile int y=4; int *restrict restrict p=0; return x+y+(p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -5989,85 +5997,85 @@ static void test_type_decl() {
 
   parsed_code = parse_program_input(
       "int sumq(const const int a, volatile volatile int b, int *restrict restrict p){ return a+b+(p==0); }"
-      "main(){ return sumq(3,4,0); }");
+      "int main(){ return sumq(3,4,0); }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
-  parsed_code = parse_program_input("main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
+  parsed_code = parse_program_input("int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { _Atomic(int) z=5; return z; }");
+  parsed_code = parse_program_input("int main() { _Atomic(int) z=5; return z; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { _Atomic(int*) p=0; _Atomic int q=1; return q + (p==0); }");
+  parsed_code = parse_program_input("int main() { _Atomic(int*) p=0; _Atomic int q=1; return q + (p==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
+  parsed_code = parse_program_input("int main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
+  parsed_code = parse_program_input("int main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { int a[1+2]; a[0]=3; return a[0]; }");
+  parsed_code = parse_program_input("int main() { int a[1+2]; a[0]=3; return a[0]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int a[2][3]; return 0; }");
+  parsed_code = parse_program_input("int main() { int a[2][3]; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x:3; int y; }; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x:3; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { struct { int x; }; int y; }; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { struct { int x; }; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { union { int x; char c; }; int y; }; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { union { int x; char c; }; int y; }; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
+  parsed_code = parse_program_input("int main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int x={3}; return x; }");
+  parsed_code = parse_program_input("int main() { int x={3}; return x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
   ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { enum E { A=1 }; return (enum E)42; }");
+  parsed_code = parse_program_input("int main() { enum E { A=1 }; return (enum E)42; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { const int cx=1; volatile int vx=2; return cx+vx; }");
+  parsed_code = parse_program_input("int main() { const int cx=1; volatile int vx=2; return cx+vx; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_TRUE(ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
@@ -6077,7 +6085,7 @@ static void test_type_decl() {
   ASSERT_TRUE(ps_node_get_type(body->body[1]->lhs)->is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
+  parsed_code = parse_program_input("int main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(1u, ps_node_pointer_const_qual_mask(body->body[0]->lhs));
@@ -6087,7 +6095,7 @@ static void test_type_decl() {
   ASSERT_EQ(1u, ps_node_pointer_volatile_qual_mask(body->body[1]->lhs));
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int *const *volatile pp=0; return pp==0; }");
+  parsed_code = parse_program_input("int main() { int *const *volatile pp=0; return pp==0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(2, ps_node_pointer_qual_levels(body->body[0]->lhs));
@@ -6095,7 +6103,7 @@ static void test_type_decl() {
   ASSERT_EQ(2u, ps_node_pointer_volatile_qual_mask(body->body[0]->lhs));
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
+  parsed_code = parse_program_input("int main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -6108,35 +6116,35 @@ static void test_type_decl() {
   ASSERT_EQ(8, ps_node_storage_type_size(body->body[3]->lhs->lhs));
   ASSERT_EQ(4, ps_node_storage_type_size(body->body[3]->lhs));
 
-  parsed_code = parse_program_input("main() { int a[3]={1,2,3}; return a[2]; }");
+  parsed_code = parse_program_input("int main() { int a[3]={1,2,3}; return a[2]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { int a[2]=1; return a[0]+a[1]; }");
+  parsed_code = parse_program_input("int main() { int a[2]=1; return a[0]+a[1]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { char s[4]=\"abc\"; return s[2]; }");
+  parsed_code = parse_program_input("int main() { char s[4]=\"abc\"; return s[2]; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=t; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
@@ -6145,7 +6153,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_TERNARY, body->body[3]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
@@ -6153,14 +6161,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[2]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
+  parsed_code = parse_program_input("int main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
@@ -6168,26 +6176,26 @@ static void test_type_decl() {
   ASSERT_EQ(ND_ASSIGN, body->body[3]->kind);
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={7}; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u=7; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u=7; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U v={7}; union U u=v; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U v={7}; union U u=v; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
@@ -6195,25 +6203,25 @@ static void test_type_decl() {
   ASSERT_EQ(ND_COMMA, body->body[2]->rhs->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int x; }; struct S s=(struct S)(struct S){1}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; }; struct S s=(struct S)(struct S){1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   bool same_tag_cast_has_return = false;
@@ -6225,7 +6233,7 @@ static void test_type_decl() {
   }
   ASSERT_TRUE(same_tag_cast_has_return);
 
-  parsed_code = parse_program_input("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=(struct B)a; return 0; }");
+  parsed_code = parse_program_input("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=(struct B)a; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   bool has_return = false;
@@ -6237,13 +6245,13 @@ static void test_type_decl() {
   }
   ASSERT_TRUE(has_return);
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u=(union U)(union U){.x=7}; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u=(union U)(union U){.x=7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { union A { int x; }; union B { int x; }; union A a={.x=1}; union B b=(union B)a; return 0; }");
+  parsed_code = parse_program_input("int main() { union A { int x; }; union B { int x; }; union A a={.x=1}; union B b=(union B)a; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   has_return = false;
@@ -6255,58 +6263,58 @@ static void test_type_decl() {
   }
   ASSERT_TRUE(has_return);
 
-  parsed_code = parse_program_input("main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  parsed_code = parse_program_input("main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  parsed_code = parse_program_input("main() { union U { int x; char y; }; union U u={.x=1,.y=2}; return u.x; }");
+  parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=1,.y=2}; return u.x; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S s={{1,2},3}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S s={{1,2},3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
+  parsed_code = parse_program_input("int main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
-  parsed_code = parse_program_input("main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
-  parsed_code = parse_program_input("main() { int a[4]={[2]=7,[0]=1}; return 0; }");
+  parsed_code = parse_program_input("int main() { int a[4]={[2]=7,[0]=1}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   // 入れ子 designator: struct の配列メンバへの .member[idx]=val
-  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   // brace init 開始で struct 全体を 0 で埋める処理が入り、init_chain は
@@ -6315,14 +6323,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: struct の配列メンバへの複数指定
-  parsed_code = parse_program_input("main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
+  parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: union の配列メンバへの .member[idx]=val
-  parsed_code = parse_program_input("main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
+  parsed_code = parse_program_input("int main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
   body = as_block(as_func(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
@@ -6332,7 +6340,7 @@ static void test_type_decl() {
 static void test_type_metadata_bridge() {
   printf("test_type_metadata_bridge...\n");
 
-  parsed_code = parse_program_input("main() { unsigned int x=1; return x; }");
+  parsed_code = parse_program_input("int main() { unsigned int x=1; return x; }");
   node_func_t *fn = as_func(parsed_code[0]);
   node_block_t *body = as_block(fn->base.rhs);
   node_t *assign = body->body[0];
@@ -6834,7 +6842,7 @@ static void test_type_metadata_bridge() {
       "__tm_ret_alias *__tm_ret_alias_fn(void); "
       "struct __tm_ret_tag *__tm_ret_tag_fn(void); "
       "int (*__tm_ret_nested(void))(double); "
-      "__tm_ret_implicit(void);");
+      "int __tm_ret_explicit(void);");
   (void)parsed_code;
   const psx_type_t *alias_return_function = ps_ctx_get_function_type(
       (char *)"__tm_ret_alias_fn",
@@ -6870,12 +6878,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             returned_function->param_types[0]->fp_kind);
 
-  const psx_type_t *implicit_return_function = ps_ctx_get_function_type(
-      (char *)"__tm_ret_implicit",
-      (int)(sizeof("__tm_ret_implicit") - 1));
-  ASSERT_TRUE(implicit_return_function != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, implicit_return_function->base->kind);
-  ASSERT_EQ(TK_INT, implicit_return_function->base->scalar_kind);
+  const psx_type_t *explicit_return_function = ps_ctx_get_function_type(
+      (char *)"__tm_ret_explicit",
+      (int)(sizeof("__tm_ret_explicit") - 1));
+  ASSERT_TRUE(explicit_return_function != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, explicit_return_function->base->kind);
+  ASSERT_EQ(TK_INT, explicit_return_function->base->scalar_kind);
 
   parsed_code = parse_program_input(
       "int (*(*__tm_sig_nested_gfp)(void))(double); "
@@ -10035,7 +10043,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, cast_widen_zext);
   ASSERT_EQ(1, cast_needs_i64);
 
-  parsed_code = parse_program_input("main() { struct S { int x; } *p; p=0; return p==0; }");
+  parsed_code = parse_program_input("int main() { struct S { int x; } *p; p=0; return p==0; }");
   fn = as_func(parsed_code[0]);
   body = as_block(fn->base.rhs);
   assign = body->body[1];
@@ -10068,7 +10076,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, param_fp_lvar->decl_type->base->fp_kind);
 
   parsed_code = parse_program_input(
-      "main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
+      "int main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
   fn = as_func(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *member = body->body[2];
@@ -10122,7 +10130,7 @@ static void test_type_metadata_bridge() {
       "struct FlatOut { int x; struct FlatIn in; union { int u; int v; }; int y; };"
       "union FlatU { int i; struct FlatIn in; };"
       "union FlatFpU { int i; float f; double d; };"
-      "main(){ return 0; }");
+      "int main(){ return 0; }");
   (void)parsed_code;
   ASSERT_EQ(2, ps_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
   ASSERT_EQ(5, ps_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
@@ -10325,7 +10333,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input("union LongMemberU { int a; long b; }; "
                                     "static union LongMemberU __tm_lu = {.b = 0x1122334455L}; "
-                                    "main(){ return 0; }");
+                                    "int main(){ return 0; }");
   (void)parsed_code;
   global_var_t *__tm_lu = ps_find_global_var("__tm_lu", 7);
   ASSERT_TRUE(__tm_lu != NULL);
@@ -10355,7 +10363,7 @@ static void test_type_metadata_bridge() {
                                     "static struct P make_p(int a, int b) { struct P p = {a, b}; return p; } "
                                     "static struct P arr[3] = {{1, 2}, {3, 4}, {5, 6}}; "
                                     "static struct P *get_arr(void) { return arr; } "
-                                    "main(){ return get_u()->b == 0x1122334455L ? 0 : 1; }");
+                                    "int main(){ return get_u()->b == 0x1122334455L ? 0 : 1; }");
   (void)parsed_code;
   global_var_t *short_union_su = ps_find_global_var("su", 2);
   ASSERT_TRUE(short_union_su != NULL);
@@ -10372,7 +10380,7 @@ static void test_type_metadata_bridge() {
                        (size_t)short_union_member.len));
   ASSERT_EQ(8, short_union_member.type_size);
 
-  parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; main(){ return 0; }");
+  parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; int main(){ return 0; }");
   (void)parsed_code;
   global_var_t *gu = ps_find_global_var("__tm_gu", 7);
   ASSERT_TRUE(gu != NULL);
@@ -11001,7 +11009,7 @@ static void test_type_metadata_bridge() {
   }
   ASSERT_EQ(0, walk_array_trace.padding_count);
 
-  parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; main(){ return 0; }");
+  parsed_code = parse_program_input("extern int __tm_extern_arr[]; int __tm_extern_arr[3]; int main(){ return 0; }");
   (void)parsed_code;
   global_var_t *gext = ps_find_global_var("__tm_extern_arr", 15);
   ASSERT_TRUE(gext != NULL);
@@ -13432,7 +13440,8 @@ static void test_translation_unit_reset_pragma_pack_state() {
 
 static void test_multiple_funcdefs() {
   printf("test_multiple_funcdefs...\n");
-  parsed_code = parse_program_input("foo() { 1; } bar() { 2; }");
+  parsed_code = parse_program_input(
+      "int foo(void) { 1; } int bar(void) { 2; }");
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
@@ -13544,31 +13553,31 @@ static void test_multiple_funcdefs() {
 
 static void test_parse_invalid() {
   printf("test_parse_invalid...\n");
-  expect_parse_fail("main( { return 0; }");     // ')' がない
-  expect_parse_fail("main() { return 0; ");     // '}' がない
-  expect_parse_fail("main() { return 0 }");     // ';' がない
-  expect_parse_fail("main() { if (1) return 1; else }"); // else ブロック不正
-  expect_parse_fail("main() { int ; return 0; }");       // 変数名なし
-  expect_parse_fail("main() { int a[; return 0; }");     // 配列サイズ不正
-  expect_parse_fail("main() { int a[1 return 0; }");     // ']' がない
-  expect_parse_fail("main() { return (1+2; }");          // ')' がない
-  expect_parse_fail("main() { if 1) return 0; }");       // '(' がない
-  expect_parse_fail("main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
-  expect_parse_fail("main() { ++1; }");                  // lvalueでない
-  expect_parse_fail("main() { 1++; }");                  // lvalueでない
+  expect_parse_fail("int main(void { return 0; }"); // ')' がない
+  expect_parse_fail("int main() { return 0; ");     // '}' がない
+  expect_parse_fail("int main() { return 0 }");     // ';' がない
+  expect_parse_fail("int main() { if (1) return 1; else }"); // else ブロック不正
+  expect_parse_fail("int main() { int ; return 0; }");       // 変数名なし
+  expect_parse_fail("int main() { int a[; return 0; }");     // 配列サイズ不正
+  expect_parse_fail("int main() { int a[1 return 0; }");     // ']' がない
+  expect_parse_fail("int main() { return (1+2; }");          // ')' がない
+  expect_parse_fail("int main() { if 1) return 0; }");       // '(' がない
+  expect_parse_fail("int main() { for (i=0 i<3; i=i+1) return 0; }"); // ';' 不足
+  expect_parse_fail("int main() { ++1; }");                  // lvalueでない
+  expect_parse_fail("int main() { 1++; }");                  // lvalueでない
   expect_parse_fail(
       "int main(void) { const int value=0; value++; return 0; }");
   expect_parse_fail(
       "int main(void) { struct S { int x; } value; value++; return 0; }");
   expect_parse_fail(
       "int main(void) { _Complex double value=0; ++value; return 0; }");
-  expect_parse_ok("main() { float f=1.0; ++f; }");       // C11: 浮動小数点の ++ は合法
-  expect_parse_ok("main() { double d=1.0; d--; }");      // C11: 浮動小数点の -- は合法
-  expect_parse_fail("main() { 1 += 2; }");               // lvalueでない
-  expect_parse_fail("main() { return; }");               // 非void関数で式なしreturn
+  expect_parse_ok("int main() { float f=1.0; ++f; }");       // C11: 浮動小数点の ++ は合法
+  expect_parse_ok("int main() { double d=1.0; d--; }");      // C11: 浮動小数点の -- は合法
+  expect_parse_fail("int main() { 1 += 2; }");               // lvalueでない
+  expect_parse_fail("int main() { return; }");               // 非void関数で式なしreturn
   expect_parse_fail("void f() { return 1; }");           // void関数で値return
-  expect_parse_fail("main() { goto MISSING; return 0; }"); // 未定義ラベル
-  expect_parse_fail("main() { struct T x; return 0; }");   // 未定義タグ参照
+  expect_parse_fail("int main() { goto MISSING; return 0; }"); // 未定義ラベル
+  expect_parse_fail("int main() { struct T x; return 0; }");   // 未定義タグ参照
   expect_parse_ok(
       "int main(void) { struct Forward (*p); (void)p; return 0; }");
   expect_parse_ok(
@@ -13602,82 +13611,82 @@ static void test_parse_invalid() {
   expect_parse_fail("int main(void) { int x; enum E { x }; return 0; }");
   expect_parse_ok("int X; int main(void) { enum E { X }; return 0; }");
   expect_parse_ok("typedef int T; int main(void) { enum E { T }; return 0; }");
-  expect_parse_ok("main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
-  expect_parse_fail("main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }"); // 非同種非スカラ型cast未対応
-  expect_parse_fail("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }"); // 同サイズでも別タグは互換structではない
-  expect_parse_fail("main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
-  expect_parse_fail("main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
-  expect_parse_fail("main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
-  expect_parse_fail("main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
-  expect_parse_fail("main() { int a[-1]; return 0; }");         // 配列サイズは負数不可
-  expect_parse_fail("main() { return sizeof(int[-1]); }");      // sizeof 型名も同じ制約
-  expect_parse_fail("main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
+  expect_parse_ok("int main() { { struct T { int x; }; } struct T *p; return 0; }"); // 外側スコープで新規前方宣言
+  expect_parse_fail("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }"); // 非同種非スカラ型cast未対応
+  expect_parse_fail("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }"); // 同サイズでも別タグは互換structではない
+  expect_parse_fail("int main() { short double x; return 0; }");   // 不正な型指定子組み合わせ
+  expect_parse_fail("int main() { _Complex int x; return 0; }");   // 浮動小数型以外との組み合わせは不正
+  expect_parse_fail("int main() { _Imaginary int x; return 0; }"); // 浮動小数型以外との組み合わせは不正
+  expect_parse_fail("int main() { return (_Thread_local int)1; }"); // cast型名のストレージ指定は未対応
+  expect_parse_fail("int main() { int a[-1]; return 0; }");         // 配列サイズは負数不可
+  expect_parse_fail("int main() { return sizeof(int[-1]); }");      // sizeof 型名も同じ制約
+  expect_parse_fail("int main() { return _Generic(1, float:2); }"); // 一致なし + defaultなし
   expect_parse_fail(
-      "main() { return _Generic(1, int:1, signed int:2, default:3); }");
+      "int main() { return _Generic(1, int:1, signed int:2, default:3); }");
   expect_parse_fail(
-      "main() { return _Generic(1, int:1, default:2, default:3); }");
+      "int main() { return _Generic(1, int:1, default:2, default:3); }");
   expect_parse_fail("int bad(int a, ..., int b) { return 0; }"); // ... は末尾のみ
   expect_parse_fail("int bad(int) { return 0; }"); // 関数定義の仮引数には名前が必要
-  expect_parse_fail("main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
-  expect_parse_fail("main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
+  expect_parse_fail("int main() { _Static_assert(0, \"ng\"); return 0; }"); // static_assert失敗
+  expect_parse_fail("int main() { _Static_assert(x, \"ng\"); return 0; }"); // 非定数式
   expect_parse_fail(
       "struct SA { _Static_assert(0, \"ng\"); int x; }; int main(void){return 0;}");
-  expect_parse_fail("main() { int x; x.y=1; }");            // 非構造体への .
-  expect_parse_fail("main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
-  expect_parse_fail("main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
+  expect_parse_fail("int main() { int x; x.y=1; }");            // 非構造体への .
+  expect_parse_fail("int main() { int *p; p->y=1; }");          // 非構造体ポインタへの ->
+  expect_parse_fail("int main() { int x; int *p=&x; return *(void *)p; }"); // void* deref
   expect_parse_fail("int main(void) { int *p=0; return -p; }");
   expect_parse_fail("int main(void) { int *p=0; return __real__ p; }");
   expect_parse_fail("int main(void) { int value=0; return value(); }");
   expect_parse_fail("int main(void) { int (**pp)(void)=0; return pp(); }");
   expect_parse_fail("int main(void) { struct S { int bits:3; } s; return &s.bits != 0; }");
-  expect_parse_fail("main() { break; }");                // ループ/switch外
-  expect_parse_fail("main() { continue; }");             // ループ外
+  expect_parse_fail("int main() { break; }");                // ループ/switch外
+  expect_parse_fail("int main() { continue; }");             // ループ外
   expect_parse_fail("int main(void) { int x = ({ continue; 0; }); return x; }");
   expect_parse_fail("int main(void) { while (({ continue; 1; })) return 0; return 0; }");
-  expect_parse_fail("main() { case 1: return 0; }");     // switch外のcase
-  expect_parse_fail("main() { default: return 0; }");    // switch外のdefault
-  expect_parse_fail("main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
-  expect_parse_fail("main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
-  expect_parse_fail("main() { switch (1) { default: 0; default: 1; } }"); // default 重複
+  expect_parse_fail("int main() { case 1: return 0; }");     // switch外のcase
+  expect_parse_fail("int main() { default: return 0; }");    // switch外のdefault
+  expect_parse_fail("int main() { switch (1) { case 1: 0; case 1: 0; } }"); // case 重複
+  expect_parse_fail("int main() { switch (0) { case 1+2: 0; case 3: 0; } }"); // 定数式評価後のcase重複
+  expect_parse_fail("int main() { switch (1) { default: 0; default: 1; } }"); // default 重複
   expect_parse_fail("enum E { A = 2147483648 }; int main(void){ return 0; }"); // enum定数はint幅
-  expect_parse_fail("main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
-  expect_parse_fail("main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
-  expect_parse_fail("main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
-  expect_parse_fail("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
-  expect_parse_fail("main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
-  expect_parse_fail("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
-  expect_parse_fail("main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
+  expect_parse_fail("int main() { int x={1,2}; return x; }"); // スカラ波括弧初期化は単一要素のみ
+  expect_parse_fail("int main() { int a[2]={1,2,3}; return 0; }"); // 配列初期化子過多
+  expect_parse_fail("int main() { struct S { int x; }; struct S s=1; return 0; }"); // 構造体単一式初期化は未対応
+  expect_parse_fail("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }"); // 最終値が同型オブジェクトでない
+  expect_parse_fail("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }"); // 共用体は1要素のみ
+  expect_parse_fail("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }"); // designatedでも1要素のみ
+  expect_parse_fail("int main() { int a[2]={[3]=1}; return 0; }"); // array designator 範囲外
   // C11 6.7.9p19: 同一 subobject への複数指定初期化子は後勝ちで受理される。
-  expect_parse_ok("main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator (後勝ち)
-  expect_parse_ok("main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後の上書き
-  expect_parse_ok("main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator (後勝ち)
+  expect_parse_ok("int main() { struct S { int x; int y; }; struct S s={.x=1,.x=2}; return 0; }"); // struct重複designator (後勝ち)
+  expect_parse_ok("int main() { struct __BraceDup { int a[2]; int z; }; struct __BraceDup s={1,2,.a={3,4}}; return 0; }"); // brace elision後の上書き
+  expect_parse_ok("int main() { int a[2]={[0]=1,[0]=2}; return 0; }"); // array重複designator (後勝ち)
 }
 
 static void test_parse_invalid_diagnostics() {
   printf("test_parse_invalid_diagnostics...\n");
-  expect_parse_fail_with_message("main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
-  expect_parse_fail_with_message("main() { L1: return 0; L1: return 1; }", "識別子が重複しています (ラベル): 'L1'");
-  expect_parse_fail_with_message("main() { struct T x; return 0; }", "不完全型のオブジェクトは宣言できません");
-  expect_parse_fail_with_message("main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] struct 値へのキャストは未対応です（型不整合）");
-  expect_parse_fail_with_message("main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（型不整合）");
-  expect_parse_fail_with_message("main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
-  expect_parse_fail_with_message("main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "スカラ変数を struct 値で初期化できません");
-  expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
-  expect_parse_fail_with_message("main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
-  expect_parse_fail_with_message("main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
-  expect_parse_fail_with_message("main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
-  expect_parse_fail_with_message("main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
-  expect_parse_fail_with_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
-  expect_parse_fail_with_message("main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
+  expect_parse_fail_with_message("int main() { goto MISSING; return 0; }", "[goto] 未定義ラベル 'MISSING'");
+  expect_parse_fail_with_message("int main() { L1: return 0; L1: return 1; }", "識別子が重複しています (ラベル): 'L1'");
+  expect_parse_fail_with_message("int main() { struct T x; return 0; }", "不完全型のオブジェクトは宣言できません");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] struct 値へのキャストは未対応です（型不整合）");
+  expect_parse_fail_with_message("int main() { union U { int x; char y; }; struct S { int z; } s={1}; return (union U)s; }", "[cast] union 値へのキャストは未対応です（型不整合）");
+  expect_parse_fail_with_message("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=a; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s=1; return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S t={1}; struct S s=(t,1); return 0; }", "[decl] 構造体の単一式初期化は同型オブジェクトのみ対応です");
+  expect_parse_fail_with_message("int main() { struct S { int x; }; int y=(0,(struct S){1}); return y; }", "スカラ変数を struct 値で初期化できません");
+  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
+  expect_parse_fail_with_message("int main() { union U { int x; char y; }; union U u={.x=1,2}; return 0; }", "[init] 共用体初期化子は現状1要素のみ対応です");
+  expect_parse_fail_with_message("int main() { _Complex int x; return 0; }", "_Complex/_Imaginary は浮動小数型にのみ指定できます");
+  expect_parse_fail_with_message("int main() { return (_Complex int)1; }", "_Complex/_Imaginary cast は浮動小数型のみ対応です");
+  expect_parse_fail_with_message("int main() { return (_Thread_local int)1; }", "[cast] cast 型名にストレージ指定子は使えません");
+  expect_parse_fail_with_message("int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }", "[decl] 不完全型のメンバは定義できません");
+  expect_parse_fail_with_message("int main() { struct T { int f(int); }; return 0; }", "[decl] 関数型のメンバは定義できません");
   expect_parse_fail_with_message(
-      "main() { struct S { int *p:1; }; return 0; }",
+      "int main() { struct S { int *p:1; }; return 0; }",
       "bit-field has non-integer canonical type");
-  expect_parse_fail("main() { struct S { int a[2]:1; }; return 0; }");
-  expect_parse_fail("main() { struct S { float f:1; }; return 0; }");
+  expect_parse_fail("int main() { struct S { int a[2]:1; }; return 0; }");
+  expect_parse_fail("int main() { struct S { float f:1; }; return 0; }");
   expect_parse_fail_with_message("int bad(int) { return 0; }", "必要な項目がありません: 仮引数");
-  expect_parse_fail_with_message("main() { int x; int *p=&x; return *(void *)p; }",
+  expect_parse_fail_with_message("int main() { int x; int *p=&x; return *(void *)p; }",
                                  "void* の deref はできません");
   expect_parse_fail_with_message("void f(void); int main(void){ int x; x=f(); return 0; }",
                                  "void 戻り値関数の結果は代入/初期化に使えません");
@@ -13685,46 +13694,46 @@ static void test_parse_invalid_diagnostics() {
                                  "void 戻り値関数の結果は代入/初期化に使えません");
 
   // 汎用cast未対応診断（"この型へのキャストは未対応です"）は現状到達しないことを固定する。
-  expect_parse_fail_without_message("main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
-  expect_parse_fail_without_message("main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message("int main() { return (_Thread_local int)1; }", "[cast] この型へのキャストは未対応です");
+  expect_parse_fail_without_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] この型へのキャストは未対応です");
 
   // Parser拡張設定: 同種同サイズの非スカラcast受理を無効化できること。
   ps_set_enable_size_compatible_nonscalar_cast(false);
   expect_parse_fail_with_message(
-      "main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }",
+      "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }",
       "[cast] struct 値へのキャストは未対応です（型不整合）");
   ps_set_enable_size_compatible_nonscalar_cast(true);
 
   // Parser拡張設定: struct への scalar/pointer cast 受理を無効化できること。
   ps_set_enable_struct_scalar_pointer_cast(false);
   expect_parse_fail_with_message(
-      "main() { struct S { int x; }; int a=0; return (struct S)a; }",
+      "int main() { struct S { int x; }; int a=0; return (struct S)a; }",
       "[cast] struct への scalar/pointer cast は設定で無効です");
   ps_set_enable_struct_scalar_pointer_cast(true);
 
   // Parser拡張設定: union への scalar/pointer cast 受理を無効化できること。
   ps_set_enable_union_scalar_pointer_cast(false);
   expect_parse_fail_with_message(
-      "main() { union U { int x; char y; }; int a=0; return (union U)a; }",
+      "int main() { union U { int x; char y; }; int a=0; return (union U)a; }",
       "[cast] union への scalar/pointer cast は設定で無効です");
   ps_set_enable_union_scalar_pointer_cast(true);
 
   // Parser拡張設定: union 先頭配列メンバの非波括弧初期化受理を無効化できること。
   ps_set_enable_union_array_member_nonbrace_init(false);
   expect_parse_fail_with_message(
-      "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
+      "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
       "[decl] 共用体の配列メンバ非波括弧初期化は設定で無効です");
   ps_set_enable_union_array_member_nonbrace_init(true);
 
   // 入れ子 designator: 非配列メンバに .member[idx]=val は診断エラー
-  expect_parse_fail_with_message("main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
+  expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
                                  "入れ子designatorの対象が配列メンバではありません");
 
   // decl.c の「1/2/4/8 byte スカラのみ」診断は、現行型セットでは到達不能であることを固定する。
   // 将来 16-byte などの新スカラ型導入時は、ここを陽性診断テストへ置き換える。
-  expect_parse_fail_without_message("main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
+  expect_parse_fail_without_message("int main() { struct __IncOnly; struct __HasInc { struct __IncOnly m; }; return 0; }",
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
-  expect_parse_fail_without_message("main() { struct T { int f(int); }; return 0; }",
+  expect_parse_fail_without_message("int main() { struct T { int f(int); }; return 0; }",
                                     "[decl] 構造体/共用体初期化は現在 1/2/4/8 byte スカラのみ対応です");
 }
 
@@ -13765,7 +13774,7 @@ static void test_parse_evil_edge_cases() {
   ASSERT_EQ(4, as_num(bw->rhs->rhs)->val);
 
   // x+++y の式解析: (x++) + y
-  parsed_code = parse_program_input("main() { int x=1; int y=2; return x+++y; }");
+  parsed_code = parse_program_input("int main() { int x=1; int y=2; return x+++y; }");
   // パースが成功すればOK
 
   // キャストと単項マイナスのネスト: (int)-(char)5
@@ -13796,12 +13805,12 @@ static void test_parse_evil_edge_cases() {
   ASSERT_EQ(1, as_num(ge->rhs)->val);
 
   // カンマ演算子と代入の優先順位: a=1,b=2 → (a=1),(b=2)
-  parsed_code = parse_program_input("main() { int a; int b; a=1,b=2; }");
+  parsed_code = parse_program_input("int main() { int a; int b; a=1,b=2; }");
   // パースが成功すればOK
 
   // 複雑な式文のパース
-  expect_parse_ok("main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
-  expect_parse_ok_without_message("main() { int x; *(&x) = 1; return x; }", "W3004");
+  expect_parse_ok("int main() { int x; x = 1 + 2 * 3 - 4 / 2 + (5 % 3); return x; }");
+  expect_parse_ok_without_message("int main() { int x; *(&x) = 1; return x; }", "W3004");
   expect_parse_ok_without_message(
       "typedef _Atomic int atomic_int; int main(void){ atomic_int x; ((void)(*(&x)=10)); return x; }",
       "W3004");
@@ -13876,7 +13885,7 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok_with_message("int main(void){ return 1 % 0; }", "W3015");
   expect_parse_ok_with_message("int main(void){ return f(); } int f(void){ return 1; }", "W3016");
   expect_parse_ok_without_message("int f(void); int main(void){ return f(); }", "W3016");
-  expect_parse_ok_with_message("main(void){ return 0; }", "W3001");
+  expect_parse_fail_with_message("main(void){ return 0; }", "E3088");
   expect_parse_ok_without_message("int main(void){ return 0; }", "W3001");
   expect_parse_ok_without_message("int main(void){ int x=2.0; return 0; }", "W3010");
   expect_parse_ok_without_message("int main(void){ int x; x=2.0; return 0; }", "W3010");
@@ -13898,25 +13907,25 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok_with_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3002");
   expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3003");
   expect_parse_ok_without_message("int main(void){ goto L; { int x; x=1; return x; } L: return 0; }", "W3004");
-  expect_parse_ok("main() { int a; int b; int c; a = b = c = 42; return a; }");
-  expect_parse_ok("main() { return 1?2:3?4:5?6:7; }");
-  expect_parse_ok("main() { int x=1; return x<<1|x<<2|x<<3; }");
-  expect_parse_ok("main() { int x=1; return !!!!!x; }");
-  expect_parse_ok("main() { int x=255; return ~~~x; }");
+  expect_parse_ok("int main() { int a; int b; int c; a = b = c = 42; return a; }");
+  expect_parse_ok("int main() { return 1?2:3?4:5?6:7; }");
+  expect_parse_ok("int main() { int x=1; return x<<1|x<<2|x<<3; }");
+  expect_parse_ok("int main() { int x=1; return !!!!!x; }");
+  expect_parse_ok("int main() { int x=255; return ~~~x; }");
   expect_parse_ok("struct S { int x; }; int f(struct S (*p)) { return p->x; } int main() { struct S s={3}; return f(&s); }");
 
   // sizeof内の型
-  expect_parse_ok("main() { return sizeof(int); }");
-  expect_parse_ok("main() { return sizeof(int*); }");
-  expect_parse_ok("main() { return sizeof(int (*[3])(int)); }");
-  expect_parse_ok("main() { return sizeof(int (*[2])[3]); }");
-  expect_parse_ok("main() { return sizeof(int (*(*[2])[3])); }");
-  expect_parse_ok("main() { return sizeof(int (*(*)(void))[3]); }");
-  expect_parse_ok("main() { return sizeof(int (*(*[2])(void))[3]); }");
-  expect_parse_ok("main() { return sizeof(int (*(*)(void))(int)); }");
-  expect_parse_ok("main() { return sizeof(int (*(*(*)(void))(int))[3]); }");
-  expect_parse_ok("main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
-  expect_parse_ok("main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }");
+  expect_parse_ok("int main() { return sizeof(int); }");
+  expect_parse_ok("int main() { return sizeof(int*); }");
+  expect_parse_ok("int main() { return sizeof(int (*[3])(int)); }");
+  expect_parse_ok("int main() { return sizeof(int (*[2])[3]); }");
+  expect_parse_ok("int main() { return sizeof(int (*(*[2])[3])); }");
+  expect_parse_ok("int main() { return sizeof(int (*(*)(void))[3]); }");
+  expect_parse_ok("int main() { return sizeof(int (*(*[2])(void))[3]); }");
+  expect_parse_ok("int main() { return sizeof(int (*(*)(void))(int)); }");
+  expect_parse_ok("int main() { return sizeof(int (*(*(*)(void))(int))[3]); }");
+  expect_parse_ok("int main() { return _Generic((int (*)(int))0, int (*[3])(int): 1, default: 2); }");
+  expect_parse_ok("int main() { return _Generic((int (*(*)(void))[3])0, int (*(*)(void))[3]: 1, default: 2); }");
 
   // 関数宣言のプロトタイプ
   expect_parse_ok("int f(int a, int b, int c); int main() { return f(1,2,3); }");
@@ -13932,16 +13941,16 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("typedef int A3[3]; _Static_assert(sizeof(A3)==12, \"ok\"); int main(){ return 0; }");
 
   // for文の複雑な初期化
-  expect_parse_ok("main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
+  expect_parse_ok("int main() { int i; int s=0; for(i=0; i<10; i=i+1) s=s+i; return s; }");
 
   // do-while の後に式文
-  expect_parse_ok("main() { int x=0; do { x=x+1; } while(x<3); return x; }");
+  expect_parse_ok("int main() { int x=0; do { x=x+1; } while(x<3); return x; }");
 
   // switch内のfall-through
-  expect_parse_ok("main() { int x=2; int r=0; switch(x) { case 1: r=10; case 2: r=r+20; case 3: r=r+30; default: r=r+1; } return r; }");
+  expect_parse_ok("int main() { int x=2; int r=0; switch(x) { case 1: r=10; case 2: r=r+20; case 3: r=r+30; default: r=r+1; } return r; }");
 
   // ネストしたブロック
-  expect_parse_ok("main() { { { { int x=42; return x; } } } }");
+  expect_parse_ok("int main() { { { { int x=42; return x; } } } }");
 
   // 意地悪テスト: 宣言・型の境界ケース
 
@@ -13967,77 +13976,77 @@ static void test_parse_evil_edge_cases() {
   expect_parse_ok("int main(){ int (*arr[2])(int); return 0; }");
 
   // 複数の変数宣言（カンマ区切り）
-  expect_parse_ok("main() { int a=1, b=2, c=3; return a+b+c; }");
+  expect_parse_ok("int main() { int a=1, b=2, c=3; return a+b+c; }");
 
   // 関数ポインタ宣言
   expect_parse_ok("int add(int a, int b) { return a+b; } int main() { int (*f)(int,int) = add; return f(20,22); }");
   expect_parse_ok("int inc(int x){return x+1;} int apply(int (**pp)(int), int x){ return (*pp)(x); } int main(){ int (*p)(int)=inc; int (**pp)(int)=&p; return apply(pp,41); }");
   expect_parse_ok("int main(){ int (*(*pp))(int); return 0; }");
-  expect_parse_ok("main() { struct S { int (*fp)(int); }; return 0; }");
-  expect_parse_ok("main() { struct S { int (*arr[2])(int); }; return 0; }");
+  expect_parse_ok("int main() { struct S { int (*fp)(int); }; return 0; }");
+  expect_parse_ok("int main() { struct S { int (*arr[2])(int); }; return 0; }");
 
   // enumの値パース
-  expect_parse_ok("main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
+  expect_parse_ok("int main() { enum Color { RED, GREEN, BLUE }; enum Color c = GREEN; return c; }");
   // 匿名enumの値指定は既知のバグ（enum初期化子パース未対応）で現在パースエラー
-  // expect_parse_ok("main() { enum { A=10, B=20, C=30 }; return B; }");
+  // expect_parse_ok("int main() { enum { A=10, B=20, C=30 }; return B; }");
 
   // 構造体の前方参照と自己参照ポインタ
   // 自己参照ポインタメンバは現在パースエラー（不完全型ポインタ未対応の可能性）
-  // expect_parse_ok("main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
+  // expect_parse_ok("int main() { struct Node { int val; struct Node *next; }; struct Node n; n.val=42; n.next=0; return n.val; }");
 
   // void* の宣言と使用
-  expect_parse_ok("main() { void *p = 0; return p == 0 ? 42 : 0; }");
+  expect_parse_ok("int main() { void *p = 0; return p == 0 ? 42 : 0; }");
 
   // const修飾
-  expect_parse_ok("main() { const int x = 42; return x; }");
+  expect_parse_ok("int main() { const int x = 42; return x; }");
   expect_parse_ok("static const char *__const_leak_roots[]={\"\"}; typedef struct __ConstLeakFrame __ConstLeakFrame; struct __ConstLeakFrame{__ConstLeakFrame *next; const char *path;}; static __ConstLeakFrame *__const_leak_g; void f(void){ __ConstLeakFrame *p=0; __const_leak_g=p; }");
   expect_parse_ok("static const char *__const_ptr_tbl[4]; void f(const char *name){ __const_ptr_tbl[0]=name; }");
   expect_parse_ok("struct __ConstMemberPtr{const char *path;}; void f(struct __ConstMemberPtr *m,const char *path){ m->path=path; }");
   expect_parse_ok("struct __PtrSubSym814{char *name; int len;}; struct __PtrSubData814{struct __PtrSubSym814 *symbols;}; static struct __PtrSubData814 __ptr_sub_g814; int main(void){__ptr_sub_g814.symbols[0].name=\"main\";return __ptr_sub_g814.symbols[0].name[0];}");
   // 後置const (int const x) は変数宣言で現在パースエラー
-  // expect_parse_ok("main() { int const x = 42; return x; }");
+  // expect_parse_ok("int main() { int const x = 42; return x; }");
 
   // 配列の宣言と初期化
-  expect_parse_ok("main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
+  expect_parse_ok("int main() { int a[3] = {1, 2, 3}; return a[0] + a[1] + a[2]; }");
 
   // 構造体のネストした初期化
-  expect_parse_ok("main() { struct P { int x; int y; }; struct R { struct P p; int z; }; struct R r = {{1,2},3}; return r.p.x + r.p.y + r.z; }");
+  expect_parse_ok("int main() { struct P { int x; int y; }; struct R { struct P p; int z; }; struct R r = {{1,2},3}; return r.p.x + r.p.y + r.z; }");
 
   // for文のスコープ付き変数宣言
-  expect_parse_ok("main() { int s=0; for (int i=0; i<5; i=i+1) s=s+i; return s; }");
+  expect_parse_ok("int main() { int s=0; for (int i=0; i<5; i=i+1) s=s+i; return s; }");
 
   // 構造体のサイズオフ
-  expect_parse_ok("main() { struct S { char a; int b; char c; }; return sizeof(struct S); }");
+  expect_parse_ok("int main() { struct S { char a; int b; char c; }; return sizeof(struct S); }");
 
   // union の基本使用
-  expect_parse_ok("main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
+  expect_parse_ok("int main() { union U { int x; char c; }; union U u; u.x=42; return u.x; }");
 
   // _Static_assert 正常系
   // _Static_assert with sizeof==4 — 定数式評価で==未対応の可能性
   // expect_parse_ok("_Static_assert(sizeof(int)==4, \"int is 4 bytes\"); int main() { return 42; }");
 
   // _Generic の複雑なケース
-  expect_parse_ok("main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
+  expect_parse_ok("int main() { double d=1.0; return _Generic(d, int:0, double:42, default:99); }");
 
   // 複合リテラルの使用 — 現在パースエラーの可能性があるため個別検証
-  //expect_parse_ok("main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
+  //expect_parse_ok("int main() { struct P { int x; int y; }; struct P p = (struct P){10, 32}; return p.x + p.y; }");
 
   // 意地悪テスト: 異常系の追加
   // 自己参照は不完全型エラーにならない（ポインタ非ポインタを問わずパース通過する可能性）
-  // expect_parse_fail("main() { struct S { int x; struct S s; }; return 0; }");
+  // expect_parse_fail("int main() { struct S { int x; struct S s; }; return 0; }");
   // 負のサイズは現在エラーにならない
-  // expect_parse_fail("main() { int a[-1]; return 0; }");
+  // expect_parse_fail("int main() { int a[-1]; return 0; }");
 }
 
 static void test_parser_config_matrix() {
   printf("test_parser_config_matrix...\n");
-  const char *struct_scalar_cast = "main() { struct S { int x; int y; }; return ((struct S)7).x; }";
-  const char *struct_pointer_cast = "main() { struct S { int *p; int q; }; int x=3; return *((struct S)&x).p; }";
-  const char *union_scalar_cast = "main() { union U { int x; char y; }; return ((union U)7).x; }";
-  const char *union_pointer_cast = "main() { union U { int *p; int q; }; int x=3; return ((union U)&x).p==&x; }";
-  const char *union_nonbrace_init = "main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }";
+  const char *struct_scalar_cast = "int main() { struct S { int x; int y; }; return ((struct S)7).x; }";
+  const char *struct_pointer_cast = "int main() { struct S { int *p; int q; }; int x=3; return *((struct S)&x).p; }";
+  const char *union_scalar_cast = "int main() { union U { int x; char y; }; return ((union U)7).x; }";
+  const char *union_pointer_cast = "int main() { union U { int *p; int q; }; int x=3; return ((union U)&x).p==&x; }";
+  const char *union_nonbrace_init = "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }";
   const char *same_size_nonscalar_cast =
-      "main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
+      "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
 
   // baseline: all extensions enabled
   ps_set_enable_struct_scalar_pointer_cast(true);
@@ -14204,9 +14213,25 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_TRUE(failure.node == &raw_initializer);
 }
 
+static void test_arena_checkpoint_rollback() {
+  printf("test_arena_checkpoint_rollback...\n");
+  arena_free_all();
+  int *retained = arena_alloc(sizeof(*retained));
+  *retained = 41;
+  arena_checkpoint_t checkpoint = arena_checkpoint();
+  int *discarded = arena_alloc(sizeof(*discarded));
+  *discarded = 99;
+  arena_rollback(checkpoint);
+  int *reused = arena_alloc(sizeof(*reused));
+  ASSERT_TRUE(reused == discarded);
+  ASSERT_EQ(41, *retained);
+  arena_free_all();
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
+  test_arena_checkpoint_rollback();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

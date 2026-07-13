@@ -3,12 +3,19 @@
 #include "config_runtime.h"
 #include "diag.h"
 #include "node_utils.h"
+#include "parser_recovery.h"
+#include "semantic_ctx.h"
 #include "static_assert_declaration.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
 
 static token_t *curtok(void) { return tk_get_current_token(); }
+
+static int is_local_typedef_name(token_t *token, void *context) {
+  (void)context;
+  return psx_ctx_is_typedef_name_token(token);
+}
 
 static void require_callbacks(
     const psx_local_declaration_callbacks_t *callbacks) {
@@ -35,7 +42,17 @@ node_t *psx_parse_local_declaration_syntax(
   int is_typedef = curtok()->kind == TK_TYPEDEF;
   if (is_typedef) tk_set_current_token(curtok()->next);
   psx_parsed_decl_specifier_t specifier;
-  psx_parse_decl_specifier_syntax_ex(&specifier, NULL);
+  if (!psx_try_parse_decl_specifier_syntax_ex(
+          &specifier,
+          &(psx_decl_specifier_syntax_options_t){
+              .is_typedef_name = is_local_typedef_name,
+          })) {
+    diag_report_tokf(
+        DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(), "%s",
+        diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
+    ps_parser_mark_recoverable_syntax_error();
+    return NULL;
+  }
   ps_prepare_decl_specifier_alignments(&specifier);
   int standalone_tag =
       specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
@@ -70,6 +87,23 @@ node_t *psx_parse_local_declaration_syntax(
 
     psx_parsed_initializer_t initializer;
     psx_prepare_optional_initializer_syntax(&initializer);
+    if (initializer.has_initializer && initializer.value_tok &&
+        (initializer.value_tok->kind == TK_SEMI ||
+         initializer.value_tok->kind == TK_COMMA ||
+         initializer.value_tok->kind == TK_RBRACE ||
+         initializer.value_tok->kind == TK_EOF)) {
+      diag_report_tokf(
+          DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer.value_tok,
+          "%s", diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
+      psx_dispose_declarator_syntax(&declarator);
+      if (callbacks->abort_declaration)
+        callbacks->abort_declaration(declaration_context);
+      else
+        callbacks->finish_declaration(declaration_context);
+      ps_dispose_decl_specifier_syntax(&specifier);
+      ps_parser_mark_recoverable_syntax_error();
+      return NULL;
+    }
     callbacks->begin_declarator(
         declaration_context, &declarator, &initializer);
     if (initializer.has_initializer) {

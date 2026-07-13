@@ -174,6 +174,7 @@ static const diag_entry_t k_diag_entries[] = {
     {DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID, "E3085", "parser.array_designator_index_invalid"},
     {DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED, "E3086", "parser.initializer_element_limit_exceeded"},
     {DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN, "E3087", "parser.void_object_forbidden"},
+    {DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, "E3088", "parser.implicit_int_forbidden"},
     {DIAG_ERR_CODEGEN_GENERIC, "E4000", "codegen.generic"},
     {DIAG_ERR_CODEGEN_OUTPUT_FAILED, "E4001", "codegen.output_failed"},
     {DIAG_ERR_CODEGEN_INVALID_LVALUE, "E4002", "codegen.invalid_lvalue"},

@@ -1,7 +1,7 @@
 // if-else 内での return
 // 期待: exit=1
 #include <assert.h>
-main() {
+int main() {
     int r;
     if (1) r = 1;
     else r = 2;

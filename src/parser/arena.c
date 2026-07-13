@@ -54,6 +54,32 @@ void *arena_alloc(size_t size) {
   return ptr;
 }
 
+arena_checkpoint_t arena_checkpoint(void) {
+  return (arena_checkpoint_t){
+      .block = arena_current,
+      .used = arena_current ? arena_current->used : 0,
+  };
+}
+
+void arena_rollback(arena_checkpoint_t checkpoint) {
+  arena_block_t *saved = checkpoint.block;
+  if (!saved) {
+    arena_free_all();
+    return;
+  }
+
+  arena_block_t *block = saved->next;
+  saved->next = NULL;
+  while (block) {
+    arena_block_t *next = block->next;
+    arena_reserved_bytes -= sizeof(arena_block_t) + block->capacity;
+    free(block);
+    block = next;
+  }
+  if (checkpoint.used <= saved->used) saved->used = checkpoint.used;
+  arena_current = saved;
+}
+
 void arena_free_all(void) {
   arena_block_t *block = arena_head;
   while (block) {

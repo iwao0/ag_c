@@ -176,6 +176,7 @@ typedef struct {
   psx_decl_typedef_name_predicate_t is_typedef_name;
   void *typedef_name_context;
   int allow_implicit_function_parameters;
+  int has_syntax_error;
 } declaration_declarator_parse_context_t;
 
 static int append_declarator_pointer(
@@ -269,8 +270,15 @@ static int consume_declarator_suffix(
     ps_diag_ctx(current_token(), "declaration-syntax",
                  "function parameter syntax allocation failed");
   }
-  psx_parse_function_parameters_syntax_ex(
-      parameters, parse_context->allow_implicit_function_parameters);
+  if (!psx_parse_function_parameters_syntax_ex(
+          parameters,
+          parse_context->is_typedef_name &&
+                  !parse_context->allow_implicit_function_parameters
+              ? PSX_PARAMETER_TYPE_C11_STRICT
+              : (parse_context->allow_implicit_function_parameters
+                     ? PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT
+                     : PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF)))
+    parse_context->has_syntax_error = 1;
   declarator->function_suffixes[declarator->function_suffix_count++] =
       (psx_parsed_function_suffix_t){
           .declarator_op_index = op_index,
@@ -330,7 +338,7 @@ static int is_parameter_grouping_parenthesis(
       next, (const declaration_declarator_parse_context_t *)context);
 }
 
-static void parse_declarator_syntax_tree_into(
+static int parse_declarator_syntax_tree_into(
     psx_parsed_declarator_t *declarator,
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
@@ -374,6 +382,7 @@ static void parse_declarator_syntax_tree_into(
   declarator->diagnostic_token = declarator->identifier
                                     ? (token_t *)declarator->identifier
                                     : current_token();
+  return !parse_context.has_syntax_error;
 }
 
 psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void) {
@@ -398,9 +407,15 @@ static int is_current_typedef_name(token_t *token, void *context) {
 psx_parsed_declarator_t
 psx_parse_toplevel_declarator_syntax_tree(void) {
   psx_parsed_declarator_t declarator;
-  parse_declarator_syntax_tree_into(
-      &declarator, 0, NULL, is_current_typedef_name, NULL, 1);
+  psx_try_parse_toplevel_declarator_syntax_tree(&declarator);
   return declarator;
+}
+
+int psx_try_parse_toplevel_declarator_syntax_tree(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator) return 0;
+  return parse_declarator_syntax_tree_into(
+      declarator, 0, NULL, is_current_typedef_name, NULL, 0);
 }
 
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void) {
@@ -509,10 +524,10 @@ static void parse_tag_specifier(psx_parsed_decl_specifier_t *specifier) {
   }
 }
 
-void psx_parse_decl_specifier_syntax_ex(
+int psx_try_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options) {
-  if (!specifier) return;
+  if (!specifier) return 0;
   memset(specifier, 0, sizeof(*specifier));
   specifier->diagnostic_token = current_token();
 
@@ -526,7 +541,7 @@ void psx_parse_decl_specifier_syntax_ex(
       });
   if (builtin_kind != TK_EOF) {
     specifier->source = PSX_PARSED_DECL_TYPE_BUILTIN;
-    return;
+    return 1;
   }
   if (current_token()->kind == TK_STRUCT ||
       current_token()->kind == TK_UNION ||
@@ -541,7 +556,7 @@ void psx_parse_decl_specifier_syntax_ex(
         specifier->type_spec.is_volatile_qualified = 1;
       tk_set_current_token(current_token()->next);
     }
-    return;
+    return 1;
   }
   if (current_token()->kind == TK_IDENT &&
       (!options || !options->is_typedef_name ||
@@ -563,13 +578,20 @@ void psx_parse_decl_specifier_syntax_ex(
         specifier->type_spec.is_atomic = 1;
       tk_set_current_token(current_token()->next);
     }
-    return;
+    return 1;
   }
   if (options && options->allow_implicit_int) {
     specifier->source = PSX_PARSED_DECL_TYPE_IMPLICIT_INT;
     specifier->type_spec.kind = TK_INT;
-    return;
+    return 1;
   }
+  return 0;
+}
+
+void psx_parse_decl_specifier_syntax_ex(
+    psx_parsed_decl_specifier_t *specifier,
+    const psx_decl_specifier_syntax_options_t *options) {
+  if (psx_try_parse_decl_specifier_syntax_ex(specifier, options)) return;
   ps_diag_ctx(current_token(), "decl", "%s",
                diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
 }

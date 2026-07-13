@@ -1,5 +1,6 @@
 #include "translation_unit.h"
 
+#include "../diag/diag.h"
 #include "../semantic/declaration_registration.h"
 #include "function_definition.h"
 #include "local_declaration.h"
@@ -54,11 +55,30 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       continue;
     }
     if (item.kind == PSX_TOPLEVEL_ITEM_FUNCTION_HEADER) {
+      arena_checkpoint_t arena_mark = arena_checkpoint();
+      token_ident_t *function_name =
+          item.value.function_header.declarator.identifier;
+      psx_function_registration_checkpoint_t checkpoint;
+      ps_ctx_checkpoint_function_registration(
+          function_name ? function_name->str : NULL,
+          function_name ? function_name->len : 0, &checkpoint);
       node_func_t *header = psx_apply_function_definition_header(
           &item.value.function_header);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,
           psx_frontend_local_declaration_callbacks());
+      if (!function) {
+        ps_ctx_rollback_function_registration(
+            function_name ? function_name->str : NULL,
+            function_name ? function_name->len : 0, &checkpoint);
+        ps_decl_reset_locals();
+        ps_ctx_reset_function_scope();
+        ps_dispose_function_definition_header_syntax(
+            &item.value.function_header);
+        arena_rollback(arena_mark);
+        if (agc_wasm_diagnostic_limit_kind()) return NULL;
+        continue;
+      }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
       psx_frontend_analyze_function(function, function->tok);

@@ -139,6 +139,16 @@ int ps_ctx_has_typedef_in_current_scope(char *name, int len);
 int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
+typedef struct {
+  const psx_type_t *function_type;
+  int existed;
+  int is_defined;
+} psx_function_registration_checkpoint_t;
+void ps_ctx_checkpoint_function_registration(
+    char *name, int len, psx_function_registration_checkpoint_t *checkpoint);
+void ps_ctx_rollback_function_registration(
+    char *name, int len,
+    const psx_function_registration_checkpoint_t *checkpoint);
 void psx_ctx_define_function_name(char *name, int len);
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size);
 int psx_ctx_get_function_ret_struct_size(char *name, int len);

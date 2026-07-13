@@ -1378,6 +1378,22 @@ static const compile_fail_case_t compile_fail_cases[] = {
     {"funcdef_unnamed_param_rejected",
      "int bad(int) { return 0; }",
      "必要な項目がありません: 仮引数"},
+    {"c11_implicit_int_objects_rejected",
+     "aaa;\nbb;\n",
+     "E3088"},
+    {"c11_implicit_return_type_rejected",
+     "implicit_return(void) { return 0; }",
+     "E3088"},
+    {"c11_old_style_parameter_rejected",
+     "int old_style(value) { return value; }",
+     "E3088"},
+    {"c11_block_implicit_int_rejected",
+     "int block_scope(void) { static local; return 0; }",
+     "E3088"},
+    {"multiple_function_syntax_errors_reported",
+     "int first(void) { int a = ; return a; }\n"
+     "int second(void) { int b = ; return b; }\n",
+     "E3045"},
 };
 
 static int test_count = 0;
@@ -2464,6 +2480,24 @@ int main() {
         run_ag_c_expect_fail_with_diag(src_path, tc->expected_diag, log_path) != 0) {
       fprintf(stderr, "Compile-fail case failed: %s (see %s)\n", tc->name, log_path);
       return 1;
+    }
+    if ((strcmp(tc->name, "c11_implicit_int_objects_rejected") == 0 ||
+         strcmp(tc->name, "multiple_function_syntax_errors_reported") == 0)) {
+      FILE *log = fopen(log_path, "r");
+      char diagnostics[8192] = {0};
+      size_t length = log ? fread(diagnostics, 1, sizeof(diagnostics) - 1, log) : 0;
+      if (log) fclose(log);
+      diagnostics[length] = '\0';
+      int count = 0;
+      for (char *match = diagnostics;
+           (match = strstr(match, tc->expected_diag)) != NULL;
+           match += strlen(tc->expected_diag))
+        count++;
+      if (count != 2) {
+        fprintf(stderr, "Compile-fail case did not emit two diagnostics: %s (see %s)\n",
+                tc->name, log_path);
+        return 1;
+      }
     }
   }
   {

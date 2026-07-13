@@ -2,4 +2,4 @@
 // 1 | 2 ^ 3 & 4 = 1 | 2 ^ (3 & 4) = 1 | (2 ^ 0) = 1 | 2 = 3
 // 期待: exit=3
 #include <assert.h>
-main() { assert((1 | 2 ^ 3 & 4) == 3); return 0; }
+int main() { assert((1 | 2 ^ 3 & 4) == 3); return 0; }

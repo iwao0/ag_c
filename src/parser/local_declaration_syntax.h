@@ -20,6 +20,7 @@ typedef struct {
       void *declaration_context,
       const psx_parsed_initializer_t *initializer);
   node_t *(*finish_declaration)(void *declaration_context);
+  void (*abort_declaration)(void *declaration_context);
 } psx_local_declaration_callbacks_t;
 
 node_t *psx_parse_local_declaration_syntax(

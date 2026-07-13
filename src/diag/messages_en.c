@@ -175,6 +175,7 @@ const char *diag_message_en(diag_error_id_t id) {
     case DIAG_ERR_PARSER_ARRAY_DESIGNATOR_INDEX_INVALID: return "Invalid array designator initializer index";
     case DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED: return "Too many initializer elements (limit %d)";
     case DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN: return "Cannot declare an object of type void: '%.*s'";
+    case DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN: return "Declarations without a type specifier are not allowed in C11";
     case DIAG_ERR_CODEGEN_GENERIC: return "Codegen error";
     case DIAG_ERR_CODEGEN_OUTPUT_FAILED: return "Failed to emit code";
     case DIAG_ERR_CODEGEN_INVALID_LVALUE: return "Invalid lvalue in assignment";

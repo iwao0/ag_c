@@ -46,6 +46,7 @@ int agc_wasm_diagnostic_start_offset(int index);
 int agc_wasm_diagnostic_end_line(int index);
 int agc_wasm_diagnostic_end_column(int index);
 int agc_wasm_diagnostic_end_offset(int index);
+int diag_has_error_records(void);
 
 /**
  * @brief テキストIDに対応するローカライズ済みテキストを取得する。
@@ -74,6 +75,12 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
  */
 void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...)
     __attribute__((noreturn));
+
+/** Store and print a recoverable source diagnostic without terminating. */
+int diag_report_atf(diag_error_id_t id, const char *input, const char *loc,
+                    const char *fmt, ...);
+int diag_report_tokf(diag_error_id_t id, const token_t *tok,
+                     const char *fmt, ...);
 
 /**
  * @brief トークン位置を指定して警告を出力する（プロセスは終了しない）。

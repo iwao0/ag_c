@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "parser_recovery.h"
 #include "parser_public.h"  /* ps_iter_globals prototype */
 #include "arena.h"
 #include "node_utils.h"
@@ -24,6 +25,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int g_recoverable_syntax_error;
+static int g_function_block_depth;
+static int g_recovery_block_depth;
 
 int ps_gvar_is_extern_decl(const global_var_t *gv) {
   return (gv && gv->is_extern_decl) ? 1 : 0;
@@ -399,6 +404,39 @@ void ps_parser_stream_begin(
     tk_set_current_token_ctx(tk_ctx, start);
   }
   tk_set_current_token(start);
+  g_recoverable_syntax_error = 0;
+  g_function_block_depth = 0;
+  g_recovery_block_depth = 0;
+}
+
+static void psx_advance_recovery_token(void) {
+  tk_ensure_lookahead();
+  token_t *token = curtok();
+  if (token && token->next) set_curtok(token->next);
+}
+
+static void psx_synchronize_toplevel_declaration(void) {
+  token_t *start = curtok();
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  int brace_depth = 0;
+  while (!tk_at_eof()) {
+    token_kind_t kind = curtok()->kind;
+    if (kind == TK_LPAREN) paren_depth++;
+    else if (kind == TK_RPAREN && paren_depth > 0) paren_depth--;
+    else if (kind == TK_LBRACKET) bracket_depth++;
+    else if (kind == TK_RBRACKET && bracket_depth > 0) bracket_depth--;
+    else if (kind == TK_LBRACE) brace_depth++;
+    else if (kind == TK_RBRACE && brace_depth > 0) brace_depth--;
+    psx_advance_recovery_token();
+    if (kind == TK_SEMI && paren_depth == 0 && bracket_depth == 0 &&
+        brace_depth == 0)
+      break;
+    if (kind == TK_RBRACE && paren_depth == 0 && bracket_depth == 0 &&
+        brace_depth == 0)
+      break;
+  }
+  if (curtok() == start && !tk_at_eof()) psx_advance_recovery_token();
 }
 
 int ps_parse_next_toplevel_item(
@@ -415,8 +453,13 @@ int ps_parse_next_toplevel_item(
       }
       return 1;
     }
-    psx_parsed_toplevel_declaration_t declaration;
-    psx_parse_toplevel_declaration_head_syntax(&declaration);
+    psx_parsed_toplevel_declaration_t declaration = {0};
+    if (!psx_parse_toplevel_declaration_head_syntax(&declaration)) {
+      ps_dispose_toplevel_declaration_syntax(&declaration);
+      psx_synchronize_toplevel_declaration();
+      if (agc_wasm_diagnostic_limit_kind()) break;
+      continue;
+    }
     psx_skip_gnu_attributes();
     if (!declaration.is_standalone_tag && curtok()->kind == TK_LBRACE) {
       psx_parsed_declarator_t *declarator = &declaration.declarators[0];
@@ -432,9 +475,15 @@ int ps_parse_next_toplevel_item(
     } else {
       item->kind = PSX_TOPLEVEL_ITEM_DECLARATION;
       item->value.declaration = declaration;
-      psx_finish_toplevel_declaration_syntax(
-          &item->value.declaration,
-          stream ? stream->toplevel_declarations : NULL);
+      if (!psx_finish_toplevel_declaration_syntax(
+              &item->value.declaration,
+              stream ? stream->toplevel_declarations : NULL)) {
+        ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
+        item->kind = PSX_TOPLEVEL_ITEM_EOF;
+        psx_synchronize_toplevel_declaration();
+        if (agc_wasm_diagnostic_limit_kind()) break;
+        continue;
+      }
     }
     if (stream && stream->tk_ctx) {
       tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
@@ -669,7 +718,11 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     break;
   }
 
-  if (curtok() == start) return TK_EOF;
+  int saw_type_specifier =
+      saw_signed || saw_unsigned || long_count > 0 || saw_short || saw_int ||
+      saw_char || saw_void || saw_float || saw_double || saw_bool ||
+      saw_complex || saw_imaginary;
+  if (!saw_type_specifier) return TK_EOF;
   out->is_unsigned = saw_unsigned;
   out->is_complex = saw_complex || saw_imaginary;
   out->is_long_long = (long_count >= 2) ? 1 : 0;
@@ -700,6 +753,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
 static node_block_t *parse_funcdef_body_block(
     const psx_local_declaration_callbacks_t *local_declarations) {
   ps_ctx_enter_block_scope();
+  ps_parser_enter_recovery_block();
   node_block_t *body = arena_alloc(sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
@@ -716,6 +770,12 @@ static node_block_t *parse_funcdef_body_block(
     psx_lvar_usage_region_t *region = psx_decl_begin_lvar_usage_region();
     body->body[i] = psx_stmt_stmt(local_declarations);
     psx_decl_end_lvar_usage_region(region);
+    if (ps_parser_has_recoverable_syntax_error()) {
+      body->body[i] = NULL;
+      ps_parser_leave_recovery_block();
+      ps_ctx_leave_block_scope();
+      return NULL;
+    }
     if (body->body[i]) {
       body->body[i]->tok = stmt_tok;
       body->body[i]->usage_region = region;
@@ -723,6 +783,7 @@ static node_block_t *parse_funcdef_body_block(
     i++;
   }
   body->body[i] = NULL;
+  ps_parser_leave_recovery_block();
   ps_ctx_leave_block_scope();
   return body;
 }
@@ -731,9 +792,26 @@ node_t *ps_parse_function_definition_body(
     psx_parser_stream_t *stream, node_func_t *function,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!function) return NULL;
+  g_recoverable_syntax_error = 0;
+  g_recovery_block_depth = 0;
   tk_expect('{');
   function->base.rhs =
       (node_t *)parse_funcdef_body_block(local_declarations);
+  if (g_recoverable_syntax_error) {
+    int depth = g_recovery_block_depth > 0 ? g_recovery_block_depth : 1;
+    while (!tk_at_eof() && depth > 0) {
+      token_kind_t kind = curtok()->kind;
+      if (kind == TK_LBRACE) depth++;
+      else if (kind == TK_RBRACE) depth--;
+      psx_advance_recovery_token();
+    }
+    ps_decl_set_current_funcname(NULL, 0);
+    if (stream && stream->tk_ctx)
+      tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
+    g_recoverable_syntax_error = 0;
+    g_recovery_block_depth = 0;
+    return NULL;
+  }
   psx_ctx_validate_goto_refs();
   function->lvars = ps_decl_get_locals();
   ps_decl_set_current_funcname(NULL, 0);
@@ -762,4 +840,19 @@ node_t *ps_expr_from(token_t *start) {
 
 node_t *ps_expr(void) {
   return ps_expr_ctx(NULL, tk_get_current_token());
+}
+void ps_parser_mark_recoverable_syntax_error(void) {
+  if (!g_recoverable_syntax_error)
+    g_recovery_block_depth = g_function_block_depth;
+  g_recoverable_syntax_error = 1;
+}
+
+int ps_parser_has_recoverable_syntax_error(void) {
+  return g_recoverable_syntax_error;
+}
+
+void ps_parser_enter_recovery_block(void) { g_function_block_depth++; }
+
+void ps_parser_leave_recovery_block(void) {
+  if (g_function_block_depth > 0) g_function_block_depth--;
 }

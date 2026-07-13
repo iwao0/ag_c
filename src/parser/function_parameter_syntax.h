@@ -15,11 +15,17 @@ struct psx_parsed_function_parameters_t {
   int is_variadic;
 };
 
-void psx_parse_function_parameters_syntax(
+typedef enum {
+  PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF = 0,
+  PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
+  PSX_PARAMETER_TYPE_C11_STRICT,
+} psx_function_parameter_type_mode_t;
+
+int psx_parse_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
-void psx_parse_function_parameters_syntax_ex(
+int psx_parse_function_parameters_syntax_ex(
     psx_parsed_function_parameters_t *parameters,
-    int allow_implicit_int);
+    psx_function_parameter_type_mode_t type_mode);
 void psx_dispose_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
 

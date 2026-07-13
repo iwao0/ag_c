@@ -30,14 +30,15 @@ typedef struct {
       void *declaration_context,
       psx_parsed_initializer_t *initializer);
   void (*finish_declaration)(void *declaration_context);
+  void (*abort_declaration)(void *declaration_context);
 } psx_toplevel_declaration_callbacks_t;
 
-void psx_parse_toplevel_declaration_syntax(
+int psx_parse_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);
-void psx_parse_toplevel_declaration_head_syntax(
+int psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
-void psx_finish_toplevel_declaration_syntax(
+int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);
 void ps_dispose_toplevel_declaration_syntax(

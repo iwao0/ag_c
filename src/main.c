@@ -207,6 +207,13 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
+  if (diag_has_error_records()) {
+    clear_output_callback();
+    gen_set_simple_formatter(0);
+    if (object_mode) wasm32_obj_capture_output(0);
+    return -5;
+  }
+
   if (object_mode) {
     wasm32_obj_emit_data_segments();
     wasm32_obj_end();
@@ -367,6 +374,18 @@ int main(int argc, char **argv) {
   }
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
+
+  if (diag_has_error_records()) {
+#ifdef AGC_TARGET_WASM32
+    if (wasm_object_mode) {
+      fclose(wasm_obj_out);
+      remove(output_path);
+    }
+#endif
+    clear_output_callback();
+    free(source);
+    return 1;
+  }
 
 #ifdef AGC_TARGET_WASM32
   if (wasm_object_mode) {

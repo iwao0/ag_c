@@ -211,6 +211,10 @@ static node_t *finish_declaration(void *declaration_context) {
   return result;
 }
 
+static void abort_declaration(void *declaration_context) {
+  free(declaration_context);
+}
+
 const psx_local_declaration_callbacks_t *
 psx_frontend_local_declaration_callbacks(void) {
   static const psx_local_declaration_callbacks_t callbacks = {
@@ -219,6 +223,7 @@ psx_frontend_local_declaration_callbacks(void) {
       .begin_declarator = begin_declarator,
       .finish_declarator = finish_declarator,
       .finish_declaration = finish_declaration,
+      .abort_declaration = abort_declaration,
   };
   return &callbacks;
 }
