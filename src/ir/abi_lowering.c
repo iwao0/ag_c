@@ -78,6 +78,31 @@ ir_abi_param_info_t ir_abi_classify_param_type(const psx_type_t *type) {
   }
 }
 
+int ir_abi_callable_sig_from_type(
+    const psx_type_t *type, ir_callable_sig_t *out) {
+  if (!out) return 0;
+  memset(out, 0, sizeof(*out));
+  const psx_type_t *function = ps_type_find_function(type);
+  if (!function) return 0;
+
+  ir_abi_param_info_t result =
+      ir_abi_classify_param_type(function->base);
+  out->result = function->base && function->base->kind == PSX_TYPE_VOID
+                    ? IR_TY_VOID
+                    : result.type;
+  int count = function->param_count;
+  if (count < 0) count = 0;
+  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
+  out->param_count = (unsigned char)count;
+  out->is_variadic = function->is_variadic_function ? 1 : 0;
+  for (int i = 0; i < count; i++) {
+    ir_abi_param_info_t param =
+        ir_abi_classify_param_type(function->param_types[i]);
+    out->params[i] = param.type == IR_TY_VOID ? IR_TY_I32 : param.type;
+  }
+  return 1;
+}
+
 ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
                                                     int param_idx) {
   ir_abi_param_info_t builtin =

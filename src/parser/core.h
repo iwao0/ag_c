@@ -82,46 +82,10 @@ typedef struct {
 
 int ps_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig);
 int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret);
-int psx_funcptr_return_shape_matches(psx_funcptr_return_shape_t a,
-                                     psx_funcptr_return_shape_t b);
-psx_funcptr_return_shape_t psx_decl_funcptr_direct_return_shape(
-    psx_decl_funcptr_sig_t sig);
-psx_funcptr_return_shape_t psx_funcptr_return_shape_merge_missing(
-    psx_funcptr_return_shape_t merged, psx_funcptr_return_shape_t src);
 int psx_funcptr_signature_has_payload(psx_funcptr_signature_t sig);
 int psx_funcptr_callable_shape_has_payload(psx_funcptr_callable_shape_t fn);
-int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
-                                       psx_funcptr_callable_shape_t b);
-psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
-    psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
-    int copy_variadic);
 int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret);
-psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
-    psx_funcptr_returned_func_t ret);
-psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
-    psx_funcptr_type_shape_t fn);
-psx_funcptr_returned_func_t psx_funcptr_returned_func_mark(
-    psx_funcptr_returned_func_t ret);
-psx_funcptr_returned_func_t psx_funcptr_returned_func_clone(
-    psx_funcptr_returned_func_t ret);
-int psx_funcptr_returned_func_matches(psx_funcptr_returned_func_t a,
-                                      psx_funcptr_returned_func_t b);
-psx_funcptr_returned_func_t psx_funcptr_returned_func_merge_missing(
-    psx_funcptr_returned_func_t merged, psx_funcptr_returned_func_t src,
-    int copy_variadic);
 int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn);
-int psx_funcptr_type_shape_matches(psx_funcptr_type_shape_t a,
-                                   psx_funcptr_type_shape_t b);
-psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
-    psx_funcptr_type_shape_t merged, psx_funcptr_type_shape_t src,
-    int copy_variadic);
-psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
-    psx_funcptr_type_shape_t fn);
-void psx_funcptr_type_shape_clone_to(const psx_funcptr_type_shape_t *src,
-                                     psx_funcptr_type_shape_t *out);
-void ps_decl_funcptr_sig_clone_to(const psx_decl_funcptr_sig_t *sig,
-                                  psx_decl_funcptr_sig_t *out);
-psx_decl_funcptr_sig_t ps_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig);
 bool psx_try_consume_pragma_pack_marker(void);
 
 #endif

@@ -261,15 +261,6 @@ void ps_decl_reset_translation_unit_state(void) {
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
-unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
-                                                  tk_float_kind_t fp_kind) {
-  if (is_pointer || fp_kind != TK_FLOAT_KIND_NONE || kind == TK_VOID ||
-      ps_ctx_is_tag_aggregate_kind(kind) || kind == TK_EOF) {
-    return 0;
-  }
-  return ps_ctx_scalar_type_size(kind) >= 8 ? 8 : 4;
-}
-
 int psx_funcptr_signature_has_payload(psx_funcptr_signature_t sig) {
   return sig.param_fp_mask || sig.param_int_mask || sig.is_variadic ||
          sig.nargs_fixed;
@@ -283,75 +274,9 @@ int psx_funcptr_return_shape_has_payload(psx_funcptr_return_shape_t ret) {
          psx_ret_pointee_array_has_dims(ret.pointee_array);
 }
 
-int psx_funcptr_return_shape_matches(psx_funcptr_return_shape_t a,
-                                     psx_funcptr_return_shape_t b) {
-  return a.int_width == b.int_width &&
-         a.fp_kind == b.fp_kind &&
-         a.pointee_fp_kind == b.pointee_fp_kind &&
-         a.is_void == b.is_void &&
-         a.is_data_pointer == b.is_data_pointer &&
-         a.is_complex == b.is_complex &&
-         psx_ret_pointee_array_equal(a.pointee_array, b.pointee_array);
-}
-
-psx_funcptr_return_shape_t psx_decl_funcptr_direct_return_shape(
-    psx_decl_funcptr_sig_t sig) {
-  return sig.function.callable.return_shape;
-}
-
-psx_funcptr_return_shape_t psx_funcptr_return_shape_merge_missing(
-    psx_funcptr_return_shape_t merged, psx_funcptr_return_shape_t src) {
-  if (!merged.int_width && src.int_width) merged.int_width = src.int_width;
-  if (merged.fp_kind == TK_FLOAT_KIND_NONE &&
-      src.fp_kind != TK_FLOAT_KIND_NONE) {
-    merged.fp_kind = src.fp_kind;
-  }
-  if (merged.pointee_fp_kind == TK_FLOAT_KIND_NONE &&
-      src.pointee_fp_kind != TK_FLOAT_KIND_NONE) {
-    merged.pointee_fp_kind = src.pointee_fp_kind;
-  }
-  if (src.is_void) merged.is_void = 1;
-  if (src.is_data_pointer) merged.is_data_pointer = 1;
-  if (src.is_complex) merged.is_complex = 1;
-  if (!psx_ret_pointee_array_has_dims(merged.pointee_array) &&
-      psx_ret_pointee_array_has_dims(src.pointee_array)) {
-    merged.pointee_array = src.pointee_array;
-  }
-  return merged;
-}
-
 int psx_funcptr_callable_shape_has_payload(psx_funcptr_callable_shape_t fn) {
   return psx_funcptr_signature_has_payload(fn.signature) ||
          psx_funcptr_return_shape_has_payload(fn.return_shape);
-}
-
-int psx_funcptr_callable_shape_matches(psx_funcptr_callable_shape_t a,
-                                       psx_funcptr_callable_shape_t b) {
-  return a.signature.param_fp_mask == b.signature.param_fp_mask &&
-         a.signature.param_int_mask == b.signature.param_int_mask &&
-         a.signature.is_variadic == b.signature.is_variadic &&
-         (!a.signature.is_variadic ||
-          a.signature.nargs_fixed == b.signature.nargs_fixed) &&
-         (a.signature.nargs_fixed <= 0 || b.signature.nargs_fixed <= 0 ||
-          a.signature.nargs_fixed == b.signature.nargs_fixed) &&
-         psx_funcptr_return_shape_matches(a.return_shape, b.return_shape);
-}
-
-psx_funcptr_callable_shape_t psx_funcptr_callable_shape_merge_missing(
-    psx_funcptr_callable_shape_t merged, psx_funcptr_callable_shape_t src,
-    int copy_variadic) {
-  if (!merged.signature.param_fp_mask && src.signature.param_fp_mask)
-    merged.signature.param_fp_mask = src.signature.param_fp_mask;
-  if (!merged.signature.param_int_mask && src.signature.param_int_mask)
-    merged.signature.param_int_mask = src.signature.param_int_mask;
-  if (copy_variadic && src.signature.is_variadic)
-    merged.signature.is_variadic = 1;
-  if (!merged.signature.nargs_fixed && src.signature.nargs_fixed)
-    merged.signature.nargs_fixed = src.signature.nargs_fixed;
-  merged.return_shape =
-      psx_funcptr_return_shape_merge_missing(merged.return_shape,
-                                             src.return_shape);
-  return merged;
 }
 
 int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
@@ -359,191 +284,13 @@ int psx_funcptr_returned_func_has_payload(psx_funcptr_returned_func_t ret) {
          (ret.type && psx_funcptr_type_shape_has_payload(*ret.type));
 }
 
-static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
-    psx_funcptr_type_shape_t fn);
-
-psx_funcptr_type_shape_t psx_funcptr_returned_func_as_type_shape(
-    psx_funcptr_returned_func_t ret) {
-  return ret.type ? *ret.type : (psx_funcptr_type_shape_t){0};
-}
-
-psx_funcptr_returned_func_t psx_funcptr_returned_func_from_type_shape(
-    psx_funcptr_type_shape_t fn) {
-  psx_funcptr_returned_func_t ret = {0};
-  ret.is_funcptr = psx_funcptr_type_shape_has_payload(fn) ? 1 : 0;
-  if (ret.is_funcptr) ret.type = psx_funcptr_type_shape_clone_heap(fn);
-  return ret;
-}
-
-psx_funcptr_returned_func_t psx_funcptr_returned_func_mark(
-    psx_funcptr_returned_func_t ret) {
-  ret.is_funcptr = 1;
-  return ret;
-}
-
-psx_funcptr_returned_func_t psx_funcptr_returned_func_clone(
-    psx_funcptr_returned_func_t ret) {
-  psx_funcptr_returned_func_t copy = {0};
-  copy.is_funcptr = ret.is_funcptr;
-  if (ret.type) copy.type = psx_funcptr_type_shape_clone_heap(*ret.type);
-  return copy;
-}
-
-int psx_funcptr_returned_func_matches(psx_funcptr_returned_func_t a,
-                                      psx_funcptr_returned_func_t b) {
-  psx_funcptr_type_shape_t a_fn = psx_funcptr_returned_func_as_type_shape(a);
-  psx_funcptr_type_shape_t b_fn = psx_funcptr_returned_func_as_type_shape(b);
-  return a.is_funcptr == b.is_funcptr &&
-         psx_funcptr_type_shape_matches(a_fn, b_fn);
-}
-
-psx_funcptr_returned_func_t psx_funcptr_returned_func_merge_missing(
-    psx_funcptr_returned_func_t merged, psx_funcptr_returned_func_t src,
-    int copy_variadic) {
-  int merged_is_funcptr = merged.is_funcptr || src.is_funcptr;
-  psx_funcptr_type_shape_t merged_fn =
-      psx_funcptr_returned_func_as_type_shape(merged);
-  psx_funcptr_type_shape_t src_fn =
-      psx_funcptr_returned_func_as_type_shape(src);
-  merged_fn = psx_funcptr_type_shape_merge_missing(
-      merged_fn, src_fn, copy_variadic);
-  merged = psx_funcptr_returned_func_from_type_shape(merged_fn);
-  if (merged_is_funcptr) merged = psx_funcptr_returned_func_mark(merged);
-  return merged;
-}
-
-static psx_funcptr_type_shape_t *psx_funcptr_type_shape_clone_heap(
-    psx_funcptr_type_shape_t fn) {
-  psx_funcptr_type_shape_t *copy = calloc(1, sizeof(*copy));
-  if (!copy) return NULL;
-  psx_funcptr_type_shape_clone_to(&fn, copy);
-  return copy;
-}
-
 int psx_funcptr_type_shape_has_payload(psx_funcptr_type_shape_t fn) {
   return psx_funcptr_callable_shape_has_payload(fn.callable) ||
          psx_funcptr_returned_func_has_payload(fn.returned_funcptr);
 }
 
-int psx_funcptr_type_shape_matches(psx_funcptr_type_shape_t a,
-                                   psx_funcptr_type_shape_t b) {
-  int has_returned =
-      psx_funcptr_returned_func_has_payload(a.returned_funcptr) ||
-      psx_funcptr_returned_func_has_payload(b.returned_funcptr);
-  return psx_funcptr_callable_shape_matches(a.callable, b.callable) &&
-         (!has_returned ||
-          psx_funcptr_returned_func_matches(a.returned_funcptr,
-                                            b.returned_funcptr));
-}
-
-psx_funcptr_type_shape_t psx_funcptr_type_shape_merge_missing(
-    psx_funcptr_type_shape_t merged, psx_funcptr_type_shape_t src,
-    int copy_variadic) {
-  merged.callable = psx_funcptr_callable_shape_merge_missing(
-      merged.callable, src.callable, copy_variadic);
-  if (psx_funcptr_returned_func_has_payload(merged.returned_funcptr) ||
-      psx_funcptr_returned_func_has_payload(src.returned_funcptr)) {
-    merged.returned_funcptr = psx_funcptr_returned_func_merge_missing(
-        merged.returned_funcptr, src.returned_funcptr, copy_variadic);
-  }
-  return merged;
-}
-
-psx_funcptr_type_shape_t psx_funcptr_type_shape_clone(
-    psx_funcptr_type_shape_t fn) {
-  psx_funcptr_type_shape_t copy = {0};
-  psx_funcptr_type_shape_clone_to(&fn, &copy);
-  return copy;
-}
-
-void psx_funcptr_type_shape_clone_to(const psx_funcptr_type_shape_t *src,
-                                     psx_funcptr_type_shape_t *out) {
-  if (!out) return;
-  *out = (psx_funcptr_type_shape_t){0};
-  if (!src) return;
-  out->callable = src->callable;
-  out->returned_funcptr.is_funcptr = src->returned_funcptr.is_funcptr;
-  if (src->returned_funcptr.type) {
-    out->returned_funcptr.type = calloc(1, sizeof(*out->returned_funcptr.type));
-    if (out->returned_funcptr.type) {
-      psx_funcptr_type_shape_clone_to(src->returned_funcptr.type,
-                                      out->returned_funcptr.type);
-    }
-  }
-}
-
-void ps_decl_funcptr_sig_clone_to(const psx_decl_funcptr_sig_t *sig,
-                                  psx_decl_funcptr_sig_t *out) {
-  if (!out) return;
-  *out = (psx_decl_funcptr_sig_t){0};
-  if (!sig) return;
-  psx_funcptr_type_shape_clone_to(&sig->function, &out->function);
-}
-
-psx_decl_funcptr_sig_t ps_decl_funcptr_sig_clone(psx_decl_funcptr_sig_t sig) {
-  psx_decl_funcptr_sig_t copy = {0};
-  ps_decl_funcptr_sig_clone_to(&sig, &copy);
-  return copy;
-}
-
 int ps_decl_funcptr_sig_has_payload(psx_decl_funcptr_sig_t sig) {
   return psx_funcptr_type_shape_has_payload(sig.function);
-}
-
-psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *suffix_sig,
-                                                 unsigned char ret_int_width,
-                                                 tk_float_kind_t ret_fp_kind,
-                                                 psx_ret_pointee_array_t ret_pointee_array,
-                                                 int ret_is_void,
-                                                 int ret_is_data_pointer,
-                                                 int ret_is_funcptr,
-                                                 int ret_is_complex) {
-  psx_decl_funcptr_sig_t sig = {0};
-  if (suffix_sig) {
-    sig.function.callable.signature = *suffix_sig;
-  }
-  sig.function.callable.return_shape.int_width = ret_int_width;
-  sig.function.callable.return_shape.pointee_array = ret_pointee_array;
-  int ret_is_pointer_like =
-      ret_is_data_pointer || psx_ret_pointee_array_has_dims(ret_pointee_array);
-  sig.function.callable.return_shape.fp_kind =
-      ret_is_pointer_like ? TK_FLOAT_KIND_NONE : ret_fp_kind;
-  sig.function.callable.return_shape.pointee_fp_kind =
-      ret_is_pointer_like ? ret_fp_kind : TK_FLOAT_KIND_NONE;
-  sig.function.callable.return_shape.is_void =
-      (ret_is_void && !ret_is_data_pointer) ? 1 : 0;
-  sig.function.callable.return_shape.is_data_pointer = ret_is_data_pointer ? 1 : 0;
-  if (ret_is_funcptr) {
-    sig.function.returned_funcptr =
-        psx_funcptr_returned_func_mark(sig.function.returned_funcptr);
-  }
-  sig.function.callable.return_shape.is_complex =
-      (ret_is_complex && !ret_is_data_pointer) ? 1 : 0;
-  return sig;
-}
-
-psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
-    const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
-    tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
-    int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array) {
-  return psx_decl_make_funcptr_sig(
-      suffix_sig,
-      psx_funcptr_ret_int_width_from_kind(ret_kind, ret_is_data_pointer, fp_kind),
-      fp_kind, ret_pointee_array, ret_kind == TK_VOID, ret_is_data_pointer,
-      ret_is_funcptr, ret_is_complex);
-}
-
-void psx_decl_funcptr_sig_promote_return_to_funcptr(
-    psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig) {
-  if (!sig) return;
-  psx_funcptr_type_shape_t returned_fn = {0};
-  if (returned_sig) returned_fn.callable.signature = *returned_sig;
-  returned_fn.callable.return_shape = psx_decl_funcptr_direct_return_shape(*sig);
-  sig->function.returned_funcptr =
-      psx_funcptr_returned_func_from_type_shape(returned_fn);
-  sig->function.returned_funcptr =
-      psx_funcptr_returned_func_mark(sig->function.returned_funcptr);
-  sig->function.callable.return_shape = (psx_funcptr_return_shape_t){0};
 }
 
 void ps_decl_set_gvar_type_size(global_var_t *gv, int type_size) {

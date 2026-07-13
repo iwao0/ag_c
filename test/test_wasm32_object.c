@@ -2469,6 +2469,16 @@ int main(void) {
                                 "int main(void){int *(*fp)(void)=get; *fp()=42; return g;}\n",
                                 indirect_pointer_return_needles, 4);
 
+  const char *indirect_nine_params_needles[] = {
+      "__indirect_function_table", "call_indirect", "<sum9>"};
+  failures += run_objdump_check(
+      "indirect_nine_params",
+      "int sum9(int a,int b,int c,int d,int e,int f,int g,int h,int i){"
+      "return a+b+c+d+e+f+g+h+i;} "
+      "int main(void){int (*fp)(int,int,int,int,int,int,int,int,int)=sum9;"
+      "return fp(1,2,3,4,5,6,7,8,9);}\n",
+      indirect_nine_params_needles, 3);
+
   const char *indirect_large_struct_return_needles[] = {
       "__indirect_function_table", "(i32, i32) -> nil", "call_indirect", "i64.store"};
   failures += run_objdump_check("indirect_large_struct_return",

@@ -361,52 +361,6 @@ static int function_table_index_or_unsupported(char *name, int name_len) {
   return intern_function_table_ref(name, name_len);
 }
 
-static ir_type_t funcptr_int_mask_type(unsigned iw) {
-  return iw == 2 ? IR_TY_I64 : IR_TY_I32;
-}
-
-static ir_callable_sig_t callable_sig_from_funcptr_sig(
-    psx_decl_funcptr_sig_t fs) {
-  ir_callable_sig_t abi = {0};
-  const psx_funcptr_callable_shape_t *callable = &fs.function.callable;
-  if (callable->return_shape.is_void) abi.result = IR_TY_VOID;
-  else if (callable->return_shape.is_data_pointer) abi.result = IR_TY_PTR;
-  else if (callable->return_shape.fp_kind == TK_FLOAT_KIND_FLOAT)
-    abi.result = IR_TY_F32;
-  else if (callable->return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE)
-    abi.result = IR_TY_F64;
-  else
-    abi.result = callable->return_shape.int_width == 8 ? IR_TY_I64
-                                                       : IR_TY_I32;
-  int count = callable->signature.is_variadic
-                  ? callable->signature.nargs_fixed
-                  : 0;
-  if (!callable->signature.is_variadic) {
-    for (int i = 0; i < IR_CALLABLE_MAX_PARAMS; i++) {
-      unsigned fp =
-          (callable->signature.param_fp_mask >> (2 * i)) & 3u;
-      unsigned iw =
-          (callable->signature.param_int_mask >> (2 * i)) & 3u;
-      if (fp || iw) count = i + 1;
-    }
-  }
-  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
-  abi.param_count = (unsigned char)count;
-  abi.is_variadic = callable->signature.is_variadic ? 1 : 0;
-  for (int i = 0; i < count; i++) {
-    unsigned fp =
-        (callable->signature.param_fp_mask >> (2 * i)) & 3u;
-    unsigned iw =
-        (callable->signature.param_int_mask >> (2 * i)) & 3u;
-    abi.params[i] = fp == TK_FLOAT_KIND_FLOAT
-                        ? IR_TY_F32
-                    : fp >= TK_FLOAT_KIND_DOUBLE
-                        ? IR_TY_F64
-                        : funcptr_int_mask_type(iw);
-  }
-  return abi;
-}
-
 static ir_type_t funcptr_param_type_from_inst(const ir_inst_t *i, int idx, ir_type_t fallback) {
   if (!i || !i->has_callable_sig || idx < 0 ||
       idx >= i->callable_sig.param_count)
@@ -2123,15 +2077,15 @@ static void emit_global_data(global_var_t *gv, void *user) {
   psx_gvar_init_scalar_value_t scalar = ps_gvar_init_scalar_value(gv, size);
   char *function_name = NULL;
   int function_name_len = 0;
-  psx_decl_funcptr_sig_t funcptr_sig = {0};
-  ps_gvar_get_funcptr_sig(gv, &funcptr_sig);
-  if (ps_decl_funcptr_sig_has_payload(funcptr_sig) &&
+  ir_callable_sig_t callable_sig = {0};
+  if (ir_abi_callable_sig_from_type(
+          ps_gvar_get_decl_type(gv), &callable_sig) &&
       ps_gvar_init_value_named_function(
           scalar, &function_name, &function_name_len)) {
     ir_inst_t function_ref = {
         .sym = function_name,
         .sym_len = function_name_len,
-        .callable_sig = callable_sig_from_funcptr_sig(funcptr_sig),
+        .callable_sig = callable_sig,
         .has_callable_sig = 1,
     };
     record_function_reference_signature(&function_ref);

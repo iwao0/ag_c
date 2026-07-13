@@ -12,8 +12,6 @@ typedef struct {
 
 typedef struct {
   psx_type_t *function_type;
-  psx_decl_funcptr_sig_t returned_funcptr_signature;
-  int returns_function_pointer;
 } psx_function_declaration_plan_t;
 
 int psx_plan_function_declaration(

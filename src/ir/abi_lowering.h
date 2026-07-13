@@ -24,5 +24,7 @@ ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
                                                     int param_idx);
 ir_abi_param_info_t ir_abi_classify_param_type(
     const struct psx_type_t *type);
+int ir_abi_callable_sig_from_type(
+    const struct psx_type_t *type, ir_callable_sig_t *out);
 
 #endif

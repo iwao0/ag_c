@@ -1061,60 +1061,34 @@ static ir_type_t func_result_type_from_decl(const char *name, int name_len, ir_t
   return raw;
 }
 
-static int funcptr_mask_param_count(unsigned short fp_mask, unsigned short int_mask) {
-  int n = 0;
-  for (int p = 0; p < 8; p++) {
-    if (((fp_mask >> (2 * p)) & 3u) || ((int_mask >> (2 * p)) & 3u)) n = p + 1;
-  }
-  return n;
-}
-
-static ir_type_t funcptr_mask_param_type(unsigned fp, unsigned iw) {
-  if (fp == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
-  if (fp >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
-  if (iw == 1 || iw == 3) return IR_TY_I32;
-  if (iw == 2) return IR_TY_I64;
-  return IR_TY_I64;
-}
-
-static obj_sig_t func_sig_from_funcptr_sig(psx_decl_funcptr_sig_t fs) {
-  obj_sig_t sig = {0};
-  if (fs.function.callable.return_shape.is_void) sig.result = IR_TY_VOID;
-  else if (fs.function.callable.return_shape.is_data_pointer) sig.result = IR_TY_I32;
-  else if (fs.function.callable.return_shape.fp_kind == TK_FLOAT_KIND_FLOAT) sig.result = IR_TY_F32;
-  else if (fs.function.callable.return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE) sig.result = IR_TY_F64;
-  else sig.result = fs.function.callable.return_shape.int_width == 8 ? IR_TY_I64 : IR_TY_I32;
-
-  int nparams = fs.function.callable.signature.is_variadic
-                    ? fs.function.callable.signature.nargs_fixed
-                    : funcptr_mask_param_count(fs.function.callable.signature.param_fp_mask, fs.function.callable.signature.param_int_mask);
-  sig.nparams = nparams;
-  if (nparams > 0) {
-    sig.params = xrealloc(NULL, (size_t)nparams * sizeof(ir_type_t));
-    for (int p = 0; p < nparams; p++) {
-      unsigned fp = (fs.function.callable.signature.param_fp_mask >> (2 * p)) & 3u;
-      unsigned iw = (fs.function.callable.signature.param_int_mask >> (2 * p)) & 3u;
-      sig.params[p] = funcptr_mask_param_type(fp, iw);
-    }
+static obj_sig_t func_sig_from_callable_type(
+    const psx_type_t *type, const char *name, int name_len) {
+  ir_callable_sig_t callable = {0};
+  if (!ir_abi_callable_sig_from_type(type, &callable))
+    obj_unsupported_msg("missing canonical function-pointer type in Wasm object mode");
+  (void)name;
+  (void)name_len;
+  obj_sig_t sig = {
+      .result = wasm_ir_type(callable.result),
+      .nparams = callable.param_count,
+  };
+  if (sig.nparams > 0) {
+    sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
+    for (int i = 0; i < sig.nparams; i++)
+      sig.params[i] = wasm_ir_type(callable.params[i]);
   }
   return sig;
 }
 
 static obj_sig_t func_sig_from_global_funcptr(global_var_t *gv, const char *name, int name_len) {
   if (!gv) obj_unsupported_msg("missing global function-pointer signature in Wasm object mode");
-  (void)name;
-  (void)name_len;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_gvar_get_funcptr_sig(gv, &sig);
-  return func_sig_from_funcptr_sig(sig);
+  return func_sig_from_callable_type(ps_gvar_get_decl_type(gv), name, name_len);
 }
 
 static obj_sig_t func_sig_from_member_funcptr(const tag_member_info_t *mi,
                                               const char *name, int name_len) {
   if (!mi) obj_unsupported_msg("missing member function-pointer signature in Wasm object mode");
-  (void)name;
-  (void)name_len;
-  return func_sig_from_funcptr_sig(ps_tag_member_funcptr_sig(mi));
+  return func_sig_from_callable_type(ps_tag_member_decl_type(mi), name, name_len);
 }
 
 static obj_sig_t func_sig_from_ir_callable(const ir_inst_t *inst,
@@ -1124,13 +1098,13 @@ static obj_sig_t func_sig_from_ir_callable(const ir_inst_t *inst,
   (void)name;
   (void)name_len;
   obj_sig_t sig = {
-      .result = inst->callable_sig.result,
+      .result = wasm_ir_type(inst->callable_sig.result),
       .nparams = inst->callable_sig.param_count,
   };
   if (sig.nparams > 0) {
     sig.params = xrealloc(NULL, (size_t)sig.nparams * sizeof(ir_type_t));
     for (int i = 0; i < sig.nparams; i++)
-      sig.params[i] = inst->callable_sig.params[i];
+      sig.params[i] = wasm_ir_type(inst->callable_sig.params[i]);
   }
   return sig;
 }

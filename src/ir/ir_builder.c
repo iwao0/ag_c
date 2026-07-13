@@ -415,12 +415,12 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
-static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig);
-static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig);
-static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig);
+static ir_val_t build_node_funcref_with_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
+static ir_val_t build_expr_with_callable_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
+static ir_val_t build_node_ternary_with_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset);
@@ -780,22 +780,22 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
   }
 }
 
-static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig) {
+static ir_val_t build_expr_with_callable_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!expected_sig || !ps_decl_funcptr_sig_has_payload(*expected_sig))
+  if (!ps_type_find_function(expected_type))
     return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
-      return build_node_funcref_with_sig(ctx, node, expected_sig);
+      return build_node_funcref_with_type(ctx, node, expected_type);
     case ND_ADDR:
       if (node->lhs && node->lhs->kind == ND_FUNCREF)
-        return build_node_funcref_with_sig(ctx, node->lhs, expected_sig);
+        return build_node_funcref_with_type(ctx, node->lhs, expected_type);
       return build_expr(ctx, node);
     case ND_CAST:
       if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
                         node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
-        return build_expr_with_funcptr_sig(ctx, node->lhs, expected_sig);
+        return build_expr_with_callable_type(ctx, node->lhs, expected_type);
       }
       return build_expr(ctx, node);
     case ND_COMMA:
@@ -803,14 +803,14 @@ static ir_val_t build_expr_with_funcptr_sig(ir_build_ctx_t *ctx, node_t *node,
         (void)build_expr(ctx, node->lhs);
         if (ctx->failed) return ir_val_none();
       }
-      return node->rhs ? build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig)
+      return node->rhs ? build_expr_with_callable_type(ctx, node->rhs, expected_type)
                        : ir_val_none();
     case ND_TERNARY:
-      return build_node_ternary_with_sig(ctx, node, expected_sig);
+      return build_node_ternary_with_type(ctx, node, expected_type);
     case ND_STMT_EXPR:
       build_stmt_expr_block_without_value(ctx, node->lhs, node->rhs);
       if (ctx->failed) return ir_val_none();
-      return build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig);
+      return build_expr_with_callable_type(ctx, node->rhs, expected_type);
     default:
       return build_expr(ctx, node);
   }
@@ -1199,12 +1199,11 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_lvar_get_funcptr_sig(find_owning_lvar(ctx, lv->offset), &sig);
-  if (!ps_decl_funcptr_sig_has_payload(sig)) {
-    ps_node_get_funcptr_sig(node->lhs, &sig);
-  }
-  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
+  lvar_t *owner = find_owning_lvar(ctx, lv->offset);
+  const psx_type_t *target_type = owner ? ps_lvar_get_decl_type(owner) : NULL;
+  if (!ps_type_find_function(target_type))
+    target_type = ps_node_get_type(node->lhs);
+  ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
   if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
@@ -1249,12 +1248,11 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_gvar_get_funcptr_sig_by_name(gv->name, gv->name_len, &sig);
-  if (!ps_decl_funcptr_sig_has_payload(sig)) {
-    ps_node_get_funcptr_sig(node->lhs, &sig);
-  }
-  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
+  global_var_t *global = ps_find_global_var(gv->name, gv->name_len);
+  const psx_type_t *target_type = global ? ps_gvar_get_decl_type(global) : NULL;
+  if (!ps_type_find_function(target_type))
+    target_type = ps_node_get_type(node->lhs);
+  ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
                           ps_node_conversion_value_is_unsigned(node->rhs));
@@ -1277,9 +1275,8 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   int bo = 0;
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node->lhs, &sig);
-  ir_val_t rhs = build_expr_with_funcptr_sig(ctx, node->rhs, &sig);
+  ir_val_t rhs = build_expr_with_callable_type(
+      ctx, node->rhs, ps_node_get_type(node->lhs));
   if (ctx->failed) return ir_val_none();
   if (ps_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, bo);
@@ -1328,88 +1325,47 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
-static ir_type_t funcptr_abi_int_type(unsigned width) {
-  return width == 2 ? IR_TY_I64 : IR_TY_I32;
+static void attach_callable_type(ir_inst_t *sym, const psx_type_t *type) {
+  if (!sym) return;
+  sym->has_callable_sig =
+      ir_abi_callable_sig_from_type(type, &sym->callable_sig) ? 1 : 0;
 }
 
-static void attach_funcptr_sig(ir_inst_t *sym, const psx_decl_funcptr_sig_t *sig) {
-  if (!sym || !sig || !ps_decl_funcptr_sig_has_payload(*sig)) return;
-  const psx_funcptr_callable_shape_t *callable = &sig->function.callable;
-  ir_callable_sig_t *abi = &sym->callable_sig;
-  if (callable->return_shape.is_void) abi->result = IR_TY_VOID;
-  else if (callable->return_shape.is_data_pointer) abi->result = IR_TY_PTR;
-  else if (callable->return_shape.fp_kind == TK_FLOAT_KIND_FLOAT)
-    abi->result = IR_TY_F32;
-  else if (callable->return_shape.fp_kind >= TK_FLOAT_KIND_DOUBLE)
-    abi->result = IR_TY_F64;
-  else
-    abi->result = callable->return_shape.int_width == 8 ? IR_TY_I64
-                                                        : IR_TY_I32;
-
-  int count = callable->signature.is_variadic
-                  ? callable->signature.nargs_fixed
-                  : 0;
-  if (!callable->signature.is_variadic) {
-    for (int i = 0; i < IR_CALLABLE_MAX_PARAMS; i++) {
-      unsigned fp =
-          (callable->signature.param_fp_mask >> (2 * i)) & 3u;
-      unsigned width =
-          (callable->signature.param_int_mask >> (2 * i)) & 3u;
-      if (fp || width) count = i + 1;
-    }
-  }
-  if (count > IR_CALLABLE_MAX_PARAMS) count = IR_CALLABLE_MAX_PARAMS;
-  abi->param_count = (unsigned char)count;
-  abi->is_variadic = callable->signature.is_variadic ? 1 : 0;
-  for (int i = 0; i < count; i++) {
-    unsigned fp =
-        (callable->signature.param_fp_mask >> (2 * i)) & 3u;
-    unsigned width =
-        (callable->signature.param_int_mask >> (2 * i)) & 3u;
-    abi->params[i] = fp == TK_FLOAT_KIND_FLOAT
-                         ? IR_TY_F32
-                     : fp >= TK_FLOAT_KIND_DOUBLE
-                         ? IR_TY_F64
-                         : funcptr_abi_int_type(width);
-  }
-  sym->has_callable_sig = 1;
-}
-
-static void funcptr_sig_for_callee(ir_build_ctx_t *ctx, node_t *callee,
-                                   psx_decl_funcptr_sig_t *out) {
-  if (!out) return;
-  *out = (psx_decl_funcptr_sig_t){0};
-  if (!callee) return;
-  ps_node_get_funcptr_sig(callee, out);
-  if (!ps_decl_funcptr_sig_has_payload(*out) && callee->kind == ND_LVAR) {
+static const psx_type_t *callable_type_for_callee(
+    ir_build_ctx_t *ctx, node_t *callee) {
+  if (!callee) return NULL;
+  const psx_type_t *type = ps_node_get_type(callee);
+  if (ps_type_find_function(type)) return type;
+  if (callee->kind == ND_LVAR) {
     lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    ps_lvar_get_funcptr_sig(lv, out);
-  } else if (!ps_decl_funcptr_sig_has_payload(*out) &&
-             callee->kind == ND_GVAR) {
+    type = lv ? ps_lvar_get_decl_type(lv) : NULL;
+  } else if (callee->kind == ND_GVAR) {
     node_gvar_t *gvn = (node_gvar_t *)callee;
-    ps_gvar_get_funcptr_sig_by_name(gvn->name, gvn->name_len, out);
+    global_var_t *gv = ps_find_global_var(gvn->name, gvn->name_len);
+    type = gv ? ps_gvar_get_decl_type(gv) : NULL;
   }
+  return ps_type_find_function(type) ? type : NULL;
 }
 
-static void attach_funcptr_sig_from_callee(ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
+static void attach_callable_type_from_callee(
+    ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  psx_decl_funcptr_sig_t sig = {0};
-  funcptr_sig_for_callee(ctx, callee, &sig);
-  attach_funcptr_sig(call, &sig);
+  attach_callable_type(call, callable_type_for_callee(ctx, callee));
 }
 
-static int func_has_return_funcptr_sig(const node_func_t *fn) {
-  return ps_decl_funcptr_sig_has_payload(ps_node_funcdef_ret_funcptr_sig(fn));
+static const psx_type_t *function_callable_return_type(const node_func_t *fn) {
+  if (!fn || !fn->function_type ||
+      fn->function_type->kind != PSX_TYPE_FUNCTION)
+    return NULL;
+  const psx_type_t *return_type = fn->function_type->base;
+  return ps_type_find_function(return_type) ? return_type : NULL;
 }
 
-static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig) {
+static ir_val_t build_node_funcref_with_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   node_funcref_t *fr = (node_funcref_t *)node;
-  psx_decl_funcptr_sig_t bound_sig = {0};
-  if (!expected_sig || !ps_decl_funcptr_sig_has_payload(*expected_sig)) {
-    bound_sig = ps_type_funcptr_signature(fr->function_type);
-    expected_sig = &bound_sig;
-  }
+  const psx_type_t *callable_type =
+      ps_type_find_function(expected_type) ? expected_type : fr->function_type;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -1417,7 +1373,7 @@ static ir_val_t build_node_funcref_with_sig(ir_build_ctx_t *ctx, node_t *node,
   sym->sym_len = fr->funcname_len;
   sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
   sym->is_function_symbol = 1;
-  attach_funcptr_sig(sym, expected_sig);
+  attach_callable_type(sym, callable_type);
   ir_func_append_inst(ctx->f, sym);
   return ir_val_vreg(v, IR_TY_PTR);
 }
@@ -1456,7 +1412,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
   /* 関数シンボル参照 (関数ポインタ値)。`_<funcname>` のアドレスを vreg に。 */
-  return build_node_funcref_with_sig(ctx, node, NULL);
+  return build_node_funcref_with_type(ctx, node, NULL);
 }
 
 /* -------- Phase B1: build_expr の算術/比較系 case ヘルパ -------- */
@@ -1756,11 +1712,12 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       nargs_fixed = fixed;
     }
   } else {
-    psx_decl_funcptr_sig_t sig = {0};
-    funcptr_sig_for_callee(ctx, fn->callee, &sig);
-    if (sig.function.callable.signature.is_variadic && sig.function.callable.signature.nargs_fixed < fn->nargs) {
+    const psx_type_t *function = ps_type_find_function(
+        callable_type_for_callee(ctx, fn->callee));
+    if (function && function->is_variadic_function &&
+        function->param_count < fn->nargs) {
       is_variadic_call = 1;
-      nargs_fixed = sig.function.callable.signature.nargs_fixed;
+      nargs_fixed = function->param_count;
     }
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
@@ -2053,7 +2010,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
   call->is_implicit_call = fn->base.is_implicit_func_decl ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
-  if (fn->callee) attach_funcptr_sig_from_callee(ctx, call, fn->callee);
+  if (fn->callee) attach_callable_type_from_callee(ctx, call, fn->callee);
   if (argc > 0) {
     call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
     for (int a = 0; a < argc; a++) {
@@ -2221,11 +2178,11 @@ static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
-  return build_node_ternary_with_sig(ctx, node, NULL);
+  return build_node_ternary_with_type(ctx, node, NULL);
 }
 
-static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
-                                            const psx_decl_funcptr_sig_t *expected_sig) {
+static ir_val_t build_node_ternary_with_type(
+    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
    * 結果型は fp_kind から推定 (整数のみ or float/double)。
    * struct ternary 等は今のところサポート外で fall through する。 */
@@ -2265,7 +2222,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
   emit_br_cond(ctx, cond, then_b, else_b);
   /* then */
   switch_to_new_block(ctx, then_b);
-  ir_val_t vt = build_expr_with_funcptr_sig(ctx, node->rhs, expected_sig);
+  ir_val_t vt = build_expr_with_callable_type(ctx, node->rhs, expected_type);
   if (ctx->failed) return ir_val_none();
   /* 型変換: 結果型が fp で値が int なら I2F、逆も */
   if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
@@ -2304,7 +2261,7 @@ static ir_val_t build_node_ternary_with_sig(ir_build_ctx_t *ctx, node_t *node,
   emit_br(ctx, merge_b);
   /* else */
   switch_to_new_block(ctx, else_b);
-  ir_val_t ve = build_expr_with_funcptr_sig(ctx, c->els, expected_sig);
+  ir_val_t ve = build_expr_with_callable_type(ctx, c->els, expected_type);
   if (ctx->failed) return ir_val_none();
   if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
     int v = ir_func_new_vreg(ctx->f);
@@ -3022,9 +2979,11 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     return;
   }
   if (node->lhs) {
-    if (func_has_return_funcptr_sig(ctx->cur_fn)) {
-      psx_decl_funcptr_sig_t sig = ps_node_funcdef_ret_funcptr_sig(ctx->cur_fn);
-      v = build_expr_with_funcptr_sig(ctx, node->lhs, &sig);
+    const psx_type_t *callable_return_type =
+        function_callable_return_type(ctx->cur_fn);
+    if (callable_return_type) {
+      v = build_expr_with_callable_type(
+          ctx, node->lhs, callable_return_type);
     } else {
       v = build_expr(ctx, node->lhs);
     }

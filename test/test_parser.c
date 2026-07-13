@@ -2222,16 +2222,16 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .return_type = returned_funcptr,
       },
       &funcptr_plan));
-  ASSERT_TRUE(funcptr_plan.returns_function_pointer);
-  ASSERT_EQ(1, funcptr_plan.returned_funcptr_signature.function.callable
-                   .signature.nargs_fixed);
-  ASSERT_EQ(1u, funcptr_plan.returned_funcptr_signature.function.callable
-                    .signature.param_int_mask);
-  ASSERT_TRUE(funcptr_plan.returned_funcptr_signature.function.callable
-                  .return_shape.is_data_pointer);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            funcptr_plan.returned_funcptr_signature.function.callable
-                .return_shape.pointee_fp_kind);
+  const psx_type_t *planned_return =
+      ps_type_function_return_type(funcptr_plan.function_type);
+  const psx_type_t *planned_callable = ps_type_find_function(planned_return);
+  ASSERT_TRUE(planned_callable != NULL);
+  ASSERT_EQ(1, planned_callable->param_count);
+  ASSERT_TRUE(ps_type_shape_matches(
+      planned_callable->param_types[0], integer));
+  ASSERT_EQ(PSX_TYPE_POINTER, planned_callable->base->kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, planned_callable->base->base->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, planned_callable->base->base->fp_kind);
 
   psx_frontend_reset_translation_unit_state();
   integer = ps_type_new_integer(TK_INT, 4, 0);
@@ -5362,7 +5362,8 @@ static void test_funcall() {
   node_t *cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
   ASSERT_EQ(ND_CAST, as_func(cast_deref_call)->callee->kind);
-  ASSERT_TRUE(psx_node_has_funcptr_signature(as_func(cast_deref_call)->callee));
+  ASSERT_TRUE(ps_type_find_function(
+      ps_node_get_type(as_func(cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, ps_node_pointer_qual_levels(as_func(cast_deref_call)->callee));
 
   parsed_code = parse_program_input(
@@ -5372,7 +5373,8 @@ static void test_funcall() {
   node_t *typedef_cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, typedef_cast_deref_call->kind);
   ASSERT_EQ(ND_CAST, as_func(typedef_cast_deref_call)->callee->kind);
-  ASSERT_TRUE(psx_node_has_funcptr_signature(as_func(typedef_cast_deref_call)->callee));
+  ASSERT_TRUE(ps_type_find_function(
+      ps_node_get_type(as_func(typedef_cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, ps_node_pointer_qual_levels(as_func(typedef_cast_deref_call)->callee));
 }
 
@@ -6517,12 +6519,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(tmp_lvar_scalar_typed_ref) ==
               tmp_lvar_scalar_canonical);
   ASSERT_EQ(4, ps_node_type_size(tmp_lvar_scalar_typed_ref));
-  psx_decl_funcptr_sig_t tmp_lvar_scalar_funcptr =
-      ps_lvar_funcptr_sig(&tmp_lvar_scalar_decl_type_wins);
-  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(tmp_lvar_scalar_funcptr));
   node_t *tmp_lvar_scalar_funcptr_ref =
       psx_node_new_lvar_for(&tmp_lvar_scalar_decl_type_wins);
-  ASSERT_TRUE(!psx_node_has_funcptr_signature(tmp_lvar_scalar_funcptr_ref));
+  ASSERT_TRUE(ps_type_find_function(
+      ps_node_get_type(tmp_lvar_scalar_funcptr_ref)) == NULL);
 
   lvar_t tmp_lvar_ptr_array_cache_decl_type_wins = {0};
   psx_type_t *tmp_lvar_ptr_array_cache_canonical =
@@ -8988,10 +8988,8 @@ static void test_type_metadata_bridge() {
   typed_data_ptr_stale_funcptr_sig.kind = ND_LVAR;
   typed_data_ptr_stale_funcptr_sig.type = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0), 8);
-  psx_decl_funcptr_sig_t typed_data_ptr_sig =
-      ps_node_funcptr_sig(&typed_data_ptr_stale_funcptr_sig);
-  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(typed_data_ptr_sig));
-  ASSERT_TRUE(!psx_node_has_funcptr_signature(&typed_data_ptr_stale_funcptr_sig));
+  ASSERT_TRUE(ps_type_find_function(
+      ps_node_get_type(&typed_data_ptr_stale_funcptr_sig)) == NULL);
 
   node_t canonical_funcptr = {0};
   canonical_funcptr.kind = ND_DEREF;
@@ -9271,12 +9269,17 @@ static void test_type_metadata_bridge() {
   typed_funcptr_view_mem.type = test_function_pointer(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       typed_funcptr_view_params, 1, 0);
-  ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(&typed_funcptr_view_mem));
-  ASSERT_EQ(0u, psx_node_funcptr_param_int_mask(&typed_funcptr_view_mem));
+  const psx_type_t *typed_funcptr_view_function =
+      ps_type_find_function(ps_node_get_type(&typed_funcptr_view_mem));
+  ASSERT_TRUE(typed_funcptr_view_function != NULL);
+  ASSERT_EQ(1, typed_funcptr_view_function->param_count);
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            typed_funcptr_view_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
+            typed_funcptr_view_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, typed_funcptr_view_function->base->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            psx_node_funcptr_ret_fp_kind(&typed_funcptr_view_mem));
-  ASSERT_TRUE(!psx_node_funcptr_returns_complex(&typed_funcptr_view_mem));
-  ASSERT_TRUE(!psx_node_funcptr_returns_pointee_array(&typed_funcptr_view_mem));
+            typed_funcptr_view_function->base->fp_kind);
 
   node_t typed_funcptr_array_mem = {0};
   typed_funcptr_array_mem.kind = ND_DEREF;
@@ -9291,11 +9294,15 @@ static void test_type_metadata_bridge() {
   node_t *typed_funcptr_array_elem_node = ps_node_new_subscript_deref_for(
       &typed_funcptr_array_mem, &typed_funcptr_array_mem,
       ps_node_new_num(0), 8, 0, 0, NULL, 0);
-  ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(typed_funcptr_array_elem_node));
   psx_type_t *typed_funcptr_array_result_type =
       ps_node_get_type(typed_funcptr_array_elem_node);
   ASSERT_TRUE(typed_funcptr_array_result_type != NULL);
-  ASSERT_TRUE(ps_type_find_function(typed_funcptr_array_result_type) != NULL);
+  const psx_type_t *typed_funcptr_array_function =
+      ps_type_find_function(typed_funcptr_array_result_type);
+  ASSERT_TRUE(typed_funcptr_array_function != NULL);
+  ASSERT_EQ(1, typed_funcptr_array_function->param_count);
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            typed_funcptr_array_function->param_types[0]->kind);
 
   node_t typed_funcptr_callee_mem = {0};
   typed_funcptr_callee_mem.kind = ND_LVAR;
@@ -10437,12 +10444,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_deref_size(tmp_gv_scalar_decl_type_ref));
   ASSERT_EQ(PSX_TYPE_INTEGER,
             ps_node_get_type(tmp_gv_scalar_decl_type_ref)->kind);
-  psx_decl_funcptr_sig_t tmp_gv_scalar_funcptr =
-      ps_gvar_funcptr_sig(&tmp_gv_scalar_decl_type_wins);
-  ASSERT_TRUE(!ps_decl_funcptr_sig_has_payload(tmp_gv_scalar_funcptr));
   node_t *tmp_gv_scalar_funcptr_ref =
       ps_node_new_gvar_for(&tmp_gv_scalar_decl_type_wins);
-  ASSERT_TRUE(!psx_node_has_funcptr_signature(tmp_gv_scalar_funcptr_ref));
+  ASSERT_TRUE(ps_type_find_function(
+      ps_node_get_type(tmp_gv_scalar_funcptr_ref)) == NULL);
 
   global_var_t tmp_gv_ptr_array_cache_decl_type_wins = {0};
   psx_type_t *tmp_gv_ptr_array_cache_canonical =
@@ -12199,7 +12204,14 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             ps_node_funcptr_sig(partial_sig_node)
                 .function.callable.return_shape.fp_kind);
-  ASSERT_EQ(1u, psx_node_funcptr_param_fp_mask(partial_sig_node));
+  const psx_type_t *partial_sig_node_function =
+      ps_type_find_function(ps_node_get_type(partial_sig_node));
+  ASSERT_TRUE(partial_sig_node_function != NULL);
+  ASSERT_EQ(1, partial_sig_node_function->param_count);
+  ASSERT_EQ(PSX_TYPE_FLOAT,
+            partial_sig_node_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
+            partial_sig_node_function->param_types[0]->fp_kind);
 
   parsed_code = parse_program_input(
       "struct TM695F { int (*fns[2])(int, int); }; int main(void){ return 0; }");
@@ -13333,17 +13345,23 @@ static void test_multiple_funcdefs() {
   parsed_code = parse_program_input(
       "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
-  psx_decl_funcptr_sig_t deep_sig =
-      psx_ctx_get_function_ret_funcptr_sig("sig_deep", 8);
-  ASSERT_TRUE(ps_decl_funcptr_sig_has_payload(deep_sig));
-  ASSERT_EQ(1u, deep_sig.function.callable.signature.param_int_mask);
-  ASSERT_TRUE(psx_funcptr_returned_func_has_payload(
-      deep_sig.function.returned_funcptr));
-  psx_funcptr_type_shape_t nested_deep =
-      psx_funcptr_returned_func_as_type_shape(
-          deep_sig.function.returned_funcptr);
-  ASSERT_EQ(2u, nested_deep.callable.signature.param_fp_mask);
-  ASSERT_EQ(3, nested_deep.callable.return_shape.pointee_array.first_dim);
+  const psx_type_t *deep_return =
+      psx_ctx_get_function_ret_type("sig_deep", 8);
+  const psx_type_t *deep_int_function =
+      ps_type_find_function(deep_return);
+  ASSERT_TRUE(deep_int_function != NULL);
+  ASSERT_EQ(1, deep_int_function->param_count);
+  ASSERT_EQ(PSX_TYPE_INTEGER, deep_int_function->param_types[0]->kind);
+  const psx_type_t *deep_double_function =
+      ps_type_find_function(deep_int_function->base);
+  ASSERT_TRUE(deep_double_function != NULL);
+  ASSERT_EQ(1, deep_double_function->param_count);
+  ASSERT_EQ(PSX_TYPE_FLOAT, deep_double_function->param_types[0]->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            deep_double_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_TYPE_POINTER, deep_double_function->base->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, deep_double_function->base->base->kind);
+  ASSERT_EQ(3, deep_double_function->base->base->array_len);
 
   parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);

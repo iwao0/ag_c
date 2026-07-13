@@ -4,6 +4,7 @@
 #include "core.h"
 
 typedef struct lvar_t lvar_t;
+typedef struct psx_type_t psx_type_t;
 typedef struct psx_lvar_usage_region_t psx_lvar_usage_region_t;
 
 typedef struct {
@@ -24,6 +25,7 @@ typedef struct {
 lvar_t *ps_lvar_next_all(const lvar_t *var);
 lvar_t *ps_lvar_find_owner(lvar_t *head, int offset);
 psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var);
+psx_type_t *ps_lvar_get_decl_type(lvar_t *var);
 
 const char *ps_lvar_name(const lvar_t *var);
 int ps_lvar_name_len(const lvar_t *var);
@@ -49,7 +51,6 @@ int ps_lvar_pointer_qual_levels(const lvar_t *var);
 token_kind_t ps_lvar_tag_kind(const lvar_t *var);
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var);
 psx_decl_funcptr_sig_t ps_lvar_funcptr_sig(const lvar_t *src);
-void ps_lvar_get_funcptr_sig(const lvar_t *src, psx_decl_funcptr_sig_t *out);
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var);
 int ps_lvar_vla_strides_remaining(const lvar_t *var);

@@ -304,12 +304,13 @@ static void type_return_shape_from_canonical(
     const psx_type_t *pointee = type->base;
     if (pointee && pointee->kind == PSX_TYPE_FUNCTION) {
       if (out_returned_funcptr) {
-        psx_funcptr_type_shape_t returned_shape = {0};
-        type_function_shape_from_canonical(pointee, &returned_shape);
-        *out_returned_funcptr = psx_funcptr_returned_func_from_type_shape(
-            returned_shape);
-        *out_returned_funcptr =
-            psx_funcptr_returned_func_mark(*out_returned_funcptr);
+        out_returned_funcptr->is_funcptr = 1;
+        out_returned_funcptr->type =
+            calloc(1, sizeof(*out_returned_funcptr->type));
+        if (out_returned_funcptr->type) {
+          type_function_shape_from_canonical(
+              pointee, out_returned_funcptr->type);
+        }
       }
       return;
     }
@@ -1094,12 +1095,6 @@ static int type_derivation_to_function_matches(const psx_type_t *a,
          b->kind == PSX_TYPE_FUNCTION;
 }
 
-static psx_decl_funcptr_sig_t type_generic_function_signature(
-    const psx_type_t *type, const psx_type_t *function) {
-  (void)function;
-  return ps_type_funcptr_signature(type);
-}
-
 typedef struct {
   char *out;
   size_t cap;
@@ -1261,16 +1256,6 @@ int ps_type_generic_matches(const psx_type_t *control,
     return ps_type_shape_matches(control, association);
   if (!control_function || !association_function) return 0;
   if (!type_derivation_to_function_matches(control, association)) return 0;
-
-  psx_decl_funcptr_sig_t control_sig =
-      type_generic_function_signature(control, control_function);
-  psx_decl_funcptr_sig_t association_sig =
-      type_generic_function_signature(association, association_function);
-  if (ps_decl_funcptr_sig_has_payload(control_sig) &&
-      ps_decl_funcptr_sig_has_payload(association_sig)) {
-    return psx_funcptr_type_shape_matches(control_sig.function,
-                                          association_sig.function);
-  }
   return ps_type_shape_matches(control_function, association_function);
 }
 

@@ -10,13 +10,6 @@ int psx_plan_function_declaration(
     return 0;
   }
   memset(plan, 0, sizeof(*plan));
-  const psx_type_t *returned_function =
-      ps_type_find_function(request->return_type);
-  if (returned_function) {
-    plan->returns_function_pointer = 1;
-    ps_type_get_funcptr_signature(
-        request->return_type, &plan->returned_funcptr_signature);
-  }
   psx_type_t *function_type = ps_type_new_function(
       ps_type_clone(request->return_type));
   if (!function_type) return 0;

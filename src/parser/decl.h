@@ -48,22 +48,6 @@ void ps_decl_enter_scope(void);
 void ps_decl_leave_scope(void);
 lvar_t *ps_decl_get_locals(void);
 void ps_decl_reserve_variadic_regs(void);
-unsigned char psx_funcptr_ret_int_width_from_kind(token_kind_t kind, int is_pointer,
-                                                  tk_float_kind_t fp_kind);
-psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig(const psx_funcptr_signature_t *suffix_sig,
-                                                 unsigned char ret_int_width,
-                                                 tk_float_kind_t ret_fp_kind,
-                                                 psx_ret_pointee_array_t ret_pointee_array,
-                                                 int ret_is_void,
-                                                 int ret_is_data_pointer,
-                                                 int ret_is_funcptr,
-                                                 int ret_is_complex);
-psx_decl_funcptr_sig_t psx_decl_make_funcptr_sig_from_kind(
-    const psx_funcptr_signature_t *suffix_sig, token_kind_t ret_kind,
-    tk_float_kind_t fp_kind, int ret_is_data_pointer, int ret_is_funcptr,
-    int ret_is_complex, psx_ret_pointee_array_t ret_pointee_array);
-void psx_decl_funcptr_sig_promote_return_to_funcptr(
-    psx_decl_funcptr_sig_t *sig, const psx_funcptr_signature_t *returned_sig);
 lvar_t *ps_decl_find_lvar(char *name, int len);
 lvar_t *psx_decl_find_lvar_by_offset(int offset);
 void ps_decl_replay_lvar_usage_events(lvar_t *all_locals);

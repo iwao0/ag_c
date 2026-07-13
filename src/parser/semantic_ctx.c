@@ -249,8 +249,7 @@ static void ctx_typedef_info_apply_type(psx_typedef_info_t *out,
                                         const psx_type_t *type) {
   if (!out || !type) return;
   ps_ctx_typedef_set_decl_type(out, (psx_type_t *)type);
-  psx_decl_funcptr_sig_t funcptr_sig = ps_type_funcptr_signature(type);
-  int has_funcptr_sig = ps_decl_funcptr_sig_has_payload(funcptr_sig);
+  int has_function_type = ps_type_find_function(type) != NULL;
   out->is_pointer = type->kind == PSX_TYPE_POINTER ? 1 : 0;
   if (type->kind == PSX_TYPE_POINTER && type->base) {
     out->pointee_const_qualified = type->base->is_const_qualified ? 1 : 0;
@@ -294,7 +293,7 @@ static void ctx_typedef_info_apply_type(psx_typedef_info_t *out,
         break;
     }
   }
-  if (has_funcptr_sig) {
+  if (has_function_type) {
     out->fp_kind = TK_FLOAT_KIND_NONE;
     out->is_unsigned = 0;
     out->is_long_double = 0;
@@ -307,8 +306,7 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
                                            const psx_type_t *type) {
   if (!out || !type) return;
   ps_tag_member_set_decl_type(out, (psx_type_t *)type);
-  psx_decl_funcptr_sig_t funcptr_sig = ps_type_funcptr_signature(type);
-  int has_funcptr_sig = ps_decl_funcptr_sig_has_payload(funcptr_sig);
+  int has_function_type = ps_type_find_function(type) != NULL;
   out->tag_kind = TK_EOF;
   out->tag_name = NULL;
   out->tag_len = 0;
@@ -326,7 +324,7 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
     out->pointer_qual_levels = ctx_type_pointer_levels(type);
   }
 
-  if (!has_funcptr_sig) {
+  if (!has_function_type) {
     const psx_type_t *base = type;
     if (base->kind == PSX_TYPE_POINTER && base->base) base = base->base;
     base = ctx_type_skip_arrays(base);
@@ -346,7 +344,7 @@ static void ctx_tag_member_info_apply_type(tag_member_info_t *out,
       }
     }
   }
-  if (has_funcptr_sig) {
+  if (has_function_type) {
     out->fp_kind = TK_FLOAT_KIND_NONE;
     out->is_bool = 0;
     out->is_unsigned = 0;

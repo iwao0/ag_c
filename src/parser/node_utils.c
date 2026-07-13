@@ -2111,90 +2111,16 @@ static psx_decl_funcptr_sig_t funcptr_sig_from_node(node_t *node) {
   return funcptr_sig_from_type(ps_node_get_type(node));
 }
 
-int psx_node_has_funcptr_signature(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return ps_decl_funcptr_sig_has_payload(sig);
-}
-
 psx_decl_funcptr_sig_t ps_node_funcptr_sig(node_t *node) {
   return funcptr_sig_from_node(node);
-}
-
-void ps_node_get_funcptr_sig(node_t *node, psx_decl_funcptr_sig_t *out) {
-  if (!out) return;
-  ps_type_get_funcptr_signature(node ? ps_node_get_type(node) : NULL, out);
 }
 
 psx_decl_funcptr_sig_t ps_lvar_funcptr_sig(const lvar_t *src) {
   return funcptr_sig_from_lvar(src);
 }
 
-void ps_lvar_get_funcptr_sig(const lvar_t *src, psx_decl_funcptr_sig_t *out) {
-  if (!out) return;
-  ps_type_get_funcptr_signature(src ? lvar_decl_type_view(src) : NULL, out);
-}
-
 psx_decl_funcptr_sig_t ps_gvar_funcptr_sig(const global_var_t *src) {
   return funcptr_sig_from_gvar(src);
-}
-
-void ps_gvar_get_funcptr_sig(const global_var_t *src,
-                             psx_decl_funcptr_sig_t *out) {
-  if (!out) return;
-  ps_type_get_funcptr_signature(src ? gvar_decl_type_view(src) : NULL, out);
-}
-
-psx_decl_funcptr_sig_t ps_gvar_funcptr_sig_by_name(char *name, int len) {
-  return ps_gvar_funcptr_sig(ps_find_global_var(name, len));
-}
-
-void ps_gvar_get_funcptr_sig_by_name(char *name, int len,
-                                     psx_decl_funcptr_sig_t *out) {
-  ps_gvar_get_funcptr_sig(ps_find_global_var(name, len), out);
-}
-
-unsigned short psx_node_funcptr_param_fp_mask(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return sig.function.callable.signature.param_fp_mask;
-}
-
-unsigned short psx_node_funcptr_param_int_mask(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return sig.function.callable.signature.param_int_mask;
-}
-
-int psx_node_funcptr_returns_void(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return sig.function.callable.return_shape.is_void ? 1 : 0;
-}
-
-int psx_node_funcptr_returns_complex(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return sig.function.callable.return_shape.is_complex ? 1 : 0;
-}
-
-int psx_node_funcptr_returns_pointee_array(node_t *node) {
-  if (!node) return 0;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return psx_ret_pointee_array_has_dims(sig.function.callable.return_shape.pointee_array) ? 1 : 0;
-}
-
-tk_float_kind_t psx_node_funcptr_ret_fp_kind(node_t *node) {
-  if (!node) return TK_FLOAT_KIND_NONE;
-  psx_decl_funcptr_sig_t sig = {0};
-  ps_node_get_funcptr_sig(node, &sig);
-  return sig.function.callable.return_shape.fp_kind;
 }
 
 static global_var_t *static_local_backing_gvar(const lvar_t *var) {
@@ -3659,8 +3585,8 @@ void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
   if (!lhs || !rhs) return;
   if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
   if (!ps_node_is_pointer(lhs)) return;
-  if (psx_node_has_funcptr_signature(lhs) &&
-      psx_node_has_funcptr_signature(rhs)) {
+  if (ps_type_find_function(ps_node_get_type(lhs)) &&
+      ps_type_find_function(ps_node_get_type(rhs))) {
     return;
   }
   if (ps_node_pointee_is_const_qualified(lhs)) return;

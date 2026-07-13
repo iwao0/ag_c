@@ -5,6 +5,7 @@
 #include "tag_member_public.h"
 
 typedef struct global_var_t global_var_t;
+typedef struct psx_type_t psx_type_t;
 
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,
@@ -150,11 +151,7 @@ int ps_gvar_is_thread_local_by_name(char *name, int len);
 int ps_gvar_is_static_storage_by_name(char *name, int len);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
+psx_type_t *ps_gvar_get_decl_type(global_var_t *gv);
 psx_decl_funcptr_sig_t ps_gvar_funcptr_sig(const global_var_t *src);
-psx_decl_funcptr_sig_t ps_gvar_funcptr_sig_by_name(char *name, int len);
-void ps_gvar_get_funcptr_sig(const global_var_t *src,
-                             psx_decl_funcptr_sig_t *out);
-void ps_gvar_get_funcptr_sig_by_name(char *name, int len,
-                                     psx_decl_funcptr_sig_t *out);
 
 #endif

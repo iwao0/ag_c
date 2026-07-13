@@ -15,16 +15,7 @@ struct global_var_t;
 struct tag_member_info_t;
 
 void ps_node_bind_type(node_t *node, psx_type_t *type);
-unsigned short psx_node_funcptr_param_fp_mask(node_t *node);
-unsigned short psx_node_funcptr_param_int_mask(node_t *node);
-int psx_node_has_funcptr_signature(node_t *node);
-int psx_node_funcptr_returns_void(node_t *node);
-int psx_node_funcptr_returns_complex(node_t *node);
-int psx_node_funcptr_returns_pointee_array(node_t *node);
-tk_float_kind_t psx_node_funcptr_ret_fp_kind(node_t *node);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
-psx_type_t *ps_lvar_get_decl_type(struct lvar_t *var);
-psx_type_t *ps_gvar_get_decl_type(struct global_var_t *gv);
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
 int ps_gvar_init_slot_is_plain_zero(const struct global_var_t *gv, int idx);

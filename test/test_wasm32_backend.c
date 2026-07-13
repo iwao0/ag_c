@@ -740,6 +740,16 @@ int main(void) {
                        "int set(int *p){*p=9; return 123;} int main(){int (*fp)(int*); int x; x=0; "
                        "fp=set; fp(&x); return x;}\n",
                        funcptr_unused_result_call, 3, 9);
+  const char *funcptr_nine_params[] = {
+      "(call_indirect (param i32) (param i32) (param i32) (param i32) "
+      "(param i32) (param i32) (param i32) (param i32) (param i32)"};
+  failures += run_case(
+      "funcptr_nine_params",
+      "int sum9(int a,int b,int c,int d,int e,int f,int g,int h,int i){"
+      "return a+b+c+d+e+f+g+h+i;} "
+      "int main(){int (*fp)(int,int,int,int,int,int,int,int,int)=sum9;"
+      "return fp(1,2,3,4,5,6,7,8,9);}\n",
+      funcptr_nine_params, 1, 45);
   const char *forward_func_addr[] = {"(table 3 funcref)", "(elem (i32.const 2) $main"};
   failures += run_case("forward_func_addr",
                        "int main(); void *foo(){return &main;} int main(){foo(); return 0;}\n",

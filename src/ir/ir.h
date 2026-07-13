@@ -35,7 +35,7 @@ typedef enum {
 int ir_type_size(ir_type_t t);
 const char *ir_type_name(ir_type_t t);
 
-#define IR_CALLABLE_MAX_PARAMS 8
+#define IR_CALLABLE_MAX_PARAMS 16
 
 /* C の recursive type を ABI lowering した後の callable signature。
  * parser の型 projection を IR に持ち込まず、backend が必要とする物理型だけを保持する。 */
