@@ -2442,6 +2442,17 @@ int main(void) {
                                 "int main(void){int (*fp)(int)=take; return fp(7.9);}\n",
                                 indirect_double_to_int_arg_needles, 4);
 
+  const char *indirect_struct_value_arg_needles[] = {
+      "__indirect_function_table", "(i32, i32, i32) -> i32", "call_indirect", "<sum>"};
+  failures += run_objdump_check(
+      "indirect_struct_value_arg",
+      "struct Value{int a;int b;int c;}; "
+      "int sum(void *u,struct Value v,void *c){return v.a+v.b+v.c;} "
+      "struct Ops{int (*scalar)(void *,struct Value,void *);}; "
+      "struct Ops ops={sum}; int main(void){struct Value v;v.a=1;v.b=2;v.c=3;"
+      "return ops.scalar(0,v,0);}\n",
+      indirect_struct_value_arg_needles, 4);
+
   const char *indirect_unused_nonvoid_needles[] = {
       "__indirect_function_table", "(i32) -> i32", "call_indirect", "R_WASM_TABLE_INDEX_SLEB"};
   failures += run_objdump_check("indirect_unused_nonvoid",

@@ -672,6 +672,16 @@ int main(void) {
   failures += run_case("funcptr_double_to_int_arg",
                        "int take(int x){return x;} int main(){int (*fp)(int); fp=take; return fp(7.9);}\n",
                        funcptr_double_to_int_arg, 3, 7);
+  const char *funcptr_struct_value_arg[] = {
+      "(func $sum (param $p0 i32) (param $p1 i32) (param $p2 i32)",
+      "(call_indirect (param i32) (param i32) (param i32)"};
+  failures += run_case("funcptr_struct_value_arg",
+                       "struct Value{int a;int b;int c;}; "
+                       "int sum(void *u,struct Value v,void *c){return v.a+v.b+v.c;} "
+                       "struct Ops{int (*scalar)(void *,struct Value,void *);}; "
+                       "struct Ops ops={sum}; int main(){struct Value v;v.a=1;v.b=2;v.c=3;"
+                       "return ops.scalar(0,v,0);}\n",
+                       funcptr_struct_value_arg, 2, 6);
   const char *funcptr_pointer_return[] = {"(call_indirect (result i32)", "(return (local.get"};
   failures += run_case("funcptr_pointer_return",
                        "int g; int *get(void){return &g;} int main(){int *(*fp)(void); fp=get; "

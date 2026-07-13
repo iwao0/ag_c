@@ -310,6 +310,13 @@ static psx_funcptr_signature_t type_function_signature_from_canonical(
                param->kind == PSX_TYPE_INTEGER) {
       unsigned short code = ps_type_sizeof(param) > 4 ? 2u : 1u;
       signature.param_int_mask |= (unsigned short)(code << (2 * i));
+    } else if (param->kind == PSX_TYPE_STRUCT ||
+               param->kind == PSX_TYPE_UNION) {
+      int size = ps_type_sizeof(param);
+      unsigned short code = size > 0 && size <= 4 ? 1u
+                            : size == 8          ? 2u
+                                                 : 3u;
+      signature.param_int_mask |= (unsigned short)(code << (2 * i));
     }
   }
   return signature;

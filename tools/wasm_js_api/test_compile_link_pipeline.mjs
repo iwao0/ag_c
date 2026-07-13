@@ -27,6 +27,35 @@ const otherSource = "int other(void) { return 41; }\n";
 const mainObj = toolchain.compileObject(mainSource);
 const otherObj = toolchain.compileObject(otherSource);
 
+const selfHostGlobalSources = [
+  "int value; void start(void) {} void update(void) {}\n",
+  "int value = 7; void start(void) {} void update(void) {}\n",
+  "static int value; void start(void) {} void update(void) {}\n",
+  "void start(void) { static int value; value++; } void update(void) {}\n",
+];
+for (const source of selfHostGlobalSources) {
+  const object = toolchain.compileObject(source);
+  if (object[0] !== 0x00 || object[1] !== 0x61 || object[2] !== 0x73 || object[3] !== 0x6d) {
+    throw new Error(`self-host global object is not a wasm object: ${source}`);
+  }
+}
+
+const globalStarterSource = `
+int value = 1;
+void start(void) { value = 4; }
+void update(void) { value++; }
+int read_value(void) { return value; }
+`;
+const globalStarter = await toolchain.instantiateLinkedWasm(globalStarterSource, {
+  exports: ["start", "update", "read_value"],
+  useStdlib: false,
+});
+globalStarter.instance.exports.start();
+globalStarter.instance.exports.update();
+if (globalStarter.instance.exports.read_value() !== 5) {
+  throw new Error("self-host global starter game did not preserve global state");
+}
+
 const mainObjPath = path.join(outDir, "main_from_compiler_api.o");
 const otherObjPath = path.join(outDir, "other_from_compiler_api.o");
 await writeFile(mainObjPath, mainObj);
