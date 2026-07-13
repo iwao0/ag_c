@@ -1,3 +1,5 @@
+export { AGC_RUNTIME_IMPORT_MANIFEST } from "./generated/runtime-import-manifest.js";
+
 function agcRound(x) {
   x = Number(x);
   return x < 0 ? -Math.floor(-x + 0.5) : Math.floor(x + 0.5);
@@ -246,50 +248,6 @@ const AGC_MATH_IMPORTS = [
   ["tanh", wrapMath(Math.tanh), ["f", "l"], true],
   ["trunc", wrapMath(Math.trunc), ["f", "l"], true],
 ];
-
-function mathFamilyImportNames([baseName, _fn, suffixes, runtimeAlias]) {
-  const names = [baseName, ...suffixes.map((suffix) => `${baseName}${suffix}`)];
-  if (runtimeAlias) names.push(`__agc_runtime_math_${baseName}`);
-  return names;
-}
-
-const AGC_MATH_EXPLICIT_IMPORT_NAMES = [
-  "frexp", "frexpf", "frexpl",
-  "ldexp", "ldexpf", "ldexpl",
-  "modf", "modff", "modfl",
-  "remquo", "remquof", "remquol", "__agc_runtime_math_remquo",
-  "copysign", "copysignf", "copysignl",
-  "nan", "nanf", "nanl",
-  "fpclassify", "isfinite", "isinf", "isnan", "isnormal", "signbit",
-  "isgreater", "isgreaterequal", "isless", "islessequal", "islessgreater",
-  "isunordered",
-];
-
-const AGC_STDIO_IMPORT_NAMES = [
-  "printf", "fprintf", "sprintf", "snprintf", "vfprintf", "vsnprintf",
-  "puts", "fputs", "putchar", "fputc", "fflush", "ungetc",
-  "__agc_runtime_stdout_write", "__agc_runtime_stderr_write",
-  "fopen", "fclose", "fread", "fwrite", "write", "lseek",
-  "fgetc", "getc", "getchar", "fgets",
-  "fgetwc", "getwc", "getwchar", "fputwc", "putwc", "putwchar",
-  "ungetwc", "fgetws", "fputws", "fwide",
-  "feof", "ferror", "clearerr", "perror", "__error",
-];
-
-const AGC_MATH_IMPORT_NAMES = [
-  ...AGC_MATH_IMPORTS.flatMap(mathFamilyImportNames),
-  ...AGC_MATH_EXPLICIT_IMPORT_NAMES,
-];
-
-export const AGC_RUNTIME_IMPORT_MANIFEST = Object.freeze({
-  version: 1,
-  namespaces: Object.freeze({
-    env: Object.freeze({
-      math: Object.freeze([...AGC_MATH_IMPORT_NAMES].sort()),
-      stdio: Object.freeze([...AGC_STDIO_IMPORT_NAMES].sort()),
-    }),
-  }),
-});
 
 function addMathImportFamily(env, baseName, fn, suffixes, runtimeAlias) {
   env[baseName] = fn;

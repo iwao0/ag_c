@@ -1,0 +1,2311 @@
+{
+  "version": 1,
+  "linker": {
+    "data": [
+      "__stderrp",
+      "__stdinp",
+      "__stdoutp"
+    ],
+    "functions": [
+      {
+        "name": "_Exit",
+        "kind": "bridge",
+        "target": "__agc_runtime__Exit"
+      },
+      {
+        "name": "__ag_complex_sqrt",
+        "kind": "synthetic"
+      },
+      {
+        "name": "__agc_runtime_trap",
+        "kind": "synthetic"
+      },
+      {
+        "name": "__assert_rtn",
+        "kind": "bridge",
+        "target": "__agc_runtime___assert_rtn"
+      },
+      {
+        "name": "__error",
+        "kind": "bridge",
+        "target": "__agc_runtime___error"
+      },
+      {
+        "name": "abort",
+        "kind": "bridge",
+        "target": "__agc_runtime_abort"
+      },
+      {
+        "name": "abs",
+        "kind": "bridge",
+        "target": "__agc_runtime_abs"
+      },
+      {
+        "name": "acos",
+        "kind": "bridge",
+        "target": "__agc_runtime_acos"
+      },
+      {
+        "name": "acosf",
+        "kind": "bridge",
+        "target": "__agc_runtime_acosf"
+      },
+      {
+        "name": "acosh",
+        "kind": "bridge",
+        "target": "__agc_runtime_acosh"
+      },
+      {
+        "name": "acoshf",
+        "kind": "bridge",
+        "target": "__agc_runtime_acoshf"
+      },
+      {
+        "name": "acoshl",
+        "kind": "bridge",
+        "target": "__agc_runtime_acoshl"
+      },
+      {
+        "name": "acosl",
+        "kind": "bridge",
+        "target": "__agc_runtime_acosl"
+      },
+      {
+        "name": "aligned_alloc",
+        "kind": "bridge",
+        "target": "__agc_runtime_aligned_alloc"
+      },
+      {
+        "name": "asctime",
+        "kind": "bridge",
+        "target": "__agc_runtime_asctime"
+      },
+      {
+        "name": "asin",
+        "kind": "bridge",
+        "target": "__agc_runtime_asin"
+      },
+      {
+        "name": "asinf",
+        "kind": "bridge",
+        "target": "__agc_runtime_asinf"
+      },
+      {
+        "name": "asinh",
+        "kind": "bridge",
+        "target": "__agc_runtime_asinh"
+      },
+      {
+        "name": "asinhf",
+        "kind": "bridge",
+        "target": "__agc_runtime_asinhf"
+      },
+      {
+        "name": "asinhl",
+        "kind": "bridge",
+        "target": "__agc_runtime_asinhl"
+      },
+      {
+        "name": "asinl",
+        "kind": "bridge",
+        "target": "__agc_runtime_asinl"
+      },
+      {
+        "name": "at_quick_exit",
+        "kind": "bridge",
+        "target": "__agc_runtime_at_quick_exit"
+      },
+      {
+        "name": "atan",
+        "kind": "bridge",
+        "target": "__agc_runtime_atan"
+      },
+      {
+        "name": "atan2",
+        "kind": "bridge",
+        "target": "__agc_runtime_atan2"
+      },
+      {
+        "name": "atan2f",
+        "kind": "bridge",
+        "target": "__agc_runtime_atan2f"
+      },
+      {
+        "name": "atan2l",
+        "kind": "bridge",
+        "target": "__agc_runtime_atan2l"
+      },
+      {
+        "name": "atanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_atanf"
+      },
+      {
+        "name": "atanh",
+        "kind": "bridge",
+        "target": "__agc_runtime_atanh"
+      },
+      {
+        "name": "atanhf",
+        "kind": "bridge",
+        "target": "__agc_runtime_atanhf"
+      },
+      {
+        "name": "atanhl",
+        "kind": "bridge",
+        "target": "__agc_runtime_atanhl"
+      },
+      {
+        "name": "atanl",
+        "kind": "bridge",
+        "target": "__agc_runtime_atanl"
+      },
+      {
+        "name": "atexit",
+        "kind": "bridge",
+        "target": "__agc_runtime_atexit"
+      },
+      {
+        "name": "atof",
+        "kind": "bridge",
+        "target": "__agc_runtime_atof"
+      },
+      {
+        "name": "atoi",
+        "kind": "bridge",
+        "target": "__agc_runtime_atoi"
+      },
+      {
+        "name": "atol",
+        "kind": "bridge",
+        "target": "__agc_runtime_atol"
+      },
+      {
+        "name": "atoll",
+        "kind": "bridge",
+        "target": "__agc_runtime_atoll"
+      },
+      {
+        "name": "bsearch",
+        "kind": "bridge",
+        "target": "__agc_runtime_bsearch"
+      },
+      {
+        "name": "btowc",
+        "kind": "bridge",
+        "target": "__agc_runtime_btowc"
+      },
+      {
+        "name": "c16rtomb",
+        "kind": "bridge",
+        "target": "__agc_runtime_c16rtomb"
+      },
+      {
+        "name": "c32rtomb",
+        "kind": "bridge",
+        "target": "__agc_runtime_c32rtomb"
+      },
+      {
+        "name": "calloc",
+        "kind": "bridge",
+        "target": "__agc_runtime_calloc"
+      },
+      {
+        "name": "cbrt",
+        "kind": "bridge",
+        "target": "__agc_runtime_cbrt"
+      },
+      {
+        "name": "cbrtf",
+        "kind": "bridge",
+        "target": "__agc_runtime_cbrtf"
+      },
+      {
+        "name": "cbrtl",
+        "kind": "bridge",
+        "target": "__agc_runtime_cbrtl"
+      },
+      {
+        "name": "ceil",
+        "kind": "bridge",
+        "target": "__agc_runtime_ceil"
+      },
+      {
+        "name": "ceilf",
+        "kind": "bridge",
+        "target": "__agc_runtime_ceilf"
+      },
+      {
+        "name": "ceill",
+        "kind": "bridge",
+        "target": "__agc_runtime_ceill"
+      },
+      {
+        "name": "clearerr",
+        "kind": "bridge",
+        "target": "__agc_runtime_clearerr"
+      },
+      {
+        "name": "clock",
+        "kind": "bridge",
+        "target": "__agc_runtime_clock"
+      },
+      {
+        "name": "close",
+        "kind": "bridge",
+        "target": "__agc_runtime_close"
+      },
+      {
+        "name": "copysign",
+        "kind": "bridge",
+        "target": "__agc_runtime_copysign"
+      },
+      {
+        "name": "copysignf",
+        "kind": "bridge",
+        "target": "__agc_runtime_copysignf"
+      },
+      {
+        "name": "copysignl",
+        "kind": "bridge",
+        "target": "__agc_runtime_copysignl"
+      },
+      {
+        "name": "cos",
+        "kind": "bridge",
+        "target": "__agc_runtime_cos"
+      },
+      {
+        "name": "cosf",
+        "kind": "bridge",
+        "target": "__agc_runtime_cosf"
+      },
+      {
+        "name": "cosh",
+        "kind": "bridge",
+        "target": "__agc_runtime_cosh"
+      },
+      {
+        "name": "coshf",
+        "kind": "bridge",
+        "target": "__agc_runtime_coshf"
+      },
+      {
+        "name": "coshl",
+        "kind": "bridge",
+        "target": "__agc_runtime_coshl"
+      },
+      {
+        "name": "cosl",
+        "kind": "bridge",
+        "target": "__agc_runtime_cosl"
+      },
+      {
+        "name": "ctime",
+        "kind": "bridge",
+        "target": "__agc_runtime_ctime"
+      },
+      {
+        "name": "difftime",
+        "kind": "bridge",
+        "target": "__agc_runtime_difftime"
+      },
+      {
+        "name": "div",
+        "kind": "bridge",
+        "target": "__agc_runtime_div"
+      },
+      {
+        "name": "erf",
+        "kind": "bridge",
+        "target": "__agc_runtime_erf"
+      },
+      {
+        "name": "erfc",
+        "kind": "bridge",
+        "target": "__agc_runtime_erfc"
+      },
+      {
+        "name": "erfcf",
+        "kind": "bridge",
+        "target": "__agc_runtime_erfcf"
+      },
+      {
+        "name": "erfcl",
+        "kind": "bridge",
+        "target": "__agc_runtime_erfcl"
+      },
+      {
+        "name": "erff",
+        "kind": "bridge",
+        "target": "__agc_runtime_erff"
+      },
+      {
+        "name": "erfl",
+        "kind": "bridge",
+        "target": "__agc_runtime_erfl"
+      },
+      {
+        "name": "exit",
+        "kind": "bridge",
+        "target": "__agc_runtime_exit"
+      },
+      {
+        "name": "exp",
+        "kind": "bridge",
+        "target": "__agc_runtime_exp"
+      },
+      {
+        "name": "exp2",
+        "kind": "bridge",
+        "target": "__agc_runtime_exp2"
+      },
+      {
+        "name": "exp2f",
+        "kind": "bridge",
+        "target": "__agc_runtime_exp2f"
+      },
+      {
+        "name": "exp2l",
+        "kind": "bridge",
+        "target": "__agc_runtime_exp2l"
+      },
+      {
+        "name": "expf",
+        "kind": "bridge",
+        "target": "__agc_runtime_expf"
+      },
+      {
+        "name": "expl",
+        "kind": "bridge",
+        "target": "__agc_runtime_expl"
+      },
+      {
+        "name": "expm1",
+        "kind": "bridge",
+        "target": "__agc_runtime_expm1"
+      },
+      {
+        "name": "expm1f",
+        "kind": "bridge",
+        "target": "__agc_runtime_expm1f"
+      },
+      {
+        "name": "expm1l",
+        "kind": "bridge",
+        "target": "__agc_runtime_expm1l"
+      },
+      {
+        "name": "fabs",
+        "kind": "bridge",
+        "target": "__agc_runtime_fabs"
+      },
+      {
+        "name": "fabsf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fabsf"
+      },
+      {
+        "name": "fabsl",
+        "kind": "bridge",
+        "target": "__agc_runtime_fabsl"
+      },
+      {
+        "name": "fclose",
+        "kind": "bridge",
+        "target": "__agc_runtime_fclose"
+      },
+      {
+        "name": "fdim",
+        "kind": "bridge",
+        "target": "__agc_runtime_fdim"
+      },
+      {
+        "name": "fdimf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fdimf"
+      },
+      {
+        "name": "fdiml",
+        "kind": "bridge",
+        "target": "__agc_runtime_fdiml"
+      },
+      {
+        "name": "fdopen",
+        "kind": "bridge",
+        "target": "__agc_runtime_fdopen"
+      },
+      {
+        "name": "feclearexcept",
+        "kind": "bridge",
+        "target": "__agc_runtime_feclearexcept"
+      },
+      {
+        "name": "fegetenv",
+        "kind": "bridge",
+        "target": "__agc_runtime_fegetenv"
+      },
+      {
+        "name": "fegetexceptflag",
+        "kind": "bridge",
+        "target": "__agc_runtime_fegetexceptflag"
+      },
+      {
+        "name": "fegetround",
+        "kind": "bridge",
+        "target": "__agc_runtime_fegetround"
+      },
+      {
+        "name": "feholdexcept",
+        "kind": "bridge",
+        "target": "__agc_runtime_feholdexcept"
+      },
+      {
+        "name": "feof",
+        "kind": "bridge",
+        "target": "__agc_runtime_feof"
+      },
+      {
+        "name": "feraiseexcept",
+        "kind": "bridge",
+        "target": "__agc_runtime_feraiseexcept"
+      },
+      {
+        "name": "ferror",
+        "kind": "bridge",
+        "target": "__agc_runtime_ferror"
+      },
+      {
+        "name": "fesetenv",
+        "kind": "bridge",
+        "target": "__agc_runtime_fesetenv"
+      },
+      {
+        "name": "fesetexceptflag",
+        "kind": "bridge",
+        "target": "__agc_runtime_fesetexceptflag"
+      },
+      {
+        "name": "fesetround",
+        "kind": "bridge",
+        "target": "__agc_runtime_fesetround"
+      },
+      {
+        "name": "fetestexcept",
+        "kind": "bridge",
+        "target": "__agc_runtime_fetestexcept"
+      },
+      {
+        "name": "feupdateenv",
+        "kind": "bridge",
+        "target": "__agc_runtime_feupdateenv"
+      },
+      {
+        "name": "fflush",
+        "kind": "bridge",
+        "target": "__agc_runtime_fflush"
+      },
+      {
+        "name": "fgetc",
+        "kind": "bridge",
+        "target": "__agc_runtime_fgetc"
+      },
+      {
+        "name": "fgetpos",
+        "kind": "bridge",
+        "target": "__agc_runtime_fgetpos"
+      },
+      {
+        "name": "fgets",
+        "kind": "bridge",
+        "target": "__agc_runtime_fgets"
+      },
+      {
+        "name": "fgetwc",
+        "kind": "bridge",
+        "target": "__agc_runtime_fgetwc"
+      },
+      {
+        "name": "fgetws",
+        "kind": "bridge",
+        "target": "__agc_runtime_fgetws"
+      },
+      {
+        "name": "floor",
+        "kind": "bridge",
+        "target": "__agc_runtime_floor"
+      },
+      {
+        "name": "floorf",
+        "kind": "bridge",
+        "target": "__agc_runtime_floorf"
+      },
+      {
+        "name": "floorl",
+        "kind": "bridge",
+        "target": "__agc_runtime_floorl"
+      },
+      {
+        "name": "fma",
+        "kind": "bridge",
+        "target": "__agc_runtime_fma"
+      },
+      {
+        "name": "fmaf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmaf"
+      },
+      {
+        "name": "fmal",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmal"
+      },
+      {
+        "name": "fmax",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmax"
+      },
+      {
+        "name": "fmaxf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmaxf"
+      },
+      {
+        "name": "fmaxl",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmaxl"
+      },
+      {
+        "name": "fmin",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmin"
+      },
+      {
+        "name": "fminf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fminf"
+      },
+      {
+        "name": "fminl",
+        "kind": "bridge",
+        "target": "__agc_runtime_fminl"
+      },
+      {
+        "name": "fmod",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmod"
+      },
+      {
+        "name": "fmodf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmodf"
+      },
+      {
+        "name": "fmodl",
+        "kind": "bridge",
+        "target": "__agc_runtime_fmodl"
+      },
+      {
+        "name": "fopen",
+        "kind": "bridge",
+        "target": "__agc_runtime_fopen"
+      },
+      {
+        "name": "fpclassify",
+        "kind": "bridge",
+        "target": "__agc_runtime_fpclassify"
+      },
+      {
+        "name": "fprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fprintf"
+      },
+      {
+        "name": "fputc",
+        "kind": "bridge",
+        "target": "__agc_runtime_fputc"
+      },
+      {
+        "name": "fputs",
+        "kind": "bridge",
+        "target": "__agc_runtime_fputs"
+      },
+      {
+        "name": "fputwc",
+        "kind": "bridge",
+        "target": "__agc_runtime_fputwc"
+      },
+      {
+        "name": "fputws",
+        "kind": "bridge",
+        "target": "__agc_runtime_fputws"
+      },
+      {
+        "name": "fread",
+        "kind": "bridge",
+        "target": "__agc_runtime_fread"
+      },
+      {
+        "name": "free",
+        "kind": "bridge",
+        "target": "__agc_runtime_free"
+      },
+      {
+        "name": "freopen",
+        "kind": "bridge",
+        "target": "__agc_runtime_freopen"
+      },
+      {
+        "name": "frexp",
+        "kind": "bridge",
+        "target": "__agc_runtime_frexp"
+      },
+      {
+        "name": "frexpf",
+        "kind": "bridge",
+        "target": "__agc_runtime_frexpf"
+      },
+      {
+        "name": "frexpl",
+        "kind": "bridge",
+        "target": "__agc_runtime_frexpl"
+      },
+      {
+        "name": "fscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_fscanf"
+      },
+      {
+        "name": "fseek",
+        "kind": "bridge",
+        "target": "__agc_runtime_fseek"
+      },
+      {
+        "name": "fsetpos",
+        "kind": "bridge",
+        "target": "__agc_runtime_fsetpos"
+      },
+      {
+        "name": "fstat",
+        "kind": "bridge",
+        "target": "__agc_runtime_fstat"
+      },
+      {
+        "name": "ftell",
+        "kind": "bridge",
+        "target": "__agc_runtime_ftell"
+      },
+      {
+        "name": "fwide",
+        "kind": "bridge",
+        "target": "__agc_runtime_fwide"
+      },
+      {
+        "name": "fwrite",
+        "kind": "bridge",
+        "target": "__agc_runtime_fwrite"
+      },
+      {
+        "name": "getc",
+        "kind": "bridge",
+        "target": "__agc_runtime_getc"
+      },
+      {
+        "name": "getchar",
+        "kind": "bridge",
+        "target": "__agc_runtime_getchar"
+      },
+      {
+        "name": "getenv",
+        "kind": "bridge",
+        "target": "__agc_runtime_getenv"
+      },
+      {
+        "name": "getline",
+        "kind": "bridge",
+        "target": "__agc_runtime_getline"
+      },
+      {
+        "name": "getrusage",
+        "kind": "bridge",
+        "target": "__agc_runtime_getrusage"
+      },
+      {
+        "name": "getwc",
+        "kind": "bridge",
+        "target": "__agc_runtime_getwc"
+      },
+      {
+        "name": "getwchar",
+        "kind": "bridge",
+        "target": "__agc_runtime_getwchar"
+      },
+      {
+        "name": "gmtime",
+        "kind": "bridge",
+        "target": "__agc_runtime_gmtime"
+      },
+      {
+        "name": "hypot",
+        "kind": "bridge",
+        "target": "__agc_runtime_hypot"
+      },
+      {
+        "name": "hypotf",
+        "kind": "bridge",
+        "target": "__agc_runtime_hypotf"
+      },
+      {
+        "name": "hypotl",
+        "kind": "bridge",
+        "target": "__agc_runtime_hypotl"
+      },
+      {
+        "name": "ilogb",
+        "kind": "bridge",
+        "target": "__agc_runtime_ilogb"
+      },
+      {
+        "name": "ilogbf",
+        "kind": "bridge",
+        "target": "__agc_runtime_ilogbf"
+      },
+      {
+        "name": "ilogbl",
+        "kind": "bridge",
+        "target": "__agc_runtime_ilogbl"
+      },
+      {
+        "name": "imaxabs",
+        "kind": "bridge",
+        "target": "__agc_runtime_imaxabs"
+      },
+      {
+        "name": "imaxdiv",
+        "kind": "bridge",
+        "target": "__agc_runtime_imaxdiv"
+      },
+      {
+        "name": "isalnum",
+        "kind": "bridge",
+        "target": "__agc_runtime_isalnum"
+      },
+      {
+        "name": "isalpha",
+        "kind": "bridge",
+        "target": "__agc_runtime_isalpha"
+      },
+      {
+        "name": "isblank",
+        "kind": "bridge",
+        "target": "__agc_runtime_isblank"
+      },
+      {
+        "name": "iscntrl",
+        "kind": "bridge",
+        "target": "__agc_runtime_iscntrl"
+      },
+      {
+        "name": "isdigit",
+        "kind": "bridge",
+        "target": "__agc_runtime_isdigit"
+      },
+      {
+        "name": "isfinite",
+        "kind": "bridge",
+        "target": "__agc_runtime_isfinite"
+      },
+      {
+        "name": "isgraph",
+        "kind": "bridge",
+        "target": "__agc_runtime_isgraph"
+      },
+      {
+        "name": "isgreater",
+        "kind": "bridge",
+        "target": "__agc_runtime_isgreater"
+      },
+      {
+        "name": "isgreaterequal",
+        "kind": "bridge",
+        "target": "__agc_runtime_isgreaterequal"
+      },
+      {
+        "name": "isinf",
+        "kind": "bridge",
+        "target": "__agc_runtime_isinf"
+      },
+      {
+        "name": "isless",
+        "kind": "bridge",
+        "target": "__agc_runtime_isless"
+      },
+      {
+        "name": "islessequal",
+        "kind": "bridge",
+        "target": "__agc_runtime_islessequal"
+      },
+      {
+        "name": "islessgreater",
+        "kind": "bridge",
+        "target": "__agc_runtime_islessgreater"
+      },
+      {
+        "name": "islower",
+        "kind": "bridge",
+        "target": "__agc_runtime_islower"
+      },
+      {
+        "name": "isnan",
+        "kind": "bridge",
+        "target": "__agc_runtime_isnan"
+      },
+      {
+        "name": "isnormal",
+        "kind": "bridge",
+        "target": "__agc_runtime_isnormal"
+      },
+      {
+        "name": "isprint",
+        "kind": "bridge",
+        "target": "__agc_runtime_isprint"
+      },
+      {
+        "name": "ispunct",
+        "kind": "bridge",
+        "target": "__agc_runtime_ispunct"
+      },
+      {
+        "name": "isspace",
+        "kind": "bridge",
+        "target": "__agc_runtime_isspace"
+      },
+      {
+        "name": "isunordered",
+        "kind": "bridge",
+        "target": "__agc_runtime_isunordered"
+      },
+      {
+        "name": "isupper",
+        "kind": "bridge",
+        "target": "__agc_runtime_isupper"
+      },
+      {
+        "name": "iswalnum",
+        "kind": "bridge",
+        "target": "__agc_runtime_isalnum"
+      },
+      {
+        "name": "iswalpha",
+        "kind": "bridge",
+        "target": "__agc_runtime_isalpha"
+      },
+      {
+        "name": "iswblank",
+        "kind": "bridge",
+        "target": "__agc_runtime_isblank"
+      },
+      {
+        "name": "iswcntrl",
+        "kind": "bridge",
+        "target": "__agc_runtime_iscntrl"
+      },
+      {
+        "name": "iswctype",
+        "kind": "bridge",
+        "target": "__agc_runtime_iswctype"
+      },
+      {
+        "name": "iswdigit",
+        "kind": "bridge",
+        "target": "__agc_runtime_isdigit"
+      },
+      {
+        "name": "iswgraph",
+        "kind": "bridge",
+        "target": "__agc_runtime_isgraph"
+      },
+      {
+        "name": "iswlower",
+        "kind": "bridge",
+        "target": "__agc_runtime_islower"
+      },
+      {
+        "name": "iswprint",
+        "kind": "bridge",
+        "target": "__agc_runtime_isprint"
+      },
+      {
+        "name": "iswpunct",
+        "kind": "bridge",
+        "target": "__agc_runtime_ispunct"
+      },
+      {
+        "name": "iswspace",
+        "kind": "bridge",
+        "target": "__agc_runtime_isspace"
+      },
+      {
+        "name": "iswupper",
+        "kind": "bridge",
+        "target": "__agc_runtime_isupper"
+      },
+      {
+        "name": "iswxdigit",
+        "kind": "bridge",
+        "target": "__agc_runtime_isxdigit"
+      },
+      {
+        "name": "isxdigit",
+        "kind": "bridge",
+        "target": "__agc_runtime_isxdigit"
+      },
+      {
+        "name": "labs",
+        "kind": "bridge",
+        "target": "__agc_runtime_labs"
+      },
+      {
+        "name": "ldexp",
+        "kind": "bridge",
+        "target": "__agc_runtime_ldexp"
+      },
+      {
+        "name": "ldexpf",
+        "kind": "bridge",
+        "target": "__agc_runtime_ldexpf"
+      },
+      {
+        "name": "ldexpl",
+        "kind": "bridge",
+        "target": "__agc_runtime_ldexpl"
+      },
+      {
+        "name": "ldiv",
+        "kind": "bridge",
+        "target": "__agc_runtime_ldiv"
+      },
+      {
+        "name": "llabs",
+        "kind": "bridge",
+        "target": "__agc_runtime_llabs"
+      },
+      {
+        "name": "lldiv",
+        "kind": "bridge",
+        "target": "__agc_runtime_lldiv"
+      },
+      {
+        "name": "llrint",
+        "kind": "bridge",
+        "target": "__agc_runtime_llrint"
+      },
+      {
+        "name": "llrintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_llrintf"
+      },
+      {
+        "name": "llrintl",
+        "kind": "bridge",
+        "target": "__agc_runtime_llrintl"
+      },
+      {
+        "name": "llround",
+        "kind": "bridge",
+        "target": "__agc_runtime_llround"
+      },
+      {
+        "name": "llroundf",
+        "kind": "bridge",
+        "target": "__agc_runtime_llroundf"
+      },
+      {
+        "name": "llroundl",
+        "kind": "bridge",
+        "target": "__agc_runtime_llroundl"
+      },
+      {
+        "name": "localeconv",
+        "kind": "bridge",
+        "target": "__agc_runtime_localeconv"
+      },
+      {
+        "name": "localtime",
+        "kind": "bridge",
+        "target": "__agc_runtime_localtime"
+      },
+      {
+        "name": "log",
+        "kind": "bridge",
+        "target": "__agc_runtime_log"
+      },
+      {
+        "name": "log10",
+        "kind": "bridge",
+        "target": "__agc_runtime_log10"
+      },
+      {
+        "name": "log10f",
+        "kind": "bridge",
+        "target": "__agc_runtime_log10f"
+      },
+      {
+        "name": "log10l",
+        "kind": "bridge",
+        "target": "__agc_runtime_log10l"
+      },
+      {
+        "name": "log1p",
+        "kind": "bridge",
+        "target": "__agc_runtime_log1p"
+      },
+      {
+        "name": "log1pf",
+        "kind": "bridge",
+        "target": "__agc_runtime_log1pf"
+      },
+      {
+        "name": "log1pl",
+        "kind": "bridge",
+        "target": "__agc_runtime_log1pl"
+      },
+      {
+        "name": "log2",
+        "kind": "bridge",
+        "target": "__agc_runtime_log2"
+      },
+      {
+        "name": "log2f",
+        "kind": "bridge",
+        "target": "__agc_runtime_log2f"
+      },
+      {
+        "name": "log2l",
+        "kind": "bridge",
+        "target": "__agc_runtime_log2l"
+      },
+      {
+        "name": "logb",
+        "kind": "bridge",
+        "target": "__agc_runtime_logb"
+      },
+      {
+        "name": "logbf",
+        "kind": "bridge",
+        "target": "__agc_runtime_logbf"
+      },
+      {
+        "name": "logbl",
+        "kind": "bridge",
+        "target": "__agc_runtime_logbl"
+      },
+      {
+        "name": "logf",
+        "kind": "bridge",
+        "target": "__agc_runtime_logf"
+      },
+      {
+        "name": "logl",
+        "kind": "bridge",
+        "target": "__agc_runtime_logl"
+      },
+      {
+        "name": "longjmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_longjmp"
+      },
+      {
+        "name": "lrint",
+        "kind": "bridge",
+        "target": "__agc_runtime_lrint"
+      },
+      {
+        "name": "lrintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_lrintf"
+      },
+      {
+        "name": "lrintl",
+        "kind": "bridge",
+        "target": "__agc_runtime_lrintl"
+      },
+      {
+        "name": "lround",
+        "kind": "bridge",
+        "target": "__agc_runtime_lround"
+      },
+      {
+        "name": "lroundf",
+        "kind": "bridge",
+        "target": "__agc_runtime_lroundf"
+      },
+      {
+        "name": "lroundl",
+        "kind": "bridge",
+        "target": "__agc_runtime_lroundl"
+      },
+      {
+        "name": "lseek",
+        "kind": "bridge",
+        "target": "__agc_runtime_lseek"
+      },
+      {
+        "name": "malloc",
+        "kind": "bridge",
+        "target": "__agc_runtime_malloc"
+      },
+      {
+        "name": "mblen",
+        "kind": "bridge",
+        "target": "__agc_runtime_mblen"
+      },
+      {
+        "name": "mbrlen",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbrlen"
+      },
+      {
+        "name": "mbrtoc16",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbrtoc16"
+      },
+      {
+        "name": "mbrtoc32",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbrtoc32"
+      },
+      {
+        "name": "mbrtowc",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbrtowc"
+      },
+      {
+        "name": "mbsinit",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbsinit"
+      },
+      {
+        "name": "mbsrtowcs",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbsrtowcs"
+      },
+      {
+        "name": "mbstowcs",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbstowcs"
+      },
+      {
+        "name": "mbtowc",
+        "kind": "bridge",
+        "target": "__agc_runtime_mbtowc"
+      },
+      {
+        "name": "memchr",
+        "kind": "bridge",
+        "target": "__agc_runtime_memchr"
+      },
+      {
+        "name": "memcmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_memcmp"
+      },
+      {
+        "name": "memcpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_memcpy"
+      },
+      {
+        "name": "memmove",
+        "kind": "bridge",
+        "target": "__agc_runtime_memmove"
+      },
+      {
+        "name": "memset",
+        "kind": "bridge",
+        "target": "__agc_runtime_memset"
+      },
+      {
+        "name": "mktime",
+        "kind": "bridge",
+        "target": "__agc_runtime_mktime"
+      },
+      {
+        "name": "modf",
+        "kind": "bridge",
+        "target": "__agc_runtime_modf"
+      },
+      {
+        "name": "modff",
+        "kind": "bridge",
+        "target": "__agc_runtime_modff"
+      },
+      {
+        "name": "modfl",
+        "kind": "bridge",
+        "target": "__agc_runtime_modfl"
+      },
+      {
+        "name": "nan",
+        "kind": "bridge",
+        "target": "__agc_runtime_nan"
+      },
+      {
+        "name": "nanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_nanf"
+      },
+      {
+        "name": "nanl",
+        "kind": "bridge",
+        "target": "__agc_runtime_nanl"
+      },
+      {
+        "name": "nearbyint",
+        "kind": "bridge",
+        "target": "__agc_runtime_nearbyint"
+      },
+      {
+        "name": "nearbyintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_nearbyintf"
+      },
+      {
+        "name": "nearbyintl",
+        "kind": "bridge",
+        "target": "__agc_runtime_nearbyintl"
+      },
+      {
+        "name": "open",
+        "kind": "bridge",
+        "target": "__agc_runtime_open"
+      },
+      {
+        "name": "perror",
+        "kind": "bridge",
+        "target": "__agc_runtime_perror"
+      },
+      {
+        "name": "pow",
+        "kind": "bridge",
+        "target": "__agc_runtime_pow"
+      },
+      {
+        "name": "powf",
+        "kind": "bridge",
+        "target": "__agc_runtime_powf"
+      },
+      {
+        "name": "powl",
+        "kind": "bridge",
+        "target": "__agc_runtime_powl"
+      },
+      {
+        "name": "printf",
+        "kind": "bridge",
+        "target": "__agc_runtime_printf"
+      },
+      {
+        "name": "putc",
+        "kind": "bridge",
+        "target": "__agc_runtime_putc"
+      },
+      {
+        "name": "putchar",
+        "kind": "bridge",
+        "target": "__agc_runtime_putchar"
+      },
+      {
+        "name": "puts",
+        "kind": "bridge",
+        "target": "__agc_runtime_puts"
+      },
+      {
+        "name": "putwc",
+        "kind": "bridge",
+        "target": "__agc_runtime_putwc"
+      },
+      {
+        "name": "putwchar",
+        "kind": "bridge",
+        "target": "__agc_runtime_putwchar"
+      },
+      {
+        "name": "qsort",
+        "kind": "bridge",
+        "target": "__agc_runtime_qsort"
+      },
+      {
+        "name": "quick_exit",
+        "kind": "bridge",
+        "target": "__agc_runtime_quick_exit"
+      },
+      {
+        "name": "raise",
+        "kind": "bridge",
+        "target": "__agc_runtime_raise"
+      },
+      {
+        "name": "rand",
+        "kind": "bridge",
+        "target": "__agc_runtime_rand"
+      },
+      {
+        "name": "read",
+        "kind": "bridge",
+        "target": "__agc_runtime_read"
+      },
+      {
+        "name": "realloc",
+        "kind": "bridge",
+        "target": "__agc_runtime_realloc"
+      },
+      {
+        "name": "realpath",
+        "kind": "bridge",
+        "target": "__agc_runtime_realpath"
+      },
+      {
+        "name": "remainder",
+        "kind": "bridge",
+        "target": "__agc_runtime_remainder"
+      },
+      {
+        "name": "remainderf",
+        "kind": "bridge",
+        "target": "__agc_runtime_remainderf"
+      },
+      {
+        "name": "remainderl",
+        "kind": "bridge",
+        "target": "__agc_runtime_remainderl"
+      },
+      {
+        "name": "remove",
+        "kind": "bridge",
+        "target": "__agc_runtime_remove"
+      },
+      {
+        "name": "remquo",
+        "kind": "bridge",
+        "target": "__agc_runtime_remquo"
+      },
+      {
+        "name": "remquof",
+        "kind": "bridge",
+        "target": "__agc_runtime_remquof"
+      },
+      {
+        "name": "remquol",
+        "kind": "bridge",
+        "target": "__agc_runtime_remquol"
+      },
+      {
+        "name": "rename",
+        "kind": "bridge",
+        "target": "__agc_runtime_rename"
+      },
+      {
+        "name": "rewind",
+        "kind": "bridge",
+        "target": "__agc_runtime_rewind"
+      },
+      {
+        "name": "rint",
+        "kind": "bridge",
+        "target": "__agc_runtime_rint"
+      },
+      {
+        "name": "rintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_rintf"
+      },
+      {
+        "name": "rintl",
+        "kind": "bridge",
+        "target": "__agc_runtime_rintl"
+      },
+      {
+        "name": "round",
+        "kind": "bridge",
+        "target": "__agc_runtime_round"
+      },
+      {
+        "name": "roundf",
+        "kind": "bridge",
+        "target": "__agc_runtime_roundf"
+      },
+      {
+        "name": "roundl",
+        "kind": "bridge",
+        "target": "__agc_runtime_roundl"
+      },
+      {
+        "name": "scalbln",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalbln"
+      },
+      {
+        "name": "scalblnf",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalblnf"
+      },
+      {
+        "name": "scalblnl",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalblnl"
+      },
+      {
+        "name": "scalbn",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalbn"
+      },
+      {
+        "name": "scalbnf",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalbnf"
+      },
+      {
+        "name": "scalbnl",
+        "kind": "bridge",
+        "target": "__agc_runtime_scalbnl"
+      },
+      {
+        "name": "scanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_scanf"
+      },
+      {
+        "name": "setbuf",
+        "kind": "bridge",
+        "target": "__agc_runtime_setbuf"
+      },
+      {
+        "name": "setjmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_setjmp"
+      },
+      {
+        "name": "setlocale",
+        "kind": "bridge",
+        "target": "__agc_runtime_setlocale"
+      },
+      {
+        "name": "setvbuf",
+        "kind": "bridge",
+        "target": "__agc_runtime_setvbuf"
+      },
+      {
+        "name": "signal",
+        "kind": "bridge",
+        "target": "__agc_runtime_signal"
+      },
+      {
+        "name": "signbit",
+        "kind": "bridge",
+        "target": "__agc_runtime_signbit"
+      },
+      {
+        "name": "sin",
+        "kind": "bridge",
+        "target": "__agc_runtime_sin"
+      },
+      {
+        "name": "sinf",
+        "kind": "bridge",
+        "target": "__agc_runtime_sinf"
+      },
+      {
+        "name": "sinh",
+        "kind": "bridge",
+        "target": "__agc_runtime_sinh"
+      },
+      {
+        "name": "sinhf",
+        "kind": "bridge",
+        "target": "__agc_runtime_sinhf"
+      },
+      {
+        "name": "sinhl",
+        "kind": "bridge",
+        "target": "__agc_runtime_sinhl"
+      },
+      {
+        "name": "sinl",
+        "kind": "bridge",
+        "target": "__agc_runtime_sinl"
+      },
+      {
+        "name": "snprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_snprintf"
+      },
+      {
+        "name": "sprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_sprintf"
+      },
+      {
+        "name": "sqrt",
+        "kind": "bridge",
+        "target": "__agc_runtime_sqrt"
+      },
+      {
+        "name": "sqrtf",
+        "kind": "bridge",
+        "target": "__agc_runtime_sqrtf"
+      },
+      {
+        "name": "sqrtl",
+        "kind": "bridge",
+        "target": "__agc_runtime_sqrtl"
+      },
+      {
+        "name": "srand",
+        "kind": "bridge",
+        "target": "__agc_runtime_srand"
+      },
+      {
+        "name": "sscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_sscanf"
+      },
+      {
+        "name": "strcat",
+        "kind": "bridge",
+        "target": "__agc_runtime_strcat"
+      },
+      {
+        "name": "strchr",
+        "kind": "bridge",
+        "target": "__agc_runtime_strchr"
+      },
+      {
+        "name": "strcmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_strcmp"
+      },
+      {
+        "name": "strcoll",
+        "kind": "bridge",
+        "target": "__agc_runtime_strcoll"
+      },
+      {
+        "name": "strcpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_strcpy"
+      },
+      {
+        "name": "strcspn",
+        "kind": "bridge",
+        "target": "__agc_runtime_strcspn"
+      },
+      {
+        "name": "strerror",
+        "kind": "bridge",
+        "target": "__agc_runtime_strerror"
+      },
+      {
+        "name": "strftime",
+        "kind": "bridge",
+        "target": "__agc_runtime_strftime"
+      },
+      {
+        "name": "strlen",
+        "kind": "bridge",
+        "target": "__agc_runtime_strlen"
+      },
+      {
+        "name": "strncat",
+        "kind": "bridge",
+        "target": "__agc_runtime_strncat"
+      },
+      {
+        "name": "strncmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_strncmp"
+      },
+      {
+        "name": "strncpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_strncpy"
+      },
+      {
+        "name": "strpbrk",
+        "kind": "bridge",
+        "target": "__agc_runtime_strpbrk"
+      },
+      {
+        "name": "strrchr",
+        "kind": "bridge",
+        "target": "__agc_runtime_strrchr"
+      },
+      {
+        "name": "strspn",
+        "kind": "bridge",
+        "target": "__agc_runtime_strspn"
+      },
+      {
+        "name": "strstr",
+        "kind": "bridge",
+        "target": "__agc_runtime_strstr"
+      },
+      {
+        "name": "strtod",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtod"
+      },
+      {
+        "name": "strtof",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtof"
+      },
+      {
+        "name": "strtoimax",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtoimax"
+      },
+      {
+        "name": "strtok",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtok"
+      },
+      {
+        "name": "strtol",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtol"
+      },
+      {
+        "name": "strtold",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtold"
+      },
+      {
+        "name": "strtoll",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtoll"
+      },
+      {
+        "name": "strtoul",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtoul"
+      },
+      {
+        "name": "strtoull",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtoull"
+      },
+      {
+        "name": "strtoumax",
+        "kind": "bridge",
+        "target": "__agc_runtime_strtoumax"
+      },
+      {
+        "name": "strxfrm",
+        "kind": "bridge",
+        "target": "__agc_runtime_strxfrm"
+      },
+      {
+        "name": "swprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_swprintf"
+      },
+      {
+        "name": "swscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_swscanf"
+      },
+      {
+        "name": "system",
+        "kind": "bridge",
+        "target": "__agc_runtime_system"
+      },
+      {
+        "name": "tan",
+        "kind": "bridge",
+        "target": "__agc_runtime_tan"
+      },
+      {
+        "name": "tanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_tanf"
+      },
+      {
+        "name": "tanh",
+        "kind": "bridge",
+        "target": "__agc_runtime_tanh"
+      },
+      {
+        "name": "tanhf",
+        "kind": "bridge",
+        "target": "__agc_runtime_tanhf"
+      },
+      {
+        "name": "tanhl",
+        "kind": "bridge",
+        "target": "__agc_runtime_tanhl"
+      },
+      {
+        "name": "tanl",
+        "kind": "bridge",
+        "target": "__agc_runtime_tanl"
+      },
+      {
+        "name": "time",
+        "kind": "bridge",
+        "target": "__agc_runtime_time"
+      },
+      {
+        "name": "timespec_get",
+        "kind": "bridge",
+        "target": "__agc_runtime_timespec_get"
+      },
+      {
+        "name": "tmpfile",
+        "kind": "bridge",
+        "target": "__agc_runtime_tmpfile"
+      },
+      {
+        "name": "tmpnam",
+        "kind": "bridge",
+        "target": "__agc_runtime_tmpnam"
+      },
+      {
+        "name": "tolower",
+        "kind": "bridge",
+        "target": "__agc_runtime_tolower"
+      },
+      {
+        "name": "toupper",
+        "kind": "bridge",
+        "target": "__agc_runtime_toupper"
+      },
+      {
+        "name": "towctrans",
+        "kind": "bridge",
+        "target": "__agc_runtime_towctrans"
+      },
+      {
+        "name": "towlower",
+        "kind": "bridge",
+        "target": "__agc_runtime_tolower"
+      },
+      {
+        "name": "towupper",
+        "kind": "bridge",
+        "target": "__agc_runtime_toupper"
+      },
+      {
+        "name": "trunc",
+        "kind": "bridge",
+        "target": "__agc_runtime_trunc"
+      },
+      {
+        "name": "truncf",
+        "kind": "bridge",
+        "target": "__agc_runtime_truncf"
+      },
+      {
+        "name": "truncl",
+        "kind": "bridge",
+        "target": "__agc_runtime_truncl"
+      },
+      {
+        "name": "ungetc",
+        "kind": "bridge",
+        "target": "__agc_runtime_ungetc"
+      },
+      {
+        "name": "ungetwc",
+        "kind": "bridge",
+        "target": "__agc_runtime_ungetwc"
+      },
+      {
+        "name": "vfprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vfprintf"
+      },
+      {
+        "name": "vfscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vfscanf"
+      },
+      {
+        "name": "vprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vprintf"
+      },
+      {
+        "name": "vscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vscanf"
+      },
+      {
+        "name": "vsnprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vsnprintf"
+      },
+      {
+        "name": "vsprintf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vsprintf"
+      },
+      {
+        "name": "vsscanf",
+        "kind": "bridge",
+        "target": "__agc_runtime_vsscanf"
+      },
+      {
+        "name": "wcrtomb",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcrtomb"
+      },
+      {
+        "name": "wcscat",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcscat"
+      },
+      {
+        "name": "wcschr",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcschr"
+      },
+      {
+        "name": "wcscmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcscmp"
+      },
+      {
+        "name": "wcscoll",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcscoll"
+      },
+      {
+        "name": "wcscpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcscpy"
+      },
+      {
+        "name": "wcscspn",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcscspn"
+      },
+      {
+        "name": "wcsftime",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsftime"
+      },
+      {
+        "name": "wcslen",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcslen"
+      },
+      {
+        "name": "wcsncat",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsncat"
+      },
+      {
+        "name": "wcsncmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsncmp"
+      },
+      {
+        "name": "wcsncpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsncpy"
+      },
+      {
+        "name": "wcspbrk",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcspbrk"
+      },
+      {
+        "name": "wcsrchr",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsrchr"
+      },
+      {
+        "name": "wcsrtombs",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsrtombs"
+      },
+      {
+        "name": "wcsspn",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsspn"
+      },
+      {
+        "name": "wcsstr",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsstr"
+      },
+      {
+        "name": "wcstod",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstod"
+      },
+      {
+        "name": "wcstof",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstof"
+      },
+      {
+        "name": "wcstok",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstok"
+      },
+      {
+        "name": "wcstol",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstol"
+      },
+      {
+        "name": "wcstold",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstold"
+      },
+      {
+        "name": "wcstoll",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstoll"
+      },
+      {
+        "name": "wcstombs",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstombs"
+      },
+      {
+        "name": "wcstoul",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstoul"
+      },
+      {
+        "name": "wcstoull",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcstoull"
+      },
+      {
+        "name": "wcsxfrm",
+        "kind": "bridge",
+        "target": "__agc_runtime_wcsxfrm"
+      },
+      {
+        "name": "wctob",
+        "kind": "bridge",
+        "target": "__agc_runtime_wctob"
+      },
+      {
+        "name": "wctomb",
+        "kind": "bridge",
+        "target": "__agc_runtime_wctomb"
+      },
+      {
+        "name": "wctrans",
+        "kind": "bridge",
+        "target": "__agc_runtime_wctrans"
+      },
+      {
+        "name": "wctype",
+        "kind": "bridge",
+        "target": "__agc_runtime_wctype"
+      },
+      {
+        "name": "wmemchr",
+        "kind": "bridge",
+        "target": "__agc_runtime_wmemchr"
+      },
+      {
+        "name": "wmemcmp",
+        "kind": "bridge",
+        "target": "__agc_runtime_wmemcmp"
+      },
+      {
+        "name": "wmemcpy",
+        "kind": "bridge",
+        "target": "__agc_runtime_wmemcpy"
+      },
+      {
+        "name": "wmemmove",
+        "kind": "bridge",
+        "target": "__agc_runtime_wmemmove"
+      },
+      {
+        "name": "wmemset",
+        "kind": "bridge",
+        "target": "__agc_runtime_wmemset"
+      },
+      {
+        "name": "write",
+        "kind": "bridge",
+        "target": "__agc_runtime_write"
+      }
+    ]
+  },
+  "jsImports": {
+    "env": {
+      "math": [
+        "__agc_runtime_math_acos",
+        "__agc_runtime_math_acosh",
+        "__agc_runtime_math_asin",
+        "__agc_runtime_math_asinh",
+        "__agc_runtime_math_atan",
+        "__agc_runtime_math_atan2",
+        "__agc_runtime_math_atanh",
+        "__agc_runtime_math_cbrt",
+        "__agc_runtime_math_ceil",
+        "__agc_runtime_math_cos",
+        "__agc_runtime_math_cosh",
+        "__agc_runtime_math_erf",
+        "__agc_runtime_math_erfc",
+        "__agc_runtime_math_exp",
+        "__agc_runtime_math_exp2",
+        "__agc_runtime_math_expm1",
+        "__agc_runtime_math_fabs",
+        "__agc_runtime_math_fdim",
+        "__agc_runtime_math_floor",
+        "__agc_runtime_math_fma",
+        "__agc_runtime_math_fmax",
+        "__agc_runtime_math_fmin",
+        "__agc_runtime_math_fmod",
+        "__agc_runtime_math_hypot",
+        "__agc_runtime_math_ilogb",
+        "__agc_runtime_math_llrint",
+        "__agc_runtime_math_llround",
+        "__agc_runtime_math_log",
+        "__agc_runtime_math_log10",
+        "__agc_runtime_math_log1p",
+        "__agc_runtime_math_log2",
+        "__agc_runtime_math_logb",
+        "__agc_runtime_math_lrint",
+        "__agc_runtime_math_lround",
+        "__agc_runtime_math_nearbyint",
+        "__agc_runtime_math_pow",
+        "__agc_runtime_math_remainder",
+        "__agc_runtime_math_remquo",
+        "__agc_runtime_math_rint",
+        "__agc_runtime_math_round",
+        "__agc_runtime_math_scalbln",
+        "__agc_runtime_math_scalbn",
+        "__agc_runtime_math_sin",
+        "__agc_runtime_math_sinh",
+        "__agc_runtime_math_sqrt",
+        "__agc_runtime_math_tan",
+        "__agc_runtime_math_tanh",
+        "__agc_runtime_math_trunc",
+        "acos",
+        "acosf",
+        "acosh",
+        "acoshf",
+        "acoshl",
+        "acosl",
+        "asin",
+        "asinf",
+        "asinh",
+        "asinhf",
+        "asinhl",
+        "asinl",
+        "atan",
+        "atan2",
+        "atan2f",
+        "atan2l",
+        "atanf",
+        "atanh",
+        "atanhf",
+        "atanhl",
+        "atanl",
+        "cbrt",
+        "cbrtf",
+        "cbrtl",
+        "ceil",
+        "ceilf",
+        "ceill",
+        "copysign",
+        "copysignf",
+        "copysignl",
+        "cos",
+        "cosf",
+        "cosh",
+        "coshf",
+        "coshl",
+        "cosl",
+        "erf",
+        "erfc",
+        "erfcf",
+        "erfcl",
+        "erff",
+        "erfl",
+        "exp",
+        "exp2",
+        "exp2f",
+        "exp2l",
+        "expf",
+        "expl",
+        "expm1",
+        "expm1f",
+        "expm1l",
+        "fabs",
+        "fabsf",
+        "fabsl",
+        "fdim",
+        "fdimf",
+        "fdiml",
+        "floor",
+        "floorf",
+        "floorl",
+        "fma",
+        "fmaf",
+        "fmal",
+        "fmax",
+        "fmaxf",
+        "fmaxl",
+        "fmin",
+        "fminf",
+        "fminl",
+        "fmod",
+        "fmodf",
+        "fmodl",
+        "fpclassify",
+        "frexp",
+        "frexpf",
+        "frexpl",
+        "hypot",
+        "hypotf",
+        "hypotl",
+        "ilogb",
+        "ilogbf",
+        "ilogbl",
+        "isfinite",
+        "isgreater",
+        "isgreaterequal",
+        "isinf",
+        "isless",
+        "islessequal",
+        "islessgreater",
+        "isnan",
+        "isnormal",
+        "isunordered",
+        "ldexp",
+        "ldexpf",
+        "ldexpl",
+        "llrint",
+        "llrintf",
+        "llrintl",
+        "llround",
+        "llroundf",
+        "llroundl",
+        "log",
+        "log10",
+        "log10f",
+        "log10l",
+        "log1p",
+        "log1pf",
+        "log1pl",
+        "log2",
+        "log2f",
+        "log2l",
+        "logb",
+        "logbf",
+        "logbl",
+        "logf",
+        "logl",
+        "lrint",
+        "lrintf",
+        "lrintl",
+        "lround",
+        "lroundf",
+        "lroundl",
+        "modf",
+        "modff",
+        "modfl",
+        "nan",
+        "nanf",
+        "nanl",
+        "nearbyint",
+        "nearbyintf",
+        "nearbyintl",
+        "pow",
+        "powf",
+        "powl",
+        "remainder",
+        "remainderf",
+        "remainderl",
+        "remquo",
+        "remquof",
+        "remquol",
+        "rint",
+        "rintf",
+        "rintl",
+        "round",
+        "roundf",
+        "roundl",
+        "scalbln",
+        "scalblnf",
+        "scalblnl",
+        "scalbn",
+        "scalbnf",
+        "scalbnl",
+        "signbit",
+        "sin",
+        "sinf",
+        "sinh",
+        "sinhf",
+        "sinhl",
+        "sinl",
+        "sqrt",
+        "sqrtf",
+        "sqrtl",
+        "tan",
+        "tanf",
+        "tanh",
+        "tanhf",
+        "tanhl",
+        "tanl",
+        "trunc",
+        "truncf",
+        "truncl"
+      ],
+      "stdio": [
+        "__agc_runtime_stderr_write",
+        "__agc_runtime_stdout_write",
+        "__error",
+        "clearerr",
+        "fclose",
+        "feof",
+        "ferror",
+        "fflush",
+        "fgetc",
+        "fgets",
+        "fgetwc",
+        "fgetws",
+        "fopen",
+        "fprintf",
+        "fputc",
+        "fputs",
+        "fputwc",
+        "fputws",
+        "fread",
+        "fwide",
+        "fwrite",
+        "getc",
+        "getchar",
+        "getwc",
+        "getwchar",
+        "lseek",
+        "perror",
+        "printf",
+        "putchar",
+        "puts",
+        "putwc",
+        "putwchar",
+        "snprintf",
+        "sprintf",
+        "ungetc",
+        "ungetwc",
+        "vfprintf",
+        "vsnprintf",
+        "write"
+      ]
+    }
+  }
+}

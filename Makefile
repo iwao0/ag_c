@@ -27,6 +27,10 @@ TARGET=build/ag_c
 WASM_TARGET=build/ag_c_wasm
 WASM_LINKER=build/ag_wasm_link
 WASM_RUNTIME=build/libagc_runtime.o
+RUNTIME_SYMBOL_MANIFEST=tools/wasm_obj_linker/runtime/symbol-manifest.json
+RUNTIME_SYMBOL_GENERATOR=tools/wasm_obj_linker/generate_runtime_symbol_manifest.mjs
+RUNTIME_SYMBOL_GENERATED_C=tools/wasm_obj_linker/runtime/generated/runtime-symbols.inc
+RUNTIME_SYMBOL_GENERATED_JS=tools/wasm_js_api/generated/runtime-import-manifest.js
 WASM_SELFHOST_API=build/wasm_selfhost_api/ag_c_wasm_api.wasm
 WASM_LINKER_SELFHOST=build/wasm_linker_selfhost/ag_wasm_link.wasm
 TEST_TOKENIZER=build/test_tokenizer
@@ -59,9 +63,16 @@ $(TARGET): $(OBJS)
 $(WASM_TARGET): $(WASM_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(WASM_OBJS)
 
-$(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c
+$(WASM_LINKER): tools/wasm_obj_linker/ag_wasm_link.c $(RUNTIME_SYMBOL_MANIFEST) $(RUNTIME_SYMBOL_GENERATOR) $(RUNTIME_SYMBOL_GENERATED_C)
 	@mkdir -p build
+	@node $(RUNTIME_SYMBOL_GENERATOR) --check
 	$(CC) $(CFLAGS) -o $@ $<
+
+generate-runtime-symbol-manifest:
+	@node $(RUNTIME_SYMBOL_GENERATOR)
+
+check-runtime-symbol-manifest:
+	@node $(RUNTIME_SYMBOL_GENERATOR) --check
 
 $(WASM_RUNTIME): tools/wasm_obj_linker/runtime/libagc_runtime.c tools/wasm_obj_linker/runtime/parts/*.c $(WASM_TARGET)
 	@mkdir -p $(dir $@)
@@ -155,7 +166,7 @@ wasm32-wat-c-testsuite-scan: $(WASM_TARGET)
 
 wasm32-scans: wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan
 
-test-wasm-obj-linker: $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
+test-wasm-obj-linker: check-runtime-symbol-manifest $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 	@bash tools/wasm_obj_linker/test_smoke.sh
 
 $(WASM_SELFHOST_API): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
@@ -163,7 +174,7 @@ $(WASM_SELFHOST_API): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 
 wasm-selfhost-api: $(WASM_SELFHOST_API)
 
-test-wasm-js-api: $(WASM_SELFHOST_API)
+test-wasm-js-api: check-runtime-symbol-manifest $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_smoke.mjs $(WASM_SELFHOST_API)
 	@node tools/wasm_js_api/test_package_exports.mjs
 
@@ -172,16 +183,16 @@ $(WASM_LINKER_SELFHOST): FORCE $(WASM_TARGET) $(WASM_LINKER) $(WASM_RUNTIME)
 
 wasm-linker-selfhost: $(WASM_LINKER_SELFHOST)
 
-test-wasm-linker-selfhost: $(WASM_LINKER_SELFHOST) $(WASM_TARGET)
+test-wasm-linker-selfhost: check-runtime-symbol-manifest $(WASM_LINKER_SELFHOST) $(WASM_TARGET)
 	@node tools/wasm_obj_linker/test_selfhost_api.mjs $(WASM_LINKER_SELFHOST)
 
-test-wasm-js-pipeline: $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
+test-wasm-js-pipeline: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 	@node tools/wasm_js_api/test_compile_link_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST)
 
-test-wasm-js-e2e: $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) $(WASM_RUNTIME)
+test-wasm-js-e2e: check-runtime-symbol-manifest $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) $(WASM_RUNTIME)
 	@node tools/wasm_js_api/test_e2e_pipeline.mjs $(WASM_SELFHOST_API) $(WASM_LINKER_SELFHOST) --list-fail
 
-test-design-invariants:
+test-design-invariants: check-runtime-symbol-manifest
 	@node test/test_design_invariants.mjs
 	@node tools/wasm_js_api/test_package_exports.mjs
 
@@ -232,6 +243,6 @@ c-testsuite-verbose: $(TARGET)
 
 FORCE:
 
-.PHONY: test test-asan test-design-invariants clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
+.PHONY: test test-asan test-design-invariants generate-runtime-symbol-manifest check-runtime-symbol-manifest clean bench release check-tokenizer-perf-light log-tokenizer-hotpath-daily check-should-reject wasm32-object-fixture-scan wasm32-object-link-fixture-scan wasm32-object-link-all-fixture-scan wasm32-wat-fixture-scan wasm32-object-c-testsuite-scan wasm32-object-link-c-testsuite-scan wasm32-wat-c-testsuite-scan wasm32-scans test-wasm-obj-linker wasm-selfhost-api test-wasm-js-api wasm-linker-selfhost test-wasm-linker-selfhost test-wasm-js-pipeline test-wasm-js-e2e c-testsuite c-testsuite-verbose FORCE
 
 -include $(DEPS)
