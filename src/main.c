@@ -6,6 +6,7 @@
 #include "frontend/translation_unit.h"
 #include "parser/config_runtime.h"
 #include "tokenizer/tokenizer.h"
+#include "tokenizer/allocator.h"
 #include "preprocess/preprocess.h"
 #include "diag/diag.h"
 #include "ir/ir.h"
@@ -22,7 +23,6 @@
 /* メモリ計測モード (環境変数 AG_MEM_STATS=1)。コンパイル各段が確保したメモリの
  * 内訳とプロセスのピーク RSS を stderr に出す。8MB 級のタイト環境への移植検討用。
  * カウンタ getter は各アロケータが提供する (ir.h / 下記 extern)。 */
-size_t tk_allocator_total_reserved_bytes(void);  /* src/tokenizer/allocator.c */
 size_t arena_total_reserved_bytes(void);         /* src/parser/arena.c */
 
 static void print_mem_stats(size_t source_bytes) {

@@ -3,6 +3,14 @@
 
 #include <stddef.h>
 
+typedef struct tk_allocator_context_t tk_allocator_context_t;
+
+tk_allocator_context_t *tk_allocator_context_create(void);
+void tk_allocator_context_destroy(tk_allocator_context_t *ctx);
+tk_allocator_context_t *tk_allocator_context_activate(
+    tk_allocator_context_t *ctx);
+tk_allocator_context_t *tk_allocator_context_active(void);
+
 /** @brief 入力サイズ見積りを設定してチャンク戦略を調整する。 */
 void tk_allocator_set_expected_size(size_t bytes);
 /** @brief Tokenizer用アリーナからゼロ初期化メモリを確保する。 */

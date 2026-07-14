@@ -19,6 +19,9 @@ struct tokenizer_context_t {
   void (*ensure_lookahead_hook)(void);
   bool tolerate_untokenizable;
   void *tolerate_jump_target;
+  size_t stats_base_chunks;
+  size_t stats_base_reserved_bytes;
+  size_t max_token_len_for_test;
 };
 
 /**

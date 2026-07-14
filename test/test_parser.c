@@ -65,6 +65,7 @@
 #include "../src/lowering/static_local_lowering.h"
 #include "../src/pragma_pack.h"
 #include "../src/tokenizer/tokenizer.h"
+#include "../src/tokenizer/allocator.h"
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15565,15 +15566,28 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.diagnostic_context != NULL);
   ASSERT_TRUE(wasm.diagnostic_context != NULL);
   ASSERT_TRUE(host.diagnostic_context != wasm.diagnostic_context);
+  ASSERT_TRUE(host.token_allocator_context != NULL);
+  ASSERT_TRUE(wasm.token_allocator_context != NULL);
+  ASSERT_TRUE(host.token_allocator_context != wasm.token_allocator_context);
   ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
+  tk_allocator_context_t *previous_token_allocator =
+      tk_allocator_context_active();
   ASSERT_TRUE(ag_compilation_session_activate(&host));
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
+  ASSERT_TRUE(tk_allocator_context_active() ==
+              host.token_allocator_context);
+  ASSERT_EQ(0, tk_allocator_total_chunks());
+  ASSERT_TRUE(tk_allocator_calloc(1, 16) != NULL);
+  ASSERT_EQ(1, tk_allocator_total_chunks());
+  tk_set_enable_c11_audit_extensions(true);
+  ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
+  ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
   tk_set_tolerate_untokenizable(true);
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
@@ -15582,16 +15596,23 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
+  ASSERT_TRUE(tk_allocator_context_active() ==
+              wasm.token_allocator_context);
+  ASSERT_EQ(0, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&wasm);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
+  ASSERT_TRUE(tk_allocator_context_active() ==
+              host.token_allocator_context);
+  ASSERT_EQ(1, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&host);
   ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
+  ASSERT_TRUE(tk_allocator_context_active() == previous_token_allocator);
 
   tokenizer_context_t *host_tokenizer =
       ag_compilation_session_tokenizer(&host);

@@ -20,24 +20,76 @@ static const unsigned char *chunk_data_const(const arena_chunk_t *c) {
   return (const unsigned char *)(c + 1);
 }
 
-static arena_chunk_t *arena_head;
-static size_t total_chunks;
-static size_t total_reserved_bytes;  // 現在 live のチャンク総バイト数 (永続+recyclable 合算)
-static size_t peak_reserved_bytes;   // 同時 live の最大 (アリーナ reclaim を跨ぐ高水位)
-static size_t next_chunk_hint = 16 * 1024;
-
 /* ---- recyclable アリーナ (トークンストリーム経路) ----
  * `#` 指令の無いファイルでは、パーサがカーソルを前進させながらトークンを消費する。
  * 消費済みトークンはもう参照されない (AST は token->str=正規化バッファを指す、唯一の
  * バックトラックは _Generic で式内に収まる) ので、カーソルが通り過ぎたチャンクを解放して
  * トークンのピークメモリを O(ウィンドウ) に抑える。永続データ (predefined マクロ本体等) は
  * g_recyc_mode=0 のとき従来の arena_head 側へ確保され、ここでは解放しない。 */
-static arena_chunk_t *recyc_oldest;   // FIFO: 確保が古い順
-static arena_chunk_t *recyc_newest;   // bump 先 (最新)
-static int g_recyc_mode = 0;          // 1 のとき tk_allocator_calloc は recyclable 側へ
-static const unsigned char *recyc_pin = NULL;  // _Generic バックトラック用の解放下限
-static const unsigned char *recyc_stream_pin = NULL; // 遅延 preprocessor の raw cursor 解放下限
-static arena_chunk_t *recyc_cursor_chunk = NULL; // 直近カーソルが属するチャンク (キャッシュ)
+struct tk_allocator_context_t {
+  arena_chunk_t *arena_head;
+  size_t total_chunks;
+  size_t total_reserved_bytes;
+  size_t peak_reserved_bytes;
+  size_t next_chunk_hint;
+  arena_chunk_t *recyc_oldest;
+  arena_chunk_t *recyc_newest;
+  int recyc_mode;
+  const unsigned char *recyc_pin;
+  const unsigned char *recyc_stream_pin;
+  arena_chunk_t *recyc_cursor_chunk;
+};
+
+static tk_allocator_context_t default_allocator_context = {
+    .next_chunk_hint = 16 * 1024,
+};
+static tk_allocator_context_t *active_allocator_context;
+
+tk_allocator_context_t *tk_allocator_context_create(void) {
+  tk_allocator_context_t *ctx = calloc(1, sizeof(*ctx));
+  if (ctx) ctx->next_chunk_hint = 16 * 1024;
+  return ctx;
+}
+
+static void free_chunk_list(arena_chunk_t *head) {
+  while (head) {
+    arena_chunk_t *next = head->next;
+    free(head);
+    head = next;
+  }
+}
+
+void tk_allocator_context_destroy(tk_allocator_context_t *ctx) {
+  if (!ctx || ctx == &default_allocator_context) return;
+  if (active_allocator_context == ctx) active_allocator_context = NULL;
+  free_chunk_list(ctx->arena_head);
+  free_chunk_list(ctx->recyc_oldest);
+  free(ctx);
+}
+
+tk_allocator_context_t *tk_allocator_context_activate(
+    tk_allocator_context_t *ctx) {
+  tk_allocator_context_t *previous = active_allocator_context;
+  active_allocator_context = ctx;
+  return previous;
+}
+
+tk_allocator_context_t *tk_allocator_context_active(void) {
+  return active_allocator_context ? active_allocator_context
+                                  : &default_allocator_context;
+}
+
+#define arena_head (tk_allocator_context_active()->arena_head)
+#define total_chunks (tk_allocator_context_active()->total_chunks)
+#define total_reserved_bytes (tk_allocator_context_active()->total_reserved_bytes)
+#define peak_reserved_bytes (tk_allocator_context_active()->peak_reserved_bytes)
+#define next_chunk_hint (tk_allocator_context_active()->next_chunk_hint)
+#define recyc_oldest (tk_allocator_context_active()->recyc_oldest)
+#define recyc_newest (tk_allocator_context_active()->recyc_newest)
+#define g_recyc_mode (tk_allocator_context_active()->recyc_mode)
+#define recyc_pin (tk_allocator_context_active()->recyc_pin)
+#define recyc_stream_pin (tk_allocator_context_active()->recyc_stream_pin)
+#define recyc_cursor_chunk (tk_allocator_context_active()->recyc_cursor_chunk)
 
 static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
   const unsigned char *u = p;

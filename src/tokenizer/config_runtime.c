@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include <limits.h>
 
 static tokenizer_context_t default_ctx = {
     .strict_c11_mode = false,
@@ -12,6 +13,9 @@ static tokenizer_context_t default_ctx = {
     .ensure_lookahead_hook = NULL,
     .tolerate_untokenizable = false,
     .tolerate_jump_target = NULL,
+    .stats_base_chunks = 0,
+    .stats_base_reserved_bytes = 0,
+    .max_token_len_for_test = (size_t)INT_MAX,
 };
 
 static tokenizer_context_t *active_ctx;
@@ -32,7 +36,14 @@ tokenizer_context_t *tk_context_active(void) {
 
 void tk_context_init(tokenizer_context_t *ctx) {
   if (!ctx) return;
-  *ctx = default_ctx;
+  *ctx = (tokenizer_context_t){
+      .strict_c11_mode = default_ctx.strict_c11_mode,
+      .enable_trigraphs = default_ctx.enable_trigraphs,
+      .enable_binary_literals = default_ctx.enable_binary_literals,
+      .enable_c11_audit_extensions =
+          default_ctx.enable_c11_audit_extensions,
+      .max_token_len_for_test = (size_t)INT_MAX,
+  };
 }
 
 bool tk_ctx_get_strict_c11_mode(const tokenizer_context_t *ctx) {
@@ -72,33 +83,33 @@ void tk_ctx_set_enable_c11_audit_extensions(tokenizer_context_t *ctx, bool enabl
 }
 
 bool tk_get_strict_c11_mode(void) {
-  return tk_ctx_get_strict_c11_mode(&default_ctx);
+  return tk_ctx_get_strict_c11_mode(tk_context_active());
 }
 
 void tk_set_strict_c11_mode(bool strict) {
-  tk_ctx_set_strict_c11_mode(&default_ctx, strict);
+  tk_ctx_set_strict_c11_mode(tk_context_active(), strict);
 }
 
 bool tk_get_enable_trigraphs(void) {
-  return tk_ctx_get_enable_trigraphs(&default_ctx);
+  return tk_ctx_get_enable_trigraphs(tk_context_active());
 }
 
 void tk_set_enable_trigraphs(bool enable) {
-  tk_ctx_set_enable_trigraphs(&default_ctx, enable);
+  tk_ctx_set_enable_trigraphs(tk_context_active(), enable);
 }
 
 bool tk_get_enable_binary_literals(void) {
-  return tk_ctx_get_enable_binary_literals(&default_ctx);
+  return tk_ctx_get_enable_binary_literals(tk_context_active());
 }
 
 void tk_set_enable_binary_literals(bool enable) {
-  tk_ctx_set_enable_binary_literals(&default_ctx, enable);
+  tk_ctx_set_enable_binary_literals(tk_context_active(), enable);
 }
 
 bool tk_get_enable_c11_audit_extensions(void) {
-  return tk_ctx_get_enable_c11_audit_extensions(&default_ctx);
+  return tk_ctx_get_enable_c11_audit_extensions(tk_context_active());
 }
 
 void tk_set_enable_c11_audit_extensions(bool enable) {
-  tk_ctx_set_enable_c11_audit_extensions(&default_ctx, enable);
+  tk_ctx_set_enable_c11_audit_extensions(tk_context_active(), enable);
 }

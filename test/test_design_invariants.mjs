@@ -65,6 +65,10 @@ const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
 const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
 const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
+const tokenizerAllocatorSource = await readFile(
+  "src/tokenizer/allocator.c",
+  "utf8",
+);
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
       compilationSessionHeader,
@@ -90,6 +94,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/tk_allocator_context_t\s*\*token_allocator_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
@@ -108,6 +115,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/tk_context_activate\s*\(&session->tokenizer\)/.test(
       compilerContextSource,
     ) ||
+    !/tk_allocator_context_create\s*\(/.test(compilerContextSource) ||
+    !/tk_allocator_context_activate\s*\(/.test(compilerContextSource) ||
+    !/tk_allocator_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -130,6 +140,20 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
   );
+}
+if (!/struct\s+tk_allocator_context_t\s*\{/.test(
+      tokenizerAllocatorSource,
+    ) ||
+    /static\s+arena_chunk_t\s*\*arena_head\s*;/.test(
+      tokenizerAllocatorSource,
+    ) ||
+    /static\s+arena_chunk_t\s*\*recyc_oldest\s*;/.test(
+      tokenizerAllocatorSource,
+    ) ||
+    /static\s+size_t\s+total_reserved_bytes\s*;/.test(
+      tokenizerAllocatorSource,
+    )) {
+  throw new Error("token allocator storage must be owned by allocator context");
 }
 if (!/void\s*\(\*cursor_hook\)\s*\(token_t\s*\*\)\s*;/.test(
       tokenizerHeader,

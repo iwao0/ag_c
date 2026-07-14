@@ -21,11 +21,6 @@
 #include <string.h>
 #include <limits.h>
 
-static tokenizer_stats_t tok_stats = {0};
-static size_t stats_base_chunks = 0;
-static size_t stats_base_reserved_bytes = 0;
-static size_t max_token_len_for_test = (size_t)INT_MAX;
-
 /* 実行中セッションの active context。未設定 (非トークナイズ中) では既定 context。 */
 static tokenizer_context_t *tk_tokenize_ctx_active = NULL;
 
@@ -124,19 +119,20 @@ void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p) {
 
 /** @brief Tokenizer統計の計測基準点をリセットする。 */
 void tk_reset_tokenizer_stats(void) {
-  stats_base_chunks = tk_allocator_total_chunks();
-  stats_base_reserved_bytes = tk_allocator_total_reserved_bytes();
-  tok_stats.alloc_count = 0;
-  tok_stats.alloc_bytes = 0;
-  tok_stats.peak_alloc_bytes = 0;
+  tokenizer_context_t *ctx = tk_runtime_ctx();
+  ctx->stats_base_chunks = tk_allocator_total_chunks();
+  ctx->stats_base_reserved_bytes = tk_allocator_total_reserved_bytes();
 }
 
 /** @brief Tokenizer統計（alloc回数/bytes）を取得する。 */
 tokenizer_stats_t tk_get_tokenizer_stats(void) {
-  tok_stats.alloc_count = tk_allocator_total_chunks() - stats_base_chunks;
-  tok_stats.alloc_bytes = tk_allocator_total_reserved_bytes() - stats_base_reserved_bytes;
-  tok_stats.peak_alloc_bytes = tok_stats.alloc_bytes;
-  return tok_stats;
+  tokenizer_context_t *ctx = tk_runtime_ctx();
+  tokenizer_stats_t stats = {0};
+  stats.alloc_count = tk_allocator_total_chunks() - ctx->stats_base_chunks;
+  stats.alloc_bytes =
+      tk_allocator_total_reserved_bytes() - ctx->stats_base_reserved_bytes;
+  stats.peak_alloc_bytes = stats.alloc_bytes;
+  return stats;
 }
 
 const char *tk_get_filename_ctx(tokenizer_context_t *ctx) {
@@ -157,14 +153,18 @@ static void *tcalloc(size_t n, size_t size) {
 
 static int checked_span_len(char *start, char *end, const char *what) {
   ptrdiff_t diff = end - start;
-  if (diff < 0 || (size_t)diff > max_token_len_for_test || (size_t)diff > (size_t)INT_MAX) {
+  tokenizer_context_t *ctx = tk_runtime_ctx();
+  if (diff < 0 || (size_t)diff > ctx->max_token_len_for_test ||
+      (size_t)diff > (size_t)INT_MAX) {
     TK_DIAG_ATF(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME, start, "%s", diag_message_for(DIAG_ERR_TOKENIZER_TOKEN_SIZE_WITH_NAME), (char *)what);
   }
   return (int)diff;
 }
 
 void tk_set_max_token_len_limit_for_test(size_t max_len) {
-  max_token_len_for_test = (max_len == 0) ? (size_t)INT_MAX : max_len;
+  tokenizer_context_t *ctx = tk_runtime_ctx();
+  ctx->max_token_len_for_test =
+      (max_len == 0) ? (size_t)INT_MAX : max_len;
 }
 
 // 新しいトークンを作成して、curに繋げる
