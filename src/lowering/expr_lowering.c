@@ -33,7 +33,7 @@ static node_t *new_pointer_result(node_kind_t kind, node_t *pointer,
                                   node_t *offset) {
   node_t *result = ps_node_new_binary(kind, pointer, offset);
   psx_type_t *type = ps_node_row_decay_pointer_arith_type(pointer);
-  if (type) result->type = type;
+  if (type) ps_node_bind_type(result, type);
   return result;
 }
 

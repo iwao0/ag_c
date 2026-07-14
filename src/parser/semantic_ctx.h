@@ -106,8 +106,6 @@ bool ps_ctx_find_typedef_decl_type_at(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type);
 int ps_ctx_has_typedef_in_current_scope(char *name, int len);
-// canonical decl_typeからポインタ段数を返す。非ポインタは0。
-int psx_ctx_get_typedef_pointer_levels(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 typedef struct {

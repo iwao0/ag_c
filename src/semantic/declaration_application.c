@@ -144,7 +144,7 @@ psx_type_t *psx_apply_parsed_type_name(
   psx_apply_parsed_declarator(&type_name->declarator, &shape, NULL);
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = base_type,
+          .base_type = base_type,
           .declarator_shape = &shape,
       });
 }
@@ -158,7 +158,7 @@ psx_type_t *psx_apply_parsed_declarator_type(
   psx_apply_parsed_declarator(declarator, &shape, NULL);
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = base_type,
+          .base_type = base_type,
           .declarator_shape = &shape,
       });
 }
@@ -169,7 +169,7 @@ psx_type_t *psx_apply_runtime_declarator_type(
   if (!base_type || !application) return NULL;
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = base_type,
+          .base_type = base_type,
           .declarator_shape = &application->shape,
       });
 }

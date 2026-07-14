@@ -70,6 +70,18 @@ static int validate_node(const node_t *node,
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
   if (node->type && !validate_type(node->type, 0))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
+  int runtime_stride_off =
+      node->type_state.vla_runtime.row_stride_frame_off;
+  int runtime_strides_remaining =
+      node->type_state.vla_runtime.strides_remaining;
+  if ((runtime_stride_off != 0 &&
+       (runtime_stride_off < 0 || !node->type ||
+        !ps_type_contains_vla_array(node->type))) ||
+      (runtime_stride_off == 0 && runtime_strides_remaining != 0) ||
+      runtime_strides_remaining < 0) {
+    return fail(
+        failure, PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW, node);
+  }
 
   switch (node->kind) {
     case ND_BLOCK: {

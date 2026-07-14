@@ -6,5 +6,8 @@
 int ps_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
                                        int *row_stride_frame_off);
 int ps_node_vla_row_stride_frame_off(node_t *n);
+int ps_node_vla_strides_remaining(node_t *n);
+void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
+                                  int strides_remaining);
 
 #endif

@@ -171,7 +171,8 @@ int ps_lvar_is_static_local(const lvar_t *var) {
 
 int ps_lvar_is_vla(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
-  return type && type->is_vla ? 1 : 0;
+  return ps_type_contains_vla_array(type) ||
+         (var && var->vla_runtime.view.row_stride_frame_off != 0);
 }
 
 int ps_lvar_is_array(const lvar_t *var) {
@@ -210,38 +211,37 @@ tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var) {
 }
 
 int ps_lvar_vla_row_stride_frame_off(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return psx_type_pointer_view_vla_row_stride_frame_off(type);
+  return var ? var->vla_runtime.view.row_stride_frame_off : 0;
 }
 
 int ps_lvar_vla_strides_remaining(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_pointer_view_vla_strides_remaining(type);
+  return var && var->vla_runtime.view.strides_remaining > 0
+             ? var->vla_runtime.view.strides_remaining
+             : 0;
 }
 
 int ps_lvar_vla_row_stride_elem_size(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_vla_row_stride_elem_size(type);
+  return var && var->vla_runtime.row_stride_elem_size > 0
+             ? var->vla_runtime.row_stride_elem_size
+             : 0;
 }
 
 int ps_lvar_vla_row_stride_src_offset(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return psx_type_vla_row_stride_src_offset(type);
+  return var ? var->vla_runtime.row_stride_src_offset : 0;
 }
 
 int ps_lvar_vla_param_inner_dim_count(const lvar_t *var) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_vla_param_inner_dim_count(type);
+  return var ? var->vla_runtime.param_inner_dim_count : 0;
 }
 
 int ps_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_vla_param_inner_dim_const(type, idx);
+  if (!var || idx < 0 || idx >= PSX_VLA_RUNTIME_MAX_INNER_DIMS) return 0;
+  return var->vla_runtime.param_inner_dim_consts[idx];
 }
 
 int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_vla_param_inner_dim_src_offset(type, idx);
+  if (!var || idx < 0 || idx >= PSX_VLA_RUNTIME_MAX_INNER_DIMS) return 0;
+  return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
 
 void ps_decl_set_gvar_decl_type(global_var_t *gv,

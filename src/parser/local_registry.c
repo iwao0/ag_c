@@ -260,11 +260,15 @@ void ps_local_registry_set_vla_descriptor(
     int row_stride_src_offset,
     int row_stride_elem_size) {
   if (!var) return;
-  psx_type_t *type = ps_lvar_get_decl_type(var);
-  if (!type) return;
-  ps_type_set_vla_runtime_descriptor(
-      type, row_stride_frame_off, strides_remaining,
-      row_stride_src_offset, row_stride_elem_size);
+  var->vla_runtime.view.row_stride_frame_off =
+      row_stride_frame_off > 0 ? row_stride_frame_off : 0;
+  var->vla_runtime.view.strides_remaining =
+      row_stride_frame_off > 0 && strides_remaining > 0
+          ? strides_remaining
+          : 0;
+  var->vla_runtime.row_stride_src_offset = row_stride_src_offset;
+  var->vla_runtime.row_stride_elem_size =
+      row_stride_elem_size > 0 ? (short)row_stride_elem_size : 0;
 }
 
 void ps_local_registry_set_vla_param_inner_dims(
@@ -272,10 +276,19 @@ void ps_local_registry_set_vla_param_inner_dims(
     const int *inner_dim_src_offsets, int inner_dim_count) {
   if (!var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
-  if (inner_dim_count > 7) inner_dim_count = 7;
-  ps_type_set_vla_param_inner_dims(
-      ps_lvar_get_decl_type(var), inner_dim_consts,
-      inner_dim_src_offsets, inner_dim_count);
+  if (inner_dim_count > PSX_VLA_RUNTIME_MAX_INNER_DIMS)
+    inner_dim_count = PSX_VLA_RUNTIME_MAX_INNER_DIMS;
+  var->vla_runtime.param_inner_dim_count = (unsigned char)inner_dim_count;
+  for (int i = 0; i < PSX_VLA_RUNTIME_MAX_INNER_DIMS; i++) {
+    var->vla_runtime.param_inner_dim_consts[i] =
+        i < inner_dim_count && inner_dim_consts
+            ? (short)inner_dim_consts[i]
+            : 0;
+    var->vla_runtime.param_inner_dim_src_offsets[i] =
+        i < inner_dim_count && inner_dim_src_offsets
+            ? inner_dim_src_offsets[i]
+            : 0;
+  }
 }
 
 lvar_t *ps_lvar_next_all(const lvar_t *var) {

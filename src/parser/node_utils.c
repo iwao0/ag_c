@@ -43,10 +43,6 @@ typedef enum {
   NODE_POINTER_POINTEE_FP_KIND,
 } node_pointer_view_field_t;
 
-typedef enum {
-  NODE_VLA_ROW_STRIDE_FRAME_OFF,
-} node_vla_view_field_t;
-
 static int pointer_view_from_node_direct(node_t *node, node_pointer_view_field_t field,
                                          int *value);
 static int node_pointer_stride_from_type(
@@ -1739,9 +1735,68 @@ psx_type_t *ps_node_get_type(node_t *node) {
   return node ? node->type : NULL;
 }
 
+static int node_type_accepts_vla_runtime_view(const node_t *node) {
+  return node && ps_type_contains_vla_array(node->type);
+}
+
+static node_t *bound_node_vla_runtime_source(node_t *node) {
+  if (!node) return NULL;
+  switch (node->kind) {
+    case ND_ADD:
+      if (node->lhs &&
+          ps_node_vla_row_stride_frame_off(node->lhs) != 0)
+        return node->lhs;
+      return node->rhs;
+    case ND_SUB:
+    case ND_ASSIGN:
+    case ND_ADDR:
+    case ND_CAST:
+    case ND_PRE_INC:
+    case ND_PRE_DEC:
+    case ND_POST_INC:
+    case ND_POST_DEC:
+      return node->lhs;
+    case ND_COMMA:
+    case ND_STMT_EXPR:
+      return node->rhs;
+    case ND_TERNARY:
+      return node->rhs;
+    default:
+      return NULL;
+  }
+}
+
+void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
+                                  int strides_remaining) {
+  if (!node) return;
+  node->type_state.vla_runtime = (psx_vla_runtime_view_t){0};
+  if (!node_type_accepts_vla_runtime_view(node) ||
+      row_stride_frame_off <= 0)
+    return;
+  node->type_state.vla_runtime.row_stride_frame_off = row_stride_frame_off;
+  node->type_state.vla_runtime.strides_remaining =
+      strides_remaining > 0 ? strides_remaining : 0;
+}
+
 void ps_node_bind_type(node_t *node, psx_type_t *type) {
   if (!node) return;
   node->type = type;
+  if (!node_type_accepts_vla_runtime_view(node)) {
+    node->type_state.vla_runtime = (psx_vla_runtime_view_t){0};
+    return;
+  }
+  node_t *source = bound_node_vla_runtime_source(node);
+  if (source) {
+    int frame_off = ps_node_vla_row_stride_frame_off(source);
+    int remaining = ps_node_vla_strides_remaining(source);
+    ps_node_set_vla_runtime_view(node, frame_off, remaining);
+  } else if (node->kind == ND_DEREF && node->lhs) {
+    int frame_off = ps_node_vla_row_stride_frame_off(node->lhs);
+    int remaining = ps_node_vla_strides_remaining(node->lhs);
+    ps_node_set_vla_runtime_view(
+        node, frame_off != 0 && remaining > 0 ? frame_off + 8 : 0,
+        remaining > 0 ? remaining - 1 : 0);
+  }
 }
 
 int ps_node_type_size(node_t *node) {
@@ -1895,31 +1950,6 @@ static int pointer_view_from_node_direct(node_t *node, node_pointer_view_field_t
   return 0;
 }
 
-static int vla_view_from_type(const psx_type_t *type, node_vla_view_field_t field,
-                              int *value) {
-  if (!type_is_pointer_view_type(type)) return 0;
-  switch (field) {
-    case NODE_VLA_ROW_STRIDE_FRAME_OFF:
-      {
-        int row_stride_frame_off =
-            psx_type_pointer_view_vla_row_stride_frame_off(type);
-        if (row_stride_frame_off == 0) return 0;
-        if (value) *value = row_stride_frame_off;
-      }
-      return 1;
-    default:
-      return 0;
-  }
-}
-
-static int vla_view_from_node_direct(node_t *node, node_vla_view_field_t field,
-                                     int *value) {
-  if (!node) return 0;
-  psx_type_t *type = ps_node_get_type(node);
-  if (vla_view_from_type(type, field, value)) return 1;
-  return 0;
-}
-
 static global_var_t *static_local_backing_gvar(const lvar_t *var) {
   if (!var || !var->static_global_name) return NULL;
   return ps_find_global_var(var->static_global_name,
@@ -2060,14 +2090,17 @@ tk_float_kind_t ps_node_pointee_fp_kind(node_t *node) {
              : TK_FLOAT_KIND_NONE;
 }
 
-/* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロット (実行時値) のフレームオフセット。
- * 無ければ 0。ポインタ算術 (`p + 1`) のスケールに使う。ND_ADD/SUB は被演算子を辿る。 */
+/* pointer-to-VLA (`int (*p)[m]`) の行ストライドスロット (実行時値) のフレームオフセット。 */
 int ps_node_vla_row_stride_frame_off(node_t *node) {
-  if (!node) return 0;
-  int value = 0;
-  return vla_view_from_node_direct(
-             node, NODE_VLA_ROW_STRIDE_FRAME_OFF, &value)
-             ? value
+  return node_type_accepts_vla_runtime_view(node)
+             ? node->type_state.vla_runtime.row_stride_frame_off
+             : 0;
+}
+
+int ps_node_vla_strides_remaining(node_t *node) {
+  return node_type_accepts_vla_runtime_view(node) &&
+                 node->type_state.vla_runtime.strides_remaining > 0
+             ? node->type_state.vla_runtime.strides_remaining
              : 0;
 }
 
@@ -2288,6 +2321,11 @@ static node_lvar_t *new_lvar_symbol_node(int offset, lvar_t *var,
   node->base.type = type;
   node->offset = offset;
   node->var = var;
+  if (var) {
+    ps_node_set_vla_runtime_view(
+        (node_t *)node, ps_lvar_vla_row_stride_frame_off(var),
+        ps_lvar_vla_strides_remaining(var));
+  }
   return node;
 }
 
@@ -2485,9 +2523,10 @@ static node_t *new_addr_node(node_t *base) {
 static void init_array_addr_canonical_type(node_t *addr,
                                            psx_type_t *array_type) {
   if (!addr || !array_type) return;
-  addr->type = array_type->kind == PSX_TYPE_ARRAY
-                   ? ps_type_decay_array(array_type)
-                   : (type_is_pointer_view_type(array_type) ? array_type : NULL);
+  ps_node_bind_type(
+      addr, array_type->kind == PSX_TYPE_ARRAY
+                ? ps_type_decay_array(array_type)
+                : (type_is_pointer_view_type(array_type) ? array_type : NULL));
 }
 
 node_t *ps_node_new_gvar_array_addr_for(global_var_t *gv) {
@@ -2519,9 +2558,9 @@ node_t *ps_node_new_explicit_addr_value_for(node_t *operand) {
   if (!operand || operand->kind != ND_ADDR) return operand;
   node_t *cp = arena_alloc(sizeof(node_t));
   *cp = *operand;
+  cp->type_state = (psx_expr_type_state_t){0};
   ps_node_bind_type(
       cp, ps_type_address_result(ps_node_get_type(operand->lhs)));
-  cp->type_state = (psx_expr_type_state_t){0};
   cp->is_explicit_addr_expr = 1;
   return cp;
 }
@@ -2536,6 +2575,16 @@ node_t *ps_node_new_unary_addr_for(node_t *operand) {
 static void init_subscript_expr_state(node_t *result) {
   if (!result || !result->type || result->type->kind != PSX_TYPE_ARRAY) return;
   result->type_state.subscript_uses_base_address = 1;
+}
+
+static void advance_subscript_vla_runtime_view(node_t *result,
+                                                node_t *base) {
+  if (!result || !base || !node_type_accepts_vla_runtime_view(result)) return;
+  int frame_off = ps_node_vla_row_stride_frame_off(base);
+  int remaining = ps_node_vla_strides_remaining(base);
+  ps_node_set_vla_runtime_view(
+      result, frame_off != 0 && remaining > 0 ? frame_off + 8 : 0,
+      remaining > 0 ? remaining - 1 : 0);
 }
 
 node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
@@ -2609,6 +2658,7 @@ node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
   result->lhs = ps_node_new_binary(ND_ADD, base_addr, scaled_offset);
   if (result_type) {
     ps_node_bind_type(result, result_type);
+    advance_subscript_vla_runtime_view(result, base);
     init_subscript_expr_state(result);
   }
   return result;

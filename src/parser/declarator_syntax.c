@@ -81,9 +81,8 @@ static declarator_parse_result_t parse_declarator_recursive(
 }
 
 token_ident_t *psx_parse_declarator_syntax(
-    const psx_declarator_syntax_t *syntax, int *out_pointer_count) {
+    const psx_declarator_syntax_t *syntax) {
   if (!syntax) return NULL;
   declarator_parse_result_t result = parse_declarator_recursive(syntax, 0);
-  if (out_pointer_count) *out_pointer_count = result.pointer_count;
   return result.name;
 }

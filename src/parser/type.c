@@ -584,37 +584,6 @@ psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
   return type;
 }
 
-void ps_type_set_vla_runtime_descriptor(
-    psx_type_t *type, int row_stride_frame_off, int strides_remaining,
-    int row_stride_src_offset, int row_stride_elem_size) {
-  if (!type) return;
-  type->is_vla = 1;
-  type->vla_row_stride_frame_off = row_stride_frame_off;
-  type->vla_strides_remaining = strides_remaining;
-  type->vla_row_stride_src_offset = row_stride_src_offset;
-  type->vla_row_stride_elem_size =
-      row_stride_elem_size > 0 ? (short)row_stride_elem_size : 0;
-}
-
-void ps_type_set_vla_param_inner_dims(
-    psx_type_t *type, const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count) {
-  if (!type) return;
-  if (inner_dim_count < 0) inner_dim_count = 0;
-  if (inner_dim_count > 7) inner_dim_count = 7;
-  type->vla_param_inner_dim_count = (unsigned char)inner_dim_count;
-  for (int i = 0; i < 7; i++) {
-    type->vla_param_inner_dim_consts[i] =
-        (i < inner_dim_count && inner_dim_consts)
-            ? (short)inner_dim_consts[i]
-            : 0;
-    type->vla_param_inner_dim_src_offsets[i] =
-        (i < inner_dim_count && inner_dim_src_offsets)
-            ? inner_dim_src_offsets[i]
-            : 0;
-  }
-}
-
 psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
   switch (tag_kind) {
     case TK_STRUCT: return PSX_TYPE_STRUCT;
@@ -649,34 +618,14 @@ int ps_type_deref_size(const psx_type_t *type) {
   return 0;
 }
 
-static void type_copy_vla_descriptor(psx_type_t *dst,
-                                     const psx_type_t *src) {
-  if (!dst || !src || !src->is_vla) return;
-  dst->is_vla = 1;
-  dst->vla_row_stride_frame_off = src->vla_row_stride_frame_off;
-  dst->vla_strides_remaining = src->vla_strides_remaining;
-  dst->vla_row_stride_src_offset = src->vla_row_stride_src_offset;
-  dst->vla_row_stride_elem_size = src->vla_row_stride_elem_size;
-  dst->vla_param_inner_dim_count = src->vla_param_inner_dim_count;
-  for (int i = 0; i < 7; i++) {
-    dst->vla_param_inner_dim_consts[i] = src->vla_param_inner_dim_consts[i];
-    dst->vla_param_inner_dim_src_offsets[i] =
-        src->vla_param_inner_dim_src_offsets[i];
-  }
-}
-
 psx_type_t *ps_type_address_result(const psx_type_t *type) {
   if (!type) return NULL;
-  psx_type_t *result = ps_type_new_pointer((psx_type_t *)type);
-  type_copy_vla_descriptor(result, type);
-  return result;
+  return ps_type_new_pointer((psx_type_t *)type);
 }
 
 psx_type_t *ps_type_decay_array(const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return NULL;
-  psx_type_t *result = ps_type_new_pointer(type->base);
-  type_copy_vla_descriptor(result, type);
-  return result;
+  return ps_type_new_pointer(type->base);
 }
 
 psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
@@ -692,19 +641,7 @@ psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
       (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
     return NULL;
   }
-  psx_type_t *result = ps_type_clone(type->base);
-  if (type->vla_row_stride_frame_off != 0 &&
-      (result->kind == PSX_TYPE_POINTER || result->kind == PSX_TYPE_ARRAY)) {
-    result->vla_row_stride_frame_off =
-        type->vla_strides_remaining > 0
-            ? type->vla_row_stride_frame_off + 8
-            : 0;
-    result->vla_strides_remaining =
-        type->vla_strides_remaining > 0
-            ? type->vla_strides_remaining - 1
-            : 0;
-  }
-  return result;
+  return ps_type_clone(type->base);
 }
 
 int ps_type_subscript_static_stride(const psx_type_t *type) {
@@ -718,6 +655,13 @@ int ps_type_subscript_static_stride(const psx_type_t *type) {
 int ps_type_is_pointer(const psx_type_t *type) {
   if (!type) return 0;
   return type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY;
+}
+
+int ps_type_contains_vla_array(const psx_type_t *type) {
+  for (; type; type = type->base) {
+    if (type->kind == PSX_TYPE_ARRAY && type->is_vla) return 1;
+  }
+  return 0;
 }
 
 int ps_type_is_unsigned(const psx_type_t *type) {
@@ -1224,40 +1168,6 @@ int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
   if (!array) return 0;
   return type_array_stride_metadata(array, inner_stride, next_stride,
                                     extra_strides, extra_strides_count);
-}
-
-int psx_type_pointer_view_vla_row_stride_frame_off(const psx_type_t *type) {
-  if (!psx_type_is_pointer_view_type(type)) return 0;
-  return type->vla_row_stride_frame_off;
-}
-
-int ps_type_pointer_view_vla_strides_remaining(const psx_type_t *type) {
-  if (!psx_type_is_pointer_view_type(type)) return 0;
-  return type->vla_strides_remaining > 0 ? type->vla_strides_remaining : 0;
-}
-
-int psx_type_vla_row_stride_src_offset(const psx_type_t *type) {
-  return type && type->is_vla ? type->vla_row_stride_src_offset : 0;
-}
-
-int ps_type_vla_row_stride_elem_size(const psx_type_t *type) {
-  return type && type->is_vla && type->vla_row_stride_elem_size > 0
-             ? type->vla_row_stride_elem_size
-             : 0;
-}
-
-int ps_type_vla_param_inner_dim_count(const psx_type_t *type) {
-  return type && type->is_vla ? type->vla_param_inner_dim_count : 0;
-}
-
-int ps_type_vla_param_inner_dim_const(const psx_type_t *type, int index) {
-  if (!type || !type->is_vla || index < 0 || index >= 7) return 0;
-  return type->vla_param_inner_dim_consts[index];
-}
-
-int ps_type_vla_param_inner_dim_src_offset(const psx_type_t *type, int index) {
-  if (!type || !type->is_vla || index < 0 || index >= 7) return 0;
-  return type->vla_param_inner_dim_src_offsets[index];
 }
 
 static int type_structural_pointer_qual_levels(const psx_type_t *type) {

@@ -17,13 +17,10 @@ static psx_type_t *apply_reference_qualifiers(
     psx_type_t *base, const psx_parsed_decl_specifier_t *specifier) {
   if (!base || !specifier) return base;
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
-  return psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .base_decl_type = base,
-          .is_const_qualified = syntax->is_const_qualified,
-          .is_volatile_qualified = syntax->is_volatile_qualified,
-          .is_atomic = syntax->is_atomic,
-      });
+  ps_type_set_decl_spec_qualifiers(
+      base, syntax->is_const_qualified, syntax->is_volatile_qualified);
+  if (syntax->is_atomic) base->is_atomic = 1;
+  return base;
 }
 
 static psx_type_t *bind_base_type(
@@ -81,7 +78,7 @@ psx_type_t *psx_resolve_bound_type_name_ref(
       &type_name->syntax->declarator, &shape, NULL);
   type_name->resolved_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = type_name->bound_base_type,
+          .base_type = type_name->bound_base_type,
           .declarator_shape = &shape,
       });
   return type_name->resolved_type;

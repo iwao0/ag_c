@@ -17,6 +17,6 @@ typedef struct {
 } psx_declarator_syntax_t;
 
 token_ident_t *psx_parse_declarator_syntax(
-    const psx_declarator_syntax_t *syntax, int *out_pointer_count);
+    const psx_declarator_syntax_t *syntax);
 
 #endif

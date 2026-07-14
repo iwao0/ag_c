@@ -34,9 +34,6 @@ typedef struct {
 token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out);
 token_kind_t psx_consume_type_kind_with_syntax_ex(
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
-void psx_consume_pointer_prefix(int *is_ptr);
-// `*` を消費しつつ段数を返す版 (多段ポインタ typedef の段数記録用)。
-int psx_consume_pointer_prefix_counted(int *is_ptr);
 bool psx_is_decl_prefix_token(token_kind_t k);
 bool psx_is_gnu_attribute_token(const token_t *t);
 void psx_skip_gnu_attributes(void);

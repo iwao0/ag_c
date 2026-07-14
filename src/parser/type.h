@@ -100,14 +100,6 @@ struct psx_type_t {
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
-  int vla_row_stride_frame_off;
-  int vla_strides_remaining;
-  int vla_row_stride_src_offset;
-  short vla_row_stride_elem_size;
-  short vla_param_inner_dim_consts[7];
-  int vla_param_inner_dim_src_offsets[7];
-  unsigned char vla_param_inner_dim_count;
-
   psx_type_t *param_types[16];
   int param_count;
   unsigned char is_variadic_function;
@@ -175,12 +167,6 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
                                         const int *dims, int dim_count,
                                         int leaf_size);
-void ps_type_set_vla_runtime_descriptor(
-    psx_type_t *type, int row_stride_frame_off, int strides_remaining,
-    int row_stride_src_offset, int row_stride_elem_size);
-void ps_type_set_vla_param_inner_dims(
-    psx_type_t *type, const int *inner_dim_consts,
-    const int *inner_dim_src_offsets, int inner_dim_count);
 psx_type_t *ps_type_new_tag(token_kind_t tag_kind, char *tag_name, int tag_len,
                              int tag_scope_depth_p1, int size);
 
@@ -194,6 +180,7 @@ psx_type_t *ps_type_dereference_result(const psx_type_t *type);
 psx_type_t *ps_type_subscript_result(const psx_type_t *type);
 int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
+int ps_type_contains_vla_array(const psx_type_t *type);
 int ps_type_is_unsigned(const psx_type_t *type);
 int ps_type_is_scalar(const psx_type_t *type);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
@@ -230,13 +217,6 @@ int ps_type_decl_array_stride_metadata(const psx_type_t *type,
                                         int *mid_stride,
                                         int *extra_strides,
                                         int *extra_strides_count);
-int psx_type_pointer_view_vla_row_stride_frame_off(const psx_type_t *type);
-int ps_type_pointer_view_vla_strides_remaining(const psx_type_t *type);
-int psx_type_vla_row_stride_src_offset(const psx_type_t *type);
-int ps_type_vla_row_stride_elem_size(const psx_type_t *type);
-int ps_type_vla_param_inner_dim_count(const psx_type_t *type);
-int ps_type_vla_param_inner_dim_const(const psx_type_t *type, int index);
-int ps_type_vla_param_inner_dim_src_offset(const psx_type_t *type, int index);
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,

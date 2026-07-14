@@ -188,26 +188,6 @@ static void skip_cv_qualifiers_into_ex(
   psx_skip_gnu_attributes();
 }
 
-static void skip_ptr_qualifiers(void) {
-  while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
-    set_curtok(curtok()->next);
-  }
-}
-
-int psx_consume_pointer_prefix_counted(int *is_ptr) {
-  int count = 0;
-  while (tk_consume('*')) {
-    if (is_ptr) *is_ptr = 1;
-    count++;
-    skip_ptr_qualifiers();
-  }
-  return count;
-}
-
-void psx_consume_pointer_prefix(int *is_ptr) {
-  (void)psx_consume_pointer_prefix_counted(is_ptr);
-}
-
 static token_kind_t parse_atomic_type_specifier(void) {
   if (curtok()->kind != TK_ATOMIC) return TK_EOF;
   set_curtok(curtok()->next);

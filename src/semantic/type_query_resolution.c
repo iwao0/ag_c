@@ -89,7 +89,7 @@ static void resolve_sizeof_type_name(
 
   query->type_name.resolved_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = base_type,
+          .base_type = base_type,
           .declarator_shape = shape,
       });
   query->queried_type = query->type_name.resolved_type;
@@ -194,8 +194,9 @@ void psx_resolve_sizeof_query(
       query->evaluates_vla_operand = 1;
   } else if (!query->is_type_name && type && type->is_vla &&
              subscript_depth > 0 && type->kind == PSX_TYPE_ARRAY &&
-             type->vla_row_stride_frame_off != 0) {
-    query->runtime_size_slot = type->vla_row_stride_frame_off;
+             ps_node_vla_row_stride_frame_off(query->operand) != 0) {
+    query->runtime_size_slot =
+        ps_node_vla_row_stride_frame_off(query->operand);
     query->evaluates_vla_operand = 1;
   }
 

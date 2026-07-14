@@ -82,7 +82,6 @@ typedef struct {
   token_ident_t *identifier;
   token_t *diagnostic_token;
   psx_declarator_shape_t declarator_shape;
-  int pointer_levels;
   int has_bitfield;
   psx_parsed_const_expr_t bit_width_expression;
   psx_parsed_array_bound_t array_bounds[24];

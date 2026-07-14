@@ -154,13 +154,6 @@ struct func_name_t {
   int is_defined;
 };
 
-static int ctx_type_pointer_levels(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_ARRAY) return 1;
-  if (type->kind != PSX_TYPE_POINTER) return 0;
-  return ps_type_pointer_view_structural_qual_levels(type);
-}
-
 static void tag_member_record_apply_desc(tag_member_t *m,
                                          const tag_member_info_t *desc) {
   if (!m || !desc) return;
@@ -1073,12 +1066,6 @@ bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
   if (out_sizeof_size)
     *out_sizeof_size = ps_type_sizeof(typedef_record_decl_type(t));
   return true;
-}
-
-int psx_ctx_get_typedef_pointer_levels(char *name, int len) {
-  typedef_name_t *t = find_typedef(name, len);
-  if (!t) return 0;
-  return ctx_type_pointer_levels(typedef_record_decl_type(t));
 }
 
 bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {

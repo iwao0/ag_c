@@ -4,6 +4,7 @@
 #include "../tokenizer/token.h"
 #include "core.h"
 #include "type.h"
+#include "vla_runtime.h"
 struct lvar_t;
 struct psx_lvar_usage_region_t;
 struct psx_parsed_type_name_t;
@@ -129,6 +130,7 @@ typedef struct {
 } psx_initializer_entry_t;
 /* Expression-local state that is independent of the canonical type. */
 typedef struct {
+  psx_vla_runtime_view_t vla_runtime;
   unsigned char is_scalar_ptr_member_lvalue;
   unsigned char subscript_uses_base_address;
   unsigned char bit_width;

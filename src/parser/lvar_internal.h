@@ -2,6 +2,7 @@
 #define PARSER_LVAR_INTERNAL_H
 
 #include "lvar_public.h"
+#include "vla_runtime.h"
 
 struct lvar_t {
   lvar_t *next;
@@ -28,6 +29,7 @@ struct lvar_t {
   int align_bytes;
   int used_count;
   psx_type_t *decl_type;
+  psx_vla_runtime_descriptor_t vla_runtime;
   psx_lvar_usage_region_t *decl_region;
 };
 

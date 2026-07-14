@@ -256,7 +256,7 @@ void psx_resolve_aggregate_member_declaration(
   int has_name = request->member_name != NULL;
   resolution->type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = request->base_type,
+          .base_type = request->base_type,
           .declarator_shape = request->declarator_shape,
       });
   if (!resolution->type) return;

@@ -263,7 +263,7 @@ static int resolve_definition_parameter(
     psx_parameter_declaration_resolution_t *resolution) {
   psx_parameter_declaration_resolution_request_t semantic_request = {
       .type = {
-          .base_decl_type = base_type,
+          .base_type = base_type,
           .declarator_shape = &application->shape,
       },
   };
@@ -424,7 +424,7 @@ int psx_finish_function_definition_pipeline(
 
   result->function_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = state->base_type,
+          .base_type = state->base_type,
           .declarator_shape = &state->application.shape,
       });
   if (!result->function_type ||

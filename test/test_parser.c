@@ -124,6 +124,19 @@ static node_t **parse_program_input(const char *input) {
   return program;
 }
 
+static psx_type_t *resolve_tag_base_for_test(
+    token_kind_t kind, char *name, int name_len) {
+  psx_parsed_decl_specifier_t specifier = {
+      .source = PSX_PARSED_DECL_TYPE_TAG,
+      .tag_action = {
+          .kind = kind,
+          .name = name,
+          .name_len = name_len,
+      },
+  };
+  return psx_resolve_decl_specifier_syntax(&specifier);
+}
+
 static node_t *parse_raw_function_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
@@ -205,12 +218,12 @@ static void test_function_parameter_point_of_declaration_boundary() {
   ASSERT_TRUE(k != NULL);
   ASSERT_TRUE(t != NULL);
   ASSERT_TRUE(t->decl_type != NULL);
-  ASSERT_EQ(3, ps_type_vla_param_inner_dim_count(t->decl_type));
+  ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(t));
   ASSERT_EQ(m->offset,
-            ps_type_vla_param_inner_dim_src_offset(t->decl_type, 0));
-  ASSERT_EQ(3, ps_type_vla_param_inner_dim_const(t->decl_type, 1));
+            ps_lvar_vla_param_inner_dim_src_offset(t, 0));
+  ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_const(t, 1));
   ASSERT_EQ(k->offset,
-            ps_type_vla_param_inner_dim_src_offset(t->decl_type, 2));
+            ps_lvar_vla_param_inner_dim_src_offset(t, 2));
 }
 
 static void assert_identifier_resolution_kind(
@@ -945,22 +958,16 @@ static void test_subscript_semantic_lowering_boundary() {
   psx_type_t *vla_cell = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *vla_row = ps_type_new_array(vla_cell, 0, 0, 1);
   psx_type_t *vla_matrix = ps_type_new_array(vla_row, 0, 0, 1);
-  ps_type_set_vla_runtime_descriptor(vla_matrix, 24, 2, 0, 4);
   psx_type_t *vla_result = ps_type_subscript_result(vla_matrix);
   ASSERT_TRUE(vla_result != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->kind);
   ASSERT_TRUE(vla_result->base != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->base->kind);
-  ASSERT_EQ(32, vla_result->vla_row_stride_frame_off);
-  ASSERT_EQ(1, vla_result->vla_strides_remaining);
   psx_type_t *vla_scalar_pointer = ps_type_new_pointer(integer);
-  ps_type_set_vla_runtime_descriptor(vla_scalar_pointer, 24, 2, 0, 4);
   psx_type_t *vla_scalar_result =
       ps_type_subscript_result(vla_scalar_pointer);
   ASSERT_TRUE(vla_scalar_result != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, vla_scalar_result->kind);
-  ASSERT_EQ(0, vla_scalar_result->vla_row_stride_frame_off);
-  ASSERT_EQ(0, vla_scalar_result->vla_strides_remaining);
 
   node_t *node = parse_expr_input_with_existing_locals("a[0][1]");
   ASSERT_EQ(ND_SUBSCRIPT, node->kind);
@@ -2074,6 +2081,12 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(PSX_TYPE_POINTER, ps_lvar_get_decl_type(result.var)->kind);
   ASSERT_EQ(ps_lvar_offset(result.var) + 8,
             ps_lvar_vla_row_stride_frame_off(result.var));
+  node_t *vla_symbol_ref = psx_node_new_lvar_identifier_ref_for(result.var);
+  ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(result.var),
+            ps_node_vla_row_stride_frame_off(vla_symbol_ref));
+  node_t *detached_type_ref = ps_node_new_param_placeholder(
+      ps_type_clone(ps_lvar_get_decl_type(result.var)));
+  ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(detached_type_ref));
   ASSERT_EQ(ND_ASSIGN, result.init->kind);
   ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(result.var),
             as_lvar(result.init->lhs)->offset);
@@ -2192,8 +2205,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &vla_parameter_shape));
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
-          .base_kind = TK_INT,
-          .elem_size = 4,
+          .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &vla_parameter_shape,
       },
       .inner_dimension_count = 1,
@@ -3105,13 +3117,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_aggregate_layout_state_t bitfield_sign_layout;
   psx_aggregate_layout_init(&bitfield_sign_layout, TK_STRUCT);
-  psx_type_t *canonical_enum = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .tag_kind = TK_ENUM,
-          .tag_name = (char *)"E",
-          .tag_len = 1,
-          .elem_size = 4,
-      });
+  psx_type_t *canonical_enum = resolve_tag_base_for_test(
+      TK_ENUM, (char *)"E", 1);
   ASSERT_TRUE(canonical_enum != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, canonical_enum->kind);
   ASSERT_EQ(TK_ENUM, canonical_enum->scalar_kind);
@@ -3213,8 +3220,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
   psx_type_t *member_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_kind = TK_INT,
-          .elem_size = 4,
+          .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &member_shape,
       });
   ASSERT_TRUE(member_type != NULL);
@@ -3242,8 +3248,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
   psx_type_t *pointer_array_member = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_kind = TK_INT,
-          .elem_size = 4,
+          .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &pointer_array_shape,
       });
   ASSERT_TRUE(pointer_array_member != NULL);
@@ -3267,13 +3272,8 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_type_t *aligned_member = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"__AlignedMember",
-          .tag_len = 15,
-          .elem_size = 12,
-      });
+  psx_type_t *aligned_member = resolve_tag_base_for_test(
+      TK_STRUCT, (char *)"__AlignedMember", 15);
   ASSERT_TRUE(aligned_member != NULL);
   ASSERT_EQ(12, ps_type_sizeof(aligned_member));
   ASSERT_EQ(4, aligned_member->align);
@@ -3287,12 +3287,8 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_type_t *incomplete_base = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .tag_kind = TK_STRUCT,
-          .tag_name = (char *)"__IncompleteMember",
-          .tag_len = 18,
-      });
+  psx_type_t *incomplete_base = resolve_tag_base_for_test(
+      TK_STRUCT, (char *)"__IncompleteMember", 18);
   ASSERT_TRUE(incomplete_base != NULL);
   psx_aggregate_layout_state_t constraint_layout;
   psx_aggregate_layout_init(&constraint_layout, TK_STRUCT);
@@ -3315,7 +3311,7 @@ static void test_aggregate_member_resolution_boundary() {
       &incomplete_pointer_shape, 1, 0, 0);
   psx_type_t *incomplete_pointer = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .base_decl_type = incomplete_base,
+          .base_type = incomplete_base,
           .declarator_shape = &incomplete_pointer_shape,
       });
   psx_resolve_aggregate_member_declaration(
@@ -3348,13 +3344,8 @@ static void test_aggregate_member_resolution_boundary() {
       &boundary);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_FUNCTION_TYPE, boundary.status);
 
-  psx_type_t *bool_base = psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .base_kind = TK_BOOL,
-          .elem_size = 1,
-          .is_unsigned = 1,
-          .is_atomic = 1,
-      });
+  psx_type_t *bool_base = ps_type_new_integer(TK_BOOL, 1, 1);
+  bool_base->is_atomic = 1;
   ASSERT_TRUE(bool_base != NULL);
   ASSERT_EQ(PSX_TYPE_BOOL, bool_base->kind);
   ASSERT_TRUE(ps_type_is_unsigned(bool_base));
@@ -7406,8 +7397,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(vla_ptr_lvar != NULL);
   ASSERT_TRUE(vla_ptr_lvar->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, vla_ptr_lvar->decl_type->kind);
+  ASSERT_TRUE(ps_type_contains_vla_array(vla_ptr_lvar->decl_type));
   ASSERT_EQ(8, ps_lvar_decl_sizeof(vla_ptr_lvar, 99));
   ASSERT_EQ(16, ps_lvar_storage_size(vla_ptr_lvar, 99));
+  ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(vla_ptr_lvar) > 0);
   body = as_block(fn->base.rhs);
   node_t *vla_ptr_sizeof_return = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -7783,12 +7776,11 @@ static void test_type_metadata_bridge() {
   psx_type_t *typed_ptr_base = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   typed_ptr_base->is_const_qualified = 1;
   psx_type_t *typed_ptr_row = ps_type_new_array(
-      typed_ptr_base, 2, 16, 0);
+      typed_ptr_base, 2, 16, 1);
   typed_ptr_mem.type = ps_type_new_pointer(typed_ptr_row);
   typed_ptr_mem.type->is_const_qualified = 1;
   typed_ptr_mem.type->is_volatile_qualified = 1;
-  typed_ptr_mem.type->vla_row_stride_frame_off = 24;
-  typed_ptr_mem.type->vla_strides_remaining = 3;
+  ps_node_set_vla_runtime_view(&typed_ptr_mem, 24, 3);
   ASSERT_TRUE(ps_node_is_pointer(&typed_ptr_mem));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(&typed_ptr_mem));
   ASSERT_EQ(16, ps_node_deref_size(&typed_ptr_mem));
@@ -7837,8 +7829,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_INT, 4, 0), 4, 16, 0);
   ASSERT_TRUE(!ps_node_pointer_stride_metadata(
       &typed_deref_stale_mem_stride, NULL, NULL, NULL, NULL));
-  ASSERT_EQ(2, ps_type_pointer_view_vla_strides_remaining(
-                   ps_node_get_type(typed_vla_sub)));
+  ASSERT_EQ(2, ps_node_vla_strides_remaining(typed_vla_sub));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_pointee_fp_kind(&typed_ptr_mem));
   ASSERT_TRUE(ps_node_pointee_is_const_qualified(&typed_ptr_mem));
   ASSERT_TRUE(!ps_node_pointee_is_volatile_qualified(&typed_ptr_mem));
@@ -8529,20 +8520,16 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(vla_param_k != NULL);
   ASSERT_TRUE(vla_param_t != NULL);
   ASSERT_TRUE(vla_param_t->decl_type != NULL);
-  ASSERT_TRUE(vla_param_t->decl_type->is_vla);
-  ASSERT_EQ(3, ps_type_vla_param_inner_dim_count(vla_param_t->decl_type));
-  ASSERT_EQ(0, ps_type_vla_param_inner_dim_const(vla_param_t->decl_type, 0));
-  ASSERT_EQ(3, ps_type_vla_param_inner_dim_const(vla_param_t->decl_type, 1));
-  ASSERT_EQ(0, ps_type_vla_param_inner_dim_const(vla_param_t->decl_type, 2));
-  ASSERT_EQ(vla_param_m->offset,
-            ps_type_vla_param_inner_dim_src_offset(vla_param_t->decl_type, 0));
-  ASSERT_EQ(vla_param_k->offset,
-            ps_type_vla_param_inner_dim_src_offset(vla_param_t->decl_type, 2));
-  ASSERT_EQ(4, ps_type_vla_row_stride_elem_size(vla_param_t->decl_type));
+  ASSERT_EQ(PSX_TYPE_POINTER, vla_param_t->decl_type->kind);
+  ASSERT_TRUE(ps_type_contains_vla_array(vla_param_t->decl_type));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(vla_param_t));
+  ASSERT_EQ(0, ps_lvar_vla_param_inner_dim_const(vla_param_t, 0));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_const(vla_param_t, 1));
+  ASSERT_EQ(0, ps_lvar_vla_param_inner_dim_const(vla_param_t, 2));
   ASSERT_EQ(vla_param_m->offset,
             ps_lvar_vla_param_inner_dim_src_offset(vla_param_t, 0));
+  ASSERT_EQ(vla_param_k->offset,
+            ps_lvar_vla_param_inner_dim_src_offset(vla_param_t, 2));
   ASSERT_EQ(4, ps_lvar_vla_row_stride_elem_size(vla_param_t));
 
   int canonical_stride_dims[4] = {2, 3, 4, 5};
@@ -9115,8 +9102,6 @@ static void test_type_metadata_bridge() {
   typed_missing_ptr_mem.kind = ND_LVAR;
   typed_missing_ptr_mem.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  typed_missing_ptr_mem.type->vla_row_stride_frame_off = 0;
-  typed_missing_ptr_mem.type->vla_strides_remaining = 0;
   ASSERT_EQ(4, ps_node_base_deref_size(&typed_missing_ptr_mem));
   ASSERT_EQ(0, ps_node_ptr_array_pointee_bytes(&typed_missing_ptr_mem));
   ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(&typed_missing_ptr_mem));
@@ -9754,10 +9739,9 @@ static void test_type_metadata_bridge() {
   cached_vla_add.kind = ND_ADD;
   cached_vla_add.lhs = &cached_scalar_rhs;
   cached_vla_add.rhs = ps_node_new_num(1);
-  cached_vla_add.type =
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  cached_vla_add.type->vla_row_stride_frame_off = 123;
-  cached_vla_add.type->vla_strides_remaining = 2;
+  cached_vla_add.type = ps_type_new_pointer(
+      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 1));
+  ps_node_set_vla_runtime_view(&cached_vla_add, 123, 2);
   ASSERT_EQ(123, ps_node_vla_row_stride_frame_off(&cached_vla_add));
 
   node_t cached_stale_plain_stride_add = {0};
@@ -11392,8 +11376,6 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_define_typedef_name((char *)typedef_sync_name,
                                           (int)sizeof(typedef_sync_name) - 1,
                                           &typedef_sync));
-  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels(
-                   (char *)typedef_sync_name, (int)sizeof(typedef_sync_name) - 1));
   psx_typedef_info_t typedef_sync_out = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name((char *)typedef_sync_name,
                                         (int)sizeof(typedef_sync_name) - 1,
@@ -11401,6 +11383,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_typedef_decl_type(&typedef_sync_out) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER,
             ps_ctx_typedef_decl_type(&typedef_sync_out)->kind);
+  ASSERT_EQ(1, ps_type_pointer_depth(
+                   ps_ctx_typedef_decl_type(&typedef_sync_out)));
 
   const char tag_member_desc_tag[] = "__tm_tag_member_desc_sync";
   const char tag_member_desc_name[] = "rows";
@@ -12691,17 +12675,17 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_GET", 9, &tm817_get_td));
   assert_canonical_type_signature(
       tm817_get_td.decl_type, "p<p<i32>()>");
-  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels("TM817_GET", 9));
+  ASSERT_EQ(1, ps_type_pointer_depth(tm817_get_td.decl_type));
   psx_typedef_info_t tm817_get2_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_GET2", 10, &tm817_get2_td));
   assert_canonical_type_signature(
       tm817_get2_td.decl_type, "p<p<i32>()>");
-  ASSERT_EQ(1, psx_ctx_get_typedef_pointer_levels("TM817_GET2", 10));
+  ASSERT_EQ(1, ps_type_pointer_depth(tm817_get2_td.decl_type));
   psx_typedef_info_t tm817_pp_td = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_PP", 8, &tm817_pp_td));
   assert_canonical_type_signature(
       tm817_pp_td.decl_type, "p<p<i32(i32)>>");
-  ASSERT_EQ(2, psx_ctx_get_typedef_pointer_levels("TM817_PP", 8));
+  ASSERT_EQ(2, ps_type_pointer_depth(tm817_pp_td.decl_type));
   fn = as_func(parsed_code[2]);
   lvar_t *tm817_get_lvar = find_func_lvar(fn, "get");
   ASSERT_TRUE(tm817_get_lvar != NULL);
@@ -13815,6 +13799,17 @@ static void test_semantic_canonical_type_invariant() {
       &raw_initializer, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, failure.status);
   ASSERT_TRUE(failure.node == &raw_initializer);
+
+  node_t invalid_vla_view = {
+      .kind = ND_LVAR,
+      .type = ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)),
+  };
+  invalid_vla_view.type_state.vla_runtime.row_stride_frame_off = 24;
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      &invalid_vla_view, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW,
+            failure.status);
+  ASSERT_TRUE(failure.node == &invalid_vla_view);
 }
 
 static void test_arena_checkpoint_rollback() {

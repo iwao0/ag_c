@@ -7,55 +7,35 @@
 
 #include <limits.h>
 
-static psx_type_t *resolve_decl_base_type(
-    const psx_decl_type_request_t *request) {
-  if (request->base_decl_type) return ps_type_clone(request->base_decl_type);
-  if (request->typedef_name) {
-    const psx_type_t *typedef_type = NULL;
-    if (!ps_ctx_find_typedef_decl_type(
-            request->typedef_name, request->typedef_name_len,
-            &typedef_type))
-      return NULL;
-    return ps_type_clone(typedef_type);
-  }
-  int elem_size = request->elem_size;
-  if (request->tag_kind == TK_ENUM) {
-    if (elem_size <= 0) elem_size = 4;
-    int scope_depth = ps_ctx_get_tag_scope_depth(
-        request->tag_kind, request->tag_name, request->tag_len);
+static psx_type_t *resolve_tag_base_type(token_kind_t kind,
+                                         char *name, int name_len) {
+  int scope_depth = ps_ctx_get_tag_scope_depth(kind, name, name_len);
+  if (kind == TK_ENUM) {
     return ps_type_new_enum(
-        request->tag_name, request->tag_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
+        name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, 4);
   }
-  if (ps_ctx_is_tag_aggregate_kind(request->tag_kind)) {
-    if (elem_size <= 0) {
-      elem_size = ps_ctx_get_tag_size(
-          request->tag_kind, request->tag_name, request->tag_len);
-      if (elem_size < 0) elem_size = 0;
-    }
-    int scope_depth = ps_ctx_get_tag_scope_depth(
-        request->tag_kind, request->tag_name, request->tag_len);
-    psx_type_t *type = ps_type_new_tag(
-        request->tag_kind, request->tag_name, request->tag_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0, elem_size);
-    type->aggregate_definition = ps_ctx_get_tag_definition(
-        request->tag_kind, request->tag_name, request->tag_len);
-    if (type->aggregate_definition && type->aggregate_definition->align > 0)
-      type->align = type->aggregate_definition->align;
-    return type;
-  }
-  if (elem_size <= 0) {
-    elem_size = ps_ctx_scalar_type_size(request->base_kind);
-    if (request->is_complex) elem_size *= 2;
-  }
-  tk_float_kind_t fp_kind = request->fp_kind;
-  if (fp_kind == TK_FLOAT_KIND_NONE) {
-    if (request->base_kind == TK_FLOAT)
-      fp_kind = TK_FLOAT_KIND_FLOAT;
-    else if (request->base_kind == TK_DOUBLE)
-      fp_kind = TK_FLOAT_KIND_DOUBLE;
-  }
-  if (request->is_complex) {
+  if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
+  int size = ps_ctx_get_tag_size(kind, name, name_len);
+  if (size < 0) size = 0;
+  psx_type_t *type = ps_type_new_tag(
+      kind, name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, size);
+  type->aggregate_definition = ps_ctx_get_tag_definition(
+      kind, name, name_len);
+  if (type->aggregate_definition && type->aggregate_definition->align > 0)
+    type->align = type->aggregate_definition->align;
+  return type;
+}
+
+static psx_type_t *resolve_builtin_base_type(
+    token_kind_t kind, const psx_type_spec_result_t *specifier) {
+  int elem_size = ps_ctx_scalar_type_size(kind);
+  if (specifier->is_complex) elem_size *= 2;
+  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  if (kind == TK_FLOAT)
+    fp_kind = TK_FLOAT_KIND_FLOAT;
+  else if (kind == TK_DOUBLE)
+    fp_kind = TK_FLOAT_KIND_DOUBLE;
+  if (specifier->is_complex) {
     psx_type_t *type = ps_type_new(PSX_TYPE_COMPLEX);
     type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
                         ? fp_kind
@@ -67,32 +47,34 @@ static psx_type_t *resolve_decl_base_type(
   if (fp_kind != TK_FLOAT_KIND_NONE) {
     return ps_type_new_float(fp_kind, elem_size);
   }
-  if (request->base_kind == TK_VOID) {
+  if (kind == TK_VOID) {
     psx_type_t *type = ps_type_new(PSX_TYPE_VOID);
     type->scalar_kind = TK_VOID;
     return type;
   }
   return ps_type_new_integer(
-      request->base_kind, elem_size, request->is_unsigned);
+      kind, elem_size, specifier->is_unsigned);
+}
+
+static void apply_decl_specifier_type_properties(
+    psx_type_t *type, const psx_type_spec_result_t *specifier,
+    int override_plain_char) {
+  if (!type || !specifier) return;
+  ps_type_set_decl_spec_qualifiers(
+      type,
+      type->is_const_qualified || specifier->is_const_qualified,
+      type->is_volatile_qualified || specifier->is_volatile_qualified);
+  if (specifier->is_atomic) type->is_atomic = 1;
+  if (specifier->is_long_long) type->is_long_long = 1;
+  if (override_plain_char)
+    type->is_plain_char = specifier->is_plain_char ? 1 : 0;
+  if (specifier->is_long_double) type->is_long_double = 1;
 }
 
 psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
-  if (!request) return NULL;
-  psx_type_t *type = resolve_decl_base_type(request);
+  if (!request || !request->base_type) return NULL;
+  psx_type_t *type = ps_type_clone(request->base_type);
   if (!type) return NULL;
-
-  if (request->is_const_qualified || request->is_volatile_qualified) {
-    ps_type_set_decl_spec_qualifiers(
-        type,
-        type->is_const_qualified || request->is_const_qualified,
-        type->is_volatile_qualified || request->is_volatile_qualified);
-  }
-  if (request->is_atomic) type->is_atomic = 1;
-  if (request->is_long_long) type->is_long_long = 1;
-  if (request->override_plain_char) {
-    type->is_plain_char = request->is_plain_char ? 1 : 0;
-  }
-  if (request->is_long_double) type->is_long_double = 1;
   if (request->declarator_shape) {
     type = ps_type_apply_declarator_shape(
         type, request->declarator_shape);
@@ -106,40 +88,39 @@ psx_type_t *psx_resolve_decl_specifier_syntax(
   if (!specifier) return NULL;
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
-  psx_decl_type_request_t request = {
-      .base_kind = TK_EOF,
-      .fp_kind = TK_FLOAT_KIND_NONE,
-      .tag_kind = TK_EOF,
-      .is_unsigned = syntax->is_unsigned,
-      .is_complex = syntax->is_complex,
-      .is_const_qualified = syntax->is_const_qualified,
-      .is_volatile_qualified = syntax->is_volatile_qualified,
-      .is_atomic = syntax->is_atomic,
-      .is_long_long = syntax->is_long_long,
-      .is_plain_char = syntax->is_plain_char,
-      .is_long_double = syntax->is_long_double,
-  };
+  psx_type_t *type = NULL;
+  int override_plain_char = 0;
   switch (specifier->source) {
     case PSX_PARSED_DECL_TYPE_BUILTIN:
-      request.base_kind = syntax->kind;
-      request.override_plain_char = syntax->kind == TK_CHAR;
+      type = resolve_builtin_base_type(syntax->kind, syntax);
+      override_plain_char = syntax->kind == TK_CHAR;
       break;
     case PSX_PARSED_DECL_TYPE_TAG:
-      request.tag_kind = specifier->tag_action.kind;
-      request.tag_name = specifier->tag_action.name;
-      request.tag_len = specifier->tag_action.name_len;
+      type = resolve_tag_base_type(
+          specifier->tag_action.kind,
+          specifier->tag_action.name,
+          specifier->tag_action.name_len);
       break;
-    case PSX_PARSED_DECL_TYPEDEF_NAME:
-      request.typedef_name = specifier->typedef_name->str;
-      request.typedef_name_len = specifier->typedef_name->len;
+    case PSX_PARSED_DECL_TYPEDEF_NAME: {
+      const psx_type_t *typedef_type = NULL;
+      if (!specifier->typedef_name ||
+          !ps_ctx_find_typedef_decl_type(
+              specifier->typedef_name->str,
+              specifier->typedef_name->len,
+              &typedef_type))
+        return NULL;
+      type = ps_type_clone(typedef_type);
       break;
+    }
     case PSX_PARSED_DECL_TYPE_IMPLICIT_INT:
-      request.base_kind = TK_INT;
+      type = resolve_builtin_base_type(TK_INT, syntax);
       break;
     default:
       return NULL;
   }
-  return psx_resolve_decl_type(&request);
+  apply_decl_specifier_type_properties(type, syntax, override_plain_char);
+  ps_ctx_attach_aggregate_definitions(type);
+  return type;
 }
 
 static int object_scalar_slots(const psx_type_t *type) {

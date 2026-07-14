@@ -364,8 +364,7 @@ static int parse_declarator_syntax_tree_into(
           .consume_suffix = consume_declarator_suffix,
           .append_pointer = append_declarator_pointer,
           .diagnose_too_complex = diagnose_declarator_too_complex,
-      },
-      &declarator->pointer_levels);
+      });
   if (!is_abstract && tk_consume(':')) {
     declarator->has_bitfield = 1;
     token_t *start = current_token();
