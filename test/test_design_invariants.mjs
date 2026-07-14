@@ -63,6 +63,7 @@ const compilationSessionHeader = await readFile(
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
 const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
+const codegenEmitSource = await readFile("src/codegen_emit.c", "utf8");
 const wasmBackendContextSource = await readFile(
   "src/arch/wasm32/backend_context.c",
   "utf8",
@@ -133,6 +134,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/psx_lowering_context_t\s*\*lowering_context\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/ag_codegen_emit_context_t\s*\*codegen_emit_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
@@ -163,6 +167,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ps_lowering_context_create\s*\(/.test(compilerContextSource) ||
     !/ps_lowering_context_activate\s*\(/.test(compilerContextSource) ||
     !/ps_lowering_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/cg_context_create\s*\(/.test(compilerContextSource) ||
+    !/cg_context_activate\s*\(/.test(compilerContextSource) ||
+    !/cg_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_set_backend_context\s*\(/.test(
       compilerContextSource,
     ) ||
@@ -198,6 +205,13 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
   );
+}
+
+if (/^static\s+(?:gen_output_line_fn|void\s*\*|char\s+|int\s+)\b(?:gen_output|cg_format_stack_buf|gen_simple_formatter)/m.test(
+      codegenEmitSource,
+    ) ||
+    !/struct\s+ag_codegen_emit_context_t\s*\{/.test(codegenEmitSource)) {
+  throw new Error("backend output routing and formatting must be context-owned");
 }
 
 if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(

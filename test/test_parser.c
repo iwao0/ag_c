@@ -1,5 +1,6 @@
 #include "../src/parser/parser.h"
 #include "../src/compiler_context.h"
+#include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
 #include "../src/parser/decl.h"
@@ -15553,7 +15554,21 @@ typedef struct {
   int destroy_count;
 } test_backend_context_t;
 
+typedef struct {
+  char bytes[64];
+  size_t length;
+} test_codegen_output_t;
+
 static void *test_active_backend_context;
+
+static void test_codegen_capture(
+    const char *line, size_t length, void *user_data) {
+  test_codegen_output_t *output = user_data;
+  if (!output || output->length + length >= sizeof(output->bytes)) return;
+  memcpy(output->bytes + output->length, line, length);
+  output->length += length;
+  output->bytes[output->length] = '\0';
+}
 
 static void test_backend_activate(void *context) {
   test_backend_context_t *backend = context;
@@ -15582,6 +15597,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_compilation_session_t wasm;
   test_backend_context_t host_backend = {0};
   test_backend_context_t wasm_backend = {0};
+  test_codegen_output_t host_output = {0};
+  test_codegen_output_t wasm_output = {0};
   ASSERT_TRUE(ag_compilation_session_init(&host, &host_target));
   ASSERT_TRUE(ag_compilation_session_init(&wasm, &wasm_target));
   ASSERT_TRUE(ag_compilation_session_set_backend_context(
@@ -15614,6 +15631,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.lowering_context != NULL);
   ASSERT_TRUE(wasm.lowering_context != NULL);
   ASSERT_TRUE(host.lowering_context != wasm.lowering_context);
+  ASSERT_TRUE(host.codegen_emit_context != NULL);
+  ASSERT_TRUE(wasm.codegen_emit_context != NULL);
+  ASSERT_TRUE(host.codegen_emit_context != wasm.codegen_emit_context);
   ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
@@ -15624,6 +15644,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       ps_parser_runtime_context_active();
   psx_lowering_context_t *previous_lowering =
       ps_lowering_context_active();
+  ag_codegen_emit_context_t *previous_codegen = cg_context_active();
   ASSERT_TRUE(ag_compilation_session_activate(&host));
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
@@ -15634,6 +15655,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               host.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
+  gen_set_output_callback(test_codegen_capture, &host_output);
+  cg_emitf("host-a");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, host_backend.activate_count);
   uint16_t host_filename = tk_filename_intern("host-session.c");
@@ -15667,6 +15691,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               wasm.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == wasm.lowering_context);
+  ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
+  gen_set_output_callback(test_codegen_capture, &wasm_output);
+  cg_emitf("wasm");
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(1, wasm_backend.activate_count);
   uint16_t wasm_filename = tk_filename_intern("wasm-session.c");
@@ -15689,6 +15716,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               host.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
+  cg_emitf("-host-b");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, wasm_backend.deactivate_count);
   ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
@@ -15705,6 +15734,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_allocator_context_active() == previous_token_allocator);
   ASSERT_TRUE(ps_parser_runtime_context_active() == previous_parser_runtime);
   ASSERT_TRUE(ps_lowering_context_active() == previous_lowering);
+  ASSERT_TRUE(cg_context_active() == previous_codegen);
+  ASSERT_TRUE(strcmp(host_output.bytes, "host-a-host-b") == 0);
+  ASSERT_TRUE(strcmp(wasm_output.bytes, "wasm") == 0);
   ASSERT_TRUE(test_active_backend_context == NULL);
   ASSERT_EQ(1, host_backend.deactivate_count);
 

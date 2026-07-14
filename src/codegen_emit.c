@@ -4,14 +4,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static gen_output_line_fn gen_output_cb;
-static void *gen_output_user_data;
-static char cg_format_stack_buf[256];
-static int gen_simple_formatter;
+struct ag_codegen_emit_context_t {
+  gen_output_line_fn output_cb;
+  void *output_user_data;
+  char format_stack_buf[256];
+  int simple_formatter;
+};
+
+static ag_codegen_emit_context_t default_codegen_emit_context;
+static ag_codegen_emit_context_t *active_codegen_emit_context;
+
+ag_codegen_emit_context_t *cg_context_create(void) {
+  return calloc(1, sizeof(ag_codegen_emit_context_t));
+}
+
+void cg_context_destroy(ag_codegen_emit_context_t *ctx) {
+  if (!ctx || ctx == &default_codegen_emit_context) return;
+  if (active_codegen_emit_context == ctx) active_codegen_emit_context = NULL;
+  free(ctx);
+}
+
+ag_codegen_emit_context_t *cg_context_activate(
+    ag_codegen_emit_context_t *ctx) {
+  ag_codegen_emit_context_t *previous = active_codegen_emit_context;
+  active_codegen_emit_context = ctx;
+  return previous;
+}
+
+ag_codegen_emit_context_t *cg_context_active(void) {
+  return active_codegen_emit_context ? active_codegen_emit_context
+                                     : &default_codegen_emit_context;
+}
 
 static void cg_raw_emit(const char *line, size_t len) {
-  if (gen_output_cb) {
-    gen_output_cb(line, len, gen_output_user_data);
+  ag_codegen_emit_context_t *ctx = cg_context_active();
+  if (ctx->output_cb) {
+    ctx->output_cb(line, len, ctx->output_user_data);
   } else {
     fwrite(line, 1, len, stdout);
   }
@@ -56,9 +84,10 @@ static void cg_emit_int_simple(long long v, int width, int zero_pad) {
 }
 
 void cg_emitf(const char *fmt, ...) {
+  ag_codegen_emit_context_t *ctx = cg_context_active();
   va_list ap;
   va_start(ap, fmt);
-  if (gen_simple_formatter) {
+  if (ctx->simple_formatter) {
     const char *p = fmt;
     while (*p) {
       if (*p != '%') {
@@ -144,7 +173,8 @@ void cg_emitf(const char *fmt, ...) {
   }
   va_list ap2;
   va_copy(ap2, ap);
-  int need_i = vsnprintf(cg_format_stack_buf, sizeof(cg_format_stack_buf), fmt, ap2);
+  int need_i = vsnprintf(
+      ctx->format_stack_buf, sizeof(ctx->format_stack_buf), fmt, ap2);
   va_end(ap2);
   if (need_i < 0) {
     va_end(ap);
@@ -152,9 +182,9 @@ void cg_emitf(const char *fmt, ...) {
                         diag_message_for(DIAG_ERR_CODEGEN_OUTPUT_FAILED));
   }
   size_t need = (size_t)need_i;
-  char *buf = cg_format_stack_buf;
+  char *buf = ctx->format_stack_buf;
   char *heap_buf = NULL;
-  if (need >= sizeof(cg_format_stack_buf)) {
+  if (need >= sizeof(ctx->format_stack_buf)) {
     heap_buf = malloc(need + 1);
     if (!heap_buf) {
       va_end(ap);
@@ -169,10 +199,11 @@ void cg_emitf(const char *fmt, ...) {
 }
 
 void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
-  gen_output_cb = cb;
-  gen_output_user_data = user_data;
+  ag_codegen_emit_context_t *ctx = cg_context_active();
+  ctx->output_cb = cb;
+  ctx->output_user_data = user_data;
 }
 
 void gen_set_simple_formatter(int enable) {
-  gen_simple_formatter = enable;
+  cg_context_active()->simple_formatter = enable;
 }

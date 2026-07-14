@@ -13,6 +13,7 @@ typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 typedef void (*ag_session_backend_callback_t)(void *context);
 
 typedef struct ag_compilation_session_t {
@@ -36,6 +37,8 @@ typedef struct ag_compilation_session_t {
   psx_parser_runtime_context_t *previous_parser_runtime_context;
   psx_lowering_context_t *lowering_context;
   psx_lowering_context_t *previous_lowering_context;
+  ag_codegen_emit_context_t *codegen_emit_context;
+  ag_codegen_emit_context_t *previous_codegen_emit_context;
   void *backend_context;
   ag_session_backend_callback_t backend_activate;
   ag_session_backend_callback_t backend_deactivate;

@@ -9,6 +9,7 @@
 #include "diag/diag.h"
 #include "tokenizer/allocator.h"
 #include "lowering/runtime_context.h"
+#include "codegen_emit.h"
 #include <string.h>
 
 int ag_compilation_session_init(
@@ -28,11 +29,12 @@ int ag_compilation_session_init(
   session->token_allocator_context = tk_allocator_context_create();
   session->parser_runtime_context = ps_parser_runtime_context_create();
   session->lowering_context = ps_lowering_context_create();
+  session->codegen_emit_context = cg_context_create();
   if (!session->semantic_context || !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
       !session->arena_context || !session->diagnostic_context ||
       !session->token_allocator_context || !session->parser_runtime_context ||
-      !session->lowering_context) {
+      !session->lowering_context || !session->codegen_emit_context) {
     ps_ctx_destroy(session->semantic_context);
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
@@ -42,6 +44,7 @@ int ag_compilation_session_init(
     tk_allocator_context_destroy(session->token_allocator_context);
     ps_parser_runtime_context_destroy(session->parser_runtime_context);
     ps_lowering_context_destroy(session->lowering_context);
+    cg_context_destroy(session->codegen_emit_context);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -56,6 +59,7 @@ int ag_compilation_session_is_complete(
          session->diagnostic_context && session->token_allocator_context &&
          session->parser_runtime_context &&
          session->lowering_context &&
+         session->codegen_emit_context &&
          (session->target.pointer_size == 4 ||
           session->target.pointer_size == 8);
 }
@@ -83,6 +87,8 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       ps_parser_runtime_context_activate(session->parser_runtime_context);
   session->previous_lowering_context =
       ps_lowering_context_activate(session->lowering_context);
+  session->previous_codegen_emit_context =
+      cg_context_activate(session->codegen_emit_context);
   if (session->backend_activate)
     session->backend_activate(session->backend_context);
   session->is_active = 1;
@@ -93,6 +99,7 @@ void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (!session || !session->is_active) return;
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
+  cg_context_activate(session->previous_codegen_emit_context);
   ps_lowering_context_activate(session->previous_lowering_context);
   ps_parser_runtime_context_activate(
       session->previous_parser_runtime_context);
@@ -112,6 +119,7 @@ void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   session->previous_token_allocator_context = NULL;
   session->previous_parser_runtime_context = NULL;
   session->previous_lowering_context = NULL;
+  session->previous_codegen_emit_context = NULL;
   session->previous_global_registry = NULL;
   session->previous_semantic_context = NULL;
   session->is_active = 0;
@@ -130,6 +138,7 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_parser_runtime_context_destroy(session->parser_runtime_context);
   ps_lowering_context_destroy(session->lowering_context);
   tk_context_dispose(&session->tokenizer);
+  cg_context_destroy(session->codegen_emit_context);
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   memset(session, 0, sizeof(*session));
