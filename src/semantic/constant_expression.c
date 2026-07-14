@@ -54,7 +54,7 @@ long long psx_eval_const_int(node_t *node, int *ok) {
     }
     case ND_GVAR: {
       node_gvar_t *ref = (node_gvar_t *)node;
-      global_var_t *global = ps_find_global_var(ref->name, ref->name_len);
+      global_var_t *global = ref->symbol;
       if (global && global->name_len == ref->name_len &&
           memcmp(global->name, ref->name, (size_t)global->name_len) == 0) {
         const psx_type_t *type = ps_gvar_get_decl_type(global);

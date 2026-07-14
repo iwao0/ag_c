@@ -24,6 +24,7 @@ struct lvar_t {
   unsigned int is_param : 1;
   unsigned int is_initialized : 1;
   unsigned int is_static_local : 1;
+  struct global_var_t *static_global;
   char *static_global_name;
   int static_global_name_len;
   int align_bytes;

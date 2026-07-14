@@ -2,6 +2,7 @@
 
 #include "decl.h"
 #include "diag.h"
+#include "global_registry.h"
 #include "lvar_internal.h"
 #include "node_utils.h"
 #include "type.h"
@@ -306,6 +307,7 @@ lvar_t *ps_local_registry_create_type_binding(
 
 lvar_t *ps_local_registry_create_static_alias_in(
     psx_local_registry_t *registry,
+    global_var_t *global,
     char *name, int name_len, char *global_name, int global_name_len,
     const psx_type_t *type) {
   if (!registry || !name || name_len <= 0 ||
@@ -317,6 +319,7 @@ lvar_t *ps_local_registry_create_static_alias_in(
   var->name = name;
   var->len = name_len;
   var->is_static_local = 1;
+  var->static_global = global;
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
   var->decl_type = ps_type_clone_persistent(type);
@@ -329,7 +332,9 @@ lvar_t *ps_local_registry_create_static_alias(
     char *name, int name_len, char *global_name, int global_name_len,
     const psx_type_t *type) {
   return ps_local_registry_create_static_alias_in(
-      active_local_registry, name, name_len,
+      active_local_registry,
+      ps_find_global_var(global_name, global_name_len),
+      name, name_len,
       global_name, global_name_len, type);
 }
 

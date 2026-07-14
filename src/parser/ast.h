@@ -353,6 +353,7 @@ struct node_jump_t {
 typedef struct node_gvar_t node_gvar_t;
 struct node_gvar_t {
   node_t base;
+  struct global_var_t *symbol;
   char *name;
   int name_len;
   unsigned int is_thread_local : 1;

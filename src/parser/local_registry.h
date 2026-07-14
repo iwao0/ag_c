@@ -5,6 +5,7 @@
 
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct global_var_t global_var_t;
 
 typedef struct {
   unsigned scope_seq;
@@ -41,6 +42,7 @@ lvar_t *ps_local_registry_create_type_binding_in(
     char *name, int name_len, const psx_type_t *type);
 lvar_t *ps_local_registry_create_static_alias_in(
     psx_local_registry_t *registry,
+    global_var_t *global,
     char *name, int name_len, char *global_name, int global_name_len,
     const psx_type_t *type);
 void ps_local_registry_update_storage_object_in(

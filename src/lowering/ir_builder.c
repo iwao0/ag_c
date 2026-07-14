@@ -378,7 +378,7 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
  * 同名のグローバル宣言が extern なら is_got_funcref を立てる。 */
 static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   ir_symbol_t *resolved =
-      lower_ir_global_symbol(ctx->m, gv->name, gv->name_len);
+      lower_ir_global_symbol(ctx->m, gv->symbol);
   int v_addr = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new((resolved ? resolved->is_thread_local
                                          : gv->is_thread_local)

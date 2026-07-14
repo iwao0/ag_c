@@ -31,6 +31,7 @@
 #include "../src/frontend/translation_unit.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
+#include "../src/semantic/constant_expression.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
 #include "../src/semantic/function_declaration_resolution.h"
@@ -11467,6 +11468,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_FLOAT, sd_gv->decl_type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, sd_gv->decl_type->fp_kind);
   node_t *sd_node = psx_node_new_static_local_gvar_for(sd);
+  ASSERT_TRUE(sd->static_global == sd_gv);
+  ASSERT_TRUE(((node_gvar_t *)sd_node)->symbol == sd_gv);
   ASSERT_TRUE(ps_node_get_type(sd_node) == sd_gv->decl_type);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_get_type(sd_node)->fp_kind);
 
@@ -15059,11 +15062,15 @@ static void test_compiler_context_registry_isolation() {
       .name = (char *)"shared_global",
       .name_len = 13,
       .decl_type = ps_type_new_integer(TK_INT, 4, 0),
+      .init_val = 41,
+      .has_init = 1,
   };
   global_var_t second_global = {
       .name = (char *)"shared_global",
       .name_len = 13,
       .decl_type = ps_type_new_integer(TK_LONG, 8, 0),
+      .init_val = 99,
+      .has_init = 1,
   };
   string_lit_t first_literal = {.label = (char *)".Lshared"};
   string_lit_t second_literal = {.label = (char *)".Lshared"};
@@ -15182,7 +15189,14 @@ static void test_compiler_context_registry_isolation() {
       first.local_registry, (node_t *)&isolated_global_identifier, NULL);
   ASSERT_TRUE(isolated_global_node != NULL);
   ASSERT_EQ(ND_GVAR, isolated_global_node->kind);
+  ASSERT_TRUE(((node_gvar_t *)isolated_global_node)->symbol ==
+              &first_global);
   ASSERT_EQ(4, ps_node_type_size(isolated_global_node));
+  int isolated_global_constant_ok = 1;
+  ASSERT_EQ(41, psx_eval_const_int(
+                    isolated_global_node,
+                    &isolated_global_constant_ok));
+  ASSERT_TRUE(isolated_global_constant_ok);
   psx_parsed_initializer_t isolated_global_initializer = {0};
   psx_global_declaration_pipeline_result_t isolated_global_result;
   ASSERT_TRUE(psx_apply_global_declaration_pipeline(

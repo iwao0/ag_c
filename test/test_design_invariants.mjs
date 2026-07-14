@@ -791,12 +791,33 @@ if (wasmObjFunctionCodegenViolations.length ||
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
 const irBuilderSource = await readFile("src/lowering/ir_builder.c", "utf8");
+const resolvedGlobalAstSource = await readFile("src/parser/ast.h", "utf8");
+const constantExpressionSource = await readFile(
+  "src/semantic/constant_expression.c",
+  "utf8",
+);
+const irSymbolLoweringSource = await readFile(
+  "src/lowering/ir_symbol_lowering.c",
+  "utf8",
+);
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
     !/\blower_ir_global_symbol\s*\(/.test(irBuilderSource) ||
     !/object_size\s*=\s*\(s->byte_len\s*\+\s*1\)/.test(irBuilderSource)) {
   throw new Error(
     "IR lowering must materialize global layout and string size before backend codegen",
+  );
+}
+if (!/struct node_gvar_t\s*\{[\s\S]*?struct global_var_t\s*\*symbol\s*;/.test(
+      resolvedGlobalAstSource,
+    ) ||
+    /\bps_find_global_var\s*\(/.test(constantExpressionSource) ||
+    /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
+    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*\)/.test(
+      irBuilderSource,
+    )) {
+  throw new Error(
+    "resolved global references must retain symbol identity without active-registry lookup",
   );
 }
 

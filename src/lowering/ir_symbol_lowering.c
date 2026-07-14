@@ -2,6 +2,7 @@
 
 #include "abi_lowering.h"
 #include "../parser/gvar_public.h"
+#include "../parser/symtab.h"
 
 typedef struct {
   ir_symbol_t *symbol;
@@ -59,14 +60,15 @@ static const psx_gvar_aggregate_walk_ops_t func_ref_walk_ops = {
     .bitfield_member = ignore_bitfield_member,
 };
 
-ir_symbol_t *lower_ir_global_symbol(ir_module_t *module,
-                                    const char *name, int name_len) {
-  if (!module || !name || name_len <= 0) return NULL;
+ir_symbol_t *lower_ir_global_symbol(
+    ir_module_t *module, global_var_t *global) {
+  if (!module || !global || !global->name || global->name_len <= 0)
+    return NULL;
+  const char *name = global->name;
+  int name_len = global->name_len;
   ir_symbol_t *symbol = ir_module_find_symbol(module, name, name_len);
   if (symbol) return symbol;
 
-  global_var_t *global = ps_find_global_var((char *)name, name_len);
-  if (!global) return NULL;
   symbol = ir_module_add_symbol(module, name, name_len);
   if (!symbol) return NULL;
   symbol->byte_size = ps_gvar_storage_size(global, 8);

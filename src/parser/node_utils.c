@@ -1772,9 +1772,7 @@ static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag
 }
 
 static global_var_t *static_local_backing_gvar(const lvar_t *var) {
-  if (!var || !var->static_global_name) return NULL;
-  return ps_find_global_var(var->static_global_name,
-                             var->static_global_name_len);
+  return var ? var->static_global : NULL;
 }
 
 static const psx_type_t *static_local_backing_decl_type(const lvar_t *var) {
@@ -2443,6 +2441,7 @@ node_t *ps_node_new_gvar_for(global_var_t *gv) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (gv) {
+    node->symbol = gv;
     node->base.type = ps_gvar_get_decl_type(gv);
     node->name = gv->name;
     node->name_len = gv->name_len;
@@ -2455,6 +2454,7 @@ node_t *psx_node_new_gvar_array_base_for(global_var_t *gv) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (gv) {
+    node->symbol = gv;
     node->base.type = ps_gvar_get_decl_type(gv);
     node->name = gv->name;
     node->name_len = gv->name_len;
@@ -2467,6 +2467,7 @@ node_t *psx_node_new_static_local_gvar_for(lvar_t *var) {
   node_gvar_t *node = arena_alloc(sizeof(node_gvar_t));
   node->base.kind = ND_GVAR;
   if (var) {
+    node->symbol = var->static_global;
     node->base.type = static_local_backing_decl_type(var);
     if (!node->base.type) node->base.type = ps_lvar_get_decl_type(var);
     node->name = var->static_global_name;

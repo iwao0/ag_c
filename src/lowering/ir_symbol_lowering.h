@@ -3,7 +3,9 @@
 
 #include "../ir/ir.h"
 
-ir_symbol_t *lower_ir_global_symbol(ir_module_t *module,
-                                    const char *name, int name_len);
+typedef struct global_var_t global_var_t;
+
+ir_symbol_t *lower_ir_global_symbol(
+    ir_module_t *module, global_var_t *global);
 
 #endif

@@ -79,6 +79,7 @@ lvar_t *lower_static_local_object(
 
   lvar_t *alias = ps_local_registry_create_static_alias_in(
       request->local_registry,
+      global,
       request->name, request->name_len, mangled, mangled_len,
       request->type);
   if (!alias) return NULL;
