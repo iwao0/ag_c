@@ -127,14 +127,8 @@ typedef struct {
   unsigned char has_index;
   unsigned char has_member;
 } psx_initializer_entry_t;
-/* Expression-local state that cannot be represented by the canonical type,
- * such as array/VLA dereference cursors. */
+/* Expression-local state that is independent of the canonical type. */
 typedef struct {
-  int inner_stride;
-  int next_stride;
-  int extra_strides[5];
-  unsigned char extra_strides_count;
-  unsigned char has_stride;
   unsigned char is_scalar_ptr_member_lvalue;
   unsigned char subscript_uses_base_address;
   unsigned char bit_width;

@@ -209,6 +209,9 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 
 int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
+psx_type_t *ps_type_dereference_result(const psx_type_t *type);
+psx_type_t *ps_type_subscript_result(const psx_type_t *type);
+int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
 int ps_type_is_unsigned(const psx_type_t *type);
 int ps_type_is_scalar(const psx_type_t *type);
@@ -238,6 +241,11 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
 int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
                                               const psx_type_t *src);
+void ps_type_set_runtime_vla_stride_metadata(psx_type_t *type,
+                                             int outer_stride,
+                                             int mid_stride,
+                                             const int *extra_strides,
+                                             int extra_strides_count);
 int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,
                                           int *next_stride,

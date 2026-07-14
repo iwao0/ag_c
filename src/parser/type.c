@@ -645,7 +645,7 @@ psx_type_t *psx_type_new_runtime_vla_row_view(
 
   psx_type_t *row = ps_type_new_array(
       (psx_type_t *)element, array_len, row_size, 1);
-  row->vla_runtime_strides.outer_stride = elem_size;
+  ps_type_set_runtime_vla_stride_metadata(row, elem_size, 0, NULL, 0);
   row->vla_row_stride_frame_off = row_stride_frame_off;
   row->vla_strides_remaining = strides_remaining;
   return row;
@@ -674,7 +674,7 @@ psx_type_t *ps_type_new_vla_object_view(
   int element_size = ps_type_sizeof(element);
   if (element_size <= 0) element_size = leaf_size;
   psx_type_t *vla = ps_type_new_array(element, 0, 0, 1);
-  vla->vla_runtime_strides.outer_stride = outer_stride;
+  ps_type_set_runtime_vla_stride_metadata(vla, outer_stride, 0, NULL, 0);
   vla->vla_row_stride_frame_off = row_stride_frame_off;
   vla->vla_strides_remaining = strides_remaining;
   psx_type_copy_common_qualifiers(vla, source);
@@ -760,6 +760,30 @@ int ps_type_deref_size(const psx_type_t *type) {
   if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY)
     return ps_type_sizeof(type->base);
   return 0;
+}
+
+psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
+  if (!type || !type->base ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return NULL;
+  }
+  return type->base;
+}
+
+psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
+  if (!type || !type->base ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return NULL;
+  }
+  return ps_type_clone(type->base);
+}
+
+int ps_type_subscript_static_stride(const psx_type_t *type) {
+  if (!type || !type->base ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  return ps_type_sizeof(type->base);
 }
 
 int ps_type_is_pointer(const psx_type_t *type) {
@@ -1177,6 +1201,27 @@ int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
   return 1;
 }
 
+void ps_type_set_runtime_vla_stride_metadata(psx_type_t *type,
+                                             int outer_stride,
+                                             int mid_stride,
+                                             const int *extra_strides,
+                                             int extra_strides_count) {
+  if (!type) return;
+  if (extra_strides_count < 0) extra_strides_count = 0;
+  if (extra_strides_count > 5) extra_strides_count = 5;
+  type->is_vla = 1;
+  type->vla_runtime_strides.outer_stride = outer_stride;
+  type->vla_runtime_strides.mid_stride = mid_stride;
+  type->vla_runtime_strides.extra_strides_count =
+      (unsigned char)extra_strides_count;
+  for (int i = 0; i < extra_strides_count; i++) {
+    type->vla_runtime_strides.extra_strides[i] =
+        extra_strides ? extra_strides[i] : 0;
+  }
+  for (int i = extra_strides_count; i < 5; i++)
+    type->vla_runtime_strides.extra_strides[i] = 0;
+}
+
 static void type_clear_stride_outputs(int *inner_stride, int *next_stride,
                                       int *extra_strides,
                                       int *extra_strides_count) {
@@ -1214,6 +1259,27 @@ static int type_array_stride_metadata(const psx_type_t *array,
   if (extra_strides) {
     for (int i = 0; i < extra_count; i++) extra_strides[i] = strides[i + 2];
     for (int i = extra_count; i < 5; i++) extra_strides[i] = 0;
+  }
+  return 1;
+}
+
+static int type_runtime_vla_stride_metadata(
+    const psx_type_t *type, int *inner_stride, int *next_stride,
+    int *extra_strides, int *extra_strides_count) {
+  if (!type || !type->is_vla || type->vla_row_stride_frame_off == 0)
+    return 0;
+  const psx_vla_runtime_strides_t *strides = &type->vla_runtime_strides;
+  int count = strides->extra_strides_count;
+  if (count > 5) count = 5;
+  if (strides->outer_stride <= 0 && strides->mid_stride <= 0 && count == 0)
+    return 0;
+  if (inner_stride) *inner_stride = strides->outer_stride;
+  if (next_stride) *next_stride = strides->mid_stride;
+  if (extra_strides_count) *extra_strides_count = count;
+  if (extra_strides) {
+    for (int i = 0; i < count; i++)
+      extra_strides[i] = strides->extra_strides[i];
+    for (int i = count; i < 5; i++) extra_strides[i] = 0;
   }
   return 1;
 }
@@ -1267,6 +1333,11 @@ int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
   type_clear_stride_outputs(inner_stride, next_stride, extra_strides,
                             extra_strides_count);
   if (!psx_type_is_pointer_view_type(type)) return 0;
+  if (type_runtime_vla_stride_metadata(
+          type, inner_stride, next_stride, extra_strides,
+          extra_strides_count)) {
+    return 1;
+  }
   const psx_type_t *array = NULL;
   if (type->kind == PSX_TYPE_POINTER && type->base &&
       type->base->kind == PSX_TYPE_ARRAY) {

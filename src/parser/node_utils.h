@@ -109,11 +109,7 @@ node_t *ps_node_new_unary_deref_for(node_t *operand);
 node_t *psx_node_new_unary_deref_syntax_for(node_t *operand);
 node_t *psx_node_new_subscript_syntax_for(node_t *base, node_t *index);
 node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
-                                         node_t *scaled_offset,
-                                         int elem_size, int inner_deref_size,
-                                         int next_deref_size,
-                                         const int *extra_strides,
-                                         int extra_strides_count);
+                                         node_t *scaled_offset);
 node_t *ps_node_new_tag_member_lvar_ref_for(struct lvar_t *owner, int member_offset,
                                              const struct tag_member_info_t *info);
 node_t *ps_node_new_gvar_for(struct global_var_t *gv);
