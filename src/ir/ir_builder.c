@@ -21,6 +21,7 @@
 #include "ir.h"
 #include "abi_lowering.h"
 #include "../target_info.h"
+#include "../lowering/ir_symbol_lowering.h"
 /* Phase C2: parser の公開 API は parser_public.h 1 本に集約。
  * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
  * transitively 取り込む形で内部実装の変更を吸収する)。 */
@@ -375,14 +376,17 @@ static int address_of_lvar(ir_build_ctx_t *ctx, int offset) {
  * address」と言われるため、関数アドレスと同じく GOT 経由 (@GOTPAGE/@GOTPAGEOFF) で解決する。
  * 同名のグローバル宣言が extern なら is_got_funcref を立てる。 */
 static int emit_load_sym_for_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
+  ir_symbol_t *resolved =
+      lower_ir_global_symbol(ctx->m, gv->name, gv->name_len);
   int v_addr = ir_func_new_vreg(ctx->f);
-  ir_inst_t *sym = ir_inst_new(ps_gvar_is_thread_local_by_name(gv->name, gv->name_len)
+  ir_inst_t *sym = ir_inst_new((resolved ? resolved->is_thread_local
+                                         : gv->is_thread_local)
                                    ? IR_LOAD_TLV_ADDR
                                    : IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v_addr, IR_TY_PTR);
   sym->sym = gv->name;
   sym->sym_len = gv->name_len;
-  if (ps_gvar_is_extern_decl_by_name(gv->name, gv->name_len)) {
+  if (resolved && resolved->is_extern) {
     sym->is_got_funcref = 1;
   }
   ir_func_append_inst(ctx->f, sym);
@@ -839,6 +843,7 @@ static ir_val_t build_node_string(ir_build_ctx_t *ctx, node_t *node) {
   inst->dst = ir_val_vreg(v, IR_TY_PTR);
   inst->sym = s->string_label;
   inst->sym_len = s->string_label ? (int)strlen(s->string_label) : 0;
+  inst->object_size = (s->byte_len + 1) * (int)s->char_width;
   ir_func_append_inst(ctx->f, inst);
   return inst->dst;
 }

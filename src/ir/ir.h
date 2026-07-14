@@ -201,6 +201,7 @@ typedef struct ir_inst_t {
 
   /* --- 4 バイト --- */
   int sym_len;        /* CALL / LOAD_* のシンボル長 (sym と対) */
+  int object_size;    /* IR_LOAD_STR: 終端を含むlower済みデータサイズ */
 
   /* --- 1 バイト (複数 op 族で共有するため union 外) --- */
   /* IR_LOAD / IR_ATOMIC: unsigned (zero-extend) なら 1。signed (sign-extend) なら 0。
@@ -322,6 +323,30 @@ typedef struct ir_global_t {
   int init_symbol_len;
 } ir_global_t;
 
+/* semantic/loweringで解決済みのシンボル情報。backendはparser registryへ
+ * 戻らず、この表からobject layoutと初期関数ポインタ値を読む。 */
+typedef struct ir_symbol_func_ref_t {
+  struct ir_symbol_func_ref_t *next;
+  char *name;
+  int name_len;
+  int offset;
+  ir_callable_sig_t callable_sig;
+  unsigned char has_callable_sig;
+} ir_symbol_func_ref_t;
+
+typedef struct ir_symbol_t {
+  struct ir_symbol_t *next;
+  char *name;
+  int name_len;
+  int byte_size;
+  int alignment;
+  unsigned char is_extern;
+  unsigned char is_static;
+  unsigned char is_thread_local;
+  ir_symbol_func_ref_t *func_refs;
+  ir_symbol_func_ref_t *func_refs_tail;
+} ir_symbol_t;
+
 /* ------------------------------------------------------------------ */
 /* IR モジュール                                                       */
 /* ------------------------------------------------------------------ */
@@ -331,6 +356,8 @@ typedef struct ir_module_t {
   ir_func_t *funcs_tail;
   ir_global_t *globals;
   ir_global_t *globals_tail;
+  ir_symbol_t *symbols;
+  ir_symbol_t *symbols_tail;
 } ir_module_t;
 
 /* ------------------------------------------------------------------ */
@@ -338,6 +365,15 @@ typedef struct ir_module_t {
 /* ------------------------------------------------------------------ */
 
 ir_module_t *ir_module_new(void);
+ir_symbol_t *ir_module_find_symbol(const ir_module_t *m,
+                                   const char *name, int name_len);
+ir_symbol_t *ir_module_add_symbol(ir_module_t *m,
+                                  const char *name, int name_len);
+ir_symbol_func_ref_t *ir_symbol_add_func_ref(
+    ir_symbol_t *symbol, int offset, const char *name, int name_len,
+    const ir_callable_sig_t *callable_sig);
+const ir_symbol_func_ref_t *ir_symbol_find_func_ref(
+    const ir_symbol_t *symbol, int offset);
 ir_func_t   *ir_func_new(ir_module_t *m, const char *name, int name_len, ir_type_t ret_type);
 ir_block_t  *ir_block_new(ir_func_t *f);
 ir_inst_t   *ir_inst_new(ir_op_t op);

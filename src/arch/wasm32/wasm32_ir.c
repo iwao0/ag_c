@@ -29,7 +29,7 @@ typedef struct {
 } wasm_alloca_slot_t;
 
 typedef struct {
-  global_var_t *gv;
+  const ir_symbol_t *symbol;
   int offset;
   char *func_ref_name;
   int func_ref_name_len;
@@ -37,6 +37,7 @@ typedef struct {
 } wasm_global_func_state_t;
 
 typedef struct {
+  const ir_module_t *module;
   ir_func_t *f;
   wasm_alloca_slot_t *allocas;
   int alloca_count;
@@ -50,7 +51,7 @@ typedef struct {
   unsigned char *vreg_unsigned;
   char **vreg_func_ref_names;
   int *vreg_func_ref_name_lens;
-  global_var_t **vreg_global_refs;
+  const ir_symbol_t **vreg_global_refs;
   int *vreg_global_ref_offsets;
   unsigned char *vreg_const_known;
   long long *vreg_const_values;
@@ -274,7 +275,12 @@ static wasm_data_symbol_t *intern_data_symbol(const char *name, int name_len, in
   }
   g_data.next_data_off = align_to(g_data.next_data_off, align > 0 ? align : 1);
   wasm_data_symbol_t *s = &g_data.symbols[g_data.symbol_count++];
-  s->name = (char *)name;
+  s->name = malloc((size_t)name_len + 1);
+  if (!s->name)
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  memcpy(s->name, name, (size_t)name_len);
+  s->name[name_len] = '\0';
   s->name_len = name_len;
   s->addr = g_data.next_data_off;
   s->size = size > 0 ? size : 1;
@@ -312,6 +318,11 @@ static int data_addr_for_string_label(const char *sym) {
   return intern_data_symbol(sym, ctx.label_len, size, 1)->addr;
 }
 
+static int data_addr_for_ir_string(const char *sym, int sym_len, int size) {
+  if (!sym || sym_len <= 0 || size <= 0) return -1;
+  return intern_data_symbol(sym, sym_len, size, 1)->addr;
+}
+
 typedef struct {
   const char *name;
   int name_len;
@@ -334,6 +345,12 @@ static int data_addr_for_global(const char *sym, int sym_len) {
   return intern_data_symbol(sym, sym_len, size, align)->addr;
 }
 
+static int data_addr_for_ir_symbol(const ir_symbol_t *symbol) {
+  if (!symbol) return -1;
+  return intern_data_symbol(symbol->name, symbol->name_len,
+                            symbol->byte_size, symbol->alignment)->addr;
+}
+
 static int intern_function_table_ref(char *name, int name_len) {
   if (!name || name_len <= 0) return -1;
   register_function_reference(name, name_len);
@@ -348,7 +365,12 @@ static int intern_function_table_ref(char *name, int name_len) {
     g_func_table.ref_cap = ncap;
   }
   int idx = g_func_table.ref_count++;
-  g_func_table.refs[idx].name = name;
+  g_func_table.refs[idx].name = malloc((size_t)name_len + 1);
+  if (!g_func_table.refs[idx].name)
+    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+  memcpy(g_func_table.refs[idx].name, name, (size_t)name_len);
+  g_func_table.refs[idx].name[name_len] = '\0';
   g_func_table.refs[idx].name_len = name_len;
   return idx + 2;
 }
@@ -635,13 +657,15 @@ static char *get_vreg_func_ref(wasm_func_ctx_t *ctx, int vreg, int *out_len) {
   return ctx->vreg_func_ref_names[vreg];
 }
 
-static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg, global_var_t *gv, int offset) {
+static void set_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
+                                const ir_symbol_t *symbol, int offset) {
   if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return;
-  ctx->vreg_global_refs[vreg] = gv;
+  ctx->vreg_global_refs[vreg] = symbol;
   ctx->vreg_global_ref_offsets[vreg] = offset;
 }
 
-static global_var_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg, int *out_offset) {
+static const ir_symbol_t *get_vreg_global_ref(wasm_func_ctx_t *ctx, int vreg,
+                                               int *out_offset) {
   if (out_offset) *out_offset = 0;
   if (vreg < 0 || vreg >= ctx->f->next_vreg_id) return NULL;
   if (out_offset) *out_offset = ctx->vreg_global_ref_offsets[vreg];
@@ -664,29 +688,23 @@ static int get_vreg_const(wasm_func_ctx_t *ctx, ir_val_t v, long long *out_value
   return 1;
 }
 
-static char *global_scalar_func_ref(global_var_t *gv, int *out_len) {
-  if (out_len) *out_len = 0;
-  psx_gvar_init_scalar_value_t value = ps_gvar_init_scalar_value(gv, 4);
-  char *name = NULL;
-  if (!ps_gvar_init_value_named_function(value, &name, out_len)) return NULL;
-  return name;
-}
-
-static wasm_global_func_state_t *find_global_func_state(wasm_func_ctx_t *ctx, global_var_t *gv,
-                                                        int offset) {
-  if (!gv) return NULL;
+static wasm_global_func_state_t *find_global_func_state(
+    wasm_func_ctx_t *ctx, const ir_symbol_t *symbol, int offset) {
+  if (!symbol) return NULL;
   for (int i = 0; i < ctx->global_func_state_count; i++) {
-    if (ctx->global_func_states[i].gv == gv && ctx->global_func_states[i].offset == offset) {
+    if (ctx->global_func_states[i].symbol == symbol &&
+        ctx->global_func_states[i].offset == offset) {
       return &ctx->global_func_states[i];
     }
   }
   return NULL;
 }
 
-static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offset, char *name,
-                                int name_len) {
-  if (!gv) return;
-  wasm_global_func_state_t *s = find_global_func_state(ctx, gv, offset);
+static void set_global_func_ref(wasm_func_ctx_t *ctx,
+                                const ir_symbol_t *symbol, int offset,
+                                char *name, int name_len) {
+  if (!symbol) return;
+  wasm_global_func_state_t *s = find_global_func_state(ctx, symbol, offset);
   if (!s) {
     if (ctx->global_func_state_count == ctx->global_func_state_cap) {
       int ncap = ctx->global_func_state_cap ? ctx->global_func_state_cap * 2 : 8;
@@ -697,7 +715,7 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offs
       ctx->global_func_state_cap = ncap;
     }
     s = &ctx->global_func_states[ctx->global_func_state_count++];
-    s->gv = gv;
+    s->symbol = symbol;
     s->offset = offset;
   }
   s->func_ref_name = name;
@@ -705,73 +723,19 @@ static void set_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offs
   s->is_set = 1;
 }
 
-typedef struct {
-  global_var_t *gv;
-  int target_offset;
-  char *name;
-  int name_len;
-} wasm_global_member_func_ref_ctx_t;
-
-static void find_global_member_func_ref_scalar(void *user,
-                                               const tag_member_info_t *mi,
-                                               int idx, long long offset) {
-  wasm_global_member_func_ref_ctx_t *ctx = user;
-  if (!ctx || ctx->name || offset != ctx->target_offset) return;
-  psx_gvar_init_member_value_t value = ps_gvar_init_member_value(ctx->gv, idx, mi);
-  ps_gvar_init_value_named_function(value, &ctx->name, &ctx->name_len);
-}
-
-static void find_global_member_func_ref_bitfield_unit(
-    void *user, const psx_gvar_bitfield_unit_t *unit, long long base_offset) {
-  (void)user;
-  (void)unit;
-  (void)base_offset;
-}
-
-static void find_global_member_func_ref_bitfield_member(
-    void *user, const tag_member_info_t *mi, int idx, long long base_offset) {
-  (void)user;
-  (void)mi;
-  (void)idx;
-  (void)base_offset;
-}
-
-static const psx_gvar_aggregate_walk_ops_t global_member_func_ref_walk_ops = {
-    .scalar = find_global_member_func_ref_scalar,
-    .bitfield_unit = find_global_member_func_ref_bitfield_unit,
-    .bitfield_member = find_global_member_func_ref_bitfield_member,
-};
-
-static char *global_member_func_ref(global_var_t *gv, int offset, int *out_len) {
-  if (out_len) *out_len = 0;
-  if (!gv) return NULL;
-  wasm_global_member_func_ref_ctx_t ctx = {
-      .gv = gv,
-      .target_offset = offset,
-      .name = NULL,
-      .name_len = 0,
-  };
-  if (!ps_gvar_walk_aggregate_initializer(gv, 0, &global_member_func_ref_walk_ops,
-                                           &ctx)) {
-    return NULL;
-  }
-  if (out_len) *out_len = ctx.name_len;
-  return ctx.name;
-}
-
-static char *current_global_func_ref(wasm_func_ctx_t *ctx, global_var_t *gv, int offset,
+static char *current_global_func_ref(wasm_func_ctx_t *ctx,
+                                     const ir_symbol_t *symbol, int offset,
                                      int *out_len) {
   if (out_len) *out_len = 0;
-  wasm_global_func_state_t *s = find_global_func_state(ctx, gv, offset);
+  wasm_global_func_state_t *s = find_global_func_state(ctx, symbol, offset);
   if (s && s->is_set) {
     if (out_len) *out_len = s->func_ref_name_len;
     return s->func_ref_name;
   }
-  if (offset == 0) {
-    char *name = global_scalar_func_ref(gv, out_len);
-    if (name) return name;
-  }
-  return global_member_func_ref(gv, offset, out_len);
+  const ir_symbol_func_ref_t *ref = ir_symbol_find_func_ref(symbol, offset);
+  if (!ref) return NULL;
+  if (out_len) *out_len = ref->name_len;
+  return ref->name;
 }
 
 static void infer_alloca_value_types(wasm_func_ctx_t *ctx) {
@@ -809,7 +773,8 @@ static void analyze_func(wasm_func_ctx_t *ctx) {
   ctx->vreg_unsigned = calloc((size_t)ctx->f->next_vreg_id, sizeof(unsigned char));
   ctx->vreg_func_ref_names = calloc((size_t)ctx->f->next_vreg_id, sizeof(char *));
   ctx->vreg_func_ref_name_lens = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
-  ctx->vreg_global_refs = calloc((size_t)ctx->f->next_vreg_id, sizeof(global_var_t *));
+  ctx->vreg_global_refs =
+      calloc((size_t)ctx->f->next_vreg_id, sizeof(ir_symbol_t *));
   ctx->vreg_global_ref_offsets = calloc((size_t)ctx->f->next_vreg_id, sizeof(int));
   ctx->vreg_const_known = calloc((size_t)ctx->f->next_vreg_id, sizeof(unsigned char));
   ctx->vreg_const_values = calloc((size_t)ctx->f->next_vreg_id, sizeof(long long));
@@ -985,9 +950,10 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     set_vreg_func_ref(ctx, i->dst.id, slot->func_ref_name, slot->func_ref_name_len);
   } else {
     int global_off = 0;
-    global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &global_off);
+    const ir_symbol_t *symbol =
+        get_vreg_global_ref(ctx, i->src1.id, &global_off);
     int name_len = 0;
-    char *name = current_global_func_ref(ctx, gv, global_off, &name_len);
+    char *name = current_global_func_ref(ctx, symbol, global_off, &name_len);
     if (name) set_vreg_func_ref(ctx, i->dst.id, name, name_len);
   }
 }
@@ -995,7 +961,8 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
 static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   wasm_alloca_slot_t *slot = find_alloca_slot(ctx, i->src1.id);
   int global_off = 0;
-  global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &global_off);
+  const ir_symbol_t *symbol =
+      get_vreg_global_ref(ctx, i->src1.id, &global_off);
   const char *op = NULL;
   ir_type_t store_ty = i->src2.type;
   switch (store_ty) {
@@ -1019,13 +986,13 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     slot->func_ref_name = name;
     slot->func_ref_name_len = name_len;
   }
-  if (gv) {
+  if (symbol) {
     int name_len = 0;
     char *name = get_vreg_func_ref(ctx, i->src2.id, &name_len);
     if (ctx->has_control_flow) {
-      set_global_func_ref(ctx, gv, global_off, NULL, 0);
+      set_global_func_ref(ctx, symbol, global_off, NULL, 0);
     } else {
-      set_global_func_ref(ctx, gv, global_off, name, name_len);
+      set_global_func_ref(ctx, symbol, global_off, name, name_len);
     }
   }
 }
@@ -1478,7 +1445,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       cg_emitf(")\n");
       return;
     case IR_LOAD_STR: {
-      int addr = data_addr_for_string_label(i->sym);
+      int addr = data_addr_for_ir_string(i->sym, i->sym_len, i->object_size);
       if (addr < 0) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
       return;
@@ -1491,15 +1458,21 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
         set_vreg_func_ref(ctx, i->dst.id, i->sym, i->sym_len);
         return;
       }
-      int addr = data_addr_for_global(i->sym, i->sym_len);
+      const ir_symbol_t *symbol =
+          ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
+      int addr = data_addr_for_ir_symbol(symbol);
+      if (addr < 0) wasm_unsupported_msg("missing resolved IR global symbol");
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
-      set_vreg_global_ref(ctx, i->dst.id, ps_find_global_var(i->sym, i->sym_len), 0);
+      set_vreg_global_ref(ctx, i->dst.id, symbol, 0);
       return;
     }
     case IR_LOAD_TLV_ADDR: {
-      int addr = data_addr_for_global(i->sym, i->sym_len);
+      const ir_symbol_t *symbol =
+          ir_module_find_symbol(ctx->module, i->sym, i->sym_len);
+      int addr = data_addr_for_ir_symbol(symbol);
+      if (addr < 0) wasm_unsupported_msg("missing resolved IR TLS symbol");
       wasm_emitf(indent, "(local.set $v%d (i32.const %d))\n", i->dst.id, addr);
-      set_vreg_global_ref(ctx, i->dst.id, ps_find_global_var(i->sym, i->sym_len), 0);
+      set_vreg_global_ref(ctx, i->dst.id, symbol, 0);
       return;
     }
     case IR_ZEXT:
@@ -1662,14 +1635,17 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       cg_emitf(")\n");
       if ((i->op == IR_ADD || i->op == IR_SUB) && !is_cmp) {
         int base_off = 0;
-        global_var_t *gv = get_vreg_global_ref(ctx, i->src1.id, &base_off);
+        const ir_symbol_t *symbol =
+            get_vreg_global_ref(ctx, i->src1.id, &base_off);
         long long delta = 0;
-        if (gv && get_vreg_const(ctx, i->src2, &delta)) {
+        if (symbol && get_vreg_const(ctx, i->src2, &delta)) {
           if (i->op == IR_SUB) delta = -delta;
-          set_vreg_global_ref(ctx, i->dst.id, gv, base_off + (int)delta);
+          set_vreg_global_ref(ctx, i->dst.id, symbol, base_off + (int)delta);
         } else if (i->op == IR_ADD && get_vreg_const(ctx, i->src1, &delta)) {
-          gv = get_vreg_global_ref(ctx, i->src2.id, &base_off);
-          if (gv) set_vreg_global_ref(ctx, i->dst.id, gv, base_off + (int)delta);
+          symbol = get_vreg_global_ref(ctx, i->src2.id, &base_off);
+          if (symbol)
+            set_vreg_global_ref(ctx, i->dst.id, symbol,
+                                base_off + (int)delta);
         }
       }
       return;
@@ -1746,8 +1722,9 @@ static int block_has_terminator(ir_block_t *b) {
   return tail && (tail->op == IR_BR || tail->op == IR_BR_COND || tail->op == IR_RET);
 }
 
-static void emit_func(ir_func_t *f) {
+static void emit_func(const ir_module_t *module, ir_func_t *f) {
   wasm_func_ctx_t ctx = {0};
+  ctx.module = module;
   ctx.f = f;
   analyze_func(&ctx);
 
@@ -1830,6 +1807,10 @@ static void emit_func(ir_func_t *f) {
 }
 
 void wasm32_module_begin(void) {
+  for (int i = 0; i < g_data.symbol_count; i++)
+    free(g_data.symbols[i].name);
+  for (int i = 0; i < g_func_table.ref_count; i++)
+    free(g_func_table.refs[i].name);
   g_data.next_data_off = WASM_STATIC_BASE;
   g_data.symbol_count = 0;
   g_func_table.ref_count = 0;
@@ -1844,7 +1825,7 @@ void wasm32_gen_ir_module(ir_module_t *m) {
   ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next)
     register_function_definition(f);
-  for (ir_func_t *f = m->funcs; f; f = f->next) emit_func(f);
+  for (ir_func_t *f = m->funcs; f; f = f->next) emit_func(m, f);
 }
 
 static void emit_wat_escaped_byte(unsigned char c) {

@@ -69,6 +69,57 @@ if (actual.size) {
   );
 }
 
+const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
+const wasmFunctionCodegenStart = wasmIrSource.indexOf(
+  "static void set_vreg_global_ref",
+);
+const wasmFunctionCodegenEnd = wasmIrSource.indexOf(
+  "static void emit_string_literal_wat_byte",
+);
+if (wasmFunctionCodegenStart < 0 ||
+    wasmFunctionCodegenEnd <= wasmFunctionCodegenStart) {
+  throw new Error("Wasm function codegen boundary markers are missing");
+}
+const wasmFunctionCodegen = wasmIrSource.slice(
+  wasmFunctionCodegenStart,
+  wasmFunctionCodegenEnd,
+);
+const parserGlobalReads = [
+  /\bps_find_global_var\b/g,
+  /\bps_iter_globals\b/g,
+  /\bps_iter_string_literals\b/g,
+  /\bps_gvar_[A-Za-z0-9_]+\b/g,
+  /\bglobal_var_t\b/g,
+  /\bstring_lit_t\b/g,
+];
+const wasmFunctionCodegenViolations = [];
+for (const pattern of parserGlobalReads) {
+  for (const match of wasmFunctionCodegen.matchAll(pattern)) {
+    wasmFunctionCodegenViolations.push(match[0]);
+  }
+}
+if (wasmFunctionCodegenViolations.length ||
+    !/\bir_module_find_symbol\s*\(/.test(wasmFunctionCodegen) ||
+    !/\bir_symbol_find_func_ref\s*\(/.test(wasmFunctionCodegen)) {
+  throw new Error(
+    "Wasm function codegen must consume resolved IR symbols instead of parser registries" +
+      (wasmFunctionCodegenViolations.length
+        ? `:\n${wasmFunctionCodegenViolations.sort().join("\n")}`
+        : ""),
+  );
+}
+
+const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
+const irBuilderSource = await readFile("src/ir/ir_builder.c", "utf8");
+if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
+    !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
+    !/\blower_ir_global_symbol\s*\(/.test(irBuilderSource) ||
+    !/object_size\s*=\s*\(s->byte_len\s*\+\s*1\)/.test(irBuilderSource)) {
+  throw new Error(
+    "IR lowering must materialize global layout and string size before backend codegen",
+  );
+}
+
 const sourceFiles = (await sourceFilesUnder("src")).sort();
 const legacyTypeMutationRe =
   /\b(?:psx_ctx_add_tag_member|ps_ctx_typedef_set_decl_type|ps_tag_member_set_decl_type|ps_tag_member_decl_type_mut|tag_member_record_set_decl_type|typedef_record_set_decl_type)\b/g;

@@ -228,8 +228,57 @@ static void test_helpers(void) {
   if (none.id != IR_VAL_NONE) { failures++; fprintf(stderr, "FAIL: ir_val_none\n"); }
 }
 
+/* ---- test 6: lower済みシンボル表の所有権と関数参照 ---- */
+static void test_resolved_symbols(void) {
+  ir_module_t *m = ir_module_new();
+  char symbol_name[] = "callbacks";
+  char function_name[] = "handler";
+  ir_symbol_t *symbol = ir_module_add_symbol(m, symbol_name, 9);
+  if (!symbol) {
+    failures++;
+    fprintf(stderr, "FAIL: ir_module_add_symbol\n");
+    ir_module_free(m);
+    return;
+  }
+  symbol->byte_size = 24;
+  symbol->alignment = 8;
+  symbol->is_static = 1;
+
+  ir_callable_sig_t sig = {0};
+  sig.result = IR_TY_I32;
+  sig.param_count = 1;
+  sig.params[0] = IR_TY_I64;
+  ir_symbol_func_ref_t *ref =
+      ir_symbol_add_func_ref(symbol, 8, function_name, 7, &sig);
+
+  symbol_name[0] = 'X';
+  function_name[0] = 'Y';
+  if (ir_module_find_symbol(m, "callbacks", 9) != symbol ||
+      ir_module_find_symbol(m, "callback", 8) != NULL ||
+      strcmp(symbol->name, "callbacks") != 0) {
+    failures++;
+    fprintf(stderr, "FAIL: resolved symbol lookup and name ownership\n");
+  }
+  if (ir_module_add_symbol(m, "callbacks", 9) != symbol) {
+    failures++;
+    fprintf(stderr, "FAIL: resolved symbol interning\n");
+  }
+  if (!ref || ir_symbol_find_func_ref(symbol, 8) != ref ||
+      ir_symbol_find_func_ref(symbol, 4) != NULL ||
+      strcmp(ref->name, "handler") != 0 || !ref->has_callable_sig ||
+      ref->callable_sig.result != IR_TY_I32 ||
+      ref->callable_sig.param_count != 1 ||
+      ref->callable_sig.params[0] != IR_TY_I64) {
+    failures++;
+    fprintf(stderr, "FAIL: resolved function reference metadata\n");
+  }
+
+  ir_module_free(m);
+}
+
 int main(void) {
   test_helpers();
+  test_resolved_symbols();
   test_simple_add();
   test_globals();
   test_control_flow();

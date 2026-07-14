@@ -140,6 +140,77 @@ ir_module_t *ir_module_new(void) {
   return m;
 }
 
+ir_symbol_t *ir_module_find_symbol(const ir_module_t *m,
+                                   const char *name, int name_len) {
+  if (!m || !name || name_len <= 0) return NULL;
+  for (ir_symbol_t *symbol = m->symbols; symbol; symbol = symbol->next) {
+    if (symbol->name_len == name_len &&
+        memcmp(symbol->name, name, (size_t)name_len) == 0) {
+      return symbol;
+    }
+  }
+  return NULL;
+}
+
+ir_symbol_t *ir_module_add_symbol(ir_module_t *m,
+                                  const char *name, int name_len) {
+  if (!m || !name || name_len <= 0) return NULL;
+  ir_symbol_t *existing = ir_module_find_symbol(m, name, name_len);
+  if (existing) return existing;
+  ir_symbol_t *symbol = calloc(1, sizeof(*symbol));
+  if (!symbol) return NULL;
+  symbol->name = malloc((size_t)name_len + 1);
+  if (!symbol->name) {
+    free(symbol);
+    return NULL;
+  }
+  memcpy(symbol->name, name, (size_t)name_len);
+  symbol->name[name_len] = '\0';
+  symbol->name_len = name_len;
+  if (!m->symbols) m->symbols = symbol;
+  else m->symbols_tail->next = symbol;
+  m->symbols_tail = symbol;
+  return symbol;
+}
+
+ir_symbol_func_ref_t *ir_symbol_add_func_ref(
+    ir_symbol_t *symbol, int offset, const char *name, int name_len,
+    const ir_callable_sig_t *callable_sig) {
+  if (!symbol || !name || name_len <= 0) return NULL;
+  for (ir_symbol_func_ref_t *ref = symbol->func_refs; ref; ref = ref->next) {
+    if (ref->offset == offset) return ref;
+  }
+  ir_symbol_func_ref_t *ref = calloc(1, sizeof(*ref));
+  if (!ref) return NULL;
+  ref->name = malloc((size_t)name_len + 1);
+  if (!ref->name) {
+    free(ref);
+    return NULL;
+  }
+  memcpy(ref->name, name, (size_t)name_len);
+  ref->name[name_len] = '\0';
+  ref->name_len = name_len;
+  ref->offset = offset;
+  if (callable_sig) {
+    ref->callable_sig = *callable_sig;
+    ref->has_callable_sig = 1;
+  }
+  if (!symbol->func_refs) symbol->func_refs = ref;
+  else symbol->func_refs_tail->next = ref;
+  symbol->func_refs_tail = ref;
+  return ref;
+}
+
+const ir_symbol_func_ref_t *ir_symbol_find_func_ref(
+    const ir_symbol_t *symbol, int offset) {
+  if (!symbol) return NULL;
+  for (const ir_symbol_func_ref_t *ref = symbol->func_refs;
+       ref; ref = ref->next) {
+    if (ref->offset == offset) return ref;
+  }
+  return NULL;
+}
+
 /* 関数 1 つ分の IR を解放する (関数ごとストリーミング codegen 用)。
  * 所有しているのは block / inst / inst->args / f->name / f->c_signature /
  * f->vreg_phys_reg のみ。
@@ -179,6 +250,18 @@ void ir_module_free(ir_module_t *m) {
     free(g->init_values);  /* init_symbol は alias なので解放しない */
     free(g);
     g = gnext;
+  }
+  for (ir_symbol_t *symbol = m->symbols; symbol; ) {
+    ir_symbol_t *next = symbol->next;
+    for (ir_symbol_func_ref_t *ref = symbol->func_refs; ref; ) {
+      ir_symbol_func_ref_t *ref_next = ref->next;
+      free(ref->name);
+      free(ref);
+      ref = ref_next;
+    }
+    free(symbol->name);
+    free(symbol);
+    symbol = next;
   }
   free(m);
 }
