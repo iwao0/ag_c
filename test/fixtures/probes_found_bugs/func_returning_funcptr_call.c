@@ -2,8 +2,8 @@
 // `int (* (*p)(int,int))(int,int)` の declarator 上 `*` が 2 つあるため pql=2 と誤登録され、
 // `(*p)(a,b)` が [p] のあと [addr] を二重ロードして SIGBUS していた。
 // 戻り funcptr 呼び出し `(*(*p)(a,b))(c,d)` も `*call` で同様に二重ロード。
-// 修正: func suffix が 2 つ (pointer-to-function で戻り funcptr) のとき pql を 1 に補正し
-// funcptr_ret_is_pointer を立てる。`(*call())(args)` の deref も減衰として剥がす。
+// 現在は pointer(function(...)) の再帰型から各段階を辿り、戻り関数ポインタと
+// `(*call())(args)` の callable decay を解決する。
 // 期待: exit=0
 int f2(int c, int b) { return c - b; }
 int (*f1(int a, int b))(int c, int b) {

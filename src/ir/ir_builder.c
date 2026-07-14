@@ -62,7 +62,7 @@ typedef struct {
   ir_module_t *m;
   ir_func_t *f;
   /* 現在処理中の関数 AST。lvars リストを引くため。 */
-  node_func_t *cur_fn;
+  node_function_definition_t *cur_fn;
   int failed;
   /* offset → ALLOCA vreg (ポインタ) のマップ */
   int lvar_offset[MAX_LVARS];
@@ -83,9 +83,9 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
    * default では silent に fallback (Phase 7a 以降)。 */
   const char *use_ir = getenv("AG_USE_IR");
   if (use_ir && strcmp(use_ir, "1") == 0) {
-    if (ctx->cur_fn && ctx->cur_fn->funcname) {
+    if (ctx->cur_fn && ctx->cur_fn->name) {
       fprintf(stderr, "ir_build: unsupported in %.*s: %s\n",
-              ctx->cur_fn->funcname_len, ctx->cur_fn->funcname, msg);
+              ctx->cur_fn->name_len, ctx->cur_fn->name, msg);
     } else {
       fprintf(stderr, "ir_build: unsupported: %s\n", msg);
     }
@@ -93,16 +93,16 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
 }
 
 static ir_abi_param_info_t classify_call_param(
-    const node_func_t *call, int param_idx) {
+    const node_function_call_t *call, int param_idx) {
   const psx_type_t *function_type =
-      ps_type_callable_function(call ? call->function_type : NULL);
+      ps_type_callable_function(call ? call->callee_type : NULL);
   if (function_type && function_type->kind == PSX_TYPE_FUNCTION &&
       param_idx >= 0 && param_idx < function_type->param_count) {
     return ir_abi_classify_param_type(function_type->param_types[param_idx]);
   }
   if (call && !call->callee)
     return ir_abi_classify_builtin_param(
-        call->funcname, call->funcname_len, param_idx);
+        call->direct_name, call->direct_name_len, param_idx);
   return (ir_abi_param_info_t){0};
 }
 
@@ -153,14 +153,22 @@ static int target_type_size(ir_type_t type) {
   return type == IR_TY_PTR ? ag_target_pointer_size() : ir_type_size(type);
 }
 
-/* node の値型から IR の浮動小数型を返すヘルパ。
+/* canonical C type から IR の浮動小数型を返すヘルパ。
  * 非浮動小数 (TK_FLOAT_KIND_NONE) なら IR_TY_I32 を返す。
  * 呼び出し側で type_size に応じた整数型 (I8/I16/I32/PTR) に上書きすること。 */
-static ir_type_t ir_type_from_node(node_t *node) {
-  tk_float_kind_t fp_kind = ps_node_value_fp_kind(node);
+static ir_type_t ir_type_from_type(const psx_type_t *type) {
+  tk_float_kind_t fp_kind =
+      type && (type->kind == PSX_TYPE_FLOAT ||
+               type->kind == PSX_TYPE_COMPLEX)
+          ? type->fp_kind
+          : TK_FLOAT_KIND_NONE;
   if (fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
   return IR_TY_I32;
+}
+
+static ir_type_t ir_type_from_node(node_t *node) {
+  return ir_type_from_type(ps_node_get_type(node));
 }
 
 /* owner (= lvar_t の親) に対して ALLOCA を 1 回だけ確保し、その vreg を返す。
@@ -388,6 +396,12 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
 
 static int aggregate_size_from_node(node_t *node) {
   return ps_node_aggregate_value_size(node);
+}
+
+static int aggregate_size_from_type(const psx_type_t *type) {
+  if (!ps_type_is_tag_aggregate(type)) return 0;
+  int size = ps_type_sizeof(type);
+  return size > 0 ? size : 0;
 }
 
 /* forward decl: build_expr 内で短絡評価/ternary 用に分岐 helper を呼ぶため。 */
@@ -1337,11 +1351,10 @@ static void attach_callable_type_from_callee(
   attach_callable_type(call, callable_type_for_callee(callee));
 }
 
-static const psx_type_t *function_callable_return_type(const node_func_t *fn) {
-  if (!fn || !fn->function_type ||
-      fn->function_type->kind != PSX_TYPE_FUNCTION)
-    return NULL;
-  const psx_type_t *return_type = fn->function_type->base;
+static const psx_type_t *function_callable_return_type(
+    const node_function_definition_t *fn) {
+  const psx_type_t *return_type =
+      ps_function_definition_return_type(fn);
   return ps_type_derived_function(return_type) ? return_type : NULL;
 }
 
@@ -1598,9 +1611,10 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
 
 /* `__ag_atomic_*(...)` 組込みを IR_ATOMIC に下ろす (stdatomic.h が使う)。
  * 幅と pointee の符号は parser の node metadata reader から取る。全操作 seq_cst 強度。 */
-static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn) {
-  const char *suf = fn->funcname + 12;          /* "__ag_atomic_" の後ろ */
-  int sl = fn->funcname_len - 12;
+static ir_val_t build_node_atomic_intrinsic(
+    ir_build_ctx_t *ctx, node_function_call_t *call) {
+  const char *suf = call->direct_name + 12;    /* "__ag_atomic_" の後ろ */
+  int sl = call->direct_name_len - 12;
 
   if (sl == 5 && memcmp(suf, "fence", 5) == 0) {
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
@@ -1608,9 +1622,9 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
     ir_func_append_inst(ctx->f, a);
     return ir_val_imm(IR_TY_I32, 0);
   }
-  if (fn->nargs < 1) { fail(ctx, "__ag_atomic intrinsic missing pointer arg"); return ir_val_none(); }
+  if (call->argument_count < 1) { fail(ctx, "__ag_atomic intrinsic missing pointer arg"); return ir_val_none(); }
 
-  node_t *parg = fn->args[0];
+  node_t *parg = call->arguments[0];
   int width = 4;
   int unsigned_p = 0;
   ps_node_atomic_pointer_info(parg, &width, &unsigned_p);
@@ -1628,7 +1642,7 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
     return a->dst;
   }
   if (sl == 5 && memcmp(suf, "store", 5) == 0) {
-    ir_val_t val = build_expr(ctx, fn->args[1]);
+    ir_val_t val = build_expr(ctx, call->arguments[1]);
     if (ctx->failed) return ir_val_none();
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
     a->atomic_kind = IR_ATOMIC_STORE; a->atomic_width = (unsigned char)width;
@@ -1637,9 +1651,9 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
     return ir_val_imm(IR_TY_I32, 0);
   }
   if (sl == 3 && memcmp(suf, "cas", 3) == 0) {
-    ir_val_t exp = build_expr(ctx, fn->args[1]);   /* expected の PTR */
+    ir_val_t exp = build_expr(ctx, call->arguments[1]);   /* expected の PTR */
     if (ctx->failed) return ir_val_none();
-    ir_val_t des = build_expr(ctx, fn->args[2]);   /* desired 値 */
+    ir_val_t des = build_expr(ctx, call->arguments[2]);   /* desired 値 */
     if (ctx->failed) return ir_val_none();
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
@@ -1656,7 +1670,7 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
   else if (sl == 9 && memcmp(suf, "fetch_and", 9) == 0) rmwop = IR_ARMW_AND;
   else if (sl == 9 && memcmp(suf, "fetch_xor", 9) == 0) rmwop = IR_ARMW_XOR;
   if (rmwop >= 0) {
-    ir_val_t val = build_expr(ctx, fn->args[1]);
+    ir_val_t val = build_expr(ctx, call->arguments[1]);
     if (ctx->failed) return ir_val_none();
     int v = ir_func_new_vreg(ctx->f);
     ir_inst_t *a = ir_inst_new(IR_ATOMIC);
@@ -1671,33 +1685,34 @@ static ir_val_t build_node_atomic_intrinsic(ir_build_ctx_t *ctx, node_func_t *fn
 }
 
 static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
-  node_func_t *fn = (node_func_t *)node;
-  if (!fn->callee && fn->funcname && fn->funcname_len > 12 &&
-      memcmp(fn->funcname, "__ag_atomic_", 12) == 0) {
-    return build_node_atomic_intrinsic(ctx, fn);
+  node_function_call_t *call_node = (node_function_call_t *)node;
+  if (!call_node->callee && call_node->direct_name &&
+      call_node->direct_name_len > 12 &&
+      memcmp(call_node->direct_name, "__ag_atomic_", 12) == 0) {
+    return build_node_atomic_intrinsic(ctx, call_node);
   }
   /* 間接呼び出し: callee 式を pre-evaluate しておく (引数評価より先に
    * vreg に確定させる方が安全)。AST 経路と同じ評価順序を守るため。
    * 間接呼び出しは現状 variadic 非対応とする (関数ポインタ型に variadic
    * 情報が乗っていない簡略化)。 */
   ir_val_t callee_v = ir_val_none();
-  if (fn->callee) {
-    callee_v = build_expr(ctx, fn->callee);
+  if (call_node->callee) {
+    callee_v = build_expr(ctx, call_node->callee);
     if (ctx->failed) return ir_val_none();
   }
   /* callee が variadic か確認。直接呼出は prototype から、間接呼出は callee に
    * 記録した function pointer signature から判定する (Apple ARM64: 可変長引数は
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
-  int nargs_fixed = fn->nargs;
+  int nargs_fixed = call_node->argument_count;
   const psx_type_t *function =
-      ps_type_callable_function(fn->function_type);
-  if (!function && fn->callee) {
+      ps_type_callable_function(call_node->callee_type);
+  if (!function && call_node->callee) {
     function = ps_type_callable_function(
-        callable_type_for_callee(fn->callee));
+        callable_type_for_callee(call_node->callee));
   }
   if (function && function->is_variadic_function &&
-      function->param_count < fn->nargs) {
+      function->param_count < call_node->argument_count) {
     is_variadic_call = 1;
     nargs_fixed = function->param_count;
   }
@@ -1712,13 +1727,14 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   /* _Complex 値引数は 2 FP レジスタ (re, im)、variadic aggregate は 8B stack
    * slot 列に展開されるので、cargs は余裕を持って確保し、argc で実エントリ数を数える。 */
   int argc = 0;
-  if (fn->nargs > 0) {
-    cargs = calloc((size_t)(8 * fn->nargs), sizeof(ir_val_t));
-    for (int i = 0; i < fn->nargs; i++) {
-      node_t *arg = fn->args[i];
+  if (call_node->argument_count > 0) {
+    cargs = calloc(
+        (size_t)(8 * call_node->argument_count), sizeof(ir_val_t));
+    for (int i = 0; i < call_node->argument_count; i++) {
+      node_t *arg = call_node->arguments[i];
       ir_abi_param_info_t declared_param = {0};
-      if (!fn->callee && i < nargs_fixed) {
-        declared_param = classify_call_param(fn, i);
+      if (!call_node->callee && i < nargs_fixed) {
+        declared_param = classify_call_param(call_node, i);
       }
       int forced_arg_full_size = 0;
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
@@ -1934,7 +1950,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 可変長部分 (idx >= nargs_fixed) は default argument promotion の
          * 規則上 int は double に昇格すべきだが、ABI 側で整数レジスタで
          * 渡される現状実装と整合が取れないため触らない。 */
-        if (!fn->callee && i < nargs_fixed) {
+        if (!call_node->callee && i < nargs_fixed) {
           if (declared_param.param_class == IR_ABI_PARAM_FLOAT) {
             cv = coerce_to_type_ex(ctx, cv, declared_param.type, 0,
                                    ps_node_conversion_value_is_unsigned(arg));
@@ -1976,27 +1992,28 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
     }
   }
   call->dst = ir_val_vreg(v, ret_ty);
-  if (fn->callee) {
+  if (call_node->callee) {
     call->callee = callee_v;
     call->sym = NULL;
     call->sym_len = 0;
   } else {
-    call->sym = fn->funcname;
-    call->sym_len = fn->funcname_len;
+    call->sym = call_node->direct_name;
+    call->sym_len = call_node->direct_name_len;
   }
   call->args = cargs;
   call->nargs = argc;
   call->is_variadic_call = is_variadic_call;
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
-  call->is_implicit_call = fn->base.is_implicit_func_decl ? 1 : 0;
+  call->is_implicit_call = call_node->base.is_implicit_func_decl ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
-  if (fn->callee) attach_callable_type_from_callee(call, fn->callee);
+  if (call_node->callee)
+    attach_callable_type_from_callee(call, call_node->callee);
   if (argc > 0) {
     call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
     for (int a = 0; a < argc; a++) {
       ir_type_t abi_type = cargs[a].type;
       if (call->sym && a < call->nargs_fixed) {
-        ir_abi_param_info_t param = classify_call_param(fn, a);
+        ir_abi_param_info_t param = classify_call_param(call_node, a);
         if (param.param_class == IR_ABI_PARAM_POINTER ||
             (param.param_class == IR_ABI_PARAM_AGGREGATE &&
              param.type == IR_TY_PTR)) {
@@ -3196,12 +3213,13 @@ static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node) {
 /* 仮引数を IR_PARAM で受け取り、frame slot に保存する (ALLOCA + STORE)。
  * struct 引数は呼び出し側がポインタを渡してくる前提で MEMCPY する。
  * 戻り値: 失敗時 0、成功時 1 (ctx->failed を立てるので 0 だけで判断可)。 */
-static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
+static int setup_function_params(
+    ir_build_ctx_t *ctx, node_function_definition_t *fn) {
   int int_arg_idx = 0;
   int fp_arg_idx = 0;
   int abi_idx = 0;
-  for (int i = 0; i < fn->nargs; i++) {
-    node_t *arg = fn->args[i];
+  for (int i = 0; i < fn->parameter_count; i++) {
+    node_t *arg = fn->parameters[i];
     if (!arg || arg->kind != ND_LVAR) {
       fail(ctx, "non-lvar parameter (Phase 4a unsupported)");
       return 0;
@@ -3302,7 +3320,8 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
  *   *[vla_row_stride_frame_off] = *[vla_row_stride_src_offset] * elem_size
  * src は先行パラメータ (例 m) で、既に setup_function_params で frame slot に
  * 格納済み。subscript の make_subscript_scaled_offset が vla_rsf 経路で読む。 */
-static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) {
+static int emit_vla_row_stride_for_params(
+    ir_build_ctx_t *ctx, node_function_definition_t *fn) {
   for (lvar_t *var = fn->lvars; var; var = ps_lvar_next_all(var)) {
     if (!ps_lvar_is_param(var)) continue;
     if (!ps_lvar_is_vla(var)) continue;
@@ -3391,9 +3410,13 @@ static int emit_vla_row_stride_for_params(ir_build_ctx_t *ctx, node_func_t *fn) 
  * main 以外: 末尾が IR_RET / IR_BR でなければ安全のため補う
  *           (ABI 上 caller が戻り値を期待していなければ実害なし)。
  * 非 void 関数で IR_RET なしの場合は C11 6.9.1p12 に従い未定義動作なので W3001 warning。 */
-static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn) {
-  int is_main = (fn->funcname_len == 4 &&
-                 fn->funcname && memcmp(fn->funcname, "main", 4) == 0);
+static void emit_implicit_return_if_missing(
+    ir_build_ctx_t *ctx, node_function_definition_t *fn) {
+  const psx_type_t *return_type =
+      ps_function_definition_return_type(fn);
+  int returns_void = return_type && return_type->kind == PSX_TYPE_VOID;
+  int is_main = (fn->name_len == 4 &&
+                 fn->name && memcmp(fn->name, "main", 4) == 0);
   ir_inst_t *tail = ctx->f->cur_block ? ctx->f->cur_block->tail : NULL;
   ir_op_t tail_op = tail ? tail->op : IR_NOP;
   int needs_ret = is_main
@@ -3402,52 +3425,54 @@ static void emit_implicit_return_if_missing(ir_build_ctx_t *ctx, node_func_t *fn
   if (needs_ret) {
     /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
      * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
-    if (!is_main) {
-      if (!ps_node_value_is_void((node_t *)fn)) {
-        diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
-                       "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
-                       fn->funcname_len, fn->funcname);
-      }
+    if (!is_main && !returns_void) {
+      diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
+                     "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
+                     fn->name_len, fn->name);
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
-    r->src1 = ps_node_value_is_void((node_t *)fn)
-                  ? ir_val_none()
-                  : ir_val_imm(IR_TY_I32, 0);
+    r->src1 = returns_void ? ir_val_none()
+                           : ir_val_imm(IR_TY_I32, 0);
     ir_func_append_inst(ctx->f, r);
   }
 }
 
-static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
+static int build_function(
+    ir_build_ctx_t *ctx, node_function_definition_t *fn) {
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
-  const psx_type_t *ret_type = ps_node_get_type((node_t *)fn);
-  (void)ret_type;
-  int ret_struct_size = aggregate_size_from_node((node_t *)fn);
-  ir_type_t ret_ty = ir_type_from_node((node_t *)fn);
-  if (ps_node_value_is_void((node_t *)fn)) {
+  const psx_type_t *ret_type =
+      ps_function_definition_return_type(fn);
+  if (!ret_type) {
+    fail(ctx, "missing canonical C function return type");
+    return 0;
+  }
+  int ret_struct_size = aggregate_size_from_type(ret_type);
+  ir_type_t ret_ty = ir_type_from_type(ret_type);
+  if (ret_type->kind == PSX_TYPE_VOID) {
     ret_ty = IR_TY_VOID;
   }
-  if (ret_struct_size > 0 && !ps_node_value_is_pointer_like((node_t *)fn) &&
+  if (ret_struct_size > 0 && !ps_type_is_pointer_like(ret_type) &&
       !cg_size_needs_indirect_struct(ret_struct_size)) {
     ret_ty = (ret_struct_size == 8) ? IR_TY_I64 : IR_TY_I32;
   }
   /* ポインタ戻り値 (`struct N *getp(...)` 等) は 8 バイト。i32 のままだと
    * return 時に coerce_to_type が i64 のポインタ値を i32 へ TRUNC して
    * 上位 32bit を捨ててしまう。 */
-  if (ret_ty == IR_TY_I32 && ps_node_value_is_pointer_like((node_t *)fn)) {
+  if (ret_ty == IR_TY_I32 && ps_type_is_pointer_like(ret_type)) {
     ret_ty = IR_TY_PTR;
   }
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
   if (ret_ty == IR_TY_I32 && ret_struct_size <= 0) {
-    if (ps_node_type_size((node_t *)fn) >= 8) {
+    if (ps_type_sizeof(ret_type) >= 8) {
       ret_ty = IR_TY_I64;
     }
   }
-  ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
+  ctx->f = ir_func_new(ctx->m, fn->name, fn->name_len, ret_ty);
   int c_signature_len = ps_type_format_canonical_signature(
-      fn->function_type, NULL, 0);
+      fn->signature, NULL, 0);
   if (c_signature_len < 0) {
     fail(ctx, "missing canonical C function signature");
     return 0;
@@ -3458,20 +3483,20 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     return 0;
   }
   if (ps_type_format_canonical_signature(
-          fn->function_type, ctx->f->c_signature,
+          fn->signature, ctx->f->c_signature,
           (size_t)c_signature_len + 1) != c_signature_len) {
     fail(ctx, "canonical C function signature changed during IR build");
     return 0;
   }
   ctx->f->c_signature_len = c_signature_len;
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
-  if (ps_node_value_is_complex((node_t *)fn)) {
+  if (ret_type->kind == PSX_TYPE_COMPLEX) {
     ctx->f->ret_complex_half =
-        (ps_node_value_fp_kind((node_t *)fn) == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+        (ret_type->fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
   }
-  ctx->f->is_variadic = fn->function_type->is_variadic_function;
+  ctx->f->is_variadic = fn->signature->is_variadic_function;
   ctx->f->is_static = fn->is_static;
-  ctx->f->nargs_fixed = fn->nargs;
+  ctx->f->nargs_fixed = fn->parameter_count;
   ctx->cur_fn = fn;
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
@@ -3531,7 +3556,7 @@ ir_module_t *ir_build_module(node_t **code) {
       fail(&ctx, "top-level node is not a function definition");
       return NULL;
     }
-    if (!build_function(&ctx, (node_func_t *)n)) return NULL;
+    if (!build_function(&ctx, (node_function_definition_t *)n)) return NULL;
   }
   if (g_ir_dump_enabled()) {
     char *buf = malloc(1 << 16);
@@ -3573,7 +3598,7 @@ ir_module_t *ir_build_function_module(node_t *fn) {
   if (!fn || fn->kind != ND_FUNCDEF) return NULL;
   ir_build_ctx_t ctx = {0};
   ctx.m = ir_module_new();
-  if (!build_function(&ctx, (node_func_t *)fn)) {
+  if (!build_function(&ctx, (node_function_definition_t *)fn)) {
     ir_module_free(ctx.m);
     return NULL;
   }

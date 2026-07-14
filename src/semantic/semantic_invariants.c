@@ -77,7 +77,7 @@ static int validate_node(const node_t *node,
     if (!function->signature ||
         function->signature->kind != PSX_TYPE_FUNCTION ||
         !ps_type_is_well_formed(function->signature) ||
-        node->type != function->signature->base) {
+        node->type != NULL) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }

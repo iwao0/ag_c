@@ -135,20 +135,21 @@ node_t *psx_lower_semantic_tree(
           ((node_block_t *)node)->body, fallback_diag_tok);
       break;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      for (int i = 0; i < function->nargs; i++)
-        function->args[i] = psx_lower_semantic_tree(
-            function->args[i], fallback_diag_tok);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++)
+        function->parameters[i] = psx_lower_semantic_tree(
+            function->parameters[i], fallback_diag_tok);
       node->rhs = psx_lower_semantic_tree(node->rhs, fallback_diag_tok);
       break;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       call->callee = psx_lower_semantic_tree(
           call->callee, fallback_diag_tok);
-      for (int i = 0; i < call->nargs; i++)
-        call->args[i] = psx_lower_semantic_tree(
-            call->args[i], fallback_diag_tok);
+      for (int i = 0; i < call->argument_count; i++)
+        call->arguments[i] = psx_lower_semantic_tree(
+            call->arguments[i], fallback_diag_tok);
       break;
     }
     case ND_SUBSCRIPT:
@@ -201,21 +202,21 @@ node_t *psx_lower_semantic_tree(
   return node;
 }
 
-static const psx_type_t *call_function_type(node_func_t *call) {
+static const psx_type_t *call_function_type(node_function_call_t *call) {
   if (!call) return NULL;
-  return ps_type_callable_function(call->function_type);
+  return ps_type_callable_function(call->callee_type);
 }
 
 static void lower_call_arguments(
-    node_func_t *call, const token_t *fallback_diag_tok) {
+    node_function_call_t *call, const token_t *fallback_diag_tok) {
   const psx_type_t *function = call_function_type(call);
   if (!call || !function || function->kind != PSX_TYPE_FUNCTION) return;
-  int count = call->nargs < function->param_count
-                  ? call->nargs : function->param_count;
+  int count = call->argument_count < function->param_count
+                  ? call->argument_count : function->param_count;
   if (count > 16) count = 16;
   for (int i = 0; i < count; i++) {
-    call->args[i] = lower_implicit_value_conversion(
-        call->args[i], function->param_types[i],
+    call->arguments[i] = lower_implicit_value_conversion(
+        call->arguments[i], function->param_types[i],
         call->base.tok ? call->base.tok
                        : (token_t *)fallback_diag_tok);
   }
@@ -231,7 +232,7 @@ static void lower_assignment_conversion(
 }
 
 void psx_lower_implicit_conversions(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
   switch (node->kind) {
@@ -243,21 +244,22 @@ void psx_lower_implicit_conversions(
       }
       break;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      for (int i = 0; i < function->nargs; i++)
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++)
         psx_lower_implicit_conversions(
-            function->args[i], function, fallback_diag_tok);
+            function->parameters[i], function, fallback_diag_tok);
       psx_lower_implicit_conversions(
           node->rhs, function, fallback_diag_tok);
       break;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       psx_lower_implicit_conversions(
           call->callee, current_func, fallback_diag_tok);
-      for (int i = 0; i < call->nargs; i++)
+      for (int i = 0; i < call->argument_count; i++)
         psx_lower_implicit_conversions(
-            call->args[i], current_func, fallback_diag_tok);
+            call->arguments[i], current_func, fallback_diag_tok);
       lower_call_arguments(call, fallback_diag_tok);
       break;
     }
@@ -282,7 +284,8 @@ void psx_lower_implicit_conversions(
           node->lhs, current_func, fallback_diag_tok);
       if (current_func && node->lhs) {
         node->lhs = lower_implicit_value_conversion(
-            node->lhs, ps_node_get_type((node_t *)current_func),
+            node->lhs,
+            ps_function_definition_return_type(current_func),
             node->tok ? node->tok : (token_t *)fallback_diag_tok);
       }
       break;

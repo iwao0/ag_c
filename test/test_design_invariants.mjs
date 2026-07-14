@@ -60,16 +60,38 @@ const sourceFiles = (await sourceFilesUnder("src")).sort();
 const legacyTypeMutationRe =
   /\b(?:psx_ctx_add_tag_member|ps_ctx_typedef_set_decl_type|ps_tag_member_set_decl_type|ps_tag_member_decl_type_mut|tag_member_record_set_decl_type|typedef_record_set_decl_type)\b/g;
 const legacyTypeMutations = [];
+const legacyFunctionNodeReferences = [];
+const legacyRecursiveTypeMetadata = [];
 for (const file of sourceFiles) {
   const source = await readFile(file, "utf8");
   for (const match of source.matchAll(legacyTypeMutationRe)) {
     legacyTypeMutations.push(`${file}:${match[0]}`);
+  }
+  if (/\bnode_func_t\b/.test(source)) {
+    legacyFunctionNodeReferences.push(file);
+  }
+  if (/\b(?:funcptr_ret_|ret_funcptr_|base_funcptr_ret_|ret_pointee_array_|funcptr_nargs_fixed|is_variadic_funcptr)\w*/.test(
+        source,
+      )) {
+    legacyRecursiveTypeMetadata.push(file);
   }
 }
 if (legacyTypeMutations.length) {
   throw new Error(
     "canonical typedef and tag-member records must not expose generic type mutation APIs:\n" +
       legacyTypeMutations.sort().join("\n"),
+  );
+}
+if (legacyFunctionNodeReferences.length) {
+  throw new Error(
+    "function definitions and calls must not share the legacy node_func_t record:\n" +
+      legacyFunctionNodeReferences.sort().join("\n"),
+  );
+}
+if (legacyRecursiveTypeMetadata.length) {
+  throw new Error(
+    "function pointer and array derivations must come from recursive canonical types:\n" +
+      legacyRecursiveTypeMetadata.sort().join("\n"),
   );
 }
 
@@ -93,14 +115,35 @@ if (!numberNodeStruct ||
     "node_num_t must derive integer identity and width from its canonical type",
   );
 }
-const functionNodeStruct = astSource.match(
-  /struct node_func_t\s*\{([\s\S]*?)\n\};/,
+const functionDefinitionStruct = astSource.match(
+  /struct node_function_definition_t\s*\{([^{}]*)\};/,
 );
-if (!functionNodeStruct ||
-    !/\bconst\s+psx_type_t\s*\*\s*function_type\s*;/.test(
-      functionNodeStruct[1],
+const functionCallStruct = astSource.match(
+  /struct node_function_call_t\s*\{([^{}]*)\};/,
+);
+if (/\bnode_func_t\b/.test(astSource) ||
+    !functionDefinitionStruct ||
+    !/\bnode_t\s*\*\*\s*parameters\s*;/.test(
+      functionDefinitionStruct[1],
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*signature\s*;/.test(
+      functionDefinitionStruct[1],
+    ) ||
+    /\b(?:arguments|callee|callee_type|direct_name)\b/.test(
+      functionDefinitionStruct[1],
+    ) ||
+    !functionCallStruct ||
+    !/\bnode_t\s*\*\*\s*arguments\s*;/.test(functionCallStruct[1]) ||
+    !/\bnode_t\s*\*\s*callee\s*;/.test(functionCallStruct[1]) ||
+    !/\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
+      functionCallStruct[1],
+    ) ||
+    /\b(?:parameters|signature|lvars|is_static)\b/.test(
+      functionCallStruct[1],
     )) {
-  throw new Error("node_func_t canonical callable type must be a const view");
+  throw new Error(
+    "function definitions and calls must use disjoint canonical AST records",
+  );
 }
 const typeNameRef = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*psx_type_name_ref_t\s*;/,
@@ -140,6 +183,32 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const nodeTypePublicSource = await readFile(
+  "src/parser/node_type_public.h",
+  "utf8",
+);
+const declarationPipelineSource = await readFile(
+  "src/declaration_pipeline.c",
+  "utf8",
+);
+const semanticInvariantsSource = await readFile(
+  "src/semantic/semantic_invariants.c",
+  "utf8",
+);
+const functionNodeBinding = declarationPipelineSource.match(
+  /if\s*\(request->function_node\)\s*\{([^{}]*)\}/,
+);
+if (!/\bps_function_definition_return_type\s*\(/.test(
+      nodeTypePublicSource,
+    ) ||
+    !/return\s+function->signature->base\s*;/.test(nodeUtilsSource) ||
+    !functionNodeBinding ||
+    /ps_node_bind_type\s*\(/.test(functionNodeBinding[1]) ||
+    !/node->type\s*!=\s*NULL/.test(semanticInvariantsSource)) {
+  throw new Error(
+    "function definition return types must be owned only by the canonical signature",
+  );
+}
 const castLoweringSource = await readFile(
   "src/lowering/cast_lowering.c",
   "utf8",

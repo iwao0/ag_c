@@ -171,7 +171,8 @@ static const psx_type_t *resolve_tag_base_for_test(
 static node_t *parse_raw_function_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
-  node_func_t *header = psx_apply_function_definition_header(
+  node_function_definition_t *header =
+      psx_apply_function_definition_header(
       &item->value.function_header);
   node_t *function = ps_parse_function_definition_body(
       stream, header, psx_frontend_local_declaration_callbacks());
@@ -182,7 +183,16 @@ static node_t *parse_raw_function_item(
 
 static node_num_t *as_num(node_t *n) { return (node_num_t *)n; }
 static node_lvar_t *as_lvar(node_t *n) { return (node_lvar_t *)n; }
-static node_func_t *as_func(node_t *n) { return (node_func_t *)n; }
+static node_function_definition_t *as_function_definition(node_t *n) {
+  ASSERT_TRUE(n != NULL);
+  ASSERT_EQ(ND_FUNCDEF, n->kind);
+  return (node_function_definition_t *)n;
+}
+static node_function_call_t *as_function_call(node_t *n) {
+  ASSERT_TRUE(n != NULL);
+  ASSERT_EQ(ND_FUNCALL, n->kind);
+  return (node_function_call_t *)n;
+}
 static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
@@ -316,7 +326,8 @@ static void assert_canonical_type_signature(const psx_type_t *type,
   }
 }
 
-static lvar_t *find_func_lvar(node_func_t *fn, const char *name) {
+static lvar_t *find_func_lvar(
+    node_function_definition_t *fn, const char *name) {
   int len = (int)strlen(name);
   for (lvar_t *v = fn ? fn->lvars : NULL; v; v = v->next_all) {
     if (v->len == len && strncmp(v->name, name, (size_t)len) == 0) return v;
@@ -332,7 +343,8 @@ static void test_local_declaration_frontend_boundary() {
       "typedef int T, U; T value = b; U other = 1; "
       "static int s = 4, t = 5; "
       "return block_fn(value) + self + other + s + t; }");
-  node_func_t *main_function = as_func(parsed_code[0]);
+  node_function_definition_t *main_function =
+      as_function_definition(parsed_code[0]);
   ASSERT_TRUE(find_func_lvar(main_function, "self") != NULL);
   ASSERT_TRUE(find_func_lvar(main_function, "b") != NULL);
   ASSERT_TRUE(find_func_lvar(main_function, "value") != NULL);
@@ -347,7 +359,8 @@ static void test_function_parameter_point_of_declaration_boundary() {
       "int __parameter_order(int m, int k, int t[][m][3][k]); "
       "int __parameter_order(int m, int k, int t[][m][3][k]) { "
       "return t[0][0][0][0]; }");
-  node_func_t *function = as_func(parsed_code[0]);
+  node_function_definition_t *function =
+      as_function_definition(parsed_code[0]);
   lvar_t *m = find_func_lvar(function, "m");
   lvar_t *k = find_func_lvar(function, "k");
   lvar_t *t = find_func_lvar(function, "t");
@@ -365,7 +378,7 @@ static void test_function_parameter_point_of_declaration_boundary() {
   parsed_code = parse_program_input(
       "int __deep_parameter_vla(int n, "
       "int t[][n][40000][n][n][n][n][n][n][n][n]) { return 0; }");
-  function = as_func(parsed_code[0]);
+  function = as_function_definition(parsed_code[0]);
   lvar_t *n = find_func_lvar(function, "n");
   t = find_func_lvar(function, "t");
   ASSERT_TRUE(n != NULL);
@@ -558,8 +571,8 @@ static void test_member_access_resolution_boundary() {
       "struct __MemberBoundary { int value; }; "
       "int __member_boundary_function(void) { "
       "struct __MemberBoundary object; int *pointer; return 0; }");
-  lvar_t *object = find_func_lvar(as_func(parsed_code[0]), "object");
-  lvar_t *pointer = find_func_lvar(as_func(parsed_code[0]), "pointer");
+  lvar_t *object = find_func_lvar(as_function_definition(parsed_code[0]), "object");
+  lvar_t *pointer = find_func_lvar(as_function_definition(parsed_code[0]), "pointer");
   ASSERT_TRUE(object != NULL);
   ASSERT_TRUE(pointer != NULL);
   node_t *base = psx_node_new_lvar_identifier_ref_for(object);
@@ -1597,17 +1610,17 @@ static void test_function_call_type_binding_boundary() {
   node_t *direct = parse_expr_input_with_existing_locals(
       "__call_type_boundary(3)");
   ASSERT_EQ(ND_FUNCALL, direct->kind);
-  node_func_t *direct_call = (node_func_t *)direct;
-  ASSERT_TRUE(direct_call->function_type == NULL);
+  node_function_call_t *direct_call = (node_function_call_t *)direct;
+  ASSERT_TRUE(direct_call->callee_type == NULL);
   ASSERT_TRUE(direct_call->callee != NULL);
   ASSERT_EQ(ND_IDENTIFIER, direct_call->callee->kind);
   ASSERT_TRUE(direct->type == NULL);
   direct = psx_frontend_analyze_expression(direct, NULL);
-  direct_call = (node_func_t *)direct;
-  ASSERT_TRUE(direct_call->function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, direct_call->function_type->kind);
+  direct_call = (node_function_call_t *)direct;
+  ASSERT_TRUE(direct_call->callee_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, direct_call->callee_type->kind);
   ASSERT_TRUE(direct->type != NULL);
-  ASSERT_TRUE(direct->type == direct_call->function_type->base);
+  ASSERT_TRUE(direct->type == direct_call->callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, direct->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, direct->type->fp_kind);
 
@@ -1628,15 +1641,15 @@ static void test_function_call_type_binding_boundary() {
       fp, ps_type_new_pointer(ps_type_clone(function)));
   node_t *indirect = parse_expr_input_with_existing_locals("fp(4)");
   ASSERT_EQ(ND_FUNCALL, indirect->kind);
-  node_func_t *indirect_call = (node_func_t *)indirect;
+  node_function_call_t *indirect_call = (node_function_call_t *)indirect;
   ASSERT_TRUE(indirect_call->callee != NULL);
-  ASSERT_TRUE(indirect_call->function_type == NULL);
+  ASSERT_TRUE(indirect_call->callee_type == NULL);
   ASSERT_TRUE(indirect->type == NULL);
   indirect = psx_frontend_analyze_expression(indirect, NULL);
-  ASSERT_TRUE(indirect_call->function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_call->function_type->kind);
+  ASSERT_TRUE(indirect_call->callee_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_call->callee_type->kind);
   ASSERT_TRUE(indirect->type != NULL);
-  ASSERT_TRUE(indirect->type == indirect_call->function_type->base);
+  ASSERT_TRUE(indirect->type == indirect_call->callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, indirect->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, indirect->type->fp_kind);
 
@@ -1644,13 +1657,13 @@ static void test_function_call_type_binding_boundary() {
   node_t *implicit = parse_expr_input_with_existing_locals(
       "__implicit_call_type_boundary(5)");
   ASSERT_EQ(ND_FUNCALL, implicit->kind);
-  node_func_t *implicit_call = (node_func_t *)implicit;
-  ASSERT_TRUE(implicit_call->function_type == NULL);
+  node_function_call_t *implicit_call = (node_function_call_t *)implicit;
+  ASSERT_TRUE(implicit_call->callee_type == NULL);
   ASSERT_TRUE(implicit->type == NULL);
   implicit = psx_frontend_analyze_expression(implicit, NULL);
-  implicit_call = (node_func_t *)implicit;
+  implicit_call = (node_function_call_t *)implicit;
   ASSERT_TRUE(implicit_call->base.is_implicit_func_decl);
-  ASSERT_TRUE(implicit_call->function_type == NULL);
+  ASSERT_TRUE(implicit_call->callee_type == NULL);
   ASSERT_TRUE(implicit->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, implicit->type->kind);
   ASSERT_EQ(TK_INT, implicit->type->scalar_kind);
@@ -1694,7 +1707,7 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(program[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, program[0]->kind);
 
-  node_func_t *fn = as_func(program[0]);
+  node_function_definition_t *fn = as_function_definition(program[0]);
   lvar_t *temp = NULL;
   for (lvar_t *var = fn->lvars; var; var = var->next_all) {
     if (var->len >= 17 &&
@@ -1722,11 +1735,11 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
       "double retconv(int x) { return x; } "
       "int main(void) { int x=3; double d=x; d=x; return (int)id(x); }");
 
-  node_block_t *retconv_body = as_block(as_func(program[1])->base.rhs);
+  node_block_t *retconv_body = as_block(as_function_definition(program[1])->base.rhs);
   ASSERT_EQ(ND_RETURN, retconv_body->body[0]->kind);
   ASSERT_EQ(ND_INT_TO_FP, retconv_body->body[0]->lhs->kind);
 
-  node_block_t *main_body = as_block(as_func(program[2])->base.rhs);
+  node_block_t *main_body = as_block(as_function_definition(program[2])->base.rhs);
   node_t *decl_init = main_body->body[1];
   ASSERT_EQ(ND_ASSIGN, decl_init->kind);
   ASSERT_TRUE(decl_init->is_decl_initializer);
@@ -1743,9 +1756,9 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
                              ? ret->lhs->lhs : ret->lhs;
   ASSERT_EQ(ND_FP_TO_INT, return_value->kind);
   ASSERT_EQ(ND_FUNCALL, return_value->lhs->kind);
-  node_func_t *call = as_func(return_value->lhs);
-  ASSERT_EQ(1, call->nargs);
-  ASSERT_EQ(ND_INT_TO_FP, call->args[0]->kind);
+  node_function_call_t *call = as_function_call(return_value->lhs);
+  ASSERT_EQ(1, call->argument_count);
+  ASSERT_EQ(ND_INT_TO_FP, call->arguments[0]->kind);
 }
 
 static void test_compound_assignment_semantic_lowering_boundary() {
@@ -1802,8 +1815,8 @@ static void test_translation_unit_frontend_boundary() {
   node_t *parsed = parse_raw_function_item(&stream, &item);
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__frontend_boundary", 19) != NULL);
-  ASSERT_TRUE(find_func_lvar(as_func(parsed), "input") != NULL);
-  node_block_t *parsed_body = as_block(as_func(parsed)->base.rhs);
+  ASSERT_TRUE(find_func_lvar(as_function_definition(parsed), "input") != NULL);
+  node_block_t *parsed_body = as_block(as_function_definition(parsed)->base.rhs);
   ASSERT_EQ(ND_ASSIGN, parsed_body->body[1]->kind);
   ASSERT_TRUE(parsed_body->body[1]->is_source_compound_assignment);
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
@@ -1814,7 +1827,7 @@ static void test_translation_unit_frontend_boundary() {
       psx_frontend_program_from(tk_tokenize((char *)source));
   ASSERT_TRUE(analyzed != NULL);
   ASSERT_TRUE(analyzed[0] != NULL);
-  node_block_t *analyzed_body = as_block(as_func(analyzed[0])->base.rhs);
+  node_block_t *analyzed_body = as_block(as_function_definition(analyzed[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, analyzed_body->body[1]->kind);
   ASSERT_TRUE(!analyzed_body->body[1]->is_source_compound_assignment);
   ASSERT_EQ(TK_EOF, analyzed_body->body[1]->source_op);
@@ -4993,7 +5006,7 @@ static void test_expr_unary_ops() {
   parsed_code = parse_program_input(
       "int cast_unsigned_short_compare(short s) { return (unsigned)s > 5; }");
   node_t *unsigned_short_return =
-      as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+      as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, unsigned_short_return->kind);
   ASSERT_EQ(ND_LT, unsigned_short_return->lhs->kind);
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(
@@ -5062,7 +5075,7 @@ static void test_expr_generic() {
       "(int (*)(ExprCanonicalParam, int *, ...))0, "
       "int (*)(ExprCanonicalParam, int *, ...): 53, default: 7); }");
   node_t *canonical_generic_return =
-      as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+      as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, canonical_generic_return->kind);
   ASSERT_EQ(53, as_num(canonical_generic_return->lhs)->val);
   node_t *canonical_expr_funcptr = parse_expr_input_with_existing_locals(
@@ -5111,7 +5124,7 @@ static void test_expr_generic() {
       "typedef int (*unary_fn)(int); int id(int x){return x;} "
       "int main(){return _Generic(id, unary_fn:9, int:4, default:5);}");
   node_t *typedef_funcref_return =
-      as_block(as_func(parsed_code[1])->base.rhs)->body[0];
+      as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, typedef_funcref_return->kind);
   ASSERT_EQ(ND_NUM, typedef_funcref_return->lhs->kind);
   ASSERT_EQ(9, as_num(typedef_funcref_return->lhs)->val);
@@ -5133,7 +5146,7 @@ static void test_expr_generic() {
       "int main(){ return _Generic(1, _Atomic(_Atomic(int)):1, default:2); }");
 
   parsed_code = parse_program_input("int main() { int *p=0; return _Generic(p, int*: 3, default: 7); }");
-  node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(3, as_num(ret->lhs)->val);
@@ -5142,7 +5155,7 @@ static void test_expr_generic() {
       "typedef int (*fp_t)(int); "
       "int f(int x){ return x; } "
       "int main(){ fp_t p=f; return _Generic(p, int (*)(int): 13, default: 7); }");
-  node_t *ret_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  node_t *ret_fp = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_fp->kind);
   ASSERT_EQ(ND_NUM, ret_fp->lhs->kind);
   ASSERT_EQ(13, as_num(ret_fp->lhs)->val);
@@ -5150,7 +5163,7 @@ static void test_expr_generic() {
   parsed_code = parse_program_input(
       "double fd(double x){ return x; } "
       "int main(){ return _Generic(fd, double (*)(double): 17, default: 7); }");
-  node_t *ret_func_designator = as_block(as_func(parsed_code[1])->base.rhs)->body[0];
+  node_t *ret_func_designator = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_func_designator->kind);
   ASSERT_EQ(ND_NUM, ret_func_designator->lhs->kind);
   ASSERT_EQ(17, as_num(ret_func_designator->lhs)->val);
@@ -5158,7 +5171,7 @@ static void test_expr_generic() {
   parsed_code = parse_program_input(
       "int fg(int x){ return x; } "
       "int main(){ int (*p)(int)=fg; return _Generic((p), int (*)(int): 19, default: 7); }");
-  node_t *ret_parenthesized_fp = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  node_t *ret_parenthesized_fp = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_fp->kind);
   ASSERT_EQ(ND_NUM, ret_parenthesized_fp->lhs->kind);
   ASSERT_EQ(19, as_num(ret_parenthesized_fp->lhs)->val);
@@ -5168,7 +5181,7 @@ static void test_expr_generic() {
       "int main(){ int (*(*p)(void))[3]=__tm_gen_rowfn; "
       "return _Generic((p), int (*(*)(void))[3]: 23, default: 7); }");
   node_t *ret_parenthesized_nested_fp =
-      as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+      as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_nested_fp->kind);
   ASSERT_EQ(ND_NUM, ret_parenthesized_nested_fp->lhs->kind);
   ASSERT_EQ(23, as_num(ret_parenthesized_nested_fp->lhs)->val);
@@ -5178,7 +5191,7 @@ static void test_expr_generic() {
       "int (*(*__tm_gen_gfp)(void))[3]; "
       "int main(){ return _Generic((__tm_gen_gfp), int (*(*)(void))[3]: 29, default: 7); }");
   node_t *ret_parenthesized_global_nested_fp =
-      as_block(as_func(parsed_code[1])->base.rhs)->body[0];
+      as_block(as_function_definition(parsed_code[1])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_parenthesized_global_nested_fp->kind);
   ASSERT_EQ(ND_NUM, ret_parenthesized_global_nested_fp->lhs->kind);
   ASSERT_EQ(29, as_num(ret_parenthesized_global_nested_fp->lhs)->val);
@@ -5269,14 +5282,14 @@ static void test_expr_generic() {
       "int main(){ union U{int x;}; return _Generic((union U){.x=1}, union U: 1, default: 2); }");
   parsed_code = parse_program_input(
       "int main(){ struct S{int x;}; return _Generic((struct S){1}, struct S: 1, default: 2); }");
-  node_t *ret_struct = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret_struct = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_struct->kind);
   ASSERT_EQ(ND_NUM, ret_struct->lhs->kind);
   ASSERT_EQ(1, as_num(ret_struct->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ struct S{int x;}; struct T{int x;}; return _Generic((struct S){1}, struct T: 1, default: 2); }");
-  node_t *ret_struct_nomatch = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_struct_nomatch = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_struct_nomatch->kind);
   ASSERT_EQ(ND_NUM, ret_struct_nomatch->lhs->kind);
   ASSERT_EQ(2, as_num(ret_struct_nomatch->lhs)->val);
@@ -5290,140 +5303,140 @@ static void test_expr_generic() {
       "int main(){ double a[1]={1.0}; double *p=a; return _Generic(p[0], double:42, default:99); }");
   parsed_code = parse_program_input(
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; return _Generic(pc, int*:1, char*:2, default:3); }");
-  node_t *ret_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
+  node_t *ret_ptr_kind = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_kind->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_kind->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_kind->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ double d=1.0; double *pd=&d; return _Generic(pd, int*:1, double*:2, default:3); }");
-  node_t *ret_ptr_fp = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_ptr_fp = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_fp->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_fp->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_fp->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ struct S{int x;}; struct T{int x;}; struct S s={1}; struct S *ps=&s; return _Generic(ps, struct T*:1, struct S*:2, default:3); }");
-  node_t *ret_ptr_tag = as_block(as_func(parsed_code[0])->base.rhs)->body[4];
+  node_t *ret_ptr_tag = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[4];
   ASSERT_EQ(ND_RETURN, ret_ptr_tag->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_tag->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_tag->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; const int *p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
-  node_t *ret_ptr_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_ptr_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_const->lhs)->val);
 
   parsed_code = parse_program_input(
       "typedef const int *cip_t; int main(){ int x=0; cip_t p=&x; return _Generic(p, int*:1, const int*:2, default:3); }");
-  node_t *ret_typedef_const_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_typedef_const_ptr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_const_ptr->kind);
   ASSERT_EQ(ND_NUM, ret_typedef_const_ptr->lhs->kind);
   ASSERT_EQ(2, as_num(ret_typedef_const_ptr->lhs)->val);
 
   parsed_code = parse_program_input(
       "typedef volatile int *vip_t; int main(){ int x=0; vip_t p=&x; return _Generic(p, volatile int*:2, int*:1, default:3); }");
-  node_t *ret_typedef_volatile_ptr = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_typedef_volatile_ptr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_typedef_volatile_ptr->kind);
   ASSERT_EQ(ND_NUM, ret_typedef_volatile_ptr->lhs->kind);
   ASSERT_EQ(2, as_num(ret_typedef_volatile_ptr->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; char c=0; int *pi=&x; char *pc=&c; int **ppi=&pi; return _Generic(ppi, char**:1, int**:2, default:3); }");
-  node_t *ret_ptr_ptr_kind = as_block(as_func(parsed_code[0])->base.rhs)->body[5];
+  node_t *ret_ptr_ptr_kind = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[5];
   ASSERT_EQ(ND_RETURN, ret_ptr_ptr_kind->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_ptr_kind->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_ptr_kind->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; unsigned int u=0; unsigned int *pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
-  node_t *ret_ptr_unsigned = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  node_t *ret_ptr_unsigned = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_unsigned->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_unsigned->lhs)->val);
 
   parsed_code = parse_program_input(
       "typedef unsigned int *uip_t; int main(){ unsigned int u=0; uip_t pu=&u; return _Generic(pu, int*:1, unsigned int*:2, default:3); }");
-  node_t *ret_ptr_unsigned_typedef = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_ptr_unsigned_typedef = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_unsigned_typedef->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_unsigned_typedef->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_unsigned_typedef->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int *p=&x; int * const *pp=&p; return _Generic(pp, int**:1, int * const *:2, default:3); }");
-  node_t *ret_ptr_level_const = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  node_t *ret_ptr_level_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_level_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_level_const->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int *p=&x; int * volatile *pp=&p; return _Generic(pp, int**:1, int * volatile *:2, default:3); }");
-  node_t *ret_ptr_level_volatile = as_block(as_func(parsed_code[0])->base.rhs)->body[3];
+  node_t *ret_ptr_level_volatile = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[3];
   ASSERT_EQ(ND_RETURN, ret_ptr_level_volatile->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_level_volatile->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_level_volatile->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ unsigned long ul=1; return _Generic(ul, unsigned long:2, unsigned int:1, default:3); }");
-  node_t *ret_unsigned_long = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret_unsigned_long = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_unsigned_long->kind);
   ASSERT_EQ(ND_NUM, ret_unsigned_long->lhs->kind);
   ASSERT_EQ(2, as_num(ret_unsigned_long->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ long l=1; return _Generic(l, unsigned long:1, long:2, default:3); }");
-  node_t *ret_long_signed = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret_long_signed = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_long_signed->kind);
   ASSERT_EQ(ND_NUM, ret_long_signed->lhs->kind);
   ASSERT_EQ(2, as_num(ret_long_signed->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((1 ? (char)1 : (char)2), char:1, int:2, default:3); }");
-  node_t *ret_ternary_promoted_char = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret_ternary_promoted_char = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_promoted_char->kind);
   ASSERT_EQ(ND_NUM, ret_ternary_promoted_char->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ternary_promoted_char->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((1 ? (long double)1.0 : (double)2.0), long double:4, double:5, default:6); }");
-  node_t *ret_ternary_long_double = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret_ternary_long_double = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_ternary_long_double->kind);
   ASSERT_EQ(ND_NUM, ret_ternary_long_double->lhs->kind);
   ASSERT_EQ(4, as_num(ret_ternary_long_double->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((long double){1.0}, long double:4, double:5, default:6); }");
-  node_t *ret_compound_long_double = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret_compound_long_double = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_compound_long_double->kind);
   ASSERT_EQ(ND_NUM, ret_compound_long_double->lhs->kind);
   ASSERT_EQ(4, as_num(ret_compound_long_double->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic((_Complex double)1, double:5, _Complex double:4, default:6); }");
-  node_t *ret_complex_cast = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret_complex_cast = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_complex_cast->kind);
   ASSERT_EQ(ND_NUM, ret_complex_cast->lhs->kind);
   ASSERT_EQ(4, as_num(ret_complex_cast->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ _Complex double z=1; return _Generic(z, double:5, _Complex double:4, default:6); }");
-  node_t *ret_complex_lvar = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret_complex_lvar = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret_complex_lvar->kind);
   ASSERT_EQ(ND_NUM, ret_complex_lvar->lhs->kind);
   ASSERT_EQ(4, as_num(ret_complex_lvar->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ return _Generic(1, int const:2, default:3); }");
-  node_t *ret_int_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret_int_post_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret_int_post_const->kind);
   ASSERT_EQ(ND_NUM, ret_int_post_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_int_post_const->lhs)->val);
 
   parsed_code = parse_program_input(
       "int main(){ int x=0; int const *p=&x; return _Generic(p, int const *:2, int *:1, default:3); }");
-  node_t *ret_ptr_post_const = as_block(as_func(parsed_code[0])->base.rhs)->body[2];
+  node_t *ret_ptr_post_const = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[2];
   ASSERT_EQ(ND_RETURN, ret_ptr_post_const->kind);
   ASSERT_EQ(ND_NUM, ret_ptr_post_const->lhs->kind);
   ASSERT_EQ(2, as_num(ret_ptr_post_const->lhs)->val);
@@ -5519,7 +5532,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(8, as_num(a3)->val);
 
   parsed_code = parse_program_input("int main() { int x; return sizeof(x); }");
-  node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
@@ -5531,7 +5544,7 @@ static void test_expr_sizeof() {
   expect_parse_ok_without_message("int main(void){ int (*p)[3][4]; return sizeof(*p); }", "W3004");
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
@@ -5540,37 +5553,37 @@ static void test_expr_sizeof() {
       "typedef struct Forward Forward; "
       "struct Forward { void *items; int count; int capacity; }; "
       "int main(void) { Forward *body = 0; return sizeof(*body); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(16, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return _Alignof(struct S); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(4, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S (*)[3]); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(8, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3 (*)[2]); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(8, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return sizeof(struct S[3]); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(12, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("typedef int A3[3]; int main() { return sizeof(A3[2]); }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(24, as_num(ret->lhs)->val);
@@ -5827,9 +5840,9 @@ static void test_program_funcdef() {
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(0, as_func(parsed_code[0])->nargs);
+  ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
 
-  node_t *body = as_func(parsed_code[0])->base.rhs;
+  node_t *body = as_function_definition(parsed_code[0])->base.rhs;
   ASSERT_EQ(ND_BLOCK, body->kind);
   ASSERT_EQ(ND_ASSIGN, as_block(body)->body[0]->kind);
   ASSERT_EQ(0, as_lvar(as_block(body)->body[0]->lhs)->offset);
@@ -5845,44 +5858,44 @@ static void test_funcall() {
     node_t *node = parse_expr_input("add(1, 2)");
 
   ASSERT_EQ(ND_FUNCALL, node->kind);
-  ASSERT_EQ(2, as_func(node)->nargs);
-  ASSERT_EQ(1, as_num(as_func(node)->args[0])->val);
-  ASSERT_EQ(2, as_num(as_func(node)->args[1])->val);
+  ASSERT_EQ(2, as_function_call(node)->argument_count);
+  ASSERT_EQ(1, as_num(as_function_call(node)->arguments[0])->val);
+  ASSERT_EQ(2, as_num(as_function_call(node)->arguments[1])->val);
 
   node= parse_expr_input("foo((1,2), 3)");
   ASSERT_EQ(ND_FUNCALL, node->kind);
-  ASSERT_EQ(2, as_func(node)->nargs);
-  ASSERT_EQ(ND_COMMA, as_func(node)->args[0]->kind);
-  ASSERT_EQ(ND_NUM, as_func(node)->args[1]->kind);
-  ASSERT_EQ(3, as_num(as_func(node)->args[1])->val);
+  ASSERT_EQ(2, as_function_call(node)->argument_count);
+  ASSERT_EQ(ND_COMMA, as_function_call(node)->arguments[0]->kind);
+  ASSERT_EQ(ND_NUM, as_function_call(node)->arguments[1]->kind);
+  ASSERT_EQ(3, as_num(as_function_call(node)->arguments[1])->val);
 
   parsed_code = parse_program_input(
       "int main() { int (*fp)(int); fp(1); }");
-  node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, stmt->kind);
-  ASSERT_EQ(ND_LVAR, as_func(stmt)->callee->kind);
-  ASSERT_EQ(1, as_func(stmt)->nargs);
+  ASSERT_EQ(ND_LVAR, as_function_call(stmt)->callee->kind);
+  ASSERT_EQ(1, as_function_call(stmt)->argument_count);
 
   parsed_code = parse_program_input(
       "int inc(int x){ return x + 1; } "
       "int main(void){ int (*fp)(int)=inc; (*(int (*)(int))fp)(1); }");
-  node_t *cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  node_t *cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, as_func(cast_deref_call)->callee->kind);
+  ASSERT_EQ(ND_CAST, as_function_call(cast_deref_call)->callee->kind);
   ASSERT_TRUE(ps_type_derived_function(
-      ps_node_get_type(as_func(cast_deref_call)->callee)) != NULL);
-  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_func(cast_deref_call)->callee));
+      ps_node_get_type(as_function_call(cast_deref_call)->callee)) != NULL);
+  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(cast_deref_call)->callee));
 
   parsed_code = parse_program_input(
       "int inc(int x){ return x + 1; } "
       "typedef int (*Fn)(int); "
       "int main(void){ int (*fp)(int)=inc; (*(Fn)fp)(1); }");
-  node_t *typedef_cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
+  node_t *typedef_cast_deref_call = as_block(as_function_definition(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, typedef_cast_deref_call->kind);
-  ASSERT_EQ(ND_CAST, as_func(typedef_cast_deref_call)->callee->kind);
+  ASSERT_EQ(ND_CAST, as_function_call(typedef_cast_deref_call)->callee->kind);
   ASSERT_TRUE(ps_type_derived_function(
-      ps_node_get_type(as_func(typedef_cast_deref_call)->callee)) != NULL);
-  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_func(typedef_cast_deref_call)->callee));
+      ps_node_get_type(as_function_call(typedef_cast_deref_call)->callee)) != NULL);
+  ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_function_call(typedef_cast_deref_call)->callee));
 }
 
 // --- ここから追加テスト ---
@@ -5892,30 +5905,30 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input("int add(int a, int b) { return a+b; }");
 
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
-  ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[0]->kind);
-  ASSERT_EQ(ND_LVAR, as_func(parsed_code[0])->args[1]->kind);
+  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
+  ASSERT_EQ(ND_LVAR, as_function_definition(parsed_code[0])->parameters[0]->kind);
+  ASSERT_EQ(ND_LVAR, as_function_definition(parsed_code[0])->parameters[1]->kind);
 
   parsed_code = parse_program_input("int apply(int (*fp)(int), int x) { return x; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+  ASSERT_EQ(2, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input(
       "int sum_variadic(int first, ...) { return first; }");
-  node_func_t *variadic = as_func(parsed_code[0]);
+  node_function_definition_t *variadic = as_function_definition(parsed_code[0]);
   ASSERT_EQ(ND_FUNCDEF, variadic->base.kind);
-  ASSERT_TRUE(variadic->function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic->function_type->kind);
-  ASSERT_TRUE(variadic->function_type->is_variadic_function);
+  ASSERT_TRUE(variadic->signature != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic->signature->kind);
+  ASSERT_TRUE(variadic->signature->is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
   parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_EQ(0, as_func(parsed_code[0])->nargs);
+  ASSERT_EQ(0, as_function_definition(parsed_code[0])->parameter_count);
 
   parsed_code = parse_program_input(
       "typedef void VoidAlias; int no_args(VoidAlias); "
@@ -5944,7 +5957,7 @@ static void test_funcdef_with_params() {
 static void test_stmt_if() {
   printf("test_stmt_if...\n");
   parsed_code = parse_program_input("int main() { if (1) 2; }");
-  node_t *body = as_func(parsed_code[0])->base.rhs;
+  node_t *body = as_function_definition(parsed_code[0])->base.rhs;
   node_t *if_node = as_block(body)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
@@ -5958,7 +5971,7 @@ static void test_stmt_if() {
 static void test_stmt_if_else() {
   printf("test_stmt_if_else...\n");
   parsed_code = parse_program_input("int main() { if (1) 2; else 3; }");
-  node_t *if_node = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *if_node = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_IF, if_node->kind);
   ASSERT_EQ(1, as_num(if_node->lhs)->val);        // 条件
@@ -5970,7 +5983,7 @@ static void test_stmt_if_else() {
 static void test_stmt_while() {
   printf("test_stmt_while...\n");
   parsed_code = parse_program_input("int main() { while (1) 2; }");
-  node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *wh = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_WHILE, wh->kind);
   ASSERT_EQ(1, as_num(wh->lhs)->val);   // 条件
@@ -5981,7 +5994,7 @@ static void test_stmt_do_while() {
   printf("test_stmt_do_while...\n");
   parsed_code = parse_program_input("int main(void) { int a = 0; do a=a+1; while (a<3); }");
   /* body[0] は int a=0 の初期化代入、body[1] が do-while */
-  node_t *dw = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *dw = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_DO_WHILE, dw->kind);
   ASSERT_EQ(ND_ASSIGN, dw->rhs->kind);  // 本体: a=a+1
@@ -5991,7 +6004,7 @@ static void test_stmt_do_while() {
 static void test_stmt_break_continue() {
   printf("test_stmt_break_continue...\n");
   parsed_code = parse_program_input("int main() { while (1) { continue; break; } }");
-  node_t *wh = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *wh = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   node_t *body = wh->rhs;
 
   ASSERT_EQ(ND_WHILE, wh->kind);
@@ -6004,7 +6017,7 @@ static void test_stmt_switch_case_default() {
   printf("test_stmt_switch_case_default...\n");
   parsed_code = parse_program_input("int main(void) { int a = 0; switch (a) { case 1: a=2; break; default: a=3; } }");
   /* body[0] は int a = 0、body[1] が switch */
-  node_t *sw = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *sw = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_SWITCH, sw->kind);
   ASSERT_EQ(ND_LVAR, sw->lhs->kind);
@@ -6019,7 +6032,7 @@ static void test_stmt_for() {
   printf("test_stmt_for...\n");
   parsed_code = parse_program_input("int main(void) { int a; for (a=0; a<10; a=a+1) a; }");
   /* body[0] は int a; (宣言のみで初期化なし → ND_NUM ダミー)、body[1] が for */
-  node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  node_t *fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
 
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: a=0
@@ -6031,7 +6044,7 @@ static void test_stmt_for() {
 static void test_stmt_for_with_decl_init() {
   printf("test_stmt_for_with_decl_init...\n");
   parsed_code = parse_program_input("int main() { for (int i=0; i<3; i=i+1) i; }");
-  node_t *fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_ASSIGN, as_ctrl(fr)->init->kind);  // init: int i=0
@@ -6040,7 +6053,7 @@ static void test_stmt_for_with_decl_init() {
   ASSERT_EQ(ND_LVAR, fr->rhs->kind);              // 本体: i
 
   parsed_code = parse_program_input("int main() { for (int i=0, j=2; i<j; i=i+1) i; }");
-  fr = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  fr = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_FOR, fr->kind);
   ASSERT_EQ(ND_COMMA, as_ctrl(fr)->init->kind);   // init: int i=0, j=2
 }
@@ -6048,26 +6061,26 @@ static void test_stmt_for_with_decl_init() {
 static void test_stmt_return() {
   printf("test_stmt_return...\n");
   parsed_code = parse_program_input("int main() { return 42; }");
-  node_t *ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->kind);
   ASSERT_EQ(42, as_num(ret->lhs)->val);
 
   parsed_code = parse_program_input("void noop() { return; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_TRUE(ret->lhs == NULL);
 
   parsed_code = parse_program_input("_Bool flag(void) { return 200; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_NE, ret->lhs->kind);
   ASSERT_EQ(ND_NUM, ret->lhs->rhs->kind);
   ASSERT_EQ(0, as_num(ret->lhs->rhs)->val);
 
   parsed_code = parse_program_input("char narrow(int x) { return x; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
   ASSERT_EQ(ND_SHR, ret->lhs->lhs->kind);
@@ -6076,7 +6089,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(ret->lhs->lhs));
 
   parsed_code = parse_program_input("int cast_unsigned_local(void) { unsigned u; return (int)u; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[1];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(ret->lhs));
@@ -6084,7 +6097,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ps_node_integer_value_is_unsigned(ret->lhs->lhs));
 
   parsed_code = parse_program_input("int cast_pointer_int(int *p) { return (int)p; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
   ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
@@ -6093,7 +6106,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
 
   parsed_code = parse_program_input("long cast_pointer_long(int *p) { return (long)p; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
   ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs));
@@ -6102,7 +6115,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ps_node_value_is_pointer_like(ret->lhs->lhs));
 
   parsed_code = parse_program_input("int deref_intptr_cast(long addr) { return *(int *)addr; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_DEREF, ret->lhs->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->lhs->kind);
@@ -6112,7 +6125,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(!ps_node_value_is_pointer_like(ret->lhs->lhs->lhs));
 
   parsed_code = parse_program_input("double void_cast_keeps_operand_fp(double d) { (void)d; return d; }");
-  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_CAST, body->body[0]->kind);
   ASSERT_TRUE(ps_node_get_type(body->body[0])->kind == PSX_TYPE_VOID);
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(body->body[0]));
@@ -6125,7 +6138,7 @@ static void test_stmt_return() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(ret->lhs));
 
   parsed_code = parse_program_input("unsigned char unarrow(int x) { return x; }");
-  ret = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  ret = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
   ASSERT_EQ(ND_CAST, ret->lhs->kind);
   ASSERT_EQ(ND_BITAND, ret->lhs->lhs->kind);
@@ -6135,33 +6148,40 @@ static void test_stmt_return() {
   parsed_code = parse_program_input(
       "struct __ret_meta_s { int a; int b; } __ret_meta_struct(void) { "
       "struct __ret_meta_s r; return r; }");
-  node_func_t *ret_meta_fn = as_func(parsed_code[0]);
+  node_function_definition_t *ret_meta_fn = as_function_definition(parsed_code[0]);
   ret = as_block(ret_meta_fn->base.rhs)->body[1];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) != NULL);
-  ASSERT_EQ(8, ps_node_aggregate_value_size((node_t *)ret_meta_fn));
+  const psx_type_t *ret_meta_type =
+      ps_function_definition_return_type(ret_meta_fn);
+  ASSERT_TRUE(ret_meta_fn->base.type == NULL);
+  ASSERT_TRUE(ret_meta_type != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, ret_meta_type->kind);
+  ASSERT_EQ(8, ps_type_sizeof(ret_meta_type));
   psx_frontend_analyze_function((node_t *)ret_meta_fn, NULL);
-  ASSERT_EQ(8, ps_node_aggregate_value_size((node_t *)ret_meta_fn));
+  ASSERT_TRUE(ret_meta_fn->base.type == NULL);
+  ASSERT_TRUE(ret_meta_type ==
+              ps_function_definition_return_type(ret_meta_fn));
 
   parsed_code =
       parse_program_input("_Complex double __ret_meta_complex(void) { return 1; }");
-  ret_meta_fn = as_func(parsed_code[0]);
+  ret_meta_fn = as_function_definition(parsed_code[0]);
   ret = as_block(ret_meta_fn->base.rhs)->body[0];
   ASSERT_EQ(ND_RETURN, ret->kind);
-  ASSERT_TRUE(ps_node_get_type((node_t *)ret_meta_fn) != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_value_fp_kind((node_t *)ret_meta_fn));
-  ASSERT_TRUE(ps_node_value_is_complex((node_t *)ret_meta_fn));
+  ret_meta_type = ps_function_definition_return_type(ret_meta_fn);
+  ASSERT_TRUE(ret_meta_fn->base.type == NULL);
+  ASSERT_TRUE(ret_meta_type != NULL);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ret_meta_type->fp_kind);
   psx_frontend_analyze_function((node_t *)ret_meta_fn, NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_value_fp_kind((node_t *)ret_meta_fn));
-  ASSERT_TRUE(ps_node_value_is_complex((node_t *)ret_meta_fn));
+  ASSERT_TRUE(ret_meta_fn->base.type == NULL);
+  ASSERT_TRUE(ret_meta_type ==
+              ps_function_definition_return_type(ret_meta_fn));
 }
 
 static void test_stmt_block() {
   printf("test_stmt_block...\n");
   parsed_code = parse_program_input("int main() { { 1; 2; } }");
-  node_t *blk = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *blk = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
 
   ASSERT_EQ(ND_BLOCK, blk->kind);
   ASSERT_EQ(ND_NUM, as_block(blk)->body[0]->kind);
@@ -6174,7 +6194,7 @@ static void test_stmt_block() {
 static void test_stmt_goto_label() {
   printf("test_stmt_goto_label...\n");
   parsed_code = parse_program_input("int main() { goto L1; L1: return 42; }");
-  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_GOTO, body->body[0]->kind);
   ASSERT_EQ(ND_LABEL, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->rhs->kind);
@@ -6204,7 +6224,7 @@ static void test_expr_deref_addr() {
 static void test_expr_member_access() {
   printf("test_expr_member_access...\n");
   parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; s.b = 3; return s.b; }");
-  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   node_t *assign = body->body[2];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
   ASSERT_EQ(ND_DEREF, assign->lhs->kind);
@@ -6218,7 +6238,7 @@ static void test_expr_member_access() {
   parsed_code = parse_program_input(
       "int f(void) { static struct { int n; int m; } s = {3, 4}; "
       "s.n += 1; return s.n + s.m; }");
-  node_func_t *fn = as_func(parsed_code[0]);
+  node_function_definition_t *fn = as_function_definition(parsed_code[0]);
   lvar_t *anonymous_static = find_func_lvar(fn, "s");
   ASSERT_TRUE(anonymous_static != NULL);
   ASSERT_TRUE(anonymous_static->decl_type != NULL);
@@ -6231,7 +6251,7 @@ static void test_expr_member_access() {
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; return s.a; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
     if (body->body[i]->kind == ND_RETURN) {
@@ -6247,7 +6267,7 @@ static void test_expr_member_access() {
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; return (int)s.a; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
     if (body->body[i]->kind == ND_RETURN) {
@@ -6262,7 +6282,7 @@ static void test_expr_member_access() {
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
       "int main() { struct S { u8 a; }; struct S s; return (signed)s.a; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
     if (body->body[i]->kind == ND_RETURN) {
@@ -6275,14 +6295,14 @@ static void test_expr_member_access() {
       ret->lhs->kind == ND_CAST ? ret->lhs->lhs : ret->lhs));
 
   parsed_code = parse_program_input("int main() { struct S { int a; int b; }; struct S s; struct S *p; p=&s; p->b=5; return p->b; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   assign = body->body[4];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
   ASSERT_EQ(ND_DEREF, assign->lhs->kind);
   ASSERT_EQ(4, ps_node_type_size(assign->lhs));
 
   parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={{1,2}}; return s.a[0]; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
@@ -6291,13 +6311,13 @@ static void test_expr_member_access() {
       "int first(char *p) { return p[0]; } "
       "int main() { struct C { char x[1]; }; "
       "struct C c = {\"Z\"}; return first(c.x); }");
-  body = as_block(as_func(parsed_code[1])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[1])->base.rhs);
   ret = body->body[2];
   ASSERT_EQ(ND_RETURN, ret->kind);
   node_t *call = ret->lhs;
   ASSERT_EQ(ND_FUNCALL, call->kind);
-  ASSERT_EQ(1, as_func(call)->nargs);
-  node_t *array_member = as_func(call)->args[0];
+  ASSERT_EQ(1, as_function_call(call)->argument_count);
+  node_t *array_member = as_function_call(call)->arguments[0];
   ASSERT_EQ(ND_DEREF, array_member->kind);
   ASSERT_TRUE(ps_node_deref_decays_to_address(array_member));
   ASSERT_EQ(1, ps_node_type_size(array_member));
@@ -6306,7 +6326,7 @@ static void test_expr_member_access() {
   parsed_code = parse_program_input(
       "int main(void) { struct B { signed int x:3; }; "
       "struct B b; return b.x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
     if (body->body[i]->kind == ND_RETURN) ret = body->body[i];
@@ -6329,7 +6349,7 @@ static void test_expr_member_access() {
       "typedef enum CanonicalBitfieldEnum CanonicalBitfieldEnumType; "
       "int main(void) { struct B { CanonicalBitfieldEnumType x:3; }; "
       "struct B b; return b.x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ret = NULL;
   for (int i = 0; body->body[i]; i++) {
     if (body->body[i]->kind == ND_RETURN) ret = body->body[i];
@@ -6375,93 +6395,93 @@ static void test_type_decl() {
   printf("test_type_decl...\n");
   // int x = 5; → ND_ASSIGN
   parsed_code = parse_program_input("int main() { int x = 5; }");
-  node_t *stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  node_t *stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_LVAR, stmt->lhs->kind);
   ASSERT_EQ(5, as_num(stmt->rhs)->val);
 
   // int x; → ND_NUM(0) ダミー
   parsed_code = parse_program_input("int main() { int x; }");
-  stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_NUM, stmt->kind);
   ASSERT_EQ(0, as_num(stmt)->val);
 
   // int a, b=1; → 初期化のある宣言子のみ式木に残る
   parsed_code = parse_program_input("int main() { int a, b=1; }");
-  stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_ASSIGN, stmt->kind);
   ASSERT_EQ(ND_NUM, stmt->rhs->kind);
   ASSERT_EQ(1, as_num(stmt->rhs)->val);
 
   parsed_code = parse_program_input("int main() { int a=1, b=2; }");
-  stmt = as_block(as_func(parsed_code[0])->base.rhs)->body[0];
+  stmt = as_block(as_function_definition(parsed_code[0])->base.rhs)->body[0];
   ASSERT_EQ(ND_COMMA, stmt->kind);
 
   parsed_code = parse_program_input("int main() { struct S; union U; enum E; return 0; }");
-  node_block_t *body = as_block(as_func(parsed_code[0])->base.rhs);
+  node_block_t *body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_NUM, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { struct S; struct S *p; p=0; return p==0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; } *p; p=0; return p==0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; enum E { A=1, B=2 }; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1, B, C=10 }; return A+B+C; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1, B=A+2, C=(B*2)-1 }; return C; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1, B=~A, C=(A<<3)|2, D=(C&10)^1 }; return D; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1, B=(A<2), C=(A==1)&&(B||0), D=C?7:9 }; return D; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { unsigned u = 3; _Bool b = 1; signed s = 2; return u+b+s; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("typedef int myint; int main() { myint x = 3; return x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("typedef int *intptr; int main() { int a=7; intptr p=&a; return *p; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
@@ -6485,13 +6505,13 @@ static void test_type_decl() {
   }
 
   parsed_code = parse_program_input("int main() { unsigned long long v = 13; signed char c = 7; return v+c; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("typedef unsigned long long ull; int main() { ull v = 5; return v; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
@@ -6499,7 +6519,7 @@ static void test_type_decl() {
    * 関数本体にはダミーの ND_NUM(0) だけが残る (init はデータセクションで行う)。
    * 続く register/auto/restrict 宣言は通常どおり ND_ASSIGN を生成。 */
   parsed_code = parse_program_input("int main() { static int x=3; register int r=2; auto int a=1; int *restrict p=0; return a+r+x+(p==0); }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
@@ -6508,7 +6528,7 @@ static void test_type_decl() {
 
   parsed_code = parse_program_input(
       "int main() { const const int x=3; volatile volatile int y=4; int *restrict restrict p=0; return x+y+(p==0); }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
@@ -6521,81 +6541,81 @@ static void test_type_decl() {
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
 
   parsed_code = parse_program_input("int main() { _Alignas(16) int x=3; _Atomic int y=4; return x+y; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { _Atomic(int) z=5; return z; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { _Atomic(int*) p=0; _Atomic int q=1; return q + (p==0); }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { _Complex double cx=1.0; _Imaginary float iy=2.0f; return (cx!=0)+(iy!=0); }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { _Complex double a=1.0; _Complex double b=2.0; _Complex double c=a+b; return c!=0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { int a[1+2]; a[0]=3; return a[0]; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int a[2][3]; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x:3; int y; }; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { struct { int x; }; int y; }; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { union { int x; char c; }; int y; }; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { _Static_assert(1, \"ok\"); int x=3; return x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int x={3}; return x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
   ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_volatile_qualified);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1 }; return (enum E)42; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { const int cx=1; volatile int vx=2; return cx+vx; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_TRUE(ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
   ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_volatile_qualified);
@@ -6605,7 +6625,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   assert_node_pointer_qualifiers(body->body[0]->lhs, "1", "0");
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
@@ -6613,7 +6633,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int *const *volatile pp=0; return pp==0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   const psx_type_t *qualified_pp_type =
       ps_node_get_type(body->body[0]->lhs);
@@ -6630,7 +6650,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { int x=42; int *p=&x; int **pp=&p; return **pp; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
@@ -6643,35 +6663,35 @@ static void test_type_decl() {
   ASSERT_EQ(4, ps_node_storage_type_size(body->body[3]->lhs));
 
   parsed_code = parse_program_input("int main() { int a[3]={1,2,3}; return a[2]; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { int a[2]=1; return a[0]+a[1]; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { char s[4]=\"abc\"; return s[2]; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S s={1,2}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=t; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S a={1,2}; struct S b={3,4}; struct S s=(0?a:b); return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
@@ -6680,7 +6700,7 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S t={1,2}; struct S s=(t.y=9,t); return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
@@ -6688,14 +6708,14 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { struct I { int x; int y; }; struct S { struct I i; int z; }; struct S t={{1,2},3}; struct S s=t; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_NUM, body->body[1]->kind);
   ASSERT_EQ(ND_COMMA, body->body[2]->kind);
@@ -6703,26 +6723,26 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[4]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={7}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u=7; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U v={7}; union U u=v; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U v={7}; union U u=(v.x=9,v); return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_ASSIGN, body->body[2]->kind);
@@ -6730,25 +6750,25 @@ static void test_type_decl() {
   ASSERT_EQ(ND_RETURN, body->body[3]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=7}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=7,.y=2}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; int y; }; struct S s={.y=2,.x=1}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int x; }; struct S s=(struct S)(struct S){1}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   bool same_tag_cast_has_return = false;
   for (int i = 1; body->body[i]; i++) {
@@ -6760,7 +6780,7 @@ static void test_type_decl() {
   ASSERT_TRUE(same_tag_cast_has_return);
 
   parsed_code = parse_program_input("int main() { struct A { int x; }; struct B { int x; }; struct A a={1}; struct B b=(struct B)a; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   bool has_return = false;
   for (int i = 1; body->body[i]; i++) {
@@ -6772,13 +6792,13 @@ static void test_type_decl() {
   ASSERT_TRUE(has_return);
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u=(union U)(union U){.x=7}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_ASSIGN || body->body[1]->kind == ND_COMMA);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { union A { int x; }; union B { int x; }; union A a={.x=1}; union B b=(union B)a; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   has_return = false;
   for (int i = 1; body->body[i]; i++) {
@@ -6790,58 +6810,58 @@ static void test_type_decl() {
   ASSERT_TRUE(has_return);
 
   parsed_code = parse_program_input("int main() { struct I { int x; int y; }; struct O { struct I i; int z; }; struct O o={{1,2},3}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
   parsed_code = parse_program_input("int main() { struct I { int x; int y; }; union U { struct I i; int raw; }; union U u={{4,5}}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
   parsed_code = parse_program_input("int main() { union U { int x; char y; }; union U u={.x=1,.y=2}; return u.x; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S s={{1,2},3}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { struct S { int a[2]; int z; }; struct S s={1,2,3}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int src[2]={5,6}; struct S { int a[2]; int z; }; struct S s={src,7}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_TRUE(body->body[1]->kind == ND_NUM || body->body[1]->kind == ND_COMMA || body->body[1]->kind == ND_ASSIGN);
   ASSERT_TRUE((body->body[2] && body->body[2]->kind == ND_RETURN) ||
               (body->body[3] && body->body[3]->kind == ND_RETURN));
 
   parsed_code = parse_program_input("int main() { struct S { char a[4]; int z; }; struct S s={\"ab\",7}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int a[4]={[2]=7,[0]=1}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_COMMA, body->body[0]->kind);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   // 入れ子 designator: struct の配列メンバへの .member[idx]=val
   parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={.a[1]=3}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   // brace init 開始で struct 全体を 0 で埋める処理が入り、init_chain は
   // ND_COMMA チェイン (zero-fills → 明示 .a[1]=3) になる。
@@ -6850,14 +6870,14 @@ static void test_type_decl() {
 
   // 入れ子 designator: struct の配列メンバへの複数指定
   parsed_code = parse_program_input("int main() { struct S { int a[2]; }; struct S s={.a[0]=1,.a[1]=2}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   // 入れ子 designator: union の配列メンバへの .member[idx]=val
   parsed_code = parse_program_input("int main() { union U { int a[2]; int z; }; union U u={.a[1]=3}; return 0; }");
-  body = as_block(as_func(parsed_code[0])->base.rhs);
+  body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_NUM, body->body[0]->kind);
   ASSERT_EQ(ND_COMMA, body->body[1]->kind);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
@@ -6942,7 +6962,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(unsigned_pointer_value));
 
   parsed_code = parse_program_input("int main() { unsigned int x=1; return x; }");
-  node_func_t *fn = as_func(parsed_code[0]);
+  node_function_definition_t *fn = as_function_definition(parsed_code[0]);
   node_block_t *body = as_block(fn->base.rhs);
   node_t *assign = body->body[0];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
@@ -6970,7 +6990,7 @@ static void test_type_metadata_bridge() {
   x_lvar->decl_type = x_decl_a;
 
   parsed_code = parse_program_input("int __tm_local_bool_ref(void) { _Bool b=1; return b; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *bool_ref_lvar = find_func_lvar(fn, "b");
   ASSERT_TRUE(bool_ref_lvar != NULL);
   ASSERT_TRUE(ps_lvar_get_decl_type(bool_ref_lvar) != NULL);
@@ -6981,7 +7001,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(bool_direct_ref) == bool_ref_lvar->decl_type);
 
   parsed_code = parse_program_input("int __tm_local_atomic_ref(void) { _Atomic int a=1; return a; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *atomic_ref_lvar = find_func_lvar(fn, "a");
   ASSERT_TRUE(atomic_ref_lvar != NULL);
   ASSERT_TRUE(ps_lvar_get_decl_type(atomic_ref_lvar) != NULL);
@@ -6993,7 +7013,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_param_identity(const long long ll, volatile char ch, "
       "_Atomic int ai) { return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ll = find_func_lvar(fn, "ll");
   lvar_t *param_ch = find_func_lvar(fn, "ch");
   lvar_t *param_ai = find_func_lvar(fn, "ai");
@@ -7010,7 +7030,7 @@ static void test_type_metadata_bridge() {
       "typedef int *__tm_qualified_ptr_alias; "
       "int __tm_qualified_ptr_alias_fn(void) { int x=0; "
       "const __tm_qualified_ptr_alias p=&x; *p=7; return x; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *qualified_ptr_alias = find_func_lvar(fn, "p");
   ASSERT_TRUE(qualified_ptr_alias != NULL);
   const psx_type_t *qualified_ptr_alias_type =
@@ -7025,7 +7045,7 @@ static void test_type_metadata_bridge() {
       "typedef const int __tm_const_array_alias[2]; "
       "int __tm_const_array_alias_fn(void) { "
       "volatile __tm_const_array_alias values={1,2}; return values[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *qualified_array_alias = find_func_lvar(fn, "values");
   ASSERT_TRUE(qualified_array_alias != NULL);
   const psx_type_t *qualified_array_alias_type =
@@ -7286,7 +7306,7 @@ static void test_type_metadata_bridge() {
       "typedef const struct LocalTag LocalAlias; LocalAlias alias_value; "
       "typedef double LocalSigParam; "
       "int (*p)(LocalSigParam, int *, ...); return 0; }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *sig_lvar = find_func_lvar(fn, "p");
   lvar_t *aligned_value = find_func_lvar(fn, "aligned_value");
   lvar_t *alias_value = find_func_lvar(fn, "alias_value");
@@ -7351,7 +7371,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_sig_nested_local(void) { "
       "int (*(*q)(void))(int); return _Generic(q, int (*(*)(void))(int): 37, default: 7); }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *sig_nested_lvar = find_func_lvar(fn, "q");
   ASSERT_TRUE(sig_nested_lvar != NULL);
   const psx_type_t *sig_nested_lvar_type = ps_lvar_get_decl_type(sig_nested_lvar);
@@ -7367,7 +7387,7 @@ static void test_type_metadata_bridge() {
       "typedef double NestedSigParam; "
       "int __tm_sig_nested_param(int (*(*q)(void))(NestedSigParam)) "
       "{ return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *sig_nested_param = find_func_lvar(fn, "q");
   ASSERT_TRUE(sig_nested_param != NULL);
   const psx_type_t *sig_nested_param_type = ps_lvar_get_decl_type(sig_nested_param);
@@ -7610,7 +7630,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, row_scalar_type->kind);
   ASSERT_EQ(PSX_TYPE_ARRAY, row_scalar_type->base->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, row_scalar_type->base->base->kind);
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *row_scalar_elem = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -7627,7 +7647,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_bool_matrix_use(void) { "
       "  _Bool m[2][3]; m[1][0] = 99; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *bool_matrix = find_func_lvar(fn, "m");
   ASSERT_TRUE(bool_matrix != NULL);
   const psx_type_t *bool_matrix_type = ps_lvar_get_decl_type(bool_matrix);
@@ -7688,7 +7708,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_param_nested_rows(int (*(*rows)[2])[3]) { "
       "  return (*rows)[0][1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *nested_rows = find_func_lvar(fn, "rows");
   ASSERT_TRUE(nested_rows != NULL);
   const psx_type_t *nested_rows_type = ps_lvar_get_decl_type(nested_rows);
@@ -7722,7 +7742,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_param_canonical(int a[2][3], int (*p)[3], "
       "int *q[3], int (*cb)(int)) { return a[0][0] + p[0][0] + *q[0] + cb(0); }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *canonical_a = find_func_lvar(fn, "a");
   lvar_t *canonical_p = find_func_lvar(fn, "p");
   lvar_t *canonical_q = find_func_lvar(fn, "q");
@@ -7818,7 +7838,7 @@ static void test_type_metadata_bridge() {
       "int __tm_local_ptr_rows(void) { "
       "  int a[2][3]; int (*m[2][2])[3] = {{a, a}, {a, a}}; "
       "  return m[0][0][1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *local_ptr_rows = find_func_lvar(fn, "m");
   ASSERT_TRUE(local_ptr_rows != NULL);
   const psx_type_t *local_ptr_rows_type = ps_lvar_get_decl_type(local_ptr_rows);
@@ -7855,7 +7875,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_local_scalar_array_flags(void) { "
       "  unsigned char u[2]; _Bool b[2]; int i[2]; return u[0] + b[0] + i[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *local_scalar_u = find_func_lvar(fn, "u");
   ASSERT_TRUE(local_scalar_u != NULL);
   ASSERT_TRUE(ps_lvar_get_decl_type(local_scalar_u) != NULL);
@@ -7895,7 +7915,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_larr_base(void) { int a[2]; return a[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *larr_base_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(larr_base_a != NULL);
   ASSERT_TRUE(ps_lvar_get_decl_type(larr_base_a) != NULL);
@@ -7905,7 +7925,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "struct __tm_byref_S { long a; long b; long c; }; "
       "long __tm_byref(struct __tm_byref_S s) { return s.b; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *byref_s = find_func_lvar(fn, "s");
   ASSERT_TRUE(byref_s != NULL);
   ASSERT_TRUE(byref_s->is_byref_param);
@@ -7929,7 +7949,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_vla_sidecar(int m) { int a[2][3]; int (*p)[m] = a; return sizeof(p); }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_ptr_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(vla_ptr_lvar != NULL);
   ASSERT_TRUE(vla_ptr_lvar->decl_type != NULL);
@@ -7964,7 +7984,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_vla_ptr_arith(int m, int a[2][3]) { "
       "int (*p)[m] = a; return (*(p + 1))[2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *vla_ptr_arith_elem = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -7984,7 +8004,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_vla_fp_sidecar(int m) { double a[2][3]; double (*p)[m] = a; "
       "p[0][1] = 9.5; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_fp_array_lvar = find_func_lvar(fn, "a");
   ASSERT_TRUE(vla_fp_array_lvar != NULL);
   node_t *vla_fp_array_node =
@@ -8002,7 +8022,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_vla_fp_leaf(int n) { double a[n]; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_fp_leaf_lvar = find_func_lvar(fn, "a");
   ASSERT_TRUE(vla_fp_leaf_lvar != NULL);
   const psx_type_t *vla_fp_leaf = vla_fp_leaf_lvar->decl_type;
@@ -8016,7 +8036,7 @@ static void test_type_metadata_bridge() {
       "struct __tm_ptrarr_S { int x; }; "
       "int __tm_ptrarr(void) { const struct __tm_ptrarr_S a[1] = {{1}}; "
       "const struct __tm_ptrarr_S (*p)[1] = &a; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr_p != NULL);
   ASSERT_TRUE(ptrarr_p->decl_type != NULL);
@@ -8478,7 +8498,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_ptrarr2d(void) { int a[2][3]; int (*p)[3] = a; return p[1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr2d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr2d_p != NULL);
   ASSERT_TRUE(ptrarr2d_p->decl_type != NULL);
@@ -8506,7 +8526,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "typedef int __tm_Row3[3]; typedef int (*__tm_PA3)[3]; "
       "int __tm_typedef_ptrarr(void) { __tm_Row3 *a; __tm_PA3 b; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *typedef_row_ptr = find_func_lvar(fn, "a");
   lvar_t *typedef_ptrarr = find_func_lvar(fn, "b");
   ASSERT_TRUE(typedef_row_ptr != NULL);
@@ -8553,7 +8573,7 @@ static void test_type_metadata_bridge() {
       "int __tm_ptrarr_leaf_flags(void) { "
       "  unsigned char uc[1][3]; unsigned char (*up)[3] = uc; "
       "  _Bool bb[1][2]; _Bool (*bp)[2] = bb; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *leaf_up = find_func_lvar(fn, "up");
   ASSERT_TRUE(leaf_up != NULL);
   node_t *leaf_up_node = psx_node_new_lvar_identifier_ref_for(leaf_up);
@@ -8574,7 +8594,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_scalar_unsigned_not_pointee(void) { "
       "unsigned char u = 1; return u; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *leaf_scalar_u = find_func_lvar(fn, "u");
   ASSERT_TRUE(leaf_scalar_u != NULL);
   node_t *leaf_scalar_u_node = psx_node_new_lvar_identifier_ref_for(leaf_scalar_u);
@@ -8584,7 +8604,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_scalar_bool_not_pointee(void) { "
       "_Bool b = 1; return b; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *leaf_scalar_b = find_func_lvar(fn, "b");
   ASSERT_TRUE(leaf_scalar_b != NULL);
   node_t *leaf_scalar_b_node = psx_node_new_lvar_identifier_ref_for(leaf_scalar_b);
@@ -8694,7 +8714,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "typedef int __tm_M[2][3][4]; "
       "int __tm_ptrarr3d(__tm_M *p) { return (*p)[1][2][3]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr3d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(ptrarr3d_p != NULL);
   ASSERT_TRUE(ptrarr3d_p->decl_type != NULL);
@@ -8738,7 +8758,7 @@ static void test_type_metadata_bridge() {
       "struct __tm_ptrarr2d_S a[2][3]; "
       "struct __tm_ptrarr2d_S (*p)[2][3] = &a; "
       "return (*p)[0][0].a; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr2d_struct_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(ptrarr2d_struct_a != NULL);
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(ptrarr2d_struct_a));
@@ -8786,7 +8806,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_array3d(void) { int a[2][2][3]; return a[0][1][0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *array3d_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(array3d_a != NULL);
   ASSERT_TRUE(array3d_a->decl_type != NULL);
@@ -8826,7 +8846,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_array2d_identifier(void) { int a[2][3]; return a[1][1]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *array2d_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(array2d_a != NULL);
   node_t *array2d_node = psx_node_new_lvar_identifier_ref_for(array2d_a);
@@ -8855,7 +8875,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "typedef int __tm_M2[3][4]; "
       "int __tm_param_ptrarr3d(__tm_M2 *a, int i, int j, int k) { return a[i][j][k]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ptrarr3d_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(param_ptrarr3d_a != NULL);
   node_t *param_ptrarr3d_node = psx_node_new_lvar_identifier_ref_for(param_ptrarr3d_a);
@@ -8881,7 +8901,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_param_decl_type(unsigned char u, double d, int i) { return u + i; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_decl_u = find_func_lvar(fn, "u");
   lvar_t *param_decl_d = find_func_lvar(fn, "d");
   lvar_t *param_decl_i = find_func_lvar(fn, "i");
@@ -8938,7 +8958,7 @@ static void test_type_metadata_bridge() {
       "int (*__tm_ret_ptrarr3d(void))[3][4]; "
       "int __tm_local_ptrarr3d(void) { "
       "  int (*p)[3][4] = __tm_ret_ptrarr3d(); return p[1][2][0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *local_ptrarr3d_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(local_ptrarr3d_p != NULL);
   ASSERT_TRUE(local_ptrarr3d_p->decl_type != NULL);
@@ -8968,7 +8988,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_vla3d(int n, int m, int k) { "
       "  int a[n][m][k]; return a[0][0][0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla3d_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(vla3d_a != NULL);
   ASSERT_TRUE(ps_lvar_is_vla(vla3d_a));
@@ -9020,7 +9040,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_vla_param_shape(int m, int k, int t[][m][3][k]) { "
       "  return t[0][0][0][0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_param_m = find_func_lvar(fn, "m");
   lvar_t *vla_param_k = find_func_lvar(fn, "k");
   lvar_t *vla_param_t = find_func_lvar(fn, "t");
@@ -9132,7 +9152,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int __tm_vla_const_inner(int n) { int a[n][4]; return a[0][1]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *vla_const_inner_a = find_func_lvar(fn, "a");
   ASSERT_TRUE(vla_const_inner_a != NULL);
   ASSERT_TRUE(ps_lvar_is_vla(vla_const_inner_a));
@@ -9154,7 +9174,7 @@ static void test_type_metadata_bridge() {
       "int __tm_ptrarr_ptr_elem(void) { "
       "  int a, b, c; __tm_IP row[3] = { &a, &b, &c }; "
       "  __tm_IP (*pia)[3] = &row; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *ptrarr_ip_pia = find_func_lvar(fn, "pia");
   ASSERT_TRUE(ptrarr_ip_pia != NULL);
   ASSERT_TRUE(ptrarr_ip_pia->decl_type != NULL);
@@ -9194,7 +9214,7 @@ static void test_type_metadata_bridge() {
       "typedef int *__tm_param_IP; "
       "int __tm_param_ptrarr_ptr_elem(__tm_param_IP (*p)[3]) { "
       "  return *(*p)[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ptrarr_ip_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_ptrarr_ip_p != NULL);
   ASSERT_TRUE(param_ptrarr_ip_p->decl_type != NULL);
@@ -9243,7 +9263,7 @@ static void test_type_metadata_bridge() {
       "typedef int *__tm_param_IP2; "
       "int __tm_param_ptrarr_ptr_elem_2d(__tm_param_IP2 (*p)[2][3]) { "
       "  return *(*p)[1][0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_ptrarr_ip2_p = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_ptrarr_ip2_p != NULL);
   ASSERT_TRUE(param_ptrarr_ip2_p->decl_type != NULL);
@@ -9312,7 +9332,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_nested_ptrarr(int (*(*rows)[2])[3]) { "
       "  return (*rows)[0][1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *nested2_rows = find_func_lvar(fn, "rows");
   ASSERT_TRUE(nested2_rows != NULL);
   node_t *nested2_rows_node = psx_node_new_lvar_identifier_ref_for(nested2_rows);
@@ -9366,7 +9386,7 @@ static void test_type_metadata_bridge() {
       "int __tm_local_nested_ptrarr(void) { "
       "  int x[2][3]; int (*(*ptrs)[2])[3] = &(int (*[2])[3]){x, x}; "
       "  return (*ptrs)[0][1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *local_nested_ptrs = find_func_lvar(fn, "ptrs");
   ASSERT_TRUE(local_nested_ptrs != NULL);
   node_t *local_nested_ptrs_node =
@@ -9388,7 +9408,7 @@ static void test_type_metadata_bridge() {
       "  int x[2][3]; __tm_RowPtr3_local *typedef_ptrs = "
       "      (__tm_RowPtr3_local[]){x, x}; "
       "  return typedef_ptrs[0][0][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *local_typedef_ptrs = find_func_lvar(fn, "typedef_ptrs");
   ASSERT_TRUE(local_typedef_ptrs != NULL);
   ASSERT_TRUE(local_typedef_ptrs->decl_type != NULL);
@@ -9430,7 +9450,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_flat_rowptr_param(int (*rows[2])[3]) { "
       "  return rows[0][0][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *flat_rows_param = find_func_lvar(fn, "rows");
   ASSERT_TRUE(flat_rows_param != NULL);
   ASSERT_TRUE(flat_rows_param->decl_type != NULL);
@@ -9555,7 +9575,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_ptr_array_unary_deref(void) { "
       "  int w = 1; int *p1[2] = { &w, &w }; return *p1[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *ptrarr_ret = body->body[2];
   ASSERT_EQ(ND_RETURN, ptrarr_ret->kind);
@@ -9632,7 +9652,7 @@ static void test_type_metadata_bridge() {
       "int __tm_unsigned_ptrptr(void) { "
       "  unsigned char a[2]; unsigned char *lp = a; "
       "  unsigned char **pp = &lp; return pp[0][1]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *unsigned_pp = find_func_lvar(fn, "pp");
   ASSERT_TRUE(unsigned_pp != NULL);
   ASSERT_TRUE(unsigned_pp->decl_type != NULL);
@@ -9798,7 +9818,7 @@ static void test_type_metadata_bridge() {
   typed_funcptr_callee_mem.kind = ND_LVAR;
   typed_funcptr_callee_mem.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  node_func_t typed_indirect_call = {0};
+  node_function_call_t typed_indirect_call = {0};
   typed_indirect_call.base.kind = ND_FUNCALL;
   typed_indirect_call.callee = &typed_funcptr_callee_mem;
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_indirect_call) == NULL);
@@ -9807,7 +9827,7 @@ static void test_type_metadata_bridge() {
   typed_stale_funcptr_callee_mem.kind = ND_LVAR;
   typed_stale_funcptr_callee_mem.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  node_func_t typed_stale_indirect_call = {0};
+  node_function_call_t typed_stale_indirect_call = {0};
   typed_stale_indirect_call.base.kind = ND_FUNCALL;
   typed_stale_indirect_call.callee = &typed_stale_funcptr_callee_mem;
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_stale_indirect_call) == NULL);
@@ -9816,12 +9836,12 @@ static void test_type_metadata_bridge() {
   typed_tag_ret_funcptr_callee_mem.kind = ND_LVAR;
   psx_type_t *typed_tag_ret = ps_type_new_tag(TK_STRUCT, "Ret", 3, 7, 4);
   typed_tag_ret_funcptr_callee_mem.type = ps_type_new_pointer(typed_tag_ret);
-  node_func_t typed_tag_ret_indirect_call = {0};
+  node_function_call_t typed_tag_ret_indirect_call = {0};
   typed_tag_ret_indirect_call.base.kind = ND_FUNCALL;
   typed_tag_ret_indirect_call.callee = &typed_tag_ret_funcptr_callee_mem;
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_tag_ret_indirect_call) == NULL);
 
-  node_func_t typed_cached_ptr_call = {0};
+  node_function_call_t typed_cached_ptr_call = {0};
   typed_cached_ptr_call.base.kind = ND_FUNCALL;
   typed_cached_ptr_call.base.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
@@ -9837,7 +9857,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_aggregate_value_size((node_t *)&typed_cached_ptr_call));
   ASSERT_TRUE(!ps_node_value_is_void((node_t *)&typed_cached_ptr_call));
 
-  node_func_t typed_cached_complex_call = {0};
+  node_function_call_t typed_cached_complex_call = {0};
   typed_cached_complex_call.base.kind = ND_FUNCALL;
   psx_type_t *typed_cached_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   typed_cached_complex_type->fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -9851,7 +9871,7 @@ static void test_type_metadata_bridge() {
             ps_node_value_fp_kind((node_t *)&typed_cached_complex_call));
   ASSERT_TRUE(ps_node_value_is_complex((node_t *)&typed_cached_complex_call));
 
-  node_func_t typed_cached_struct_call = {0};
+  node_function_call_t typed_cached_struct_call = {0};
   typed_cached_struct_call.base.kind = ND_FUNCALL;
   ps_node_bind_type(
       (node_t *)&typed_cached_struct_call,
@@ -9860,13 +9880,13 @@ static void test_type_metadata_bridge() {
               typed_cached_struct_call.base.type);
   ASSERT_EQ(12, ps_node_aggregate_value_size((node_t *)&typed_cached_struct_call));
 
-  node_func_t typed_cached_void_call = {0};
+  node_function_call_t typed_cached_void_call = {0};
   typed_cached_void_call.base.kind = ND_FUNCALL;
   ps_node_bind_type((node_t *)&typed_cached_void_call,
                     ps_type_new(PSX_TYPE_VOID));
   ASSERT_TRUE(ps_node_value_is_void((node_t *)&typed_cached_void_call));
 
-  node_func_t typed_cached_unsigned_call = {0};
+  node_function_call_t typed_cached_unsigned_call = {0};
   typed_cached_unsigned_call.base.kind = ND_FUNCALL;
   psx_type_t *typed_cached_unsigned_type =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
@@ -9884,52 +9904,52 @@ static void test_type_metadata_bridge() {
       (node_t *)&typed_cached_unsigned_call));
 
   parsed_code = parse_program_input("long __tm_funcdef_long(void) { return 1; }");
-  node_func_t *typed_long_funcdef = as_func(parsed_code[0]);
+  node_function_definition_t *typed_long_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_long_funcdef_ty =
-      ps_node_get_type((node_t *)typed_long_funcdef);
+      ps_function_definition_return_type(typed_long_funcdef);
+  ASSERT_TRUE(typed_long_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_long_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, typed_long_funcdef_ty->kind);
   ASSERT_EQ(8, ps_type_sizeof(typed_long_funcdef_ty));
-  ASSERT_EQ(8, ps_node_type_size((node_t *)typed_long_funcdef));
 
   parsed_code =
       parse_program_input("int *__tm_funcdef_ptr(int *p) { return p; }");
-  node_func_t *typed_ptr_funcdef = as_func(parsed_code[0]);
+  node_function_definition_t *typed_ptr_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_ptr_funcdef_ty =
-      ps_node_get_type((node_t *)typed_ptr_funcdef);
+      ps_function_definition_return_type(typed_ptr_funcdef);
+  ASSERT_TRUE(typed_ptr_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_ptr_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, typed_ptr_funcdef_ty->kind);
-  ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)typed_ptr_funcdef));
+  ASSERT_TRUE(ps_type_is_pointer_like(typed_ptr_funcdef_ty));
 
   parsed_code = parse_program_input("void __tm_funcdef_void(void) { }");
-  node_func_t *typed_void_funcdef = as_func(parsed_code[0]);
+  node_function_definition_t *typed_void_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_void_funcdef_ty =
-      ps_node_get_type((node_t *)typed_void_funcdef);
+      ps_function_definition_return_type(typed_void_funcdef);
+  ASSERT_TRUE(typed_void_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_void_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_VOID, typed_void_funcdef_ty->kind);
-  ASSERT_TRUE(ps_node_value_is_void((node_t *)typed_void_funcdef));
 
   parsed_code = parse_program_input(
       "struct __tm_fdr { int a; int b; } __tm_funcdef_struct(void) { "
       "struct __tm_fdr r; return r; }");
-  node_func_t *typed_struct_funcdef = as_func(parsed_code[0]);
+  node_function_definition_t *typed_struct_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_struct_funcdef_ty =
-      ps_node_get_type((node_t *)typed_struct_funcdef);
+      ps_function_definition_return_type(typed_struct_funcdef);
+  ASSERT_TRUE(typed_struct_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_struct_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, typed_struct_funcdef_ty->kind);
   ASSERT_EQ(8, ps_type_sizeof(typed_struct_funcdef_ty));
-  ASSERT_EQ(8, ps_node_aggregate_value_size((node_t *)typed_struct_funcdef));
 
   parsed_code =
       parse_program_input("_Complex double __tm_funcdef_complex(void) { return 1; }");
-  node_func_t *typed_complex_funcdef = as_func(parsed_code[0]);
+  node_function_definition_t *typed_complex_funcdef = as_function_definition(parsed_code[0]);
   const psx_type_t *typed_complex_funcdef_ty =
-      ps_node_get_type((node_t *)typed_complex_funcdef);
+      ps_function_definition_return_type(typed_complex_funcdef);
+  ASSERT_TRUE(typed_complex_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_complex_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, typed_complex_funcdef_ty->kind);
-  ASSERT_TRUE(ps_node_value_is_complex((node_t *)typed_complex_funcdef));
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_value_fp_kind((node_t *)typed_complex_funcdef));
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, typed_complex_funcdef_ty->fp_kind);
 
   node_t typed_cached_pointer_stale_complex = {0};
   typed_cached_pointer_stale_complex.kind = ND_ADD;
@@ -9943,7 +9963,7 @@ static void test_type_metadata_bridge() {
   typed_double_ret_callee.kind = ND_LVAR;
   typed_double_ret_callee.type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  node_func_t typed_double_ret_call = {0};
+  node_function_call_t typed_double_ret_call = {0};
   typed_double_ret_call.base.kind = ND_FUNCALL;
   typed_double_ret_call.callee = &typed_double_ret_callee;
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_double_ret_call) == NULL);
@@ -10381,7 +10401,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "unsigned __tm_fp_to_unsigned_expr(double d){ return (unsigned)d; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *fp_to_unsigned_ret = body->body[0];
   ASSERT_EQ(ND_RETURN, fp_to_unsigned_ret->kind);
@@ -10469,7 +10489,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, cast_needs_i64);
 
   parsed_code = parse_program_input("int main() { struct S { int x; } *p; p=0; return p==0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   assign = body->body[1];
   ASSERT_EQ(ND_ASSIGN, assign->kind);
@@ -10491,7 +10511,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_STRUCT, p_lvar->decl_type->base->tag_kind);
 
   parsed_code = parse_program_input("double __tm_param_fp(double *p) { return p[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *param_fp_lvar = find_func_lvar(fn, "p");
   ASSERT_TRUE(param_fp_lvar != NULL);
   ASSERT_TRUE(param_fp_lvar->decl_type != NULL);
@@ -10502,7 +10522,7 @@ static void test_type_metadata_bridge() {
 
   parsed_code = parse_program_input(
       "int main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *member = body->body[2];
   ASSERT_EQ(ND_DEREF, member->kind);
@@ -11412,7 +11432,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(12, ps_type_sizeof(gext->decl_type));
 
   parsed_code = parse_program_input("int __tm_static_decl_type(void) { static double sd = 1.0; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *sd = find_func_lvar(fn, "sd");
   ASSERT_TRUE(sd != NULL);
   ASSERT_TRUE(sd->is_static_local);
@@ -11431,7 +11451,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_static_scalar_flags(void) { "
       "static _Bool sb = 1; static unsigned int su = 2; return sb + su; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *static_scalar_sb = find_func_lvar(fn, "sb");
   ASSERT_TRUE(static_scalar_sb != NULL);
   ASSERT_TRUE(static_scalar_sb->is_static_local);
@@ -11459,7 +11479,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_is_unsigned_type(static_scalar_su_node));
 
   parsed_code = parse_program_input("int __tm_static_arr_decl_type(void) { static int sa[2] = {1,2}; return sa[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *sa = find_func_lvar(fn, "sa");
   ASSERT_TRUE(sa != NULL);
   ASSERT_TRUE(sa->is_static_local);
@@ -11481,7 +11501,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_static_inferred_arr(void) { "
       "static int inferred[] = {1,2,3}; return inferred[2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *static_inferred = find_func_lvar(fn, "inferred");
   ASSERT_TRUE(static_inferred != NULL);
   global_var_t *static_inferred_gv = ps_find_global_var(
@@ -11496,7 +11516,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_static_2d_arr_decl_type(void) { "
       "static int sm[2][3] = {{1,2,3},{4,5,6}}; return sm[1][2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *sm = find_func_lvar(fn, "sm");
   ASSERT_TRUE(sm != NULL);
   ASSERT_TRUE(sm->is_static_local);
@@ -11516,7 +11536,7 @@ static void test_type_metadata_bridge() {
       "int __tm_static_array_addr_flags(void) { "
       "static unsigned char su[2] = {1,2}; static _Bool sb[2] = {0,1}; "
       "static int si[2] = {3,4}; return su[0] + sb[1] + si[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *static_su = find_func_lvar(fn, "su");
   ASSERT_TRUE(static_su != NULL);
   ASSERT_TRUE(static_su->is_static_local);
@@ -11567,7 +11587,7 @@ static void test_type_metadata_bridge() {
       "int __tm_static_pointer_pointee_flags(void) { "
       "static _Bool *bp = 0; static unsigned int *up = 0; "
       "return bp == 0 && up == 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *static_bp = find_func_lvar(fn, "bp");
   ASSERT_TRUE(static_bp != NULL);
   ASSERT_TRUE(static_bp->is_static_local);
@@ -11600,7 +11620,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm_static_self_reference(void) { "
       "static int *self = &self; return self != 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *static_self = find_func_lvar(fn, "self");
   ASSERT_TRUE(static_self != NULL);
   ASSERT_TRUE(static_self->is_static_local);
@@ -11745,7 +11765,7 @@ static void test_type_metadata_bridge() {
       "int main(void){ int x; int *p; x + 1L; p + 1; "
       "double (*(*dpa)(void))[2]=__tm_dp; "
       "__tm_lf(); __tm_ip(); __tm_pp(); __tm_dp(); dpa(); return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *long_add = NULL;
   node_t *ptr_add = NULL;
@@ -11759,11 +11779,15 @@ static void test_type_metadata_bridge() {
     if (n->kind == ND_ADD && ps_node_value_is_pointer_like(n)) ptr_add = n;
     if (n->kind == ND_ADD && !ps_node_value_is_pointer_like(n) && ps_node_type_size(n) == 8) long_add = n;
     if (n->kind == ND_FUNCALL) {
-      node_func_t *call = as_func(n);
-      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_lf", 7) == 0) long_call = n;
-      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_ip", 7) == 0) ptr_call = n;
-      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_pp", 7) == 0) ptrptr_call = n;
-      if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_dp", 7) == 0)
+      node_function_call_t *call = as_function_call(n);
+      if (call->direct_name_len == 7 &&
+          strncmp(call->direct_name, "__tm_lf", 7) == 0) long_call = n;
+      if (call->direct_name_len == 7 &&
+          strncmp(call->direct_name, "__tm_ip", 7) == 0) ptr_call = n;
+      if (call->direct_name_len == 7 &&
+          strncmp(call->direct_name, "__tm_pp", 7) == 0) ptrptr_call = n;
+      if (call->direct_name_len == 7 &&
+          strncmp(call->direct_name, "__tm_dp", 7) == 0)
         double_ptr_to_array_call = n;
       if (call->callee && call->callee->kind == ND_LVAR) {
         lvar_t *callee_lvar = ps_node_lvar_symbol(call->callee);
@@ -12452,7 +12476,7 @@ static void test_type_metadata_bridge() {
       "int (*__tm_deref_getrow(void))[3]; "
       "int main(void){ int (*(*direct)(void))[3]=__tm_deref_getrow; "
       "return (*direct())[2]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   body = as_block(fn->base.rhs);
   node_t *indirect_explicit_row_ret = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -12476,7 +12500,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int add(int a,int b){return a+b;} int (*ops[3])(int,int)={add,add,add}; "
       "int main(void){ int (*(*pb)[3])(int,int)=&ops; return (*pb)[0](1,2); }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *pb_lvar = find_func_lvar(fn, "pb");
   ASSERT_TRUE(pb_lvar != NULL);
   const psx_type_t *pb_type = pb_lvar->decl_type;
@@ -12492,7 +12516,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "static int data; static void *get(void){return &data;} "
       "int main(void){int *p=(int *)get(); return p[0];}");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   body = as_block(fn->base.rhs);
   node_t *void_ptr_call = NULL;
   for (int i = 0; body->body[i]; i++) {
@@ -12529,7 +12553,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_typedef_name("TMFuncs", 7, &tm_funcs_info));
   ASSERT_TRUE(ps_type_derived_function(
       ps_ctx_typedef_decl_type(&tm_funcs_info)) != NULL);
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *tm_ops = find_func_lvar(fn, "ops");
   lvar_t *tm_pa = find_func_lvar(fn, "pa");
   ASSERT_TRUE(tm_ops != NULL);
@@ -12554,7 +12578,7 @@ static void test_type_metadata_bridge() {
       "TMLocalFuncs matrix[2]; "
       "TMLocalFuncs *pa=&ops; TMLocalArrayPtr array_ptrs; "
       "TMLocalPtrArray ptr_array; return (*pa)[0](1,2);}");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *tm_local_ops = find_func_lvar(fn, "ops");
   lvar_t *tm_local_matrix = find_func_lvar(fn, "matrix");
   lvar_t *tm_local_pa = find_func_lvar(fn, "pa");
@@ -12723,7 +12747,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "struct __tm_member_ptrarr { int (*p)[3]; }; "
       "int main(void){ struct __tm_member_ptrarr h; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *member_ptrarr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_ptrarr_h != NULL);
   tag_member_info_t member_ptrarr_p_info = {0};
@@ -12758,7 +12782,7 @@ static void test_type_metadata_bridge() {
       "typedef int *__tm_member_IP; "
       "struct __tm_member_ip_ptrarr { __tm_member_IP (*p)[3]; }; "
       "int main(void){ struct __tm_member_ip_ptrarr h; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *member_ip_ptrarr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_ip_ptrarr_h != NULL);
   tag_member_info_t member_ip_ptrarr_p_info = {0};
@@ -12851,7 +12875,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "struct __tm_member_arr { int a[2]; }; "
       "int main(void){ struct __tm_member_arr h; return h.a[0]; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *member_arr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_arr_h != NULL);
   tag_member_info_t member_arr_a_info = {0};
@@ -12921,7 +12945,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "struct __tm_member_plain_ptr { int *p; }; "
       "int main(void){ struct __tm_member_plain_ptr h; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *member_plain_ptr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_plain_ptr_h != NULL);
   tag_member_info_t member_plain_ptr_p_info = {0};
@@ -13004,7 +13028,7 @@ static void test_type_metadata_bridge() {
       "struct __tm_member_scalar { unsigned int u; _Bool b; _Atomic int a; "
       "double _Complex z; }; "
       "int main(void){ struct __tm_member_scalar h; return 0; }");
-  fn = as_func(parsed_code[0]);
+  fn = as_function_definition(parsed_code[0]);
   lvar_t *member_scalar_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_scalar_h != NULL);
   const char *member_scalar_tag = "__tm_member_scalar";
@@ -13084,7 +13108,7 @@ static void test_type_metadata_bridge() {
       "double __tm696_ret_d(void){ return 1.0; } "
       "double *__tm696_gdp; double (*__tm696_gfp)(void)=__tm696_ret_d; "
       "int main(void){ double d; double *dp=&d; double (*fp)(void)=__tm696_ret_d; return 0; }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(dp_lvar != NULL);
   const psx_type_t *dp_type = ps_lvar_get_decl_type(dp_lvar);
@@ -13249,7 +13273,7 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(td_fp.decl_type, "p<f64()>");
   const psx_type_t *td_fp_decl_type = td_fp.decl_type;
   ASSERT_TRUE(td_fp.decl_type == td_fp_decl_type);
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp_lvar->decl_type->base->fp_kind);
@@ -13286,7 +13310,7 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       tm817_pp_td.decl_type, "p<p<i32(i32)>>");
   ASSERT_EQ(2, ps_type_pointer_depth(tm817_pp_td.decl_type));
-  fn = as_func(parsed_code[2]);
+  fn = as_function_definition(parsed_code[2]);
   lvar_t *tm817_get_lvar = find_func_lvar(fn, "get");
   ASSERT_TRUE(tm817_get_lvar != NULL);
   ASSERT_EQ(1, canonical_lvar_pointer_qual_levels(tm817_get_lvar));
@@ -13317,7 +13341,7 @@ static void test_type_metadata_bridge() {
       "double __tm700_d; double *__tm700_ret_dp(void){ return &__tm700_d; } "
       "double *(*__tm700_gfp)(void)=__tm700_ret_dp; "
       "int main(void){ double *(*fp)(void)=__tm700_ret_dp; fp(); __tm700_gfp(); return 0; }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *tm700_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm700_fp_lvar != NULL);
   assert_canonical_type_signature(
@@ -13330,7 +13354,7 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "int __tm814_inc(int x){ return x + 1; } "
       "int main(void){ int (*p)(int)=__tm814_inc; int (**pp)(int)=&p; return (*pp)(41); }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *tm814_pp_lvar = find_func_lvar(fn, "pp");
   ASSERT_TRUE(tm814_pp_lvar != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm814_pp_lvar));
@@ -13351,7 +13375,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, ps_type_pointer_depth(tm815_gpp->decl_type));
   assert_canonical_type_signature(
       tm815_gpp->decl_type, "p<p<i32(i32)>>");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   lvar_t *tm815_param_pp = find_func_lvar(fn, "pp");
   ASSERT_TRUE(tm815_param_pp != NULL);
   ASSERT_EQ(2, canonical_lvar_pointer_qual_levels(tm815_param_pp));
@@ -13370,7 +13394,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm816_gfp != NULL);
   assert_canonical_type_signature(
       tm816_gfp->decl_type, "p<p<i32>()>");
-  fn = as_func(parsed_code[2]);
+  fn = as_function_definition(parsed_code[2]);
   lvar_t *tm816_param_fp = find_func_lvar(fn, "fp");
   ASSERT_TRUE(tm816_param_fp != NULL);
   assert_canonical_type_signature(
@@ -13393,14 +13417,14 @@ static void test_type_metadata_bridge() {
       "int *__tm_makep(void){ static int x=1; return &x; } "
       "int main(void){ double (*df)(double)=__tm_sq; int *(*pf)(void)=__tm_makep; "
       "df(2.0); pf(); return 0; }");
-  fn = as_func(parsed_code[2]);
+  fn = as_function_definition(parsed_code[2]);
   body = as_block(fn->base.rhs);
   node_t *indirect_double_call = NULL;
   node_t *indirect_ptr_call = NULL;
   for (int i = 0; body->body[i]; i++) {
     node_t *n = body->body[i];
     if (n->kind != ND_FUNCALL) continue;
-    node_func_t *call = as_func(n);
+    node_function_call_t *call = as_function_call(n);
     if (!call->callee || call->callee->kind != ND_LVAR) continue;
     lvar_t *callee_lvar = ps_node_lvar_symbol(call->callee);
     if (callee_lvar && callee_lvar->len == 2 && strncmp(callee_lvar->name, "df", 2) == 0)
@@ -13424,14 +13448,15 @@ static void test_type_metadata_bridge() {
   parsed_code = parse_program_input(
       "struct CQ { int v; }; const struct CQ *__tm_cq(void){ return 0; } "
       "int main(void){ __tm_cq(); return 0; }");
-  fn = as_func(parsed_code[1]);
+  fn = as_function_definition(parsed_code[1]);
   body = as_block(fn->base.rhs);
   node_t *const_struct_ptr_call = NULL;
   for (int i = 0; body->body[i]; i++) {
     node_t *n = body->body[i];
     if (n->kind != ND_FUNCALL) continue;
-    node_func_t *call = as_func(n);
-    if (call->funcname_len == 7 && strncmp(call->funcname, "__tm_cq", 7) == 0) {
+    node_function_call_t *call = as_function_call(n);
+    if (call->direct_name_len == 7 &&
+        strncmp(call->direct_name, "__tm_cq", 7) == 0) {
       const_struct_ptr_call = n;
       break;
     }
@@ -13456,24 +13481,27 @@ static void test_type_metadata_bridge() {
       "typedef struct FS *(*__tm_fty)(void); "
       "__tm_fty __tm_go(void){ return __tm_anon; } "
       "int main(void){ __tm_go()(); return 0; }");
-  node_func_t *go_def = as_func(parsed_code[2]);
-  ASSERT_TRUE(go_def->function_type != NULL);
+  node_function_definition_t *go_def = as_function_definition(parsed_code[2]);
+  ASSERT_TRUE(go_def->signature != NULL);
   assert_canonical_type_signature(
-      go_def->function_type, "p<p<s{2:FS}>()>()");
-  ASSERT_TRUE(go_def->base.type != NULL);
+      go_def->signature, "p<p<s{2:FS}>()>()");
+  ASSERT_TRUE(go_def->base.type == NULL);
+  const psx_type_t *go_return_type =
+      ps_function_definition_return_type(go_def);
+  ASSERT_TRUE(go_return_type != NULL);
   assert_canonical_type_signature(
-      go_def->base.type, "p<p<s{2:FS}>()>");
+      go_return_type, "p<p<s{2:FS}>()>");
   const psx_type_t *go_ctx_return =
       psx_ctx_get_function_ret_type("__tm_go", 7);
   ASSERT_TRUE(go_ctx_return != NULL);
-  ASSERT_TRUE(ps_type_shape_matches(go_ctx_return, go_def->base.type));
-  fn = as_func(parsed_code[3]);
+  ASSERT_TRUE(ps_type_shape_matches(go_ctx_return, go_return_type));
+  fn = as_function_definition(parsed_code[3]);
   body = as_block(fn->base.rhs);
   node_t *funcptr_chain_call = NULL;
   for (int i = 0; body->body[i]; i++) {
     node_t *n = body->body[i];
     if (n->kind != ND_FUNCALL) continue;
-    node_func_t *call = as_func(n);
+    node_function_call_t *call = as_function_call(n);
     if (call->callee && call->callee->kind == ND_FUNCALL) {
       funcptr_chain_call = n;
       break;
@@ -13494,39 +13522,41 @@ static void test_type_metadata_bridge() {
       "typedef double (*TM698_DF)(double); "
       "TM698_DF __tm698_pick(void){ return __tm698_add; } "
       "int main(void){ return __tm698_pick()(3.0) == 3.5; }");
-  node_func_t *pick_def = as_func(parsed_code[1]);
-  ASSERT_TRUE(pick_def->function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, pick_def->function_type->kind);
-  ASSERT_TRUE(pick_def->function_type->base != NULL);
-  ASSERT_TRUE(pick_def->base.type == pick_def->function_type->base);
+  node_function_definition_t *pick_def = as_function_definition(parsed_code[1]);
+  ASSERT_TRUE(pick_def->signature != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, pick_def->signature->kind);
+  ASSERT_TRUE(pick_def->signature->base != NULL);
+  ASSERT_TRUE(pick_def->base.type == NULL);
+  ASSERT_TRUE(ps_function_definition_return_type(pick_def) ==
+              pick_def->signature->base);
   assert_canonical_type_signature(
-      pick_def->function_type, "p<f64(f64)>()");
+      pick_def->signature, "p<f64(f64)>()");
   assert_canonical_type_signature(
-      pick_def->function_type->base, "p<f64(f64)>");
-  node_func_t pick_call = {0};
+      pick_def->signature->base, "p<f64(f64)>");
+  node_function_call_t pick_call = {0};
   pick_call.base.kind = ND_FUNCALL;
-  pick_call.funcname = "__tm698_pick";
-  pick_call.funcname_len = 12;
-  pick_call.function_type = ps_type_clone(pick_def->function_type);
+  pick_call.direct_name = "__tm698_pick";
+  pick_call.direct_name_len = 12;
+  pick_call.callee_type = ps_type_clone(pick_def->signature);
   ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
   psx_frontend_analyze_expression((node_t *)&pick_call, NULL);
   const psx_type_t *pick_call_type =
       ps_node_get_type((node_t *)&pick_call);
   ASSERT_TRUE(pick_call_type != NULL);
-  ASSERT_TRUE(pick_call_type == pick_call.function_type->base);
+  ASSERT_TRUE(pick_call_type == pick_call.callee_type->base);
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)&pick_call));
   assert_canonical_type_signature(pick_call_type, "p<f64(f64)>");
   const psx_type_t *pick_ctx_return =
       psx_ctx_get_function_ret_type("__tm698_pick", 12);
   ASSERT_TRUE(pick_ctx_return != NULL);
   ASSERT_TRUE(ps_type_shape_matches(
-      pick_ctx_return, pick_def->function_type->base));
+      pick_ctx_return, pick_def->signature->base));
   node_funcref_t pick_add_ref = {0};
   pick_add_ref.base.kind = ND_FUNCREF;
   pick_add_ref.funcname = "__tm698_add";
   pick_add_ref.funcname_len = 11;
   pick_add_ref.base.type = ps_type_clone(
-      as_func(parsed_code[0])->function_type);
+      as_function_definition(parsed_code[0])->signature);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
             ps_node_get_type((node_t *)&pick_add_ref)->kind);
   psx_frontend_analyze_expression((node_t *)&pick_add_ref, NULL);
@@ -13546,9 +13576,9 @@ static void test_type_metadata_bridge() {
       "int (*__tm818_fp)(int)=__tm818_inc; "
       "int (**__tm818_getpp(void))(int){ return &__tm818_fp; } "
       "int main(void){ return (*__tm818_getpp())(20) + (**__tm818_getpp())(30); }");
-  node_func_t *tm818_getpp_def = as_func(parsed_code[1]);
+  node_function_definition_t *tm818_getpp_def = as_function_definition(parsed_code[1]);
   assert_canonical_type_signature(
-      tm818_getpp_def->function_type, "p<p<i32(i32)>>()");
+      tm818_getpp_def->signature, "p<p<i32(i32)>>()");
   ASSERT_EQ(2, ps_type_pointer_depth(
                    psx_ctx_get_function_ret_type("__tm818_getpp", 13)));
 }
@@ -13622,24 +13652,24 @@ static void test_multiple_funcdefs() {
 
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "foo", 3) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "foo", 3) == 0);
 
   ASSERT_TRUE(parsed_code[1] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "bar", 3) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "bar", 3) == 0);
 
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("int add(int a, int b); int add(int a, int b) { return a+b; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("int log(const char *fmt, ...); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("int **sig_proto_pp(void); int main(void) { return 0; }");
@@ -13676,7 +13706,7 @@ static void test_multiple_funcdefs() {
   parsed_code = parse_program_input("int variadic(...){ return 0; } int main() { return variadic(); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "variadic", 8) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "variadic", 8) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
   ASSERT_TRUE(parsed_code[2] == NULL);
@@ -13684,49 +13714,49 @@ static void test_multiple_funcdefs() {
   parsed_code = parse_program_input("int f(int a[static 3], int b[restrict static 2]) { return 7; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "f", 1) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "f", 1) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("struct S { int x; }; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("struct S { int x; } *gp; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("int g=1; int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input("extern int g; inline int add(int a, int b) { return a+b; } int main() { return add(3,4); }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "add", 3) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "add", 3) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("_Noreturn void die() { return; } int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "die", 3) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "die", 3) == 0);
   ASSERT_TRUE(parsed_code[1] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[1]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[1])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[1])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[2] == NULL);
 
   parsed_code = parse_program_input("_Static_assert(1, \"ok\"); int main() { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
-  ASSERT_TRUE(strncmp(as_func(parsed_code[0])->funcname, "main", 4) == 0);
+  ASSERT_TRUE(strncmp(as_function_definition(parsed_code[0])->name, "main", 4) == 0);
   ASSERT_TRUE(parsed_code[1] == NULL);
 
   parsed_code = parse_program_input(
@@ -14379,6 +14409,10 @@ static void test_semantic_canonical_type_invariant() {
       "}");
   ASSERT_TRUE(program != NULL);
   for (int i = 0; program[i]; i++) {
+    node_function_definition_t *function =
+        as_function_definition(program[i]);
+    ASSERT_TRUE(function->base.type == NULL);
+    ASSERT_TRUE(ps_function_definition_return_type(function) != NULL);
     psx_semantic_invariant_failure_t failure;
     ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
         program[i], &failure));
@@ -14386,9 +14420,21 @@ static void test_semantic_canonical_type_invariant() {
     ASSERT_TRUE(failure.node == NULL);
   }
 
+  node_function_definition_t duplicated_return_type = {0};
+  duplicated_return_type.base.kind = ND_FUNCDEF;
+  duplicated_return_type.signature = ps_type_new_function(
+      ps_type_new_integer(TK_INT, 4, 0));
+  duplicated_return_type.base.type =
+      duplicated_return_type.signature->base;
+  psx_semantic_invariant_failure_t failure;
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&duplicated_return_type, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
+            failure.status);
+  ASSERT_TRUE(failure.node == (node_t *)&duplicated_return_type);
+
   node_num_t untyped = {0};
   untyped.base.kind = ND_NUM;
-  psx_semantic_invariant_failure_t failure;
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&untyped, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
@@ -14427,11 +14473,11 @@ static void test_semantic_canonical_type_invariant() {
             failure.status);
   ASSERT_TRUE(failure.node == (node_t *)&invalid_function_reference);
 
-  node_func_t invalid_function_call = {0};
+  node_function_call_t invalid_function_call = {0};
   invalid_function_call.base.kind = ND_FUNCALL;
   invalid_function_call.base.type =
       ps_type_new_integer(TK_INT, 4, 0);
-  invalid_function_call.function_type = ps_type_new_function(
+  invalid_function_call.callee_type = ps_type_new_function(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_function_call, &failure));
@@ -14446,12 +14492,12 @@ static void test_semantic_canonical_type_invariant() {
       .type = ps_type_new_pointer(
           ps_type_new_pointer(ps_type_clone(callee_function))),
   };
-  node_func_t invalid_indirect_function_call = {0};
+  node_function_call_t invalid_indirect_function_call = {0};
   invalid_indirect_function_call.base.kind = ND_FUNCALL;
   invalid_indirect_function_call.base.type =
       ps_type_new_integer(TK_INT, 4, 0);
   invalid_indirect_function_call.callee = &non_callable_callee;
-  invalid_indirect_function_call.function_type = callee_function;
+  invalid_indirect_function_call.callee_type = callee_function;
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&invalid_indirect_function_call, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -14459,7 +14505,7 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_TRUE(
       failure.node == (node_t *)&invalid_indirect_function_call);
 
-  node_func_t invalid_implicit_function_call = {0};
+  node_function_call_t invalid_implicit_function_call = {0};
   invalid_implicit_function_call.base.kind = ND_FUNCALL;
   invalid_implicit_function_call.base.type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
@@ -14471,7 +14517,7 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_TRUE(
       failure.node == (node_t *)&invalid_implicit_function_call);
 
-  node_func_t valid_implicit_function_call = {0};
+  node_function_call_t valid_implicit_function_call = {0};
   valid_implicit_function_call.base.kind = ND_FUNCALL;
   valid_implicit_function_call.base.type =
       ps_type_new_integer(TK_INT, 4, 0);

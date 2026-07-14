@@ -11,9 +11,7 @@ static int fp_literal_fractional_part_known(double value) {
   return value != (double)(long long)value;
 }
 
-static tk_float_kind_t node_fp_kind(node_t *node) {
-  if (!node) return TK_FLOAT_KIND_NONE;
-  const psx_type_t *type = ps_node_get_type(node);
+static tk_float_kind_t type_fp_kind(const psx_type_t *type) {
   if (type && !ps_type_is_pointer(type) &&
       (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
     return type->fp_kind != TK_FLOAT_KIND_NONE
@@ -21,6 +19,11 @@ static tk_float_kind_t node_fp_kind(node_t *node) {
                : TK_FLOAT_KIND_DOUBLE;
   }
   return TK_FLOAT_KIND_NONE;
+}
+
+static tk_float_kind_t node_fp_kind(node_t *node) {
+  return node ? type_fp_kind(ps_node_get_type(node))
+              : TK_FLOAT_KIND_NONE;
 }
 
 static void warn_float_to_int(
@@ -108,8 +111,9 @@ static void warn_return(
     const token_t *fallback) {
   if (!node || node->kind != ND_RETURN || !node->lhs || !current_func)
     return;
-  const psx_type_t *ret_type = ps_node_get_type((node_t *)current_func);
-  tk_float_kind_t ret_fp = ps_node_value_fp_kind((node_t *)current_func);
+  const psx_type_t *ret_type =
+      ps_function_definition_return_type(current_func);
+  tk_float_kind_t ret_fp = type_fp_kind(ret_type);
   int ret_pointer = ps_type_is_pointer(ret_type);
   int ret_void = ret_type && ret_type->kind == PSX_TYPE_VOID;
   const token_t *tok = node->tok ? node->tok : fallback;

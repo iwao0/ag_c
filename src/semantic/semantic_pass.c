@@ -62,7 +62,8 @@ static void semantic_transform_return(
                                       const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
-  const psx_type_t *return_type = ps_node_get_type((node_t *)current_func);
+  const psx_type_t *return_type =
+      ps_function_definition_return_type(current_func);
   int returns_void = return_type && return_type->kind == PSX_TYPE_VOID;
 
   if (!node->lhs) {

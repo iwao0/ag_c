@@ -1667,6 +1667,14 @@ const psx_type_t *ps_node_get_type(const node_t *node) {
   return node ? node->type : NULL;
 }
 
+const psx_type_t *ps_function_definition_return_type(
+    const node_function_definition_t *function) {
+  if (!function || !function->signature ||
+      function->signature->kind != PSX_TYPE_FUNCTION)
+    return NULL;
+  return function->signature->base;
+}
+
 static int node_type_accepts_vla_runtime_view(const node_t *node) {
   return node && ps_type_contains_vla_array(node->type);
 }

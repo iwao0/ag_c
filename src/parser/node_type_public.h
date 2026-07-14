@@ -7,6 +7,8 @@
 typedef struct psx_type_t psx_type_t;
 
 const psx_type_t *ps_node_get_type(const node_t *node);
+const psx_type_t *ps_function_definition_return_type(
+    const node_function_definition_t *function);
 int ps_node_deref_size(node_t *n);
 int ps_node_type_size(node_t *n);
 int ps_node_storage_type_size(node_t *n);

@@ -243,9 +243,6 @@ int psx_apply_function_declaration_pipeline(
         ps_function_symbol_type(resolution.function);
     request->function_node->signature = ps_type_clone(
         function_type);
-    ps_node_bind_type(
-        (node_t *)request->function_node,
-        request->function_node->signature->base);
   }
   return 1;
 }
