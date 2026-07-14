@@ -1,12 +1,11 @@
 #include "assignment_lowering.h"
+#include "runtime_context.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int compound_assignment_temp_seq;
 
 static node_kind_t compound_binary_kind(token_kind_t op) {
   switch (op) {
@@ -25,7 +24,8 @@ static node_kind_t compound_binary_kind(token_kind_t op) {
 }
 
 static char *new_compound_assignment_temp_name(void) {
-  int seq = compound_assignment_temp_seq++;
+  int seq = ps_lowering_context_active()
+      ->compound_assignment_temp_sequence++;
   int len = snprintf(NULL, 0, "__compound_assign_%d", seq);
   char *name = calloc((size_t)len + 1, 1);
   snprintf(name, (size_t)len + 1, "__compound_assign_%d", seq);

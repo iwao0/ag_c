@@ -31,6 +31,11 @@ lvar_t *ps_local_registry_find_visible_in(
     const psx_local_registry_t *registry,
     char *name, int name_len, psx_local_lookup_point_t point);
 void ps_local_registry_reset_in(psx_local_registry_t *registry);
+void ps_local_registry_set_current_function_in(
+    psx_local_registry_t *registry, char *name, int len);
+void ps_local_registry_get_current_function_in(
+    const psx_local_registry_t *registry,
+    char **out_name, int *out_len);
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var);
 lvar_t *ps_local_registry_create_storage_object_in(

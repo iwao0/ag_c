@@ -1,4 +1,5 @@
 #include "compound_literal_lowering.h"
+#include "runtime_context.h"
 
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
@@ -14,17 +15,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int file_scope_compound_sequence;
-static int local_compound_sequence;
-
 void psx_compound_literal_lowering_reset_translation_unit_state(void) {
-  file_scope_compound_sequence = 0;
-  local_compound_sequence = 0;
+  psx_lowering_context_t *ctx = ps_lowering_context_active();
+  ctx->file_scope_compound_sequence = 0;
+  ctx->local_compound_sequence = 0;
 }
 
 static char *new_compound_object_name(int file_scope) {
-  int sequence = file_scope ? file_scope_compound_sequence++
-                            : local_compound_sequence++;
+  psx_lowering_context_t *ctx = ps_lowering_context_active();
+  int sequence = file_scope ? ctx->file_scope_compound_sequence++
+                            : ctx->local_compound_sequence++;
   const char *format = file_scope ? "__compound_lit_%d"
                                   : "__compound_object_%d";
   int len = snprintf(NULL, 0, format, sequence);

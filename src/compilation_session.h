@@ -11,6 +11,8 @@ typedef struct ag_preprocessor_context_t ag_preprocessor_context_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct tk_allocator_context_t tk_allocator_context_t;
+typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 typedef struct ag_compilation_session_t {
   psx_semantic_context_t *semantic_context;
@@ -29,6 +31,10 @@ typedef struct ag_compilation_session_t {
   tokenizer_context_t *previous_tokenizer_context;
   tk_allocator_context_t *token_allocator_context;
   tk_allocator_context_t *previous_token_allocator_context;
+  psx_parser_runtime_context_t *parser_runtime_context;
+  psx_parser_runtime_context_t *previous_parser_runtime_context;
+  psx_lowering_context_t *lowering_context;
+  psx_lowering_context_t *previous_lowering_context;
   ag_target_info_t target;
   unsigned char is_active;
 } ag_compilation_session_t;

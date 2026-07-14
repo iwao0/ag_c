@@ -102,7 +102,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     ps_diag_ctx((token_t *)name, "funcdef",
                 "function declaration pipeline failed");
   }
-  ps_decl_set_current_funcname(name->str, name->len);
+  ps_decl_set_current_funcname_in(
+      local_registry, name->str, name->len);
   if (node->signature->is_variadic_function)
     ps_decl_reserve_variadic_regs();
   return node;

@@ -1,6 +1,7 @@
 #include "static_local_lowering.h"
 
 #include "static_data_initializer.h"
+#include "runtime_context.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
@@ -9,10 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int object_sequences[PSX_STATIC_LOCAL_KIND_COUNT];
-
 void psx_static_local_lowering_reset(void) {
-  memset(object_sequences, 0, sizeof(object_sequences));
+  psx_lowering_context_t *ctx = ps_lowering_context_active();
+  memset(ctx->static_local_sequences, 0,
+         sizeof(ctx->static_local_sequences));
 }
 
 int psx_static_local_prepare_global(global_var_t *global,
@@ -38,7 +39,8 @@ static char *mangle_static_local_name(
                          ? function_name_len : 4;
   char sequence[16];
   int sequence_len = snprintf(
-      sequence, sizeof(sequence), "%s%d", prefix, object_sequences[kind]++);
+      sequence, sizeof(sequence), "%s%d", prefix,
+      ps_lowering_context_active()->static_local_sequences[kind]++);
   int total_len = function_len + 1 + name_len + 1 + sequence_len;
   char *mangled = malloc((size_t)total_len + 1);
   if (!mangled) return NULL;

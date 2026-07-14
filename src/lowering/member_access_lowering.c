@@ -1,4 +1,5 @@
 #include "member_access_lowering.h"
+#include "runtime_context.h"
 
 #include "../declaration_pipeline.h"
 #include "../parser/arena.h"
@@ -11,10 +12,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int member_rvalue_sequence;
-
 static char *new_member_rvalue_name(void) {
-  int sequence = member_rvalue_sequence++;
+  int sequence = ps_lowering_context_active()->member_rvalue_sequence++;
   int len = snprintf(NULL, 0, "__member_rvalue_%d", sequence);
   char *name = calloc((size_t)len + 1, 1);
   if (!name) return NULL;

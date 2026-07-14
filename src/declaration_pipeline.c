@@ -2,7 +2,6 @@
 
 #include "diag/diag.h"
 #include "lowering/global_object_lowering.h"
-#include "lowering/compound_literal_lowering.h"
 #include "lowering/local_object_lowering.h"
 #include "lowering/static_local_lowering.h"
 #include "lowering/vla_lowering.h"
@@ -19,6 +18,7 @@
 #include "parser/semantic_ctx.h"
 #include "parser/type_builder.h"
 #include "lowering/parameter_lowering.h"
+#include "lowering/runtime_context.h"
 #include "semantic/function_declaration_resolution.h"
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
@@ -32,8 +32,13 @@
 #include <string.h>
 
 void psx_declaration_pipeline_reset_translation_unit_state(void) {
-  psx_static_local_lowering_reset();
-  psx_compound_literal_lowering_reset_translation_unit_state();
+  psx_declaration_pipeline_reset_translation_unit_state_in(
+      ps_lowering_context_active());
+}
+
+void psx_declaration_pipeline_reset_translation_unit_state_in(
+    psx_lowering_context_t *ctx) {
+  ps_lowering_context_reset_translation_unit(ctx);
 }
 
 static void diagnose_global_declaration(

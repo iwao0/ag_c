@@ -55,6 +55,11 @@ lvar_t *ps_decl_register_lvar_typed_align(
     char *name, int len, int size, int align, const psx_type_t *type);
 void ps_decl_set_current_funcname(char *name, int len);
 void ps_decl_get_current_funcname(char **out_name, int *out_len);
+void ps_decl_set_current_funcname_in(
+    psx_local_registry_t *registry, char *name, int len);
+void ps_decl_get_current_funcname_in(
+    const psx_local_registry_t *registry,
+    char **out_name, int *out_len);
 
 node_t *psx_decl_parse_initializer_for_var(lvar_t *var);
 node_t *ps_decl_bind_initializer_for_var(

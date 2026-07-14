@@ -147,7 +147,9 @@ static void begin_declarator(
   if (application->is_static) {
     char *function_name = NULL;
     int function_name_len = 0;
-    ps_decl_get_current_funcname(&function_name, &function_name_len);
+    ps_decl_get_current_funcname_in(
+        application->local_registry,
+        &function_name, &function_name_len);
     application->static_request =
         (psx_static_local_declaration_pipeline_request_t){
             .semantic_context = application->semantic_context,

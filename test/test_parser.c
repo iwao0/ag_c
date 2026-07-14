@@ -19,6 +19,7 @@
 #include "../src/parser/tag_public.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
+#include "../src/parser/runtime_context.h"
 #include "../src/parser/symtab.h"
 #include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
@@ -58,6 +59,7 @@
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
+#include "../src/lowering/runtime_context.h"
 #include "../src/lowering/local_object_lowering.h"
 #include "../src/lowering/parameter_lowering.h"
 #include "../src/lowering/vla_lowering.h"
@@ -15251,7 +15253,8 @@ static void test_semantic_context_isolation() {
       second, streamed_label_name, 14, NULL);
   psx_parser_stream_t parser_stream = {0};
   ps_parser_stream_begin_in_contexts(
-      &parser_stream, second, ps_local_registry_active(), NULL,
+      &parser_stream, second, ps_local_registry_active(),
+      ps_parser_runtime_context_active(), NULL,
       tk_tokenize((char *)
           "{ StreamType value = 0; "
           "{ streamed_label: return value; } }"),
@@ -15569,12 +15572,22 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.token_allocator_context != NULL);
   ASSERT_TRUE(wasm.token_allocator_context != NULL);
   ASSERT_TRUE(host.token_allocator_context != wasm.token_allocator_context);
+  ASSERT_TRUE(host.parser_runtime_context != NULL);
+  ASSERT_TRUE(wasm.parser_runtime_context != NULL);
+  ASSERT_TRUE(host.parser_runtime_context != wasm.parser_runtime_context);
+  ASSERT_TRUE(host.lowering_context != NULL);
+  ASSERT_TRUE(wasm.lowering_context != NULL);
+  ASSERT_TRUE(host.lowering_context != wasm.lowering_context);
   ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
   tk_allocator_context_t *previous_token_allocator =
       tk_allocator_context_active();
+  psx_parser_runtime_context_t *previous_parser_runtime =
+      ps_parser_runtime_context_active();
+  psx_lowering_context_t *previous_lowering =
+      ps_lowering_context_active();
   ASSERT_TRUE(ag_compilation_session_activate(&host));
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
@@ -15582,12 +15595,24 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
   ASSERT_TRUE(tk_allocator_context_active() ==
               host.token_allocator_context);
+  ASSERT_TRUE(ps_parser_runtime_context_active() ==
+              host.parser_runtime_context);
+  ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  host.lowering_context->aggregate_cast_temp_sequence = 9;
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(tk_allocator_calloc(1, 16) != NULL);
   ASSERT_EQ(1, tk_allocator_total_chunks());
   tk_set_enable_c11_audit_extensions(true);
   ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
   ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
+  pragma_pack_set(4);
+  ps_set_enable_union_scalar_pointer_cast(false);
+  ASSERT_EQ(4, host.parser_runtime_context->pragma_pack_current);
+  ASSERT_TRUE(!host.parser_runtime_context
+                   ->enable_union_scalar_pointer_cast);
+  ASSERT_EQ(0, wasm.parser_runtime_context->pragma_pack_current);
+  ASSERT_TRUE(wasm.parser_runtime_context
+                  ->enable_union_scalar_pointer_cast);
   tk_set_tolerate_untokenizable(true);
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
@@ -15598,6 +15623,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
   ASSERT_TRUE(tk_allocator_context_active() ==
               wasm.token_allocator_context);
+  ASSERT_TRUE(ps_parser_runtime_context_active() ==
+              wasm.parser_runtime_context);
+  ASSERT_TRUE(ps_lowering_context_active() == wasm.lowering_context);
+  ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
+  ASSERT_EQ(0, pragma_pack_current_alignment());
+  ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&wasm);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
@@ -15606,6 +15637,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
   ASSERT_TRUE(tk_allocator_context_active() ==
               host.token_allocator_context);
+  ASSERT_TRUE(ps_parser_runtime_context_active() ==
+              host.parser_runtime_context);
+  ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
+  ASSERT_EQ(4, pragma_pack_current_alignment());
+  ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&host);
   ASSERT_TRUE(pp_context_active() == previous_pp);
@@ -15613,6 +15650,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   ASSERT_TRUE(tk_allocator_context_active() == previous_token_allocator);
+  ASSERT_TRUE(ps_parser_runtime_context_active() == previous_parser_runtime);
+  ASSERT_TRUE(ps_lowering_context_active() == previous_lowering);
 
   tokenizer_context_t *host_tokenizer =
       ag_compilation_session_tokenizer(&host);

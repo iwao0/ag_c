@@ -1,4 +1,5 @@
 #include "cast_lowering.h"
+#include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../parser/config_runtime.h"
 #include "../parser/decl.h"
@@ -10,8 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int aggregate_temp_seq;
 
 static node_t *annotate(node_t *node, const psx_type_t *type) {
   if (node && type) ps_node_bind_type(node, type);
@@ -116,7 +115,8 @@ static int size_compatible_tag_value(node_t *expr,
 }
 
 static char *new_aggregate_temp_name(void) {
-  int seq = aggregate_temp_seq++;
+  int seq = ps_lowering_context_active()
+      ->aggregate_cast_temp_sequence++;
   int len = snprintf(NULL, 0, "__aggregate_cast_%d", seq);
   char *name = calloc((size_t)len + 1, 1);
   snprintf(name, (size_t)len + 1, "__aggregate_cast_%d", seq);

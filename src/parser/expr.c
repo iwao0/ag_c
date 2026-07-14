@@ -12,6 +12,7 @@
 #include "config_runtime.h"
 #include "type.h"
 #include "type_builder.h"
+#include "runtime_context.h"
 #include "declaration_syntax.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -20,9 +21,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int string_label_count = 0;
-static int float_label_count = 0;
 
 #define PS_MAX_EXPR_NEST_DEPTH 1024
 #define PS_MAX_PAREN_NEST_DEPTH 1024
@@ -302,8 +300,10 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx);
 
 void ps_expr_reset_translation_unit_state(void) {
-  string_label_count = 0;
-  float_label_count = 0;
+  psx_parser_runtime_context_t *runtime =
+      ps_parser_runtime_context_active();
+  runtime->string_label_count = 0;
+  runtime->float_label_count = 0;
 }
 
 // expr = assign ("," assign)*
@@ -981,7 +981,7 @@ static node_t *parse_num_literal(void) {
                           fp_kind,
                           fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8));
     float_lit_t *lit = calloc(1, sizeof(float_lit_t));
-    lit->id = float_label_count++;
+    lit->id = ps_parser_runtime_context_active()->float_label_count++;
     lit->fval = node->fval;
     lit->fp_kind = fp_kind;
     lit->float_suffix_kind = node->float_suffix_kind;
@@ -999,7 +999,7 @@ static node_string_t *make_string_lit_node(char *str, int len,
                                            tk_string_prefix_kind_t prefix_kind) {
   node_string_t *snode = arena_alloc(sizeof(node_string_t));
   snode->base.kind = ND_STRING;
-  int id = string_label_count++;
+  int id = ps_parser_runtime_context_active()->string_label_count++;
   int label_len = snprintf(NULL, 0, ".LC%d", id);
   snode->string_label = calloc((size_t)label_len + 1, 1);
   snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);

@@ -1,36 +1,41 @@
 #include "../pragma_pack.h"
-
-#define PACK_STACK_MAX 16
-
-static int pragma_pack_current = 0;
-
-static int pack_stack[PACK_STACK_MAX];
-static int pack_stack_depth = 0;
+#include "runtime_context.h"
 
 void pragma_pack_push(int alignment) {
-  if (pack_stack_depth < PACK_STACK_MAX) {
-    pack_stack[pack_stack_depth++] = pragma_pack_current;
+  psx_parser_runtime_context_t *ctx =
+      ps_parser_runtime_context_active();
+  if (ctx->pragma_pack_stack_depth < PSX_PRAGMA_PACK_STACK_MAX) {
+    ctx->pragma_pack_stack[ctx->pragma_pack_stack_depth++] =
+        ctx->pragma_pack_current;
   }
-  pragma_pack_current = alignment;
+  ctx->pragma_pack_current = alignment;
 }
 
 void pragma_pack_pop(void) {
-  if (pack_stack_depth > 0) {
-    pragma_pack_current = pack_stack[--pack_stack_depth];
+  psx_parser_runtime_context_t *ctx =
+      ps_parser_runtime_context_active();
+  if (ctx->pragma_pack_stack_depth > 0) {
+    ctx->pragma_pack_current =
+        ctx->pragma_pack_stack[--ctx->pragma_pack_stack_depth];
   } else {
-    pragma_pack_current = 0;
+    ctx->pragma_pack_current = 0;
   }
 }
 
 void pragma_pack_set(int alignment) {
-  pragma_pack_current = alignment;
+  ps_parser_runtime_context_active()->pragma_pack_current = alignment;
+}
+
+void pragma_pack_reset_in(psx_parser_runtime_context_t *ctx) {
+  if (!ctx) return;
+  ctx->pragma_pack_current = 0;
+  ctx->pragma_pack_stack_depth = 0;
 }
 
 void pragma_pack_reset(void) {
-  pragma_pack_current = 0;
-  pack_stack_depth = 0;
+  pragma_pack_reset_in(ps_parser_runtime_context_active());
 }
 
 int pragma_pack_current_alignment(void) {
-  return pragma_pack_current;
+  return ps_parser_runtime_context_active()->pragma_pack_current;
 }

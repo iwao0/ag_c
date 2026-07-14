@@ -9,6 +9,7 @@
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_lowering_context_t psx_lowering_context_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -175,5 +176,7 @@ struct lvar_t *psx_apply_temporary_local_declaration_pipeline(
     const psx_temporary_local_declaration_pipeline_request_t *request);
 
 void psx_declaration_pipeline_reset_translation_unit_state(void);
+void psx_declaration_pipeline_reset_translation_unit_state_in(
+    psx_lowering_context_t *ctx);
 
 #endif

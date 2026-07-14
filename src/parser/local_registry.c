@@ -44,6 +44,8 @@ struct psx_local_registry_t {
   lvar_usage_event_t *usage_events_head;
   lvar_usage_event_t *usage_events_tail;
   psx_lvar_usage_region_t *current_usage_region;
+  char *current_function_name;
+  int current_function_name_len;
 };
 
 static psx_local_registry_t default_local_registry;
@@ -496,6 +498,24 @@ void ps_local_registry_reset_in(psx_local_registry_t *registry) {
   registry->usage_events_head = NULL;
   registry->usage_events_tail = NULL;
   registry->current_usage_region = NULL;
+  registry->current_function_name = NULL;
+  registry->current_function_name_len = 0;
+}
+
+void ps_local_registry_set_current_function_in(
+    psx_local_registry_t *registry, char *name, int len) {
+  if (!registry) return;
+  registry->current_function_name = name;
+  registry->current_function_name_len = len;
+}
+
+void ps_local_registry_get_current_function_in(
+    const psx_local_registry_t *registry,
+    char **out_name, int *out_len) {
+  if (out_name)
+    *out_name = registry ? registry->current_function_name : NULL;
+  if (out_len)
+    *out_len = registry ? registry->current_function_name_len : 0;
 }
 
 void ps_local_registry_reset(void) {

@@ -18,8 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char *current_funcname;
-static int current_funcname_len;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 
 lvar_t *ps_decl_register_lvar_typed_align(
@@ -45,13 +43,25 @@ void ps_decl_reserve_variadic_regs(void) {
 }
 
 void ps_decl_set_current_funcname(char *name, int len) {
-  current_funcname = name;
-  current_funcname_len = len;
+  ps_decl_set_current_funcname_in(
+      ps_local_registry_active(), name, len);
 }
 
 void ps_decl_get_current_funcname(char **out_name, int *out_len) {
-  if (out_name) *out_name = current_funcname;
-  if (out_len) *out_len = current_funcname_len;
+  ps_decl_get_current_funcname_in(
+      ps_local_registry_active(), out_name, out_len);
+}
+
+void ps_decl_set_current_funcname_in(
+    psx_local_registry_t *registry, char *name, int len) {
+  ps_local_registry_set_current_function_in(registry, name, len);
+}
+
+void ps_decl_get_current_funcname_in(
+    const psx_local_registry_t *registry,
+    char **out_name, int *out_len) {
+  ps_local_registry_get_current_function_in(
+      registry, out_name, out_len);
 }
 
 static const psx_type_t *lvar_public_decl_type(const lvar_t *var) {
@@ -202,13 +212,12 @@ void ps_decl_reset_translation_unit_state_in(
     psx_local_registry_t *registry) {
   if (!registry) return;
   ps_decl_reset_locals_in(registry);
-  current_funcname = NULL;
-  current_funcname_len = 0;
-  psx_declaration_pipeline_reset_translation_unit_state();
+  ps_decl_set_current_funcname_in(registry, NULL, 0);
 }
 
 void ps_decl_reset_translation_unit_state(void) {
   ps_decl_reset_translation_unit_state_in(ps_local_registry_active());
+  psx_declaration_pipeline_reset_translation_unit_state();
 }
 
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を

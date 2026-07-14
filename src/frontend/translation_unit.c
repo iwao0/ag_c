@@ -1,18 +1,18 @@
 #include "translation_unit.h"
 
 #include "../diag/diag.h"
+#include "../declaration_pipeline.h"
+#include "../lowering/runtime_context.h"
 #include "../semantic/declaration_registration.h"
 #include "function_definition.h"
 #include "local_declaration.h"
 #include "semantic_pipeline.h"
 #include "toplevel_declaration.h"
-#include "../parser/anon_tag.h"
 #include "../parser/arena.h"
 #include "../parser/decl.h"
-#include "../parser/expr.h"
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
-#include "../pragma_pack.h"
+#include "../parser/runtime_context.h"
 #include "../parser/semantic_ctx.h"
 #include <stdlib.h>
 #include <string.h>
@@ -22,25 +22,30 @@ static ag_compilation_session_t active_session_view(void) {
       .semantic_context = ps_ctx_active(),
       .global_registry = ps_global_registry_active(),
       .local_registry = ps_local_registry_active(),
+      .parser_runtime_context = ps_parser_runtime_context_active(),
+      .lowering_context = ps_lowering_context_active(),
   };
 }
 
 static int frontend_session_has_registries(
     const ag_compilation_session_t *session) {
   return session && session->semantic_context && session->global_registry &&
-         session->local_registry;
+         session->local_registry && session->parser_runtime_context &&
+         session->lowering_context;
 }
 
 static void reset_translation_unit_state(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry) {
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
+    psx_lowering_context_t *lowering_context) {
   ps_global_registry_reset_translation_unit_in(global_registry);
-  ps_anon_tag_reset_translation_unit_state();
-  ps_expr_reset_translation_unit_state();
   ps_decl_reset_translation_unit_state_in(local_registry);
   ps_ctx_reset_translation_unit_scope_in(semantic_context);
-  pragma_pack_reset();
+  ps_parser_runtime_context_reset_translation_unit(runtime_context);
+  psx_declaration_pipeline_reset_translation_unit_state_in(
+      lowering_context);
   arena_free_all();
 }
 
@@ -56,7 +61,9 @@ int psx_frontend_reset_translation_unit_state_in_compiler_context(
   reset_translation_unit_state(
       session->semantic_context,
       session->global_registry,
-      session->local_registry);
+      session->local_registry,
+      session->parser_runtime_context,
+      session->lowering_context);
   return 1;
 }
 
@@ -83,6 +90,7 @@ int psx_frontend_stream_begin(
       global_registry, local_registry);
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context, local_registry,
+      session->parser_runtime_context,
       tk_ctx, start,
       &stream->toplevel_declarations);
   stream->is_started = 1;

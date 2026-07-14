@@ -19,16 +19,13 @@
 #include "lvar_internal.h"
 #include "stmt.h"
 #include "type.h"
+#include "runtime_context.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include "../pragma_pack.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-static int g_recoverable_syntax_error;
-static int g_function_block_depth;
-static int g_recovery_block_depth;
 
 int ps_gvar_is_extern_decl(const global_var_t *gv) {
   return (gv && gv->is_extern_decl) ? 1 : 0;
@@ -247,6 +244,7 @@ void ps_parser_stream_begin(
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
   ps_parser_stream_begin_in_contexts(
       stream, ps_ctx_active(), ps_local_registry_active(),
+      ps_parser_runtime_context_active(),
       tk_ctx, start, toplevel_declarations);
 }
 
@@ -254,20 +252,23 @@ void ps_parser_stream_begin_in_contexts(
     psx_parser_stream_t *stream,
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     tokenizer_context_t *tk_ctx, token_t *start,
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
-  if (!stream || !semantic_context || !local_registry) abort();
+  if (!stream || !semantic_context || !local_registry || !runtime_context)
+    abort();
   stream->tk_ctx = tk_ctx;
   stream->semantic_context = semantic_context;
   stream->local_registry = local_registry;
+  stream->runtime_context = runtime_context;
   stream->toplevel_declarations = toplevel_declarations;
   if (tk_ctx) {
     tk_set_current_token_ctx(tk_ctx, start);
   }
   tk_set_current_token(start);
-  g_recoverable_syntax_error = 0;
-  g_function_block_depth = 0;
-  g_recovery_block_depth = 0;
+  runtime_context->recoverable_syntax_error = 0;
+  runtime_context->function_block_depth = 0;
+  runtime_context->recovery_block_depth = 0;
 }
 
 static void psx_advance_recovery_token(void) {
@@ -665,32 +666,35 @@ node_t *ps_parse_function_definition_body(
     psx_parser_stream_t *stream, node_function_definition_t *function,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!stream || !stream->semantic_context ||
-      !stream->local_registry || !function) return NULL;
+      !stream->local_registry || !stream->runtime_context || !function)
+    return NULL;
   psx_semantic_context_t *semantic_context = stream->semantic_context;
-  g_recoverable_syntax_error = 0;
-  g_recovery_block_depth = 0;
+  psx_parser_runtime_context_t *runtime = stream->runtime_context;
+  runtime->recoverable_syntax_error = 0;
+  runtime->recovery_block_depth = 0;
   tk_expect('{');
   function->base.rhs =
       (node_t *)parse_funcdef_body_block(
           semantic_context, stream->local_registry, local_declarations);
-  if (g_recoverable_syntax_error) {
-    int depth = g_recovery_block_depth > 0 ? g_recovery_block_depth : 1;
+  if (runtime->recoverable_syntax_error) {
+    int depth = runtime->recovery_block_depth > 0
+        ? runtime->recovery_block_depth : 1;
     while (!tk_at_eof() && depth > 0) {
       token_kind_t kind = curtok()->kind;
       if (kind == TK_LBRACE) depth++;
       else if (kind == TK_RBRACE) depth--;
       psx_advance_recovery_token();
     }
-    ps_decl_set_current_funcname(NULL, 0);
+    ps_decl_set_current_funcname_in(stream->local_registry, NULL, 0);
     if (stream && stream->tk_ctx)
       tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
-    g_recoverable_syntax_error = 0;
-    g_recovery_block_depth = 0;
+    runtime->recoverable_syntax_error = 0;
+    runtime->recovery_block_depth = 0;
     return NULL;
   }
   psx_ctx_validate_goto_refs_in(semantic_context);
   function->lvars = ps_decl_get_locals_in(stream->local_registry);
-  ps_decl_set_current_funcname(NULL, 0);
+  ps_decl_set_current_funcname_in(stream->local_registry, NULL, 0);
   if (stream && stream->tk_ctx) {
     tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
   }
@@ -718,17 +722,23 @@ node_t *ps_expr(void) {
   return ps_expr_ctx(NULL, tk_get_current_token());
 }
 void ps_parser_mark_recoverable_syntax_error(void) {
-  if (!g_recoverable_syntax_error)
-    g_recovery_block_depth = g_function_block_depth;
-  g_recoverable_syntax_error = 1;
+  psx_parser_runtime_context_t *runtime =
+      ps_parser_runtime_context_active();
+  if (!runtime->recoverable_syntax_error)
+    runtime->recovery_block_depth = runtime->function_block_depth;
+  runtime->recoverable_syntax_error = 1;
 }
 
 int ps_parser_has_recoverable_syntax_error(void) {
-  return g_recoverable_syntax_error;
+  return ps_parser_runtime_context_active()->recoverable_syntax_error;
 }
 
-void ps_parser_enter_recovery_block(void) { g_function_block_depth++; }
+void ps_parser_enter_recovery_block(void) {
+  ps_parser_runtime_context_active()->function_block_depth++;
+}
 
 void ps_parser_leave_recovery_block(void) {
-  if (g_function_block_depth > 0) g_function_block_depth--;
+  psx_parser_runtime_context_t *runtime =
+      ps_parser_runtime_context_active();
+  if (runtime->function_block_depth > 0) runtime->function_block_depth--;
 }

@@ -70,6 +70,28 @@ const tokenizerAllocatorSource = await readFile(
   "utf8",
 );
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
+const parserRuntimeSource = await readFile(
+  "src/parser/runtime_context.c",
+  "utf8",
+);
+const parserRuntimeConsumerSource = await readFile(
+  "src/parser/parser.c",
+  "utf8",
+);
+const parserExprSource = await readFile("src/parser/expr.c", "utf8");
+const parserPragmaPackSource = await readFile(
+  "src/parser/pragma_pack.c",
+  "utf8",
+);
+const parserDeclSource = await readFile("src/parser/decl.c", "utf8");
+const loweringRuntimeHeader = await readFile(
+  "src/lowering/runtime_context.h",
+  "utf8",
+);
+const loweringRuntimeSource = await readFile(
+  "src/lowering/runtime_context.c",
+  "utf8",
+);
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
       compilationSessionHeader,
     ) ||
@@ -97,6 +119,12 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/tk_allocator_context_t\s*\*token_allocator_context\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/psx_parser_runtime_context_t\s*\*parser_runtime_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
+    !/psx_lowering_context_t\s*\*lowering_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
@@ -118,6 +146,12 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/tk_allocator_context_create\s*\(/.test(compilerContextSource) ||
     !/tk_allocator_context_activate\s*\(/.test(compilerContextSource) ||
     !/tk_allocator_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/ps_parser_runtime_context_create\s*\(/.test(compilerContextSource) ||
+    !/ps_parser_runtime_context_activate\s*\(/.test(compilerContextSource) ||
+    !/ps_parser_runtime_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/ps_lowering_context_create\s*\(/.test(compilerContextSource) ||
+    !/ps_lowering_context_activate\s*\(/.test(compilerContextSource) ||
+    !/ps_lowering_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -139,6 +173,53 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+const loweringStateSources = await Promise.all([
+  readFile("src/lowering/local_storage.c", "utf8"),
+  readFile("src/lowering/static_local_lowering.c", "utf8"),
+  readFile("src/lowering/compound_literal_lowering.c", "utf8"),
+  readFile("src/lowering/cast_lowering.c", "utf8"),
+  readFile("src/lowering/assignment_lowering.c", "utf8"),
+  readFile("src/lowering/member_access_lowering.c", "utf8"),
+]);
+if (!/typedef\s+struct\s+psx_lowering_context_t\s*\{/.test(
+      loweringRuntimeHeader,
+    ) ||
+    !/default_lowering_context/.test(loweringRuntimeSource) ||
+    loweringStateSources.some((source) =>
+      /static\s+(?:frame_layout_t\s+current_layout|int\s+(?:object_sequences|file_scope_compound_sequence|local_compound_sequence|aggregate_temp_seq|compound_assignment_temp_seq|member_rvalue_sequence))/.test(
+        source,
+      )
+    ) ||
+    !/psx_declaration_pipeline_reset_translation_unit_state_in\s*\(\s*lowering_context\s*\)/.test(
+      await readFile("src/frontend/translation_unit.c", "utf8"),
+    )) {
+  throw new Error(
+    "lowering temporary naming and frame state must be owned by lowering context",
+  );
+}
+if (!/struct\s+psx_parser_runtime_context_t\s*\{/.test(
+      await readFile("src/parser/runtime_context.h", "utf8"),
+    ) ||
+    !/default_parser_runtime_context/.test(parserRuntimeSource) ||
+    /static\s+int\s+g_(?:recoverable_syntax_error|function_block_depth|recovery_block_depth)/.test(
+      parserRuntimeConsumerSource,
+    ) ||
+    /static\s+int\s+(?:string_label_count|float_label_count)/.test(
+      parserExprSource,
+    ) ||
+    /static\s+int\s+(?:pragma_pack_current|pack_stack_depth)/.test(
+      parserPragmaPackSource,
+    ) ||
+    /static\s+(?:char\s*\*|int\s+)current_funcname/.test(
+      parserDeclSource,
+    ) ||
+    !/ps_parser_runtime_context_reset_translation_unit\s*\(runtime_context\)/.test(
+      await readFile("src/frontend/translation_unit.c", "utf8"),
+    )) {
+  throw new Error(
+    "parser translation-unit state must be owned by parser runtime context",
   );
 }
 if (!/struct\s+tk_allocator_context_t\s*\{/.test(
