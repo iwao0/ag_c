@@ -15094,8 +15094,9 @@ static void test_semantic_context_isolation() {
       .member_name = direct_member_name,
       .member_name_len = 5,
   };
-  psx_semantic_resolve_tree_in_context(
-      second, (node_t *)&detached_access, NULL, NULL);
+  psx_semantic_resolve_tree_in_contexts(
+      second, ps_global_registry_active(), ps_local_registry_active(),
+      (node_t *)&detached_access, NULL, NULL);
   ASSERT_TRUE(detached_access.resolved_member != NULL);
   ASSERT_EQ(4, ps_type_sizeof(detached_access.base.type));
 

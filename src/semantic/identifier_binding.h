@@ -6,12 +6,6 @@
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
-node_t *psx_bind_identifier_tree_in(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_initializer_tree_in(
-    psx_semantic_context_t *semantic_context,
-    node_t *syntax, const token_t *fallback_diag_tok);
 node_t *psx_bind_identifier_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

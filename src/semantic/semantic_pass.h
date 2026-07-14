@@ -11,10 +11,6 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 void psx_semantic_resolve_tree(
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
-void psx_semantic_resolve_tree_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok);
 void psx_semantic_resolve_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -22,10 +18,6 @@ void psx_semantic_resolve_tree_in_contexts(
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 void psx_semantic_resolve_initializer_tree(
-    node_t *syntax, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok);
-void psx_semantic_resolve_initializer_tree_in_context(
-    psx_semantic_context_t *semantic_context,
     node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 void psx_semantic_resolve_initializer_tree_in_contexts(

@@ -798,23 +798,13 @@ void psx_semantic_resolve_tree(
       node, current_func, fallback_diag_tok);
 }
 
-void psx_semantic_resolve_tree_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *node, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
-  psx_semantic_resolve_tree_in_contexts(
-      semantic_context ? semantic_context : ps_ctx_active(),
-      ps_global_registry_active(),
-      ps_local_registry_active(),
-      node, current_func, fallback_diag_tok);
-}
-
 void psx_semantic_resolve_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return;
   psx_semantic_traversal_t traversal = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -834,23 +824,13 @@ void psx_semantic_resolve_initializer_tree(
       syntax, current_func, fallback_diag_tok);
 }
 
-void psx_semantic_resolve_initializer_tree_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *syntax, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
-  psx_semantic_resolve_initializer_tree_in_contexts(
-      semantic_context ? semantic_context : ps_ctx_active(),
-      ps_global_registry_active(),
-      ps_local_registry_active(),
-      syntax, current_func, fallback_diag_tok);
-}
-
 void psx_semantic_resolve_initializer_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return;
   psx_semantic_traversal_t traversal = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,

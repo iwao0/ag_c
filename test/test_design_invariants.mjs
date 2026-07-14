@@ -172,6 +172,10 @@ const semanticPipelineSource = await readFile(
   "src/frontend/semantic_pipeline.c",
   "utf8",
 );
+const semanticPassSource = await readFile(
+  "src/semantic/semantic_pass.c",
+  "utf8",
+);
 const identifierBindingSource = await readFile(
   "src/semantic/identifier_binding.c",
   "utf8",
@@ -238,6 +242,17 @@ if (ambiguousFrontendContextApis.test(
     )) {
   throw new Error(
     "frontend APIs must not combine one passed semantic context with active registries",
+  );
+}
+if (/psx_semantic_resolve_(?:initializer_)?tree_in_context\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    /psx_bind_identifier_(?:initializer_)?tree_in\s*\(/.test(
+      identifierBindingSource,
+    ) ||
+    /if\s*\(\s*!compiler_context\s*\)/.test(identifierBindingSource)) {
+  throw new Error(
+    "semantic traversal APIs must receive one complete registry set",
   );
 }
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
@@ -445,10 +460,6 @@ if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     "tag registration and layout resolution must use the passed semantic context",
   );
 }
-const semanticPassSource = await readFile(
-  "src/semantic/semantic_pass.c",
-  "utf8",
-);
 const memberAccessResolutionSource = await readFile(
   "src/semantic/member_access_resolution.c",
   "utf8",
