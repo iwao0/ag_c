@@ -1,6 +1,7 @@
 #include "static_assert_declaration.h"
 
 #include "expr.h"
+#include "local_registry.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -20,6 +21,16 @@ void psx_parse_static_assert_syntax_in_context(
     psx_parsed_static_assert_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  psx_parse_static_assert_syntax_in_contexts(
+      declaration, semantic_context,
+      ps_local_registry_active(), local_declarations);
+}
+
+void psx_parse_static_assert_syntax_in_contexts(
+    psx_parsed_static_assert_declaration_t *declaration,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   if (!declaration) return;
   memset(declaration, 0, sizeof(*declaration));
   declaration->diagnostic_token = current_token();
@@ -30,8 +41,8 @@ void psx_parse_static_assert_syntax_in_context(
   }
   tk_set_current_token(current_token()->next);
   tk_expect('(');
-  declaration->condition = psx_expr_assign_in_context(
-      semantic_context, local_declarations);
+  declaration->condition = psx_expr_assign_in_contexts(
+      semantic_context, local_registry, local_declarations);
   tk_expect(',');
   if (current_token()->kind != TK_STRING) {
     diag_emit_tokf(DIAG_ERR_PARSER_STATIC_ASSERT_MSG_NOT_STRING,

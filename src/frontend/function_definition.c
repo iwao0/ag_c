@@ -7,13 +7,15 @@
 #include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
+#include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 
-node_function_definition_t *psx_apply_function_definition_header_in_context(
+node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     psx_parsed_function_definition_t *definition) {
-  if (!definition) return NULL;
-  ps_decl_reset_locals();
+  if (!definition || !semantic_context || !local_registry) return NULL;
+  ps_decl_reset_locals_in(local_registry);
   ps_ctx_reset_function_scope_in(semantic_context);
 
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_context(
@@ -22,13 +24,14 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
     ps_diag_ctx(definition->diagnostic_token, "funcdef",
                 "canonical function return base type resolution failed");
   }
-  ps_parse_runtime_declarator_expressions_in_context(
-      &definition->declarator, semantic_context, NULL);
+  ps_parse_runtime_declarator_expressions_in_contexts(
+      &definition->declarator, semantic_context, local_registry, NULL);
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
           &(psx_function_definition_pipeline_request_t){
               .semantic_context = semantic_context,
+              .local_registry = local_registry,
               .base_type = base_type,
               .declarator = &definition->declarator,
           },
@@ -43,8 +46,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
   for (int i = 0; parameters && i < parameters->count; i++) {
     psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
-    ps_parse_runtime_declarator_expressions_in_context(
-        &parameter->declarator, semantic_context, NULL);
+    ps_parse_runtime_declarator_expressions_in_contexts(
+        &parameter->declarator, semantic_context, local_registry, NULL);
     if (!psx_apply_function_definition_parameter_pipeline(
             &pipeline, parameter)) {
       ps_diag_ctx(parameter->declarator.diagnostic_token, "funcdef",
@@ -97,6 +100,14 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
   if (node->signature->is_variadic_function)
     ps_decl_reserve_variadic_regs();
   return node;
+}
+
+node_function_definition_t *psx_apply_function_definition_header_in_context(
+    psx_semantic_context_t *semantic_context,
+    psx_parsed_function_definition_t *definition) {
+  return psx_apply_function_definition_header_in_contexts(
+      semantic_context ? semantic_context : ps_ctx_active(),
+      ps_local_registry_active(), definition);
 }
 
 

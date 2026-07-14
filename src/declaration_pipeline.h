@@ -7,6 +7,8 @@
 #include "parser/symtab.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -52,6 +54,7 @@ int psx_apply_function_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   const psx_type_t *base_type;
   psx_parsed_declarator_t *declarator;
 } psx_function_definition_pipeline_request_t;
@@ -65,6 +68,7 @@ typedef struct {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   const psx_type_t *base_type;
   psx_runtime_declarator_application_t application;
   psx_function_definition_pipeline_result_t *result;
@@ -85,6 +89,8 @@ int psx_finish_function_definition_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   char *function_name;
   int function_name_len;
   char *name;
@@ -113,6 +119,7 @@ int psx_finish_static_local_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -150,6 +157,7 @@ int psx_apply_block_extern_declaration_pipeline(
     const psx_block_extern_declaration_pipeline_request_t *request);
 
 typedef struct {
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   const psx_type_t *type;

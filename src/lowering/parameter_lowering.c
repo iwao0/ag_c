@@ -7,13 +7,16 @@
 #include "../parser/local_registry.h"
 
 static lvar_t *lower_parameter_with_plan(
+    psx_local_registry_t *local_registry,
     char *name, int name_len, const psx_type_t *type,
     const psx_parameter_storage_plan_t *storage) {
-  if (!name || name_len <= 0 || !type || !storage) return NULL;
+  if (!local_registry || !name || name_len <= 0 || !type || !storage)
+    return NULL;
 
   int offset = local_storage_allocate(
       storage->storage_size, storage->alignment);
-  lvar_t *var = ps_local_registry_create_storage_object(
+  lvar_t *var = ps_local_registry_create_storage_object_in(
+      local_registry,
       name, name_len, offset,
       storage->storage_size, storage->alignment, type);
   if (!var) return NULL;
@@ -24,26 +27,30 @@ static lvar_t *lower_parameter_with_plan(
 lvar_t *lower_parameter_declaration(
     const psx_parameter_lowering_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->type) return NULL;
+      !request->type || !request->local_registry) return NULL;
   psx_parameter_storage_plan_t storage;
   if (!psx_plan_parameter_storage(request->type, &storage)) return NULL;
   return lower_parameter_with_plan(
+      request->local_registry,
       request->name, request->name_len, request->type, &storage);
 }
 
 lvar_t *lower_resolved_parameter_declaration(
     const psx_resolved_parameter_lowering_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->resolution || !request->resolution->type) return NULL;
+      !request->resolution || !request->resolution->type ||
+      !request->local_registry) return NULL;
   const psx_parameter_declaration_resolution_t *resolution =
       request->resolution;
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_NORMAL) {
     return lower_parameter_with_plan(
+        request->local_registry,
         request->name, request->name_len, resolution->type,
         &resolution->storage);
   }
 
   psx_parameter_vla_lowering_request_t vla = {
+      .local_registry = request->local_registry,
       .name = request->name,
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,

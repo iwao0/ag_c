@@ -2219,6 +2219,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ps_decl_reset_locals();
   lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"matrix",
           .name_len = 6,
           .type = matrix,
@@ -2242,6 +2243,7 @@ static void test_local_declaration_storage_plan_boundary() {
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
   lvar_t *declared = declare_incomplete_local_object(
       &(psx_local_object_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"deferred",
           .name_len = 8,
           .type = deferred_type,
@@ -2264,6 +2266,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(complete_declared_local_object(
       declared,
       &(psx_local_object_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"deferred",
           .name_len = 8,
           .type = deferred_type,
@@ -2294,6 +2297,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_automatic_local_declaration_pipeline_result_t pipeline_result = {0};
   ASSERT_TRUE(psx_apply_automatic_local_declaration_pipeline(
       &(psx_automatic_local_declaration_pipeline_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"pipeline_deferred",
           .name_len = 17,
           .type = pipeline_input,
@@ -2321,6 +2325,7 @@ static void test_vla_lowering_request_boundary() {
   long long request_const_values[3] = {0};
   unsigned char request_is_const[3] = {0};
   psx_vla_lowering_request_t request = {
+      .local_registry = ps_local_registry_active(),
       .dimensions = request_dimensions,
       .const_values = request_const_values,
       .is_const = request_is_const,
@@ -2384,6 +2389,7 @@ static void test_vla_lowering_request_boundary() {
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
   result = lower_pointer_to_vla_declaration(
       &(psx_pointer_vla_lowering_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"p",
           .name_len = 1,
           .row_dimension = row_dimension,
@@ -2421,6 +2427,7 @@ static void test_vla_lowering_request_boundary() {
       ps_type_new_array(integer, 0, 0, 1));
   psx_parameter_vla_dimension_t parameter_dimensions[3] = {0};
   psx_parameter_vla_lowering_request_t parameter_request = {
+      .local_registry = ps_local_registry_active(),
       .name = (char *)"tensor",
       .name_len = 6,
       .inner_dimensions = parameter_dimensions,
@@ -2496,6 +2503,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ps_decl_reset_locals();
   lvar_t *lowered = lower_parameter_declaration(
       &(psx_parameter_lowering_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"value",
           .name_len = 5,
           .type = large_aggregate,
@@ -2540,6 +2548,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   dimension->is_param = 1;
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"values",
           .name_len = 6,
           .resolution = &parameter_resolution,
@@ -4616,6 +4625,8 @@ static void test_static_data_initializer_boundary() {
   psx_static_local_declaration_result_t static_result = {0};
   ASSERT_TRUE(lower_static_local_declaration(
       &(psx_static_local_declaration_request_t){
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = PSX_STATIC_LOCAL_ARRAY,
           .function_name = (char *)"boundary",
           .function_name_len = 8,
@@ -15087,6 +15098,20 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_TRUE(ag_compiler_context_activate(&second));
   ps_local_registry_reset();
   ps_local_registry_reset_in(first.local_registry);
+  lvar_t *lowered_into_first = lower_complete_local_object(
+      &(psx_local_object_request_t){
+          .local_registry = first.local_registry,
+          .name = (char *)"lowered_into_first",
+          .name_len = 18,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+      });
+  ASSERT_TRUE(lowered_into_first != NULL);
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"lowered_into_first", 18) == NULL);
+  ASSERT_TRUE(ps_decl_find_lvar_in(
+                  first.local_registry,
+                  (char *)"lowered_into_first", 18) ==
+              lowered_into_first);
   psx_local_registry_add_in(
       first.local_registry, &explicit_first_local);
   ASSERT_TRUE(ps_decl_find_lvar(

@@ -4,6 +4,7 @@
 #include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
+#include "../parser/local_registry.h"
 #include "../parser/type_builder.h"
 
 #include <stdio.h>
@@ -37,6 +38,7 @@ static struct lvar_t *create_aggregate_temporary(
   psx_type_t *type = ps_type_clone(object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
       &(psx_temporary_local_declaration_pipeline_request_t){
+          .local_registry = ps_local_registry_active(),
           .name = name,
           .name_len = (int)strlen(name),
           .type = type,

@@ -154,6 +154,30 @@ const lvarUsageAnalysisSource = await readFile(
   "src/semantic/lvar_usage_analysis.c",
   "utf8",
 );
+const localDeclarationHeader = await readFile(
+  "src/parser/local_declaration_syntax.h",
+  "utf8",
+);
+const localDeclarationFrontendSource = await readFile(
+  "src/frontend/local_declaration.c",
+  "utf8",
+);
+const localObjectLoweringSource = await readFile(
+  "src/lowering/local_object_lowering.c",
+  "utf8",
+);
+const parameterLoweringSource = await readFile(
+  "src/lowering/parameter_lowering.c",
+  "utf8",
+);
+const vlaLoweringSource = await readFile(
+  "src/lowering/vla_lowering.c",
+  "utf8",
+);
+const staticLocalLoweringSource = await readFile(
+  "src/lowering/static_local_lowering.c",
+  "utf8",
+);
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -183,6 +207,46 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       lvarUsageAnalysisSource,
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
+}
+const explicitLocalDeclarationLowering = [
+  localObjectLoweringSource,
+  parameterLoweringSource,
+  vlaLoweringSource,
+  staticLocalLoweringSource,
+].join("\n");
+if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
+      localDeclarationHeader,
+    ) ||
+    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+      localDeclarationHeader,
+    ) ||
+    !/callbacks->context\s*=\s*callbacks\s*;/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    /\bps_local_registry_create_storage_object\s*\(/.test(
+      explicitLocalDeclarationLowering,
+    ) ||
+    /\bps_local_registry_create_static_alias\s*\(/.test(
+      staticLocalLoweringSource,
+    ) ||
+    /\bps_register_global_var\s*\(/.test(staticLocalLoweringSource) ||
+    /\bps_decl_find_lvar\s*\(/.test(vlaLoweringSource) ||
+    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+      localObjectLoweringSource,
+    ) ||
+    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+      parameterLoweringSource,
+    ) ||
+    !/ps_local_registry_create_storage_object_in\s*\(/.test(
+      vlaLoweringSource,
+    ) ||
+    !/ps_local_registry_create_static_alias_in\s*\(/.test(
+      staticLocalLoweringSource,
+    ) ||
+    !/ps_register_global_var_in\s*\(/.test(staticLocalLoweringSource)) {
+  throw new Error(
+    "local declaration and parameter lowering must use explicitly passed registries",
+  );
 }
 const identifierResolutionSource = await readFile(
   "src/semantic/identifier_resolution.c",

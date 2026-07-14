@@ -5,6 +5,12 @@
 #include "../parser/ast.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
+
+node_function_definition_t *psx_apply_function_definition_header_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_parsed_function_definition_t *definition);
 
 node_function_definition_t *psx_apply_function_definition_header_in_context(
     psx_semantic_context_t *semantic_context,

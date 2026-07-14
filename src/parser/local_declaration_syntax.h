@@ -5,8 +5,14 @@
 #include "declaration_syntax.h"
 #include "initializer_syntax.h"
 
+typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
+
 typedef struct psx_local_declaration_callbacks_t {
   void *context;
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   void (*apply_static_assert)(
       void *context, node_t *condition, token_t *diagnostic_token);
   void *(*begin_declaration)(

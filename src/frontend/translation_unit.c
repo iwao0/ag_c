@@ -71,8 +71,14 @@ void psx_frontend_stream_begin(
   ps_ctx_reset_function_names_in(semantic_context);
   psx_frontend_init_toplevel_declaration_callbacks(
       &stream->toplevel_declarations, semantic_context);
-  psx_frontend_init_local_declaration_callbacks(
-      &stream->local_declarations, semantic_context);
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &stream->local_declarations, semantic_context,
+      compiler_context
+          ? compiler_context->global_registry
+          : ps_global_registry_active(),
+      compiler_context
+          ? compiler_context->local_registry
+          : ps_local_registry_active());
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context,
       compiler_context
@@ -115,8 +121,12 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0, &checkpoint);
       node_function_definition_t *header =
-          psx_apply_function_definition_header_in_context(
-              semantic_context, &item.value.function_header);
+          psx_apply_function_definition_header_in_contexts(
+              semantic_context,
+              stream->compiler_context
+                  ? stream->compiler_context->local_registry
+                  : ps_local_registry_active(),
+              &item.value.function_header);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,
           &stream->local_declarations);

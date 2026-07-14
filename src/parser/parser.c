@@ -318,9 +318,9 @@ int ps_parse_next_toplevel_item(
     if (psx_try_consume_pragma_pack_marker()) continue;
     if (curtok()->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_TOPLEVEL_ITEM_STATIC_ASSERT;
-      psx_parse_static_assert_syntax_in_context(
+      psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
-          semantic_context,
+          semantic_context, stream->local_registry,
           NULL);
       if (stream && stream->tk_ctx) {
         tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());

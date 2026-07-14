@@ -11,6 +11,7 @@
 #include "enum_const.h"
 #include "expr.h"
 #include "function_parameter_syntax.h"
+#include "local_registry.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -521,6 +522,16 @@ void ps_parse_runtime_declarator_expressions_in_context(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  ps_parse_runtime_declarator_expressions_in_contexts(
+      declarator, semantic_context,
+      ps_local_registry_active(), local_declarations);
+}
+
+void ps_parse_runtime_declarator_expressions_in_contexts(
+    psx_parsed_declarator_t *declarator,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   if (!declarator) return;
   token_t *saved = current_token();
   for (int i = 0; i < declarator->array_bound_count; i++) {
@@ -528,8 +539,8 @@ void ps_parse_runtime_declarator_expressions_in_context(
         &declarator->array_bounds[i].expression;
     if (expression->node || !expression->start || !expression->end) continue;
     tk_set_current_token(expression->start);
-    expression->node = psx_expr_assign_in_context(
-        semantic_context, local_declarations);
+    expression->node = psx_expr_assign_in_contexts(
+        semantic_context, local_registry, local_declarations);
     if (current_token() != expression->end) {
       ps_diag_ctx(current_token(), "declaration-syntax",
                    "runtime array bound was not fully consumed");

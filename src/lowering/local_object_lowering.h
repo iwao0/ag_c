@@ -3,7 +3,10 @@
 
 #include "../parser/decl.h"
 
+typedef struct psx_local_registry_t psx_local_registry_t;
+
 typedef struct {
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   const psx_type_t *type;

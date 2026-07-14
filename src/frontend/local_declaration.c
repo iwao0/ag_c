@@ -7,6 +7,9 @@
 #include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
+#include "../parser/local_registry.h"
+#include "../parser/global_registry.h"
+#include "../parser/semantic_ctx.h"
 
 #include <stdlib.h>
 
@@ -20,6 +23,8 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   const psx_type_t *base_type;
   int requested_alignment;
   int is_typedef;
@@ -39,20 +44,24 @@ typedef struct {
 
 static void apply_static_assert(
     void *context, node_t *condition, token_t *diagnostic_token) {
+  const psx_local_declaration_callbacks_t *callbacks = context;
   psx_apply_static_assert_in_context(
-      context, condition, diagnostic_token);
+      callbacks->semantic_context, condition, diagnostic_token);
 }
 
 static void *begin_declaration(
     void *context, const psx_parsed_decl_specifier_t *specifier,
     int is_typedef, int is_standalone_tag) {
+  const psx_local_declaration_callbacks_t *callbacks = context;
   psx_local_declaration_application_t *application =
       calloc(1, sizeof(*application));
   if (!application) {
     ps_diag_ctx(specifier ? specifier->diagnostic_token : NULL,
                 "local-declaration", "local declaration allocation failed");
   }
-  application->semantic_context = context;
+  application->semantic_context = callbacks->semantic_context;
+  application->global_registry = callbacks->global_registry;
+  application->local_registry = callbacks->local_registry;
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
     psx_apply_parsed_standalone_tag_in_context(
@@ -131,6 +140,8 @@ static void begin_declarator(
     application->static_request =
         (psx_static_local_declaration_pipeline_request_t){
             .semantic_context = application->semantic_context,
+            .global_registry = application->global_registry,
+            .local_registry = application->local_registry,
             .function_name = function_name,
             .function_name_len = function_name_len,
             .name = name->str,
@@ -152,6 +163,7 @@ static void begin_declarator(
   application->automatic_request =
       (psx_automatic_local_declaration_pipeline_request_t){
           .semantic_context = application->semantic_context,
+          .local_registry = application->local_registry,
           .name = name->str,
           .name_len = name->len,
           .type = application->current_type,
@@ -222,7 +234,11 @@ static void abort_declaration(void *declaration_context) {
 
 const psx_local_declaration_callbacks_t *
 psx_frontend_local_declaration_callbacks(void) {
-  static const psx_local_declaration_callbacks_t callbacks = {
+  static psx_local_declaration_callbacks_t callbacks;
+  callbacks = (psx_local_declaration_callbacks_t){
+      .semantic_context = ps_ctx_active(),
+      .global_registry = ps_global_registry_active(),
+      .local_registry = ps_local_registry_active(),
       .apply_static_assert = apply_static_assert,
       .begin_declaration = begin_declaration,
       .begin_declarator = begin_declarator,
@@ -230,15 +246,28 @@ psx_frontend_local_declaration_callbacks(void) {
       .finish_declaration = finish_declaration,
       .abort_declaration = abort_declaration,
   };
+  callbacks.context = &callbacks;
   return &callbacks;
 }
 
 void psx_frontend_init_local_declaration_callbacks(
     psx_local_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context) {
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      callbacks, semantic_context, ps_global_registry_active(),
+      ps_local_registry_active());
+}
+
+void psx_frontend_init_local_declaration_callbacks_in_contexts(
+    psx_local_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry) {
   if (!callbacks) return;
   *callbacks = (psx_local_declaration_callbacks_t){
-      .context = semantic_context,
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
       .apply_static_assert = apply_static_assert,
       .begin_declaration = begin_declaration,
       .begin_declarator = begin_declarator,
@@ -246,4 +275,5 @@ void psx_frontend_init_local_declaration_callbacks(
       .finish_declaration = finish_declaration,
       .abort_declaration = abort_declaration,
   };
+  callbacks->context = callbacks;
 }

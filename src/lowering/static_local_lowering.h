@@ -4,6 +4,9 @@
 #include "../parser/decl.h"
 #include "../semantic/static_initializer_resolution.h"
 
+typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
+
 typedef enum {
   PSX_STATIC_LOCAL_SCALAR,
   PSX_STATIC_LOCAL_ARRAY,
@@ -14,6 +17,8 @@ typedef enum {
 } psx_static_local_kind_t;
 
 typedef struct {
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   psx_static_local_kind_t kind;
   char *function_name;
   int function_name_len;
@@ -24,6 +29,8 @@ typedef struct {
 } psx_static_local_object_request_t;
 
 typedef struct {
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   psx_static_local_kind_t kind;
   char *function_name;
   int function_name_len;

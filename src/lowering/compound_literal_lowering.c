@@ -5,6 +5,7 @@
 #include "../diag/error_catalog.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
+#include "../parser/local_registry.h"
 #include "../parser/type.h"
 
 #include <stdio.h>
@@ -102,6 +103,7 @@ static node_t *lower_local_compound_literal(
   if (!storage_name ||
       !psx_apply_automatic_local_declaration_pipeline(
           &(psx_automatic_local_declaration_pipeline_request_t){
+              .local_registry = ps_local_registry_active(),
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
               .type = type,
