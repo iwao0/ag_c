@@ -63,6 +63,10 @@ const compilationSessionHeader = await readFile(
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
 const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
+const wasmBackendContextSource = await readFile(
+  "src/arch/wasm32/backend_context.c",
+  "utf8",
+);
 const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
 const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
 const tokenizerAllocatorSource = await readFile(
@@ -152,6 +156,19 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ps_lowering_context_create\s*\(/.test(compilerContextSource) ||
     !/ps_lowering_context_activate\s*\(/.test(compilerContextSource) ||
     !/ps_lowering_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/ag_compilation_session_set_backend_context\s*\(/.test(
+      compilerContextSource,
+    ) ||
+    !/session->backend_activate\s*\(session->backend_context\)/.test(
+      compilerContextSource,
+    ) ||
+    !/session->backend_deactivate\s*\(session->backend_context\)/.test(
+      compilerContextSource,
+    ) ||
+    !/session->backend_destroy\s*\(session->backend_context\)/.test(
+      compilerContextSource,
+    ) ||
+    /wasm32_(?:ir|obj|backend)_context/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -173,6 +190,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+
+if (!/wasm32_ir_context_create\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_obj_context_create\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_ir_context_activate\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_obj_context_activate\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_ir_context_destroy\s*\(/.test(wasmBackendContextSource) ||
+    !/wasm32_obj_context_destroy\s*\(/.test(wasmBackendContextSource) ||
+    !/attach_wasm_backend_context\s*\(/.test(compilerMainSource)) {
+  throw new Error(
+    "Wasm compilation entry points must attach session-owned IR and object contexts",
   );
 }
 const loweringStateSources = await Promise.all([
@@ -1078,6 +1107,17 @@ if (wasmFunctionCodegenViolations.length ||
 }
 
 const wasmObjSource = await readFile("src/arch/wasm32/wasm32_obj.c", "utf8");
+if (/^static\s+obj_ctx_t\s+g_obj\s*;/m.test(wasmObjSource) ||
+    /^static\s+wb_t\s+g_obj_capture\s*;/m.test(wasmObjSource) ||
+    /^static\s+(?:ir_type_t|unsigned char|int)\s*\*?g_emit_local_/m.test(
+      wasmObjSource,
+    ) ||
+    !/struct\s+wasm32_obj_context_t\s*\{/.test(wasmObjSource) ||
+    !/wasm32_obj_clear_module\s*\(&g_obj\)/.test(wasmObjSource)) {
+  throw new Error(
+    "Wasm object module, capture, and emit state must be context-owned and reset with cleanup",
+  );
+}
 const wasmObjFunctionCodegenStart = wasmObjSource.indexOf(
   "static void gen_func_body",
 );

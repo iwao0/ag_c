@@ -13,6 +13,7 @@ typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef void (*ag_session_backend_callback_t)(void *context);
 
 typedef struct ag_compilation_session_t {
   psx_semantic_context_t *semantic_context;
@@ -35,6 +36,10 @@ typedef struct ag_compilation_session_t {
   psx_parser_runtime_context_t *previous_parser_runtime_context;
   psx_lowering_context_t *lowering_context;
   psx_lowering_context_t *previous_lowering_context;
+  void *backend_context;
+  ag_session_backend_callback_t backend_activate;
+  ag_session_backend_callback_t backend_deactivate;
+  ag_session_backend_callback_t backend_destroy;
   ag_target_info_t target;
   unsigned char is_active;
 } ag_compilation_session_t;
@@ -50,5 +55,10 @@ tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);
 const ag_target_info_t *ag_compilation_session_target(
     const ag_compilation_session_t *session);
+int ag_compilation_session_set_backend_context(
+    ag_compilation_session_t *session, void *backend_context,
+    ag_session_backend_callback_t activate,
+    ag_session_backend_callback_t deactivate,
+    ag_session_backend_callback_t destroy);
 
 #endif

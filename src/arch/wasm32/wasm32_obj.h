@@ -5,6 +5,14 @@
 #include "../../ir/ir_data.h"
 #include <stdio.h>
 
+typedef struct wasm32_obj_context_t wasm32_obj_context_t;
+
+wasm32_obj_context_t *wasm32_obj_context_create(void);
+void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx);
+wasm32_obj_context_t *wasm32_obj_context_activate(
+    wasm32_obj_context_t *ctx);
+wasm32_obj_context_t *wasm32_obj_context_active(void);
+
 void wasm32_obj_set_output_file(FILE *out);
 void wasm32_obj_capture_output(int enabled);
 void wasm32_obj_set_capture_limit(size_t max_bytes);

@@ -83,12 +83,16 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       ps_parser_runtime_context_activate(session->parser_runtime_context);
   session->previous_lowering_context =
       ps_lowering_context_activate(session->lowering_context);
+  if (session->backend_activate)
+    session->backend_activate(session->backend_context);
   session->is_active = 1;
   return 1;
 }
 
 void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (!session || !session->is_active) return;
+  if (session->backend_deactivate)
+    session->backend_deactivate(session->backend_context);
   ps_lowering_context_activate(session->previous_lowering_context);
   ps_parser_runtime_context_activate(
       session->previous_parser_runtime_context);
@@ -125,6 +129,8 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   tk_allocator_context_destroy(session->token_allocator_context);
   ps_parser_runtime_context_destroy(session->parser_runtime_context);
   ps_lowering_context_destroy(session->lowering_context);
+  if (session->backend_destroy)
+    session->backend_destroy(session->backend_context);
   memset(session, 0, sizeof(*session));
 }
 
@@ -140,6 +146,21 @@ const ag_target_info_t *ag_compilation_session_target(
   return ag_compilation_session_is_complete(session)
              ? &session->target
              : NULL;
+}
+
+int ag_compilation_session_set_backend_context(
+    ag_compilation_session_t *session, void *backend_context,
+    ag_session_backend_callback_t activate,
+    ag_session_backend_callback_t deactivate,
+    ag_session_backend_callback_t destroy) {
+  if (!session || session->is_active || session->backend_context ||
+      !backend_context || !destroy)
+    return 0;
+  session->backend_context = backend_context;
+  session->backend_activate = activate;
+  session->backend_deactivate = deactivate;
+  session->backend_destroy = destroy;
+  return 1;
 }
 
 int ag_compiler_context_init(ag_compiler_context_t *context) {

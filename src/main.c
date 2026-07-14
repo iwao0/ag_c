@@ -15,6 +15,7 @@
 #include "arch/arm64_apple/arm64_apple_ir.h"
 #include "arch/wasm32/wasm32_ir.h"
 #include "arch/wasm32/wasm32_obj.h"
+#include "arch/wasm32/backend_context.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,6 +155,21 @@ static char *read_file_contents(const char *path) {
 static ag_compilation_session_t wasm_adapter_session;
 static int wasm_adapter_session_live;
 
+static int attach_wasm_backend_context(
+    ag_compilation_session_t *session) {
+  wasm32_backend_context_t *backend = wasm32_backend_context_create();
+  if (!backend) return 0;
+  if (!ag_compilation_session_set_backend_context(
+          session, backend,
+          wasm32_backend_context_activate,
+          wasm32_backend_context_deactivate,
+          wasm32_backend_context_destroy)) {
+    wasm32_backend_context_destroy(backend);
+    return 0;
+  }
+  return 1;
+}
+
 static void wasm_publish_and_dispose_session(
     ag_compilation_session_t *session) {
   if (!session) return;
@@ -179,7 +195,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
 
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = &wasm_adapter_session;
-  if (!ag_compilation_session_init(session, &target)) {
+  if (!ag_compilation_session_init(session, &target) ||
+      !attach_wasm_backend_context(session)) {
     wasm_publish_and_dispose_session(session);
     return -4;
   }
@@ -392,8 +409,11 @@ int main(int argc, char **argv) {
       ag_target_info_host();
 #endif
   ag_compilation_session_t session;
-  if (!ag_compilation_session_init(&session, &target) ||
-      !ag_compilation_session_activate(&session)) {
+  int session_ready = ag_compilation_session_init(&session, &target);
+#ifdef AGC_TARGET_WASM32
+  if (session_ready) session_ready = attach_wasm_backend_context(&session);
+#endif
+  if (!session_ready || !ag_compilation_session_activate(&session)) {
     ag_compilation_session_dispose(&session);
     free(source);
     return 1;

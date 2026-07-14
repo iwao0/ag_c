@@ -123,10 +123,79 @@ typedef struct {
   int has_indirect_call;
 } obj_ctx_t;
 
-static obj_ctx_t g_obj;
-static wb_t g_obj_capture;
-static uint32_t g_obj_capture_limit;
-static int g_obj_capture_limit_exceeded;
+struct wasm32_obj_context_t {
+  obj_ctx_t obj;
+  wb_t capture;
+  uint32_t capture_limit;
+  int capture_limit_exceeded;
+  ir_type_t *emit_local_types;
+  unsigned char *emit_local_unsigned;
+  int emit_local_count;
+};
+
+static wasm32_obj_context_t default_wasm32_obj_context;
+static wasm32_obj_context_t *active_wasm32_obj_context;
+
+static void wasm32_obj_clear_module(obj_ctx_t *obj) {
+  if (!obj) return;
+  for (int i = 0; i < obj->func_count; i++) {
+    free(obj->funcs[i].name);
+    free(obj->funcs[i].c_signature);
+    free(obj->funcs[i].sig.params);
+    free(obj->funcs[i].body.data);
+    free(obj->funcs[i].relocs);
+  }
+  for (int i = 0; i < obj->data_count; i++) {
+    free(obj->data[i].name);
+    free(obj->data[i].bytes.data);
+    free(obj->data[i].relocs);
+  }
+  for (int i = 0; i < obj->global_count; i++)
+    free(obj->globals[i].name);
+  for (int i = 0; i < obj->type_count; i++)
+    free(obj->types[i].params);
+  free(obj->funcs);
+  free(obj->data);
+  free(obj->globals);
+  free(obj->types);
+  free(obj->code_relocs);
+  free(obj->data_relocs);
+  memset(obj, 0, sizeof(*obj));
+}
+
+wasm32_obj_context_t *wasm32_obj_context_create(void) {
+  return calloc(1, sizeof(wasm32_obj_context_t));
+}
+
+void wasm32_obj_context_destroy(wasm32_obj_context_t *ctx) {
+  if (!ctx || ctx == &default_wasm32_obj_context) return;
+  if (active_wasm32_obj_context == ctx) active_wasm32_obj_context = NULL;
+  wasm32_obj_clear_module(&ctx->obj);
+  free(ctx->capture.data);
+  free(ctx);
+}
+
+wasm32_obj_context_t *wasm32_obj_context_activate(
+    wasm32_obj_context_t *ctx) {
+  wasm32_obj_context_t *previous = active_wasm32_obj_context;
+  active_wasm32_obj_context = ctx;
+  return previous;
+}
+
+wasm32_obj_context_t *wasm32_obj_context_active(void) {
+  return active_wasm32_obj_context ? active_wasm32_obj_context
+                                   : &default_wasm32_obj_context;
+}
+
+#define g_obj (wasm32_obj_context_active()->obj)
+#define g_obj_capture (wasm32_obj_context_active()->capture)
+#define g_obj_capture_limit (wasm32_obj_context_active()->capture_limit)
+#define g_obj_capture_limit_exceeded \
+  (wasm32_obj_context_active()->capture_limit_exceeded)
+#define g_emit_local_types (wasm32_obj_context_active()->emit_local_types)
+#define g_emit_local_unsigned \
+  (wasm32_obj_context_active()->emit_local_unsigned)
+#define g_emit_local_count (wasm32_obj_context_active()->emit_local_count)
 
 static const char STACK_POINTER_NAME[] = "__stack_pointer";
 static const char VA_ARG_AREA_NAME[] = "__ag_va_arg_area";
@@ -576,10 +645,6 @@ static int intern_type(const obj_sig_t *sig) {
 static int local_index(int param_count, int vreg) {
   return param_count + vreg;
 }
-
-static ir_type_t *g_emit_local_types;
-static unsigned char *g_emit_local_unsigned;
-static int g_emit_local_count;
 
 static ir_type_t actual_vreg_type(ir_val_t v) {
   if (v.id >= 0 && v.id < g_emit_local_count && g_emit_local_types) return g_emit_local_types[v.id];
@@ -2213,7 +2278,7 @@ unsigned char *wasm32_obj_take_output(size_t *out_len) {
 void wasm32_obj_begin(void) {
   FILE *out = g_obj.out;
   int capture_output = g_obj.capture_output;
-  memset(&g_obj, 0, sizeof(g_obj));
+  wasm32_obj_clear_module(&g_obj);
   g_obj.out = out;
   g_obj.capture_output = capture_output;
 }

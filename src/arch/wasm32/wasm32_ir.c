@@ -98,10 +98,54 @@ typedef struct {
   int cap;
 } wasm_function_symbol_ctx_t;
 
-static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
-static const ir_data_module_t *g_data_module;
-static wasm_func_table_ctx_t g_func_table = {NULL, 0, 0, 0};
-static wasm_function_symbol_ctx_t g_function_symbols = {NULL, 0, 0};
+struct wasm32_ir_context_t {
+  wasm_data_ctx_t data;
+  const ir_data_module_t *data_module;
+  wasm_func_table_ctx_t func_table;
+  wasm_function_symbol_ctx_t function_symbols;
+};
+
+static wasm32_ir_context_t default_wasm32_ir_context = {
+    .data = {.next_data_off = WASM_STATIC_BASE},
+};
+static wasm32_ir_context_t *active_wasm32_ir_context;
+
+wasm32_ir_context_t *wasm32_ir_context_create(void) {
+  wasm32_ir_context_t *ctx = calloc(1, sizeof(*ctx));
+  if (ctx) ctx->data.next_data_off = WASM_STATIC_BASE;
+  return ctx;
+}
+
+void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx) {
+  if (!ctx || ctx == &default_wasm32_ir_context) return;
+  if (active_wasm32_ir_context == ctx) active_wasm32_ir_context = NULL;
+  for (int i = 0; i < ctx->data.symbol_count; i++)
+    free(ctx->data.symbols[i].name);
+  for (int i = 0; i < ctx->func_table.ref_count; i++)
+    free(ctx->func_table.refs[i].name);
+  for (int i = 0; i < ctx->function_symbols.count; i++)
+    free(ctx->function_symbols.symbols[i].name);
+  free(ctx->data.symbols);
+  free(ctx->func_table.refs);
+  free(ctx->function_symbols.symbols);
+  free(ctx);
+}
+
+wasm32_ir_context_t *wasm32_ir_context_activate(wasm32_ir_context_t *ctx) {
+  wasm32_ir_context_t *previous = active_wasm32_ir_context;
+  active_wasm32_ir_context = ctx;
+  return previous;
+}
+
+wasm32_ir_context_t *wasm32_ir_context_active(void) {
+  return active_wasm32_ir_context ? active_wasm32_ir_context
+                                  : &default_wasm32_ir_context;
+}
+
+#define g_data (wasm32_ir_context_active()->data)
+#define g_data_module (wasm32_ir_context_active()->data_module)
+#define g_func_table (wasm32_ir_context_active()->func_table)
+#define g_function_symbols (wasm32_ir_context_active()->function_symbols)
 static const char k_wasm_indent_spaces[] = "                                ";
 
 static void wasm_emit_indent(int spaces) {

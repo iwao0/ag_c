@@ -15546,14 +15546,50 @@ static void test_compiler_context_registry_isolation() {
   ag_compiler_context_dispose(&second);
 }
 
+typedef struct {
+  void *previous;
+  int activate_count;
+  int deactivate_count;
+  int destroy_count;
+} test_backend_context_t;
+
+static void *test_active_backend_context;
+
+static void test_backend_activate(void *context) {
+  test_backend_context_t *backend = context;
+  backend->previous = test_active_backend_context;
+  test_active_backend_context = backend;
+  backend->activate_count++;
+}
+
+static void test_backend_deactivate(void *context) {
+  test_backend_context_t *backend = context;
+  test_active_backend_context = backend->previous;
+  backend->previous = NULL;
+  backend->deactivate_count++;
+}
+
+static void test_backend_destroy(void *context) {
+  test_backend_context_t *backend = context;
+  backend->destroy_count++;
+}
+
 static void test_compilation_session_owns_target_and_tokenizer() {
   printf("test_compilation_session_owns_target_and_tokenizer...\n");
   ag_target_info_t host_target = ag_target_info_host();
   ag_target_info_t wasm_target = ag_target_info_wasm32();
   ag_compilation_session_t host;
   ag_compilation_session_t wasm;
+  test_backend_context_t host_backend = {0};
+  test_backend_context_t wasm_backend = {0};
   ASSERT_TRUE(ag_compilation_session_init(&host, &host_target));
   ASSERT_TRUE(ag_compilation_session_init(&wasm, &wasm_target));
+  ASSERT_TRUE(ag_compilation_session_set_backend_context(
+      &host, &host_backend, test_backend_activate,
+      test_backend_deactivate, test_backend_destroy));
+  ASSERT_TRUE(ag_compilation_session_set_backend_context(
+      &wasm, &wasm_backend, test_backend_activate,
+      test_backend_deactivate, test_backend_destroy));
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
   ASSERT_EQ(8, ag_target_info_pointer_size(
@@ -15598,6 +15634,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               host.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  ASSERT_TRUE(test_active_backend_context == &host_backend);
+  ASSERT_EQ(1, host_backend.activate_count);
   host.lowering_context->aggregate_cast_temp_sequence = 9;
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(tk_allocator_calloc(1, 16) != NULL);
@@ -15626,6 +15664,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               wasm.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == wasm.lowering_context);
+  ASSERT_TRUE(test_active_backend_context == &wasm_backend);
+  ASSERT_EQ(1, wasm_backend.activate_count);
   ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(0, pragma_pack_current_alignment());
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
@@ -15640,6 +15680,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_parser_runtime_context_active() ==
               host.parser_runtime_context);
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
+  ASSERT_TRUE(test_active_backend_context == &host_backend);
+  ASSERT_EQ(1, wasm_backend.deactivate_count);
   ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(4, pragma_pack_current_alignment());
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
@@ -15652,6 +15694,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_allocator_context_active() == previous_token_allocator);
   ASSERT_TRUE(ps_parser_runtime_context_active() == previous_parser_runtime);
   ASSERT_TRUE(ps_lowering_context_active() == previous_lowering);
+  ASSERT_TRUE(test_active_backend_context == NULL);
+  ASSERT_EQ(1, host_backend.deactivate_count);
 
   tokenizer_context_t *host_tokenizer =
       ag_compilation_session_tokenizer(&host);
@@ -15673,6 +15717,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    ag_compilation_session_target(&wasm)));
   ag_compilation_session_dispose(&host);
   ag_compilation_session_dispose(&wasm);
+  ASSERT_EQ(1, host_backend.destroy_count);
+  ASSERT_EQ(1, wasm_backend.destroy_count);
 }
 
 int main() {
