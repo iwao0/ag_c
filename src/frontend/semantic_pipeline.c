@@ -42,15 +42,6 @@ static void analyze_function_in_contexts(
       local_registry, current_function, fallback_diag_tok);
 }
 
-void psx_frontend_analyze_function_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *function, const token_t *fallback_diag_tok) {
-  analyze_function_in_contexts(
-      semantic_context ? semantic_context : ps_ctx_active(),
-      ps_global_registry_active(),
-      ps_local_registry_active(), function, fallback_diag_tok);
-}
-
 void psx_frontend_analyze_function_in_compiler_context(
     ag_compiler_context_t *compiler_context,
     node_t *function, const token_t *fallback_diag_tok) {
@@ -64,17 +55,9 @@ void psx_frontend_analyze_function_in_compiler_context(
 
 void psx_frontend_analyze_function(
     node_t *function, const token_t *fallback_diag_tok) {
-  psx_frontend_analyze_function_in_context(
-      ps_ctx_active(), function, fallback_diag_tok);
-}
-
-node_t *psx_frontend_analyze_expression_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *expression, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_expression_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(),
-      expression, fallback_diag_tok);
+  analyze_function_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), function, fallback_diag_tok);
 }
 
 node_t *psx_frontend_analyze_expression_in_contexts(
@@ -100,17 +83,9 @@ node_t *psx_frontend_analyze_expression_in_contexts(
 
 node_t *psx_frontend_analyze_expression(
     node_t *expression, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_expression_in_context(
-      ps_ctx_active(), expression, fallback_diag_tok);
-}
-
-node_t *psx_frontend_analyze_initializer_syntax_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_initializer_syntax_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(),
-      syntax, fallback_diag_tok);
+  return psx_frontend_analyze_expression_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), expression, fallback_diag_tok);
 }
 
 node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
@@ -135,15 +110,9 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
 
 node_t *psx_frontend_analyze_initializer_syntax(
     node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_frontend_analyze_initializer_syntax_in_context(
-      ps_ctx_active(), syntax, fallback_diag_tok);
-}
-
-void psx_frontend_analyze_program_in_context(
-    psx_semantic_context_t *semantic_context, node_t **program) {
-  psx_frontend_analyze_program_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), program);
+  return psx_frontend_analyze_initializer_syntax_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), syntax, fallback_diag_tok);
 }
 
 void psx_frontend_analyze_program_in_contexts(
@@ -171,6 +140,7 @@ void psx_frontend_analyze_program_in_contexts(
 }
 
 void psx_frontend_analyze_program(node_t **program) {
-  psx_frontend_analyze_program_in_context(
-      ps_ctx_active(), program);
+  psx_frontend_analyze_program_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), program);
 }

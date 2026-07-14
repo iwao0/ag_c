@@ -196,6 +196,10 @@ const toplevelDeclarationFrontendSource = await readFile(
   "src/frontend/toplevel_declaration.c",
   "utf8",
 );
+const frontendFunctionDefinitionSource = await readFile(
+  "src/frontend/function_definition.c",
+  "utf8",
+);
 const toplevelDeclarationSyntaxSource = await readFile(
   "src/parser/toplevel_declaration_syntax.c",
   "utf8",
@@ -225,6 +229,15 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
     )) {
   throw new Error(
     "declaration pipelines must use only their explicit compiler contexts",
+  );
+}
+const ambiguousFrontendContextApis =
+  /psx_(?:frontend_analyze_(?:function|expression|initializer_syntax|program)|apply_function_definition_header|apply_toplevel_declaration|frontend_init_(?:toplevel|local)_declaration_callbacks)_in_context\s*\(/;
+if (ambiguousFrontendContextApis.test(
+      `${semanticPipelineSource}\n${frontendFunctionDefinitionSource}\n${toplevelDeclarationFrontendSource}\n${localDeclarationFrontendSource}`,
+    )) {
+  throw new Error(
+    "frontend APIs must not combine one passed semantic context with active registries",
   );
 }
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
@@ -630,10 +643,6 @@ if (!/ps_find_global_var_in\s*\(/.test(
     "global declaration and semantic lowering must use explicit registries",
   );
 }
-const frontendFunctionDefinitionSource = await readFile(
-  "src/frontend/function_definition.c",
-  "utf8",
-);
 const parserSource = await readFile("src/parser/parser.c", "utf8");
 const statementParserSource = await readFile("src/parser/stmt.c", "utf8");
 const expressionParserSource = await readFile("src/parser/expr.c", "utf8");

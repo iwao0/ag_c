@@ -7,9 +7,6 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 
-void psx_frontend_init_local_declaration_callbacks(
-    psx_local_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context);
 void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_local_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,

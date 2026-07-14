@@ -261,14 +261,6 @@ psx_frontend_local_declaration_callbacks(void) {
   return &callbacks;
 }
 
-void psx_frontend_init_local_declaration_callbacks(
-    psx_local_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context) {
-  psx_frontend_init_local_declaration_callbacks_in_contexts(
-      callbacks, semantic_context, ps_global_registry_active(),
-      ps_local_registry_active());
-}
-
 void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_local_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,

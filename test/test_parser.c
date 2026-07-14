@@ -15185,8 +15185,9 @@ static void test_semantic_context_isolation() {
   node_function_definition_t parsed_function = {0};
   parsed_function.base.kind = ND_FUNCDEF;
   psx_local_declaration_callbacks_t local_declarations;
-  psx_frontend_init_local_declaration_callbacks(
-      &local_declarations, second);
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      &local_declarations, second, ps_global_registry_active(),
+      ps_local_registry_active());
   ASSERT_TRUE(ps_parse_function_definition_body(
                   &parser_stream, &parsed_function,
                   &local_declarations) != NULL);

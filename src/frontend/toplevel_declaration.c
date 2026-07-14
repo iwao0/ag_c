@@ -196,14 +196,6 @@ psx_frontend_toplevel_declaration_callbacks(void) {
   return &callbacks;
 }
 
-void psx_frontend_init_toplevel_declaration_callbacks(
-    psx_toplevel_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context) {
-  psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
-      callbacks, semantic_context,
-      ps_global_registry_active(), ps_local_registry_active());
-}
-
 void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
     psx_toplevel_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,
@@ -223,14 +215,6 @@ void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
       .finish_declaration = finish_declaration,
       .abort_declaration = finish_declaration,
   };
-}
-
-void psx_apply_toplevel_declaration_in_context(
-    psx_semantic_context_t *semantic_context,
-    psx_parsed_toplevel_declaration_t *declaration) {
-  psx_apply_toplevel_declaration_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), declaration);
 }
 
 void psx_apply_toplevel_declaration_in_contexts(
@@ -257,6 +241,7 @@ void psx_apply_toplevel_declaration_in_contexts(
 
 void psx_apply_toplevel_declaration(
     psx_parsed_toplevel_declaration_t *declaration) {
-  psx_apply_toplevel_declaration_in_context(
-      ps_ctx_active(), declaration);
+  psx_apply_toplevel_declaration_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), declaration);
 }
