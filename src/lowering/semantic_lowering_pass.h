@@ -18,13 +18,6 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok);
 
-node_t *psx_lower_semantic_tree_in(
-    psx_local_registry_t *local_registry,
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_lower_semantic_initializer_syntax_in(
-    psx_local_registry_t *local_registry,
-    node_t *syntax, const token_t *fallback_diag_tok);
-
 node_t *psx_lower_semantic_tree(
     node_t *node, const token_t *fallback_diag_tok);
 node_t *psx_lower_semantic_initializer_syntax(

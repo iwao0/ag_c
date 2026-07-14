@@ -459,6 +459,19 @@ for (const sourcePath of [
     );
   }
 }
+const splitSemanticLoweringApi =
+  /(?:psx_lower_semantic_(?:tree|initializer_syntax)|lower_compound_literal_expression)_in\s*\(/;
+for (const sourcePath of [
+  "src/lowering/semantic_lowering_pass.c",
+  "src/lowering/compound_literal_lowering.c",
+]) {
+  const source = await readFile(sourcePath, "utf8");
+  if (splitSemanticLoweringApi.test(source)) {
+    throw new Error(
+      `${sourcePath} must not combine a local registry with active contexts`,
+    );
+  }
+}
 const frontendDeclarationSources = [
   await readFile("src/frontend/toplevel_declaration.c", "utf8"),
   await readFile("src/frontend/local_declaration.c", "utf8"),

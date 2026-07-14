@@ -139,19 +139,12 @@ static node_t *lower_local_compound_literal(
       ND_COMMA, object.initialization, reference);
 }
 
-node_t *lower_compound_literal_expression_in(
-    psx_local_registry_t *local_registry,
-    node_t *node, const token_t *fallback_diag_tok) {
-  return lower_compound_literal_expression_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(), local_registry,
-      node, fallback_diag_tok);
-}
-
 node_t *lower_compound_literal_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return node;
   if (!node || node->kind != ND_COMPOUND_LITERAL) return node;
   node_compound_literal_t *compound = (node_compound_literal_t *)node;
   node_t *lowered = compound->has_file_scope_storage
@@ -168,6 +161,7 @@ node_t *lower_compound_literal_expression_in_contexts(
 
 node_t *lower_compound_literal_expression(
     node_t *node, const token_t *fallback_diag_tok) {
-  return lower_compound_literal_expression_in(
+  return lower_compound_literal_expression_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
       ps_local_registry_active(), node, fallback_diag_tok);
 }

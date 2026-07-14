@@ -245,6 +245,7 @@ node_t *psx_lower_semantic_tree_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return node;
   const psx_semantic_lowering_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -258,6 +259,7 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return syntax;
   const psx_semantic_lowering_context_t context = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
@@ -266,31 +268,17 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
   return lower_initializer(&context, syntax, fallback_diag_tok);
 }
 
-node_t *psx_lower_semantic_tree_in(
-    psx_local_registry_t *local_registry,
-    node_t *node, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(), local_registry,
-      node, fallback_diag_tok);
-}
-
-node_t *psx_lower_semantic_initializer_syntax_in(
-    psx_local_registry_t *local_registry,
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_initializer_syntax_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(), local_registry,
-      syntax, fallback_diag_tok);
-}
-
 node_t *psx_lower_semantic_tree(
     node_t *node, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_tree_in(
+  return psx_lower_semantic_tree_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
       ps_local_registry_active(), node, fallback_diag_tok);
 }
 
 node_t *psx_lower_semantic_initializer_syntax(
     node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_initializer_syntax_in(
+  return psx_lower_semantic_initializer_syntax_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(),
       ps_local_registry_active(), syntax, fallback_diag_tok);
 }
 
