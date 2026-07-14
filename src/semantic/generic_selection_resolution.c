@@ -17,15 +17,6 @@ void psx_resolve_generic_selection(
       ps_local_registry_active(), selection, resolution);
 }
 
-void psx_resolve_generic_selection_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_generic_selection_t *selection,
-    psx_generic_selection_resolution_t *resolution) {
-  psx_resolve_generic_selection_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), selection, resolution);
-}
-
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -37,7 +28,8 @@ void psx_resolve_generic_selection_in_contexts(
   resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
   resolution->selected_index = -1;
   resolution->conflict_index = -1;
-  if (!selection || !selection->control ||
+  if (!semantic_context || !global_registry || !local_registry ||
+      !selection || !selection->control ||
       selection->association_count <= 0)
     return;
 

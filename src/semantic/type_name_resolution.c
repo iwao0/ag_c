@@ -79,20 +79,13 @@ int psx_bind_type_name_ref(psx_type_name_ref_t *type_name) {
       ps_local_registry_active(), type_name);
 }
 
-int psx_bind_type_name_ref_in_context(
-    psx_semantic_context_t *semantic_context,
-    psx_type_name_ref_t *type_name) {
-  return psx_bind_type_name_ref_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), type_name);
-}
-
 int psx_bind_type_name_ref_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
-  if (!type_name || !type_name->syntax) return 0;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !type_name || !type_name->syntax) return 0;
   if (type_name->bound_base_type) return 1;
   type_name->bound_base_type = bind_base_type(
       semantic_context, global_registry, local_registry, type_name);
@@ -106,20 +99,13 @@ const psx_type_t *psx_resolve_bound_type_name_ref(
       ps_local_registry_active(), type_name);
 }
 
-const psx_type_t *psx_resolve_bound_type_name_ref_in_context(
-    psx_semantic_context_t *semantic_context,
-    psx_type_name_ref_t *type_name) {
-  return psx_resolve_bound_type_name_ref_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), type_name);
-}
-
 const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
-  if (!type_name) return NULL;
+  if (!semantic_context || !global_registry || !local_registry || !type_name)
+    return NULL;
   if (type_name->resolved_type) return type_name->resolved_type;
   if (!psx_bind_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,

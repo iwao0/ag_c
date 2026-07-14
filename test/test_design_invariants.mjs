@@ -445,6 +445,20 @@ if (splitDeclarationApplicationApi.test(declarationApplicationSource)) {
     "declaration application APIs must not combine one context with active registries",
   );
 }
+const splitSemanticTypeResolutionApi =
+  /psx_(?:bind_type_name_ref|resolve_bound_type_name_ref|resolve_sizeof_query|resolve_alignof_query|resolve_generic_selection)_in_context\s*\(/;
+for (const sourcePath of [
+  "src/semantic/type_name_resolution.c",
+  "src/semantic/type_query_resolution.c",
+  "src/semantic/generic_selection_resolution.c",
+]) {
+  const source = await readFile(sourcePath, "utf8");
+  if (splitSemanticTypeResolutionApi.test(source)) {
+    throw new Error(
+      `${sourcePath} must not combine one context with active registries`,
+    );
+  }
+}
 const frontendDeclarationSources = [
   await readFile("src/frontend/toplevel_declaration.c", "utf8"),
   await readFile("src/frontend/local_declaration.c", "utf8"),

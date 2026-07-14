@@ -187,15 +187,6 @@ void psx_resolve_sizeof_query(
       ps_local_registry_active(), query, resolution);
 }
 
-void psx_resolve_sizeof_query_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_sizeof_query_t *query,
-    psx_sizeof_query_resolution_t *resolution) {
-  psx_resolve_sizeof_query_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), query, resolution);
-}
-
 void psx_resolve_sizeof_query_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -206,7 +197,7 @@ void psx_resolve_sizeof_query_in_contexts(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_TYPE_QUERY_RESOLUTION_OK;
   resolution->issue_bound_index = -1;
-  if (!query) {
+  if (!semantic_context || !global_registry || !local_registry || !query) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -272,20 +263,13 @@ void psx_resolve_alignof_query(node_alignof_query_t *query) {
       ps_local_registry_active(), query);
 }
 
-void psx_resolve_alignof_query_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_alignof_query_t *query) {
-  psx_resolve_alignof_query_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), query);
-}
-
 void psx_resolve_alignof_query_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_alignof_query_t *query) {
-  if (!query) return;
+  if (!semantic_context || !global_registry || !local_registry || !query)
+    return;
   const psx_type_t *type =
       psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
