@@ -13,8 +13,7 @@ typedef struct {
   unsigned char owns_session_activation;
 } psx_frontend_stream_t;
 
-void psx_frontend_reset_translation_unit_state(void);
-int psx_frontend_reset_translation_unit_state_in_compiler_context(
+int psx_frontend_reset_translation_unit_state_in_session(
     ag_compilation_session_t *session);
 int psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
@@ -22,15 +21,10 @@ int psx_frontend_stream_begin(
     tokenizer_context_t *tk_ctx, token_t *start);
 node_t *psx_frontend_next_function(psx_frontend_stream_t *stream);
 int psx_frontend_stream_end(psx_frontend_stream_t *stream);
-int psx_frontend_free_processed_ast_in_compiler_context(
+int psx_frontend_free_processed_ast_in_session(
     ag_compilation_session_t *session);
-void psx_frontend_free_processed_ast(void);
-node_t **psx_frontend_program(void);
-node_t **psx_frontend_program_from(token_t *start);
-node_t **psx_frontend_program_in_compiler_context(
+node_t **psx_frontend_program_in_session(
     ag_compilation_session_t *session,
-    tokenizer_context_t *tk_ctx, token_t *start);
-node_t **psx_frontend_program_ctx(
     tokenizer_context_t *tk_ctx, token_t *start);
 
 #endif

@@ -60,8 +60,14 @@ const compilationSessionHeader = await readFile(
   "src/compilation_session.h",
   "utf8",
 );
-const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
-const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
+const compilationSessionCompatHeader = await readFile(
+  "src/compilation_session_compat.h",
+  "utf8",
+);
+const compilationSessionSource = await readFile(
+  "src/compilation_session.c",
+  "utf8",
+);
 const compilerMainSource = await readFile("src/main.c", "utf8");
 const codegenEmitSource = await readFile("src/codegen_emit.c", "utf8");
 const wasmBackendContextSource = await readFile(
@@ -79,6 +85,15 @@ const tokenizerFilenameSource = await readFile(
   "utf8",
 );
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
+const preprocessHeader = await readFile("src/preprocess/preprocess.h", "utf8");
+const preprocessCompatHeader = await readFile(
+  "src/preprocess/preprocess_compat.h",
+  "utf8",
+);
+const preprocessCompatSource = await readFile(
+  "src/preprocess/preprocess_compat.c",
+  "utf8",
+);
 const parserRuntimeSource = await readFile(
   "src/parser/runtime_context.c",
   "utf8",
@@ -106,12 +121,32 @@ const translationUnitDataLoweringSource = await readFile(
   "src/lowering/translation_unit_data_lowering.c",
   "utf8",
 );
+const translationUnitDataLoweringHeader = await readFile(
+  "src/lowering/translation_unit_data_lowering.h",
+  "utf8",
+);
+const translationUnitDataLoweringCompatHeader = await readFile(
+  "src/lowering/translation_unit_data_lowering_compat.h",
+  "utf8",
+);
+const translationUnitDataLoweringCompatSource = await readFile(
+  "src/lowering/translation_unit_data_lowering_compat.c",
+  "utf8",
+);
 const irBuilderSource = await readFile(
   "src/lowering/ir_builder.c",
   "utf8",
 );
 const irBuilderHeader = await readFile(
   "src/lowering/ir_builder.h",
+  "utf8",
+);
+const irBuilderCompatHeader = await readFile(
+  "src/lowering/ir_builder_compat.h",
+  "utf8",
+);
+const irBuilderCompatSource = await readFile(
+  "src/lowering/ir_builder_compat.c",
   "utf8",
 );
 const compilationSessionInternalHeader = await readFile(
@@ -132,60 +167,57 @@ if (sessionContextAccessorNames.some((name) =>
         compilationSessionHeader,
       ) ||
       !new RegExp(`ag_compilation_session_${name}\\s*\\(`).test(
-        compilerContextSource,
+        compilationSessionSource,
       )
     ) ||
-    !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
-    !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
-    !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
-    !/ps_local_registry_create\s*\(/.test(compilerContextSource) ||
-    !/ps_local_registry_activate\s*\(/.test(compilerContextSource) ||
-    !/ps_local_registry_destroy\s*\(/.test(compilerContextSource) ||
-    !/pp_context_create\s*\(/.test(compilerContextSource) ||
-    !/pp_context_activate\s*\(/.test(compilerContextSource) ||
-    !/pp_context_destroy\s*\(/.test(compilerContextSource) ||
-    !/arena_context_create\s*\(/.test(compilerContextSource) ||
-    !/arena_context_activate\s*\(/.test(compilerContextSource) ||
-    !/arena_context_destroy\s*\(/.test(compilerContextSource) ||
-    !/diag_context_create\s*\(/.test(compilerContextSource) ||
-    !/diag_context_activate\s*\(/.test(compilerContextSource) ||
-    !/diag_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/ps_global_registry_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_global_registry_activate\s*\(/.test(compilationSessionSource) ||
+    !/ps_global_registry_destroy\s*\(/.test(compilationSessionSource) ||
+    !/ps_local_registry_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
+    !/ps_local_registry_destroy\s*\(/.test(compilationSessionSource) ||
+    !/pp_context_create\s*\(/.test(compilationSessionSource) ||
+    !/pp_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/pp_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/arena_context_create\s*\(/.test(compilationSessionSource) ||
+    !/arena_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/arena_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/diag_context_create\s*\(/.test(compilationSessionSource) ||
+    !/diag_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/diag_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/tk_context_activate\s*\(&session->tokenizer\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/tk_context_dispose\s*\(&session->tokenizer\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
-    !/tk_allocator_context_create\s*\(/.test(compilerContextSource) ||
-    !/tk_allocator_context_activate\s*\(/.test(compilerContextSource) ||
-    !/tk_allocator_context_destroy\s*\(/.test(compilerContextSource) ||
-    !/ps_parser_runtime_context_create\s*\(/.test(compilerContextSource) ||
-    !/ps_parser_runtime_context_activate\s*\(/.test(compilerContextSource) ||
-    !/ps_parser_runtime_context_destroy\s*\(/.test(compilerContextSource) ||
-    !/ps_lowering_context_create\s*\(/.test(compilerContextSource) ||
-    !/ps_lowering_context_activate\s*\(/.test(compilerContextSource) ||
-    !/ps_lowering_context_destroy\s*\(/.test(compilerContextSource) ||
-    !/cg_context_create\s*\(/.test(compilerContextSource) ||
-    !/cg_context_activate\s*\(/.test(compilerContextSource) ||
-    !/cg_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/tk_allocator_context_create\s*\(/.test(compilationSessionSource) ||
+    !/tk_allocator_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/tk_allocator_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/ps_parser_runtime_context_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_parser_runtime_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/ps_parser_runtime_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/ps_lowering_context_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_lowering_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/ps_lowering_context_destroy\s*\(/.test(compilationSessionSource) ||
+    !/cg_context_create\s*\(/.test(compilationSessionSource) ||
+    !/cg_context_activate\s*\(/.test(compilationSessionSource) ||
+    !/cg_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/ag_compilation_session_set_backend_context\s*\(/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/session->backend_activate\s*\(session->backend_context\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/session->backend_deactivate\s*\(session->backend_context\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/session->backend_destroy\s*\(session->backend_context\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
-    /wasm32_(?:ir|obj|backend)_context/.test(compilerContextSource) ||
-    !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
-    !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
-      compilerContextHeader,
-    ) ||
-    !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
+    /wasm32_(?:ir|obj|backend)_context/.test(compilationSessionSource) ||
+    !/ag_compilation_session_is_complete\s*\(/.test(compilationSessionSource) ||
+    !/psx_frontend_reset_translation_unit_state_in_session\s*\(/.test(
       compilerMainSource,
     ) ||
     !/ag_compilation_session_create\s*\(/.test(compilerMainSource) ||
@@ -202,10 +234,10 @@ if (sessionContextAccessorNames.some((name) =>
     !/ir_build_(?:function_module|emit_function)_with_options\s*\(/.test(
       compilerMainSource,
     ) ||
-    !/psx_frontend_free_processed_ast_in_compiler_context\s*\(/.test(
+    !/psx_frontend_free_processed_ast_in_session\s*\(/.test(
       compilerMainSource,
     ) ||
-    !/lower_ir_translation_unit_data_in_compiler_context\s*\(/.test(
+    !/lower_ir_translation_unit_data_in_session\s*\(/.test(
       compilerMainSource,
     ) ||
     /\bpsx_frontend_free_processed_ast\s*\(\s*\)/.test(
@@ -229,13 +261,38 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
       compilationSessionInternalHeader,
     ) ||
     !/#include\s+"compilation_session_internal\.h"/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/ag_compilation_session_t\s*\*ag_compilation_session_create\s*\(/.test(
-      compilerContextSource,
+      compilationSessionSource,
     ) ||
     !/int\s+ag_compilation_session_destroy\s*\(/.test(
-      compilerContextSource,
+      compilationSessionSource,
+    ) ||
+    /ag_compilation_session_(?:init|dispose)\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/ag_compilation_session_init\s*\(/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    !/ag_compilation_session_dispose\s*\(/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    /ag_compilation_session_(?:active_compat|effective_target_compat)\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/ag_compilation_session_active_compat\s*\(void\)/.test(
+      compilationSessionCompatHeader,
+    ) ||
+    !/ag_compilation_session_effective_target_compat\s*\(void\)/.test(
+      compilationSessionCompatHeader,
+    ) ||
+    !/ag_compilation_session_is_active\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    /ag_compiler_context_/.test(compilationSessionSource) ||
+    /#include\s+"tokenizer\/tokenizer\.h"/.test(
+      compilationSessionHeader,
     ) ||
     /ag_compilation_session_t\s+\w+\s*;/.test(compilerMainSource)) {
   throw new Error(
@@ -244,7 +301,36 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
 }
 
 const irBuilderActiveSessionReads =
-  irBuilderSource.match(/\bag_compilation_session_active\s*\(\)/g) ?? [];
+  irBuilderSource.match(/\bag_compilation_session_active_compat\s*\(\)/g) ?? [];
+const irBuilderCompatActiveSessionReads =
+  irBuilderCompatSource.match(
+    /\bag_compilation_session_active_compat\s*\(\)/g,
+  ) ?? [];
+const irBuilderRange = (start, end) => {
+  const startIndex = irBuilderSource.indexOf(start);
+  return irBuilderSource.slice(
+    startIndex,
+    irBuilderSource.indexOf(end, startIndex),
+  );
+};
+const irTargetOnlyEntryBodies = [
+  irBuilderRange(
+    "ir_build_module_for_target(",
+    "int ir_build_emit_function_for_target(",
+  ),
+  irBuilderRange(
+    "ir_build_emit_function_for_target(",
+    "ir_build_emit_function_with_options(",
+  ),
+  irBuilderRange(
+    "ir_build_function_module_for_target(",
+    "ir_build_function_module_with_options(",
+  ),
+  irBuilderRange(
+    "ir_build_each_and_emit_for_target(",
+    "ir_build_each_and_emit_with_options(",
+  ),
+];
 if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
       irBuilderHeader,
     ) ||
@@ -252,9 +338,14 @@ if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]
     !/ctx->continuation\s*=\s*NULL\s*;[\s\S]*?ctx->continuation_while\s*=\s*NULL\s*;/.test(
       irBuilderSource,
     ) ||
-    irBuilderActiveSessionReads.length !== 1 ||
-    !/ir_build_options_for_active_session\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_active\s*\(\)/.test(
-      irBuilderSource,
+    irBuilderActiveSessionReads.length !== 0 ||
+    irBuilderCompatActiveSessionReads.length !== 1 ||
+    !/active_session_options\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_active_compat\s*\(\)/.test(
+      irBuilderCompatSource,
+    ) ||
+    irTargetOnlyEntryBodies.some((body) =>
+      !body.includes("ir_build_options_for_target(") ||
+      body.includes("ir_build_options_for_active_session(")
     ) ||
     !/\.target\s*=\s*ag_compilation_session_target\s*\(/.test(
       compilerMainSource,
@@ -274,31 +365,36 @@ if (!/int\s+ag_compilation_session_deactivate\s*\(/.test(
       compilationSessionHeader,
     ) ||
     !/int\s+ag_compilation_session_dispose\s*\(/.test(
-      compilationSessionHeader,
+      compilationSessionInternalHeader,
     ) ||
     !/active_compilation_session\s*!=\s*session/.test(
-      compilerContextSource,
+      compilationSessionSource,
+    ) ||
+    !/ag_compilation_session_is_active\s*\([^)]*\)\s*\{[\s\S]*?active_compilation_session\s*==\s*session/.test(
+      compilationSessionSource,
     ) ||
     !/session->is_active\s*&&\s*!ag_compilation_session_deactivate\s*\(session\)/.test(
-      compilerContextSource,
+      compilationSessionSource,
     )) {
   throw new Error(
     "CompilationSession lifecycle must reject out-of-order deactivation and disposal",
   );
 }
 
-const preprocessEffectiveTargetCalls =
-  preprocessSource.match(/\bag_compilation_session_effective_target\s*\(/g) ?? [];
-const irBuilderEffectiveTargetCalls =
-  irBuilderSource.match(/\bag_compilation_session_effective_target\s*\(/g) ?? [];
-if (!/ag_target_info_t\s+ag_compilation_session_effective_target\s*\(void\)/.test(
-      compilationSessionHeader,
+const preprocessCompatTargetCalls =
+  preprocessCompatSource.match(/\bag_compilation_session_effective_target_compat\s*\(/g) ?? [];
+const irBuilderCompatTargetCalls =
+  irBuilderCompatSource.match(/\bag_compilation_session_effective_target_compat\s*\(/g) ?? [];
+if (!/ag_target_info_t\s+ag_compilation_session_effective_target_compat\s*\(void\)/.test(
+      compilationSessionCompatHeader,
     ) ||
-    !/ag_compiler_context_init\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_effective_target\s*\(\)/.test(
-      compilerContextSource,
+    !/ag_compilation_session_effective_target_compat\s*\(void\)\s*\{[\s\S]*?active_compilation_session->target/.test(
+      compilationSessionSource,
     ) ||
-    preprocessEffectiveTargetCalls.length !== 2 ||
-    irBuilderEffectiveTargetCalls.length !== 4 ||
+    preprocessCompatTargetCalls.length !== 2 ||
+    irBuilderCompatTargetCalls.length !== 4 ||
+    /compilation_session_compat\.h/.test(preprocessSource) ||
+    /compilation_session_compat\.h/.test(irBuilderSource) ||
     /\bag_target_pointer_size\s*\(/.test(preprocessSource) ||
     /\bag_target_pointer_size\s*\(/.test(irBuilderSource)) {
   throw new Error(
@@ -308,6 +404,14 @@ if (!/ag_target_info_t\s+ag_compilation_session_effective_target\s*\(void\)/.tes
 
 const frontendTranslationUnitSessionSource = await readFile(
   "src/frontend/translation_unit.c",
+  "utf8",
+);
+const frontendTranslationUnitCompatHeader = await readFile(
+  "src/frontend/translation_unit_compat.h",
+  "utf8",
+);
+const frontendTranslationUnitCompatSource = await readFile(
+  "src/frontend/translation_unit_compat.c",
   "utf8",
 );
 
@@ -323,7 +427,7 @@ if (!/arena_alloc_in\s*\(/.test(parserArenaSource) ||
   );
 }
 
-if (!/lower_ir_translation_unit_data_in_compiler_context\s*\(/.test(
+if (!/lower_ir_translation_unit_data_in_session\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
     !/ps_iter_string_literals_in\s*\(/.test(
@@ -350,11 +454,14 @@ if (!/lower_ir_translation_unit_data_in_compiler_context\s*\(/.test(
   );
 }
 
-if (/active_session_view\s*\(/.test(frontendTranslationUnitSessionSource) ||
+if (/active_session_view\s*\(/.test(frontendTranslationUnitCompatSource) ||
     /ps_(?:ctx|global_registry|local_registry|parser_runtime_context|lowering_context)_active\s*\(/.test(
-      frontendTranslationUnitSessionSource,
+      frontendTranslationUnitCompatSource,
     ) ||
-    !/ag_compilation_session_active\s*\(\)/.test(
+    !/ag_compilation_session_active_compat\s*\(\)/.test(
+      frontendTranslationUnitCompatSource,
+    ) ||
+    /compilation_session_compat\.h/.test(
       frontendTranslationUnitSessionSource,
     )) {
   throw new Error(
@@ -681,7 +788,7 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       parserStreamHeader,
     ) ||
     !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
-    !/psx_frontend_analyze_function_in_compiler_context\s*\(/.test(
+    !/psx_frontend_analyze_function_in_session\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
     !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
@@ -703,7 +810,9 @@ if (!/ag_compilation_session_t\s*\*session\s*;/.test(
 }
 const frontendStreamCore = frontendTranslationUnitSource.slice(
   frontendTranslationUnitSource.indexOf("int psx_frontend_stream_begin("),
-  frontendTranslationUnitSource.indexOf("void psx_frontend_free_processed_ast("),
+  frontendTranslationUnitSource.indexOf(
+    "int psx_frontend_free_processed_ast_in_session(",
+  ),
 );
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       frontendStreamCore,
@@ -711,13 +820,16 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
     !/frontend_session_is_complete\s*\(stream->session\)/.test(
       frontendStreamCore,
     ) ||
-    !/ag_compilation_session_active\s*\(\)\s*!=\s*session/.test(
+    !/!ag_compilation_session_is_active\s*\(session\)/.test(
       frontendStreamCore,
     ) ||
     !/ag_compilation_session_activate\s*\(session\)/.test(
       frontendStreamCore,
     ) ||
-    !/ag_compilation_session_active\s*\(\)\s*!=\s*stream->session/.test(
+    !/!ag_compilation_session_is_active\s*\(stream->session\)/.test(
+      frontendStreamCore,
+    ) ||
+    /ag_compilation_session_active_compat\s*\(/.test(
       frontendStreamCore,
     ) ||
     !/ag_compilation_session_deactivate\s*\(stream->session\)/.test(
@@ -755,13 +867,68 @@ const productionSessionConsumers = [
   identifierBindingSource,
   translationUnitDataLoweringSource,
   irBuilderSource,
+  preprocessSource,
 ];
 if (directSessionContextField.test(productionSessionConsumers.join("\n")) ||
     productionSessionConsumers.some((source) =>
-      /compilation_session_internal\.h/.test(source)
+      /compilation_session_(?:internal|compat)\.h/.test(source)
     )) {
   throw new Error(
     "CompilationSession consumers must use ownership accessors instead of public struct fields",
+  );
+}
+
+const contextFreeApiDeclarations = [
+  {
+    core: frontendTranslationUnitHeader,
+    compat: frontendTranslationUnitCompatHeader,
+    names: [
+      "psx_frontend_reset_translation_unit_state",
+      "psx_frontend_free_processed_ast",
+      "psx_frontend_program",
+      "psx_frontend_program_from",
+      "psx_frontend_program_ctx",
+    ],
+  },
+  {
+    core: irBuilderHeader,
+    compat: irBuilderCompatHeader,
+    names: [
+      "ir_build_module",
+      "ir_build_each_and_emit",
+      "ir_build_emit_function",
+      "ir_build_function_module",
+    ],
+  },
+  {
+    core: preprocessHeader,
+    compat: preprocessCompatHeader,
+    names: ["preprocess", "preprocess_ctx", "pp_stream_open"],
+  },
+  {
+    core: translationUnitDataLoweringHeader,
+    compat: translationUnitDataLoweringCompatHeader,
+    names: ["lower_ir_translation_unit_data"],
+  },
+];
+for (const { core, compat, names } of contextFreeApiDeclarations) {
+  for (const name of names) {
+    const declaration = new RegExp(`\\b${name}\\s*\\(`);
+    if (declaration.test(core) || !declaration.test(compat)) {
+      throw new Error(
+        `context-free API ${name} must be declared only by its compatibility header`,
+      );
+    }
+  }
+}
+if (!/ag_compilation_session_active_compat\s*\(\)/.test(
+      translationUnitDataLoweringCompatSource,
+    ) ||
+    /compilation_session_compat\.h/.test(
+      translationUnitDataLoweringSource,
+    )) {
+  throw new Error(
+    "context-free data lowering must remain isolated from the explicit-session core",
   );
 }
 const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(
@@ -1250,7 +1417,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
       toplevelDeclarationSyntaxSource,
     ) ||
     !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
-    !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
+    !/psx_frontend_reset_translation_unit_state_in_session\s*\(/.test(
       compilerMainSource,
     ) ||
     !/ps_ctx_reset_function_scope_in\s*\(/.test(

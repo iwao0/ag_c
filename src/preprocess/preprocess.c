@@ -1,6 +1,5 @@
 #include "preprocess.h"
 #include "../target_info.h"
-#include "../compilation_session.h"
 #include "../parser/config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/allocator.h"
@@ -1532,10 +1531,6 @@ static token_t *paste_tokens(token_t *tok) {
 }
 
 // プリプロセッサのメイン処理
-token_t *preprocess(token_t *tok) {
-  return preprocess_ctx(tk_get_default_context(), tok);
-}
-
 // 行頭（at_bol）まで進める。ディレクティブの末尾余剰トークンの読み飛ばし用。
 static token_t *skip_to_next_line(token_t *tok) {
   while (tok->kind != TK_EOF && !tok->at_bol) tok = tok->next;
@@ -2281,11 +2276,6 @@ token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
   return head.next;
 }
 
-token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return preprocess_for_target_ctx(tk_ctx, &target, tok);
-}
-
 /* ============================================================================
  * トークンストリーム経路: `#` 指令の無いファイル専用の遅延プリプロセス生成器。
  * 指令・ユーザマクロ・include・条件・#line が存在しない入力では preprocess_ctx は
@@ -2980,12 +2970,6 @@ token_t *pp_stream_open_for_target(pp_stream_t **out_s,
   pps_activate(s);
   *out_s = s;
   return s->out_head;
-}
-
-token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx,
-                        const char *src) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return pp_stream_open_for_target(out_s, tk_ctx, &target, src);
 }
 
 void pp_stream_close(pp_stream_t *s) {

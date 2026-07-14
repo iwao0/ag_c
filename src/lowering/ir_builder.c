@@ -21,7 +21,6 @@
 #include "../ir/ir.h"
 #include "abi_lowering.h"
 #include "../target_info.h"
-#include "../compilation_session.h"
 #include "ir_symbol_lowering.h"
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
@@ -3774,25 +3773,18 @@ ir_module_t *ir_build_module_with_options(
   return ctx.m;
 }
 
-static ir_build_options_t ir_build_options_for_active_session(
+static ir_build_options_t ir_build_options_for_target(
     const ag_target_info_t *target) {
   return (ir_build_options_t){
       .target = target,
-      .continuation = ag_compilation_session_continuation(
-          ag_compilation_session_active()),
   };
 }
 
 ir_module_t *ir_build_module_for_target(
     node_t **code, const ag_target_info_t *target) {
   ir_build_options_t options =
-      ir_build_options_for_active_session(target);
+      ir_build_options_for_target(target);
   return ir_build_module_with_options(code, &options);
-}
-
-ir_module_t *ir_build_module(node_t **code) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return ir_build_module_for_target(code, &target);
 }
 
 static int g_ir_dump_enabled(void) {
@@ -3809,7 +3801,7 @@ int ir_build_emit_function_for_target(
     node_t *fn, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
   ir_build_options_t options =
-      ir_build_options_for_active_session(target);
+      ir_build_options_for_target(target);
   return ir_build_emit_function_with_options(fn, &options, emit_module);
 }
 
@@ -3832,15 +3824,10 @@ int ir_build_emit_function_with_options(
   return 1;
 }
 
-int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return ir_build_emit_function_for_target(fn, &target, emit_module);
-}
-
 ir_module_t *ir_build_function_module_for_target(
     node_t *fn, const ag_target_info_t *target) {
   ir_build_options_t options =
-      ir_build_options_for_active_session(target);
+      ir_build_options_for_target(target);
   return ir_build_function_module_with_options(fn, &options);
 }
 
@@ -3858,16 +3845,11 @@ ir_module_t *ir_build_function_module_with_options(
   return ctx.m;
 }
 
-ir_module_t *ir_build_function_module(node_t *fn) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return ir_build_function_module_for_target(fn, &target);
-}
-
 int ir_build_each_and_emit_for_target(
     node_t **code, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
   ir_build_options_t options =
-      ir_build_options_for_active_session(target);
+      ir_build_options_for_target(target);
   return ir_build_each_and_emit_with_options(code, &options, emit_module);
 }
 
@@ -3880,9 +3862,4 @@ int ir_build_each_and_emit_with_options(
             code[i], options, emit_module)) return 0;
   }
   return 1;
-}
-
-int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return ir_build_each_and_emit_for_target(code, &target, emit_module);
 }

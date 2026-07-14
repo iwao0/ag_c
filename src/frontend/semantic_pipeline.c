@@ -45,7 +45,7 @@ static void analyze_function_in_contexts(
       local_registry, current_function, fallback_diag_tok);
 }
 
-void psx_frontend_analyze_function_in_compiler_context(
+void psx_frontend_analyze_function_in_session(
     ag_compilation_session_t *session,
     node_t *function, const token_t *fallback_diag_tok) {
   if (!ag_compilation_session_is_complete(session)) return;

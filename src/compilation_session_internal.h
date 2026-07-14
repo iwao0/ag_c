@@ -2,6 +2,11 @@
 #define AG_COMPILATION_SESSION_INTERNAL_H
 
 #include "compilation_session.h"
+#include "tokenizer/tokenizer.h"
+
+int ag_compilation_session_init(
+    ag_compilation_session_t *session, const ag_target_info_t *target);
+int ag_compilation_session_dispose(ag_compilation_session_t *session);
 
 struct ag_compilation_session_t {
   struct ag_compilation_session_t *previous_session;

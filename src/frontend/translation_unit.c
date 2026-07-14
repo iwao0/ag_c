@@ -38,12 +38,7 @@ static void reset_translation_unit_state(
   arena_free_all_in(arena_context);
 }
 
-void psx_frontend_reset_translation_unit_state(void) {
-  (void)psx_frontend_reset_translation_unit_state_in_compiler_context(
-      ag_compilation_session_active());
-}
-
-int psx_frontend_reset_translation_unit_state_in_compiler_context(
+int psx_frontend_reset_translation_unit_state_in_session(
     ag_compilation_session_t *session) {
   if (!frontend_session_is_complete(session)) return 0;
   reset_translation_unit_state(
@@ -63,7 +58,7 @@ int psx_frontend_stream_begin(
   if (!stream) return 0;
   memset(stream, 0, sizeof(*stream));
   if (!frontend_session_is_complete(session)) return 0;
-  if (ag_compilation_session_active() != session) {
+  if (!ag_compilation_session_is_active(session)) {
     if (!ag_compilation_session_activate(session)) return 0;
     stream->owns_session_activation = 1;
   }
@@ -96,7 +91,7 @@ int psx_frontend_stream_begin(
 node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
-      ag_compilation_session_active() != stream->session) {
+      !ag_compilation_session_is_active(stream->session)) {
     return NULL;
   }
   ag_compilation_session_t *session = stream->session;
@@ -157,7 +152,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      psx_frontend_analyze_function_in_compiler_context(
+      psx_frontend_analyze_function_in_session(
           session, function, function->tok);
       return function;
     }
@@ -168,7 +163,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
 int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
       !frontend_session_is_complete(stream->session) ||
-      ag_compilation_session_active() != stream->session)
+      !ag_compilation_session_is_active(stream->session))
     return 0;
   ps_ctx_emit_deferred_parser_warnings_in(
       ag_compilation_session_semantic_context(stream->session));
@@ -181,19 +176,14 @@ int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   return 1;
 }
 
-int psx_frontend_free_processed_ast_in_compiler_context(
+int psx_frontend_free_processed_ast_in_session(
     ag_compilation_session_t *session) {
   if (!frontend_session_is_complete(session)) return 0;
   arena_free_all_in(ag_compilation_session_arena_context(session));
   return 1;
 }
 
-void psx_frontend_free_processed_ast(void) {
-  (void)psx_frontend_free_processed_ast_in_compiler_context(
-      ag_compilation_session_active());
-}
-
-node_t **psx_frontend_program_in_compiler_context(
+node_t **psx_frontend_program_in_session(
     ag_compilation_session_t *session,
     tokenizer_context_t *tk_ctx, token_t *start) {
   psx_frontend_stream_t stream = {0};
@@ -234,18 +224,4 @@ node_t **psx_frontend_program_in_compiler_context(
     return NULL;
   }
   return program;
-}
-
-node_t **psx_frontend_program_ctx(
-    tokenizer_context_t *tk_ctx, token_t *start) {
-  return psx_frontend_program_in_compiler_context(
-      ag_compilation_session_active(), tk_ctx, start);
-}
-
-node_t **psx_frontend_program_from(token_t *start) {
-  return psx_frontend_program_ctx(NULL, start);
-}
-
-node_t **psx_frontend_program(void) {
-  return psx_frontend_program_ctx(NULL, tk_get_current_token());
 }

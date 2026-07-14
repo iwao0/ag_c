@@ -408,7 +408,7 @@ node_t *psx_bind_identifier_tree_in_contexts(
   return bind_node(node, &context);
 }
 
-node_t *psx_bind_identifier_tree_in_compiler_context(
+node_t *psx_bind_identifier_tree_in_session(
     ag_compilation_session_t *session,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!ag_compilation_session_is_complete(session)) return node;
@@ -441,7 +441,7 @@ node_t *psx_bind_identifier_initializer_tree_in_contexts(
   return bind_initializer(syntax, &context);
 }
 
-node_t *psx_bind_identifier_initializer_tree_in_compiler_context(
+node_t *psx_bind_identifier_initializer_tree_in_session(
     ag_compilation_session_t *session,
     node_t *syntax, const token_t *fallback_diag_tok) {
   if (!ag_compilation_session_is_complete(session)) return syntax;

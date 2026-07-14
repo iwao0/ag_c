@@ -1,5 +1,5 @@
-#include "compiler_context.h"
 #include "compilation_session_internal.h"
+#include "compilation_session_compat.h"
 
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
@@ -131,11 +131,17 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
   return 1;
 }
 
-ag_compilation_session_t *ag_compilation_session_active(void) {
+int ag_compilation_session_is_active(
+    const ag_compilation_session_t *session) {
+  return session && session->is_active &&
+         active_compilation_session == session;
+}
+
+ag_compilation_session_t *ag_compilation_session_active_compat(void) {
   return active_compilation_session;
 }
 
-ag_target_info_t ag_compilation_session_effective_target(void) {
+ag_target_info_t ag_compilation_session_effective_target_compat(void) {
   if (ag_compilation_session_is_complete(active_compilation_session))
     return active_compilation_session->target;
   return (ag_target_info_t){ag_target_pointer_size()};
@@ -319,25 +325,4 @@ const ag_continuation_options_t *ag_compilation_session_continuation(
     const ag_compilation_session_t *session) {
   return session && session->continuation.enabled
              ? &session->continuation : NULL;
-}
-
-int ag_compiler_context_init(ag_compiler_context_t *context) {
-  ag_target_info_t target = ag_compilation_session_effective_target();
-  return ag_compilation_session_init(context, &target);
-}
-
-int ag_compiler_context_is_complete(const ag_compiler_context_t *context) {
-  return ag_compilation_session_is_complete(context);
-}
-
-int ag_compiler_context_activate(ag_compiler_context_t *context) {
-  return ag_compilation_session_activate(context);
-}
-
-int ag_compiler_context_deactivate(ag_compiler_context_t *context) {
-  return ag_compilation_session_deactivate(context);
-}
-
-int ag_compiler_context_dispose(ag_compiler_context_t *context) {
-  return ag_compilation_session_dispose(context);
 }

@@ -4,8 +4,7 @@
 #include "../compilation_session.h"
 #include "../ir/ir_data.h"
 
-ir_data_module_t *lower_ir_translation_unit_data_in_compiler_context(
+ir_data_module_t *lower_ir_translation_unit_data_in_session(
     const ag_compilation_session_t *session);
-ir_data_module_t *lower_ir_translation_unit_data(void);
 
 #endif

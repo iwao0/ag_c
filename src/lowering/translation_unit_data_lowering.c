@@ -319,15 +319,10 @@ static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
   return module;
 }
 
-ir_data_module_t *lower_ir_translation_unit_data_in_compiler_context(
+ir_data_module_t *lower_ir_translation_unit_data_in_session(
     const ag_compilation_session_t *session) {
   if (!ag_compilation_session_is_complete(session)) return NULL;
   return lower_ir_translation_unit_data_in_registry(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session));
-}
-
-ir_data_module_t *lower_ir_translation_unit_data(void) {
-  return lower_ir_translation_unit_data_in_compiler_context(
-      ag_compilation_session_active());
 }

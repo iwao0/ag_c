@@ -3,8 +3,8 @@
 
 #include "continuation_options.h"
 #include "target_info.h"
-#include "tokenizer/tokenizer.h"
 
+typedef struct tokenizer_context_t tokenizer_context_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
@@ -20,15 +20,12 @@ typedef void (*ag_session_backend_callback_t)(void *context);
 
 ag_compilation_session_t *ag_compilation_session_create(
     const ag_target_info_t *target);
-int ag_compilation_session_init(
-    ag_compilation_session_t *session, const ag_target_info_t *target);
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session);
 int ag_compilation_session_activate(ag_compilation_session_t *session);
-ag_compilation_session_t *ag_compilation_session_active(void);
-ag_target_info_t ag_compilation_session_effective_target(void);
+int ag_compilation_session_is_active(
+    const ag_compilation_session_t *session);
 int ag_compilation_session_deactivate(ag_compilation_session_t *session);
-int ag_compilation_session_dispose(ag_compilation_session_t *session);
 int ag_compilation_session_destroy(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);

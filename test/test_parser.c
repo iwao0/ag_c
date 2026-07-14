@@ -1,5 +1,5 @@
 #include "../src/parser/parser.h"
-#include "../src/compiler_context.h"
+#include "../src/compilation_session_compat.h"
 #include "../src/compilation_session_internal.h"
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
@@ -32,6 +32,7 @@
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/frontend/translation_unit_compat.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
@@ -2016,9 +2017,9 @@ static void test_toplevel_declaration_frontend_boundary() {
 
 static void test_toplevel_callback_context_boundary() {
   printf("test_toplevel_callback_context_boundary...\n");
-  ASSERT_TRUE(ag_compilation_session_active() != NULL);
+  ASSERT_TRUE(ag_compilation_session_active_compat() != NULL);
   ASSERT_TRUE(tk_context_active() ==
-              &ag_compilation_session_active()->tokenizer);
+              &ag_compilation_session_active_compat()->tokenizer);
   psx_frontend_reset_translation_unit_state();
   tk_tokenize((char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
@@ -2142,39 +2143,39 @@ static void test_frontend_stream_lifecycle_boundary() {
                   (char *)"__stream_previous", 17) != NULL);
   ps_parser_stream_end(&parser_stream);
 
-  ag_compiler_context_t compiler_context;
-  ASSERT_TRUE(ag_compiler_context_init(&compiler_context));
+  ag_compilation_session_t session_context;
+  ASSERT_TRUE(ag_compilation_session_init(&session_context, NULL));
   ag_compilation_session_t *outer_session =
-      ag_compilation_session_active();
+      ag_compilation_session_active_compat();
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
       &frontend_stream, NULL, NULL, tk_tokenize((char *)"")));
   ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
   psx_frontend_stream_end(&frontend_stream);
 
-  ag_diagnostic_context_t *compiler_diagnostic_context =
-      compiler_context.diagnostic_context;
-  compiler_context.diagnostic_context = NULL;
-  ASSERT_TRUE(!ag_compiler_context_is_complete(&compiler_context));
+  ag_diagnostic_context_t *session_diagnostic_context =
+      session_context.diagnostic_context;
+  session_context.diagnostic_context = NULL;
+  ASSERT_TRUE(!ag_compilation_session_is_complete(&session_context));
   ASSERT_TRUE(ag_compilation_session_semantic_context(
-                  &compiler_context) == NULL);
+                  &session_context) == NULL);
   ASSERT_TRUE(ag_compilation_session_diagnostic_context(
-                  &compiler_context) == NULL);
+                  &session_context) == NULL);
   ASSERT_TRUE(!psx_frontend_stream_begin(
-      &frontend_stream, &compiler_context, NULL,
+      &frontend_stream, &session_context, NULL,
       tk_tokenize((char *)"int __incomplete_session(void);")));
-  compiler_context.diagnostic_context = compiler_diagnostic_context;
-  ASSERT_TRUE(ag_compiler_context_is_complete(&compiler_context));
+  session_context.diagnostic_context = session_diagnostic_context;
+  ASSERT_TRUE(ag_compilation_session_is_complete(&session_context));
 
   ASSERT_TRUE(psx_frontend_stream_begin(
-      &frontend_stream, &compiler_context, NULL,
+      &frontend_stream, &session_context, NULL,
       tk_tokenize((char *)
           "int __stream_explicit(void) { return 0; }")));
-  ASSERT_TRUE(ag_compilation_session_active() == &compiler_context);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &session_context);
   ASSERT_TRUE(frontend_stream.owns_session_activation);
   ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) != NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
-                  compiler_context.semantic_context,
+                  session_context.semantic_context,
                   (char *)"__stream_explicit", 17) != NULL);
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__stream_explicit", 17) != NULL);
@@ -2183,18 +2184,18 @@ static void test_frontend_stream_lifecycle_boundary() {
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
                   outer_session->semantic_context,
                   (char *)"__stream_previous", 17) != NULL);
-  ag_compiler_context_t nested_context;
-  ASSERT_TRUE(ag_compiler_context_init(&nested_context));
-  ASSERT_TRUE(ag_compiler_context_activate(&nested_context));
+  ag_compilation_session_t nested_context;
+  ASSERT_TRUE(ag_compilation_session_init(&nested_context, NULL));
+  ASSERT_TRUE(ag_compilation_session_activate(&nested_context));
   ASSERT_TRUE(!psx_frontend_stream_end(&frontend_stream));
-  ASSERT_TRUE(ag_compilation_session_active() == &nested_context);
-  ASSERT_TRUE(ag_compiler_context_deactivate(&nested_context));
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &nested_context);
+  ASSERT_TRUE(ag_compilation_session_deactivate(&nested_context));
   ASSERT_TRUE(psx_frontend_stream_end(&frontend_stream));
-  ASSERT_TRUE(ag_compilation_session_active() == outer_session);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == outer_session);
   ASSERT_TRUE(!frontend_stream.owns_session_activation);
   ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
-  ASSERT_TRUE(ag_compiler_context_dispose(&nested_context));
-  ASSERT_TRUE(ag_compiler_context_dispose(&compiler_context));
+  ASSERT_TRUE(ag_compilation_session_dispose(&nested_context));
+  ASSERT_TRUE(ag_compilation_session_dispose(&session_context));
 }
 
 static void test_complex_initializer_semantic_lowering_boundary() {
@@ -15315,12 +15316,12 @@ static void test_semantic_context_isolation() {
   ps_ctx_destroy(second);
 }
 
-static void test_compiler_context_registry_isolation() {
-  printf("test_compiler_context_registry_isolation...\n");
-  ag_compiler_context_t first;
-  ag_compiler_context_t second;
-  ASSERT_TRUE(ag_compiler_context_init(&first));
-  ASSERT_TRUE(ag_compiler_context_init(&second));
+static void test_compilation_session_registry_isolation() {
+  printf("test_compilation_session_registry_isolation...\n");
+  ag_compilation_session_t first;
+  ag_compilation_session_t second;
+  ASSERT_TRUE(ag_compilation_session_init(&first, NULL));
+  ASSERT_TRUE(ag_compilation_session_init(&second, NULL));
 
   global_var_t first_global = {
       .name = (char *)"shared_global",
@@ -15462,7 +15463,7 @@ static void test_compiler_context_registry_isolation() {
                   second.global_registry,
                   (char *)".Lshared") == NULL);
 
-  ASSERT_TRUE(ag_compiler_context_activate(&second));
+  ASSERT_TRUE(ag_compilation_session_activate(&second));
   ps_local_registry_reset();
   ps_local_registry_reset_in(first.local_registry);
   ps_ctx_enter_block_scope_in(first.semantic_context);
@@ -15651,7 +15652,7 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &second_local);
   ir_data_module_t *first_data =
-      lower_ir_translation_unit_data_in_compiler_context(&first);
+      lower_ir_translation_unit_data_in_session(&first);
   ASSERT_TRUE(first_data != NULL);
   ir_data_object_t *first_global_data =
       ir_data_module_find_object(first_data, "shared_global", 13);
@@ -15672,9 +15673,9 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_EQ(41, first_global_data->bytes[0]);
   ASSERT_TRUE(memcmp(first_literal_data->bytes, "first\0", 6) == 0);
   ir_data_module_free(first_data);
-  ag_compiler_context_deactivate(&second);
+  ag_compilation_session_deactivate(&second);
 
-  ASSERT_TRUE(ag_compiler_context_activate(&first));
+  ASSERT_TRUE(ag_compilation_session_activate(&first));
   ps_local_registry_reset();
   ASSERT_TRUE(ps_find_global_var(
                   (char *)"shared_global", 13) == &first_global);
@@ -15686,7 +15687,7 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &first_local);
   ir_data_module_t *second_data =
-      lower_ir_translation_unit_data_in_compiler_context(&second);
+      lower_ir_translation_unit_data_in_session(&second);
   ASSERT_TRUE(second_data != NULL);
   ir_data_object_t *second_global_data =
       ir_data_module_find_object(second_data, "shared_global", 13);
@@ -15707,15 +15708,15 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_EQ(99, second_global_data->bytes[0]);
   ASSERT_TRUE(memcmp(second_literal_data->bytes, "second\0", 7) == 0);
   ir_data_module_free(second_data);
-  ag_compiler_context_deactivate(&first);
+  ag_compilation_session_deactivate(&first);
 
-  ASSERT_TRUE(ag_compiler_context_activate(&second));
+  ASSERT_TRUE(ag_compilation_session_activate(&second));
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &second_local);
-  ag_compiler_context_deactivate(&second);
+  ag_compilation_session_deactivate(&second);
 
-  ag_compiler_context_dispose(&first);
-  ag_compiler_context_dispose(&second);
+  ag_compilation_session_dispose(&first);
+  ag_compilation_session_dispose(&second);
 }
 
 typedef struct {
@@ -15841,12 +15842,16 @@ static void test_compilation_session_owns_target_and_tokenizer() {
       ps_lowering_context_active();
   ag_codegen_emit_context_t *previous_codegen = cg_context_active();
   ag_compilation_session_t *previous_session =
-      ag_compilation_session_active();
-  ASSERT_EQ(8, ag_compilation_session_effective_target().pointer_size);
+      ag_compilation_session_active_compat();
+  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
+  ASSERT_TRUE(!ag_compilation_session_is_active(&host));
+  ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(ag_compilation_session_activate(&host));
-  ASSERT_TRUE(ag_compilation_session_active() == &host);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &host);
+  ASSERT_TRUE(ag_compilation_session_is_active(&host));
+  ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(4);
-  ASSERT_EQ(8, ag_compilation_session_effective_target().pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15883,9 +15888,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
-  ASSERT_TRUE(ag_compilation_session_active() == &wasm);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
+  ASSERT_TRUE(!ag_compilation_session_is_active(&host));
+  ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(8);
-  ASSERT_EQ(4, ag_compilation_session_effective_target().pointer_size);
+  ASSERT_EQ(4, ag_compilation_session_effective_target_compat().pointer_size);
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
@@ -15911,7 +15918,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
-  ASSERT_TRUE(ag_compilation_session_active() == &wasm);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
@@ -15926,19 +15933,22 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, host_backend.deactivate_count);
   ASSERT_TRUE(!ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
-  ASSERT_TRUE(ag_compilation_session_active() == &wasm);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
   ASSERT_EQ(0, host_backend.destroy_count);
-  ag_compiler_context_t inherited_context;
-  ASSERT_TRUE(ag_compiler_context_init(&inherited_context));
+  ag_compilation_session_t inherited_context;
+  ASSERT_TRUE(ag_compilation_session_init(
+      &inherited_context, ag_compilation_session_target(&wasm)));
   ASSERT_EQ(4, ag_compilation_session_target(&inherited_context)
                    ->pointer_size);
-  ASSERT_TRUE(ag_compiler_context_dispose(&inherited_context));
-  ASSERT_TRUE(psx_frontend_free_processed_ast_in_compiler_context(&host));
+  ASSERT_TRUE(ag_compilation_session_dispose(&inherited_context));
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_session(&host));
   ASSERT_EQ(0, arena_current_reserved_bytes_in(host.arena_context));
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ASSERT_TRUE(ag_compilation_session_deactivate(&wasm));
-  ASSERT_TRUE(ag_compilation_session_active() == &host);
-  ASSERT_EQ(8, ag_compilation_session_effective_target().pointer_size);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == &host);
+  ASSERT_TRUE(ag_compilation_session_is_active(&host));
+  ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
+  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15959,7 +15969,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
-  ASSERT_TRUE(ag_compilation_session_active() == previous_session);
+  ASSERT_TRUE(ag_compilation_session_active_compat() == previous_session);
+  ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
@@ -15991,7 +16002,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_target_set_pointer_size(4);
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
-  ASSERT_EQ(8, ag_compilation_session_effective_target().pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
   ag_target_set_pointer_size(8);
   ASSERT_TRUE(ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_dispose(&wasm));
@@ -16009,7 +16020,7 @@ int main() {
   test_arena_checkpoint_rollback();
   test_semantic_context_isolation();
   test_compilation_session_owns_target_and_tokenizer();
-  test_compiler_context_registry_isolation();
+  test_compilation_session_registry_isolation();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

@@ -16,10 +16,10 @@ node_t *psx_bind_identifier_initializer_tree_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_tree_in_compiler_context(
+node_t *psx_bind_identifier_tree_in_session(
     ag_compilation_session_t *session,
     node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_initializer_tree_in_compiler_context(
+node_t *psx_bind_identifier_initializer_tree_in_session(
     ag_compilation_session_t *session,
     node_t *syntax, const token_t *fallback_diag_tok);
 
