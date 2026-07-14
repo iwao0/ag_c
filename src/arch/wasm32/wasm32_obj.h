@@ -1,7 +1,7 @@
 #ifndef AG_WASM32_OBJ_H
 #define AG_WASM32_OBJ_H
 
-#include "../ir/ir.h"
+#include "../../ir/ir.h"
 #include <stdio.h>
 
 void wasm32_obj_set_output_file(FILE *out);

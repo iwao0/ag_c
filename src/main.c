@@ -9,9 +9,9 @@
 #include "diag/diag.h"
 #include "ir/ir.h"
 #include "ir/ir_builder.h"
-#include "arch/arm64_apple_ir.h"
-#include "arch/wasm32_ir.h"
-#include "arch/wasm32_obj.h"
+#include "arch/arm64_apple/arm64_apple_ir.h"
+#include "arch/wasm32/wasm32_ir.h"
+#include "arch/wasm32/wasm32_obj.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

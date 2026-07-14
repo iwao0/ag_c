@@ -1168,9 +1168,9 @@ static int collect_public_std_header_symbols(symbol_set_t *out) {
 }
 
 static int verify_minimal_libc_stub_table_sync(void) {
-  char *src = slurp_alloc("src/arch/wasm32_ir.c");
+  char *src = slurp_alloc("src/arch/wasm32/wasm32_ir.c");
   if (!src) {
-    fprintf(stderr, "FAIL: open src/arch/wasm32_ir.c for minimal libc stub sync check\n");
+    fprintf(stderr, "FAIL: open src/arch/wasm32/wasm32_ir.c for minimal libc stub sync check\n");
     return 1;
   }
 
@@ -1179,7 +1179,7 @@ static int verify_minimal_libc_stub_table_sync(void) {
   int failed = 0;
   if (collect_stub_table_symbols(src, &table) != 0 ||
       collect_stub_emit_symbols(src, &emitted) != 0) {
-    fprintf(stderr, "FAIL: parse minimal libc stub symbols from src/arch/wasm32_ir.c\n");
+    fprintf(stderr, "FAIL: parse minimal libc stub symbols from src/arch/wasm32/wasm32_ir.c\n");
     free(src);
     return 1;
   }
@@ -1204,7 +1204,7 @@ static int verify_minimal_libc_stub_table_sync(void) {
 }
 
 static int verify_runtime_backed_std_headers_have_standalone_stubs(void) {
-  char *wasm_src = slurp_alloc("src/arch/wasm32_ir.c");
+  char *wasm_src = slurp_alloc("src/arch/wasm32/wasm32_ir.c");
   char *linker_src = slurp_alloc("tools/wasm_obj_linker/ag_wasm_link.c");
   if (!wasm_src || !linker_src) {
     fprintf(stderr, "FAIL: open sources for runtime-backed standard header stub check\n");

@@ -1,9 +1,9 @@
 #include "wasm32_ir.h"
-#include "../codegen_emit.h"
-#include "../diag/diag.h"
-#include "../ir/abi_lowering.h"
-#include "../parser/parser_public.h"
-#include "../tokenizer/literals.h"
+#include "../../codegen_emit.h"
+#include "../../diag/diag.h"
+#include "../../ir/abi_lowering.h"
+#include "../../parser/parser_public.h"
+#include "../../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

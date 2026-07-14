@@ -20,7 +20,8 @@ DIAG_MSG_SRCS=src/diag/messages_ja.c
 CFLAGS+=-DDIAG_LANG_JA
 endif
 
-SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(wildcard src/arch/*.c) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(wildcard src/lowering/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
+ARCH_SRCS=$(wildcard src/arch/*/*.c)
+SRCS=$(wildcard src/*.c) $(wildcard src/config/*.c) $(ARCH_SRCS) $(wildcard src/tokenizer/*.c) $(wildcard src/parser/*.c) $(wildcard src/frontend/*.c) $(wildcard src/semantic/*.c) $(wildcard src/preprocess/*.c) $(wildcard src/ir/*.c) $(wildcard src/lowering/*.c) $(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS)
 OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(SRCS))
 DEPS=$(OBJS:.o=.d)
 TARGET=build/ag_c

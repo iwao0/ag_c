@@ -15,7 +15,7 @@
  *
  * 現在は canonical type の array(pointer(struct P)) を subscript ごとに辿り、
  * `parr[i]` の結果を pointer(struct P) として `->` 解決する。
- * (arch/arm64_apple.c) emit_one_global_var の struct 配列分岐に `!gv->is_tag_pointer`
+ * (arch/arm64_apple/arm64_apple.c) emit_one_global_var の struct 配列分岐に `!gv->is_tag_pointer`
  *   ガードを追加。struct ポインタ配列は scalar emit 経路に流して 8B ポインタとして出力する。 */
 #include <assert.h>
 

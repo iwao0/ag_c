@@ -12,12 +12,12 @@
  */
 
 #include "arm64_apple_emit.h"
-#include "../codegen_backend.h"
-#include "../diag/diag.h"
+#include "../../codegen_backend.h"
+#include "../../diag/diag.h"
 /* arm64_apple.c は AST node 型を使わない。
  * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。 */
-#include "../parser/parser_public.h"
-#include "../tokenizer/literals.h"
+#include "../../parser/parser_public.h"
+#include "../../tokenizer/literals.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>

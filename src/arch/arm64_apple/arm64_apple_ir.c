@@ -15,8 +15,8 @@
 
 #include "arm64_apple_ir.h"
 #include "arm64_apple_emit.h"
-#include "../ir/ir.h"
-#include "../diag/diag.h"
+#include "../../ir/ir.h"
+#include "../../diag/diag.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

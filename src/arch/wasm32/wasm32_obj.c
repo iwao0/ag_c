@@ -1,8 +1,8 @@
 #include "wasm32_obj.h"
-#include "../diag/diag.h"
-#include "../ir/abi_lowering.h"
-#include "../parser/parser_public.h"
-#include "../tokenizer/literals.h"
+#include "../../diag/diag.h"
+#include "../../ir/abi_lowering.h"
+#include "../../parser/parser_public.h"
+#include "../../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

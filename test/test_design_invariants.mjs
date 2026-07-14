@@ -18,11 +18,24 @@ const irFiles = (await readdir("src/ir", { withFileTypes: true }))
   .map((entry) => `src/ir/${entry.name}`)
   .sort();
 
+const archEntries = await readdir("src/arch", { withFileTypes: true });
+const ungroupedArchFiles = archEntries
+  .filter((entry) => entry.isFile() && /\.[ch]$/.test(entry.name))
+  .map((entry) => `src/arch/${entry.name}`)
+  .sort();
+if (ungroupedArchFiles.length) {
+  throw new Error(
+    "architecture sources must live in target-specific directories:\n" +
+      ungroupedArchFiles.join("\n"),
+  );
+}
+
+const archFiles = (await sourceFilesUnder("src/arch"))
+  .filter((file) => file.endsWith(".c"))
+  .sort();
+
 const backendFiles = [
-  "src/arch/arm64_apple.c",
-  "src/arch/arm64_apple_ir.c",
-  "src/arch/wasm32_ir.c",
-  "src/arch/wasm32_obj.c",
+  ...archFiles,
   ...irFiles,
 ];
 
