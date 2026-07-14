@@ -75,6 +75,20 @@ void ps_ctx_promote_tag_to_file_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
 
+/* Explicit-context ordinary namespace operations. */
+int ps_ctx_register_enum_const_in(
+    psx_semantic_context_t *context,
+    char *name, int len, long long value, int *out_created);
+bool ps_ctx_find_enum_const_in(
+    psx_semantic_context_t *context,
+    char *name, int len, long long *out_value);
+bool ps_ctx_find_enum_const_at_in(
+    psx_semantic_context_t *context,
+    char *name, int len, psx_local_lookup_point_t point,
+    long long *out_value);
+int ps_ctx_has_enum_const_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len);
+
 void ps_ctx_reset_function_scope(void);
 void ps_ctx_reset_translation_unit_scope(void);
 void ps_ctx_reset_function_names(void);
@@ -147,12 +161,19 @@ static inline const psx_type_t *ps_ctx_typedef_decl_type(
 /* typedef 名を登録する。info->decl_type は正本として必須。
  * 戻り値 1 = 成功 (新規 or 互換な再宣言)、0 = decl_type欠落または型衝突。 */
 int psx_ctx_define_typedef_name(char *name, int len, const psx_typedef_info_t *info);
+int ps_ctx_register_typedef_name_in(
+    psx_semantic_context_t *context,
+    char *name, int len, const psx_typedef_info_t *info,
+    int *out_created, int *out_redeclared);
 int ps_ctx_register_typedef_name(
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared);
 /* typedef 名を引く。見つかれば true を返し *out に記述子を書く。
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */
 bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
+bool ps_ctx_find_typedef_name_in(
+    psx_semantic_context_t *context,
+    char *name, int len, psx_typedef_info_t *out);
 bool ps_ctx_find_typedef_decl_type(
     char *name, int len, const psx_type_t **out_type);
 bool ps_ctx_find_typedef_decl_type_in(
@@ -166,6 +187,8 @@ bool ps_ctx_find_typedef_decl_type_at_in(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type);
 int ps_ctx_has_typedef_in_current_scope(char *name, int len);
+int ps_ctx_has_typedef_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
 struct psx_function_registration_checkpoint_t {

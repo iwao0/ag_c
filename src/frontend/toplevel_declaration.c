@@ -90,7 +90,8 @@ static void begin_declarator(
                   "typedef declaration '%.*s' cannot have an initializer",
                   name->len, name->str);
     }
-    psx_apply_parsed_typedef_declaration(
+    psx_apply_parsed_typedef_declaration_in_context(
+        application->semantic_context,
         name->str, name->len, application->current_type,
         declarator->diagnostic_token);
     application->current_kind = PSX_TOPLEVEL_APPLY_TYPEDEF;

@@ -2,6 +2,7 @@
 #define SEMANTIC_ENUM_CONSTANT_RESOLUTION_H
 
 struct psx_parsed_enum_expr_t;
+typedef struct psx_semantic_context_t psx_semantic_context_t;
 
 typedef enum {
   PSX_ENUM_CONSTANT_OK = 0,
@@ -13,6 +14,7 @@ typedef enum {
 } psx_enum_constant_status_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   long long value;
@@ -28,6 +30,9 @@ void psx_resolve_enum_constant(
     const psx_enum_constant_resolution_request_t *request,
     psx_enum_constant_resolution_t *resolution);
 long long psx_resolve_prepared_enum_const_expr(
+    const struct psx_parsed_enum_expr_t *expression);
+long long psx_resolve_prepared_enum_const_expr_in_context(
+    psx_semantic_context_t *semantic_context,
     const struct psx_parsed_enum_expr_t *expression);
 
 #endif

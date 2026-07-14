@@ -83,6 +83,9 @@ void psx_apply_parsed_function_parameters(
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 
 int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body);
+int psx_apply_parsed_enum_body_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_enum_body_t *body);
 int psx_apply_parsed_aggregate_body_layout(
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,

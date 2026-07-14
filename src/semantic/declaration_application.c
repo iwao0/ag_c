@@ -24,14 +24,22 @@
 #include <stdlib.h>
 
 int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body) {
+  return psx_apply_parsed_enum_body_in_context(NULL, body);
+}
+
+int psx_apply_parsed_enum_body_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_enum_body_t *body) {
   if (!body) return 0;
   long long next_value = 0;
   for (int i = 0; i < body->member_count; i++) {
     const psx_parsed_enum_member_t *member = &body->members[i];
     long long value = next_value;
     if (member->initializer)
-      value = psx_resolve_prepared_enum_const_expr(member->initializer);
-    psx_apply_parsed_enum_constant(
+      value = psx_resolve_prepared_enum_const_expr_in_context(
+          semantic_context, member->initializer);
+    psx_apply_parsed_enum_constant_in_context(
+        semantic_context,
         member->enumerator->str, member->enumerator->len, value,
         (token_t *)member->enumerator);
     next_value = value + 1;
@@ -129,7 +137,8 @@ static void apply_decl_tag_action(
   int size = 0;
   int alignment = 0;
   if (action->kind == TK_ENUM) {
-    member_count = psx_apply_parsed_enum_body(action->enum_body);
+    member_count = psx_apply_parsed_enum_body_in_context(
+        semantic_context, action->enum_body);
     size = 4;
     alignment = 4;
   } else {

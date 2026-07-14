@@ -206,6 +206,55 @@ if (!/psx_semantic_resolve_tree_in_context\s*\(/.test(
     "semantic traversal and delayed type queries must use the passed semantic context",
   );
 }
+const enumConstantResolutionSource = await readFile(
+  "src/semantic/enum_constant_resolution.c",
+  "utf8",
+);
+const typedefDeclarationResolutionSource = await readFile(
+  "src/semantic/typedef_declaration_resolution.c",
+  "utf8",
+);
+const globalDeclarationResolutionSource = await readFile(
+  "src/semantic/global_declaration_resolution.c",
+  "utf8",
+);
+const declarationRegistrationSource = await readFile(
+  "src/semantic/declaration_registration.c",
+  "utf8",
+);
+const ordinaryNamespaceResolutionSources = [
+  identifierResolutionSource,
+  enumConstantResolutionSource,
+  typedefDeclarationResolutionSource,
+  globalDeclarationResolutionSource,
+].join("\n");
+const contextFreeOrdinaryNamespaceCall =
+  /\bps_ctx_(?:has_function_name|find_typedef_name|find_enum_const|find_enum_const_at|has_typedef_in_current_scope|has_enum_const_in_current_scope|register_typedef_name|register_enum_const|current_tag_scope_depth)\s*\(/;
+if (contextFreeOrdinaryNamespaceCall.test(
+      ordinaryNamespaceResolutionSources,
+    ) ||
+    !/ps_ctx_register_enum_const_in\s*\(/.test(
+      enumConstantResolutionSource,
+    ) ||
+    !/ps_ctx_register_typedef_name_in\s*\(/.test(
+      typedefDeclarationResolutionSource,
+    ) ||
+    !/ps_ctx_find_enum_const_at_in\s*\(/.test(
+      identifierResolutionSource,
+    ) ||
+    !/ps_ctx_find_typedef_name_in\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/psx_apply_parsed_typedef_declaration_in_context\s*\(/.test(
+      frontendDeclarationSources,
+    ) ||
+    !/\.semantic_context\s*=\s*semantic_context/.test(
+      declarationRegistrationSource,
+    )) {
+  throw new Error(
+    "ordinary namespace resolution must use the passed semantic context",
+  );
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

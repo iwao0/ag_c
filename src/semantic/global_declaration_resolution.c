@@ -32,6 +32,8 @@ void psx_resolve_global_declaration(
   resolution->status = PSX_GLOBAL_DECLARATION_INVALID;
   if (!request || !request->name || request->name_len <= 0 ||
       !request->type) return;
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
 
   if (is_incomplete_object_type(request->type) ||
       (request->type->kind == PSX_TYPE_ARRAY &&
@@ -46,19 +48,22 @@ void psx_resolve_global_declaration(
   if (!incoming_is_incomplete_array && ps_type_sizeof(request->type) <= 0) {
     return;
   }
-  if (ps_ctx_has_function_name(request->name, request->name_len)) {
+  if (ps_ctx_has_function_name_in(
+          semantic_context, request->name, request->name_len)) {
     resolution->status = PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;
     return;
   }
   psx_typedef_info_t typedef_info;
-  if (ps_ctx_find_typedef_name(
-          request->name, request->name_len, &typedef_info)) {
+  if (ps_ctx_find_typedef_name_in(
+          semantic_context, request->name, request->name_len,
+          &typedef_info)) {
     resolution->status = PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT;
     return;
   }
   long long enum_value = 0;
-  if (ps_ctx_find_enum_const(
-          request->name, request->name_len, &enum_value)) {
+  if (ps_ctx_find_enum_const_in(
+          semantic_context, request->name, request->name_len,
+          &enum_value)) {
     resolution->status = PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT;
     return;
   }

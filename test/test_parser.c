@@ -14765,6 +14765,85 @@ static void test_semantic_context_isolation() {
               ps_ctx_find_function_symbol_in(
                   second, function_name, 15));
 
+  char direct_enum_name[] = "DirectEnum";
+  psx_enum_constant_resolution_t direct_enum_resolution;
+  psx_resolve_enum_constant(
+      &(psx_enum_constant_resolution_request_t){
+          .semantic_context = second,
+          .name = direct_enum_name,
+          .name_len = 10,
+          .value = 37,
+      },
+      &direct_enum_resolution);
+  ASSERT_EQ(PSX_ENUM_CONSTANT_OK, direct_enum_resolution.status);
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(
+      first, direct_enum_name, 10, &value));
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(
+      second, direct_enum_name, 10, &value));
+  ASSERT_EQ(37, value);
+  psx_identifier_resolution_t direct_enum_identifier;
+  psx_resolve_identifier(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = second,
+          .name = direct_enum_name,
+          .name_len = 10,
+      },
+      &direct_enum_identifier);
+  ASSERT_EQ(PSX_IDENTIFIER_ENUM_CONSTANT, direct_enum_identifier.kind);
+  ASSERT_EQ(37, direct_enum_identifier.enum_value);
+  psx_parsed_enum_expr_t direct_enum_expression = {
+      .kind = PSX_ENUM_EXPR_IDENTIFIER,
+      .identifier = direct_enum_name,
+      .identifier_len = 10,
+  };
+  ASSERT_EQ(37, psx_resolve_prepared_enum_const_expr_in_context(
+                    second, &direct_enum_expression));
+
+  char direct_typedef_name[] = "DirectTypedef";
+  psx_type_t *direct_typedef_type =
+      ps_type_new_integer(TK_LONG, 8, 0);
+  psx_typedef_declaration_resolution_t direct_typedef_resolution;
+  psx_resolve_typedef_declaration(
+      &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = second,
+          .name = direct_typedef_name,
+          .name_len = 13,
+          .type = direct_typedef_type,
+      },
+      &direct_typedef_resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
+            direct_typedef_resolution.status);
+  psx_typedef_info_t direct_typedef_info = {0};
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
+      first, direct_typedef_name, 13, &direct_typedef_info));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(
+      second, direct_typedef_name, 13, &direct_typedef_info));
+  ASSERT_EQ(8, ps_type_sizeof(
+                   ps_ctx_typedef_decl_type(&direct_typedef_info)));
+  psx_global_declaration_resolution_t direct_global_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = first,
+          .name = direct_typedef_name,
+          .name_len = 13,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .is_extern_decl = 1,
+      },
+      &direct_global_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK,
+            direct_global_resolution.status);
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = second,
+          .name = direct_typedef_name,
+          .name_len = 13,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .is_extern_decl = 1,
+      },
+      &direct_global_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT,
+            direct_global_resolution.status);
+
   char direct_tag_name[] = "DirectTag";
   char direct_member_name[] = "value";
   tag_member_info_t direct_member = {

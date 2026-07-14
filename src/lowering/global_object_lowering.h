@@ -7,6 +7,7 @@
 #include "../semantic/static_initializer_resolution.h"
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *type;

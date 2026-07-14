@@ -12,9 +12,17 @@
 
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
+  psx_apply_parsed_typedef_declaration_in_context(
+      NULL, name, name_len, type, diag_tok);
+}
+
+void psx_apply_parsed_typedef_declaration_in_context(
+    psx_semantic_context_t *semantic_context,
+    char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = semantic_context,
           .name = name,
           .name_len = name_len,
           .type = type,
@@ -48,9 +56,17 @@ void psx_apply_parsed_typedef_declaration(
 
 void psx_apply_parsed_enum_constant(
     char *name, int name_len, long long value, token_t *diag_tok) {
+  psx_apply_parsed_enum_constant_in_context(
+      NULL, name, name_len, value, diag_tok);
+}
+
+void psx_apply_parsed_enum_constant_in_context(
+    psx_semantic_context_t *semantic_context,
+    char *name, int name_len, long long value, token_t *diag_tok) {
   psx_enum_constant_resolution_t resolution;
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
+          .semantic_context = semantic_context,
           .name = name,
           .name_len = name_len,
           .value = value,

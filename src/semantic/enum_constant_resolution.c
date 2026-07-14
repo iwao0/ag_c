@@ -19,10 +19,12 @@ void psx_resolve_enum_constant(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_ENUM_CONSTANT_INVALID;
   if (!request || !request->name || request->name_len <= 0) return;
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
 
-  int scope_depth = ps_ctx_current_tag_scope_depth();
-  if (ps_ctx_has_typedef_in_current_scope(
-          request->name, request->name_len)) {
+  int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
+  if (ps_ctx_has_typedef_in_current_scope_in(
+          semantic_context, request->name, request->name_len)) {
     resolution->status = PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT;
     return;
   }
@@ -31,7 +33,8 @@ void psx_resolve_enum_constant(
       resolution->status = PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT;
       return;
     }
-    if (ps_ctx_has_function_name(request->name, request->name_len)) {
+    if (ps_ctx_has_function_name_in(
+            semantic_context, request->name, request->name_len)) {
       resolution->status = PSX_ENUM_CONSTANT_FUNCTION_NAME_CONFLICT;
       return;
     }
@@ -44,7 +47,8 @@ void psx_resolve_enum_constant(
     }
   }
 
-  if (!ps_ctx_register_enum_const(
+  if (!ps_ctx_register_enum_const_in(
+          semantic_context,
           request->name, request->name_len, request->value,
           &resolution->created)) {
     resolution->status = PSX_ENUM_CONSTANT_DUPLICATE;
@@ -56,11 +60,20 @@ void psx_resolve_enum_constant(
 
 long long psx_resolve_prepared_enum_const_expr(
     const psx_parsed_enum_expr_t *expression) {
+  return psx_resolve_prepared_enum_const_expr_in_context(
+      NULL, expression);
+}
+
+long long psx_resolve_prepared_enum_const_expr_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_enum_expr_t *expression) {
   if (!expression) return 0;
+  if (!semantic_context) semantic_context = ps_ctx_active();
   if (expression->kind == PSX_ENUM_EXPR_VALUE) return expression->value;
   if (expression->kind == PSX_ENUM_EXPR_IDENTIFIER) {
     long long value = 0;
-    if (!ps_ctx_find_enum_const(
+    if (!ps_ctx_find_enum_const_in(
+            semantic_context,
             expression->identifier, expression->identifier_len, &value)) {
       ps_diag_ctx(
           expression->diagnostic_token, "enum",
@@ -70,12 +83,14 @@ long long psx_resolve_prepared_enum_const_expr(
     return value;
   }
   long long left =
-      psx_resolve_prepared_enum_const_expr(expression->lhs);
+      psx_resolve_prepared_enum_const_expr_in_context(
+          semantic_context, expression->lhs);
   if (expression->kind == PSX_ENUM_EXPR_CONDITIONAL) {
     return left
-               ? psx_resolve_prepared_enum_const_expr(expression->rhs)
-               : psx_resolve_prepared_enum_const_expr(
-                     expression->alternative);
+               ? psx_resolve_prepared_enum_const_expr_in_context(
+                     semantic_context, expression->rhs)
+               : psx_resolve_prepared_enum_const_expr_in_context(
+                     semantic_context, expression->alternative);
   }
   if (expression->kind == PSX_ENUM_EXPR_UNARY) {
     switch (expression->op) {
@@ -87,7 +102,8 @@ long long psx_resolve_prepared_enum_const_expr(
     }
   }
   long long right =
-      psx_resolve_prepared_enum_const_expr(expression->rhs);
+      psx_resolve_prepared_enum_const_expr_in_context(
+          semantic_context, expression->rhs);
   switch (expression->op) {
     case TK_PLUS: return left + right;
     case TK_MINUS: return left - right;

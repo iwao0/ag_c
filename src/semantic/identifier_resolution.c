@@ -17,6 +17,8 @@ void psx_resolve_identifier(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   if (!request || !request->name || request->name_len <= 0) return;
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
 
   resolution->local = request->has_local_lookup_point
       ? ps_local_registry_find_visible(
@@ -28,10 +30,12 @@ void psx_resolve_identifier(
     return;
   }
   int has_enum = request->has_local_lookup_point
-      ? ps_ctx_find_enum_const_at(
+      ? ps_ctx_find_enum_const_at_in(
+            semantic_context,
             request->name, request->name_len,
             request->local_lookup_point, &resolution->enum_value)
-      : ps_ctx_find_enum_const(
+      : ps_ctx_find_enum_const_in(
+            semantic_context,
             request->name, request->name_len,
             &resolution->enum_value);
   if (has_enum) {
@@ -43,8 +47,7 @@ void psx_resolve_identifier(
       request->name, request->name_len);
   const psx_function_symbol_t *function =
       ps_ctx_find_function_symbol_in(
-          request->semantic_context
-              ? request->semantic_context : ps_ctx_active(),
+          semantic_context,
           request->name, request->name_len);
   if (request->is_call) {
     if (resolution->global) {

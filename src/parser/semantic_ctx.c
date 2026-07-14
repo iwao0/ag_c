@@ -171,10 +171,10 @@ struct psx_semantic_context_t {
   tag_type_t *tags_by_bucket[PCTX_HASH_BUCKETS];
   tag_type_t *tags_all;
   tag_member_t *aggregate_members_by_bucket[PCTX_HASH_BUCKETS];
-  enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
-  enum_const_t *all_enum_consts;
-  typedef_name_t *typedef_names_by_bucket[PCTX_HASH_BUCKETS];
-  typedef_name_t *typedef_names_all;
+  enum_const_t *enum_entries_by_bucket[PCTX_HASH_BUCKETS];
+  enum_const_t *enum_entries_all;
+  typedef_name_t *typedef_entries_by_bucket[PCTX_HASH_BUCKETS];
+  typedef_name_t *typedef_entries_all;
   psx_function_symbol_t *function_symbols_by_bucket[PCTX_HASH_BUCKETS];
   int scope_depth;
   int aggregate_member_decl_order;
@@ -273,10 +273,6 @@ static psx_type_t *ctx_type_clone_persistent_in(
   return dst;
 }
 
-static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
-  return ctx_type_clone_persistent_in(active_semantic_context, src);
-}
-
 static void initialize_tag_member_record(
                                          psx_semantic_context_t *context,
                                          tag_member_t *m,
@@ -298,11 +294,11 @@ static void initialize_tag_member_record(
 #define all_tag_types (active_semantic_context->tags_all)
 #define tag_members_by_bucket \
   (active_semantic_context->aggregate_members_by_bucket)
-#define enum_consts_by_bucket (active_semantic_context->enum_consts_by_bucket)
-#define all_enum_consts (active_semantic_context->all_enum_consts)
+#define enum_consts_by_bucket (active_semantic_context->enum_entries_by_bucket)
+#define all_enum_consts (active_semantic_context->enum_entries_all)
 #define typedefs_by_bucket \
-  (active_semantic_context->typedef_names_by_bucket)
-#define all_typedefs (active_semantic_context->typedef_names_all)
+  (active_semantic_context->typedef_entries_by_bucket)
+#define all_typedefs (active_semantic_context->typedef_entries_all)
 #define func_names_by_bucket \
   (active_semantic_context->function_symbols_by_bucket)
 #define tag_scope_depth (active_semantic_context->scope_depth)
@@ -1145,9 +1141,12 @@ int ps_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len,
 }
 
 // 任意のスコープから名前一致の enum_const を返す。なければ NULL。
-static enum_const_t *find_enum_const(char *name, int len) {
+static enum_const_t *find_enum_const_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !name || len <= 0) return NULL;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
+  for (enum_const_t *e = context->enum_entries_by_bucket[bucket];
+       e; e = e->next_hash) {
     if (e->len == len && strncmp(e->name, name, (size_t)len) == 0) {
       return e;
     }
@@ -1156,10 +1155,13 @@ static enum_const_t *find_enum_const(char *name, int len) {
 }
 
 // 現スコープ深度に限った検索（同名再定義の検出用）。
-static enum_const_t *find_enum_const_in_current_scope(char *name, int len) {
+static enum_const_t *find_enum_const_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !name || len <= 0) return NULL;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (enum_const_t *e = enum_consts_by_bucket[bucket]; e; e = e->next_hash) {
-    if (e->scope_depth == tag_scope_depth && e->len == len &&
+  for (enum_const_t *e = context->enum_entries_by_bucket[bucket];
+       e; e = e->next_hash) {
+    if (e->scope_depth == context->scope_depth && e->len == len &&
         strncmp(e->name, name, (size_t)len) == 0) {
       return e;
     }
@@ -1170,45 +1172,63 @@ static enum_const_t *find_enum_const_in_current_scope(char *name, int len) {
 /* enum 定数を登録する。
  * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
  * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
-int ps_ctx_register_enum_const(
+int ps_ctx_register_enum_const_in(
+    psx_semantic_context_t *context,
     char *name, int len, long long value, int *out_created) {
   if (out_created) *out_created = 0;
-  enum_const_t *existing = find_enum_const_in_current_scope(name, len);
+  if (!context || !name || len <= 0) return 0;
+  enum_const_t *existing = find_enum_const_in_current_scope_in(
+      context, name, len);
   if (existing) {
     return 0;
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
-  enum_const_t *e = ctx_calloc(1, sizeof(enum_const_t));
+  enum_const_t *e = ctx_calloc_in(context, 1, sizeof(enum_const_t));
   e->name = name;
   e->len = len;
   e->value = value;
-  e->scope_depth = tag_scope_depth;
+  e->scope_depth = context->scope_depth;
   e->scope_seq = ps_local_registry_current_scope_seq();
   e->declaration_seq = ps_local_registry_register_binding_event();
-  e->next_hash = enum_consts_by_bucket[bucket];
-  enum_consts_by_bucket[bucket] = e;
-  e->next_all = all_enum_consts;
-  all_enum_consts = e;
+  e->next_hash = context->enum_entries_by_bucket[bucket];
+  context->enum_entries_by_bucket[bucket] = e;
+  e->next_all = context->enum_entries_all;
+  context->enum_entries_all = e;
   if (out_created) *out_created = 1;
   return 1;
+}
+
+int ps_ctx_register_enum_const(
+    char *name, int len, long long value, int *out_created) {
+  return ps_ctx_register_enum_const_in(
+      active_semantic_context, name, len, value, out_created);
 }
 
 int psx_ctx_define_enum_const(char *name, int len, long long value) {
   return ps_ctx_register_enum_const(name, len, value, NULL);
 }
 
-bool ps_ctx_find_enum_const(char *name, int len, long long *out_value) {
-  enum_const_t *e = find_enum_const(name, len);
+bool ps_ctx_find_enum_const_in(
+    psx_semantic_context_t *context,
+    char *name, int len, long long *out_value) {
+  enum_const_t *e = find_enum_const_in(context, name, len);
   if (!e) return false;
   if (out_value) *out_value = e->value;
   return true;
 }
 
-bool ps_ctx_find_enum_const_at(
+bool ps_ctx_find_enum_const(char *name, int len, long long *out_value) {
+  return ps_ctx_find_enum_const_in(
+      active_semantic_context, name, len, out_value);
+}
+
+bool ps_ctx_find_enum_const_at_in(
+    psx_semantic_context_t *context,
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value) {
-  if (!name || len <= 0) return false;
-  for (enum_const_t *e = all_enum_consts; e; e = e->next_all) {
+  if (!context || !name || len <= 0) return false;
+  for (enum_const_t *e = context->enum_entries_all;
+       e; e = e->next_all) {
     if (e->len != len ||
         strncmp(e->name, name, (size_t)len) != 0 ||
         (e->scope_seq != 0 &&
@@ -1222,15 +1242,28 @@ bool ps_ctx_find_enum_const_at(
   return false;
 }
 
+bool ps_ctx_find_enum_const_at(
+    char *name, int len, psx_local_lookup_point_t point,
+    long long *out_value) {
+  return ps_ctx_find_enum_const_at_in(
+      active_semantic_context, name, len, point, out_value);
+}
+
+int ps_ctx_has_enum_const_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  return find_enum_const_in_current_scope_in(context, name, len) != NULL;
+}
+
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len) {
-  return find_enum_const_in_current_scope(name, len) != NULL;
+  return ps_ctx_has_enum_const_in_current_scope_in(
+      active_semantic_context, name, len);
 }
 
 static typedef_name_t *find_typedef_in(
     psx_semantic_context_t *context, char *name, int len) {
   if (!context || !name || len <= 0) return NULL;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (typedef_name_t *t = context->typedef_names_by_bucket[bucket];
+  for (typedef_name_t *t = context->typedef_entries_by_bucket[bucket];
        t; t = t->next_hash) {
     if (t->len == len && strncmp(t->name, name, (size_t)len) == 0) {
       return t;
@@ -1245,10 +1278,13 @@ static typedef_name_t *find_typedef(char *name, int len) {
 }
 
 // 現スコープ深度に限った検索（同名再定義の検出用）。
-static typedef_name_t *find_typedef_in_current_scope(char *name, int len) {
+static typedef_name_t *find_typedef_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !name || len <= 0) return NULL;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (typedef_name_t *t = typedefs_by_bucket[bucket]; t; t = t->next_hash) {
-    if (t->scope_depth == tag_scope_depth && t->len == len &&
+  for (typedef_name_t *t = context->typedef_entries_by_bucket[bucket];
+       t; t = t->next_hash) {
+    if (t->scope_depth == context->scope_depth && t->len == len &&
         strncmp(t->name, name, (size_t)len) == 0) {
       return t;
     }
@@ -1256,8 +1292,14 @@ static typedef_name_t *find_typedef_in_current_scope(char *name, int len) {
   return NULL;
 }
 
+int ps_ctx_has_typedef_in_current_scope_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  return find_typedef_in_current_scope_in(context, name, len) != NULL;
+}
+
 int ps_ctx_has_typedef_in_current_scope(char *name, int len) {
-  return find_typedef_in_current_scope(name, len) != NULL;
+  return ps_ctx_has_typedef_in_current_scope_in(
+      active_semantic_context, name, len);
 }
 
 void ps_ctx_refresh_type_completeness_in(
@@ -1292,18 +1334,23 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
 }
 
 static void initialize_typedef_record(
+    psx_semantic_context_t *context,
     typedef_name_t *t, const psx_typedef_info_t *info) {
   if (!t || !info || t->decl_type) return;
-  t->decl_type = ctx_type_clone_persistent(ps_ctx_typedef_decl_type(info));
+  t->decl_type = ctx_type_clone_persistent_in(
+      context, ps_ctx_typedef_decl_type(info));
 }
 
-int ps_ctx_register_typedef_name(
+int ps_ctx_register_typedef_name_in(
+    psx_semantic_context_t *context,
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared) {
   if (out_created) *out_created = 0;
   if (out_redeclared) *out_redeclared = 0;
-  if (!info || !ps_ctx_typedef_decl_type(info)) return 0;
-  typedef_name_t *existing = find_typedef_in_current_scope(name, len);
+  if (!context || !name || len <= 0 || !info ||
+      !ps_ctx_typedef_decl_type(info)) return 0;
+  typedef_name_t *existing = find_typedef_in_current_scope_in(
+      context, name, len);
   /* C11 6.7p3: typedef は同じ型なら再宣言可。違う型なら error。
    * 比較するフィールドは「型の identity」を成すもの。tag_name は同じ ptr で
    * あるはずなので ptr 比較で十分 (parser が tag を共有させている)。 */
@@ -1315,19 +1362,28 @@ int ps_ctx_register_typedef_name(
     return 1;  /* 同じ型なら登録済みのままで OK */
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
-  typedef_name_t *t = ctx_calloc(1, sizeof(typedef_name_t));
+  typedef_name_t *t = ctx_calloc_in(
+      context, 1, sizeof(typedef_name_t));
   t->name = name;
   t->len = len;
-  t->scope_depth = tag_scope_depth;
+  t->scope_depth = context->scope_depth;
   t->scope_seq = ps_local_registry_current_scope_seq();
   t->declaration_seq = ps_local_registry_register_binding_event();
-  t->next_hash = typedefs_by_bucket[bucket];
-  typedefs_by_bucket[bucket] = t;
-  t->next_all = all_typedefs;
-  all_typedefs = t;
-  initialize_typedef_record(t, info);
+  t->next_hash = context->typedef_entries_by_bucket[bucket];
+  context->typedef_entries_by_bucket[bucket] = t;
+  t->next_all = context->typedef_entries_all;
+  context->typedef_entries_all = t;
+  initialize_typedef_record(context, t, info);
   if (out_created) *out_created = 1;
   return 1;
+}
+
+int ps_ctx_register_typedef_name(
+    char *name, int len, const psx_typedef_info_t *info,
+    int *out_created, int *out_redeclared) {
+  return ps_ctx_register_typedef_name_in(
+      active_semantic_context, name, len, info,
+      out_created, out_redeclared);
 }
 
 int psx_ctx_define_typedef_name(
@@ -1344,15 +1400,23 @@ bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
   return true;
 }
 
-bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
-  typedef_name_t *t = find_typedef(name, len);
+bool ps_ctx_find_typedef_name_in(
+    psx_semantic_context_t *context,
+    char *name, int len, psx_typedef_info_t *out) {
+  typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
+  ps_ctx_refresh_type_completeness_in(
+      context, typedef_record_decl_type_mut(t));
   if (out) {
     memset(out, 0, sizeof(*out));
     out->decl_type = typedef_record_decl_type(t);
   }
   return true;
+}
+
+bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
+  return ps_ctx_find_typedef_name_in(
+      active_semantic_context, name, len, out);
 }
 
 bool ps_ctx_find_typedef_decl_type(
@@ -1384,7 +1448,7 @@ bool ps_ctx_find_typedef_decl_type_at_in(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type) {
   if (!context || !name || len <= 0) return false;
-  for (typedef_name_t *type = context->typedef_names_all; type;
+  for (typedef_name_t *type = context->typedef_entries_all; type;
        type = type->next_all) {
     if (type->len != len ||
         strncmp(type->name, name, (size_t)len) != 0 ||

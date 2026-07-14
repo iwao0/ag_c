@@ -9,7 +9,13 @@ typedef struct psx_semantic_context_t psx_semantic_context_t;
 
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok);
+void psx_apply_parsed_typedef_declaration_in_context(
+    psx_semantic_context_t *semantic_context,
+    char *name, int name_len, const psx_type_t *type, token_t *diag_tok);
 void psx_apply_parsed_enum_constant(
+    char *name, int name_len, long long value, token_t *diag_tok);
+void psx_apply_parsed_enum_constant_in_context(
+    psx_semantic_context_t *semantic_context,
     char *name, int name_len, long long value, token_t *diag_tok);
 void psx_apply_parsed_tag_declaration(
     token_kind_t kind, char *name, int name_len,
