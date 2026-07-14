@@ -543,8 +543,10 @@ int psx_finish_static_local_declaration_pipeline(
           &result->type_completed)) {
     return 0;
   }
-  if (result->type_completed)
-    ps_local_registry_set_decl_type(result->alias, request->type);
+  if (result->type_completed &&
+      !ps_local_registry_complete_array_type(
+          result->alias, resolution.type))
+    return 0;
   result->initialized = 1;
   return 1;
 }

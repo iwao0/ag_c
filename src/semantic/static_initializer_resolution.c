@@ -21,6 +21,10 @@ void psx_resolve_static_initializer(
   resolution->type = request->type;
   resolution->kind = request->kind;
   resolution->initializer = request->initializer;
+  if (ps_type_is_incomplete_array(resolution->type)) {
+    resolution->type = ps_type_clone(resolution->type);
+    if (!resolution->type) return;
+  }
   ps_ctx_attach_aggregate_definitions(resolution->type);
 
   if (ps_type_is_incomplete_array(resolution->type)) {

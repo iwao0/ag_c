@@ -2701,8 +2701,8 @@ void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
   if (!lhs || !rhs) return;
   if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
   if (!ps_node_value_is_pointer_like(lhs)) return;
-  if (ps_type_find_function(ps_node_get_type(lhs)) &&
-      ps_type_find_function(ps_node_get_type(rhs))) {
+  if (ps_type_derived_function(ps_node_get_type(lhs)) &&
+      ps_type_derived_function(ps_node_get_type(rhs))) {
     return;
   }
   if (node_pointee_is_const_qualified(lhs)) return;

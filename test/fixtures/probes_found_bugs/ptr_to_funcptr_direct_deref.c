@@ -3,8 +3,8 @@
 // 宣言子 `(*...)` の後ろに `[N]` が無くても parse_decl_array_suffixes_constexpr_required(1)
 // が初期値 1 をそのまま返し、`paren_array_mul=1` を立てていた。これにより
 // `int (**pp)(int)` が `(*p)[N]` 配列ポインタ専用ブランチ (decl.c:2246) を
-// 誤発火し、`ps_decl_register_lvar_sized_align(.., 8, elem_size=4, 0)` で
-// elem_size=4 + outer_stride=4 で登録 → build_lvar_or_vla_node が mem.deref_size=4
+// 誤発火し、旧size/elem_sizeベースのlocal登録経路で
+// elem_size=4 + outer_stride=4 と解釈 → build_lvar_or_vla_node が mem.deref_size=4
 // を作り、`*pp` の ND_DEREF.type_size=4 が IR_TY_I32 と判定されて
 // `ldrsw x19, [x20]` (4B signed load) を出していた。関数ポインタの上位 32bit が
 // 落ちて不正アドレスを call → segfault。

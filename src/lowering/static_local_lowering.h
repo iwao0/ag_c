@@ -41,8 +41,8 @@ typedef struct {
 } psx_static_local_declaration_result_t;
 
 void psx_static_local_lowering_reset(void);
-void psx_static_local_prepare_global(global_var_t *global,
-                                     const psx_type_t *type);
+int psx_static_local_prepare_global(global_var_t *global,
+                                    const psx_type_t *type);
 lvar_t *lower_static_local_object(
     const psx_static_local_object_request_t *request);
 int lower_static_local_declaration(

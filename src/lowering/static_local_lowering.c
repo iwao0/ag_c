@@ -1,6 +1,7 @@
 #include "static_local_lowering.h"
 
 #include "static_data_initializer.h"
+#include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
@@ -14,11 +15,12 @@ void psx_static_local_lowering_reset(void) {
   memset(object_sequences, 0, sizeof(object_sequences));
 }
 
-void psx_static_local_prepare_global(global_var_t *global,
-                                     const psx_type_t *type) {
-  if (!global || !type) return;
+int psx_static_local_prepare_global(global_var_t *global,
+                                    const psx_type_t *type) {
+  if (!global || !type) return 0;
   global->is_static = 1;
-  if (!global->decl_type) ps_decl_set_gvar_decl_type(global, type);
+  if (global->decl_type) return 1;
+  return ps_global_registry_bind_decl_type(global, type);
 }
 
 static char *mangle_static_local_name(
@@ -66,7 +68,10 @@ lvar_t *lower_static_local_object(
   if (!mangled) return NULL;
 
   global_var_t *global = request->global;
-  psx_static_local_prepare_global(global, request->type);
+  if (!psx_static_local_prepare_global(global, request->type)) {
+    free(mangled);
+    return NULL;
+  }
   global->name = mangled;
   global->name_len = mangled_len;
   ps_register_global_var(global);
@@ -88,7 +93,10 @@ int lower_static_local_declaration_storage(
 
   global_var_t *global = calloc(1, sizeof(*global));
   if (!global) return 0;
-  psx_static_local_prepare_global(global, request->type);
+  if (!psx_static_local_prepare_global(global, request->type)) {
+    free(global);
+    return 0;
+  }
 
   lvar_t *alias = lower_static_local_object(
       &(psx_static_local_object_request_t){
@@ -133,6 +141,11 @@ int lower_static_local_declaration(
       !lower_static_local_declaration_initializer(
           lowered.global, request->initializer_resolution,
           request->diag_tok, &lowered.type_completed)) {
+    return 0;
+  }
+  if (lowered.type_completed &&
+      !ps_local_registry_complete_array_type(
+          lowered.alias, request->initializer_resolution->type)) {
     return 0;
   }
   if (result) *result = lowered;

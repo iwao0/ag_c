@@ -1,5 +1,5 @@
 #include "abi_lowering.h"
-#include "../parser/parser_public.h"
+#include "../parser/type.h"
 
 #include <string.h>
 
@@ -10,7 +10,7 @@ static ir_abi_param_info_t abi_param_unknown(void) {
   };
 }
 
-static ir_abi_param_info_t abi_compiler_builtin_param(
+ir_abi_param_info_t ir_abi_classify_builtin_param(
     const char *name, int name_len, int param_idx) {
   if (name_len == 6 && strncmp(name, "memset", 6) == 0) {
     if (param_idx == 0) {
@@ -82,7 +82,7 @@ int ir_abi_callable_sig_from_type(
     const psx_type_t *type, ir_callable_sig_t *out) {
   if (!out) return 0;
   memset(out, 0, sizeof(*out));
-  const psx_type_t *function = ps_type_find_function(type);
+  const psx_type_t *function = ps_type_derived_function(type);
   if (!function) return 0;
 
   ir_abi_param_info_t result =
@@ -101,17 +101,4 @@ int ir_abi_callable_sig_from_type(
     out->params[i] = param.type == IR_TY_VOID ? IR_TY_I32 : param.type;
   }
   return 1;
-}
-
-ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
-                                                    int param_idx) {
-  ir_abi_param_info_t builtin =
-      abi_compiler_builtin_param(name, name_len, param_idx);
-  if (builtin.param_class != IR_ABI_PARAM_UNKNOWN) return builtin;
-  const psx_type_t *function = ps_ctx_get_function_type(name, name_len);
-  if (!function || function->kind != PSX_TYPE_FUNCTION || param_idx < 0 ||
-      param_idx >= function->param_count || !function->param_types) {
-    return abi_param_unknown();
-  }
-  return ir_abi_classify_param_type(function->param_types[param_idx]);
 }

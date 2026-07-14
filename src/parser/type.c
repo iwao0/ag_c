@@ -262,7 +262,7 @@ void ps_type_set_function_params(psx_type_t *function_type,
         param_types ? ps_type_clone(param_types[i]) : NULL;
 }
 
-const psx_type_t *ps_type_find_function(const psx_type_t *type) {
+const psx_type_t *ps_type_derived_function(const psx_type_t *type) {
   while (type) {
     if (type->kind == PSX_TYPE_FUNCTION) return type;
     if (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)
@@ -1082,9 +1082,9 @@ int ps_type_generic_matches(const psx_type_t *control,
   unqualified_association.is_volatile_qualified = 0;
   control = &unqualified_control;
   association = &unqualified_association;
-  const psx_type_t *control_function = ps_type_find_function(control);
+  const psx_type_t *control_function = ps_type_derived_function(control);
   const psx_type_t *association_function =
-      ps_type_find_function(association);
+      ps_type_derived_function(association);
   if (!control_function && !association_function)
     return ps_type_shape_matches(control, association);
   if (!control_function || !association_function) return 0;

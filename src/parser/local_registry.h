@@ -30,8 +30,8 @@ lvar_t *ps_local_registry_create_static_alias(
 void ps_local_registry_update_storage_object(
     lvar_t *var, int offset, int storage_size, int alignment);
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
-void ps_local_registry_set_decl_type(
-    lvar_t *var, const psx_type_t *decl_type);
+int ps_local_registry_complete_array_type(
+    lvar_t *var, const psx_type_t *complete_type);
 void ps_local_registry_set_vla_descriptor(
     lvar_t *var, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset,

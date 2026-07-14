@@ -3,6 +3,7 @@
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/decl.h"
+#include "../parser/global_registry.h"
 #include "../parser/literal_public.h"
 #include "../parser/node_utils.h"
 #include "../semantic/constant_expression.h"
@@ -386,7 +387,7 @@ int lower_resolved_static_initializer(
 
   psx_type_t *type = resolution->type;
   if (resolution->type_completed) {
-    ps_decl_set_gvar_decl_type(global, type);
+    if (!ps_global_registry_complete_array_type(global, type)) return 0;
     if (result) result->type_completed = 1;
   }
 

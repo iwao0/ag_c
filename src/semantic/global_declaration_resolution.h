@@ -24,7 +24,7 @@ typedef struct {
 typedef struct {
   psx_global_declaration_status_t status;
   global_var_t *existing;
-  int replace_existing_type;
+  int complete_existing_array;
   int clear_existing_extern;
 } psx_global_declaration_resolution_t;
 

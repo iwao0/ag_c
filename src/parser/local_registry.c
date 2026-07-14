@@ -249,10 +249,20 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
   var->is_byref_param = is_byref ? 1 : 0;
 }
 
-void ps_local_registry_set_decl_type(
-    lvar_t *var, const psx_type_t *decl_type) {
-  if (!var || !decl_type) return;
-  var->decl_type = ps_type_clone_persistent(decl_type);
+int ps_local_registry_complete_array_type(
+    lvar_t *var, const psx_type_t *complete_type) {
+  const psx_type_t *current = var ? var->decl_type : NULL;
+  if (!ps_type_is_incomplete_array(current) || !complete_type ||
+      complete_type->kind != PSX_TYPE_ARRAY ||
+      complete_type->array_len <= 0 || complete_type->is_vla ||
+      !current->base || !complete_type->base ||
+      !ps_type_shape_matches(current->base, complete_type->base)) {
+    return 0;
+  }
+  psx_type_t *replacement = ps_type_clone_persistent(complete_type);
+  if (!replacement) return 0;
+  var->decl_type = replacement;
+  return 1;
 }
 
 void ps_local_registry_set_vla_descriptor(

@@ -1,11 +1,35 @@
 #include "global_registry.h"
 #include "parser_public.h"
 #include "symtab.h"
+#include "type.h"
 #include <string.h>
 
 static string_lit_t *string_literals;
 static float_lit_t *float_literals;
 static global_var_t *global_vars;
+
+int ps_global_registry_bind_decl_type(
+    global_var_t *global, const psx_type_t *type) {
+  if (!global || global->decl_type || !type) return 0;
+  global->decl_type = ps_type_clone_persistent(type);
+  return global->decl_type != NULL;
+}
+
+int ps_global_registry_complete_array_type(
+    global_var_t *global, const psx_type_t *complete_type) {
+  const psx_type_t *current = global ? global->decl_type : NULL;
+  if (!ps_type_is_incomplete_array(current) || !complete_type ||
+      complete_type->kind != PSX_TYPE_ARRAY ||
+      complete_type->array_len <= 0 || complete_type->is_vla ||
+      !current->base || !complete_type->base ||
+      !ps_type_shape_matches(current->base, complete_type->base)) {
+    return 0;
+  }
+  psx_type_t *replacement = ps_type_clone_persistent(complete_type);
+  if (!replacement) return 0;
+  global->decl_type = replacement;
+  return 1;
+}
 
 #define GVAR_HASH_BUCKETS 256u
 static global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];

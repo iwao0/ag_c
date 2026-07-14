@@ -62,6 +62,37 @@
 
 static node_t **parsed_code;
 
+/* Test-only storage fixtures may start with a simple scalar/array type and
+ * replace it with the exact type under test. Production registration accepts
+ * only an explicit canonical type. */
+static lvar_t *register_test_storage_fixture(
+    char *name, int len, int size, int elem_size, int is_array) {
+  int scalar_size = elem_size > 0 ? elem_size : size;
+  if (scalar_size <= 0) scalar_size = 1;
+  psx_type_t *type = ps_type_new_integer(
+      scalar_size > 4 ? TK_LONG : TK_INT, scalar_size, 0);
+  if (is_array) {
+    int array_len = size > 0 && size % scalar_size == 0
+                        ? size / scalar_size
+                        : 0;
+    type = ps_type_new_array(type, array_len, size, 0);
+  }
+  return ps_decl_register_lvar_typed_align(
+      name, len, size, 0, type);
+}
+
+static lvar_t *register_test_default_storage_fixture(char *name, int len) {
+  return register_test_storage_fixture(name, len, 8, 8, 0);
+}
+
+static void set_test_storage_fixture_type(
+    lvar_t *var, const psx_type_t *type) {
+  ASSERT_TRUE(var != NULL);
+  ASSERT_TRUE(type != NULL);
+  var->decl_type = ps_type_clone_persistent(type);
+  ASSERT_TRUE(var->decl_type != NULL);
+}
+
 static void find_long_double_float_literal(float_lit_t *lit, void *user) {
   bool *found = user;
   if (lit->float_suffix_kind == TK_FLOAT_SUFFIX_L) *found = true;
@@ -73,7 +104,7 @@ static void find_long_double_float_literal(float_lit_t *lit, void *user) {
 static void preregister_test_locals(void) {
   static char names[] = "abcdefghijklmnopqrstuvwxyz";
   for (int i = 0; i < 26; i++) {
-    ps_decl_register_lvar(&names[i], 1);
+    register_test_default_storage_fixture(&names[i], 1);
   }
 }
 
@@ -367,7 +398,7 @@ static void test_identifier_resolution_boundary() {
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
       "int __identifier_function(int value);");
-  lvar_t *local = ps_decl_register_lvar(
+  lvar_t *local = register_test_default_storage_fixture(
       (char *)"__identifier_local", 18);
   ASSERT_TRUE(local != NULL);
 
@@ -419,14 +450,14 @@ static void test_persistent_local_scope_lookup_boundary() {
   printf("test_persistent_local_scope_lookup_boundary...\n");
   ps_decl_reset_locals();
 
-  lvar_t *outer = ps_decl_register_lvar_sized(
+  lvar_t *outer = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(outer != NULL);
 
   ps_decl_enter_scope();
   psx_local_lookup_point_t before_inner =
       ps_local_registry_capture_lookup_point();
-  lvar_t *inner = ps_decl_register_lvar_sized(
+  lvar_t *inner = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(inner != NULL);
   psx_local_lookup_point_t after_inner =
@@ -469,7 +500,7 @@ static void test_persistent_local_scope_lookup_boundary() {
   ps_decl_enter_scope();
   psx_local_lookup_point_t sibling_before_decl =
       ps_local_registry_capture_lookup_point();
-  lvar_t *sibling = ps_decl_register_lvar_sized(
+  lvar_t *sibling = register_test_storage_fixture(
       (char *)"__sibling_only", 14, 4, 4, 0);
   ASSERT_TRUE(sibling != NULL);
   ASSERT_TRUE(ps_local_registry_find_visible(
@@ -564,9 +595,9 @@ static void test_member_access_resolution_boundary() {
 
   psx_type_t *object_type = ps_type_clone(ps_lvar_get_decl_type(object));
   ps_decl_reset_locals();
-  lvar_t *raw_object = ps_decl_register_lvar_sized(
+  lvar_t *raw_object = register_test_storage_fixture(
       (char *)"object", 6, 4, 4, 0);
-  ps_local_registry_set_decl_type(raw_object, object_type);
+  set_test_storage_fixture_type(raw_object, object_type);
   node_t *raw_access = parse_expr_input_with_existing_locals(
       "object.value");
   ASSERT_EQ(ND_MEMBER_ACCESS, raw_access->kind);
@@ -959,17 +990,17 @@ static void test_expr_add_sub() {
 static void test_additive_semantic_lowering_boundary() {
   printf("test_additive_semantic_lowering_boundary...\n");
   ps_decl_reset_locals();
-  lvar_t *pointer = ps_decl_register_lvar_sized((char *)"p", 1, 8, 4, 0);
-  ps_local_registry_set_decl_type(
+  lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
+  set_test_storage_fixture_type(
       pointer,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
-  lvar_t *integer = ps_decl_register_lvar_sized(
+  lvar_t *integer = register_test_storage_fixture(
       (char *)"i", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       integer, ps_type_new_integer(TK_INT, 4, 0));
-  lvar_t *floating = ps_decl_register_lvar_sized(
+  lvar_t *floating = register_test_storage_fixture(
       (char *)"d", 1, 8, 8, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       floating, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
 
   node_t *node = parse_expr_input_with_existing_locals("p + 2");
@@ -1093,9 +1124,9 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_TRUE(addressed_matrix != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, addressed_matrix->kind);
   ASSERT_TRUE(addressed_matrix->base == matrix);
-  lvar_t *array = ps_decl_register_lvar_sized(
+  lvar_t *array = register_test_storage_fixture(
       (char *)"a", 1, 24, 12, 1);
-  ps_local_registry_set_decl_type(array, matrix);
+  set_test_storage_fixture_type(array, matrix);
   ASSERT_EQ(12, ps_type_subscript_static_stride(matrix));
   psx_type_t *matrix_row_type = ps_type_subscript_result(matrix);
   ASSERT_TRUE(matrix_row_type != NULL);
@@ -1149,12 +1180,12 @@ static void test_unary_deref_semantic_lowering_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *pointer_type = ps_type_new_pointer(integer);
   ASSERT_TRUE(ps_type_dereference_result(pointer_type) == integer);
-  lvar_t *pointer = ps_decl_register_lvar_sized(
+  lvar_t *pointer = register_test_storage_fixture(
       (char *)"p", 1, 8, 4, 0);
-  ps_local_registry_set_decl_type(pointer, pointer_type);
-  lvar_t *pointer_pointer = ps_decl_register_lvar_sized(
+  set_test_storage_fixture_type(pointer, pointer_type);
+  lvar_t *pointer_pointer = register_test_storage_fixture(
       (char *)"q", 1, 8, 8, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       pointer_pointer, ps_type_new_pointer(pointer_type));
 
   node_t *node = parse_expr_input_with_existing_locals("**q");
@@ -1197,21 +1228,21 @@ static void test_unary_deref_semantic_lowering_boundary() {
 static void test_unary_operator_semantic_lowering_boundary() {
   printf("test_unary_operator_semantic_lowering_boundary...\n");
   ps_decl_reset_locals();
-  lvar_t *integer = ps_decl_register_lvar_sized(
+  lvar_t *integer = register_test_storage_fixture(
       (char *)"i", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       integer, ps_type_new_integer(TK_INT, 4, 0));
-  lvar_t *floating = ps_decl_register_lvar_sized(
+  lvar_t *floating = register_test_storage_fixture(
       (char *)"d", 1, 8, 8, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       floating, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   complex_type->size = 16;
   complex_type->align = 8;
-  lvar_t *complex_value = ps_decl_register_lvar_sized(
+  lvar_t *complex_value = register_test_storage_fixture(
       (char *)"z", 1, 16, 8, 0);
-  ps_local_registry_set_decl_type(complex_value, complex_type);
+  set_test_storage_fixture_type(complex_value, complex_type);
 
   node_t *raw_integer = parse_expr_input_with_existing_locals("-i");
   ASSERT_EQ(ND_UNARY_NEGATE, raw_integer->kind);
@@ -1317,9 +1348,9 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_EQ(0, resolution.conflict_index);
 
   ps_decl_reset_locals();
-  lvar_t *value = ps_decl_register_lvar_sized(
+  lvar_t *value = register_test_storage_fixture(
       (char *)"x", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       value, ps_type_new_integer(TK_INT, 4, 0));
 
   node_t *raw = parse_expr_input_with_existing_locals(
@@ -1357,9 +1388,9 @@ static void test_generic_selection_semantic_lowering_boundary() {
 static void test_sizeof_semantic_lowering_boundary() {
   printf("test_sizeof_semantic_lowering_boundary...\n");
   ps_decl_reset_locals();
-  lvar_t *value = ps_decl_register_lvar_sized(
+  lvar_t *value = register_test_storage_fixture(
       (char *)"x", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       value, ps_type_new_integer(TK_INT, 4, 0));
 
   node_t *raw_expr = parse_expr_input_with_existing_locals("sizeof(x)");
@@ -1434,9 +1465,9 @@ static void test_sizeof_semantic_lowering_boundary() {
 
   psx_type_t *array_type = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
-  lvar_t *array = ps_decl_register_lvar_sized(
+  lvar_t *array = register_test_storage_fixture(
       (char *)"a", 1, 12, 4, 1);
-  ps_local_registry_set_decl_type(array, array_type);
+  set_test_storage_fixture_type(array, array_type);
   node_t *raw_addr =
       parse_expr_input_with_existing_locals("sizeof(&a)");
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_addr->kind);
@@ -1522,7 +1553,7 @@ static void test_function_call_type_binding_boundary() {
 
   psx_type_t *double_function_pointer =
       ps_type_new_pointer(ps_type_new_pointer(ps_type_clone(function)));
-  ASSERT_TRUE(ps_type_find_function(double_function_pointer) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(double_function_pointer) != NULL);
   ASSERT_TRUE(ps_type_callable_function(double_function_pointer) == NULL);
   ASSERT_TRUE(ps_type_function_return_type(double_function_pointer) == NULL);
   psx_resolve_function_call_type(
@@ -1533,7 +1564,7 @@ static void test_function_call_type_binding_boundary() {
 
   psx_type_t *function_pointer_array = ps_type_new_array(
       ps_type_clone(function_pointer), 2, 16, 0);
-  ASSERT_TRUE(ps_type_find_function(function_pointer_array) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(function_pointer_array) != NULL);
   ASSERT_TRUE(ps_type_callable_function(function_pointer_array) == NULL);
   ASSERT_TRUE(ps_type_function_return_type(function_pointer_array) == NULL);
 
@@ -1541,7 +1572,7 @@ static void test_function_call_type_binding_boundary() {
       psx_resolve_function_reference_type(function);
   ASSERT_TRUE(reference_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference_type->kind);
-  ASSERT_TRUE(ps_type_find_function(reference_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(reference_type) != NULL);
   ASSERT_TRUE(psx_resolve_function_reference_type(parameter) == NULL);
 
   psx_ctx_define_function_name_with_ret(
@@ -1574,12 +1605,12 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_EQ(ND_FUNCREF, reference->kind);
   ASSERT_TRUE(reference->type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference->type->kind);
-  ASSERT_TRUE(ps_type_find_function(reference->type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(reference->type) != NULL);
 
   ps_decl_reset_locals();
-  lvar_t *fp = ps_decl_register_lvar_sized(
+  lvar_t *fp = register_test_storage_fixture(
       (char *)"fp", 2, 8, 8, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       fp, ps_type_new_pointer(ps_type_clone(function)));
   node_t *indirect = parse_expr_input_with_existing_locals("fp(4)");
   ASSERT_EQ(ND_FUNCALL, indirect->kind);
@@ -1705,8 +1736,8 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
 static void test_compound_assignment_semantic_lowering_boundary() {
   printf("test_compound_assignment_semantic_lowering_boundary...\n");
   ps_decl_reset_locals();
-  lvar_t *value = ps_decl_register_lvar_sized((char *)"a", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  lvar_t *value = register_test_storage_fixture((char *)"a", 1, 4, 4, 0);
+  set_test_storage_fixture_type(
       value, ps_type_new_integer(TK_INT, 4, 0));
   node_t *node = parse_expr_input_with_existing_locals("a += 2");
   ASSERT_EQ(ND_ASSIGN, node->kind);
@@ -1720,8 +1751,8 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_EQ(ND_ADD, node->rhs->kind);
 
   ps_decl_reset_locals();
-  lvar_t *pointer = ps_decl_register_lvar_sized((char *)"p", 1, 8, 4, 0);
-  ps_local_registry_set_decl_type(
+  lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
+  set_test_storage_fixture_type(
       pointer,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node = parse_expr_input_with_existing_locals("*p += 2");
@@ -1991,12 +2022,12 @@ static void test_frontend_stream_lifecycle_boundary() {
 static void test_complex_initializer_semantic_lowering_boundary() {
   printf("test_complex_initializer_semantic_lowering_boundary...\n");
   ps_decl_reset_locals();
-  lvar_t *value = ps_decl_register_lvar_sized((char *)"z", 1, 16, 16, 0);
+  lvar_t *value = register_test_storage_fixture((char *)"z", 1, 16, 16, 0);
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
   complex_type->size = 16;
   complex_type->align = 8;
-  ps_local_registry_set_decl_type(value, complex_type);
+  set_test_storage_fixture_type(value, complex_type);
 
   psx_initializer_entry_t *complex_entries =
       calloc(2, sizeof(*complex_entries));
@@ -2019,12 +2050,12 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(ND_INT_TO_FP, raw->lhs->rhs->kind);
   ASSERT_EQ(ND_INT_TO_FP, raw->rhs->rhs->kind);
 
-  lvar_t *float_value = ps_decl_register_lvar_sized((char *)"f", 1, 8, 8, 0);
+  lvar_t *float_value = register_test_storage_fixture((char *)"f", 1, 8, 8, 0);
   psx_type_t *float_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   float_complex_type->fp_kind = TK_FLOAT_KIND_FLOAT;
   float_complex_type->size = 8;
   float_complex_type->align = 4;
-  ps_local_registry_set_decl_type(float_value, float_complex_type);
+  set_test_storage_fixture_type(float_value, float_complex_type);
   complex_entries = calloc(2, sizeof(*complex_entries));
   complex_entries[0].value = ps_node_new_num(1);
   complex_entries[1].value = ps_node_new_num(2);
@@ -2038,8 +2069,8 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(raw->rhs->lhs));
 
   ps_decl_reset_locals();
-  lvar_t *array = ps_decl_register_lvar_sized((char *)"a", 1, 12, 4, 1);
-  ps_local_registry_set_decl_type(
+  lvar_t *array = register_test_storage_fixture((char *)"a", 1, 12, 4, 1);
+  set_test_storage_fixture_type(
       array,
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0));
   raw = psx_node_new_raw_decl_initializer(
@@ -2175,6 +2206,12 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(declared,
             ps_decl_find_lvar((char *)"deferred", 8));
+  ASSERT_TRUE(!ps_local_registry_complete_array_type(
+      declared, ps_type_new_integer(TK_INT, 4, 0)));
+  ASSERT_TRUE(!ps_local_registry_complete_array_type(
+      declared,
+      ps_type_new_array(
+          ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0)));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
       deferred_type,
       &(psx_incomplete_array_resolution_t){
@@ -2189,6 +2226,8 @@ static void test_local_declaration_storage_plan_boundary() {
       }));
   ASSERT_EQ(12, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(3, ps_lvar_get_decl_type(declared)->array_len);
+  ASSERT_TRUE(!ps_local_registry_complete_array_type(
+      declared, deferred_type));
 
   expect_parse_ok(
       "int main(void){ int *a[]={(int *)a}; return sizeof(a)==8; }");
@@ -2294,9 +2333,9 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(4, as_num(result.init->rhs->rhs)->val);
 
   ps_decl_reset_locals();
-  lvar_t *n = ps_decl_register_lvar_sized(
+  lvar_t *n = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
-  lvar_t *k = ps_decl_register_lvar_sized(
+  lvar_t *k = register_test_storage_fixture(
       (char *)"k", 1, 4, 4, 0);
   n->is_param = 1;
   k->is_param = 1;
@@ -2418,7 +2457,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
 
   ps_decl_reset_locals();
-  lvar_t *dimension = ps_decl_register_lvar_sized(
+  lvar_t *dimension = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
   dimension->is_param = 1;
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
@@ -2513,7 +2552,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   const psx_type_t *planned_return =
       ps_type_function_return_type(
           ps_function_symbol_type(funcptr_resolution.function));
-  const psx_type_t *planned_callable = ps_type_find_function(planned_return);
+  const psx_type_t *planned_callable = ps_type_derived_function(planned_return);
   ASSERT_TRUE(planned_callable != NULL);
   ASSERT_EQ(1, planned_callable->param_count);
   ASSERT_TRUE(ps_type_shape_matches(
@@ -2620,7 +2659,7 @@ static void test_global_declaration_resolution_boundary() {
       &merged_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, merged_resolution.status);
   ASSERT_EQ(first.global, merged_resolution.existing);
-  ASSERT_TRUE(merged_resolution.replace_existing_type);
+  ASSERT_TRUE(merged_resolution.complete_existing_array);
   ASSERT_TRUE(merged_resolution.clear_existing_extern);
   psx_global_object_result_t merged = {0};
   ASSERT_TRUE(lower_resolved_global_object_declaration(
@@ -2636,6 +2675,28 @@ static void test_global_declaration_resolution_boundary() {
   ASSERT_TRUE(!merged.global->is_extern_decl);
   ASSERT_EQ(12, ps_gvar_decl_sizeof(merged.global, 0));
   ASSERT_EQ(3, ps_gvar_get_decl_type(merged.global)->array_len);
+  const psx_type_t *merged_type = ps_gvar_get_decl_type(merged.global);
+
+  psx_global_declaration_resolution_t repeated_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = complete,
+      },
+      &repeated_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, repeated_resolution.status);
+  ASSERT_TRUE(!repeated_resolution.complete_existing_array);
+  psx_global_object_result_t repeated = {0};
+  ASSERT_TRUE(lower_resolved_global_object_declaration(
+      &(psx_resolved_global_object_request_t){
+          .name = (char *)"__boundary_global",
+          .name_len = 17,
+          .type = complete,
+          .resolution = &repeated_resolution,
+      },
+      &repeated));
+  ASSERT_TRUE(ps_gvar_get_decl_type(repeated.global) == merged_type);
 
   psx_global_declaration_resolution_t rejected_resolution;
   psx_resolve_global_declaration(
@@ -2980,7 +3041,7 @@ static void test_aggregate_body_phase_boundary() {
       (char *)"callback", 8, &member));
   ASSERT_EQ(64, member.offset);
   const psx_type_t *callback_type =
-      ps_type_find_function(member.decl_type);
+      ps_type_derived_function(member.decl_type);
   ASSERT_TRUE(callback_type != NULL);
   ASSERT_EQ(3, callback_type->param_count);
   ASSERT_TRUE(callback_type->is_variadic_function);
@@ -3090,7 +3151,7 @@ static void test_toplevel_declarator_phase_boundary() {
 static void test_local_declarator_application_boundary() {
   printf("test_local_declarator_application_boundary...\n");
   psx_frontend_reset_translation_unit_state();
-  ps_decl_register_lvar((char *)"n", 1);
+  register_test_default_storage_fixture((char *)"n", 1);
 
   token_t *tokens = tk_tokenize((char *)"matrix[n][4]");
   tk_set_current_token(tokens);
@@ -4013,7 +4074,7 @@ static void test_enum_constant_resolution_boundary() {
 
   ps_ctx_enter_block_scope();
   ps_decl_enter_scope();
-  ASSERT_TRUE(ps_decl_register_lvar_sized(
+  ASSERT_TRUE(register_test_storage_fixture(
       (char *)"__EnumLocal", 11, 4, 4, 0) != NULL);
   request.name = (char *)"__EnumLocal";
   request.name_len = 11;
@@ -4107,9 +4168,9 @@ static void test_local_initializer_parse_lowering_boundary() {
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 16);
   aggregate->aggregate_definition = &definition;
 
-  lvar_t *object = ps_decl_register_lvar_sized(
+  lvar_t *object = register_test_storage_fixture(
       (char *)"object", 6, 16, 16, 0);
-  ps_local_registry_set_decl_type(object, aggregate);
+  set_test_storage_fixture_type(object, aggregate);
   token_t *tokens = tk_tokenize((char *)"{0, 7}");
   tk_set_current_token(tokens);
 
@@ -4124,9 +4185,9 @@ static void test_local_initializer_parse_lowering_boundary() {
   psx_frontend_analyze_expression(raw, NULL);
   ASSERT_TRUE(raw->kind != ND_DECL_INIT);
 
-  lvar_t *source = ps_decl_register_lvar_sized(
+  lvar_t *source = register_test_storage_fixture(
       (char *)"source", 6, 16, 16, 0);
-  ps_local_registry_set_decl_type(source, aggregate);
+  set_test_storage_fixture_type(source, aggregate);
   tokens = tk_tokenize((char *)"source");
   tk_set_current_token(tokens);
   raw = psx_decl_parse_initializer_for_var(object);
@@ -4154,9 +4215,9 @@ static void test_local_initializer_parse_lowering_boundary() {
   psx_type_t *union_type = ps_type_new_tag(
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 4);
   union_type->aggregate_definition = &union_definition;
-  lvar_t *union_object = ps_decl_register_lvar_sized(
+  lvar_t *union_object = register_test_storage_fixture(
       (char *)"u", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(union_object, union_type);
+  set_test_storage_fixture_type(union_object, union_type);
   tokens = tk_tokenize((char *)"9");
   tk_set_current_token(tokens);
   raw = psx_decl_parse_initializer_for_var(union_object);
@@ -4168,9 +4229,9 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_TRUE(raw->is_decl_initializer);
   ASSERT_EQ(9, as_num(raw->rhs)->val);
 
-  lvar_t *scalar = ps_decl_register_lvar_sized(
+  lvar_t *scalar = register_test_storage_fixture(
       (char *)"scalar", 6, 4, 4, 0);
-  ps_local_registry_set_decl_type(scalar, integer);
+  set_test_storage_fixture_type(scalar, integer);
   tokens = tk_tokenize((char *)"{7,}");
   tk_set_current_token(tokens);
   raw = psx_decl_parse_initializer_for_var(scalar);
@@ -4186,9 +4247,9 @@ static void test_local_initializer_parse_lowering_boundary() {
   complex_type->size = 16;
   complex_type->align = 8;
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
-  lvar_t *complex_value = ps_decl_register_lvar_sized(
+  lvar_t *complex_value = register_test_storage_fixture(
       (char *)"complex", 7, 16, 16, 0);
-  ps_local_registry_set_decl_type(complex_value, complex_type);
+  set_test_storage_fixture_type(complex_value, complex_type);
   tokens = tk_tokenize((char *)"{3, 4}");
   tk_set_current_token(tokens);
   raw = psx_decl_parse_initializer_for_var(complex_value);
@@ -4228,7 +4289,7 @@ static void test_static_data_initializer_boundary() {
   list.entries = entries;
   list.entry_count = 2;
   global_var_t global = {0};
-  ps_decl_set_gvar_decl_type(&global, array);
+  ps_global_registry_bind_decl_type(&global, array);
   ASSERT_TRUE(lower_static_scalar_array_initializer(
       &global, array, &list, NULL));
   ASSERT_EQ(3, global.init_count);
@@ -4280,7 +4341,7 @@ static void test_static_data_initializer_boundary() {
   union_list.entries = &union_entry;
   union_list.entry_count = 1;
   global_var_t union_global = {0};
-  ps_decl_set_gvar_decl_type(&union_global, union_type);
+  ps_global_registry_bind_decl_type(&union_global, union_type);
   ASSERT_TRUE(lower_static_object_initializer(
       &union_global, union_type, &union_list, NULL));
   ASSERT_EQ(2, union_global.init_count);
@@ -4290,7 +4351,7 @@ static void test_static_data_initializer_boundary() {
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
   global_var_t inferred_global = {0};
-  ps_decl_set_gvar_decl_type(&inferred_global, incomplete);
+  ps_global_registry_bind_decl_type(&inferred_global, incomplete);
   psx_type_t *inferred_type = ps_gvar_get_decl_type(&inferred_global);
   psx_initializer_entry_t inferred_entries[3] = {
       {.value = (node_t *)&one},
@@ -4311,8 +4372,11 @@ static void test_static_data_initializer_boundary() {
       &inferred_resolution);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, inferred_resolution.status);
   ASSERT_EQ(1, inferred_resolution.type_completed);
-  ASSERT_EQ(3, inferred_type->array_len);
-  ASSERT_EQ(12, ps_gvar_decl_sizeof(&inferred_global, 0));
+  ASSERT_EQ(0, inferred_type->array_len);
+  ASSERT_TRUE(inferred_resolution.type != inferred_type);
+  ASSERT_EQ(3, inferred_resolution.type->array_len);
+  ASSERT_EQ(12, ps_type_sizeof(inferred_resolution.type));
+  ASSERT_EQ(0, ps_gvar_decl_sizeof(&inferred_global, 0));
 
   psx_static_declaration_initializer_result_t inferred_result = {0};
   ASSERT_TRUE(lower_resolved_static_initializer(
@@ -4321,6 +4385,7 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(1, inferred_result.type_completed);
   ASSERT_EQ(1, inferred_result.initialized);
   ASSERT_EQ(12, ps_gvar_decl_sizeof(&inferred_global, 0));
+  ASSERT_EQ(3, ps_gvar_get_decl_type(&inferred_global)->array_len);
   ASSERT_EQ(3, inferred_global.init_count);
   ASSERT_EQ(7, ps_gvar_init_slot_view(&inferred_global, 2).value);
 
@@ -4328,7 +4393,7 @@ static void test_static_data_initializer_boundary() {
   psx_type_t *char_pointer = ps_type_new_pointer(char_type);
   psx_type_t *pointer_array = ps_type_new_array(char_pointer, 0, 0, 0);
   global_var_t pointer_array_global = {0};
-  ps_decl_set_gvar_decl_type(&pointer_array_global, pointer_array);
+  ps_global_registry_bind_decl_type(&pointer_array_global, pointer_array);
   psx_type_t *pointer_array_type =
       ps_gvar_get_decl_type(&pointer_array_global);
   node_string_t string = {0};
@@ -4353,7 +4418,9 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, pointer_resolution.status);
   ASSERT_TRUE(lower_resolved_static_initializer(
       &pointer_array_global, &pointer_resolution, NULL, NULL));
-  ASSERT_EQ(1, pointer_array_type->array_len);
+  ASSERT_EQ(0, pointer_array_type->array_len);
+  ASSERT_EQ(1, pointer_resolution.type->array_len);
+  ASSERT_EQ(1, ps_gvar_get_decl_type(&pointer_array_global)->array_len);
   ASSERT_EQ(8, ps_gvar_decl_sizeof(&pointer_array_global, 0));
   ASSERT_EQ(1, pointer_array_global.init_count);
   psx_gvar_init_slot_t pointer_slot =
@@ -4846,7 +4913,7 @@ static void test_expr_generic() {
   canonical_expr_funcptr = psx_frontend_analyze_expression(
       canonical_expr_funcptr, NULL);
   const psx_type_t *canonical_expr_function =
-      ps_type_find_function(ps_node_get_type(canonical_expr_funcptr));
+      ps_type_derived_function(ps_node_get_type(canonical_expr_funcptr));
   ASSERT_TRUE(canonical_expr_function != NULL);
   ASSERT_EQ(2, canonical_expr_function->param_count);
   ASSERT_TRUE(canonical_expr_function->is_variadic_function);
@@ -4871,7 +4938,7 @@ static void test_expr_generic() {
   const psx_type_t *unary_type = ps_ctx_typedef_decl_type(&unary_info);
   ASSERT_TRUE(unary_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, unary_type->kind);
-  ASSERT_TRUE(ps_type_find_function(unary_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(unary_type) != NULL);
   assert_canonical_type_signature(generic_id_pointer, "p<i32(i32)>");
   assert_canonical_type_signature(unary_type, "p<i32(i32)>");
   ASSERT_TRUE(ps_type_generic_matches(generic_id_pointer, unary_type));
@@ -4958,15 +5025,15 @@ static void test_expr_generic() {
 
   ps_decl_reset_locals();
   char synthetic_nested_name[] = "p";
-  lvar_t *synthetic_nested =
-      ps_decl_register_lvar_sized(synthetic_nested_name, 1, 8, 4, 0);
   psx_type_t *synthetic_nested_array = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
   psx_type_t *synthetic_nested_return =
       ps_type_new_pointer(synthetic_nested_array);
   psx_type_t *synthetic_nested_type =
       test_function_pointer(synthetic_nested_return, NULL, 0, 0);
-  ps_local_registry_set_decl_type(synthetic_nested, synthetic_nested_type);
+  lvar_t *synthetic_nested = ps_decl_register_lvar_typed_align(
+      synthetic_nested_name, 1, 8, 0, synthetic_nested_type);
+  ASSERT_TRUE(synthetic_nested != NULL);
   node_t *ret_structural_nested_fp = parse_analyzed_expr_input_with_existing_locals(
       "_Generic(p, int (*(*)(void))[3]: 31, default: 7)");
   ASSERT_EQ(ND_NUM, ret_structural_nested_fp->kind);
@@ -4974,8 +5041,6 @@ static void test_expr_generic() {
 
   ps_decl_reset_locals();
   char synthetic_ret_funcptr_name[] = "q";
-  lvar_t *synthetic_ret_funcptr =
-      ps_decl_register_lvar_sized(synthetic_ret_funcptr_name, 1, 8, 4, 0);
   psx_type_t *synthetic_ret_funcptr_param =
       ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *synthetic_ret_funcptr_params[] = {
@@ -4984,8 +5049,9 @@ static void test_expr_generic() {
       ps_type_new_integer(TK_INT, 4, 0), synthetic_ret_funcptr_params, 1, 0);
   psx_type_t *synthetic_ret_funcptr_type =
       test_function_pointer(synthetic_returned_funcptr, NULL, 0, 0);
-  ps_local_registry_set_decl_type(synthetic_ret_funcptr,
-                              synthetic_ret_funcptr_type);
+  lvar_t *synthetic_ret_funcptr = ps_decl_register_lvar_typed_align(
+      synthetic_ret_funcptr_name, 1, 8, 0,
+      synthetic_ret_funcptr_type);
   psx_type_t *synthetic_ret_funcptr_ty =
       ps_lvar_get_decl_type(synthetic_ret_funcptr);
   ASSERT_TRUE(synthetic_ret_funcptr_ty != NULL);
@@ -5010,8 +5076,6 @@ static void test_expr_generic() {
 
   ps_decl_reset_locals();
   char synthetic_double_ret_funcptr_name[] = "r";
-  lvar_t *synthetic_double_ret_funcptr =
-      ps_decl_register_lvar_sized(synthetic_double_ret_funcptr_name, 1, 8, 8, 0);
   psx_type_t *synthetic_double_ret_funcptr_param =
       ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *synthetic_double_ret_funcptr_params[] = {
@@ -5021,8 +5085,10 @@ static void test_expr_generic() {
       synthetic_double_ret_funcptr_params, 1, 0);
   psx_type_t *synthetic_double_ret_funcptr_type =
       test_function_pointer(synthetic_double_returned_funcptr, NULL, 0, 0);
-  ps_local_registry_set_decl_type(synthetic_double_ret_funcptr,
-                              synthetic_double_ret_funcptr_type);
+  lvar_t *synthetic_double_ret_funcptr =
+      ps_decl_register_lvar_typed_align(
+          synthetic_double_ret_funcptr_name, 1, 8, 0,
+          synthetic_double_ret_funcptr_type);
   psx_type_t *synthetic_double_ret_funcptr_ty =
       ps_lvar_get_decl_type(synthetic_double_ret_funcptr);
   ASSERT_TRUE(synthetic_double_ret_funcptr_ty != NULL);
@@ -5490,9 +5556,9 @@ static void test_expr_sizeof() {
 static void test_expr_inc_dec() {
   printf("test_expr_inc_dec...\n");
   ps_decl_reset_locals();
-  lvar_t *integer = ps_decl_register_lvar_sized(
+  lvar_t *integer = register_test_storage_fixture(
       (char *)"a", 1, 4, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       integer, ps_type_new_integer(TK_INT, 4, 0));
 
   node_t *prei = parse_expr_input_with_existing_locals("++a");
@@ -5642,7 +5708,7 @@ static void test_funcall() {
   node_t *cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, cast_deref_call->kind);
   ASSERT_EQ(ND_CAST, as_func(cast_deref_call)->callee->kind);
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(as_func(cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_func(cast_deref_call)->callee));
 
@@ -5653,7 +5719,7 @@ static void test_funcall() {
   node_t *typedef_cast_deref_call = as_block(as_func(parsed_code[1])->base.rhs)->body[1];
   ASSERT_EQ(ND_FUNCALL, typedef_cast_deref_call->kind);
   ASSERT_EQ(ND_CAST, as_func(typedef_cast_deref_call)->callee->kind);
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(as_func(typedef_cast_deref_call)->callee)) != NULL);
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(as_func(typedef_cast_deref_call)->callee));
 }
@@ -5962,9 +6028,9 @@ static void test_expr_deref_addr() {
 
   // *a (a は実際に pointer 型として登録する)
   ps_decl_reset_locals();
-  lvar_t *pointer = ps_decl_register_lvar_sized(
+  lvar_t *pointer = register_test_storage_fixture(
       (char *)"a", 1, 8, 4, 0);
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       pointer,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *deref = parse_expr_input_with_existing_locals("*a");
@@ -6820,14 +6886,14 @@ static void test_type_metadata_bridge() {
 
   lvar_t tmp_lvar = {0};
   tmp_lvar.size = 4;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_lvar, ps_type_new_integer(TK_INT, 4, 0));
   psx_type_t *tmp_lvar_int = ps_lvar_get_decl_type(&tmp_lvar);
   ASSERT_TRUE(tmp_lvar_int != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_lvar_int->kind);
   ASSERT_TRUE(!ps_lvar_value_is_pointer_like(&tmp_lvar));
   tmp_lvar.size = 8;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_lvar,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(ps_lvar_value_is_pointer_like(&tmp_lvar));
@@ -6854,7 +6920,7 @@ static void test_type_metadata_bridge() {
   tmp_nested_ptr->is_const_qualified = 1;
   psx_type_t *tmp_nested_array = ps_type_new_array(
       tmp_nested_ptr, 2, 16, 0);
-  ps_local_registry_set_decl_type(&tmp_lvar_nested_tag_ptr_array,
+  set_test_storage_fixture_type(&tmp_lvar_nested_tag_ptr_array,
                               tmp_nested_array);
   psx_type_t *tmp_lvar_nested_tag_ptr_array_type =
       ps_lvar_get_decl_type(&tmp_lvar_nested_tag_ptr_array);
@@ -6877,7 +6943,7 @@ static void test_type_metadata_bridge() {
 
   lvar_t tmp_lvar_decl_type_wins = {0};
   tmp_lvar_decl_type_wins.size = 4;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_lvar_decl_type_wins,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *tmp_lvar_decl_type_ref =
@@ -6908,7 +6974,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(0, ps_node_deref_size(tmp_lvar_scalar_decl_type_ref));
   node_t *tmp_lvar_scalar_funcptr_ref =
       psx_node_new_lvar_for(&tmp_lvar_scalar_decl_type_wins);
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(tmp_lvar_scalar_funcptr_ref)) == NULL);
 
   lvar_t tmp_lvar_ptr_array_cache_decl_type_wins = {0};
@@ -7076,7 +7142,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *sig_lvar_type = ps_lvar_get_decl_type(sig_lvar);
   ASSERT_TRUE(sig_lvar_type != NULL);
   const psx_type_t *sig_lvar_function =
-      ps_type_find_function(sig_lvar_type);
+      ps_type_derived_function(sig_lvar_type);
   ASSERT_TRUE(sig_lvar_function != NULL);
   ASSERT_EQ(2, sig_lvar_function->param_count);
   ASSERT_TRUE(sig_lvar_function->is_variadic_function);
@@ -7093,7 +7159,7 @@ static void test_type_metadata_bridge() {
   ps_decl_reset_locals();
   char funcptr_sync_lvar_name[] = "__tm_funcptr_sync_lvar";
   lvar_t *funcptr_sync_lvar =
-      ps_decl_register_lvar_sized(funcptr_sync_lvar_name,
+      register_test_storage_fixture(funcptr_sync_lvar_name,
                                    (int)strlen(funcptr_sync_lvar_name), 8, 4, 0);
   psx_type_t *funcptr_sync_lvar_param =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -7101,7 +7167,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *funcptr_sync_lvar_type = test_function_pointer(
       ps_type_new_integer(TK_INT, 4, 0),
       funcptr_sync_lvar_params, 1, 0);
-  ps_local_registry_set_decl_type(funcptr_sync_lvar, funcptr_sync_lvar_type);
+  set_test_storage_fixture_type(funcptr_sync_lvar, funcptr_sync_lvar_type);
   funcptr_sync_lvar_type = ps_lvar_get_decl_type(funcptr_sync_lvar);
   ASSERT_TRUE(funcptr_sync_lvar_type != NULL);
   assert_canonical_type_signature(funcptr_sync_lvar_type, "p<i32(i32)>");
@@ -7113,7 +7179,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *funcptr_sync_gvar_type = test_function_pointer(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       funcptr_sync_gvar_params, 1, 0);
-  ps_decl_set_gvar_decl_type(&funcptr_sync_gvar, funcptr_sync_gvar_type);
+  ps_global_registry_bind_decl_type(&funcptr_sync_gvar, funcptr_sync_gvar_type);
   funcptr_sync_gvar_type = ps_gvar_get_decl_type(&funcptr_sync_gvar);
   ASSERT_TRUE(funcptr_sync_gvar_type != NULL);
   assert_canonical_type_signature(funcptr_sync_gvar_type, "p<f64(f64)>");
@@ -7145,11 +7211,11 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       sig_nested_param_type, "p<p<i32(f64)>()>");
   const psx_type_t *outer_nested_param_function =
-      ps_type_find_function(sig_nested_param_type);
+      ps_type_derived_function(sig_nested_param_type);
   ASSERT_TRUE(outer_nested_param_function != NULL);
   ASSERT_EQ(0, outer_nested_param_function->param_count);
   const psx_type_t *returned_nested_param_function =
-      ps_type_find_function(outer_nested_param_function->base);
+      ps_type_derived_function(outer_nested_param_function->base);
   ASSERT_TRUE(returned_nested_param_function != NULL);
   ASSERT_EQ(1, returned_nested_param_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
@@ -7175,7 +7241,7 @@ static void test_type_metadata_bridge() {
       "__tm_top_fp", (int)(sizeof("__tm_top_fp") - 1));
   ASSERT_TRUE(top_fp != NULL);
   const psx_type_t *top_function =
-      ps_type_find_function(ps_gvar_get_decl_type(top_fp));
+      ps_type_derived_function(ps_gvar_get_decl_type(top_fp));
   ASSERT_TRUE(top_function != NULL);
   ASSERT_EQ(2, top_function->param_count);
   ASSERT_TRUE(top_function->is_variadic_function);
@@ -7218,7 +7284,7 @@ static void test_type_metadata_bridge() {
       (int)(sizeof("__tm_ret_nested") - 1));
   ASSERT_TRUE(nested_return_function != NULL);
   const psx_type_t *returned_function =
-      ps_type_find_function(nested_return_function->base);
+      ps_type_derived_function(nested_return_function->base);
   ASSERT_TRUE(returned_function != NULL);
   ASSERT_EQ(1, returned_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, returned_function->param_types[0]->kind);
@@ -7796,7 +7862,7 @@ static void test_type_metadata_bridge() {
 
   lvar_t tmp_fp_ptr_lvar = {0};
   tmp_fp_ptr_lvar.size = 8;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_fp_ptr_lvar,
       ps_type_new_pointer(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
@@ -7812,7 +7878,7 @@ static void test_type_metadata_bridge() {
   tmp_void_ptr_lvar.size = 8;
   psx_type_t *tmp_void_type = ps_type_new(PSX_TYPE_VOID);
   tmp_void_type->scalar_kind = TK_VOID;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_void_ptr_lvar, ps_type_new_pointer(tmp_void_type));
   ASSERT_TRUE(ps_lvar_value_is_pointer_like(&tmp_void_ptr_lvar));
 
@@ -7822,7 +7888,7 @@ static void test_type_metadata_bridge() {
   canonical_complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
   canonical_complex->size = 16;
   canonical_complex->align = 8;
-  ps_local_registry_set_decl_type(&tmp_complex_lvar, canonical_complex);
+  set_test_storage_fixture_type(&tmp_complex_lvar, canonical_complex);
   psx_type_t *tmp_complex_type = tmp_complex_lvar.decl_type;
   ASSERT_TRUE(tmp_complex_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, tmp_complex_type->kind);
@@ -9239,7 +9305,7 @@ static void test_type_metadata_bridge() {
   typed_data_ptr_stale_funcptr_sig.kind = ND_LVAR;
   typed_data_ptr_stale_funcptr_sig.type = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(&typed_data_ptr_stale_funcptr_sig)) == NULL);
 
   node_t canonical_funcptr = {0};
@@ -9512,7 +9578,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       typed_funcptr_view_params, 1, 0);
   const psx_type_t *typed_funcptr_view_function =
-      ps_type_find_function(ps_node_get_type(&typed_funcptr_view_mem));
+      ps_type_derived_function(ps_node_get_type(&typed_funcptr_view_mem));
   ASSERT_TRUE(typed_funcptr_view_function != NULL);
   ASSERT_EQ(1, typed_funcptr_view_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
@@ -9540,7 +9606,7 @@ static void test_type_metadata_bridge() {
       ps_node_get_type(typed_funcptr_array_elem_node);
   ASSERT_TRUE(typed_funcptr_array_result_type != NULL);
   const psx_type_t *typed_funcptr_array_function =
-      ps_type_find_function(typed_funcptr_array_result_type);
+      ps_type_derived_function(typed_funcptr_array_result_type);
   ASSERT_TRUE(typed_funcptr_array_function != NULL);
   ASSERT_EQ(1, typed_funcptr_array_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
@@ -10258,12 +10324,12 @@ static void test_type_metadata_bridge() {
 
   lvar_t tmp_tag_lvar = {0};
   tmp_tag_lvar.size = 4;
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_tag_lvar, ps_type_new_tag(TK_UNION, NULL, 0, 0, 4));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(!ps_lvar_is_struct_aggregate(&tmp_tag_lvar));
   ASSERT_TRUE(ps_lvar_is_union_aggregate(&tmp_tag_lvar));
-  ps_local_registry_set_decl_type(
+  set_test_storage_fixture_type(
       &tmp_tag_lvar,
       ps_type_new_pointer(
           ps_type_new_tag(TK_UNION, NULL, 0, 0, 4)));
@@ -10556,7 +10622,7 @@ static void test_type_metadata_bridge() {
   gu->decl_type = gu_decl_a;
 
   global_var_t tmp_gv = {0};
-  ps_decl_set_gvar_decl_type(
+  ps_global_registry_bind_decl_type(
       &tmp_gv, ps_type_new_integer(TK_INT, 4, 0));
   psx_type_t *tmp_gv_int = ps_gvar_get_decl_type(&tmp_gv);
   ASSERT_TRUE(tmp_gv_int != NULL);
@@ -10566,19 +10632,26 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_gv));
-  ps_decl_set_gvar_decl_type(
+  ASSERT_TRUE(!ps_global_registry_bind_decl_type(
       &tmp_gv,
-      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
-  psx_type_t *tmp_gv_ptr = tmp_gv.decl_type;
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
+  ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_int);
+
+  global_var_t tmp_ptr_gv = {0};
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      &tmp_ptr_gv,
+      ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
+  psx_type_t *tmp_gv_ptr = tmp_ptr_gv.decl_type;
   ASSERT_TRUE(tmp_gv_ptr != NULL);
   ASSERT_TRUE(tmp_gv_ptr != tmp_gv_int);
-  ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_ptr);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_ptr->kind);
-  ps_decl_set_gvar_decl_type(
-      &tmp_gv,
+
+  global_var_t tmp_double_ptr_gv = {0};
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      &tmp_double_ptr_gv,
       ps_type_new_pointer(
-          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8)));
-  psx_type_t *tmp_gv_double_ptr = tmp_gv.decl_type;
+          ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8))));
+  psx_type_t *tmp_gv_double_ptr = tmp_double_ptr_gv.decl_type;
   ASSERT_TRUE(tmp_gv_double_ptr != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_double_ptr->kind);
   ASSERT_TRUE(tmp_gv_double_ptr->base != NULL);
@@ -10586,16 +10659,19 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_gv_double_ptr->base->fp_kind);
 
   global_var_t tmp_arr_gv = {0};
-  ps_decl_set_gvar_decl_type(
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
       &tmp_arr_gv,
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0),
-                         0, 0, 0));
+                         0, 0, 0)));
   ASSERT_EQ(99, ps_gvar_storage_size(&tmp_arr_gv, 99));
   psx_type_t *tmp_arr_empty = ps_gvar_get_decl_type(&tmp_arr_gv);
   ASSERT_TRUE(tmp_arr_empty != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_empty->kind);
   ASSERT_TRUE(ps_gvar_is_array(&tmp_arr_gv));
-  ASSERT_TRUE(ps_type_complete_array(ps_gvar_get_decl_type(&tmp_arr_gv), 3));
+  psx_type_t *tmp_arr_complete = ps_type_new_array(
+      ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
+  ASSERT_TRUE(ps_global_registry_complete_array_type(
+      &tmp_arr_gv, tmp_arr_complete));
   psx_type_t *tmp_arr_sized = tmp_arr_gv.decl_type;
   ASSERT_TRUE(tmp_arr_sized != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_sized->kind);
@@ -10605,6 +10681,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_gvar_initializer_element_size(&tmp_arr_gv, 12));
   ASSERT_EQ(3, ps_gvar_initializer_element_count(&tmp_arr_gv, 12));
   ASSERT_EQ(12, ps_gvar_initializer_element_size(gu, 12));
+  ASSERT_TRUE(!ps_global_registry_complete_array_type(
+      &tmp_arr_gv, tmp_arr_complete));
 
   global_var_t tmp_arr_stale_size_gv = {0};
   tmp_arr_stale_size_gv.decl_type =
@@ -10657,7 +10735,7 @@ static void test_type_metadata_bridge() {
             ps_node_get_type(tmp_gv_scalar_decl_type_ref)->kind);
   node_t *tmp_gv_scalar_funcptr_ref =
       ps_node_new_gvar_for(&tmp_gv_scalar_decl_type_wins);
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_node_get_type(tmp_gv_scalar_funcptr_ref)) == NULL);
 
   global_var_t tmp_gv_ptr_array_cache_decl_type_wins = {0};
@@ -10822,31 +10900,43 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, ps_gvar_array_element_count(tm817_gs));
   global_var_t tmp_tag_arr_gv = {0};
   const char tmp_tag_arr_name[] = "__tm_tmp_tag_arr";
-  tmp_tag_arr_gv.decl_type = ps_type_new_array(
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      &tmp_tag_arr_gv, ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)tmp_tag_arr_name,
                        (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
-      2, 16, 0);
+      2, 16, 0)));
   ASSERT_TRUE(ps_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
   ASSERT_TRUE(ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_tag_arr_gv));
   ASSERT_EQ(8, ps_gvar_array_element_size(&tmp_tag_arr_gv));
   ASSERT_EQ(2, ps_gvar_array_element_count(&tmp_tag_arr_gv));
-  ps_decl_set_gvar_decl_type(
+  ASSERT_TRUE(!ps_global_registry_bind_decl_type(
       &tmp_tag_arr_gv,
       ps_type_new_array(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
                            (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
-          2, 16, 0));
-  ASSERT_TRUE(ps_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
-  ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
-  ASSERT_TRUE(ps_gvar_is_union_aggregate(&tmp_tag_arr_gv));
-  ps_decl_set_gvar_decl_type(
-      &tmp_tag_arr_gv,
+          2, 16, 0)));
+  ASSERT_TRUE(ps_gvar_is_struct_aggregate(&tmp_tag_arr_gv));
+
+  global_var_t tmp_union_arr_gv = {0};
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      &tmp_union_arr_gv,
+      ps_type_new_array(
+          ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
+                           (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
+          2, 16, 0)));
+  ASSERT_TRUE(ps_gvar_is_tag_aggregate(&tmp_union_arr_gv));
+  ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_union_arr_gv));
+  ASSERT_TRUE(ps_gvar_is_union_aggregate(&tmp_union_arr_gv));
+
+  global_var_t tmp_union_ptr_gv = {0};
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      &tmp_union_ptr_gv,
       ps_type_new_pointer(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
-                           (int)sizeof(tmp_tag_arr_name) - 1, 0, 8)));
-  ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_tag_arr_gv));
-  ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_tag_arr_gv));
+                           (int)sizeof(tmp_tag_arr_name) - 1, 0, 8))));
+  ASSERT_TRUE(!ps_gvar_is_tag_aggregate(&tmp_union_ptr_gv));
+  ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_union_ptr_gv));
 
   tag_member_info_t tmp_member = {0};
   tmp_member.decl_type = ps_type_new_tag(TK_STRUCT, NULL, 0, 0, 8);
@@ -11531,7 +11621,7 @@ static void test_type_metadata_bridge() {
       psx_ctx_get_function_ret_type("__tm_dp", 7);
   ASSERT_TRUE(dpa_ret_type != NULL);
   ASSERT_TRUE(ps_type_shape_matches(dpa_ret_type, double_ptr_to_array_ty));
-  ASSERT_TRUE(ps_type_find_function(dpa_ret_type) == NULL);
+  ASSERT_TRUE(ps_type_derived_function(dpa_ret_type) == NULL);
   ASSERT_EQ(2, double_ptr_to_array_ty->base->array_len);
   ASSERT_EQ(8, ps_type_sizeof(double_ptr_to_array_ty->base->base));
   psx_ctx_define_function_name_with_ret("__tm_manual_type", 16, 0);
@@ -12141,7 +12231,7 @@ static void test_type_metadata_bridge() {
   lvar_t *dpa_lvar = find_func_lvar(fn, "dpa");
   ASSERT_TRUE(dpa_lvar != NULL);
   const psx_type_t *dpa_function_type =
-      ps_type_find_function(dpa_lvar->decl_type);
+      ps_type_derived_function(dpa_lvar->decl_type);
   ASSERT_TRUE(dpa_function_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, dpa_function_type->kind);
   ASSERT_TRUE(dpa_function_type->base != NULL);
@@ -12227,11 +12317,11 @@ static void test_type_metadata_bridge() {
       "return (*pa)[0](1,2);}");
   psx_typedef_info_t tm_func_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name("TMFunc", 6, &tm_func_info));
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_ctx_typedef_decl_type(&tm_func_info)) != NULL);
   psx_typedef_info_t tm_funcs_info = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name("TMFuncs", 7, &tm_funcs_info));
-  ASSERT_TRUE(ps_type_find_function(
+  ASSERT_TRUE(ps_type_derived_function(
       ps_ctx_typedef_decl_type(&tm_funcs_info)) != NULL);
   fn = as_func(parsed_code[1]);
   lvar_t *tm_ops = find_func_lvar(fn, "ops");
@@ -12241,13 +12331,13 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_ops->decl_type->kind);
   ASSERT_TRUE(tm_ops->decl_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_ops->decl_type->base->kind);
-  ASSERT_TRUE(ps_type_find_function(tm_ops->decl_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(tm_ops->decl_type) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->kind);
   ASSERT_TRUE(tm_pa->decl_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_pa->decl_type->base->kind);
   ASSERT_TRUE(tm_pa->decl_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_pa->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_find_function(tm_pa->decl_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(tm_pa->decl_type) != NULL);
 
   parsed_code = parse_program_input(
       "int tm_local_add(int a,int b){return a+b;} "
@@ -12271,18 +12361,18 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(tm_local_ptr_array != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_ops->decl_type->kind);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_local_ops->decl_type->base->kind);
-  ASSERT_TRUE(ps_type_find_function(tm_local_ops->decl_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(tm_local_ops->decl_type) != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->kind);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_pa->decl_type->base->kind);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_local_pa->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_find_function(tm_local_pa->decl_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(tm_local_pa->decl_type) != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->kind);
   ASSERT_EQ(2, tm_local_matrix->decl_type->array_len);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_matrix->decl_type->base->kind);
   ASSERT_EQ(2, tm_local_matrix->decl_type->base->array_len);
   ASSERT_EQ(PSX_TYPE_POINTER,
             tm_local_matrix->decl_type->base->base->kind);
-  ASSERT_TRUE(ps_type_find_function(tm_local_matrix->decl_type) != NULL);
+  ASSERT_TRUE(ps_type_derived_function(tm_local_matrix->decl_type) != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tm_local_array_ptrs->decl_type->kind);
   ASSERT_EQ(3, tm_local_array_ptrs->decl_type->array_len);
   ASSERT_EQ(PSX_TYPE_POINTER, tm_local_array_ptrs->decl_type->base->kind);
@@ -12301,7 +12391,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
   ASSERT_TRUE(dp_info.decl_type != NULL && dp_info.decl_type->base != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.decl_type->base->fp_kind);
-  ASSERT_TRUE(ps_type_find_function(dp_info.decl_type) == NULL);
+  ASSERT_TRUE(ps_type_derived_function(dp_info.decl_type) == NULL);
   node_t canonical_int_ptr = {0};
   canonical_int_ptr.kind = ND_LVAR;
   canonical_int_ptr.type =
@@ -12324,7 +12414,7 @@ static void test_type_metadata_bridge() {
       partial_sig_params, 1, 0);
   assert_canonical_type_signature(
       partial_sig_member.decl_type, "p<f64(f32)>");
-  psx_type_t *partial_sig_function = (psx_type_t *)ps_type_find_function(
+  psx_type_t *partial_sig_function = (psx_type_t *)ps_type_derived_function(
       partial_sig_member.decl_type);
   ASSERT_TRUE(partial_sig_function != NULL);
   ASSERT_EQ(1, partial_sig_function->param_count);
@@ -12339,7 +12429,7 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       ps_node_get_type(partial_sig_node), "p<f64(f32)>");
   const psx_type_t *partial_sig_node_function =
-      ps_type_find_function(ps_node_get_type(partial_sig_node));
+      ps_type_derived_function(ps_node_get_type(partial_sig_node));
   ASSERT_TRUE(partial_sig_node_function != NULL);
   ASSERT_EQ(1, partial_sig_node_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
@@ -12793,7 +12883,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *dp_type = ps_lvar_get_decl_type(dp_lvar);
   ASSERT_TRUE(dp_type != NULL && dp_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, dp_type->base->kind);
-  ASSERT_TRUE(ps_type_find_function(dp_type) == NULL);
+  ASSERT_TRUE(ps_type_derived_function(dp_type) == NULL);
   lvar_t *fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(fp_lvar != NULL);
   assert_canonical_type_signature(
@@ -12803,7 +12893,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *gdp_type = ps_gvar_get_decl_type(gdp);
   ASSERT_TRUE(gdp_type != NULL && gdp_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, gdp_type->base->kind);
-  ASSERT_TRUE(ps_type_find_function(gdp_type) == NULL);
+  ASSERT_TRUE(ps_type_derived_function(gdp_type) == NULL);
   global_var_t *gfp = ps_find_global_var("__tm696_gfp", 11);
   ASSERT_TRUE(gfp != NULL);
   assert_canonical_type_signature(
@@ -13295,7 +13385,7 @@ static void test_translation_unit_reset_decl_locals_state() {
 
   char name[] = "x";
   ps_decl_reset_locals();
-  ASSERT_TRUE(ps_decl_register_lvar(name, 1) != NULL);
+  ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
   ASSERT_TRUE(ps_decl_find_lvar(name, 1) != NULL);
   psx_frontend_reset_translation_unit_state();
   ASSERT_TRUE(ps_decl_find_lvar(name, 1) == NULL);
@@ -13357,12 +13447,12 @@ static void test_multiple_funcdefs() {
   const psx_type_t *deep_return =
       psx_ctx_get_function_ret_type("sig_deep", 8);
   const psx_type_t *deep_int_function =
-      ps_type_find_function(deep_return);
+      ps_type_derived_function(deep_return);
   ASSERT_TRUE(deep_int_function != NULL);
   ASSERT_EQ(1, deep_int_function->param_count);
   ASSERT_EQ(PSX_TYPE_INTEGER, deep_int_function->param_types[0]->kind);
   const psx_type_t *deep_double_function =
-      ps_type_find_function(deep_int_function->base);
+      ps_type_derived_function(deep_int_function->base);
   ASSERT_TRUE(deep_double_function != NULL);
   ASSERT_EQ(1, deep_double_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, deep_double_function->param_types[0]->kind);

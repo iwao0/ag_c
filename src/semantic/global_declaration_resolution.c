@@ -75,8 +75,8 @@ void psx_resolve_global_declaration(
     int existing_is_incomplete =
         existing_type && existing_type->kind == PSX_TYPE_ARRAY &&
         existing_type->array_len <= 0;
-    resolution->replace_existing_type =
-        existing_is_incomplete || !incoming_is_incomplete_array;
+    resolution->complete_existing_array =
+        existing_is_incomplete && !incoming_is_incomplete_array;
     resolution->clear_existing_extern =
         resolution->existing->is_extern_decl && !request->is_extern_decl;
   }

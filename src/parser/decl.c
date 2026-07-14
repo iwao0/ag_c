@@ -174,12 +174,6 @@ int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
   return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
 
-void ps_decl_set_gvar_decl_type(global_var_t *gv,
-                                 const psx_type_t *decl_type) {
-  if (!gv || !decl_type) return;
-  gv->decl_type = ps_type_clone_persistent(decl_type);
-}
-
 void ps_decl_reset_translation_unit_state(void) {
   ps_decl_reset_locals();
   current_funcname = NULL;

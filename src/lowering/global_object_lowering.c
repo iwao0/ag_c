@@ -1,7 +1,7 @@
 #include "global_object_lowering.h"
 
-#include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/global_registry.h"
 #include "static_data_initializer.h"
 #include "../diag/diag.h"
 #include <stdlib.h>
@@ -19,8 +19,10 @@ int lower_resolved_global_object_declaration(
   if (existing) {
     if (request->resolution->clear_existing_extern)
       existing->is_extern_decl = 0;
-    if (request->resolution->replace_existing_type)
-      ps_decl_set_gvar_decl_type(existing, request->type);
+    if (request->resolution->complete_existing_array &&
+        !ps_global_registry_complete_array_type(
+            existing, request->type))
+      return 0;
     result->global = existing;
     return 1;
   }
@@ -32,7 +34,10 @@ int lower_resolved_global_object_declaration(
   global->is_extern_decl = request->is_extern_decl ? 1 : 0;
   global->is_static = request->is_extern_decl ? 0
                                                : (request->is_static ? 1 : 0);
-  ps_decl_set_gvar_decl_type(global, request->type);
+  if (!ps_global_registry_bind_decl_type(global, request->type)) {
+    free(global);
+    return 0;
+  }
   ps_register_global_var(global);
   result->global = global;
   result->created = 1;

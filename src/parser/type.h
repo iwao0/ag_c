@@ -127,7 +127,9 @@ psx_type_t *ps_type_new_function(psx_type_t *return_type);
 void ps_type_set_function_params(psx_type_t *function_type,
                                   psx_type_t *const *param_types,
                                   int param_count, int is_variadic);
-const psx_type_t *ps_type_find_function(const psx_type_t *type);
+/* Returns the function node contained in a pointer/array derivation chain.
+ * This does not imply that the original expression type is callable. */
+const psx_type_t *ps_type_derived_function(const psx_type_t *type);
 const psx_type_t *ps_type_callable_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,

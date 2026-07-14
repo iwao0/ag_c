@@ -28,13 +28,8 @@ psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void);
 void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region);
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region);
 void psx_decl_attach_lvar_current_region(lvar_t *var);
-lvar_t *ps_decl_register_lvar(char *name, int len);
-lvar_t *ps_decl_register_lvar_sized(char *name, int len, int size, int elem_size, int is_array);
-lvar_t *ps_decl_register_lvar_sized_align(char *name, int len, int size, int elem_size, int is_array, int align);
 lvar_t *ps_decl_register_lvar_typed_align(
     char *name, int len, int size, int align, const psx_type_t *type);
-void ps_decl_set_gvar_decl_type(global_var_t *gv,
-                                 const psx_type_t *decl_type);
 void ps_decl_set_current_funcname(char *name, int len);
 void ps_decl_get_current_funcname(char **out_name, int *out_len);
 

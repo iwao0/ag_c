@@ -20,8 +20,8 @@ typedef struct {
   int is_unsigned;
 } ir_abi_param_info_t;
 
-ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
-                                                    int param_idx);
+ir_abi_param_info_t ir_abi_classify_builtin_param(
+    const char *name, int name_len, int param_idx);
 ir_abi_param_info_t ir_abi_classify_param_type(
     const struct psx_type_t *type);
 int ir_abi_callable_sig_from_type(

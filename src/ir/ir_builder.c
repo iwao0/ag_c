@@ -101,7 +101,7 @@ static ir_abi_param_info_t classify_call_param(
     return ir_abi_classify_param_type(function_type->param_types[param_idx]);
   }
   if (call && !call->callee)
-    return ir_abi_classify_function_param(
+    return ir_abi_classify_builtin_param(
         call->funcname, call->funcname_len, param_idx);
   return (ir_abi_param_info_t){0};
 }
@@ -782,7 +782,7 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
 static ir_val_t build_expr_with_callable_type(
     ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!ps_type_find_function(expected_type))
+  if (!ps_type_derived_function(expected_type))
     return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
@@ -1198,10 +1198,7 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-  const psx_type_t *target_type = owner ? ps_lvar_get_decl_type(owner) : NULL;
-  if (!ps_type_find_function(target_type))
-    target_type = ps_node_get_type(node->lhs);
+  const psx_type_t *target_type = ps_node_get_type(node->lhs);
   ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
@@ -1247,10 +1244,7 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  global_var_t *global = ps_find_global_var(gv->name, gv->name_len);
-  const psx_type_t *target_type = global ? ps_gvar_get_decl_type(global) : NULL;
-  if (!ps_type_find_function(target_type))
-    target_type = ps_node_get_type(node->lhs);
+  const psx_type_t *target_type = ps_node_get_type(node->lhs);
   ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
@@ -1330,26 +1324,16 @@ static void attach_callable_type(ir_inst_t *sym, const psx_type_t *type) {
       ir_abi_callable_sig_from_type(type, &sym->callable_sig) ? 1 : 0;
 }
 
-static const psx_type_t *callable_type_for_callee(
-    ir_build_ctx_t *ctx, node_t *callee) {
+static const psx_type_t *callable_type_for_callee(node_t *callee) {
   if (!callee) return NULL;
   const psx_type_t *type = ps_node_get_type(callee);
-  if (ps_type_callable_function(type)) return type;
-  if (callee->kind == ND_LVAR) {
-    lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
-    type = lv ? ps_lvar_get_decl_type(lv) : NULL;
-  } else if (callee->kind == ND_GVAR) {
-    node_gvar_t *gvn = (node_gvar_t *)callee;
-    global_var_t *gv = ps_find_global_var(gvn->name, gvn->name_len);
-    type = gv ? ps_gvar_get_decl_type(gv) : NULL;
-  }
   return ps_type_callable_function(type) ? type : NULL;
 }
 
 static void attach_callable_type_from_callee(
-    ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
+    ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  attach_callable_type(call, callable_type_for_callee(ctx, callee));
+  attach_callable_type(call, callable_type_for_callee(callee));
 }
 
 static const psx_type_t *function_callable_return_type(const node_func_t *fn) {
@@ -1357,14 +1341,14 @@ static const psx_type_t *function_callable_return_type(const node_func_t *fn) {
       fn->function_type->kind != PSX_TYPE_FUNCTION)
     return NULL;
   const psx_type_t *return_type = fn->function_type->base;
-  return ps_type_find_function(return_type) ? return_type : NULL;
+  return ps_type_derived_function(return_type) ? return_type : NULL;
 }
 
 static ir_val_t build_node_funcref_with_type(
     ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   node_funcref_t *fr = (node_funcref_t *)node;
   const psx_type_t *callable_type =
-      ps_type_find_function(expected_type)
+      ps_type_derived_function(expected_type)
           ? expected_type
           : ps_node_get_type(node);
   int v = ir_func_new_vreg(ctx->f);
@@ -1709,7 +1693,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       ps_type_callable_function(fn->function_type);
   if (!function && fn->callee) {
     function = ps_type_callable_function(
-        callable_type_for_callee(ctx, fn->callee));
+        callable_type_for_callee(fn->callee));
   }
   if (function && function->is_variadic_function &&
       function->param_count < fn->nargs) {
@@ -1806,9 +1790,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           if (arg_full_size == 0) arg_full_size = ps_node_storage_type_size(arg);
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
-          if ((!owner || (!ps_lvar_is_array(owner) &&
-                          ps_type_pointer_depth(
-                              ps_lvar_get_decl_type(owner)) == 0)) &&
+          if (ps_type_is_tag_aggregate(ps_node_get_type(arg)) &&
               cg_size_needs_indirect_struct(arg_full_size) && arg_full_size <= 8) {
             struct_needs_ptr = 1;
           }
@@ -2007,7 +1989,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->is_void_call = ps_node_value_is_void(node) ? 1 : 0;
   call->is_implicit_call = fn->base.is_implicit_func_decl ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
-  if (fn->callee) attach_callable_type_from_callee(ctx, call, fn->callee);
+  if (fn->callee) attach_callable_type_from_callee(call, fn->callee);
   if (argc > 0) {
     call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
     for (int a = 0; a < argc; a++) {
@@ -3228,17 +3210,15 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
     int param_full_size = owner
                               ? ps_lvar_storage_size(owner, ps_node_storage_type_size(arg))
                               : ps_node_storage_type_size(arg);
+    const psx_type_t *param_type = ps_node_get_type(arg);
     /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は
      * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
     int struct_param_needs_ptr =
-        owner && ps_lvar_tag_kind(owner) != TK_EOF && !ps_lvar_is_tag_pointer(owner) &&
-        !ps_lvar_is_array(owner) &&
-        ps_type_pointer_depth(
-            ps_lvar_get_decl_type(owner)) == 0 &&
+        ps_type_is_tag_aggregate(param_type) &&
         param_full_size != 1 && param_full_size != 2 &&
         param_full_size != 4 && param_full_size != 8;
     if ((param_full_size > 8 || struct_param_needs_ptr) &&
-        !(owner && ps_lvar_is_complex(owner))) {
+        !(param_type && param_type->kind == PSX_TYPE_COMPLEX)) {
       /* struct 引数 (Apple ARM64 ABI 簡略版): 呼び出し側が一時 buffer に copy
        * したポインタを x{int_idx} で渡してくる前提。 */
       int param_vreg = ir_func_new_vreg(ctx->f);
@@ -3256,10 +3236,11 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       ir_func_append_inst(ctx->f, cp);
       continue;
     }
-    if (owner && ps_lvar_is_complex(owner)) {
+    if (param_type && param_type->kind == PSX_TYPE_COMPLEX) {
       /* _Complex 引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1} の 2 FP レジスタで
        * 受け取り、slot+0 / slot+half に格納する (AAPCS64)。 */
-      ir_type_t pty = (ps_lvar_fp_kind(owner) == TK_FLOAT_KIND_FLOAT) ? IR_TY_F32 : IR_TY_F64;
+      ir_type_t pty = param_type->fp_kind == TK_FLOAT_KIND_FLOAT
+                          ? IR_TY_F32 : IR_TY_F64;
       int half = (pty == IR_TY_F32) ? 4 : 8;
       int base_ptr = address_of_lvar(ctx, lv->offset);
       if (base_ptr < 0) return 0;
@@ -3464,8 +3445,8 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     }
   }
   ctx->f = ir_func_new(ctx->m, fn->funcname, fn->funcname_len, ret_ty);
-  int c_signature_len = ps_ctx_format_function_signature(
-      fn->funcname, fn->funcname_len, NULL, 0);
+  int c_signature_len = ps_type_format_canonical_signature(
+      fn->function_type, NULL, 0);
   if (c_signature_len < 0) {
     fail(ctx, "missing canonical C function signature");
     return 0;
@@ -3475,8 +3456,8 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     fail(ctx, "canonical C function signature allocation failed");
     return 0;
   }
-  if (ps_ctx_format_function_signature(
-          fn->funcname, fn->funcname_len, ctx->f->c_signature,
+  if (ps_type_format_canonical_signature(
+          fn->function_type, ctx->f->c_signature,
           (size_t)c_signature_len + 1) != c_signature_len) {
     fail(ctx, "canonical C function signature changed during IR build");
     return 0;
