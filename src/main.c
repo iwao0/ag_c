@@ -1,4 +1,5 @@
 #include "codegen_backend.h"
+#include "compiler_context.h"
 #include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
@@ -161,11 +162,21 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
+  ag_compiler_context_t compiler_context;
+  if (!ag_compiler_context_init(&compiler_context) ||
+      !ag_compiler_context_activate(&compiler_context)) {
+    ag_compiler_context_dispose(&compiler_context);
+    return -4;
+  }
+
   psx_frontend_reset_translation_unit_state();
 
   char *source = (char *)(long)source_addr;
   const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
-  if (!source_name[0]) return -1;
+  if (!source_name[0]) {
+    ag_compiler_context_dispose(&compiler_context);
+    return -1;
+  }
   if (virtual_bundle_addr) {
     pp_virtual_headers_configure((const unsigned char *)(long)virtual_bundle_addr,
                                  (size_t)virtual_bundle_len,
@@ -202,6 +213,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
       gen_set_simple_formatter(0);
       if (pps) pp_stream_close(pps);
       wasm32_obj_capture_output(0);
+      ag_compiler_context_dispose(&compiler_context);
       return -3;
     }
     psx_frontend_free_processed_ast();
@@ -213,6 +225,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
+    ag_compiler_context_dispose(&compiler_context);
     return -5;
   }
 
@@ -221,6 +234,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
+    ag_compiler_context_dispose(&compiler_context);
     return -3;
   }
 
@@ -229,15 +243,23 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     ir_data_module_free(data_module);
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
-    if (wasm32_obj_capture_limit_exceeded()) return -2;
+    if (wasm32_obj_capture_limit_exceeded()) {
+      ag_compiler_context_dispose(&compiler_context);
+      return -2;
+    }
     obj_bytes = wasm32_obj_take_output(&obj_len);
-    if (!obj_bytes) return -4;
+    if (!obj_bytes) {
+      ag_compiler_context_dispose(&compiler_context);
+      return -4;
+    }
     if (obj_len > (size_t)out_cap) {
       free(obj_bytes);
+      ag_compiler_context_dispose(&compiler_context);
       return -2;
     }
     memcpy(out.buf, obj_bytes, obj_len);
     free(obj_bytes);
+    ag_compiler_context_dispose(&compiler_context);
     return (int)obj_len;
   } else {
     wasm32_emit_data_segments(data_module);
@@ -247,7 +269,9 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     gen_set_simple_formatter(0);
   }
 
-  return out.overflow ? -2 : out.len;
+  int result = out.overflow ? -2 : out.len;
+  ag_compiler_context_dispose(&compiler_context);
+  return result;
 }
 
 int agc_wasm_compile_wat(int source_addr, int out_addr, int out_cap) {
@@ -331,6 +355,15 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  ag_compiler_context_t compiler_context;
+  if (!ag_compiler_context_init(&compiler_context) ||
+      !ag_compiler_context_activate(&compiler_context)) {
+    ag_compiler_context_dispose(&compiler_context);
+    free(source);
+    return 1;
+  }
+  psx_frontend_reset_translation_unit_state();
+
   load_config_toml(input_path);
 
   tk_set_filename_ctx(tk_get_default_context(), input_disp);
@@ -350,6 +383,9 @@ int main(int argc, char **argv) {
     wasm_obj_out = fopen(output_path, "wb");
     if (!wasm_obj_out) {
       diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to open Wasm object output");
+      if (pps) pp_stream_close(pps);
+      ag_compiler_context_dispose(&compiler_context);
+      free(source);
       return 1;
     }
     wasm32_obj_set_output_file(wasm_obj_out);
@@ -379,6 +415,8 @@ int main(int argc, char **argv) {
 #endif
       diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
                           diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
+      if (pps) pp_stream_close(pps);
+      ag_compiler_context_dispose(&compiler_context);
       free(source);
       return 1;
     }
@@ -395,6 +433,7 @@ int main(int argc, char **argv) {
     }
 #endif
     clear_output_callback();
+    ag_compiler_context_dispose(&compiler_context);
     free(source);
     return 1;
   }
@@ -408,6 +447,7 @@ int main(int argc, char **argv) {
     }
 #endif
     clear_output_callback();
+    ag_compiler_context_dispose(&compiler_context);
     free(source);
     return 1;
   }
@@ -432,6 +472,7 @@ int main(int argc, char **argv) {
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
 
+  ag_compiler_context_dispose(&compiler_context);
   free(source);
   return 0;
 }

@@ -54,6 +54,16 @@ const legacySemanticGlobals =
 if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
 }
+const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
+const compilerMainSource = await readFile("src/main.c", "utf8");
+if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
+      compilerContextHeader,
+    ) ||
+    !/ag_compiler_context_init\s*\(/.test(compilerMainSource) ||
+    !/ag_compiler_context_activate\s*\(/.test(compilerMainSource) ||
+    !/ag_compiler_context_dispose\s*\(/.test(compilerMainSource)) {
+  throw new Error("compilation entry points must own semantic state through CompilerContext");
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");
