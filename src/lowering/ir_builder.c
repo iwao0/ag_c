@@ -63,6 +63,7 @@ typedef struct {
 typedef struct {
   ir_module_t *m;
   ir_func_t *f;
+  const ag_target_info_t *target;
   /* 現在処理中の関数 AST。lvars リストを引くため。 */
   node_function_definition_t *cur_fn;
   int failed;
@@ -151,8 +152,11 @@ static int is_fp_type(ir_type_t t) {
   return t == IR_TY_F32 || t == IR_TY_F64;
 }
 
-static int target_type_size(ir_type_t type) {
-  return type == IR_TY_PTR ? ag_target_pointer_size() : ir_type_size(type);
+static int target_type_size(
+    const ir_build_ctx_t *ctx, ir_type_t type) {
+  return type == IR_TY_PTR
+             ? ag_target_info_pointer_size(ctx ? ctx->target : NULL)
+             : ir_type_size(type);
 }
 
 /* canonical C type から IR の浮動小数型を返すヘルパ。
@@ -271,8 +275,8 @@ static ir_val_t coerce_to_type_ex(ir_build_ctx_t *ctx, ir_val_t v, ir_type_t tar
    * Apple ARM64 and 32-bit on Wasm. Keeping this decision in the shared IR
    * builder prevents either backend's ABI from leaking into the other. */
   if (target_ty == IR_TY_PTR || v.type == IR_TY_PTR) {
-    int source_size = target_type_size(v.type);
-    int result_size = target_type_size(target_ty);
+    int source_size = target_type_size(ctx, v.type);
+    int result_size = target_type_size(ctx, target_ty);
     if (source_size != result_size) {
       int dst = ir_func_new_vreg(ctx->f);
       ir_inst_t *inst = ir_inst_new(source_size > result_size ? IR_TRUNC : IR_ZEXT);
@@ -3552,8 +3556,10 @@ static int build_function(
 
 static int g_ir_dump_enabled(void);
 
-ir_module_t *ir_build_module(node_t **code) {
+ir_module_t *ir_build_module_for_target(
+    node_t **code, const ag_target_info_t *target) {
   ir_build_ctx_t ctx = {0};
+  ctx.target = target;
   ctx.m = ir_module_new();
   if (!code) return ctx.m;
   for (int i = 0; code[i]; i++) {
@@ -3573,6 +3579,11 @@ ir_module_t *ir_build_module(node_t **code) {
   return ctx.m;
 }
 
+ir_module_t *ir_build_module(node_t **code) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return ir_build_module_for_target(code, &target);
+}
+
 static int g_ir_dump_enabled(void) {
   const char *e = getenv("AG_DUMP_IR");
   return e && strcmp(e, "1") == 0;
@@ -3583,9 +3594,11 @@ static int g_ir_dump_enabled(void) {
  * 「最大の 1 関数」になる。関数間に IR 依存はない (呼び出しは sym 名で解決) ため、
  * 出力はバッチ版 (ir_build_module) と一致する。emit は通常 gen_ir_module
  * (1 関数モジュールに const_fold/dce + gen_func)。fn は ND_FUNCDEF。成功 1 / エラー 0。 */
-int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
+int ir_build_emit_function_for_target(
+    node_t *fn, const ag_target_info_t *target,
+    void (*emit_module)(ir_module_t *)) {
   if (!fn || fn->kind != ND_FUNCDEF) return 0;
-  ir_module_t *m = ir_build_function_module(fn);
+  ir_module_t *m = ir_build_function_module_for_target(fn, target);
   if (!m) {
     return 0;
   }
@@ -3600,9 +3613,16 @@ int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
   return 1;
 }
 
-ir_module_t *ir_build_function_module(node_t *fn) {
+int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return ir_build_emit_function_for_target(fn, &target, emit_module);
+}
+
+ir_module_t *ir_build_function_module_for_target(
+    node_t *fn, const ag_target_info_t *target) {
   if (!fn || fn->kind != ND_FUNCDEF) return NULL;
   ir_build_ctx_t ctx = {0};
+  ctx.target = target;
   ctx.m = ir_module_new();
   if (!build_function(&ctx, (node_function_definition_t *)fn)) {
     ir_module_free(ctx.m);
@@ -3611,10 +3631,23 @@ ir_module_t *ir_build_function_module(node_t *fn) {
   return ctx.m;
 }
 
-int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {
+ir_module_t *ir_build_function_module(node_t *fn) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return ir_build_function_module_for_target(fn, &target);
+}
+
+int ir_build_each_and_emit_for_target(
+    node_t **code, const ag_target_info_t *target,
+    void (*emit_module)(ir_module_t *)) {
   if (!code) return 1;
   for (int i = 0; code[i]; i++) {
-    if (!ir_build_emit_function(code[i], emit_module)) return 0;
+    if (!ir_build_emit_function_for_target(
+            code[i], target, emit_module)) return 0;
   }
   return 1;
+}
+
+int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return ir_build_each_and_emit_for_target(code, &target, emit_module);
 }

@@ -15541,11 +15541,49 @@ static void test_compiler_context_registry_isolation() {
   ag_compiler_context_dispose(&second);
 }
 
+static void test_compilation_session_owns_target_and_tokenizer() {
+  printf("test_compilation_session_owns_target_and_tokenizer...\n");
+  ag_target_info_t host_target = ag_target_info_host();
+  ag_target_info_t wasm_target = ag_target_info_wasm32();
+  ag_compilation_session_t host;
+  ag_compilation_session_t wasm;
+  ASSERT_TRUE(ag_compilation_session_init(&host, &host_target));
+  ASSERT_TRUE(ag_compilation_session_init(&wasm, &wasm_target));
+  ASSERT_TRUE(ag_compilation_session_is_complete(&host));
+  ASSERT_TRUE(ag_compilation_session_is_complete(&wasm));
+  ASSERT_EQ(8, ag_target_info_pointer_size(
+                   ag_compilation_session_target(&host)));
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ag_compilation_session_target(&wasm)));
+
+  tokenizer_context_t *host_tokenizer =
+      ag_compilation_session_tokenizer(&host);
+  tokenizer_context_t *wasm_tokenizer =
+      ag_compilation_session_tokenizer(&wasm);
+  ASSERT_TRUE(host_tokenizer != NULL);
+  ASSERT_TRUE(wasm_tokenizer != NULL);
+  ASSERT_TRUE(host_tokenizer != wasm_tokenizer);
+  tk_set_filename_ctx(host_tokenizer, "host.c");
+  tk_set_filename_ctx(wasm_tokenizer, "wasm.c");
+  tk_ctx_set_strict_c11_mode(host_tokenizer, true);
+  ASSERT_TRUE(strcmp(tk_get_filename_ctx(host_tokenizer), "host.c") == 0);
+  ASSERT_TRUE(strcmp(tk_get_filename_ctx(wasm_tokenizer), "wasm.c") == 0);
+  ASSERT_TRUE(tk_ctx_get_strict_c11_mode(host_tokenizer));
+  ASSERT_TRUE(!tk_ctx_get_strict_c11_mode(wasm_tokenizer));
+
+  ag_target_set_pointer_size(8);
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ag_compilation_session_target(&wasm)));
+  ag_compilation_session_dispose(&host);
+  ag_compilation_session_dispose(&wasm);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
   test_semantic_context_isolation();
+  test_compilation_session_owns_target_and_tokenizer();
   test_compiler_context_registry_isolation();
   test_expr_number();
   test_expr_add_sub();

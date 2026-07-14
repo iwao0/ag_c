@@ -56,17 +56,27 @@ if (splitSemanticLocalContextApis.test(semanticContextOwnershipSource)) {
     "semantic namespace operations must receive semantic and local contexts together",
   );
 }
+const compilationSessionHeader = await readFile(
+  "src/compilation_session.h",
+  "utf8",
+);
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
 const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
-      compilerContextHeader,
+      compilationSessionHeader,
     ) ||
     !/psx_global_registry_t\s*\*global_registry\s*;/.test(
-      compilerContextHeader,
+      compilationSessionHeader,
     ) ||
     !/psx_local_registry_t\s*\*local_registry\s*;/.test(
-      compilerContextHeader,
+      compilationSessionHeader,
+    ) ||
+    !/tokenizer_context_t\s+tokenizer\s*;/.test(
+      compilationSessionHeader,
+    ) ||
+    !/ag_target_info_t\s+target\s*;/.test(
+      compilationSessionHeader,
     ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
@@ -74,14 +84,24 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ps_local_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_destroy\s*\(/.test(compilerContextSource) ||
-    !/ag_compiler_context_is_complete\s*\(/.test(compilerContextSource) ||
+    !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
+    !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
+      compilerContextHeader,
+    ) ||
     !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
       compilerMainSource,
     ) ||
-    !/ag_compiler_context_init\s*\(/.test(compilerMainSource) ||
-    !/ag_compiler_context_activate\s*\(/.test(compilerMainSource) ||
-    !/ag_compiler_context_dispose\s*\(/.test(compilerMainSource)) {
-  throw new Error("compilation entry points must own semantic state through CompilerContext");
+    !/ag_compilation_session_init\s*\(/.test(compilerMainSource) ||
+    !/ag_compilation_session_activate\s*\(/.test(compilerMainSource) ||
+    !/ag_compilation_session_dispose\s*\(/.test(compilerMainSource) ||
+    !/ag_compilation_session_tokenizer\s*\(/.test(compilerMainSource) ||
+    /tk_get_default_context\s*\(/.test(compilerMainSource) ||
+    !/ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
+      compilerMainSource,
+    )) {
+  throw new Error(
+    "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
 }
 const globalRegistrySource = await readFile(
   "src/parser/global_registry.c",
@@ -251,19 +271,18 @@ if (/psx_semantic_resolve_(?:initializer_)?tree_in_context\s*\(/.test(
     ) ||
     /psx_bind_identifier_(?:initializer_)?tree_in\s*\(/.test(
       identifierBindingSource,
-    ) ||
-    /if\s*\(\s*!compiler_context\s*\)/.test(identifierBindingSource)) {
+    )) {
   throw new Error(
     "semantic traversal APIs must receive one complete registry set",
   );
 }
-if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
+if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
     !/int\s+psx_frontend_stream_begin\s*\(/.test(
       frontendTranslationUnitHeader,
     ) ||
-    !/psx_frontend_stream_begin\s*\([\s\S]*?ag_compiler_context_t\s*\*compiler_context/.test(
+    !/psx_frontend_stream_begin\s*\([\s\S]*?ag_compilation_session_t\s*\*session/.test(
       frontendTranslationUnitHeader,
     ) ||
     !/ps_global_registry_reset_diag_state_in\s*\(/.test(
@@ -300,12 +319,11 @@ const frontendStreamCore = frontendTranslationUnitSource.slice(
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       frontendStreamCore,
     ) ||
-    !/ag_compiler_context_is_complete\s*\(compiler_context\)/.test(
+    !/frontend_session_has_registries\s*\(stream->session\)/.test(
       frontendStreamCore,
-    ) ||
-    /if\s*\(\s*!compiler_context\s*\)/.test(semanticPipelineSource)) {
+    )) {
   throw new Error(
-    "frontend stream core must require a complete CompilerContext without active-state fallback",
+    "frontend stream core must require an explicit CompilationSession without active-state fallback",
   );
 }
 const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(

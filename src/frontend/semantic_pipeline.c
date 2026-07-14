@@ -46,13 +46,14 @@ static void analyze_function_in_contexts(
 }
 
 void psx_frontend_analyze_function_in_compiler_context(
-    ag_compiler_context_t *compiler_context,
+    ag_compilation_session_t *session,
     node_t *function, const token_t *fallback_diag_tok) {
-  if (!ag_compiler_context_is_complete(compiler_context)) return;
+  if (!session || !session->semantic_context || !session->global_registry ||
+      !session->local_registry) return;
   analyze_function_in_contexts(
-      compiler_context->semantic_context,
-      compiler_context->global_registry,
-      compiler_context->local_registry,
+      session->semantic_context,
+      session->global_registry,
+      session->local_registry,
       function, fallback_diag_tok);
 }
 

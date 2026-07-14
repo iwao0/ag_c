@@ -17,12 +17,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-static ag_compiler_context_t active_compiler_context_view(void) {
-  return (ag_compiler_context_t){
+static ag_compilation_session_t active_session_view(void) {
+  return (ag_compilation_session_t){
       .semantic_context = ps_ctx_active(),
       .global_registry = ps_global_registry_active(),
       .local_registry = ps_local_registry_active(),
   };
+}
+
+static int frontend_session_has_registries(
+    const ag_compilation_session_t *session) {
+  return session && session->semantic_context && session->global_registry &&
+         session->local_registry;
 }
 
 static void reset_translation_unit_state(
@@ -39,32 +45,32 @@ static void reset_translation_unit_state(
 }
 
 void psx_frontend_reset_translation_unit_state(void) {
-  ag_compiler_context_t compiler_context = active_compiler_context_view();
+  ag_compilation_session_t session = active_session_view();
   (void)psx_frontend_reset_translation_unit_state_in_compiler_context(
-      &compiler_context);
+      &session);
 }
 
 int psx_frontend_reset_translation_unit_state_in_compiler_context(
-    ag_compiler_context_t *compiler_context) {
-  if (!ag_compiler_context_is_complete(compiler_context)) return 0;
+    ag_compilation_session_t *session) {
+  if (!frontend_session_has_registries(session)) return 0;
   reset_translation_unit_state(
-      compiler_context->semantic_context,
-      compiler_context->global_registry,
-      compiler_context->local_registry);
+      session->semantic_context,
+      session->global_registry,
+      session->local_registry);
   return 1;
 }
 
 int psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
-    ag_compiler_context_t *compiler_context,
+    ag_compilation_session_t *session,
     tokenizer_context_t *tk_ctx, token_t *start) {
   if (!stream) return 0;
   memset(stream, 0, sizeof(*stream));
-  if (!ag_compiler_context_is_complete(compiler_context)) return 0;
-  stream->compiler_context = compiler_context;
-  psx_semantic_context_t *semantic_context = compiler_context->semantic_context;
-  psx_global_registry_t *global_registry = compiler_context->global_registry;
-  psx_local_registry_t *local_registry = compiler_context->local_registry;
+  if (!frontend_session_has_registries(session)) return 0;
+  stream->session = session;
+  psx_semantic_context_t *semantic_context = session->semantic_context;
+  psx_global_registry_t *global_registry = session->global_registry;
+  psx_local_registry_t *local_registry = session->local_registry;
   ps_global_registry_reset_diag_state_in(global_registry);
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
@@ -85,15 +91,15 @@ int psx_frontend_stream_begin(
 
 node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
-      !ag_compiler_context_is_complete(stream->compiler_context)) {
+      !frontend_session_has_registries(stream->session)) {
     return NULL;
   }
-  ag_compiler_context_t *compiler_context = stream->compiler_context;
+  ag_compilation_session_t *session = stream->session;
   psx_semantic_context_t *semantic_context =
-      compiler_context->semantic_context;
+      session->semantic_context;
   psx_global_registry_t *global_registry =
-      compiler_context->global_registry;
-  psx_local_registry_t *local_registry = compiler_context->local_registry;
+      session->global_registry;
+  psx_local_registry_t *local_registry = session->local_registry;
   psx_parsed_toplevel_item_t item;
   while (ps_parse_next_toplevel_item(&stream->parser, &item)) {
     if (item.kind == PSX_TOPLEVEL_ITEM_STATIC_ASSERT) {
@@ -143,7 +149,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
       psx_frontend_analyze_function_in_compiler_context(
-          compiler_context, function, function->tok);
+          session, function, function->tok);
       return function;
     }
   }
@@ -152,11 +158,11 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
 
 void psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
-      !ag_compiler_context_is_complete(stream->compiler_context)) {
+      !frontend_session_has_registries(stream->session)) {
     return;
   }
   ps_ctx_emit_deferred_parser_warnings_in(
-      stream->compiler_context->semantic_context);
+      stream->session->semantic_context);
   ps_parser_stream_end(&stream->parser);
   stream->is_started = 0;
 }
@@ -166,11 +172,11 @@ void psx_frontend_free_processed_ast(void) {
 }
 
 node_t **psx_frontend_program_in_compiler_context(
-    ag_compiler_context_t *compiler_context,
+    ag_compilation_session_t *session,
     tokenizer_context_t *tk_ctx, token_t *start) {
   psx_frontend_stream_t stream = {0};
   if (!psx_frontend_stream_begin(
-          &stream, compiler_context, tk_ctx, start)) {
+          &stream, session, tk_ctx, start)) {
     return NULL;
   }
   int capacity = 16;
@@ -198,18 +204,18 @@ node_t **psx_frontend_program_in_compiler_context(
   program[count] = NULL;
   psx_frontend_stream_end(&stream);
   psx_frontend_analyze_program_in_contexts(
-      compiler_context->semantic_context,
-      compiler_context->global_registry,
-      compiler_context->local_registry,
+      session->semantic_context,
+      session->global_registry,
+      session->local_registry,
       program);
   return program;
 }
 
 node_t **psx_frontend_program_ctx(
     tokenizer_context_t *tk_ctx, token_t *start) {
-  ag_compiler_context_t compiler_context = active_compiler_context_view();
+  ag_compilation_session_t session = active_session_view();
   return psx_frontend_program_in_compiler_context(
-      &compiler_context, tk_ctx, start);
+      &session, tk_ctx, start);
 }
 
 node_t **psx_frontend_program_from(token_t *start) {

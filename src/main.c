@@ -1,5 +1,5 @@
 #include "codegen_backend.h"
-#include "compiler_context.h"
+#include "compilation_session.h"
 #include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
@@ -94,8 +94,9 @@ static void clear_output_callback(void) {
   gen_set_output_callback(cb, user_data);
 }
 
-static int wasm_emit_function_direct(node_t *fn, int object_mode) {
-  ir_module_t *m = ir_build_function_module(fn);
+static int wasm_emit_function_direct(
+    node_t *fn, int object_mode, const ag_target_info_t *target) {
+  ir_module_t *m = ir_build_function_module_for_target(fn, target);
   if (!m) return 0;
   {
     const char *dump_ir = getenv("AG_DUMP_IR");
@@ -162,23 +163,24 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
-  ag_compiler_context_t compiler_context;
-  if (!ag_compiler_context_init(&compiler_context) ||
-      !ag_compiler_context_activate(&compiler_context)) {
-    ag_compiler_context_dispose(&compiler_context);
+  ag_target_info_t target = ag_target_info_wasm32();
+  ag_compilation_session_t session;
+  if (!ag_compilation_session_init(&session, &target) ||
+      !ag_compilation_session_activate(&session)) {
+    ag_compilation_session_dispose(&session);
     return -4;
   }
 
   if (!psx_frontend_reset_translation_unit_state_in_compiler_context(
-          &compiler_context)) {
-    ag_compiler_context_dispose(&compiler_context);
+          &session)) {
+    ag_compilation_session_dispose(&session);
     return -4;
   }
 
   char *source = (char *)(long)source_addr;
   const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
   if (!source_name[0]) {
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     return -1;
   }
   if (virtual_bundle_addr) {
@@ -192,8 +194,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   unsigned char *obj_bytes = NULL;
   size_t obj_len = 0;
 
-  tk_set_filename_ctx(tk_get_default_context(), source_name);
-  tokenizer_context_t *tk_ctx = tk_get_default_context();
+  tokenizer_context_t *tk_ctx = ag_compilation_session_tokenizer(&session);
+  tk_set_filename_ctx(tk_ctx, source_name);
 
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open(&pps, tk_ctx, source);
@@ -211,21 +213,21 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
 
   psx_frontend_stream_t stream = {0};
   if (!psx_frontend_stream_begin(
-          &stream, &compiler_context, tk_ctx, tok)) {
+          &stream, &session, tk_ctx, tok)) {
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (pps) pp_stream_close(pps);
     wasm32_obj_capture_output(0);
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     return -4;
   }
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
-    if (!wasm_emit_function_direct(fn, object_mode)) {
+    if (!wasm_emit_function_direct(fn, object_mode, &session.target)) {
       clear_output_callback();
       gen_set_simple_formatter(0);
       if (pps) pp_stream_close(pps);
       wasm32_obj_capture_output(0);
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       return -3;
     }
     psx_frontend_free_processed_ast();
@@ -237,7 +239,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     return -5;
   }
 
@@ -246,7 +248,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     return -3;
   }
 
@@ -256,22 +258,22 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
     if (wasm32_obj_capture_limit_exceeded()) {
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       return -2;
     }
     obj_bytes = wasm32_obj_take_output(&obj_len);
     if (!obj_bytes) {
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       return -4;
     }
     if (obj_len > (size_t)out_cap) {
       free(obj_bytes);
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       return -2;
     }
     memcpy(out.buf, obj_bytes, obj_len);
     free(obj_bytes);
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     return (int)obj_len;
   } else {
     wasm32_emit_data_segments(data_module);
@@ -282,7 +284,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   }
 
   int result = out.overflow ? -2 : out.len;
-  ag_compiler_context_dispose(&compiler_context);
+  ag_compilation_session_dispose(&session);
   return result;
 }
 
@@ -367,24 +369,30 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  ag_compiler_context_t compiler_context;
-  if (!ag_compiler_context_init(&compiler_context) ||
-      !ag_compiler_context_activate(&compiler_context)) {
-    ag_compiler_context_dispose(&compiler_context);
+  ag_target_info_t target =
+#ifdef AGC_TARGET_WASM32
+      ag_target_info_wasm32();
+#else
+      ag_target_info_host();
+#endif
+  ag_compilation_session_t session;
+  if (!ag_compilation_session_init(&session, &target) ||
+      !ag_compilation_session_activate(&session)) {
+    ag_compilation_session_dispose(&session);
     free(source);
     return 1;
   }
   if (!psx_frontend_reset_translation_unit_state_in_compiler_context(
-          &compiler_context)) {
-    ag_compiler_context_dispose(&compiler_context);
+          &session)) {
+    ag_compilation_session_dispose(&session);
     free(source);
     return 1;
   }
 
   load_config_toml(input_path);
 
-  tk_set_filename_ctx(tk_get_default_context(), input_disp);
-  tokenizer_context_t *tk_ctx = tk_get_default_context();
+  tokenizer_context_t *tk_ctx = ag_compilation_session_tokenizer(&session);
+  tk_set_filename_ctx(tk_ctx, input_disp);
 
   /* トークン経路: 字句解析→プリプロセスを遅延 pull 化し、パーサがカーソルを進めるたびに
    * 先読み分だけ materialize して通過済みトークンを解放する。トークンのピークメモリが
@@ -401,7 +409,7 @@ int main(int argc, char **argv) {
     if (!wasm_obj_out) {
       diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to open Wasm object output");
       if (pps) pp_stream_close(pps);
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       free(source);
       return 1;
     }
@@ -422,7 +430,7 @@ int main(int argc, char **argv) {
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   psx_frontend_stream_t stream = {0};
   if (!psx_frontend_stream_begin(
-          &stream, &compiler_context, tk_ctx, tok)) {
+          &stream, &session, tk_ctx, tok)) {
     if (pps) pp_stream_close(pps);
 #ifdef AGC_TARGET_WASM32
     if (wasm_object_mode) {
@@ -431,22 +439,21 @@ int main(int argc, char **argv) {
     }
 #endif
     clear_output_callback();
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     free(source);
     return 1;
   }
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
-    if (!wasm_emit_function_direct(fn, wasm_object_mode)) {
+    if (!wasm_emit_function_direct(fn, wasm_object_mode, &session.target)) {
 #else
-    if (!ir_build_emit_function(fn,
-                                gen_ir_module
-                                )) {
+    if (!ir_build_emit_function_for_target(
+            fn, &session.target, gen_ir_module)) {
 #endif
       diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
                           diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
       if (pps) pp_stream_close(pps);
-      ag_compiler_context_dispose(&compiler_context);
+      ag_compilation_session_dispose(&session);
       free(source);
       return 1;
     }
@@ -463,7 +470,7 @@ int main(int argc, char **argv) {
     }
 #endif
     clear_output_callback();
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     free(source);
     return 1;
   }
@@ -477,7 +484,7 @@ int main(int argc, char **argv) {
     }
 #endif
     clear_output_callback();
-    ag_compiler_context_dispose(&compiler_context);
+    ag_compilation_session_dispose(&session);
     free(source);
     return 1;
   }
@@ -502,7 +509,7 @@ int main(int argc, char **argv) {
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
 
-  ag_compiler_context_dispose(&compiler_context);
+  ag_compilation_session_dispose(&session);
   free(source);
   return 0;
 }

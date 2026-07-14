@@ -3,14 +3,14 @@
 
 #include "../parser/ast.h"
 #include "../tokenizer/token.h"
-#include "../compiler_context.h"
+#include "../compilation_session.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 
 void psx_frontend_analyze_function_in_compiler_context(
-    ag_compiler_context_t *compiler_context,
+    ag_compilation_session_t *session,
     node_t *function, const token_t *fallback_diag_tok);
 node_t *psx_frontend_analyze_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
