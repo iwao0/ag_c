@@ -3,12 +3,11 @@
 // silently 捨てられて miscompile (`sum_3d` が誤値) していた。
 //
 // 修正:
-// (1) parse_param_declarator_name_recursive が内側 dim を全捕捉する (最大 7 個)。
-//     g_param_inner_dim_consts / g_param_inner_dim_idents に保存。
-// (2) lvar_t に vla_param_inner_dim_consts/src_offsets/count を追加し、N-D VLA 仮引数の
-//     内側 dim 値の取得元 (const か frame offset か) を記録。
+// (1) declarator の再帰配列型と runtime bound から内側 dim を全捕捉する。
+// (2) lvar_t の動的 runtime descriptor に内側 dim 値の取得元
+//     (const か frame offset か) を記録する。
 // (3) register_vla_array_param: N-D VLA 仮引数で stride スロットを (N-1)*8 バイト確保し
-//     vla_strides_remaining = n_inner - 1 を立てる。全 const 内側は extra_strides にも拡張。
+//     vla_strides_remaining = n_inner - 1 を立てる。
 // (4) emit_vla_row_stride_for_params: N-D VLA 仮引数の各 level の stride を関数 entry で
 //     計算・store。後ろから掛けて各 level 1 回の MUL で済む構成。
 //
@@ -53,6 +52,10 @@ int sum_3d_const(int t[][2][3]) {
     return s;
 }
 
+int read_11d(int n, int t[][n][n][n][n][n][n][n][n][n][n]) {
+    return t[0][0][0][0][0][0][0][0][0][0][0];
+}
+
 int main(void) {
     /* (a) 3D fully-VLA */
     int n = 2, m = 3, k = 4;
@@ -84,6 +87,10 @@ int main(void) {
     v = 1;
     for (int i=0;i<2;i++) for (int j=0;j<2;j++) for (int p=0;p<3;p++) t3c[i][j][p] = v++;
     assert(sum_3d_const(t3c) == 78);  /* 1..12 = 78 */
+
+    /* (e) 旧 7-inner-dimension 上限を越える parameter VLA */
+    int deep[1][1][1][1][1][1][1][1][1][1][1] = {7};
+    assert(read_11d(1, deep) == 7);
 
     return 0;
 }

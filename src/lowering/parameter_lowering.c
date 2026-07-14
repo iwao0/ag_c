@@ -2,6 +2,7 @@
 
 #include "local_storage.h"
 #include "vla_lowering.h"
+#include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
 #include <string.h>
@@ -57,6 +58,11 @@ int lower_resolved_parameter_declaration(
       .type = resolution->type,
       .diag_tok = request->diag_tok,
   };
+  if (resolution->inner_dimension_count > 0) {
+    vla.inner_dimensions = arena_alloc(
+        (size_t)resolution->inner_dimension_count *
+        sizeof(*vla.inner_dimensions));
+  }
   for (int i = 0; i < resolution->inner_dimension_count; i++) {
     vla.inner_dimensions[i].constant =
         resolution->inner_dimensions[i].constant;

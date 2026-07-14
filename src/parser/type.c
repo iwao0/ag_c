@@ -697,6 +697,15 @@ int ps_type_array_subscript_stride_elements(const psx_type_t *type,
   return ps_type_array_flat_element_count(selected);
 }
 
+int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth) {
+  if (!type || type->kind != PSX_TYPE_ARRAY || depth < 0) return 0;
+  while (depth-- > 0) {
+    type = type->base;
+    if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
+  }
+  return ps_type_sizeof(type->base);
+}
+
 psx_type_t *ps_type_address_result(const psx_type_t *type) {
   if (!type) return NULL;
   return ps_type_new_pointer((psx_type_t *)type);
@@ -1115,114 +1124,6 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
   int bytes = ps_type_sizeof(type->base);
   if (bytes <= 0) bytes = ps_type_deref_size(type);
   return bytes > 0 ? bytes : 0;
-}
-
-static void type_clear_stride_outputs(int *inner_stride, int *next_stride,
-                                      int *extra_strides,
-                                      int *extra_strides_count) {
-  if (inner_stride) *inner_stride = 0;
-  if (next_stride) *next_stride = 0;
-  if (extra_strides_count) *extra_strides_count = 0;
-  if (extra_strides) {
-    for (int i = 0; i < 5; i++) extra_strides[i] = 0;
-  }
-}
-
-static int type_array_stride_metadata(const psx_type_t *array,
-                                      int *inner_stride,
-                                      int *next_stride,
-                                      int *extra_strides,
-                                      int *extra_strides_count) {
-  type_clear_stride_outputs(inner_stride, next_stride, extra_strides,
-                            extra_strides_count);
-  if (!array || array->kind != PSX_TYPE_ARRAY) return 0;
-  int strides[7] = {0};
-  int count = 0;
-  const psx_type_t *cur = array;
-  while (cur && cur->kind == PSX_TYPE_ARRAY && count < 7) {
-    int stride = ps_type_deref_size(cur);
-    if (stride <= 0 && cur->base) stride = ps_type_sizeof(cur->base);
-    if (stride > 0) strides[count++] = stride;
-    cur = cur->base;
-  }
-  if (count <= 0) return 0;
-  if (inner_stride) *inner_stride = strides[0];
-  if (next_stride) *next_stride = count > 1 ? strides[1] : 0;
-  int extra_count = count > 2 ? count - 2 : 0;
-  if (extra_count > 5) extra_count = 5;
-  if (extra_strides_count) *extra_strides_count = extra_count;
-  if (extra_strides) {
-    for (int i = 0; i < extra_count; i++) extra_strides[i] = strides[i + 2];
-    for (int i = extra_count; i < 5; i++) extra_strides[i] = 0;
-  }
-  return 1;
-}
-
-int ps_type_decl_array_stride_metadata(const psx_type_t *type,
-                                        int *outer_stride,
-                                        int *mid_stride,
-                                        int *extra_strides,
-                                        int *extra_strides_count) {
-  type_clear_stride_outputs(outer_stride, mid_stride, extra_strides,
-                            extra_strides_count);
-  if (!type) return 0;
-  const psx_type_t *array = NULL;
-  if (type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_ARRAY) {
-    array = type->base;
-  } else if (type->kind == PSX_TYPE_ARRAY && type->base &&
-             type->base->kind == PSX_TYPE_ARRAY) {
-    array = type->base;
-  }
-  if (!array) return 0;
-
-  int strides[7] = {0};
-  int count = 0;
-  for (const psx_type_t *cur = array;
-       cur && cur->kind == PSX_TYPE_ARRAY && count < 7;
-       cur = cur->base) {
-    int stride = ps_type_sizeof(cur);
-    if (stride <= 0) break;
-    strides[count++] = stride;
-  }
-  if (count <= 0) return 0;
-  if (outer_stride) *outer_stride = strides[0];
-  if (mid_stride) *mid_stride = count > 1 ? strides[1] : 0;
-  int extra_count = count > 2 ? count - 2 : 0;
-  if (extra_count > 5) extra_count = 5;
-  if (extra_strides_count) *extra_strides_count = extra_count;
-  if (extra_strides) {
-    for (int i = 0; i < extra_count; i++)
-      extra_strides[i] = strides[i + 2];
-    for (int i = extra_count; i < 5; i++) extra_strides[i] = 0;
-  }
-  return 1;
-}
-
-int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
-                                          int *inner_stride,
-                                          int *next_stride,
-                                          int *extra_strides,
-                                          int *extra_strides_count) {
-  type_clear_stride_outputs(inner_stride, next_stride, extra_strides,
-                            extra_strides_count);
-  if (!psx_type_is_pointer_view_type(type)) return 0;
-  const psx_type_t *array = NULL;
-  if (type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_ARRAY) {
-    array = type->base;
-  } else if (type->kind == PSX_TYPE_ARRAY) {
-    int base_carries_nested_shape =
-        type->base &&
-        (type->base->kind == PSX_TYPE_ARRAY ||
-         (type->base->kind == PSX_TYPE_POINTER && type->base->base &&
-          type->base->base->kind == PSX_TYPE_ARRAY));
-    if (!base_carries_nested_shape) return 0;
-    array = type;
-  }
-  if (!array) return 0;
-  return type_array_stride_metadata(array, inner_stride, next_stride,
-                                    extra_strides, extra_strides_count);
 }
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {

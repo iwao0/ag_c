@@ -268,7 +268,7 @@ void ps_local_registry_set_vla_descriptor(
           : 0;
   var->vla_runtime.row_stride_src_offset = row_stride_src_offset;
   var->vla_runtime.row_stride_elem_size =
-      row_stride_elem_size > 0 ? (short)row_stride_elem_size : 0;
+      row_stride_elem_size > 0 ? row_stride_elem_size : 0;
 }
 
 void ps_local_registry_set_vla_param_inner_dims(
@@ -276,19 +276,30 @@ void ps_local_registry_set_vla_param_inner_dims(
     const int *inner_dim_src_offsets, int inner_dim_count) {
   if (!var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
-  if (inner_dim_count > PSX_VLA_RUNTIME_MAX_INNER_DIMS)
-    inner_dim_count = PSX_VLA_RUNTIME_MAX_INNER_DIMS;
-  var->vla_runtime.param_inner_dim_count = (unsigned char)inner_dim_count;
-  for (int i = 0; i < PSX_VLA_RUNTIME_MAX_INNER_DIMS; i++) {
-    var->vla_runtime.param_inner_dim_consts[i] =
-        i < inner_dim_count && inner_dim_consts
-            ? (short)inner_dim_consts[i]
-            : 0;
-    var->vla_runtime.param_inner_dim_src_offsets[i] =
-        i < inner_dim_count && inner_dim_src_offsets
-            ? inner_dim_src_offsets[i]
-            : 0;
+  int *constants = NULL;
+  int *source_offsets = NULL;
+  if (inner_dim_count > 0) {
+    constants = calloc((size_t)inner_dim_count, sizeof(*constants));
+    source_offsets = calloc((size_t)inner_dim_count, sizeof(*source_offsets));
+    if (!constants || !source_offsets) {
+      free(constants);
+      free(source_offsets);
+      ps_diag_ctx(tk_get_current_token(), "vla",
+                  "VLA runtime dimension allocation failed");
+      return;
+    }
+    if (inner_dim_consts)
+      memcpy(constants, inner_dim_consts,
+             (size_t)inner_dim_count * sizeof(*constants));
+    if (inner_dim_src_offsets)
+      memcpy(source_offsets, inner_dim_src_offsets,
+             (size_t)inner_dim_count * sizeof(*source_offsets));
   }
+  free(var->vla_runtime.param_inner_dim_consts);
+  free(var->vla_runtime.param_inner_dim_src_offsets);
+  var->vla_runtime.param_inner_dim_consts = constants;
+  var->vla_runtime.param_inner_dim_src_offsets = source_offsets;
+  var->vla_runtime.param_inner_dim_count = inner_dim_count;
 }
 
 lvar_t *ps_lvar_next_all(const lvar_t *var) {
@@ -336,6 +347,13 @@ int ps_lvar_name_len(const lvar_t *var) {
 }
 
 void ps_local_registry_reset(void) {
+  for (lvar_t *var = all_locals; var; var = var->next_all) {
+    free(var->vla_runtime.param_inner_dim_consts);
+    free(var->vla_runtime.param_inner_dim_src_offsets);
+    var->vla_runtime.param_inner_dim_consts = NULL;
+    var->vla_runtime.param_inner_dim_src_offsets = NULL;
+    var->vla_runtime.param_inner_dim_count = 0;
+  }
   locals = NULL;
   all_locals = NULL;
   all_bindings = NULL;

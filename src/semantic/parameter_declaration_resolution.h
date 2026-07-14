@@ -4,8 +4,6 @@
 #include "declaration_resolution.h"
 #include "parameter_declaration_plan.h"
 
-#define PSX_PARAMETER_MAX_INNER_DIMS 7
-
 typedef struct {
   int constant;
   char *source_name;
@@ -19,7 +17,7 @@ typedef enum {
 
 typedef struct {
   psx_decl_type_request_t type;
-  psx_parameter_dimension_t inner_dimensions[PSX_PARAMETER_MAX_INNER_DIMS];
+  psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
 } psx_parameter_declaration_resolution_request_t;
 
@@ -28,7 +26,7 @@ typedef struct {
   psx_parameter_storage_plan_t storage;
   psx_parameter_lowering_kind_t lowering_kind;
   int element_size;
-  psx_parameter_dimension_t inner_dimensions[PSX_PARAMETER_MAX_INNER_DIMS];
+  psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
 } psx_parameter_declaration_resolution_t;
 

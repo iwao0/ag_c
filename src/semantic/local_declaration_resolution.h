@@ -3,8 +3,6 @@
 
 #include "declaration_resolution.h"
 
-#define PSX_LOCAL_DECLARATION_MAX_VLA_DIMS 8
-
 typedef enum {
   PSX_LOCAL_DECLARATION_OK = 0,
   PSX_LOCAL_DECLARATION_INVALID,
@@ -37,8 +35,7 @@ typedef struct {
   psx_local_declaration_status_t status;
   psx_local_storage_kind_t storage_kind;
   int element_size;
-  psx_local_vla_dimension_t
-      dimensions[PSX_LOCAL_DECLARATION_MAX_VLA_DIMS];
+  psx_local_vla_dimension_t *dimensions;
   int dimension_count;
   node_t *pointer_row_dimension;
 } psx_local_declaration_resolution_t;

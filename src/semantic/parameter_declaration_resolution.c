@@ -1,4 +1,5 @@
 #include "parameter_declaration_resolution.h"
+#include "../parser/arena.h"
 
 #include <string.h>
 
@@ -32,7 +33,7 @@ int psx_resolve_parameter_declaration(
     const psx_parameter_declaration_resolution_request_t *request,
     psx_parameter_declaration_resolution_t *resolution) {
   if (!request || !resolution || request->inner_dimension_count < 0 ||
-      request->inner_dimension_count > PSX_PARAMETER_MAX_INNER_DIMS) {
+      (request->inner_dimension_count > 0 && !request->inner_dimensions)) {
     return 0;
   }
   memset(resolution, 0, sizeof(*resolution));
@@ -59,8 +60,13 @@ int psx_resolve_parameter_declaration(
   }
 
   resolution->inner_dimension_count = request->inner_dimension_count;
-  for (int i = 0; i < request->inner_dimension_count; i++) {
-    resolution->inner_dimensions[i] = request->inner_dimensions[i];
+  if (request->inner_dimension_count > 0) {
+    resolution->inner_dimensions = arena_alloc(
+        (size_t)request->inner_dimension_count *
+        sizeof(*resolution->inner_dimensions));
+    memcpy(resolution->inner_dimensions, request->inner_dimensions,
+           (size_t)request->inner_dimension_count *
+           sizeof(*resolution->inner_dimensions));
   }
   return 1;
 }

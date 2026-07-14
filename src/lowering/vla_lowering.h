@@ -4,15 +4,13 @@
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
 
-#define PSX_VLA_MAX_DIMS 8
-
 typedef struct {
   char *name;
   int name_len;
   int element_size;
-  node_t *dimensions[PSX_VLA_MAX_DIMS];
-  long long const_values[PSX_VLA_MAX_DIMS];
-  unsigned char is_const[PSX_VLA_MAX_DIMS];
+  node_t **dimensions;
+  long long *const_values;
+  unsigned char *is_const;
   int dimension_count;
   const psx_type_t *type;
   int requested_alignment;
@@ -40,8 +38,6 @@ typedef struct {
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
     const psx_pointer_vla_lowering_request_t *request);
 
-#define PSX_VLA_PARAM_MAX_INNER_DIMS 7
-
 typedef struct {
   int constant;
   char *source_name;
@@ -52,8 +48,7 @@ typedef struct {
   char *name;
   int name_len;
   int element_size;
-  psx_parameter_vla_dimension_t
-      inner_dimensions[PSX_VLA_PARAM_MAX_INNER_DIMS];
+  psx_parameter_vla_dimension_t *inner_dimensions;
   int inner_dimension_count;
   const psx_type_t *type;
   token_t *diag_tok;

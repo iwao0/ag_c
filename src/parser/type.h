@@ -183,6 +183,7 @@ int ps_type_array_flat_element_count(const psx_type_t *type);
 int ps_type_array_scalar_element_size(const psx_type_t *type);
 int ps_type_array_subscript_stride_elements(const psx_type_t *type,
                                              int depth);
+int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth);
 psx_type_t *ps_type_address_result(const psx_type_t *type);
 psx_type_t *ps_type_decay_array(const psx_type_t *type);
 psx_type_t *ps_type_dereference_result(const psx_type_t *type);
@@ -212,16 +213,6 @@ int ps_type_pointer_depth(const psx_type_t *type);
 int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
 int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
-int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
-                                          int *inner_stride,
-                                          int *next_stride,
-                                          int *extra_strides,
-                                          int *extra_strides_count);
-int ps_type_decl_array_stride_metadata(const psx_type_t *type,
-                                        int *outer_stride,
-                                        int *mid_stride,
-                                        int *extra_strides,
-                                        int *extra_strides_count);
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src);
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,

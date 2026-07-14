@@ -1,4 +1,5 @@
 #include "local_declaration_resolution.h"
+#include "../parser/arena.h"
 
 #include <string.h>
 
@@ -35,12 +36,15 @@ void psx_resolve_local_declaration(
 
   const psx_runtime_declarator_application_t *application =
       request->application;
+  if (application->shape.count > 0) {
+    resolution->dimensions = arena_alloc(
+        (size_t)application->shape.count * sizeof(*resolution->dimensions));
+  }
   int leading_array_count = 0;
   int leading_array_has_vla = 0;
   for (int i = 0; i < application->shape.count; i++) {
     const psx_declarator_op_t *op = &application->shape.ops[i];
     if (op->kind != PSX_DECL_OP_ARRAY) break;
-    if (leading_array_count >= PSX_LOCAL_DECLARATION_MAX_VLA_DIMS) return;
     const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
     resolution->dimensions[leading_array_count++] =
         (psx_local_vla_dimension_t){

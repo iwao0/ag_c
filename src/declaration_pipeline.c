@@ -7,6 +7,7 @@
 #include "lowering/static_local_lowering.h"
 #include "lowering/vla_lowering.h"
 #include "parser/decl.h"
+#include "parser/arena.h"
 #include "parser/diag.h"
 #include "parser/local_registry.h"
 #include "semantic/declaration_application.h"
@@ -267,6 +268,11 @@ static int resolve_definition_parameter(
           .declarator_shape = &application->shape,
       },
   };
+  if (application->shape.count > 0) {
+    semantic_request.inner_dimensions = arena_alloc(
+        (size_t)application->shape.count *
+        sizeof(*semantic_request.inner_dimensions));
+  }
   int skip_outer_array =
       application->shape.count > 0 &&
       application->shape.ops[0].kind == PSX_DECL_OP_ARRAY;
@@ -274,8 +280,6 @@ static int resolve_definition_parameter(
   for (int op_index = 0; op_index < application->shape.count; op_index++) {
     if (application->shape.ops[op_index].kind != PSX_DECL_OP_ARRAY) continue;
     if (skip_outer_array && saw_array++ == 0) continue;
-    if (semantic_request.inner_dimension_count >=
-        PSX_PARAMETER_MAX_INNER_DIMS) break;
     const psx_runtime_array_bound_t *bound =
         parameter_bound_for_op(application, op_index);
     psx_parameter_dimension_t *dimension =
@@ -664,6 +668,12 @@ int psx_begin_automatic_local_declaration_pipeline(
           .requested_alignment = request->requested_alignment,
           .diag_tok = request->diag_tok,
       };
+      lowering.dimensions = arena_alloc(
+          (size_t)resolution.dimension_count * sizeof(*lowering.dimensions));
+      lowering.const_values = arena_alloc(
+          (size_t)resolution.dimension_count * sizeof(*lowering.const_values));
+      lowering.is_const = arena_alloc(
+          (size_t)resolution.dimension_count * sizeof(*lowering.is_const));
       for (int i = 0; i < resolution.dimension_count; i++) {
         lowering.dimensions[i] = resolution.dimensions[i].expression;
         lowering.const_values[i] =

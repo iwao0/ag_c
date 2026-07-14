@@ -161,12 +161,16 @@ int ps_lvar_vla_param_inner_dim_count(const lvar_t *var) {
 }
 
 int ps_lvar_vla_param_inner_dim_const(const lvar_t *var, int idx) {
-  if (!var || idx < 0 || idx >= PSX_VLA_RUNTIME_MAX_INNER_DIMS) return 0;
+  if (!var || idx < 0 || idx >= var->vla_runtime.param_inner_dim_count ||
+      !var->vla_runtime.param_inner_dim_consts)
+    return 0;
   return var->vla_runtime.param_inner_dim_consts[idx];
 }
 
 int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
-  if (!var || idx < 0 || idx >= PSX_VLA_RUNTIME_MAX_INNER_DIMS) return 0;
+  if (!var || idx < 0 || idx >= var->vla_runtime.param_inner_dim_count ||
+      !var->vla_runtime.param_inner_dim_src_offsets)
+    return 0;
   return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
 

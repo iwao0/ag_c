@@ -37,7 +37,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
   psx_vla_lowering_result_t result = {0};
   int count = request ? request->dimension_count : 0;
   if (!request || !request->type || count <= 0 ||
-      count > PSX_VLA_MAX_DIMS) {
+      !request->dimensions || !request->const_values || !request->is_const) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
@@ -148,7 +148,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   int count = request ? request->inner_dimension_count : 0;
   if (!request || !request->type || !request->name || request->name_len <= 0 ||
       request->element_size <= 0 || count < 0 ||
-      count > PSX_VLA_PARAM_MAX_INNER_DIMS) {
+      (count > 0 && !request->inner_dimensions)) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
@@ -175,8 +175,14 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
         runtime_stride_storage_type(count));
     if (!result.stride_storage) return result;
 
-    int constants[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
-    int source_offsets[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
+    int *constants = calloc((size_t)count, sizeof(*constants));
+    int *source_offsets = calloc((size_t)count, sizeof(*source_offsets));
+    if (!constants || !source_offsets) {
+      free(constants);
+      free(source_offsets);
+      ps_diag_ctx(request->diag_tok, "param",
+                  "VLA parameter dimension allocation failed");
+    }
     for (int i = 0; i < count; i++) {
       const psx_parameter_vla_dimension_t *dimension =
           &request->inner_dimensions[i];
@@ -204,6 +210,8 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
           result.var, ps_lvar_offset(result.stride_storage), 0,
           source_offsets[0], request->element_size);
     }
+    free(constants);
+    free(source_offsets);
   }
 
   /* Keep the current name ineligible while resolving preceding parameters. */
