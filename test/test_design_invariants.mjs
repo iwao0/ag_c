@@ -13,10 +13,7 @@ async function sourceFilesUnder(directory) {
   return files;
 }
 
-const irFiles = (await readdir("src/ir", { withFileTypes: true }))
-  .filter((entry) => entry.isFile() && /\.[ch]$/.test(entry.name))
-  .map((entry) => `src/ir/${entry.name}`)
-  .sort();
+const irFiles = (await sourceFilesUnder("src/ir")).sort();
 
 const archEntries = await readdir("src/arch", { withFileTypes: true });
 const ungroupedArchFiles = archEntries
@@ -30,9 +27,7 @@ if (ungroupedArchFiles.length) {
   );
 }
 
-const archFiles = (await sourceFilesUnder("src/arch"))
-  .filter((file) => file.endsWith(".c"))
-  .sort();
+const archFiles = (await sourceFilesUnder("src/arch")).sort();
 
 const backendFiles = [
   ...archFiles,
