@@ -11,6 +11,9 @@ int main(void) {
     assert(sizeof(long long) == 8);
     assert(sizeof(void *) == 8);
     printf("Ok\n");
+#elif defined(__wasm32__)
+    /* This fixture is shared with the Wasm32 suite. Reaching this branch
+     * verifies that Wasm32 advertises its target marker without claiming LP64. */
 #else
     printf("KO no __*LP*__ defined.\n");
     return 1;

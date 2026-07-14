@@ -174,6 +174,7 @@ static int has_side_effect(ir_op_t op) {
     case IR_BR:
     case IR_BR_COND:
     case IR_RET:
+    case IR_CONTINUATION_SUSPEND:
     case IR_LABEL:
     case IR_PARAM:
     case IR_ALLOCA:    /* フレーム上の位置に意味がある */

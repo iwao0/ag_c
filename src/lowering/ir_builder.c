@@ -21,6 +21,7 @@
 #include "../ir/ir.h"
 #include "abi_lowering.h"
 #include "../target_info.h"
+#include "../compilation_session.h"
 #include "ir_symbol_lowering.h"
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
@@ -77,7 +78,137 @@ typedef struct {
   int case_map_count;
   label_map_entry_t labels[MAX_LABELS];
   int label_count;
+  const ag_continuation_options_t *continuation;
+  node_t *continuation_while;
 } ir_build_ctx_t;
+
+static char *ir_strdup(const char *text) {
+  if (!text) return NULL;
+  size_t len = strlen(text);
+  char *copy = malloc(len + 1);
+  if (copy) memcpy(copy, text, len + 1);
+  return copy;
+}
+
+static int name_matches(const char *name, int name_len, const char *expected) {
+  return name && expected && name_len == (int)strlen(expected) &&
+         memcmp(name, expected, (size_t)name_len) == 0;
+}
+
+static int is_exact_int_void_function(const psx_type_t *type) {
+  const psx_type_t *function = ps_type_callable_function(type);
+  const psx_type_t *result = ps_type_function_return_type(function);
+  return function && function->param_count == 0 &&
+         !function->is_variadic_function && result &&
+         result->kind == PSX_TYPE_INTEGER && result->scalar_kind == TK_INT &&
+         ps_type_sizeof(result) == 4 && !result->is_unsigned;
+}
+
+typedef struct {
+  const ag_continuation_options_t *options;
+  node_t *frame_while;
+  int frame_while_count;
+  int condition_call_count;
+  node_t *invalid_node;
+  const char *invalid_reason;
+} continuation_scan_t;
+
+static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
+  if (!node || scan->invalid_node) return;
+  if (node->kind == ND_GOTO || node->kind == ND_LABEL) {
+    scan->invalid_node = node;
+    scan->invalid_reason = "continuation entry does not support goto or labels";
+    return;
+  }
+  if (node->kind == ND_VLA_ALLOC) {
+    scan->invalid_node = node;
+    scan->invalid_reason = "continuation entry does not support VLA across frames";
+    return;
+  }
+  if (node->kind == ND_FUNCALL) {
+    node_function_call_t *call = (node_function_call_t *)node;
+    if (name_matches(call->direct_name, call->direct_name_len,
+                     scan->options->frame_condition)) {
+      scan->condition_call_count++;
+      if (!is_exact_int_void_function(call->callee_type)) {
+        scan->invalid_node = node;
+        scan->invalid_reason =
+            "continuation frame condition must have type int(void)";
+        return;
+      }
+    }
+    if (name_matches(call->direct_name, call->direct_name_len, "alloca") ||
+        name_matches(call->direct_name, call->direct_name_len,
+                     "__builtin_alloca")) {
+      scan->invalid_node = node;
+      scan->invalid_reason =
+          "continuation entry does not support alloca across frames";
+      return;
+    }
+    scan_continuation_node(call->callee, scan);
+    for (int i = 0; i < call->argument_count; i++)
+      scan_continuation_node(call->arguments[i], scan);
+    return;
+  }
+  if (node->kind == ND_WHILE && node->lhs &&
+      node->lhs->kind == ND_FUNCALL) {
+    node_function_call_t *call = (node_function_call_t *)node->lhs;
+    if (name_matches(call->direct_name, call->direct_name_len,
+                     scan->options->frame_condition)) {
+      scan->frame_while = node;
+      scan->frame_while_count++;
+    }
+  }
+  if (node->kind == ND_BLOCK) {
+    node_t **body = ((node_block_t *)node)->body;
+    for (int i = 0; body && body[i]; i++)
+      scan_continuation_node(body[i], scan);
+    return;
+  }
+  if (node->kind == ND_IF || node->kind == ND_FOR ||
+      node->kind == ND_TERNARY) {
+    node_ctrl_t *control = (node_ctrl_t *)node;
+    scan_continuation_node(control->init, scan);
+    scan_continuation_node(control->inc, scan);
+    scan_continuation_node(control->els, scan);
+  }
+  scan_continuation_node(node->lhs, scan);
+  scan_continuation_node(node->rhs, scan);
+}
+
+static int prepare_continuation_entry(ir_build_ctx_t *ctx,
+                                      node_function_definition_t *fn) {
+  const ag_continuation_options_t *options =
+      ag_compilation_session_continuation(ag_compilation_session_active());
+  if (!options || !name_matches(fn->name, fn->name_len, options->entry))
+    return 1;
+  /* A same-named internal-linkage function in another translation unit is
+   * unrelated to the configured external entry. */
+  if (fn->is_static) return 1;
+  if (!is_exact_int_void_function(fn->signature)) {
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, fn->base.tok, "%s",
+                   "continuation entry must have type int(void)");
+    return 0;
+  }
+  continuation_scan_t scan = {.options = options};
+  scan_continuation_node(fn->base.rhs, &scan);
+  if (scan.invalid_node) {
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT,
+                   scan.invalid_node->tok, "%s", scan.invalid_reason);
+    return 0;
+  }
+  if (scan.frame_while_count != 1 || scan.condition_call_count != 1) {
+    diag_emit_tokf(
+        DIAG_ERR_PARSER_INVALID_CONTEXT, fn->base.tok, "%s",
+        scan.frame_while_count == 0
+            ? "continuation entry requires one direct while(frame_condition()) loop"
+            : "continuation entry permits exactly one frame condition call");
+    return 0;
+  }
+  ctx->continuation = options;
+  ctx->continuation_while = scan.frame_while;
+  return 1;
+}
 
 static void fail(ir_build_ctx_t *ctx, const char *msg) {
   if (ctx->failed) return;
@@ -3037,9 +3168,17 @@ static void build_stmt_while(ir_build_ctx_t *ctx, node_t *node) {
   ir_block_t *exit_b = ir_block_new(ctx->f);
   emit_br(ctx, cond_b);
   switch_to_new_block(ctx, cond_b);
+  if (node == ctx->continuation_while) {
+    ir_inst_t *suspend = ir_inst_new(IR_CONTINUATION_SUSPEND);
+    suspend->label_id = body_b->id;
+    suspend->else_label_id = exit_b->id;
+    ir_func_append_inst(ctx->f, suspend);
+    ctx->f->continuation_condition_block_id = cond_b->id;
+  } else {
   ir_val_t cv = build_expr(ctx, node->lhs);
   if (ctx->failed) return;
   emit_br_cond(ctx, cv, body_b, exit_b);
+  }
   push_loop(ctx, cond_b, exit_b);
   switch_to_new_block(ctx, body_b);
   build_stmt(ctx, node->rhs);
@@ -3225,9 +3364,9 @@ static void build_stmt_label(ir_build_ctx_t *ctx, node_t *node) {
  * 戻り値: 失敗時 0、成功時 1 (ctx->failed を立てるので 0 だけで判断可)。 */
 static int setup_function_params(
     ir_build_ctx_t *ctx, node_function_definition_t *fn) {
-  int int_arg_idx = 0;
+  int int_arg_idx = ctx->continuation ? 1 : 0;
   int fp_arg_idx = 0;
-  int abi_idx = 0;
+  int abi_idx = ctx->continuation ? 1 : 0;
   for (int i = 0; i < fn->parameter_count; i++) {
     node_t *arg = fn->parameters[i];
     if (!arg || arg->kind != ND_LVAR) {
@@ -3449,6 +3588,7 @@ static void emit_implicit_return_if_missing(
 
 static int build_function(
     ir_build_ctx_t *ctx, node_function_definition_t *fn) {
+  if (!prepare_continuation_entry(ctx, fn)) return 0;
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
@@ -3480,7 +3620,43 @@ static int build_function(
       ret_ty = IR_TY_I64;
     }
   }
-  ctx->f = ir_func_new(ctx->m, fn->name, fn->name_len, ret_ty);
+  char continuation_step_name[256];
+  const char *ir_name = fn->name;
+  int ir_name_len = fn->name_len;
+  if (ctx->continuation) {
+    int n = snprintf(continuation_step_name, sizeof(continuation_step_name),
+                     "__agc_continuation_step_%.*s", fn->name_len, fn->name);
+    if (n < 0 || n >= (int)sizeof(continuation_step_name)) {
+      fail(ctx, "continuation entry name is too long");
+      return 0;
+    }
+    ir_name = continuation_step_name;
+    ir_name_len = n;
+  }
+  ctx->f = ir_func_new(ctx->m, ir_name, ir_name_len, ret_ty);
+  if (ctx->continuation) {
+    ctx->f->is_continuation_entry = 1;
+    ctx->f->continuation_entry_name = ir_strdup(ctx->continuation->entry);
+    ctx->f->continuation_condition_name =
+        ir_strdup(ctx->continuation->frame_condition);
+    ctx->f->continuation_start_export =
+        ir_strdup(ctx->continuation->start_export);
+    ctx->f->continuation_resume_export =
+        ir_strdup(ctx->continuation->resume_export);
+    ctx->f->continuation_status_export =
+        ir_strdup(ctx->continuation->status_export);
+    ctx->f->continuation_result_export =
+        ir_strdup(ctx->continuation->result_export);
+    if (!ctx->f->continuation_entry_name ||
+        !ctx->f->continuation_condition_name ||
+        !ctx->f->continuation_start_export ||
+        !ctx->f->continuation_resume_export ||
+        !ctx->f->continuation_status_export ||
+        !ctx->f->continuation_result_export) {
+      fail(ctx, "continuation metadata allocation failed");
+      return 0;
+    }
+  }
   int c_signature_len = ps_type_format_canonical_signature(
       fn->signature, NULL, 0);
   if (c_signature_len < 0) {
@@ -3499,6 +3675,13 @@ static int build_function(
     return 0;
   }
   ctx->f->c_signature_len = c_signature_len;
+  if (ctx->continuation) {
+    /* The internal step ABI is i32(command), not the source-level int(void).
+     * Public start/resume helpers carry their own canonical signatures. */
+    free(ctx->f->c_signature);
+    ctx->f->c_signature = NULL;
+    ctx->f->c_signature_len = 0;
+  }
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
   if (ret_type->kind == PSX_TYPE_COMPLEX) {
     ctx->f->ret_complex_half =
@@ -3511,6 +3694,15 @@ static int build_function(
   ctx->lvar_count = 0;
   ctx->loop_depth = 0;
   ctx->label_count = 0;
+  if (ctx->continuation) {
+    int command_vreg = ir_func_new_vreg(ctx->f);
+    ir_inst_t *command = ir_inst_new(IR_PARAM);
+    command->dst = ir_val_vreg(command_vreg, IR_TY_I32);
+    command->src1 = ir_val_imm(IR_TY_I32, 0);
+    ir_func_append_inst(ctx->f, command);
+    ctx->f->param_abi_count = 1;
+    ctx->f->param_abi_types[0] = IR_TY_I32;
+  }
   /* >8B struct 戻り値 (および 3/5/6/7B の非 clean サイズ) の関数では prologue で
    * x8 を受け取る (Apple ARM64 ABI 簡略版)。1/2/4/8B のみ x0 で 1 レジスタ返却。
    * 非 clean サイズを scalar 返ししていたため `{char;short;uchar}` 戻り値が先頭

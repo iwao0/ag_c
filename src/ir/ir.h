@@ -88,6 +88,9 @@ typedef enum {
 
   /* 制御フロー */
   IR_BR, IR_BR_COND, IR_LABEL, IR_RET,
+  /* Resumable Wasm entryのframe条件境界。label_id/else_label_idは
+   * hostから渡された条件値のtrue/false継続先。 */
+  IR_CONTINUATION_SUSPEND,
 
   /* 関数呼び出し */
   IR_CALL,
@@ -274,6 +277,12 @@ typedef struct ir_func_t {
   struct ir_func_t *next;
   char *name;
   char *c_signature; /* semantic pass由来のcanonical C関数型。backendはparserを再参照しない。 */
+  char *continuation_entry_name;
+  char *continuation_condition_name;
+  char *continuation_start_export;
+  char *continuation_resume_export;
+  char *continuation_status_export;
+  char *continuation_result_export;
   ir_block_t *entry;
   ir_block_t *cur_block;
   ir_block_t *blocks_tail;
@@ -301,6 +310,8 @@ typedef struct ir_func_t {
   int ret_complex_half;
   int param_abi_count;
   ir_type_t param_abi_types[32];
+  int continuation_condition_block_id;
+  unsigned char is_continuation_entry;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */

@@ -11,8 +11,28 @@
 #include "lowering/runtime_context.h"
 #include "codegen_emit.h"
 #include <string.h>
+#include <stdlib.h>
 
 static ag_compilation_session_t *active_compilation_session;
+
+static char *session_strdup(const char *text) {
+  if (!text || !text[0]) return NULL;
+  size_t len = strlen(text);
+  char *copy = malloc(len + 1);
+  if (copy) memcpy(copy, text, len + 1);
+  return copy;
+}
+
+static void dispose_continuation_options(ag_continuation_options_t *options) {
+  if (!options) return;
+  free(options->entry);
+  free(options->frame_condition);
+  free(options->start_export);
+  free(options->resume_export);
+  free(options->status_export);
+  free(options->result_export);
+  memset(options, 0, sizeof(*options));
+}
 
 int ag_compilation_session_init(
     ag_compilation_session_t *session, const ag_target_info_t *target) {
@@ -149,6 +169,7 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_lowering_context_destroy(session->lowering_context);
   tk_context_dispose(&session->tokenizer);
   cg_context_destroy(session->codegen_emit_context);
+  dispose_continuation_options(&session->continuation);
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   memset(session, 0, sizeof(*session));
@@ -181,6 +202,45 @@ int ag_compilation_session_set_backend_context(
   session->backend_deactivate = deactivate;
   session->backend_destroy = destroy;
   return 1;
+}
+
+int ag_compilation_session_set_continuation(
+    ag_compilation_session_t *session, const char *entry,
+    const char *frame_condition, const char *start_export,
+    const char *resume_export, const char *status_export,
+    const char *result_export) {
+  if (!session || session->is_active || !entry || !entry[0] ||
+      !frame_condition || !frame_condition[0])
+    return 0;
+  ag_continuation_options_t next = {0};
+  next.entry = session_strdup(entry);
+  next.frame_condition = session_strdup(frame_condition);
+  next.start_export = session_strdup(
+      start_export && start_export[0] ? start_export : entry);
+  next.resume_export = session_strdup(
+      resume_export && resume_export[0]
+          ? resume_export : "__agc_continuation_resume");
+  next.status_export = session_strdup(
+      status_export && status_export[0]
+          ? status_export : "__agc_continuation_status");
+  next.result_export = session_strdup(
+      result_export && result_export[0]
+          ? result_export : "__agc_continuation_result");
+  if (!next.entry || !next.frame_condition || !next.start_export ||
+      !next.resume_export || !next.status_export || !next.result_export) {
+    dispose_continuation_options(&next);
+    return 0;
+  }
+  next.enabled = 1;
+  dispose_continuation_options(&session->continuation);
+  session->continuation = next;
+  return 1;
+}
+
+const ag_continuation_options_t *ag_compilation_session_continuation(
+    const ag_compilation_session_t *session) {
+  return session && session->continuation.enabled
+             ? &session->continuation : NULL;
 }
 
 int ag_compiler_context_init(ag_compiler_context_t *context) {

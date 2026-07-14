@@ -94,6 +94,7 @@ const char *ir_op_name(ir_op_t op) {
     case IR_UMOD:         return "umod";
     case IR_LSR:          return "lsr";
     case IR_ALIGN_PTR:    return "align_ptr";
+    case IR_CONTINUATION_SUSPEND: return "continuation_suspend";
     default:              return "?";
   }
 }
@@ -233,6 +234,12 @@ void ir_func_free(ir_func_t *f) {
   }
   free(f->vreg_phys_reg);
   free(f->c_signature);
+  free(f->continuation_entry_name);
+  free(f->continuation_condition_name);
+  free(f->continuation_start_export);
+  free(f->continuation_resume_export);
+  free(f->continuation_status_export);
+  free(f->continuation_result_export);
   free(f->name);
   free(f);
 }

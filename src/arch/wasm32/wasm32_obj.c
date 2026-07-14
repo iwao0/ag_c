@@ -121,6 +121,13 @@ typedef struct {
   int data_reloc_cap;
   int symbol_count;
   int has_indirect_call;
+  char *continuation_entry;
+  char *continuation_condition;
+  char *continuation_step;
+  char *continuation_start;
+  char *continuation_resume;
+  char *continuation_status;
+  char *continuation_result;
 } obj_ctx_t;
 
 struct wasm32_obj_context_t {
@@ -160,6 +167,13 @@ static void wasm32_obj_clear_module(obj_ctx_t *obj) {
   free(obj->types);
   free(obj->code_relocs);
   free(obj->data_relocs);
+  free(obj->continuation_entry);
+  free(obj->continuation_condition);
+  free(obj->continuation_step);
+  free(obj->continuation_start);
+  free(obj->continuation_resume);
+  free(obj->continuation_status);
+  free(obj->continuation_result);
   memset(obj, 0, sizeof(*obj));
 }
 
@@ -868,7 +882,9 @@ static int func_has_atomic_cas_width(ir_func_t *f, int width64) {
 
 static int block_has_terminator(ir_block_t *b) {
   ir_inst_t *tail = b ? b->tail : NULL;
-  return tail && (tail->op == IR_BR || tail->op == IR_BR_COND || tail->op == IR_RET);
+  return tail && (tail->op == IR_BR || tail->op == IR_BR_COND ||
+                  tail->op == IR_RET ||
+                  tail->op == IR_CONTINUATION_SUSPEND);
 }
 
 static int alloca_offset(ir_func_t *f, int vreg) {
@@ -893,6 +909,32 @@ static void emit_local_get(wb_t *b, int idx) {
 static void emit_local_set(wb_t *b, int idx) {
   wb_u8(b, 0x21);
   wb_uleb(b, (uint32_t)idx);
+}
+
+static void emit_const(wb_t *b, ir_type_t type, long long value);
+static void emit_memarg(wb_t *b, ir_type_t ty);
+
+static void emit_data_address(wb_t *b, obj_func_t *of,
+                              int data_idx, int addend) {
+  wb_u8(b, 0x41);
+  uint32_t imm_off = wb_uleb5(b, 0);
+  func_add_reloc(of, R_WASM_MEMORY_ADDR_LEB, imm_off,
+                 data_idx, 1, addend);
+}
+
+static void emit_continuation_data_load(wb_t *b, obj_func_t *of,
+                                        int data_idx) {
+  emit_data_address(b, of, data_idx, 0);
+  wb_u8(b, 0x28); /* i32.load */
+  emit_memarg(b, IR_TY_I32);
+}
+
+static void emit_continuation_data_store_const(wb_t *b, obj_func_t *of,
+                                               int data_idx, int value) {
+  emit_data_address(b, of, data_idx, 0);
+  emit_const(b, IR_TY_I32, value);
+  wb_u8(b, 0x36); /* i32.store */
+  emit_memarg(b, IR_TY_I32);
 }
 
 static void emit_stack_global_get(wb_t *b, obj_func_t *of, obj_global_t *sp) {
@@ -1421,19 +1463,23 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
   int has_variadic_varargs = func_has_variadic_varargs(f);
-  int has_stack_restore = frame_size > 0 || func_has_vla_alloc(f) || has_variadic_varargs;
+  int has_stack_restore = !f->is_continuation_entry &&
+      (frame_size > 0 || func_has_vla_alloc(f) || has_variadic_varargs);
   int has_control_flow = func_has_control_flow(f);
   int has_atomic_cas32 = func_has_atomic_cas_width(f, 0);
   int has_atomic_cas64 = func_has_atomic_cas_width(f, 1);
   int extra_base = local_index(param_count, nlocals);
   int extra_count = 0;
-  int fp_local = extra_base + extra_count;
-  int old_sp_local = fp_local + 1;
-  if (has_stack_restore) extra_count += 2;
+  int fp_local = -1;
+  if (frame_size > 0) fp_local = extra_base + extra_count++;
+  int old_sp_local = -1;
+  if (has_stack_restore) old_sp_local = extra_base + extra_count++;
   int old_va_arg_area_local = extra_base + extra_count;
   if (has_variadic_varargs) extra_count++;
   int pc_local = extra_base + extra_count;
   if (has_control_flow) extra_count++;
+  int resumed_local = extra_base + extra_count;
+  if (f->is_continuation_entry) extra_count++;
   int atomic_tmp32_local = extra_base + extra_count;
   int atomic_exp32_local = atomic_tmp32_local + 1;
   if (has_atomic_cas32) extra_count += 2;
@@ -1441,6 +1487,33 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   int atomic_exp64_local = atomic_tmp64_local + 1;
   if (has_atomic_cas64) extra_count += 2;
   obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
+  int continuation_frame_data = -1;
+  int continuation_status_data = -1;
+  int continuation_result_data = -1;
+  if (f->is_continuation_entry) {
+    char name[320];
+    int n = snprintf(name, sizeof(name), "__agc_cont_frame_%s",
+                     f->continuation_entry_name);
+    if (n < 0 || n >= (int)sizeof(name))
+      obj_unsupported_msg("continuation data symbol name too long");
+    obj_data_t *frame = intern_data(name, n, 4, 1, 0);
+    continuation_frame_data = data_index(frame);
+    data_note_alloc_size(frame, (size_t)(frame_size > 0 ? frame_size : 16));
+    frame->is_emitted = 1;
+    n = snprintf(name, sizeof(name), "__agc_cont_status_%s",
+                 f->continuation_entry_name);
+    obj_data_t *status = intern_data(name, n, 2, 1, 0);
+    continuation_status_data = data_index(status);
+    data_note_alloc_size(status, 4);
+    status->is_emitted = 1;
+    n = snprintf(name, sizeof(name), "__agc_cont_result_%s",
+                 f->continuation_entry_name);
+    obj_data_t *result = intern_data(name, n, 2, 1, 0);
+    continuation_result_data = data_index(result);
+    data_note_alloc_size(result, 4);
+    result->is_emitted = 1;
+    of = &g_obj.funcs[of_index];
+  }
   obj_global_t *va_arg_area = NULL;
   wb_t body = {0};
   ir_type_t *local_types = NULL;
@@ -1460,9 +1533,11 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(local_types[v]));
   }
-  if (has_stack_restore) {
+  if (frame_size > 0) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (has_stack_restore) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
   }
@@ -1471,6 +1546,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     wb_u8(&body, wasm_valtype(IR_TY_I32));
   }
   if (has_control_flow) {
+    wb_uleb(&body, 1);
+    wb_u8(&body, wasm_valtype(IR_TY_I32));
+  }
+  if (f->is_continuation_entry) {
     wb_uleb(&body, 1);
     wb_u8(&body, wasm_valtype(IR_TY_I32));
   }
@@ -1490,7 +1569,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     emit_stack_global_get(&body, of, stack_pointer);
     emit_local_set(&body, old_sp_local);
   }
-  if (frame_size > 0) {
+  if (frame_size > 0 && f->is_continuation_entry) {
+    emit_data_address(&body, of, continuation_frame_data, 0);
+    emit_local_set(&body, fp_local);
+  } else if (frame_size > 0) {
     emit_stack_global_get(&body, of, stack_pointer);
     emit_const(&body, IR_TY_I32, frame_size);
     wb_u8(&body, 0x6b);
@@ -1498,9 +1580,67 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     emit_local_get(&body, fp_local);
     emit_stack_global_set(&body, of, stack_pointer);
   }
+  if (f->is_continuation_entry) {
+    /* command=-1 is start; all other values resume the pending condition. */
+    emit_local_get(&body, 0);
+    emit_const(&body, IR_TY_I32, -1);
+    wb_u8(&body, 0x46); /* i32.eq */
+    wb_u8(&body, 0x04); wb_u8(&body, 0x40); /* if */
+    emit_continuation_data_load(&body, of, continuation_status_data);
+    wb_u8(&body, 0x45); /* i32.eqz */
+    wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+    wb_u8(&body, 0x05); /* else: invalid double start */
+    emit_const(&body, IR_TY_I32, -1); wb_u8(&body, 0x0f);
+    wb_u8(&body, 0x0b);
+    wb_u8(&body, 0x05); /* resume */
+    emit_continuation_data_load(&body, of, continuation_status_data);
+    emit_const(&body, IR_TY_I32, 2);
+    wb_u8(&body, 0x46);
+    wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+    wb_u8(&body, 0x05); /* else: resume without suspension */
+    emit_const(&body, IR_TY_I32, -1); wb_u8(&body, 0x0f);
+    wb_u8(&body, 0x0b);
+    wb_u8(&body, 0x0b);
+    emit_continuation_data_store_const(
+        &body, of, continuation_status_data, 1);
+    emit_local_get(&body, 0);
+    emit_const(&body, IR_TY_I32, -1);
+    wb_u8(&body, 0x47); /* i32.ne */
+    emit_local_set(&body, resumed_local);
+
+    /* Every invocation reconstructs ALLOCA pointer vregs from the same frame. */
+    for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
+      for (ir_inst_t *i = blk->head; i; i = i->next) {
+        if (i->op != IR_ALLOCA) continue;
+        int off = alloca_offset(f, i->dst.id);
+        emit_local_get(&body, fp_local);
+        emit_const(&body, IR_TY_I32, off);
+        wb_u8(&body, 0x6a);
+        emit_local_set(&body, local_index(param_count, i->dst.id));
+      }
+    }
+    for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
+      for (ir_inst_t *i = blk->head; i; i = i->next) {
+        if (i->op != IR_ALIGN_PTR) continue;
+        emit_addr_val(&body, i->src1, param_count);
+        emit_const(&body, IR_TY_I32, i->alloca_align - 1);
+        wb_u8(&body, 0x6a);
+        emit_const(&body, IR_TY_I32, -i->alloca_align);
+        wb_u8(&body, 0x71);
+        emit_local_set(&body, local_index(param_count, i->dst.id));
+      }
+    }
+  }
   if (has_control_flow) {
     emit_const(&body, IR_TY_I32, f->entry ? f->entry->id : 0);
     emit_local_set(&body, pc_local);
+    if (f->is_continuation_entry) {
+      emit_local_get(&body, resumed_local);
+      wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+      emit_const(&body, IR_TY_I32, f->continuation_condition_block_id);
+      emit_local_set(&body, pc_local);
+      wb_u8(&body, 0x0b);
+    }
     wb_u8(&body, 0x02);
     wb_u8(&body, 0x40);
     wb_u8(&body, 0x03);
@@ -1539,6 +1679,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALLOCA: {
+          if (f->is_continuation_entry) break;
           int off = alloca_offset(f, i->dst.id);
           if (off < 0 || frame_size <= 0) obj_unsupported_op(i->op);
           emit_local_get(&body, fp_local);
@@ -1740,6 +1881,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALIGN_PTR: {
+          if (f->is_continuation_entry) break;
           int align = i->alloca_align > 0 ? i->alloca_align : 16;
           emit_addr_val(&body, i->src1, param_count);
           emit_const(&body, IR_TY_I32, align - 1);
@@ -1907,15 +2049,52 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           wb_u8(&body, 0x0c);
           wb_uleb(&body, 1);
           break;
+        case IR_CONTINUATION_SUSPEND:
+          if (!f->is_continuation_entry || !has_control_flow)
+            obj_unsupported_op(i->op);
+          emit_local_get(&body, resumed_local);
+          wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+          emit_const(&body, IR_TY_I32, 0);
+          emit_local_set(&body, resumed_local);
+          emit_local_get(&body, 0);
+          wb_u8(&body, 0x04); wb_u8(&body, 0x40);
+          emit_const(&body, IR_TY_I32, i->label_id);
+          emit_local_set(&body, pc_local);
+          wb_u8(&body, 0x05);
+          emit_const(&body, IR_TY_I32, i->else_label_id);
+          emit_local_set(&body, pc_local);
+          wb_u8(&body, 0x0b);
+          wb_u8(&body, 0x05);
+          emit_continuation_data_store_const(
+              &body, of, continuation_status_data, 2);
+          emit_const(&body, IR_TY_I32, 2);
+          wb_u8(&body, 0x0f);
+          wb_u8(&body, 0x0b);
+          wb_u8(&body, 0x0c);
+          wb_uleb(&body, 1);
+          break;
         case IR_RET:
-          if (i->ret_complex_half > 0) {
-            emit_complex_ret_copy(&body, i, param_count);
-          } else if (i->src1.id != IR_VAL_NONE) {
-            emit_val(&body, i->src1, of->sig.result, param_count);
-          }
-          if (has_stack_restore) {
-            emit_local_get(&body, old_sp_local);
-            emit_stack_global_set(&body, of, stack_pointer);
+          if (f->is_continuation_entry) {
+            emit_data_address(&body, of, continuation_result_data, 0);
+            if (i->src1.id != IR_VAL_NONE)
+              emit_val(&body, i->src1, IR_TY_I32, param_count);
+            else
+              emit_const(&body, IR_TY_I32, 0);
+            wb_u8(&body, 0x36);
+            emit_memarg(&body, IR_TY_I32);
+            emit_continuation_data_store_const(
+                &body, of, continuation_status_data, 3);
+            emit_const(&body, IR_TY_I32, 3);
+          } else {
+            if (i->ret_complex_half > 0) {
+              emit_complex_ret_copy(&body, i, param_count);
+            } else if (i->src1.id != IR_VAL_NONE) {
+              emit_val(&body, i->src1, of->sig.result, param_count);
+            }
+            if (has_stack_restore) {
+              emit_local_get(&body, old_sp_local);
+              emit_stack_global_set(&body, of, stack_pointer);
+            }
           }
           wb_u8(&body, 0x0f);
           break;
@@ -2003,6 +2182,89 @@ static void assign_indices(void) {
       }
     }
   }
+}
+
+static void set_helper_c_signature(obj_func_t *helper, const char *signature) {
+  int len = (int)strlen(signature);
+  helper->c_signature = xrealloc(helper->c_signature, (size_t)len + 1);
+  memcpy(helper->c_signature, signature, (size_t)len + 1);
+  helper->c_signature_len = len;
+}
+
+static obj_func_t *define_continuation_helper(const char *name,
+                                              int param_count) {
+  obj_func_t *helper = intern_func(name, (int)strlen(name));
+  if (helper->defined)
+    obj_unsupported_msg("continuation export conflicts with a C function");
+  helper->defined = 1;
+  helper->sig.result = IR_TY_I32;
+  helper->sig.nparams = param_count;
+  if (param_count > 0) {
+    helper->sig.params = xrealloc(
+        helper->sig.params, (size_t)param_count * sizeof(ir_type_t));
+    for (int i = 0; i < param_count; i++)
+      helper->sig.params[i] = IR_TY_I32;
+  }
+  set_helper_c_signature(helper, param_count ? "i32(i32)" : "i32()");
+  return helper;
+}
+
+static void synthesize_continuation_helpers(ir_func_t *f) {
+  obj_func_t *step = find_func(f->name, f->name_len);
+  if (!step || !step->defined)
+    obj_unsupported_msg("missing continuation step function");
+  int step_index = (int)(step - g_obj.funcs);
+  char data_name[320];
+  int n = snprintf(data_name, sizeof(data_name), "__agc_cont_status_%s",
+                   f->continuation_entry_name);
+  obj_data_t *status = find_data(data_name, n);
+  n = snprintf(data_name, sizeof(data_name), "__agc_cont_result_%s",
+               f->continuation_entry_name);
+  obj_data_t *result = find_data(data_name, n);
+  if (!status || !result)
+    obj_unsupported_msg("missing continuation state data");
+  int status_index = data_index(status);
+  int result_index = data_index(result);
+
+  obj_func_t *start = define_continuation_helper(
+      f->continuation_start_export, 0);
+  int start_index = (int)(start - g_obj.funcs);
+  wb_uleb(&start->body, 0);
+  emit_const(&start->body, IR_TY_I32, -1);
+  wb_u8(&start->body, 0x10);
+  uint32_t call_off = wb_uleb5(&start->body, 0);
+  func_add_call_reloc(start, call_off, step_index);
+  wb_u8(&start->body, 0x0b);
+
+  obj_func_t *resume = define_continuation_helper(
+      f->continuation_resume_export, 1);
+  int resume_index = (int)(resume - g_obj.funcs);
+  wb_uleb(&resume->body, 0);
+  emit_local_get(&resume->body, 0);
+  wb_u8(&resume->body, 0x10);
+  call_off = wb_uleb5(&resume->body, 0);
+  func_add_call_reloc(resume, call_off, step_index);
+  wb_u8(&resume->body, 0x0b);
+
+  obj_func_t *status_fn = define_continuation_helper(
+      f->continuation_status_export, 0);
+  int status_fn_index = (int)(status_fn - g_obj.funcs);
+  wb_uleb(&status_fn->body, 0);
+  emit_continuation_data_load(&status_fn->body, status_fn, status_index);
+  wb_u8(&status_fn->body, 0x0b);
+
+  obj_func_t *result_fn = define_continuation_helper(
+      f->continuation_result_export, 0);
+  int result_fn_index = (int)(result_fn - g_obj.funcs);
+  wb_uleb(&result_fn->body, 0);
+  emit_continuation_data_load(&result_fn->body, result_fn, result_index);
+  wb_u8(&result_fn->body, 0x0b);
+
+  /* intern_func may move the array; reloc targets remain stable indices. */
+  (void)start_index;
+  (void)resume_index;
+  (void)status_fn_index;
+  (void)result_fn_index;
 }
 
 static int defined_data_count(void) {
@@ -2232,6 +2494,28 @@ static void emit_c_signature_section(wb_t *out) {
   free(payload.data);
 }
 
+static void emit_continuation_section(wb_t *out) {
+  if (!g_obj.continuation_entry) return;
+  wb_t payload = {0};
+  wb_uleb(&payload, 1); /* metadata version */
+  wb_str(&payload, g_obj.continuation_entry,
+         (int)strlen(g_obj.continuation_entry));
+  wb_str(&payload, g_obj.continuation_condition,
+         (int)strlen(g_obj.continuation_condition));
+  wb_str(&payload, g_obj.continuation_step,
+         (int)strlen(g_obj.continuation_step));
+  wb_str(&payload, g_obj.continuation_start,
+         (int)strlen(g_obj.continuation_start));
+  wb_str(&payload, g_obj.continuation_resume,
+         (int)strlen(g_obj.continuation_resume));
+  wb_str(&payload, g_obj.continuation_status,
+         (int)strlen(g_obj.continuation_status));
+  wb_str(&payload, g_obj.continuation_result,
+         (int)strlen(g_obj.continuation_result));
+  emit_custom_section(out, "agc.continuation", &payload);
+  free(payload.data);
+}
+
 static void emit_reloc_section(wb_t *out, const char *name, int target_section,
                                obj_reloc_t *relocs, int reloc_count) {
   if (reloc_count == 0) return;
@@ -2311,6 +2595,30 @@ void wasm32_obj_gen_ir_module(ir_module_t *m) {
     of->defined = 1;
     of->is_static = f->is_static;
     gen_func_body(m, of, f);
+    if (f->is_continuation_entry) {
+      if (g_obj.continuation_entry)
+        obj_unsupported_msg("multiple continuation entries in one object");
+      g_obj.continuation_entry = dup_name(
+          f->continuation_entry_name,
+          (int)strlen(f->continuation_entry_name));
+      g_obj.continuation_condition = dup_name(
+          f->continuation_condition_name,
+          (int)strlen(f->continuation_condition_name));
+      g_obj.continuation_step = dup_name(f->name, f->name_len);
+      g_obj.continuation_start = dup_name(
+          f->continuation_start_export,
+          (int)strlen(f->continuation_start_export));
+      g_obj.continuation_resume = dup_name(
+          f->continuation_resume_export,
+          (int)strlen(f->continuation_resume_export));
+      g_obj.continuation_status = dup_name(
+          f->continuation_status_export,
+          (int)strlen(f->continuation_status_export));
+      g_obj.continuation_result = dup_name(
+          f->continuation_result_export,
+          (int)strlen(f->continuation_result_export));
+      synthesize_continuation_helpers(f);
+    }
   }
 }
 
@@ -2431,6 +2739,7 @@ void wasm32_obj_end(void) {
   emit_code_section(&out);
   emit_data_section(&out);
   emit_c_signature_section(&out);
+  emit_continuation_section(&out);
   emit_linking_section(&out);
   emit_reloc_section(&out, "reloc.CODE", code_section_index, g_obj.code_relocs, g_obj.code_reloc_count);
   emit_reloc_section(&out, "reloc.DATA", data_section_index, g_obj.data_relocs, g_obj.data_reloc_count);

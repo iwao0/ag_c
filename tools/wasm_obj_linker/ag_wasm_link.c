@@ -144,6 +144,14 @@ typedef struct {
   int code_section_index;
   int data_section_index;
   int imports_table;
+  str_t continuation_entry;
+  str_t continuation_condition;
+  str_t continuation_step;
+  str_t continuation_start;
+  str_t continuation_resume;
+  str_t continuation_status;
+  str_t continuation_result;
+  int has_continuation;
 } object_t;
 
 typedef struct {
@@ -638,6 +646,30 @@ static void parse_c_signature_section(object_t *o, rd_t sec) {
   if (sec.pos != sec.len) die("trailing bytes in agc.c_signature section");
 }
 
+static void parse_continuation_section(object_t *o, rd_t sec) {
+  if (o->has_continuation) die("duplicate agc.continuation section");
+  uint32_t version = rd_uleb(&sec);
+  if (version != 1) die("unsupported agc.continuation version");
+  o->continuation_entry = rd_str_dup(&sec);
+  o->continuation_condition = rd_str_dup(&sec);
+  o->continuation_step = rd_str_dup(&sec);
+  o->continuation_start = rd_str_dup(&sec);
+  o->continuation_resume = rd_str_dup(&sec);
+  o->continuation_status = rd_str_dup(&sec);
+  o->continuation_result = rd_str_dup(&sec);
+  if (str_empty(o->continuation_entry) ||
+      str_empty(o->continuation_condition) ||
+      str_empty(o->continuation_step) ||
+      str_empty(o->continuation_start) ||
+      str_empty(o->continuation_resume) ||
+      str_empty(o->continuation_status) ||
+      str_empty(o->continuation_result))
+    die("invalid agc.continuation metadata");
+  if (sec.pos != sec.len)
+    die("trailing bytes in agc.continuation section");
+  o->has_continuation = 1;
+}
+
 static object_t parse_object_bytes(const char *path, const unsigned char *file, size_t len) {
   if (len < 8 || memcmp(file, "\0asm", 4) != 0) dief("not a wasm object: %s", path);
   object_t o;
@@ -670,6 +702,8 @@ static object_t parse_object_bytes(const char *path, const unsigned char *file, 
         parse_reloc_section(&o, sec, 0);
       } else if (name.len == 15 && memcmp(name.s, "agc.c_signature", 15) == 0) {
         parse_c_signature_section(&o, sec);
+      } else if (name.len == 16 && memcmp(name.s, "agc.continuation", 16) == 0) {
+        parse_continuation_section(&o, sec);
       }
     }
   }
@@ -3050,6 +3084,48 @@ static int has_runtime_layout_value(
   return 0;
 }
 
+static void validate_continuation_metadata(object_t *objs, int obj_count) {
+  object_t *owner = NULL;
+  for (int i = 0; i < obj_count; i++) {
+    if (!objs[i].has_continuation) continue;
+    if (owner) die("multiple continuation entries in linked objects");
+    owner = &objs[i];
+  }
+  if (!owner) return;
+  str_t required = owner->continuation_step;
+  if (!find_defined_func(objs, obj_count, required, NULL, NULL))
+    dief("continuation metadata function not found: %s", required.s);
+  required = owner->continuation_start;
+  if (!find_defined_func(objs, obj_count, required, NULL, NULL))
+    dief("continuation metadata function not found: %s", required.s);
+  required = owner->continuation_resume;
+  if (!find_defined_func(objs, obj_count, required, NULL, NULL))
+    dief("continuation metadata function not found: %s", required.s);
+  required = owner->continuation_status;
+  if (!find_defined_func(objs, obj_count, required, NULL, NULL))
+    dief("continuation metadata function not found: %s", required.s);
+  required = owner->continuation_result;
+  if (!find_defined_func(objs, obj_count, required, NULL, NULL))
+    dief("continuation metadata function not found: %s", required.s);
+  for (int oi = 0; oi < obj_count; oi++) {
+    for (int si = 0; si < objs[oi].symbol_count; si++) {
+      symbol_t *symbol = &objs[oi].symbols[si];
+      if (symbol->kind == SYM_FUNCTION &&
+          (symbol->flags & SYM_UNDEFINED) &&
+          str_eq(symbol->name, owner->continuation_condition)) {
+        dief("frame condition call outside configured continuation loop: %s",
+             symbol->name.s);
+      }
+      if (symbol->kind == SYM_FUNCTION &&
+          (symbol->flags & SYM_UNDEFINED) &&
+          str_eq(symbol->name, owner->continuation_entry)) {
+        dief("continuation entry cannot be called from C: %s",
+             symbol->name.s);
+      }
+    }
+  }
+}
+
 static void build_module_into(buf_t *out, const export_spec_t *exports, int export_count,
                               object_t *objs, int obj_count, int use_stdlib,
                               const linker_options_t *requested_options,
@@ -3060,6 +3136,7 @@ static void build_module_into(buf_t *out, const export_spec_t *exports, int expo
     die("initial memory pages exceed maximum memory pages");
   }
   check_duplicate_definitions(objs, obj_count);
+  validate_continuation_metadata(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
   if (use_stdlib) synthesize_runtime_object(objs, obj_count, &runtime);

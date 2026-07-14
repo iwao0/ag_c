@@ -154,6 +154,54 @@ static char *read_file_contents(const char *path) {
 
 static ag_compilation_session_t wasm_adapter_session;
 static int wasm_adapter_session_live;
+typedef struct {
+  char entry[128];
+  char condition[128];
+  char start_export[128];
+  char resume_export[128];
+  char status_export[128];
+  char result_export[128];
+  int enabled;
+} wasm_pending_continuation_t;
+static wasm_pending_continuation_t wasm_pending_continuation;
+
+static int copy_wasm_option_string(char out[128], int address,
+                                   const char *fallback) {
+  const char *source = address ? (const char *)(long)address : fallback;
+  if (!source || !source[0]) return 0;
+  int i = 0;
+  while (i < 127 && source[i]) {
+    out[i] = source[i];
+    i++;
+  }
+  if (source[i]) return 0;
+  out[i] = '\0';
+  return 1;
+}
+
+int agc_wasm_set_continuation_options(
+    int entry_addr, int condition_addr, int start_export_addr,
+    int resume_export_addr, int status_export_addr, int result_export_addr) {
+  if (!entry_addr && !condition_addr) {
+    memset(&wasm_pending_continuation, 0, sizeof(wasm_pending_continuation));
+    return 0;
+  }
+  wasm_pending_continuation_t next = {0};
+  if (!copy_wasm_option_string(next.entry, entry_addr, NULL) ||
+      !copy_wasm_option_string(next.condition, condition_addr, NULL) ||
+      !copy_wasm_option_string(next.start_export, start_export_addr,
+                               next.entry) ||
+      !copy_wasm_option_string(next.resume_export, resume_export_addr,
+                               "__agc_continuation_resume") ||
+      !copy_wasm_option_string(next.status_export, status_export_addr,
+                               "__agc_continuation_status") ||
+      !copy_wasm_option_string(next.result_export, result_export_addr,
+                               "__agc_continuation_result"))
+    return -1;
+  next.enabled = 1;
+  wasm_pending_continuation = next;
+  return 0;
+}
 
 static int attach_wasm_backend_context(
     ag_compilation_session_t *session) {
@@ -195,7 +243,22 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
 
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session = &wasm_adapter_session;
-  if (!ag_compilation_session_init(session, &target) ||
+  if (!ag_compilation_session_init(session, &target)) {
+    wasm_publish_and_dispose_session(session);
+    return -4;
+  }
+  if (wasm_pending_continuation.enabled &&
+      !ag_compilation_session_set_continuation(
+          session, wasm_pending_continuation.entry,
+          wasm_pending_continuation.condition,
+          wasm_pending_continuation.start_export,
+          wasm_pending_continuation.resume_export,
+          wasm_pending_continuation.status_export,
+          wasm_pending_continuation.result_export)) {
+    wasm_publish_and_dispose_session(session);
+    return -4;
+  }
+  if (
       !attach_wasm_backend_context(session)) {
     wasm_publish_and_dispose_session(session);
     return -4;
@@ -374,13 +437,45 @@ int main(int argc, char **argv) {
   int wasm_object_mode = 0;
 #ifdef AGC_TARGET_WASM32
   const char *output_path = NULL;
-  if (argc == 2) {
-    input_path = argv[1];
-  } else if (argc == 5 && strcmp(argv[1], "-c") == 0 && strcmp(argv[2], "-o") == 0) {
-    wasm_object_mode = 1;
-    output_path = argv[3];
-    input_path = argv[4];
-  } else {
+  const char *continuation_entry = NULL;
+  const char *continuation_condition = NULL;
+  const char *continuation_start = NULL;
+  const char *continuation_resume = NULL;
+  const char *continuation_status = NULL;
+  const char *continuation_result = NULL;
+  for (int i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-c") == 0) {
+      wasm_object_mode = 1;
+    } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
+      output_path = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-entry") == 0 &&
+               i + 1 < argc) {
+      continuation_entry = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-frame-condition") == 0 &&
+               i + 1 < argc) {
+      continuation_condition = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-start-export") == 0 &&
+               i + 1 < argc) {
+      continuation_start = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-resume-export") == 0 &&
+               i + 1 < argc) {
+      continuation_resume = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-status-export") == 0 &&
+               i + 1 < argc) {
+      continuation_status = argv[++i];
+    } else if (strcmp(argv[i], "--continuation-result-export") == 0 &&
+               i + 1 < argc) {
+      continuation_result = argv[++i];
+    } else if (argv[i][0] != '-' && !input_path) {
+      input_path = argv[i];
+    } else {
+      input_path = NULL;
+      break;
+    }
+  }
+  if (!input_path || (wasm_object_mode && !output_path) ||
+      (continuation_entry && !wasm_object_mode) ||
+      (!!continuation_entry != !!continuation_condition)) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
                         diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
     return 1;
@@ -411,6 +506,12 @@ int main(int argc, char **argv) {
   ag_compilation_session_t session;
   int session_ready = ag_compilation_session_init(&session, &target);
 #ifdef AGC_TARGET_WASM32
+  if (session_ready && continuation_entry) {
+    session_ready = ag_compilation_session_set_continuation(
+        &session, continuation_entry, continuation_condition,
+        continuation_start, continuation_resume,
+        continuation_status, continuation_result);
+  }
   if (session_ready) session_ready = attach_wasm_backend_context(&session);
 #endif
   if (!session_ready || !ag_compilation_session_activate(&session)) {

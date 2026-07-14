@@ -16,6 +16,16 @@ typedef struct psx_lowering_context_t psx_lowering_context_t;
 typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 typedef void (*ag_session_backend_callback_t)(void *context);
 
+typedef struct {
+  char *entry;
+  char *frame_condition;
+  char *start_export;
+  char *resume_export;
+  char *status_export;
+  char *result_export;
+  unsigned char enabled;
+} ag_continuation_options_t;
+
 typedef struct ag_compilation_session_t {
   struct ag_compilation_session_t *previous_session;
   psx_semantic_context_t *semantic_context;
@@ -40,6 +50,7 @@ typedef struct ag_compilation_session_t {
   psx_lowering_context_t *previous_lowering_context;
   ag_codegen_emit_context_t *codegen_emit_context;
   ag_codegen_emit_context_t *previous_codegen_emit_context;
+  ag_continuation_options_t continuation;
   void *backend_context;
   ag_session_backend_callback_t backend_activate;
   ag_session_backend_callback_t backend_deactivate;
@@ -65,5 +76,12 @@ int ag_compilation_session_set_backend_context(
     ag_session_backend_callback_t activate,
     ag_session_backend_callback_t deactivate,
     ag_session_backend_callback_t destroy);
+int ag_compilation_session_set_continuation(
+    ag_compilation_session_t *session, const char *entry,
+    const char *frame_condition, const char *start_export,
+    const char *resume_export, const char *status_export,
+    const char *result_export);
+const ag_continuation_options_t *ag_compilation_session_continuation(
+    const ag_compilation_session_t *session);
 
 #endif

@@ -14,6 +14,13 @@ const utf8Encoder = new TextEncoder();
 
 export { AgcResourceLimitError } from "./agc-resource-limits.js";
 
+export const AGC_CONTINUATION_STATUS = Object.freeze({
+  INVALID: -1,
+  NOT_STARTED: 0,
+  SUSPENDED: 2,
+  COMPLETED: 3,
+});
+
 async function loadBytes(source, label) {
   if (source === undefined || source === null) return null;
   if (source instanceof Uint8Array) return source;
@@ -174,6 +181,7 @@ export async function createToolchain(options) {
     const {
       headers,
       headerLimits,
+      continuation,
       limits: limitOverrides,
       maxOutputBytes: _ignoredMaxOutputBytes,
       ...linkerOptions
@@ -181,6 +189,7 @@ export async function createToolchain(options) {
     const compileResourceLimits = resolveResourceLimits(resourceLimits, limitOverrides ?? {});
     const compileOptions = {
       limits: compileResourceLimits,
+      ...(continuation === undefined ? {} : { continuation }),
       ...(headers === undefined && headerLimits === undefined
         ? {}
         : { headers: headers ?? {}, headerLimits }),
@@ -220,9 +229,18 @@ export async function createToolchain(options) {
       objects.push(runtimeObject);
     }
     let wasm;
+    const continuationExports = continuation ? [
+      continuation.start ?? continuation.entry,
+      continuation.resume ?? "__agc_continuation_resume",
+      continuation.status ?? "__agc_continuation_status",
+      continuation.result ?? "__agc_continuation_result",
+    ] : [];
+    const effectiveLinkerOptions = continuationExports.length
+      ? mergeExports(linkerOptions, continuationExports)
+      : linkerOptions;
     try {
       wasm = linker.link(objects, {
-        ...linkerOptions,
+        ...effectiveLinkerOptions,
         maxOutputBytes: compileResourceLimits.maxLinkedWasmBytes,
       });
     } catch (err) {

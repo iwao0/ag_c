@@ -192,6 +192,27 @@ remain available through the fenv flag APIs.
 rejected by the linker with an explicit unsupported-control-flow error. They are
 not mapped to ordinary runtime functions.
 
+## Resumable Entry
+
+The JavaScript toolchain can turn one direct frame loop in an entry function
+into a resumable Wasm state machine:
+
+```js
+const wasm = toolchain.compileLinkedWasm(source, {
+  exports: ["main"],
+  continuation: { entry: "main", frameCondition: "game_running" },
+});
+```
+
+`main()` starts the entry and returns `2` when suspended. The generated
+`__agc_continuation_resume(i32)`, `__agc_continuation_status()`, and
+`__agc_continuation_result()` exports resume the pending condition, read the
+state, and read the completed C result. Status `0` is not started, `2` is
+suspended, `3` is completed, and `-1` rejects an invalid start or resume.
+The `start`, `resume`, `status`, and `result` names can be overridden in the
+`continuation` option. Object files retain this contract in the
+`agc.continuation` custom section for link-time validation.
+
 ## Smoke Test
 
 ```sh

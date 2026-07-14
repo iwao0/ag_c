@@ -22,6 +22,173 @@ async function freshToolchain() {
 let toolchain = await freshToolchain();
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
 
+const continuationProgram = await toolchain.instantiateLinkedWasm(`
+int game_running(void);
+static int observed;
+int main(void) {
+  int frame = 0;
+  while (game_running()) {
+    frame += 1;
+    observed = frame;
+  }
+  observed += 100;
+  return frame;
+}
+int read_observed(void) { return observed; }
+`, {
+  exports: ["main", "read_observed"],
+  useStdlib: false,
+  continuation: { entry: "main", frameCondition: "game_running" },
+});
+const continuation = continuationProgram.instance.exports;
+if (continuation.main() !== 2 || continuation.read_observed() !== 0 ||
+    continuation.__agc_continuation_status() !== 2) {
+  throw new Error("continuation start did not suspend before the first frame");
+}
+if (continuation.__agc_continuation_resume(1) !== 2 ||
+    continuation.read_observed() !== 1 ||
+    continuation.__agc_continuation_resume(1) !== 2 ||
+    continuation.read_observed() !== 2) {
+  throw new Error("continuation resume did not execute exactly one frame");
+}
+if (continuation.__agc_continuation_resume(0) !== 3 ||
+    continuation.__agc_continuation_status() !== 3 ||
+    continuation.__agc_continuation_result() !== 2 ||
+    continuation.read_observed() !== 102 ||
+    continuation.__agc_continuation_resume(1) !== -1 ||
+    continuation.main() !== -1) {
+  throw new Error("continuation completion state is incorrect");
+}
+
+const breakContinuationProgram = await toolchain.instantiateLinkedWasm(`
+int frame_gate(void);
+static int cleaned;
+int main(void) {
+  while (frame_gate()) break;
+  cleaned = 1;
+  return 17;
+}
+int was_cleaned(void) { return cleaned; }
+`, {
+  exports: ["main", "was_cleaned"],
+  useStdlib: false,
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+});
+if (breakContinuationProgram.instance.exports.main() !== 2 ||
+    breakContinuationProgram.instance.exports.__agc_continuation_resume(1) !== 3 ||
+    breakContinuationProgram.instance.exports.was_cleaned() !== 1 ||
+    breakContinuationProgram.instance.exports.__agc_continuation_result() !== 17) {
+  throw new Error("break did not complete a continuation entry");
+}
+
+const earlyReturnContinuation = await toolchain.instantiateLinkedWasm(`
+int frame_gate(void);
+static int stop_before_loop = 1;
+int main(void) {
+  if (stop_before_loop) return 9;
+  while (frame_gate()) {}
+  return 0;
+}
+`, {
+  exports: ["main"],
+  useStdlib: false,
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+});
+if (earlyReturnContinuation.instance.exports.main() !== 3 ||
+    earlyReturnContinuation.instance.exports.__agc_continuation_status() !== 3 ||
+    earlyReturnContinuation.instance.exports.__agc_continuation_result() !== 9) {
+  throw new Error("return before the first frame condition was not completed");
+}
+
+try {
+  toolchain.compileLinkedWasm(`
+int frame_gate(void);
+int main(void) {
+  int enabled = 1;
+  while (frame_gate() && enabled) enabled = 0;
+  return 0;
+}
+`, {
+    exports: ["main"],
+    useStdlib: false,
+    continuation: { entry: "main", frameCondition: "frame_gate" },
+  });
+  throw new Error("unsupported continuation condition unexpectedly compiled");
+} catch (err) {
+  if (!String(err.message).includes("requires one direct while(frame_condition()) loop")) {
+    throw err;
+  }
+}
+
+try {
+  toolchain.compileLinkedWasm([
+    `int frame_gate(void); int main(void) {
+       while (frame_gate()) {}
+       return 0;
+     }`,
+    "int frame_gate(void); int invalid_extra_call(void) { return frame_gate(); }",
+  ], {
+    exports: ["main"],
+    useStdlib: false,
+    continuation: { entry: "main", frameCondition: "frame_gate" },
+  });
+  throw new Error("frame condition call outside the entry unexpectedly linked");
+} catch (err) {
+  if (!String(err.message).includes(
+    "frame condition call outside configured continuation loop: frame_gate",
+  )) {
+    throw err;
+  }
+}
+
+const typedContinuationProgram = await toolchain.instantiateLinkedWasm(`
+int frame_gate(void);
+struct FrameState { int delta; double elapsed; };
+static int observed;
+int main(void) {
+  int frame = 0;
+  int value = 1;
+  int *address = &value;
+  struct FrameState state = {2, 1.5};
+  while (frame_gate()) {
+    int sum = 0;
+    int i;
+    for (i = 0; i < 3; i++) sum += i;
+    frame++;
+    *address += sum + state.delta;
+    state.elapsed += 0.5;
+    if (frame == 1) continue;
+    observed = value + (int)state.elapsed;
+  }
+  observed += 1000;
+  return value + frame;
+}
+int read_typed_observed(void) { return observed; }
+`, {
+  exports: ["begin_frames", "read_typed_observed"],
+  useStdlib: false,
+  continuation: {
+    entry: "main",
+    frameCondition: "frame_gate",
+    start: "begin_frames",
+    resume: "advance_frame",
+    status: "frame_status",
+    result: "frame_result",
+  },
+});
+const typedContinuation = typedContinuationProgram.instance.exports;
+if (typedContinuation.begin_frames() !== 2 ||
+    typedContinuation.advance_frame(1) !== 2 ||
+    typedContinuation.read_typed_observed() !== 0 ||
+    typedContinuation.advance_frame(1) !== 2 ||
+    typedContinuation.read_typed_observed() !== 13 ||
+    typedContinuation.advance_frame(0) !== 3 ||
+    typedContinuation.frame_status() !== 3 ||
+    typedContinuation.frame_result() !== 13 ||
+    typedContinuation.read_typed_observed() !== 1013) {
+  throw new Error("typed continuation frame did not preserve automatic state");
+}
+
 const mainSource = "int other(void); int main(void) { return other() + 1; }\n";
 const otherSource = "int other(void) { return 41; }\n";
 const mainObj = toolchain.compileObject(mainSource);

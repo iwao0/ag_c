@@ -206,6 +206,15 @@ function callTwoArgNumberFunc(fn, first, second) {
   }
 }
 
+function callNumberFunc(fn, args) {
+  try {
+    return Number(fn(...args.map((arg) => BigInt(arg))));
+  } catch (err) {
+    if (err instanceof TypeError) return Number(fn(...args));
+    throw err;
+  }
+}
+
 function ensureMemoryRange(memory, ptr, len, label) {
   if (ptr < 0 || len < 0 || ptr + len > memory.buffer.byteLength) {
     throw new RangeError(`${label} buffer is outside wasm memory`);
@@ -266,6 +275,7 @@ export async function createCompiler(wasmSource, options = {}) {
   const compileObjectNamedExport = instance.exports.agc_wasm_compile_object_named;
   const compileWatVirtualExport = instance.exports.agc_wasm_compile_wat_virtual;
   const compileObjectVirtualExport = instance.exports.agc_wasm_compile_object_virtual;
+  const continuationOptionsExport = instance.exports.agc_wasm_set_continuation_options;
   const diagnosticExports = {
     apiVersion: instance.exports.agc_wasm_diagnostic_api_version,
     count: instance.exports.agc_wasm_diagnostic_count,
@@ -331,6 +341,60 @@ export async function createCompiler(wasmSource, options = {}) {
     ensureMemoryRange(memory, outputPtr, outputCap, "fixed output");
   }
   const encoder = new TextEncoder();
+
+  function continuationNames(input) {
+    if (input === undefined) return null;
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new TypeError("continuation must be an object");
+    }
+    const names = {
+      entry: input.entry,
+      frameCondition: input.frameCondition,
+      start: input.start ?? input.entry,
+      resume: input.resume ?? "__agc_continuation_resume",
+      status: input.status ?? "__agc_continuation_status",
+      result: input.result ?? "__agc_continuation_result",
+    };
+    for (const [key, value] of Object.entries(names)) {
+      if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+        throw new TypeError(`continuation.${key} must be a non-empty string without NUL`);
+      }
+    }
+    return names;
+  }
+
+  function configureContinuation(input) {
+    const names = continuationNames(input);
+    if (!names) return () => {};
+    if (typeof continuationOptionsExport !== "function") {
+      throw new Error("ag_c wasm module does not support continuation compilation");
+    }
+    if (typeof malloc !== "function" || typeof free !== "function") {
+      throw new Error("continuation compilation requires malloc/free exports");
+    }
+    const allocations = [];
+    try {
+      const pointers = Object.values(names).map((name) => {
+        const bytes = encoder.encode(`${name}\0`);
+        const ptr = callPtrFunc(malloc, bytes.length);
+        if (!ptr) throw new Error("ag_c wasm malloc failed for continuation option");
+        allocations.push(ptr);
+        ensureMemoryRange(memory, ptr, bytes.length, "continuation option");
+        new Uint8Array(memory.buffer).set(bytes, ptr);
+        return ptr;
+      });
+      if (callNumberFunc(continuationOptionsExport, pointers) !== 0) {
+        throw new Error("ag_c wasm rejected continuation options");
+      }
+    } catch (err) {
+      for (const ptr of allocations) callVoidPtrFunc(free, ptr);
+      throw err;
+    }
+    return () => {
+      callNumberFunc(continuationOptionsExport, [0, 0, 0, 0, 0, 0]);
+      for (const ptr of allocations) callVoidPtrFunc(free, ptr);
+    };
+  }
 
   function configureDiagnosticLimits(resourceLimits) {
     if (typeof diagnosticLimitExports.set !== "function") {
@@ -704,21 +768,26 @@ export async function createCompiler(wasmSource, options = {}) {
     if (typeof compileObjectExport !== "function") {
       throw new Error("ag_c wasm module does not export agc_wasm_compile_object");
     }
-    const prepared = prepareCompile(
-      source, options, compileObjectExport, compileObjectNamedExport, compileObjectVirtualExport,
-    );
-    if (useHeapBuffers) {
-      return compileWithHeapBuffers(
+    const resetContinuation = configureContinuation(options.continuation);
+    try {
+      const prepared = prepareCompile(
+        source, options, compileObjectExport, compileObjectNamedExport, compileObjectVirtualExport,
+      );
+      if (useHeapBuffers) {
+        return compileWithHeapBuffers(
+          prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
+          prepared.compileFn, false, prepared.resourceLimits,
+          prepared.resourceLimits.maxObjectBytes, "maxObjectBytes",
+        );
+      }
+      return compileWithFixedBuffers(
         prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
         prepared.compileFn, false, prepared.resourceLimits,
         prepared.resourceLimits.maxObjectBytes, "maxObjectBytes",
       );
+    } finally {
+      resetContinuation();
     }
-    return compileWithFixedBuffers(
-      prepared.sourceBytes, prepared.sourceNameBytes, prepared.virtualHeaders,
-      prepared.compileFn, false, prepared.resourceLimits,
-      prepared.resourceLimits.maxObjectBytes, "maxObjectBytes",
-    );
   }
 
   function compileWatWithDiagnostics(source, options = {}) {

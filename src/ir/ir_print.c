@@ -114,6 +114,9 @@ static void print_inst(ir_print_sink_t *s, ir_inst_t *i) {
     case IR_RET:
       if (i->src1.id != IR_VAL_NONE) print_val(s, i->src1);
       break;
+    case IR_CONTINUATION_SUSPEND:
+      sink_printf(s, ".L%d, .L%d", i->label_id, i->else_label_id);
+      break;
     case IR_CALL:
       if (i->is_void_call) sink_printf(s, "void ");
       sink_printf(s, "@%.*s(", i->sym_len, i->sym ? i->sym : "");
