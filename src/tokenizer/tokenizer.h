@@ -6,6 +6,8 @@
 
 typedef struct tokenizer_context_t tokenizer_context_t;
 
+#define TK_FILENAME_TABLE_CAP 256
+
 /** @brief Tokenizerの実行時設定コンテキスト。 */
 struct tokenizer_context_t {
   bool strict_c11_mode;
@@ -22,6 +24,8 @@ struct tokenizer_context_t {
   size_t stats_base_chunks;
   size_t stats_base_reserved_bytes;
   size_t max_token_len_for_test;
+  char *filename_table[TK_FILENAME_TABLE_CAP];
+  uint16_t filename_table_count;
 };
 
 /**
@@ -254,6 +258,12 @@ tokenizer_context_t *tk_context_active(void);
  * @param ctx 初期化対象コンテキスト。
  */
 void tk_context_init(tokenizer_context_t *ctx);
+/** @brief コンテキストが所有する実行時領域を解放する。 */
+void tk_context_dispose(tokenizer_context_t *ctx);
+uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name);
+const char *tk_filename_lookup_ctx(
+    const tokenizer_context_t *ctx, uint16_t id);
+void tk_filename_reset_translation_unit_ctx(tokenizer_context_t *ctx);
 /** @brief コンテキストのstrict C11有効/無効を取得する。 */
 bool tk_ctx_get_strict_c11_mode(const tokenizer_context_t *ctx);
 /**

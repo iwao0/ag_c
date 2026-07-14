@@ -1,34 +1,46 @@
-#include "token.h"
+#include "tokenizer.h"
 #include <stdlib.h>
 #include <string.h>
 
-#define FILENAME_TABLE_CAP 256
-static const char *filename_table[FILENAME_TABLE_CAP];
-static uint16_t filename_table_count = 0;
-
-uint16_t tk_filename_intern(const char *name) {
-  if (!name) return 0;
-  for (uint16_t i = 0; i < filename_table_count; i++) {
-    if (filename_table[i] == name || !strcmp(filename_table[i], name)) return i;
+uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name) {
+  if (!ctx || !name) return 0;
+  for (uint16_t i = 0; i < ctx->filename_table_count; i++) {
+    if (ctx->filename_table[i] == name ||
+        !strcmp(ctx->filename_table[i], name))
+      return i;
   }
-  if (filename_table_count >= FILENAME_TABLE_CAP) return 0;
+  if (ctx->filename_table_count >= TK_FILENAME_TABLE_CAP) return 0;
   size_t len = strlen(name);
   char *copy = malloc(len + 1);
   if (!copy) return 0;
   memcpy(copy, name, len + 1);
-  filename_table[filename_table_count] = copy;
-  return filename_table_count++;
+  ctx->filename_table[ctx->filename_table_count] = copy;
+  return ctx->filename_table_count++;
+}
+
+uint16_t tk_filename_intern(const char *name) {
+  return tk_filename_intern_ctx(tk_context_active(), name);
+}
+
+const char *tk_filename_lookup_ctx(
+    const tokenizer_context_t *ctx, uint16_t id) {
+  if (!ctx || id >= ctx->filename_table_count) return NULL;
+  return ctx->filename_table[id];
 }
 
 const char *tk_filename_lookup(uint16_t id) {
-  if (id >= filename_table_count) return NULL;
-  return filename_table[id];
+  return tk_filename_lookup_ctx(tk_context_active(), id);
+}
+
+void tk_filename_reset_translation_unit_ctx(tokenizer_context_t *ctx) {
+  if (!ctx) return;
+  for (uint16_t i = 0; i < ctx->filename_table_count; i++) {
+    free(ctx->filename_table[i]);
+    ctx->filename_table[i] = NULL;
+  }
+  ctx->filename_table_count = 0;
 }
 
 void tk_filename_reset_translation_unit(void) {
-  for (uint16_t i = 0; i < filename_table_count; i++) {
-    free((void *)filename_table[i]);
-    filename_table[i] = NULL;
-  }
-  filename_table_count = 0;
+  tk_filename_reset_translation_unit_ctx(tk_context_active());
 }

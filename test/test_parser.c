@@ -15636,6 +15636,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, host_backend.activate_count);
+  uint16_t host_filename = tk_filename_intern("host-session.c");
+  ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
+                     "host-session.c") == 0);
   host.lowering_context->aggregate_cast_temp_sequence = 9;
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(tk_allocator_calloc(1, 16) != NULL);
@@ -15666,6 +15669,12 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_lowering_context_active() == wasm.lowering_context);
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(1, wasm_backend.activate_count);
+  uint16_t wasm_filename = tk_filename_intern("wasm-session.c");
+  ASSERT_EQ(host_filename, wasm_filename);
+  ASSERT_TRUE(strcmp(tk_filename_lookup(wasm_filename),
+                     "wasm-session.c") == 0);
+  tk_filename_reset_translation_unit();
+  ASSERT_TRUE(tk_filename_lookup(wasm_filename) == NULL);
   ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(0, pragma_pack_current_alignment());
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
@@ -15682,6 +15691,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_lowering_context_active() == host.lowering_context);
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, wasm_backend.deactivate_count);
+  ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
+                     "host-session.c") == 0);
   ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(4, pragma_pack_current_alignment());
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());

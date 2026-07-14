@@ -129,6 +129,7 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   tk_allocator_context_destroy(session->token_allocator_context);
   ps_parser_runtime_context_destroy(session->parser_runtime_context);
   ps_lowering_context_destroy(session->lowering_context);
+  tk_context_dispose(&session->tokenizer);
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   memset(session, 0, sizeof(*session));

@@ -73,6 +73,10 @@ const tokenizerAllocatorSource = await readFile(
   "src/tokenizer/allocator.c",
   "utf8",
 );
+const tokenizerFilenameSource = await readFile(
+  "src/tokenizer/filename_table.c",
+  "utf8",
+);
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
 const parserRuntimeSource = await readFile(
   "src/parser/runtime_context.c",
@@ -147,6 +151,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/tk_context_activate\s*\(&session->tokenizer\)/.test(
       compilerContextSource,
     ) ||
+    !/tk_context_dispose\s*\(&session->tokenizer\)/.test(
+      compilerContextSource,
+    ) ||
     !/tk_allocator_context_create\s*\(/.test(compilerContextSource) ||
     !/tk_allocator_context_activate\s*\(/.test(compilerContextSource) ||
     !/tk_allocator_context_destroy\s*\(/.test(compilerContextSource) ||
@@ -190,6 +197,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+
+if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
+      tokenizerFilenameSource,
+    ) ||
+    !/ctx->filename_table_count/.test(tokenizerFilenameSource) ||
+    !/tk_filename_reset_translation_unit_ctx\s*\(/.test(
+      tokenizerFilenameSource,
+    )) {
+  throw new Error(
+    "token filename interning must be owned and reset by tokenizer context",
   );
 }
 

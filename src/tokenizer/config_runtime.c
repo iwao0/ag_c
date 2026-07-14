@@ -46,6 +46,12 @@ void tk_context_init(tokenizer_context_t *ctx) {
   };
 }
 
+void tk_context_dispose(tokenizer_context_t *ctx) {
+  if (!ctx) return;
+  tk_filename_reset_translation_unit_ctx(ctx);
+  *ctx = (tokenizer_context_t){0};
+}
+
 bool tk_ctx_get_strict_c11_mode(const tokenizer_context_t *ctx) {
   return ctx ? ctx->strict_c11_mode : default_ctx.strict_c11_mode;
 }
