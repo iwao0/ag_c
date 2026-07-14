@@ -21,6 +21,25 @@
 
 static token_t *current_token(void) { return tk_get_current_token(); }
 
+static const psx_decl_specifier_syntax_options_t *
+complete_decl_specifier_syntax_options(
+    const psx_decl_specifier_syntax_options_t *options,
+    psx_decl_specifier_syntax_options_t *storage) {
+  if (!storage) return NULL;
+  *storage = options ? *options
+                     : (psx_decl_specifier_syntax_options_t){0};
+  if ((storage->semantic_context == NULL) !=
+      (storage->local_registry == NULL)) {
+    ps_diag_ctx(current_token(), "declaration-syntax",
+                "semantic and local contexts must be provided together");
+  }
+  if (!storage->semantic_context) {
+    storage->semantic_context = ps_ctx_active();
+    storage->local_registry = ps_local_registry_active();
+  }
+  return storage;
+}
+
 static void diagnose_type_name_storage_class(token_t *start) {
   for (token_t *token = start;
        token && psx_is_decl_prefix_token(token->kind);
@@ -161,6 +180,9 @@ static int parse_type_name_syntax_at(
     const psx_decl_specifier_syntax_options_t *options,
     int prepare_constant_bounds, psx_parsed_type_name_t *out) {
   if (!start || !out) return 0;
+  psx_decl_specifier_syntax_options_t complete_options;
+  options = complete_decl_specifier_syntax_options(
+      options, &complete_options);
   *out = (psx_parsed_type_name_t){0};
   token_t *saved = current_token();
   token_t *type_start = start;
@@ -193,17 +215,11 @@ static int parse_type_name_syntax_at(
     }
   }
 
-  psx_semantic_context_t *semantic_context =
-      options && options->semantic_context && options->local_registry
-          ? options->semantic_context : ps_ctx_active();
-  psx_local_registry_t *local_registry =
-      options && options->semantic_context && options->local_registry
-          ? options->local_registry : ps_local_registry_active();
   out->declarator = psx_parse_abstract_declarator_syntax_tree_in_contexts(
-      semantic_context, local_registry);
+      options->semantic_context, options->local_registry);
   if (prepare_constant_bounds)
     ps_prepare_constant_declarator_expressions_in_context(
-        &out->declarator, semantic_context);
+        &out->declarator, options->semantic_context);
   out->end = current_token();
   tk_set_current_token(saved);
   return 1;
@@ -693,14 +709,9 @@ int psx_try_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!specifier) return 0;
-  psx_decl_specifier_syntax_options_t active_options;
-  if (!options) {
-    active_options = (psx_decl_specifier_syntax_options_t){
-        .semantic_context = ps_ctx_active(),
-        .local_registry = ps_local_registry_active(),
-    };
-    options = &active_options;
-  }
+  psx_decl_specifier_syntax_options_t complete_options;
+  options = complete_decl_specifier_syntax_options(
+      options, &complete_options);
   memset(specifier, 0, sizeof(*specifier));
   specifier->diagnostic_token = current_token();
 

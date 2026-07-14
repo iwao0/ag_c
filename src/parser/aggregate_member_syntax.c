@@ -66,6 +66,18 @@ void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
+  psx_decl_specifier_syntax_options_t complete_options =
+      options ? *options : (psx_decl_specifier_syntax_options_t){0};
+  if ((complete_options.semantic_context == NULL) !=
+      (complete_options.local_registry == NULL)) {
+    ps_diag_ctx(current_token(), "aggregate-syntax",
+                "semantic and local contexts must be provided together");
+  }
+  if (!complete_options.semantic_context) {
+    complete_options.semantic_context = ps_ctx_active();
+    complete_options.local_registry = ps_local_registry_active();
+  }
+  options = &complete_options;
   memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
     psx_parsed_aggregate_item_t *item = append_aggregate_item(body);

@@ -140,6 +140,12 @@ static void abort_toplevel_declaration(
 int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks) {
+  if (callbacks &&
+      ((callbacks->semantic_context == NULL) !=
+       (callbacks->local_registry == NULL))) {
+    ps_diag_ctx(current_token(), "toplevel-declaration-syntax",
+                "semantic and local contexts must be provided together");
+  }
   psx_semantic_context_t *semantic_context =
       callbacks && callbacks->semantic_context && callbacks->local_registry
           ? callbacks->semantic_context : ps_ctx_active();

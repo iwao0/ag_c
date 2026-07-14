@@ -94,19 +94,18 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     }
     psx_parsed_function_parameter_t *parameter =
         append_function_parameter(parameters);
-    int parsed_specifier = type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
-        ? psx_try_parse_decl_specifier_syntax_ex(
-              &parameter->specifier, NULL)
-        : psx_try_parse_decl_specifier_syntax_ex(
-              &parameter->specifier,
-              &(psx_decl_specifier_syntax_options_t){
-                  .is_typedef_name = is_typedef_name,
-                  .context = typedef_name_context,
-                  .semantic_context = semantic_context,
-                  .local_registry = local_registry,
-                  .allow_implicit_int =
-                      type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
-              });
+    psx_decl_specifier_syntax_options_t specifier_options = {
+        .is_typedef_name =
+            type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
+                ? NULL : is_typedef_name,
+        .context = typedef_name_context,
+        .semantic_context = semantic_context,
+        .local_registry = local_registry,
+        .allow_implicit_int =
+            type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
+    };
+    int parsed_specifier = psx_try_parse_decl_specifier_syntax_ex(
+        &parameter->specifier, &specifier_options);
     if (!parsed_specifier) {
       diag_report_tokf(
           DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, current_token(), "%s",

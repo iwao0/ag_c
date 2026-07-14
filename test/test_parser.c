@@ -15297,6 +15297,40 @@ static void test_compiler_context_registry_isolation() {
       first.semantic_context, first.local_registry,
       TK_STRUCT, (char *)"FirstTag", 8,
       first_namespace_point) != NULL);
+  token_t *nested_context_tokens = tk_tokenize(
+      (char *)"int (*callback)(struct NestedContextParameter { "
+               "FirstType member; "
+               "_Static_assert(sizeof(FirstType) == 4, \"ok\"); "
+               "} *); }");
+  tk_set_current_token(nested_context_tokens);
+  psx_parsed_aggregate_body_t nested_context_body;
+  psx_parse_aggregate_body_with_options(
+      &nested_context_body,
+      &(psx_decl_specifier_syntax_options_t){
+          .semantic_context = first.semantic_context,
+          .local_registry = first.local_registry,
+      });
+  ASSERT_EQ(1, nested_context_body.item_count);
+  psx_parsed_declarator_t *nested_context_callback =
+      &nested_context_body.items[0].value.member_declaration.declarators[0];
+  ASSERT_EQ(1, nested_context_callback->function_suffix_count);
+  psx_parsed_function_parameters_t *nested_context_parameters =
+      nested_context_callback->function_suffixes[0].parameters;
+  ASSERT_TRUE(nested_context_parameters != NULL);
+  ASSERT_EQ(1, nested_context_parameters->count);
+  psx_parsed_aggregate_body_t *nested_parameter_body =
+      nested_context_parameters->items[0].specifier
+          .tag_action.aggregate_body;
+  ASSERT_TRUE(nested_parameter_body != NULL);
+  ASSERT_EQ(2, nested_parameter_body->item_count);
+  ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
+            nested_parameter_body->items[0].value.member_declaration
+                .specifier.source);
+  ASSERT_EQ(PSX_PARSED_AGGREGATE_STATIC_ASSERT,
+            nested_parameter_body->items[1].kind);
+  ASSERT_TRUE(nested_parameter_body->items[1].value.static_assertion
+                  .condition != NULL);
+  psx_dispose_parsed_aggregate_body(&nested_context_body);
   token_ident_t isolated_typedef_token = {
       .str = (char *)"FirstType",
       .len = 9,
