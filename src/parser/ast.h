@@ -185,7 +185,6 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
-  const psx_type_t *object_type;
   unsigned char requires_addressable_object;
   unsigned char has_file_scope_storage;
 } node_compound_literal_t;
@@ -204,7 +203,6 @@ typedef struct {
 } node_member_access_t;
 
 typedef struct {
-  const psx_type_t *type;
   psx_type_name_ref_t type_name;
   node_t *expression;
   token_t *tok;

@@ -31,20 +31,23 @@ void psx_resolve_generic_selection(
       default_index = i;
       continue;
     }
-    if (!association->type) {
-      psx_type_t *resolved = ps_type_clone(
-          psx_resolve_bound_type_name_ref(&association->type_name));
-      ps_type_normalize_integer_identity(resolved);
-      association->type = resolved;
+    const psx_type_t *resolved =
+        psx_resolve_bound_type_name_ref(&association->type_name);
+    if (resolved) {
+      psx_type_t *normalized = ps_type_clone(resolved);
+      ps_type_normalize_integer_identity(normalized);
+      association->type_name.resolved_type = normalized;
+      resolved = normalized;
     }
-    if (!association->type) {
+    if (!resolved) {
       resolution->conflict_index = i;
       return;
     }
     for (int j = 0; j < i; j++) {
       psx_generic_association_t *previous = &selection->associations[j];
       if (!previous->is_default &&
-          ps_type_generic_matches(association->type, previous->type)) {
+          ps_type_generic_matches(
+              resolved, previous->type_name.resolved_type)) {
         resolution->status =
             PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE;
         resolution->conflict_index = i;

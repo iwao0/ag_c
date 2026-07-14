@@ -48,10 +48,10 @@ static node_t *materialize_lvalue_address_once(node_t *target,
       target, ps_node_new_lvar_expr_ref_for(temp));
 }
 
-void lower_compound_assignment_expression(node_t *node) {
+node_t *lower_compound_assignment_expression(node_t *node) {
   if (!node || node->kind != ND_ASSIGN ||
       !node->is_source_compound_assignment || !node->lhs || !node->rhs) {
-    return;
+    return node;
   }
 
   token_t *source_tok = node->tok;
@@ -71,8 +71,9 @@ void lower_compound_assignment_expression(node_t *node) {
   node_t *lowered = prefix
                         ? ps_node_new_binary(ND_COMMA, prefix, assign)
                         : assign;
-  *node = *lowered;
-  node->tok = source_tok;
-  node->is_source_compound_assignment = 0;
-  node->source_op = TK_EOF;
+  if (!lowered) return node;
+  if (!lowered->tok) lowered->tok = source_tok;
+  lowered->is_source_compound_assignment = 0;
+  lowered->source_op = TK_EOF;
+  return lowered;
 }

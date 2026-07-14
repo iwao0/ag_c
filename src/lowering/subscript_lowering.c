@@ -25,14 +25,15 @@ static node_t *base_address_of(node_t *base) {
   return base;
 }
 
-void lower_subscript_expression(node_t *node) {
-  if (!node || node->kind != ND_SUBSCRIPT) return;
+node_t *lower_subscript_expression(node_t *node) {
+  if (!node || node->kind != ND_SUBSCRIPT) return node;
   node_t *base = node->lhs;
   node_t *index = node->rhs;
   token_t *source_tok = node->tok;
   node_t *scaled = make_scaled_offset(base, index);
   node_t *lowered = ps_node_new_subscript_deref_for(
       base, base_address_of(base), scaled);
-  *node = *lowered;
-  node->tok = source_tok;
+  if (!lowered) return node;
+  if (!lowered->tok) lowered->tok = source_tok;
+  return lowered;
 }

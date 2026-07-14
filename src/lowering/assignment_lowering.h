@@ -3,6 +3,6 @@
 
 #include "../parser/ast.h"
 
-void lower_compound_assignment_expression(node_t *node);
+node_t *lower_compound_assignment_expression(node_t *node);
 
 #endif

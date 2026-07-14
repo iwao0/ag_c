@@ -8,6 +8,6 @@ node_t *lower_implicit_value_conversion(node_t *operand,
                                         token_t *fallback_diag_tok);
 node_t *lower_source_cast_expression(node_t *node,
                                      token_t *fallback_diag_tok);
-void lower_aggregate_address_expression(node_t *node);
+node_t *lower_aggregate_address_expression(node_t *node);
 
 #endif

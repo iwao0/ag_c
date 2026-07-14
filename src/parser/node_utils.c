@@ -1656,7 +1656,7 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
       arena_alloc(sizeof(*types) * (size_t)count);
   unsigned char *defaults = arena_alloc((size_t)count);
   for (int i = 0; i < count; i++) {
-    types[i] = selection->associations[i].type;
+    types[i] = selection->associations[i].type_name.resolved_type;
     defaults[i] = selection->associations[i].is_default;
   }
   return ps_type_generic_select_index(

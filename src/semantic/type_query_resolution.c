@@ -140,19 +140,20 @@ static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
   if (!operand) return NULL;
   if (operand->kind == ND_COMPOUND_LITERAL) {
     node_compound_literal_t *compound = (node_compound_literal_t *)operand;
-    if (compound->object_type &&
-        compound->object_type->kind == PSX_TYPE_ARRAY &&
-        compound->object_type->array_len <= 0 && compound->base.rhs) {
-      psx_type_t *completed = ps_type_clone(compound->object_type);
+    const psx_type_t *object_type = compound->type_name.resolved_type;
+    if (object_type && object_type->kind == PSX_TYPE_ARRAY &&
+        object_type->array_len <= 0 && compound->base.rhs) {
+      psx_type_t *completed = ps_type_clone(object_type);
       if (completed && psx_resolve_incomplete_array_initializer(
                            completed, PSX_DECL_INIT_LIST,
                            compound->base.rhs)) {
-        compound->object_type = completed;
+        compound->type_name.resolved_type = completed;
+        object_type = completed;
       }
     }
     if (compound->requires_addressable_object)
       return ps_node_get_type(operand);
-    return compound->object_type;
+    return object_type;
   }
   int depth = 0;
   node_t *base = sizeof_base(operand, &depth);

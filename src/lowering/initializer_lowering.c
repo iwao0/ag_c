@@ -1188,27 +1188,27 @@ static node_t *lower_typed_expr_initializer(
       initializer->base.tok);
 }
 
-void lower_decl_initializer(node_t *node) {
-  if (!node || node->kind != ND_DECL_INIT || !node->lhs || !node->rhs) return;
+node_t *lower_decl_initializer(node_t *node) {
+  if (!node || node->kind != ND_DECL_INIT || !node->lhs || !node->rhs)
+    return node;
 
   psx_decl_init_kind_t init_kind = ((node_decl_init_t *)node)->init_kind;
   token_t *tok = node->tok;
   if (init_kind == PSX_DECL_INIT_EXPR) {
     node_t *lowered = lower_typed_expr_initializer(
         (node_decl_init_t *)node);
-    if (!lowered) return;
-    *node = *lowered;
-    node->tok = tok;
-    return;
+    if (!lowered) return node;
+    if (!lowered->tok) lowered->tok = tok;
+    return lowered;
   }
 
   if (init_kind == PSX_DECL_INIT_LIST) {
     node_t *lowered = lower_typed_list_initializer(
         (node_decl_init_t *)node);
-    if (!lowered) return;
-    *node = *lowered;
-    node->tok = tok;
-    return;
+    if (!lowered) return node;
+    if (!lowered->tok) lowered->tok = tok;
+    return lowered;
   }
 
+  return node;
 }

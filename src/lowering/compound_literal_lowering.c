@@ -11,9 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-_Static_assert(sizeof(node_compound_literal_t) >= sizeof(node_num_t),
-               "compound literal slot must hold a lowered number");
-
 static int file_scope_compound_sequence;
 static int local_compound_sequence;
 
@@ -37,7 +34,7 @@ static char *new_compound_object_name(int file_scope) {
 static node_t *lower_file_scope_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
-  const psx_type_t *type = compound->object_type;
+  const psx_type_t *type = compound->type_name.resolved_type;
   node_t *initializer = compound->base.rhs;
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
@@ -89,7 +86,7 @@ static node_t *lower_file_scope_compound_literal(
 static node_t *lower_local_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
-  const psx_type_t *type = compound->object_type;
+  const psx_type_t *type = compound->type_name.resolved_type;
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,
@@ -129,20 +126,16 @@ static node_t *lower_local_compound_literal(
       ND_COMMA, object.initialization, reference);
 }
 
-void lower_compound_literal_expression(
+node_t *lower_compound_literal_expression(
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_COMPOUND_LITERAL) return;
+  if (!node || node->kind != ND_COMPOUND_LITERAL) return node;
   node_compound_literal_t *compound = (node_compound_literal_t *)node;
   node_t *lowered = compound->has_file_scope_storage
                         ? lower_file_scope_compound_literal(
                               compound, fallback_diag_tok)
                         : lower_local_compound_literal(
                               compound, fallback_diag_tok);
-  if (!lowered) return;
-  token_t *tok = node->tok;
-  if (lowered->kind == ND_NUM)
-    *(node_num_t *)node = *(node_num_t *)lowered;
-  else
-    *node = *lowered;
-  if (!node->tok) node->tok = tok;
+  if (!lowered) return node;
+  if (!lowered->tok) lowered->tok = node->tok;
+  return lowered;
 }

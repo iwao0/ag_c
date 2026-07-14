@@ -403,20 +403,23 @@ node_t *lower_source_cast_expression(node_t *node,
   return lowered;
 }
 
-void lower_aggregate_address_expression(node_t *node) {
-  if (!node || node->kind != ND_ADDR || !node->lhs) return;
+node_t *lower_aggregate_address_expression(node_t *node) {
+  if (!node || node->kind != ND_ADDR || !node->lhs) return node;
   node_t *value = node->lhs;
   token_t *source_tok = node->tok;
 
   if (value->kind == ND_CAST && value->type &&
       ps_type_is_tag_aggregate(value->type) && value->lhs) {
-    node->lhs = value->lhs;
-    return;
+    node_t *address = ps_node_new_unary_addr_for(value->lhs);
+    if (node->type) ps_node_bind_type(address, node->type);
+    if (!address->tok) address->tok = source_tok;
+    return address;
   }
-  if (value->kind != ND_COMMA || !value->rhs) return;
+  if (value->kind != ND_COMMA || !value->rhs) return node;
 
   node_t *address = ps_node_new_addr_value_for(value->rhs);
   node_t *lowered = ps_node_new_binary(ND_COMMA, value->lhs, address);
-  *node = *lowered;
-  node->tok = source_tok;
+  if (!lowered) return node;
+  if (!lowered->tok) lowered->tok = source_tok;
+  return lowered;
 }

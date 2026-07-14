@@ -3,6 +3,6 @@
 
 #include "../parser/ast.h"
 
-void lower_unary_deref_expression(node_t *node);
+node_t *lower_unary_deref_expression(node_t *node);
 
 #endif

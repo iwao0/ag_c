@@ -3,7 +3,7 @@
 
 #include "../parser/ast.h"
 
-void lower_decl_initializer(node_t *node);
+node_t *lower_decl_initializer(node_t *node);
 int psx_initializer_lowering_supports_recursive_aggregate(
     const psx_type_t *type);
 

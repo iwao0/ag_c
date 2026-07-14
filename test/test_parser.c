@@ -943,11 +943,13 @@ static void test_expr_compound_literal() {
   ASSERT_TRUE(compound->type_name.syntax != NULL);
   ASSERT_TRUE(compound->type_name.bound_base_type == NULL);
   ASSERT_TRUE(compound->type_name.resolved_type == NULL);
-  ASSERT_TRUE(compound->object_type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
-  psx_frontend_analyze_expression(raw, raw->tok);
-  ASSERT_EQ(ND_COMMA, raw->kind);
+  node_t *lowered = psx_frontend_analyze_expression(raw, raw->tok);
+  ASSERT_TRUE(lowered != raw);
+  ASSERT_TRUE(compound->type_name.resolved_type != NULL);
+  ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
+  ASSERT_EQ(ND_COMMA, lowered->kind);
 
   node_t *node = parse_expr_input("(int){3}");
   ASSERT_EQ(ND_COMMA, node->kind);
@@ -1013,7 +1015,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(2, as_num(node->rhs)->val);
 
-  psx_frontend_analyze_expression(node, NULL);
+  node = psx_frontend_analyze_expression(node, NULL);
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(TK_EOF, node->source_op);
   ASSERT_TRUE(node->type != NULL);
@@ -1161,7 +1163,10 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
 
+  node_t *subscript_syntax = node;
   node = psx_frontend_analyze_expression(node, NULL);
+  ASSERT_TRUE(node != subscript_syntax);
+  ASSERT_EQ(ND_SUBSCRIPT, subscript_syntax->kind);
   ASSERT_EQ(ND_DEREF, node->kind);
   ASSERT_TRUE(node->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, node->type->kind);
@@ -1172,7 +1177,7 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
   ASSERT_EQ(ND_NUM, reversed->lhs->kind);
   ASSERT_EQ(ND_IDENTIFIER, reversed->rhs->kind);
-  psx_frontend_analyze_expression(reversed, NULL);
+  reversed = psx_frontend_analyze_expression(reversed, NULL);
   ASSERT_EQ(ND_DEREF, reversed->kind);
 }
 
@@ -1197,7 +1202,10 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_TRUE(node->lhs->type == NULL);
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
-  psx_frontend_analyze_expression(node, NULL);
+  node_t *deref_syntax = node;
+  node = psx_frontend_analyze_expression(node, NULL);
+  ASSERT_TRUE(node != deref_syntax);
+  ASSERT_EQ(ND_UNARY_DEREF, deref_syntax->kind);
   ASSERT_EQ(ND_DEREF, node->kind);
   ASSERT_EQ(ND_DEREF, node->lhs->kind);
   ASSERT_TRUE(node->type != NULL);
@@ -1208,7 +1216,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_EQ(ND_UNARY_DEREF, assignment->lhs->kind);
   ASSERT_TRUE(assignment->type == NULL);
   ASSERT_TRUE(assignment->lhs->type == NULL);
-  psx_frontend_analyze_expression(assignment, NULL);
+  assignment = psx_frontend_analyze_expression(assignment, NULL);
   ASSERT_EQ(ND_DEREF, assignment->lhs->kind);
   ASSERT_TRUE(assignment->type != NULL);
 
@@ -1298,7 +1306,9 @@ static void test_generic_selection_semantic_lowering_boundary() {
   };
   psx_generic_association_t associations[2] = {
       {
-          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .type_name = {
+              .resolved_type = ps_type_new_integer(TK_INT, 4, 0),
+          },
           .expression = &integer_result,
       },
       {
@@ -1330,7 +1340,8 @@ static void test_generic_selection_semantic_lowering_boundary() {
 
   associations[0].is_default = 0;
   associations[1].is_default = 0;
-  associations[1].type = ps_type_new_integer(TK_INT, 4, 0);
+  associations[1].type_name.resolved_type =
+      ps_type_new_integer(TK_INT, 4, 0);
   psx_resolve_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE,
             resolution.status);
@@ -1365,7 +1376,6 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_EQ(ND_IDENTIFIER, selection->control->kind);
   ASSERT_TRUE(!selection->control->records_lvar_usage);
   ASSERT_TRUE(selection->control->lvar_usage_unevaluated);
-  ASSERT_TRUE(selection->associations[0].type == NULL);
   ASSERT_TRUE(selection->associations[0].type_name.syntax != NULL);
   ASSERT_TRUE(selection->associations[0].type_name.resolved_type == NULL);
   ASSERT_EQ(ND_ADD, selection->associations[0].expression->kind);
@@ -1374,8 +1384,9 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
   node_t *lowered = psx_frontend_analyze_expression(raw, NULL);
-  ASSERT_TRUE(selection->associations[0].type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, selection->associations[0].type->kind);
+  ASSERT_TRUE(selection->associations[0].type_name.resolved_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            selection->associations[0].type_name.resolved_type->kind);
   ASSERT_EQ(0, selection->selected_index);
   ASSERT_TRUE(selection->base.type != NULL);
   ASSERT_TRUE(selection->base.type !=
@@ -1747,7 +1758,10 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_EQ(TK_PLUSEQ, node->source_op);
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
-  psx_frontend_analyze_expression(node, NULL);
+  node_t *assignment_syntax = node;
+  node = psx_frontend_analyze_expression(node, NULL);
+  ASSERT_TRUE(node != assignment_syntax);
+  ASSERT_TRUE(assignment_syntax->is_source_compound_assignment);
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_TRUE(!node->is_source_compound_assignment);
   ASSERT_EQ(ND_ADD, node->rhs->kind);
@@ -1760,7 +1774,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   node = parse_expr_input_with_existing_locals("*p += 2");
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_TRUE(node->is_source_compound_assignment);
-  psx_frontend_analyze_expression(node, NULL);
+  node = psx_frontend_analyze_expression(node, NULL);
   ASSERT_EQ(ND_COMMA, node->kind);
   ASSERT_EQ(ND_ASSIGN, node->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, node->rhs->kind);
@@ -2043,7 +2057,10 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_TRUE(raw->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
-  psx_frontend_analyze_expression(raw, NULL);
+  node_t *initializer_syntax = raw;
+  raw = psx_frontend_analyze_expression(raw, NULL);
+  ASSERT_TRUE(raw != initializer_syntax);
+  ASSERT_EQ(ND_DECL_INIT, initializer_syntax->kind);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
@@ -2064,7 +2081,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   raw = psx_node_new_raw_decl_initializer_list(
       ps_node_new_lvar_expr_ref_for(float_value),
       PSX_DECL_INIT_LIST, complex_entries, 2, NULL);
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(4, ((node_lvar_t *)raw->rhs->lhs)->offset -
                    ((node_lvar_t *)raw->lhs->lhs)->offset);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(raw->lhs->lhs));
@@ -2083,7 +2100,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_TRUE(raw->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_COMMA, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->lhs->kind);
@@ -2106,7 +2123,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
 
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_COMMA, raw->lhs->kind);
   ASSERT_EQ(8, as_num(raw->lhs->lhs->rhs)->val);
@@ -4310,7 +4327,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
   ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
 
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_TRUE(raw->kind != ND_DECL_INIT);
 
   lvar_t *source = register_test_storage_fixture(
@@ -4323,7 +4340,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(ND_IDENTIFIER, raw->rhs->kind);
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_TRUE(raw->is_decl_initializer);
 
@@ -4352,7 +4369,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_TRUE(raw->is_decl_initializer);
   ASSERT_EQ(9, as_num(raw->rhs)->val);
@@ -4367,7 +4384,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(1, ((node_init_list_t *)raw->rhs)->entry_count);
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_EQ(7, as_num(raw->rhs)->val);
 
@@ -4385,7 +4402,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
-  psx_frontend_analyze_expression(raw, NULL);
+  raw = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
@@ -6164,7 +6181,7 @@ static void test_expr_deref_addr() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *deref = parse_expr_input_with_existing_locals("*a");
   ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
-  psx_frontend_analyze_expression(deref, NULL);
+  deref = psx_frontend_analyze_expression(deref, NULL);
   ASSERT_EQ(ND_DEREF, deref->kind);
   ASSERT_EQ(ND_LVAR, deref->lhs->kind);
 }

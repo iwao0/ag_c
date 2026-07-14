@@ -53,18 +53,18 @@ node_t *psx_lower_semantic_initializer_syntax(
   return syntax;
 }
 
-static void lower_additive_expression_node(node_t *node) {
+static node_t *lower_additive_expression_node(node_t *node) {
   if (!node ||
       (node->source_op != TK_PLUS && node->source_op != TK_MINUS) ||
       (node->kind != ND_ADD && node->kind != ND_SUB)) {
-    return;
+    return node;
   }
   token_t *source_tok = node->tok;
   node_t *lowered = lower_additive_expression(
       node->kind, node->lhs, node->rhs);
-  if (!lowered || lowered == node) return;
-  *node = *lowered;
-  node->tok = source_tok;
+  if (!lowered || lowered == node) return node;
+  if (!lowered->tok) lowered->tok = source_tok;
+  return lowered;
 }
 
 static node_t *lower_sizeof_vla_indices(
@@ -91,10 +91,10 @@ node_t *psx_lower_semantic_tree(
     case ND_COMPOUND_LITERAL:
       node->rhs = psx_lower_semantic_initializer_syntax(
           node->rhs, fallback_diag_tok);
-      lower_compound_literal_expression(node, fallback_diag_tok);
-      if (node->kind != ND_COMPOUND_LITERAL)
-        return psx_lower_semantic_tree(node, fallback_diag_tok);
-      return node;
+      node = lower_compound_literal_expression(node, fallback_diag_tok);
+      return node->kind == ND_COMPOUND_LITERAL
+                 ? node
+                 : psx_lower_semantic_tree(node, fallback_diag_tok);
     case ND_GENERIC_SELECTION: {
       node_t *selected = lower_generic_selection_expression(node);
       return selected == node
@@ -127,7 +127,7 @@ node_t *psx_lower_semantic_tree(
       } else {
         node->rhs = psx_lower_semantic_tree(node->rhs, fallback_diag_tok);
       }
-      lower_decl_initializer(node);
+      node = lower_decl_initializer(node);
       break;
     }
     case ND_BLOCK:
@@ -154,8 +154,7 @@ node_t *psx_lower_semantic_tree(
     case ND_SUBSCRIPT:
       node->lhs = psx_lower_semantic_tree(node->lhs, fallback_diag_tok);
       node->rhs = psx_lower_semantic_tree(node->rhs, fallback_diag_tok);
-      lower_subscript_expression(node);
-      break;
+      return lower_subscript_expression(node);
     case ND_MEMBER_ACCESS:
       node->lhs = psx_lower_semantic_tree(
           node->lhs, fallback_diag_tok);
@@ -163,8 +162,7 @@ node_t *psx_lower_semantic_tree(
           (node_member_access_t *)node, fallback_diag_tok);
     case ND_UNARY_DEREF:
       node->lhs = psx_lower_semantic_tree(node->lhs, fallback_diag_tok);
-      lower_unary_deref_expression(node);
-      break;
+      return lower_unary_deref_expression(node);
     case ND_UNARY_NEGATE:
       node->lhs = psx_lower_semantic_tree(node->lhs, fallback_diag_tok);
       return psx_lower_semantic_tree(
@@ -195,9 +193,9 @@ node_t *psx_lower_semantic_tree(
       node->lhs = psx_lower_semantic_tree(node->lhs, fallback_diag_tok);
       node->rhs = psx_lower_semantic_tree(node->rhs, fallback_diag_tok);
       node = lower_source_cast_node(node, fallback_diag_tok);
-      lower_aggregate_address_expression(node);
-      lower_additive_expression_node(node);
-      lower_compound_assignment_expression(node);
+      node = lower_aggregate_address_expression(node);
+      node = lower_additive_expression_node(node);
+      node = lower_compound_assignment_expression(node);
       break;
   }
   return node;
