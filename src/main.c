@@ -425,7 +425,7 @@ int main(int argc, char **argv) {
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
   gen_string_literals(data_module);
-  gen_float_literals();
+  gen_float_literals(data_module);
   gen_global_vars();
 #endif
   ir_data_module_free(data_module);

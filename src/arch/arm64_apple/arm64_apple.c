@@ -55,7 +55,7 @@ typedef struct {
   int has_wide;
 } string_lit_kind_scan_t;
 
-static void emit_string_literal_object(const ir_data_object_t *object) {
+static void emit_data_object_bytes(const ir_data_object_t *object) {
   cg_emitf("%s:\n", object->name);
   for (int i = 0; i < object->byte_size; i++)
     cg_emitf("  .byte %u\n", (unsigned)object->bytes[i]);
@@ -76,7 +76,7 @@ void gen_string_literals(const ir_data_module_t *data_module) {
   for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
        object; object = object->next) {
     if (object->kind == IR_DATA_STRING && object->element_size == 1)
-      emit_string_literal_object(object);
+      emit_data_object_bytes(object);
   }
   if (scan.has_wide) {
     cg_emitf(".section __DATA,__const\n");
@@ -84,31 +84,26 @@ void gen_string_literals(const ir_data_module_t *data_module) {
     for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
          object; object = object->next) {
       if (object->kind == IR_DATA_STRING && object->element_size != 1)
-        emit_string_literal_object(object);
+        emit_data_object_bytes(object);
     }
   }
   cg_emitf(".text\n");
 }
 
-static void emit_one_float_literal(float_lit_t *lit, void *user) {
-  (void)user;
-  psx_float_lit_view_t view = ps_float_lit_view(lit);
-  cg_emitf(".LCF%d:\n", view.id);
-  if (view.fp_kind == TK_FLOAT_KIND_FLOAT) {
-    union { float f; uint32_t i; } u = { .f = (float)view.fval };
-    cg_emitf("  .word %u\n", u.i);
-  } else {
-    /* note: long double is currently lowered to double. */
-    union { double d; uint64_t i; } u = { .d = view.fval };
-    cg_emitf("  .quad %llu\n", (unsigned long long)u.i);
+void gen_float_literals(const ir_data_module_t *data_module) {
+  int has_float = 0;
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind == IR_DATA_FLOAT) has_float = 1;
   }
-}
-
-void gen_float_literals(void) {
-  if (!ps_has_float_literals()) return;
+  if (!has_float) return;
   cg_emitf(".section __DATA,__data\n");
   cg_emitf(".align 3\n");
-  ps_iter_float_literals(emit_one_float_literal, NULL);
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind != IR_DATA_FLOAT) continue;
+    emit_data_object_bytes(object);
+  }
   cg_emitf(".text\n");
 }
 

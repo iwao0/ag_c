@@ -2,6 +2,8 @@
 
 #include "../parser/parser_public.h"
 #include "../tokenizer/literals.h"
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -58,11 +60,47 @@ static void lower_string_literal(string_lit_t *literal, void *user) {
   free(bytes);
 }
 
+static void lower_float_literal(float_lit_t *literal, void *user) {
+  translation_unit_data_lowering_t *lowering = user;
+  if (!lowering || lowering->failed) return;
+  psx_float_lit_view_t view = ps_float_lit_view(literal);
+  char name[32];
+  int name_len = snprintf(name, sizeof(name), ".LCF%d", view.id);
+  unsigned char bytes[8] = {0};
+  int byte_size = view.fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8;
+  uint64_t bits = 0;
+  if (byte_size == 4) {
+    union {
+      float value;
+      uint32_t bits;
+    } encoded = {(float)view.fval};
+    bits = encoded.bits;
+  } else {
+    union {
+      double value;
+      uint64_t bits;
+    } encoded = {view.fval};
+    bits = encoded.bits;
+  }
+  for (int i = 0; i < byte_size; i++)
+    bytes[i] = (unsigned char)(bits >> (8 * i));
+  ir_data_object_t *object = ir_data_module_add_object(
+      lowering->module, name, name_len, IR_DATA_FLOAT);
+  if (!object || !ir_data_object_set_bytes(object, bytes, byte_size)) {
+    lowering->failed = 1;
+    return;
+  }
+  object->alignment = byte_size;
+  object->element_size = byte_size;
+  object->is_static = 1;
+}
+
 ir_data_module_t *lower_ir_translation_unit_data(void) {
   ir_data_module_t *module = ir_data_module_new();
   if (!module) return NULL;
   translation_unit_data_lowering_t lowering = {module, 0};
   ps_iter_string_literals(lower_string_literal, &lowering);
+  ps_iter_float_literals(lower_float_literal, &lowering);
   if (lowering.failed) {
     ir_data_module_free(module);
     return NULL;

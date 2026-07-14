@@ -44,7 +44,7 @@ const contextBridgeRe =
   /\b(?:psx?_ctx_[A-Za-z0-9_]+|ir_abi_classify_function_param)\b/g;
 const irSymbolTypeRe = /\bps_(?:lvar|gvar)_get_decl_type\b/g;
 const parserLiteralRegistryRe =
-  /\b(?:ps_iter_string_literals|ps_string_lit_view|string_lit_t)\b/g;
+  /\b(?:ps_iter_string_literals|ps_iter_float_literals|ps_string_lit_view|ps_float_lit_view|string_lit_t|float_lit_t)\b/g;
 for (const file of backendFiles) {
   const source = await readFile(file, "utf8");
   if (/#[ \t]*include[^\n]*parser\/semantic_ctx\.h/.test(source)) {
