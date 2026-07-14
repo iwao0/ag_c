@@ -221,6 +221,7 @@ static int parenthesized_type_name_is_compound_literal(
                   diagnose_type_name_complex_requires_float,
               .context = ctx->semantic_context,
               .semantic_context = ctx->semantic_context,
+              .local_registry = ctx->local_registry,
           },
           &syntax)) {
     return 0;
@@ -247,6 +248,7 @@ static int capture_type_name_ref_at(
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,
                              .semantic_context = ctx->semantic_context,
+                             .local_registry = ctx->local_registry,
                          },
                          syntax)
                    : psx_parse_type_name_syntax_at(
@@ -257,6 +259,7 @@ static int capture_type_name_ref_at(
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,
                              .semantic_context = ctx->semantic_context,
+                             .local_registry = ctx->local_registry,
                          },
                          syntax);
   if (!parsed) {

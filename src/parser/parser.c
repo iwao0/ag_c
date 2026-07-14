@@ -319,8 +319,8 @@ int ps_parse_next_toplevel_item(
       return 1;
     }
     psx_parsed_toplevel_declaration_t declaration = {0};
-    if (!psx_parse_toplevel_declaration_head_syntax_in_context(
-            &declaration, semantic_context)) {
+    if (!psx_parse_toplevel_declaration_head_syntax_in_contexts(
+            &declaration, semantic_context, stream->local_registry)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
       psx_synchronize_toplevel_declaration();
       if (agc_wasm_diagnostic_limit_kind()) break;

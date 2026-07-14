@@ -54,6 +54,13 @@ const legacySemanticGlobals =
 if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
 }
+const splitSemanticLocalContextApis =
+  /\bps_ctx_(?:clone_tag_type_at|register_tag_type|register_enum_const|find_enum_const_at|register_typedef_name|find_typedef_decl_type_at)_in\s*\(/;
+if (splitSemanticLocalContextApis.test(semanticContextOwnershipSource)) {
+  throw new Error(
+    "semantic namespace operations must receive semantic and local contexts together",
+  );
+}
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
 const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
@@ -785,10 +792,10 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
       initializerSyntaxSource,
     ) ||
-    !/psx_parse_declarator_syntax_tree_into_with_typedef_lookup\s*\(/.test(
+    !/psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts\s*\(/.test(
       localDeclarationSyntaxSource,
     ) ||
-    !/psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup\s*\(/.test(
+    !/psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts\s*\(/.test(
       toplevelDeclarationSyntaxSource,
     ) ||
     !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||

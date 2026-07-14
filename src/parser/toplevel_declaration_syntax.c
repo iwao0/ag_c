@@ -57,12 +57,14 @@ static void append_declarator_slot(
 
 static int parse_declarator_head(
     psx_parsed_toplevel_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context) {
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry) {
   append_declarator_slot(declaration);
   psx_parsed_declarator_t *declarator =
       &declaration->declarators[declaration->declarator_count - 1];
-  if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup(
-          declarator, is_toplevel_typedef_name, semantic_context)) return 0;
+  if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
+          declarator, semantic_context, local_registry,
+          is_toplevel_typedef_name, semantic_context)) return 0;
   ps_prepare_constant_declarator_expressions_in_context(
       declarator, semantic_context);
   require_declarator_name(declarator);
@@ -71,14 +73,15 @@ static int parse_declarator_head(
 
 int psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration) {
-  return psx_parse_toplevel_declaration_head_syntax_in_context(
-      declaration, ps_ctx_active());
+  return psx_parse_toplevel_declaration_head_syntax_in_contexts(
+      declaration, ps_ctx_active(), ps_local_registry_active());
 }
 
-int psx_parse_toplevel_declaration_head_syntax_in_context(
+int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context) {
-  if (!declaration) return 0;
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry) {
+  if (!declaration || !semantic_context || !local_registry) return 0;
   *declaration = (psx_parsed_toplevel_declaration_t){0};
   declaration->diagnostic_token = current_token();
   if (current_token()->kind == TK_TYPEDEF) {
@@ -92,6 +95,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_context(
               .is_typedef_name = is_toplevel_typedef_name,
               .context = semantic_context,
               .semantic_context = semantic_context,
+              .local_registry = local_registry,
               .allow_implicit_int = 0,
           })) {
     diag_report_tokf(
@@ -110,7 +114,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_context(
       declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
       current_token()->kind == TK_SEMI;
   if (!declaration->is_standalone_tag &&
-      !parse_declarator_head(declaration, semantic_context))
+      !parse_declarator_head(declaration, semantic_context, local_registry))
     return 0;
   return 1;
 }
@@ -189,7 +193,8 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
     if (!tk_consume(',')) break;
-    if (!parse_declarator_head(declaration, semantic_context)) {
+    if (!parse_declarator_head(
+            declaration, semantic_context, local_registry)) {
       abort_toplevel_declaration(callbacks, declaration_context);
       return 0;
     }

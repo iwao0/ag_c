@@ -2,6 +2,7 @@
 
 #include "diag.h"
 #include "dynarray.h"
+#include "local_registry.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../pragma_pack.h"
@@ -52,10 +53,12 @@ static psx_parsed_declarator_t *append_aggregate_declarator(
 
 void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
   psx_semantic_context_t *semantic_context = ps_ctx_active();
+  psx_local_registry_t *local_registry = ps_local_registry_active();
   psx_parse_aggregate_body_with_options(
       body,
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context = semantic_context,
+          .local_registry = local_registry,
       });
 }
 
@@ -68,9 +71,10 @@ void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_item_t *item = append_aggregate_item(body);
     if (current_token()->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_PARSED_AGGREGATE_STATIC_ASSERT;
-      psx_parse_static_assert_syntax_in_context(
+      psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
-          options ? options->semantic_context : NULL, NULL);
+          options ? options->semantic_context : NULL,
+          options ? options->local_registry : NULL, NULL);
       continue;
     }
 
@@ -83,8 +87,9 @@ void psx_parse_aggregate_body_with_options(
     for (;;) {
       psx_parsed_declarator_t *declarator =
           append_aggregate_declarator(declaration);
-      psx_parse_declarator_syntax_tree_into_with_typedef_lookup(
-          declarator,
+      psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
+          declarator, options ? options->semantic_context : NULL,
+          options ? options->local_registry : NULL,
           options ? options->is_typedef_name : NULL,
           options ? options->context : NULL);
       int has_comma = tk_consume(',');

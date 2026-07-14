@@ -670,14 +670,6 @@ bool ps_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
       active_semantic_context, kind, name, len);
 }
 
-psx_type_t *ps_ctx_clone_tag_type_at_in(
-    psx_semantic_context_t *context,
-    token_kind_t kind, char *name, int len,
-    psx_local_lookup_point_t point) {
-  return ps_ctx_clone_tag_type_at_in_contexts(
-      context, ps_local_registry_active(), kind, name, len, point);
-}
-
 psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
@@ -708,8 +700,9 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
 psx_type_t *ps_ctx_clone_tag_type_at(
     token_kind_t kind, char *name, int len,
     psx_local_lookup_point_t point) {
-  return ps_ctx_clone_tag_type_at_in(
-      active_semantic_context, kind, name, len, point);
+  return ps_ctx_clone_tag_type_at_in_contexts(
+      active_semantic_context, ps_local_registry_active(),
+      kind, name, len, point);
 }
 
 void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
@@ -729,16 +722,6 @@ void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
                    "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
                    len, name);
   }
-}
-
-int ps_ctx_register_tag_type_in(
-    psx_semantic_context_t *context,
-    token_kind_t kind, char *name, int len,
-    int is_complete, int member_count,
-    int tag_size, int tag_align) {
-  return ps_ctx_register_tag_type_in_contexts(
-      context, ps_local_registry_active(), kind, name, len,
-      is_complete, member_count, tag_size, tag_align);
 }
 
 int ps_ctx_register_tag_type_in_contexts(
@@ -798,9 +781,9 @@ int ps_ctx_register_tag_type_in_contexts(
 int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
                              int is_complete, int member_count,
                              int tag_size, int tag_align) {
-  return ps_ctx_register_tag_type_in(
-      active_semantic_context, kind, name, len, is_complete,
-      member_count, tag_size, tag_align);
+  return ps_ctx_register_tag_type_in_contexts(
+      active_semantic_context, ps_local_registry_active(),
+      kind, name, len, is_complete, member_count, tag_size, tag_align);
 }
 
 int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context) {
@@ -1262,13 +1245,6 @@ static enum_const_t *find_enum_const_in_current_scope_in(
 /* enum 定数を登録する。
  * 戻り値: 1 = 新規登録に成功、0 = 同名定数が既に同スコープにあった (重複)。
  * 重複時はテーブルを変更しない (呼び出し元で診断を出す)。 */
-int ps_ctx_register_enum_const_in(
-    psx_semantic_context_t *context,
-    char *name, int len, long long value, int *out_created) {
-  return ps_ctx_register_enum_const_in_contexts(
-      context, ps_local_registry_active(), name, len, value, out_created);
-}
-
 int ps_ctx_register_enum_const_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
@@ -1299,8 +1275,9 @@ int ps_ctx_register_enum_const_in_contexts(
 
 int ps_ctx_register_enum_const(
     char *name, int len, long long value, int *out_created) {
-  return ps_ctx_register_enum_const_in(
-      active_semantic_context, name, len, value, out_created);
+  return ps_ctx_register_enum_const_in_contexts(
+      active_semantic_context, ps_local_registry_active(),
+      name, len, value, out_created);
 }
 
 int psx_ctx_define_enum_const(char *name, int len, long long value) {
@@ -1319,14 +1296,6 @@ bool ps_ctx_find_enum_const_in(
 bool ps_ctx_find_enum_const(char *name, int len, long long *out_value) {
   return ps_ctx_find_enum_const_in(
       active_semantic_context, name, len, out_value);
-}
-
-bool ps_ctx_find_enum_const_at_in(
-    psx_semantic_context_t *context,
-    char *name, int len, psx_local_lookup_point_t point,
-    long long *out_value) {
-  return ps_ctx_find_enum_const_at_in_contexts(
-      context, ps_local_registry_active(), name, len, point, out_value);
 }
 
 bool ps_ctx_find_enum_const_at_in_contexts(
@@ -1353,8 +1322,9 @@ bool ps_ctx_find_enum_const_at_in_contexts(
 bool ps_ctx_find_enum_const_at(
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value) {
-  return ps_ctx_find_enum_const_at_in(
-      active_semantic_context, name, len, point, out_value);
+  return ps_ctx_find_enum_const_at_in_contexts(
+      active_semantic_context, ps_local_registry_active(),
+      name, len, point, out_value);
 }
 
 int ps_ctx_has_enum_const_in_current_scope_in(
@@ -1444,15 +1414,6 @@ static void initialize_typedef_record(
       context, ps_ctx_typedef_decl_type(info));
 }
 
-int ps_ctx_register_typedef_name_in(
-    psx_semantic_context_t *context,
-    char *name, int len, const psx_typedef_info_t *info,
-    int *out_created, int *out_redeclared) {
-  return ps_ctx_register_typedef_name_in_contexts(
-      context, ps_local_registry_active(), name, len, info,
-      out_created, out_redeclared);
-}
-
 int ps_ctx_register_typedef_name_in_contexts(
     psx_semantic_context_t *context,
     psx_local_registry_t *local_registry,
@@ -1495,8 +1456,9 @@ int ps_ctx_register_typedef_name_in_contexts(
 int ps_ctx_register_typedef_name(
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared) {
-  return ps_ctx_register_typedef_name_in(
-      active_semantic_context, name, len, info,
+  return ps_ctx_register_typedef_name_in_contexts(
+      active_semantic_context, ps_local_registry_active(),
+      name, len, info,
       out_created, out_redeclared);
 }
 
@@ -1561,16 +1523,9 @@ bool ps_ctx_find_typedef_decl_type_in(
 bool ps_ctx_find_typedef_decl_type_at(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type) {
-  return ps_ctx_find_typedef_decl_type_at_in(
-      active_semantic_context, name, len, point, out_type);
-}
-
-bool ps_ctx_find_typedef_decl_type_at_in(
-    psx_semantic_context_t *context,
-    char *name, int len, psx_local_lookup_point_t point,
-    const psx_type_t **out_type) {
   return ps_ctx_find_typedef_decl_type_at_in_contexts(
-      context, ps_local_registry_active(), name, len, point, out_type);
+      active_semantic_context, ps_local_registry_active(),
+      name, len, point, out_type);
 }
 
 bool ps_ctx_find_typedef_decl_type_at_in_contexts(

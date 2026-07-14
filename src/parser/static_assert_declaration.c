@@ -13,17 +13,8 @@ static token_t *current_token(void) { return tk_get_current_token(); }
 
 void psx_parse_static_assert_syntax(
     psx_parsed_static_assert_declaration_t *declaration) {
-  psx_parse_static_assert_syntax_in_context(
-      declaration, ps_ctx_active(), NULL);
-}
-
-void psx_parse_static_assert_syntax_in_context(
-    psx_parsed_static_assert_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations) {
   psx_parse_static_assert_syntax_in_contexts(
-      declaration, semantic_context,
-      ps_local_registry_active(), local_declarations);
+      declaration, ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 void psx_parse_static_assert_syntax_in_contexts(
@@ -31,7 +22,7 @@ void psx_parse_static_assert_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!declaration) return;
+  if (!declaration || !semantic_context || !local_registry) return;
   memset(declaration, 0, sizeof(*declaration));
   declaration->diagnostic_token = current_token();
   if (current_token()->kind != TK_STATIC_ASSERT) {

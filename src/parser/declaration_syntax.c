@@ -193,12 +193,17 @@ static int parse_type_name_syntax_at(
     }
   }
 
-  out->declarator = psx_parse_abstract_declarator_syntax_tree();
+  psx_semantic_context_t *semantic_context =
+      options && options->semantic_context && options->local_registry
+          ? options->semantic_context : ps_ctx_active();
+  psx_local_registry_t *local_registry =
+      options && options->semantic_context && options->local_registry
+          ? options->local_registry : ps_local_registry_active();
+  out->declarator = psx_parse_abstract_declarator_syntax_tree_in_contexts(
+      semantic_context, local_registry);
   if (prepare_constant_bounds)
     ps_prepare_constant_declarator_expressions_in_context(
-        &out->declarator,
-        options && options->semantic_context
-            ? options->semantic_context : ps_ctx_active());
+        &out->declarator, semantic_context);
   out->end = current_token();
   tk_set_current_token(saved);
   return 1;
@@ -232,6 +237,8 @@ void psx_dispose_type_name_syntax(psx_parsed_type_name_t *type_name) {
 
 typedef struct {
   psx_parsed_declarator_t *declarator;
+  psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   psx_decl_typedef_name_predicate_t is_typedef_name;
   void *typedef_name_context;
   int allow_implicit_function_parameters;
@@ -331,7 +338,7 @@ static int consume_declarator_suffix(
     ps_diag_ctx(current_token(), "declaration-syntax",
                  "function parameter syntax allocation failed");
   }
-  if (!psx_parse_function_parameters_syntax_with_typedef_lookup(
+  if (!psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
           parameters,
           parse_context->is_typedef_name &&
                   !parse_context->allow_implicit_function_parameters
@@ -339,6 +346,8 @@ static int consume_declarator_suffix(
               : (parse_context->allow_implicit_function_parameters
                      ? PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT
                      : PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF),
+          parse_context->semantic_context,
+          parse_context->local_registry,
           parse_context->is_typedef_name,
           parse_context->typedef_name_context))
     parse_context->has_syntax_error = 1;
@@ -404,6 +413,8 @@ static int parse_declarator_syntax_tree_into(
     psx_parsed_declarator_t *declarator,
     int is_abstract,
     int (*is_grouping_parenthesis)(void *, int),
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context,
     int allow_implicit_function_parameters) {
@@ -411,6 +422,8 @@ static int parse_declarator_syntax_tree_into(
   ps_declarator_shape_init(&declarator->declarator_shape);
   declaration_declarator_parse_context_t parse_context = {
       .declarator = declarator,
+      .semantic_context = semantic_context,
+      .local_registry = local_registry,
       .is_typedef_name = is_typedef_name,
       .typedef_name_context = typedef_name_context,
       .allow_implicit_function_parameters =
@@ -449,7 +462,8 @@ static int parse_declarator_syntax_tree_into(
 psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
-      &declarator, 0, NULL, NULL, NULL, 0);
+      &declarator, 0, NULL, ps_ctx_active(),
+      ps_local_registry_active(), NULL, NULL, 0);
   return declarator;
 }
 
@@ -464,8 +478,21 @@ void psx_parse_declarator_syntax_tree_into_with_typedef_lookup(
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context) {
   if (!declarator) return;
+  psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
+      declarator, ps_ctx_active(), ps_local_registry_active(),
+      is_typedef_name, typedef_name_context);
+}
+
+void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
+    psx_parsed_declarator_t *declarator,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context) {
+  if (!declarator || !semantic_context || !local_registry) return;
   parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, is_typedef_name,
+      declarator, 0, NULL, semantic_context, local_registry,
+      is_typedef_name,
       typedef_name_context, 0);
 }
 
@@ -490,24 +517,54 @@ int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup(
     psx_parsed_declarator_t *declarator,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context) {
-  if (!declarator) return 0;
+  return psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
+      declarator, ps_ctx_active(), ps_local_registry_active(),
+      is_typedef_name, typedef_name_context);
+}
+
+int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
+    psx_parsed_declarator_t *declarator,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context) {
+  if (!declarator || !semantic_context || !local_registry) return 0;
   return parse_declarator_syntax_tree_into(
-      declarator, 0, NULL, is_typedef_name,
+      declarator, 0, NULL, semantic_context, local_registry,
+      is_typedef_name,
       typedef_name_context, 0);
 }
 
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void) {
+  return psx_parse_abstract_declarator_syntax_tree_in_contexts(
+      ps_ctx_active(), ps_local_registry_active());
+}
+
+psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
-      &declarator, 1, NULL, NULL, NULL, 0);
+      &declarator, 1, NULL, semantic_context, local_registry,
+      NULL, NULL, 0);
   return declarator;
 }
 
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context) {
+  return psx_parse_parameter_declarator_syntax_tree_in_contexts(
+      ps_ctx_active(), ps_local_registry_active(),
+      is_typedef_name, context);
+}
+
+psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_decl_typedef_name_predicate_t is_typedef_name, void *context) {
   psx_parsed_declarator_t declarator;
   parse_declarator_syntax_tree_into(
       &declarator, 0, is_parameter_grouping_parenthesis,
+      semantic_context, local_registry,
       is_typedef_name, context, 0);
   return declarator;
 }
@@ -636,6 +693,14 @@ int psx_try_parse_decl_specifier_syntax_ex(
     psx_parsed_decl_specifier_t *specifier,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!specifier) return 0;
+  psx_decl_specifier_syntax_options_t active_options;
+  if (!options) {
+    active_options = (psx_decl_specifier_syntax_options_t){
+        .semantic_context = ps_ctx_active(),
+        .local_registry = ps_local_registry_active(),
+    };
+    options = &active_options;
+  }
   memset(specifier, 0, sizeof(*specifier));
   specifier->diagnostic_token = current_token();
 

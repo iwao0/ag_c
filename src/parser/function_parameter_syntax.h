@@ -31,6 +31,13 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup(
     psx_function_parameter_type_mode_t type_mode,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context);
+int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
+    psx_parsed_function_parameters_t *parameters,
+    psx_function_parameter_type_mode_t type_mode,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context);
 void psx_dispose_function_parameters_syntax(
     psx_parsed_function_parameters_t *parameters);
 

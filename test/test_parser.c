@@ -15017,13 +15017,15 @@ static void test_semantic_context_isolation() {
       .offset = 0,
       .decl_type = ps_type_new_integer(TK_INT, 4, 0),
   };
-  ASSERT_TRUE(ps_ctx_register_tag_type_in(
-      second, TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      second, ps_local_registry_active(),
+      TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
   ASSERT_TRUE(ps_ctx_register_tag_members_in(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type_in(
-      second, TK_STRUCT, direct_tag_name, 9, 1, 1, 4, 4));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      second, ps_local_registry_active(),
+      TK_STRUCT, direct_tag_name, 9, 1, 1, 4, 4));
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       first, TK_STRUCT, direct_tag_name, 9));
   ASSERT_TRUE(ps_ctx_has_tag_type_in(

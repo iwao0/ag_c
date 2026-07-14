@@ -45,9 +45,10 @@ int psx_parse_toplevel_declaration_syntax(
     const psx_toplevel_declaration_callbacks_t *callbacks);
 int psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
-int psx_parse_toplevel_declaration_head_syntax_in_context(
+int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
-    psx_semantic_context_t *semantic_context);
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry);
 int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);

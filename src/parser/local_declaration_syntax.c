@@ -49,6 +49,7 @@ node_t *psx_parse_local_declaration_syntax(
               .is_typedef_name = is_local_typedef_name,
               .context = callbacks->semantic_context,
               .semantic_context = callbacks->semantic_context,
+              .local_registry = callbacks->local_registry,
           })) {
     diag_report_tokf(
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(), "%s",
@@ -81,8 +82,9 @@ node_t *psx_parse_local_declaration_syntax(
                   PS_MAX_DECLARATOR_COUNT);
     }
     psx_parsed_declarator_t declarator;
-    psx_parse_declarator_syntax_tree_into_with_typedef_lookup(
-        &declarator, is_local_typedef_name,
+    psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
+        &declarator, callbacks->semantic_context,
+        callbacks->local_registry, is_local_typedef_name,
         callbacks->semantic_context);
     ps_parse_runtime_declarator_expressions_in_contexts(
         &declarator, callbacks->semantic_context,
