@@ -45,6 +45,7 @@
 #include "../src/semantic/semantic_invariants.h"
 #include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/type_query_resolution.h"
+#include "../src/semantic/type_name_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
 #include "../src/semantic/global_declaration_resolution.h"
@@ -15130,6 +15131,28 @@ static void test_compiler_context_registry_isolation() {
       first.semantic_context, first.local_registry,
       TK_STRUCT, (char *)"FirstTag", 8,
       first_namespace_point) != NULL);
+  token_ident_t isolated_typedef_token = {
+      .str = (char *)"FirstType",
+      .len = 9,
+  };
+  psx_parsed_type_name_t isolated_type_name_syntax = {
+      .specifier = {
+          .source = PSX_PARSED_DECL_TYPEDEF_NAME,
+          .typedef_name = &isolated_typedef_token,
+      },
+  };
+  psx_type_name_ref_t isolated_type_name = {
+      .syntax = &isolated_type_name_syntax,
+      .scope_seq = first_namespace_point.scope_seq,
+      .declaration_seq = first_namespace_point.declaration_seq,
+  };
+  const psx_type_t *isolated_resolved_type =
+      psx_resolve_bound_type_name_ref_in_contexts(
+          first.semantic_context, first.local_registry,
+          &isolated_type_name);
+  ASSERT_TRUE(isolated_resolved_type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, isolated_resolved_type->kind);
+  ASSERT_EQ(4, isolated_resolved_type->size);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
       second.semantic_context, (char *)"FirstType", 9, NULL));
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(

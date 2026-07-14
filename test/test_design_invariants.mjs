@@ -391,17 +391,20 @@ const contextFreeSemanticTraversalCall =
   /\bpsx_semantic_resolve_(?:tree|initializer_tree)\s*\(/;
 const contextFreeMemberRegistryCall =
   /\bps_ctx_(?:find_tag_member_info|find_tag_member_info_at_scope)\s*\(/;
-if (!/psx_semantic_resolve_tree_in_context\s*\(/.test(
+if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
       semanticPassSource,
     ) ||
-    !/psx_semantic_resolve_initializer_tree_in_context\s*\(/.test(
+    !/psx_semantic_resolve_initializer_tree_in_contexts\s*\(/.test(
       semanticPassSource,
     ) ||
     !/\.semantic_context\s*=\s*semantic_context/.test(
       semanticPassSource,
     ) ||
+    !/\.local_registry\s*=\s*local_registry/.test(
+      semanticPassSource,
+    ) ||
     contextFreeSemanticTraversalCall.test(semanticTraversalCallers) ||
-    !/psx_semantic_resolve_tree_in_context\s*\(/.test(
+    !/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
       frontendSemanticPipelineSource,
     ) ||
     contextFreeMemberRegistryCall.test(memberAccessResolutionSource) ||
@@ -411,16 +414,16 @@ if (!/psx_semantic_resolve_tree_in_context\s*\(/.test(
     !/ps_ctx_find_tag_member_info_in\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
-    !/ps_ctx_find_typedef_decl_type_at_in\s*\(/.test(
+    !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
+    !/ps_ctx_clone_tag_type_at_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     ) ||
-    !/psx_resolve_bound_type_name_ref_in_context\s*\(/.test(
+    !/psx_resolve_bound_type_name_ref_in_contexts\s*\(/.test(
       genericSelectionResolutionSource,
     ) ||
-    !/psx_bind_type_name_ref_in_context\s*\(/.test(
+    !/psx_bind_type_name_ref_in_contexts\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
     !/ps_ctx_attach_aggregate_definitions_in\s*\(/.test(
@@ -576,13 +579,13 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/ps_ctx_emit_deferred_parser_warnings_in\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    !/psx_apply_parsed_function_parameters_in_context\s*\(/.test(
+    !/psx_apply_parsed_function_parameters_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
     !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
       functionParameterResolutionSource,
     ) ||
-    !/psx_apply_parsed_declarator_in_context\s*\(/.test(
+    !/psx_apply_parsed_declarator_in_contexts\s*\(/.test(
       typeNameResolutionSource,
     )) {
   throw new Error(

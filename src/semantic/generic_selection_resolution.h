@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef enum {
   PSX_GENERIC_SELECTION_RESOLUTION_OK = 0,
@@ -24,6 +25,11 @@ void psx_resolve_generic_selection(
     psx_generic_selection_resolution_t *resolution);
 void psx_resolve_generic_selection_in_context(
     psx_semantic_context_t *semantic_context,
+    node_generic_selection_t *selection,
+    psx_generic_selection_resolution_t *resolution);
+void psx_resolve_generic_selection_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution);
 

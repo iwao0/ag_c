@@ -7,6 +7,7 @@
 #include "../parser/arena.h"
 #include "../parser/declarator_shape_builder.h"
 #include "../parser/lvar_public.h"
+#include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
@@ -51,13 +52,14 @@ static node_t *widen_size_value(node_t *value) {
 
 static void resolve_sizeof_type_name(
     psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution) {
   psx_parsed_type_name_t *syntax =
       query ? query->type_name.syntax : NULL;
   if (!query || !query->is_type_name || !syntax) return;
-  if (!psx_bind_type_name_ref_in_context(
-          semantic_context, &query->type_name) ||
+  if (!psx_bind_type_name_ref_in_contexts(
+          semantic_context, local_registry, &query->type_name) ||
       !query->type_name.bound_base_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
@@ -177,12 +179,21 @@ static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
 void psx_resolve_sizeof_query(
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution) {
-  psx_resolve_sizeof_query_in_context(
-      ps_ctx_active(), query, resolution);
+  psx_resolve_sizeof_query_in_contexts(
+      ps_ctx_active(), ps_local_registry_active(), query, resolution);
 }
 
 void psx_resolve_sizeof_query_in_context(
     psx_semantic_context_t *semantic_context,
+    node_sizeof_query_t *query,
+    psx_sizeof_query_resolution_t *resolution) {
+  psx_resolve_sizeof_query_in_contexts(
+      semantic_context, ps_local_registry_active(), query, resolution);
+}
+
+void psx_resolve_sizeof_query_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution) {
   if (!resolution) return;
@@ -194,7 +205,8 @@ void psx_resolve_sizeof_query_in_context(
     return;
   }
 
-  resolve_sizeof_type_name(semantic_context, query, resolution);
+  resolve_sizeof_type_name(
+      semantic_context, local_registry, query, resolution);
   if (resolution->status != PSX_TYPE_QUERY_RESOLUTION_OK) return;
   const psx_type_t *type = sizeof_operand_type(query);
   if (!query->is_type_name && type) {
@@ -248,15 +260,24 @@ void psx_resolve_sizeof_query_in_context(
 }
 
 void psx_resolve_alignof_query(node_alignof_query_t *query) {
-  psx_resolve_alignof_query_in_context(ps_ctx_active(), query);
+  psx_resolve_alignof_query_in_contexts(
+      ps_ctx_active(), ps_local_registry_active(), query);
 }
 
 void psx_resolve_alignof_query_in_context(
     psx_semantic_context_t *semantic_context,
     node_alignof_query_t *query) {
+  psx_resolve_alignof_query_in_contexts(
+      semantic_context, ps_local_registry_active(), query);
+}
+
+void psx_resolve_alignof_query_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    node_alignof_query_t *query) {
   if (!query) return;
   const psx_type_t *type =
-      psx_resolve_bound_type_name_ref_in_context(
-          semantic_context, &query->type_name);
+      psx_resolve_bound_type_name_ref_in_contexts(
+          semantic_context, local_registry, &query->type_name);
   query->resolved_alignment = type && type->align > 0 ? type->align : 1;
 }

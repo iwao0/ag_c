@@ -51,6 +51,11 @@ const psx_type_t *psx_apply_parsed_declarator_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator);
+const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_type_t *base_type,
+    const psx_parsed_declarator_t *declarator);
 const psx_type_t *psx_apply_runtime_declarator_type(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application);
@@ -72,11 +77,21 @@ void psx_apply_parsed_declarator_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *declarator,
     psx_declarator_shape_t *shape, int *bit_width);
+void psx_apply_parsed_declarator_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_declarator_t *declarator,
+    psx_declarator_shape_t *shape, int *bit_width);
 void psx_apply_runtime_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
 void psx_apply_runtime_parsed_declarator_in_context(
     psx_semantic_context_t *semantic_context,
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application);
+void psx_apply_runtime_parsed_declarator_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
 void psx_apply_runtime_parsed_declarator_ex(
@@ -88,11 +103,22 @@ void psx_apply_runtime_parsed_declarator_ex_in_context(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index);
+void psx_apply_runtime_parsed_declarator_ex_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application,
+    int skipped_function_op_index);
 void psx_apply_parsed_function_parameters(
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 void psx_apply_parsed_function_parameters_in_context(
     psx_semantic_context_t *semantic_context,
+    psx_parsed_function_parameters_t *parameters,
+    psx_declarator_op_t *function_op, token_t *diagnostic_token);
+void psx_apply_parsed_function_parameters_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 
