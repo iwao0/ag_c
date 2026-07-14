@@ -104,7 +104,8 @@ static void warn_assignment(node_t *node, const token_t *fallback) {
 }
 
 static void warn_return(
-    node_t *node, node_func_t *current_func, const token_t *fallback) {
+    node_t *node, node_function_definition_t *current_func,
+    const token_t *fallback) {
   if (!node || node->kind != ND_RETURN || !node->lhs || !current_func)
     return;
   const psx_type_t *ret_type = ps_node_get_type((node_t *)current_func);
@@ -337,13 +338,13 @@ static void warn_arithmetic(node_t *node, const token_t *fallback) {
 
 static void warn_function(node_t *node, const token_t *fallback) {
   if (node->kind == ND_FUNCALL && node->is_implicit_func_decl) {
-    node_func_t *call = (node_func_t *)node;
-    if (call->funcname) {
+    node_function_call_t *call = (node_function_call_t *)node;
+    if (call->direct_name) {
       diag_warn_tokf(
           DIAG_WARN_PARSER_IMPLICIT_FUNCTION_DECL,
           node->tok ? node->tok : fallback,
           "関数 '%.*s' は宣言されていません (C99/C11 で implicit declaration は不可)",
-          call->funcname_len, call->funcname);
+          call->direct_name_len, call->direct_name);
     }
   } else if (node->kind == ND_FUNCDEF && node->is_implicit_int_return) {
     diag_warn_tokf(
@@ -372,7 +373,7 @@ static void warn_condition(node_t *node, const token_t *fallback) {
 }
 
 static void emit_node_warning(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
   switch (node->kind) {
@@ -415,11 +416,11 @@ static void emit_node_warning(
 }
 
 static void emit_warning_tree(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 
 static void emit_warning_array(
-    node_t **nodes, node_func_t *current_func,
+    node_t **nodes, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++)
@@ -427,7 +428,7 @@ static void emit_warning_array(
 }
 
 static void emit_warning_tree(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
   emit_node_warning(node, current_func, fallback_diag_tok);
@@ -437,16 +438,19 @@ static void emit_warning_tree(
           ((node_block_t *)node)->body, current_func, fallback_diag_tok);
       return;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      emit_warning_array(function->args, function, fallback_diag_tok);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      emit_warning_array(
+          function->parameters, function, fallback_diag_tok);
       emit_warning_tree(node->rhs, function, fallback_diag_tok);
       return;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       emit_warning_tree(call->callee, current_func, fallback_diag_tok);
-      for (int i = 0; i < call->nargs; i++)
-        emit_warning_tree(call->args[i], current_func, fallback_diag_tok);
+      for (int i = 0; i < call->argument_count; i++)
+        emit_warning_tree(
+            call->arguments[i], current_func, fallback_diag_tok);
       return;
     }
     case ND_IF:
@@ -469,7 +473,7 @@ static void emit_warning_tree(
 }
 
 void psx_emit_semantic_warnings(
-    node_t *root, node_func_t *current_func,
+    node_t *root, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   emit_warning_tree(root, current_func, fallback_diag_tok);
 }

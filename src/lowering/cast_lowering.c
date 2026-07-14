@@ -230,7 +230,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
     operand = fp_to_int(operand, view.is_pointer ? NULL : view.target);
     if (!view.is_pointer && view.kind == TK_LONG) {
       if (operand->kind == ND_NUM) {
-        ps_node_set_unsigned(operand, view.is_unsigned);
         return annotate(operand, view.target);
       }
       if (!ps_node_value_is_pointer_like(operand)) {
@@ -277,7 +276,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
       node_t *number = ps_node_new_num(
           target_unsigned ? (long long)(unsigned)value
                           : (long long)(int)value);
-      if (target_unsigned) ps_node_set_unsigned(number, 1);
       return annotate(number, view.target);
     }
     if (ps_node_type_size(operand) > 4 && !ps_node_value_is_pointer_like(operand))
@@ -289,8 +287,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
         !ps_node_value_is_pointer_like(operand)) {
       node_t *masked = ps_node_new_binary(
           ND_BITAND, operand, ps_node_new_num(0xffffffffLL));
-      ps_node_set_unsigned(masked, 1);
-      return annotate(masked, view.target);
+      return integer_result(masked, view);
     }
     return integer_result(operand, view);
   }
@@ -314,13 +311,11 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
           : (view.is_unsigned ? (long long)(unsigned char)value
                               : (long long)(signed char)value);
       node_t *number = ps_node_new_num(truncated);
-      if (view.is_unsigned) ps_node_set_unsigned(number, 1);
       return annotate(number, view.target);
     }
     if (view.is_unsigned) {
       node_t *masked = ps_node_new_binary(
           ND_BITAND, operand, ps_node_new_num(mask));
-      ps_node_set_unsigned(masked, 1);
       return integer_result(masked, view);
     }
     int source_width = ps_node_type_size(operand) >= 8 ? 64 : 32;

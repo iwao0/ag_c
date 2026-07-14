@@ -71,22 +71,33 @@ static int validate_node(const node_t *node,
        node->type->base->kind != PSX_TYPE_FUNCTION)) {
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
   }
-  if (node->kind == ND_FUNCDEF || node->kind == ND_FUNCALL) {
-    const node_func_t *function = (const node_func_t *)node;
-    if (node->kind == ND_FUNCALL && function->callee &&
-        !ps_type_callable_function(function->callee->type)) {
+  if (node->kind == ND_FUNCDEF) {
+    const node_function_definition_t *function =
+        (const node_function_definition_t *)node;
+    if (!function->signature ||
+        function->signature->kind != PSX_TYPE_FUNCTION ||
+        !ps_type_is_well_formed(function->signature) ||
+        node->type != function->signature->base) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }
-    if (function->function_type) {
-      if (function->function_type->kind != PSX_TYPE_FUNCTION ||
-          !ps_type_is_well_formed(function->function_type) ||
-          !ps_type_shape_matches(node->type, function->function_type->base)) {
+  }
+  if (node->kind == ND_FUNCALL) {
+    const node_function_call_t *call =
+        (const node_function_call_t *)node;
+    if (call->callee &&
+        !ps_type_callable_function(call->callee->type)) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+    }
+    if (call->callee_type) {
+      if (call->callee_type->kind != PSX_TYPE_FUNCTION ||
+          !ps_type_is_well_formed(call->callee_type) ||
+          node->type != call->callee_type->base) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
-    } else if (node->kind == ND_FUNCDEF ||
-               !node->is_implicit_func_decl ||
+    } else if (!node->is_implicit_func_decl ||
                !is_implicit_function_result_type(node->type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
@@ -113,12 +124,20 @@ static int validate_node(const node_t *node,
       }
       return 1;
     }
-    case ND_FUNCDEF:
+    case ND_FUNCDEF: {
+      const node_function_definition_t *function =
+          (const node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++) {
+        if (!validate_node(function->parameters[i], failure)) return 0;
+      }
+      break;
+    }
     case ND_FUNCALL: {
-      const node_func_t *function = (const node_func_t *)node;
-      if (!validate_node(function->callee, failure)) return 0;
-      for (int i = 0; i < function->nargs; i++) {
-        if (!validate_node(function->args[i], failure)) return 0;
+      const node_function_call_t *call =
+          (const node_function_call_t *)node;
+      if (!validate_node(call->callee, failure)) return 0;
+      for (int i = 0; i < call->argument_count; i++) {
+        if (!validate_node(call->arguments[i], failure)) return 0;
       }
       break;
     }

@@ -5,10 +5,10 @@
 #include "../tokenizer/token.h"
 
 void psx_semantic_resolve_tree(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 void psx_semantic_resolve_initializer_tree(
-    node_t *syntax, node_func_t *current_func,
+    node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 
 #endif

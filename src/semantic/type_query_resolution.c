@@ -102,8 +102,7 @@ static void resolve_sizeof_type_name(
       });
   ps_ctx_refresh_type_completeness(resolved_type);
   query->type_name.resolved_type = resolved_type;
-  query->queried_type = resolved_type;
-  if (!query->queried_type) {
+  if (!query->type_name.resolved_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
   }
@@ -135,7 +134,7 @@ static void resolve_sizeof_type_name(
 
 static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
   if (!query) return NULL;
-  if (query->is_type_name) return query->queried_type;
+  if (query->is_type_name) return query->type_name.resolved_type;
   node_t *operand = query->operand;
   if (!operand) return NULL;
   if (operand->kind == ND_COMPOUND_LITERAL) {
@@ -191,7 +190,6 @@ void psx_resolve_sizeof_query(
     ps_ctx_refresh_type_completeness(completed_view);
     type = completed_view;
   }
-  query->queried_type = type;
 
   int subscript_depth = 0;
   node_t *base = sizeof_base(query->operand, &subscript_depth);

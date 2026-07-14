@@ -62,7 +62,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       ps_ctx_checkpoint_function_registration(
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0, &checkpoint);
-      node_func_t *header = psx_apply_function_definition_header(
+      node_function_definition_t *header =
+          psx_apply_function_definition_header(
           &item.value.function_header);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,

@@ -1420,8 +1420,8 @@ static void test_sizeof_semantic_lowering_boundary() {
   psx_resolve_sizeof_query(expr_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
   ASSERT_TRUE(direct_resolution.usage_root == expr_query->operand);
-  ASSERT_TRUE(expr_query->queried_type != NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, expr_query->queried_type->kind);
+  ASSERT_TRUE(ps_node_get_type(expr_query->operand) != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(expr_query->operand)->kind);
   ASSERT_EQ(4, expr_query->resolved_size);
   node_t *lowered_expr = psx_frontend_analyze_expression(raw_expr, NULL);
   ASSERT_EQ(ND_NUM, lowered_expr->kind);
@@ -1433,8 +1433,9 @@ static void test_sizeof_semantic_lowering_boundary() {
       (node_sizeof_query_t *)direct_type_raw;
   psx_resolve_sizeof_query(direct_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
-  ASSERT_TRUE(direct_type_query->queried_type != NULL);
-  ASSERT_EQ(PSX_TYPE_ARRAY, direct_type_query->queried_type->kind);
+  ASSERT_TRUE(direct_type_query->type_name.resolved_type != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            direct_type_query->type_name.resolved_type->kind);
   ASSERT_EQ(12, direct_type_query->resolved_size);
 
   node_sizeof_query_t *negative_type_query =
@@ -1462,7 +1463,6 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_type->kind);
   node_sizeof_query_t *type_query = (node_sizeof_query_t *)raw_type;
   ASSERT_TRUE(type_query->is_type_name);
-  ASSERT_TRUE(type_query->queried_type == NULL);
   ASSERT_TRUE(type_query->type_name.syntax != NULL);
   ASSERT_TRUE(type_query->type_name.resolved_type == NULL);
   ASSERT_EQ(1, type_query->type_name.syntax->declarator.declarator_shape.count);
@@ -1607,6 +1607,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(direct_call->function_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, direct_call->function_type->kind);
   ASSERT_TRUE(direct->type != NULL);
+  ASSERT_TRUE(direct->type == direct_call->function_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, direct->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, direct->type->fp_kind);
 
@@ -1635,6 +1636,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(indirect_call->function_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_call->function_type->kind);
   ASSERT_TRUE(indirect->type != NULL);
+  ASSERT_TRUE(indirect->type == indirect_call->function_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, indirect->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, indirect->type->fp_kind);
 
@@ -4732,6 +4734,10 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_CAST, forced_signed_shift->kind);
   ASSERT_EQ(ND_SHR, forced_signed_shift->lhs->kind);
   ASSERT_EQ(ND_SHL, forced_signed_shift->lhs->lhs->kind);
+  ASSERT_TRUE(!ps_type_is_unsigned(
+      ps_node_get_type(forced_signed_shift->lhs->lhs)));
+  ASSERT_TRUE(!ps_type_is_unsigned(
+      ps_node_get_type(forced_signed_shift->lhs)));
   ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(forced_signed_shift->lhs->lhs));
   ASSERT_TRUE(!ps_node_shift_operation_is_unsigned(forced_signed_shift->lhs));
   ASSERT_TRUE(!ps_node_conversion_value_is_unsigned(forced_signed_shift));
@@ -4748,6 +4754,10 @@ static void test_expr_shift() {
   ASSERT_EQ(ND_CAST, forced_unsigned_shift->kind);
   ASSERT_EQ(ND_SHR, forced_unsigned_shift->lhs->kind);
   ASSERT_EQ(ND_SHL, forced_unsigned_shift->lhs->lhs->kind);
+  ASSERT_TRUE(ps_type_is_unsigned(
+      ps_node_get_type(forced_unsigned_shift->lhs->lhs)));
+  ASSERT_TRUE(ps_type_is_unsigned(
+      ps_node_get_type(forced_unsigned_shift->lhs)));
   ASSERT_TRUE(ps_node_shift_operation_is_unsigned(forced_unsigned_shift->lhs->lhs));
   ASSERT_TRUE(ps_node_shift_operation_is_unsigned(forced_unsigned_shift->lhs));
   ASSERT_TRUE(ps_node_conversion_value_is_unsigned(forced_unsigned_shift));
@@ -4971,7 +4981,12 @@ static void test_expr_unary_ops() {
 
   node_t *unsigned_signed_short_cast =
       parse_expr_input("(unsigned)(short)a");
-  ASSERT_EQ(ND_BITAND, unsigned_signed_short_cast->kind);
+  ASSERT_EQ(ND_CAST, unsigned_signed_short_cast->kind);
+  ASSERT_EQ(ND_BITAND, unsigned_signed_short_cast->lhs->kind);
+  ASSERT_TRUE(!ps_type_is_unsigned(
+      ps_node_get_type(unsigned_signed_short_cast->lhs)));
+  ASSERT_TRUE(ps_type_is_unsigned(
+      ps_node_get_type(unsigned_signed_short_cast)));
   ASSERT_TRUE(ps_node_usual_arith_is_unsigned(
       unsigned_signed_short_cast));
 
@@ -13483,8 +13498,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(pick_def->function_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, pick_def->function_type->kind);
   ASSERT_TRUE(pick_def->function_type->base != NULL);
-  ASSERT_TRUE(ps_type_shape_matches(
-      pick_def->base.type, pick_def->function_type->base));
+  ASSERT_TRUE(pick_def->base.type == pick_def->function_type->base);
   assert_canonical_type_signature(
       pick_def->function_type, "p<f64(f64)>()");
   assert_canonical_type_signature(
@@ -13499,6 +13513,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *pick_call_type =
       ps_node_get_type((node_t *)&pick_call);
   ASSERT_TRUE(pick_call_type != NULL);
+  ASSERT_TRUE(pick_call_type == pick_call.function_type->base);
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)&pick_call));
   assert_canonical_type_signature(pick_call_type, "p<f64(f64)>");
   const psx_type_t *pick_ctx_return =
@@ -14578,8 +14593,9 @@ static void test_recursive_declarator_capacity_boundary() {
             deep_sizeof_resolution.status);
   ASSERT_EQ(1, deep_sizeof_resolution.zero_length_bound_count);
   ASSERT_EQ(39, deep_sizeof_resolution.zero_length_bound_indices[0]);
-  ASSERT_TRUE(deep_sizeof_query->queried_type != NULL);
-  ASSERT_EQ(40, ps_type_array_rank(deep_sizeof_query->queried_type));
+  ASSERT_TRUE(deep_sizeof_query->type_name.resolved_type != NULL);
+  ASSERT_EQ(40, ps_type_array_rank(
+                    deep_sizeof_query->type_name.resolved_type));
 
   char function_declarator[2048] = {0};
   used = 0;

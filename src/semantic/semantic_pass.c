@@ -16,7 +16,8 @@
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 
-static void semantic_transform_node(node_t *node, node_func_t *current_func,
+static void semantic_transform_node(
+    node_t *node, node_function_definition_t *current_func,
                                     const token_t *fallback_diag_tok);
 
 static void semantic_bind_result_type(
@@ -25,7 +26,7 @@ static void semantic_bind_result_type(
 }
 
 static void semantic_transform_initializer_syntax(
-    node_t *syntax, node_func_t *current_func,
+    node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!syntax) return;
   if (syntax->kind != ND_INIT_LIST) {
@@ -56,7 +57,8 @@ static void semantic_transform_initializer_syntax(
   }
 }
 
-static void semantic_transform_return(node_t *node, node_func_t *current_func,
+static void semantic_transform_return(
+    node_t *node, node_function_definition_t *current_func,
                                       const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
@@ -92,7 +94,8 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
 
 }
 
-static void semantic_transform_node_array(node_t **nodes, node_func_t *current_func,
+static void semantic_transform_node_array(
+    node_t **nodes, node_function_definition_t *current_func,
                                           const token_t *fallback_diag_tok) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++) {
@@ -108,11 +111,12 @@ static void semantic_validate_assignment(node_t *node,
   const psx_type_t *rhs_type = ps_node_get_type(node->rhs);
   if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
     if (node->rhs->kind == ND_FUNCALL) {
-      node_func_t *fn = (node_func_t *)node->rhs;
-      if (!fn->callee && fn->funcname) {
+      node_function_call_t *call =
+          (node_function_call_t *)node->rhs;
+      if (!call->callee && call->direct_name) {
         ps_diag_ctx(tok, "assign",
                      "void 戻り値関数の結果は代入/初期化に使えません: '%.*s' (C11 6.5.16)",
-                     fn->funcname_len, fn->funcname);
+                     call->direct_name_len, call->direct_name);
       }
     }
     ps_diag_ctx(tok, "assign",
@@ -293,7 +297,7 @@ static void semantic_resolve_function_reference(
 }
 
 static node_t *semantic_normalize_call_deref_chain(
-    node_t *callee, node_func_t *current_func,
+    node_t *callee, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   int deref_count = 0;
   node_t *bottom = callee;
@@ -324,22 +328,21 @@ static node_t *semantic_normalize_call_deref_chain(
 }
 
 static void semantic_resolve_function_call(
-    node_func_t *call,
+    node_function_call_t *call,
     const token_t *fallback_diag_tok) {
   if (!call) return;
   psx_function_call_resolution_t resolution;
   psx_resolve_function_call_type(
-      call->function_type,
+      call->callee_type,
       call->callee ? ps_node_get_type(call->callee) : NULL,
       call->base.is_implicit_func_decl, &resolution);
   if (resolution.status == PSX_FUNCTION_CALL_RESOLUTION_OK) {
     if (resolution.function_type) {
-      if (!call->function_type)
-        call->function_type = ps_type_clone(resolution.function_type);
+      if (!call->callee_type)
+        call->callee_type = ps_type_clone(resolution.function_type);
       semantic_bind_result_type(
           (node_t *)call,
-          ps_type_clone(
-              ps_type_function_return_type(resolution.function_type)));
+          ps_type_function_return_type(call->callee_type));
       return;
     }
     if (call->base.is_implicit_func_decl) {
@@ -439,10 +442,10 @@ static void semantic_mark_usage_evaluated(node_t *node) {
       }
       return;
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       semantic_mark_usage_evaluated(call->callee);
-      for (int i = 0; i < call->nargs; i++)
-        semantic_mark_usage_evaluated(call->args[i]);
+      for (int i = 0; i < call->argument_count; i++)
+        semantic_mark_usage_evaluated(call->arguments[i]);
       return;
     }
     case ND_GENERIC_SELECTION: {
@@ -480,7 +483,8 @@ static void semantic_mark_sizeof_indices_evaluated(node_t *operand) {
 }
 
 static void semantic_resolve_sizeof_query(
-    node_sizeof_query_t *query, node_func_t *current_func,
+    node_sizeof_query_t *query,
+    node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!query) return;
   psx_parsed_type_name_t *syntax = query->type_name.syntax;
@@ -544,7 +548,8 @@ static void semantic_resolve_sizeof_query(
     return;
 }
 
-static void semantic_transform_node(node_t *node, node_func_t *current_func,
+static void semantic_transform_node(
+    node_t *node, node_function_definition_t *current_func,
                                     const token_t *fallback_diag_tok) {
   if (!node) return;
 
@@ -571,20 +576,25 @@ static void semantic_transform_node(node_t *node, node_func_t *current_func,
       semantic_transform_node_array(((node_block_t *)node)->body, current_func, fallback_diag_tok);
       break;
     case ND_FUNCDEF: {
-      node_func_t *fn = (node_func_t *)node;
-      semantic_transform_node_array(fn->args, fn, fallback_diag_tok);
-      semantic_transform_node(node->rhs, fn, fallback_diag_tok);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      semantic_transform_node_array(
+          function->parameters, function, fallback_diag_tok);
+      semantic_transform_node(
+          node->rhs, function, fallback_diag_tok);
       break;
     }
     case ND_FUNCALL: {
-      node_func_t *fn = (node_func_t *)node;
-      fn->callee = semantic_normalize_call_deref_chain(
-          fn->callee, current_func, fallback_diag_tok);
-      semantic_transform_node(fn->callee, current_func, fallback_diag_tok);
-      for (int i = 0; i < fn->nargs; i++) {
-        semantic_transform_node(fn->args[i], current_func, fallback_diag_tok);
+      node_function_call_t *call = (node_function_call_t *)node;
+      call->callee = semantic_normalize_call_deref_chain(
+          call->callee, current_func, fallback_diag_tok);
+      semantic_transform_node(
+          call->callee, current_func, fallback_diag_tok);
+      for (int i = 0; i < call->argument_count; i++) {
+        semantic_transform_node(
+            call->arguments[i], current_func, fallback_diag_tok);
       }
-      semantic_resolve_function_call(fn, fallback_diag_tok);
+      semantic_resolve_function_call(call, fallback_diag_tok);
       break;
     }
     case ND_FUNCREF:
@@ -731,13 +741,13 @@ static void semantic_transform_node(node_t *node, node_func_t *current_func,
 }
 
 void psx_semantic_resolve_tree(
-    node_t *node, node_func_t *current_func,
+    node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   semantic_transform_node(node, current_func, fallback_diag_tok);
 }
 
 void psx_semantic_resolve_initializer_tree(
-    node_t *syntax, node_func_t *current_func,
+    node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   semantic_transform_initializer_syntax(
       syntax, current_func, fallback_diag_tok);

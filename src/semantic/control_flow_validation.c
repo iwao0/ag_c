@@ -103,9 +103,9 @@ static void collect_switch_labels(
           ((node_block_t *)node)->body, context, fallback);
       return;
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       collect_switch_labels(call->callee, context, fallback);
-      collect_switch_label_array(call->args, context, fallback);
+      collect_switch_label_array(call->arguments, context, fallback);
       return;
     }
     case ND_IF:
@@ -157,16 +157,19 @@ static void validate_node(
           loop_depth, switch_depth);
       return;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      validate_array(function->args, fallback, loop_depth, switch_depth);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      validate_array(
+          function->parameters, fallback, loop_depth, switch_depth);
       validate_node(node->rhs, fallback, loop_depth, switch_depth);
       return;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       validate_node(call->callee, fallback, loop_depth, switch_depth);
-      for (int i = 0; i < call->nargs; i++)
-        validate_node(call->args[i], fallback, loop_depth, switch_depth);
+      for (int i = 0; i < call->argument_count; i++)
+        validate_node(
+            call->arguments[i], fallback, loop_depth, switch_depth);
       return;
     }
     case ND_WHILE:
@@ -287,17 +290,18 @@ static void suppress_lvar_regions(node_t *node) {
         suppress_lvar_regions(*body);
       return;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      for (int i = 0; i < function->nargs; i++)
-        suppress_lvar_regions(function->args[i]);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++)
+        suppress_lvar_regions(function->parameters[i]);
       suppress_lvar_regions(node->rhs);
       return;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       suppress_lvar_regions(call->callee);
-      for (int i = 0; i < call->nargs; i++)
-        suppress_lvar_regions(call->args[i]);
+      for (int i = 0; i < call->argument_count; i++)
+        suppress_lvar_regions(call->arguments[i]);
       return;
     }
     case ND_IF:
@@ -363,10 +367,10 @@ static void emit_unreachable_node(node_t *node, const token_t *fallback) {
       emit_unreachable_node(node->rhs, fallback);
       return;
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       emit_unreachable_node(call->callee, fallback);
-      for (int i = 0; i < call->nargs; i++)
-        emit_unreachable_node(call->args[i], fallback);
+      for (int i = 0; i < call->argument_count; i++)
+        emit_unreachable_node(call->arguments[i], fallback);
       return;
     }
     case ND_IF:

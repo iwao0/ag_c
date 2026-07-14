@@ -122,17 +122,18 @@ void psx_collect_lvar_usage_events(
       collect_array(((node_block_t *)node)->body, region);
       return;
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      for (int i = 0; i < function->nargs; i++)
-        psx_collect_lvar_usage_events(function->args[i], region);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++)
+        psx_collect_lvar_usage_events(function->parameters[i], region);
       psx_collect_lvar_usage_events(node->rhs, region);
       return;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
+      node_function_call_t *call = (node_function_call_t *)node;
       psx_collect_lvar_usage_events(call->callee, region);
-      for (int i = 0; i < call->nargs; i++)
-        psx_collect_lvar_usage_events(call->args[i], region);
+      for (int i = 0; i < call->argument_count; i++)
+        psx_collect_lvar_usage_events(call->arguments[i], region);
       return;
     }
     case ND_IF:
@@ -153,7 +154,8 @@ void psx_collect_lvar_usage_events(
   }
 }
 
-static void record_preinitialized_locals(node_func_t *function) {
+static void record_preinitialized_locals(
+    node_function_definition_t *function) {
   if (!function) return;
   for (lvar_t *var = function->lvars; var; var = ps_lvar_next_all(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
@@ -168,7 +170,8 @@ static void record_preinitialized_locals(node_func_t *function) {
 }
 
 static void emit_usage_warnings(
-    node_func_t *function, const token_t *fallback) {
+    node_function_definition_t *function,
+    const token_t *fallback) {
   if (!function) return;
   for (lvar_t *var = function->lvars; var; var = ps_lvar_next_all(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
@@ -191,7 +194,8 @@ static void emit_usage_warnings(
 }
 
 void psx_analyze_function_lvar_usage(
-    node_func_t *function, const token_t *fallback_diag_tok) {
+    node_function_definition_t *function,
+    const token_t *fallback_diag_tok) {
   if (!function) return;
   psx_collect_lvar_usage_events((node_t *)function, NULL);
   record_preinitialized_locals(function);

@@ -12,7 +12,8 @@ void psx_frontend_analyze_function(
     node_t *function, const token_t *fallback_diag_tok) {
   if (!function || function->kind != ND_FUNCDEF) return;
   function = psx_bind_identifier_tree(function, fallback_diag_tok);
-  node_func_t *current_function = (node_func_t *)function;
+  node_function_definition_t *current_function =
+      (node_function_definition_t *)function;
   psx_validate_control_flow(function, fallback_diag_tok);
   psx_semantic_resolve_tree(
       function, current_function, fallback_diag_tok);

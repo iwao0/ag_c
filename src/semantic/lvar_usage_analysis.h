@@ -8,6 +8,7 @@
 void psx_collect_lvar_usage_events(
     node_t *node, psx_lvar_usage_region_t *inherited_region);
 void psx_analyze_function_lvar_usage(
-    node_func_t *function, const token_t *fallback_diag_tok);
+    node_function_definition_t *function,
+    const token_t *fallback_diag_tok);
 
 #endif

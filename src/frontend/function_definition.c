@@ -9,7 +9,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
-node_func_t *psx_apply_function_definition_header(
+node_function_definition_t *psx_apply_function_definition_header(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return NULL;
   ps_decl_reset_locals();
@@ -62,16 +62,17 @@ node_func_t *psx_apply_function_definition_header(
   }
 
   token_ident_t *name = definition->declarator.identifier;
-  node_func_t *node = arena_alloc(sizeof(node_func_t));
+  node_function_definition_t *node =
+      arena_alloc(sizeof(node_function_definition_t));
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)name;
   node->base.is_implicit_int_return =
       definition->has_implicit_int_return ? 1 : 0;
-  node->funcname = name->str;
-  node->funcname_len = name->len;
+  node->name = name->str;
+  node->name_len = name->len;
   node->is_static = definition->is_static;
-  node->args = applied.args;
-  node->nargs = applied.nargs;
+  node->parameters = applied.args;
+  node->parameter_count = applied.nargs;
 
   int registered = psx_apply_function_declaration_pipeline(
           &(psx_function_declaration_pipeline_request_t){
@@ -88,7 +89,7 @@ node_func_t *psx_apply_function_definition_header(
                 "function declaration pipeline failed");
   }
   ps_decl_set_current_funcname(name->str, name->len);
-  if (node->function_type->is_variadic_function)
+  if (node->signature->is_variadic_function)
     ps_decl_reserve_variadic_regs();
   return node;
 }

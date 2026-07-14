@@ -76,8 +76,11 @@ if (legacyTypeMutations.length) {
 const astSource = await readFile("src/parser/ast.h", "utf8");
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
-    !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1])) {
-  throw new Error("node_t canonical semantic type must be a const view");
+    !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
+    /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
+  throw new Error(
+    "node_t value identity must come only from its canonical semantic type",
+  );
 }
 const numberNodeStruct = astSource.match(
   /struct node_num_t\s*\{([\s\S]*?)\n\};/,
@@ -108,6 +111,9 @@ const compoundLiteralNode = astSource.match(
 const genericAssociation = astSource.match(
   /typedef struct\s*\{([^{}]*)\}\s*psx_generic_association_t\s*;/,
 );
+const sizeofQueryNode = astSource.match(
+  /typedef struct\s*\{([^{}]*)\}\s*node_sizeof_query_t\s*;/,
+);
 if (!typeNameRef ||
     !/\bconst\s+psx_type_t\s*\*\s*bound_base_type\s*;/.test(
       typeNameRef[1],
@@ -124,9 +130,12 @@ if (!typeNameRef ||
     !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(
       genericAssociation[1],
     ) ||
-    /\bpsx_type_t\s*\*\s*type\s*;/.test(genericAssociation[1])) {
+    /\bpsx_type_t\s*\*\s*type\s*;/.test(genericAssociation[1]) ||
+    !sizeofQueryNode ||
+    !/\bpsx_type_name_ref_t\s+type_name\s*;/.test(sizeofQueryNode[1]) ||
+    /\bqueried_type\b/.test(sizeofQueryNode[1])) {
   throw new Error(
-    "compound literals and generic associations must keep resolved types only in their type-name reference",
+    "type-name expressions must keep resolved types only in their type-name reference",
   );
 }
 

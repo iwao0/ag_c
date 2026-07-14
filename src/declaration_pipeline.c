@@ -241,11 +241,11 @@ int psx_apply_function_declaration_pipeline(
   if (request->function_node) {
     const psx_type_t *function_type =
         ps_function_symbol_type(resolution.function);
-    request->function_node->function_type = ps_type_clone(
+    request->function_node->signature = ps_type_clone(
         function_type);
     ps_node_bind_type(
         (node_t *)request->function_node,
-        ps_type_clone(request->function_node->function_type->base));
+        request->function_node->signature->base);
   }
   return 1;
 }

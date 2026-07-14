@@ -1876,9 +1876,7 @@ int ps_node_vla_strides_remaining(node_t *node) {
 }
 
 static int node_is_unsigned(node_t *node) {
-  if (!node) return 0;
-  if (node->has_unsigned_override) return node->unsigned_override ? 1 : 0;
-  return type_result_unsigned(ps_node_get_type(node));
+  return node ? type_result_unsigned(ps_node_get_type(node)) : 0;
 }
 
 static int binary_usual_arith_unsigned(node_t *lhs, node_t *rhs) {
@@ -1920,8 +1918,6 @@ int ps_node_integer_value_is_unsigned(node_t *node) {
   return type_is_integer_like(type) && ps_type_is_unsigned(type);
 }
 
-/* Conversion/codegen source signedness. This intentionally preserves legacy
- * operation overrides such as cast-lowered forced signed shifts. */
 int ps_node_conversion_value_is_unsigned(node_t *node) {
   return node_is_unsigned(node);
 }
@@ -1936,7 +1932,6 @@ int ps_node_i64_widen_source_is_unsigned(node_t *node) {
   return size >= 4 && node_is_unsigned(node);
 }
 
-/* Full shift operation signedness, including explicit cast-lowering overrides. */
 int ps_node_shift_operation_is_unsigned(node_t *node) {
   if (!node || (node->kind != ND_SHL && node->kind != ND_SHR)) return 0;
   return node_is_unsigned(node);
@@ -1948,7 +1943,6 @@ int ps_node_usual_arith_operands_is_unsigned(node_t *lhs, node_t *rhs) {
 
 int ps_node_usual_arith_is_unsigned(node_t *node) {
   if (!node) return 0;
-  if (node->has_unsigned_override) return node_is_unsigned(node);
   switch (node->kind) {
     case ND_ADD:
     case ND_SUB:
@@ -1970,14 +1964,6 @@ int ps_node_usual_arith_is_unsigned(node_t *node) {
     default:
       return type_result_unsigned(ps_node_get_type(node));
   }
-}
-
-/* node の符号フラグを設定する (node_is_unsigned が読むフィールドに一致させる)。
- * `(int)u` / `(unsigned)i` キャストで結果の符号を確定するのに使う。 */
-void ps_node_set_unsigned(node_t *node, int is_unsigned) {
-  if (!node) return;
-  node->has_unsigned_override = 1;
-  node->unsigned_override = is_unsigned ? 1 : 0;
 }
 
 node_t *psx_node_new_raw_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
@@ -2033,10 +2019,19 @@ node_t *ps_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
 }
 
 node_t *ps_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_unsigned) {
+  const psx_type_t *operand_type = ps_node_get_type(operand);
+  int execution_size = ps_type_sizeof(operand_type);
+  if (execution_size < 4) execution_size = 4;
+  psx_type_t *execution_type = ps_type_new_integer(
+      execution_size >= 8 ? TK_LONG : TK_INT,
+      execution_size, is_unsigned ? 1 : 0);
+  if (operand_type && operand_type->kind == PSX_TYPE_INTEGER &&
+      operand_type->is_long_long)
+    execution_type->is_long_long = 1;
   node_t *shl = ps_node_new_binary(ND_SHL, operand, ps_node_new_num(left_shift));
+  ps_node_bind_type(shl, execution_type);
   node_t *shr = ps_node_new_binary(ND_SHR, shl, ps_node_new_num(left_shift));
-  ps_node_set_unsigned(shl, is_unsigned ? 1 : 0);
-  ps_node_set_unsigned(shr, is_unsigned ? 1 : 0);
+  ps_node_bind_type(shr, execution_type);
   return shr;
 }
 

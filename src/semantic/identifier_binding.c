@@ -197,7 +197,7 @@ static node_t *bind_initializer(
 }
 
 static void bind_direct_call(
-    node_func_t *call, node_identifier_t *identifier,
+    node_function_call_t *call, node_identifier_t *identifier,
     const token_t *fallback_diag_tok) {
   psx_identifier_resolution_t resolution;
   node_t *callee = materialize_identifier(
@@ -209,8 +209,8 @@ static void bind_direct_call(
   }
 
   call->callee = NULL;
-  call->funcname = identifier->name;
-  call->funcname_len = identifier->name_len;
+  call->direct_name = identifier->name;
+  call->direct_name_len = identifier->name_len;
   call->base.tok = identifier->base.tok;
   if (resolution.kind == PSX_IDENTIFIER_UNDECLARED_CALL) {
     call->base.is_implicit_func_decl = 1;
@@ -218,11 +218,11 @@ static void bind_direct_call(
   }
   const psx_type_t *function_type =
       ps_function_symbol_type(resolution.function);
-  call->function_type = function_type
+  call->callee_type = function_type
       ? ps_type_clone(function_type)
       : NULL;
-  if (!call->function_type ||
-      call->function_type->kind != PSX_TYPE_FUNCTION) {
+  if (!call->callee_type ||
+      call->callee_type->kind != PSX_TYPE_FUNCTION) {
     ps_diag_ctx(
         identifier->base.tok
             ? identifier->base.tok
@@ -230,11 +230,11 @@ static void bind_direct_call(
         "funcall", "canonical function type is missing for '%.*s'",
         identifier->name_len, identifier->name);
   }
-  int expected = call->function_type->param_count;
-  int is_variadic = call->function_type->is_variadic_function;
+  int expected = call->callee_type->param_count;
+  int is_variadic = call->callee_type->is_variadic_function;
   int mismatch = is_variadic
-      ? call->nargs < expected
-      : call->nargs != expected;
+      ? call->argument_count < expected
+      : call->argument_count != expected;
   if (mismatch) {
     ps_diag_ctx(
         identifier->base.tok
@@ -243,7 +243,7 @@ static void bind_direct_call(
         "funcall",
         "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
         identifier->name_len, identifier->name,
-        is_variadic ? ">=" : "", expected, call->nargs);
+        is_variadic ? ">=" : "", expected, call->argument_count);
   }
 }
 
@@ -260,16 +260,17 @@ static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
       return node;
     }
     case ND_FUNCDEF: {
-      node_func_t *function = (node_func_t *)node;
-      for (int i = 0; i < function->nargs; i++)
-        bind_slot(&function->args[i], fallback_diag_tok);
+      node_function_definition_t *function =
+          (node_function_definition_t *)node;
+      for (int i = 0; i < function->parameter_count; i++)
+        bind_slot(&function->parameters[i], fallback_diag_tok);
       bind_slot(&node->rhs, fallback_diag_tok);
       return node;
     }
     case ND_FUNCALL: {
-      node_func_t *call = (node_func_t *)node;
-      for (int i = 0; i < call->nargs; i++)
-        bind_slot(&call->args[i], fallback_diag_tok);
+      node_function_call_t *call = (node_function_call_t *)node;
+      for (int i = 0; i < call->argument_count; i++)
+        bind_slot(&call->arguments[i], fallback_diag_tok);
       if (call->callee && call->callee->kind == ND_IDENTIFIER)
         bind_direct_call(
             call, (node_identifier_t *)call->callee,
@@ -333,8 +334,9 @@ static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
-      if (query->queried_type || query->resolved_size > 0 ||
-          query->runtime_size_slot != 0)
+      if (query->resolved_size > 0 || query->runtime_size_slot != 0 ||
+          query->runtime_size_expr ||
+          (query->is_type_name && query->type_name.resolved_type))
         return node;
       bind_type_name(&query->type_name, fallback_diag_tok);
       bind_slot(&query->operand, fallback_diag_tok);

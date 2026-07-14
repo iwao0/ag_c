@@ -637,7 +637,7 @@ static node_block_t *parse_funcdef_body_block(
 }
 
 node_t *ps_parse_function_definition_body(
-    psx_parser_stream_t *stream, node_func_t *function,
+    psx_parser_stream_t *stream, node_function_definition_t *function,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!function) return NULL;
   g_recoverable_syntax_error = 0;

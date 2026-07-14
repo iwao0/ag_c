@@ -791,7 +791,8 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   token_t *call_tok = curtok();
   tk_expect('(');
-  node_func_t *node = arena_alloc(sizeof(node_func_t));
+  node_function_call_t *node =
+      arena_alloc(sizeof(node_function_call_t));
   node->base.kind = ND_FUNCALL;
   node->base.tok = call_tok;
   /* callee が bare 関数参照 (ND_FUNCREF) のとき — 典型的には `_Generic(...)(args)` が
@@ -801,11 +802,11 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
    * 値が化けていた)。 */
   if (callee && callee->kind == ND_FUNCREF) {
     node_funcref_t *fr = (node_funcref_t *)callee;
-    node->funcname = fr->funcname;
-    node->funcname_len = fr->funcname_len;
+    node->direct_name = fr->funcname;
+    node->direct_name_len = fr->funcname_len;
     const psx_type_t *function = ps_type_callable_function(
         ps_node_get_type((node_t *)fr));
-    node->function_type = function ? ps_type_clone(function) : NULL;
+    node->callee_type = function ? ps_type_clone(function) : NULL;
     node->callee = NULL;
     callee = NULL;
   } else {
@@ -813,22 +814,23 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   }
   int nargs = 0;
   int arg_cap = 16;
-  node->args = calloc(arg_cap, sizeof(node_t *));
+  node->arguments = calloc(arg_cap, sizeof(node_t *));
   if (curtok()->kind == TK_RPAREN) {
     set_curtok(curtok()->next);
   } else {
-    node->args[nargs++] = assign_ctx(ctx);
+    node->arguments[nargs++] = assign_ctx(ctx);
     while (curtok()->kind == TK_COMMA) {
       set_curtok(curtok()->next);
       if (nargs >= arg_cap) {
         arg_cap = pda_next_cap(arg_cap, nargs + 1);
-        node->args = pda_xreallocarray(node->args, (size_t)arg_cap, sizeof(node_t *));
+        node->arguments = pda_xreallocarray(
+            node->arguments, (size_t)arg_cap, sizeof(node_t *));
       }
-      node->args[nargs++] = assign_ctx(ctx);
+      node->arguments[nargs++] = assign_ctx(ctx);
     }
     tk_expect(')');
   }
-  node->nargs = nargs;
+  node->argument_count = nargs;
   return (node_t *)node;
 }
 

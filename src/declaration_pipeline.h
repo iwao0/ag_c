@@ -38,7 +38,7 @@ typedef struct {
   int name_len;
   const psx_type_t *function_type;
   int is_definition;
-  node_func_t *function_node;
+  node_function_definition_t *function_node;
   const char *diag_context;
   token_t *diag_tok;
 } psx_function_declaration_pipeline_request_t;

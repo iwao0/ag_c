@@ -148,8 +148,6 @@ struct node_t {
   struct lvar_t *usage_lvar;
   token_kind_t source_op;
 
-  unsigned int unsigned_override : 1;
-  unsigned int has_unsigned_override : 1;
   unsigned int from_logical_not : 1; // 1: 単項 `!x` を ND_EQ(x,0) に変換したノード
                                      // (`!p == 0` の precedence-trap 警告に使う)
   unsigned int records_lvar_usage : 1;
@@ -220,7 +218,6 @@ typedef struct {
 typedef struct {
   node_t base;
   node_t *operand;
-  const psx_type_t *queried_type;
   psx_type_name_ref_t type_name;
   node_t *runtime_size_expr;
   int resolved_size;
@@ -283,21 +280,32 @@ struct node_block_t {
   node_t **body;    // ブロック内の文（NULL終端の動的配列）
 };
 
-// 関数ノード
-typedef struct node_func_t node_func_t;
-struct node_func_t {
+// 関数定義ノード
+typedef struct node_function_definition_t node_function_definition_t;
+struct node_function_definition_t {
   node_t base;
-  node_t **args;    // 引数/仮引数の動的配列
-  int nargs;        // 引数の数
-  node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
-  const psx_type_t *function_type; // bound canonical callable type
-  char *funcname;   // 関数名
-  int funcname_len; // 関数名の長さ
+  node_t **parameters;
+  int parameter_count;
+  const psx_type_t *signature;
+  char *name;
+  int name_len;
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
   // 関数定義のローカル変数連結リスト (next_all で辿る)。
   // 関数解析完了時に保存し、IR builder 等が後段で参照する。
   // 既存 AST 直 codegen には影響しない (未参照のまま動く)。
   struct lvar_t *lvars;
+};
+
+// 関数呼び出しノード
+typedef struct node_function_call_t node_function_call_t;
+struct node_function_call_t {
+  node_t base;
+  node_t **arguments;
+  int argument_count;
+  node_t *callee;
+  const psx_type_t *callee_type;
+  char *direct_name;
+  int direct_name_len;
 };
 
 // 関数シンボル参照ノード
