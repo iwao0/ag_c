@@ -47,7 +47,6 @@ int ps_lvar_value_is_pointer_like(const lvar_t *var);
 int ps_lvar_is_tag_aggregate(const lvar_t *var);
 int ps_lvar_is_struct_aggregate(const lvar_t *var);
 int ps_lvar_is_union_aggregate(const lvar_t *var);
-int ps_lvar_pointer_qual_levels(const lvar_t *var);
 token_kind_t ps_lvar_tag_kind(const lvar_t *var);
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var);
 

@@ -15,8 +15,7 @@ static const psx_runtime_array_bound_t *bound_for_op(
 static const psx_type_t *storage_element_type(const psx_type_t *type) {
   const psx_type_t *element = type;
   if (element && element->kind == PSX_TYPE_POINTER) element = element->base;
-  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
-  return element;
+  return ps_type_array_leaf_type(element);
 }
 
 void psx_resolve_local_declaration(

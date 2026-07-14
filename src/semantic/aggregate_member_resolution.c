@@ -44,8 +44,7 @@ typedef struct {
 static psx_aggregate_member_status_t validate_aggregate_member_type(
     const psx_type_t *type) {
   if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
-  const psx_type_t *stored = type;
-  while (stored && stored->kind == PSX_TYPE_ARRAY) stored = stored->base;
+  const psx_type_t *stored = ps_type_array_leaf_type(type);
   if (!stored) return PSX_AGGREGATE_MEMBER_INVALID;
   if (stored->kind == PSX_TYPE_POINTER)
     return PSX_AGGREGATE_MEMBER_OK;

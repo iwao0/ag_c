@@ -241,15 +241,18 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
         return integer_result_ex(operand, view, zext);
       }
     }
+    const psx_type_t *operand_pointee =
+        ps_type_pointee_value_type(ps_node_get_type(operand));
     if (view.is_pointer &&
         (ps_ctx_is_tag_aggregate_kind(view.tag_kind) ||
          view.kind == TK_FLOAT || view.kind == TK_DOUBLE ||
-         ps_node_pointee_is_void(operand)))
+         (operand_pointee && operand_pointee->kind == PSX_TYPE_VOID)))
       return pointer_result(operand, view);
 
     if (view.is_pointer && view.elem_size > 0 &&
         ps_node_is_pointer(operand) &&
-        ps_node_pointer_qual_levels(operand) <= 1)
+        ps_type_pointer_view_structural_qual_levels(
+            ps_node_get_type(operand)) <= 1)
       return pointer_result(operand, view);
     if (!view.is_pointer && view.kind == TK_LONG &&
         ps_node_is_pointer(operand))

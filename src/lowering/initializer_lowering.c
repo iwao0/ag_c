@@ -28,7 +28,7 @@ static int initializer_value_is_zero(const node_t *value) {
 
 int psx_initializer_lowering_supports_recursive_aggregate(
     const psx_type_t *type) {
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  type = ps_type_array_leaf_type(type);
   if (!type || !ps_type_is_tag_aggregate(type)) return 0;
   const psx_aggregate_definition_t *definition = type->aggregate_definition;
   if (!definition) return 0;
@@ -42,8 +42,7 @@ int psx_initializer_lowering_supports_recursive_aggregate(
       continue;
     }
     const psx_type_t *member_type = ps_tag_member_decl_type(member);
-    const psx_type_t *leaf = member_type;
-    while (leaf && leaf->kind == PSX_TYPE_ARRAY) leaf = leaf->base;
+    const psx_type_t *leaf = ps_type_array_leaf_type(member_type);
     if (leaf && ps_type_is_tag_aggregate(leaf) &&
         !psx_initializer_lowering_supports_recursive_aggregate(member_type))
       return 0;
@@ -269,8 +268,8 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
 static node_t *lower_typed_character_array_string(
     lvar_t *var, psx_type_t *array_type, int relative_offset,
     node_string_t *string, node_t *chain, token_t *tok) {
-  psx_type_t *element = array_type;
-  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
+  psx_type_t *element =
+      (psx_type_t *)ps_type_array_leaf_type(array_type);
   int element_size = ps_type_sizeof(element);
   int capacity = element_size > 0
                      ? ps_type_sizeof(array_type) / element_size
@@ -295,8 +294,7 @@ static node_t *lower_typed_character_array_string(
 }
 
 static int type_has_aggregate_leaf(const psx_type_t *type) {
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
-  return ps_type_is_tag_aggregate(type);
+  return ps_type_is_tag_aggregate(ps_type_array_leaf_type(type));
 }
 
 static node_t *lower_array_list_initializer(node_decl_init_t *initializer) {
@@ -760,10 +758,9 @@ static node_t *try_lower_typed_array_copy(
 static node_t *lower_flat_typed_array_initializer_list(
     lvar_t *var, psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
-  psx_type_t *leaf = type;
-  while (leaf && leaf->kind == PSX_TYPE_ARRAY) leaf = leaf->base;
+  psx_type_t *leaf = (psx_type_t *)ps_type_array_leaf_type(type);
   int leaf_size = ps_type_sizeof(leaf);
-  int flat_count = leaf_size > 0 ? ps_type_sizeof(type) / leaf_size : 0;
+  int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
     ps_diag_ctx(fallback_tok, "init", "%s",
                  diag_message_for(

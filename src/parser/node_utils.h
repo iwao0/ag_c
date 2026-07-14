@@ -32,24 +32,11 @@ void ps_gvar_init_slot_write(struct global_var_t *gv, int idx, long long value,
 void ps_gvar_init_slot_write_fp_sentinel(struct global_var_t *gv, int idx,
                                           tk_float_kind_t fp_kind, int fp_size);
 void ps_gvar_init_slot_set_ordinal(struct global_var_t *gv, int idx, int ordinal);
-int ps_node_base_deref_size(node_t *node);
-int ps_node_ptr_array_pointee_bytes(node_t *node);
-unsigned int ps_node_pointer_const_qual_mask(node_t *node);
-unsigned int ps_node_pointer_volatile_qual_mask(node_t *node);
-int ps_node_pointee_is_unsigned(node_t *node);
-int ps_node_pointee_is_bool(node_t *node);
-int ps_node_pointee_is_void(node_t *node);
-int ps_node_pointee_is_const_qualified(node_t *node);
-int ps_node_pointee_is_volatile_qualified(node_t *node);
 int ps_node_is_long_long_type(node_t *node);
 int ps_node_is_plain_char_type(node_t *node);
 int ps_node_is_long_double_type(node_t *node);
 int ps_node_integer_value_is_unsigned(node_t *node);
 void ps_node_set_unsigned(node_t *node, int is_unsigned);
-tk_float_kind_t ps_node_pointee_fp_kind(node_t *node);
-int ps_node_pointer_stride_metadata(node_t *node, int *inner_stride,
-                                     int *next_stride, int *extra_strides,
-                                     int *extra_strides_count);
 int ps_node_scalar_ptr_member_lvalue(node_t *node);
 int ps_node_subscript_deref_uses_base_address(node_t *node);
 psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node);

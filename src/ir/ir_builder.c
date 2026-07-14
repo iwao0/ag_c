@@ -1811,7 +1811,8 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
              確定。配列は ND_ADDR へ decay し ND_LVAR では来ないため除外不要。 */
           if ((!owner || (!ps_lvar_is_array(owner) &&
-                          ps_lvar_pointer_qual_levels(owner) == 0)) &&
+                          ps_type_pointer_view_structural_qual_levels(
+                              ps_lvar_get_decl_type(owner)) == 0)) &&
               cg_size_needs_indirect_struct(arg_full_size) && arg_full_size <= 8) {
             struct_needs_ptr = 1;
           }
@@ -3235,7 +3236,9 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
      * アドレス渡しで受け取る (register 値ロードだと先頭メンバ幅しか復元できない)。 */
     int struct_param_needs_ptr =
         owner && ps_lvar_tag_kind(owner) != TK_EOF && !ps_lvar_is_tag_pointer(owner) &&
-        !ps_lvar_is_array(owner) && ps_lvar_pointer_qual_levels(owner) == 0 &&
+        !ps_lvar_is_array(owner) &&
+        ps_type_pointer_view_structural_qual_levels(
+            ps_lvar_get_decl_type(owner)) == 0 &&
         param_full_size != 1 && param_full_size != 2 &&
         param_full_size != 4 && param_full_size != 8;
     if ((param_full_size > 8 || struct_param_needs_ptr) &&

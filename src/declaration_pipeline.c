@@ -442,12 +442,6 @@ static int static_local_type_contains_vla(const psx_type_t *type) {
   return 0;
 }
 
-static const psx_type_t *static_local_array_leaf(const psx_type_t *type) {
-  const psx_type_t *leaf = type;
-  while (leaf && leaf->kind == PSX_TYPE_ARRAY) leaf = leaf->base;
-  return leaf;
-}
-
 int psx_begin_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result) {
@@ -466,7 +460,7 @@ int psx_begin_static_local_declaration_pipeline(
                  request->name_len, request->name);
   }
 
-  const psx_type_t *leaf = static_local_array_leaf(request->type);
+  const psx_type_t *leaf = ps_type_array_leaf_type(request->type);
   int object_size = ps_type_sizeof(request->type);
   int leaf_size = ps_type_sizeof(leaf);
   if (leaf && ps_type_is_tag_aggregate(leaf) && leaf_size <= 0) {

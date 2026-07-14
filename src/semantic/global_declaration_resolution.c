@@ -19,8 +19,7 @@ static int global_types_compatible(
 
 static int is_incomplete_object_type(const psx_type_t *type) {
   if (!type) return 0;
-  const psx_type_t *value = type;
-  while (value && value->kind == PSX_TYPE_ARRAY) value = value->base;
+  const psx_type_t *value = ps_type_array_leaf_type(type);
   return value && value->kind != PSX_TYPE_POINTER &&
          ps_type_is_tag_aggregate(value) && ps_type_sizeof(value) <= 0;
 }

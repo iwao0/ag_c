@@ -34,20 +34,15 @@ static psx_type_t *lvar_public_decl_type(const lvar_t *var) {
   return var ? ps_lvar_get_decl_type((lvar_t *)var) : NULL;
 }
 
-static const psx_type_t *lvar_public_skip_arrays(const psx_type_t *type) {
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
-  return type;
-}
-
 static const psx_type_t *lvar_public_pointee_type(const psx_type_t *type) {
   return type && type->kind == PSX_TYPE_POINTER ? type->base : NULL;
 }
 
 static token_kind_t lvar_public_tag_kind_from_type(const psx_type_t *type) {
   if (!type) return TK_EOF;
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  type = ps_type_array_leaf_type(type);
   if (type && type->kind == PSX_TYPE_POINTER) type = type->base;
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  type = ps_type_array_leaf_type(type);
   if (!type) return TK_EOF;
   if (type->kind == PSX_TYPE_STRUCT) return TK_STRUCT;
   if (type->kind == PSX_TYPE_UNION) return TK_UNION;
@@ -74,87 +69,23 @@ int ps_lvar_elem_size(const lvar_t *var, int fallback_size) {
   return size > 0 ? size : fallback_size;
 }
 
-static int lvar_array_shape_from_decl_type(const psx_type_t *type,
-                                           int *type_size,
-                                           int *scalar_elem_size,
-                                           int *stride_elems,
-                                           int max_strides) {
-  if (type_size) *type_size = 0;
-  if (scalar_elem_size) *scalar_elem_size = 0;
-  if (stride_elems) {
-    for (int i = 0; i < max_strides; i++) stride_elems[i] = 0;
-  }
-  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-
-  int strides[10];
-  int n = 0;
-  const psx_type_t *cur = type;
-  while (cur && cur->kind == PSX_TYPE_ARRAY && n < 10) {
-    int stride = cur->base ? ps_type_sizeof(cur->base) : 0;
-    if (stride <= 0) stride = ps_type_deref_size(cur);
-    if (stride <= 0) break;
-    strides[n++] = stride;
-    cur = cur->base;
-  }
-  if (n <= 0) return 0;
-
-  int elem = strides[n - 1];
-  if (elem <= 0) return 0;
-  if (type_size) *type_size = ps_type_sizeof(type);
-  if (scalar_elem_size) *scalar_elem_size = elem;
-  int out_count = n - 1;
-  if (out_count > max_strides) out_count = max_strides;
-  for (int i = 0; i < out_count; i++) {
-    stride_elems[i] = strides[i] / elem;
-    if (stride_elems[i] <= 0) stride_elems[i] = 1;
-  }
-  return n;
-}
-
-static int lvar_array_shape(const lvar_t *var, int *type_size,
-                            int *scalar_elem_size, int *stride_elems,
-                            int max_strides) {
-  if (type_size) *type_size = 0;
-  if (scalar_elem_size) *scalar_elem_size = 0;
-  if (stride_elems) {
-    for (int i = 0; i < max_strides; i++) stride_elems[i] = 0;
-  }
-  if (!var) return 0;
-  psx_type_t *type = lvar_public_decl_type(var);
-  int depth = lvar_array_shape_from_decl_type(type, type_size,
-                                              scalar_elem_size,
-                                              stride_elems,
-                                              max_strides);
-  return depth;
-}
-
 int ps_lvar_array_flat_element_count(const lvar_t *var) {
-  if (!ps_lvar_is_array(var)) return 0;
-  int type_size = 0;
-  int elem = 0;
-  (void)lvar_array_shape(var, &type_size, &elem, NULL, 0);
-  if (type_size <= 0 || elem <= 0) return 0;
-  return type_size / elem;
+  return var ? ps_type_array_flat_element_count(lvar_public_decl_type(var)) : 0;
 }
 
 int ps_lvar_array_scalar_element_size(const lvar_t *var) {
   if (!ps_lvar_is_array(var)) return ps_lvar_elem_size(var, 0);
-  int elem = 0;
-  (void)lvar_array_shape(var, NULL, &elem, NULL, 0);
+  int elem = ps_type_array_scalar_element_size(lvar_public_decl_type(var));
   if (elem > 0) return elem;
   return ps_lvar_elem_size(var, 0);
 }
 
 int ps_lvar_array_designator_stride_elements(const lvar_t *var, int depth) {
   if (depth < 0) return 1;
-  int strides[8] = {0};
-  int type_size = 0;
-  int elem = 0;
-  (void)lvar_array_shape(var, &type_size, &elem, strides, 8);
-  (void)type_size;
-  (void)elem;
-  if (depth < 8 && strides[depth] > 0) return strides[depth];
-  return 1;
+  int stride = var ? ps_type_array_subscript_stride_elements(
+                         lvar_public_decl_type(var), depth)
+                   : 0;
+  return stride > 0 ? stride : 1;
 }
 
 int ps_lvar_align_bytes(const lvar_t *var) {
@@ -182,19 +113,14 @@ int ps_lvar_is_array(const lvar_t *var) {
 
 int ps_lvar_is_complex(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *leaf = lvar_public_skip_arrays(type);
+  const psx_type_t *leaf = ps_type_array_leaf_type(type);
   return leaf && leaf->kind == PSX_TYPE_COMPLEX ? 1 : 0;
 }
 
 int ps_lvar_is_tag_pointer(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *base = lvar_public_pointee_type(type);
-  return base ? ps_type_is_tag_aggregate(lvar_public_skip_arrays(base)) : 0;
-}
-
-int ps_lvar_pointer_qual_levels(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
-  return ps_type_pointer_view_structural_qual_levels(type);
+  return base ? ps_type_is_tag_aggregate(ps_type_array_leaf_type(base)) : 0;
 }
 
 token_kind_t ps_lvar_tag_kind(const lvar_t *var) {
@@ -204,7 +130,7 @@ token_kind_t ps_lvar_tag_kind(const lvar_t *var) {
 
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var) {
   psx_type_t *type = lvar_public_decl_type(var);
-  const psx_type_t *leaf = lvar_public_skip_arrays(type);
+  const psx_type_t *leaf = ps_type_array_leaf_type(type);
   if (leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX))
     return leaf->fp_kind;
   return TK_FLOAT_KIND_NONE;

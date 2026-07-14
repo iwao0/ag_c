@@ -162,8 +162,8 @@ static void write_scalar_value(
 static void write_string_value(
     static_array_lowering_t *lowering, psx_type_t *array_type,
     int relative_offset, node_string_t *string, token_t *tok) {
-  psx_type_t *element = array_type;
-  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
+  psx_type_t *element =
+      (psx_type_t *)ps_type_array_leaf_type(array_type);
   int element_size = ps_type_sizeof(element);
   int total_size = ps_type_sizeof(array_type);
   int capacity = element_size > 0 ? total_size / element_size : 0;
@@ -190,8 +190,7 @@ static void write_string_value(
 static int is_character_array_for_string(
     psx_type_t *type, const node_string_t *string) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !string) return 0;
-  psx_type_t *element = type;
-  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
+  psx_type_t *element = (psx_type_t *)ps_type_array_leaf_type(type);
   if (!element || element->kind == PSX_TYPE_POINTER ||
       element->kind == PSX_TYPE_FUNCTION ||
       ps_type_is_tag_aggregate(element)) return 0;
@@ -314,8 +313,7 @@ static int lower_static_string_expression(
   }
   if (type->kind != PSX_TYPE_ARRAY) return 0;
 
-  psx_type_t *element = type;
-  while (element && element->kind == PSX_TYPE_ARRAY) element = element->base;
+  psx_type_t *element = (psx_type_t *)ps_type_array_leaf_type(type);
   int element_size = ps_type_sizeof(element);
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;

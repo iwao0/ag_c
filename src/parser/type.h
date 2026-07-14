@@ -174,6 +174,15 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 
 int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
+const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type);
+const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type);
+const psx_type_t *ps_type_derived_leaf_type(const psx_type_t *type);
+int ps_type_array_rank(const psx_type_t *type);
+int ps_type_array_dimension(const psx_type_t *type, int index);
+int ps_type_array_flat_element_count(const psx_type_t *type);
+int ps_type_array_scalar_element_size(const psx_type_t *type);
+int ps_type_array_subscript_stride_elements(const psx_type_t *type,
+                                             int depth);
 psx_type_t *ps_type_address_result(const psx_type_t *type);
 psx_type_t *ps_type_decay_array(const psx_type_t *type);
 psx_type_t *ps_type_dereference_result(const psx_type_t *type);
