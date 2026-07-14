@@ -12,14 +12,24 @@ struct arena_block_t {
   char data[];
 };
 
+struct arena_context_t {
+  arena_block_t *head;
+  arena_block_t *current;
+  size_t reserved_bytes;
+  size_t peak_bytes;
+};
+
+static arena_context_t default_arena_context;
+static arena_context_t *active_arena_context = &default_arena_context;
+
+#define arena_head (active_arena_context->head)
+#define arena_current (active_arena_context->current)
+#define arena_reserved_bytes (active_arena_context->reserved_bytes)
+#define arena_peak_bytes (active_arena_context->peak_bytes)
+
 static char *arena_block_data(arena_block_t *block) {
   return (char *)(block + 1);
 }
-
-static arena_block_t *arena_head = NULL;
-static arena_block_t *arena_current = NULL;
-static size_t arena_reserved_bytes = 0;  // メモリ計測用: 現在の予約バイト数
-static size_t arena_peak_bytes = 0;      // 同: 同時予約量の最大 (関数ごとリセットを跨ぐ)
 
 // 関数ごとに arena をリセットするため、現在量ではなく「最大の 1 関数」を表すピークを返す。
 size_t arena_total_reserved_bytes(void) { return arena_peak_bytes; }
@@ -90,4 +100,26 @@ void arena_free_all(void) {
   arena_head = NULL;
   arena_current = NULL;
   arena_reserved_bytes = 0;
+}
+
+arena_context_t *arena_context_create(void) {
+  return calloc(1, sizeof(arena_context_t));
+}
+
+arena_context_t *arena_context_activate(arena_context_t *context) {
+  arena_context_t *previous = active_arena_context;
+  active_arena_context = context ? context : &default_arena_context;
+  return previous;
+}
+
+arena_context_t *arena_context_active(void) {
+  return active_arena_context;
+}
+
+void arena_context_destroy(arena_context_t *context) {
+  if (!context || context == &default_arena_context) return;
+  arena_context_t *previous = arena_context_activate(context);
+  arena_free_all();
+  arena_context_activate(previous == context ? NULL : previous);
+  free(context);
 }

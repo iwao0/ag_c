@@ -3,6 +3,13 @@
 
 #include <stddef.h>
 
+typedef struct arena_context_t arena_context_t;
+
+arena_context_t *arena_context_create(void);
+void arena_context_destroy(arena_context_t *context);
+arena_context_t *arena_context_activate(arena_context_t *context);
+arena_context_t *arena_context_active(void);
+
 typedef struct {
   void *block;
   size_t used;

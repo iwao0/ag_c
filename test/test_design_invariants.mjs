@@ -81,6 +81,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ag_preprocessor_context_t\s*\*preprocessor_context\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/arena_context_t\s*\*arena_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
@@ -90,6 +93,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/pp_context_create\s*\(/.test(compilerContextSource) ||
     !/pp_context_activate\s*\(/.test(compilerContextSource) ||
     !/pp_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/arena_context_create\s*\(/.test(compilerContextSource) ||
+    !/arena_context_activate\s*\(/.test(compilerContextSource) ||
+    !/arena_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
