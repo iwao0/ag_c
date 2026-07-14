@@ -1122,6 +1122,86 @@ const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",
 );
+const nodeKindEnum = astSource.match(
+  /typedef enum\s*\{([\s\S]*?)\}\s*node_kind_t\s*;/,
+);
+const semanticRoleClassifier = semanticInvariantsSource.match(
+  /static\s+node_semantic_role_t\s+semantic_role\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+);
+if (!nodeKindEnum || !semanticRoleClassifier) {
+  throw new Error("semantic node role classification must remain inspectable");
+}
+const declaredNodeKinds = [
+  ...new Set(
+    [...nodeKindEnum[1].matchAll(/\bND_[A-Z0-9_]+\b/g)].map(
+      (match) => match[0],
+    ),
+  ),
+];
+const classifiedNodeKinds = [
+  ...semanticRoleClassifier[1].matchAll(/\bcase\s+(ND_[A-Z0-9_]+)\s*:/g),
+].map((match) => match[1]);
+const classifiedNodeKindSet = new Set(classifiedNodeKinds);
+const missingNodeKinds = declaredNodeKinds.filter(
+  (kind) => !classifiedNodeKindSet.has(kind),
+);
+const duplicateNodeKinds = classifiedNodeKinds.filter(
+  (kind, index) => classifiedNodeKinds.indexOf(kind) !== index,
+);
+if (missingNodeKinds.length || duplicateNodeKinds.length ||
+    classifiedNodeKindSet.size !== declaredNodeKinds.length) {
+  throw new Error(
+    "every AST node kind must have exactly one semantic expression role; " +
+      `missing: ${missingNodeKinds.join(", ") || "none"}; ` +
+      `duplicates: ${[...new Set(duplicateNodeKinds)].join(", ") || "none"}`,
+  );
+}
+const completeSemanticBoundaryCheckCount = [
+  ...semanticPipelineSource.matchAll(
+    /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/g,
+  ),
+].length;
+const initializerSemanticBoundaryCheckCount = [
+  ...semanticPipelineSource.matchAll(
+    /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/g,
+  ),
+].length;
+if (completeSemanticBoundaryCheckCount !== 3 ||
+    initializerSemanticBoundaryCheckCount !== 1) {
+  throw new Error(
+    "every semantic pipeline entry must require its canonical expression contract",
+  );
+}
+const semanticPipelineContracts = [
+  [
+    "function",
+    /static\s+void\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+  ],
+  [
+    "expression",
+    /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+  ],
+  [
+    "initializer",
+    /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
+  ],
+  [
+    "program",
+    /void\s+psx_frontend_analyze_program_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
+    /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+  ],
+];
+for (const [name, boundaryPattern, contractPattern] of semanticPipelineContracts) {
+  const boundary = semanticPipelineSource.match(boundaryPattern);
+  if (!boundary || !contractPattern.test(boundary[1])) {
+    throw new Error(
+      `${name} semantic pipeline must enforce its canonical expression contract`,
+    );
+  }
+}
 const functionNodeBinding = declarationPipelineSource.match(
   /if\s*\(request->function_node\)\s*\{([^{}]*)\}/,
 );

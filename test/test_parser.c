@@ -1760,13 +1760,22 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
   node_t **program = parse_program_input(
       "double id(double x) { return x; } "
       "double retconv(int x) { return x; } "
+      "double same(double x) { double y=id(x); return y; } "
       "int main(void) { int x=3; double d=x; d=x; return (int)id(x); }");
 
   node_block_t *retconv_body = as_block(as_function_definition(program[1])->base.rhs);
   ASSERT_EQ(ND_RETURN, retconv_body->body[0]->kind);
   ASSERT_EQ(ND_INT_TO_FP, retconv_body->body[0]->lhs->kind);
 
-  node_block_t *main_body = as_block(as_function_definition(program[2])->base.rhs);
+  node_block_t *same_body =
+      as_block(as_function_definition(program[2])->base.rhs);
+  ASSERT_EQ(ND_ASSIGN, same_body->body[0]->kind);
+  ASSERT_EQ(ND_FUNCALL, same_body->body[0]->rhs->kind);
+  node_function_call_t *same_call =
+      as_function_call(same_body->body[0]->rhs);
+  ASSERT_TRUE(same_call->base.type == same_call->callee_type->base);
+
+  node_block_t *main_body = as_block(as_function_definition(program[3])->base.rhs);
   node_t *decl_init = main_body->body[1];
   ASSERT_EQ(ND_ASSIGN, decl_init->kind);
   ASSERT_TRUE(decl_init->is_decl_initializer);
@@ -14580,8 +14589,19 @@ static void test_semantic_canonical_type_invariant() {
     ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
         program[i], &failure));
     ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
-    ASSERT_TRUE(failure.node == NULL);
+  ASSERT_TRUE(failure.node == NULL);
   }
+
+  psx_semantic_invariant_failure_t failure;
+  node_t *va_arg_area = parse_expr_input("__va_arg_area");
+  ASSERT_EQ(ND_VA_ARG_AREA, va_arg_area->kind);
+  ASSERT_TRUE(va_arg_area->type != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, va_arg_area->type->kind);
+  ASSERT_TRUE(va_arg_area->type->base != NULL);
+  ASSERT_EQ(PSX_TYPE_VOID, va_arg_area->type->base->kind);
+  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
+      va_arg_area, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
 
   node_function_definition_t duplicated_return_type = {0};
   duplicated_return_type.base.kind = ND_FUNCDEF;
@@ -14589,7 +14609,6 @@ static void test_semantic_canonical_type_invariant() {
       ps_type_new_integer(TK_INT, 4, 0));
   duplicated_return_type.base.type =
       duplicated_return_type.signature->base;
-  psx_semantic_invariant_failure_t failure;
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       (node_t *)&duplicated_return_type, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
@@ -14612,8 +14631,15 @@ static void test_semantic_canonical_type_invariant() {
   node_t raw_initializer = {.kind = ND_INIT_LIST};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
       &raw_initializer, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, failure.status);
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX,
+            failure.status);
   ASSERT_TRUE(failure.node == &raw_initializer);
+
+  node_t invalid_node_kind = {.kind = (node_kind_t)999};
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      &invalid_node_kind, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, failure.status);
+  ASSERT_TRUE(failure.node == &invalid_node_kind);
 
   node_t invalid_vla_view = {
       .kind = ND_LVAR,

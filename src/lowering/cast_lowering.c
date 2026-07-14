@@ -25,18 +25,15 @@ static node_t *fp_to_int(node_t *operand, const psx_type_t *type) {
   return ps_node_new_fp_to_int_cast(operand, type);
 }
 
-static node_t *lower_value_to_fp(node_t *operand, tk_float_kind_t target) {
+static node_t *lower_value_to_fp(node_t *operand,
+                                 const psx_type_t *target_type) {
   if (!operand) return NULL;
-  psx_type_t *type = ps_type_new_float(
-      target, target == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+  if (!target_type) return operand;
   tk_float_kind_t source = ps_node_value_fp_kind(operand);
-  if (source == target ||
-      (source != TK_FLOAT_KIND_NONE &&
-       (source >= TK_FLOAT_KIND_DOUBLE) ==
-           (target >= TK_FLOAT_KIND_DOUBLE))) {
-    return annotate(operand, type);
-  }
-  return ps_node_new_int_to_fp_cast(operand, type);
+  if (source == target_type->fp_kind &&
+      ps_type_shape_matches(ps_node_get_type(operand), target_type))
+    return operand;
+  return ps_node_new_int_to_fp_cast(operand, target_type);
 }
 
 typedef struct {
@@ -260,11 +257,9 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
   }
 
   if (view.kind == TK_FLOAT)
-    return annotate(lower_value_to_fp(operand, TK_FLOAT_KIND_FLOAT),
-                    view.target);
+    return lower_value_to_fp(operand, view.target);
   if (view.kind == TK_DOUBLE)
-    return annotate(lower_value_to_fp(operand, TK_FLOAT_KIND_DOUBLE),
-                    view.target);
+    return lower_value_to_fp(operand, view.target);
 
   if (view.kind == TK_INT || view.kind == TK_ENUM ||
       view.kind == TK_SIGNED || view.kind == TK_UNSIGNED) {
@@ -349,8 +344,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
     return ps_node_new_fp_to_int_cast(operand, target_type);
   }
   if (target_type->kind == PSX_TYPE_FLOAT)
-    return annotate(lower_value_to_fp(operand, target_type->fp_kind),
-                    target_type);
+    return lower_value_to_fp(operand, target_type);
   cast_target_view_t view = target_view(target_type);
   if (view.kind == TK_EOF ||
       (target_type->kind != PSX_TYPE_BOOL &&

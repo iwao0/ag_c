@@ -639,6 +639,11 @@ static void semantic_transform_node(
       semantic_resolve_function_reference(
           (node_funcref_t *)node, fallback_diag_tok);
       break;
+    case ND_VA_ARG_AREA:
+      if (!node->type)
+        semantic_bind_result_type(
+            node, ps_type_new_pointer(ps_type_new(PSX_TYPE_VOID)));
+      break;
     case ND_SUBSCRIPT:
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);

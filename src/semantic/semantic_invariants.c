@@ -2,8 +2,35 @@
 
 #include <string.h>
 
-static int is_raw_expression_kind(node_kind_t kind) {
+#include "../parser/diag.h"
+
+typedef enum {
+  NODE_SEMANTIC_ROLE_INVALID = 0,
+  NODE_SEMANTIC_ROLE_NON_EXPRESSION,
+  NODE_SEMANTIC_ROLE_RAW_EXPRESSION,
+  NODE_SEMANTIC_ROLE_INITIALIZER_SYNTAX,
+  NODE_SEMANTIC_ROLE_TYPED_EXPRESSION,
+} node_semantic_role_t;
+
+static node_semantic_role_t semantic_role(node_kind_t kind) {
   switch (kind) {
+    case ND_IF:
+    case ND_WHILE:
+    case ND_DO_WHILE:
+    case ND_FOR:
+    case ND_SWITCH:
+    case ND_CASE:
+    case ND_DEFAULT:
+    case ND_BREAK:
+    case ND_CONTINUE:
+    case ND_GOTO:
+    case ND_LABEL:
+    case ND_RETURN:
+    case ND_BLOCK:
+    case ND_FUNCDEF:
+    case ND_VLA_ALLOC:
+      return NODE_SEMANTIC_ROLE_NON_EXPRESSION;
+
     case ND_IDENTIFIER:
     case ND_UNARY_NEGATE:
     case ND_UNARY_DEREF:
@@ -13,16 +40,12 @@ static int is_raw_expression_kind(node_kind_t kind) {
     case ND_SIZEOF_QUERY:
     case ND_ALIGNOF_QUERY:
     case ND_COMPOUND_LITERAL:
+      return NODE_SEMANTIC_ROLE_RAW_EXPRESSION;
+
     case ND_INIT_LIST:
     case ND_DECL_INIT:
-      return 1;
-    default:
-      return 0;
-  }
-}
+      return NODE_SEMANTIC_ROLE_INITIALIZER_SYNTAX;
 
-static int expression_kind_requires_type(node_kind_t kind) {
-  switch (kind) {
     case ND_ADD: case ND_SUB: case ND_MUL: case ND_DIV: case ND_MOD:
     case ND_EQ: case ND_NE: case ND_LT: case ND_LE:
     case ND_BITAND: case ND_BITXOR: case ND_BITOR:
@@ -35,9 +58,10 @@ static int expression_kind_requires_type(node_kind_t kind) {
     case ND_FP_TO_INT: case ND_INT_TO_FP: case ND_FNEG:
     case ND_VA_ARG_AREA: case ND_CAST: case ND_CREAL: case ND_CIMAG:
     case ND_STMT_EXPR:
-      return 1;
+      return NODE_SEMANTIC_ROLE_TYPED_EXPRESSION;
+
     default:
-      return 0;
+      return NODE_SEMANTIC_ROLE_INVALID;
   }
 }
 
@@ -58,11 +82,20 @@ static int is_implicit_function_result_type(const psx_type_t *type) {
 }
 
 static int validate_node(const node_t *node,
-                         psx_semantic_invariant_failure_t *failure) {
+                         psx_semantic_invariant_failure_t *failure,
+                         int allow_initializer_syntax) {
   if (!node) return 1;
-  if (is_raw_expression_kind(node->kind))
+  node_semantic_role_t role = semantic_role(node->kind);
+  if (role == NODE_SEMANTIC_ROLE_INVALID)
+    return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, node);
+  if (role == NODE_SEMANTIC_ROLE_RAW_EXPRESSION)
     return fail(failure, PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, node);
-  if (expression_kind_requires_type(node->kind) && !node->type)
+  if (role == NODE_SEMANTIC_ROLE_INITIALIZER_SYNTAX &&
+      !allow_initializer_syntax)
+    return fail(
+        failure,
+        PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX, node);
+  if (role == NODE_SEMANTIC_ROLE_TYPED_EXPRESSION && !node->type)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
   if (node->type && !ps_type_is_well_formed(node->type))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
@@ -120,7 +153,7 @@ static int validate_node(const node_t *node,
     case ND_BLOCK: {
       node_t *const *body = ((const node_block_t *)node)->body;
       for (int i = 0; body && body[i]; i++) {
-        if (!validate_node(body[i], failure)) return 0;
+        if (!validate_node(body[i], failure, allow_initializer_syntax)) return 0;
       }
       return 1;
     }
@@ -128,16 +161,21 @@ static int validate_node(const node_t *node,
       const node_function_definition_t *function =
           (const node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++) {
-        if (!validate_node(function->parameters[i], failure)) return 0;
+        if (!validate_node(
+                function->parameters[i], failure, allow_initializer_syntax))
+          return 0;
       }
       break;
     }
     case ND_FUNCALL: {
       const node_function_call_t *call =
           (const node_function_call_t *)node;
-      if (!validate_node(call->callee, failure)) return 0;
+      if (!validate_node(call->callee, failure, allow_initializer_syntax))
+        return 0;
       for (int i = 0; i < call->argument_count; i++) {
-        if (!validate_node(call->arguments[i], failure)) return 0;
+        if (!validate_node(
+                call->arguments[i], failure, allow_initializer_syntax))
+          return 0;
       }
       break;
     }
@@ -145,9 +183,10 @@ static int validate_node(const node_t *node,
     case ND_FOR:
     case ND_TERNARY: {
       const node_ctrl_t *control = (const node_ctrl_t *)node;
-      if (!validate_node(control->init, failure) ||
-          !validate_node(control->inc, failure) ||
-          !validate_node(control->els, failure))
+      if (!validate_node(
+              control->init, failure, allow_initializer_syntax) ||
+          !validate_node(control->inc, failure, allow_initializer_syntax) ||
+          !validate_node(control->els, failure, allow_initializer_syntax))
         return 0;
       break;
     }
@@ -155,14 +194,20 @@ static int validate_node(const node_t *node,
       const node_init_list_t *list = (const node_init_list_t *)node;
       for (int i = 0; i < list->entry_count; i++) {
         const psx_initializer_entry_t *entry = &list->entries[i];
-        if (!validate_node(entry->value, failure)) return 0;
+        if (!validate_node(
+                entry->value, failure, allow_initializer_syntax))
+          return 0;
         for (int d = 0; d < entry->designator_count; d++) {
-          if (!validate_node(entry->designators[d].index_expr, failure) ||
-              !validate_node(entry->designators[d].range_end_expr, failure))
+          if (!validate_node(entry->designators[d].index_expr, failure,
+                             allow_initializer_syntax) ||
+              !validate_node(entry->designators[d].range_end_expr, failure,
+                             allow_initializer_syntax))
             return 0;
         }
         for (int d = 0; d < entry->index_expr_count; d++) {
-          if (!validate_node(entry->index_exprs[d], failure)) return 0;
+          if (!validate_node(
+                  entry->index_exprs[d], failure, allow_initializer_syntax))
+            return 0;
         }
       }
       return 1;
@@ -171,12 +216,59 @@ static int validate_node(const node_t *node,
       break;
   }
 
-  return validate_node(node->lhs, failure) &&
-         validate_node(node->rhs, failure);
+  return validate_node(node->lhs, failure, allow_initializer_syntax) &&
+         validate_node(node->rhs, failure, allow_initializer_syntax);
 }
 
 int psx_semantic_tree_has_canonical_expression_types(
     const node_t *root, psx_semantic_invariant_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  return validate_node(root, failure);
+  return validate_node(root, failure, 0);
+}
+
+static const char *semantic_invariant_status_name(
+    psx_semantic_invariant_status_t status) {
+  switch (status) {
+    case PSX_SEMANTIC_INVARIANT_OK:
+      return "ok";
+    case PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION:
+      return "raw expression remains";
+    case PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX:
+      return "intermediate initializer syntax remains";
+    case PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE:
+      return "expression has no canonical type";
+    case PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE:
+      return "expression has an invalid canonical type";
+    case PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE:
+      return "callable has inconsistent canonical types";
+    case PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW:
+      return "VLA runtime view is inconsistent with its canonical type";
+    case PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND:
+      return "node kind is not classified by the semantic invariant";
+  }
+  return "unknown semantic invariant failure";
+}
+
+void psx_require_semantic_tree_has_canonical_expression_types(
+    const node_t *root, const token_t *fallback_diag_tok) {
+  psx_semantic_invariant_failure_t failure;
+  if (validate_node(root, &failure, 0)) return;
+  token_t *tok = failure.node && failure.node->tok
+                     ? failure.node->tok
+                     : (token_t *)fallback_diag_tok;
+  ps_diag_ctx(tok, "semantic-invariant", "%s (node kind %d)",
+              semantic_invariant_status_name(failure.status),
+              failure.node ? (int)failure.node->kind : -1);
+}
+
+void psx_require_semantic_initializer_has_canonical_expression_types(
+    const node_t *root, const token_t *fallback_diag_tok) {
+  psx_semantic_invariant_failure_t failure = {0};
+  if (validate_node(root, &failure, 1)) return;
+  token_t *tok = failure.node && failure.node->tok
+                     ? failure.node->tok
+                     : (token_t *)fallback_diag_tok;
+  ps_diag_ctx(tok, "semantic-invariant", "%s (node kind %d)",
+              semantic_invariant_status_name(failure.status),
+              failure.node ? (int)failure.node->kind : -1);
 }

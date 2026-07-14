@@ -6,10 +6,12 @@
 typedef enum {
   PSX_SEMANTIC_INVARIANT_OK = 0,
   PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION,
+  PSX_SEMANTIC_INVARIANT_INTERMEDIATE_INITIALIZER_SYNTAX,
   PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE,
   PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE,
   PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
   PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW,
+  PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND,
 } psx_semantic_invariant_status_t;
 
 typedef struct {
@@ -19,5 +21,9 @@ typedef struct {
 
 int psx_semantic_tree_has_canonical_expression_types(
     const node_t *root, psx_semantic_invariant_failure_t *failure);
+void psx_require_semantic_tree_has_canonical_expression_types(
+    const node_t *root, const token_t *fallback_diag_tok);
+void psx_require_semantic_initializer_has_canonical_expression_types(
+    const node_t *root, const token_t *fallback_diag_tok);
 
 #endif
