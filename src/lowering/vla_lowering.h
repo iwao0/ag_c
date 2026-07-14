@@ -22,7 +22,6 @@ typedef struct {
 typedef struct {
   lvar_t *var;
   node_t *init;
-  int type_attached;
 } psx_vla_lowering_result_t;
 
 psx_vla_lowering_result_t lower_vla_declaration(
@@ -63,7 +62,6 @@ typedef struct {
 typedef struct {
   lvar_t *var;
   lvar_t *stride_storage;
-  int type_attached;
 } psx_parameter_vla_lowering_result_t;
 
 psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(

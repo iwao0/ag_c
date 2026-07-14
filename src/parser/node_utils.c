@@ -45,7 +45,6 @@ typedef enum {
 
 typedef enum {
   NODE_VLA_ROW_STRIDE_FRAME_OFF,
-  NODE_VLA_STRIDES_REMAINING,
 } node_vla_view_field_t;
 
 static int pointer_view_from_node_direct(node_t *node, node_pointer_view_field_t field,
@@ -55,7 +54,6 @@ static int node_pointer_stride_from_type(
     int *extra_strides, int *extra_strides_count);
 static int node_self_is_const_qualified(node_t *node);
 static int node_self_is_volatile_qualified(node_t *node);
-static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type);
 static const psx_type_t *type_pointee_value_type(const psx_type_t *type);
 static void gvar_tag_identity(const global_var_t *gv, token_kind_t *kind,
                               char **name, int *len, int *scope_depth_p1);
@@ -1909,14 +1907,6 @@ static int vla_view_from_type(const psx_type_t *type, node_vla_view_field_t fiel
         if (value) *value = row_stride_frame_off;
       }
       return 1;
-    case NODE_VLA_STRIDES_REMAINING:
-      {
-        int strides_remaining =
-            ps_type_pointer_view_vla_strides_remaining(type);
-        if (strides_remaining <= 0) return 0;
-        if (value) *value = strides_remaining;
-      }
-      return 1;
     default:
       return 0;
   }
@@ -2077,15 +2067,6 @@ int ps_node_vla_row_stride_frame_off(node_t *node) {
   int value = 0;
   return vla_view_from_node_direct(
              node, NODE_VLA_ROW_STRIDE_FRAME_OFF, &value)
-             ? value
-             : 0;
-}
-
-static int node_vla_strides_remaining(node_t *node) {
-  if (!node) return 0;
-  int value = 0;
-  return vla_view_from_node_direct(
-             node, NODE_VLA_STRIDES_REMAINING, &value)
              ? value
              : 0;
 }
@@ -2397,7 +2378,7 @@ node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
 
 node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
   psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  psx_type_t *decay_type = type_decay_array_to_pointer(array_type);
+  psx_type_t *decay_type = ps_type_decay_array(array_type);
   if (!decay_type) return psx_node_new_lvar_identifier_ref_for(var);
   return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
 }
@@ -2505,27 +2486,8 @@ static void init_array_addr_canonical_type(node_t *addr,
                                            psx_type_t *array_type) {
   if (!addr || !array_type) return;
   addr->type = array_type->kind == PSX_TYPE_ARRAY
-                   ? type_decay_array_to_pointer(array_type)
+                   ? ps_type_decay_array(array_type)
                    : (type_is_pointer_view_type(array_type) ? array_type : NULL);
-}
-
-static psx_type_t *type_from_address_operand(node_t *operand) {
-  psx_type_t *base = ps_node_get_type(operand);
-  if (!base) return NULL;
-  return ps_type_new_pointer(base);
-}
-
-static psx_type_t *type_decay_array_to_pointer(psx_type_t *array_type) {
-  if (!array_type || array_type->kind != PSX_TYPE_ARRAY || !array_type->base)
-    return NULL;
-  psx_type_t *ptr = ps_type_new_pointer(array_type->base);
-  ptr->vla_row_stride_frame_off =
-      psx_type_pointer_view_vla_row_stride_frame_off(array_type);
-  ptr->vla_strides_remaining =
-      ps_type_pointer_view_vla_strides_remaining(array_type);
-  if (ptr->vla_row_stride_frame_off != 0 || array_type->is_vla)
-    psx_type_copy_runtime_vla_stride_metadata(ptr, array_type);
-  return ptr;
 }
 
 node_t *ps_node_new_gvar_array_addr_for(global_var_t *gv) {
@@ -2549,7 +2511,7 @@ node_t *ps_node_new_lvar_array_addr_for(lvar_t *var) {
 
 node_t *ps_node_new_addr_value_for(node_t *operand) {
   node_t *addr = new_addr_node(operand);
-  ps_node_bind_type(addr, type_from_address_operand(operand));
+  ps_node_bind_type(addr, ps_type_address_result(ps_node_get_type(operand)));
   return addr;
 }
 
@@ -2557,7 +2519,8 @@ node_t *ps_node_new_explicit_addr_value_for(node_t *operand) {
   if (!operand || operand->kind != ND_ADDR) return operand;
   node_t *cp = arena_alloc(sizeof(node_t));
   *cp = *operand;
-  ps_node_bind_type(cp, type_from_address_operand(operand->lhs));
+  ps_node_bind_type(
+      cp, ps_type_address_result(ps_node_get_type(operand->lhs)));
   cp->type_state = (psx_expr_type_state_t){0};
   cp->is_explicit_addr_expr = 1;
   return cp;
@@ -2565,61 +2528,14 @@ node_t *ps_node_new_explicit_addr_value_for(node_t *operand) {
 
 node_t *ps_node_new_unary_addr_for(node_t *operand) {
   node_t *node = new_addr_node(operand);
-  ps_node_bind_type(node, type_from_address_operand(operand));
+  ps_node_bind_type(node, ps_type_address_result(ps_node_get_type(operand)));
   node->is_explicit_addr_expr = 1;
   return node;
 }
 
-static void init_subscript_expr_state(node_t *result,
-                                      const psx_type_t *base_type) {
+static void init_subscript_expr_state(node_t *result) {
   if (!result || !result->type || result->type->kind != PSX_TYPE_ARRAY) return;
   result->type_state.subscript_uses_base_address = 1;
-  if (!result->type->is_vla &&
-      psx_type_pointer_view_vla_row_stride_frame_off(result->type) == 0) {
-    return;
-  }
-  int next_stride = 0;
-  int extra_strides[5] = {0};
-  int extra_count = 0;
-  if (!ps_type_pointer_view_stride_metadata(
-          base_type, NULL, &next_stride,
-          extra_strides, &extra_count)) {
-    return;
-  }
-  int result_next = extra_count > 0 ? extra_strides[0] : 0;
-  int result_extra[5] = {0};
-  int result_extra_count = extra_count > 0 ? extra_count - 1 : 0;
-  if (result_extra_count > 5) result_extra_count = 5;
-  for (int i = 0; i < result_extra_count; i++)
-    result_extra[i] = extra_strides[i + 1];
-  psx_type_t *result_type = ps_type_clone(result->type);
-  ps_type_set_runtime_vla_stride_metadata(
-      result_type, next_stride, result_next,
-      result_extra, result_extra_count);
-  ps_node_bind_type(result, result_type);
-}
-
-static psx_type_t *type_from_vla_subscript_result(
-    psx_type_t *base_type, psx_type_t *subscript_type,
-    int parent_row_offset, int parent_remaining) {
-  int result_row_offset =
-      parent_remaining > 0 ? parent_row_offset + 8 : 0;
-  int result_remaining = parent_remaining > 0 ? parent_remaining - 1 : 0;
-  int element_stride = 0;
-  ps_type_pointer_view_stride_metadata(
-      base_type, &element_stride, NULL, NULL, NULL);
-  int keeps_row = element_stride > 0;
-  if (keeps_row && (!subscript_type ||
-                    subscript_type->kind != PSX_TYPE_ARRAY)) {
-    int row_size = element_stride * 2;
-    return psx_type_new_runtime_vla_row_view(
-        base_type, row_size, element_stride,
-        result_row_offset, result_remaining);
-  }
-  if (!subscript_type) return NULL;
-  subscript_type->vla_row_stride_frame_off = result_row_offset;
-  subscript_type->vla_strides_remaining = result_remaining;
-  return subscript_type;
 }
 
 node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
@@ -2688,32 +2604,12 @@ node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
                                          node_t *scaled_offset) {
   psx_type_t *base_type = ps_node_get_type(base);
   psx_type_t *result_type = ps_type_subscript_result(base_type);
-  int parent_vla_row = ps_node_vla_row_stride_frame_off(base);
-  if (base_type && parent_vla_row != 0) {
-    int parent_remaining = node_vla_strides_remaining(base);
-    result_type = type_from_vla_subscript_result(
-        base_type, result_type, parent_vla_row, parent_remaining);
-    if (result_type && parent_remaining > 0) {
-      int parent_elem = 0;
-      ps_type_pointer_view_stride_metadata(
-          base_type, &parent_elem, NULL, NULL, NULL);
-      if (parent_elem > 0) {
-        ps_type_set_runtime_vla_stride_metadata(
-            result_type, parent_elem, parent_elem, NULL, 0);
-      }
-    }
-  }
   node_t *result = arena_alloc(sizeof(node_t));
   result->kind = ND_DEREF;
   result->lhs = ps_node_new_binary(ND_ADD, base_addr, scaled_offset);
   if (result_type) {
     ps_node_bind_type(result, result_type);
-    if (parent_vla_row != 0) {
-      result->type_state.subscript_uses_base_address =
-          result_type->kind == PSX_TYPE_ARRAY ? 1 : 0;
-    } else {
-      init_subscript_expr_state(result, base_type);
-    }
+    init_subscript_expr_state(result);
   }
   return result;
 }

@@ -185,9 +185,9 @@ static node_t *lower_aggregate_cast(node_t *operand,
 
   int object_size = view.elem_size > 0 ? view.elem_size : 8;
   char *temp_name = new_aggregate_temp_name();
-  lvar_t *temp = ps_decl_register_lvar_sized(
-      temp_name, (int)strlen(temp_name), object_size, object_size, 0);
-  ps_local_registry_set_decl_type(temp, view.target);
+  lvar_t *temp = ps_decl_register_lvar_typed_align(
+      temp_name, (int)strlen(temp_name), object_size, object_size,
+      view.target);
 
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for(temp, member.offset, &member);

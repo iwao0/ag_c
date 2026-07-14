@@ -921,6 +921,14 @@ static void test_subscript_semantic_lowering_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
   psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
+  psx_type_t *decayed_matrix = ps_type_decay_array(matrix);
+  ASSERT_TRUE(decayed_matrix != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, decayed_matrix->kind);
+  ASSERT_TRUE(decayed_matrix->base == row);
+  psx_type_t *addressed_matrix = ps_type_address_result(matrix);
+  ASSERT_TRUE(addressed_matrix != NULL);
+  ASSERT_EQ(PSX_TYPE_POINTER, addressed_matrix->kind);
+  ASSERT_TRUE(addressed_matrix->base == matrix);
   lvar_t *array = ps_decl_register_lvar_sized(
       (char *)"a", 1, 24, 12, 1);
   ps_local_registry_set_decl_type(array, matrix);
@@ -933,6 +941,26 @@ static void test_subscript_semantic_lowering_boundary() {
       ps_type_subscript_result(matrix_row_type);
   ASSERT_TRUE(matrix_element_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, matrix_element_type->kind);
+
+  psx_type_t *vla_cell = ps_type_new_array(integer, 0, 0, 1);
+  psx_type_t *vla_row = ps_type_new_array(vla_cell, 0, 0, 1);
+  psx_type_t *vla_matrix = ps_type_new_array(vla_row, 0, 0, 1);
+  ps_type_set_vla_runtime_descriptor(vla_matrix, 24, 2, 0, 4);
+  psx_type_t *vla_result = ps_type_subscript_result(vla_matrix);
+  ASSERT_TRUE(vla_result != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->kind);
+  ASSERT_TRUE(vla_result->base != NULL);
+  ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->base->kind);
+  ASSERT_EQ(32, vla_result->vla_row_stride_frame_off);
+  ASSERT_EQ(1, vla_result->vla_strides_remaining);
+  psx_type_t *vla_scalar_pointer = ps_type_new_pointer(integer);
+  ps_type_set_vla_runtime_descriptor(vla_scalar_pointer, 24, 2, 0, 4);
+  psx_type_t *vla_scalar_result =
+      ps_type_subscript_result(vla_scalar_pointer);
+  ASSERT_TRUE(vla_scalar_result != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, vla_scalar_result->kind);
+  ASSERT_EQ(0, vla_scalar_result->vla_row_stride_frame_off);
+  ASSERT_EQ(0, vla_scalar_result->vla_strides_remaining);
 
   node_t *node = parse_expr_input_with_existing_locals("a[0][1]");
   ASSERT_EQ(ND_SUBSCRIPT, node->kind);
@@ -1999,7 +2027,6 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
   ASSERT_EQ(4, ps_lvar_array_scalar_element_size(result.var));
-  ASSERT_TRUE(result.type_attached);
   ASSERT_EQ(0, ps_lvar_offset(result.var) % 16);
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(result.var)->kind);
   ASSERT_TRUE(ps_lvar_get_decl_type(result.var)->is_vla);
@@ -2010,13 +2037,21 @@ static void test_vla_lowering_request_boundary() {
   request.dimensions[1] = ps_node_new_num(3);
   request.dimensions[2] = ps_node_new_num(4);
   request.dimension_count = 3;
-  request.type = NULL;
+  request.type = ps_type_new_array(
+      ps_type_new_array(
+          ps_type_new_array(integer, 0, 0, 1), 0, 0, 1),
+      0, 0, 1);
   request.requested_alignment = 0;
   result = lower_vla_declaration(&request);
   ASSERT_EQ(32, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(ND_COMMA, result.init->kind);
   ASSERT_EQ(ND_VLA_ALLOC, result.init->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, result.init->rhs->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(result.var)->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_lvar_get_decl_type(result.var)->base->kind);
+  ASSERT_EQ(PSX_TYPE_ARRAY,
+            ps_lvar_get_decl_type(result.var)->base->base->kind);
   ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(result.var) > 0);
 
   ps_decl_reset_locals();
@@ -2033,7 +2068,6 @@ static void test_vla_lowering_request_boundary() {
           .requested_alignment = 32,
       });
   ASSERT_TRUE(result.var != NULL);
-  ASSERT_TRUE(result.type_attached);
   ASSERT_EQ(16, ps_lvar_storage_size(result.var, 0));
   ASSERT_EQ(8, ps_lvar_decl_sizeof(result.var, 0));
   ASSERT_EQ(0, ps_lvar_offset(result.var) % 32);
@@ -2072,7 +2106,6 @@ static void test_vla_lowering_request_boundary() {
       lower_parameter_vla_declaration(&parameter_request);
   ASSERT_TRUE(parameter_result.var != NULL);
   ASSERT_TRUE(parameter_result.stride_storage != NULL);
-  ASSERT_TRUE(parameter_result.type_attached);
   ASSERT_TRUE(parameter_result.var->is_param);
   ASSERT_EQ(8, ps_lvar_storage_size(parameter_result.var, 0));
   ASSERT_EQ(24, ps_lvar_storage_size(
@@ -2145,7 +2178,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
       },
       &lowered));
   ASSERT_TRUE(lowered.var != NULL);
-  ASSERT_TRUE(lowered.type_attached);
   ASSERT_TRUE(lowered.var->is_param);
   ASSERT_TRUE(lowered.var->is_byref_param);
   ASSERT_EQ(8, lowered.var->size);
@@ -2191,7 +2223,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
       },
       &resolved_lowered));
   ASSERT_TRUE(resolved_lowered.var != NULL);
-  ASSERT_TRUE(resolved_lowered.type_attached);
   ASSERT_TRUE(resolved_lowered.var->is_param);
   ASSERT_EQ(PSX_TYPE_POINTER,
             ps_lvar_get_decl_type(resolved_lowered.var)->kind);
@@ -13772,25 +13803,6 @@ static void test_semantic_canonical_type_invariant() {
       (node_t *)&untyped, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
   ASSERT_TRUE(failure.node == (node_t *)&untyped);
-
-  node_num_t fixed_with_runtime_strides = {0};
-  fixed_with_runtime_strides.base.kind = ND_NUM;
-  fixed_with_runtime_strides.base.type =
-      ps_type_new_integer(TK_INT, 4, 0);
-  fixed_with_runtime_strides.base.type->vla_runtime_strides.outer_stride = 4;
-  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
-      (node_t *)&fixed_with_runtime_strides, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_NON_VLA_RUNTIME_STRIDES,
-            failure.status);
-  ASSERT_TRUE(failure.node == (node_t *)&fixed_with_runtime_strides);
-
-  node_t vla_with_runtime_strides = {.kind = ND_LVAR};
-  vla_with_runtime_strides.type = ps_type_new_array(
-      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 1);
-  vla_with_runtime_strides.type->vla_runtime_strides.outer_stride = 4;
-  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
-      &vla_with_runtime_strides, &failure));
-  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
 
   node_t raw_subscript = {.kind = ND_SUBSCRIPT};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(

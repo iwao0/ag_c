@@ -16,30 +16,28 @@ static node_t *append_init(node_t *chain, node_t *node) {
 }
 
 static lvar_t *create_vla_storage(
-    char *name, int name_len, int storage_size, int element_size,
-    int is_array, int alignment) {
+    char *name, int name_len, int storage_size, int alignment,
+    const psx_type_t *type) {
+  if (!type) return NULL;
   int offset = local_storage_allocate(storage_size, alignment);
   return ps_local_registry_create_storage_object(
-      name, name_len, offset, storage_size, element_size,
-      is_array, alignment);
+      name, name_len, offset, storage_size, alignment, type);
 }
 
-static void attach_canonical_vla_type(
-    psx_vla_lowering_result_t *result, const psx_type_t *type) {
-  if (!result || !result->var || !type) return;
-  psx_type_t *resolved = ps_type_clone(type);
-  if (!resolved) return;
-  ps_type_copy_vla_runtime_metadata(
-      resolved, ps_lvar_get_decl_type(result->var));
-  ps_local_registry_set_decl_type(result->var, resolved);
-  result->type_attached = 1;
+static psx_type_t *runtime_stride_storage_type(int count) {
+  if (count <= 0) return NULL;
+  psx_type_t *slot = ps_type_new_integer(TK_LONG, 8, 0);
+  return count == 1
+             ? slot
+             : ps_type_new_array(slot, count, count * 8, 0);
 }
 
 psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
   int count = request ? request->dimension_count : 0;
-  if (!request || count <= 0 || count > PSX_VLA_MAX_DIMS) {
+  if (!request || !request->type || count <= 0 ||
+      count > PSX_VLA_MAX_DIMS) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
@@ -57,14 +55,14 @@ psx_vla_lowering_result_t lower_vla_declaration(
 
   result.var = create_vla_storage(
       request->name, request->name_len, layout.storage_size,
-      request->element_size, 1, request->requested_alignment);
+      request->requested_alignment, request->type);
+  if (!result.var) return result;
   int var_offset = ps_lvar_offset(result.var);
   if (layout.row_stride_relative_offset > 0)
     row_stride_offset = var_offset + layout.row_stride_relative_offset;
   if (count >= 3) remaining_strides = layout.subsequent_stride_count;
   ps_local_registry_set_vla_descriptor(
-      result.var, outer_stride, row_stride_offset,
-      remaining_strides, 0, 0);
+      result.var, row_stride_offset, remaining_strides, 0, 0);
 
   node_t *alloc_lhs = NULL;
   node_t *alloc_rhs = NULL;
@@ -99,14 +97,13 @@ psx_vla_lowering_result_t lower_vla_declaration(
     result.init = append_init(
         result.init, ps_node_new_assign(slot, stride));
   }
-  attach_canonical_vla_type(&result, request->type);
   return result;
 }
 
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
     const psx_pointer_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
-  if (!request || !request->name || request->name_len <= 0 ||
+  if (!request || !request->type || !request->name || request->name_len <= 0 ||
       request->element_size <= 0 || !request->row_dimension) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(
@@ -116,18 +113,18 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   frame_vla_layout_t layout = frame_layout_pointer_vla_storage();
   result.var = create_vla_storage(
       request->name, request->name_len, layout.storage_size,
-      request->element_size, 0, request->requested_alignment);
+      request->requested_alignment, request->type);
+  if (!result.var) return result;
   int row_stride_offset =
       ps_lvar_offset(result.var) + layout.row_stride_relative_offset;
   ps_local_registry_set_vla_descriptor(
-      result.var, 0, row_stride_offset, 0, 0, request->element_size);
+      result.var, row_stride_offset, 0, 0, request->element_size);
 
   node_t *slot = ps_node_new_lvar_typed(row_stride_offset, 8);
   node_t *stride = ps_node_new_binary(
       ND_MUL, request->row_dimension,
       ps_node_new_num(request->element_size));
   result.init = (node_t *)ps_node_new_assign(slot, stride);
-  attach_canonical_vla_type(&result, request->type);
   return result;
 }
 
@@ -149,7 +146,7 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     const psx_parameter_vla_lowering_request_t *request) {
   psx_parameter_vla_lowering_result_t result = {0};
   int count = request ? request->inner_dimension_count : 0;
-  if (!request || !request->name || request->name_len <= 0 ||
+  if (!request || !request->type || !request->name || request->name_len <= 0 ||
       request->element_size <= 0 || count < 0 ||
       count > PSX_VLA_PARAM_MAX_INNER_DIMS) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
@@ -158,7 +155,8 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   }
 
   result.var = create_vla_storage(
-      request->name, request->name_len, 8, request->element_size, 0, 0);
+      request->name, request->name_len, 8, 0, request->type);
+  if (!result.var) return result;
 
   int has_runtime_dimension = 0;
   for (int i = 0; i < count; i++) {
@@ -173,7 +171,9 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     char *stride_name = parameter_stride_storage_name(
         request->name, request->name_len, &stride_name_len);
     result.stride_storage = create_vla_storage(
-        stride_name, stride_name_len, 8 * count, 8, 0, 0);
+        stride_name, stride_name_len, 8 * count, 0,
+        runtime_stride_storage_type(count));
+    if (!result.stride_storage) return result;
 
     int constants[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
     int source_offsets[PSX_VLA_PARAM_MAX_INNER_DIMS] = {0};
@@ -195,20 +195,17 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     }
 
     ps_local_registry_set_vla_descriptor(
-        result.var, 0, ps_lvar_offset(result.stride_storage),
-        count - 1, 0, request->element_size);
+        result.var, ps_lvar_offset(result.stride_storage), count - 1,
+        0, request->element_size);
     ps_local_registry_set_vla_param_inner_dims(
         result.var, constants, source_offsets, count);
     if (count == 1 && constants[0] == 0) {
       ps_local_registry_set_vla_descriptor(
-          result.var, 0, ps_lvar_offset(result.stride_storage), 0,
+          result.var, ps_lvar_offset(result.stride_storage), 0,
           source_offsets[0], request->element_size);
     }
   }
 
-  psx_vla_lowering_result_t attached = {.var = result.var};
-  attach_canonical_vla_type(&attached, request->type);
-  result.type_attached = attached.type_attached;
   /* Keep the current name ineligible while resolving preceding parameters. */
   ps_local_registry_mark_parameter(result.var, 0);
   return result;

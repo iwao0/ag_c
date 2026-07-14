@@ -16,7 +16,6 @@ typedef struct {
   int element_size;
   int alignment;
   int is_array;
-  int type_attached;
 } psx_local_object_result_t;
 
 int lower_complete_local_object(

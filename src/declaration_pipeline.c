@@ -646,7 +646,6 @@ int psx_begin_automatic_local_declaration_pipeline(
         return 0;
       }
       result->var = object.var;
-      result->type_attached = object.type_attached;
       break;
     case PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY:
       if (!declare_incomplete_local_object(
@@ -660,7 +659,6 @@ int psx_begin_automatic_local_declaration_pipeline(
         return 0;
       }
       result->var = object.var;
-      result->type_attached = object.type_attached;
       break;
     case PSX_LOCAL_STORAGE_VLA_OBJECT: {
       psx_vla_lowering_request_t lowering = {
@@ -680,7 +678,6 @@ int psx_begin_automatic_local_declaration_pipeline(
       }
       vla = lower_vla_declaration(&lowering);
       result->var = vla.var;
-      result->type_attached = vla.type_attached;
       result->initialization = vla.init;
       break;
     }
@@ -696,7 +693,6 @@ int psx_begin_automatic_local_declaration_pipeline(
               .diag_tok = request->diag_tok,
           });
       result->var = vla.var;
-      result->type_attached = vla.type_attached;
       result->initialization = vla.init;
       break;
   }
@@ -732,14 +728,6 @@ int psx_finish_automatic_local_declaration_pipeline(
             &completed)) {
       return 0;
     }
-    result->type_attached = completed.type_attached;
-  }
-
-  if (!result->type_attached) {
-    ps_type_copy_vla_runtime_metadata(
-        request->type, ps_lvar_get_decl_type(result->var));
-    ps_local_registry_set_decl_type(result->var, request->type);
-    result->type_attached = 1;
   }
 
   if (request->initializer->has_initializer) {

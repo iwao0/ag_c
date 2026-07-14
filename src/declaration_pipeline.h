@@ -122,7 +122,6 @@ typedef struct {
 typedef struct {
   struct lvar_t *var;
   node_t *initialization;
-  int type_attached;
 } psx_automatic_local_declaration_pipeline_result_t;
 
 int psx_apply_automatic_local_declaration_pipeline(

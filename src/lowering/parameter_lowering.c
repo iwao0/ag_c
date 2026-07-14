@@ -18,13 +18,10 @@ static int lower_parameter_with_plan(
       result->storage.storage_size, result->storage.alignment);
   result->var = ps_local_registry_create_storage_object(
       name, name_len, offset,
-      result->storage.storage_size, result->storage.element_size,
-      0, result->storage.alignment);
+      result->storage.storage_size, result->storage.alignment, type);
   if (!result->var) return 0;
   ps_local_registry_mark_parameter(
       result->var, result->storage.is_byref);
-  ps_local_registry_set_decl_type(result->var, type);
-  result->type_attached = 1;
   return 1;
 }
 
@@ -73,6 +70,5 @@ int lower_resolved_parameter_declaration(
   memset(result, 0, sizeof(*result));
   result->var = lowered.var;
   result->storage = resolution->storage;
-  result->type_attached = lowered.type_attached;
   return result->var != NULL;
 }

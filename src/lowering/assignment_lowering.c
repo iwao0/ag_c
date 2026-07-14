@@ -36,11 +36,11 @@ static node_t *materialize_lvalue_address_once(node_t *target,
                                                node_t **prefix) {
   if (!target || target->kind != ND_DEREF || !target->lhs) return target;
   node_t *address = target->lhs;
-  char *name = new_compound_assignment_temp_name();
-  lvar_t *temp = ps_decl_register_lvar_sized(
-      name, (int)strlen(name), 8, 8, 0);
   psx_type_t *address_type = ps_node_get_type(address);
-  if (address_type) ps_local_registry_set_decl_type(temp, address_type);
+  if (!address_type) return target;
+  char *name = new_compound_assignment_temp_name();
+  lvar_t *temp = ps_decl_register_lvar_typed_align(
+      name, (int)strlen(name), 8, 0, address_type);
 
   node_t *temp_lhs = ps_node_new_lvar_expr_ref_for(temp);
   *prefix = ps_node_new_assign(temp_lhs, address);

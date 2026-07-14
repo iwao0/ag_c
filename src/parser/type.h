@@ -71,13 +71,6 @@ typedef struct {
   int count;
 } psx_declarator_shape_t;
 
-typedef struct {
-  int outer_stride;
-  int mid_stride;
-  int extra_strides[5];
-  unsigned char extra_strides_count;
-} psx_vla_runtime_strides_t;
-
 /* Operators are stored from the declared identifier outward. Applying them in
  * reverse order preserves parenthesized declarator binding without flattening
  * pointer/array/function placement into independent flags. */
@@ -114,7 +107,6 @@ struct psx_type_t {
   short vla_param_inner_dim_consts[7];
   int vla_param_inner_dim_src_offsets[7];
   unsigned char vla_param_inner_dim_count;
-  psx_vla_runtime_strides_t vla_runtime_strides;
 
   psx_type_t *param_types[16];
   int param_count;
@@ -144,11 +136,6 @@ void ps_type_set_function_params(psx_type_t *function_type,
                                   int param_count, int is_variadic);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
-psx_type_t *psx_type_new_storage_object(
-    int object_size, int elem_size, int is_array,
-    tk_float_kind_t fp_kind, int is_unsigned,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int tag_scope_depth_p1, int is_pointer);
 psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
                                           unsigned int const_mask,
                                           unsigned int volatile_mask);
@@ -188,17 +175,9 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src);
 psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
                                         const int *dims, int dim_count,
                                         int leaf_size);
-psx_type_t *psx_type_new_runtime_vla_row_view(
-    const psx_type_t *source, int row_size, int elem_size,
-    int row_stride_frame_off, int strides_remaining);
-psx_type_t *ps_type_new_vla_object_view(
-    const psx_type_t *source, int outer_stride,
-    int row_stride_frame_off, int strides_remaining);
 void ps_type_set_vla_runtime_descriptor(
     psx_type_t *type, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset, int row_stride_elem_size);
-void ps_type_copy_vla_runtime_metadata(psx_type_t *dst,
-                                        const psx_type_t *src);
 void ps_type_set_vla_param_inner_dims(
     psx_type_t *type, const int *inner_dim_consts,
     const int *inner_dim_src_offsets, int inner_dim_count);
@@ -209,6 +188,8 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 
 int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
+psx_type_t *ps_type_address_result(const psx_type_t *type);
+psx_type_t *ps_type_decay_array(const psx_type_t *type);
 psx_type_t *ps_type_dereference_result(const psx_type_t *type);
 psx_type_t *ps_type_subscript_result(const psx_type_t *type);
 int ps_type_subscript_static_stride(const psx_type_t *type);
@@ -239,13 +220,6 @@ unsigned int ps_type_pointer_view_structural_qual_mask(
 int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
 int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);
-int psx_type_copy_runtime_vla_stride_metadata(psx_type_t *dst,
-                                              const psx_type_t *src);
-void ps_type_set_runtime_vla_stride_metadata(psx_type_t *type,
-                                             int outer_stride,
-                                             int mid_stride,
-                                             const int *extra_strides,
-                                             int extra_strides_count);
 int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
                                           int *inner_stride,
                                           int *next_stride,

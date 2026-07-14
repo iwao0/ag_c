@@ -159,7 +159,8 @@ void psx_local_registry_add(lvar_t *var) {
 
 lvar_t *ps_local_registry_create_storage_object(
     char *name, int name_len, int offset, int storage_size,
-    int element_size, int is_array, int alignment) {
+    int alignment, const psx_type_t *decl_type) {
+  if (!decl_type) return NULL;
   lvar_t *previous = ps_decl_find_lvar(name, name_len);
   if (previous &&
       previous->scope_seq == ps_local_registry_current_scope_seq()) {
@@ -174,9 +175,11 @@ lvar_t *ps_local_registry_create_storage_object(
   var->offset = offset;
   var->size = storage_size;
   var->align_bytes = alignment;
-  var->decl_type = psx_type_new_storage_object(
-      storage_size, element_size, is_array, TK_FLOAT_KIND_NONE, 0,
-      TK_EOF, NULL, 0, 0, 0);
+  var->decl_type = ps_type_clone_persistent(decl_type);
+  if (!var->decl_type) {
+    free(var);
+    return NULL;
+  }
   psx_decl_attach_lvar_current_region(var);
   psx_local_registry_add(var);
   return var;
@@ -253,34 +256,12 @@ void ps_local_registry_set_decl_type(
 }
 
 void ps_local_registry_set_vla_descriptor(
-    lvar_t *var, int outer_stride, int row_stride_frame_off,
-    int strides_remaining, int row_stride_src_offset,
+    lvar_t *var, int row_stride_frame_off, int strides_remaining,
+    int row_stride_src_offset,
     int row_stride_elem_size) {
   if (!var) return;
   psx_type_t *type = ps_lvar_get_decl_type(var);
   if (!type) return;
-  int is_array = ps_lvar_is_array(var);
-  if (is_array && type->kind != PSX_TYPE_POINTER) {
-    psx_type_t *vla = ps_type_new_vla_object_view(
-        type, outer_stride, row_stride_frame_off, strides_remaining);
-    if (vla) {
-      var->decl_type = vla;
-      type = vla;
-    }
-  } else if (!is_array && type->kind == PSX_TYPE_POINTER &&
-             row_stride_frame_off != 0 && type->base &&
-             type->base->kind != PSX_TYPE_ARRAY) {
-    int elem_size = row_stride_elem_size > 0
-                        ? row_stride_elem_size
-                        : ps_type_sizeof(type->base);
-    if (elem_size > 0) {
-      psx_type_t *row = ps_type_new_array(
-          type->base, 0, 0, 1);
-      ps_type_set_runtime_vla_stride_metadata(row, elem_size, 0, NULL, 0);
-      type->base = row;
-    }
-  }
-  ps_type_set_runtime_vla_stride_metadata(type, outer_stride, 0, NULL, 0);
   ps_type_set_vla_runtime_descriptor(
       type, row_stride_frame_off, strides_remaining,
       row_stride_src_offset, row_stride_elem_size);

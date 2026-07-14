@@ -34,10 +34,8 @@ int lower_complete_local_object(
       result->storage_size, result->alignment);
   result->var = ps_local_registry_create_storage_object(
       request->name, request->name_len, offset, result->storage_size,
-      result->element_size, result->is_array, result->alignment);
+      result->alignment, request->type);
   if (!result->var) return 0;
-  ps_local_registry_set_decl_type(result->var, request->type);
-  result->type_attached = 1;
   return 1;
 }
 
@@ -53,12 +51,10 @@ int declare_incomplete_local_object(
   if (element_size <= 0) element_size = 1;
   result->var = ps_local_registry_create_storage_object(
       request->name, request->name_len, 0, 0,
-      element_size, 1, request->requested_alignment);
+      request->requested_alignment, request->type);
   if (!result->var) return 0;
-  ps_local_registry_set_decl_type(result->var, request->type);
   result->element_size = element_size;
   result->is_array = 1;
-  result->type_attached = 1;
   return 1;
 }
 
@@ -80,6 +76,5 @@ int complete_declared_local_object(
       var, offset, result->storage_size, result->alignment);
   ps_local_registry_set_decl_type(var, request->type);
   result->var = var;
-  result->type_attached = 1;
   return 1;
 }

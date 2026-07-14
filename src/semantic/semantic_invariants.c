@@ -51,27 +51,9 @@ static int fail(psx_semantic_invariant_failure_t *failure,
   return 0;
 }
 
-static int type_has_runtime_vla_strides(const psx_type_t *type) {
-  if (!type) return 0;
-  const psx_vla_runtime_strides_t *strides = &type->vla_runtime_strides;
-  if (strides->outer_stride != 0 || strides->mid_stride != 0 ||
-      strides->extra_strides_count != 0) {
-    return 1;
-  }
-  for (int i = 0; i < 5; i++) {
-    if (strides->extra_strides[i] != 0) return 1;
-  }
-  return 0;
-}
-
 static int validate_type(const psx_type_t *type, int depth) {
   if (!type) return 1;
   if (depth > 64) return 0;
-  if (type_has_runtime_vla_strides(type) && !type->is_vla &&
-      type->vla_row_stride_frame_off == 0 &&
-      type->vla_strides_remaining == 0) {
-    return 0;
-  }
   if (!validate_type(type->base, depth + 1)) return 0;
   for (int i = 0; i < type->param_count && i < 16; i++) {
     if (!validate_type(type->param_types[i], depth + 1)) return 0;
@@ -87,7 +69,7 @@ static int validate_node(const node_t *node,
   if (expression_kind_requires_type(node->kind) && !node->type)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
   if (node->type && !validate_type(node->type, 0))
-    return fail(failure, PSX_SEMANTIC_INVARIANT_NON_VLA_RUNTIME_STRIDES, node);
+    return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
 
   switch (node->kind) {
     case ND_BLOCK: {

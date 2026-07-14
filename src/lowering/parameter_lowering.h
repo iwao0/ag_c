@@ -14,7 +14,6 @@ typedef struct {
 typedef struct {
   lvar_t *var;
   psx_parameter_storage_plan_t storage;
-  int type_attached;
 } psx_parameter_lowering_result_t;
 
 int lower_parameter_declaration(
