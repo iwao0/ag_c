@@ -363,7 +363,7 @@ void psx_apply_parsed_function_parameters(
     ps_diag_ctx(diagnostic_token, "declarator-application",
                  "invalid function parameter syntax target");
   }
-  psx_type_t **resolved_types = parameters->count > 0
+  const psx_type_t **resolved_types = parameters->count > 0
       ? calloc((size_t)parameters->count, sizeof(*resolved_types)) : NULL;
   if (parameters->count > 0 && !resolved_types) {
     ps_diag_ctx(diagnostic_token, "declarator-application",

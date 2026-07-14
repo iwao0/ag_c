@@ -73,6 +73,76 @@ if (legacyTypeMutations.length) {
   );
 }
 
+const astSource = await readFile("src/parser/ast.h", "utf8");
+const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
+if (!nodeStruct ||
+    !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1])) {
+  throw new Error("node_t canonical semantic type must be a const view");
+}
+
+const typeSource = await readFile("src/parser/type.h", "utf8");
+const canonicalTypeStruct = typeSource.match(
+  /struct psx_type_t\s*\{([\s\S]*?)\n\};/,
+);
+if (!canonicalTypeStruct ||
+    !/\bconst\s+psx_type_t\s*\*\s*base\s*;/.test(
+      canonicalTypeStruct[1],
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*const\s*\*\s*param_types\s*;/.test(
+      canonicalTypeStruct[1],
+    )) {
+  throw new Error(
+    "canonical recursive type children must be exposed as const views",
+  );
+}
+
+const astTypeMutationRe =
+  /(?:->|\.)type->[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)/g;
+const mutableNodeTypeReadRe =
+  /^[ \t]*psx_type_t\s*\*\s*[A-Za-z_][A-Za-z0-9_]*\s*=\s*ps_node_get_type\s*\(/gm;
+const castedNodeTypeReadRe =
+  /\(\s*psx_type_t\s*\*\s*\)\s*ps_node_get_type\s*\(/g;
+const escapedCanonicalTypeConstRe = /\(\s*psx_type_t\s*\*\s*\)/g;
+const astTypeOwnershipViolations = [];
+const ownedChildMutationUsers = new Set([
+  "src/parser/semantic_ctx.c",
+  "src/parser/type.c",
+  "src/parser/type_owned_internal.h",
+]);
+const ownedChildMutationRe =
+  /\bpsx_type_owned_(?:base|param)_mut\s*\(/g;
+for (const file of sourceFiles) {
+  const source = await readFile(file, "utf8");
+  for (const pattern of [
+    astTypeMutationRe,
+    mutableNodeTypeReadRe,
+    castedNodeTypeReadRe,
+  ]) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      astTypeOwnershipViolations.push(`${file}:${match[0]}`);
+    }
+  }
+  if (file !== "src/parser/type.c") {
+    escapedCanonicalTypeConstRe.lastIndex = 0;
+    for (const match of source.matchAll(escapedCanonicalTypeConstRe)) {
+      astTypeOwnershipViolations.push(`${file}:${match[0]}`);
+    }
+  }
+  if (!ownedChildMutationUsers.has(file)) {
+    ownedChildMutationRe.lastIndex = 0;
+    for (const match of source.matchAll(ownedChildMutationRe)) {
+      astTypeOwnershipViolations.push(`${file}:${match[0]}`);
+    }
+  }
+}
+if (astTypeOwnershipViolations.length) {
+  throw new Error(
+    "AST-bound canonical types must not be mutated or recovered as mutable views:\n" +
+      astTypeOwnershipViolations.sort().join("\n"),
+  );
+}
+
 console.log(
-  "design invariants: ok (backend parser context isolation and canonical type ownership verified)",
+  "design invariants: ok (backend isolation and read-only canonical type ownership verified)",
 );

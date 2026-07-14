@@ -1,4 +1,5 @@
 #include "semantic_ctx.h"
+#include "type_owned_internal.h"
 #include "diag.h"
 #include "type.h"
 #include "../diag/diag.h"
@@ -136,7 +137,7 @@ struct psx_function_symbol_t {
   psx_function_symbol_t *next_hash;
   char *name;
   int len;
-  psx_type_t *function_type;
+  const psx_type_t *function_type;
   /* 1: この関数名はすでに本体定義済み。2 度目の定義を E3064 で弾くために使う
    * (C11 6.9p3、`int f(){...} int f(){...}` 等)。プロトタイプ宣言 `int f(int);`
    * のみではこのフラグは立たない。 */
@@ -712,7 +713,7 @@ void ps_ctx_attach_aggregate_definitions(psx_type_t *type) {
   }
   if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY ||
       type->kind == PSX_TYPE_FUNCTION) {
-    ps_ctx_attach_aggregate_definitions(type->base);
+    ps_ctx_attach_aggregate_definitions(psx_type_owned_base_mut(type));
   }
 }
 
@@ -973,7 +974,7 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
       if (type->align <= 0) type->align = size >= 8 ? 8 : size;
     }
   }
-  ps_ctx_refresh_type_completeness(type->base);
+  ps_ctx_refresh_type_completeness(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_ARRAY && type->base) {
     int element_size = ps_type_sizeof(type->base);
     if (element_size > 0) {
@@ -983,7 +984,8 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
   }
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count; i++)
-      ps_ctx_refresh_type_completeness(type->param_types[i]);
+      ps_ctx_refresh_type_completeness(
+          psx_type_owned_param_mut(type, i));
   }
 }
 
@@ -1143,7 +1145,7 @@ void ps_ctx_rollback_function_registration(
     return;
   }
   (*link)->is_defined = checkpoint->is_defined;
-  (*link)->function_type = (psx_type_t *)checkpoint->function_type;
+  (*link)->function_type = checkpoint->function_type;
 }
 
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {

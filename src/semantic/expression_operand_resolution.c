@@ -7,7 +7,7 @@
 
 psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
   if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
-  psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(operand);
   if (!type || !ps_type_is_pointer_like(type))
     return PSX_DEREF_OPERAND_NOT_POINTER;
   if (type->base && type->base->kind == PSX_TYPE_VOID)
@@ -16,7 +16,7 @@ psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
 }
 
 psx_type_t *psx_resolve_indirection_result_type(node_t *operand) {
-  psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(operand);
   if (!type || !type->base ||
       (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY))
     return NULL;
@@ -25,7 +25,7 @@ psx_type_t *psx_resolve_indirection_result_type(node_t *operand) {
 
 psx_type_t *psx_resolve_arithmetic_unary_result_type(
     node_kind_t kind, node_t *operand) {
-  psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(operand);
   if (!type) return NULL;
   if (kind == ND_UNARY_NEGATE) {
     if (type->kind == PSX_TYPE_BOOL ||
@@ -69,14 +69,14 @@ psx_type_t *psx_resolve_sequence_result_type(node_t *value) {
 }
 
 psx_type_t *psx_resolve_address_result_type(node_t *operand) {
-  psx_type_t *operand_type = ps_node_get_type(operand);
+  const psx_type_t *operand_type = ps_node_get_type(operand);
   if (!operand_type) return NULL;
   psx_type_t *base = ps_type_clone(operand_type);
   return ps_type_new_pointer(base);
 }
 
 psx_type_t *psx_resolve_incdec_result_type(node_t *operand) {
-  psx_type_t *type = ps_node_get_type(operand);
+  const psx_type_t *type = ps_node_get_type(operand);
   if (!type) return NULL;
   if (ps_type_is_pointer(type) || type->kind == PSX_TYPE_BOOL ||
       type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT)
@@ -85,7 +85,7 @@ psx_type_t *psx_resolve_incdec_result_type(node_t *operand) {
 }
 
 static int is_subscript_pointer_operand(node_t *node) {
-  psx_type_t *type = ps_node_get_type(node);
+  const psx_type_t *type = ps_node_get_type(node);
   return type && (type->kind == PSX_TYPE_POINTER ||
                   type->kind == PSX_TYPE_ARRAY);
 }

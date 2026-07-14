@@ -12,12 +12,12 @@
 
 static int aggregate_temp_seq;
 
-static node_t *annotate(node_t *node, psx_type_t *type) {
+static node_t *annotate(node_t *node, const psx_type_t *type) {
   if (node && type) ps_node_bind_type(node, type);
   return node;
 }
 
-static node_t *fp_to_int(node_t *operand, psx_type_t *type) {
+static node_t *fp_to_int(node_t *operand, const psx_type_t *type) {
   if (!operand || ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE)
     return operand;
   if (!type) type = ps_type_new_integer(TK_INT, 4, 0);
@@ -39,7 +39,7 @@ static node_t *lower_value_to_fp(node_t *operand, tk_float_kind_t target) {
 }
 
 typedef struct {
-  psx_type_t *target;
+  const psx_type_t *target;
   const psx_type_t *value;
   token_kind_t kind;
   token_kind_t tag_kind;
@@ -59,7 +59,7 @@ static const psx_type_t *target_value_type(const psx_type_t *type) {
   return value;
 }
 
-static cast_target_view_t target_view(psx_type_t *target) {
+static cast_target_view_t target_view(const psx_type_t *target) {
   cast_target_view_t view = {0};
   view.target = target;
   view.value = target_value_type(target);
@@ -341,7 +341,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
 }
 
 node_t *lower_implicit_value_conversion(node_t *operand,
-                                        psx_type_t *target_type,
+                                        const psx_type_t *target_type,
                                         token_t *fallback_diag_tok) {
   if (!operand || !target_type || ps_type_is_tag_aggregate(target_type))
     return operand;
@@ -369,7 +369,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
        target_type->kind != PSX_TYPE_POINTER)) {
     return operand;
   }
-  psx_type_t *source_type = ps_node_get_type(operand);
+  const psx_type_t *source_type = ps_node_get_type(operand);
   if (source_type && ps_type_is_pointer_like(source_type) &&
       ps_type_is_pointer(target_type)) {
     return operand;
@@ -390,7 +390,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
 
 void lower_source_cast_expression(node_t *node, token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_CAST || !node->is_source_cast) return;
-  psx_type_t *target = node->type;
+  const psx_type_t *target = node->type;
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
       operand, target_view(target),

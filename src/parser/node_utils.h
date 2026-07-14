@@ -60,7 +60,7 @@ node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
                                          tk_float_kind_t fp_kind, int is_bool);
 node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind);
 node_t *ps_node_new_lvar_fp_slot_for(struct lvar_t *owner, int offset, int type_size);
-node_t *ps_node_new_param_placeholder(psx_type_t *type);
+node_t *ps_node_new_param_placeholder(const psx_type_t *type);
 node_t *ps_node_new_unsigned_lvar_typed(int offset, int type_size);
 node_t *psx_node_new_lvar_for(struct lvar_t *var);
 node_t *psx_node_new_lvar_object_ref_for(struct lvar_t *var);
@@ -69,19 +69,23 @@ node_t *psx_node_new_lvar_identifier_ref_for(struct lvar_t *var);
 node_t *psx_node_new_vla_decay_ref_for(struct lvar_t *var);
 node_t *ps_node_new_param_lvar_for(struct lvar_t *var);
 node_t *ps_node_new_array_elem_lvar_for(struct lvar_t *var, int idx);
-node_t *ps_node_new_fp_to_int_cast(node_t *operand, psx_type_t *cast_type);
-node_t *ps_node_new_int_to_fp_cast(node_t *operand, psx_type_t *cast_type);
+node_t *ps_node_new_fp_to_int_cast(node_t *operand,
+                                    const psx_type_t *cast_type);
+node_t *ps_node_new_int_to_fp_cast(node_t *operand,
+                                    const psx_type_t *cast_type);
 node_t *ps_node_new_integer_cast_result(node_t *operand,
-                                         psx_type_t *cast_type);
+                                         const psx_type_t *cast_type);
 node_t *ps_node_new_integer_cast_result_ex(node_t *operand,
-                                            psx_type_t *cast_type,
+                                            const psx_type_t *cast_type,
                                             int widen_zext_i64);
 node_t *ps_node_new_i64_to_i32_trunc_cast(node_t *operand,
-                                           psx_type_t *cast_type);
+                                           const psx_type_t *cast_type);
 node_t *ps_node_new_pointer_cast_result(node_t *operand,
-                                         psx_type_t *cast_type);
-node_t *ps_node_new_aggregate_cast_result(node_t *operand, psx_type_t *cast_type);
-node_t *ps_node_new_void_cast_result(node_t *operand, psx_type_t *cast_type);
+                                         const psx_type_t *cast_type);
+node_t *ps_node_new_aggregate_cast_result(
+    node_t *operand, const psx_type_t *cast_type);
+node_t *ps_node_new_void_cast_result(node_t *operand,
+                                     const psx_type_t *cast_type);
 node_t *psx_node_new_source_cast(
     node_t *operand, psx_type_name_ref_t type_name);
 node_t *ps_node_new_gvar_array_addr_for(struct global_var_t *gv);

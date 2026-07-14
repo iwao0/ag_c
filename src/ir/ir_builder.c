@@ -1374,7 +1374,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
     return emit_bitfield_load(ctx, ptr, bw, bo, bs);
   }
   /* 配列が式中でポインタへ崩壊するケース: load せず address (ptr) を返す。 */
-  psx_type_t *deref_type = ps_node_get_type(node);
+  const psx_type_t *deref_type = ps_node_get_type(node);
   if (ps_node_deref_decays_to_address(node) ||
       (deref_type && deref_type->kind == PSX_TYPE_ARRAY)) {
     return ptr;
@@ -3420,7 +3420,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
   /* >8 個の引数: 9 個目以降は stack 渡し。idx >= 8 を IR_PARAM の src1 に渡し、
    * codegen 側で [x29 + total_size + (idx-8)*8] から load する。 */
   /* 関数戻り値型: fp_kind 対応 */
-  psx_type_t *ret_type = ps_node_get_type((node_t *)fn);
+  const psx_type_t *ret_type = ps_node_get_type((node_t *)fn);
   (void)ret_type;
   int ret_struct_size = aggregate_size_from_node((node_t *)fn);
   ir_type_t ret_ty = ir_type_from_node((node_t *)fn);

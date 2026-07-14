@@ -2,6 +2,7 @@
 #include "arena.h"
 #include "dynarray.h"
 #include "tag_member_public.h"
+#include "type_owned_internal.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,6 +60,17 @@ int ps_type_is_well_formed(const psx_type_t *type) {
   return type && type_is_well_formed_from(type, NULL);
 }
 
+psx_type_t *psx_type_owned_base_mut(psx_type_t *owner) {
+  return owner ? (psx_type_t *)owner->base : NULL;
+}
+
+psx_type_t *psx_type_owned_param_mut(psx_type_t *owner, int index) {
+  if (!owner || !owner->param_types || index < 0 ||
+      index >= owner->param_count)
+    return NULL;
+  return (psx_type_t *)owner->param_types[index];
+}
+
 psx_type_t *ps_type_new(psx_type_kind_t kind) {
   psx_type_t *type = arena_alloc(sizeof(psx_type_t));
   type->kind = kind;
@@ -76,10 +88,11 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
     else if (type->size == 8) type->scalar_kind = TK_LONG;
     else type->scalar_kind = TK_INT;
   }
-  ps_type_normalize_integer_identity(type->base);
+  ps_type_normalize_integer_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count; i++)
-      ps_type_normalize_integer_identity(type->param_types[i]);
+      ps_type_normalize_integer_identity(
+          psx_type_owned_param_mut(type, i));
   }
 }
 
@@ -232,7 +245,7 @@ psx_type_t *ps_type_conditional_result(
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }
 
-psx_type_t *ps_type_new_pointer(psx_type_t *base) {
+psx_type_t *ps_type_new_pointer(const psx_type_t *base) {
   psx_type_t *type = ps_type_new(PSX_TYPE_POINTER);
   type->base = base;
   type->size = 8;
@@ -240,14 +253,14 @@ psx_type_t *ps_type_new_pointer(psx_type_t *base) {
   return type;
 }
 
-psx_type_t *ps_type_new_function(psx_type_t *return_type) {
+psx_type_t *ps_type_new_function(const psx_type_t *return_type) {
   psx_type_t *type = ps_type_new(PSX_TYPE_FUNCTION);
   type->base = return_type;
   return type;
 }
 
 void ps_type_set_function_params(psx_type_t *function_type,
-                                  psx_type_t *const *param_types,
+                                  const psx_type_t *const *param_types,
                                   int param_count, int is_variadic) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION) return;
   if (param_count < 0) param_count = 0;
@@ -255,11 +268,11 @@ void ps_type_set_function_params(psx_type_t *function_type,
   function_type->param_count = param_count;
   function_type->is_variadic_function = is_variadic ? 1 : 0;
   if (param_count == 0) return;
-  function_type->param_types =
-      arena_alloc((size_t)param_count * sizeof(*function_type->param_types));
+  const psx_type_t **params =
+      arena_alloc((size_t)param_count * sizeof(*params));
   for (int i = 0; i < param_count; i++)
-    function_type->param_types[i] =
-        param_types ? ps_type_clone(param_types[i]) : NULL;
+    params[i] = param_types ? ps_type_clone(param_types[i]) : NULL;
+  function_type->param_types = params;
 }
 
 const psx_type_t *ps_type_derived_function(const psx_type_t *type) {
@@ -286,7 +299,8 @@ const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
   return function ? function->base : NULL;
 }
 
-psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size,
+psx_type_t *ps_type_new_array(const psx_type_t *base,
+                              int array_len, int size,
                               int is_vla) {
   psx_type_t *type = ps_type_new(PSX_TYPE_ARRAY);
   type->base = base;
@@ -320,11 +334,12 @@ psx_type_t *ps_type_clone(const psx_type_t *src) {
   dst->param_types = NULL;
   dst->base = ps_type_clone(src->base);
   if (src->param_count > 0) {
-    dst->param_types =
-        arena_alloc((size_t)src->param_count * sizeof(*dst->param_types));
+    const psx_type_t **params =
+        arena_alloc((size_t)src->param_count * sizeof(*params));
     for (int i = 0; i < src->param_count; i++)
-      dst->param_types[i] = ps_type_clone(
+      params[i] = ps_type_clone(
           src->param_types ? src->param_types[i] : NULL);
+    dst->param_types = params;
   }
   return dst;
 }
@@ -337,30 +352,32 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
   dst->param_types = NULL;
   dst->base = ps_type_clone_persistent(src->base);
   if (src->param_count > 0) {
-    dst->param_types = calloc(
-        (size_t)src->param_count, sizeof(*dst->param_types));
-    if (!dst->param_types) return NULL;
+    const psx_type_t **params = calloc(
+        (size_t)src->param_count, sizeof(*params));
+    if (!params) return NULL;
     for (int i = 0; i < src->param_count; i++)
-      dst->param_types[i] = ps_type_clone_persistent(
+      params[i] = ps_type_clone_persistent(
           src->param_types ? src->param_types[i] : NULL);
+    dst->param_types = params;
   }
   return dst;
 }
 
-static psx_type_t *type_build_array_dim_chain(psx_type_t *base,
+static psx_type_t *type_build_array_dim_chain(const psx_type_t *base,
                                                const int *dims,
                                                int dim_count,
                                                int leaf_size) {
-  if (!base || !dims || dim_count <= 0 || leaf_size <= 0) return base;
-  psx_type_t *result = base;
+  if (!base || !dims || dim_count <= 0 || leaf_size <= 0) return NULL;
+  const psx_type_t *child = base;
+  psx_type_t *result = NULL;
   int child_size = ps_type_sizeof(base);
   if (child_size <= 0) child_size = leaf_size;
   for (int i = dim_count - 1; i >= 0; i--) {
     int len = dims[i];
-    if (len <= 0) return base;
+    if (len <= 0) return NULL;
     int size = child_size * len;
-    psx_type_t *array = ps_type_new_array(result, len, size, 0);
-    result = array;
+    result = ps_type_new_array(child, len, size, 0);
+    child = result;
     child_size = size;
   }
   return result;
@@ -369,14 +386,15 @@ static psx_type_t *type_build_array_dim_chain(psx_type_t *base,
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
                                      const int *dims, int dim_count) {
   if (!base || !dims || dim_count <= 0) return base;
-  psx_type_t *result = base;
+  const psx_type_t *child = base;
+  psx_type_t *result = NULL;
   int child_size = ps_type_sizeof(base);
   if (child_size <= 0) child_size = 1;
   for (int i = dim_count - 1; i >= 0; i--) {
     int len = dims[i];
     int size = len > 0 ? len * child_size : 0;
-    psx_type_t *array = ps_type_new_array(result, len, size, 0);
-    result = array;
+    result = ps_type_new_array(child, len, size, 0);
+    child = result;
     child_size = size;
   }
   return result;
@@ -456,7 +474,7 @@ int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
 }
 
 int ps_declarator_op_set_function_params(
-    psx_declarator_op_t *op, psx_type_t *const *param_types,
+    psx_declarator_op_t *op, const psx_type_t *const *param_types,
     int param_count, int is_variadic) {
   if (!op || op->kind != PSX_DECL_OP_FUNCTION || param_count < 0)
     return 0;
@@ -627,10 +645,11 @@ psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
 
   if (type->kind == PSX_TYPE_ARRAY) {
     psx_type_t *old_outer = type;
-    psx_type_t *base = type;
+    const psx_type_t *base = type;
     while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
     psx_type_t *rebuilt =
         type_build_array_dim_chain(base, dims, dim_count, leaf_size);
+    if (!rebuilt) return type;
     if (rebuilt && rebuilt->kind == PSX_TYPE_ARRAY) {
       psx_type_copy_common_qualifiers(rebuilt, old_outer);
       rebuilt->fp_kind = old_outer->fp_kind;
@@ -645,12 +664,12 @@ psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
   if (type->kind != PSX_TYPE_POINTER) return type;
   psx_type_t *owner = type;
   while (owner->base && owner->base->kind == PSX_TYPE_POINTER)
-    owner = owner->base;
-  psx_type_t *base = owner->base;
+    owner = psx_type_owned_base_mut(owner);
+  const psx_type_t *base = owner->base;
   while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
   psx_type_t *rebuilt =
       type_build_array_dim_chain(base, dims, dim_count, leaf_size);
-  if (!rebuilt || rebuilt == base) return type;
+  if (!rebuilt) return type;
   owner->base = rebuilt;
   return type;
 }
@@ -772,7 +791,7 @@ int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth) {
 
 psx_type_t *ps_type_address_result(const psx_type_t *type) {
   if (!type) return NULL;
-  return ps_type_new_pointer((psx_type_t *)type);
+  return ps_type_new_pointer(type);
 }
 
 psx_type_t *ps_type_decay_array(const psx_type_t *type) {
@@ -780,7 +799,7 @@ psx_type_t *ps_type_decay_array(const psx_type_t *type) {
   return ps_type_new_pointer(type->base);
 }
 
-psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
+const psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
   if (!type || !type->base ||
       (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
     return NULL;
@@ -1105,7 +1124,8 @@ psx_type_t *ps_type_generic_control(const psx_type_t *control) {
 }
 
 int ps_type_generic_select_index(
-    const psx_type_t *control, psx_type_t *const *association_types,
+    const psx_type_t *control,
+    const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count) {
   psx_type_t *normalized = ps_type_generic_control(control);
   if (!normalized || !association_types || association_count <= 0) return -1;
@@ -1217,7 +1237,8 @@ void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                        int is_const_qualified,
                                        int is_volatile_qualified) {
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  while (type && type->kind == PSX_TYPE_ARRAY)
+    type = psx_type_owned_base_mut(type);
   if (!type || type->kind == PSX_TYPE_FUNCTION) return;
   if (is_const_qualified) type->is_const_qualified = 1;
   if (is_volatile_qualified) type->is_volatile_qualified = 1;

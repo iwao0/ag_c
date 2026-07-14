@@ -30,14 +30,16 @@ void psx_resolve_generic_selection(
       default_index = i;
       continue;
     }
-    if (!association->type)
-      association->type =
+    if (!association->type) {
+      psx_type_t *resolved =
           psx_resolve_bound_type_name_ref(&association->type_name);
+      ps_type_normalize_integer_identity(resolved);
+      association->type = resolved;
+    }
     if (!association->type) {
       resolution->conflict_index = i;
       return;
     }
-    ps_type_normalize_integer_identity(association->type);
     for (int j = 0; j < i; j++) {
       psx_generic_association_t *previous = &selection->associations[j];
       if (!previous->is_default &&
@@ -55,7 +57,7 @@ void psx_resolve_generic_selection(
     resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH;
     return;
   }
-  psx_type_t *selected_type = ps_node_get_type(
+  const psx_type_t *selected_type = ps_node_get_type(
       selection->associations[selected].expression);
   if (!selected_type) {
     resolution->conflict_index = selected;

@@ -313,7 +313,7 @@ static int lower_static_string_expression(
   }
   if (type->kind != PSX_TYPE_ARRAY) return 0;
 
-  psx_type_t *element = (psx_type_t *)ps_type_array_leaf_type(type);
+  const psx_type_t *element = ps_type_array_leaf_type(type);
   int element_size = ps_type_sizeof(element);
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;

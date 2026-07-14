@@ -205,7 +205,7 @@ typedef struct {
 } node_member_access_t;
 
 typedef struct {
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_type_name_ref_t type_name;
   node_t *expression;
   token_t *tok;
@@ -223,7 +223,7 @@ typedef struct {
 typedef struct {
   node_t base;
   node_t *operand;
-  psx_type_t *queried_type;
+  const psx_type_t *queried_type;
   psx_type_name_ref_t type_name;
   node_t *runtime_size_expr;
   int resolved_size;

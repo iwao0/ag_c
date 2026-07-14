@@ -61,7 +61,7 @@ typedef struct {
   unsigned int is_incomplete_array : 1;
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
-  psx_type_t **function_param_types;
+  const psx_type_t **function_param_types;
   int function_param_count;
   int function_is_variadic;
 } psx_declarator_op_t;
@@ -78,7 +78,7 @@ typedef struct {
 
 struct psx_type_t {
   psx_type_kind_t kind;
-  psx_type_t *base;
+  const psx_type_t *base;
 
   int size;
   int align;
@@ -101,7 +101,7 @@ struct psx_type_t {
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
-  psx_type_t **param_types;
+  const psx_type_t *const *param_types;
   int param_count;
   unsigned char is_variadic_function;
 
@@ -122,10 +122,10 @@ psx_type_t *ps_type_binary_result(
     const psx_type_t *rhs);
 psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type);
-psx_type_t *ps_type_new_pointer(psx_type_t *base);
-psx_type_t *ps_type_new_function(psx_type_t *return_type);
+psx_type_t *ps_type_new_pointer(const psx_type_t *base);
+psx_type_t *ps_type_new_function(const psx_type_t *return_type);
 void ps_type_set_function_params(psx_type_t *function_type,
-                                  psx_type_t *const *param_types,
+                                  const psx_type_t *const *param_types,
                                   int param_count, int is_variadic);
 /* Returns the function node contained in a pointer/array derivation chain.
  * This does not imply that the original expression type is callable. */
@@ -150,7 +150,7 @@ int psx_declarator_shape_append_array_dims(
     psx_declarator_shape_t *shape, const int *dims, int dim_count);
 int ps_declarator_shape_append_function(psx_declarator_shape_t *shape);
 int ps_declarator_op_set_function_params(
-    psx_declarator_op_t *op, psx_type_t *const *param_types,
+    psx_declarator_op_t *op, const psx_type_t *const *param_types,
     int param_count, int is_variadic);
 int ps_declarator_shape_append_shape(
     psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix);
@@ -162,7 +162,8 @@ psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type);
 psx_type_t *psx_type_rebase_declarator(
     const psx_type_t *derived_type, const psx_type_t *canonical_base,
     int *out_rebased);
-psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size,
+psx_type_t *ps_type_new_array(const psx_type_t *base,
+                              int array_len, int size,
                               int is_vla);
 int ps_type_complete_array(psx_type_t *type, int array_len);
 psx_type_t *ps_type_clone(const psx_type_t *src);
@@ -191,7 +192,7 @@ int ps_type_array_subscript_stride_elements(const psx_type_t *type,
 int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth);
 psx_type_t *ps_type_address_result(const psx_type_t *type);
 psx_type_t *ps_type_decay_array(const psx_type_t *type);
-psx_type_t *ps_type_dereference_result(const psx_type_t *type);
+const psx_type_t *ps_type_dereference_result(const psx_type_t *type);
 psx_type_t *ps_type_subscript_result(const psx_type_t *type);
 int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
@@ -216,7 +217,8 @@ int ps_type_generic_matches(const psx_type_t *control,
                             const psx_type_t *association);
 psx_type_t *ps_type_generic_control(const psx_type_t *control);
 int ps_type_generic_select_index(
-    const psx_type_t *control, psx_type_t *const *association_types,
+    const psx_type_t *control,
+    const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
 int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);

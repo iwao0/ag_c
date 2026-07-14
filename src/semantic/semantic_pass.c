@@ -103,7 +103,7 @@ static void semantic_validate_assignment(node_t *node,
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
 
-  psx_type_t *rhs_type = ps_node_get_type(node->rhs);
+  const psx_type_t *rhs_type = ps_node_get_type(node->rhs);
   if (rhs_type && rhs_type->kind == PSX_TYPE_VOID) {
     if (node->rhs->kind == ND_FUNCALL) {
       node_func_t *fn = (node_func_t *)node->rhs;
@@ -118,7 +118,7 @@ static void semantic_validate_assignment(node_t *node,
   }
 
   if (node->is_decl_initializer) {
-    psx_type_t *lhs_type = ps_node_get_type(node->lhs);
+    const psx_type_t *lhs_type = ps_node_get_type(node->lhs);
     int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
     ps_node_reject_const_qual_discard_at(node->lhs, node->rhs, tok);
     if (lhs_is_pointer && node->rhs->kind == ND_NUM &&

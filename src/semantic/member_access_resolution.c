@@ -5,7 +5,7 @@
 #include <string.h>
 
 static int node_is_single_tag_array_view(node_t *node) {
-  psx_type_t *type = ps_node_get_type(node);
+  const psx_type_t *type = ps_node_get_type(node);
   return node &&
          (node->kind == ND_UNARY_DEREF || node->kind == ND_DEREF) && type &&
          type->kind == PSX_TYPE_ARRAY && type->base &&
@@ -23,7 +23,7 @@ void psx_resolve_member_access(
     return;
   }
 
-  psx_type_t *base_type = ps_node_get_type(request->base);
+  const psx_type_t *base_type = ps_node_get_type(request->base);
   const psx_type_t *object_type =
       ps_type_find_aggregate_object_type(base_type);
   int base_is_pointer = base_type &&

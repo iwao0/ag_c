@@ -51,7 +51,8 @@ void psx_resolve_declarator_syntax(
 }
 
 void psx_set_resolved_function_parameter_types(
-    psx_declarator_op_t *function_op, psx_type_t **parameter_types,
+    psx_declarator_op_t *function_op,
+    const psx_type_t *const *parameter_types,
     int parameter_count, int is_variadic) {
   if (!function_op || function_op->kind != PSX_DECL_OP_FUNCTION) return;
   (void)ps_declarator_op_set_function_params(

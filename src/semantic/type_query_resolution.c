@@ -95,12 +95,14 @@ static void resolve_sizeof_type_name(
     op->is_vla_array = is_constant ? 0 : 1;
   }
 
-  query->type_name.resolved_type = psx_resolve_decl_type(
+  psx_type_t *resolved_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = base_type,
           .declarator_shape = shape,
       });
-  query->queried_type = query->type_name.resolved_type;
+  ps_ctx_refresh_type_completeness(resolved_type);
+  query->type_name.resolved_type = resolved_type;
+  query->queried_type = resolved_type;
   if (!query->queried_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
@@ -131,7 +133,7 @@ static void resolve_sizeof_type_name(
   if (is_runtime) query->runtime_size_expr = size;
 }
 
-static psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
+static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
   if (!query) return NULL;
   if (query->is_type_name) return query->queried_type;
   node_t *operand = query->operand;
@@ -157,7 +159,7 @@ static psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
     return ps_lvar_get_decl_type(var);
   if (depth == 0 && operand->kind == ND_ADDR && !explicit_addr &&
       operand->lhs) {
-    psx_type_t *object_type = ps_node_get_type(operand->lhs);
+    const psx_type_t *object_type = ps_node_get_type(operand->lhs);
     if (object_type && object_type->kind == PSX_TYPE_ARRAY)
       return object_type;
   }
@@ -178,8 +180,12 @@ void psx_resolve_sizeof_query(
 
   resolve_sizeof_type_name(query, resolution);
   if (resolution->status != PSX_TYPE_QUERY_RESOLUTION_OK) return;
-  psx_type_t *type = sizeof_operand_type(query);
-  ps_ctx_refresh_type_completeness(type);
+  const psx_type_t *type = sizeof_operand_type(query);
+  if (!query->is_type_name && type) {
+    psx_type_t *completed_view = ps_type_clone(type);
+    ps_ctx_refresh_type_completeness(completed_view);
+    type = completed_view;
+  }
   query->queried_type = type;
 
   int subscript_depth = 0;

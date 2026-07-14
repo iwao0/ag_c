@@ -492,8 +492,8 @@ static int initializer_list_is_flat_positional_scalar(
   if (!list || list->entry_count <= 0) return 0;
   for (int i = 0; i < list->entry_count; i++) {
     const psx_initializer_entry_t *entry = &list->entries[i];
-    psx_type_t *value_type = ps_node_get_type(entry->value);
-    psx_type_t *addressed_type =
+    const psx_type_t *value_type = ps_node_get_type(entry->value);
+    const psx_type_t *addressed_type =
         entry->value && entry->value->kind == ND_ADDR
             ? ps_node_get_type(entry->value->lhs)
             : NULL;
@@ -593,10 +593,10 @@ static node_t *lower_flat_typed_object_initializer_list(
 
 static int initializer_value_requires_immediate_subobject(
     node_t *value) {
-  psx_type_t *value_type = ps_node_get_type(value);
+  const psx_type_t *value_type = ps_node_get_type(value);
   if (ps_type_is_tag_aggregate(value_type)) return 1;
   if (value && value->kind == ND_ADDR && value->lhs) {
-    psx_type_t *addressed = ps_node_get_type(value->lhs);
+    const psx_type_t *addressed = ps_node_get_type(value->lhs);
     return addressed && addressed->kind == PSX_TYPE_ARRAY;
   }
   return 0;
@@ -726,7 +726,7 @@ static node_t *try_lower_typed_array_copy(
       value->kind != ND_ADDR || !value->lhs ||
       value->lhs->kind != ND_LVAR) return NULL;
   node_lvar_t *source = (node_lvar_t *)value->lhs;
-  psx_type_t *source_type = ps_node_get_type(value->lhs);
+  const psx_type_t *source_type = ps_node_get_type(value->lhs);
   if (!source->var || !source_type ||
       ps_type_sizeof(source_type) < ps_type_sizeof(type)) return NULL;
 
@@ -1060,8 +1060,8 @@ static node_t *new_decl_initializer_assign(node_t *target, node_t *value,
 static node_t *lower_aggregate_expr_initializer(
     node_decl_init_t *initializer, int allow_union_scalar) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
-  psx_type_t *target_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  psx_type_t *value_type = ps_node_get_type(initializer->base.rhs);
+  const psx_type_t *target_type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *value_type = ps_node_get_type(initializer->base.rhs);
   token_t *tok = initializer->base.tok;
   if (!var || !target_type) return NULL;
 

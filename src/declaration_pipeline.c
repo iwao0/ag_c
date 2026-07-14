@@ -415,7 +415,7 @@ int psx_finish_function_definition_pipeline(
   psx_function_definition_pipeline_result_t *result = state->result;
   psx_declarator_op_t *primary =
       &state->application.shape.ops[state->primary_function_op_index];
-  psx_type_t **parameter_types = result->nargs > 0
+  const psx_type_t **parameter_types = result->nargs > 0
       ? calloc((size_t)result->nargs, sizeof(*parameter_types)) : NULL;
   for (int i = 0; i < result->nargs; i++)
     parameter_types[i] = ps_node_get_type(result->args[i]);
