@@ -31,8 +31,8 @@ void psx_resolve_generic_selection(
       continue;
     }
     if (!association->type) {
-      psx_type_t *resolved =
-          psx_resolve_bound_type_name_ref(&association->type_name);
+      psx_type_t *resolved = ps_type_clone(
+          psx_resolve_bound_type_name_ref(&association->type_name));
       ps_type_normalize_integer_identity(resolved);
       association->type = resolved;
     }

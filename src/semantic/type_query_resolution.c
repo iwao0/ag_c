@@ -58,7 +58,7 @@ static void resolve_sizeof_type_name(
     return;
   }
 
-  psx_type_t *base_type = query->type_name.bound_base_type;
+  const psx_type_t *base_type = query->type_name.bound_base_type;
   psx_declarator_shape_t *shape = &syntax->declarator.declarator_shape;
   if (syntax->declarator.array_bound_count > 0) {
     resolution->zero_length_bound_indices = arena_alloc(
@@ -143,8 +143,12 @@ static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
     if (compound->object_type &&
         compound->object_type->kind == PSX_TYPE_ARRAY &&
         compound->object_type->array_len <= 0 && compound->base.rhs) {
-      psx_resolve_incomplete_array_initializer(
-          compound->object_type, PSX_DECL_INIT_LIST, compound->base.rhs);
+      psx_type_t *completed = ps_type_clone(compound->object_type);
+      if (completed && psx_resolve_incomplete_array_initializer(
+                           completed, PSX_DECL_INIT_LIST,
+                           compound->base.rhs)) {
+        compound->object_type = completed;
+      }
     }
     if (compound->requires_addressable_object)
       return ps_node_get_type(operand);
@@ -233,8 +237,7 @@ void psx_resolve_sizeof_query(
 
 void psx_resolve_alignof_query(node_alignof_query_t *query) {
   if (!query) return;
-  psx_type_t *type =
+  const psx_type_t *type =
       psx_resolve_bound_type_name_ref(&query->type_name);
-  ps_ctx_refresh_type_completeness(type);
   query->resolved_alignment = type && type->align > 0 ? type->align : 1;
 }

@@ -301,7 +301,7 @@ static node_t *lower_array_list_initializer(node_decl_init_t *initializer) {
   if (!var || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
-  psx_type_t *type = ps_lvar_get_decl_type(var);
+  const psx_type_t *type = ps_lvar_get_decl_type(var);
   if (type && type->kind == PSX_TYPE_ARRAY && list->entry_count == 1) {
     psx_initializer_entry_t *entry = &list->entries[0];
     if (entry->value && entry->value->kind == ND_STRING &&
@@ -972,7 +972,7 @@ static node_t *lower_typed_initializer_list(
 
 static node_t *lower_struct_list_initializer(node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
-  psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   psx_aggregate_definition_t *definition =
       type ? type->aggregate_definition : NULL;
   if (!var || !definition || !initializer->base.rhs ||
@@ -1005,7 +1005,7 @@ static node_t *lower_struct_list_initializer(node_decl_init_t *initializer) {
 
 static node_t *lower_union_list_initializer(node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
-  psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   psx_aggregate_definition_t *definition =
       type ? type->aggregate_definition : NULL;
   if (!var || !definition || !initializer->base.rhs ||
@@ -1156,7 +1156,7 @@ static node_t *lower_typed_list_initializer(
   if (!initializer || initializer->base.rhs->kind != ND_INIT_LIST)
     return NULL;
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
-  psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   if (!var || !type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY)
     return lower_array_list_initializer(initializer);
@@ -1172,7 +1172,7 @@ static node_t *lower_typed_list_initializer(
 static node_t *lower_typed_expr_initializer(
     node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
-  psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   if (!var || !type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
     return lower_array_expr_initializer(

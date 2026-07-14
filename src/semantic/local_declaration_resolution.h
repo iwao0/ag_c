@@ -26,7 +26,7 @@ typedef struct {
 } psx_local_vla_dimension_t;
 
 typedef struct {
-  psx_type_t *type;
+  const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int has_initializer;
 } psx_local_declaration_resolution_request_t;

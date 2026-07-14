@@ -9,7 +9,7 @@
 typedef struct {
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   int is_extern_decl;
   int is_static;
   int is_thread_local;
@@ -55,7 +55,7 @@ typedef struct {
   node_t **args;
   int nargs;
   int has_unnamed_parameter;
-  psx_type_t *function_type;
+  const psx_type_t *function_type;
 } psx_function_definition_pipeline_result_t;
 
 typedef struct {
@@ -82,7 +82,7 @@ typedef struct {
   int function_name_len;
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_parsed_initializer_t *initializer;
   token_t *diag_tok;
 } psx_static_local_declaration_pipeline_request_t;
@@ -107,7 +107,7 @@ int psx_finish_static_local_declaration_pipeline(
 typedef struct {
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int requested_alignment;
   psx_parsed_initializer_t *initializer;
@@ -132,7 +132,7 @@ int psx_finish_automatic_local_declaration_pipeline(
 typedef struct {
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   int has_initializer;
   token_t *diag_tok;
 } psx_block_extern_declaration_pipeline_request_t;
@@ -143,7 +143,7 @@ int psx_apply_block_extern_declaration_pipeline(
 typedef struct {
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   int requested_alignment;
 } psx_temporary_local_declaration_pipeline_request_t;
 

@@ -18,18 +18,16 @@ void psx_resolve_static_initializer(
     return;
   }
 
-  resolution->type = request->type;
+  psx_type_t *type = ps_type_clone(request->type);
+  if (!type) return;
+  resolution->type = type;
   resolution->kind = request->kind;
   resolution->initializer = request->initializer;
-  if (ps_type_is_incomplete_array(resolution->type)) {
-    resolution->type = ps_type_clone(resolution->type);
-    if (!resolution->type) return;
-  }
-  ps_ctx_attach_aggregate_definitions(resolution->type);
+  ps_ctx_attach_aggregate_definitions(type);
 
-  if (ps_type_is_incomplete_array(resolution->type)) {
+  if (ps_type_is_incomplete_array(type)) {
     if (!psx_resolve_incomplete_array_initializer(
-            resolution->type, resolution->kind,
+            type, resolution->kind,
             resolution->initializer)) {
       resolution->status = PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED;
       return;
@@ -39,8 +37,8 @@ void psx_resolve_static_initializer(
 
   if (resolution->kind == PSX_DECL_INIT_LIST) {
     if (resolution->initializer->kind != ND_INIT_LIST) return;
-    if (resolution->type->kind == PSX_TYPE_ARRAY ||
-        ps_type_is_tag_aggregate(resolution->type)) {
+    if (type->kind == PSX_TYPE_ARRAY ||
+        ps_type_is_tag_aggregate(type)) {
       resolution->is_aggregate_initializer = 1;
       resolution->status = PSX_STATIC_INITIALIZER_OK;
       return;

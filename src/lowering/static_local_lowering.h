@@ -29,7 +29,7 @@ typedef struct {
   int function_name_len;
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   const psx_static_initializer_resolution_t *initializer_resolution;
   token_t *diag_tok;
 } psx_static_local_declaration_request_t;

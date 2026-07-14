@@ -22,7 +22,7 @@ typedef struct {
 } psx_parameter_declaration_resolution_request_t;
 
 typedef struct {
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_parameter_storage_plan_t storage;
   psx_parameter_lowering_kind_t lowering_kind;
   psx_parameter_dimension_t *inner_dimensions;

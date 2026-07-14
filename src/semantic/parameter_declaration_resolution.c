@@ -29,16 +29,17 @@ int psx_resolve_parameter_declaration(
     return 0;
   }
   memset(resolution, 0, sizeof(*resolution));
-  resolution->type = psx_resolve_decl_type(&request->type);
-  if (!resolution->type) return 0;
-  resolution->type = ps_type_adjust_parameter_type(resolution->type);
-  if (!resolution->type ||
-      !psx_plan_parameter_storage(resolution->type,
+  psx_type_t *type = psx_resolve_decl_type(&request->type);
+  if (!type) return 0;
+  type = ps_type_adjust_parameter_type(type);
+  if (!type ||
+      !psx_plan_parameter_storage(type,
                                   &resolution->storage)) {
     return 0;
   }
+  resolution->type = type;
 
-  const psx_type_t *leaf = ps_type_derived_leaf_type(resolution->type);
+  const psx_type_t *leaf = ps_type_derived_leaf_type(type);
   int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);
   int has_pointer = request_shape_has(request, PSX_DECL_OP_POINTER);
   int has_array = request_shape_has(request, PSX_DECL_OP_ARRAY);

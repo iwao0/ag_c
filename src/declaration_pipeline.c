@@ -688,9 +688,11 @@ int psx_finish_automatic_local_declaration_pipeline(
   if (!request || !result || !result->var || !request->initializer)
     return 0;
   if (ps_type_is_incomplete_array(request->type)) {
+    psx_type_t *completed_type = ps_type_clone(request->type);
+    if (!completed_type) return 0;
     if (!request->initializer->has_initializer ||
         !psx_resolve_incomplete_array_initializer(
-            request->type, request->initializer->kind,
+            completed_type, request->initializer->kind,
             request->initializer->value)) {
       ps_diag_ctx(request->initializer->value_tok, "decl", "%s",
                    diag_message_for(
@@ -701,7 +703,7 @@ int psx_finish_automatic_local_declaration_pipeline(
             &(psx_local_object_request_t){
                 .name = request->name,
                 .name_len = request->name_len,
-                .type = request->type,
+                .type = completed_type,
                 .requested_alignment = request->requested_alignment,
             })) {
       return 0;

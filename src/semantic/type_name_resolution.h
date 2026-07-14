@@ -4,7 +4,7 @@
 #include "../parser/ast.h"
 
 int psx_bind_type_name_ref(psx_type_name_ref_t *type_name);
-psx_type_t *psx_resolve_bound_type_name_ref(
+const psx_type_t *psx_resolve_bound_type_name_ref(
     psx_type_name_ref_t *type_name);
 
 #endif

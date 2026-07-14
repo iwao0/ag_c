@@ -6,7 +6,7 @@
 typedef struct {
   char *name;
   int name_len;
-  psx_type_t *type;
+  const psx_type_t *type;
   int requested_alignment;
 } psx_local_object_request_t;
 

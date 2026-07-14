@@ -89,8 +89,8 @@ typedef enum {
 typedef struct node_t node_t;
 typedef struct {
   struct psx_parsed_type_name_t *syntax;
-  psx_type_t *bound_base_type;
-  psx_type_t *resolved_type;
+  const psx_type_t *bound_base_type;
+  const psx_type_t *resolved_type;
   unsigned scope_seq;
   unsigned declaration_seq;
 } psx_type_name_ref_t;
@@ -186,7 +186,7 @@ typedef struct {
 typedef struct {
   node_t base;
   psx_type_name_ref_t type_name;
-  psx_type_t *object_type;
+  const psx_type_t *object_type;
   unsigned char requires_addressable_object;
   unsigned char has_file_scope_storage;
 } node_compound_literal_t;
@@ -303,7 +303,7 @@ struct node_func_t {
   node_t **args;    // 引数/仮引数の動的配列
   int nargs;        // 引数の数
   node_t *callee;   // 間接呼び出し時のcallee式（直接呼び出しはNULL）
-  psx_type_t *function_type; // bound canonical callable type
+  const psx_type_t *function_type; // bound canonical callable type
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。

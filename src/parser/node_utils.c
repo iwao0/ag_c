@@ -16,8 +16,8 @@ _Static_assert(sizeof(node_num_t) >= sizeof(node_source_cast_t),
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static int type_is_pointer_view_type(const psx_type_t *type);
-static psx_type_t *lvar_decl_type_view(const lvar_t *var);
-static psx_type_t *gvar_decl_type_view(const global_var_t *gv);
+static const psx_type_t *lvar_decl_type_view(const lvar_t *var);
+static const psx_type_t *gvar_decl_type_view(const global_var_t *gv);
 
 typedef enum {
   NODE_SCALAR_UNSIGNED,
@@ -79,15 +79,15 @@ static psx_type_t *type_with_self_qualifiers(const psx_type_t *type,
   return copy;
 }
 
-static psx_type_t *lvar_decl_type_consistent(lvar_t *var);
-static psx_type_t *gvar_decl_type_consistent(global_var_t *gv);
+static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var);
+static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv);
 
-static psx_type_t *lvar_decl_type_view(const lvar_t *var) {
-  return var ? lvar_decl_type_consistent((lvar_t *)var) : NULL;
+static const psx_type_t *lvar_decl_type_view(const lvar_t *var) {
+  return var ? lvar_decl_type_consistent(var) : NULL;
 }
 
-static psx_type_t *gvar_decl_type_view(const global_var_t *gv) {
-  return gv ? gvar_decl_type_consistent((global_var_t *)gv) : NULL;
+static const psx_type_t *gvar_decl_type_view(const global_var_t *gv) {
+  return gv ? gvar_decl_type_consistent(gv) : NULL;
 }
 
 static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
@@ -99,26 +99,26 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
   return TK_EOF;
 }
 
-static psx_type_t *lvar_decl_type_consistent(lvar_t *var) {
+static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
   return var ? var->decl_type : NULL;
 }
 
-static psx_type_t *gvar_decl_type_consistent(global_var_t *gv) {
+static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
   return gv ? gv->decl_type : NULL;
 }
 
 int ps_lvar_value_is_pointer_like(const lvar_t *var) {
-  psx_type_t *type = lvar_decl_type_view(var);
+  const psx_type_t *type = lvar_decl_type_view(var);
   return type ? ps_type_is_pointer_like(type) : 0;
 }
 
 int ps_lvar_is_struct_aggregate(const lvar_t *var) {
-  psx_type_t *type = lvar_decl_type_view(var);
+  const psx_type_t *type = lvar_decl_type_view(var);
   return type ? type_tag_aggregate_kind(type) == TK_STRUCT : 0;
 }
 
 int ps_lvar_is_union_aggregate(const lvar_t *var) {
-  psx_type_t *type = lvar_decl_type_view(var);
+  const psx_type_t *type = lvar_decl_type_view(var);
   return type ? type_tag_aggregate_kind(type) == TK_UNION : 0;
 }
 
@@ -127,7 +127,7 @@ int ps_lvar_is_tag_aggregate(const lvar_t *var) {
 }
 
 static int lvar_self_is_const_qualified(const lvar_t *var) {
-  psx_type_t *type = lvar_decl_type_view(var);
+  const psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
   if (type_is_pointer_view_type(value_type))
     return value_type->is_const_qualified ? 1 : 0;
@@ -135,14 +135,14 @@ static int lvar_self_is_const_qualified(const lvar_t *var) {
 }
 
 static int lvar_self_is_volatile_qualified(const lvar_t *var) {
-  psx_type_t *type = lvar_decl_type_view(var);
+  const psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
   if (type_is_pointer_view_type(value_type))
     return value_type->is_volatile_qualified ? 1 : 0;
   return value_type && value_type->is_volatile_qualified ? 1 : 0;
 }
 
-psx_type_t *ps_lvar_get_decl_type(lvar_t *var) {
+const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
 
@@ -151,23 +151,23 @@ int ps_gvar_storage_size(const global_var_t *gv, int fallback_size) {
 }
 
 int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   int size = ps_type_sizeof(type);
   return size > 0 ? size : fallback_size;
 }
 
 int ps_gvar_is_array(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   return type && type->kind == PSX_TYPE_ARRAY ? 1 : 0;
 }
 
 int ps_gvar_is_struct_aggregate(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   return type ? type_tag_aggregate_kind(type) == TK_STRUCT : 0;
 }
 
 int ps_gvar_is_union_aggregate(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   return type ? type_tag_aggregate_kind(type) == TK_UNION : 0;
 }
 
@@ -185,12 +185,12 @@ static tk_float_kind_t gvar_initializer_fp_kind(const global_var_t *gv) {
 }
 
 int ps_gvar_is_bool_scalar(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   return type && type->kind == PSX_TYPE_BOOL ? 1 : 0;
 }
 
 int ps_gvar_array_element_is_bool(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
   return leaf && leaf->kind == PSX_TYPE_BOOL ? 1 : 0;
@@ -470,7 +470,7 @@ int ps_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregat
 
 int ps_gvar_array_element_size(const global_var_t *gv) {
   if (!ps_gvar_is_array(gv)) return 0;
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return 0;
   int elem = ps_type_sizeof(type->base);
   if (elem <= 0) elem = ps_type_deref_size(type);
@@ -478,7 +478,7 @@ int ps_gvar_array_element_size(const global_var_t *gv) {
 }
 
 int ps_gvar_array_element_count(const global_var_t *gv) {
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   if (type && type->kind == PSX_TYPE_ARRAY && type->array_len > 0)
     return type->array_len;
   int elem = ps_gvar_array_element_size(gv);
@@ -1004,7 +1004,7 @@ int ps_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
 
 int ps_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
   if (ps_gvar_is_array(gv)) {
-    psx_type_t *type = gvar_decl_type_view(gv);
+    const psx_type_t *type = gvar_decl_type_view(gv);
     int leaf_elem = ps_type_array_scalar_element_size(type);
     if (leaf_elem > 0) return leaf_elem;
     int elem = ps_gvar_array_element_size(gv);
@@ -1016,7 +1016,7 @@ int ps_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) 
 int ps_gvar_initializer_element_count(const global_var_t *gv, int fallback_size) {
   if (gv && !ps_gvar_is_array(gv)) return gv->has_init ? 1 : 0;
   int elem = ps_gvar_initializer_element_size(gv, fallback_size);
-  psx_type_t *type = gvar_decl_type_view(gv);
+  const psx_type_t *type = gvar_decl_type_view(gv);
   int size = ps_type_sizeof(type);
   if (size <= 0) size = ps_gvar_storage_size(gv, fallback_size);
   return elem > 0 ? (size + elem - 1) / elem : 0;
@@ -1635,7 +1635,7 @@ int ps_tag_member_designator_slot(token_kind_t tag_kind, char *tag_name, int tag
   return -1;
 }
 
-psx_type_t *ps_gvar_get_decl_type(global_var_t *gv) {
+const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv) {
   return gvar_decl_type_consistent(gv);
 }
 
@@ -1771,7 +1771,7 @@ static global_var_t *static_local_backing_gvar(const lvar_t *var) {
                              var->static_global_name_len);
 }
 
-static psx_type_t *static_local_backing_decl_type(const lvar_t *var) {
+static const psx_type_t *static_local_backing_decl_type(const lvar_t *var) {
   global_var_t *backing = static_local_backing_gvar(var);
   return backing ? ps_gvar_get_decl_type(backing) : NULL;
 }
@@ -2129,7 +2129,7 @@ node_t *ps_node_new_unsigned_lvar_typed(int offset, int type_size) {
 }
 
 node_t *psx_node_new_lvar_for(lvar_t *var) {
-  psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
   return (node_t *)new_lvar_symbol_node(var ? var->offset : 0, var, type);
 }
 
@@ -2138,7 +2138,7 @@ node_t *psx_node_new_lvar_object_ref_for(lvar_t *var) {
 }
 
 node_t *ps_node_new_lvar_expr_ref_for(lvar_t *var) {
-  psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
   return (node_t *)new_lvar_symbol_node(var ? var->offset : 0, var, decl_type);
 }
 
@@ -2151,14 +2151,14 @@ node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
 }
 
 node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
-  psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
   psx_type_t *decay_type = ps_type_decay_array(array_type);
   if (!decay_type) return psx_node_new_lvar_identifier_ref_for(var);
   return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
 }
 
 node_t *ps_node_new_param_lvar_for(lvar_t *var) {
-  psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
+  const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
   return (node_t *)new_lvar_symbol_node(
       var ? var->offset : 0, var, decl_type);
 }
@@ -2265,7 +2265,7 @@ static node_t *new_addr_node(node_t *base) {
 }
 
 static void init_array_addr_canonical_type(node_t *addr,
-                                           psx_type_t *array_type) {
+                                           const psx_type_t *array_type) {
   if (!addr || !array_type) return;
   ps_node_bind_type(
       addr, array_type->kind == PSX_TYPE_ARRAY

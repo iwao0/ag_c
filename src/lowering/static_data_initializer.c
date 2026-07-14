@@ -271,7 +271,7 @@ static int type_contains_float(const psx_type_t *type) {
 }
 
 int lower_static_object_initializer(
-    global_var_t *global, psx_type_t *type,
+    global_var_t *global, const psx_type_t *type,
     node_init_list_t *initializer, token_t *fallback_tok) {
   if (!global || !type || !initializer ||
       (type->kind != PSX_TYPE_ARRAY && !ps_type_is_tag_aggregate(type)))
@@ -296,7 +296,7 @@ int lower_static_object_initializer(
 }
 
 int lower_static_scalar_array_initializer(
-    global_var_t *global, psx_type_t *type,
+    global_var_t *global, const psx_type_t *type,
     node_init_list_t *initializer, token_t *fallback_tok) {
   if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
   return lower_static_object_initializer(
@@ -304,7 +304,7 @@ int lower_static_scalar_array_initializer(
 }
 
 static int lower_static_string_expression(
-    global_var_t *global, psx_type_t *type, node_string_t *string) {
+    global_var_t *global, const psx_type_t *type, node_string_t *string) {
   if (!global || !type || !string) return 0;
   if (type->kind == PSX_TYPE_POINTER) {
     global->init_symbol = string->string_label;
@@ -333,7 +333,7 @@ static int lower_static_string_expression(
 }
 
 static int lower_static_scalar_expression(
-    global_var_t *global, psx_type_t *type, node_t *initializer) {
+    global_var_t *global, const psx_type_t *type, node_t *initializer) {
   if (!global || !type || !initializer) return 0;
   if (initializer->kind == ND_STRING)
     return lower_static_string_expression(
@@ -384,7 +384,7 @@ int lower_resolved_static_initializer(
       !resolution->type || !resolution->initializer)
     return 0;
 
-  psx_type_t *type = resolution->type;
+  const psx_type_t *type = resolution->type;
   if (resolution->type_completed) {
     if (!ps_global_registry_complete_array_type(global, type)) return 0;
     if (result) result->type_completed = 1;

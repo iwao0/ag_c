@@ -30,8 +30,8 @@ void ps_decl_get_current_funcname(char **out_name, int *out_len) {
   if (out_len) *out_len = current_funcname_len;
 }
 
-static psx_type_t *lvar_public_decl_type(const lvar_t *var) {
-  return var ? ps_lvar_get_decl_type((lvar_t *)var) : NULL;
+static const psx_type_t *lvar_public_decl_type(const lvar_t *var) {
+  return var ? ps_lvar_get_decl_type(var) : NULL;
 }
 
 static const psx_type_t *lvar_public_pointee_type(const psx_type_t *type) {
@@ -58,13 +58,13 @@ int ps_lvar_storage_size(const lvar_t *var, int fallback_size) {
 }
 
 int ps_lvar_decl_sizeof(const lvar_t *var, int fallback_size) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   int decl_size = ps_type_sizeof(type);
   return decl_size > 0 ? decl_size : fallback_size;
 }
 
 int ps_lvar_elem_size(const lvar_t *var, int fallback_size) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   int size = ps_type_deref_size(type);
   return size > 0 ? size : fallback_size;
 }
@@ -101,35 +101,35 @@ int ps_lvar_is_static_local(const lvar_t *var) {
 }
 
 int ps_lvar_is_vla(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   return ps_type_contains_vla_array(type) ||
          (var && var->vla_runtime.view.row_stride_frame_off != 0);
 }
 
 int ps_lvar_is_array(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   return type && type->kind == PSX_TYPE_ARRAY ? 1 : 0;
 }
 
 int ps_lvar_is_complex(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
   return leaf && leaf->kind == PSX_TYPE_COMPLEX ? 1 : 0;
 }
 
 int ps_lvar_is_tag_pointer(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *base = lvar_public_pointee_type(type);
   return base ? ps_type_is_tag_aggregate(ps_type_array_leaf_type(base)) : 0;
 }
 
 token_kind_t ps_lvar_tag_kind(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   return lvar_public_tag_kind_from_type(type);
 }
 
 tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var) {
-  psx_type_t *type = lvar_public_decl_type(var);
+  const psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
   if (leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX))
     return leaf->fp_kind;

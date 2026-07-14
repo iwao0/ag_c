@@ -28,7 +28,7 @@ struct lvar_t {
   int static_global_name_len;
   int align_bytes;
   int used_count;
-  psx_type_t *decl_type;
+  const psx_type_t *decl_type;
   psx_vla_runtime_descriptor_t vla_runtime;
   psx_lvar_usage_region_t *decl_region;
 };

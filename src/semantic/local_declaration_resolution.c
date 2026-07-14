@@ -21,7 +21,7 @@ void psx_resolve_local_declaration(
   resolution->status = PSX_LOCAL_DECLARATION_INVALID;
   if (!request || !request->type || !request->application) return;
 
-  psx_type_t *type = request->type;
+  const psx_type_t *type = request->type;
   if (type->kind == PSX_TYPE_VOID) {
     resolution->status = PSX_LOCAL_DECLARATION_VOID_OBJECT;
     return;

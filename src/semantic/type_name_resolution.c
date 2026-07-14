@@ -33,7 +33,8 @@ static psx_type_t *bind_base_type(
         .scope_seq = point.scope_seq,
         .declaration_seq = point.declaration_seq,
     };
-    psx_type_t *type = psx_resolve_bound_type_name_ref(&inner);
+    psx_type_t *type = ps_type_clone(
+        psx_resolve_bound_type_name_ref(&inner));
     if (type) type->is_atomic = 1;
     return type;
   }
@@ -67,7 +68,7 @@ int psx_bind_type_name_ref(psx_type_name_ref_t *type_name) {
   return type_name->bound_base_type != NULL;
 }
 
-psx_type_t *psx_resolve_bound_type_name_ref(
+const psx_type_t *psx_resolve_bound_type_name_ref(
     psx_type_name_ref_t *type_name) {
   if (!type_name) return NULL;
   if (type_name->resolved_type) return type_name->resolved_type;
@@ -76,10 +77,12 @@ psx_type_t *psx_resolve_bound_type_name_ref(
   ps_declarator_shape_init(&shape);
   psx_apply_parsed_declarator(
       &type_name->syntax->declarator, &shape, NULL);
-  type_name->resolved_type = psx_resolve_decl_type(
+  psx_type_t *resolved = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = type_name->bound_base_type,
           .declarator_shape = &shape,
       });
+  ps_ctx_refresh_type_completeness(resolved);
+  type_name->resolved_type = resolved;
   return type_name->resolved_type;
 }

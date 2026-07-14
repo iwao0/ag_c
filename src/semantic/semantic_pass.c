@@ -352,7 +352,7 @@ static void semantic_resolve_function_call(
               "funcall", "canonical callable type is not bound");
 }
 
-static psx_type_t *semantic_resolve_type_name_ref(
+static const psx_type_t *semantic_resolve_type_name_ref(
     psx_type_name_ref_t *type_name) {
   return psx_resolve_bound_type_name_ref(type_name);
 }
@@ -368,9 +368,10 @@ static void semantic_resolve_compound_literal(
     node_compound_literal_t *compound) {
   if (!compound) return;
   if (!compound->object_type) {
-    compound->object_type = ps_type_clone(
+    psx_type_t *object_type = ps_type_clone(
         semantic_resolve_type_name_ref(&compound->type_name));
-    ps_ctx_attach_aggregate_definitions(compound->object_type);
+    ps_ctx_attach_aggregate_definitions(object_type);
+    compound->object_type = object_type;
   }
   psx_type_t *result = ps_type_clone(compound->object_type);
   if (compound->requires_addressable_object)

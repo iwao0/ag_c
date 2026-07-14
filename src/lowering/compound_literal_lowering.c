@@ -37,7 +37,7 @@ static char *new_compound_object_name(int file_scope) {
 static node_t *lower_file_scope_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
-  psx_type_t *type = compound->object_type;
+  const psx_type_t *type = compound->object_type;
   node_t *initializer = compound->base.rhs;
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_init_list_t *list = initializer && initializer->kind == ND_INIT_LIST
@@ -89,7 +89,7 @@ static node_t *lower_file_scope_compound_literal(
 static node_t *lower_local_compound_literal(
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
-  psx_type_t *type = compound->object_type;
+  const psx_type_t *type = compound->object_type;
   psx_parsed_initializer_t parsed = {
       .has_initializer = 1,
       .kind = PSX_DECL_INIT_LIST,

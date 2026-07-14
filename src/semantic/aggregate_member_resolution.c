@@ -253,14 +253,15 @@ void psx_resolve_aggregate_member_declaration(
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
-  resolution->type = psx_resolve_decl_type(
+  psx_type_t *type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = request->base_type,
           .declarator_shape = request->declarator_shape,
       });
-  if (!resolution->type) return;
+  if (!type) return;
+  resolution->type = type;
   int is_anonymous_aggregate =
-      !has_name && ps_type_is_tag_aggregate(resolution->type);
+      !has_name && ps_type_is_tag_aggregate(type);
   if (!has_name && !is_anonymous_aggregate && !request->has_bitfield) {
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;
@@ -271,7 +272,7 @@ void psx_resolve_aggregate_member_declaration(
     resolve_aggregate_bitfield_placement(
         &working_layout,
         &(aggregate_bitfield_request_t){
-            .type = resolution->type,
+            .type = type,
             .bit_width = request->bit_width,
         },
         &bitfield);
@@ -286,10 +287,10 @@ void psx_resolve_aggregate_member_declaration(
       return;
     }
   } else {
-    resolution->status = validate_aggregate_member_type(resolution->type);
+    resolution->status = validate_aggregate_member_type(type);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
-    int storage_size = ps_type_sizeof(resolution->type);
-    int storage_alignment = resolution->type->align;
+    int storage_size = ps_type_sizeof(type);
+    int storage_alignment = type->align;
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;
@@ -312,7 +313,7 @@ void psx_resolve_aggregate_member_declaration(
   int promoted_count = 0;
   if (is_anonymous_aggregate) {
     if (!collect_promoted_aggregate_members(
-            resolution->type, resolution->offset,
+            type, resolution->offset,
             &promoted_members, &promoted_count))
       return;
   }
@@ -334,7 +335,7 @@ void psx_resolve_aggregate_member_declaration(
         .bit_width = request->has_bitfield ? request->bit_width : 0,
         .bit_offset = resolution->bit_offset,
         .bit_is_signed = resolution->bit_is_signed,
-        .decl_type = resolution->type,
+        .decl_type = type,
     };
   }
   if (promoted_count > 0) {

@@ -13,7 +13,7 @@ typedef enum {
 } psx_static_initializer_status_t;
 
 typedef struct {
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_decl_init_kind_t kind;
   node_t *initializer;
   token_t *diag_tok;
@@ -22,7 +22,7 @@ typedef struct {
 
 typedef struct {
   psx_static_initializer_status_t status;
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_decl_init_kind_t kind;
   node_t *initializer;
   int is_aggregate_initializer;
