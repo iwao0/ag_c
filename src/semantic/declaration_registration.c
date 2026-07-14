@@ -13,26 +13,12 @@
 #include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 
-void psx_apply_parsed_typedef_declaration(
-    char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
-  psx_apply_parsed_typedef_declaration_in_context(
-      ps_ctx_active(), name, name_len, type, diag_tok);
-}
-
-void psx_apply_parsed_typedef_declaration_in_context(
-    psx_semantic_context_t *semantic_context,
-    char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
-  psx_apply_parsed_typedef_declaration_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(),
-      name, name_len, type, diag_tok);
-}
-
 void psx_apply_parsed_typedef_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return;
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
@@ -70,26 +56,12 @@ void psx_apply_parsed_typedef_declaration_in_contexts(
                name_len, name);
 }
 
-void psx_apply_parsed_enum_constant(
-    char *name, int name_len, long long value, token_t *diag_tok) {
-  psx_apply_parsed_enum_constant_in_context(
-      ps_ctx_active(), name, name_len, value, diag_tok);
-}
-
-void psx_apply_parsed_enum_constant_in_context(
-    psx_semantic_context_t *semantic_context,
-    char *name, int name_len, long long value, token_t *diag_tok) {
-  psx_apply_parsed_enum_constant_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(),
-      name, name_len, value, diag_tok);
-}
-
 void psx_apply_parsed_enum_constant_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     char *name, int name_len, long long value, token_t *diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return;
   psx_enum_constant_resolution_t resolution;
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
@@ -126,22 +98,13 @@ void psx_apply_parsed_enum_constant_in_contexts(
                name_len, name);
 }
 
-void psx_apply_parsed_tag_declaration_in_context(
-    psx_semantic_context_t *semantic_context,
-    token_kind_t kind, char *name, int name_len,
-    psx_tag_declaration_mode_t mode, int member_count,
-    int size, int alignment, token_t *diag_tok) {
-  psx_apply_parsed_tag_declaration_in_contexts(
-      semantic_context, ps_local_registry_active(), kind, name, name_len,
-      mode, member_count, size, alignment, diag_tok);
-}
-
 void psx_apply_parsed_tag_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     token_kind_t kind, char *name, int name_len,
     psx_tag_declaration_mode_t mode, int member_count,
     int size, int alignment, token_t *diag_tok) {
+  if (!semantic_context || !local_registry) return;
   psx_tag_declaration_resolution_t resolution;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
@@ -170,15 +133,6 @@ void psx_apply_parsed_tag_declaration_in_contexts(
   ps_diag_ctx(diag_tok, "tag",
                "canonical tag declaration resolution failed for '%.*s'",
                name_len, name);
-}
-
-void psx_apply_parsed_tag_declaration(
-    token_kind_t kind, char *name, int name_len,
-    psx_tag_declaration_mode_t mode, int member_count,
-    int size, int alignment, token_t *diag_tok) {
-  psx_apply_parsed_tag_declaration_in_context(
-      ps_ctx_active(), kind, name, name_len, mode, member_count,
-      size, alignment, diag_tok);
 }
 
 int psx_apply_aggregate_member_declaration(
@@ -225,20 +179,13 @@ int psx_apply_aggregate_member_declaration(
   return 0;
 }
 
-void psx_apply_static_assert_in_context(
-    psx_semantic_context_t *semantic_context,
-    node_t *condition, token_t *diag_tok) {
-  psx_apply_static_assert_in_contexts(
-      semantic_context, ps_global_registry_active(),
-      ps_local_registry_active(), condition, diag_tok);
-}
-
 void psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *condition, token_t *diag_tok) {
-  if (!condition) return;
+  if (!semantic_context || !global_registry || !local_registry || !condition)
+    return;
   condition = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       condition, diag_tok);
@@ -265,9 +212,4 @@ void psx_apply_static_assert_in_contexts(
                    diag_tok, "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
-}
-
-void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
-  psx_apply_static_assert_in_context(
-      ps_ctx_active(), condition, diag_tok);
 }

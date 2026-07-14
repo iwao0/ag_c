@@ -15125,8 +15125,9 @@ static void test_semantic_context_isolation() {
             detached_initializer.type->aggregate_definition->member_count);
 
   char applied_tag_name[] = "AppliedTag";
-  psx_apply_parsed_tag_declaration_in_context(
-      second, TK_STRUCT, applied_tag_name, 10,
+  psx_apply_parsed_tag_declaration_in_contexts(
+      second, ps_local_registry_active(),
+      TK_STRUCT, applied_tag_name, 10,
       PSX_TAG_DECLARATION_DEFINITION, 0, 8, 8, NULL);
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       first, TK_STRUCT, applied_tag_name, 10));

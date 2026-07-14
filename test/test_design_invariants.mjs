@@ -555,6 +555,13 @@ const declarationRegistrationSource = await readFile(
   "src/semantic/declaration_registration.c",
   "utf8",
 );
+if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
+      declarationRegistrationSource,
+    )) {
+  throw new Error(
+    "declaration registration must receive all required registries explicitly",
+  );
+}
 const ordinaryNamespaceResolutionSources = [
   identifierResolutionSource,
   enumConstantResolutionSource,
