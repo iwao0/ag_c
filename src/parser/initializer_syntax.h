@@ -17,9 +17,6 @@ typedef struct {
 } psx_parsed_initializer_t;
 
 node_t *psx_parse_initializer_syntax_list(void);
-node_t *psx_parse_initializer_syntax_list_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations);
 node_t *psx_parse_initializer_syntax_list_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
@@ -28,10 +25,6 @@ void psx_prepare_optional_initializer_syntax(
     psx_parsed_initializer_t *out);
 void psx_parse_initializer_syntax_value(
     psx_parsed_initializer_t *out, token_t *assign_tok);
-void psx_parse_initializer_syntax_value_in_context(
-    psx_parsed_initializer_t *out, token_t *assign_tok,
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations);
 void psx_parse_initializer_syntax_value_in_contexts(
     psx_parsed_initializer_t *out, token_t *assign_tok,
     psx_semantic_context_t *semantic_context,

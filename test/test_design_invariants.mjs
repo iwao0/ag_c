@@ -473,12 +473,14 @@ for (const sourcePath of [
   }
 }
 const splitParserContextApi =
-  /(?:psx_(?:expr_(?:expr|assign)|parse_statement_expression|stmt_stmt)|ps_parse_runtime_declarator_expressions|ps_parser_stream_begin)_in_context\s*\(/;
+  /(?:psx_(?:expr_(?:expr|assign)|parse_statement_expression|stmt_stmt|parse_initializer_syntax_(?:value|list)|finish_toplevel_declaration_syntax)|ps_parse_runtime_declarator_expressions|ps_parser_stream_begin)_in_context\s*\(/;
 for (const sourcePath of [
   "src/parser/expr.c",
   "src/parser/declaration_syntax.c",
+  "src/parser/initializer_syntax.c",
   "src/parser/stmt.c",
   "src/parser/parser.c",
+  "src/parser/toplevel_declaration_syntax.c",
 ]) {
   const source = await readFile(sourcePath, "utf8");
   if (splitParserContextApi.test(source)) {

@@ -2,6 +2,7 @@
 
 #include "core.h"
 #include "diag.h"
+#include "local_registry.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -135,17 +136,22 @@ static void abort_toplevel_declaration(
 int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks) {
-  return psx_finish_toplevel_declaration_syntax_in_context(
-      declaration, callbacks,
-      callbacks && callbacks->semantic_context
-          ? callbacks->semantic_context : ps_ctx_active());
+  psx_semantic_context_t *semantic_context =
+      callbacks && callbacks->semantic_context && callbacks->local_registry
+          ? callbacks->semantic_context : ps_ctx_active();
+  psx_local_registry_t *local_registry =
+      callbacks && callbacks->semantic_context && callbacks->local_registry
+          ? callbacks->local_registry : ps_local_registry_active();
+  return psx_finish_toplevel_declaration_syntax_in_contexts(
+      declaration, callbacks, semantic_context, local_registry);
 }
 
-int psx_finish_toplevel_declaration_syntax_in_context(
+int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,
-    psx_semantic_context_t *semantic_context) {
-  if (!declaration || !semantic_context) return 0;
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry) {
+  if (!declaration || !semantic_context || !local_registry) return 0;
   void *declaration_context = callbacks && callbacks->begin_declaration
       ? callbacks->begin_declaration(callbacks->context, declaration)
       : NULL;
@@ -176,8 +182,9 @@ int psx_finish_toplevel_declaration_syntax_in_context(
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
       tk_expect('=');
-      psx_parse_initializer_syntax_value_in_context(
-          initializer, assign_tok, semantic_context, NULL);
+      psx_parse_initializer_syntax_value_in_contexts(
+          initializer, assign_tok, semantic_context,
+          local_registry, NULL);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);

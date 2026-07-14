@@ -341,9 +341,10 @@ int ps_parse_next_toplevel_item(
     } else {
       item->kind = PSX_TOPLEVEL_ITEM_DECLARATION;
       item->value.declaration = declaration;
-      if (!psx_finish_toplevel_declaration_syntax_in_context(
+      if (!psx_finish_toplevel_declaration_syntax_in_contexts(
               &item->value.declaration,
-              stream->toplevel_declarations, semantic_context)) {
+              stream->toplevel_declarations, semantic_context,
+              stream->local_registry)) {
         ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
         item->kind = PSX_TOPLEVEL_ITEM_EOF;
         psx_synchronize_toplevel_declaration();
