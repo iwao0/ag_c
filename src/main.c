@@ -422,11 +422,10 @@ int main(int argc, char **argv) {
     wasm32_module_end();
   }
 #else
-  // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
-  // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
+  // lowering 済みの文字列・浮動小数点定数・global object を emit。
   gen_string_literals(data_module);
   gen_float_literals(data_module);
-  gen_global_vars();
+  gen_global_vars(data_module);
 #endif
   ir_data_module_free(data_module);
   if (!wasm_object_mode) clear_output_callback();

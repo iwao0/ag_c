@@ -71,7 +71,13 @@ ir_data_reloc_t *ir_data_object_add_reloc(
     ir_data_object_t *object, int offset, int width,
     ir_data_reloc_kind_t kind, const char *target, int target_len,
     long long addend, const ir_callable_sig_t *callable_sig) {
-  if (!object || offset < 0 || width <= 0 || !target || target_len <= 0)
+  if (!object || offset < 0 ||
+      (width != 1 && width != 2 && width != 4 && width != 8) ||
+      object->byte_size < width || offset > object->byte_size - width ||
+      !target || target_len <= 0)
+    return NULL;
+  if (object->relocs_tail &&
+      offset < object->relocs_tail->offset + object->relocs_tail->width)
     return NULL;
   ir_data_reloc_t *reloc = calloc(1, sizeof(*reloc));
   if (!reloc) return NULL;

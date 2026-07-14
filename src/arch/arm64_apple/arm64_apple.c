@@ -4,8 +4,8 @@
  * ag_c は AST → IR → ASM の経路で関数本体を生成する (arm64_apple_ir.c)。
  * このファイルは IR バックエンドと main.c が共有する以下を提供する:
  *   - cg_emit_mov_imm: ARM64 即値ロードヘルパ
- *   - gen_string_literals / gen_float_literals / gen_global_vars: parser が登録
- *     した文字列 / 浮動小数点定数 / グローバル変数のデータセクション emit
+ *   - gen_string_literals / gen_float_literals / gen_global_vars: lowering 済み
+ *     translation-unit data IR のデータセクション emit
  *
  * 旧 AST 直 codegen (gen / gen_stmt / gen_expr ...) はここから削除済み。
  * Phase 7o で IR 経路が fixture 100% を通過したため、AST 経路は不要になった。
@@ -13,13 +13,7 @@
 
 #include "arm64_apple_emit.h"
 #include "../../codegen_backend.h"
-#include "../../diag/diag.h"
-/* arm64_apple.c は AST node 型を使わない。
- * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。 */
-#include "../../parser/parser_public.h"
-#include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
 
 /* AArch64 即値ロード: 16bit に収まらない値は movz/movk シーケンス。
  * IR バックエンドからも共有するため非 static。 */
@@ -47,7 +41,7 @@ void cg_emit_mov_imm(const char *reg, long long val) {
 }
 
 /* ------------------------------------------------------------------ */
-/* データセクション (parser が tokenize/parse 中に登録したテーブルを emit) */
+/* データセクション (translation-unit data IR を emit) */
 /* ------------------------------------------------------------------ */
 
 typedef struct {
@@ -107,205 +101,92 @@ void gen_float_literals(const ir_data_module_t *data_module) {
   cg_emitf(".text\n");
 }
 
-/* 整数値を指定サイズの assembly directive で出力する。
- *   size=1 → .byte / size=2 → .short / size=4 → .long / その他 → .quad
- * gen_global_vars 系で同形ブロックが 6 箇所重複していたのを集約。 */
-static void cg_emit_int_directive(int size, long long value) {
-  if (size == 1)      cg_emitf("  .byte %lld\n", value);
-  else if (size == 2) cg_emitf("  .short %lld\n", value);
-  else if (size == 4) cg_emitf("  .long %lld\n", value);
-  else                cg_emitf("  .quad %lld\n", value);
+static int log2_alignment(int alignment) {
+  if (alignment >= 8) return 3;
+  if (alignment >= 4) return 2;
+  if (alignment >= 2) return 1;
+  return 0;
 }
 
-static void emit_global_symbol_ref_quad(psx_gvar_symbol_ref_t ref) {
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
-    if (ref.addend != 0) cg_emitf("  .quad %s+%lld\n", ref.symbol, ref.addend);
-    else                 cg_emitf("  .quad %s\n", ref.symbol);
-  } else if (ref.kind == PSX_GVAR_SYMBOL_REF_NAMED) {
-    if (ref.addend != 0) cg_emitf("  .quad _%.*s+%lld\n", ref.symbol_len, ref.symbol,
-                                  ref.addend);
-    else                 cg_emitf("  .quad _%.*s\n", ref.symbol_len, ref.symbol);
-  }
+static void emit_relocation_target(const ir_data_module_t *module,
+                                   const ir_data_reloc_t *reloc) {
+  const char *directive = reloc->width == 8 ? ".quad" :
+                          reloc->width == 4 ? ".long" :
+                          reloc->width == 2 ? ".short" : ".byte";
+  const ir_data_object_t *target = ir_data_module_find_object(
+      module, reloc->target, reloc->target_len);
+  int raw_label = target && target->kind == IR_DATA_STRING;
+  cg_emitf("  %s ", directive);
+  if (!raw_label) cg_emitf("_");
+  cg_emitf("%.*s", reloc->target_len, reloc->target);
+  if (reloc->addend > 0) cg_emitf("+%lld", reloc->addend);
+  else if (reloc->addend < 0) cg_emitf("%lld", reloc->addend);
+  cg_emitf("\n");
 }
 
-/* struct / union global with brace init: 各メンバの型サイズに合わせて
- * init_values[] を出力。メンバ間の padding は .space で埋める。
- * `struct { int x; int y; } p = {10, 32}` → .long 10; .long 32。
- * 配列メンバは alen 個連続出力する。 */
-static void emit_global_init_value(psx_gvar_init_value_t value) {
-  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    emit_global_symbol_ref_quad(value.symbol_ref);
-  } else if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    psx_gvar_fp_bits_t bits;
-    if (ps_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) {
-      if (bits.size == 4) cg_emitf("  .long %u\n", (unsigned)bits.bits);
-      else                cg_emitf("  .quad %llu\n", bits.bits);
+static void emit_global_initializer(const ir_data_module_t *module,
+                                    const ir_data_object_t *object) {
+  const ir_data_reloc_t *reloc = object->relocs;
+  for (int offset = 0; offset < object->byte_size; ) {
+    if (reloc && reloc->offset == offset) {
+      emit_relocation_target(module, reloc);
+      offset += reloc->width;
+      reloc = reloc->next;
     } else {
-      cg_emit_int_directive(value.size, value.value);
+      cg_emitf("  .byte %u\n", (unsigned)object->bytes[offset++]);
     }
-  } else {
-    cg_emit_int_directive(value.size, value.value);
   }
 }
 
-static int emit_global_init_slot_value(void *user, int index,
-                                       psx_gvar_init_slot_value_t value,
-                                       const psx_gvar_init_slots_layout_t *layout) {
-  (void)user;
-  (void)index;
-  (void)layout;
-  emit_global_init_value(value);
-  return 1;
-}
-
-typedef struct {
-  global_var_t *gv;
-} arm64_global_aggregate_emit_ctx_t;
-
-static void emit_global_walk_padding(void *user, long long offset, int size) {
-  (void)user;
-  (void)offset;
-  if (size > 0) cg_emitf("  .space %d\n", size);
-}
-
-static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
-                                    int slot_idx, long long offset) {
-  (void)offset;
-  arm64_global_aggregate_emit_ctx_t *ctx = user;
-  emit_global_init_value(ps_gvar_init_member_value(ctx->gv, slot_idx, mi));
-}
-
-static void emit_global_walk_bitfield_unit(void *user,
-                                           const psx_gvar_bitfield_unit_t *unit,
-                                           long long base_offset) {
-  (void)user;
-  (void)base_offset;
-  cg_emit_int_directive(unit->size, (long long)unit->packed);
-}
-
-static void emit_global_walk_bitfield_member(void *user, const tag_member_info_t *mi,
-                                             int slot_idx, long long base_offset) {
-  (void)base_offset;
-  arm64_global_aggregate_emit_ctx_t *ctx = user;
-  unsigned long long packed = ps_gvar_init_slot_bitfield_bits(ctx->gv, slot_idx,
-                                                               mi->bit_width,
-                                                               mi->bit_offset);
-  cg_emit_int_directive(ps_tag_member_decl_value_size(mi), (long long)packed);
-}
-
-static const psx_gvar_aggregate_walk_ops_t arm64_global_aggregate_walk_ops = {
-    .scalar = emit_global_walk_scalar,
-    .bitfield_unit = emit_global_walk_bitfield_unit,
-    .bitfield_member = emit_global_walk_bitfield_member,
-    .padding = emit_global_walk_padding,
-};
-
-static int emit_global_aggregate_init(global_var_t *gv) {
-  arm64_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  return ps_gvar_walk_aggregate_initializer(gv, 0, &arm64_global_aggregate_walk_ops, &ctx);
-}
-
-typedef struct {
-  global_var_t *gv;
-} arm64_global_init_emit_ctx_t;
-
-static int emit_global_initializer_aggregate(void *user,
-                                             const psx_gvar_initializer_class_t *init_class) {
-  (void)init_class;
-  arm64_global_init_emit_ctx_t *ctx = user;
-  return emit_global_aggregate_init(ctx->gv);
-}
-
-static int emit_global_initializer_slots(void *user,
-                                         const psx_gvar_init_slots_layout_t *layout,
-                                         const psx_gvar_initializer_class_t *init_class) {
-  (void)init_class;
-  arm64_global_init_emit_ctx_t *ctx = user;
-  if (!ps_gvar_walk_init_slot_values(ctx->gv, layout, layout->init_count,
-                                      emit_global_init_slot_value, NULL)) {
-    return 0;
-  }
-  int remain = layout->elem_count - layout->init_count;
-  if (remain > 0) cg_emitf("  .space %d\n", remain * layout->elem_size);
-  return 1;
-}
-
-static int emit_global_initializer_scalar(void *user,
-                                          psx_gvar_init_scalar_value_t value,
-                                          const psx_gvar_initializer_class_t *init_class) {
-  (void)user;
-  (void)init_class;
-  emit_global_init_value(value);
-  return 1;
-}
-
-static const psx_gvar_initializer_visit_ops_t arm64_global_initializer_visit_ops = {
-    .aggregate = emit_global_initializer_aggregate,
-    .slots = emit_global_initializer_slots,
-    .scalar = emit_global_initializer_scalar,
-};
-
-/* gen_global_vars の本体: 1 つの global_var_t を assembly directive に
- * 落とす visitor 関数 (Phase C3-2 で ps_iter_globals に切替)。 */
-static void emit_one_global_var(global_var_t *gv, void *user) {
-  (void)user;
-  if (ps_gvar_is_extern_decl(gv)) return;
-  char *name = ps_gvar_name(gv);
-  int name_len = ps_gvar_name_len(gv);
-  int storage_size = ps_gvar_storage_size(gv, 4);
-  int has_explicit_initializer = ps_gvar_has_explicit_initializer(gv);
-  if (ps_gvar_is_thread_local(gv)) {
+static void emit_global_object(const ir_data_module_t *module,
+                               const ir_data_object_t *object) {
+  if (object->is_extern) return;
+  if (object->is_thread_local) {
     /* _Thread_local: TLV descriptor + thread data/bss */
-    if (has_explicit_initializer) {
+    if (object->has_explicit_initializer) {
       cg_emitf(".section __DATA,__thread_data\n");
-      cg_emitf("_%.*s$tlv$init:\n", name_len, name);
-      arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-      if (!ps_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
-                                      &init_ctx)) {
-        diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
-                            "failed to emit arm64 thread-local initializer");
-      }
+      cg_emitf("_%.*s$tlv$init:\n", object->name_len, object->name);
+      emit_global_initializer(module, object);
     } else {
       cg_emitf(".section __DATA,__thread_bss\n");
-      cg_emitf("_%.*s$tlv$init:\n", name_len, name);
-      cg_emitf("  .space %d\n", storage_size);
+      cg_emitf("_%.*s$tlv$init:\n", object->name_len, object->name);
+      cg_emitf("  .space %d\n", object->byte_size);
     }
     cg_emitf(".section __DATA,__thread_vars,thread_local_variables\n");
-    if (!ps_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
-    cg_emitf("_%.*s:\n", name_len, name);
+    if (!object->is_static)
+      cg_emitf(".global _%.*s\n", object->name_len, object->name);
+    cg_emitf("_%.*s:\n", object->name_len, object->name);
     cg_emitf("  .quad __tlv_bootstrap\n");
     cg_emitf("  .quad 0\n");
-    cg_emitf("  .quad _%.*s$tlv$init\n", name_len, name);
+    cg_emitf("  .quad _%.*s$tlv$init\n", object->name_len, object->name);
     return;
   }
-  if (has_explicit_initializer) {
+  if (object->has_explicit_initializer) {
     cg_emitf(".section __DATA,__data\n");
-    /* static (内部リンケージ) は .global を出さない (C11 6.2.2p3)。 */
-    if (!ps_gvar_is_static_storage(gv)) cg_emitf(".global _%.*s\n", name_len, name);
-    int align_size = ps_gvar_initializer_element_size(gv, storage_size);
-    int align = (align_size >= 8) ? 3 : (align_size >= 4) ? 2 : (align_size >= 2) ? 1 : 0;
-    cg_emitf(".align %d\n", align);
-    cg_emitf("_%.*s:\n", name_len, name);
-    arm64_global_init_emit_ctx_t init_ctx = {.gv = gv};
-    if (!ps_gvar_visit_initializer(gv, 0, 4, &arm64_global_initializer_visit_ops,
-                                    &init_ctx)) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s",
-                          "failed to emit arm64 global initializer");
-    }
+    if (!object->is_static)
+      cg_emitf(".global _%.*s\n", object->name_len, object->name);
+    cg_emitf(".align %d\n", log2_alignment(object->alignment));
+    cg_emitf("_%.*s:\n", object->name_len, object->name);
+    emit_global_initializer(module, object);
     return;
   }
   /* 暫定定義: .comm _name,size,log2align。
    * ただし static (内部リンケージ) は .comm (= common/外部シンボル) にすると別 TU の
    * 同名 static と共有/衝突するため、ローカルな .zerofill (__bss) に出す。 */
-  int log2align = (storage_size >= 8) ? 3 : (storage_size >= 4) ? 2 : (storage_size >= 2) ? 1 : 0;
-  if (ps_gvar_is_static_storage(gv)) {
-    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n", name_len, name, storage_size,
-             log2align);
+  int log2align = log2_alignment(object->alignment);
+  if (object->is_static) {
+    cg_emitf(".zerofill __DATA,__bss,_%.*s,%d,%d\n",
+             object->name_len, object->name, object->byte_size, log2align);
   } else {
-    cg_emitf(".comm _%.*s,%d,%d\n", name_len, name, storage_size, log2align);
+    cg_emitf(".comm _%.*s,%d,%d\n", object->name_len, object->name,
+             object->byte_size, log2align);
   }
 }
 
-void gen_global_vars(void) {
-  ps_iter_globals(emit_one_global_var, NULL);
+void gen_global_vars(const ir_data_module_t *data_module) {
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind == IR_DATA_OBJECT)
+      emit_global_object(data_module, object);
+  }
 }

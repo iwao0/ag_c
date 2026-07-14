@@ -322,6 +322,16 @@ static void test_data_module(void) {
     failures++;
     fprintf(stderr, "FAIL: IR data relocation metadata and ownership\n");
   }
+  if (ir_data_object_add_reloc(object, 6, 1, IR_DATA_RELOC_DATA,
+                               "overlap", 7, 0, NULL) != NULL ||
+      ir_data_object_add_reloc(object, 0, 3, IR_DATA_RELOC_DATA,
+                               "bad_width", 9, 0, NULL) != NULL ||
+      ir_data_object_add_reloc(object, 8, 1, IR_DATA_RELOC_DATA,
+                               "past_end", 8, 0, NULL) != NULL ||
+      object->relocs != reloc || object->relocs_tail != reloc || reloc->next) {
+    failures++;
+    fprintf(stderr, "FAIL: IR data relocation structural validation\n");
+  }
 
   ir_data_module_free(module);
 }

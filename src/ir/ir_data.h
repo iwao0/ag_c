@@ -39,6 +39,7 @@ typedef struct ir_data_object_t {
   unsigned char is_static;
   unsigned char is_thread_local;
   unsigned char is_read_only;
+  unsigned char has_explicit_initializer;
   ir_data_reloc_t *relocs;
   ir_data_reloc_t *relocs_tail;
 } ir_data_object_t;

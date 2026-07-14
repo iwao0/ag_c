@@ -50,6 +50,14 @@ for (const file of backendFiles) {
   if (/#[ \t]*include[^\n]*parser\/semantic_ctx\.h/.test(source)) {
     throw new Error(`${file} directly includes parser/semantic_ctx.h`);
   }
+  if (file.startsWith("src/arch/") &&
+      (/#[ \t]*include[^\n]*parser\//.test(source) ||
+       /\bpsx?_[A-Za-z0-9_]+\b/.test(source) ||
+       /\b(?:global_var_t|lvar_t|node_t|tag_member_info_t|string_lit_t|float_lit_t)\b/.test(
+         source,
+       ))) {
+    throw new Error(`${file} backend directly depends on parser types or APIs`);
+  }
   const forbidden = file.startsWith("src/ir/")
     ? [contextBridgeRe, irSymbolTypeRe]
     : [contextBridgeRe, parserLiteralRegistryRe];

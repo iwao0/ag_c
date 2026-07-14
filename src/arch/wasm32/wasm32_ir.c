@@ -1,8 +1,6 @@
 #include "wasm32_ir.h"
 #include "../../codegen_emit.h"
 #include "../../diag/diag.h"
-#include "../../ir/abi_lowering.h"
-#include "../../parser/parser_public.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -303,26 +301,10 @@ static int data_addr_for_ir_string(const char *sym, int sym_len, int size) {
   return intern_data_symbol(sym, sym_len, size, 1)->addr;
 }
 
-typedef struct {
-  const char *name;
-  int name_len;
-  global_var_t *found;
-} global_find_ctx_t;
-
-static void find_global_cb(global_var_t *gv, void *user) {
-  global_find_ctx_t *ctx = user;
-  if (!ctx->found &&
-      name_eq(ps_gvar_name(gv), ps_gvar_name_len(gv), ctx->name, ctx->name_len)) {
-    ctx->found = gv;
-  }
-}
-
-static int data_addr_for_global(const char *sym, int sym_len) {
-  global_find_ctx_t ctx = {sym, sym_len, NULL};
-  ps_iter_globals(find_global_cb, &ctx);
-  int size = ps_gvar_storage_size(ctx.found, 8);
-  int align = size >= 8 ? 8 : size >= 4 ? 4 : size >= 2 ? 2 : 1;
-  return intern_data_symbol(sym, sym_len, size, align)->addr;
+static int data_addr_for_data_object(const ir_data_object_t *object) {
+  if (!object) return -1;
+  return intern_data_symbol(object->name, object->name_len,
+                            object->byte_size, object->alignment)->addr;
 }
 
 static int data_addr_for_ir_symbol(const ir_symbol_t *symbol) {
@@ -1833,227 +1815,54 @@ static void emit_i32_data_bytes(int addr, long long value, int size) {
   cg_emitf("\")\n");
 }
 
-static psx_gvar_fp_bits_t fp_init_value_bits(tk_float_kind_t fp_kind, double value,
-                                             const char *float_error) {
-  psx_gvar_fp_bits_t bits;
-  if (!ps_gvar_fp_bit_pattern(fp_kind, value, &bits)) {
-    wasm_unsupported_msg(float_error);
+static long long data_relocation_value(const ir_data_reloc_t *reloc) {
+  if (!reloc) return 0;
+  if (reloc->kind == IR_DATA_RELOC_FUNCTION) {
+    if (reloc->has_callable_sig) {
+      record_function_signature(
+          reloc->target, reloc->target_len, reloc->callable_sig.result,
+          reloc->callable_sig.params, reloc->callable_sig.param_count);
+    }
+    int index = function_table_index_or_unsupported(
+        reloc->target, reloc->target_len);
+    return (long long)index + reloc->addend;
   }
-  return bits;
+  ir_data_object_t *target = ir_data_module_find_object(
+      g_data_module, reloc->target, reloc->target_len);
+  int addr = data_addr_for_data_object(target);
+  if (addr < 0) wasm_unsupported_msg("missing data relocation target");
+  return (long long)addr + reloc->addend;
 }
 
-static int data_addr_for_symbol_ref(psx_gvar_symbol_ref_t ref) {
-  if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
-    return data_addr_for_string_label(ref.symbol);
-  }
-  char *name = NULL;
-  int name_len = 0;
-  if (ps_gvar_symbol_ref_named_function(ref, &name, &name_len)) {
-    return function_table_index_or_unsupported(name, name_len);
-  }
-  if (ps_gvar_symbol_ref_named(ref, &name, &name_len)) {
-    return data_addr_for_global(name, name_len);
-  }
-  return -1;
-}
-
-static uint64_t global_init_value_bits(psx_gvar_init_value_t value,
-                                       const char *symbol_error,
-                                       const char *float_error) {
-  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    return (uint64_t)fp_init_value_bits(value.fp_kind, value.fvalue,
-                                        float_error).bits;
-  }
-  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    int sym_addr = data_addr_for_symbol_ref(value.symbol_ref);
-    if (sym_addr < 0) wasm_unsupported_msg(symbol_error);
-    return (uint64_t)((long long)sym_addr + value.symbol_ref.addend);
-  }
-  return (uint64_t)value.value;
-}
-
-static void emit_global_init_value_data(int addr, psx_gvar_init_value_t value,
-                                        const char *symbol_error,
-                                        const char *float_error) {
-  if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
-    psx_gvar_fp_bits_t bits =
-        fp_init_value_bits(value.fp_kind, value.fvalue, float_error);
-    emit_i32_data_bytes(addr, (long long)bits.bits, bits.size);
+static void emit_global_data_object(const ir_data_object_t *object) {
+  if (!object || object->is_extern) return;
+  if (!object->has_explicit_initializer && object->byte_size != 1 &&
+      object->byte_size != 2 && object->byte_size != 4 &&
+      object->byte_size != 8)
     return;
-  }
-  if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
-    wasm_unsupported_msg("global size in Wasm backend");
-  }
-  uint64_t bits = global_init_value_bits(value, symbol_error, float_error);
-  emit_i32_data_bytes(addr, (long long)bits, value.size);
-}
-
-typedef struct {
-  int total_size;
-} wasm_init_slots_data_ctx_t;
-
-static int emit_global_init_slot_value_data(void *user, int index,
-                                            psx_gvar_init_slot_value_t slot_value,
-                                            const psx_gvar_init_slots_layout_t *layout) {
-  wasm_init_slots_data_ctx_t *ctx = user;
-  int elem = layout->elem_size;
-  uint64_t value = global_init_value_bits(
-      slot_value, "symbol array initializer in Wasm backend",
-      "floating global initializer in Wasm backend");
-  int bytes = elem;
-  if ((index + 1) * elem > ctx->total_size) bytes = ctx->total_size - index * elem;
-  for (int b = 0; b < bytes; b++) emit_wat_escaped_byte((unsigned char)(value >> (8 * b)));
-  return 1;
-}
-
-static void emit_global_init_values_data(global_var_t *gv, int addr, int size,
-                                         const psx_gvar_init_slots_layout_t *slot_layout) {
-  int elem = slot_layout->elem_size;
-  if (elem != 1 && elem != 2 && elem != 4 && elem != 8) wasm_unsupported_msg("global element size in Wasm backend");
+  int addr = data_addr_for_data_object(object);
+  if (addr < 0 || (object->has_explicit_initializer && !object->bytes))
+    wasm_unsupported_msg("missing lowered global data in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  wasm_init_slots_data_ctx_t ctx = {.total_size = size};
-  if (!ps_gvar_walk_init_slot_values(gv, slot_layout, slot_layout->elem_count,
-                                      emit_global_init_slot_value_data, &ctx)) {
-    wasm_unsupported_msg("global array initializer in Wasm backend");
+  const ir_data_reloc_t *reloc = object->relocs;
+  for (int offset = 0; offset < object->byte_size; ) {
+    if (reloc && reloc->offset == offset) {
+      if (reloc->width <= 0 || offset > object->byte_size - reloc->width)
+        wasm_unsupported_msg("global data relocation range");
+      uint64_t value = (uint64_t)data_relocation_value(reloc);
+      for (int i = 0; i < reloc->width; i++)
+        emit_wat_escaped_byte((unsigned char)(value >> (8 * i)));
+      offset += reloc->width;
+      reloc = reloc->next;
+    } else {
+      if (reloc && reloc->offset < offset)
+        wasm_unsupported_msg("overlapping global data relocations");
+      emit_wat_escaped_byte(object->bytes ? object->bytes[offset] : 0);
+      offset++;
+    }
   }
+  if (reloc) wasm_unsupported_msg("global data relocation outside object");
   cg_emitf("\")\n");
-}
-
-static void emit_global_init_member_value_data(global_var_t *gv, int idx, int addr,
-                                               const tag_member_info_t *mi) {
-  psx_gvar_init_member_value_t value = ps_gvar_init_member_value(gv, idx, mi);
-  if (value.size != 1 && value.size != 2 && value.size != 4 && value.size != 8) {
-    wasm_unsupported_msg("global member size in Wasm backend");
-  }
-  emit_global_init_value_data(addr, value,
-                              "symbol global struct initializer in Wasm backend",
-                              "floating global struct initializer in Wasm backend");
-}
-
-static void emit_global_init_member_data(global_var_t *gv, int idx, int addr,
-                                         const tag_member_info_t *mi) {
-  if (!mi) wasm_unsupported_msg("global struct member initializer in Wasm backend");
-  emit_global_init_member_value_data(gv, idx, addr, mi);
-}
-
-static void emit_global_bitfield_member_data(global_var_t *gv, int idx, int addr,
-                                             const tag_member_info_t *mi) {
-  if (!mi || mi->bit_width <= 0) {
-    wasm_unsupported_msg("global bitfield initializer in Wasm backend");
-  }
-  unsigned long long packed = ps_gvar_init_slot_bitfield_bits(gv, idx,
-                                                               mi->bit_width, mi->bit_offset);
-  emit_i32_data_bytes(addr + mi->offset, (long long)packed,
-                      ps_tag_member_decl_value_size(mi));
-}
-
-typedef struct {
-  global_var_t *gv;
-} wasm_global_aggregate_emit_ctx_t;
-
-static void emit_global_walk_scalar(void *user, const tag_member_info_t *mi,
-                                    int idx, long long offset) {
-  wasm_global_aggregate_emit_ctx_t *ctx = user;
-  emit_global_init_member_data(ctx->gv, idx, (int)offset, mi);
-}
-
-static void emit_global_walk_bitfield_unit(void *user,
-                                           const psx_gvar_bitfield_unit_t *unit,
-                                           long long base_offset) {
-  (void)user;
-  emit_i32_data_bytes((int)base_offset + unit->offset,
-                      (long long)unit->packed, unit->size);
-}
-
-static void emit_global_walk_bitfield_member(void *user, const tag_member_info_t *mi,
-                                             int idx, long long base_offset) {
-  wasm_global_aggregate_emit_ctx_t *ctx = user;
-  emit_global_bitfield_member_data(ctx->gv, idx, (int)base_offset, mi);
-}
-
-static const psx_gvar_aggregate_walk_ops_t wasm_global_aggregate_walk_ops = {
-    .scalar = emit_global_walk_scalar,
-    .bitfield_unit = emit_global_walk_bitfield_unit,
-    .bitfield_member = emit_global_walk_bitfield_member,
-};
-
-static void emit_global_struct_data(global_var_t *gv, int addr) {
-  wasm_global_aggregate_emit_ctx_t ctx = {.gv = gv};
-  if (!ps_gvar_walk_aggregate_initializer(gv, addr,
-                                           &wasm_global_aggregate_walk_ops, &ctx)) {
-    wasm_unsupported_msg("global aggregate initializer in Wasm backend");
-  }
-}
-
-typedef struct {
-  global_var_t *gv;
-  int addr;
-  int size;
-} wasm_global_init_emit_ctx_t;
-
-static int emit_global_initializer_aggregate_data(void *user,
-                                                  const psx_gvar_initializer_class_t *init_class) {
-  (void)init_class;
-  wasm_global_init_emit_ctx_t *ctx = user;
-  emit_global_struct_data(ctx->gv, ctx->addr);
-  return 1;
-}
-
-static int emit_global_initializer_slots_data(void *user,
-                                              const psx_gvar_init_slots_layout_t *layout,
-                                              const psx_gvar_initializer_class_t *init_class) {
-  (void)init_class;
-  wasm_global_init_emit_ctx_t *ctx = user;
-  emit_global_init_values_data(ctx->gv, ctx->addr, ctx->size, layout);
-  return 1;
-}
-
-static int emit_global_initializer_scalar_data(void *user,
-                                               psx_gvar_init_scalar_value_t value,
-                                               const psx_gvar_initializer_class_t *init_class) {
-  wasm_global_init_emit_ctx_t *ctx = user;
-  if ((!init_class->has_payload || value.value == 0) &&
-      ctx->size != 1 && ctx->size != 2 && ctx->size != 4 && ctx->size != 8) {
-    return 1;
-  }
-  emit_global_init_value_data(ctx->addr, value,
-                              "global symbol initializer in Wasm backend",
-                              "floating global initializer in Wasm backend");
-  return 1;
-}
-
-static const psx_gvar_initializer_visit_ops_t wasm_global_initializer_visit_ops = {
-    .aggregate = emit_global_initializer_aggregate_data,
-    .slots = emit_global_initializer_slots_data,
-    .scalar = emit_global_initializer_scalar_data,
-};
-
-static void emit_global_data(global_var_t *gv, void *user) {
-  (void)user;
-  if (ps_gvar_is_extern_decl(gv)) return;
-  int addr = data_addr_for_global(ps_gvar_name(gv), ps_gvar_name_len(gv));
-  int size = ps_gvar_storage_size(gv, 4);
-  psx_gvar_init_scalar_value_t scalar = ps_gvar_init_scalar_value(gv, size);
-  char *function_name = NULL;
-  int function_name_len = 0;
-  ir_callable_sig_t callable_sig = {0};
-  if (ir_abi_callable_sig_from_type(
-          ps_gvar_get_decl_type(gv), &callable_sig) &&
-      ps_gvar_init_value_named_function(
-          scalar, &function_name, &function_name_len)) {
-    ir_inst_t function_ref = {
-        .sym = function_name,
-        .sym_len = function_name_len,
-        .callable_sig = callable_sig,
-        .has_callable_sig = 1,
-    };
-    record_function_reference_signature(&function_ref);
-  }
-  wasm_global_init_emit_ctx_t ctx = {.gv = gv, .addr = addr, .size = size};
-  if (!ps_gvar_visit_initializer(gv, 1, size, &wasm_global_initializer_visit_ops,
-                                  &ctx)) {
-    wasm_unsupported_msg("global initializer in Wasm backend");
-  }
 }
 
 void wasm32_emit_data_segments(const ir_data_module_t *data_module) {
@@ -2061,8 +1870,8 @@ void wasm32_emit_data_segments(const ir_data_module_t *data_module) {
   for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
        object; object = object->next) {
     if (object->kind == IR_DATA_STRING) emit_string_literal_data(object);
+    else if (object->kind == IR_DATA_OBJECT) emit_global_data_object(object);
   }
-  ps_iter_globals(emit_global_data, NULL);
 }
 
 static int has_undefined_function(const char *name, int len) {
