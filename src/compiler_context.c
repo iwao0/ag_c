@@ -22,8 +22,13 @@ int ag_compiler_context_init(ag_compiler_context_t *context) {
   return 1;
 }
 
+int ag_compiler_context_is_complete(const ag_compiler_context_t *context) {
+  return context && context->semantic_context && context->global_registry &&
+         context->local_registry;
+}
+
 int ag_compiler_context_activate(ag_compiler_context_t *context) {
-  if (!context || !context->semantic_context || context->is_active) return 0;
+  if (!ag_compiler_context_is_complete(context) || context->is_active) return 0;
   context->previous_semantic_context =
       ps_ctx_activate(context->semantic_context);
   context->previous_global_registry =

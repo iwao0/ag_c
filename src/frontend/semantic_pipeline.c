@@ -54,11 +54,7 @@ void psx_frontend_analyze_function_in_context(
 void psx_frontend_analyze_function_in_compiler_context(
     ag_compiler_context_t *compiler_context,
     node_t *function, const token_t *fallback_diag_tok) {
-  if (!compiler_context) {
-    psx_frontend_analyze_function_in_context(
-        NULL, function, fallback_diag_tok);
-    return;
-  }
+  if (!ag_compiler_context_is_complete(compiler_context)) return;
   analyze_function_in_contexts(
       compiler_context->semantic_context,
       compiler_context->global_registry,

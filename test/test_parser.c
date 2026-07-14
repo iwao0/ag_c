@@ -2069,12 +2069,29 @@ static void test_frontend_stream_lifecycle_boundary() {
                   (char *)"__stream_previous", 17) != NULL);
   ps_parser_stream_end(&parser_stream);
 
+  ag_compiler_context_t compiler_context;
+  ASSERT_TRUE(ag_compiler_context_init(&compiler_context));
   psx_frontend_stream_t frontend_stream = {0};
-  psx_frontend_stream_begin(
-      &frontend_stream, NULL, NULL, tk_tokenize((char *)""));
-  ASSERT_TRUE(ps_ctx_get_function_type(
-                  (char *)"__stream_previous", 17) == NULL);
+  ASSERT_TRUE(!psx_frontend_stream_begin(
+      &frontend_stream, NULL, NULL, tk_tokenize((char *)"")));
+  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
   psx_frontend_stream_end(&frontend_stream);
+
+  ASSERT_TRUE(psx_frontend_stream_begin(
+      &frontend_stream, &compiler_context, NULL,
+      tk_tokenize((char *)
+          "int __stream_explicit(void) { return 0; }")));
+  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) != NULL);
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+                  compiler_context.semantic_context,
+                  (char *)"__stream_explicit", 17) != NULL);
+  ASSERT_TRUE(ps_ctx_get_function_type(
+                  (char *)"__stream_explicit", 17) == NULL);
+  ASSERT_TRUE(ps_ctx_get_function_type(
+                  (char *)"__stream_previous", 17) != NULL);
+  psx_frontend_stream_end(&frontend_stream);
+  ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
+  ag_compiler_context_dispose(&compiler_context);
 }
 
 static void test_complex_initializer_semantic_lowering_boundary() {

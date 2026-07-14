@@ -72,6 +72,7 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ps_local_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_destroy\s*\(/.test(compilerContextSource) ||
+    !/ag_compiler_context_is_complete\s*\(/.test(compilerContextSource) ||
     !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
       compilerMainSource,
     ) ||
@@ -225,6 +226,9 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
+    !/int\s+psx_frontend_stream_begin\s*\(/.test(
+      frontendTranslationUnitHeader,
+    ) ||
     !/psx_frontend_stream_begin\s*\([\s\S]*?ag_compiler_context_t\s*\*compiler_context/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -254,6 +258,21 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       lvarUsageAnalysisSource,
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
+}
+const frontendStreamCore = frontendTranslationUnitSource.slice(
+  frontendTranslationUnitSource.indexOf("int psx_frontend_stream_begin("),
+  frontendTranslationUnitSource.indexOf("void psx_frontend_free_processed_ast("),
+);
+if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
+      frontendStreamCore,
+    ) ||
+    !/ag_compiler_context_is_complete\s*\(compiler_context\)/.test(
+      frontendStreamCore,
+    ) ||
+    /if\s*\(\s*!compiler_context\s*\)/.test(semanticPipelineSource)) {
+  throw new Error(
+    "frontend stream core must require a complete CompilerContext without active-state fallback",
+  );
 }
 if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
       toplevelDeclarationHeader,

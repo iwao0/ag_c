@@ -169,8 +169,11 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     return -4;
   }
 
-  psx_frontend_reset_translation_unit_state_in_compiler_context(
-      &compiler_context);
+  if (!psx_frontend_reset_translation_unit_state_in_compiler_context(
+          &compiler_context)) {
+    ag_compiler_context_dispose(&compiler_context);
+    return -4;
+  }
 
   char *source = (char *)(long)source_addr;
   const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
@@ -207,7 +210,15 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   }
 
   psx_frontend_stream_t stream = {0};
-  psx_frontend_stream_begin(&stream, &compiler_context, tk_ctx, tok);
+  if (!psx_frontend_stream_begin(
+          &stream, &compiler_context, tk_ctx, tok)) {
+    clear_output_callback();
+    gen_set_simple_formatter(0);
+    if (pps) pp_stream_close(pps);
+    wasm32_obj_capture_output(0);
+    ag_compiler_context_dispose(&compiler_context);
+    return -4;
+  }
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode)) {
       clear_output_callback();
@@ -363,8 +374,12 @@ int main(int argc, char **argv) {
     free(source);
     return 1;
   }
-  psx_frontend_reset_translation_unit_state_in_compiler_context(
-      &compiler_context);
+  if (!psx_frontend_reset_translation_unit_state_in_compiler_context(
+          &compiler_context)) {
+    ag_compiler_context_dispose(&compiler_context);
+    free(source);
+    return 1;
+  }
 
   load_config_toml(input_path);
 
@@ -406,7 +421,20 @@ int main(int argc, char **argv) {
   // 非関数のトップレベル宣言はfrontend item driverが逐次適用し、データセクションは末尾。
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   psx_frontend_stream_t stream = {0};
-  psx_frontend_stream_begin(&stream, &compiler_context, tk_ctx, tok);
+  if (!psx_frontend_stream_begin(
+          &stream, &compiler_context, tk_ctx, tok)) {
+    if (pps) pp_stream_close(pps);
+#ifdef AGC_TARGET_WASM32
+    if (wasm_object_mode) {
+      fclose(wasm_obj_out);
+      remove(output_path);
+    }
+#endif
+    clear_output_callback();
+    ag_compiler_context_dispose(&compiler_context);
+    free(source);
+    return 1;
+  }
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
     if (!wasm_emit_function_direct(fn, wasm_object_mode)) {
