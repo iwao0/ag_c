@@ -470,7 +470,7 @@ static bool tokenize_number_literal(
 static tokenize_session_t begin_tokenize_session(tokenizer_context_t *ctx) {
   tokenize_session_t s = {0};
   s.prev_ctx = tk_tokenize_ctx_active;
-  s.ctx = ctx ? ctx : tk_get_default_context();
+  s.ctx = ctx ? ctx : tk_context_active();
   tk_tokenize_ctx_active = s.ctx;
   tk_set_current_token_ctx(s.ctx, NULL);
   return s;
@@ -584,7 +584,7 @@ static bool tokenize_number_literal(
 
 /** @brief 入力文字列をトークナイズし、先頭トークンを返す。 */
 token_t *tk_tokenize(const char *p) {
-  return tk_tokenize_ctx(tk_get_default_context(), p);
+  return tk_tokenize_ctx(NULL, p);
 }
 
 /** @brief 入力文字列を正規化し、診断用入力参照をコンテキストへ設定する。 */

@@ -12,6 +12,8 @@
 #include "codegen_emit.h"
 #include <string.h>
 
+static ag_compilation_session_t *active_compilation_session;
+
 int ag_compilation_session_init(
     ag_compilation_session_t *session, const ag_target_info_t *target) {
   if (!session) return 0;
@@ -67,6 +69,8 @@ int ag_compilation_session_is_complete(
 int ag_compilation_session_activate(ag_compilation_session_t *session) {
   if (!ag_compilation_session_is_complete(session) || session->is_active)
     return 0;
+  session->previous_session = active_compilation_session;
+  active_compilation_session = session;
   session->previous_semantic_context =
       ps_ctx_activate(session->semantic_context);
   session->previous_global_registry =
@@ -95,6 +99,10 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
   return 1;
 }
 
+ag_compilation_session_t *ag_compilation_session_active(void) {
+  return active_compilation_session;
+}
+
 void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (!session || !session->is_active) return;
   if (session->backend_deactivate)
@@ -111,6 +119,8 @@ void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   ps_local_registry_activate(session->previous_local_registry);
   ps_global_registry_activate(session->previous_global_registry);
   ps_ctx_activate(session->previous_semantic_context);
+  active_compilation_session = session->previous_session;
+  session->previous_session = NULL;
   session->previous_local_registry = NULL;
   session->previous_preprocessor_context = NULL;
   session->previous_arena_context = NULL;

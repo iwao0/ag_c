@@ -2014,6 +2014,9 @@ static void test_toplevel_declaration_frontend_boundary() {
 
 static void test_toplevel_callback_context_boundary() {
   printf("test_toplevel_callback_context_boundary...\n");
+  ASSERT_TRUE(ag_compilation_session_active() != NULL);
+  ASSERT_TRUE(tk_context_active() ==
+              &ag_compilation_session_active()->tokenizer);
   psx_frontend_reset_translation_unit_state();
   tk_tokenize((char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
@@ -15645,7 +15648,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   psx_lowering_context_t *previous_lowering =
       ps_lowering_context_active();
   ag_codegen_emit_context_t *previous_codegen = cg_context_active();
+  ag_compilation_session_t *previous_session =
+      ag_compilation_session_active();
   ASSERT_TRUE(ag_compilation_session_activate(&host));
+  ASSERT_TRUE(ag_compilation_session_active() == &host);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15682,6 +15688,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
+  ASSERT_TRUE(ag_compilation_session_active() == &wasm);
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
@@ -15707,6 +15714,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&wasm);
+  ASSERT_TRUE(ag_compilation_session_active() == &host);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15727,6 +15735,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ag_compilation_session_deactivate(&host);
+  ASSERT_TRUE(ag_compilation_session_active() == previous_session);
   ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
@@ -15765,6 +15774,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
 }
 
 int main() {
+  ag_compilation_session_t suite_session;
+  ag_target_info_t suite_target = ag_target_info_host();
+  ASSERT_TRUE(ag_compilation_session_init(&suite_session, &suite_target));
+  ASSERT_TRUE(ag_compilation_session_activate(&suite_session));
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
@@ -15874,6 +15887,7 @@ int main() {
   test_parser_width_limits();
   test_semantic_canonical_type_invariant();
 
+  ag_compilation_session_dispose(&suite_session);
   printf("OK: All unit tests passed!\n");
   return 0;
 }

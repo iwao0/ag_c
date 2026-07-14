@@ -17,16 +17,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static ag_compilation_session_t active_session_view(void) {
-  return (ag_compilation_session_t){
-      .semantic_context = ps_ctx_active(),
-      .global_registry = ps_global_registry_active(),
-      .local_registry = ps_local_registry_active(),
-      .parser_runtime_context = ps_parser_runtime_context_active(),
-      .lowering_context = ps_lowering_context_active(),
-  };
-}
-
 static int frontend_session_has_registries(
     const ag_compilation_session_t *session) {
   return session && session->semantic_context && session->global_registry &&
@@ -50,9 +40,8 @@ static void reset_translation_unit_state(
 }
 
 void psx_frontend_reset_translation_unit_state(void) {
-  ag_compilation_session_t session = active_session_view();
   (void)psx_frontend_reset_translation_unit_state_in_compiler_context(
-      &session);
+      ag_compilation_session_active());
 }
 
 int psx_frontend_reset_translation_unit_state_in_compiler_context(
@@ -221,9 +210,8 @@ node_t **psx_frontend_program_in_compiler_context(
 
 node_t **psx_frontend_program_ctx(
     tokenizer_context_t *tk_ctx, token_t *start) {
-  ag_compilation_session_t session = active_session_view();
   return psx_frontend_program_in_compiler_context(
-      &session, tk_ctx, start);
+      ag_compilation_session_active(), tk_ctx, start);
 }
 
 node_t **psx_frontend_program_from(token_t *start) {

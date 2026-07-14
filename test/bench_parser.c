@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/compiler_context.h"
 #include "../src/frontend/translation_unit.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"
@@ -65,6 +66,13 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
 }
 
 int main(void) {
+  ag_compilation_session_t session;
+  ag_target_info_t target = ag_target_info_host();
+  if (!ag_compilation_session_init(&session, &target) ||
+      !ag_compilation_session_activate(&session)) {
+    ag_compilation_session_dispose(&session);
+    return 1;
+  }
   const char *mixed_pattern =
       "int add(int a,int b){return a+b;}"
       "int main(){int s=0;for(int i=0,j=8;i<j;i=i+1){if(i==3)continue;s=s+i;}return s;}\n";
@@ -83,5 +91,6 @@ int main(void) {
   run_case("mixed", mixed_pattern, 256 * 1024);
   run_case("expr-heavy", expr_heavy_pattern, 256 * 1024);
   run_case("control-heavy", control_heavy_pattern, 256 * 1024);
+  ag_compilation_session_dispose(&session);
   return 0;
 }

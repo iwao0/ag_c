@@ -207,6 +207,22 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
   );
 }
 
+const frontendTranslationUnitSessionSource = await readFile(
+  "src/frontend/translation_unit.c",
+  "utf8",
+);
+if (/active_session_view\s*\(/.test(frontendTranslationUnitSessionSource) ||
+    /ps_(?:ctx|global_registry|local_registry|parser_runtime_context|lowering_context)_active\s*\(/.test(
+      frontendTranslationUnitSessionSource,
+    ) ||
+    !/ag_compilation_session_active\s*\(\)/.test(
+      frontendTranslationUnitSessionSource,
+    )) {
+  throw new Error(
+    "frontend compatibility APIs must use the active CompilationSession instead of reconstructing one from subsystem globals",
+  );
+}
+
 if (/^static\s+(?:gen_output_line_fn|void\s*\*|char\s+|int\s+)\b(?:gen_output|cg_format_stack_buf|gen_simple_formatter)/m.test(
       codegenEmitSource,
     ) ||
@@ -223,6 +239,20 @@ if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
     )) {
   throw new Error(
     "token filename interning must be owned and reset by tokenizer context",
+  );
+}
+
+if (/s\.ctx\s*=\s*ctx\s*\?\s*ctx\s*:\s*tk_get_default_context\s*\(\)/.test(
+      tokenizerSource,
+    ) ||
+    /tk_tokenize_ctx\s*\(\s*tk_get_default_context\s*\(\)/.test(
+      tokenizerSource,
+    ) ||
+    !/s\.ctx\s*=\s*ctx\s*\?\s*ctx\s*:\s*tk_context_active\s*\(\)/.test(
+      tokenizerSource,
+    )) {
+  throw new Error(
+    "context-free tokenization must use the active tokenizer context",
   );
 }
 

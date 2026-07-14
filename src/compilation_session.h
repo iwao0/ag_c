@@ -17,6 +17,7 @@ typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 typedef void (*ag_session_backend_callback_t)(void *context);
 
 typedef struct ag_compilation_session_t {
+  struct ag_compilation_session_t *previous_session;
   psx_semantic_context_t *semantic_context;
   psx_semantic_context_t *previous_semantic_context;
   psx_global_registry_t *global_registry;
@@ -52,6 +53,7 @@ int ag_compilation_session_init(
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session);
 int ag_compilation_session_activate(ag_compilation_session_t *session);
+ag_compilation_session_t *ag_compilation_session_active(void);
 void ag_compilation_session_deactivate(ag_compilation_session_t *session);
 void ag_compilation_session_dispose(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
