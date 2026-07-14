@@ -502,6 +502,10 @@ const strictResolverRequestSources = [
   [functionDeclarationResolutionSource, ["semantic_context", "global_registry"]],
   [globalDeclarationResolutionSource, ["semantic_context", "global_registry"]],
   [tagDeclarationResolutionSource, ["semantic_context", "local_registry"]],
+  [declarationResolutionSource, ["semantic_context"]],
+  [aggregateMemberResolutionSource, ["semantic_context"]],
+  [memberAccessResolutionSource, ["semantic_context"]],
+  [staticInitializerResolutionSource, ["semantic_context"]],
 ];
 for (const [source, fields] of strictResolverRequestSources) {
   for (const field of fields) {

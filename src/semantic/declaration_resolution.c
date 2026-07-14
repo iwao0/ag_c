@@ -77,9 +77,9 @@ static void apply_decl_specifier_type_properties(
 }
 
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
-  if (!request || !request->base_type) return NULL;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
+  if (!request || !request->semantic_context || !request->base_type)
+    return NULL;
+  psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_type_t *type = ps_type_clone(request->base_type);
   if (!type) return NULL;
   if (request->declarator_shape) {

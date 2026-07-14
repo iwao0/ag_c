@@ -18,8 +18,8 @@ void psx_resolve_member_access(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_MEMBER_ACCESS_INVALID_BASE;
-  if (!request || !request->base || !request->member_name ||
-      request->member_name_len <= 0) {
+  if (!request || !request->semantic_context || !request->base ||
+      !request->member_name || request->member_name_len <= 0) {
     return;
   }
 
@@ -41,8 +41,7 @@ void psx_resolve_member_access(
     return;
   }
   resolution->base_object_type = object_type;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
+  psx_semantic_context_t *semantic_context = request->semantic_context;
 
   const tag_member_info_t *member = ps_type_find_aggregate_member(
       base_type, object_type->tag_kind,

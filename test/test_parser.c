@@ -603,6 +603,7 @@ static void test_member_access_resolution_boundary() {
   psx_member_access_resolution_t resolution;
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .base = base,
           .member_name = (char *)"value",
           .member_name_len = 5,
@@ -616,6 +617,7 @@ static void test_member_access_resolution_boundary() {
 
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .base = base,
           .member_name = (char *)"value",
           .member_name_len = 5,
@@ -625,6 +627,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_INVALID_BASE, resolution.status);
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .base = base,
           .member_name = (char *)"missing",
           .member_name_len = 7,
@@ -2537,6 +2540,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_parameter_dimension_t parameter_dimensions[1] = {0};
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
+          .semantic_context = ps_ctx_active(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &vla_parameter_shape,
       },
@@ -3501,6 +3505,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3517,6 +3522,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3535,6 +3541,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3552,6 +3559,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3569,6 +3577,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3600,6 +3609,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__SignBoundary",
           .target_tag_name_len = 14,
@@ -3616,6 +3626,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__SignBoundary",
           .target_tag_name_len = 14,
@@ -3635,6 +3646,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -3654,6 +3666,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_UNION,
           .target_tag_name = (char *)"__UnionBoundary",
           .target_tag_name_len = 15,
@@ -3668,6 +3681,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_UNION,
           .target_tag_name = (char *)"__UnionBoundary",
           .target_tag_name_len = 15,
@@ -3688,6 +3702,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
   const psx_type_t *member_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = ps_ctx_active(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &member_shape,
       });
@@ -3716,6 +3731,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
   const psx_type_t *pointer_array_member = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = ps_ctx_active(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &pointer_array_shape,
       });
@@ -3767,6 +3783,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -3783,12 +3800,14 @@ static void test_aggregate_member_resolution_boundary() {
       &incomplete_pointer_shape, 0, 0);
   const psx_type_t *incomplete_pointer = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = ps_ctx_active(),
           .base_type = incomplete_base,
           .declarator_shape = &incomplete_pointer_shape,
       });
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -3805,6 +3824,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -3833,6 +3853,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -3879,6 +3900,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -3900,6 +3922,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -3916,6 +3939,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -3932,6 +3956,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -3949,6 +3974,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4033,6 +4059,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"PromDst",
           .target_tag_name_len = 7,
@@ -4046,6 +4073,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"PromDst",
           .target_tag_name_len = 7,
@@ -4118,6 +4146,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &anonymous_layout,
       &(psx_aggregate_member_declaration_request_t){
+          .semantic_context = ps_ctx_active(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"BatchDst",
           .target_tag_name_len = 8,
@@ -4619,6 +4648,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t inferred_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .type = inferred_type,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,
@@ -4664,6 +4694,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t pointer_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .type = pointer_array_type,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&pointer_list,
@@ -4690,6 +4721,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t static_initializer_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
           .type = static_incomplete,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,

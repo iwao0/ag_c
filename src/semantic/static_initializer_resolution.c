@@ -13,7 +13,8 @@ void psx_resolve_static_initializer(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_STATIC_INITIALIZER_INVALID;
-  if (!request || !request->type || !request->initializer) return;
+  if (!request || !request->semantic_context || !request->type ||
+      !request->initializer) return;
   if (request->already_initialized) {
     resolution->status = PSX_STATIC_INITIALIZER_DUPLICATE_DEFINITION;
     return;
@@ -24,8 +25,7 @@ void psx_resolve_static_initializer(
   resolution->type = type;
   resolution->kind = request->kind;
   resolution->initializer = request->initializer;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
+  psx_semantic_context_t *semantic_context = request->semantic_context;
   ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
 
   if (ps_type_is_incomplete_array(type)) {

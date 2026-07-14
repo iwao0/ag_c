@@ -244,7 +244,7 @@ void psx_resolve_aggregate_member_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!layout || !request ||
+  if (!layout || !request || !request->semantic_context ||
       !is_aggregate_kind(request->target_tag_kind) ||
       !request->target_tag_name || request->target_tag_name_len <= 0 ||
       !request->base_type || !request->declarator_shape ||
@@ -252,13 +252,13 @@ void psx_resolve_aggregate_member_declaration(
       request->requested_alignment < 0) {
     return;
   }
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
+  psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
   psx_type_t *type = psx_build_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = semantic_context,
           .base_type = request->base_type,
           .declarator_shape = request->declarator_shape,
       });
