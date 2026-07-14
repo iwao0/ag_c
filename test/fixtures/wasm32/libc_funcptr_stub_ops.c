@@ -60,16 +60,17 @@ int main(void) {
     if (pfputc('Z', stream) != 'Z' || pfputc('Z', 0) != EOF) return 4;
     if (ptime(&t) != (time_t)-1 || t != (time_t)-1) return 5;
     if ((int)pdifftime(100, 58) != 42) return 6;
-    if (pfesetround(FE_UPWARD) == 0 || pfegetround() != FE_TONEAREST) return 7;
+    if (pfesetround(FE_UPWARD) != 0 || pfegetround() != FE_UPWARD) return 7;
+    if (pfesetround(0x12345678) == 0 || pfegetround() != FE_UPWARD) return 8;
     loc = psetlocale(LC_ALL, "C");
-    if (loc[0] != 'C') return 8;
+    if (loc[0] != 'C') return 9;
     lc = plocaleconv();
-    if (!lc || !lc->decimal_point || lc->decimal_point[0] != '.') return 9;
+    if (!lc || !lc->decimal_point || lc->decimal_point[0] != '.') return 10;
     psrand(1);
-    if (prand() != 16838) return 10;
+    if (prand() != 16838) return 11;
     pqsort(values, 3, sizeof(values[0]), cmp_ints);
-    if (values[0] != 1 || values[1] != 2 || values[2] != 3) return 11;
-    if (check_move_fn(g_move) != 0) return 12;
-    if (check_move_fn(choose_move(pmemmove)) != 0) return 13;
+    if (values[0] != 1 || values[1] != 2 || values[2] != 3) return 12;
+    if (check_move_fn(g_move) != 0) return 13;
+    if (check_move_fn(choose_move(pmemmove)) != 0) return 14;
     return 0;
 }

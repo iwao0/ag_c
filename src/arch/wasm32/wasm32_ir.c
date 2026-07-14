@@ -14,6 +14,11 @@
 #define WASM_STACK_BASE WASM_PAGE_SIZE
 #define WASM_HEAP_BASE 32768
 
+#define WASM_FE_TONEAREST 0x00000000
+#define WASM_FE_UPWARD 0x00400000
+#define WASM_FE_DOWNWARD 0x00800000
+#define WASM_FE_TOWARDZERO 0x00C00000
+
 typedef struct {
   int vreg;
   int offset;
@@ -3967,11 +3972,22 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i64.store (i32.add (local.get $ret) (i32.const 8)) (i64.rem_s (local.get $numer) (local.get $denom)))\n");
     wasm_emitf(2, ")\n");
   }
-  if (need_rounding_mode_helper || has_undefined_function("fegetround", 10) ||
-      has_undefined_function("fesetround", 10) ||
+  int need_fegetround_stub = has_undefined_function("fegetround", 10);
+  int need_fesetround_stub = has_undefined_function("fesetround", 10);
+  if (need_rounding_mode_helper || need_fegetround_stub ||
+      need_fesetround_stub ||
       need_fegetenv_stub || need_fesetenv_stub ||
       has_undefined_function("feholdexcept", 12) || has_undefined_function("feupdateenv", 11)) {
     wasm_emitf(2, "(global $__ag_fe_round_mode (mut i32) (i32.const 0))\n");
+  }
+  if (need_fesetround_stub || need_fesetenv_stub) {
+    wasm_emitf(2, "(func $__ag_fe_round_mode_valid (param $round i32) (result i32)\n");
+    wasm_emitf(4, "(i32.or\n");
+    wasm_emitf(6, "(i32.or (i32.eq (local.get $round) (i32.const %d)) (i32.eq (local.get $round) (i32.const %d)))\n",
+               WASM_FE_TONEAREST, WASM_FE_UPWARD);
+    wasm_emitf(6, "(i32.or (i32.eq (local.get $round) (i32.const %d)) (i32.eq (local.get $round) (i32.const %d))))\n",
+               WASM_FE_DOWNWARD, WASM_FE_TOWARDZERO);
+    wasm_emitf(2, ")\n");
   }
   int needs_fenv_except_flags =
       has_undefined_function("feclearexcept", 13) ||
@@ -4031,14 +4047,14 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(4, "(i32.and (global.get $__ag_fe_except_flags) (local.get $mask))\n");
     wasm_emitf(2, ")\n");
   }
-  if (has_undefined_function("fegetround", 10)) {
+  if (need_fegetround_stub) {
     wasm_emitf(2, "(func $fegetround (result i32) (global.get $__ag_fe_round_mode))\n");
   }
-  if (has_undefined_function("fesetround", 10)) {
+  if (need_fesetround_stub) {
     wasm_emitf(2, "(func $fesetround (param $round %s) (result i32)\n",
                wasm_stub_param_type("fesetround", 10, 0, IR_TY_I32));
-    wasm_emitf(4, "(if (i32.ne (local.get $round) (i32.const 0)) (then (return (i32.const 1))))\n");
-    wasm_emitf(4, "(global.set $__ag_fe_round_mode (i32.const 0))\n");
+    wasm_emitf(4, "(if (i32.eqz (call $__ag_fe_round_mode_valid (local.get $round))) (then (return (i32.const 1))))\n");
+    wasm_emitf(4, "(global.set $__ag_fe_round_mode (local.get $round))\n");
     wasm_emitf(4, "(i32.const 0)\n");
     wasm_emitf(2, ")\n");
   }
@@ -4065,6 +4081,7 @@ static void emit_minimal_libc_stubs(void) {
     wasm_emitf(6, "(global.set $__ag_fe_except_flags (i32.const 0))\n");
     wasm_emitf(4, ") (else\n");
     wasm_emitf(6, "(if (local.get $envp) (then\n");
+    wasm_emitf(8, "(if (i32.eqz (call $__ag_fe_round_mode_valid (i32.wrap_i64 (i64.load (local.get $envp))))) (then (return (i32.const 1))))\n");
     wasm_emitf(8, "(global.set $__ag_fe_round_mode (i32.wrap_i64 (i64.load (local.get $envp))))\n");
     wasm_emitf(8, "(global.set $__ag_fe_except_flags (i32.wrap_i64 (i64.load (i32.add (local.get $envp) (i32.const 8)))))\n");
     wasm_emitf(6, "))\n");
@@ -7215,11 +7232,14 @@ static void emit_minimal_libc_stubs(void) {
   }
   if (need_rounding_mode_helper) {
     wasm_emitf(2, "(func $__ag_round_current (param $x f64) (result f64)\n");
-    wasm_emitf(4, "(if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const 4194304))\n");
+    wasm_emitf(4, "(if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const %d))\n",
+               WASM_FE_UPWARD);
     wasm_emitf(6, "(then (f64.ceil (local.get $x)))\n");
-    wasm_emitf(6, "(else (if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const 8388608))\n");
+    wasm_emitf(6, "(else (if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const %d))\n",
+               WASM_FE_DOWNWARD);
     wasm_emitf(8, "(then (f64.floor (local.get $x)))\n");
-    wasm_emitf(8, "(else (if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const 12582912))\n");
+    wasm_emitf(8, "(else (if (result f64) (i32.eq (global.get $__ag_fe_round_mode) (i32.const %d))\n",
+               WASM_FE_TOWARDZERO);
     wasm_emitf(10, "(then (f64.trunc (local.get $x)))\n");
     wasm_emitf(10, "(else (f64.nearest (local.get $x)))\n");
     wasm_emitf(8, "))\n");

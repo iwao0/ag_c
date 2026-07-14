@@ -181,10 +181,12 @@ conversion as `gmtime` and does not inspect host timezone state.
 
 Streams are immediate, unbuffered in-memory streams. `_IONBF` is accepted by
 `setvbuf`; full and line buffering fail with `ENOSYS`. Stream orientation is
-sticky once selected. Only `FE_TONEAREST` is supported for ordinary Wasm
-floating-point operations; other `fesetround` modes fail instead of claiming to
-affect arithmetic. Software exception flags remain available through the fenv
-flag APIs.
+sticky once selected. Wasm floating-point instructions always use their
+specified IEEE-754 rounding behavior and cannot be reconfigured by
+`fesetround`. The runtime still tracks all four C rounding modes for
+mode-sensitive software helpers such as `rint` and `nearbyint`; unsupported
+mode values fail without changing the current mode. Software exception flags
+remain available through the fenv flag APIs.
 
 `setjmp` and `longjmp` require compiler-assisted non-local control flow and are
 rejected by the linker with an explicit unsupported-control-flow error. They are
