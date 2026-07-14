@@ -17,6 +17,36 @@ psx_local_registry_t *ps_local_registry_activate(
     psx_local_registry_t *registry);
 psx_local_registry_t *ps_local_registry_active(void);
 
+unsigned ps_local_registry_current_scope_seq_in(
+    const psx_local_registry_t *registry);
+unsigned ps_local_registry_register_binding_event_in(
+    psx_local_registry_t *registry);
+int ps_local_registry_scope_is_visible_from_in(
+    const psx_local_registry_t *registry,
+    unsigned declaration_scope, unsigned reference_scope);
+psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
+    const psx_local_registry_t *registry);
+lvar_t *ps_local_registry_find_visible_in(
+    const psx_local_registry_t *registry,
+    char *name, int name_len, psx_local_lookup_point_t point);
+void ps_local_registry_reset_in(psx_local_registry_t *registry);
+void psx_local_registry_add_in(
+    psx_local_registry_t *registry, lvar_t *var);
+lvar_t *ps_local_registry_create_storage_object_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, int offset, int storage_size,
+    int alignment, const psx_type_t *decl_type);
+lvar_t *ps_local_registry_create_type_binding_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, const psx_type_t *type);
+lvar_t *ps_local_registry_create_static_alias_in(
+    psx_local_registry_t *registry,
+    char *name, int name_len, char *global_name, int global_name_len,
+    const psx_type_t *type);
+void ps_local_registry_update_storage_object_in(
+    psx_local_registry_t *registry,
+    lvar_t *var, int offset, int storage_size, int alignment);
+
 unsigned ps_local_registry_current_scope_seq(void);
 unsigned ps_local_registry_register_binding_event(void);
 int ps_local_registry_scope_is_visible_from(

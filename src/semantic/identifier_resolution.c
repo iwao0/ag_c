@@ -19,12 +19,16 @@ void psx_resolve_identifier(
   if (!request || !request->name || request->name_len <= 0) return;
   psx_semantic_context_t *semantic_context = request->semantic_context
       ? request->semantic_context : ps_ctx_active();
+  psx_local_registry_t *local_registry = request->local_registry
+      ? request->local_registry : ps_local_registry_active();
 
   resolution->local = request->has_local_lookup_point
-      ? ps_local_registry_find_visible(
+      ? ps_local_registry_find_visible_in(
+            local_registry,
             request->name, request->name_len,
             request->local_lookup_point)
-      : ps_decl_find_lvar(request->name, request->name_len);
+      : ps_decl_find_lvar_in(
+            local_registry, request->name, request->name_len);
   if (resolution->local) {
     resolution->kind = PSX_IDENTIFIER_LOCAL;
     return;

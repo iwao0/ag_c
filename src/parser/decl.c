@@ -30,9 +30,14 @@ lvar_t *ps_decl_register_lvar_typed_align(
       name, len, offset, size, align, type);
 }
 
-void ps_decl_reset_locals(void) {
-  ps_local_registry_reset();
+void ps_decl_reset_locals_in(psx_local_registry_t *registry) {
+  if (!registry) return;
+  ps_local_registry_reset_in(registry);
   local_storage_reset();
+}
+
+void ps_decl_reset_locals(void) {
+  ps_decl_reset_locals_in(ps_local_registry_active());
 }
 
 void ps_decl_reserve_variadic_regs(void) {
@@ -193,11 +198,17 @@ int ps_lvar_vla_param_inner_dim_src_offset(const lvar_t *var, int idx) {
   return var->vla_runtime.param_inner_dim_src_offsets[idx];
 }
 
-void ps_decl_reset_translation_unit_state(void) {
-  ps_decl_reset_locals();
+void ps_decl_reset_translation_unit_state_in(
+    psx_local_registry_t *registry) {
+  if (!registry) return;
+  ps_decl_reset_locals_in(registry);
   current_funcname = NULL;
   current_funcname_len = 0;
   psx_declaration_pipeline_reset_translation_unit_state();
+}
+
+void ps_decl_reset_translation_unit_state(void) {
+  ps_decl_reset_translation_unit_state_in(ps_local_registry_active());
 }
 
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を

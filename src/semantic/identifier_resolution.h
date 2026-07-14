@@ -18,6 +18,7 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   int is_call;

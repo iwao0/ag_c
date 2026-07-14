@@ -110,6 +110,8 @@ const localRegistrySource = await readFile(
 );
 const legacyLocalRegistryGlobals =
   /^static\s+.*\b(?:locals|all_locals|all_bindings|lvar_scope_stack|lvar_scope_seq_stack|lvar_scope_depth|next_scope_seq|current_scope_seq|next_declaration_seq|scope_parent_by_seq|scope_parent_capacity|lvars_by_bucket|lvars_by_offset|usage_events_head|usage_events_tail|current_usage_region)\b/gm;
+const legacyActiveLocalRegistryMacros =
+  /^#define\s+(?:locals|all_locals|all_bindings|lvar_scope_stack|lvar_scope_seq_stack|lvar_scope_depth|next_scope_seq|current_scope_seq|next_declaration_seq|scope_parent_by_seq|scope_parent_capacity|lvars_by_bucket|lvars_by_offset|usage_events_head|usage_events_tail|current_usage_region)\b/gm;
 if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     !/psx_local_registry_t\s*\*ps_local_registry_create\s*\(/.test(
       localRegistrySource,
@@ -120,7 +122,12 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     !/void\s+ps_local_registry_destroy\s*\(/.test(
       localRegistrySource,
     ) ||
-    legacyLocalRegistryGlobals.test(localRegistrySource)) {
+    !/ps_local_registry_find_visible_in\s*\(/.test(localRegistrySource) ||
+    !/ps_decl_record_lvar_usage_in_region_in\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    legacyLocalRegistryGlobals.test(localRegistrySource) ||
+    legacyActiveLocalRegistryMacros.test(localRegistrySource)) {
   throw new Error(
     "function-local symbols, scopes, and usage events must be owned by an explicit registry",
   );
@@ -133,6 +140,20 @@ const frontendTranslationUnitSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
+const parserStreamHeader = await readFile("src/parser/parser.h", "utf8");
+const parserStreamSource = await readFile("src/parser/parser.c", "utf8");
+const semanticPipelineSource = await readFile(
+  "src/frontend/semantic_pipeline.c",
+  "utf8",
+);
+const identifierBindingSource = await readFile(
+  "src/semantic/identifier_binding.c",
+  "utf8",
+);
+const lvarUsageAnalysisSource = await readFile(
+  "src/semantic/lvar_usage_analysis.c",
+  "utf8",
+);
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -141,6 +162,25 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
     ) ||
     !/ps_global_registry_reset_diag_state_in\s*\(/.test(
       frontendTranslationUnitSource,
+    ) ||
+    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+      parserStreamHeader,
+    ) ||
+    !/ps_parser_stream_begin_in_contexts\s*\(/.test(parserStreamSource) ||
+    !/psx_frontend_analyze_function_in_compiler_context\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_bind_identifier_tree_in_contexts\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/\.local_registry\s*=\s*local_registry/.test(
+      identifierBindingSource,
+    ) ||
+    !/psx_analyze_function_lvar_usage_in\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/ps_decl_replay_lvar_usage_events_in\s*\(/.test(
+      lvarUsageAnalysisSource,
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
 }
@@ -390,16 +430,16 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     /stream\s*&&\s*stream->semantic_context\s*\?[^;]*ps_ctx_active\s*\(\)/s.test(
       parserSource,
     ) ||
-    !/ps_parser_stream_begin_in_context\s*\(/.test(
+    !/ps_parser_stream_begin_in_contexts\s*\(/.test(
       frontendTranslationUnitSource,
     ) ||
-    !/psx_stmt_stmt_in_context\s*\(/.test(parserSource) ||
+    !/psx_stmt_stmt_in_contexts\s*\(/.test(parserSource) ||
     !/psx_ctx_is_typedef_name_token_in\s*\(/.test(
       statementParserSource,
     ) ||
     /active_local_declarations/.test(statementParserSource) ||
-    !/psx_expr_expr_in_context\s*\(/.test(statementParserSource) ||
-    !/psx_parse_statement_expression_in_context\s*\(/.test(
+    !/psx_expr_expr_in_contexts\s*\(/.test(statementParserSource) ||
+    !/psx_parse_statement_expression_in_contexts\s*\(/.test(
       expressionParserSource,
     ) ||
     !/psx_parse_initializer_syntax_list_in_context\s*\(/.test(

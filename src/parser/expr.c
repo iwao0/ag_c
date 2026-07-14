@@ -5,6 +5,7 @@
 #include "diag.h"
 #include "dynarray.h"
 #include "initializer_syntax.h"
+#include "local_registry.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
@@ -31,6 +32,7 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
   int expr_nest_depth;
@@ -44,9 +46,11 @@ typedef struct {
 
 static expr_parse_ctx_t expr_parse_ctx_default(
     psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = {
       .semantic_context = semantic_context,
+      .local_registry = local_registry,
       .local_declarations = local_declarations,
   };
   return ctx;
@@ -262,7 +266,7 @@ static int capture_type_name_ref_at(
         &syntax->declarator, ctx->semantic_context,
         ctx->local_declarations);
   psx_local_lookup_point_t point =
-      ps_local_registry_capture_lookup_point();
+      ps_local_registry_capture_lookup_point_in(ctx->local_registry);
   *out = (psx_type_name_ref_t){
       .syntax = syntax,
       .scope_seq = point.scope_seq,
@@ -305,8 +309,16 @@ node_t *psx_expr_expr(void) {
 node_t *psx_expr_expr_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  return psx_expr_expr_in_contexts(
+      semantic_context, ps_local_registry_active(), local_declarations);
+}
+
+node_t *psx_expr_expr_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, local_declarations);
+      semantic_context, local_registry, local_declarations);
   return expr_internal_ctx(&ctx);
 }
 
@@ -318,8 +330,16 @@ node_t *psx_expr_assign(void) {
 node_t *psx_expr_assign_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  return psx_expr_assign_in_contexts(
+      semantic_context, ps_local_registry_active(), local_declarations);
+}
+
+node_t *psx_expr_assign_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, local_declarations);
+      semantic_context, local_registry, local_declarations);
   return assign_ctx(&ctx);
 }
 
@@ -1105,7 +1125,7 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
   }
 
   psx_local_lookup_point_t point =
-      ps_local_registry_capture_lookup_point();
+      ps_local_registry_capture_lookup_point_in(ctx->local_registry);
   node_identifier_t *identifier = arena_alloc(sizeof(*identifier));
   identifier->base.kind = ND_IDENTIFIER;
   identifier->base.tok = (token_t *)tok;
@@ -1128,8 +1148,9 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
 
   if (curtok()->kind == TK_LPAREN && curtok()->next &&
       curtok()->next->kind == TK_LBRACE) {
-    return psx_parse_statement_expression_in_context(
-        ctx->semantic_context, ctx->local_declarations);
+    return psx_parse_statement_expression_in_contexts(
+        ctx->semantic_context, ctx->local_registry,
+        ctx->local_declarations);
   }
 
   if (curtok()->kind == TK_LPAREN) {

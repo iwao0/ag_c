@@ -9,12 +9,14 @@
 #include "../semantic/semantic_diagnostics.h"
 #include "../semantic/semantic_pass.h"
 
-void psx_frontend_analyze_function_in_context(
+static void analyze_function_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     node_t *function, const token_t *fallback_diag_tok) {
-  if (!function || function->kind != ND_FUNCDEF) return;
-  function = psx_bind_identifier_tree_in(
-      semantic_context,
+  if (!semantic_context || !local_registry ||
+      !function || function->kind != ND_FUNCDEF) return;
+  function = psx_bind_identifier_tree_in_contexts(
+      semantic_context, local_registry,
       function, fallback_diag_tok);
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
@@ -24,14 +26,36 @@ void psx_frontend_analyze_function_in_context(
   function = psx_lower_semantic_tree(function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_context(
       semantic_context, function, current_function, fallback_diag_tok);
-  current_function->lvars = ps_decl_get_locals();
+  current_function->lvars = ps_decl_get_locals_in(local_registry);
   psx_emit_semantic_warnings(
       function, current_function, fallback_diag_tok);
   psx_emit_unreachable_warnings(function, fallback_diag_tok);
   psx_lower_implicit_conversions(
       function, current_function, fallback_diag_tok);
-  psx_analyze_function_lvar_usage(
-      current_function, fallback_diag_tok);
+  psx_analyze_function_lvar_usage_in(
+      local_registry, current_function, fallback_diag_tok);
+}
+
+void psx_frontend_analyze_function_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_t *function, const token_t *fallback_diag_tok) {
+  analyze_function_in_contexts(
+      semantic_context ? semantic_context : ps_ctx_active(),
+      ps_local_registry_active(), function, fallback_diag_tok);
+}
+
+void psx_frontend_analyze_function_in_compiler_context(
+    ag_compiler_context_t *compiler_context,
+    node_t *function, const token_t *fallback_diag_tok) {
+  if (!compiler_context) {
+    psx_frontend_analyze_function_in_context(
+        NULL, function, fallback_diag_tok);
+    return;
+  }
+  analyze_function_in_contexts(
+      compiler_context->semantic_context,
+      compiler_context->local_registry,
+      function, fallback_diag_tok);
 }
 
 void psx_frontend_analyze_function(

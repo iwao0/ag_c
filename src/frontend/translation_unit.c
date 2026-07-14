@@ -11,17 +11,19 @@
 #include "../parser/decl.h"
 #include "../parser/expr.h"
 #include "../parser/global_registry.h"
+#include "../parser/local_registry.h"
 #include "../pragma_pack.h"
 #include "../parser/semantic_ctx.h"
 #include <stdlib.h>
 
 static void reset_translation_unit_state(
     psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry) {
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry) {
   ps_global_registry_reset_translation_unit_in(global_registry);
   ps_anon_tag_reset_translation_unit_state();
   ps_expr_reset_translation_unit_state();
-  ps_decl_reset_translation_unit_state();
+  ps_decl_reset_translation_unit_state_in(local_registry);
   ps_ctx_reset_translation_unit_scope_in(semantic_context);
   pragma_pack_reset();
   arena_free_all();
@@ -29,13 +31,15 @@ static void reset_translation_unit_state(
 
 void psx_frontend_reset_translation_unit_state(void) {
   reset_translation_unit_state(
-      ps_ctx_active(), ps_global_registry_active());
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active());
 }
 
 void psx_frontend_reset_translation_unit_state_in_context(
     psx_semantic_context_t *semantic_context) {
   reset_translation_unit_state(
-      semantic_context, ps_global_registry_active());
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active());
 }
 
 void psx_frontend_reset_translation_unit_state_in_compiler_context(
@@ -46,7 +50,8 @@ void psx_frontend_reset_translation_unit_state_in_compiler_context(
   }
   reset_translation_unit_state(
       compiler_context->semantic_context,
-      compiler_context->global_registry);
+      compiler_context->global_registry,
+      compiler_context->local_registry);
 }
 
 void psx_frontend_stream_begin(
@@ -68,8 +73,12 @@ void psx_frontend_stream_begin(
       &stream->toplevel_declarations, semantic_context);
   psx_frontend_init_local_declaration_callbacks(
       &stream->local_declarations, semantic_context);
-  ps_parser_stream_begin_in_context(
-      &stream->parser, semantic_context, tk_ctx, start,
+  ps_parser_stream_begin_in_contexts(
+      &stream->parser, semantic_context,
+      compiler_context
+          ? compiler_context->local_registry
+          : ps_local_registry_active(),
+      tk_ctx, start,
       &stream->toplevel_declarations);
 }
 
@@ -116,7 +125,10 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
             semantic_context,
             function_name ? function_name->str : NULL,
             function_name ? function_name->len : 0, &checkpoint);
-        ps_decl_reset_locals();
+        ps_decl_reset_locals_in(
+            stream->compiler_context
+                ? stream->compiler_context->local_registry
+                : ps_local_registry_active());
         ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);
@@ -126,8 +138,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      psx_frontend_analyze_function_in_context(
-          semantic_context, function, function->tok);
+      psx_frontend_analyze_function_in_compiler_context(
+          stream->compiler_context, function, function->tok);
       return function;
     }
   }

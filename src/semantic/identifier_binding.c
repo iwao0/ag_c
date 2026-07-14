@@ -14,6 +14,7 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_local_registry_t *local_registry;
   const token_t *fallback_diag_tok;
 } psx_identifier_binding_context_t;
 
@@ -87,10 +88,12 @@ static node_t *materialize_function(
 static void resolve_identifier(
     const node_identifier_t *identifier, int is_call,
     psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     psx_identifier_resolution_t *resolution) {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = semantic_context,
+          .local_registry = local_registry,
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
@@ -109,7 +112,8 @@ static node_t *materialize_identifier(
     psx_identifier_resolution_t *out_resolution) {
   psx_identifier_resolution_t resolution;
   resolve_identifier(
-      identifier, is_call, context->semantic_context, &resolution);
+      identifier, is_call,
+      context->semantic_context, context->local_registry, &resolution);
   if (out_resolution) *out_resolution = resolution;
   switch (resolution.kind) {
     case PSX_IDENTIFIER_LOCAL:
@@ -141,7 +145,8 @@ static node_t *materialize_address_operand(
     const psx_identifier_binding_context_t *context) {
   psx_identifier_resolution_t resolution;
   resolve_identifier(
-      identifier, 0, context->semantic_context, &resolution);
+      identifier, 0,
+      context->semantic_context, context->local_registry, &resolution);
   if (resolution.kind == PSX_IDENTIFIER_LOCAL && resolution.local) {
     lvar_t *var = resolution.local;
     node_t *node = NULL;
@@ -385,12 +390,33 @@ static node_t *bind_node(
 node_t *psx_bind_identifier_tree_in(
     psx_semantic_context_t *semantic_context,
     node_t *node, const token_t *fallback_diag_tok) {
+  return psx_bind_identifier_tree_in_contexts(
+      semantic_context ? semantic_context : ps_ctx_active(),
+      ps_local_registry_active(), node, fallback_diag_tok);
+}
+
+node_t *psx_bind_identifier_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    node_t *node, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !local_registry) return node;
   const psx_identifier_binding_context_t context = {
-      .semantic_context = semantic_context
-          ? semantic_context : ps_ctx_active(),
+      .semantic_context = semantic_context,
+      .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
   return bind_node(node, &context);
+}
+
+node_t *psx_bind_identifier_tree_in_compiler_context(
+    ag_compiler_context_t *compiler_context,
+    node_t *node, const token_t *fallback_diag_tok) {
+  if (!compiler_context) return psx_bind_identifier_tree_in(
+      NULL, node, fallback_diag_tok);
+  return psx_bind_identifier_tree_in_contexts(
+      compiler_context->semantic_context,
+      compiler_context->local_registry,
+      node, fallback_diag_tok);
 }
 
 node_t *psx_bind_identifier_tree(
@@ -402,12 +428,34 @@ node_t *psx_bind_identifier_tree(
 node_t *psx_bind_identifier_initializer_tree_in(
     psx_semantic_context_t *semantic_context,
     node_t *syntax, const token_t *fallback_diag_tok) {
+  return psx_bind_identifier_initializer_tree_in_contexts(
+      semantic_context ? semantic_context : ps_ctx_active(),
+      ps_local_registry_active(), syntax, fallback_diag_tok);
+}
+
+node_t *psx_bind_identifier_initializer_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !local_registry) return syntax;
   const psx_identifier_binding_context_t context = {
-      .semantic_context = semantic_context
-          ? semantic_context : ps_ctx_active(),
+      .semantic_context = semantic_context,
+      .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
   };
   return bind_initializer(syntax, &context);
+}
+
+node_t *psx_bind_identifier_initializer_tree_in_compiler_context(
+    ag_compiler_context_t *compiler_context,
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  if (!compiler_context)
+    return psx_bind_identifier_initializer_tree_in(
+        NULL, syntax, fallback_diag_tok);
+  return psx_bind_identifier_initializer_tree_in_contexts(
+      compiler_context->semantic_context,
+      compiler_context->local_registry,
+      syntax, fallback_diag_tok);
 }
 
 node_t *psx_bind_identifier_initializer_tree(

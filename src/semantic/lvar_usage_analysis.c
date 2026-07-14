@@ -1,6 +1,7 @@
 #include "lvar_usage_analysis.h"
 
 #include "../diag/diag.h"
+#include "../parser/local_registry.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 
@@ -45,36 +46,38 @@ static node_t *assigned_lvar_from_target(node_t *target) {
 }
 
 static void record_initialized(
+    psx_local_registry_t *local_registry,
     node_t *target, psx_lvar_usage_region_t *region) {
   lvar_t *var = ps_node_lvar_symbol(assigned_lvar_from_target(target));
   if (var)
-    ps_decl_record_lvar_usage_in_region(
-        var, PSX_LVAR_USAGE_INITIALIZED, region);
+    ps_decl_record_lvar_usage_in_region_in(
+        local_registry, var, PSX_LVAR_USAGE_INITIALIZED, region);
 }
 
 static void record_address_taken(
+    psx_local_registry_t *local_registry,
     node_t *operand, psx_lvar_usage_region_t *region) {
   if (!operand) return;
   if (operand->kind == ND_COMMA && operand->rhs) {
-    record_address_taken(operand->rhs, region);
+    record_address_taken(local_registry, operand->rhs, region);
     return;
   }
   if (operand->kind == ND_LVAR) {
     lvar_t *var = ps_node_lvar_symbol(operand);
     if (var)
-      ps_decl_record_lvar_usage_in_region(
-          var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+      ps_decl_record_lvar_usage_in_region_in(
+          local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
     return;
   }
   if (operand->kind == ND_ADDR && operand->lhs) {
     if (operand->lhs->kind == ND_LVAR) {
       lvar_t *var = ps_node_lvar_symbol(operand->lhs);
       if (var)
-        ps_decl_record_lvar_usage_in_region(
-            var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+        ps_decl_record_lvar_usage_in_region_in(
+            local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
       return;
     }
-    record_address_taken(operand->lhs, region);
+    record_address_taken(local_registry, operand->lhs, region);
     return;
   }
   if (operand->kind == ND_DEREF) {
@@ -82,26 +85,28 @@ static void record_address_taken(
         assigned_aggregate_lvar_from_member_address(operand->lhs);
     lvar_t *var = ps_node_lvar_symbol(lvar);
     if (var)
-      ps_decl_record_lvar_usage_in_region(
-          var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
+      ps_decl_record_lvar_usage_in_region_in(
+          local_registry, var, PSX_LVAR_USAGE_ADDRESS_TAKEN, region);
   }
 }
 
 static void collect_array(
+    psx_local_registry_t *local_registry,
     node_t **nodes, psx_lvar_usage_region_t *region) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++)
-    psx_collect_lvar_usage_events(nodes[i], region);
+    psx_collect_lvar_usage_events_in(local_registry, nodes[i], region);
 }
 
-void psx_collect_lvar_usage_events(
+void psx_collect_lvar_usage_events_in(
+    psx_local_registry_t *local_registry,
     node_t *node, psx_lvar_usage_region_t *inherited_region) {
-  if (!node) return;
+  if (!local_registry || !node) return;
   psx_lvar_usage_region_t *region =
       node->usage_region ? node->usage_region : inherited_region;
   if (node->records_lvar_usage && node->usage_lvar) {
-    ps_decl_record_lvar_usage_in_region(
-        node->usage_lvar,
+    ps_decl_record_lvar_usage_in_region_in(
+        local_registry, node->usage_lvar,
         node->lvar_usage_unevaluated
             ? PSX_LVAR_USAGE_UNEVALUATED
             : PSX_LVAR_USAGE_EVALUATED,
@@ -109,62 +114,76 @@ void psx_collect_lvar_usage_events(
   }
   switch (node->kind) {
     case ND_ASSIGN:
-      record_initialized(node->lhs, region);
-      psx_collect_lvar_usage_events(node->lhs, region);
-      psx_collect_lvar_usage_events(node->rhs, region);
+      record_initialized(local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
       return;
     case ND_ADDR:
-      psx_collect_lvar_usage_events(node->lhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
       if (node->is_explicit_addr_expr)
-        record_address_taken(node, region);
+        record_address_taken(local_registry, node, region);
       return;
     case ND_BLOCK:
-      collect_array(((node_block_t *)node)->body, region);
+      collect_array(local_registry, ((node_block_t *)node)->body, region);
       return;
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++)
-        psx_collect_lvar_usage_events(function->parameters[i], region);
-      psx_collect_lvar_usage_events(node->rhs, region);
+        psx_collect_lvar_usage_events_in(
+            local_registry, function->parameters[i], region);
+      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
       return;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
-      psx_collect_lvar_usage_events(call->callee, region);
+      psx_collect_lvar_usage_events_in(
+          local_registry, call->callee, region);
       for (int i = 0; i < call->argument_count; i++)
-        psx_collect_lvar_usage_events(call->arguments[i], region);
+        psx_collect_lvar_usage_events_in(
+            local_registry, call->arguments[i], region);
       return;
     }
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
-      psx_collect_lvar_usage_events(control->init, region);
-      psx_collect_lvar_usage_events(node->lhs, region);
-      psx_collect_lvar_usage_events(node->rhs, region);
-      psx_collect_lvar_usage_events(control->inc, region);
-      psx_collect_lvar_usage_events(control->els, region);
+      psx_collect_lvar_usage_events_in(
+          local_registry, control->init, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
+      psx_collect_lvar_usage_events_in(
+          local_registry, control->inc, region);
+      psx_collect_lvar_usage_events_in(
+          local_registry, control->els, region);
       return;
     }
     default:
-      psx_collect_lvar_usage_events(node->lhs, region);
-      psx_collect_lvar_usage_events(node->rhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->lhs, region);
+      psx_collect_lvar_usage_events_in(local_registry, node->rhs, region);
       return;
   }
 }
 
+void psx_collect_lvar_usage_events(
+    node_t *node, psx_lvar_usage_region_t *inherited_region) {
+  psx_collect_lvar_usage_events_in(
+      ps_local_registry_active(), node, inherited_region);
+}
+
 static void record_preinitialized_locals(
+    psx_local_registry_t *local_registry,
     node_function_definition_t *function) {
   if (!function) return;
   for (lvar_t *var = function->lvars; var; var = ps_lvar_next_all(var)) {
     psx_lvar_registry_view_t view = ps_lvar_registry_view(var);
     if (view.is_param) {
-      ps_decl_record_lvar_usage_in_region(
-          var, PSX_LVAR_USAGE_INITIALIZED, NULL);
+      ps_decl_record_lvar_usage_in_region_in(
+          local_registry, var, PSX_LVAR_USAGE_INITIALIZED, NULL);
     } else if (view.is_static_local) {
-      ps_decl_record_lvar_usage_in_region(
-          var, PSX_LVAR_USAGE_INITIALIZED, view.decl_region);
+      ps_decl_record_lvar_usage_in_region_in(
+          local_registry, var,
+          PSX_LVAR_USAGE_INITIALIZED, view.decl_region);
     }
   }
 }
@@ -193,12 +212,22 @@ static void emit_usage_warnings(
   }
 }
 
+void psx_analyze_function_lvar_usage_in(
+    psx_local_registry_t *local_registry,
+    node_function_definition_t *function,
+    const token_t *fallback_diag_tok) {
+  if (!local_registry || !function) return;
+  psx_collect_lvar_usage_events_in(
+      local_registry, (node_t *)function, NULL);
+  record_preinitialized_locals(local_registry, function);
+  ps_decl_replay_lvar_usage_events_in(
+      local_registry, function->lvars);
+  emit_usage_warnings(function, fallback_diag_tok);
+}
+
 void psx_analyze_function_lvar_usage(
     node_function_definition_t *function,
     const token_t *fallback_diag_tok) {
-  if (!function) return;
-  psx_collect_lvar_usage_events((node_t *)function, NULL);
-  record_preinitialized_locals(function);
-  ps_decl_replay_lvar_usage_events(function->lvars);
-  emit_usage_warnings(function, fallback_diag_tok);
+  psx_analyze_function_lvar_usage_in(
+      ps_local_registry_active(), function, fallback_diag_tok);
 }

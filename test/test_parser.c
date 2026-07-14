@@ -15063,6 +15063,11 @@ static void test_compiler_context_registry_isolation() {
       .len = 12,
       .offset = 16,
   };
+  lvar_t explicit_first_local = {
+      .name = (char *)"explicit_first_local",
+      .len = 20,
+      .offset = 24,
+  };
 
   ps_register_global_var_in(first.global_registry, &first_global);
   psx_register_string_lit_in(first.global_registry, &first_literal);
@@ -15081,6 +15086,21 @@ static void test_compiler_context_registry_isolation() {
 
   ASSERT_TRUE(ag_compiler_context_activate(&second));
   ps_local_registry_reset();
+  ps_local_registry_reset_in(first.local_registry);
+  psx_local_registry_add_in(
+      first.local_registry, &explicit_first_local);
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"explicit_first_local", 20) == NULL);
+  ASSERT_TRUE(ps_decl_find_lvar_in(
+                  first.local_registry,
+                  (char *)"explicit_first_local", 20) ==
+              &explicit_first_local);
+  psx_local_lookup_point_t explicit_first_point =
+      ps_local_registry_capture_lookup_point_in(first.local_registry);
+  ASSERT_TRUE(ps_local_registry_find_visible_in(
+                  first.local_registry,
+                  (char *)"explicit_first_local", 20,
+                  explicit_first_point) == &explicit_first_local);
   ps_register_global_var(&second_global);
   psx_register_string_lit(&second_literal);
   psx_local_registry_add(&second_local);
