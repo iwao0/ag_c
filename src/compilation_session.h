@@ -25,6 +25,7 @@ typedef struct ag_compilation_session_t {
   ag_diagnostic_context_t *diagnostic_context;
   ag_diagnostic_context_t *previous_diagnostic_context;
   tokenizer_context_t tokenizer;
+  tokenizer_context_t *previous_tokenizer_context;
   ag_target_info_t target;
   unsigned char is_active;
 } ag_compilation_session_t;

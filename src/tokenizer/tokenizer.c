@@ -27,19 +27,33 @@ static size_t stats_base_reserved_bytes = 0;
 static size_t max_token_len_for_test = (size_t)INT_MAX;
 
 /* 実行中セッションの active context。未設定 (非トークナイズ中) では既定 context。 */
-static tokenizer_context_t *tk_active_ctx = NULL;
+static tokenizer_context_t *tk_tokenize_ctx_active = NULL;
 
 /* トークンストリーム経路で、パーサがカーソルを前進させるたびに呼ばれるフック。
  * 先読み分を materialize し、通り過ぎたトークンを解放する (driver が登録/解除)。
  * 非ストリーム経路では NULL なので無影響。カーソル更新の 2 経路
  * (逐次前進 tk_advance_current_token と明示ジャンプ tk_set_current_token_ctx)
  * の両方で呼ぶ。 */
-static void (*tk_cursor_hook)(token_t *) = NULL;
-void tk_set_cursor_hook(void (*fn)(token_t *)) { tk_cursor_hook = fn; }
-void (*tk_get_cursor_hook(void))(token_t *) { return tk_cursor_hook; }
+void tk_set_cursor_hook_ctx(tokenizer_context_t *ctx, void (*fn)(token_t *)) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  if (use_ctx) use_ctx->cursor_hook = fn;
+}
+
+void tk_set_cursor_hook(void (*fn)(token_t *)) {
+  tk_set_cursor_hook_ctx(NULL, fn);
+}
+
+void (*tk_get_cursor_hook_ctx(tokenizer_context_t *ctx))(token_t *) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  return use_ctx ? use_ctx->cursor_hook : NULL;
+}
+
+void (*tk_get_cursor_hook(void))(token_t *) {
+  return tk_get_cursor_hook_ctx(NULL);
+}
 
 tokenizer_context_t *tk_runtime_ctx(void) {
-  return tk_active_ctx ? tk_active_ctx : tk_get_default_context();
+  return tk_tokenize_ctx_active ? tk_tokenize_ctx_active : tk_context_active();
 }
 
 tokenizer_context_t *tk_effective_ctx(tokenizer_context_t *ctx) {
@@ -47,17 +61,33 @@ tokenizer_context_t *tk_effective_ctx(tokenizer_context_t *ctx) {
 }
 
 void tk_advance_current_token(tokenizer_context_t *ctx, token_t *cur) {
+  ctx = tk_effective_ctx(ctx);
+  if (!ctx) return;
   token_t *nx = cur ? cur->next : NULL;
   ctx->current_token = nx;
-  if (tk_cursor_hook && nx) tk_cursor_hook(nx);
+  if (ctx->cursor_hook && nx) ctx->cursor_hook(nx);
 }
 
 /* カーソルを進めない深い前方先読み (パーサの _Generic 型照合等) の直前に呼び、ストリーミング
  * 生成器に前方 lookahead を満たさせるフック。プリプロセッサが登録する。未登録 (非ストリーム
  * の単体テスト等) では no-op。parser↔preprocess を直接リンクせず疎結合に保つための間接化。 */
-static void (*g_ensure_lookahead_hook)(void) = NULL;
-void tk_set_ensure_lookahead_hook(void (*fn)(void)) { g_ensure_lookahead_hook = fn; }
-void tk_ensure_lookahead(void) { if (g_ensure_lookahead_hook) g_ensure_lookahead_hook(); }
+void tk_set_ensure_lookahead_hook_ctx(
+    tokenizer_context_t *ctx, void (*fn)(void)) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  if (use_ctx) use_ctx->ensure_lookahead_hook = fn;
+}
+
+void tk_set_ensure_lookahead_hook(void (*fn)(void)) {
+  tk_set_ensure_lookahead_hook_ctx(NULL, fn);
+}
+
+void tk_ensure_lookahead_ctx(tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  if (use_ctx && use_ctx->ensure_lookahead_hook)
+    use_ctx->ensure_lookahead_hook();
+}
+
+void tk_ensure_lookahead(void) { tk_ensure_lookahead_ctx(NULL); }
 
 token_t *tk_get_current_token(void) {
   return tk_get_current_token_ctx(NULL);
@@ -77,7 +107,7 @@ void tk_set_current_token_ctx(tokenizer_context_t *ctx, token_t *tok) {
   if (use_ctx) {
     use_ctx->current_token = tok;
   }
-  if (tk_cursor_hook && tok) tk_cursor_hook(tok);
+  if (use_ctx && use_ctx->cursor_hook && tok) use_ctx->cursor_hook(tok);
 }
 
 const char *tk_get_user_input_ctx(tokenizer_context_t *ctx) {
@@ -439,9 +469,9 @@ static bool tokenize_number_literal(
  */
 static tokenize_session_t begin_tokenize_session(tokenizer_context_t *ctx) {
   tokenize_session_t s = {0};
-  s.prev_ctx = tk_active_ctx;
+  s.prev_ctx = tk_tokenize_ctx_active;
   s.ctx = ctx ? ctx : tk_get_default_context();
-  tk_active_ctx = s.ctx;
+  tk_tokenize_ctx_active = s.ctx;
   tk_set_current_token_ctx(s.ctx, NULL);
   return s;
 }
@@ -472,7 +502,7 @@ static token_t *tokenize_one(char **pp, token_t **cur_io, int line_no, bool at_b
  */
 static token_t *end_tokenize_session(tokenize_session_t *s, token_t *head_next) {
   tk_set_current_token(head_next);
-  tk_active_ctx = s->prev_ctx;
+  tk_tokenize_ctx_active = s->prev_ctx;
   return head_next;
 }
 
@@ -593,18 +623,22 @@ void tk_stream_open(tk_token_stream_t *s, tokenizer_context_t *ctx, const char *
  * されるだけで、これらはフェーズ 7 まで到達しないのでエラーにならない。プリプロセッサが
  * pps_skip_cond_incl / pps_materialize_line の先読み区間だけ true にする。
  * scanner が出す各種 TK_DIAG_* は (寛容モード中のみ) longjmp で tk_stream_next へ巻き戻る。 */
-static bool g_tolerate_untokenizable = false;
-#if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
-static jmp_buf g_tok_tolerate_jmp;
-static bool g_tok_jmp_valid = false;  // setjmp 済みで longjmp 可能な区間か
-#endif
-void tk_set_tolerate_untokenizable(bool v) { g_tolerate_untokenizable = v; }
+void tk_set_tolerate_untokenizable_ctx(tokenizer_context_t *ctx, bool v) {
+  tokenizer_context_t *use_ctx = tk_effective_ctx(ctx);
+  if (use_ctx) use_ctx->tolerate_untokenizable = v;
+}
+
+void tk_set_tolerate_untokenizable(bool v) {
+  tk_set_tolerate_untokenizable_ctx(NULL, v);
+}
 
 /* TK_DIAG_* マクロから呼ばれる。寛容モードかつ tokenize_one 実行中なら、エラーを出さず
  * tk_stream_next の setjmp 地点へ巻き戻す (戻らない)。それ以外は何もしない (通常診断へ続く)。 */
 void tk_tolerate_longjmp_if_active(void) {
 #if !defined(AGC_TARGET_WASM32) && !defined(__wasm32__)
-  if (g_tolerate_untokenizable && g_tok_jmp_valid) longjmp(g_tok_tolerate_jmp, 1);
+  tokenizer_context_t *ctx = tk_runtime_ctx();
+  if (ctx && ctx->tolerate_untokenizable && ctx->tolerate_jump_target)
+    longjmp(*(jmp_buf *)ctx->tolerate_jump_target, 1);
 #endif
 }
 
@@ -854,7 +888,8 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     bool flag_has_space = s->has_space;
     s->at_bol = false;
     s->has_space = false;
-    if (!g_tolerate_untokenizable) {
+    tokenizer_context_t *ctx = s->session.ctx;
+    if (!ctx->tolerate_untokenizable) {
       char *p = s->p;
       token_t *tok = tokenize_one(&p, &cur, s->line_no, flag_at_bol, flag_has_space);
       s->p = p;
@@ -870,17 +905,19 @@ token_t *tk_stream_next(tk_token_stream_t *s) {
     char *volatile tok_start = s->p;
     volatile bool v_at_bol = flag_at_bol;
     volatile bool v_has_space = flag_has_space;
-    if (setjmp(g_tok_tolerate_jmp) != 0) {
-      g_tok_jmp_valid = false;
+    jmp_buf tolerate_jump;
+    void *previous_jump_target = ctx->tolerate_jump_target;
+    ctx->tolerate_jump_target = &tolerate_jump;
+    if (setjmp(tolerate_jump) != 0) {
+      ctx->tolerate_jump_target = previous_jump_target;
       s->p = tok_start + 1;
       new_token_simple(TK_UNKNOWN, cur, s->line_no, v_at_bol, v_has_space, tok_start, 1);
       return head.next;
     }
-    g_tok_jmp_valid = true;
     char *p = s->p;
     token_t *tok = tokenize_one(&p, &cur, s->line_no, flag_at_bol, flag_has_space);
     s->p = p;
-    g_tok_jmp_valid = false;
+    ctx->tolerate_jump_target = previous_jump_target;
     if (tok) return tok;
     /* tokenize_one が false (トークナイズ不能文字): 1 文字を TK_UNKNOWN に。 */
     s->p = tok_start + 1;

@@ -2346,33 +2346,33 @@ static void pps_ensure_lookahead(void);
 
 typedef void (*pps_cursor_hook_t)(token_t *);
 
-static pps_cursor_hook_t pps_suspend_cursor_hook(void) {
-  pps_cursor_hook_t saved_hook = tk_get_cursor_hook();
-  tk_set_cursor_hook(NULL);
+static pps_cursor_hook_t pps_suspend_cursor_hook(pp_stream_t *s) {
+  pps_cursor_hook_t saved_hook = tk_get_cursor_hook_ctx(s->tk_ctx);
+  tk_set_cursor_hook_ctx(s->tk_ctx, NULL);
   return saved_hook;
 }
 
-static void pps_restore_cursor_hook(pps_cursor_hook_t hook) {
-  tk_set_cursor_hook(hook);
+static void pps_restore_cursor_hook(pp_stream_t *s, pps_cursor_hook_t hook) {
+  tk_set_cursor_hook_ctx(s->tk_ctx, hook);
 }
 
-static void pps_install_tokenizer_hooks(void) {
-  tk_set_cursor_hook(pps_on_advance);
-  tk_set_ensure_lookahead_hook(pps_ensure_lookahead);
+static void pps_install_tokenizer_hooks(pp_stream_t *s) {
+  tk_set_cursor_hook_ctx(s->tk_ctx, pps_on_advance);
+  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, pps_ensure_lookahead);
 }
 
-static void pps_clear_tokenizer_hooks(void) {
-  tk_set_cursor_hook(NULL);
-  tk_set_ensure_lookahead_hook(NULL);
+static void pps_clear_tokenizer_hooks(pp_stream_t *s) {
+  tk_set_cursor_hook_ctx(s->tk_ctx, NULL);
+  tk_set_ensure_lookahead_hook_ctx(s->tk_ctx, NULL);
 }
 
 static void pps_activate(pp_stream_t *s) {
   g_active_pps = s;
-  pps_install_tokenizer_hooks();
+  pps_install_tokenizer_hooks(s);
 }
 
 static void pps_deactivate(pp_stream_t *s) {
-  pps_clear_tokenizer_hooks();
+  pps_clear_tokenizer_hooks(s);
   if (!s || g_active_pps == s) g_active_pps = NULL;
 }
 
@@ -2404,9 +2404,9 @@ static void pps_append(pp_stream_t *s, token_t *t) {
  * 復元する (無条件で pps_on_advance に戻すと dispatch 中にフックを誤って再有効化してしまう)。 */
 static void pps_pop_frame(pp_stream_t *s) {
   pp_include_frame_t *f = s->frames;
-  pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
+  pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
   tk_stream_delete(s->lex);          // EOF に達した被 include の lexer
-  pps_restore_cursor_hook(saved_hook);
+  pps_restore_cursor_hook(s, saved_hook);
   tk_set_filename_ctx(g_preprocess_tk_ctx, f->saved_filename);
   tk_set_user_input_ctx(g_preprocess_tk_ctx, f->saved_input);
   s->pb_head           = f->saved_pb_head;  // 親の pushback 列 (被 include 後に続く)
@@ -2548,14 +2548,14 @@ static token_t *pps_materialize_line(pp_stream_t *s, token_t *first) {
    * 先頭でトークナイズ不能文字 (` @ $) だと、スキップ開始前にここで tokenize されて E2028 に
    * なる。先読み区間はトークナイズ不能文字を許容 (TK_UNKNOWN 化) し、偽分岐なら後段の skip が
    * 捨て、active なら pps_step が出力時に E2028 を出す。 */
-  tk_set_tolerate_untokenizable(true);
+  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, true);
   for (;;) {
     token_t *nx = pps_pull_raw(s);
     if (!nx) break;                    // 入力末尾
     if (nx->kind == TK_EOF || nx->at_bol) { pps_pushback_one(s, nx); break; }
     cur->next = nx; cur = nx;
   }
-  tk_set_tolerate_untokenizable(false);
+  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, false);
   cur->next = pps_make_eof(first);
   return first;
 }
@@ -2620,9 +2620,9 @@ static void pps_skip_cond_incl_impl(pp_stream_t *s) {
  * 中身は単一文字 pp-token に分解されるだけでよい)。読み飛ばしは生トークンを pull して捨てる
  * ので、ここで tk_set_tolerate_untokenizable を立てておけば偽分岐内の非C 文字でエラーにならない。 */
 static void pps_skip_cond_incl(pp_stream_t *s) {
-  tk_set_tolerate_untokenizable(true);
+  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, true);
   pps_skip_cond_incl_impl(s);
-  tk_set_tolerate_untokenizable(false);
+  tk_set_tolerate_untokenizable_ctx(s->tk_ctx, false);
 }
 
 /* ストリーミング版の条件指令ハンドラ。式評価/スタック操作はバッチの補助関数を再利用し、
@@ -2814,9 +2814,9 @@ static int pps_step(pp_stream_t *s) {
    * カーソルフックを発火させるので一時的に外す。 */
   if (tok->at_bol && tok->kind == TK_HASH) {
     token_t *line = pps_materialize_line(s, tok);
-    pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
+    pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
     pps_dispatch_directive(s, line);
-    pps_restore_cursor_hook(saved_hook);
+    pps_restore_cursor_hook(s, saved_hook);
     return 0;
   }
 
@@ -2846,7 +2846,7 @@ static int pps_step(pp_stream_t *s) {
           token_t *grp = pps_materialize_balanced(s, nx);
           token_t *rparen = NULL;
           token_t **args = pp_collect_args(m, grp, &rparen);
-          pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
+          pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
           token_t *body = pp_expand_funclike(m, tok, args, name);
           free(args);
           if (body) {
@@ -2858,7 +2858,7 @@ static int pps_step(pp_stream_t *s) {
             if (s->pb_head) s->ooo_active = 1;
             pps_pushback_list(s, body);
           }
-          pps_restore_cursor_hook(saved_hook);
+          pps_restore_cursor_hook(s, saved_hook);
           free(name);
           return 0;
         }
@@ -2868,9 +2868,9 @@ static int pps_step(pp_stream_t *s) {
         free(name);
         return 1;
       } else {
-        pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook();
+        pps_cursor_hook_t saved_hook = pps_suspend_cursor_hook(s);
         token_t *body = pp_expand_objlike(m, tok, name);  // ## 展開で tk_tokenize_ctx 経由あり
-        pps_restore_cursor_hook(saved_hook);
+        pps_restore_cursor_hook(s, saved_hook);
         if (body) {
           if (s->pb_head) s->ooo_active = 1;  // 入れ子展開 = out-of-order
           pps_pushback_list(s, body);

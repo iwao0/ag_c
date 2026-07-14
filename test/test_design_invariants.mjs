@@ -63,6 +63,9 @@ const compilationSessionHeader = await readFile(
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
 const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
+const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
+const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
+const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
       compilationSessionHeader,
     ) ||
@@ -102,6 +105,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/diag_context_create\s*\(/.test(compilerContextSource) ||
     !/diag_context_activate\s*\(/.test(compilerContextSource) ||
     !/diag_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/tk_context_activate\s*\(&session->tokenizer\)/.test(
+      compilerContextSource,
+    ) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -123,6 +129,28 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+if (!/void\s*\(\*cursor_hook\)\s*\(token_t\s*\*\)\s*;/.test(
+      tokenizerHeader,
+    ) ||
+    !/void\s*\(\*ensure_lookahead_hook\)\s*\(void\)\s*;/.test(
+      tokenizerHeader,
+    ) ||
+    !/bool\s+tolerate_untokenizable\s*;/.test(tokenizerHeader) ||
+    !/void\s*\*tolerate_jump_target\s*;/.test(tokenizerHeader) ||
+    /static\s+void\s*\(\*tk_cursor_hook\)/.test(tokenizerSource) ||
+    /static\s+void\s*\(\*g_ensure_lookahead_hook\)/.test(tokenizerSource) ||
+    /static\s+bool\s+g_tolerate_untokenizable/.test(tokenizerSource) ||
+    !/tk_set_cursor_hook_ctx\s*\(s->tk_ctx/.test(preprocessSource) ||
+    !/tk_set_ensure_lookahead_hook_ctx\s*\(s->tk_ctx/.test(
+      preprocessSource,
+    ) ||
+    !/tk_set_tolerate_untokenizable_ctx\s*\(s->tk_ctx/.test(
+      preprocessSource,
+    )) {
+  throw new Error(
+    "tokenizer callbacks and tolerant scanning state must be owned by tokenizer context",
   );
 }
 const globalRegistrySource = await readFile(

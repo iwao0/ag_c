@@ -8,10 +8,26 @@ static tokenizer_context_t default_ctx = {
     .current_token = NULL,
     .user_input = NULL,
     .current_filename = NULL,
+    .cursor_hook = NULL,
+    .ensure_lookahead_hook = NULL,
+    .tolerate_untokenizable = false,
+    .tolerate_jump_target = NULL,
 };
+
+static tokenizer_context_t *active_ctx;
 
 tokenizer_context_t *tk_get_default_context(void) {
   return &default_ctx;
+}
+
+tokenizer_context_t *tk_context_activate(tokenizer_context_t *ctx) {
+  tokenizer_context_t *previous = active_ctx;
+  active_ctx = ctx;
+  return previous;
+}
+
+tokenizer_context_t *tk_context_active(void) {
+  return active_ctx ? active_ctx : &default_ctx;
 }
 
 void tk_context_init(tokenizer_context_t *ctx) {

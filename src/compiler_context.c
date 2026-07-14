@@ -62,12 +62,15 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       arena_context_activate(session->arena_context);
   session->previous_diagnostic_context =
       diag_context_activate(session->diagnostic_context);
+  session->previous_tokenizer_context =
+      tk_context_activate(&session->tokenizer);
   session->is_active = 1;
   return 1;
 }
 
 void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (!session || !session->is_active) return;
+  tk_context_activate(session->previous_tokenizer_context);
   diag_context_activate(session->previous_diagnostic_context);
   arena_context_activate(session->previous_arena_context);
   pp_context_activate(session->previous_preprocessor_context);
@@ -78,6 +81,7 @@ void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   session->previous_preprocessor_context = NULL;
   session->previous_arena_context = NULL;
   session->previous_diagnostic_context = NULL;
+  session->previous_tokenizer_context = NULL;
   session->previous_global_registry = NULL;
   session->previous_semantic_context = NULL;
   session->is_active = 0;
