@@ -102,7 +102,6 @@ static void begin_declarator(
 
   if (application->is_extern ||
       application->current_type->kind == PSX_TYPE_FUNCTION) {
-    psx_block_extern_declaration_pipeline_result_t result;
     if (!psx_apply_block_extern_declaration_pipeline(
             &(psx_block_extern_declaration_pipeline_request_t){
                 .name = name->str,
@@ -110,8 +109,7 @@ static void begin_declarator(
                 .type = application->current_type,
                 .has_initializer = initializer->has_initializer,
                 .diag_tok = (token_t *)name,
-            },
-            &result)) {
+            })) {
       ps_diag_ctx((token_t *)name, "local-declaration",
                   "block declaration pipeline failed for '%.*s'",
                   name->len, name->str);

@@ -36,7 +36,6 @@
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
-#include "../src/semantic/global_declaration_plan.h"
 #include "../src/semantic/global_declaration_resolution.h"
 #include "../src/semantic/parameter_declaration_plan.h"
 #include "../src/semantic/parameter_declaration_resolution.h"
@@ -2019,20 +2018,18 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
   psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
-  psx_complete_array_storage_plan_t plan = {0};
-  ASSERT_TRUE(psx_plan_complete_array_storage(matrix, &plan));
+  psx_local_storage_plan_t plan = {0};
+  ASSERT_TRUE(psx_plan_local_storage(matrix, &plan));
   ASSERT_EQ(24, plan.storage_size);
-  ASSERT_EQ(4, plan.scalar_element_size);
   ASSERT_EQ(4, plan.alignment);
 
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_type_t *pointers = ps_type_new_array(pointer, 3, 24, 0);
-  ASSERT_TRUE(psx_plan_complete_array_storage(pointers, &plan));
+  ASSERT_TRUE(psx_plan_local_storage(pointers, &plan));
   ASSERT_EQ(24, plan.storage_size);
-  ASSERT_EQ(8, plan.scalar_element_size);
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
-  ASSERT_TRUE(!psx_plan_complete_array_storage(incomplete, &plan));
+  ASSERT_TRUE(!psx_plan_local_storage(incomplete, &plan));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
       incomplete,
       &(psx_incomplete_array_resolution_t){
@@ -2040,7 +2037,7 @@ static void test_local_declaration_storage_plan_boundary() {
       }));
   ASSERT_EQ(5, incomplete->array_len);
   ASSERT_EQ(20, ps_type_sizeof(incomplete));
-  ASSERT_TRUE(psx_plan_complete_array_storage(incomplete, &plan));
+  ASSERT_TRUE(psx_plan_local_storage(incomplete, &plan));
 
   psx_type_t *partial_flat_matrix = ps_type_new_array(row, 0, 0, 0);
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
@@ -2062,76 +2059,63 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(2, nested_matrix->array_len);
   ASSERT_EQ(24, ps_type_sizeof(nested_matrix));
   psx_type_t *vla = ps_type_new_array(integer, 0, 0, 1);
-  ASSERT_TRUE(!psx_plan_complete_array_storage(vla, &plan));
+  ASSERT_TRUE(!psx_plan_local_storage(vla, &plan));
 
-  psx_complete_object_storage_plan_t object_plan = {0};
-  ASSERT_TRUE(psx_plan_complete_object_storage(pointer, &object_plan));
-  ASSERT_EQ(8, object_plan.storage_size);
-  ASSERT_EQ(4, object_plan.element_size);
-  ASSERT_EQ(8, object_plan.alignment);
-  ASSERT_TRUE(psx_plan_complete_object_storage(integer, &object_plan));
-  ASSERT_EQ(4, object_plan.storage_size);
-  ASSERT_EQ(4, object_plan.element_size);
-  ASSERT_TRUE(!psx_plan_complete_object_storage(vla, &object_plan));
+  ASSERT_TRUE(psx_plan_local_storage(pointer, &plan));
+  ASSERT_EQ(8, plan.storage_size);
+  ASSERT_EQ(8, plan.alignment);
+  ASSERT_TRUE(psx_plan_local_storage(integer, &plan));
+  ASSERT_EQ(4, plan.storage_size);
+  ASSERT_TRUE(!psx_plan_local_storage(vla, &plan));
 
   ps_decl_reset_locals();
-  psx_local_object_result_t lowered = {0};
-  ASSERT_TRUE(lower_complete_local_object(
+  lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
           .name = (char *)"matrix",
           .name_len = 6,
           .type = matrix,
           .requested_alignment = 32,
-      },
-      &lowered));
-  ASSERT_TRUE(lowered.var != NULL);
-  ASSERT_EQ(24, lowered.storage_size);
-  ASSERT_EQ(4, lowered.element_size);
-  ASSERT_EQ(32, lowered.alignment);
-  ASSERT_EQ(1, lowered.is_array);
-  ASSERT_EQ(0, ps_lvar_offset(lowered.var) % 32);
-  psx_type_t *stored_type = ps_lvar_get_decl_type(lowered.var);
+      });
+  ASSERT_TRUE(lowered != NULL);
+  ASSERT_EQ(24, ps_lvar_storage_size(lowered, 0));
+  ASSERT_TRUE(ps_lvar_is_array(lowered));
+  ASSERT_EQ(0, ps_lvar_offset(lowered) % 32);
+  psx_type_t *stored_type = ps_lvar_get_decl_type(lowered);
   ASSERT_TRUE(stored_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, stored_type->kind);
   ASSERT_EQ(24, ps_type_sizeof(stored_type));
   ASSERT_EQ(2, stored_type->array_len);
   ASSERT_TRUE(stored_type->base != NULL);
   ASSERT_EQ(3, stored_type->base->array_len);
-  ASSERT_EQ(lowered.var, ps_decl_find_lvar((char *)"matrix", 6));
+  ASSERT_EQ(lowered, ps_decl_find_lvar((char *)"matrix", 6));
 
   ps_decl_reset_locals();
   psx_type_t *deferred_type =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
-  psx_local_object_result_t declared = {0};
-  ASSERT_TRUE(declare_incomplete_local_object(
+  lvar_t *declared = declare_incomplete_local_object(
       &(psx_local_object_request_t){
           .name = (char *)"deferred",
           .name_len = 8,
           .type = deferred_type,
-      },
-      &declared));
-  ASSERT_TRUE(declared.var != NULL);
-  ASSERT_EQ(0, declared.var->size);
-  ASSERT_EQ(declared.var,
+      });
+  ASSERT_TRUE(declared != NULL);
+  ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
+  ASSERT_EQ(declared,
             ps_decl_find_lvar((char *)"deferred", 8));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
       deferred_type,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 3,
       }));
-  psx_local_object_result_t completed = {0};
   ASSERT_TRUE(complete_declared_local_object(
-      declared.var,
+      declared,
       &(psx_local_object_request_t){
           .name = (char *)"deferred",
           .name_len = 8,
           .type = deferred_type,
-      },
-      &completed));
-  ASSERT_EQ(declared.var, completed.var);
-  ASSERT_EQ(12, completed.storage_size);
-  ASSERT_EQ(12, completed.var->size);
-  ASSERT_EQ(3, ps_lvar_get_decl_type(completed.var)->array_len);
+      }));
+  ASSERT_EQ(12, ps_lvar_storage_size(declared, 0));
+  ASSERT_EQ(3, ps_lvar_get_decl_type(declared)->array_len);
 
   expect_parse_ok(
       "int main(void){ int *a[]={(int *)a}; return sizeof(a)==8; }");
@@ -2375,13 +2359,12 @@ static void test_parameter_declaration_storage_plan_boundary() {
             ps_lvar_vla_row_stride_src_offset(resolved_lowered.var));
 
   psx_type_t *parameter_types[2] = {integer, pointer};
+  psx_type_t *function_input = ps_type_new_function(ps_type_clone(pointer));
+  ps_type_set_function_params(function_input, parameter_types, 2, 1);
   psx_function_declaration_plan_t function_plan = {0};
   ASSERT_TRUE(psx_plan_function_declaration(
       &(psx_function_declaration_request_t){
-          .return_type = pointer,
-          .parameter_types = parameter_types,
-          .parameter_count = 2,
-          .is_variadic = 1,
+          .function_type = function_input,
       },
       &function_plan));
   ASSERT_TRUE(function_plan.function_type != NULL);
@@ -2394,6 +2377,14 @@ static void test_parameter_declaration_storage_plan_boundary() {
       function_plan.function_type->param_types[0], integer));
   ASSERT_TRUE(ps_type_shape_matches(
       function_plan.function_type->param_types[1], pointer));
+  psx_type_t *cyclic_function_type = ps_type_new_function(NULL);
+  cyclic_function_type->base = cyclic_function_type;
+  ASSERT_TRUE(!ps_type_is_well_formed(cyclic_function_type));
+  ASSERT_TRUE(!psx_plan_function_declaration(
+      &(psx_function_declaration_request_t){
+          .function_type = cyclic_function_type,
+      },
+      &function_plan));
 
   psx_declarator_shape_t returned_funcptr_shape;
   psx_declarator_shape_t returned_value_shape;
@@ -2420,10 +2411,12 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_type_t *returned_funcptr = ps_type_apply_declarator_shape(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       &returned_funcptr_shape);
+  psx_type_t *funcptr_function_input =
+      ps_type_new_function(ps_type_clone(returned_funcptr));
   psx_function_declaration_plan_t funcptr_plan = {0};
   ASSERT_TRUE(psx_plan_function_declaration(
       &(psx_function_declaration_request_t){
-          .return_type = returned_funcptr,
+          .function_type = funcptr_function_input,
       },
       &funcptr_plan));
   const psx_type_t *planned_return =
@@ -2442,15 +2435,20 @@ static void test_parameter_declaration_storage_plan_boundary() {
   pointer = ps_type_new_pointer(integer);
   parameter_types[0] = integer;
   parameter_types[1] = pointer;
+  psx_type_t *resolution_function_type =
+      ps_type_new_function(ps_type_clone(integer));
+  ps_type_set_function_params(
+      resolution_function_type, parameter_types, 2, 1);
   psx_function_declaration_resolution_request_t resolution_request = {
       .name = (char *)"__resolution_fn",
       .name_len = 15,
-      .return_type = integer,
-      .parameter_types = parameter_types,
-      .parameter_count = 2,
-      .is_variadic = 1,
+      .function_type = integer,
   };
   psx_function_declaration_resolution_t resolution = {0};
+  psx_resolve_function_declaration(&resolution_request, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_INVALID, resolution.status);
+
+  resolution_request.function_type = resolution_function_type;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(ps_ctx_has_function_name("__resolution_fn", 15));
@@ -2459,11 +2457,15 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
   ASSERT_EQ(0, ps_ctx_is_function_defined("__resolution_fn", 15));
-  resolution_request.return_type = pointer;
+  psx_type_t *pointer_return_function_type =
+      ps_type_new_function(ps_type_clone(pointer));
+  ps_type_set_function_params(
+      pointer_return_function_type, parameter_types, 2, 1);
+  resolution_request.function_type = pointer_return_function_type;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_TYPE_CONFLICT, resolution.status);
 
-  resolution_request.return_type = integer;
+  resolution_request.function_type = resolution_function_type;
   resolution_request.is_definition = 1;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
@@ -2476,23 +2478,18 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(ps_find_global_var("__resolution_object", 19) != NULL);
   resolution_request.name = (char *)"__resolution_object";
   resolution_request.name_len = 19;
-  resolution_request.return_type = integer;
+  resolution_request.function_type = resolution_function_type;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT,
             resolution.status);
 }
 
-static void test_global_declaration_storage_plan_boundary() {
-  printf("test_global_declaration_storage_plan_boundary...\n");
+static void test_global_declaration_resolution_boundary() {
+  printf("test_global_declaration_resolution_boundary...\n");
   ps_global_registry_reset_translation_unit();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *incomplete = ps_type_new_array(
       integer, 0, 0, 0);
-  psx_global_storage_plan_t plan = {0};
-  ASSERT_TRUE(psx_plan_global_object_storage(incomplete, &plan));
-  ASSERT_TRUE(plan.is_incomplete_array);
-  ASSERT_EQ(0, plan.storage_size);
-
   psx_global_declaration_resolution_t first_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -2578,8 +2575,6 @@ static void test_global_declaration_storage_plan_boundary() {
       &rejected_resolution);
   ASSERT_EQ(PSX_GLOBAL_DECLARATION_TYPE_CONFLICT,
             rejected_resolution.status);
-  ASSERT_TRUE(psx_plan_global_object_storage(pointer, &plan));
-  ASSERT_EQ(8, plan.storage_size);
   psx_global_object_result_t internal = {0};
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
@@ -3824,11 +3819,13 @@ static void test_typedef_declaration_resolution_boundary() {
             resolution.status);
 
   psx_function_declaration_resolution_t function_resolution;
+  psx_type_t *function_type =
+      ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
           .name = (char *)"__TypeFunction",
           .name_len = 14,
-          .return_type = integer,
+          .function_type = function_type,
       },
       &function_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
@@ -3893,11 +3890,13 @@ static void test_enum_constant_resolution_boundary() {
   ASSERT_EQ(PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT, resolution.status);
 
   psx_function_declaration_resolution_t function_resolution;
+  psx_type_t *function_type =
+      ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
           .name = (char *)"__EnumFunction",
           .name_len = 14,
-          .return_type = integer,
+          .function_type = function_type,
       },
       &function_resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, function_resolution.status);
@@ -14101,6 +14100,7 @@ static void test_recursive_declarator_capacity_boundary() {
 
   psx_type_t *cyclic_pointer = ps_type_new_pointer(NULL);
   cyclic_pointer->base = cyclic_pointer;
+  ASSERT_TRUE(!ps_type_is_well_formed(cyclic_pointer));
   ASSERT_EQ(-1, ps_type_format_canonical_signature(
                     cyclic_pointer, deep_pointer_signature,
                     sizeof(deep_pointer_signature)));
@@ -14248,7 +14248,7 @@ int main() {
   test_local_declaration_storage_plan_boundary();
   test_vla_lowering_request_boundary();
   test_parameter_declaration_storage_plan_boundary();
-  test_global_declaration_storage_plan_boundary();
+  test_global_declaration_resolution_boundary();
   test_declaration_pipeline_order_boundary();
   test_tag_declaration_resolution_boundary();
   test_aggregate_body_phase_boundary();

@@ -198,6 +198,7 @@ const psx_type_t *ps_type_find_aggregate_object_type(
     const psx_type_t *type);
 int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b);
+int ps_type_is_well_formed(const psx_type_t *type);
 const struct tag_member_info_t *ps_type_find_aggregate_member(
     const psx_type_t *type, token_kind_t tag_kind,
     const char *tag_name, int tag_len,

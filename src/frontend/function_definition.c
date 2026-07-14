@@ -9,8 +9,6 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
-#include <stdlib.h>
-
 node_func_t *psx_apply_function_definition_header(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return NULL;
@@ -58,8 +56,7 @@ node_func_t *psx_apply_function_definition_header(
         definition->declarator.diagnostic_token,
         diag_text_for(DIAG_TEXT_PARAMETER));
   }
-  const psx_type_t *return_type = applied.function_type->base;
-  if (!return_type) {
+  if (!applied.function_type->base) {
     ps_diag_ctx(definition->diagnostic_token, "funcdef",
                 "canonical function return type construction failed");
   }
@@ -76,30 +73,16 @@ node_func_t *psx_apply_function_definition_header(
   node->args = applied.args;
   node->nargs = applied.nargs;
 
-  psx_type_t **parameter_types = node->nargs > 0
-                                    ? calloc((size_t)node->nargs,
-                                             sizeof(*parameter_types))
-                                    : NULL;
-  if (node->nargs > 0 && !parameter_types) {
-    ps_diag_ctx((token_t *)name, "funcdef",
-                "function parameter type allocation failed");
-  }
-  for (int i = 0; i < node->nargs; i++)
-    parameter_types[i] = ps_node_get_type(node->args[i]);
   int registered = psx_apply_function_declaration_pipeline(
           &(psx_function_declaration_pipeline_request_t){
               .name = name->str,
               .name_len = name->len,
-              .return_type = return_type,
-              .parameter_types = parameter_types,
-              .parameter_count = node->nargs,
-              .is_variadic = applied.function_type->is_variadic_function,
+              .function_type = applied.function_type,
               .is_definition = 1,
               .function_node = node,
               .diag_context = "funcdef",
               .diag_tok = (token_t *)name,
           });
-  free(parameter_types);
   if (!registered) {
     ps_diag_ctx((token_t *)name, "funcdef",
                 "function declaration pipeline failed");

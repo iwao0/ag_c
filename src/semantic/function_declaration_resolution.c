@@ -12,7 +12,8 @@ void psx_resolve_function_declaration(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_FUNCTION_DECLARATION_INVALID;
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->return_type || request->parameter_count < 0) {
+      !request->function_type ||
+      request->function_type->kind != PSX_TYPE_FUNCTION) {
     return;
   }
   if (ps_find_global_var(request->name, request->name_len)) {
@@ -21,10 +22,7 @@ void psx_resolve_function_declaration(
   }
   if (!psx_plan_function_declaration(
           &(psx_function_declaration_request_t){
-              .return_type = request->return_type,
-              .parameter_types = request->parameter_types,
-              .parameter_count = request->parameter_count,
-              .is_variadic = request->is_variadic,
+              .function_type = request->function_type,
           },
           &resolution->declaration_plan)) {
     return;

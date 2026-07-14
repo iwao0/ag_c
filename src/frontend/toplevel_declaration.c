@@ -31,10 +31,7 @@ static void apply_function_prototype(
           &(psx_function_declaration_pipeline_request_t){
               .name = name->str,
               .name_len = name->len,
-              .return_type = type->base,
-              .parameter_types = type->param_types,
-              .parameter_count = type->param_count,
-              .is_variadic = type->is_variadic_function,
+              .function_type = type,
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
           })) {

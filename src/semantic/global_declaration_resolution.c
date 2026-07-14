@@ -40,8 +40,10 @@ void psx_resolve_global_declaration(
     resolution->status = PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }
-  if (!psx_plan_global_object_storage(request->type,
-                                      &resolution->storage)) {
+  int incoming_is_incomplete_array =
+      request->type->kind == PSX_TYPE_ARRAY &&
+      request->type->array_len <= 0;
+  if (!incoming_is_incomplete_array && ps_type_sizeof(request->type) <= 0) {
     return;
   }
   if (ps_ctx_has_function_name(request->name, request->name_len)) {
@@ -74,7 +76,7 @@ void psx_resolve_global_declaration(
         existing_type && existing_type->kind == PSX_TYPE_ARRAY &&
         existing_type->array_len <= 0;
     resolution->replace_existing_type =
-        existing_is_incomplete || !resolution->storage.is_incomplete_array;
+        existing_is_incomplete || !incoming_is_incomplete_array;
     resolution->clear_existing_extern =
         resolution->existing->is_extern_decl && !request->is_extern_decl;
   }

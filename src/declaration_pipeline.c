@@ -223,16 +223,14 @@ static void diagnose_function_declaration(
 int psx_apply_function_declaration_pipeline(
     const psx_function_declaration_pipeline_request_t *request) {
   if (!request || !request->name || request->name_len <= 0 ||
-      !request->return_type) return 0;
+      !request->function_type ||
+      request->function_type->kind != PSX_TYPE_FUNCTION) return 0;
   psx_function_declaration_resolution_t resolution;
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
           .name = request->name,
           .name_len = request->name_len,
-          .return_type = request->return_type,
-          .parameter_types = request->parameter_types,
-          .parameter_count = request->parameter_count,
-          .is_variadic = request->is_variadic,
+          .function_type = request->function_type,
           .is_definition = request->is_definition,
       },
       &resolution);
@@ -627,34 +625,27 @@ int psx_begin_automatic_local_declaration_pipeline(
     diagnose_local_declaration(request, resolution.status);
   *storage_kind = (int)resolution.storage_kind;
 
-  psx_local_object_result_t object = {0};
   psx_vla_lowering_result_t vla = {0};
   switch (resolution.storage_kind) {
     case PSX_LOCAL_STORAGE_COMPLETE:
-      if (!lower_complete_local_object(
+      result->var = lower_complete_local_object(
               &(psx_local_object_request_t){
                   .name = request->name,
                   .name_len = request->name_len,
                   .type = request->type,
                   .requested_alignment = request->requested_alignment,
-              },
-              &object)) {
-        return 0;
-      }
-      result->var = object.var;
+              });
+      if (!result->var) return 0;
       break;
     case PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY:
-      if (!declare_incomplete_local_object(
+      result->var = declare_incomplete_local_object(
               &(psx_local_object_request_t){
                   .name = request->name,
                   .name_len = request->name_len,
                   .type = request->type,
                   .requested_alignment = request->requested_alignment,
-              },
-              &object)) {
-        return 0;
-      }
-      result->var = object.var;
+              });
+      if (!result->var) return 0;
       break;
     case PSX_LOCAL_STORAGE_VLA_OBJECT: {
       psx_vla_lowering_request_t lowering = {
@@ -718,7 +709,6 @@ int psx_finish_automatic_local_declaration_pipeline(
                    diag_message_for(
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
-    psx_local_object_result_t completed = {0};
     if (!complete_declared_local_object(
             result->var,
             &(psx_local_object_request_t){
@@ -726,8 +716,7 @@ int psx_finish_automatic_local_declaration_pipeline(
                 .name_len = request->name_len,
                 .type = request->type,
                 .requested_alignment = request->requested_alignment,
-            },
-            &completed)) {
+            })) {
       return 0;
     }
   }
@@ -755,11 +744,8 @@ int psx_apply_automatic_local_declaration_pipeline(
 }
 
 int psx_apply_block_extern_declaration_pipeline(
-    const psx_block_extern_declaration_pipeline_request_t *request,
-    psx_block_extern_declaration_pipeline_result_t *result) {
-  if (result)
-    *result = (psx_block_extern_declaration_pipeline_result_t){0};
-  if (!request || !result || !request->name || request->name_len <= 0 ||
+    const psx_block_extern_declaration_pipeline_request_t *request) {
+  if (!request || !request->name || request->name_len <= 0 ||
       !request->type) return 0;
   if (request->has_initializer) {
     ps_diag_ctx(request->diag_tok, "decl",
@@ -772,16 +758,12 @@ int psx_apply_block_extern_declaration_pipeline(
             &(psx_function_declaration_pipeline_request_t){
                 .name = request->name,
                 .name_len = request->name_len,
-                .return_type = request->type->base,
-                .parameter_types = request->type->param_types,
-                .parameter_count = request->type->param_count,
-                .is_variadic = request->type->is_variadic_function,
+                .function_type = request->type,
                 .diag_context = "block-extern",
                 .diag_tok = request->diag_tok,
             })) {
       return 0;
     }
-    result->is_function = 1;
     return 1;
   }
 
@@ -799,7 +781,6 @@ int psx_apply_block_extern_declaration_pipeline(
           &global)) {
     return 0;
   }
-  result->global = global.global;
   return 1;
 }
 
@@ -809,16 +790,11 @@ lvar_t *psx_apply_temporary_local_declaration_pipeline(
       !request->type) {
     return NULL;
   }
-  psx_local_object_result_t object = {0};
-  if (!lower_complete_local_object(
-          &(psx_local_object_request_t){
-              .name = request->name,
-              .name_len = request->name_len,
-              .type = request->type,
-              .requested_alignment = request->requested_alignment,
-          },
-          &object)) {
-    return NULL;
-  }
-  return object.var;
+  return lower_complete_local_object(
+      &(psx_local_object_request_t){
+          .name = request->name,
+          .name_len = request->name_len,
+          .type = request->type,
+          .requested_alignment = request->requested_alignment,
+      });
 }

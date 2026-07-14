@@ -4,10 +4,7 @@
 #include "../parser/type.h"
 
 typedef struct {
-  const psx_type_t *return_type;
-  psx_type_t *const *parameter_types;
-  int parameter_count;
-  int is_variadic;
+  const psx_type_t *function_type;
 } psx_function_declaration_request_t;
 
 typedef struct {

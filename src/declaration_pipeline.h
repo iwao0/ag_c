@@ -36,10 +36,7 @@ int psx_finish_global_declaration_pipeline(
 typedef struct {
   char *name;
   int name_len;
-  const psx_type_t *return_type;
-  psx_type_t *const *parameter_types;
-  int parameter_count;
-  int is_variadic;
+  const psx_type_t *function_type;
   int is_definition;
   node_func_t *function_node;
   const char *diag_context;
@@ -142,14 +139,8 @@ typedef struct {
   token_t *diag_tok;
 } psx_block_extern_declaration_pipeline_request_t;
 
-typedef struct {
-  global_var_t *global;
-  int is_function;
-} psx_block_extern_declaration_pipeline_result_t;
-
 int psx_apply_block_extern_declaration_pipeline(
-    const psx_block_extern_declaration_pipeline_request_t *request,
-    psx_block_extern_declaration_pipeline_result_t *result);
+    const psx_block_extern_declaration_pipeline_request_t *request);
 
 typedef struct {
   char *name;

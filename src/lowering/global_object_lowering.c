@@ -14,7 +14,6 @@ int lower_resolved_global_object_declaration(
       !request->type || !request->resolution ||
       request->resolution->status != PSX_GLOBAL_DECLARATION_OK) return 0;
   memset(result, 0, sizeof(*result));
-  result->storage = request->resolution->storage;
 
   global_var_t *existing = request->resolution->existing;
   if (existing) {

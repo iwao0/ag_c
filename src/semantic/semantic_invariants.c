@@ -51,33 +51,6 @@ static int fail(psx_semantic_invariant_failure_t *failure,
   return 0;
 }
 
-typedef struct psx_type_validation_path_t psx_type_validation_path_t;
-struct psx_type_validation_path_t {
-  const psx_type_t *type;
-  const psx_type_validation_path_t *parent;
-};
-
-static int validate_type(
-    const psx_type_t *type, const psx_type_validation_path_t *path) {
-  if (!type) return 1;
-  for (const psx_type_validation_path_t *current = path; current;
-       current = current->parent) {
-    if (current->type == type) return 0;
-  }
-  if (type->param_count < 0 ||
-      (type->param_count > 0 && !type->param_types))
-    return 0;
-  psx_type_validation_path_t current_path = {
-      .type = type,
-      .parent = path,
-  };
-  if (!validate_type(type->base, &current_path)) return 0;
-  for (int i = 0; i < type->param_count; i++) {
-    if (!validate_type(type->param_types[i], &current_path)) return 0;
-  }
-  return 1;
-}
-
 static int validate_node(const node_t *node,
                          psx_semantic_invariant_failure_t *failure) {
   if (!node) return 1;
@@ -85,7 +58,7 @@ static int validate_node(const node_t *node,
     return fail(failure, PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, node);
   if (expression_kind_requires_type(node->kind) && !node->type)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
-  if (node->type && !validate_type(node->type, NULL))
+  if (node->type && !ps_type_is_well_formed(node->type))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
   if (node->kind == ND_FUNCREF &&
       (node->type->kind != PSX_TYPE_POINTER || !node->type->base ||
@@ -96,7 +69,7 @@ static int validate_node(const node_t *node,
     const node_func_t *function = (const node_func_t *)node;
     if (function->function_type) {
       if (function->function_type->kind != PSX_TYPE_FUNCTION ||
-          !validate_type(function->function_type, NULL) ||
+          !ps_type_is_well_formed(function->function_type) ||
           !ps_type_shape_matches(node->type, function->function_type->base)) {
         return fail(
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);

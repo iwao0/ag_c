@@ -2,7 +2,6 @@
 #define SEMANTIC_GLOBAL_DECLARATION_RESOLUTION_H
 
 #include "../parser/symtab.h"
-#include "global_declaration_plan.h"
 
 typedef enum {
   PSX_GLOBAL_DECLARATION_OK = 0,
@@ -24,7 +23,6 @@ typedef struct {
 
 typedef struct {
   psx_global_declaration_status_t status;
-  psx_global_storage_plan_t storage;
   global_var_t *existing;
   int replace_existing_type;
   int clear_existing_extern;

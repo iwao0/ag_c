@@ -10,22 +10,11 @@ typedef struct {
   int requested_alignment;
 } psx_local_object_request_t;
 
-typedef struct {
-  lvar_t *var;
-  int storage_size;
-  int element_size;
-  int alignment;
-  int is_array;
-} psx_local_object_result_t;
-
-int lower_complete_local_object(
-    const psx_local_object_request_t *request,
-    psx_local_object_result_t *result);
-int declare_incomplete_local_object(
-    const psx_local_object_request_t *request,
-    psx_local_object_result_t *result);
+lvar_t *lower_complete_local_object(
+    const psx_local_object_request_t *request);
+lvar_t *declare_incomplete_local_object(
+    const psx_local_object_request_t *request);
 int complete_declared_local_object(
-    lvar_t *var, const psx_local_object_request_t *request,
-    psx_local_object_result_t *result);
+    lvar_t *var, const psx_local_object_request_t *request);
 
 #endif

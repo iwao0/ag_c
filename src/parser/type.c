@@ -24,6 +24,41 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
          a->tag_scope_depth_p1 == b->tag_scope_depth_p1;
 }
 
+typedef struct psx_type_validation_path_t psx_type_validation_path_t;
+struct psx_type_validation_path_t {
+  const psx_type_t *type;
+  const psx_type_validation_path_t *parent;
+};
+
+static int type_is_well_formed_from(
+    const psx_type_t *type, const psx_type_validation_path_t *path) {
+  if (!type) return 1;
+  for (const psx_type_validation_path_t *current = path; current;
+       current = current->parent) {
+    if (current->type == type) return 0;
+  }
+  if (type->param_count < 0 ||
+      (type->param_count > 0 && !type->param_types)) {
+    return 0;
+  }
+  psx_type_validation_path_t current_path = {
+      .type = type,
+      .parent = path,
+  };
+  if (!type_is_well_formed_from(type->base, &current_path)) return 0;
+  for (int i = 0; i < type->param_count; i++) {
+    if (!type->param_types[i] ||
+        !type_is_well_formed_from(type->param_types[i], &current_path)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+int ps_type_is_well_formed(const psx_type_t *type) {
+  return type && type_is_well_formed_from(type, NULL);
+}
+
 psx_type_t *ps_type_new(psx_type_kind_t kind) {
   psx_type_t *type = arena_alloc(sizeof(psx_type_t));
   type->kind = kind;

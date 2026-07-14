@@ -3,7 +3,6 @@
 
 #include "../parser/ast.h"
 #include "../parser/symtab.h"
-#include "../semantic/global_declaration_plan.h"
 #include "../semantic/global_declaration_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 
@@ -18,7 +17,6 @@ typedef struct {
 
 typedef struct {
   global_var_t *global;
-  psx_global_storage_plan_t storage;
   int created;
 } psx_global_object_result_t;
 
