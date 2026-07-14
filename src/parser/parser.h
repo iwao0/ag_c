@@ -9,8 +9,11 @@
 #include "../tokenizer/token.h"
 #include "../tokenizer/tokenizer.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef struct {
   tokenizer_context_t *tk_ctx;
+  psx_semantic_context_t *semantic_context;
   const psx_toplevel_declaration_callbacks_t *toplevel_declarations;
 } psx_parser_stream_t;
 
@@ -34,6 +37,11 @@ typedef struct {
 // 1 関数ぶんの AST だけを保持して codegen→解放できるので、AST のピークメモリを抑える。
 void ps_parser_stream_begin(
     psx_parser_stream_t *stream,
+    tokenizer_context_t *tk_ctx, token_t *start,
+    const psx_toplevel_declaration_callbacks_t *toplevel_declarations);
+void ps_parser_stream_begin_in_context(
+    psx_parser_stream_t *stream,
+    psx_semantic_context_t *semantic_context,
     tokenizer_context_t *tk_ctx, token_t *start,
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations);
 int ps_parse_next_toplevel_item(

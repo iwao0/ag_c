@@ -13,8 +13,7 @@
 static token_t *current_token(void) { return tk_get_current_token(); }
 
 static int is_toplevel_typedef_name(token_t *token, void *context) {
-  (void)context;
-  return psx_ctx_is_typedef_name_token(token);
+  return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static void require_declarator_name(
@@ -56,18 +55,28 @@ static void append_declarator_slot(
 }
 
 static int parse_declarator_head(
-    psx_parsed_toplevel_declaration_t *declaration) {
+    psx_parsed_toplevel_declaration_t *declaration,
+    psx_semantic_context_t *semantic_context) {
   append_declarator_slot(declaration);
   psx_parsed_declarator_t *declarator =
       &declaration->declarators[declaration->declarator_count - 1];
-  if (!psx_try_parse_toplevel_declarator_syntax_tree(declarator)) return 0;
-  ps_prepare_constant_declarator_expressions(declarator);
+  if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup(
+          declarator, is_toplevel_typedef_name, semantic_context)) return 0;
+  ps_prepare_constant_declarator_expressions_in_context(
+      declarator, semantic_context);
   require_declarator_name(declarator);
   return 1;
 }
 
 int psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration) {
+  return psx_parse_toplevel_declaration_head_syntax_in_context(
+      declaration, ps_ctx_active());
+}
+
+int psx_parse_toplevel_declaration_head_syntax_in_context(
+    psx_parsed_toplevel_declaration_t *declaration,
+    psx_semantic_context_t *semantic_context) {
   if (!declaration) return 0;
   *declaration = (psx_parsed_toplevel_declaration_t){0};
   declaration->diagnostic_token = current_token();
@@ -80,6 +89,8 @@ int psx_parse_toplevel_declaration_head_syntax(
           &declaration->specifier,
           &(psx_decl_specifier_syntax_options_t){
               .is_typedef_name = is_toplevel_typedef_name,
+              .context = semantic_context,
+              .semantic_context = semantic_context,
               .allow_implicit_int = 0,
           })) {
     diag_report_tokf(
@@ -88,7 +99,8 @@ int psx_parse_toplevel_declaration_head_syntax(
         diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     return 0;
   }
-  ps_prepare_decl_specifier_alignments(&declaration->specifier);
+  ps_prepare_decl_specifier_alignments_in_context(
+      &declaration->specifier, semantic_context);
   declaration->is_extern = declaration->specifier.type_spec.is_extern;
   declaration->is_static = declaration->specifier.type_spec.is_static;
   declaration->is_thread_local =
@@ -96,7 +108,8 @@ int psx_parse_toplevel_declaration_head_syntax(
   declaration->is_standalone_tag =
       declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
       current_token()->kind == TK_SEMI;
-  if (!declaration->is_standalone_tag && !parse_declarator_head(declaration))
+  if (!declaration->is_standalone_tag &&
+      !parse_declarator_head(declaration, semantic_context))
     return 0;
   return 1;
 }
@@ -122,6 +135,16 @@ static void abort_toplevel_declaration(
 int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks) {
+  return psx_finish_toplevel_declaration_syntax_in_context(
+      declaration, callbacks,
+      callbacks && callbacks->context
+          ? callbacks->context : ps_ctx_active());
+}
+
+int psx_finish_toplevel_declaration_syntax_in_context(
+    psx_parsed_toplevel_declaration_t *declaration,
+    const psx_toplevel_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context) {
   if (!declaration) return 0;
   void *declaration_context = callbacks && callbacks->begin_declaration
       ? callbacks->begin_declaration(callbacks->context, declaration)
@@ -153,12 +176,13 @@ int psx_finish_toplevel_declaration_syntax(
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
       tk_expect('=');
-      psx_parse_initializer_syntax_value(initializer, assign_tok);
+      psx_parse_initializer_syntax_value_in_context(
+          initializer, assign_tok, semantic_context, NULL);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
     if (!tk_consume(',')) break;
-    if (!parse_declarator_head(declaration)) {
+    if (!parse_declarator_head(declaration, semantic_context)) {
       abort_toplevel_declaration(callbacks, declaration_context);
       return 0;
     }

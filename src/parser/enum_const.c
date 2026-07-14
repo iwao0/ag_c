@@ -16,6 +16,7 @@ typedef struct {
    * (C11 6.8.4.2)。enum 定数・配列次元・_Alignas・ビットフィールド幅の
    * 経路は従来どおり tk_expect_number() で int に制約する。 */
   int allow_wide_const;
+  psx_semantic_context_t *semantic_context;
 } enum_const_eval_ctx_t;
 
 static long long parse_conditional_ctx(enum_const_eval_ctx_t *ctx);
@@ -33,23 +34,46 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx);
 static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx);
 
 long long psx_parse_enum_const_expr(void) {
-  enum_const_eval_ctx_t ctx = {0};
+  return psx_parse_enum_const_expr_in_context(ps_ctx_active());
+}
+
+long long psx_parse_enum_const_expr_in_context(
+    psx_semantic_context_t *semantic_context) {
+  enum_const_eval_ctx_t ctx = {
+      .semantic_context = semantic_context,
+  };
   return parse_conditional_ctx(&ctx);
 }
 
 long long psx_parse_case_const_expr(void) {
-  enum_const_eval_ctx_t ctx = {.allow_wide_const = 1};
+  return psx_parse_case_const_expr_in_context(ps_ctx_active());
+}
+
+long long psx_parse_case_const_expr_in_context(
+    psx_semantic_context_t *semantic_context) {
+  enum_const_eval_ctx_t ctx = {
+      .allow_wide_const = 1,
+      .semantic_context = semantic_context,
+  };
   return parse_conditional_ctx(&ctx);
 }
 
 long long psx_eval_parsed_enum_const_expr(token_t *start, token_t *end) {
+  return psx_eval_parsed_enum_const_expr_in_context(
+      ps_ctx_active(), start, end);
+}
+
+long long psx_eval_parsed_enum_const_expr_in_context(
+    psx_semantic_context_t *semantic_context,
+    token_t *start, token_t *end) {
   if (!start || !end) {
     ps_diag_ctx(curtok(), "constant-expression",
                  "missing parsed constant expression range");
   }
   token_t *saved_token = curtok();
   set_curtok(start);
-  long long value = psx_parse_enum_const_expr();
+  long long value = psx_parse_enum_const_expr_in_context(
+      semantic_context);
   if (curtok() != end) {
     ps_diag_ctx(curtok(), "constant-expression",
                  "parsed constant expression was not fully consumed");
@@ -204,20 +228,28 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
     if (curtok()->kind == TK_LPAREN) {
       set_curtok(curtok()->next);
       int sz = 8;
-      if (psx_ctx_is_type_token(curtok()->kind) || psx_ctx_is_tag_keyword(curtok()->kind) ||
-          psx_ctx_is_typedef_name_token(curtok())) {
+      if (psx_ctx_is_type_token(curtok()->kind) ||
+          psx_ctx_is_tag_keyword(curtok()->kind) ||
+          psx_ctx_is_typedef_name_token_in(
+              ctx->semantic_context, curtok())) {
         psx_ctx_get_type_info(curtok()->kind, NULL, &sz);
         if (psx_ctx_is_tag_keyword(curtok()->kind)) {
           token_kind_t tk = curtok()->kind;
           set_curtok(curtok()->next);
           token_ident_t *tag = tk_consume_ident();
-          if (tag && ps_ctx_has_tag_type(tk, tag->str, tag->len)) {
-            sz = ps_ctx_get_tag_size(tk, tag->str, tag->len);
+          if (tag && ps_ctx_has_tag_type_in(
+                         ctx->semantic_context,
+                         tk, tag->str, tag->len)) {
+            sz = ps_ctx_get_tag_size_in(
+                ctx->semantic_context, tk, tag->str, tag->len);
           }
-        } else if (psx_ctx_is_typedef_name_token(curtok())) {
+        } else if (psx_ctx_is_typedef_name_token_in(
+                       ctx->semantic_context, curtok())) {
           token_ident_t *id = (token_ident_t *)curtok();
           int td_sizeof = 8;
-          if (psx_ctx_find_typedef_sizeof(id->str, id->len, &td_sizeof))
+          if (psx_ctx_find_typedef_sizeof_in(
+                  ctx->semantic_context,
+                  id->str, id->len, &td_sizeof))
             sz = td_sizeof;
           set_curtok(curtok()->next);
         } else {
@@ -244,7 +276,8 @@ static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx) {
   token_ident_t *id = tk_consume_ident();
   if (id) {
     long long v = 0;
-    if (!ps_ctx_find_enum_const(id->str, id->len, &v)) {
+    if (!ps_ctx_find_enum_const_in(
+            ctx->semantic_context, id->str, id->len, &v)) {
       ps_diag_ctx(curtok(), "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
                    id->len, id->str);
     }

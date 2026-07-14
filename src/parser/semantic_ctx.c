@@ -1341,11 +1341,6 @@ static typedef_name_t *find_typedef_in(
   return NULL;
 }
 
-// 任意のスコープから名前一致の typedef を返す。なければ NULL。
-static typedef_name_t *find_typedef(char *name, int len) {
-  return find_typedef_in(active_semantic_context, name, len);
-}
-
 // 現スコープ深度に限った検索（同名再定義の検出用）。
 static typedef_name_t *find_typedef_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len) {
@@ -1461,9 +1456,17 @@ int psx_ctx_define_typedef_name(
 }
 
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
-  typedef_name_t *t = find_typedef(name, len);
+  return psx_ctx_find_typedef_sizeof_in(
+      active_semantic_context, name, len, out_sizeof_size);
+}
+
+bool psx_ctx_find_typedef_sizeof_in(
+    psx_semantic_context_t *context,
+    char *name, int len, int *out_sizeof_size) {
+  typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
+  ps_ctx_refresh_type_completeness_in(
+      context, typedef_record_decl_type_mut(t));
   if (out_sizeof_size)
     *out_sizeof_size = ps_type_sizeof(typedef_record_decl_type(t));
   return true;
@@ -1535,10 +1538,17 @@ bool ps_ctx_find_typedef_decl_type_at_in(
   return false;
 }
 
-bool psx_ctx_is_typedef_name_token(token_t *tok) {
+bool psx_ctx_is_typedef_name_token_in(
+    psx_semantic_context_t *context, token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return false;
   token_ident_t *id = (token_ident_t *)tok;
-  return ps_ctx_find_typedef_name(id->str, id->len, NULL);
+  return ps_ctx_find_typedef_name_in(
+      context, id->str, id->len, NULL);
+}
+
+bool psx_ctx_is_typedef_name_token(token_t *tok) {
+  return psx_ctx_is_typedef_name_token_in(
+      active_semantic_context, tok);
 }
 
 void psx_ctx_define_function_name(char *name, int len) {

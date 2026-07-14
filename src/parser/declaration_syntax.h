@@ -9,6 +9,9 @@ typedef struct psx_parsed_aggregate_body_t psx_parsed_aggregate_body_t;
 typedef struct psx_parsed_function_parameters_t
     psx_parsed_function_parameters_t;
 typedef struct node_t node_t;
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_local_declaration_callbacks_t
+    psx_local_declaration_callbacks_t;
 
 typedef struct {
   token_t *start;
@@ -51,6 +54,7 @@ typedef struct {
   psx_decl_typedef_name_predicate_t is_typedef_name;
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
   void *context;
+  psx_semantic_context_t *semantic_context;
   int allow_implicit_int;
 } psx_decl_specifier_syntax_options_t;
 
@@ -111,19 +115,37 @@ int psx_try_parse_decl_specifier_syntax_ex(
 psx_parsed_declarator_t psx_parse_declarator_syntax_tree(void);
 void psx_parse_declarator_syntax_tree_into(
     psx_parsed_declarator_t *declarator);
+void psx_parse_declarator_syntax_tree_into_with_typedef_lookup(
+    psx_parsed_declarator_t *declarator,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context);
 psx_parsed_declarator_t
 psx_parse_toplevel_declarator_syntax_tree(void);
 int psx_try_parse_toplevel_declarator_syntax_tree(
     psx_parsed_declarator_t *declarator);
+int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup(
+    psx_parsed_declarator_t *declarator,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree(void);
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
 void ps_parse_runtime_declarator_expressions(
     psx_parsed_declarator_t *declarator);
+void ps_parse_runtime_declarator_expressions_in_context(
+    psx_parsed_declarator_t *declarator,
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations);
 void ps_prepare_constant_declarator_expressions(
     psx_parsed_declarator_t *declarator);
+void ps_prepare_constant_declarator_expressions_in_context(
+    psx_parsed_declarator_t *declarator,
+    psx_semantic_context_t *semantic_context);
 void ps_prepare_decl_specifier_alignments(
     psx_parsed_decl_specifier_t *specifier);
+void ps_prepare_decl_specifier_alignments_in_context(
+    psx_parsed_decl_specifier_t *specifier,
+    psx_semantic_context_t *semantic_context);
 void ps_dispose_decl_specifier_syntax(
     psx_parsed_decl_specifier_t *specifier);
 void psx_dispose_declarator_syntax(psx_parsed_declarator_t *declarator);

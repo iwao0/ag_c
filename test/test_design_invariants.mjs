@@ -146,6 +146,10 @@ const typeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
 );
+const declarationResolutionSource = await readFile(
+  "src/semantic/declaration_resolution.c",
+  "utf8",
+);
 const genericSelectionResolutionSource = await readFile(
   "src/semantic/generic_selection_resolution.c",
   "utf8",
@@ -263,6 +267,22 @@ const frontendFunctionDefinitionSource = await readFile(
   "src/frontend/function_definition.c",
   "utf8",
 );
+const parserSource = await readFile("src/parser/parser.c", "utf8");
+const statementParserSource = await readFile("src/parser/stmt.c", "utf8");
+const expressionParserSource = await readFile("src/parser/expr.c", "utf8");
+const initializerSyntaxSource = await readFile(
+  "src/parser/initializer_syntax.c",
+  "utf8",
+);
+const localDeclarationSyntaxSource = await readFile(
+  "src/parser/local_declaration_syntax.c",
+  "utf8",
+);
+const toplevelDeclarationSyntaxSource = await readFile(
+  "src/parser/toplevel_declaration_syntax.c",
+  "utf8",
+);
+const enumConstSource = await readFile("src/parser/enum_const.c", "utf8");
 const functionParameterResolutionSource = await readFile(
   "src/semantic/function_parameter_resolution.c",
   "utf8",
@@ -275,6 +295,8 @@ const explicitLifecycleCallers = [
   compilerMainSource,
   frontendTranslationUnitSource,
   frontendFunctionDefinitionSource,
+  parserSource,
+  statementParserSource,
   semanticPassSource,
   declarationApplicationSource,
   functionParameterResolutionSource,
@@ -282,7 +304,53 @@ const explicitLifecycleCallers = [
 ].join("\n");
 const contextFreeLifecycleCall =
   /\bps_ctx_(?:reset_translation_unit_scope|reset_function_diag_state|reset_tag_diag_state|reset_function_scope|enter_block_scope|leave_block_scope|record_unsupported_gnu_extension_warning|emit_deferred_parser_warnings|promote_tag_to_file_scope)\s*\(/;
+const contextFreeJumpRegistryCall =
+  /\bpsx_ctx_(?:register_goto_ref|register_label_def|validate_goto_refs)\s*\(/;
+const implicitActiveContextFallback =
+  /semantic_context\s*\?\s*semantic_context\s*:\s*ps_ctx_active\s*\(\)|if\s*\(\s*!semantic_context\s*\)\s*semantic_context\s*=\s*ps_ctx_active\s*\(\)/;
+const explicitParserContextSources = [
+  expressionParserSource,
+  statementParserSource,
+  initializerSyntaxSource,
+  enumConstSource,
+  declarationResolutionSource,
+  typeNameResolutionSource,
+  typeQueryResolutionSource,
+  declarationApplicationSource,
+].join("\n");
 if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
+    contextFreeJumpRegistryCall.test(
+      `${parserSource}\n${statementParserSource}`,
+    ) ||
+    implicitActiveContextFallback.test(explicitParserContextSources) ||
+    /stream\s*&&\s*stream->semantic_context\s*\?[^;]*ps_ctx_active\s*\(\)/s.test(
+      parserSource,
+    ) ||
+    !/ps_parser_stream_begin_in_context\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_stmt_stmt_in_context\s*\(/.test(parserSource) ||
+    !/psx_ctx_is_typedef_name_token_in\s*\(/.test(
+      statementParserSource,
+    ) ||
+    /active_local_declarations/.test(statementParserSource) ||
+    !/psx_expr_expr_in_context\s*\(/.test(statementParserSource) ||
+    !/psx_parse_statement_expression_in_context\s*\(/.test(
+      expressionParserSource,
+    ) ||
+    !/psx_parse_initializer_syntax_list_in_context\s*\(/.test(
+      expressionParserSource,
+    ) ||
+    !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
+      initializerSyntaxSource,
+    ) ||
+    !/psx_parse_declarator_syntax_tree_into_with_typedef_lookup\s*\(/.test(
+      localDeclarationSyntaxSource,
+    ) ||
+    !/psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup\s*\(/.test(
+      toplevelDeclarationSyntaxSource,
+    ) ||
+    !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
     !/psx_frontend_reset_translation_unit_state_in_context\s*\(/.test(
       compilerMainSource,
     ) ||

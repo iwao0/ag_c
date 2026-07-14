@@ -24,7 +24,7 @@
 #include <stdlib.h>
 
 int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body) {
-  return psx_apply_parsed_enum_body_in_context(NULL, body);
+  return psx_apply_parsed_enum_body_in_context(ps_ctx_active(), body);
 }
 
 int psx_apply_parsed_enum_body_in_context(
@@ -68,7 +68,8 @@ int psx_apply_parsed_aggregate_body_layout_in_context(
 
     psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
-    ps_prepare_decl_specifier_alignments(&declaration->specifier);
+    ps_prepare_decl_specifier_alignments_in_context(
+        &declaration->specifier, semantic_context);
     const psx_type_t *member_base_type =
         psx_apply_parsed_decl_specifier_in_context(
             semantic_context, &declaration->specifier);
@@ -81,7 +82,8 @@ int psx_apply_parsed_aggregate_body_layout_in_context(
         psx_apply_parsed_decl_alignment(&declaration->specifier);
     for (int j = 0; j < declaration->declarator_count; j++) {
       psx_parsed_declarator_t *head = &declaration->declarators[j];
-      ps_prepare_constant_declarator_expressions(head);
+      ps_prepare_constant_declarator_expressions_in_context(
+          head, semantic_context);
       psx_declarator_shape_t resolved_shape;
       int resolved_bit_width = 0;
       psx_apply_parsed_declarator_in_context(
@@ -119,7 +121,8 @@ int psx_apply_parsed_aggregate_body_layout(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align) {
   return psx_apply_parsed_aggregate_body_layout_in_context(
-      NULL, body, tag_kind, tag_name, tag_len, out_size, out_align);
+      ps_ctx_active(), body, tag_kind, tag_name, tag_len,
+      out_size, out_align);
 }
 
 static void apply_decl_tag_action(
@@ -186,7 +189,8 @@ static psx_type_t *build_parsed_type_name(
 
 const psx_type_t *psx_apply_parsed_type_name(
     const psx_parsed_type_name_t *type_name) {
-  return psx_apply_parsed_type_name_in_context(NULL, type_name);
+  return psx_apply_parsed_type_name_in_context(
+      ps_ctx_active(), type_name);
 }
 
 const psx_type_t *psx_apply_parsed_type_name_in_context(
@@ -216,7 +220,7 @@ const psx_type_t *psx_apply_parsed_declarator_type(
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator) {
   return psx_apply_parsed_declarator_type_in_context(
-      NULL, base_type, declarator);
+      ps_ctx_active(), base_type, declarator);
 }
 
 const psx_type_t *psx_apply_runtime_declarator_type_in_context(
@@ -236,7 +240,7 @@ const psx_type_t *psx_apply_runtime_declarator_type(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application) {
   return psx_apply_runtime_declarator_type_in_context(
-      NULL, base_type, application);
+      ps_ctx_active(), base_type, application);
 }
 
 void psx_begin_declaration_phase(
@@ -274,7 +278,8 @@ void psx_dispose_declaration_phase(psx_declaration_phase_t *phase) {
 
 const psx_type_t *psx_apply_parsed_decl_specifier(
     const psx_parsed_decl_specifier_t *specifier) {
-  return psx_apply_parsed_decl_specifier_in_context(NULL, specifier);
+  return psx_apply_parsed_decl_specifier_in_context(
+      ps_ctx_active(), specifier);
 }
 
 const psx_type_t *psx_apply_parsed_decl_specifier_in_context(
@@ -305,7 +310,8 @@ int psx_apply_parsed_decl_alignment(
 
 void psx_apply_parsed_standalone_tag(
     const psx_parsed_decl_specifier_t *specifier) {
-  psx_apply_parsed_standalone_tag_in_context(NULL, specifier);
+  psx_apply_parsed_standalone_tag_in_context(
+      ps_ctx_active(), specifier);
 }
 
 void psx_apply_parsed_standalone_tag_in_context(
@@ -328,7 +334,7 @@ void psx_apply_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_declarator_shape_t *shape, int *bit_width) {
   psx_apply_parsed_declarator_in_context(
-      NULL, declarator, shape, bit_width);
+      ps_ctx_active(), declarator, shape, bit_width);
 }
 
 void psx_apply_parsed_declarator_in_context(
@@ -360,7 +366,7 @@ void psx_apply_runtime_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application) {
   psx_apply_runtime_parsed_declarator_in_context(
-      NULL, declarator, application);
+      ps_ctx_active(), declarator, application);
 }
 
 void psx_apply_runtime_parsed_declarator_in_context(
@@ -376,7 +382,8 @@ void psx_apply_runtime_parsed_declarator_ex(
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index) {
   psx_apply_runtime_parsed_declarator_ex_in_context(
-      NULL, declarator, application, skipped_function_op_index);
+      ps_ctx_active(), declarator, application,
+      skipped_function_op_index);
 }
 
 void psx_apply_runtime_parsed_declarator_ex_in_context(
@@ -468,14 +475,13 @@ void psx_apply_parsed_function_parameters(
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token) {
   psx_apply_parsed_function_parameters_in_context(
-      NULL, parameters, function_op, diagnostic_token);
+      ps_ctx_active(), parameters, function_op, diagnostic_token);
 }
 
 void psx_apply_parsed_function_parameters_in_context(
     psx_semantic_context_t *semantic_context,
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token) {
-  if (!semantic_context) semantic_context = ps_ctx_active();
   if (!parameters || !function_op ||
       function_op->kind != PSX_DECL_OP_FUNCTION) {
     ps_diag_ctx(diagnostic_token, "declarator-application",
@@ -499,7 +505,8 @@ void psx_apply_parsed_function_parameters_in_context(
       ps_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
-    ps_parse_runtime_declarator_expressions(&parameter->declarator);
+    ps_parse_runtime_declarator_expressions_in_context(
+        &parameter->declarator, semantic_context, NULL);
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator_in_context(
         semantic_context,

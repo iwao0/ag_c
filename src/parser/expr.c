@@ -30,6 +30,8 @@ static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
+  const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
   int expr_nest_depth;
   int paren_nest_depth;
@@ -40,21 +42,28 @@ typedef struct {
   token_t *after_rparen;
 } parsed_parenthesized_type_name_t;
 
-static expr_parse_ctx_t expr_parse_ctx_default(void) {
-  expr_parse_ctx_t ctx = {0};
+static expr_parse_ctx_t expr_parse_ctx_default(
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  expr_parse_ctx_t ctx = {
+      .semantic_context = semantic_context,
+      .local_declarations = local_declarations,
+  };
   return ctx;
 }
 
 static expr_parse_ctx_t expr_parse_ctx_unevaluated_child(const expr_parse_ctx_t *parent) {
-  expr_parse_ctx_t ctx = parent ? *parent : expr_parse_ctx_default();
+  expr_parse_ctx_t ctx = parent
+      ? *parent : (expr_parse_ctx_t){0};
   ctx.unevaluated_operand_depth++;
   return ctx;
 }
 
-static int is_type_name_start_token(token_t *t);
+static int is_type_name_start_token(
+    token_t *t, const expr_parse_ctx_t *ctx);
 static int capture_type_name_ref_at(
     token_t *start, int runtime_bounds, psx_type_name_ref_t *out,
-    token_t **out_end);
+    token_t **out_end, expr_parse_ctx_t *ctx);
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 static node_t *parse_compound_literal_from_type(
     psx_type_name_ref_t type_name, token_t *after_rparen,
@@ -99,7 +108,8 @@ static node_t *new_binary_with_source_op(node_kind_t kind, node_t *lhs, node_t *
   return node;
 }
 
-static int is_type_name_start_token(token_t *t) {
+static int is_type_name_start_token(
+    token_t *t, const expr_parse_ctx_t *ctx) {
   if (!t) return 0;
   psx_skip_gnu_attributes_at(&t);
   if (!t) return 0;
@@ -112,13 +122,13 @@ static int is_type_name_start_token(token_t *t) {
   if (t->kind == TK_CONST || t->kind == TK_VOLATILE || t->kind == TK_RESTRICT || t->kind == TK_ATOMIC) return 1;
   if (t->kind == TK_STRUCT || t->kind == TK_UNION || t->kind == TK_ENUM) return 1;
   if (psx_ctx_is_type_token(t->kind)) return 1;
-  if (psx_ctx_is_typedef_name_token(t)) return 1;
+  if (psx_ctx_is_typedef_name_token_in(
+          ctx ? ctx->semantic_context : NULL, t)) return 1;
   return 0;
 }
 
 static int expr_type_name_is_typedef(token_t *token, void *context) {
-  (void)context;
-  return psx_ctx_is_typedef_name_token(token);
+  return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static void diagnose_type_name_complex_requires_float(
@@ -130,9 +140,11 @@ static void diagnose_type_name_complex_requires_float(
           DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT));
 }
 
-static int parse_generic_assoc_type(psx_type_name_ref_t *out) {
+static int parse_generic_assoc_type(
+    psx_type_name_ref_t *out, expr_parse_ctx_t *ctx) {
   token_t *end = NULL;
-  if (!capture_type_name_ref_at(curtok(), 0, out, &end)) return 0;
+  if (!capture_type_name_ref_at(
+          curtok(), 0, out, &end, ctx)) return 0;
   set_curtok(end);
   return 1;
 }
@@ -161,7 +173,8 @@ static node_t *parse_compound_literal_from_type(
   ps_decl_get_current_funcname(&current_funcname, &current_funcname_len);
   (void)current_funcname_len;
   token_t *initializer_tok = curtok();
-  node_t *initializer = psx_parse_initializer_syntax_list();
+  node_t *initializer = psx_parse_initializer_syntax_list_in_context(
+      ctx->semantic_context, ctx->local_declarations);
   node_t *syntax = psx_node_new_compound_literal(
       type_name, initializer, initializer_tok,
       0, current_funcname == NULL);
@@ -169,14 +182,16 @@ static node_t *parse_compound_literal_from_type(
 }
 
 static int parse_parenthesized_type_name(
-    token_t *tok, parsed_parenthesized_type_name_t *out) {
+    token_t *tok, parsed_parenthesized_type_name_t *out,
+    expr_parse_ctx_t *ctx) {
   if (!out || !tok || tok->kind != TK_LPAREN ||
-      !is_type_name_start_token(tok->next))
+      !is_type_name_start_token(tok->next, ctx))
     return 0;
   tk_ensure_lookahead();
   token_t *end = NULL;
   psx_type_name_ref_t type_name = {0};
-  if (!capture_type_name_ref_at(tok->next, 0, &type_name, &end) ||
+  if (!capture_type_name_ref_at(
+          tok->next, 0, &type_name, &end, ctx) ||
       !end || end->kind != TK_RPAREN || !end->next)
     return 0;
   *out = (parsed_parenthesized_type_name_t){
@@ -186,9 +201,10 @@ static int parse_parenthesized_type_name(
   return 1;
 }
 
-static int parenthesized_type_name_is_compound_literal(token_t *tok) {
+static int parenthesized_type_name_is_compound_literal(
+    token_t *tok, expr_parse_ctx_t *ctx) {
   if (!tok || tok->kind != TK_LPAREN ||
-      !is_type_name_start_token(tok->next)) {
+      !is_type_name_start_token(tok->next, ctx)) {
     return 0;
   }
   psx_parsed_type_name_t syntax;
@@ -198,6 +214,8 @@ static int parenthesized_type_name_is_compound_literal(token_t *tok) {
               .is_typedef_name = expr_type_name_is_typedef,
               .diagnose_complex_requires_float =
                   diagnose_type_name_complex_requires_float,
+              .context = ctx->semantic_context,
+              .semantic_context = ctx->semantic_context,
           },
           &syntax)) {
     return 0;
@@ -211,8 +229,8 @@ static int parenthesized_type_name_is_compound_literal(token_t *tok) {
 
 static int capture_type_name_ref_at(
     token_t *start, int runtime_bounds, psx_type_name_ref_t *out,
-    token_t **out_end) {
-  if (!start || !out || !is_type_name_start_token(start)) return 0;
+    token_t **out_end, expr_parse_ctx_t *ctx) {
+  if (!start || !out || !is_type_name_start_token(start, ctx)) return 0;
   psx_parsed_type_name_t *syntax =
       arena_alloc(sizeof(psx_parsed_type_name_t));
   int parsed = runtime_bounds
@@ -222,6 +240,8 @@ static int capture_type_name_ref_at(
                              .is_typedef_name = expr_type_name_is_typedef,
                              .diagnose_complex_requires_float =
                                  diagnose_type_name_complex_requires_float,
+                             .context = ctx->semantic_context,
+                             .semantic_context = ctx->semantic_context,
                          },
                          syntax)
                    : psx_parse_type_name_syntax_at(
@@ -230,13 +250,17 @@ static int capture_type_name_ref_at(
                              .is_typedef_name = expr_type_name_is_typedef,
                              .diagnose_complex_requires_float =
                                  diagnose_type_name_complex_requires_float,
+                             .context = ctx->semantic_context,
+                             .semantic_context = ctx->semantic_context,
                          },
                          syntax);
   if (!parsed) {
     return 0;
   }
   if (runtime_bounds)
-    ps_parse_runtime_declarator_expressions(&syntax->declarator);
+    ps_parse_runtime_declarator_expressions_in_context(
+        &syntax->declarator, ctx->semantic_context,
+        ctx->local_declarations);
   psx_local_lookup_point_t point =
       ps_local_registry_capture_lookup_point();
   *out = (psx_type_name_ref_t){
@@ -275,13 +299,27 @@ void ps_expr_reset_translation_unit_state(void) {
 
 // expr = assign ("," assign)*
 node_t *psx_expr_expr(void) {
-  expr_parse_ctx_t ctx = expr_parse_ctx_default();
+  return psx_expr_expr_in_context(ps_ctx_active(), NULL);
+}
+
+node_t *psx_expr_expr_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  expr_parse_ctx_t ctx = expr_parse_ctx_default(
+      semantic_context, local_declarations);
   return expr_internal_ctx(&ctx);
 }
 
 // assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 node_t *psx_expr_assign(void) {
-  expr_parse_ctx_t ctx = expr_parse_ctx_default();
+  return psx_expr_assign_in_context(ps_ctx_active(), NULL);
+}
+
+node_t *psx_expr_assign_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations) {
+  expr_parse_ctx_t ctx = expr_parse_ctx_default(
+      semantic_context, local_declarations);
   return assign_ctx(&ctx);
 }
 
@@ -509,11 +547,11 @@ static node_t *mul_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
   token_t *cast_tok = curtok();
-  if (parenthesized_type_name_is_compound_literal(curtok())) {
+  if (parenthesized_type_name_is_compound_literal(curtok(), ctx)) {
     return unary_ctx(ctx);
   }
   parsed_parenthesized_type_name_t parsed_type;
-  if (parse_parenthesized_type_name(curtok(), &parsed_type)) {
+  if (parse_parenthesized_type_name(curtok(), &parsed_type, ctx)) {
     set_curtok(parsed_type.after_rparen);
     node_t *operand = cast_ctx(ctx);
     node_t *source_cast =
@@ -534,7 +572,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
     psx_type_name_ref_t captured = {0};
     token_t *type_end = NULL;
     if (capture_type_name_ref_at(
-            curtok()->next, 1, &captured, &type_end) &&
+            curtok()->next, 1, &captured, &type_end, ctx) &&
         type_end && type_end->kind == TK_RPAREN && type_end->next &&
         type_end->next->kind != TK_LBRACE) {
       query->is_type_name = 1;
@@ -547,7 +585,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
     type_end = NULL;
     if (outer->next && outer->next->kind == TK_LPAREN &&
         capture_type_name_ref_at(
-            outer->next->next, 1, &captured, &type_end) &&
+            outer->next->next, 1, &captured, &type_end, ctx) &&
         type_end && type_end->kind == TK_RPAREN && type_end->next &&
         type_end->next->kind == TK_RPAREN) {
       query->is_type_name = 1;
@@ -568,7 +606,8 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
   return (node_t *)query;
 }
 
-static node_t *parse_alignof_type_name(token_t *op_tok) {
+static node_t *parse_alignof_type_name(
+    token_t *op_tok, expr_parse_ctx_t *ctx) {
   node_alignof_query_t *query = arena_alloc(sizeof(node_alignof_query_t));
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
@@ -576,7 +615,8 @@ static node_t *parse_alignof_type_name(token_t *op_tok) {
 
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
-  if (capture_type_name_ref_at(curtok(), 0, &captured, &type_end) &&
+  if (capture_type_name_ref_at(
+          curtok(), 0, &captured, &type_end, ctx) &&
       type_end && type_end->kind == TK_RPAREN) {
     query->type_name = captured;
     set_curtok(type_end->next);
@@ -586,7 +626,8 @@ static node_t *parse_alignof_type_name(token_t *op_tok) {
   captured = (psx_type_name_ref_t){0};
   type_end = NULL;
   if (outer && outer->kind == TK_LPAREN &&
-      capture_type_name_ref_at(outer->next, 0, &captured, &type_end) &&
+      capture_type_name_ref_at(
+          outer->next, 0, &captured, &type_end, ctx) &&
       type_end && type_end->kind == TK_RPAREN && type_end->next &&
       type_end->next->kind == TK_RPAREN) {
     query->type_name = captured;
@@ -678,7 +719,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     token_t *op_tok = curtok();
     set_curtok(curtok()->next);
     tk_expect('(');
-    return parse_alignof_type_name(op_tok);
+    return parse_alignof_type_name(op_tok, ctx);
   }
   if (k == TK_INC || k == TK_DEC) {
     token_t *op_tok = curtok();
@@ -839,7 +880,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
 static node_t *try_parse_compound_literal(expr_parse_ctx_t *ctx) {
   parsed_parenthesized_type_name_t parsed_type;
   if (curtok()->kind == TK_LPAREN &&
-      parse_parenthesized_type_name(curtok(), &parsed_type) &&
+      parse_parenthesized_type_name(curtok(), &parsed_type, ctx) &&
       parsed_type.after_rparen &&
       parsed_type.after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(
@@ -874,7 +915,8 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_DEFAULT) {
       association->is_default = 1;
       set_curtok(curtok()->next);
-    } else if (!parse_generic_assoc_type(&association->type_name)) {
+    } else if (!parse_generic_assoc_type(
+                   &association->type_name, ctx)) {
       ps_diag_ctx(curtok(), "generic", "%s",
                   diag_message_for(
                       DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
@@ -1086,7 +1128,8 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
 
   if (curtok()->kind == TK_LPAREN && curtok()->next &&
       curtok()->next->kind == TK_LBRACE) {
-    return psx_parse_statement_expression();
+    return psx_parse_statement_expression_in_context(
+        ctx->semantic_context, ctx->local_declarations);
   }
 
   if (curtok()->kind == TK_LPAREN) {

@@ -11,8 +11,7 @@
 static token_t *current_token(void) { return tk_get_current_token(); }
 
 static int is_parameter_typedef_name(token_t *token, void *context) {
-  (void)context;
-  return psx_ctx_is_typedef_name_token(token);
+  return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static psx_parsed_function_parameter_t *append_function_parameter(
@@ -59,6 +58,16 @@ static void synchronize_function_parameters(void) {
 int psx_parse_function_parameters_syntax_ex(
     psx_parsed_function_parameters_t *parameters,
     psx_function_parameter_type_mode_t type_mode) {
+  return psx_parse_function_parameters_syntax_with_typedef_lookup(
+      parameters, type_mode, is_parameter_typedef_name,
+      ps_ctx_active());
+}
+
+int psx_parse_function_parameters_syntax_with_typedef_lookup(
+    psx_parsed_function_parameters_t *parameters,
+    psx_function_parameter_type_mode_t type_mode,
+    psx_decl_typedef_name_predicate_t is_typedef_name,
+    void *typedef_name_context) {
   tk_expect('(');
   if (tk_consume(')')) return 1;
   for (;;) {
@@ -76,7 +85,8 @@ int psx_parse_function_parameters_syntax_ex(
         : psx_try_parse_decl_specifier_syntax_ex(
               &parameter->specifier,
               &(psx_decl_specifier_syntax_options_t){
-                  .is_typedef_name = is_parameter_typedef_name,
+                  .is_typedef_name = is_typedef_name,
+                  .context = typedef_name_context,
                   .allow_implicit_int =
                       type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
               });
@@ -89,7 +99,7 @@ int psx_parse_function_parameters_syntax_ex(
     }
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree(
-            is_parameter_typedef_name, NULL);
+            is_typedef_name, typedef_name_context);
     if (tk_consume(',')) continue;
     tk_expect(')');
     return 1;

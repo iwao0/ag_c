@@ -9,11 +9,12 @@
 #include "enum_constant_resolution.h"
 #include "static_assert_resolution.h"
 #include "typedef_declaration_resolution.h"
+#include "../parser/semantic_ctx.h"
 
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
   psx_apply_parsed_typedef_declaration_in_context(
-      NULL, name, name_len, type, diag_tok);
+      ps_ctx_active(), name, name_len, type, diag_tok);
 }
 
 void psx_apply_parsed_typedef_declaration_in_context(
@@ -57,7 +58,7 @@ void psx_apply_parsed_typedef_declaration_in_context(
 void psx_apply_parsed_enum_constant(
     char *name, int name_len, long long value, token_t *diag_tok) {
   psx_apply_parsed_enum_constant_in_context(
-      NULL, name, name_len, value, diag_tok);
+      ps_ctx_active(), name, name_len, value, diag_tok);
 }
 
 void psx_apply_parsed_enum_constant_in_context(
@@ -136,7 +137,7 @@ void psx_apply_parsed_tag_declaration(
     psx_tag_declaration_mode_t mode, int member_count,
     int size, int alignment, token_t *diag_tok) {
   psx_apply_parsed_tag_declaration_in_context(
-      NULL, kind, name, name_len, mode, member_count,
+      ps_ctx_active(), kind, name, name_len, mode, member_count,
       size, alignment, diag_tok);
 }
 
@@ -215,5 +216,6 @@ void psx_apply_static_assert_in_context(
 }
 
 void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
-  psx_apply_static_assert_in_context(NULL, condition, diag_tok);
+  psx_apply_static_assert_in_context(
+      ps_ctx_active(), condition, diag_tok);
 }

@@ -14993,6 +14993,42 @@ static void test_semantic_context_isolation() {
       first, enum_name, 12, &value));
   ASSERT_EQ(11, value);
 
+  char streamed_label_name[] = "streamed_label";
+  ps_ctx_reset_function_scope_in(second);
+  psx_typedef_declaration_resolution_t streamed_typedef_resolution;
+  psx_resolve_typedef_declaration(
+      &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = second,
+          .name = (char *)"StreamType",
+          .name_len = 10,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+      },
+      &streamed_typedef_resolution);
+  ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK,
+            streamed_typedef_resolution.status);
+  psx_ctx_register_goto_ref_in(
+      second, streamed_label_name, 14, NULL);
+  psx_parser_stream_t parser_stream = {0};
+  ps_parser_stream_begin_in_context(
+      &parser_stream, second, NULL,
+      tk_tokenize((char *)
+          "{ StreamType value = 0; "
+          "{ streamed_label: return value; } }"),
+      NULL);
+  node_function_definition_t parsed_function = {0};
+  parsed_function.base.kind = ND_FUNCDEF;
+  psx_local_declaration_callbacks_t local_declarations;
+  psx_frontend_init_local_declaration_callbacks(
+      &local_declarations, second);
+  ASSERT_TRUE(ps_parse_function_definition_body(
+                  &parser_stream, &parsed_function,
+                  &local_declarations) != NULL);
+  ASSERT_TRUE(find_func_lvar(&parsed_function, "value") != NULL);
+  psx_ctx_validate_goto_refs_in(second);
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
+  ps_parser_stream_end(&parser_stream);
+
   ps_ctx_activate(previous);
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);

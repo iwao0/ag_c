@@ -61,14 +61,13 @@ void psx_resolve_enum_constant(
 long long psx_resolve_prepared_enum_const_expr(
     const psx_parsed_enum_expr_t *expression) {
   return psx_resolve_prepared_enum_const_expr_in_context(
-      NULL, expression);
+      ps_ctx_active(), expression);
 }
 
 long long psx_resolve_prepared_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_enum_expr_t *expression) {
   if (!expression) return 0;
-  if (!semantic_context) semantic_context = ps_ctx_active();
   if (expression->kind == PSX_ENUM_EXPR_VALUE) return expression->value;
   if (expression->kind == PSX_ENUM_EXPR_IDENTIFIER) {
     long long value = 0;

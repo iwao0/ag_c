@@ -4,6 +4,8 @@
 #include "declaration_syntax.h"
 #include "initializer_syntax.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef struct {
   psx_parsed_decl_specifier_t specifier;
   psx_parsed_declarator_t *declarators;
@@ -38,9 +40,16 @@ int psx_parse_toplevel_declaration_syntax(
     const psx_toplevel_declaration_callbacks_t *callbacks);
 int psx_parse_toplevel_declaration_head_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
+int psx_parse_toplevel_declaration_head_syntax_in_context(
+    psx_parsed_toplevel_declaration_t *declaration,
+    psx_semantic_context_t *semantic_context);
 int psx_finish_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks);
+int psx_finish_toplevel_declaration_syntax_in_context(
+    psx_parsed_toplevel_declaration_t *declaration,
+    const psx_toplevel_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context);
 void ps_dispose_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
 

@@ -2,6 +2,7 @@
 
 #include "../lowering/semantic_lowering_pass.h"
 #include "../parser/decl.h"
+#include "../parser/semantic_ctx.h"
 #include "../semantic/control_flow_validation.h"
 #include "../semantic/identifier_binding.h"
 #include "../semantic/lvar_usage_analysis.h"
@@ -36,7 +37,7 @@ void psx_frontend_analyze_function_in_context(
 void psx_frontend_analyze_function(
     node_t *function, const token_t *fallback_diag_tok) {
   psx_frontend_analyze_function_in_context(
-      NULL, function, fallback_diag_tok);
+      ps_ctx_active(), function, fallback_diag_tok);
 }
 
 node_t *psx_frontend_analyze_expression_in_context(
@@ -57,7 +58,7 @@ node_t *psx_frontend_analyze_expression_in_context(
 node_t *psx_frontend_analyze_expression(
     node_t *expression, const token_t *fallback_diag_tok) {
   return psx_frontend_analyze_expression_in_context(
-      NULL, expression, fallback_diag_tok);
+      ps_ctx_active(), expression, fallback_diag_tok);
 }
 
 node_t *psx_frontend_analyze_initializer_syntax_in_context(
@@ -78,7 +79,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_context(
 node_t *psx_frontend_analyze_initializer_syntax(
     node_t *syntax, const token_t *fallback_diag_tok) {
   return psx_frontend_analyze_initializer_syntax_in_context(
-      NULL, syntax, fallback_diag_tok);
+      ps_ctx_active(), syntax, fallback_diag_tok);
 }
 
 void psx_frontend_analyze_program_in_context(
@@ -99,5 +100,6 @@ void psx_frontend_analyze_program_in_context(
 }
 
 void psx_frontend_analyze_program(node_t **program) {
-  psx_frontend_analyze_program_in_context(NULL, program);
+  psx_frontend_analyze_program_in_context(
+      ps_ctx_active(), program);
 }

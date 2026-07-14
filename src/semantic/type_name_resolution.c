@@ -70,7 +70,8 @@ static const psx_type_t *bind_base_type(
 }
 
 int psx_bind_type_name_ref(psx_type_name_ref_t *type_name) {
-  return psx_bind_type_name_ref_in_context(NULL, type_name);
+  return psx_bind_type_name_ref_in_context(
+      ps_ctx_active(), type_name);
 }
 
 int psx_bind_type_name_ref_in_context(
@@ -78,7 +79,6 @@ int psx_bind_type_name_ref_in_context(
     psx_type_name_ref_t *type_name) {
   if (!type_name || !type_name->syntax) return 0;
   if (type_name->bound_base_type) return 1;
-  if (!semantic_context) semantic_context = ps_ctx_active();
   type_name->bound_base_type = bind_base_type(
       semantic_context, type_name);
   return type_name->bound_base_type != NULL;
@@ -86,7 +86,8 @@ int psx_bind_type_name_ref_in_context(
 
 const psx_type_t *psx_resolve_bound_type_name_ref(
     psx_type_name_ref_t *type_name) {
-  return psx_resolve_bound_type_name_ref_in_context(NULL, type_name);
+  return psx_resolve_bound_type_name_ref_in_context(
+      ps_ctx_active(), type_name);
 }
 
 const psx_type_t *psx_resolve_bound_type_name_ref_in_context(
@@ -94,7 +95,6 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_context(
     psx_type_name_ref_t *type_name) {
   if (!type_name) return NULL;
   if (type_name->resolved_type) return type_name->resolved_type;
-  if (!semantic_context) semantic_context = ps_ctx_active();
   if (!psx_bind_type_name_ref_in_context(
           semantic_context, type_name)) return NULL;
   psx_declarator_shape_t shape;

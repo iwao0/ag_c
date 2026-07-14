@@ -16,12 +16,12 @@
 #include <stdlib.h>
 
 void psx_frontend_reset_translation_unit_state(void) {
-  psx_frontend_reset_translation_unit_state_in_context(NULL);
+  psx_frontend_reset_translation_unit_state_in_context(
+      ps_ctx_active());
 }
 
 void psx_frontend_reset_translation_unit_state_in_context(
     psx_semantic_context_t *semantic_context) {
-  if (!semantic_context) semantic_context = ps_ctx_active();
   ps_global_registry_reset_translation_unit();
   ps_anon_tag_reset_translation_unit_state();
   ps_expr_reset_translation_unit_state();
@@ -47,8 +47,8 @@ void psx_frontend_stream_begin(
       &stream->toplevel_declarations, semantic_context);
   psx_frontend_init_local_declaration_callbacks(
       &stream->local_declarations, semantic_context);
-  ps_parser_stream_begin(
-      &stream->parser, tk_ctx, start,
+  ps_parser_stream_begin_in_context(
+      &stream->parser, semantic_context, tk_ctx, start,
       &stream->toplevel_declarations);
 }
 

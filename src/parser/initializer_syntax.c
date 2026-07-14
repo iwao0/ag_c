@@ -23,6 +23,14 @@ void psx_prepare_optional_initializer_syntax(
 
 void psx_parse_initializer_syntax_value(
     psx_parsed_initializer_t *out, token_t *assign_tok) {
+  psx_parse_initializer_syntax_value_in_context(
+      out, assign_tok, ps_ctx_active(), NULL);
+}
+
+void psx_parse_initializer_syntax_value_in_context(
+    psx_parsed_initializer_t *out, token_t *assign_tok,
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   if (!out) return;
   *out = (psx_parsed_initializer_t){
       .has_initializer = 1,
@@ -32,11 +40,20 @@ void psx_parse_initializer_syntax_value(
       .value_tok = curtok(),
   };
   out->value = out->kind == PSX_DECL_INIT_LIST
-                   ? psx_parse_initializer_syntax_list()
-                   : psx_expr_assign();
+                   ? psx_parse_initializer_syntax_list_in_context(
+                         semantic_context, local_declarations)
+                   : psx_expr_assign_in_context(
+                         semantic_context, local_declarations);
 }
 
 node_t *psx_parse_initializer_syntax_list(void) {
+  return psx_parse_initializer_syntax_list_in_context(
+      ps_ctx_active(), NULL);
+}
+
+node_t *psx_parse_initializer_syntax_list_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_local_declaration_callbacks_t *local_declarations) {
   token_t *brace_tok = curtok();
   tk_expect('{');
   psx_initializer_entry_t *entries = NULL;
@@ -91,14 +108,16 @@ node_t *psx_parse_initializer_syntax_list(void) {
           };
         } else {
           tk_expect('[');
-          node_t *index_expr = psx_expr_assign();
+          node_t *index_expr = psx_expr_assign_in_context(
+              semantic_context, local_declarations);
           node_t *range_end_expr = NULL;
           int is_range = 0;
           if (curtok()->kind == TK_ELLIPSIS) {
-            ps_ctx_record_unsupported_gnu_extension_warning(
-                curtok(), "array range designator");
+            ps_ctx_record_unsupported_gnu_extension_warning_in(
+                semantic_context, curtok(), "array range designator");
             tk_set_current_token(curtok()->next);
-            range_end_expr = psx_expr_assign();
+            range_end_expr = psx_expr_assign_in_context(
+                semantic_context, local_declarations);
             is_range = 1;
           }
           tk_expect(']');
@@ -115,8 +134,10 @@ node_t *psx_parse_initializer_syntax_list(void) {
       if (designator_count > 0) tk_expect('=');
 
       node_t *value = curtok()->kind == TK_LBRACE
-                          ? psx_parse_initializer_syntax_list()
-                          : psx_expr_assign();
+                          ? psx_parse_initializer_syntax_list_in_context(
+                                semantic_context, local_declarations)
+                          : psx_expr_assign_in_context(
+                                semantic_context, local_declarations);
       entries[count++] = (psx_initializer_entry_t){
           .value = value,
           .member_name = member ? member->str : NULL,

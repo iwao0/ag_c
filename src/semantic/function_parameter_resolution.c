@@ -9,14 +9,13 @@ void psx_resolve_declarator_syntax(
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width) {
   psx_resolve_declarator_syntax_in_context(
-      NULL, parsed, shape, bit_width);
+      ps_ctx_active(), parsed, shape, bit_width);
 }
 
 void psx_resolve_declarator_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width) {
-  if (!semantic_context) semantic_context = ps_ctx_active();
   if (!parsed || !shape ||
       !ps_declarator_shape_copy(shape, &parsed->declarator_shape)) {
     ps_diag_ctx(parsed ? parsed->diagnostic_token : NULL,

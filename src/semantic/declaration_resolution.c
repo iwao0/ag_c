@@ -99,7 +99,6 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
-  if (!semantic_context) semantic_context = ps_ctx_active();
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
   psx_type_t *type = NULL;
@@ -142,13 +141,13 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
 psx_type_t *psx_build_decl_specifier_type(
     const psx_parsed_decl_specifier_t *specifier) {
   return psx_build_decl_specifier_type_in_context(
-      NULL, specifier);
+      ps_ctx_active(), specifier);
 }
 
 const psx_type_t *psx_resolve_decl_specifier_syntax(
     const psx_parsed_decl_specifier_t *specifier) {
   return psx_resolve_decl_specifier_syntax_in_context(
-      NULL, specifier);
+      ps_ctx_active(), specifier);
 }
 
 const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(

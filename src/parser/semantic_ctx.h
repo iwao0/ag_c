@@ -217,7 +217,12 @@ int ps_ctx_has_typedef_in_current_scope(char *name, int len);
 int ps_ctx_has_typedef_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
+bool psx_ctx_find_typedef_sizeof_in(
+    psx_semantic_context_t *context,
+    char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
+bool psx_ctx_is_typedef_name_token_in(
+    psx_semantic_context_t *context, token_t *tok);
 struct psx_function_registration_checkpoint_t {
   const psx_type_t *function_type;
   int existed;

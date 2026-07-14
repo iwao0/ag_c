@@ -4,6 +4,7 @@
 #include "../semantic/declaration_registration.h"
 #include "../declaration_pipeline.h"
 #include "../parser/diag.h"
+#include "../parser/semantic_ctx.h"
 
 #include <stdlib.h>
 
@@ -201,5 +202,6 @@ void psx_apply_toplevel_declaration_in_context(
 
 void psx_apply_toplevel_declaration(
     psx_parsed_toplevel_declaration_t *declaration) {
-  psx_apply_toplevel_declaration_in_context(NULL, declaration);
+  psx_apply_toplevel_declaration_in_context(
+      ps_ctx_active(), declaration);
 }

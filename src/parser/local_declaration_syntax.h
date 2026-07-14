@@ -5,7 +5,7 @@
 #include "declaration_syntax.h"
 #include "initializer_syntax.h"
 
-typedef struct {
+typedef struct psx_local_declaration_callbacks_t {
   void *context;
   void (*apply_static_assert)(
       void *context, node_t *condition, token_t *diagnostic_token);

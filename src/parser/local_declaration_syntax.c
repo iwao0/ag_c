@@ -13,8 +13,7 @@
 static token_t *curtok(void) { return tk_get_current_token(); }
 
 static int is_local_typedef_name(token_t *token, void *context) {
-  (void)context;
-  return psx_ctx_is_typedef_name_token(token);
+  return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static void require_callbacks(
@@ -32,7 +31,8 @@ node_t *psx_parse_local_declaration_syntax(
   require_callbacks(callbacks);
   if (curtok()->kind == TK_STATIC_ASSERT) {
     psx_parsed_static_assert_declaration_t assertion;
-    psx_parse_static_assert_syntax(&assertion);
+    psx_parse_static_assert_syntax_in_context(
+        &assertion, callbacks->context, callbacks);
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
         assertion.diagnostic_token);
@@ -46,6 +46,8 @@ node_t *psx_parse_local_declaration_syntax(
           &specifier,
           &(psx_decl_specifier_syntax_options_t){
               .is_typedef_name = is_local_typedef_name,
+              .context = callbacks->context,
+              .semantic_context = callbacks->context,
           })) {
     diag_report_tokf(
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(), "%s",
@@ -53,7 +55,8 @@ node_t *psx_parse_local_declaration_syntax(
     ps_parser_mark_recoverable_syntax_error();
     return NULL;
   }
-  ps_prepare_decl_specifier_alignments(&specifier);
+  ps_prepare_decl_specifier_alignments_in_context(
+      &specifier, callbacks->context);
   int standalone_tag =
       specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
       curtok()->kind == TK_SEMI;
@@ -77,8 +80,10 @@ node_t *psx_parse_local_declaration_syntax(
                   PS_MAX_DECLARATOR_COUNT);
     }
     psx_parsed_declarator_t declarator;
-    psx_parse_declarator_syntax_tree_into(&declarator);
-    ps_parse_runtime_declarator_expressions(&declarator);
+    psx_parse_declarator_syntax_tree_into_with_typedef_lookup(
+        &declarator, is_local_typedef_name, callbacks->context);
+    ps_parse_runtime_declarator_expressions_in_context(
+        &declarator, callbacks->context, callbacks);
     if (!declarator.identifier) {
       ps_diag_ctx(curtok(), "decl", "%s",
                   diag_message_for(
@@ -109,7 +114,8 @@ node_t *psx_parse_local_declaration_syntax(
     if (initializer.has_initializer) {
       token_t *assign_tok = initializer.assign_tok;
       tk_expect('=');
-      psx_parse_initializer_syntax_value(&initializer, assign_tok);
+      psx_parse_initializer_syntax_value_in_context(
+          &initializer, assign_tok, callbacks->context, callbacks);
     }
     callbacks->finish_declarator(
         declaration_context, &initializer);
