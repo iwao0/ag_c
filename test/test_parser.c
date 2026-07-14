@@ -29,6 +29,7 @@
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
+#include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/constant_expression.h"
@@ -15555,6 +15556,18 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    ag_compilation_session_target(&host)));
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
+  ASSERT_TRUE(host.preprocessor_context != NULL);
+  ASSERT_TRUE(wasm.preprocessor_context != NULL);
+  ASSERT_TRUE(host.preprocessor_context != wasm.preprocessor_context);
+  ag_preprocessor_context_t *previous_pp = pp_context_active();
+  ASSERT_TRUE(ag_compilation_session_activate(&host));
+  ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
+  ASSERT_TRUE(ag_compilation_session_activate(&wasm));
+  ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
+  ag_compilation_session_deactivate(&wasm);
+  ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
+  ag_compilation_session_deactivate(&host);
+  ASSERT_TRUE(pp_context_active() == previous_pp);
 
   tokenizer_context_t *host_tokenizer =
       ag_compilation_session_tokenizer(&host);

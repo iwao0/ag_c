@@ -161,6 +161,14 @@ int main(void) {
   int failures = 0;
   const char *basic[] = {"(module", "(memory (export \"memory\") 1)", "(func $main", "(export \"main\""};
   failures += run_case("ret42", "int main(){return 42;}\n", basic, 4, 42);
+  failures += run_case(
+      "target_predefined_macros",
+      "#if defined(__wasm32__) && !defined(__LP64__)\n"
+      "int main(){return 42;}\n"
+      "#else\n"
+      "int main(){return 0;}\n"
+      "#endif\n",
+      basic, 4, 42);
   const char *arith[] = {"i32.const 29", "(return"};
   failures += run_case("arith", "int main(){return (3+4)*5-6;}\n", arith, 2, 29);
   const char *local[] = {"__stack_pointer", "i32.store", "i32.load"};

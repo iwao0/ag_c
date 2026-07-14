@@ -16,6 +16,67 @@
 #include <sys/stat.h>
 
 typedef struct macro macro_t;
+typedef struct pp_owned_source pp_owned_source_t;
+typedef struct include_frame include_frame_t;
+typedef struct pp_virtual_header pp_virtual_header_t;
+typedef struct pragma_once_entry pragma_once_entry_t;
+typedef struct pp_cond_incl cond_incl_t;
+
+#define PP_MAX_INCLUDE_DEPTH 64
+
+struct ag_preprocessor_context_t {
+  macro_t *macros;
+  pp_owned_source_t *retired_include_sources;
+  include_frame_t *include_stack;
+  int include_depth;
+  size_t macro_expand_steps;
+  int include_last_errno;
+  pp_virtual_header_t *virtual_headers;
+  int virtual_header_count;
+  int virtual_headers_enabled;
+  int virtual_include_depth_limit;
+  size_t if_expr_eval_steps;
+  bool if_expr_eval;
+  char date_buf[16];
+  char time_buf[10];
+  pragma_once_entry_t *pragma_once_list;
+  cond_incl_t *cond_incl;
+  tokenizer_context_t *tokenizer;
+  const ag_target_info_t *target;
+  pp_stream_t *active_stream;
+};
+
+static ag_preprocessor_context_t default_preprocessor_context = {
+    .virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH,
+    .if_expr_eval = true,
+};
+static ag_preprocessor_context_t *active_preprocessor_context =
+    &default_preprocessor_context;
+
+#define macros (active_preprocessor_context->macros)
+#define retired_include_sources \
+  (active_preprocessor_context->retired_include_sources)
+#define include_stack (active_preprocessor_context->include_stack)
+#define include_depth (active_preprocessor_context->include_depth)
+#define macro_expand_steps (active_preprocessor_context->macro_expand_steps)
+#define include_last_errno (active_preprocessor_context->include_last_errno)
+#define g_virtual_headers (active_preprocessor_context->virtual_headers)
+#define g_virtual_header_count \
+  (active_preprocessor_context->virtual_header_count)
+#define g_virtual_headers_enabled \
+  (active_preprocessor_context->virtual_headers_enabled)
+#define g_virtual_include_depth_limit \
+  (active_preprocessor_context->virtual_include_depth_limit)
+#define if_expr_eval_steps (active_preprocessor_context->if_expr_eval_steps)
+#define g_if_expr_eval (active_preprocessor_context->if_expr_eval)
+#define pp_date_buf (active_preprocessor_context->date_buf)
+#define pp_time_buf (active_preprocessor_context->time_buf)
+#define pragma_once_list (active_preprocessor_context->pragma_once_list)
+#define cond_incl (active_preprocessor_context->cond_incl)
+#define g_preprocess_tk_ctx (active_preprocessor_context->tokenizer)
+#define g_preprocess_target (active_preprocessor_context->target)
+#define g_active_pps (active_preprocessor_context->active_stream)
+
 #define MACRO_INLINE_PARAMS 8
 /* アライメント降順 (ポインタ/配列 → int → bool) に並べてパディングを除き sizeof=104B
  * (並べ替え前は 112B)。 */
@@ -30,15 +91,10 @@ struct macro {
   bool is_variadic;  // 末尾が `...` (合成パラメータ "__VA_ARGS__") の可変長マクロ
 };
 
-static macro_t *macros;
-
-typedef struct pp_owned_source pp_owned_source_t;
 struct pp_owned_source {
   pp_owned_source_t *next;
   char *buf;
 };
-
-static pp_owned_source_t *retired_include_sources;
 
 static void retain_include_source(char *buf) {
   if (!buf) return;
@@ -82,7 +138,6 @@ static token_ident_t *as_ident(token_t *tok) { return (token_ident_t *)tok; }
 static token_string_t *as_string(token_t *tok) { return (token_string_t *)tok; }
 static token_num_t *as_num(token_t *tok) { return (token_num_t *)tok; }
 
-#define PP_MAX_INCLUDE_DEPTH 64
 #define PP_MAX_MACRO_EXPANSIONS 262144
 #define PP_MAX_LINE_FILENAME_LEN 1024
 #define PP_MAX_INCLUDE_FILE_BYTES (16 * 1024 * 1024)
@@ -93,41 +148,26 @@ static const char *k_include_search_roots[] = {
     "include/",
 };
 
-typedef struct include_frame include_frame_t;
 struct include_frame {
   include_frame_t *next;
   const char *path;
 };
 
-static include_frame_t *include_stack = NULL;
-static int include_depth = 0;
-static size_t macro_expand_steps = 0;
-static int include_last_errno = 0;
-
-typedef struct {
+struct pp_virtual_header {
   const char *path;
   const char *source;
   size_t source_len;
-} pp_virtual_header_t;
-
-static pp_virtual_header_t *g_virtual_headers;
-static int g_virtual_header_count;
-static int g_virtual_headers_enabled;
-static int g_virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+};
 
 static char *normalize_include_path_or_die(const char *path);
 static char *dirname_dup_or_null(const char *path);
 static char *my_strndup(const char *s, size_t n);
-static size_t if_expr_eval_steps = 0;
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
-static bool g_if_expr_eval = true;
 static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
 static const char *k_pp_month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
-static char pp_date_buf[16];
-static char pp_time_buf[10];
 
 static void if_expr_step_or_die(void) {
   if_expr_eval_steps++;
@@ -730,13 +770,10 @@ static macro_t *find_macro(char *name) {
 }
 
 // === pragma once ===
-typedef struct pragma_once_entry pragma_once_entry_t;
 struct pragma_once_entry {
   pragma_once_entry_t *next;
   char *path;
 };
-static pragma_once_entry_t *pragma_once_list = NULL;
-
 static void reset_pragma_once_list(void) {
   while (pragma_once_list) {
     pragma_once_entry_t *entry = pragma_once_list;
@@ -818,12 +855,14 @@ static void add_string_macro(const char *name, const char *s) {
   add_macro(my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
-static void pp_init_predefined_macros(void) {
+static void pp_init_predefined_macros(const ag_target_info_t *target) {
+  int pointer_size = ag_target_info_pointer_size(target);
   add_int_macro("__STDC__", 1);
   add_int_macro("__STDC_VERSION__", 201112LL);
-  /* Apple Silicon ARM64 は LP64 (int=4, long/pointer=8)。 */
-  add_int_macro("__LP64__", 1);
-  if (ag_target_pointer_size() == 4) {
+  if (pointer_size == 8) {
+    add_int_macro("__LP64__", 1);
+  }
+  if (pointer_size == 4) {
     add_int_macro("__wasm32__", 1);
   }
 
@@ -961,14 +1000,11 @@ typedef enum {
   IN_ELSE,
 } cond_incl_ctx_t;
 
-typedef struct cond_incl cond_incl_t;
-struct cond_incl {
+struct pp_cond_incl {
   cond_incl_t *next;
   cond_incl_ctx_t ctx;
   bool included;
 };
-
-static cond_incl_t *cond_incl;
 
 static bool is_dir(token_t *tok, const char *name) {
   if (!tok) return false;
@@ -1270,8 +1306,6 @@ static void skip_const_expr(token_t **rest, token_t *tok) {
   g_if_expr_eval = saved;
 }
 
-static tokenizer_context_t *g_preprocess_tk_ctx;
-
 /* 関数マクロの実引数を、代入前に独立して完全マクロ展開する (C11 6.10.3.1)。
  * 戻り値は TK_EOF 終端の展開済みリスト。include_depth を一時的に上げて
  * macro_expand_steps のリセットや定義済みマクロ再初期化を回避する
@@ -1291,7 +1325,8 @@ static token_t *pp_expand_arg(token_t *arg) {
   }
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, list);
+  token_t *expanded = preprocess_for_target_ctx(
+      g_preprocess_tk_ctx, g_preprocess_target, list);
   include_depth = saved_depth;
   return expanded;
 }
@@ -1361,7 +1396,8 @@ static bool evaluate_constexpr(token_t **rest_tok, token_t *tok) {
    cur2->next = tk_allocator_calloc(1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
 
-   token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, head2.next);
+   token_t *expanded = preprocess_for_target_ctx(
+       g_preprocess_tk_ctx, g_preprocess_target, head2.next);
 
    if (expanded->kind == TK_EOF) return false;
    if_expr_eval_steps = 0;
@@ -1810,7 +1846,8 @@ static token_t *pp_expand_directive_line(token_t *args) {
   cur->next->kind = TK_EOF;
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, head.next);
+  token_t *expanded = preprocess_for_target_ctx(
+      g_preprocess_tk_ctx, g_preprocess_target, head.next);
   include_depth = saved_depth;
   return expanded;
 }
@@ -2119,12 +2156,16 @@ static token_t *pp_expand_funclike(macro_t *m, token_t *macro_tok, token_t **arg
 }
 
 // プリプロセッサのメイン処理（Tokenizerコンテキスト明示版）
-token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
+token_t *preprocess_for_target_ctx(tokenizer_context_t *tk_ctx,
+                                   const ag_target_info_t *target,
+                                   token_t *tok) {
   tokenizer_context_t *prev_tk_ctx = g_preprocess_tk_ctx;
+  const ag_target_info_t *prev_target = g_preprocess_target;
   g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  g_preprocess_target = target;
   if (include_depth == 0) {
     macro_expand_steps = 0;
-    pp_init_predefined_macros();
+    pp_init_predefined_macros(target);
   }
 
   token_t head;
@@ -2235,7 +2276,13 @@ token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
 
   cur->next = tok; // TK_EOF を繋ぐ
   g_preprocess_tk_ctx = prev_tk_ctx;
+  g_preprocess_target = prev_target;
   return head.next;
+}
+
+token_t *preprocess_ctx(tokenizer_context_t *tk_ctx, token_t *tok) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return preprocess_for_target_ctx(tk_ctx, &target, tok);
 }
 
 /* ============================================================================
@@ -2267,6 +2314,8 @@ struct pp_include_frame {
 };
 
 struct pp_stream {
+  tokenizer_context_t *tk_ctx;
+  ag_target_info_t target;
   tk_token_stream_t *lex;
   token_t *out_head;   // 解放されていない先頭 (デバッグ用)
   token_t *out_tail;   // 末尾 (ここに append)
@@ -2296,8 +2345,6 @@ static void pps_on_advance(token_t *cursor);
 static void pps_ensure_lookahead(void);
 
 typedef void (*pps_cursor_hook_t)(token_t *);
-
-static pp_stream_t *g_active_pps = NULL;
 
 static pps_cursor_hook_t pps_suspend_cursor_hook(void) {
   pps_cursor_hook_t saved_hook = tk_get_cursor_hook();
@@ -2449,7 +2496,8 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
 
   int saved_depth = include_depth;
   include_depth++;
-  token_t *expanded = preprocess_ctx(g_preprocess_tk_ctx, copy);
+  token_t *expanded = preprocess_for_target_ctx(
+      g_preprocess_tk_ctx, g_preprocess_target, copy);
   include_depth = saved_depth;
   if (expanded) {
     token_t *prev = NULL;
@@ -2892,9 +2940,15 @@ static void pps_ensure_lookahead(void) {
 
 /* ストリーム生成器を開く。predefined マクロは永続側へ作り、以後の生成は recyclable 側。
  * 先頭トークン (パーサのカーソル開始位置) を返す。 */
-token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const char *src) {
+token_t *pp_stream_open_for_target(pp_stream_t **out_s,
+                                   tokenizer_context_t *tk_ctx,
+                                   const ag_target_info_t *target,
+                                   const char *src) {
   pp_stream_t *s = calloc(1, sizeof(pp_stream_t));
-  g_preprocess_tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  s->tk_ctx = tk_ctx ? tk_ctx : tk_get_default_context();
+  s->target = target ? *target : ag_target_info_host();
+  g_preprocess_tk_ctx = s->tk_ctx;
+  g_preprocess_target = &s->target;
   /* adapter は同じ compiler instance を再利用する。前の翻訳単位を参照する管理構造を先に
    * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
   reset_macros();
@@ -2913,10 +2967,10 @@ token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const 
   include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
   tk_allocator_set_recyclable(0);
-  pp_init_predefined_macros();
+  pp_init_predefined_macros(target);
   /* 以後の生成は recyclable アリーナ。 */
   tk_allocator_set_recyclable(1);
-  s->lex = tk_stream_new(tk_ctx, src);
+  s->lex = tk_stream_new(s->tk_ctx, src);
   s->cursor = NULL;
   /* 先頭を 1 つ生成し、そこから lookahead 分を満たす。 */
   while (!s->out_head && !s->eof_done) pps_step(s);
@@ -2925,6 +2979,12 @@ token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx, const 
   pps_activate(s);
   *out_s = s;
   return s->out_head;
+}
+
+token_t *pp_stream_open(pp_stream_t **out_s, tokenizer_context_t *tk_ctx,
+                        const char *src) {
+  ag_target_info_t target = {ag_target_pointer_size()};
+  return pp_stream_open_for_target(out_s, tk_ctx, &target, src);
 }
 
 void pp_stream_close(pp_stream_t *s) {
@@ -2946,6 +3006,45 @@ void pp_stream_close(pp_stream_t *s) {
       free(f);
     }
     tk_stream_delete(s->lex);
+    if (g_preprocess_tk_ctx == s->tk_ctx) g_preprocess_tk_ctx = NULL;
+    if (g_preprocess_target == &s->target) g_preprocess_target = NULL;
     free(s);
   }
+}
+
+ag_preprocessor_context_t *pp_context_create(void) {
+  ag_preprocessor_context_t *context = calloc(1, sizeof(*context));
+  if (!context) return NULL;
+  context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+  context->if_expr_eval = true;
+  return context;
+}
+
+ag_preprocessor_context_t *pp_context_activate(
+    ag_preprocessor_context_t *context) {
+  ag_preprocessor_context_t *previous = active_preprocessor_context;
+  active_preprocessor_context = context ? context : &default_preprocessor_context;
+  return previous;
+}
+
+ag_preprocessor_context_t *pp_context_active(void) {
+  return active_preprocessor_context;
+}
+
+void pp_context_destroy(ag_preprocessor_context_t *context) {
+  if (!context || context == &default_preprocessor_context) return;
+  ag_preprocessor_context_t *previous = pp_context_activate(context);
+  if (g_active_pps) pp_stream_close(g_active_pps);
+  reset_macros();
+  reset_retired_include_sources();
+  reset_pragma_once_list();
+  pp_virtual_headers_clear();
+  while (cond_incl) {
+    cond_incl_t *entry = cond_incl;
+    cond_incl = entry->next;
+    free(entry);
+  }
+  while (include_stack) pop_include();
+  pp_context_activate(previous == context ? NULL : previous);
+  free(context);
 }

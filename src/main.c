@@ -156,9 +156,6 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
                                       int max_header_files, int max_header_file_bytes,
                                       int max_header_total_bytes, int max_include_depth,
                                       int out_addr, int out_cap, int object_mode) {
-#ifdef AGC_TARGET_WASM32
-  ag_target_set_pointer_size(4);
-#endif
   diag_reset_records();
   pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
@@ -198,7 +195,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   tk_set_filename_ctx(tk_ctx, source_name);
 
   pp_stream_t *pps = NULL;
-  token_t *tok = pp_stream_open(&pps, tk_ctx, source);
+  token_t *tok = pp_stream_open_for_target(
+      &pps, tk_ctx, ag_compilation_session_target(&session), source);
 
   if (object_mode) {
     wasm32_obj_set_output_file(NULL);
@@ -333,9 +331,6 @@ int agc_wasm_compile_object_virtual(int source_addr, int source_name_addr,
 }
 
 int main(int argc, char **argv) {
-#ifdef AGC_TARGET_WASM32
-  ag_target_set_pointer_size(4);
-#endif
   const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
   const char *input_path = NULL;
   int wasm_object_mode = 0;
@@ -400,7 +395,8 @@ int main(int argc, char **argv) {
    * line_delta / file_override)、#include (Stage 5: 被 include を遅延字句フレームとして push)
    * をすべて扱える。 */
   pp_stream_t *pps = NULL;
-  token_t *tok = pp_stream_open(&pps, tk_ctx, source);
+  token_t *tok = pp_stream_open_for_target(
+      &pps, tk_ctx, ag_compilation_session_target(&session), source);
 
 #ifdef AGC_TARGET_WASM32
   FILE *wasm_obj_out = NULL;

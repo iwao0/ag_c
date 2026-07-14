@@ -3,6 +3,7 @@
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
 #include "parser/semantic_ctx.h"
+#include "preprocess/preprocess.h"
 #include <string.h>
 
 int ag_compilation_session_init(
@@ -16,11 +17,13 @@ int ag_compilation_session_init(
   session->semantic_context = ps_ctx_create();
   session->global_registry = ps_global_registry_create();
   session->local_registry = ps_local_registry_create();
+  session->preprocessor_context = pp_context_create();
   if (!session->semantic_context || !session->global_registry ||
-      !session->local_registry) {
+      !session->local_registry || !session->preprocessor_context) {
     ps_ctx_destroy(session->semantic_context);
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
+    pp_context_destroy(session->preprocessor_context);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -30,7 +33,7 @@ int ag_compilation_session_init(
 int ag_compilation_session_is_complete(
     const ag_compilation_session_t *session) {
   return session && session->semantic_context && session->global_registry &&
-         session->local_registry &&
+         session->local_registry && session->preprocessor_context &&
          (session->target.pointer_size == 4 ||
           session->target.pointer_size == 8);
 }
@@ -44,16 +47,20 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       ps_global_registry_activate(session->global_registry);
   session->previous_local_registry =
       ps_local_registry_activate(session->local_registry);
+  session->previous_preprocessor_context =
+      pp_context_activate(session->preprocessor_context);
   session->is_active = 1;
   return 1;
 }
 
 void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (!session || !session->is_active) return;
+  pp_context_activate(session->previous_preprocessor_context);
   ps_local_registry_activate(session->previous_local_registry);
   ps_global_registry_activate(session->previous_global_registry);
   ps_ctx_activate(session->previous_semantic_context);
   session->previous_local_registry = NULL;
+  session->previous_preprocessor_context = NULL;
   session->previous_global_registry = NULL;
   session->previous_semantic_context = NULL;
   session->is_active = 0;
@@ -65,6 +72,7 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);
   ps_local_registry_destroy(session->local_registry);
+  pp_context_destroy(session->preprocessor_context);
   memset(session, 0, sizeof(*session));
 }
 

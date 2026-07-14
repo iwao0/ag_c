@@ -78,12 +78,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ag_target_info_t\s+target\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/ag_preprocessor_context_t\s*\*preprocessor_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_local_registry_destroy\s*\(/.test(compilerContextSource) ||
+    !/pp_context_create\s*\(/.test(compilerContextSource) ||
+    !/pp_context_activate\s*\(/.test(compilerContextSource) ||
+    !/pp_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -96,6 +102,8 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ag_compilation_session_dispose\s*\(/.test(compilerMainSource) ||
     !/ag_compilation_session_tokenizer\s*\(/.test(compilerMainSource) ||
     /tk_get_default_context\s*\(/.test(compilerMainSource) ||
+    /ag_target_set_pointer_size\s*\(/.test(compilerMainSource) ||
+    !/pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
     !/ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
       compilerMainSource,
     )) {
