@@ -11,7 +11,7 @@
 #ifndef AG_IR_BUILDER_H
 #define AG_IR_BUILDER_H
 
-#include "ir.h"
+#include "../ir/ir.h"
 
 struct node_t;
 

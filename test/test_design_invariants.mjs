@@ -14,7 +14,7 @@ async function sourceFilesUnder(directory) {
 }
 
 const irFiles = (await readdir("src/ir", { withFileTypes: true }))
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".c"))
+  .filter((entry) => entry.isFile() && /\.[ch]$/.test(entry.name))
   .map((entry) => `src/ir/${entry.name}`)
   .sort();
 
@@ -50,13 +50,13 @@ for (const file of backendFiles) {
   if (/#[ \t]*include[^\n]*parser\/semantic_ctx\.h/.test(source)) {
     throw new Error(`${file} directly includes parser/semantic_ctx.h`);
   }
-  if (file.startsWith("src/arch/") &&
+  if ((file.startsWith("src/arch/") || file.startsWith("src/ir/")) &&
       (/#[ \t]*include[^\n]*parser\//.test(source) ||
        /\bpsx?_[A-Za-z0-9_]+\b/.test(source) ||
        /\b(?:global_var_t|lvar_t|node_t|tag_member_info_t|string_lit_t|float_lit_t)\b/.test(
          source,
        ))) {
-    throw new Error(`${file} backend directly depends on parser types or APIs`);
+    throw new Error(`${file} IR/backend layer directly depends on parser types or APIs`);
   }
   const forbidden = file.startsWith("src/ir/")
     ? [contextBridgeRe, irSymbolTypeRe]
@@ -162,7 +162,7 @@ if (wasmObjFunctionCodegenViolations.length ||
 }
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
-const irBuilderSource = await readFile("src/ir/ir_builder.c", "utf8");
+const irBuilderSource = await readFile("src/lowering/ir_builder.c", "utf8");
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
     !/\blower_ir_global_symbol\s*\(/.test(irBuilderSource) ||
@@ -843,5 +843,5 @@ if (astTypeOwnershipViolations.length) {
 }
 
 console.log(
-  "design invariants: ok (backend isolation and read-only canonical type ownership verified)",
+  "design invariants: ok (IR/backend isolation and read-only canonical type ownership verified)",
 );

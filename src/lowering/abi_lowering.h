@@ -1,7 +1,7 @@
 #ifndef AG_IR_ABI_LOWERING_H
 #define AG_IR_ABI_LOWERING_H
 
-#include "ir.h"
+#include "../ir/ir.h"
 
 struct psx_type_t;
 

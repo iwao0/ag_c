@@ -361,7 +361,7 @@ typedef struct ir_module_t {
 } ir_module_t;
 
 /* ------------------------------------------------------------------ */
-/* アロケータ / ビルダー (詳細は ir_builder.h)                          */
+/* IR model allocation helpers                                          */
 /* ------------------------------------------------------------------ */
 
 ir_module_t *ir_module_new(void);
