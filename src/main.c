@@ -151,33 +151,54 @@ static char *read_file_contents(const char *path) {
   return buf;
 }
 
+static ag_compilation_session_t wasm_adapter_session;
+static int wasm_adapter_session_live;
+
+static void wasm_publish_and_dispose_session(
+    ag_compilation_session_t *session) {
+  if (!session) return;
+  if (session->diagnostic_context) {
+    diag_context_publish(session->diagnostic_context);
+  }
+  ag_compilation_session_dispose(session);
+  if (session == &wasm_adapter_session) wasm_adapter_session_live = 0;
+}
+
 static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
                                       int virtual_bundle_addr, int virtual_bundle_len,
                                       int max_header_files, int max_header_file_bytes,
                                       int max_header_total_bytes, int max_include_depth,
                                       int out_addr, int out_cap, int object_mode) {
+  if (wasm_adapter_session_live) {
+    ag_compilation_session_dispose(&wasm_adapter_session);
+    wasm_adapter_session_live = 0;
+  }
   diag_reset_records();
   pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
   ag_target_info_t target = ag_target_info_wasm32();
-  ag_compilation_session_t session;
-  if (!ag_compilation_session_init(&session, &target) ||
-      !ag_compilation_session_activate(&session)) {
-    ag_compilation_session_dispose(&session);
+  ag_compilation_session_t *session = &wasm_adapter_session;
+  if (!ag_compilation_session_init(session, &target)) {
+    wasm_publish_and_dispose_session(session);
+    return -4;
+  }
+  wasm_adapter_session_live = 1;
+  if (!ag_compilation_session_activate(session)) {
+    wasm_publish_and_dispose_session(session);
     return -4;
   }
 
   if (!psx_frontend_reset_translation_unit_state_in_compiler_context(
-          &session)) {
-    ag_compilation_session_dispose(&session);
+          session)) {
+    wasm_publish_and_dispose_session(session);
     return -4;
   }
 
   char *source = (char *)(long)source_addr;
   const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
   if (!source_name[0]) {
-    ag_compilation_session_dispose(&session);
+    wasm_publish_and_dispose_session(session);
     return -1;
   }
   if (virtual_bundle_addr) {
@@ -191,12 +212,12 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   unsigned char *obj_bytes = NULL;
   size_t obj_len = 0;
 
-  tokenizer_context_t *tk_ctx = ag_compilation_session_tokenizer(&session);
+  tokenizer_context_t *tk_ctx = ag_compilation_session_tokenizer(session);
   tk_set_filename_ctx(tk_ctx, source_name);
 
   pp_stream_t *pps = NULL;
   token_t *tok = pp_stream_open_for_target(
-      &pps, tk_ctx, ag_compilation_session_target(&session), source);
+      &pps, tk_ctx, ag_compilation_session_target(session), source);
 
   if (object_mode) {
     wasm32_obj_set_output_file(NULL);
@@ -211,21 +232,21 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
 
   psx_frontend_stream_t stream = {0};
   if (!psx_frontend_stream_begin(
-          &stream, &session, tk_ctx, tok)) {
+          &stream, session, tk_ctx, tok)) {
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (pps) pp_stream_close(pps);
     wasm32_obj_capture_output(0);
-    ag_compilation_session_dispose(&session);
+    wasm_publish_and_dispose_session(session);
     return -4;
   }
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
-    if (!wasm_emit_function_direct(fn, object_mode, &session.target)) {
+    if (!wasm_emit_function_direct(fn, object_mode, &session->target)) {
       clear_output_callback();
       gen_set_simple_formatter(0);
       if (pps) pp_stream_close(pps);
       wasm32_obj_capture_output(0);
-      ag_compilation_session_dispose(&session);
+      wasm_publish_and_dispose_session(session);
       return -3;
     }
     psx_frontend_free_processed_ast();
@@ -237,7 +258,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
-    ag_compilation_session_dispose(&session);
+    wasm_publish_and_dispose_session(session);
     return -5;
   }
 
@@ -246,7 +267,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     clear_output_callback();
     gen_set_simple_formatter(0);
     if (object_mode) wasm32_obj_capture_output(0);
-    ag_compilation_session_dispose(&session);
+    wasm_publish_and_dispose_session(session);
     return -3;
   }
 
@@ -256,22 +277,22 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
     if (wasm32_obj_capture_limit_exceeded()) {
-      ag_compilation_session_dispose(&session);
+      wasm_publish_and_dispose_session(session);
       return -2;
     }
     obj_bytes = wasm32_obj_take_output(&obj_len);
     if (!obj_bytes) {
-      ag_compilation_session_dispose(&session);
+      wasm_publish_and_dispose_session(session);
       return -4;
     }
     if (obj_len > (size_t)out_cap) {
       free(obj_bytes);
-      ag_compilation_session_dispose(&session);
+      wasm_publish_and_dispose_session(session);
       return -2;
     }
     memcpy(out.buf, obj_bytes, obj_len);
     free(obj_bytes);
-    ag_compilation_session_dispose(&session);
+    wasm_publish_and_dispose_session(session);
     return (int)obj_len;
   } else {
     wasm32_emit_data_segments(data_module);
@@ -282,7 +303,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   }
 
   int result = out.overflow ? -2 : out.len;
-  ag_compilation_session_dispose(&session);
+  wasm_publish_and_dispose_session(session);
   return result;
 }
 

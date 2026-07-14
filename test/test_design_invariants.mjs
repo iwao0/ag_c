@@ -84,6 +84,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/arena_context_t\s*\*arena_context\s*;/.test(
       compilationSessionHeader,
     ) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      compilationSessionHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
@@ -96,6 +99,9 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/arena_context_create\s*\(/.test(compilerContextSource) ||
     !/arena_context_activate\s*\(/.test(compilerContextSource) ||
     !/arena_context_destroy\s*\(/.test(compilerContextSource) ||
+    !/diag_context_create\s*\(/.test(compilerContextSource) ||
+    !/diag_context_activate\s*\(/.test(compilerContextSource) ||
+    !/diag_context_destroy\s*\(/.test(compilerContextSource) ||
     !/ag_compilation_session_is_complete\s*\(/.test(compilerContextSource) ||
     !/typedef\s+ag_compilation_session_t\s+ag_compiler_context_t\s*;/.test(
       compilerContextHeader,
@@ -110,6 +116,8 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     /tk_get_default_context\s*\(/.test(compilerMainSource) ||
     /ag_target_set_pointer_size\s*\(/.test(compilerMainSource) ||
     !/pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
+    !/diag_context_publish\s*\(/.test(compilerMainSource) ||
+    !/wasm_adapter_session_live/.test(compilerMainSource) ||
     !/ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
       compilerMainSource,
     )) {

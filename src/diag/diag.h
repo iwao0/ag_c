@@ -6,6 +6,15 @@
 #include "messages.h"
 #include "../tokenizer/token.h"
 
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+
+ag_diagnostic_context_t *diag_context_create(void);
+void diag_context_destroy(ag_diagnostic_context_t *context);
+ag_diagnostic_context_t *diag_context_activate(
+    ag_diagnostic_context_t *context);
+ag_diagnostic_context_t *diag_context_active(void);
+void diag_context_publish(const ag_diagnostic_context_t *context);
+
 /**
  * @brief 診断メッセージのロケールを設定する。
  * @param locale ロケール名（例: "ja", "en"）。NULL の場合は既定ロケールを維持する。
@@ -47,6 +56,7 @@ int agc_wasm_diagnostic_end_line(int index);
 int agc_wasm_diagnostic_end_column(int index);
 int agc_wasm_diagnostic_end_offset(int index);
 int diag_has_error_records(void);
+int diag_active_limit_kind(void);
 
 /**
  * @brief テキストIDに対応するローカライズ済みテキストを取得する。

@@ -8,8 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-static const char *g_diag_locale = "ja";
-
 enum {
   AGC_DIAG_SEVERITY_ERROR = 1,
   AGC_DIAG_SEVERITY_WARNING = 2,
@@ -32,16 +30,48 @@ typedef struct {
   char message[AGC_DIAG_MESSAGE_CAP];
 } agc_diag_record_t;
 
-static agc_diag_record_t g_diag_initial_records[AGC_DIAG_DEFAULT_RECORD_LIMIT];
-static agc_diag_record_t *g_diag_records = g_diag_initial_records;
-static int g_diag_record_count;
-static int g_diag_error_count;
-static int g_diag_record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
-static int g_diag_record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT;
-static size_t g_diag_byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT;
-static size_t g_diag_bytes;
-static int g_diag_limit_kind;
-static int g_diag_limits_enforced;
+struct ag_diagnostic_context_t {
+  const char *locale;
+  agc_diag_record_t initial_records[AGC_DIAG_DEFAULT_RECORD_LIMIT];
+  agc_diag_record_t *records;
+  int record_count;
+  int error_count;
+  int record_cap;
+  int record_limit;
+  size_t byte_limit;
+  size_t bytes;
+  int limit_kind;
+  int limits_enforced;
+};
+
+static ag_diagnostic_context_t published_diagnostic_context = {
+    .locale = "ja",
+    .record_limit = AGC_DIAG_DEFAULT_RECORD_LIMIT,
+    .byte_limit = AGC_DIAG_DEFAULT_BYTE_LIMIT,
+};
+static ag_diagnostic_context_t *active_diagnostic_context =
+    &published_diagnostic_context;
+
+static ag_diagnostic_context_t *diag_current_context(void) {
+  if (!active_diagnostic_context->records) {
+    active_diagnostic_context->records =
+        active_diagnostic_context->initial_records;
+    active_diagnostic_context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+  }
+  return active_diagnostic_context;
+}
+
+#define g_diag_locale (diag_current_context()->locale)
+#define g_diag_initial_records (diag_current_context()->initial_records)
+#define g_diag_records (diag_current_context()->records)
+#define g_diag_record_count (diag_current_context()->record_count)
+#define g_diag_error_count (diag_current_context()->error_count)
+#define g_diag_record_cap (diag_current_context()->record_cap)
+#define g_diag_record_limit (diag_current_context()->record_limit)
+#define g_diag_byte_limit (diag_current_context()->byte_limit)
+#define g_diag_bytes (diag_current_context()->bytes)
+#define g_diag_limit_kind (diag_current_context()->limit_kind)
+#define g_diag_limits_enforced (diag_current_context()->limits_enforced)
 
 static void diag_copy_text(char *dst, size_t cap, const char *src) {
   if (!dst || cap == 0) return;
@@ -189,24 +219,120 @@ void diag_reset_records(void) {
   g_diag_limit_kind = 0;
 }
 
+ag_diagnostic_context_t *diag_context_create(void) {
+  ag_diagnostic_context_t *context = calloc(1, sizeof(*context));
+  if (!context) return NULL;
+  context->locale = published_diagnostic_context.locale;
+  context->records = context->initial_records;
+  context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+  context->record_limit = published_diagnostic_context.record_limit;
+  context->byte_limit = published_diagnostic_context.byte_limit;
+  context->limits_enforced = published_diagnostic_context.limits_enforced;
+  return context;
+}
+
+ag_diagnostic_context_t *diag_context_activate(
+    ag_diagnostic_context_t *context) {
+  ag_diagnostic_context_t *previous = active_diagnostic_context;
+  active_diagnostic_context = context ? context : &published_diagnostic_context;
+  return previous;
+}
+
+ag_diagnostic_context_t *diag_context_active(void) {
+  return diag_current_context();
+}
+
+static void diag_context_release_records(ag_diagnostic_context_t *context) {
+  if (!context) return;
+  if (!context->records) {
+    context->records = context->initial_records;
+    context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+    return;
+  }
+  for (int i = 0; i < context->record_count; i++) {
+    free(context->records[i].source_name);
+    context->records[i].source_name = NULL;
+  }
+  if (context->records != context->initial_records) free(context->records);
+  context->records = context->initial_records;
+  context->record_count = 0;
+  context->error_count = 0;
+  context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+  context->bytes = 0;
+  context->limit_kind = 0;
+}
+
+void diag_context_destroy(ag_diagnostic_context_t *context) {
+  if (!context || context == &published_diagnostic_context) return;
+  if (active_diagnostic_context == context) {
+    active_diagnostic_context = &published_diagnostic_context;
+  }
+  diag_context_release_records(context);
+  free(context);
+}
+
+void diag_context_publish(const ag_diagnostic_context_t *context) {
+  if (!context || context == &published_diagnostic_context) return;
+  ag_diagnostic_context_t *published = &published_diagnostic_context;
+  diag_context_release_records(published);
+  published->locale = context->locale;
+  published->record_limit = context->record_limit;
+  published->byte_limit = context->byte_limit;
+  published->limits_enforced = context->limits_enforced;
+  if (context->record_count > AGC_DIAG_DEFAULT_RECORD_LIMIT) {
+    published->records = calloc(
+        (size_t)context->record_count, sizeof(*published->records));
+    if (!published->records) {
+      published->records = published->initial_records;
+      return;
+    }
+    published->record_cap = context->record_count;
+  }
+  for (int i = 0; i < context->record_count; i++) {
+    published->records[i] = context->records[i];
+    published->records[i].source_name =
+        diag_dup_text(context->records[i].source_name);
+    if (!published->records[i].source_name) {
+      diag_context_release_records(published);
+      return;
+    }
+  }
+  published->record_count = context->record_count;
+  published->error_count = context->error_count;
+  published->bytes = context->bytes;
+  published->limit_kind = context->limit_kind;
+}
+
 int agc_wasm_diagnostic_set_limits(int max_records, int max_bytes) {
   if (max_records <= 0 || max_bytes <= 0) return -1;
-  g_diag_record_limit = max_records;
-  g_diag_byte_limit = (size_t)max_bytes;
-  g_diag_limits_enforced = 1;
+  published_diagnostic_context.record_limit = max_records;
+  published_diagnostic_context.byte_limit = (size_t)max_bytes;
+  published_diagnostic_context.limits_enforced = 1;
   return 0;
 }
 
 static const agc_diag_record_t *diag_record_at(int index) {
-  if (index < 0 || index >= g_diag_record_count) return NULL;
-  return &g_diag_records[index];
+  ag_diagnostic_context_t *published = &published_diagnostic_context;
+  if (!published->records) {
+    published->records = published->initial_records;
+    published->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
+  }
+  if (index < 0 || index >= published->record_count) return NULL;
+  return &published->records[index];
 }
 
 int agc_wasm_diagnostic_api_version(void) { return 1; }
-int agc_wasm_diagnostic_count(void) { return g_diag_record_count; }
-int agc_wasm_diagnostic_bytes(void) { return (int)g_diag_bytes; }
-int agc_wasm_diagnostic_limit_kind(void) { return g_diag_limit_kind; }
+int agc_wasm_diagnostic_count(void) {
+  return published_diagnostic_context.record_count;
+}
+int agc_wasm_diagnostic_bytes(void) {
+  return (int)published_diagnostic_context.bytes;
+}
+int agc_wasm_diagnostic_limit_kind(void) {
+  return published_diagnostic_context.limit_kind;
+}
 int diag_has_error_records(void) { return g_diag_error_count > 0; }
+int diag_active_limit_kind(void) { return g_diag_limit_kind; }
 int agc_wasm_diagnostic_severity(int index) {
   const agc_diag_record_t *record = diag_record_at(index);
   return record ? record->severity : 0;
@@ -518,6 +644,7 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
   va_end(ap);
+  diag_context_publish(active_diagnostic_context);
   exit(1);
 }
 
@@ -542,6 +669,7 @@ void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...
   print_token_actual(tok);
   fprintf(stderr, "\n");
   va_end(ap);
+  diag_context_publish(active_diagnostic_context);
   exit(1);
 }
 
@@ -636,6 +764,7 @@ void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) {
   diag_vfprint_escaped(stderr, fmt, ap);
   fprintf(stderr, "\n");
   va_end(ap);
+  diag_context_publish(active_diagnostic_context);
   exit(1);
 }
 

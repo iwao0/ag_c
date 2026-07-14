@@ -323,7 +323,7 @@ int ps_parse_next_toplevel_item(
             &declaration, semantic_context, stream->local_registry)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
       psx_synchronize_toplevel_declaration();
-      if (agc_wasm_diagnostic_limit_kind()) break;
+      if (diag_active_limit_kind()) break;
       continue;
     }
     psx_skip_gnu_attributes();
@@ -348,7 +348,7 @@ int ps_parse_next_toplevel_item(
         ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
         item->kind = PSX_TOPLEVEL_ITEM_EOF;
         psx_synchronize_toplevel_declaration();
-        if (agc_wasm_diagnostic_limit_kind()) break;
+        if (diag_active_limit_kind()) break;
         continue;
       }
     }

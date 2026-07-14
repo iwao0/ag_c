@@ -15562,20 +15562,28 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.arena_context != NULL);
   ASSERT_TRUE(wasm.arena_context != NULL);
   ASSERT_TRUE(host.arena_context != wasm.arena_context);
+  ASSERT_TRUE(host.diagnostic_context != NULL);
+  ASSERT_TRUE(wasm.diagnostic_context != NULL);
+  ASSERT_TRUE(host.diagnostic_context != wasm.diagnostic_context);
   ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
+  ag_diagnostic_context_t *previous_diag = diag_context_active();
   ASSERT_TRUE(ag_compilation_session_activate(&host));
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
+  ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
+  ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ag_compilation_session_deactivate(&wasm);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
+  ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ag_compilation_session_deactivate(&host);
   ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
+  ASSERT_TRUE(diag_context_active() == previous_diag);
 
   tokenizer_context_t *host_tokenizer =
       ag_compilation_session_tokenizer(&host);

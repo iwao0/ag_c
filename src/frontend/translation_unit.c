@@ -143,7 +143,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);
         arena_rollback(arena_mark);
-        if (agc_wasm_diagnostic_limit_kind()) return NULL;
+        if (diag_active_limit_kind()) return NULL;
         continue;
       }
       ps_dispose_function_definition_header_syntax(
