@@ -9,7 +9,8 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 
-node_function_definition_t *psx_apply_function_definition_header(
+node_function_definition_t *psx_apply_function_definition_header_in_context(
+    psx_semantic_context_t *semantic_context,
     psx_parsed_function_definition_t *definition) {
   if (!definition) return NULL;
   ps_decl_reset_locals();
@@ -76,6 +77,7 @@ node_function_definition_t *psx_apply_function_definition_header(
 
   int registered = psx_apply_function_declaration_pipeline(
           &(psx_function_declaration_pipeline_request_t){
+              .semantic_context = semantic_context,
               .name = name->str,
               .name_len = name->len,
               .function_type = applied.function_type,
@@ -92,4 +94,11 @@ node_function_definition_t *psx_apply_function_definition_header(
   if (node->signature->is_variadic_function)
     ps_decl_reserve_variadic_regs();
   return node;
+}
+
+
+node_function_definition_t *psx_apply_function_definition_header(
+    psx_parsed_function_definition_t *definition) {
+  return psx_apply_function_definition_header_in_context(
+      NULL, definition);
 }

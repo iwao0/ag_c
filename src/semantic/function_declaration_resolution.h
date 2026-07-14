@@ -3,6 +3,8 @@
 
 #include "../parser/function_public.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_FUNCTION_DECLARATION_OK = 0,
   PSX_FUNCTION_DECLARATION_INVALID,
@@ -12,6 +14,7 @@ typedef enum {
 } psx_function_declaration_status_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *function_type;

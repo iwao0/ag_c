@@ -42,7 +42,10 @@ void psx_resolve_identifier(
   resolution->global = psx_resolve_global_object_symbol(
       request->name, request->name_len);
   const psx_function_symbol_t *function =
-      ps_ctx_find_function_symbol(request->name, request->name_len);
+      ps_ctx_find_function_symbol_in(
+          request->semantic_context
+              ? request->semantic_context : ps_ctx_active(),
+          request->name, request->name_len);
   if (request->is_call) {
     if (resolution->global) {
       resolution->kind = PSX_IDENTIFIER_GLOBAL_OBJECT;

@@ -157,9 +157,12 @@ int psx_apply_aggregate_member_declaration(
   return 0;
 }
 
-void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
+void psx_apply_static_assert_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_t *condition, token_t *diag_tok) {
   if (!condition) return;
-  condition = psx_bind_identifier_tree(condition, diag_tok);
+  condition = psx_bind_identifier_tree_in(
+      semantic_context, condition, diag_tok);
   psx_semantic_resolve_tree(condition, NULL, diag_tok);
   int is_constant = 1;
   long long value = psx_eval_const_int(condition, &is_constant);
@@ -181,4 +184,8 @@ void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
                    diag_tok, "%s",
                    diag_message_for(DIAG_ERR_PARSER_STATIC_ASSERT_FAILED));
   }
+}
+
+void psx_apply_static_assert(node_t *condition, token_t *diag_tok) {
+  psx_apply_static_assert_in_context(NULL, condition, diag_tok);
 }

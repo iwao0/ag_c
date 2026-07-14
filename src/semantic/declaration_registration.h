@@ -5,6 +5,8 @@
 #include "aggregate_member_resolution.h"
 #include "tag_declaration_resolution.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 void psx_apply_parsed_typedef_declaration(
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok);
 void psx_apply_parsed_enum_constant(
@@ -18,5 +20,8 @@ int psx_apply_aggregate_member_declaration(
     const psx_aggregate_member_declaration_request_t *request,
     token_t *diag_tok);
 void psx_apply_static_assert(node_t *condition, token_t *diag_tok);
+void psx_apply_static_assert_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_t *condition, token_t *diag_tok);
 
 #endif

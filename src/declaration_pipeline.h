@@ -6,7 +6,10 @@
 #include "parser/initializer_syntax.h"
 #include "parser/symtab.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -34,6 +37,7 @@ int psx_finish_global_declaration_pipeline(
     psx_global_declaration_pipeline_result_t *result);
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *function_type;
@@ -78,6 +82,7 @@ int psx_finish_function_definition_pipeline(
     psx_function_definition_pipeline_state_t *state);
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *function_name;
   int function_name_len;
   char *name;
@@ -105,6 +110,7 @@ int psx_finish_static_local_declaration_pipeline(
     psx_static_local_declaration_pipeline_result_t *result);
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -130,6 +136,7 @@ int psx_finish_automatic_local_declaration_pipeline(
     psx_automatic_local_declaration_pipeline_result_t *result);
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   const psx_type_t *type;

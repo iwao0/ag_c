@@ -4,6 +4,12 @@
 #include "../parser/function_definition_syntax.h"
 #include "../parser/ast.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
+node_function_definition_t *psx_apply_function_definition_header_in_context(
+    psx_semantic_context_t *semantic_context,
+    psx_parsed_function_definition_t *definition);
+
 node_function_definition_t *psx_apply_function_definition_header(
     psx_parsed_function_definition_t *definition);
 

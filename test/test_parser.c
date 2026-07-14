@@ -14738,6 +14738,31 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(11, value);
   ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, tag_name, 10));
 
+  char function_name[] = "ContextFunction";
+  psx_type_t *function_type = ps_type_new_function(
+      ps_type_new_integer(TK_INT, 4, 0));
+  ASSERT_TRUE(ps_ctx_register_function_type_in(
+                  second, function_name, 15, function_type) != NULL);
+  ASSERT_TRUE(ps_ctx_find_function_symbol(
+                  function_name, 15) == NULL);
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+                  first, function_name, 15) == NULL);
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(
+                  second, function_name, 15) != NULL);
+  psx_identifier_resolution_t function_resolution;
+  psx_resolve_identifier(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = second,
+          .name = function_name,
+          .name_len = 15,
+          .is_call = 1,
+      },
+      &function_resolution);
+  ASSERT_EQ(PSX_IDENTIFIER_FUNCTION, function_resolution.kind);
+  ASSERT_TRUE(function_resolution.function ==
+              ps_ctx_find_function_symbol_in(
+                  second, function_name, 15));
+
   ps_ctx_activate(previous);
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);

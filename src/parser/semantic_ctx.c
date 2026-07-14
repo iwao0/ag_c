@@ -74,6 +74,10 @@ struct psx_ctx_allocation_t {
   void *pointer;
 };
 
+static void *ctx_calloc_in(
+    psx_semantic_context_t *context, size_t count, size_t size);
+static void ctx_release_in(
+    psx_semantic_context_t *context, void *pointer);
 static void *ctx_calloc(size_t count, size_t size);
 static void ctx_release(void *pointer);
 
@@ -167,7 +171,7 @@ struct psx_semantic_context_t {
   enum_const_t *all_enum_consts;
   typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
   typedef_name_t *all_typedefs;
-  psx_function_symbol_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
+  psx_function_symbol_t *function_symbols_by_bucket[PCTX_HASH_BUCKETS];
   int tag_scope_depth;
   int tag_member_decl_order;
 };
@@ -176,7 +180,9 @@ static psx_semantic_context_t default_semantic_context;
 static psx_semantic_context_t *active_semantic_context =
     &default_semantic_context;
 
-static void *ctx_calloc(size_t count, size_t size) {
+static void *ctx_calloc_in(
+    psx_semantic_context_t *context, size_t count, size_t size) {
+  if (!context) return NULL;
   void *pointer = calloc(count, size);
   if (!pointer) return NULL;
   psx_ctx_allocation_t *allocation = malloc(sizeof(*allocation));
@@ -185,20 +191,29 @@ static void *ctx_calloc(size_t count, size_t size) {
     return NULL;
   }
   allocation->pointer = pointer;
-  allocation->next = active_semantic_context->allocations;
-  active_semantic_context->allocations = allocation;
+  allocation->next = context->allocations;
+  context->allocations = allocation;
   return pointer;
 }
 
-static void ctx_release(void *pointer) {
-  if (!pointer) return;
-  psx_ctx_allocation_t **link = &active_semantic_context->allocations;
+static void ctx_release_in(
+    psx_semantic_context_t *context, void *pointer) {
+  if (!context || !pointer) return;
+  psx_ctx_allocation_t **link = &context->allocations;
   while (*link && (*link)->pointer != pointer) link = &(*link)->next;
   if (!*link) return;
   psx_ctx_allocation_t *allocation = *link;
   *link = allocation->next;
   free(allocation->pointer);
   free(allocation);
+}
+
+static void *ctx_calloc(size_t count, size_t size) {
+  return ctx_calloc_in(active_semantic_context, count, size);
+}
+
+static void ctx_release(void *pointer) {
+  ctx_release_in(active_semantic_context, pointer);
 }
 
 static void ctx_release_all(psx_semantic_context_t *context) {
@@ -233,23 +248,29 @@ psx_semantic_context_t *ps_ctx_active(void) {
   return active_semantic_context;
 }
 
-static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
+static psx_type_t *ctx_type_clone_persistent_in(
+    psx_semantic_context_t *context, const psx_type_t *src) {
   if (!src) return NULL;
-  psx_type_t *dst = ctx_calloc(1, sizeof(*dst));
+  psx_type_t *dst = ctx_calloc_in(context, 1, sizeof(*dst));
   if (!dst) return NULL;
   *dst = *src;
   dst->param_types = NULL;
-  dst->base = ctx_type_clone_persistent(src->base);
+  dst->base = ctx_type_clone_persistent_in(context, src->base);
   if (src->param_count > 0) {
     const psx_type_t **params =
-        ctx_calloc((size_t)src->param_count, sizeof(*params));
+        ctx_calloc_in(context, (size_t)src->param_count, sizeof(*params));
     if (!params) return NULL;
     for (int i = 0; i < src->param_count; i++)
-      params[i] = ctx_type_clone_persistent(
+      params[i] = ctx_type_clone_persistent_in(
+          context,
           src->param_types ? src->param_types[i] : NULL);
     dst->param_types = params;
   }
   return dst;
+}
+
+static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
+  return ctx_type_clone_persistent_in(active_semantic_context, src);
 }
 
 static void initialize_tag_member_record(tag_member_t *m,
@@ -274,7 +295,8 @@ static void initialize_tag_member_record(tag_member_t *m,
 #define all_enum_consts (active_semantic_context->all_enum_consts)
 #define typedefs_by_bucket (active_semantic_context->typedefs_by_bucket)
 #define all_typedefs (active_semantic_context->all_typedefs)
-#define func_names_by_bucket (active_semantic_context->func_names_by_bucket)
+#define func_names_by_bucket \
+  (active_semantic_context->function_symbols_by_bucket)
 #define tag_scope_depth (active_semantic_context->tag_scope_depth)
 #define tag_member_decl_order \
   (active_semantic_context->tag_member_decl_order)
@@ -309,8 +331,14 @@ static unsigned psx_ctx_hash_tag(token_kind_t kind, const char *name, int len) {
 /* 翻訳単位 (program) の境界で関数名テーブルを初期化する。
  * テストでは fork() 経由で複数のプログラムを 1 プロセス内で解析するため、
  * 関数戻り値型チェック等が前テストの登録に引きずられないようにする。 */
+void ps_ctx_reset_function_names_in(psx_semantic_context_t *context) {
+  if (!context) return;
+  memset(context->function_symbols_by_bucket, 0,
+         sizeof(context->function_symbols_by_bucket));
+}
+
 void ps_ctx_reset_function_names(void) {
-  memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
+  ps_ctx_reset_function_names_in(active_semantic_context);
 }
 
 void ps_ctx_reset_translation_unit_scope(void) {
@@ -1181,10 +1209,12 @@ void psx_ctx_define_function_name(char *name, int len) {
 }
 
 // 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
-const psx_function_symbol_t *ps_ctx_find_function_symbol(
-    char *name, int len) {
+const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  if (!context || !name || len <= 0) return NULL;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (psx_function_symbol_t *f = func_names_by_bucket[bucket];
+  for (psx_function_symbol_t *f =
+           context->function_symbols_by_bucket[bucket];
        f; f = f->next_hash) {
     if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
       return f;
@@ -1193,9 +1223,21 @@ const psx_function_symbol_t *ps_ctx_find_function_symbol(
   return NULL;
 }
 
+const psx_function_symbol_t *ps_ctx_find_function_symbol(
+    char *name, int len) {
+  return ps_ctx_find_function_symbol_in(
+      active_semantic_context, name, len);
+}
+
+static psx_function_symbol_t *find_function_name_mut_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  return (psx_function_symbol_t *)ps_ctx_find_function_symbol_in(
+      context, name, len);
+}
+
 static psx_function_symbol_t *find_function_name_mut(
     char *name, int len) {
-  return (psx_function_symbol_t *)ps_ctx_find_function_symbol(name, len);
+  return find_function_name_mut_in(active_semantic_context, name, len);
 }
 
 const psx_type_t *ps_function_symbol_type(
@@ -1203,24 +1245,33 @@ const psx_type_t *ps_function_symbol_type(
   return symbol ? symbol->function_type : NULL;
 }
 
-void ps_ctx_checkpoint_function_registration(
-    char *name, int len, psx_function_registration_checkpoint_t *checkpoint) {
+void ps_ctx_checkpoint_function_registration_in(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_function_registration_checkpoint_t *checkpoint) {
   if (!checkpoint) return;
   *checkpoint = (psx_function_registration_checkpoint_t){0};
-  if (!name || len <= 0) return;
-  psx_function_symbol_t *function = find_function_name_mut(name, len);
+  if (!context || !name || len <= 0) return;
+  psx_function_symbol_t *function =
+      find_function_name_mut_in(context, name, len);
   if (!function) return;
   checkpoint->existed = 1;
   checkpoint->is_defined = function->is_defined;
   checkpoint->function_type = function->function_type;
 }
 
-void ps_ctx_rollback_function_registration(
-    char *name, int len,
+void ps_ctx_checkpoint_function_registration(
+    char *name, int len, psx_function_registration_checkpoint_t *checkpoint) {
+  ps_ctx_checkpoint_function_registration_in(
+      active_semantic_context, name, len, checkpoint);
+}
+
+void ps_ctx_rollback_function_registration_in(
+    psx_semantic_context_t *context, char *name, int len,
     const psx_function_registration_checkpoint_t *checkpoint) {
-  if (!checkpoint || !name || len <= 0) return;
+  if (!context || !checkpoint || !name || len <= 0) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  psx_function_symbol_t **link = &func_names_by_bucket[bucket];
+  psx_function_symbol_t **link =
+      &context->function_symbols_by_bucket[bucket];
   while (*link && ((*link)->len != len ||
                    strncmp((*link)->name, name, (size_t)len) != 0)) {
     link = &(*link)->next_hash;
@@ -1229,37 +1280,68 @@ void ps_ctx_rollback_function_registration(
   if (!checkpoint->existed) {
     psx_function_symbol_t *removed = *link;
     *link = removed->next_hash;
-    ctx_release(removed);
+    ctx_release_in(context, removed);
     return;
   }
   (*link)->is_defined = checkpoint->is_defined;
   (*link)->function_type = checkpoint->function_type;
 }
 
-void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
-  psx_function_symbol_t *existing = find_function_name_mut(name, len);
+void ps_ctx_rollback_function_registration(
+    char *name, int len,
+    const psx_function_registration_checkpoint_t *checkpoint) {
+  ps_ctx_rollback_function_registration_in(
+      active_semantic_context, name, len, checkpoint);
+}
+
+static void define_function_name_with_ret_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int ret_struct_size) {
+  if (!context || !name || len <= 0) return;
+  psx_function_symbol_t *existing =
+      find_function_name_mut_in(context, name, len);
   if (existing) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  psx_function_symbol_t *f = ctx_calloc(1, sizeof(*f));
+  psx_function_symbol_t *f =
+      ctx_calloc_in(context, 1, sizeof(*f));
+  if (!f) return;
   f->name = name;
   f->len = len;
   (void)ret_struct_size;
-  f->next_hash = func_names_by_bucket[bucket];
-  func_names_by_bucket[bucket] = f;
+  f->next_hash = context->function_symbols_by_bucket[bucket];
+  context->function_symbols_by_bucket[bucket] = f;
+}
+
+void psx_ctx_define_function_name_with_ret(char *name, int len,
+                                           int ret_struct_size) {
+  define_function_name_with_ret_in(
+      active_semantic_context, name, len, ret_struct_size);
+}
+
+bool ps_ctx_has_function_name_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  return ps_ctx_find_function_symbol_in(context, name, len) != NULL;
 }
 
 bool ps_ctx_has_function_name(char *name, int len) {
-  return ps_ctx_find_function_symbol(name, len) != NULL;
+  return ps_ctx_has_function_name_in(active_semantic_context, name, len);
 }
 
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
  * 初回 (まだ立っていない) なら 1 を返してフラグを立てる、すでに定義済みなら 0 を返す。 */
-int ps_ctx_track_function_defined(char *name, int len) {
-  psx_function_symbol_t *f = find_function_name_mut(name, len);
+int ps_ctx_track_function_defined_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  psx_function_symbol_t *f =
+      find_function_name_mut_in(context, name, len);
   if (!f) return 1;
   if (f->is_defined) return 0;
   f->is_defined = 1;
   return 1;
+}
+
+int ps_ctx_track_function_defined(char *name, int len) {
+  return ps_ctx_track_function_defined_in(
+      active_semantic_context, name, len);
 }
 
 int ps_ctx_is_function_defined(char *name, int len) {
@@ -1273,23 +1355,32 @@ const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
   return f ? ps_type_function_return_type(f->function_type) : NULL;
 }
 
-const psx_function_symbol_t *ps_ctx_register_function_type(
-    char *name, int len, const psx_type_t *function_type) {
-  if (!name || len <= 0 || !function_type ||
+const psx_function_symbol_t *ps_ctx_register_function_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    const psx_type_t *function_type) {
+  if (!context || !name || len <= 0 || !function_type ||
       function_type->kind != PSX_TYPE_FUNCTION) {
     return NULL;
   }
-  psx_function_symbol_t *f = find_function_name_mut(name, len);
+  psx_function_symbol_t *f =
+      find_function_name_mut_in(context, name, len);
   if (!f) {
-    psx_ctx_define_function_name(name, len);
-    f = find_function_name_mut(name, len);
+    define_function_name_with_ret_in(context, name, len, 0);
+    f = find_function_name_mut_in(context, name, len);
   }
   if (!f) return NULL;
   if (f->function_type)
     return ps_type_shape_matches(f->function_type, function_type)
                ? f : NULL;
-  f->function_type = ctx_type_clone_persistent(function_type);
+  f->function_type =
+      ctx_type_clone_persistent_in(context, function_type);
   return f;
+}
+
+const psx_function_symbol_t *ps_ctx_register_function_type(
+    char *name, int len, const psx_type_t *function_type) {
+  return ps_ctx_register_function_type_in(
+      active_semantic_context, name, len, function_type);
 }
 
 int psx_ctx_track_function_type(char *name, int len,

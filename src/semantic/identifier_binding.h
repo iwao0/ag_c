@@ -3,6 +3,15 @@
 
 #include "../parser/ast.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
+node_t *psx_bind_identifier_tree_in(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, const token_t *fallback_diag_tok);
+node_t *psx_bind_identifier_initializer_tree_in(
+    psx_semantic_context_t *semantic_context,
+    node_t *syntax, const token_t *fallback_diag_tok);
+
 node_t *psx_bind_identifier_tree(
     node_t *node, const token_t *fallback_diag_tok);
 node_t *psx_bind_identifier_initializer_tree(

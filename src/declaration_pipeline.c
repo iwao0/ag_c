@@ -164,12 +164,14 @@ int psx_finish_global_declaration_pipeline(
             initializer_resolution.status);
       if (initializer_resolution.is_aggregate_initializer) {
         initializer_resolution.initializer =
-            psx_frontend_analyze_initializer_syntax(
+            psx_frontend_analyze_initializer_syntax_in_context(
+                request->semantic_context,
                 initializer_resolution.initializer,
                 request->initializer->value_tok);
       } else {
         initializer_resolution.initializer =
-            psx_frontend_analyze_expression(
+            psx_frontend_analyze_expression_in_context(
+                request->semantic_context,
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
                     ? initializer_resolution.initializer->tok
@@ -230,6 +232,7 @@ int psx_apply_function_declaration_pipeline(
   psx_function_declaration_resolution_t resolution;
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = request->semantic_context,
           .name = request->name,
           .name_len = request->name_len,
           .function_type = request->function_type,
@@ -528,10 +531,12 @@ int psx_finish_static_local_declaration_pipeline(
         request->name, request->name_len, resolution.status);
   }
   if (resolution.is_aggregate_initializer) {
-    resolution.initializer = psx_frontend_analyze_initializer_syntax(
+    resolution.initializer = psx_frontend_analyze_initializer_syntax_in_context(
+        request->semantic_context,
         resolution.initializer, request->initializer->value_tok);
   } else {
-    resolution.initializer = psx_frontend_analyze_expression(
+    resolution.initializer = psx_frontend_analyze_expression_in_context(
+        request->semantic_context,
         resolution.initializer,
         resolution.initializer->tok
             ? resolution.initializer->tok
@@ -743,6 +748,7 @@ int psx_apply_block_extern_declaration_pipeline(
   if (request->type->kind == PSX_TYPE_FUNCTION) {
     if (!psx_apply_function_declaration_pipeline(
             &(psx_function_declaration_pipeline_request_t){
+                .semantic_context = request->semantic_context,
                 .name = request->name,
                 .name_len = request->name_len,
                 .function_type = request->type,

@@ -15,6 +15,7 @@ typedef enum {
 } psx_toplevel_apply_kind_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   psx_parsed_toplevel_declaration_t *declaration;
   const psx_type_t *base_type;
   psx_toplevel_apply_kind_t current_kind;
@@ -25,10 +26,12 @@ typedef struct {
 } psx_toplevel_declaration_application_t;
 
 static void apply_function_prototype(
+    psx_semantic_context_t *semantic_context,
     token_ident_t *name, const psx_type_t *type) {
   if (!name || !type || type->kind != PSX_TYPE_FUNCTION) return;
   if (!psx_apply_function_declaration_pipeline(
-          &(psx_function_declaration_pipeline_request_t){
+      &(psx_function_declaration_pipeline_request_t){
+              .semantic_context = semantic_context,
               .name = name->str,
               .name_len = name->len,
               .function_type = type,
@@ -42,13 +45,13 @@ static void apply_function_prototype(
 
 static void *begin_declaration(
     void *context, psx_parsed_toplevel_declaration_t *declaration) {
-  (void)context;
   psx_toplevel_declaration_application_t *application =
       calloc(1, sizeof(*application));
   if (!application) {
     ps_diag_ctx(declaration ? declaration->diagnostic_token : NULL,
                 "decl", "top-level declaration allocation failed");
   }
+  application->semantic_context = context;
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
     psx_apply_parsed_standalone_tag(&declaration->specifier);
@@ -98,13 +101,15 @@ static void begin_declarator(
                   "function declaration '%.*s' cannot have an initializer",
                   name->len, name->str);
     }
-    apply_function_prototype(name, application->current_type);
+    apply_function_prototype(
+        application->semantic_context, name, application->current_type);
     application->current_kind = PSX_TOPLEVEL_APPLY_FUNCTION;
     return;
   }
 
   application->global_request =
       (psx_global_declaration_pipeline_request_t){
+          .semantic_context = application->semantic_context,
           .name = name->str,
           .name_len = name->len,
           .type = application->current_type,
@@ -159,19 +164,40 @@ psx_frontend_toplevel_declaration_callbacks(void) {
   return &callbacks;
 }
 
-void psx_apply_toplevel_declaration(
+void psx_frontend_init_toplevel_declaration_callbacks(
+    psx_toplevel_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context) {
+  if (!callbacks) return;
+  *callbacks = (psx_toplevel_declaration_callbacks_t){
+      .context = semantic_context,
+      .begin_declaration = begin_declaration,
+      .begin_declarator = begin_declarator,
+      .finish_declarator = finish_declarator,
+      .finish_declaration = finish_declaration,
+      .abort_declaration = finish_declaration,
+  };
+}
+
+void psx_apply_toplevel_declaration_in_context(
+    psx_semantic_context_t *semantic_context,
     psx_parsed_toplevel_declaration_t *declaration) {
   if (!declaration || declaration->applied_during_parse) return;
-  const psx_toplevel_declaration_callbacks_t *callbacks =
-      psx_frontend_toplevel_declaration_callbacks();
-  void *application = callbacks->begin_declaration(
-      callbacks->context, declaration);
+  psx_toplevel_declaration_callbacks_t callbacks;
+  psx_frontend_init_toplevel_declaration_callbacks(
+      &callbacks, semantic_context);
+  void *application = callbacks.begin_declaration(
+      callbacks.context, declaration);
   for (int i = 0; i < declaration->declarator_count; i++) {
-    callbacks->begin_declarator(
+    callbacks.begin_declarator(
         application, &declaration->declarators[i],
         &declaration->initializers[i]);
-    callbacks->finish_declarator(
+    callbacks.finish_declarator(
         application, &declaration->initializers[i]);
   }
-  callbacks->finish_declaration(application);
+  callbacks.finish_declaration(application);
+}
+
+void psx_apply_toplevel_declaration(
+    psx_parsed_toplevel_declaration_t *declaration) {
+  psx_apply_toplevel_declaration_in_context(NULL, declaration);
 }

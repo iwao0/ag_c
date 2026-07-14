@@ -10,11 +10,32 @@
 #include <stdbool.h>
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_function_registration_checkpoint_t
+    psx_function_registration_checkpoint_t;
 
 psx_semantic_context_t *ps_ctx_create(void);
 void ps_ctx_destroy(psx_semantic_context_t *context);
 psx_semantic_context_t *ps_ctx_activate(psx_semantic_context_t *context);
 psx_semantic_context_t *ps_ctx_active(void);
+
+/* Explicit-context function symbol operations. New phase code should use
+ * these APIs; the context-free variants remain as parser compatibility. */
+void ps_ctx_reset_function_names_in(psx_semantic_context_t *context);
+const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
+    psx_semantic_context_t *context, char *name, int len);
+bool ps_ctx_has_function_name_in(
+    psx_semantic_context_t *context, char *name, int len);
+int ps_ctx_track_function_defined_in(
+    psx_semantic_context_t *context, char *name, int len);
+const psx_function_symbol_t *ps_ctx_register_function_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    const psx_type_t *function_type);
+void ps_ctx_checkpoint_function_registration_in(
+    psx_semantic_context_t *context, char *name, int len,
+    psx_function_registration_checkpoint_t *checkpoint);
+void ps_ctx_rollback_function_registration_in(
+    psx_semantic_context_t *context, char *name, int len,
+    const psx_function_registration_checkpoint_t *checkpoint);
 
 void ps_ctx_reset_function_scope(void);
 void ps_ctx_reset_translation_unit_scope(void);
@@ -102,11 +123,11 @@ bool ps_ctx_find_typedef_decl_type_at(
 int ps_ctx_has_typedef_in_current_scope(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);
-typedef struct {
+struct psx_function_registration_checkpoint_t {
   const psx_type_t *function_type;
   int existed;
   int is_defined;
-} psx_function_registration_checkpoint_t;
+};
 void ps_ctx_checkpoint_function_registration(
     char *name, int len, psx_function_registration_checkpoint_t *checkpoint);
 void ps_ctx_rollback_function_registration(

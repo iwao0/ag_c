@@ -31,13 +31,19 @@ void psx_frontend_stream_begin(
     tokenizer_context_t *tk_ctx, token_t *start) {
   if (!stream) return;
   stream->compiler_context = compiler_context;
+  psx_semantic_context_t *semantic_context = compiler_context
+      ? compiler_context->semantic_context : ps_ctx_active();
   ps_global_registry_reset_diag_state();
   ps_ctx_reset_function_diag_state();
   ps_ctx_reset_tag_diag_state();
-  ps_ctx_reset_function_names();
+  ps_ctx_reset_function_names_in(semantic_context);
+  psx_frontend_init_toplevel_declaration_callbacks(
+      &stream->toplevel_declarations, semantic_context);
+  psx_frontend_init_local_declaration_callbacks(
+      &stream->local_declarations, semantic_context);
   ps_parser_stream_begin(
       &stream->parser, tk_ctx, start,
-      psx_frontend_toplevel_declaration_callbacks());
+      &stream->toplevel_declarations);
 }
 
 node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
@@ -45,13 +51,18 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
   psx_parsed_toplevel_item_t item;
   while (ps_parse_next_toplevel_item(&stream->parser, &item)) {
     if (item.kind == PSX_TOPLEVEL_ITEM_STATIC_ASSERT) {
-      psx_apply_static_assert(
+      psx_apply_static_assert_in_context(
+          stream->compiler_context
+              ? stream->compiler_context->semantic_context : ps_ctx_active(),
           item.value.static_assertion.condition,
           item.value.static_assertion.diagnostic_token);
       continue;
     }
     if (item.kind == PSX_TOPLEVEL_ITEM_DECLARATION) {
-      psx_apply_toplevel_declaration(&item.value.declaration);
+      psx_apply_toplevel_declaration_in_context(
+          stream->compiler_context
+              ? stream->compiler_context->semantic_context : ps_ctx_active(),
+          &item.value.declaration);
       ps_dispose_toplevel_declaration_syntax(
           &item.value.declaration);
       continue;
@@ -61,17 +72,21 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       token_ident_t *function_name =
           item.value.function_header.declarator.identifier;
       psx_function_registration_checkpoint_t checkpoint;
-      ps_ctx_checkpoint_function_registration(
+      psx_semantic_context_t *semantic_context = stream->compiler_context
+          ? stream->compiler_context->semantic_context : ps_ctx_active();
+      ps_ctx_checkpoint_function_registration_in(
+          semantic_context,
           function_name ? function_name->str : NULL,
           function_name ? function_name->len : 0, &checkpoint);
       node_function_definition_t *header =
-          psx_apply_function_definition_header(
-          &item.value.function_header);
+          psx_apply_function_definition_header_in_context(
+              semantic_context, &item.value.function_header);
       node_t *function = ps_parse_function_definition_body(
           &stream->parser, header,
-          psx_frontend_local_declaration_callbacks());
+          &stream->local_declarations);
       if (!function) {
-        ps_ctx_rollback_function_registration(
+        ps_ctx_rollback_function_registration_in(
+            semantic_context,
             function_name ? function_name->str : NULL,
             function_name ? function_name->len : 0, &checkpoint);
         ps_decl_reset_locals();
@@ -84,7 +99,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       }
       ps_dispose_function_definition_header_syntax(
           &item.value.function_header);
-      psx_frontend_analyze_function(function, function->tok);
+      psx_frontend_analyze_function_in_context(
+          semantic_context, function, function->tok);
       return function;
     }
   }
@@ -129,7 +145,10 @@ node_t **psx_frontend_program_ctx(
   }
   program[count] = NULL;
   psx_frontend_stream_end(&stream);
-  psx_frontend_analyze_program(program);
+  psx_frontend_analyze_program_in_context(
+      stream.compiler_context
+          ? stream.compiler_context->semantic_context : ps_ctx_active(),
+      program);
   return program;
 }
 

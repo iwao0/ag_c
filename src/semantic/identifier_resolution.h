@@ -5,6 +5,8 @@
 #include "../parser/local_registry.h"
 #include "../parser/symtab.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_IDENTIFIER_UNDEFINED = 0,
   PSX_IDENTIFIER_LOCAL,
@@ -15,6 +17,7 @@ typedef enum {
 } psx_identifier_resolution_kind_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   char *name;
   int name_len;
   int is_call;

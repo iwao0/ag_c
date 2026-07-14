@@ -19,6 +19,7 @@ typedef enum {
 } psx_local_apply_kind_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   const psx_type_t *base_type;
   int requested_alignment;
   int is_typedef;
@@ -38,20 +39,20 @@ typedef struct {
 
 static void apply_static_assert(
     void *context, node_t *condition, token_t *diagnostic_token) {
-  (void)context;
-  psx_apply_static_assert(condition, diagnostic_token);
+  psx_apply_static_assert_in_context(
+      context, condition, diagnostic_token);
 }
 
 static void *begin_declaration(
     void *context, const psx_parsed_decl_specifier_t *specifier,
     int is_typedef, int is_standalone_tag) {
-  (void)context;
   psx_local_declaration_application_t *application =
       calloc(1, sizeof(*application));
   if (!application) {
     ps_diag_ctx(specifier ? specifier->diagnostic_token : NULL,
                 "local-declaration", "local declaration allocation failed");
   }
+  application->semantic_context = context;
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
     psx_apply_parsed_standalone_tag(specifier);
@@ -103,6 +104,7 @@ static void begin_declarator(
       application->current_type->kind == PSX_TYPE_FUNCTION) {
     if (!psx_apply_block_extern_declaration_pipeline(
             &(psx_block_extern_declaration_pipeline_request_t){
+                .semantic_context = application->semantic_context,
                 .name = name->str,
                 .name_len = name->len,
                 .type = application->current_type,
@@ -123,6 +125,7 @@ static void begin_declarator(
     ps_decl_get_current_funcname(&function_name, &function_name_len);
     application->static_request =
         (psx_static_local_declaration_pipeline_request_t){
+            .semantic_context = application->semantic_context,
             .function_name = function_name,
             .function_name_len = function_name_len,
             .name = name->str,
@@ -143,6 +146,7 @@ static void begin_declarator(
 
   application->automatic_request =
       (psx_automatic_local_declaration_pipeline_request_t){
+          .semantic_context = application->semantic_context,
           .name = name->str,
           .name_len = name->len,
           .type = application->current_type,
@@ -222,4 +226,19 @@ psx_frontend_local_declaration_callbacks(void) {
       .abort_declaration = abort_declaration,
   };
   return &callbacks;
+}
+
+void psx_frontend_init_local_declaration_callbacks(
+    psx_local_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context) {
+  if (!callbacks) return;
+  *callbacks = (psx_local_declaration_callbacks_t){
+      .context = semantic_context,
+      .apply_static_assert = apply_static_assert,
+      .begin_declaration = begin_declaration,
+      .begin_declarator = begin_declarator,
+      .finish_declarator = finish_declarator,
+      .finish_declaration = finish_declaration,
+      .abort_declaration = abort_declaration,
+  };
 }

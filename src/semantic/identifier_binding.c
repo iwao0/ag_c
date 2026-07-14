@@ -6,15 +6,23 @@
 #include "../parser/diag.h"
 #include "../parser/lvar_internal.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 #include "../parser/symtab.h"
 #include "../parser/type_builder.h"
 
 #include <string.h>
 
-static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok);
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  const token_t *fallback_diag_tok;
+} psx_identifier_binding_context_t;
 
-static void bind_slot(node_t **slot, const token_t *fallback_diag_tok) {
-  if (slot && *slot) *slot = bind_node(*slot, fallback_diag_tok);
+static node_t *bind_node(
+    node_t *node, const psx_identifier_binding_context_t *context);
+
+static void bind_slot(
+    node_t **slot, const psx_identifier_binding_context_t *context) {
+  if (slot && *slot) *slot = bind_node(*slot, context);
 }
 
 static void copy_identifier_source_state(
@@ -78,9 +86,11 @@ static node_t *materialize_function(
 
 static void resolve_identifier(
     const node_identifier_t *identifier, int is_call,
+    psx_semantic_context_t *semantic_context,
     psx_identifier_resolution_t *resolution) {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
+          .semantic_context = semantic_context,
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
@@ -95,10 +105,11 @@ static void resolve_identifier(
 
 static node_t *materialize_identifier(
     node_identifier_t *identifier, int is_call,
-    const token_t *fallback_diag_tok,
+    const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *out_resolution) {
   psx_identifier_resolution_t resolution;
-  resolve_identifier(identifier, is_call, &resolution);
+  resolve_identifier(
+      identifier, is_call, context->semantic_context, &resolution);
   if (out_resolution) *out_resolution = resolution;
   switch (resolution.kind) {
     case PSX_IDENTIFIER_LOCAL:
@@ -118,7 +129,7 @@ static node_t *materialize_identifier(
       psx_diag_undefined_with_name(
           identifier->base.tok
               ? identifier->base.tok
-              : (token_t *)fallback_diag_tok,
+              : (token_t *)context->fallback_diag_tok,
           "variable", identifier->name, identifier->name_len);
       return NULL;
   }
@@ -127,9 +138,10 @@ static node_t *materialize_identifier(
 
 static node_t *materialize_address_operand(
     node_identifier_t *identifier,
-    const token_t *fallback_diag_tok) {
+    const psx_identifier_binding_context_t *context) {
   psx_identifier_resolution_t resolution;
-  resolve_identifier(identifier, 0, &resolution);
+  resolve_identifier(
+      identifier, 0, context->semantic_context, &resolution);
   if (resolution.kind == PSX_IDENTIFIER_LOCAL && resolution.local) {
     lvar_t *var = resolution.local;
     node_t *node = NULL;
@@ -155,53 +167,54 @@ static node_t *materialize_address_operand(
   if (resolution.kind == PSX_IDENTIFIER_FUNCTION)
     return materialize_function(identifier, &resolution);
   return materialize_identifier(
-      identifier, 0, fallback_diag_tok, NULL);
+      identifier, 0, context, NULL);
 }
 
 static void bind_type_name(
-    psx_type_name_ref_t *type_name, const token_t *fallback_diag_tok) {
+    psx_type_name_ref_t *type_name,
+    const psx_identifier_binding_context_t *context) {
   if (!type_name || !type_name->syntax) return;
   psx_parsed_declarator_t *declarator =
       &type_name->syntax->declarator;
   for (int i = 0; i < declarator->array_bound_count; i++)
     bind_slot(
         &declarator->array_bounds[i].expression.node,
-        fallback_diag_tok);
+        context);
   if (type_name->syntax->atomic_inner)
     bind_type_name(
         &(psx_type_name_ref_t){
             .syntax = type_name->syntax->atomic_inner,
         },
-        fallback_diag_tok);
+        context);
 }
 
 static node_t *bind_initializer(
-    node_t *syntax, const token_t *fallback_diag_tok) {
+    node_t *syntax, const psx_identifier_binding_context_t *context) {
   if (!syntax) return NULL;
   if (syntax->kind != ND_INIT_LIST)
-    return bind_node(syntax, fallback_diag_tok);
+    return bind_node(syntax, context);
   node_init_list_t *list = (node_init_list_t *)syntax;
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
     for (int d = 0; d < entry->designator_count; d++) {
       psx_initializer_designator_t *designator =
           &entry->designators[d];
-      bind_slot(&designator->index_expr, fallback_diag_tok);
-      bind_slot(&designator->range_end_expr, fallback_diag_tok);
+      bind_slot(&designator->index_expr, context);
+      bind_slot(&designator->range_end_expr, context);
     }
     for (int d = 0; d < entry->index_expr_count; d++)
-      bind_slot(&entry->index_exprs[d], fallback_diag_tok);
-    entry->value = bind_initializer(entry->value, fallback_diag_tok);
+      bind_slot(&entry->index_exprs[d], context);
+    entry->value = bind_initializer(entry->value, context);
   }
   return syntax;
 }
 
 static void bind_direct_call(
     node_function_call_t *call, node_identifier_t *identifier,
-    const token_t *fallback_diag_tok) {
+    const psx_identifier_binding_context_t *context) {
   psx_identifier_resolution_t resolution;
   node_t *callee = materialize_identifier(
-      identifier, 1, fallback_diag_tok, &resolution);
+      identifier, 1, context, &resolution);
   if (resolution.kind != PSX_IDENTIFIER_FUNCTION &&
       resolution.kind != PSX_IDENTIFIER_UNDECLARED_CALL) {
     call->callee = callee;
@@ -226,7 +239,7 @@ static void bind_direct_call(
     ps_diag_ctx(
         identifier->base.tok
             ? identifier->base.tok
-            : (token_t *)fallback_diag_tok,
+            : (token_t *)context->fallback_diag_tok,
         "funcall", "canonical function type is missing for '%.*s'",
         identifier->name_len, identifier->name);
   }
@@ -239,7 +252,7 @@ static void bind_direct_call(
     ps_diag_ctx(
         identifier->base.tok
             ? identifier->base.tok
-            : (token_t *)fallback_diag_tok,
+            : (token_t *)context->fallback_diag_tok,
         "funcall",
         "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
         identifier->name_len, identifier->name,
@@ -247,36 +260,37 @@ static void bind_direct_call(
   }
 }
 
-static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
+static node_t *bind_node(
+    node_t *node, const psx_identifier_binding_context_t *context) {
   if (!node) return NULL;
   switch (node->kind) {
     case ND_IDENTIFIER:
       return materialize_identifier(
-          (node_identifier_t *)node, 0, fallback_diag_tok, NULL);
+          (node_identifier_t *)node, 0, context, NULL);
     case ND_BLOCK: {
       node_t **body = ((node_block_t *)node)->body;
       for (int i = 0; body && body[i]; i++)
-        bind_slot(&body[i], fallback_diag_tok);
+        bind_slot(&body[i], context);
       return node;
     }
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++)
-        bind_slot(&function->parameters[i], fallback_diag_tok);
-      bind_slot(&node->rhs, fallback_diag_tok);
+        bind_slot(&function->parameters[i], context);
+      bind_slot(&node->rhs, context);
       return node;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
       for (int i = 0; i < call->argument_count; i++)
-        bind_slot(&call->arguments[i], fallback_diag_tok);
+        bind_slot(&call->arguments[i], context);
       if (call->callee && call->callee->kind == ND_IDENTIFIER)
         bind_direct_call(
             call, (node_identifier_t *)call->callee,
-            fallback_diag_tok);
+            context);
       else
-        bind_slot(&call->callee, fallback_diag_tok);
+        bind_slot(&call->callee, context);
       return node;
     }
     case ND_ADDR:
@@ -284,51 +298,51 @@ static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
           node->lhs->kind == ND_IDENTIFIER) {
         node->lhs = materialize_address_operand(
             (node_identifier_t *)node->lhs,
-            fallback_diag_tok);
+            context);
         if (node->lhs && node->lhs->kind == ND_FUNCREF)
           return node->lhs;
         return node;
       }
-      bind_slot(&node->lhs, fallback_diag_tok);
+      bind_slot(&node->lhs, context);
       return node;
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
-      bind_slot(&node->lhs, fallback_diag_tok);
+      bind_slot(&node->lhs, context);
       if (init->init_kind == PSX_DECL_INIT_LIST)
-        node->rhs = bind_initializer(node->rhs, fallback_diag_tok);
+        node->rhs = bind_initializer(node->rhs, context);
       else
-        bind_slot(&node->rhs, fallback_diag_tok);
+        bind_slot(&node->rhs, context);
       return node;
     }
     case ND_INIT_LIST:
-      return bind_initializer(node, fallback_diag_tok);
+      return bind_initializer(node, context);
     case ND_COMPOUND_LITERAL: {
       node_compound_literal_t *literal =
           (node_compound_literal_t *)node;
-      bind_type_name(&literal->type_name, fallback_diag_tok);
-      node->rhs = bind_initializer(node->rhs, fallback_diag_tok);
+      bind_type_name(&literal->type_name, context);
+      node->rhs = bind_initializer(node->rhs, context);
       return node;
     }
     case ND_CAST:
       if (node->is_source_cast)
         bind_type_name(
             &((node_source_cast_t *)node)->type_name,
-            fallback_diag_tok);
-      bind_slot(&node->lhs, fallback_diag_tok);
+            context);
+      bind_slot(&node->lhs, context);
       return node;
     case ND_GENERIC_SELECTION: {
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
       if (selection->selected_index >= 0) return node;
-      bind_slot(&selection->control, fallback_diag_tok);
+      bind_slot(&selection->control, context);
       for (int i = 0; i < selection->association_count; i++) {
         if (!selection->associations[i].is_default)
           bind_type_name(
               &selection->associations[i].type_name,
-              fallback_diag_tok);
+              context);
         bind_slot(
             &selection->associations[i].expression,
-            fallback_diag_tok);
+            context);
       }
       return node;
     }
@@ -338,9 +352,9 @@ static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
           query->runtime_size_expr ||
           (query->is_type_name && query->type_name.resolved_type))
         return node;
-      bind_type_name(&query->type_name, fallback_diag_tok);
-      bind_slot(&query->operand, fallback_diag_tok);
-      bind_slot(&query->runtime_size_expr, fallback_diag_tok);
+      bind_type_name(&query->type_name, context);
+      bind_slot(&query->operand, context);
+      bind_slot(&query->runtime_size_expr, context);
       return node;
     }
     case ND_ALIGNOF_QUERY:
@@ -348,32 +362,56 @@ static node_t *bind_node(node_t *node, const token_t *fallback_diag_tok) {
         return node;
       bind_type_name(
           &((node_alignof_query_t *)node)->type_name,
-          fallback_diag_tok);
+          context);
       return node;
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
-      bind_slot(&control->init, fallback_diag_tok);
-      bind_slot(&node->lhs, fallback_diag_tok);
-      bind_slot(&node->rhs, fallback_diag_tok);
-      bind_slot(&control->inc, fallback_diag_tok);
-      bind_slot(&control->els, fallback_diag_tok);
+      bind_slot(&control->init, context);
+      bind_slot(&node->lhs, context);
+      bind_slot(&node->rhs, context);
+      bind_slot(&control->inc, context);
+      bind_slot(&control->els, context);
       return node;
     }
     default:
-      bind_slot(&node->lhs, fallback_diag_tok);
-      bind_slot(&node->rhs, fallback_diag_tok);
+      bind_slot(&node->lhs, context);
+      bind_slot(&node->rhs, context);
       return node;
   }
 }
 
+node_t *psx_bind_identifier_tree_in(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, const token_t *fallback_diag_tok) {
+  const psx_identifier_binding_context_t context = {
+      .semantic_context = semantic_context
+          ? semantic_context : ps_ctx_active(),
+      .fallback_diag_tok = fallback_diag_tok,
+  };
+  return bind_node(node, &context);
+}
+
 node_t *psx_bind_identifier_tree(
     node_t *node, const token_t *fallback_diag_tok) {
-  return bind_node(node, fallback_diag_tok);
+  return psx_bind_identifier_tree_in(
+      ps_ctx_active(), node, fallback_diag_tok);
+}
+
+node_t *psx_bind_identifier_initializer_tree_in(
+    psx_semantic_context_t *semantic_context,
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  const psx_identifier_binding_context_t context = {
+      .semantic_context = semantic_context
+          ? semantic_context : ps_ctx_active(),
+      .fallback_diag_tok = fallback_diag_tok,
+  };
+  return bind_initializer(syntax, &context);
 }
 
 node_t *psx_bind_identifier_initializer_tree(
     node_t *syntax, const token_t *fallback_diag_tok) {
-  return bind_initializer(syntax, fallback_diag_tok);
+  return psx_bind_identifier_initializer_tree_in(
+      ps_ctx_active(), syntax, fallback_diag_tok);
 }

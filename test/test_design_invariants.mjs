@@ -76,6 +76,26 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
 }
+const identifierResolutionSource = await readFile(
+  "src/semantic/identifier_resolution.c",
+  "utf8",
+);
+const functionDeclarationResolutionSource = await readFile(
+  "src/semantic/function_declaration_resolution.c",
+  "utf8",
+);
+if (!/ps_ctx_find_function_symbol_in\s*\(/.test(identifierResolutionSource) ||
+    /ps_ctx_find_function_symbol\s*\(/.test(identifierResolutionSource) ||
+    !/ps_ctx_register_function_type_in\s*\(/.test(
+      functionDeclarationResolutionSource,
+    ) ||
+    !/ps_ctx_track_function_defined_in\s*\(/.test(
+      functionDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "semantic function-symbol resolution must use the passed semantic context",
+  );
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

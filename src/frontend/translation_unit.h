@@ -6,6 +6,8 @@
 
 typedef struct {
   psx_parser_stream_t parser;
+  psx_toplevel_declaration_callbacks_t toplevel_declarations;
+  psx_local_declaration_callbacks_t local_declarations;
   ag_compiler_context_t *compiler_context;
 } psx_frontend_stream_t;
 
