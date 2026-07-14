@@ -75,8 +75,7 @@ typedef enum {
                 // 符号ビット反転 (IR_FNEG)。`0.0 - x` だと -0.0 が +0.0 になるため専用ノード。
   ND_VA_ARG_AREA, // 識別子 `__va_arg_area`: stack 上の variadic 引数領域の先頭アドレス。
                   // stdarg.h の va_start マクロが参照する。codegen は x29 + STACK_SIZE を返す。
-  ND_CAST,       // 明示 cast wrapper。pointer cast では pointee metadata を保持し、
-                 // integer cast では operand を壊さず result 幅/signedness を保持する。
+  ND_CAST,       // 明示 cast wrapper。canonical target typeを保持し、operandを壊さない。
   ND_COMPOUND_LITERAL, // prepared syntax; semantic loweringでobjectを実体化
   ND_INIT_LIST, // raw braced initializer syntax
   ND_DECL_INIT, // raw declaration initializer, lowered after semantic resolution
@@ -258,16 +257,6 @@ struct node_num_t {
   double fval;      // 浮動小数点値
   int fval_id;      // 浮動小数点リテラルのID
   tk_float_suffix_kind_t float_suffix_kind;
-  // 整数リテラルが long / long long サフィックスを持つ (= 値が 32bit に収まっても
-  // i64 として扱う)。`2L * u` が 32bit 演算で wrap するのを防ぐ。
-  unsigned char int_is_long;
-  // 整数リテラルが long long サフィックス (LL) を持つ。long と long long は同サイズ
-  // でも別型 (C11 6.2.5) なので _Generic の型照合で区別する。
-  unsigned char int_is_long_long;
-  // 明示 cast で得た整数定数の幅。0 は通常の int/long リテラル、1/2 は char/short。
-  unsigned char int_width;
-  // 明示 cast で得た plain char 定数。signed char / unsigned char と _Generic で区別する。
-  unsigned char int_is_plain_char;
 };
 
 // ローカル変数ノード

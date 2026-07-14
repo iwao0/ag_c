@@ -4,6 +4,7 @@
 #include "../parser/function_parameter_syntax.h"
 #include "../parser/aggregate_member_syntax.h"
 #include "../parser/ast.h"
+#include "../parser/declarator_shape.h"
 #include "declaration_resolution.h"
 
 typedef enum {

@@ -2,6 +2,7 @@
 #define SEMANTIC_AGGREGATE_MEMBER_RESOLUTION_H
 
 #include "declaration_resolution.h"
+#include "../parser/declarator_shape.h"
 #include "../parser/tag_member_public.h"
 
 typedef enum {

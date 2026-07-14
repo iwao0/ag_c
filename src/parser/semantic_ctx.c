@@ -2,6 +2,7 @@
 #include "type_owned_internal.h"
 #include "diag.h"
 #include "type.h"
+#include "type_builder.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>

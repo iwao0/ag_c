@@ -77,10 +77,11 @@ static node_t *lower_sizeof_vla_indices(
   return prefix ? ps_node_new_binary(ND_COMMA, prefix, index) : index;
 }
 
-static void lower_source_cast_node(
+static node_t *lower_source_cast_node(
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast) return;
-  lower_source_cast_expression(node, (token_t *)fallback_diag_tok);
+  if (!node || node->kind != ND_CAST || !node->is_source_cast) return node;
+  return lower_source_cast_expression(
+      node, (token_t *)fallback_diag_tok);
 }
 
 node_t *psx_lower_semantic_tree(
@@ -193,7 +194,7 @@ node_t *psx_lower_semantic_tree(
     default:
       node->lhs = psx_lower_semantic_tree(node->lhs, fallback_diag_tok);
       node->rhs = psx_lower_semantic_tree(node->rhs, fallback_diag_tok);
-      lower_source_cast_node(node, fallback_diag_tok);
+      node = lower_source_cast_node(node, fallback_diag_tok);
       lower_aggregate_address_expression(node);
       lower_additive_expression_node(node);
       lower_compound_assignment_expression(node);

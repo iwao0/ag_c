@@ -1,6 +1,7 @@
 #include "sizeof_lowering.h"
 
 #include "../parser/node_utils.h"
+#include "../parser/type_builder.h"
 
 node_t *lower_sizeof_query_expression(
     node_sizeof_query_t *query, node_t *evaluated_prefix) {

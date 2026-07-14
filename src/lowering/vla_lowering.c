@@ -7,6 +7,7 @@
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
+#include "../parser/type_builder.h"
 #include "../diag/diag.h"
 #include <stdlib.h>
 #include <string.h>

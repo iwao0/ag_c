@@ -4,7 +4,9 @@
 #include "declaration_application.h"
 #include "declaration_type_builder.h"
 #include "../parser/declaration_syntax.h"
+#include "../parser/declarator_shape_builder.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/type_builder.h"
 
 static psx_local_lookup_point_t type_name_lookup_point(
     const psx_type_name_ref_t *type_name) {

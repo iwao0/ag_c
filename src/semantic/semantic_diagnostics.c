@@ -286,8 +286,9 @@ static int is_plain_int_literal(node_t *node) {
       node_fp_kind(node) != TK_FLOAT_KIND_NONE ||
       ps_node_integer_value_is_unsigned(node))
     return 0;
+  const psx_type_t *type = ps_node_get_type(node);
   node_num_t *number = (node_num_t *)node;
-  return !number->int_is_long && !number->int_is_long_long &&
+  return type && ps_type_sizeof(type) <= 4 && !type->is_long_long &&
          number->val >= -2147483648LL && number->val <= 2147483647LL;
 }
 

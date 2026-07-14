@@ -6,6 +6,7 @@
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/type_builder.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -229,8 +230,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
     operand = fp_to_int(operand, view.is_pointer ? NULL : view.target);
     if (!view.is_pointer && view.kind == TK_LONG) {
       if (operand->kind == ND_NUM) {
-        ((node_num_t *)operand)->int_is_long = 1;
-        ((node_num_t *)operand)->int_is_long_long = view.is_long_long;
         ps_node_set_unsigned(operand, view.is_unsigned);
         return annotate(operand, view.target);
       }
@@ -315,10 +314,6 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
           : (view.is_unsigned ? (long long)(unsigned char)value
                               : (long long)(signed char)value);
       node_t *number = ps_node_new_num(truncated);
-      ((node_num_t *)number)->int_width =
-          (unsigned char)(view.kind == TK_SHORT ? 2 : 1);
-      if (view.is_plain_char)
-        ((node_num_t *)number)->int_is_plain_char = 1;
       if (view.is_unsigned) ps_node_set_unsigned(number, 1);
       return annotate(number, view.target);
     }
@@ -388,26 +383,24 @@ node_t *lower_implicit_value_conversion(node_t *operand,
   return lower_cast(operand, view, fallback_diag_tok);
 }
 
-void lower_source_cast_expression(node_t *node, token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast) return;
+node_t *lower_source_cast_expression(node_t *node,
+                                     token_t *fallback_diag_tok) {
+  if (!node || node->kind != ND_CAST || !node->is_source_cast) return node;
   const psx_type_t *target = node->type;
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
       operand, target_view(target),
       node->tok ? node->tok : fallback_diag_tok);
-  if (!lowered) return;
+  if (!lowered) return node;
   token_t *source_tok = node->tok;
   if (lowered == operand && lowered->kind != ND_NUM) {
     node->is_source_cast = 0;
     ps_node_bind_type(node, target);
-    return;
+    return node;
   }
-  if (lowered->kind == ND_NUM)
-    *(node_num_t *)node = *(node_num_t *)lowered;
-  else
-    *node = *lowered;
-  node->tok = source_tok;
-  node->is_source_cast = 0;
+  lowered->tok = source_tok;
+  lowered->is_source_cast = 0;
+  return lowered;
 }
 
 void lower_aggregate_address_expression(node_t *node) {

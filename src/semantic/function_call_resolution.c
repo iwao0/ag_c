@@ -1,5 +1,7 @@
 #include "function_call_resolution.h"
 
+#include "../parser/type_builder.h"
+
 #include <string.h>
 
 void psx_resolve_function_call_type(

@@ -2,6 +2,7 @@
 
 #include "type_name_resolution.h"
 #include "../parser/node_utils.h"
+#include "../parser/type_builder.h"
 
 #include <string.h>
 

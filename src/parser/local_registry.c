@@ -5,6 +5,7 @@
 #include "lvar_internal.h"
 #include "node_utils.h"
 #include "type.h"
+#include "type_builder.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 #include <string.h>

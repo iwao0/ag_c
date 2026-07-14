@@ -2,6 +2,7 @@
 #define SEMANTIC_FUNCTION_PARAMETER_RESOLUTION_H
 
 #include "declaration_resolution.h"
+#include "../parser/declarator_shape.h"
 #include "../parser/function_parameter_syntax.h"
 
 void psx_resolve_declarator_syntax(

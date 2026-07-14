@@ -2,6 +2,7 @@
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
+#include "type_builder.h"
 #include "arena.h"
 #include "diag.h"
 #include "../diag/diag.h"
@@ -10,9 +11,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-
-_Static_assert(sizeof(node_num_t) >= sizeof(node_source_cast_t),
-               "source cast arena slot must hold lowered numeric nodes");
 
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static int type_is_pointer_view_type(const psx_type_t *type);
@@ -2023,11 +2021,11 @@ int ps_node_binary_type_op(
 node_t *ps_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs) {
   node_t *node = psx_node_new_raw_binary(kind, lhs, rhs);
   psx_type_binary_op_t op;
-  psx_type_t *type = ps_node_binary_type_op(kind, &op)
-                         ? ps_type_binary_result(
-                               op, ps_node_get_type(lhs),
-                               ps_node_get_type(rhs))
-                         : NULL;
+  const psx_type_t *type = ps_node_binary_type_op(kind, &op)
+                               ? ps_type_binary_result(
+                                     op, ps_node_get_type(lhs),
+                                     ps_node_get_type(rhs))
+                               : NULL;
   if (type) {
     ps_node_bind_type(node, type);
   }
@@ -2152,7 +2150,7 @@ node_t *psx_node_new_lvar_identifier_ref_for(lvar_t *var) {
 
 node_t *psx_node_new_vla_decay_ref_for(lvar_t *var) {
   const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  psx_type_t *decay_type = ps_type_decay_array(array_type);
+  const psx_type_t *decay_type = ps_type_decay_array(array_type);
   if (!decay_type) return psx_node_new_lvar_identifier_ref_for(var);
   return (node_t *)new_lvar_symbol_node(var->offset, var, decay_type);
 }
@@ -2249,7 +2247,7 @@ node_t *ps_node_new_void_cast_result(node_t *operand,
 
 node_t *psx_node_new_source_cast(
     node_t *operand, psx_type_name_ref_t type_name) {
-  node_source_cast_t *cast = arena_alloc(sizeof(node_num_t));
+  node_source_cast_t *cast = arena_alloc(sizeof(node_source_cast_t));
   cast->base.kind = ND_CAST;
   cast->base.lhs = operand;
   cast->base.is_source_cast = 1;
@@ -2401,7 +2399,7 @@ node_t *psx_node_new_subscript_syntax_for(node_t *base, node_t *index) {
 node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
                                          node_t *scaled_offset) {
   const psx_type_t *base_type = ps_node_get_type(base);
-  psx_type_t *result_type = ps_type_subscript_result(base_type);
+  const psx_type_t *result_type = ps_type_subscript_result(base_type);
   node_t *result = arena_alloc(sizeof(node_t));
   result->kind = ND_DEREF;
   result->lhs = ps_node_new_binary(ND_ADD, base_addr, scaled_offset);

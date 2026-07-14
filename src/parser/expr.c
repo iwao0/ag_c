@@ -10,6 +10,7 @@
 #include "stmt.h"
 #include "config_runtime.h"
 #include "type.h"
+#include "type_builder.h"
 #include "declaration_syntax.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -901,16 +902,16 @@ static node_t *parse_num_literal(void) {
   if (num->num_kind == TK_NUM_KIND_INT) {
     node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
     node->val = tk_as_num_int(tok)->val;
-    /* long / long long サフィックス付き整数リテラルは値が 32bit に収まっても i64 と
-     * して扱う (`2L * u` 等が 32bit 演算で wrap しないように)。unsigned サフィックスも
-     * 比較/除算の符号判定のため node に伝播する。 */
-    node->int_is_long = (tk_as_num_int(tok)->int_size != TK_INT_SIZE_INT) ? 1 : 0;
-    node->int_is_long_long = (tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG) ? 1 : 0;
+    /* long / long long サフィックス付き整数リテラルは値が 32bit に収まっても
+     * canonical typeをi64幅にする。unsignedも型に保持する。 */
+    int is_long = tk_as_num_int(tok)->int_size != TK_INT_SIZE_INT;
+    int is_long_long =
+        tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG;
     int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
-    int int_size = node->int_is_long ? 8 : 4;
+    int int_size = is_long ? 8 : 4;
     psx_type_t *literal_type = ps_type_new_integer(
         is_unsigned ? TK_UNSIGNED : TK_INT, int_size, is_unsigned);
-    literal_type->is_long_long = node->int_is_long_long ? 1 : 0;
+    literal_type->is_long_long = is_long_long ? 1 : 0;
     ps_node_bind_type((node_t *)node, literal_type);
   } else {
     tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;

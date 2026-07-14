@@ -3,6 +3,7 @@
 #include "../src/parser/parser_public.h"
 #include "../src/parser/arena.h"
 #include "../src/parser/decl.h"
+#include "../src/parser/declarator_shape_builder.h"
 #include "../src/parser/lvar_internal.h"
 #include "../src/parser/expr.h"
 #include "../src/parser/function_parameter_syntax.h"
@@ -11,6 +12,7 @@
 #include "../src/parser/node_utils.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
+#include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
 #include "../src/semantic/declaration_application.h"
 #include "../src/frontend/function_definition.h"
@@ -1011,7 +1013,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(2, as_num(node->rhs)->val);
 
-  node = psx_frontend_analyze_expression(node, NULL);
+  psx_frontend_analyze_expression(node, NULL);
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(TK_EOF, node->source_op);
   ASSERT_TRUE(node->type != NULL);
@@ -1037,7 +1039,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(8, ps_node_type_size(difference));
   ASSERT_TRUE(!ps_node_is_unsigned_type(difference));
 
-  psx_type_t *promoted = ps_type_usual_arithmetic_result(
+  const psx_type_t *promoted = ps_type_usual_arithmetic_result(
       ps_type_new_integer(TK_CHAR, 1, 1),
       ps_type_new_integer(TK_SHORT, 2, 0),
       TK_FLOAT_KIND_NONE, 0);
@@ -1045,7 +1047,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(4, ps_type_sizeof(promoted));
   ASSERT_TRUE(!ps_type_is_unsigned(promoted));
 
-  psx_type_t *ranked = ps_type_usual_arithmetic_result(
+  const psx_type_t *ranked = ps_type_usual_arithmetic_result(
       ps_type_new_integer(TK_UNSIGNED, 4, 1),
       ps_type_new_integer(TK_LONG, 8, 0),
       TK_FLOAT_KIND_NONE, 0);
@@ -1056,7 +1058,7 @@ static void test_additive_semantic_lowering_boundary() {
   complex_float->fp_kind = TK_FLOAT_KIND_FLOAT;
   complex_float->size = 8;
   complex_float->align = 4;
-  psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
+  const psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
       complex_float, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       TK_FLOAT_KIND_NONE, 0);
   ASSERT_EQ(PSX_TYPE_COMPLEX, complex_promoted->kind);
@@ -1065,12 +1067,12 @@ static void test_additive_semantic_lowering_boundary() {
 
   psx_type_t *pointer_type = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0));
-  psx_type_t *pointer_sum = ps_type_binary_result(
+  const psx_type_t *pointer_sum = ps_type_binary_result(
       PSX_TYPE_BINARY_ADD, pointer_type,
       ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_EQ(PSX_TYPE_POINTER, pointer_sum->kind);
   ASSERT_TRUE(pointer_sum != pointer_type);
-  psx_type_t *pointer_difference = ps_type_binary_result(
+  const psx_type_t *pointer_difference = ps_type_binary_result(
       PSX_TYPE_BINARY_SUB, pointer_type, pointer_type);
   ASSERT_EQ(PSX_TYPE_INTEGER, pointer_difference->kind);
   ASSERT_EQ(8, ps_type_sizeof(pointer_difference));
@@ -1080,12 +1082,12 @@ static void test_additive_semantic_lowering_boundary() {
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
   ASSERT_TRUE(!ps_type_is_pointer(array_type));
   ASSERT_TRUE(ps_type_is_pointer_like(array_type));
-  psx_type_t *array_sum = ps_type_binary_result(
+  const psx_type_t *array_sum = ps_type_binary_result(
       PSX_TYPE_BINARY_ADD, array_type,
       ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_EQ(PSX_TYPE_POINTER, array_sum->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, array_sum->base->kind);
-  psx_type_t *array_conditional = ps_type_conditional_result(
+  const psx_type_t *array_conditional = ps_type_conditional_result(
       array_type, pointer_type);
   ASSERT_EQ(PSX_TYPE_POINTER, array_conditional->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, array_conditional->base->kind);
@@ -1098,12 +1100,12 @@ static void test_additive_semantic_lowering_boundary() {
 
   psx_type_t *comma_rhs = ps_type_new_float(
       TK_FLOAT_KIND_DOUBLE, 8);
-  psx_type_t *comma_result = ps_type_binary_result(
+  const psx_type_t *comma_result = ps_type_binary_result(
       PSX_TYPE_BINARY_COMMA,
       ps_type_new_integer(TK_INT, 4, 0), comma_rhs);
   ASSERT_EQ(PSX_TYPE_FLOAT, comma_result->kind);
   ASSERT_TRUE(comma_result != comma_rhs);
-  psx_type_t *conditional_result = ps_type_conditional_result(
+  const psx_type_t *conditional_result = ps_type_conditional_result(
       ps_type_new_integer(TK_UNSIGNED, 4, 1),
       ps_type_new_integer(TK_LONG, 8, 0));
   ASSERT_EQ(8, ps_type_sizeof(conditional_result));
@@ -1116,11 +1118,11 @@ static void test_subscript_semantic_lowering_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
   psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
-  psx_type_t *decayed_matrix = ps_type_decay_array(matrix);
+  const psx_type_t *decayed_matrix = ps_type_decay_array(matrix);
   ASSERT_TRUE(decayed_matrix != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, decayed_matrix->kind);
   ASSERT_TRUE(decayed_matrix->base == row);
-  psx_type_t *addressed_matrix = ps_type_address_result(matrix);
+  const psx_type_t *addressed_matrix = ps_type_address_result(matrix);
   ASSERT_TRUE(addressed_matrix != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, addressed_matrix->kind);
   ASSERT_TRUE(addressed_matrix->base == matrix);
@@ -1128,11 +1130,11 @@ static void test_subscript_semantic_lowering_boundary() {
       (char *)"a", 1, 24, 12, 1);
   set_test_storage_fixture_type(array, matrix);
   ASSERT_EQ(12, ps_type_subscript_static_stride(matrix));
-  psx_type_t *matrix_row_type = ps_type_subscript_result(matrix);
+  const psx_type_t *matrix_row_type = ps_type_subscript_result(matrix);
   ASSERT_TRUE(matrix_row_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, matrix_row_type->kind);
   ASSERT_EQ(4, ps_type_subscript_static_stride(matrix_row_type));
-  psx_type_t *matrix_element_type =
+  const psx_type_t *matrix_element_type =
       ps_type_subscript_result(matrix_row_type);
   ASSERT_TRUE(matrix_element_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, matrix_element_type->kind);
@@ -1140,13 +1142,13 @@ static void test_subscript_semantic_lowering_boundary() {
   psx_type_t *vla_cell = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *vla_row = ps_type_new_array(vla_cell, 0, 0, 1);
   psx_type_t *vla_matrix = ps_type_new_array(vla_row, 0, 0, 1);
-  psx_type_t *vla_result = ps_type_subscript_result(vla_matrix);
+  const psx_type_t *vla_result = ps_type_subscript_result(vla_matrix);
   ASSERT_TRUE(vla_result != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->kind);
   ASSERT_TRUE(vla_result->base != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, vla_result->base->kind);
   psx_type_t *vla_scalar_pointer = ps_type_new_pointer(integer);
-  psx_type_t *vla_scalar_result =
+  const psx_type_t *vla_scalar_result =
       ps_type_subscript_result(vla_scalar_pointer);
   ASSERT_TRUE(vla_scalar_result != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, vla_scalar_result->kind);
@@ -1159,7 +1161,7 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
 
-  psx_frontend_analyze_expression(node, NULL);
+  node = psx_frontend_analyze_expression(node, NULL);
   ASSERT_EQ(ND_DEREF, node->kind);
   ASSERT_TRUE(node->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, node->type->kind);
@@ -1663,7 +1665,7 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(inner->type_name.bound_base_type == NULL);
   ASSERT_TRUE(inner->type_name.resolved_type == NULL);
 
-  psx_frontend_analyze_expression(node, NULL);
+  node = psx_frontend_analyze_expression(node, NULL);
   ASSERT_EQ(ND_CAST, node->kind);
   ASSERT_TRUE(!node->is_source_cast);
   ASSERT_EQ(ND_SHR, node->lhs->kind);
@@ -2546,9 +2548,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_INVALID, planned_function.status);
 
   psx_declarator_shape_t returned_funcptr_shape;
-  psx_declarator_shape_t returned_value_shape;
   ps_declarator_shape_init(&returned_funcptr_shape);
-  ps_declarator_shape_init(&returned_value_shape);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
       &returned_funcptr_shape, 0, 0));
   ASSERT_TRUE(ps_declarator_shape_append_function(
@@ -2558,9 +2558,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &returned_funcptr_shape.ops[returned_funcptr_shape.count - 1],
       returned_callable_params, 1, 0);
   ASSERT_TRUE(ps_declarator_shape_append_pointer(
-      &returned_value_shape, 0, 0));
-  ASSERT_TRUE(ps_declarator_shape_append_shape(
-      &returned_funcptr_shape, &returned_value_shape));
+      &returned_funcptr_shape, 0, 0));
   ASSERT_EQ(2, ps_declarator_shape_count_ops(
                    &returned_funcptr_shape, PSX_DECL_OP_POINTER));
   ASSERT_EQ(1, ps_declarator_shape_count_ops(

@@ -2,6 +2,7 @@
 
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
+#include "../parser/type_builder.h"
 
 #include <string.h>
 

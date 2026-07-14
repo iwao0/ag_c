@@ -1,4 +1,5 @@
 #include "function_parameter_resolution.h"
+#include "../parser/declarator_shape_builder.h"
 
 #include "../diag/diag.h"
 #include "../parser/diag.h"
@@ -29,14 +30,11 @@ void psx_resolve_declarator_syntax(
       ps_ctx_record_unsupported_gnu_extension_warning(
           bound->expression.start, "zero-length array");
     }
-    if (bound->declarator_op_index < 0 ||
-        bound->declarator_op_index >= shape->count ||
-        shape->ops[bound->declarator_op_index].kind != PSX_DECL_OP_ARRAY) {
+    if (!ps_declarator_shape_set_array_bound(
+            shape, bound->declarator_op_index, (int)value, 0)) {
       ps_diag_ctx(bound->expression.start, "declarator-resolution",
                    "invalid deferred array bound target");
     }
-    shape->ops[bound->declarator_op_index].array_len = (int)value;
-    shape->ops[bound->declarator_op_index].is_incomplete_array = 0;
   }
   if (bit_width) *bit_width = 0;
   if (parsed->has_bitfield) {

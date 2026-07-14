@@ -5,9 +5,11 @@
 #include "declaration_resolution.h"
 #include "type_name_resolution.h"
 #include "../parser/arena.h"
+#include "../parser/declarator_shape_builder.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/type_builder.h"
 
 #include <string.h>
 
@@ -83,17 +85,14 @@ static void resolve_sizeof_type_name(
           resolution->zero_length_bound_count++] = i;
     }
     int op_index = parsed_bound->declarator_op_index;
-    if (op_index < 0 || op_index >= shape->count ||
-        shape->ops[op_index].kind != PSX_DECL_OP_ARRAY) {
+    if (!ps_declarator_shape_set_array_bound(
+            shape, op_index, is_constant ? (int)value : 0,
+            !is_constant)) {
       resolution->status =
           PSX_TYPE_QUERY_RESOLUTION_INVALID_ARRAY_BOUND_TARGET;
       resolution->issue_bound_index = i;
       return;
     }
-    psx_declarator_op_t *op = &shape->ops[op_index];
-    op->array_len = is_constant ? (int)value : 0;
-    op->is_incomplete_array = 0;
-    op->is_vla_array = is_constant ? 0 : 1;
   }
 
   psx_type_t *resolved_type = psx_build_decl_type(

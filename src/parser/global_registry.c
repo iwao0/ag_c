@@ -2,6 +2,7 @@
 #include "parser_public.h"
 #include "symtab.h"
 #include "type.h"
+#include "type_builder.h"
 #include <string.h>
 
 static string_lit_t *string_literals;

@@ -7,6 +7,7 @@
 #include "../parser/lvar_internal.h"
 #include "../parser/node_utils.h"
 #include "../parser/symtab.h"
+#include "../parser/type_builder.h"
 
 #include <string.h>
 

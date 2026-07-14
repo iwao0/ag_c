@@ -2,6 +2,7 @@
 #define SEMANTIC_DECLARATION_RESOLUTION_H
 
 #include "../parser/ast.h"
+#include "../parser/declarator_shape.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/type.h"
 

@@ -79,6 +79,17 @@ if (!nodeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1])) {
   throw new Error("node_t canonical semantic type must be a const view");
 }
+const numberNodeStruct = astSource.match(
+  /struct node_num_t\s*\{([\s\S]*?)\n\};/,
+);
+if (!numberNodeStruct ||
+    /\b(?:int_is_long|int_is_long_long|int_width|int_is_plain_char)\b/.test(
+      numberNodeStruct[1],
+    )) {
+  throw new Error(
+    "node_num_t must derive integer identity and width from its canonical type",
+  );
+}
 const functionNodeStruct = astSource.match(
   /struct node_func_t\s*\{([\s\S]*?)\n\};/,
 );
@@ -110,7 +121,233 @@ if (!typeNameRef ||
   );
 }
 
+const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const castLoweringSource = await readFile(
+  "src/lowering/cast_lowering.c",
+  "utf8",
+);
+const castLoweringHeader = await readFile(
+  "src/lowering/cast_lowering.h",
+  "utf8",
+);
+if (!/arena_alloc\s*\(\s*sizeof\s*\(\s*node_source_cast_t\s*\)\s*\)/.test(
+      nodeUtilsSource,
+    ) ||
+    /node_source_cast_t\s*\*[^;=]*=\s*arena_alloc\s*\(\s*sizeof\s*\(\s*node_num_t\s*\)/.test(
+      nodeUtilsSource,
+    )) {
+  throw new Error("source casts must use their own arena allocation size");
+}
+if (!/\bnode_t\s*\*\s*lower_source_cast_expression\s*\(/.test(
+      castLoweringHeader,
+    ) ||
+    /\*\s*\(\s*node_num_t\s*\*\s*\)\s*node\s*=/.test(
+      castLoweringSource,
+    )) {
+  throw new Error(
+    "source cast lowering must return a replacement node without cross-struct overwrite",
+  );
+}
+
 const typeSource = await readFile("src/parser/type.h", "utf8");
+const typeBuilderSource = await readFile(
+  "src/parser/type_builder.h",
+  "utf8",
+);
+const typeBuilderApiNames = [
+  "ps_type_new",
+  "ps_type_new_integer",
+  "ps_type_new_enum",
+  "ps_type_new_float",
+  "ps_type_new_pointer",
+  "ps_type_new_function",
+  "ps_type_new_array",
+  "ps_type_clone",
+  "ps_type_clone_persistent",
+  "ps_type_new_tag",
+  "ps_type_normalize_integer_identity",
+  "ps_type_set_function_params",
+  "ps_type_wrap_array_dims",
+  "ps_type_apply_declarator_shape",
+  "ps_type_adjust_parameter_type",
+  "ps_type_complete_array",
+  "ps_type_set_decl_spec_qualifiers",
+];
+for (const functionName of typeBuilderApiNames) {
+  const name = new RegExp(`\\b${functionName}\\b`);
+  if (name.test(typeSource)) {
+    throw new Error(`${functionName} must not be exposed by parser/type.h`);
+  }
+  if (!name.test(typeBuilderSource)) {
+    throw new Error(`${functionName} must be declared by parser/type_builder.h`);
+  }
+}
+if (/^\s*psx_type_t\s*\*/m.test(typeSource)) {
+  throw new Error("parser/type.h must not publish mutable type results");
+}
+
+const typeBuilderApiRe = new RegExp(
+  `\\b(?:${typeBuilderApiNames.join("|")})\\b`,
+);
+const typeBuilderUsers = new Set([
+  "src/parser/type_builder.h",
+  "src/parser/type.c",
+  "src/parser/expr.c",
+  "src/parser/semantic_ctx.c",
+  "src/parser/local_registry.c",
+  "src/parser/global_registry.c",
+  "src/parser/node_utils.c",
+  "src/declaration_pipeline.c",
+  "src/semantic/declaration_resolution.c",
+  "src/semantic/parameter_declaration_resolution.c",
+  "src/semantic/declaration_application.c",
+  "src/semantic/type_name_resolution.c",
+  "src/semantic/semantic_pass.c",
+  "src/semantic/generic_selection_resolution.c",
+  "src/semantic/static_initializer_resolution.c",
+  "src/semantic/type_query_resolution.c",
+  "src/semantic/identifier_binding.c",
+  "src/semantic/function_call_resolution.c",
+  "src/semantic/expression_operand_resolution.c",
+  "src/lowering/vla_lowering.c",
+  "src/lowering/sizeof_lowering.c",
+  "src/lowering/cast_lowering.c",
+  "src/lowering/member_access_lowering.c",
+  "test/test_parser.c",
+]);
+const typeBuilderFiles = [...sourceFiles, "test/test_parser.c"];
+const typeBuilderViolations = [];
+for (const file of typeBuilderFiles) {
+  const source = await readFile(file, "utf8");
+  if (!typeBuilderUsers.has(file) &&
+      (typeBuilderApiRe.test(source) ||
+       /#[ \t]*include[^\n]*(?:[\/"]type_builder\.h")/.test(source))) {
+    typeBuilderViolations.push(file);
+  }
+  if (/\bpsx_type_(?:rebuild_array_dims|copy_common_qualifiers|rebase_declarator)\b/.test(
+    source,
+  )) {
+    typeBuilderViolations.push(`${file}:removed type mutation API`);
+  }
+}
+if (typeBuilderViolations.length) {
+  throw new Error(
+    "type builders must stay inside construction owners:\n" +
+      typeBuilderViolations.sort().join("\n"),
+  );
+}
+
+const declaratorShapeBuilderSource = await readFile(
+  "src/parser/declarator_shape_builder.h",
+  "utf8",
+);
+const declaratorShapeSource = await readFile(
+  "src/parser/declarator_shape.h",
+  "utf8",
+);
+if (/\bpsx_declarator_(?:op_kind_t|op_t|shape_t)\b|\bPSX_DECL_OP_/.test(
+  typeSource,
+)) {
+  throw new Error(
+    "canonical type declarations must not contain declarator shape state",
+  );
+}
+if (!/\bpsx_declarator_shape_t\b/.test(declaratorShapeSource) ||
+    /#[ \t]*include[^\n]*type\.h/.test(declaratorShapeSource)) {
+  throw new Error(
+    "declarator shape state must depend only on the canonical type forward declaration",
+  );
+}
+const declaratorShapeBuilderApiNames = [
+  "ps_declarator_shape_init",
+  "ps_declarator_shape_copy",
+  "ps_declarator_shape_append_pointer",
+  "ps_declarator_shape_append_array",
+  "ps_declarator_shape_append_array_ex",
+  "ps_declarator_shape_append_vla_array",
+  "ps_declarator_shape_append_function",
+  "ps_declarator_op_set_function_params",
+  "ps_declarator_shape_set_array_bound",
+  "ps_declarator_op_set_variadic",
+  "ps_declarator_shape_count_ops",
+];
+for (const functionName of declaratorShapeBuilderApiNames) {
+  const name = new RegExp(`\\b${functionName}\\b`);
+  if (name.test(typeSource)) {
+    throw new Error(`${functionName} must not be exposed by parser/type.h`);
+  }
+  if (!name.test(declaratorShapeBuilderSource)) {
+    throw new Error(
+      `${functionName} must be declared by declarator_shape_builder.h`,
+    );
+  }
+}
+
+const declaratorShapeBuilderApiRe = new RegExp(
+  `\\b(?:${declaratorShapeBuilderApiNames.join("|")})\\b`,
+);
+const declaratorShapeBuilderUsers = new Set([
+  "src/parser/declarator_shape_builder.h",
+  "src/parser/type.c",
+  "src/parser/declaration_syntax.c",
+  "src/semantic/type_name_resolution.c",
+  "src/semantic/function_parameter_resolution.c",
+  "src/semantic/declaration_application.c",
+  "src/semantic/parameter_declaration_resolution.c",
+  "src/semantic/type_query_resolution.c",
+  "src/declaration_pipeline.c",
+  "test/test_parser.c",
+]);
+const declaratorShapeBuilderViolations = [];
+for (const file of typeBuilderFiles) {
+  const source = await readFile(file, "utf8");
+  if (!declaratorShapeBuilderUsers.has(file) &&
+      (declaratorShapeBuilderApiRe.test(source) ||
+       /#[ \t]*include[^\n]*(?:[\/"]declarator_shape_builder\.h")/.test(
+         source,
+       ))) {
+    declaratorShapeBuilderViolations.push(file);
+  }
+  if (/\b(?:psx_declarator_shape_append_array_dims|ps_declarator_shape_append_shape)\b/.test(
+    source,
+  )) {
+    declaratorShapeBuilderViolations.push(
+      `${file}:removed declarator shape API`,
+    );
+  }
+  if (file !== "src/parser/type.c" &&
+      /->(?:array_len|is_incomplete_array|is_vla_array|function_is_variadic)\s*=(?!=)/.test(
+        source,
+      )) {
+    declaratorShapeBuilderViolations.push(
+      `${file}:direct declarator shape state mutation`,
+    );
+  }
+}
+if (declaratorShapeBuilderViolations.length) {
+  throw new Error(
+    "declarator shape builders must stay inside syntax and semantic owners:\n" +
+      declaratorShapeBuilderViolations.sort().join("\n"),
+  );
+}
+
+for (const functionName of [
+  "ps_type_usual_arithmetic_result",
+  "ps_type_binary_result",
+  "ps_type_conditional_result",
+  "ps_type_address_result",
+  "ps_type_decay_array",
+  "ps_type_subscript_result",
+  "ps_type_generic_control",
+]) {
+  const signature = new RegExp(
+    `\\bconst\\s+psx_type_t\\s*\\*\\s*${functionName}\\s*\\(`,
+  );
+  if (!signature.test(typeSource)) {
+    throw new Error(`${functionName} must publish a const type view`);
+  }
+}
+
 const canonicalTypeStruct = typeSource.match(
   /struct psx_type_t\s*\{([\s\S]*?)\n\};/,
 );

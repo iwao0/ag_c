@@ -4,6 +4,7 @@
 #include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
+#include "../parser/type_builder.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,6 +1,8 @@
 #include "parameter_declaration_resolution.h"
 #include "declaration_type_builder.h"
 #include "../parser/arena.h"
+#include "../parser/declarator_shape_builder.h"
+#include "../parser/type_builder.h"
 
 #include <string.h>
 

@@ -1,4 +1,6 @@
 #include "type.h"
+#include "type_builder.h"
+#include "declarator_shape_builder.h"
 #include "arena.h"
 #include "dynarray.h"
 #include "tag_member_public.h"
@@ -142,7 +144,7 @@ int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
   return ps_type_sizeof(type) >= 4 && ps_type_is_unsigned(type);
 }
 
-psx_type_t *ps_type_usual_arithmetic_result(
+const psx_type_t *ps_type_usual_arithmetic_result(
     const psx_type_t *lhs, const psx_type_t *rhs,
     tk_float_kind_t fallback_fp_kind, int force_complex) {
   int result_is_complex =
@@ -195,7 +197,7 @@ psx_type_t *ps_type_usual_arithmetic_result(
   return type;
 }
 
-psx_type_t *ps_type_binary_result(
+const psx_type_t *ps_type_binary_result(
     psx_type_binary_op_t op, const psx_type_t *lhs,
     const psx_type_t *rhs) {
   if (op == PSX_TYPE_BINARY_COMMA)
@@ -226,7 +228,7 @@ psx_type_t *ps_type_binary_result(
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-psx_type_t *ps_type_conditional_result(
+const psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type) {
   if (ps_type_is_pointer_like(then_type))
     return then_type->kind == PSX_TYPE_ARRAY
@@ -363,26 +365,6 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
   return dst;
 }
 
-static psx_type_t *type_build_array_dim_chain(const psx_type_t *base,
-                                               const int *dims,
-                                               int dim_count,
-                                               int leaf_size) {
-  if (!base || !dims || dim_count <= 0 || leaf_size <= 0) return NULL;
-  const psx_type_t *child = base;
-  psx_type_t *result = NULL;
-  int child_size = ps_type_sizeof(base);
-  if (child_size <= 0) child_size = leaf_size;
-  for (int i = dim_count - 1; i >= 0; i--) {
-    int len = dims[i];
-    if (len <= 0) return NULL;
-    int size = child_size * len;
-    result = ps_type_new_array(child, len, size, 0);
-    child = result;
-    child_size = size;
-  }
-  return result;
-}
-
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
                                      const int *dims, int dim_count) {
   if (!base || !dims || dim_count <= 0) return base;
@@ -460,15 +442,6 @@ int ps_declarator_shape_append_vla_array(
   return 1;
 }
 
-int psx_declarator_shape_append_array_dims(
-    psx_declarator_shape_t *shape, const int *dims, int dim_count) {
-  if (!shape || dim_count < 0 || (dim_count > 0 && !dims)) return 0;
-  for (int i = 0; i < dim_count; i++) {
-    if (!ps_declarator_shape_append_array(shape, dims[i])) return 0;
-  }
-  return 1;
-}
-
 int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
   return declarator_shape_append(shape, PSX_DECL_OP_FUNCTION) != NULL;
 }
@@ -490,7 +463,28 @@ int ps_declarator_op_set_function_params(
   return 1;
 }
 
-int ps_declarator_shape_append_shape(
+int ps_declarator_shape_set_array_bound(
+    psx_declarator_shape_t *shape, int op_index,
+    int array_len, int is_vla) {
+  if (!shape || op_index < 0 || op_index >= shape->count ||
+      shape->ops[op_index].kind != PSX_DECL_OP_ARRAY) {
+    return 0;
+  }
+  psx_declarator_op_t *op = &shape->ops[op_index];
+  op->array_len = array_len;
+  op->is_incomplete_array = 0;
+  op->is_vla_array = is_vla ? 1u : 0u;
+  return 1;
+}
+
+int ps_declarator_op_set_variadic(
+    psx_declarator_op_t *op, int is_variadic) {
+  if (!op || op->kind != PSX_DECL_OP_FUNCTION) return 0;
+  op->function_is_variadic = is_variadic ? 1 : 0;
+  return 1;
+}
+
+static int declarator_shape_append_shape(
     psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix) {
   if (!shape || !suffix || suffix->count < 0) return 0;
   int suffix_count = suffix->count;
@@ -524,7 +518,7 @@ int ps_declarator_shape_copy(psx_declarator_shape_t *dst,
                              const psx_declarator_shape_t *src) {
   if (!dst || !src) return 0;
   ps_declarator_shape_init(dst);
-  return ps_declarator_shape_append_shape(dst, src);
+  return declarator_shape_append_shape(dst, src);
 }
 
 int ps_declarator_shape_count_ops(
@@ -574,103 +568,6 @@ psx_type_t *ps_type_adjust_parameter_type(psx_type_t *type) {
   }
   if (type->kind == PSX_TYPE_FUNCTION)
     return ps_type_new_pointer(type);
-  return type;
-}
-
-static int type_matches_canonical_base(const psx_type_t *derived,
-                                       const psx_type_t *canonical) {
-  if (!derived || !canonical) return derived == canonical;
-  if (canonical->kind == PSX_TYPE_FUNCTION) {
-    if (derived->kind == PSX_TYPE_FUNCTION)
-      return type_matches_canonical_base(derived->base, canonical->base);
-    return type_matches_canonical_base(derived, canonical->base);
-  }
-  if (derived->kind != canonical->kind) return 0;
-  if (canonical->kind == PSX_TYPE_ARRAY && canonical->array_len > 0 &&
-      derived->array_len != canonical->array_len) {
-    return 0;
-  }
-  if (canonical->kind == PSX_TYPE_POINTER ||
-      canonical->kind == PSX_TYPE_ARRAY) {
-    return type_matches_canonical_base(derived->base, canonical->base);
-  }
-  if (ps_type_is_tag_aggregate(canonical)) {
-    return derived->tag_kind == canonical->tag_kind &&
-           derived->tag_name == canonical->tag_name &&
-           derived->tag_len == canonical->tag_len;
-  }
-  if (canonical->kind == PSX_TYPE_INTEGER &&
-      (canonical->scalar_kind == TK_ENUM || derived->scalar_kind == TK_ENUM) &&
-      !ps_type_tag_identity_matches(derived, canonical)) {
-    return 0;
-  }
-  int canonical_size = ps_type_sizeof(canonical);
-  int derived_size = ps_type_sizeof(derived);
-  return canonical_size <= 0 || derived_size <= 0 ||
-         canonical_size == derived_size;
-}
-
-static psx_type_t *type_rebase_declarator_impl(
-    const psx_type_t *derived, const psx_type_t *canonical_base,
-    int *rebased) {
-  if (!derived) return NULL;
-  if (!*rebased && type_matches_canonical_base(derived, canonical_base)) {
-    psx_type_t *replacement = ps_type_clone(canonical_base);
-    psx_type_copy_common_qualifiers(replacement, derived);
-    *rebased = 1;
-    return replacement;
-  }
-  psx_type_t *copy = ps_type_clone(derived);
-  if (!*rebased && copy->base) {
-    copy->base = type_rebase_declarator_impl(
-        derived->base, canonical_base, rebased);
-  }
-  return copy;
-}
-
-psx_type_t *psx_type_rebase_declarator(
-    const psx_type_t *derived_type, const psx_type_t *canonical_base,
-    int *out_rebased) {
-  int rebased = 0;
-  psx_type_t *result = type_rebase_declarator_impl(
-      derived_type, canonical_base, &rebased);
-  if (out_rebased) *out_rebased = rebased;
-  return result;
-}
-
-psx_type_t *psx_type_rebuild_array_dims(psx_type_t *type,
-                                        const int *dims, int dim_count,
-                                        int leaf_size) {
-  if (!type || !dims || dim_count <= 0 || leaf_size <= 0) return type;
-
-  if (type->kind == PSX_TYPE_ARRAY) {
-    psx_type_t *old_outer = type;
-    const psx_type_t *base = type;
-    while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
-    psx_type_t *rebuilt =
-        type_build_array_dim_chain(base, dims, dim_count, leaf_size);
-    if (!rebuilt) return type;
-    if (rebuilt && rebuilt->kind == PSX_TYPE_ARRAY) {
-      psx_type_copy_common_qualifiers(rebuilt, old_outer);
-      rebuilt->fp_kind = old_outer->fp_kind;
-      rebuilt->tag_kind = old_outer->tag_kind;
-      rebuilt->tag_name = old_outer->tag_name;
-      rebuilt->tag_len = old_outer->tag_len;
-      rebuilt->tag_scope_depth_p1 = old_outer->tag_scope_depth_p1;
-    }
-    return rebuilt;
-  }
-
-  if (type->kind != PSX_TYPE_POINTER) return type;
-  psx_type_t *owner = type;
-  while (owner->base && owner->base->kind == PSX_TYPE_POINTER)
-    owner = psx_type_owned_base_mut(owner);
-  const psx_type_t *base = owner->base;
-  while (base && base->kind == PSX_TYPE_ARRAY) base = base->base;
-  psx_type_t *rebuilt =
-      type_build_array_dim_chain(base, dims, dim_count, leaf_size);
-  if (!rebuilt) return type;
-  owner->base = rebuilt;
   return type;
 }
 
@@ -789,12 +686,12 @@ int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth) {
   return ps_type_sizeof(type->base);
 }
 
-psx_type_t *ps_type_address_result(const psx_type_t *type) {
+const psx_type_t *ps_type_address_result(const psx_type_t *type) {
   if (!type) return NULL;
   return ps_type_new_pointer(type);
 }
 
-psx_type_t *ps_type_decay_array(const psx_type_t *type) {
+const psx_type_t *ps_type_decay_array(const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return NULL;
   return ps_type_new_pointer(type->base);
 }
@@ -807,7 +704,7 @@ const psx_type_t *ps_type_dereference_result(const psx_type_t *type) {
   return type->base;
 }
 
-psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
+const psx_type_t *ps_type_subscript_result(const psx_type_t *type) {
   if (!type || !type->base ||
       (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
     return NULL;
@@ -1111,11 +1008,11 @@ int ps_type_generic_matches(const psx_type_t *control,
   return ps_type_shape_matches(control_function, association_function);
 }
 
-psx_type_t *ps_type_generic_control(const psx_type_t *control) {
+const psx_type_t *ps_type_generic_control(const psx_type_t *control) {
   psx_type_t *type = ps_type_clone(control);
   if (!type) return NULL;
   if (type->kind == PSX_TYPE_ARRAY) {
-    type = ps_type_decay_array(type);
+    type = ps_type_new_pointer(type->base);
   } else if (type->kind == PSX_TYPE_FUNCTION) {
     type = ps_type_new_pointer(type);
   }
@@ -1127,7 +1024,7 @@ int ps_type_generic_select_index(
     const psx_type_t *control,
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count) {
-  psx_type_t *normalized = ps_type_generic_control(control);
+  const psx_type_t *normalized = ps_type_generic_control(control);
   if (!normalized || !association_types || association_count <= 0) return -1;
   int default_index = -1;
   for (int i = 0; i < association_count; i++) {
@@ -1221,17 +1118,6 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
   int bytes = ps_type_sizeof(type->base);
   if (bytes <= 0) bytes = ps_type_deref_size(type);
   return bytes > 0 ? bytes : 0;
-}
-
-void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {
-  if (!dst || !src) return;
-  dst->is_const_qualified = src->is_const_qualified;
-  dst->is_volatile_qualified = src->is_volatile_qualified;
-  dst->is_atomic = src->is_atomic;
-  dst->is_unsigned = src->is_unsigned;
-  dst->is_long_long = src->is_long_long;
-  dst->is_plain_char = src->is_plain_char;
-  dst->is_long_double = src->is_long_double;
 }
 
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,

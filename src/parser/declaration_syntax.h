@@ -2,8 +2,8 @@
 #define PARSER_DECLARATION_SYNTAX_H
 
 #include "core.h"
+#include "declarator_shape.h"
 #include "enum_const.h"
-#include "type.h"
 
 typedef struct psx_parsed_aggregate_body_t psx_parsed_aggregate_body_t;
 typedef struct psx_parsed_function_parameters_t

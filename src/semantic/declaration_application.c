@@ -4,11 +4,13 @@
 
 #include "../parser/arena.h"
 #include "../parser/diag.h"
+#include "../parser/declarator_shape_builder.h"
 #include "../parser/enum_const.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/type_builder.h"
 #include "aggregate_member_resolution.h"
 #include "declaration_resolution.h"
 #include "enum_constant_resolution.h"
@@ -326,11 +328,12 @@ void psx_apply_runtime_parsed_declarator_ex(
       ps_ctx_record_unsupported_gnu_extension_warning(
           parsed->expression.start, "zero-length array");
     }
-    psx_declarator_op_t *op =
-        &application->shape.ops[parsed->declarator_op_index];
-    op->array_len = is_constant ? (int)value : 0;
-    op->is_incomplete_array = 0;
-    op->is_vla_array = is_constant ? 0 : 1;
+    if (!ps_declarator_shape_set_array_bound(
+            &application->shape, parsed->declarator_op_index,
+            is_constant ? (int)value : 0, !is_constant)) {
+      ps_diag_ctx(parsed->expression.start, "declarator-resolution",
+                  "invalid local array bound target");
+    }
     application->array_bounds[application->array_bound_count++] =
         (psx_runtime_array_bound_t){
             .declarator_op_index = parsed->declarator_op_index,
@@ -352,8 +355,9 @@ void psx_apply_runtime_parsed_declarator_ex(
     psx_declarator_op_t *function_op =
         &application->shape.ops[suffix->declarator_op_index];
     if (suffix->declarator_op_index == skipped_function_op_index) {
-      function_op->function_is_variadic =
-          suffix->parameters && suffix->parameters->is_variadic;
+      (void)ps_declarator_op_set_variadic(
+          function_op,
+          suffix->parameters && suffix->parameters->is_variadic);
       continue;
     }
     psx_apply_parsed_function_parameters(

@@ -1,4 +1,5 @@
 #include "declaration_syntax.h"
+#include "declarator_shape_builder.h"
 
 #include "aggregate_member_syntax.h"
 #include "alignas_value.h"
