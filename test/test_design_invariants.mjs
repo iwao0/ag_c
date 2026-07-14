@@ -39,6 +39,22 @@ const backendFiles = [
   ...irFiles,
 ];
 
+const semanticContextOwnershipSource = await readFile(
+  "src/parser/semantic_ctx.c",
+  "utf8",
+);
+if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
+    !/psx_semantic_context_t\s*\*ps_ctx_create\s*\(/.test(semanticContextOwnershipSource) ||
+    !/psx_semantic_context_t\s*\*ps_ctx_activate\s*\(/.test(semanticContextOwnershipSource) ||
+    !/void\s+ps_ctx_destroy\s*\(/.test(semanticContextOwnershipSource)) {
+  throw new Error("semantic state must be owned by an explicit context lifecycle");
+}
+const legacySemanticGlobals =
+  /^static\s+.*\b(?:goto_refs_all|label_defs_by_bucket|deferred_parser_warnings_all|tag_types_by_bucket|all_tag_types|tag_members_by_bucket|enum_consts_by_bucket|all_enum_consts|typedefs_by_bucket|all_typedefs|func_names_by_bucket|tag_scope_depth|tag_member_decl_order)\b/gm;
+if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
+  throw new Error("semantic registries must not return to file-scope global ownership");
+}
+
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");
   if (/#[ \t]*include[^\n]*parser_public\.h/.test(source)) {

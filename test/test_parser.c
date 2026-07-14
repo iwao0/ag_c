@@ -14705,10 +14705,49 @@ static void test_arena_checkpoint_rollback() {
   arena_free_all();
 }
 
+static void test_semantic_context_isolation() {
+  printf("test_semantic_context_isolation...\n");
+  psx_semantic_context_t *previous = ps_ctx_active();
+  psx_semantic_context_t *first = ps_ctx_create();
+  psx_semantic_context_t *second = ps_ctx_create();
+  ASSERT_TRUE(first != NULL);
+  ASSERT_TRUE(second != NULL);
+  if (!first || !second) {
+    ps_ctx_destroy(first);
+    ps_ctx_destroy(second);
+    return;
+  }
+
+  char enum_name[] = "ContextValue";
+  char tag_name[] = "ContextTag";
+  long long value = 0;
+  ps_ctx_activate(first);
+  ASSERT_TRUE(psx_ctx_define_enum_const(enum_name, 12, 11));
+  ASSERT_TRUE(ps_ctx_register_tag_type(
+      TK_STRUCT, tag_name, 10, 0, 0, 0, 0));
+
+  ps_ctx_activate(second);
+  ASSERT_TRUE(!ps_ctx_find_enum_const(enum_name, 12, &value));
+  ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, tag_name, 10));
+  ASSERT_TRUE(psx_ctx_define_enum_const(enum_name, 12, 22));
+  ASSERT_TRUE(ps_ctx_find_enum_const(enum_name, 12, &value));
+  ASSERT_EQ(22, value);
+
+  ps_ctx_activate(first);
+  ASSERT_TRUE(ps_ctx_find_enum_const(enum_name, 12, &value));
+  ASSERT_EQ(11, value);
+  ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, tag_name, 10));
+
+  ps_ctx_activate(previous);
+  ps_ctx_destroy(first);
+  ps_ctx_destroy(second);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
+  test_semantic_context_isolation();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

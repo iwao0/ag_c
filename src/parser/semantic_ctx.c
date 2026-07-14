@@ -68,6 +68,15 @@ struct tag_member_t {
   int scope_depth;
 };
 
+typedef struct psx_ctx_allocation_t psx_ctx_allocation_t;
+struct psx_ctx_allocation_t {
+  psx_ctx_allocation_t *next;
+  void *pointer;
+};
+
+static void *ctx_calloc(size_t count, size_t size);
+static void ctx_release(void *pointer);
+
 static bool get_tag_member_info_impl(
     token_kind_t kind, char *name, int len, int scope_depth,
     int index, tag_member_info_t *out);
@@ -78,7 +87,7 @@ static void refresh_cached_tag_definition(tag_type_t *tag) {
   tag_member_info_t *members = NULL;
   int member_count = tag->member_count;
   if (member_count > 0) {
-    members = calloc((size_t)member_count, sizeof(tag_member_info_t));
+    members = ctx_calloc((size_t)member_count, sizeof(tag_member_info_t));
     for (int i = 0; i < member_count; i++) {
       if (!get_tag_member_info_impl(
               tag->kind, tag->name, tag->len, tag->scope_depth,
@@ -89,7 +98,7 @@ static void refresh_cached_tag_definition(tag_type_t *tag) {
     }
   }
 
-  free(tag->definition_members);
+  ctx_release(tag->definition_members);
   tag->definition_members = members;
   definition->tag_kind = tag->kind;
   definition->tag_name = tag->name;
@@ -135,10 +144,6 @@ static psx_type_t *typedef_record_decl_type_mut(typedef_name_t *t) {
   return t ? t->decl_type : NULL;
 }
 
-static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
-  return ps_type_clone_persistent(src);
-}
-
 struct psx_function_symbol_t {
   psx_function_symbol_t *next_hash;
   char *name;
@@ -149,6 +154,103 @@ struct psx_function_symbol_t {
    * のみではこのフラグは立たない。 */
   int is_defined;
 };
+
+struct psx_semantic_context_t {
+  psx_ctx_allocation_t *allocations;
+  goto_ref_t *goto_refs_all;
+  label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
+  deferred_parser_warning_t *deferred_parser_warnings_all;
+  tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
+  tag_type_t *all_tag_types;
+  tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
+  enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
+  enum_const_t *all_enum_consts;
+  typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
+  typedef_name_t *all_typedefs;
+  psx_function_symbol_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
+  int tag_scope_depth;
+  int tag_member_decl_order;
+};
+
+static psx_semantic_context_t default_semantic_context;
+static psx_semantic_context_t *active_semantic_context =
+    &default_semantic_context;
+
+static void *ctx_calloc(size_t count, size_t size) {
+  void *pointer = calloc(count, size);
+  if (!pointer) return NULL;
+  psx_ctx_allocation_t *allocation = malloc(sizeof(*allocation));
+  if (!allocation) {
+    free(pointer);
+    return NULL;
+  }
+  allocation->pointer = pointer;
+  allocation->next = active_semantic_context->allocations;
+  active_semantic_context->allocations = allocation;
+  return pointer;
+}
+
+static void ctx_release(void *pointer) {
+  if (!pointer) return;
+  psx_ctx_allocation_t **link = &active_semantic_context->allocations;
+  while (*link && (*link)->pointer != pointer) link = &(*link)->next;
+  if (!*link) return;
+  psx_ctx_allocation_t *allocation = *link;
+  *link = allocation->next;
+  free(allocation->pointer);
+  free(allocation);
+}
+
+static void ctx_release_all(psx_semantic_context_t *context) {
+  if (!context) return;
+  while (context->allocations) {
+    psx_ctx_allocation_t *allocation = context->allocations;
+    context->allocations = allocation->next;
+    free(allocation->pointer);
+    free(allocation);
+  }
+}
+
+psx_semantic_context_t *ps_ctx_create(void) {
+  return calloc(1, sizeof(psx_semantic_context_t));
+}
+
+void ps_ctx_destroy(psx_semantic_context_t *context) {
+  if (!context || context == &default_semantic_context) return;
+  if (active_semantic_context == context)
+    active_semantic_context = &default_semantic_context;
+  ctx_release_all(context);
+  free(context);
+}
+
+psx_semantic_context_t *ps_ctx_activate(psx_semantic_context_t *context) {
+  psx_semantic_context_t *previous = active_semantic_context;
+  active_semantic_context = context ? context : &default_semantic_context;
+  return previous;
+}
+
+psx_semantic_context_t *ps_ctx_active(void) {
+  return active_semantic_context;
+}
+
+static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
+  if (!src) return NULL;
+  psx_type_t *dst = ctx_calloc(1, sizeof(*dst));
+  if (!dst) return NULL;
+  *dst = *src;
+  dst->param_types = NULL;
+  dst->base = ctx_type_clone_persistent(src->base);
+  if (src->param_count > 0) {
+    const psx_type_t **params =
+        ctx_calloc((size_t)src->param_count, sizeof(*params));
+    if (!params) return NULL;
+    for (int i = 0; i < src->param_count; i++)
+      params[i] = ctx_type_clone_persistent(
+          src->param_types ? src->param_types[i] : NULL);
+    dst->param_types = params;
+  }
+  return dst;
+}
 
 static void initialize_tag_member_record(tag_member_t *m,
                                          const tag_member_info_t *desc) {
@@ -161,19 +263,21 @@ static void initialize_tag_member_record(tag_member_t *m,
   m->decl_type = ctx_type_clone_persistent(desc_type);
 }
 
-static goto_ref_t *goto_refs_all = NULL;
-static label_def_t *label_defs_by_bucket[PCTX_HASH_BUCKETS];
-static deferred_parser_warning_t *deferred_parser_warnings_all = NULL;
-static tag_type_t *tag_types_by_bucket[PCTX_HASH_BUCKETS];
-static tag_type_t *all_tag_types;
-static tag_member_t *tag_members_by_bucket[PCTX_HASH_BUCKETS];
-static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
-static enum_const_t *all_enum_consts;
-static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
-static typedef_name_t *all_typedefs;
-static psx_function_symbol_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
-static int tag_scope_depth = 0;
-static int tag_member_decl_order = 0;
+#define goto_refs_all (active_semantic_context->goto_refs_all)
+#define label_defs_by_bucket (active_semantic_context->label_defs_by_bucket)
+#define deferred_parser_warnings_all \
+  (active_semantic_context->deferred_parser_warnings_all)
+#define tag_types_by_bucket (active_semantic_context->tag_types_by_bucket)
+#define all_tag_types (active_semantic_context->all_tag_types)
+#define tag_members_by_bucket (active_semantic_context->tag_members_by_bucket)
+#define enum_consts_by_bucket (active_semantic_context->enum_consts_by_bucket)
+#define all_enum_consts (active_semantic_context->all_enum_consts)
+#define typedefs_by_bucket (active_semantic_context->typedefs_by_bucket)
+#define all_typedefs (active_semantic_context->all_typedefs)
+#define func_names_by_bucket (active_semantic_context->func_names_by_bucket)
+#define tag_scope_depth (active_semantic_context->tag_scope_depth)
+#define tag_member_decl_order \
+  (active_semantic_context->tag_member_decl_order)
 
 static void refresh_registered_member_type_completeness(void) {
   for (int bucket = 0; bucket < PCTX_HASH_BUCKETS; bucket++) {
@@ -210,23 +314,13 @@ void ps_ctx_reset_function_names(void) {
 }
 
 void ps_ctx_reset_translation_unit_scope(void) {
-  goto_refs_all = NULL;
-  deferred_parser_warnings_all = NULL;
-  memset(label_defs_by_bucket, 0, sizeof(label_defs_by_bucket));
-  memset(tag_types_by_bucket, 0, sizeof(tag_types_by_bucket));
-  all_tag_types = NULL;
-  memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
-  memset(enum_consts_by_bucket, 0, sizeof(enum_consts_by_bucket));
-  all_enum_consts = NULL;
-  memset(typedefs_by_bucket, 0, sizeof(typedefs_by_bucket));
-  all_typedefs = NULL;
-  memset(func_names_by_bucket, 0, sizeof(func_names_by_bucket));
-  tag_scope_depth = 0;
-  tag_member_decl_order = 0;
+  psx_semantic_context_t *context = active_semantic_context;
+  ctx_release_all(context);
+  memset(context, 0, sizeof(*context));
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning(const token_t *tok, const char *name) {
-  deferred_parser_warning_t *w = calloc(1, sizeof(deferred_parser_warning_t));
+  deferred_parser_warning_t *w = ctx_calloc(1, sizeof(deferred_parser_warning_t));
   if (!w) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
@@ -251,6 +345,7 @@ void ps_ctx_emit_deferred_parser_warnings(void) {
                    "%s: %s",
                    diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
                    w->name ? w->name : "");
+    ctx_release(w);
   }
 }
 
@@ -404,7 +499,7 @@ void ps_ctx_leave_block_scope(void) {
 }
 
 void psx_ctx_register_goto_ref(char *name, int len, token_t *tok) {
-  goto_ref_t *g = calloc(1, sizeof(goto_ref_t));
+  goto_ref_t *g = ctx_calloc(1, sizeof(goto_ref_t));
   g->name = name;
   g->len = len;
   g->tok = tok;
@@ -419,7 +514,7 @@ void psx_ctx_register_label_def(char *name, int len, token_t *tok) {
       ps_diag_duplicate_with_name(tok, diag_text_for(DIAG_TEXT_LABEL), name, len);
     }
   }
-  label_def_t *d = calloc(1, sizeof(label_def_t));
+  label_def_t *d = ctx_calloc(1, sizeof(label_def_t));
   d->name = name;
   d->len = len;
   d->tok = tok;
@@ -528,7 +623,7 @@ int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
     return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  tag_type_t *t = calloc(1, sizeof(tag_type_t));
+  tag_type_t *t = ctx_calloc(1, sizeof(tag_type_t));
   t->kind = kind;
   t->name = name;
   t->len = len;
@@ -583,7 +678,7 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition(
   if (tag->definition) return tag->definition;
 
   psx_aggregate_definition_t *definition =
-      calloc(1, sizeof(psx_aggregate_definition_t));
+      ctx_calloc(1, sizeof(psx_aggregate_definition_t));
   tag->definition = definition;
   refresh_cached_tag_definition(tag);
   return definition;
@@ -618,7 +713,7 @@ static tag_member_t *find_tag_member_record_at_current_scope(
 static void insert_tag_member_record(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *desc, unsigned bucket) {
-  tag_member_t *m = calloc(1, sizeof(tag_member_t));
+  tag_member_t *m = ctx_calloc(1, sizeof(tag_member_t));
   m->tag_kind = tag_kind;
   m->tag_name = tag_name;
   m->tag_len = tag_len;
@@ -882,7 +977,7 @@ int ps_ctx_register_enum_const(
     return 0;
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
-  enum_const_t *e = calloc(1, sizeof(enum_const_t));
+  enum_const_t *e = ctx_calloc(1, sizeof(enum_const_t));
   e->name = name;
   e->len = len;
   e->value = value;
@@ -1006,7 +1101,7 @@ int ps_ctx_register_typedef_name(
     return 1;  /* 同じ型なら登録済みのままで OK */
   }
   unsigned bucket = psx_ctx_hash_name(name, len);
-  typedef_name_t *t = calloc(1, sizeof(typedef_name_t));
+  typedef_name_t *t = ctx_calloc(1, sizeof(typedef_name_t));
   t->name = name;
   t->len = len;
   t->scope_depth = tag_scope_depth;
@@ -1134,7 +1229,7 @@ void ps_ctx_rollback_function_registration(
   if (!checkpoint->existed) {
     psx_function_symbol_t *removed = *link;
     *link = removed->next_hash;
-    free(removed);
+    ctx_release(removed);
     return;
   }
   (*link)->is_defined = checkpoint->is_defined;
@@ -1145,7 +1240,7 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
   psx_function_symbol_t *existing = find_function_name_mut(name, len);
   if (existing) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  psx_function_symbol_t *f = calloc(1, sizeof(*f));
+  psx_function_symbol_t *f = ctx_calloc(1, sizeof(*f));
   f->name = name;
   f->len = len;
   (void)ret_struct_size;

@@ -9,6 +9,13 @@
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
+psx_semantic_context_t *ps_ctx_create(void);
+void ps_ctx_destroy(psx_semantic_context_t *context);
+psx_semantic_context_t *ps_ctx_activate(psx_semantic_context_t *context);
+psx_semantic_context_t *ps_ctx_active(void);
+
 void ps_ctx_reset_function_scope(void);
 void ps_ctx_reset_translation_unit_scope(void);
 void ps_ctx_reset_function_names(void);
