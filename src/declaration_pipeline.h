@@ -51,6 +51,7 @@ int psx_apply_function_declaration_pipeline(
     const psx_function_declaration_pipeline_request_t *request);
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   const psx_type_t *base_type;
   psx_parsed_declarator_t *declarator;
 } psx_function_definition_pipeline_request_t;
@@ -63,6 +64,7 @@ typedef struct {
 } psx_function_definition_pipeline_result_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   const psx_type_t *base_type;
   psx_runtime_declarator_application_t application;
   psx_function_definition_pipeline_result_t *result;

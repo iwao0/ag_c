@@ -41,6 +41,8 @@ void psx_resolve_member_access(
     return;
   }
   resolution->base_object_type = object_type;
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
 
   const tag_member_info_t *member = ps_type_find_aggregate_member(
       base_type, object_type->tag_kind,
@@ -56,12 +58,14 @@ void psx_resolve_member_access(
                        ? object_type->tag_scope_depth_p1 - 1
                        : -1;
   int found = base_scope >= 0
-      ? ps_ctx_find_tag_member_info_at_scope(
+      ? ps_ctx_find_tag_member_info_at_scope_in(
+            semantic_context,
             object_type->tag_kind, object_type->tag_name,
             object_type->tag_len, base_scope,
             request->member_name, request->member_name_len,
             &resolution->member)
-      : ps_ctx_find_tag_member_info(
+      : ps_ctx_find_tag_member_info_in(
+            semantic_context,
             object_type->tag_kind, object_type->tag_name,
             object_type->tag_len,
             request->member_name, request->member_name_len,

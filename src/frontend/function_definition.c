@@ -27,6 +27,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
           &(psx_function_definition_pipeline_request_t){
+              .semantic_context = semantic_context,
               .base_type = base_type,
               .declarator = &definition->declarator,
           },

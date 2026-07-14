@@ -161,6 +161,10 @@ bool ps_ctx_find_typedef_decl_type_in(
 bool ps_ctx_find_typedef_decl_type_at(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type);
+bool ps_ctx_find_typedef_decl_type_at_in(
+    psx_semantic_context_t *context,
+    char *name, int len, psx_local_lookup_point_t point,
+    const psx_type_t **out_type);
 int ps_ctx_has_typedef_in_current_scope(char *name, int len);
 bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size);
 bool psx_ctx_is_typedef_name_token(token_t *tok);

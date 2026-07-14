@@ -3,6 +3,8 @@
 
 #include "../parser/ast.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_TYPE_QUERY_RESOLUTION_OK = 0,
   PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED,
@@ -22,6 +24,13 @@ typedef struct {
 void psx_resolve_sizeof_query(
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution);
+void psx_resolve_sizeof_query_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_sizeof_query_t *query,
+    psx_sizeof_query_resolution_t *resolution);
 void psx_resolve_alignof_query(node_alignof_query_t *query);
+void psx_resolve_alignof_query_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_alignof_query_t *query);
 
 #endif

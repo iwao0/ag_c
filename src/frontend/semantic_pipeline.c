@@ -18,11 +18,11 @@ void psx_frontend_analyze_function_in_context(
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
   psx_validate_control_flow(function, fallback_diag_tok);
-  psx_semantic_resolve_tree(
-      function, current_function, fallback_diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      semantic_context, function, current_function, fallback_diag_tok);
   function = psx_lower_semantic_tree(function, fallback_diag_tok);
-  psx_semantic_resolve_tree(
-      function, current_function, fallback_diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      semantic_context, function, current_function, fallback_diag_tok);
   current_function->lvars = ps_decl_get_locals();
   psx_emit_semantic_warnings(
       function, current_function, fallback_diag_tok);
@@ -45,9 +45,11 @@ node_t *psx_frontend_analyze_expression_in_context(
   expression = psx_bind_identifier_tree_in(
       semantic_context,
       expression, fallback_diag_tok);
-  psx_semantic_resolve_tree(expression, NULL, fallback_diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      semantic_context, expression, NULL, fallback_diag_tok);
   expression = psx_lower_semantic_tree(expression, fallback_diag_tok);
-  psx_semantic_resolve_tree(expression, NULL, fallback_diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      semantic_context, expression, NULL, fallback_diag_tok);
   psx_lower_implicit_conversions(expression, NULL, fallback_diag_tok);
   return expression;
 }
@@ -64,10 +66,12 @@ node_t *psx_frontend_analyze_initializer_syntax_in_context(
   syntax = psx_bind_identifier_initializer_tree_in(
       semantic_context,
       syntax, fallback_diag_tok);
-  psx_semantic_resolve_initializer_tree(syntax, NULL, fallback_diag_tok);
+  psx_semantic_resolve_initializer_tree_in_context(
+      semantic_context, syntax, NULL, fallback_diag_tok);
   syntax = psx_lower_semantic_initializer_syntax(
       syntax, fallback_diag_tok);
-  psx_semantic_resolve_initializer_tree(syntax, NULL, fallback_diag_tok);
+  psx_semantic_resolve_initializer_tree_in_context(
+      semantic_context, syntax, NULL, fallback_diag_tok);
   return syntax;
 }
 
@@ -85,9 +89,11 @@ void psx_frontend_analyze_program_in_context(
     program[i] = psx_bind_identifier_tree_in(
         semantic_context,
         program[i], program[i]->tok);
-    psx_semantic_resolve_tree(program[i], NULL, program[i]->tok);
+    psx_semantic_resolve_tree_in_context(
+        semantic_context, program[i], NULL, program[i]->tok);
     program[i] = psx_lower_semantic_tree(program[i], program[i]->tok);
-    psx_semantic_resolve_tree(program[i], NULL, program[i]->tok);
+    psx_semantic_resolve_tree_in_context(
+        semantic_context, program[i], NULL, program[i]->tok);
     psx_lower_implicit_conversions(program[i], NULL, program[i]->tok);
   }
 }

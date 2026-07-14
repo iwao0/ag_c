@@ -24,7 +24,9 @@ void psx_resolve_static_initializer(
   resolution->type = type;
   resolution->kind = request->kind;
   resolution->initializer = request->initializer;
-  ps_ctx_attach_aggregate_definitions(type);
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
+  ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
 
   if (ps_type_is_incomplete_array(type)) {
     if (!psx_resolve_incomplete_array_initializer(

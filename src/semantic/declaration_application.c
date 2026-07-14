@@ -338,10 +338,28 @@ void psx_apply_parsed_declarator(
 void psx_apply_runtime_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application) {
-  psx_apply_runtime_parsed_declarator_ex(declarator, application, -1);
+  psx_apply_runtime_parsed_declarator_in_context(
+      NULL, declarator, application);
+}
+
+void psx_apply_runtime_parsed_declarator_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application) {
+  psx_apply_runtime_parsed_declarator_ex_in_context(
+      semantic_context, declarator, application, -1);
 }
 
 void psx_apply_runtime_parsed_declarator_ex(
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application,
+    int skipped_function_op_index) {
+  psx_apply_runtime_parsed_declarator_ex_in_context(
+      NULL, declarator, application, skipped_function_op_index);
+}
+
+void psx_apply_runtime_parsed_declarator_ex_in_context(
+    psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index) {
@@ -371,10 +389,10 @@ void psx_apply_runtime_parsed_declarator_ex(
       ps_diag_ctx(parsed->expression.start, "declarator-resolution",
                    "runtime array bound syntax was not prepared");
     }
-    expression = psx_bind_identifier_tree(
-        expression, parsed->expression.start);
-    psx_semantic_resolve_tree(
-        expression, NULL, parsed->expression.start);
+    expression = psx_bind_identifier_tree_in(
+        semantic_context, expression, parsed->expression.start);
+    psx_semantic_resolve_tree_in_context(
+        semantic_context, expression, NULL, parsed->expression.start);
     int is_constant = 1;
     long long value = psx_eval_const_int(expression, &is_constant);
     if (is_constant && value < 0) {

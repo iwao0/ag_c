@@ -9,6 +9,14 @@
 void psx_resolve_generic_selection(
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution) {
+  psx_resolve_generic_selection_in_context(
+      NULL, selection, resolution);
+}
+
+void psx_resolve_generic_selection_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_generic_selection_t *selection,
+    psx_generic_selection_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED;
@@ -32,7 +40,8 @@ void psx_resolve_generic_selection(
       continue;
     }
     const psx_type_t *resolved =
-        psx_resolve_bound_type_name_ref(&association->type_name);
+        psx_resolve_bound_type_name_ref_in_context(
+            semantic_context, &association->type_name);
     if (resolved) {
       psx_type_t *normalized = ps_type_clone(resolved);
       ps_type_normalize_integer_identity(normalized);

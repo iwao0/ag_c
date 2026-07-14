@@ -1375,7 +1375,16 @@ bool ps_ctx_find_typedef_decl_type_in(
 bool ps_ctx_find_typedef_decl_type_at(
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type) {
-  for (typedef_name_t *type = all_typedefs; type;
+  return ps_ctx_find_typedef_decl_type_at_in(
+      active_semantic_context, name, len, point, out_type);
+}
+
+bool ps_ctx_find_typedef_decl_type_at_in(
+    psx_semantic_context_t *context,
+    char *name, int len, psx_local_lookup_point_t point,
+    const psx_type_t **out_type) {
+  if (!context || !name || len <= 0) return false;
+  for (typedef_name_t *type = context->typedef_names_all; type;
        type = type->next_all) {
     if (type->len != len ||
         strncmp(type->name, name, (size_t)len) != 0 ||
@@ -1384,7 +1393,8 @@ bool ps_ctx_find_typedef_decl_type_at(
         !ps_local_registry_scope_is_visible_from(
             type->scope_seq, point.scope_seq))
       continue;
-    ps_ctx_refresh_type_completeness(
+    ps_ctx_refresh_type_completeness_in(
+        context,
         typedef_record_decl_type_mut(type));
     if (out_type) *out_type = typedef_record_decl_type(type);
     return true;

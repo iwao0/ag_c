@@ -130,6 +130,82 @@ if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     "tag registration and layout resolution must use the passed semantic context",
   );
 }
+const semanticPassSource = await readFile(
+  "src/semantic/semantic_pass.c",
+  "utf8",
+);
+const memberAccessResolutionSource = await readFile(
+  "src/semantic/member_access_resolution.c",
+  "utf8",
+);
+const typeNameResolutionSource = await readFile(
+  "src/semantic/type_name_resolution.c",
+  "utf8",
+);
+const typeQueryResolutionSource = await readFile(
+  "src/semantic/type_query_resolution.c",
+  "utf8",
+);
+const genericSelectionResolutionSource = await readFile(
+  "src/semantic/generic_selection_resolution.c",
+  "utf8",
+);
+const staticInitializerResolutionSource = await readFile(
+  "src/semantic/static_initializer_resolution.c",
+  "utf8",
+);
+const frontendSemanticPipelineSource = await readFile(
+  "src/frontend/semantic_pipeline.c",
+  "utf8",
+);
+const semanticTraversalCallers = [
+  frontendSemanticPipelineSource,
+  declarationApplicationSource,
+  await readFile("src/semantic/declaration_registration.c", "utf8"),
+].join("\n");
+const contextFreeSemanticTraversalCall =
+  /\bpsx_semantic_resolve_(?:tree|initializer_tree)\s*\(/;
+const contextFreeMemberRegistryCall =
+  /\bps_ctx_(?:find_tag_member_info|find_tag_member_info_at_scope)\s*\(/;
+if (!/psx_semantic_resolve_tree_in_context\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_semantic_resolve_initializer_tree_in_context\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/\.semantic_context\s*=\s*semantic_context/.test(
+      semanticPassSource,
+    ) ||
+    contextFreeSemanticTraversalCall.test(semanticTraversalCallers) ||
+    !/psx_semantic_resolve_tree_in_context\s*\(/.test(
+      frontendSemanticPipelineSource,
+    ) ||
+    contextFreeMemberRegistryCall.test(memberAccessResolutionSource) ||
+    !/ps_ctx_find_tag_member_info_at_scope_in\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/ps_ctx_find_tag_member_info_in\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/ps_ctx_find_typedef_decl_type_at_in\s*\(/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/ps_ctx_clone_tag_type_at_in\s*\(/.test(
+      typeNameResolutionSource,
+    ) ||
+    !/psx_resolve_bound_type_name_ref_in_context\s*\(/.test(
+      genericSelectionResolutionSource,
+    ) ||
+    !/psx_bind_type_name_ref_in_context\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/ps_ctx_attach_aggregate_definitions_in\s*\(/.test(
+      staticInitializerResolutionSource,
+    )) {
+  throw new Error(
+    "semantic traversal and delayed type queries must use the passed semantic context",
+  );
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

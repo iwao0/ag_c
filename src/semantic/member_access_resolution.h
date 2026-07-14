@@ -11,6 +11,7 @@ typedef enum {
 } psx_member_access_status_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   node_t *base;
   char *member_name;
   int member_name_len;

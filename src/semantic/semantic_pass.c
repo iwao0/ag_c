@@ -16,9 +16,14 @@
 #include "type_name_resolution.h"
 #include "type_query_resolution.h"
 
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  node_function_definition_t *current_func;
+  const token_t *fallback_diag_tok;
+} psx_semantic_traversal_t;
+
 static void semantic_transform_node(
-    node_t *node, node_function_definition_t *current_func,
-                                    const token_t *fallback_diag_tok);
+    node_t *node, const psx_semantic_traversal_t *traversal);
 
 static void semantic_bind_result_type(
     node_t *node, const psx_type_t *type) {
@@ -26,11 +31,10 @@ static void semantic_bind_result_type(
 }
 
 static void semantic_transform_initializer_syntax(
-    node_t *syntax, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
+    node_t *syntax, const psx_semantic_traversal_t *traversal) {
   if (!syntax) return;
   if (syntax->kind != ND_INIT_LIST) {
-    semantic_transform_node(syntax, current_func, fallback_diag_tok);
+    semantic_transform_node(syntax, traversal);
     return;
   }
   node_init_list_t *list = (node_init_list_t *)syntax;
@@ -41,19 +45,19 @@ static void semantic_transform_initializer_syntax(
             &list->entries[i].designators[d];
         if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
           semantic_transform_node(
-              designator->index_expr, current_func, fallback_diag_tok);
+              designator->index_expr, traversal);
           semantic_transform_node(
-              designator->range_end_expr, current_func, fallback_diag_tok);
+              designator->range_end_expr, traversal);
         }
       }
     } else {
       for (int d = 0; d < list->entries[i].index_expr_count; d++) {
         semantic_transform_node(
-            list->entries[i].index_exprs[d], current_func, fallback_diag_tok);
+            list->entries[i].index_exprs[d], traversal);
       }
     }
     semantic_transform_initializer_syntax(
-        list->entries[i].value, current_func, fallback_diag_tok);
+        list->entries[i].value, traversal);
   }
 }
 
@@ -96,11 +100,10 @@ static void semantic_transform_return(
 }
 
 static void semantic_transform_node_array(
-    node_t **nodes, node_function_definition_t *current_func,
-                                          const token_t *fallback_diag_tok) {
+    node_t **nodes, const psx_semantic_traversal_t *traversal) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++) {
-    semantic_transform_node(nodes[i], current_func, fallback_diag_tok);
+    semantic_transform_node(nodes[i], traversal);
   }
 }
 
@@ -229,6 +232,7 @@ static void semantic_resolve_incdec(
 }
 
 static void semantic_resolve_member_access(
+    psx_semantic_context_t *semantic_context,
     node_member_access_t *access,
     const token_t *fallback_diag_tok) {
   if (!access || !access->base.lhs) return;
@@ -238,6 +242,7 @@ static void semantic_resolve_member_access(
   psx_member_access_resolution_t resolution;
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
+          .semantic_context = semantic_context,
           .base = access->base.lhs,
           .member_name = access->member_name,
           .member_name_len = access->member_name_len,
@@ -298,8 +303,7 @@ static void semantic_resolve_function_reference(
 }
 
 static node_t *semantic_normalize_call_deref_chain(
-    node_t *callee, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
+    node_t *callee, const psx_semantic_traversal_t *traversal) {
   int deref_count = 0;
   node_t *bottom = callee;
   while (bottom &&
@@ -311,7 +315,7 @@ static node_t *semantic_normalize_call_deref_chain(
   if (deref_count == 0 || !bottom) return callee;
 
   semantic_transform_node(
-      bottom, current_func, fallback_diag_tok);
+      bottom, traversal);
   const psx_type_t *type = ps_node_get_type(bottom);
   int pointer_depth = 0;
   while (type && type->kind == PSX_TYPE_POINTER) {
@@ -359,25 +363,33 @@ static void semantic_resolve_function_call(
 }
 
 static const psx_type_t *semantic_resolve_type_name_ref(
+    psx_semantic_context_t *semantic_context,
     psx_type_name_ref_t *type_name) {
-  return psx_resolve_bound_type_name_ref(type_name);
+  return psx_resolve_bound_type_name_ref_in_context(
+      semantic_context, type_name);
 }
 
-static void semantic_resolve_source_cast(node_source_cast_t *cast) {
+static void semantic_resolve_source_cast(
+    psx_semantic_context_t *semantic_context,
+    node_source_cast_t *cast) {
   if (!cast || !cast->base.is_source_cast) return;
   semantic_bind_result_type(
       (node_t *)cast,
-      ps_type_clone(semantic_resolve_type_name_ref(&cast->type_name)));
+      ps_type_clone(semantic_resolve_type_name_ref(
+          semantic_context, &cast->type_name)));
 }
 
 static void semantic_resolve_compound_literal(
+    psx_semantic_context_t *semantic_context,
     node_compound_literal_t *compound) {
   if (!compound) return;
   const psx_type_t *object_type = compound->type_name.resolved_type;
   if (!object_type) {
     psx_type_t *resolved = ps_type_clone(
-        semantic_resolve_type_name_ref(&compound->type_name));
-    ps_ctx_attach_aggregate_definitions(resolved);
+        semantic_resolve_type_name_ref(
+            semantic_context, &compound->type_name));
+    ps_ctx_attach_aggregate_definitions_in(
+        semantic_context, resolved);
     compound->type_name.resolved_type = resolved;
     object_type = resolved;
   }
@@ -389,6 +401,7 @@ static void semantic_resolve_compound_literal(
 }
 
 static void semantic_resolve_generic_selection(
+    psx_semantic_context_t *semantic_context,
     node_generic_selection_t *selection,
     const token_t *fallback_diag_tok) {
   if (!selection) return;
@@ -398,7 +411,8 @@ static void semantic_resolve_generic_selection(
                      : (token_t *)fallback_diag_tok;
   selection->base.type = NULL;
   psx_generic_selection_resolution_t resolution;
-  psx_resolve_generic_selection(selection, &resolution);
+  psx_resolve_generic_selection_in_context(
+      semantic_context, selection, &resolution);
   token_t *conflict_tok = tok;
   if (resolution.conflict_index >= 0 &&
       resolution.conflict_index < selection->association_count &&
@@ -485,20 +499,21 @@ static void semantic_mark_sizeof_indices_evaluated(node_t *operand) {
 
 static void semantic_resolve_sizeof_query(
     node_sizeof_query_t *query,
-    node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
+    const psx_semantic_traversal_t *traversal) {
   if (!query) return;
+  const token_t *fallback_diag_tok = traversal->fallback_diag_tok;
   psx_parsed_type_name_t *syntax = query->type_name.syntax;
   if (query->is_type_name && syntax) {
     for (int i = 0; i < syntax->declarator.array_bound_count; i++) {
       semantic_transform_node(
           syntax->declarator.array_bounds[i].expression.node,
-          current_func, fallback_diag_tok);
+          traversal);
     }
   }
 
   psx_sizeof_query_resolution_t resolution;
-  psx_resolve_sizeof_query(query, &resolution);
+  psx_resolve_sizeof_query_in_context(
+      traversal->semantic_context, query, &resolution);
   node_t *issue_bound = NULL;
   if (syntax && resolution.issue_bound_index >= 0 &&
       resolution.issue_bound_index < syntax->declarator.array_bound_count) {
@@ -550,19 +565,20 @@ static void semantic_resolve_sizeof_query(
 }
 
 static void semantic_transform_node(
-    node_t *node, node_function_definition_t *current_func,
-                                    const token_t *fallback_diag_tok) {
+    node_t *node, const psx_semantic_traversal_t *traversal) {
   if (!node) return;
+  node_function_definition_t *current_func = traversal->current_func;
+  const token_t *fallback_diag_tok = traversal->fallback_diag_tok;
 
   switch (node->kind) {
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       if (init->init_kind == PSX_DECL_INIT_LIST) {
         semantic_transform_initializer_syntax(
-            node->rhs, current_func, fallback_diag_tok);
+            node->rhs, traversal);
       } else {
-        semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
+        semantic_transform_node(node->rhs, traversal);
       }
       semantic_bind_result_type(
           node, ps_type_clone(ps_node_get_type(node->lhs)));
@@ -571,29 +587,32 @@ static void semantic_transform_node(
     }
     case ND_RETURN:
       semantic_transform_return(node, current_func, fallback_diag_tok);
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       break;
     case ND_BLOCK:
-      semantic_transform_node_array(((node_block_t *)node)->body, current_func, fallback_diag_tok);
+      semantic_transform_node_array(
+          ((node_block_t *)node)->body, traversal);
       break;
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
+      psx_semantic_traversal_t function_traversal = *traversal;
+      function_traversal.current_func = function;
       semantic_transform_node_array(
-          function->parameters, function, fallback_diag_tok);
+          function->parameters, &function_traversal);
       semantic_transform_node(
-          node->rhs, function, fallback_diag_tok);
+          node->rhs, &function_traversal);
       break;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
       call->callee = semantic_normalize_call_deref_chain(
-          call->callee, current_func, fallback_diag_tok);
+          call->callee, traversal);
       semantic_transform_node(
-          call->callee, current_func, fallback_diag_tok);
+          call->callee, traversal);
       for (int i = 0; i < call->argument_count; i++) {
         semantic_transform_node(
-            call->arguments[i], current_func, fallback_diag_tok);
+            call->arguments[i], traversal);
       }
       semantic_resolve_function_call(call, fallback_diag_tok);
       break;
@@ -603,27 +622,28 @@ static void semantic_transform_node(
           (node_funcref_t *)node, fallback_diag_tok);
       break;
     case ND_SUBSCRIPT:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
       semantic_resolve_subscript(node, fallback_diag_tok);
       break;
     case ND_MEMBER_ACCESS:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       semantic_resolve_member_access(
+          traversal->semantic_context,
           (node_member_access_t *)node, fallback_diag_tok);
       break;
     case ND_UNARY_DEREF:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       semantic_resolve_unary_deref(node, fallback_diag_tok);
       break;
     case ND_UNARY_NEGATE:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       semantic_resolve_arithmetic_unary(
           node, "単項 -", fallback_diag_tok);
       break;
     case ND_CREAL:
     case ND_CIMAG:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       semantic_resolve_arithmetic_unary(
           node, node->kind == ND_CREAL ? "__real__" : "__imag__",
           fallback_diag_tok);
@@ -632,39 +652,43 @@ static void semantic_transform_node(
       node_generic_selection_t *selection =
           (node_generic_selection_t *)node;
       semantic_transform_node(
-          selection->control, current_func, fallback_diag_tok);
+          selection->control, traversal);
       for (int i = 0; i < selection->association_count; i++) {
         semantic_transform_node(
             selection->associations[i].expression,
-            current_func, fallback_diag_tok);
+            traversal);
       }
-      semantic_resolve_generic_selection(selection, fallback_diag_tok);
+      semantic_resolve_generic_selection(
+          traversal->semantic_context, selection, fallback_diag_tok);
       break;
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       if (!query->is_type_name)
         semantic_transform_node(
-            query->operand, current_func, fallback_diag_tok);
-      semantic_resolve_sizeof_query(
-          query, current_func, fallback_diag_tok);
+            query->operand, traversal);
+      semantic_resolve_sizeof_query(query, traversal);
       break;
     }
     case ND_ALIGNOF_QUERY:
-      psx_resolve_alignof_query((node_alignof_query_t *)node);
+      psx_resolve_alignof_query_in_context(
+          traversal->semantic_context,
+          (node_alignof_query_t *)node);
       break;
     case ND_CAST:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_resolve_source_cast((node_source_cast_t *)node);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_resolve_source_cast(
+          traversal->semantic_context, (node_source_cast_t *)node);
       break;
     case ND_COMPOUND_LITERAL:
       semantic_resolve_compound_literal(
+          traversal->semantic_context,
           (node_compound_literal_t *)node);
       semantic_transform_initializer_syntax(
-          node->rhs, current_func, fallback_diag_tok);
+          node->rhs, traversal);
       break;
     case ND_ADDR:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       if (!node->type)
         semantic_bind_result_type(
             node, psx_resolve_address_result_type(node->lhs));
@@ -681,7 +705,7 @@ static void semantic_transform_node(
     case ND_PRE_DEC:
     case ND_POST_INC:
     case ND_POST_DEC:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
       semantic_resolve_incdec(node, fallback_diag_tok);
       break;
     case ND_COMMA:
@@ -701,8 +725,8 @@ static void semantic_transform_node(
     case ND_LE:
     case ND_LOGAND:
     case ND_LOGOR:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
       if (!ps_node_get_type(node)) {
         semantic_bind_result_type(
             node, psx_resolve_binary_result_type(
@@ -713,11 +737,11 @@ static void semantic_transform_node(
     case ND_FOR:
     case ND_TERNARY: {
       node_ctrl_t *ctrl = (node_ctrl_t *)node;
-      semantic_transform_node(ctrl->init, current_func, fallback_diag_tok);
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
-      semantic_transform_node(ctrl->inc, current_func, fallback_diag_tok);
-      semantic_transform_node(ctrl->els, current_func, fallback_diag_tok);
+      semantic_transform_node(ctrl->init, traversal);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
+      semantic_transform_node(ctrl->inc, traversal);
+      semantic_transform_node(ctrl->els, traversal);
       if (node->kind == ND_TERNARY)
         semantic_bind_result_type(
             node, psx_resolve_conditional_result_type(
@@ -725,15 +749,15 @@ static void semantic_transform_node(
       break;
     }
     case ND_STMT_EXPR: {
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
       semantic_bind_result_type(
           node, psx_resolve_sequence_result_type(node->rhs));
       break;
     }
     default:
-      semantic_transform_node(node->lhs, current_func, fallback_diag_tok);
-      semantic_transform_node(node->rhs, current_func, fallback_diag_tok);
+      semantic_transform_node(node->lhs, traversal);
+      semantic_transform_node(node->rhs, traversal);
       semantic_validate_assignment(node, fallback_diag_tok);
       if (node->kind == ND_ASSIGN)
         ps_node_bind_type(node, ps_node_get_type(node->lhs));
@@ -744,12 +768,40 @@ static void semantic_transform_node(
 void psx_semantic_resolve_tree(
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
-  semantic_transform_node(node, current_func, fallback_diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      NULL, node, current_func, fallback_diag_tok);
+}
+
+void psx_semantic_resolve_tree_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_t *node, node_function_definition_t *current_func,
+    const token_t *fallback_diag_tok) {
+  psx_semantic_traversal_t traversal = {
+      .semantic_context = semantic_context
+          ? semantic_context : ps_ctx_active(),
+      .current_func = current_func,
+      .fallback_diag_tok = fallback_diag_tok,
+  };
+  semantic_transform_node(node, &traversal);
 }
 
 void psx_semantic_resolve_initializer_tree(
     node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
+  psx_semantic_resolve_initializer_tree_in_context(
+      NULL, syntax, current_func, fallback_diag_tok);
+}
+
+void psx_semantic_resolve_initializer_tree_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_t *syntax, node_function_definition_t *current_func,
+    const token_t *fallback_diag_tok) {
+  psx_semantic_traversal_t traversal = {
+      .semantic_context = semantic_context
+          ? semantic_context : ps_ctx_active(),
+      .current_func = current_func,
+      .fallback_diag_tok = fallback_diag_tok,
+  };
   semantic_transform_initializer_syntax(
-      syntax, current_func, fallback_diag_tok);
+      syntax, &traversal);
 }

@@ -3,6 +3,8 @@
 
 #include "../parser/ast.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_GENERIC_SELECTION_RESOLUTION_OK = 0,
   PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT,
@@ -18,6 +20,10 @@ typedef struct {
 } psx_generic_selection_resolution_t;
 
 void psx_resolve_generic_selection(
+    node_generic_selection_t *selection,
+    psx_generic_selection_resolution_t *resolution);
+void psx_resolve_generic_selection_in_context(
+    psx_semantic_context_t *semantic_context,
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution);
 

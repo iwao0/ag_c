@@ -4,6 +4,8 @@
 #include "../parser/ast.h"
 #include "../parser/type.h"
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef enum {
   PSX_STATIC_INITIALIZER_OK = 0,
   PSX_STATIC_INITIALIZER_INVALID,
@@ -13,6 +15,7 @@ typedef enum {
 } psx_static_initializer_status_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   const psx_type_t *type;
   psx_decl_init_kind_t kind;
   node_t *initializer;

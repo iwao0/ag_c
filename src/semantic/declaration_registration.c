@@ -174,7 +174,8 @@ void psx_apply_static_assert_in_context(
   if (!condition) return;
   condition = psx_bind_identifier_tree_in(
       semantic_context, condition, diag_tok);
-  psx_semantic_resolve_tree(condition, NULL, diag_tok);
+  psx_semantic_resolve_tree_in_context(
+      semantic_context, condition, NULL, diag_tok);
   int is_constant = 1;
   long long value = psx_eval_const_int(condition, &is_constant);
   psx_static_assert_resolution_t resolution;

@@ -50,12 +50,14 @@ static node_t *widen_size_value(node_t *value) {
 }
 
 static void resolve_sizeof_type_name(
+    psx_semantic_context_t *semantic_context,
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution) {
   psx_parsed_type_name_t *syntax =
       query ? query->type_name.syntax : NULL;
   if (!query || !query->is_type_name || !syntax) return;
-  if (!psx_bind_type_name_ref(&query->type_name) ||
+  if (!psx_bind_type_name_ref_in_context(
+          semantic_context, &query->type_name) ||
       !query->type_name.bound_base_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
     return;
@@ -97,10 +99,12 @@ static void resolve_sizeof_type_name(
 
   psx_type_t *resolved_type = psx_build_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = semantic_context,
           .base_type = base_type,
           .declarator_shape = shape,
       });
-  ps_ctx_refresh_type_completeness(resolved_type);
+  ps_ctx_refresh_type_completeness_in(
+      semantic_context, resolved_type);
   query->type_name.resolved_type = resolved_type;
   if (!query->type_name.resolved_type) {
     resolution->status = PSX_TYPE_QUERY_RESOLUTION_TYPE_UNRESOLVED;
@@ -173,6 +177,13 @@ static const psx_type_t *sizeof_operand_type(node_sizeof_query_t *query) {
 void psx_resolve_sizeof_query(
     node_sizeof_query_t *query,
     psx_sizeof_query_resolution_t *resolution) {
+  psx_resolve_sizeof_query_in_context(NULL, query, resolution);
+}
+
+void psx_resolve_sizeof_query_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_sizeof_query_t *query,
+    psx_sizeof_query_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_TYPE_QUERY_RESOLUTION_OK;
@@ -182,12 +193,14 @@ void psx_resolve_sizeof_query(
     return;
   }
 
-  resolve_sizeof_type_name(query, resolution);
+  if (!semantic_context) semantic_context = ps_ctx_active();
+  resolve_sizeof_type_name(semantic_context, query, resolution);
   if (resolution->status != PSX_TYPE_QUERY_RESOLUTION_OK) return;
   const psx_type_t *type = sizeof_operand_type(query);
   if (!query->is_type_name && type) {
     psx_type_t *completed_view = ps_type_clone(type);
-    ps_ctx_refresh_type_completeness(completed_view);
+    ps_ctx_refresh_type_completeness_in(
+        semantic_context, completed_view);
     type = completed_view;
   }
 
@@ -235,8 +248,15 @@ void psx_resolve_sizeof_query(
 }
 
 void psx_resolve_alignof_query(node_alignof_query_t *query) {
+  psx_resolve_alignof_query_in_context(NULL, query);
+}
+
+void psx_resolve_alignof_query_in_context(
+    psx_semantic_context_t *semantic_context,
+    node_alignof_query_t *query) {
   if (!query) return;
   const psx_type_t *type =
-      psx_resolve_bound_type_name_ref(&query->type_name);
+      psx_resolve_bound_type_name_ref_in_context(
+          semantic_context, &query->type_name);
   query->resolved_alignment = type && type->align > 0 ? type->align : 1;
 }

@@ -149,6 +149,7 @@ int psx_finish_global_declaration_pipeline(
       psx_static_initializer_resolution_t initializer_resolution;
       psx_resolve_static_initializer(
           &(psx_static_initializer_resolution_request_t){
+              .semantic_context = request->semantic_context,
               .type = request->type,
               .kind = request->initializer->kind,
               .initializer = request->initializer->value,
@@ -260,12 +261,14 @@ static const psx_runtime_array_bound_t *parameter_bound_for_op(
 }
 
 static int resolve_definition_parameter(
+    psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator,
     const psx_runtime_declarator_application_t *application,
     psx_parameter_declaration_resolution_t *resolution) {
   psx_parameter_declaration_resolution_request_t semantic_request = {
       .type = {
+          .semantic_context = semantic_context,
           .base_type = base_type,
           .declarator_shape = &application->shape,
       },
@@ -305,17 +308,18 @@ static int resolve_definition_parameter(
 }
 
 static int append_definition_parameter(
+    psx_semantic_context_t *semantic_context,
     psx_function_definition_pipeline_result_t *result, int *capacity,
     psx_parsed_function_parameter_t *parameter) {
-  const psx_type_t *base_type =
-      psx_apply_parsed_decl_specifier(&parameter->specifier);
+  const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_context(
+      semantic_context, &parameter->specifier);
   if (!base_type) {
     ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
                  "canonical parameter base type resolution failed");
   }
   psx_runtime_declarator_application_t applied;
-  psx_apply_runtime_parsed_declarator(
-      &parameter->declarator, &applied);
+  psx_apply_runtime_parsed_declarator_in_context(
+      semantic_context, &parameter->declarator, &applied);
   token_ident_t *name = parameter->declarator.identifier;
   int has_pointer = ps_declarator_shape_count_ops(
       &applied.shape, PSX_DECL_OP_POINTER) > 0;
@@ -328,7 +332,8 @@ static int append_definition_parameter(
 
   psx_parameter_declaration_resolution_t resolution;
   if (!resolve_definition_parameter(
-          base_type, &parameter->declarator, &applied, &resolution)) {
+          semantic_context, base_type, &parameter->declarator,
+          &applied, &resolution)) {
     ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
                  "canonical parameter declaration resolution failed");
   }
@@ -372,8 +377,8 @@ int psx_begin_function_definition_pipeline(
 
   psx_parsed_function_suffix_t *primary_suffix =
       &request->declarator->function_suffixes[0];
-  psx_apply_runtime_parsed_declarator_ex(
-      request->declarator, &state->application,
+  psx_apply_runtime_parsed_declarator_ex_in_context(
+      request->semantic_context, request->declarator, &state->application,
       primary_suffix->declarator_op_index);
   if (primary_suffix->declarator_op_index < 0 ||
       primary_suffix->declarator_op_index >= state->application.shape.count ||
@@ -382,6 +387,7 @@ int psx_begin_function_definition_pipeline(
     return 0;
   }
 
+  state->semantic_context = request->semantic_context;
   state->base_type = request->base_type;
   state->result = result;
   state->primary_function_op_index =
@@ -398,7 +404,8 @@ int psx_apply_function_definition_parameter_pipeline(
     psx_parsed_function_parameter_t *parameter) {
   if (!state || !state->result || !parameter) return 0;
   int applied = append_definition_parameter(
-      state->result, &state->args_capacity, parameter);
+      state->semantic_context, state->result,
+      &state->args_capacity, parameter);
   if (applied < 0) {
     if (state->parameter_count != 1) {
       ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
@@ -428,6 +435,7 @@ int psx_finish_function_definition_pipeline(
 
   result->function_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = state->semantic_context,
           .base_type = state->base_type,
           .declarator_shape = &state->application.shape,
       });
@@ -518,6 +526,7 @@ int psx_finish_static_local_declaration_pipeline(
   psx_static_initializer_resolution_t resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
+          .semantic_context = request->semantic_context,
           .type = request->type,
           .kind = request->initializer->kind,
           .initializer = request->initializer->value,

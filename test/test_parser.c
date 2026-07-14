@@ -41,6 +41,7 @@
 #include "../src/semantic/generic_selection_resolution.h"
 #include "../src/semantic/identifier_binding.h"
 #include "../src/semantic/semantic_invariants.h"
+#include "../src/semantic/semantic_pass.h"
 #include "../src/semantic/type_query_resolution.h"
 #include "../src/semantic/local_declaration_plan.h"
 #include "../src/semantic/local_declaration_resolution.h"
@@ -14812,6 +14813,71 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(4, ps_type_sizeof(direct_tag_type));
   ASSERT_TRUE(direct_tag_type->aggregate_definition != NULL);
   ASSERT_EQ(1, direct_tag_type->aggregate_definition->member_count);
+
+  psx_type_t *detached_tag_type = ps_type_new_tag(
+      TK_STRUCT, direct_tag_name, 9, 1, 4);
+  ASSERT_TRUE(detached_tag_type->aggregate_definition == NULL);
+  node_t detached_base = {
+      .kind = ND_LVAR,
+      .type = detached_tag_type,
+  };
+  psx_member_access_resolution_t detached_resolution;
+  psx_resolve_member_access(
+      &(psx_member_access_resolution_request_t){
+          .semantic_context = first,
+          .base = &detached_base,
+          .member_name = direct_member_name,
+          .member_name_len = 5,
+      },
+      &detached_resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, detached_resolution.status);
+  psx_resolve_member_access(
+      &(psx_member_access_resolution_request_t){
+          .semantic_context = second,
+          .base = &detached_base,
+          .member_name = direct_member_name,
+          .member_name_len = 5,
+      },
+      &detached_resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, detached_resolution.status);
+  ASSERT_EQ(4, ps_type_sizeof(detached_resolution.member.decl_type));
+
+  node_member_access_t detached_access = {
+      .base = {
+          .kind = ND_MEMBER_ACCESS,
+          .lhs = &detached_base,
+      },
+      .member_name = direct_member_name,
+      .member_name_len = 5,
+  };
+  psx_semantic_resolve_tree_in_context(
+      second, (node_t *)&detached_access, NULL, NULL);
+  ASSERT_TRUE(detached_access.resolved_member != NULL);
+  ASSERT_EQ(4, ps_type_sizeof(detached_access.base.type));
+
+  psx_static_initializer_resolution_t detached_initializer;
+  psx_resolve_static_initializer(
+      &(psx_static_initializer_resolution_request_t){
+          .semantic_context = first,
+          .type = detached_tag_type,
+          .kind = PSX_DECL_INIT_EXPR,
+          .initializer = ps_node_new_num(0),
+      },
+      &detached_initializer);
+  ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
+  ASSERT_TRUE(detached_initializer.type->aggregate_definition == NULL);
+  psx_resolve_static_initializer(
+      &(psx_static_initializer_resolution_request_t){
+          .semantic_context = second,
+          .type = detached_tag_type,
+          .kind = PSX_DECL_INIT_EXPR,
+          .initializer = ps_node_new_num(0),
+      },
+      &detached_initializer);
+  ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
+  ASSERT_TRUE(detached_initializer.type->aggregate_definition != NULL);
+  ASSERT_EQ(1,
+            detached_initializer.type->aggregate_definition->member_count);
 
   char applied_tag_name[] = "AppliedTag";
   psx_apply_parsed_tag_declaration_in_context(

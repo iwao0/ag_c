@@ -80,8 +80,9 @@ static void begin_declarator(
   token_ident_t *name = declarator->identifier;
   application->current_kind = PSX_LOCAL_APPLY_NONE;
   application->current_initializer = *initializer;
-  psx_apply_runtime_parsed_declarator(
-      declarator, &application->current_application);
+  psx_apply_runtime_parsed_declarator_in_context(
+      application->semantic_context, declarator,
+      &application->current_application);
   application->current_type = psx_apply_runtime_declarator_type_in_context(
       application->semantic_context, application->base_type,
       &application->current_application);
