@@ -15036,8 +15036,8 @@ static void test_semantic_context_isolation() {
   ps_ctx_destroy(second);
 }
 
-static void test_compiler_context_global_registry_isolation() {
-  printf("test_compiler_context_global_registry_isolation...\n");
+static void test_compiler_context_registry_isolation() {
+  printf("test_compiler_context_registry_isolation...\n");
   ag_compiler_context_t first;
   ag_compiler_context_t second;
   ASSERT_TRUE(ag_compiler_context_init(&first));
@@ -15053,6 +15053,16 @@ static void test_compiler_context_global_registry_isolation() {
   };
   string_lit_t first_literal = {.label = (char *)".Lshared"};
   string_lit_t second_literal = {.label = (char *)".Lshared"};
+  lvar_t first_local = {
+      .name = (char *)"shared_local",
+      .len = 12,
+      .offset = 8,
+  };
+  lvar_t second_local = {
+      .name = (char *)"shared_local",
+      .len = 12,
+      .offset = 16,
+  };
 
   ps_register_global_var_in(first.global_registry, &first_global);
   psx_register_string_lit_in(first.global_registry, &first_literal);
@@ -15070,20 +15080,35 @@ static void test_compiler_context_global_registry_isolation() {
                   (char *)".Lshared") == NULL);
 
   ASSERT_TRUE(ag_compiler_context_activate(&second));
+  ps_local_registry_reset();
   ps_register_global_var(&second_global);
   psx_register_string_lit(&second_literal);
+  psx_local_registry_add(&second_local);
   ASSERT_TRUE(ps_find_global_var(
                   (char *)"shared_global", 13) == &second_global);
   ASSERT_TRUE(ps_find_string_lit_by_label(
                   (char *)".Lshared") == &second_literal);
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"shared_local", 12) == &second_local);
   ag_compiler_context_deactivate(&second);
 
   ASSERT_TRUE(ag_compiler_context_activate(&first));
+  ps_local_registry_reset();
   ASSERT_TRUE(ps_find_global_var(
                   (char *)"shared_global", 13) == &first_global);
   ASSERT_TRUE(ps_find_string_lit_by_label(
                   (char *)".Lshared") == &first_literal);
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"shared_local", 12) == NULL);
+  psx_local_registry_add(&first_local);
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"shared_local", 12) == &first_local);
   ag_compiler_context_deactivate(&first);
+
+  ASSERT_TRUE(ag_compiler_context_activate(&second));
+  ASSERT_TRUE(ps_decl_find_lvar(
+                  (char *)"shared_local", 12) == &second_local);
+  ag_compiler_context_deactivate(&second);
 
   ag_compiler_context_dispose(&first);
   ag_compiler_context_dispose(&second);
@@ -15094,7 +15119,7 @@ int main() {
 
   test_arena_checkpoint_rollback();
   test_semantic_context_isolation();
-  test_compiler_context_global_registry_isolation();
+  test_compiler_context_registry_isolation();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

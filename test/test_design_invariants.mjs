@@ -63,9 +63,15 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/psx_global_registry_t\s*\*global_registry\s*;/.test(
       compilerContextHeader,
     ) ||
+    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+      compilerContextHeader,
+    ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
+    !/ps_local_registry_create\s*\(/.test(compilerContextSource) ||
+    !/ps_local_registry_activate\s*\(/.test(compilerContextSource) ||
+    !/ps_local_registry_destroy\s*\(/.test(compilerContextSource) ||
     !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
       compilerMainSource,
     ) ||
@@ -96,6 +102,27 @@ if (!/struct\s+psx_global_registry_t\s*\{/.test(globalRegistrySource) ||
     )) {
   throw new Error(
     "global symbols and literals must be owned by an explicit registry",
+  );
+}
+const localRegistrySource = await readFile(
+  "src/parser/local_registry.c",
+  "utf8",
+);
+const legacyLocalRegistryGlobals =
+  /^static\s+.*\b(?:locals|all_locals|all_bindings|lvar_scope_stack|lvar_scope_seq_stack|lvar_scope_depth|next_scope_seq|current_scope_seq|next_declaration_seq|scope_parent_by_seq|scope_parent_capacity|lvars_by_bucket|lvars_by_offset|usage_events_head|usage_events_tail|current_usage_region)\b/gm;
+if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
+    !/psx_local_registry_t\s*\*ps_local_registry_create\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    !/psx_local_registry_t\s*\*ps_local_registry_activate\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    !/void\s+ps_local_registry_destroy\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    legacyLocalRegistryGlobals.test(localRegistrySource)) {
+  throw new Error(
+    "function-local symbols, scopes, and usage events must be owned by an explicit registry",
   );
 }
 const frontendTranslationUnitHeader = await readFile(

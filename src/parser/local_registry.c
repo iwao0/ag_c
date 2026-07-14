@@ -13,20 +13,6 @@
 #define LVAR_SCOPE_STACK_MAX 256
 #define LVAR_HASH_BUCKETS 256u
 
-static lvar_t *locals;
-static lvar_t *all_locals;
-static lvar_t *all_bindings;
-static lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
-static unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
-static int lvar_scope_depth;
-static unsigned next_scope_seq;
-static unsigned current_scope_seq;
-static unsigned next_declaration_seq;
-static unsigned *scope_parent_by_seq;
-static size_t scope_parent_capacity;
-static lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
-static lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
-
 struct psx_lvar_usage_region_t {
   psx_lvar_usage_region_t *prev;
   unsigned int suppress_warnings : 1;
@@ -40,9 +26,68 @@ struct lvar_usage_event_t {
   psx_lvar_usage_region_t *region;
 };
 
-static lvar_usage_event_t *usage_events_head;
-static lvar_usage_event_t *usage_events_tail;
-static psx_lvar_usage_region_t *current_usage_region;
+struct psx_local_registry_t {
+  lvar_t *locals;
+  lvar_t *all_locals;
+  lvar_t *all_bindings;
+  lvar_t *lvar_scope_stack[LVAR_SCOPE_STACK_MAX];
+  unsigned lvar_scope_seq_stack[LVAR_SCOPE_STACK_MAX];
+  int lvar_scope_depth;
+  unsigned next_scope_seq;
+  unsigned current_scope_seq;
+  unsigned next_declaration_seq;
+  unsigned *scope_parent_by_seq;
+  size_t scope_parent_capacity;
+  lvar_t *lvars_by_bucket[LVAR_HASH_BUCKETS];
+  lvar_t *lvars_by_offset[LVAR_HASH_BUCKETS];
+  lvar_usage_event_t *usage_events_head;
+  lvar_usage_event_t *usage_events_tail;
+  psx_lvar_usage_region_t *current_usage_region;
+};
+
+static psx_local_registry_t default_local_registry;
+static psx_local_registry_t *active_local_registry =
+    &default_local_registry;
+
+psx_local_registry_t *ps_local_registry_create(void) {
+  return calloc(1, sizeof(psx_local_registry_t));
+}
+
+void ps_local_registry_destroy(psx_local_registry_t *registry) {
+  if (!registry || registry == &default_local_registry) return;
+  if (active_local_registry == registry)
+    active_local_registry = &default_local_registry;
+  free(registry->scope_parent_by_seq);
+  free(registry);
+}
+
+psx_local_registry_t *ps_local_registry_activate(
+    psx_local_registry_t *registry) {
+  psx_local_registry_t *previous = active_local_registry;
+  active_local_registry = registry ? registry : &default_local_registry;
+  return previous;
+}
+
+psx_local_registry_t *ps_local_registry_active(void) {
+  return active_local_registry;
+}
+
+#define locals (active_local_registry->locals)
+#define all_locals (active_local_registry->all_locals)
+#define all_bindings (active_local_registry->all_bindings)
+#define lvar_scope_stack (active_local_registry->lvar_scope_stack)
+#define lvar_scope_seq_stack (active_local_registry->lvar_scope_seq_stack)
+#define lvar_scope_depth (active_local_registry->lvar_scope_depth)
+#define next_scope_seq (active_local_registry->next_scope_seq)
+#define current_scope_seq (active_local_registry->current_scope_seq)
+#define next_declaration_seq (active_local_registry->next_declaration_seq)
+#define scope_parent_by_seq (active_local_registry->scope_parent_by_seq)
+#define scope_parent_capacity (active_local_registry->scope_parent_capacity)
+#define lvars_by_bucket (active_local_registry->lvars_by_bucket)
+#define lvars_by_offset (active_local_registry->lvars_by_offset)
+#define usage_events_head (active_local_registry->usage_events_head)
+#define usage_events_tail (active_local_registry->usage_events_tail)
+#define current_usage_region (active_local_registry->current_usage_region)
 
 static unsigned name_hash(const char *name, int len) {
   unsigned hash = 2166136261u;

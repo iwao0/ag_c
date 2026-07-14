@@ -58,6 +58,7 @@ DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_S
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
 IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_print.o
 WASM_MAIN_OBJ=$(OBJROOT)/main_wasm32.o
+DEPS+=$(WASM_MAIN_OBJ:.o=.d)
 WASM_OBJS=$(filter-out $(OBJROOT)/main.o,$(OBJS)) $(WASM_MAIN_OBJ)
 
 

@@ -4,11 +4,18 @@
 #include "lvar_public.h"
 
 typedef struct psx_type_t psx_type_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef struct {
   unsigned scope_seq;
   unsigned declaration_seq;
 } psx_local_lookup_point_t;
+
+psx_local_registry_t *ps_local_registry_create(void);
+void ps_local_registry_destroy(psx_local_registry_t *registry);
+psx_local_registry_t *ps_local_registry_activate(
+    psx_local_registry_t *registry);
+psx_local_registry_t *ps_local_registry_active(void);
 
 unsigned ps_local_registry_current_scope_seq(void);
 unsigned ps_local_registry_register_binding_event(void);
