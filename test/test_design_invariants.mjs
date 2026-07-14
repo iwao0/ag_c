@@ -255,6 +255,56 @@ if (contextFreeOrdinaryNamespaceCall.test(
     "ordinary namespace resolution must use the passed semantic context",
   );
 }
+const frontendTranslationUnitSource = await readFile(
+  "src/frontend/translation_unit.c",
+  "utf8",
+);
+const frontendFunctionDefinitionSource = await readFile(
+  "src/frontend/function_definition.c",
+  "utf8",
+);
+const functionParameterResolutionSource = await readFile(
+  "src/semantic/function_parameter_resolution.c",
+  "utf8",
+);
+const lifecycleDeclarationPipelineSource = await readFile(
+  "src/declaration_pipeline.c",
+  "utf8",
+);
+const explicitLifecycleCallers = [
+  compilerMainSource,
+  frontendTranslationUnitSource,
+  frontendFunctionDefinitionSource,
+  semanticPassSource,
+  declarationApplicationSource,
+  functionParameterResolutionSource,
+  lifecycleDeclarationPipelineSource,
+].join("\n");
+const contextFreeLifecycleCall =
+  /\bps_ctx_(?:reset_translation_unit_scope|reset_function_diag_state|reset_tag_diag_state|reset_function_scope|enter_block_scope|leave_block_scope|record_unsupported_gnu_extension_warning|emit_deferred_parser_warnings|promote_tag_to_file_scope)\s*\(/;
+if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
+    !/psx_frontend_reset_translation_unit_state_in_context\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/ps_ctx_reset_function_scope_in\s*\(/.test(
+      frontendFunctionDefinitionSource,
+    ) ||
+    !/ps_ctx_emit_deferred_parser_warnings_in\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_apply_parsed_function_parameters_in_context\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(
+      functionParameterResolutionSource,
+    ) ||
+    !/psx_apply_parsed_declarator_in_context\s*\(/.test(
+      typeNameResolutionSource,
+    )) {
+  throw new Error(
+    "semantic lifecycle and prototype type resolution must use the passed context",
+  );
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

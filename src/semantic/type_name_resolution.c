@@ -99,8 +99,8 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_context(
           semantic_context, type_name)) return NULL;
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
-  psx_apply_parsed_declarator(
-      &type_name->syntax->declarator, &shape, NULL);
+  psx_apply_parsed_declarator_in_context(
+      semantic_context, &type_name->syntax->declarator, &shape, NULL);
   psx_type_t *resolved = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,

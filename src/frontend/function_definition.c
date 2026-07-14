@@ -14,7 +14,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
     psx_parsed_function_definition_t *definition) {
   if (!definition) return NULL;
   ps_decl_reset_locals();
-  ps_ctx_reset_function_scope();
+  ps_ctx_reset_function_scope_in(
+      semantic_context ? semantic_context : ps_ctx_active());
 
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_context(
       semantic_context, &definition->return_specifier);

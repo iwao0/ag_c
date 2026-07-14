@@ -14967,6 +14967,32 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(8, ps_ctx_get_tag_size_in(
       second, TK_STRUCT, applied_tag_name, 10));
 
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
+  ps_ctx_enter_block_scope_in(second);
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(first));
+  ASSERT_EQ(1, ps_ctx_current_tag_scope_depth_in(second));
+  ps_ctx_leave_block_scope_in(second);
+  ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
+
+  char direct_label_name[] = "direct_label";
+  psx_ctx_register_goto_ref_in(
+      second, direct_label_name, 12, NULL);
+  psx_ctx_register_label_def_in(
+      second, direct_label_name, 12, NULL);
+  psx_ctx_validate_goto_refs_in(second);
+
+  ps_ctx_record_unsupported_gnu_extension_warning_in(
+      second, NULL, "context-isolation");
+  ps_ctx_reset_translation_unit_scope_in(second);
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(
+      second, direct_enum_name, 10, &value));
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
+      second, direct_typedef_name, 13, &direct_typedef_info));
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(
+      first, enum_name, 12, &value));
+  ASSERT_EQ(11, value);
+
   ps_ctx_activate(previous);
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);

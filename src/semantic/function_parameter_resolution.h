@@ -8,6 +8,10 @@
 void psx_resolve_declarator_syntax(
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width);
+void psx_resolve_declarator_syntax_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_declarator_t *parsed,
+    psx_declarator_shape_t *shape, int *bit_width);
 void psx_set_resolved_function_parameter_types(
     psx_declarator_op_t *function_op,
     const psx_type_t *const *parameter_types,

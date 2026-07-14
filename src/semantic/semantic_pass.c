@@ -551,7 +551,8 @@ static void semantic_resolve_sizeof_query(
         continue;
       node_t *bound =
           syntax->declarator.array_bounds[bound_index].expression.node;
-      ps_ctx_record_unsupported_gnu_extension_warning(
+      ps_ctx_record_unsupported_gnu_extension_warning_in(
+          traversal->semantic_context,
           bound && bound->tok ? bound->tok : query->base.tok,
           "zero-length array");
     }

@@ -18,6 +18,33 @@ void ps_ctx_destroy(psx_semantic_context_t *context);
 psx_semantic_context_t *ps_ctx_activate(psx_semantic_context_t *context);
 psx_semantic_context_t *ps_ctx_active(void);
 
+/* Explicit-context lifecycle and deferred diagnostic operations. */
+void ps_ctx_reset_translation_unit_scope_in(
+    psx_semantic_context_t *context);
+void ps_ctx_reset_function_diag_state_in(
+    psx_semantic_context_t *context);
+void ps_ctx_reset_tag_diag_state_in(
+    psx_semantic_context_t *context);
+void ps_ctx_reset_function_scope_in(
+    psx_semantic_context_t *context);
+void ps_ctx_enter_block_scope_in(
+    psx_semantic_context_t *context);
+void ps_ctx_leave_block_scope_in(
+    psx_semantic_context_t *context);
+void ps_ctx_record_unsupported_gnu_extension_warning_in(
+    psx_semantic_context_t *context,
+    const token_t *tok, const char *name);
+void ps_ctx_emit_deferred_parser_warnings_in(
+    psx_semantic_context_t *context);
+void psx_ctx_register_goto_ref_in(
+    psx_semantic_context_t *context,
+    char *name, int len, token_t *tok);
+void psx_ctx_register_label_def_in(
+    psx_semantic_context_t *context,
+    char *name, int len, token_t *tok);
+void psx_ctx_validate_goto_refs_in(
+    psx_semantic_context_t *context);
+
 /* Explicit-context function symbol operations. New phase code should use
  * these APIs; the context-free variants remain as parser compatibility. */
 void ps_ctx_reset_function_names_in(psx_semantic_context_t *context);

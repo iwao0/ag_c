@@ -16,11 +16,17 @@
 #include <stdlib.h>
 
 void psx_frontend_reset_translation_unit_state(void) {
+  psx_frontend_reset_translation_unit_state_in_context(NULL);
+}
+
+void psx_frontend_reset_translation_unit_state_in_context(
+    psx_semantic_context_t *semantic_context) {
+  if (!semantic_context) semantic_context = ps_ctx_active();
   ps_global_registry_reset_translation_unit();
   ps_anon_tag_reset_translation_unit_state();
   ps_expr_reset_translation_unit_state();
   ps_decl_reset_translation_unit_state();
-  ps_ctx_reset_translation_unit_scope();
+  ps_ctx_reset_translation_unit_scope_in(semantic_context);
   pragma_pack_reset();
   arena_free_all();
 }
@@ -34,8 +40,8 @@ void psx_frontend_stream_begin(
   psx_semantic_context_t *semantic_context = compiler_context
       ? compiler_context->semantic_context : ps_ctx_active();
   ps_global_registry_reset_diag_state();
-  ps_ctx_reset_function_diag_state();
-  ps_ctx_reset_tag_diag_state();
+  ps_ctx_reset_function_diag_state_in(semantic_context);
+  ps_ctx_reset_tag_diag_state_in(semantic_context);
   ps_ctx_reset_function_names_in(semantic_context);
   psx_frontend_init_toplevel_declaration_callbacks(
       &stream->toplevel_declarations, semantic_context);
@@ -90,7 +96,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
             function_name ? function_name->str : NULL,
             function_name ? function_name->len : 0, &checkpoint);
         ps_decl_reset_locals();
-        ps_ctx_reset_function_scope();
+        ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);
         arena_rollback(arena_mark);
@@ -109,7 +115,9 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
 
 void psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream) return;
-  ps_ctx_emit_deferred_parser_warnings();
+  ps_ctx_emit_deferred_parser_warnings_in(
+      stream->compiler_context
+          ? stream->compiler_context->semantic_context : ps_ctx_active());
   ps_parser_stream_end(&stream->parser);
 }
 

@@ -84,8 +84,8 @@ int psx_apply_parsed_aggregate_body_layout_in_context(
       ps_prepare_constant_declarator_expressions(head);
       psx_declarator_shape_t resolved_shape;
       int resolved_bit_width = 0;
-      psx_apply_parsed_declarator(
-          head, &resolved_shape, &resolved_bit_width);
+      psx_apply_parsed_declarator_in_context(
+          semantic_context, head, &resolved_shape, &resolved_bit_width);
       member_count += psx_apply_aggregate_member_declaration(
           &layout,
           &(psx_aggregate_member_declaration_request_t){
@@ -174,7 +174,8 @@ static psx_type_t *build_parsed_type_name(
 
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
-  psx_apply_parsed_declarator(&type_name->declarator, &shape, NULL);
+  psx_apply_parsed_declarator_in_context(
+      semantic_context, &type_name->declarator, &shape, NULL);
   return psx_build_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
@@ -201,7 +202,8 @@ const psx_type_t *psx_apply_parsed_declarator_type_in_context(
   if (!base_type || !declarator) return NULL;
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
-  psx_apply_parsed_declarator(declarator, &shape, NULL);
+  psx_apply_parsed_declarator_in_context(
+      semantic_context, declarator, &shape, NULL);
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .semantic_context = semantic_context,
@@ -325,7 +327,16 @@ void psx_apply_parsed_standalone_tag_in_context(
 void psx_apply_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_declarator_shape_t *shape, int *bit_width) {
-  psx_resolve_declarator_syntax(declarator, shape, bit_width);
+  psx_apply_parsed_declarator_in_context(
+      NULL, declarator, shape, bit_width);
+}
+
+void psx_apply_parsed_declarator_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_declarator_t *declarator,
+    psx_declarator_shape_t *shape, int *bit_width) {
+  psx_resolve_declarator_syntax_in_context(
+      semantic_context, declarator, shape, bit_width);
   for (int i = 0; i < declarator->function_suffix_count; i++) {
     const psx_parsed_function_suffix_t *suffix =
         &declarator->function_suffixes[i];
@@ -337,7 +348,8 @@ void psx_apply_parsed_declarator(
       ps_diag_ctx(declarator->diagnostic_token, "declarator-application",
                    "invalid deferred function suffix target");
     }
-    psx_apply_parsed_function_parameters(
+    psx_apply_parsed_function_parameters_in_context(
+        semantic_context,
         suffix->parameters,
         &shape->ops[suffix->declarator_op_index],
         declarator->diagnostic_token);
@@ -410,7 +422,8 @@ void psx_apply_runtime_parsed_declarator_ex_in_context(
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
     if (is_constant && value == 0) {
-      ps_ctx_record_unsupported_gnu_extension_warning(
+      ps_ctx_record_unsupported_gnu_extension_warning_in(
+          semantic_context,
           parsed->expression.start, "zero-length array");
     }
     if (!ps_declarator_shape_set_array_bound(
@@ -445,8 +458,8 @@ void psx_apply_runtime_parsed_declarator_ex_in_context(
           suffix->parameters && suffix->parameters->is_variadic);
       continue;
     }
-    psx_apply_parsed_function_parameters(
-        suffix->parameters, function_op,
+    psx_apply_parsed_function_parameters_in_context(
+        semantic_context, suffix->parameters, function_op,
         declarator->diagnostic_token);
   }
 }
@@ -454,6 +467,15 @@ void psx_apply_runtime_parsed_declarator_ex_in_context(
 void psx_apply_parsed_function_parameters(
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token) {
+  psx_apply_parsed_function_parameters_in_context(
+      NULL, parameters, function_op, diagnostic_token);
+}
+
+void psx_apply_parsed_function_parameters_in_context(
+    psx_semantic_context_t *semantic_context,
+    psx_parsed_function_parameters_t *parameters,
+    psx_declarator_op_t *function_op, token_t *diagnostic_token) {
+  if (!semantic_context) semantic_context = ps_ctx_active();
   if (!parameters || !function_op ||
       function_op->kind != PSX_DECL_OP_FUNCTION) {
     ps_diag_ctx(diagnostic_token, "declarator-application",
@@ -466,22 +488,25 @@ void psx_apply_parsed_function_parameters(
                 "function parameter type allocation failed");
   }
   int resolved_count = 0;
-  ps_ctx_enter_block_scope();
+  ps_ctx_enter_block_scope_in(semantic_context);
   ps_decl_enter_scope();
   for (int i = 0; i < parameters->count; i++) {
     psx_parsed_function_parameter_t *parameter = &parameters->items[i];
     const psx_type_t *base =
-        psx_apply_parsed_decl_specifier(&parameter->specifier);
+        psx_apply_parsed_decl_specifier_in_context(
+            semantic_context, &parameter->specifier);
     if (!base) {
       ps_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     ps_parse_runtime_declarator_expressions(&parameter->declarator);
     psx_runtime_declarator_application_t parameter_application;
-    psx_apply_runtime_parsed_declarator(
+    psx_apply_runtime_parsed_declarator_in_context(
+        semantic_context,
         &parameter->declarator, &parameter_application);
     psx_type_t *type = psx_build_decl_type(
         &(psx_decl_type_request_t){
+            .semantic_context = semantic_context,
             .base_type = base,
             .declarator_shape = &parameter_application.shape,
         });
@@ -501,7 +526,7 @@ void psx_apply_parsed_function_parameters(
     }
   }
   ps_decl_leave_scope();
-  ps_ctx_leave_block_scope();
+  ps_ctx_leave_block_scope_in(semantic_context);
   psx_set_resolved_function_parameter_types(
       function_op, resolved_types, resolved_count,
       parameters->is_variadic);

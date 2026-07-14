@@ -485,7 +485,9 @@ int psx_begin_static_local_declaration_pipeline(
   if (leaf && ps_type_is_tag_aggregate(leaf) && leaf->tag_name &&
       leaf->tag_len >= 11 &&
       memcmp(leaf->tag_name, "__anon_tag_", 11) == 0) {
-    ps_ctx_promote_tag_to_file_scope(
+    ps_ctx_promote_tag_to_file_scope_in(
+        request->semantic_context
+            ? request->semantic_context : ps_ctx_active(),
         leaf->tag_kind, leaf->tag_name, leaf->tag_len);
   }
 
