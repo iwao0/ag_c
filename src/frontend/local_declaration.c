@@ -45,8 +45,9 @@ typedef struct {
 static void apply_static_assert(
     void *context, node_t *condition, token_t *diagnostic_token) {
   const psx_local_declaration_callbacks_t *callbacks = context;
-  psx_apply_static_assert_in_context(
-      callbacks->semantic_context, condition, diagnostic_token);
+  psx_apply_static_assert_in_contexts(
+      callbacks->semantic_context, callbacks->local_registry,
+      condition, diagnostic_token);
 }
 
 static void *begin_declaration(
@@ -64,12 +65,14 @@ static void *begin_declaration(
   application->local_registry = callbacks->local_registry;
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
-    psx_apply_parsed_standalone_tag_in_context(
-        application->semantic_context, specifier);
+    psx_apply_parsed_standalone_tag_in_contexts(
+        application->semantic_context, application->local_registry,
+        specifier);
     return application;
   }
-  application->base_type = psx_apply_parsed_decl_specifier_in_context(
-      application->semantic_context, specifier);
+  application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
+      application->semantic_context, application->local_registry,
+      specifier);
   if (!application->base_type) {
     ps_diag_ctx(specifier->diagnostic_token, "local-declaration",
                 "canonical local declaration type resolution failed");
@@ -107,8 +110,8 @@ static void begin_declarator(
                   "typedef declaration '%.*s' cannot have an initializer",
                   name->len, name->str);
     }
-    psx_apply_parsed_typedef_declaration_in_context(
-        application->semantic_context,
+    psx_apply_parsed_typedef_declaration_in_contexts(
+        application->semantic_context, application->local_registry,
         name->str, name->len, application->current_type, (token_t *)name);
     application->current_kind = PSX_LOCAL_APPLY_TYPEDEF;
     return;

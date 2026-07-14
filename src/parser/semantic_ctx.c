@@ -674,14 +674,23 @@ psx_type_t *ps_ctx_clone_tag_type_at_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     psx_local_lookup_point_t point) {
+  return ps_ctx_clone_tag_type_at_in_contexts(
+      context, ps_local_registry_active(), kind, name, len, point);
+}
+
+psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    token_kind_t kind, char *name, int len,
+    psx_local_lookup_point_t point) {
   if (!context) return NULL;
   for (tag_type_t *tag = context->tags_all; tag; tag = tag->next_all) {
     if (tag->kind != kind || tag->len != len ||
         strncmp(tag->name, name, (size_t)len) != 0 ||
         (tag->scope_depth > 0 &&
          tag->declaration_seq > point.declaration_seq) ||
-        !ps_local_registry_scope_is_visible_from(
-            tag->scope_seq, point.scope_seq))
+        !ps_local_registry_scope_is_visible_from_in(
+            local_registry, tag->scope_seq, point.scope_seq))
       continue;
     psx_type_t *type = kind == TK_ENUM
         ? ps_type_new_enum(
@@ -727,7 +736,18 @@ int ps_ctx_register_tag_type_in(
     token_kind_t kind, char *name, int len,
     int is_complete, int member_count,
     int tag_size, int tag_align) {
-  if (!context || !name || len <= 0) return 0;
+  return ps_ctx_register_tag_type_in_contexts(
+      context, ps_local_registry_active(), kind, name, len,
+      is_complete, member_count, tag_size, tag_align);
+}
+
+int ps_ctx_register_tag_type_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    token_kind_t kind, char *name, int len,
+    int is_complete, int member_count,
+    int tag_size, int tag_align) {
+  if (!context || !local_registry || !name || len <= 0) return 0;
   tag_type_t *existing = find_tag_type_in(context, kind, name, len);
   /* 同じスコープでの再宣言 (前方宣言 `struct S;` → 定義 `struct S{...}`) のみ既存を update する。
    * 内側スコープに同名タグを別レイアウトで宣言した場合 (`struct S{int a;}` 外側 → ブロック内
@@ -761,8 +781,9 @@ int ps_ctx_register_tag_type_in(
   t->size = tag_size;
   t->align = tag_align;
   t->scope_depth = context->scope_depth;
-  t->scope_seq = ps_local_registry_current_scope_seq();
-  t->declaration_seq = ps_local_registry_register_binding_event();
+  t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
+  t->declaration_seq =
+      ps_local_registry_register_binding_event_in(local_registry);
   t->next_hash = context->tags_by_bucket[bucket];
   context->tags_by_bucket[bucket] = t;
   t->next_all = context->tags_all;
@@ -1244,8 +1265,16 @@ static enum_const_t *find_enum_const_in_current_scope_in(
 int ps_ctx_register_enum_const_in(
     psx_semantic_context_t *context,
     char *name, int len, long long value, int *out_created) {
+  return ps_ctx_register_enum_const_in_contexts(
+      context, ps_local_registry_active(), name, len, value, out_created);
+}
+
+int ps_ctx_register_enum_const_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, long long value, int *out_created) {
   if (out_created) *out_created = 0;
-  if (!context || !name || len <= 0) return 0;
+  if (!context || !local_registry || !name || len <= 0) return 0;
   enum_const_t *existing = find_enum_const_in_current_scope_in(
       context, name, len);
   if (existing) {
@@ -1257,8 +1286,9 @@ int ps_ctx_register_enum_const_in(
   e->len = len;
   e->value = value;
   e->scope_depth = context->scope_depth;
-  e->scope_seq = ps_local_registry_current_scope_seq();
-  e->declaration_seq = ps_local_registry_register_binding_event();
+  e->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
+  e->declaration_seq =
+      ps_local_registry_register_binding_event_in(local_registry);
   e->next_hash = context->enum_entries_by_bucket[bucket];
   context->enum_entries_by_bucket[bucket] = e;
   e->next_all = context->enum_entries_all;
@@ -1295,15 +1325,24 @@ bool ps_ctx_find_enum_const_at_in(
     psx_semantic_context_t *context,
     char *name, int len, psx_local_lookup_point_t point,
     long long *out_value) {
-  if (!context || !name || len <= 0) return false;
+  return ps_ctx_find_enum_const_at_in_contexts(
+      context, ps_local_registry_active(), name, len, point, out_value);
+}
+
+bool ps_ctx_find_enum_const_at_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, psx_local_lookup_point_t point,
+    long long *out_value) {
+  if (!context || !local_registry || !name || len <= 0) return false;
   for (enum_const_t *e = context->enum_entries_all;
        e; e = e->next_all) {
     if (e->len != len ||
         strncmp(e->name, name, (size_t)len) != 0 ||
         (e->scope_seq != 0 &&
          e->declaration_seq > point.declaration_seq) ||
-        !ps_local_registry_scope_is_visible_from(
-            e->scope_seq, point.scope_seq))
+        !ps_local_registry_scope_is_visible_from_in(
+            local_registry, e->scope_seq, point.scope_seq))
       continue;
     if (out_value) *out_value = e->value;
     return true;
@@ -1409,9 +1448,19 @@ int ps_ctx_register_typedef_name_in(
     psx_semantic_context_t *context,
     char *name, int len, const psx_typedef_info_t *info,
     int *out_created, int *out_redeclared) {
+  return ps_ctx_register_typedef_name_in_contexts(
+      context, ps_local_registry_active(), name, len, info,
+      out_created, out_redeclared);
+}
+
+int ps_ctx_register_typedef_name_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, const psx_typedef_info_t *info,
+    int *out_created, int *out_redeclared) {
   if (out_created) *out_created = 0;
   if (out_redeclared) *out_redeclared = 0;
-  if (!context || !name || len <= 0 || !info ||
+  if (!context || !local_registry || !name || len <= 0 || !info ||
       !ps_ctx_typedef_decl_type(info)) return 0;
   typedef_name_t *existing = find_typedef_in_current_scope_in(
       context, name, len);
@@ -1431,8 +1480,9 @@ int ps_ctx_register_typedef_name_in(
   t->name = name;
   t->len = len;
   t->scope_depth = context->scope_depth;
-  t->scope_seq = ps_local_registry_current_scope_seq();
-  t->declaration_seq = ps_local_registry_register_binding_event();
+  t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
+  t->declaration_seq =
+      ps_local_registry_register_binding_event_in(local_registry);
   t->next_hash = context->typedef_entries_by_bucket[bucket];
   context->typedef_entries_by_bucket[bucket] = t;
   t->next_all = context->typedef_entries_all;
@@ -1519,15 +1569,24 @@ bool ps_ctx_find_typedef_decl_type_at_in(
     psx_semantic_context_t *context,
     char *name, int len, psx_local_lookup_point_t point,
     const psx_type_t **out_type) {
-  if (!context || !name || len <= 0) return false;
+  return ps_ctx_find_typedef_decl_type_at_in_contexts(
+      context, ps_local_registry_active(), name, len, point, out_type);
+}
+
+bool ps_ctx_find_typedef_decl_type_at_in_contexts(
+    psx_semantic_context_t *context,
+    psx_local_registry_t *local_registry,
+    char *name, int len, psx_local_lookup_point_t point,
+    const psx_type_t **out_type) {
+  if (!context || !local_registry || !name || len <= 0) return false;
   for (typedef_name_t *type = context->typedef_entries_all; type;
        type = type->next_all) {
     if (type->len != len ||
         strncmp(type->name, name, (size_t)len) != 0 ||
         (type->scope_depth > 0 &&
          type->declaration_seq > point.declaration_seq) ||
-        !ps_local_registry_scope_is_visible_from(
-            type->scope_seq, point.scope_seq))
+        !ps_local_registry_scope_is_visible_from_in(
+            local_registry, type->scope_seq, point.scope_seq))
       continue;
     ps_ctx_refresh_type_completeness_in(
         context,

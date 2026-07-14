@@ -1,6 +1,7 @@
 #include "tag_declaration_resolution.h"
 
 #include "../parser/semantic_ctx.h"
+#include "../parser/local_registry.h"
 
 #include <string.h>
 
@@ -21,6 +22,8 @@ void psx_resolve_tag_declaration(
   }
   psx_semantic_context_t *semantic_context = request->semantic_context
       ? request->semantic_context : ps_ctx_active();
+  psx_local_registry_t *local_registry = request->local_registry
+      ? request->local_registry : ps_local_registry_active();
 
   token_kind_t current_kind = TK_EOF;
   if (ps_ctx_find_tag_kind_at_current_scope_in(
@@ -39,8 +42,8 @@ void psx_resolve_tag_declaration(
   } else {
     int is_complete =
         request->mode == PSX_TAG_DECLARATION_DEFINITION;
-    if (!ps_ctx_register_tag_type_in(
-            semantic_context, request->kind,
+    if (!ps_ctx_register_tag_type_in_contexts(
+            semantic_context, local_registry, request->kind,
             request->name, request->name_len,
             is_complete, request->member_count, request->size,
             request->alignment)) {

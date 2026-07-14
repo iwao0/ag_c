@@ -18,6 +18,8 @@ void psx_resolve_typedef_declaration(
       !request->type) return;
   psx_semantic_context_t *semantic_context = request->semantic_context
       ? request->semantic_context : ps_ctx_active();
+  psx_local_registry_t *local_registry = request->local_registry
+      ? request->local_registry : ps_local_registry_active();
 
   int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
   if (ps_ctx_has_enum_const_in_current_scope_in(
@@ -36,17 +38,19 @@ void psx_resolve_typedef_declaration(
       return;
     }
   } else {
-    lvar_t *local = ps_decl_find_lvar(request->name, request->name_len);
+    lvar_t *local = ps_decl_find_lvar_in(
+        local_registry, request->name, request->name_len);
     if (local && ps_lvar_registry_view(local).scope_seq ==
-                     ps_local_registry_current_scope_seq()) {
+                     ps_local_registry_current_scope_seq_in(local_registry)) {
       resolution->status = PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT;
       return;
     }
   }
 
   const psx_typedef_info_t info = {.decl_type = request->type};
-  if (!ps_ctx_register_typedef_name_in(
-          semantic_context, request->name, request->name_len, &info,
+  if (!ps_ctx_register_typedef_name_in_contexts(
+          semantic_context, local_registry,
+          request->name, request->name_len, &info,
           &resolution->created, &resolution->redeclared)) {
     resolution->status = PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT;
     return;

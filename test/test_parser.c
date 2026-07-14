@@ -15098,6 +15098,46 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_TRUE(ag_compiler_context_activate(&second));
   ps_local_registry_reset();
   ps_local_registry_reset_in(first.local_registry);
+  ps_ctx_enter_block_scope_in(first.semantic_context);
+  ps_decl_enter_scope_in(first.local_registry);
+  const psx_typedef_info_t isolated_typedef = {
+      .decl_type = ps_type_new_integer(TK_INT, 4, 0),
+  };
+  ASSERT_TRUE(ps_ctx_register_typedef_name_in_contexts(
+      first.semantic_context, first.local_registry,
+      (char *)"FirstType", 9, &isolated_typedef, NULL, NULL));
+  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
+      first.semantic_context, first.local_registry,
+      (char *)"FIRST_ENUM", 10, 37, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      first.semantic_context, first.local_registry,
+      TK_STRUCT, (char *)"FirstTag", 8, 0, 0, 0, 0));
+  psx_local_lookup_point_t first_namespace_point =
+      ps_local_registry_capture_lookup_point_in(first.local_registry);
+  const psx_type_t *isolated_typedef_type = NULL;
+  long long isolated_enum_value = 0;
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_at_in_contexts(
+      first.semantic_context, first.local_registry,
+      (char *)"FirstType", 9, first_namespace_point,
+      &isolated_typedef_type));
+  ASSERT_TRUE(isolated_typedef_type != NULL);
+  ASSERT_TRUE(ps_ctx_find_enum_const_at_in_contexts(
+      first.semantic_context, first.local_registry,
+      (char *)"FIRST_ENUM", 10, first_namespace_point,
+      &isolated_enum_value));
+  ASSERT_EQ(37, isolated_enum_value);
+  ASSERT_TRUE(ps_ctx_clone_tag_type_at_in_contexts(
+      first.semantic_context, first.local_registry,
+      TK_STRUCT, (char *)"FirstTag", 8,
+      first_namespace_point) != NULL);
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
+      second.semantic_context, (char *)"FirstType", 9, NULL));
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(
+      second.semantic_context, (char *)"FIRST_ENUM", 10, NULL));
+  ASSERT_TRUE(!ps_ctx_has_tag_type_in(
+      second.semantic_context, TK_STRUCT, (char *)"FirstTag", 8));
+  ps_decl_leave_scope_in(first.local_registry);
+  ps_ctx_leave_block_scope_in(first.semantic_context);
   lvar_t *lowered_into_first = lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = first.local_registry,

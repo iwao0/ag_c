@@ -7,6 +7,8 @@
 #include "../parser/declarator_shape.h"
 #include "declaration_resolution.h"
 
+typedef struct psx_local_registry_t psx_local_registry_t;
+
 typedef enum {
   PSX_DECLARATION_PHASE_EMPTY = 0,
   PSX_DECLARATION_PHASE_SYNTAX,
@@ -37,6 +39,10 @@ const psx_type_t *psx_apply_parsed_type_name(
     const psx_parsed_type_name_t *type_name);
 const psx_type_t *psx_apply_parsed_type_name_in_context(
     psx_semantic_context_t *semantic_context,
+    const psx_parsed_type_name_t *type_name);
+const psx_type_t *psx_apply_parsed_type_name_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name);
 const psx_type_t *psx_apply_parsed_declarator_type(
     const psx_type_t *base_type,
@@ -94,6 +100,10 @@ int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body);
 int psx_apply_parsed_enum_body_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_enum_body_t *body);
+int psx_apply_parsed_enum_body_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_enum_body_t *body);
 int psx_apply_parsed_aggregate_body_layout(
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -103,4 +113,18 @@ int psx_apply_parsed_aggregate_body_layout_in_context(
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align);
+int psx_apply_parsed_aggregate_body_layout_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    psx_parsed_aggregate_body_t *body,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int *out_size, int *out_align);
+const psx_type_t *psx_apply_parsed_decl_specifier_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_decl_specifier_t *specifier);
+void psx_apply_parsed_standalone_tag_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_parsed_decl_specifier_t *specifier);
 #endif

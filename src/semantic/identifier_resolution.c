@@ -34,8 +34,8 @@ void psx_resolve_identifier(
     return;
   }
   int has_enum = request->has_local_lookup_point
-      ? ps_ctx_find_enum_const_at_in(
-            semantic_context,
+      ? ps_ctx_find_enum_const_at_in_contexts(
+            semantic_context, local_registry,
             request->name, request->name_len,
             request->local_lookup_point, &resolution->enum_value)
       : ps_ctx_find_enum_const_in(

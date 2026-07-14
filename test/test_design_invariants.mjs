@@ -132,6 +132,31 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     "function-local symbols, scopes, and usage events must be owned by an explicit registry",
   );
 }
+if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_clone_tag_type_at_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_find_enum_const_at_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    !/ps_local_registry_scope_is_visible_from_in\s*\(/.test(
+      semanticContextOwnershipSource,
+    )) {
+  throw new Error(
+    "semantic namespaces must receive local scope ownership explicitly",
+  );
+}
 const frontendTranslationUnitHeader = await readFile(
   "src/frontend/translation_unit.h",
   "utf8",
@@ -230,6 +255,12 @@ if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
     !/callbacks->context\s*=\s*callbacks\s*;/.test(
       localDeclarationFrontendSource,
     ) ||
+    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+      localDeclarationFrontendSource,
+    ) ||
+    !/psx_apply_parsed_standalone_tag_in_contexts\s*\(/.test(
+      localDeclarationFrontendSource,
+    ) ||
     /\bps_local_registry_create_storage_object\s*\(/.test(
       explicitLocalDeclarationLowering,
     ) ||
@@ -306,13 +337,13 @@ const contextFreeTagRegistryCall =
   /\bps_ctx_(?:has_tag_type|register_tag_type|get_tag_size|get_tag_align|get_tag_definition|get_tag_member_count|register_tag_members|find_tag_member_info)\s*\(/;
 if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     contextFreeTagRegistryCall.test(aggregateMemberResolutionSource) ||
-    !/psx_apply_parsed_tag_declaration_in_context\s*\(/.test(
+    !/psx_apply_parsed_tag_declaration_in_contexts\s*\(/.test(
       declarationApplicationSource,
     ) ||
-    !/psx_apply_parsed_decl_specifier_in_context\s*\(/.test(
+    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
       frontendDeclarationSources,
     ) ||
-    !/psx_apply_parsed_standalone_tag_in_context\s*\(/.test(
+    !/psx_apply_parsed_standalone_tag_in_contexts\s*\(/.test(
       frontendDeclarationSources,
     )) {
   throw new Error(
@@ -426,13 +457,13 @@ const contextFreeOrdinaryNamespaceCall =
 if (contextFreeOrdinaryNamespaceCall.test(
       ordinaryNamespaceResolutionSources,
     ) ||
-    !/ps_ctx_register_enum_const_in\s*\(/.test(
+    !/ps_ctx_register_enum_const_in_contexts\s*\(/.test(
       enumConstantResolutionSource,
     ) ||
-    !/ps_ctx_register_typedef_name_in\s*\(/.test(
+    !/ps_ctx_register_typedef_name_in_contexts\s*\(/.test(
       typedefDeclarationResolutionSource,
     ) ||
-    !/ps_ctx_find_enum_const_at_in\s*\(/.test(
+    !/ps_ctx_find_enum_const_at_in_contexts\s*\(/.test(
       identifierResolutionSource,
     ) ||
     !/ps_ctx_find_typedef_name_in\s*\(/.test(
