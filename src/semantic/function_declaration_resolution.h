@@ -1,7 +1,7 @@
 #ifndef SEMANTIC_FUNCTION_DECLARATION_RESOLUTION_H
 #define SEMANTIC_FUNCTION_DECLARATION_RESOLUTION_H
 
-#include "function_declaration_plan.h"
+#include "../parser/function_public.h"
 
 typedef enum {
   PSX_FUNCTION_DECLARATION_OK = 0,
@@ -20,7 +20,7 @@ typedef struct {
 
 typedef struct {
   psx_function_declaration_status_t status;
-  psx_function_declaration_plan_t declaration_plan;
+  const psx_function_symbol_t *function;
 } psx_function_declaration_resolution_t;
 
 void psx_resolve_function_declaration(

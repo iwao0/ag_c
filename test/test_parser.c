@@ -22,7 +22,6 @@
 #include "../src/semantic/aggregate_member_resolution.h"
 #include "../src/semantic/declaration_resolution.h"
 #include "../src/semantic/enum_constant_resolution.h"
-#include "../src/semantic/function_declaration_plan.h"
 #include "../src/semantic/function_declaration_resolution.h"
 #include "../src/semantic/function_parameter_resolution.h"
 #include "../src/semantic/initializer_resolution.h"
@@ -395,10 +394,19 @@ static void test_identifier_resolution_boundary() {
       },
       &function_call);
   ASSERT_EQ(PSX_IDENTIFIER_FUNCTION, function_call.kind);
-  ASSERT_TRUE(function_call.function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, function_call.function_type->kind);
-  ASSERT_EQ(1, function_call.function_type->param_count);
-  ASSERT_TRUE(!function_call.function_type->is_variadic_function);
+  ASSERT_TRUE(function_call.function != NULL);
+  ASSERT_TRUE(function_call.function ==
+              ps_ctx_find_function_symbol(
+                  (char *)"__identifier_function", 21));
+  const psx_type_t *resolved_function_type =
+      ps_function_symbol_type(function_call.function);
+  ASSERT_TRUE(resolved_function_type != NULL);
+  ASSERT_TRUE(resolved_function_type ==
+              ps_ctx_get_function_type(
+                  (char *)"__identifier_function", 21));
+  ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_type->kind);
+  ASSERT_EQ(1, resolved_function_type->param_count);
+  ASSERT_TRUE(!resolved_function_type->is_variadic_function);
   assert_identifier_resolution_kind(
       (char *)"__identifier_missing", 20, 0,
       PSX_IDENTIFIER_UNDEFINED);
@@ -1256,8 +1264,10 @@ static void test_generic_selection_semantic_lowering_boundary() {
   psx_resolve_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_OK, resolution.status);
   ASSERT_EQ(0, resolution.selected_index);
-  ASSERT_TRUE(resolution.result_type != integer_result.type);
-  ASSERT_EQ(PSX_TYPE_INTEGER, resolution.result_type->kind);
+  ASSERT_EQ(PSX_TYPE_INTEGER,
+            ps_node_get_type(
+                direct_selection.associations[resolution.selected_index]
+                    .expression)->kind);
 
   associations[0].is_default = 1;
   psx_resolve_generic_selection(&direct_selection, &resolution);
@@ -1313,6 +1323,13 @@ static void test_generic_selection_semantic_lowering_boundary() {
   node_t *lowered = psx_frontend_analyze_expression(raw, NULL);
   ASSERT_TRUE(selection->associations[0].type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, selection->associations[0].type->kind);
+  ASSERT_EQ(0, selection->selected_index);
+  ASSERT_TRUE(selection->base.type != NULL);
+  ASSERT_TRUE(selection->base.type !=
+              selection->associations[0].expression->type);
+  ASSERT_TRUE(ps_type_shape_matches(
+      selection->base.type,
+      selection->associations[0].expression->type));
   ASSERT_EQ(ND_ADD, lowered->kind);
   ASSERT_EQ(1, as_num(lowered->rhs)->val);
 }
@@ -1456,9 +1473,9 @@ static void test_function_call_type_binding_boundary() {
   psx_resolve_function_call_type(function, NULL, 0, &resolution);
   ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
   ASSERT_TRUE(resolution.function_type == function);
-  ASSERT_TRUE(resolution.result_type != function->base);
-  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.result_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, resolution.result_type->fp_kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.function_type->base->kind);
+  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
+            resolution.function_type->base->fp_kind);
 
   psx_type_t *function_pointer = ps_type_new_pointer(
       ps_type_clone(function));
@@ -1466,19 +1483,24 @@ static void test_function_call_type_binding_boundary() {
       NULL, function_pointer, 0, &resolution);
   ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
   ASSERT_EQ(PSX_TYPE_FUNCTION, resolution.function_type->kind);
-  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.result_type->kind);
+  ASSERT_EQ(PSX_TYPE_FLOAT, resolution.function_type->base->kind);
 
   psx_resolve_function_call_type(NULL, NULL, 1, &resolution);
   ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
   ASSERT_TRUE(resolution.function_type == NULL);
-  ASSERT_EQ(PSX_TYPE_INTEGER, resolution.result_type->kind);
-  ASSERT_EQ(4, ps_type_sizeof(resolution.result_type));
 
   psx_resolve_function_call_type(
       NULL, ps_type_new_integer(TK_INT, 4, 0), 0, &resolution);
   ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
             resolution.status);
-  ASSERT_TRUE(resolution.result_type == NULL);
+  ASSERT_TRUE(resolution.function_type == NULL);
+
+  psx_resolve_function_call_type(
+      NULL, ps_type_new_pointer(ps_type_new_pointer(
+                ps_type_clone(function))), 0, &resolution);
+  ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE,
+            resolution.status);
+  ASSERT_TRUE(resolution.function_type == NULL);
 
   psx_type_t *reference_type =
       psx_resolve_function_reference_type(function);
@@ -1536,6 +1558,22 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(indirect->type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, indirect->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, indirect->type->fp_kind);
+
+  ps_decl_reset_locals();
+  node_t *implicit = parse_expr_input_with_existing_locals(
+      "__implicit_call_type_boundary(5)");
+  ASSERT_EQ(ND_FUNCALL, implicit->kind);
+  node_func_t *implicit_call = (node_func_t *)implicit;
+  ASSERT_TRUE(implicit_call->function_type == NULL);
+  ASSERT_TRUE(implicit->type == NULL);
+  implicit = psx_frontend_analyze_expression(implicit, NULL);
+  implicit_call = (node_func_t *)implicit;
+  ASSERT_TRUE(implicit_call->base.is_implicit_func_decl);
+  ASSERT_TRUE(implicit_call->function_type == NULL);
+  ASSERT_TRUE(implicit->type != NULL);
+  ASSERT_EQ(PSX_TYPE_INTEGER, implicit->type->kind);
+  ASSERT_EQ(TK_INT, implicit->type->scalar_kind);
+  ASSERT_EQ(4, ps_type_sizeof(implicit->type));
 }
 
 static void test_cast_semantic_lowering_boundary() {
@@ -2137,7 +2175,6 @@ static void test_vla_lowering_request_boundary() {
   };
   request.name = (char *)"v";
   request.name_len = 1;
-  request.element_size = 4;
   request.dimensions[0] = ps_node_new_num(3);
   request.dimension_count = 1;
   request.type = vla_type;
@@ -2152,7 +2189,22 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_TRUE(ps_lvar_get_decl_type(result.var)->is_vla);
 
   ps_decl_reset_locals();
+  request.name = (char *)"vp";
+  request.name_len = 2;
+  request.dimensions[0] = ps_node_new_num(3);
+  request.dimension_count = 1;
+  request.type = ps_type_new_array(
+      ps_type_new_pointer(ps_type_clone(integer)), 0, 0, 1);
+  result = lower_vla_declaration(&request);
+  ASSERT_TRUE(result.var != NULL);
+  ASSERT_EQ(8, ps_type_pointee_value_size(request.type));
+  ASSERT_EQ(ND_VLA_ALLOC, result.init->kind);
+  ASSERT_EQ(ND_MUL, result.init->lhs->kind);
+  ASSERT_EQ(8, as_num(result.init->lhs->rhs)->val);
+
+  ps_decl_reset_locals();
   request.name = (char *)"m";
+  request.name_len = 1;
   request.dimensions[0] = ps_node_new_num(2);
   request.dimensions[1] = ps_node_new_num(3);
   request.dimensions[2] = ps_node_new_num(4);
@@ -2182,7 +2234,6 @@ static void test_vla_lowering_request_boundary() {
       &(psx_pointer_vla_lowering_request_t){
           .name = (char *)"p",
           .name_len = 1,
-          .element_size = 4,
           .row_dimension = row_dimension,
           .type = pointer_type,
           .requested_alignment = 32,
@@ -2220,7 +2271,6 @@ static void test_vla_lowering_request_boundary() {
   psx_parameter_vla_lowering_request_t parameter_request = {
       .name = (char *)"tensor",
       .name_len = 6,
-      .element_size = 4,
       .inner_dimensions = parameter_dimensions,
       .inner_dimension_count = 3,
       .type = parameter_type,
@@ -2261,20 +2311,17 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(psx_plan_parameter_storage(integer, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_SCALAR, plan.kind);
   ASSERT_EQ(4, plan.storage_size);
-  ASSERT_EQ(4, plan.element_size);
 
   psx_type_t *pointer = ps_type_new_pointer(integer);
   ASSERT_TRUE(psx_plan_parameter_storage(pointer, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
-  ASSERT_EQ(4, plan.element_size);
 
   psx_type_t *small_aggregate = ps_type_new_tag(
       TK_STRUCT, (char *)"SmallParam", 10, 0, 12);
   ASSERT_TRUE(psx_plan_parameter_storage(small_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE, plan.kind);
   ASSERT_EQ(12, plan.storage_size);
-  ASSERT_EQ(12, plan.element_size);
   ASSERT_EQ(8, plan.alignment);
   ASSERT_TRUE(!plan.is_byref);
 
@@ -2283,7 +2330,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(psx_plan_parameter_storage(large_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
-  ASSERT_EQ(24, plan.element_size);
   ASSERT_TRUE(plan.is_byref);
 
   psx_type_t *complex = ps_type_new(PSX_TYPE_COMPLEX);
@@ -2293,26 +2339,22 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(psx_plan_parameter_storage(complex, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
   ASSERT_EQ(16, plan.storage_size);
-  ASSERT_EQ(16, plan.element_size);
   ASSERT_EQ(8, plan.alignment);
 
   ps_decl_reset_locals();
-  psx_parameter_lowering_result_t lowered = {0};
-  ASSERT_TRUE(lower_parameter_declaration(
+  lvar_t *lowered = lower_parameter_declaration(
       &(psx_parameter_lowering_request_t){
           .name = (char *)"value",
           .name_len = 5,
           .type = large_aggregate,
-      },
-      &lowered));
-  ASSERT_TRUE(lowered.var != NULL);
-  ASSERT_TRUE(lowered.var->is_param);
-  ASSERT_TRUE(lowered.var->is_byref_param);
-  ASSERT_EQ(8, lowered.var->size);
-  ASSERT_EQ(24, lowered.storage.element_size);
-  ASSERT_EQ(24, ps_lvar_decl_sizeof(lowered.var, 0));
+      });
+  ASSERT_TRUE(lowered != NULL);
+  ASSERT_TRUE(lowered->is_param);
+  ASSERT_TRUE(lowered->is_byref_param);
+  ASSERT_EQ(8, lowered->size);
+  ASSERT_EQ(24, ps_lvar_decl_sizeof(lowered, 0));
   ASSERT_EQ(PSX_TYPE_STRUCT,
-            ps_lvar_get_decl_type(lowered.var)->kind);
+            ps_lvar_get_decl_type(lowered)->kind);
 
   psx_declarator_shape_t vla_parameter_shape;
   ps_declarator_shape_init(&vla_parameter_shape);
@@ -2336,55 +2378,64 @@ static void test_parameter_declaration_storage_plan_boundary() {
             parameter_resolution.lowering_kind);
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER,
             parameter_resolution.storage.kind);
-  ASSERT_EQ(4, parameter_resolution.element_size);
+  ASSERT_EQ(4,
+            ps_type_pointee_value_size(parameter_resolution.type));
   ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
 
   ps_decl_reset_locals();
   lvar_t *dimension = ps_decl_register_lvar_sized(
       (char *)"n", 1, 4, 4, 0);
   dimension->is_param = 1;
-  psx_parameter_lowering_result_t resolved_lowered;
-  ASSERT_TRUE(lower_resolved_parameter_declaration(
+  lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
           .name = (char *)"values",
           .name_len = 6,
           .resolution = &parameter_resolution,
-      },
-      &resolved_lowered));
-  ASSERT_TRUE(resolved_lowered.var != NULL);
-  ASSERT_TRUE(resolved_lowered.var->is_param);
+      });
+  ASSERT_TRUE(resolved_lowered != NULL);
+  ASSERT_TRUE(resolved_lowered->is_param);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            ps_lvar_get_decl_type(resolved_lowered.var)->kind);
+            ps_lvar_get_decl_type(resolved_lowered)->kind);
   ASSERT_EQ(dimension->offset,
-            ps_lvar_vla_row_stride_src_offset(resolved_lowered.var));
+            ps_lvar_vla_row_stride_src_offset(resolved_lowered));
 
   psx_type_t *parameter_types[2] = {integer, pointer};
   psx_type_t *function_input = ps_type_new_function(ps_type_clone(pointer));
   ps_type_set_function_params(function_input, parameter_types, 2, 1);
-  psx_function_declaration_plan_t function_plan = {0};
-  ASSERT_TRUE(psx_plan_function_declaration(
-      &(psx_function_declaration_request_t){
+  psx_frontend_reset_translation_unit_state();
+  static char planned_function_name[] = "__planned_function";
+  psx_function_declaration_resolution_t planned_function = {0};
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = planned_function_name,
+          .name_len = (int)sizeof(planned_function_name) - 1,
           .function_type = function_input,
       },
-      &function_plan));
-  ASSERT_TRUE(function_plan.function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, function_plan.function_type->kind);
+      &planned_function);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, planned_function.status);
+  ASSERT_TRUE(planned_function.function != NULL);
+  const psx_type_t *planned_function_type =
+      ps_function_symbol_type(planned_function.function);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, planned_function_type->kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
-            function_plan.function_type->base->kind);
-  ASSERT_EQ(2, function_plan.function_type->param_count);
-  ASSERT_TRUE(function_plan.function_type->is_variadic_function);
+            planned_function_type->base->kind);
+  ASSERT_EQ(2, planned_function_type->param_count);
+  ASSERT_TRUE(planned_function_type->is_variadic_function);
   ASSERT_TRUE(ps_type_shape_matches(
-      function_plan.function_type->param_types[0], integer));
+      planned_function_type->param_types[0], integer));
   ASSERT_TRUE(ps_type_shape_matches(
-      function_plan.function_type->param_types[1], pointer));
+      planned_function_type->param_types[1], pointer));
   psx_type_t *cyclic_function_type = ps_type_new_function(NULL);
   cyclic_function_type->base = cyclic_function_type;
   ASSERT_TRUE(!ps_type_is_well_formed(cyclic_function_type));
-  ASSERT_TRUE(!psx_plan_function_declaration(
-      &(psx_function_declaration_request_t){
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = (char *)"__cyclic_function",
+          .name_len = 17,
           .function_type = cyclic_function_type,
       },
-      &function_plan));
+      &planned_function);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_INVALID, planned_function.status);
 
   psx_declarator_shape_t returned_funcptr_shape;
   psx_declarator_shape_t returned_value_shape;
@@ -2413,14 +2464,20 @@ static void test_parameter_declaration_storage_plan_boundary() {
       &returned_funcptr_shape);
   psx_type_t *funcptr_function_input =
       ps_type_new_function(ps_type_clone(returned_funcptr));
-  psx_function_declaration_plan_t funcptr_plan = {0};
-  ASSERT_TRUE(psx_plan_function_declaration(
-      &(psx_function_declaration_request_t){
+  static char funcptr_function_name[] = "__planned_funcptr";
+  psx_function_declaration_resolution_t funcptr_resolution = {0};
+  psx_resolve_function_declaration(
+      &(psx_function_declaration_resolution_request_t){
+          .name = funcptr_function_name,
+          .name_len = (int)sizeof(funcptr_function_name) - 1,
           .function_type = funcptr_function_input,
       },
-      &funcptr_plan));
+      &funcptr_resolution);
+  ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, funcptr_resolution.status);
+  ASSERT_TRUE(funcptr_resolution.function != NULL);
   const psx_type_t *planned_return =
-      ps_type_function_return_type(funcptr_plan.function_type);
+      ps_type_function_return_type(
+          ps_function_symbol_type(funcptr_resolution.function));
   const psx_type_t *planned_callable = ps_type_find_function(planned_return);
   ASSERT_TRUE(planned_callable != NULL);
   ASSERT_EQ(1, planned_callable->param_count);
@@ -14041,6 +14098,27 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
             failure.status);
   ASSERT_TRUE(failure.node == (node_t *)&invalid_function_call);
+
+  node_func_t invalid_implicit_function_call = {0};
+  invalid_implicit_function_call.base.kind = ND_FUNCALL;
+  invalid_implicit_function_call.base.type =
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
+  invalid_implicit_function_call.base.is_implicit_func_decl = 1;
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&invalid_implicit_function_call, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
+            failure.status);
+  ASSERT_TRUE(
+      failure.node == (node_t *)&invalid_implicit_function_call);
+
+  node_func_t valid_implicit_function_call = {0};
+  valid_implicit_function_call.base.kind = ND_FUNCALL;
+  valid_implicit_function_call.base.type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  valid_implicit_function_call.base.is_implicit_func_decl = 1;
+  ASSERT_TRUE(psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&valid_implicit_function_call, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_OK, failure.status);
 }
 
 static void test_recursive_declarator_capacity_boundary() {

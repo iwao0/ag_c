@@ -63,5 +63,4 @@ void psx_resolve_generic_selection(
   }
   resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_OK;
   resolution->selected_index = selected;
-  resolution->result_type = ps_type_clone(selected_type);
 }

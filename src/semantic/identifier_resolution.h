@@ -1,6 +1,7 @@
 #ifndef SEMANTIC_IDENTIFIER_RESOLUTION_H
 #define SEMANTIC_IDENTIFIER_RESOLUTION_H
 
+#include "../parser/function_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/symtab.h"
 
@@ -25,7 +26,7 @@ typedef struct {
   psx_identifier_resolution_kind_t kind;
   lvar_t *local;
   global_var_t *global;
-  const psx_type_t *function_type;
+  const psx_function_symbol_t *function;
   long long enum_value;
 } psx_identifier_resolution_t;
 

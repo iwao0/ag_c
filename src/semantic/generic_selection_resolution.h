@@ -15,7 +15,6 @@ typedef struct {
   psx_generic_selection_resolution_status_t status;
   int selected_index;
   int conflict_index;
-  psx_type_t *result_type;
 } psx_generic_selection_resolution_t;
 
 void psx_resolve_generic_selection(

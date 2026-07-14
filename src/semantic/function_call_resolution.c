@@ -24,13 +24,10 @@ void psx_resolve_function_call_type(
   if (function && function->base) {
     resolution->status = PSX_FUNCTION_CALL_RESOLUTION_OK;
     resolution->function_type = function;
-    resolution->result_type = ps_type_clone(function->base);
     return;
   }
-  if (is_implicit_declaration) {
+  if (is_implicit_declaration)
     resolution->status = PSX_FUNCTION_CALL_RESOLUTION_OK;
-    resolution->result_type = ps_type_new_integer(TK_INT, 4, 0);
-  }
 }
 
 psx_type_t *psx_resolve_function_reference_type(

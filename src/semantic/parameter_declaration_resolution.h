@@ -25,7 +25,6 @@ typedef struct {
   psx_type_t *type;
   psx_parameter_storage_plan_t storage;
   psx_parameter_lowering_kind_t lowering_kind;
-  int element_size;
   psx_parameter_dimension_t *inner_dimensions;
   int inner_dimension_count;
 } psx_parameter_declaration_resolution_t;

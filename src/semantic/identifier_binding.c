@@ -60,12 +60,14 @@ static node_t *materialize_global(
 static node_t *materialize_function(
     const node_identifier_t *identifier,
     const psx_identifier_resolution_t *resolution) {
+  const psx_type_t *function_type =
+      ps_function_symbol_type(resolution->function);
   node_funcref_t *reference = arena_alloc(sizeof(*reference));
   reference->base.kind = ND_FUNCREF;
   ps_node_bind_type(
       (node_t *)reference,
-      resolution->function_type
-          ? ps_type_clone(resolution->function_type)
+      function_type
+          ? ps_type_clone(function_type)
           : NULL);
   reference->funcname = identifier->name;
   reference->funcname_len = identifier->name_len;
@@ -213,8 +215,10 @@ static void bind_direct_call(
     call->base.is_implicit_func_decl = 1;
     return;
   }
-  call->function_type = resolution.function_type
-      ? ps_type_clone(resolution.function_type)
+  const psx_type_t *function_type =
+      ps_function_symbol_type(resolution.function);
+  call->function_type = function_type
+      ? ps_type_clone(function_type)
       : NULL;
   if (!call->function_type ||
       call->function_type->kind != PSX_TYPE_FUNCTION) {

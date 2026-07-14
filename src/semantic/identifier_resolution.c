@@ -41,27 +41,25 @@ void psx_resolve_identifier(
 
   resolution->global = psx_resolve_global_object_symbol(
       request->name, request->name_len);
-  int has_function =
-      ps_ctx_has_function_name(request->name, request->name_len);
+  const psx_function_symbol_t *function =
+      ps_ctx_find_function_symbol(request->name, request->name_len);
   if (request->is_call) {
     if (resolution->global) {
       resolution->kind = PSX_IDENTIFIER_GLOBAL_OBJECT;
       return;
     }
-    if (!has_function) {
+    if (!function) {
       resolution->kind = PSX_IDENTIFIER_UNDECLARED_CALL;
       return;
     }
     resolution->kind = PSX_IDENTIFIER_FUNCTION;
-    resolution->function_type = ps_ctx_get_function_type(
-        request->name, request->name_len);
+    resolution->function = function;
     return;
   }
 
-  if (has_function) {
+  if (function) {
     resolution->kind = PSX_IDENTIFIER_FUNCTION;
-    resolution->function_type = ps_ctx_get_function_type(
-        request->name, request->name_len);
+    resolution->function = function;
     return;
   }
   if (resolution->global) {

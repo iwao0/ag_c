@@ -128,8 +128,8 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
 int ps_ctx_track_function_defined(char *name, int len);
 const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len);
 /* 完全な canonical 関数型を初回登録し、再宣言時は同じ型か照合する。 */
-int ps_ctx_register_function_type(char *name, int len,
-                                   const psx_type_t *function_type);
+const psx_function_symbol_t *ps_ctx_register_function_type(
+    char *name, int len, const psx_type_t *function_type);
 int psx_ctx_track_function_type(char *name, int len,
                                 const psx_type_t *function_type);
 const psx_type_t *ps_ctx_get_function_type(char *name, int len);

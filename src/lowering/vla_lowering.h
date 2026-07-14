@@ -7,7 +7,6 @@
 typedef struct {
   char *name;
   int name_len;
-  int element_size;
   node_t **dimensions;
   long long *const_values;
   unsigned char *is_const;
@@ -28,7 +27,6 @@ psx_vla_lowering_result_t lower_vla_declaration(
 typedef struct {
   char *name;
   int name_len;
-  int element_size;
   node_t *row_dimension;
   const psx_type_t *type;
   int requested_alignment;
@@ -47,7 +45,6 @@ typedef struct {
 typedef struct {
   char *name;
   int name_len;
-  int element_size;
   psx_parameter_vla_dimension_t *inner_dimensions;
   int inner_dimension_count;
   const psx_type_t *type;

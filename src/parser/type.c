@@ -677,6 +677,10 @@ const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type) {
   return ps_type_array_leaf_type(type->base);
 }
 
+int ps_type_pointee_value_size(const psx_type_t *type) {
+  return ps_type_sizeof(ps_type_pointee_value_type(type));
+}
+
 const psx_type_t *ps_type_derived_leaf_type(const psx_type_t *type) {
   while (type &&
          (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY)) {

@@ -13,12 +13,6 @@ static const psx_runtime_array_bound_t *bound_for_op(
   return NULL;
 }
 
-static const psx_type_t *storage_element_type(const psx_type_t *type) {
-  const psx_type_t *element = type;
-  if (element && element->kind == PSX_TYPE_POINTER) element = element->base;
-  return ps_type_array_leaf_type(element);
-}
-
 void psx_resolve_local_declaration(
     const psx_local_declaration_resolution_request_t *request,
     psx_local_declaration_resolution_t *resolution) {
@@ -56,11 +50,10 @@ void psx_resolve_local_declaration(
     if (op->is_vla_array) leading_array_has_vla = 1;
   }
 
-  const psx_type_t *element = storage_element_type(type);
-  resolution->element_size = ps_type_sizeof(element);
+  int element_size = ps_type_pointee_value_size(type);
 
   if (type->kind == PSX_TYPE_ARRAY && leading_array_has_vla) {
-    if (resolution->element_size <= 0) {
+    if (element_size <= 0) {
       resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
       return;
     }
@@ -76,7 +69,7 @@ void psx_resolve_local_declaration(
 
   if (type->kind == PSX_TYPE_ARRAY && type->array_len <= 0 &&
       !type->is_vla) {
-    if (resolution->element_size <= 0) {
+    if (element_size <= 0) {
       resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
       return;
     }
@@ -95,7 +88,7 @@ void psx_resolve_local_declaration(
       const psx_declarator_op_t *op = &application->shape.ops[i];
       if (op->kind != PSX_DECL_OP_ARRAY || !op->is_vla_array) continue;
       const psx_runtime_array_bound_t *bound = bound_for_op(application, i);
-      if (!bound || !bound->expression || resolution->element_size <= 0)
+      if (!bound || !bound->expression || element_size <= 0)
         return;
       resolution->storage_kind = PSX_LOCAL_STORAGE_POINTER_TO_VLA;
       resolution->pointer_row_dimension = bound->expression;

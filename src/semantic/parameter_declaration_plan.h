@@ -14,7 +14,6 @@ typedef enum {
 typedef struct {
   psx_parameter_storage_kind_t kind;
   int storage_size;
-  int element_size;
   int alignment;
   int is_byref;
 } psx_parameter_storage_plan_t;

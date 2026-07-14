@@ -142,9 +142,8 @@ static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
   return ps_type_clone_persistent(src);
 }
 
-typedef struct func_name_t func_name_t;
-struct func_name_t {
-  func_name_t *next_hash;
+struct psx_function_symbol_t {
+  psx_function_symbol_t *next_hash;
   char *name;
   int len;
   psx_type_t *function_type;
@@ -175,7 +174,7 @@ static enum_const_t *enum_consts_by_bucket[PCTX_HASH_BUCKETS];
 static enum_const_t *all_enum_consts;
 static typedef_name_t *typedefs_by_bucket[PCTX_HASH_BUCKETS];
 static typedef_name_t *all_typedefs;
-static func_name_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
+static psx_function_symbol_t *func_names_by_bucket[PCTX_HASH_BUCKETS];
 static int tag_scope_depth = 0;
 static int tag_member_decl_order = 0;
 
@@ -278,7 +277,8 @@ void ps_ctx_reset_tag_diag_state(void) {
  * を呼ぶユニットテストで前回パースの "function defined" 状態が今回パースに漏れない。 */
 void ps_ctx_reset_function_diag_state(void) {
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
-    for (func_name_t *f = func_names_by_bucket[i]; f; f = f->next_hash) {
+    for (psx_function_symbol_t *f = func_names_by_bucket[i];
+         f; f = f->next_hash) {
       f->is_defined = 0;
     }
   }
@@ -1120,9 +1120,11 @@ void psx_ctx_define_function_name(char *name, int len) {
 }
 
 // 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
-static func_name_t *find_function_name(char *name, int len) {
+const psx_function_symbol_t *ps_ctx_find_function_symbol(
+    char *name, int len) {
   unsigned bucket = psx_ctx_hash_name(name, len);
-  for (func_name_t *f = func_names_by_bucket[bucket]; f; f = f->next_hash) {
+  for (psx_function_symbol_t *f = func_names_by_bucket[bucket];
+       f; f = f->next_hash) {
     if (f->len == len && strncmp(f->name, name, (size_t)len) == 0) {
       return f;
     }
@@ -1130,12 +1132,22 @@ static func_name_t *find_function_name(char *name, int len) {
   return NULL;
 }
 
+static psx_function_symbol_t *find_function_name_mut(
+    char *name, int len) {
+  return (psx_function_symbol_t *)ps_ctx_find_function_symbol(name, len);
+}
+
+const psx_type_t *ps_function_symbol_type(
+    const psx_function_symbol_t *symbol) {
+  return symbol ? symbol->function_type : NULL;
+}
+
 void ps_ctx_checkpoint_function_registration(
     char *name, int len, psx_function_registration_checkpoint_t *checkpoint) {
   if (!checkpoint) return;
   *checkpoint = (psx_function_registration_checkpoint_t){0};
   if (!name || len <= 0) return;
-  func_name_t *function = find_function_name(name, len);
+  psx_function_symbol_t *function = find_function_name_mut(name, len);
   if (!function) return;
   checkpoint->existed = 1;
   checkpoint->is_defined = function->is_defined;
@@ -1147,14 +1159,14 @@ void ps_ctx_rollback_function_registration(
     const psx_function_registration_checkpoint_t *checkpoint) {
   if (!checkpoint || !name || len <= 0) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  func_name_t **link = &func_names_by_bucket[bucket];
+  psx_function_symbol_t **link = &func_names_by_bucket[bucket];
   while (*link && ((*link)->len != len ||
                    strncmp((*link)->name, name, (size_t)len) != 0)) {
     link = &(*link)->next_hash;
   }
   if (!*link) return;
   if (!checkpoint->existed) {
-    func_name_t *removed = *link;
+    psx_function_symbol_t *removed = *link;
     *link = removed->next_hash;
     free(removed);
     return;
@@ -1164,10 +1176,10 @@ void ps_ctx_rollback_function_registration(
 }
 
 void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_size) {
-  func_name_t *existing = find_function_name(name, len);
+  psx_function_symbol_t *existing = find_function_name_mut(name, len);
   if (existing) return;
   unsigned bucket = psx_ctx_hash_name(name, len);
-  func_name_t *f = calloc(1, sizeof(func_name_t));
+  psx_function_symbol_t *f = calloc(1, sizeof(*f));
   f->name = name;
   f->len = len;
   (void)ret_struct_size;
@@ -1176,13 +1188,13 @@ void psx_ctx_define_function_name_with_ret(char *name, int len, int ret_struct_s
 }
 
 bool ps_ctx_has_function_name(char *name, int len) {
-  return find_function_name(name, len) != NULL;
+  return ps_ctx_find_function_symbol(name, len) != NULL;
 }
 
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
  * 初回 (まだ立っていない) なら 1 を返してフラグを立てる、すでに定義済みなら 0 を返す。 */
 int ps_ctx_track_function_defined(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
+  psx_function_symbol_t *f = find_function_name_mut(name, len);
   if (!f) return 1;
   if (f->is_defined) return 0;
   f->is_defined = 1;
@@ -1190,41 +1202,43 @@ int ps_ctx_track_function_defined(char *name, int len) {
 }
 
 int ps_ctx_is_function_defined(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
+  psx_function_symbol_t *f = find_function_name_mut(name, len);
   return f && f->is_defined;
 }
 
 const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
+  const psx_function_symbol_t *f =
+      ps_ctx_find_function_symbol(name, len);
   return f ? ps_type_function_return_type(f->function_type) : NULL;
 }
 
-int ps_ctx_register_function_type(char *name, int len,
-                                   const psx_type_t *function_type) {
+const psx_function_symbol_t *ps_ctx_register_function_type(
+    char *name, int len, const psx_type_t *function_type) {
   if (!name || len <= 0 || !function_type ||
       function_type->kind != PSX_TYPE_FUNCTION) {
-    return 0;
+    return NULL;
   }
-  func_name_t *f = find_function_name(name, len);
+  psx_function_symbol_t *f = find_function_name_mut(name, len);
   if (!f) {
     psx_ctx_define_function_name(name, len);
-    f = find_function_name(name, len);
+    f = find_function_name_mut(name, len);
   }
-  if (!f) return 0;
+  if (!f) return NULL;
   if (f->function_type)
-    return ps_type_shape_matches(f->function_type, function_type);
+    return ps_type_shape_matches(f->function_type, function_type)
+               ? f : NULL;
   f->function_type = ctx_type_clone_persistent(function_type);
-  return 1;
+  return f;
 }
 
 int psx_ctx_track_function_type(char *name, int len,
                                 const psx_type_t *function_type) {
-  return ps_ctx_register_function_type(name, len, function_type);
+  return ps_ctx_register_function_type(name, len, function_type) != NULL;
 }
 
 const psx_type_t *ps_ctx_get_function_type(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
-  return f ? f->function_type : NULL;
+  return ps_function_symbol_type(
+      ps_ctx_find_function_symbol(name, len));
 }
 
 int ps_ctx_format_function_signature(char *name, int len,

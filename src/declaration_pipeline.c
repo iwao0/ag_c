@@ -237,8 +237,10 @@ int psx_apply_function_declaration_pipeline(
   if (resolution.status != PSX_FUNCTION_DECLARATION_OK)
     diagnose_function_declaration(request, resolution.status);
   if (request->function_node) {
+    const psx_type_t *function_type =
+        ps_function_symbol_type(resolution.function);
     request->function_node->function_type = ps_type_clone(
-        resolution.declaration_plan.function_type);
+        function_type);
     ps_node_bind_type(
         (node_t *)request->function_node,
         ps_type_clone(request->function_node->function_type->base));
@@ -339,21 +341,20 @@ static int append_definition_parameter(
     return 1;
   }
 
-  psx_parameter_lowering_result_t lowered;
-  if (!lower_resolved_parameter_declaration(
+  lvar_t *lowered = lower_resolved_parameter_declaration(
           &(psx_resolved_parameter_lowering_request_t){
               .name = name->str,
               .name_len = name->len,
               .resolution = &resolution,
               .diag_tok = parameter->declarator.diagnostic_token,
-          },
-          &lowered)) {
+          });
+  if (!lowered) {
     ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
                  "canonical parameter lowering failed for '%.*s'",
                  name->len, name->str);
   }
   result->args[result->nargs++] =
-      ps_node_new_param_lvar_for(lowered.var);
+      ps_node_new_param_lvar_for(lowered);
   return 0;
 }
 
@@ -651,7 +652,6 @@ int psx_begin_automatic_local_declaration_pipeline(
       psx_vla_lowering_request_t lowering = {
           .name = request->name,
           .name_len = request->name_len,
-          .element_size = resolution.element_size,
           .dimension_count = resolution.dimension_count,
           .type = request->type,
           .requested_alignment = request->requested_alignment,
@@ -679,7 +679,6 @@ int psx_begin_automatic_local_declaration_pipeline(
           &(psx_pointer_vla_lowering_request_t){
               .name = request->name,
               .name_len = request->name_len,
-              .element_size = resolution.element_size,
               .row_dimension = resolution.pointer_row_dimension,
               .type = request->type,
               .requested_alignment = request->requested_alignment,

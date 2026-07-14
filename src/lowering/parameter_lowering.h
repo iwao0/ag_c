@@ -11,14 +11,8 @@ typedef struct {
   const psx_type_t *type;
 } psx_parameter_lowering_request_t;
 
-typedef struct {
-  lvar_t *var;
-  psx_parameter_storage_plan_t storage;
-} psx_parameter_lowering_result_t;
-
-int lower_parameter_declaration(
-    const psx_parameter_lowering_request_t *request,
-    psx_parameter_lowering_result_t *result);
+lvar_t *lower_parameter_declaration(
+    const psx_parameter_lowering_request_t *request);
 
 typedef struct {
   char *name;
@@ -27,8 +21,7 @@ typedef struct {
   token_t *diag_tok;
 } psx_resolved_parameter_lowering_request_t;
 
-int lower_resolved_parameter_declaration(
-    const psx_resolved_parameter_lowering_request_t *request,
-    psx_parameter_lowering_result_t *result);
+lvar_t *lower_resolved_parameter_declaration(
+    const psx_resolved_parameter_lowering_request_t *request);
 
 #endif

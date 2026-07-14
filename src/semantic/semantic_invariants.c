@@ -51,6 +51,12 @@ static int fail(psx_semantic_invariant_failure_t *failure,
   return 0;
 }
 
+static int is_implicit_function_result_type(const psx_type_t *type) {
+  return type && type->kind == PSX_TYPE_INTEGER &&
+         type->scalar_kind == TK_INT && type->size == 4 &&
+         !type->is_unsigned;
+}
+
 static int validate_node(const node_t *node,
                          psx_semantic_invariant_failure_t *failure) {
   if (!node) return 1;
@@ -75,7 +81,8 @@ static int validate_node(const node_t *node,
             failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
       }
     } else if (node->kind == ND_FUNCDEF ||
-               !node->is_implicit_func_decl) {
+               !node->is_implicit_func_decl ||
+               !is_implicit_function_result_type(node->type)) {
       return fail(
           failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
     }

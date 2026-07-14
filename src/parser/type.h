@@ -176,6 +176,7 @@ int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
 const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type);
 const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type);
+int ps_type_pointee_value_size(const psx_type_t *type);
 const psx_type_t *ps_type_derived_leaf_type(const psx_type_t *type);
 int ps_type_array_rank(const psx_type_t *type);
 int ps_type_array_dimension(const psx_type_t *type, int index);

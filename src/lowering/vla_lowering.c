@@ -36,8 +36,11 @@ psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
   int count = request ? request->dimension_count : 0;
+  int element_size =
+      request ? ps_type_pointee_value_size(request->type) : 0;
   if (!request || !request->type || count <= 0 ||
-      !request->dimensions || !request->const_values || !request->is_const) {
+      element_size <= 0 || !request->dimensions || !request->const_values ||
+      !request->is_const) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
@@ -48,9 +51,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
   int outer_stride = 0;
   int remaining_strides = 0;
   if (count == 1) {
-    outer_stride = request->element_size;
+    outer_stride = element_size;
   } else if (count == 2 && request->is_const[1]) {
-    outer_stride = (int)request->const_values[1] * request->element_size;
+    outer_stride = (int)request->const_values[1] * element_size;
   }
 
   result.var = create_vla_storage(
@@ -69,7 +72,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
   if (count == 1) {
     alloc_lhs = ps_node_new_binary(
         ND_MUL, request->dimensions[0],
-        ps_node_new_num(request->element_size));
+        ps_node_new_num(element_size));
   } else if (count == 2 && request->is_const[1]) {
     alloc_lhs = ps_node_new_binary(
         ND_MUL, request->dimensions[0], ps_node_new_num(outer_stride));
@@ -77,9 +80,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
     alloc_lhs = request->dimensions[0];
     alloc_rhs = ps_node_new_binary(
         ND_MUL, request->dimensions[1],
-        ps_node_new_num(request->element_size));
+        ps_node_new_num(element_size));
   } else {
-    node_t *outer = ps_node_new_num(request->element_size);
+    node_t *outer = ps_node_new_num(element_size);
     for (int i = count - 1; i >= 1; i--)
       outer = ps_node_new_binary(ND_MUL, outer, request->dimensions[i]);
     alloc_lhs = request->dimensions[0];
@@ -89,7 +92,7 @@ psx_vla_lowering_result_t lower_vla_declaration(
       var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
 
   for (int level = 1; level < count - 1; level++) {
-    node_t *stride = ps_node_new_num(request->element_size);
+    node_t *stride = ps_node_new_num(element_size);
     for (int i = count - 1; i >= level + 1; i--)
       stride = ps_node_new_binary(ND_MUL, stride, request->dimensions[i]);
     node_t *slot = ps_node_new_lvar_typed(
@@ -103,8 +106,10 @@ psx_vla_lowering_result_t lower_vla_declaration(
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
     const psx_pointer_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
+  int element_size =
+      request ? ps_type_pointee_value_size(request->type) : 0;
   if (!request || !request->type || !request->name || request->name_len <= 0 ||
-      request->element_size <= 0 || !request->row_dimension) {
+      element_size <= 0 || !request->row_dimension) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
@@ -118,12 +123,12 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   int row_stride_offset =
       ps_lvar_offset(result.var) + layout.row_stride_relative_offset;
   ps_local_registry_set_vla_descriptor(
-      result.var, row_stride_offset, 0, 0, request->element_size);
+      result.var, row_stride_offset, 0, 0, element_size);
 
   node_t *slot = ps_node_new_lvar_typed(row_stride_offset, 8);
   node_t *stride = ps_node_new_binary(
       ND_MUL, request->row_dimension,
-      ps_node_new_num(request->element_size));
+      ps_node_new_num(element_size));
   result.init = (node_t *)ps_node_new_assign(slot, stride);
   return result;
 }
@@ -146,8 +151,10 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     const psx_parameter_vla_lowering_request_t *request) {
   psx_parameter_vla_lowering_result_t result = {0};
   int count = request ? request->inner_dimension_count : 0;
+  int element_size =
+      request ? ps_type_pointee_value_size(request->type) : 0;
   if (!request || !request->type || !request->name || request->name_len <= 0 ||
-      request->element_size <= 0 || count < 0 ||
+      element_size <= 0 || count < 0 ||
       (count > 0 && !request->inner_dimensions)) {
     ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
                  diag_message_for(
@@ -202,13 +209,13 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
 
     ps_local_registry_set_vla_descriptor(
         result.var, ps_lvar_offset(result.stride_storage), count - 1,
-        0, request->element_size);
+        0, element_size);
     ps_local_registry_set_vla_param_inner_dims(
         result.var, constants, source_offsets, count);
     if (count == 1 && constants[0] == 0) {
       ps_local_registry_set_vla_descriptor(
           result.var, ps_lvar_offset(result.stride_storage), 0,
-          source_offsets[0], request->element_size);
+          source_offsets[0], element_size);
     }
     free(constants);
     free(source_offsets);

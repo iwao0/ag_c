@@ -3,14 +3,6 @@
 
 #include <string.h>
 
-static const psx_type_t *parameter_leaf_type(const psx_type_t *type) {
-  while (type && (type->kind == PSX_TYPE_POINTER ||
-                  type->kind == PSX_TYPE_ARRAY)) {
-    type = type->base;
-  }
-  return type;
-}
-
 static int has_runtime_inner_dimension(
     const psx_parameter_declaration_resolution_request_t *request) {
   for (int i = 0; i < request->inner_dimension_count; i++) {
@@ -46,13 +38,11 @@ int psx_resolve_parameter_declaration(
     return 0;
   }
 
-  const psx_type_t *leaf = parameter_leaf_type(resolution->type);
+  const psx_type_t *leaf = ps_type_derived_leaf_type(resolution->type);
   int leaf_is_aggregate = leaf && ps_type_is_tag_aggregate(leaf);
   int has_pointer = request_shape_has(request, PSX_DECL_OP_POINTER);
   int has_array = request_shape_has(request, PSX_DECL_OP_ARRAY);
   int has_function = request_shape_has(request, PSX_DECL_OP_FUNCTION);
-  resolution->element_size = ps_type_sizeof(leaf);
-  if (resolution->element_size <= 0) resolution->element_size = 8;
   if ((has_array && !leaf_is_aggregate && !has_pointer && !has_function) ||
       (has_pointer && has_array && !leaf_is_aggregate && !has_function &&
        has_runtime_inner_dimension(request))) {

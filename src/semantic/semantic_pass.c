@@ -54,34 +54,15 @@ static void semantic_transform_initializer_syntax(
   }
 }
 
-typedef struct {
-  psx_type_t *type;
-  tk_float_kind_t fp_kind;
-  int is_void;
-  int is_pointer;
-  int aggregate_size;
-} semantic_return_type_view_t;
-
-static semantic_return_type_view_t semantic_return_type_view(node_func_t *fn) {
-  semantic_return_type_view_t view = {0};
-  view.type = ps_node_get_type((node_t *)fn);
-  psx_type_t *type = view.type;
-  if (!type) return view;
-  view.fp_kind = ps_node_value_fp_kind((node_t *)fn);
-  view.is_void = type->kind == PSX_TYPE_VOID;
-  view.is_pointer = ps_type_is_pointer(type);
-  view.aggregate_size = ps_node_aggregate_value_size((node_t *)fn);
-  return view;
-}
-
 static void semantic_transform_return(node_t *node, node_func_t *current_func,
                                       const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_RETURN || !current_func) return;
   const token_t *tok = node->tok ? node->tok : fallback_diag_tok;
-  semantic_return_type_view_t ret = semantic_return_type_view(current_func);
+  const psx_type_t *return_type = ps_node_get_type((node_t *)current_func);
+  int returns_void = return_type && return_type->kind == PSX_TYPE_VOID;
 
   if (!node->lhs) {
-    if (!ret.is_void) {
+    if (!returns_void) {
       diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                      "%s",
                      diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_REQUIRED_NONVOID));
@@ -89,7 +70,7 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
     return;
   }
 
-  if (ret.is_void) {
+  if (returns_void) {
     diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, tok,
                    "%s",
                    diag_message_for(DIAG_ERR_PARSER_RETURN_VALUE_FORBIDDEN_VOID));
@@ -97,7 +78,8 @@ static void semantic_transform_return(node_t *node, node_func_t *current_func,
 
   /* C11 6.8.6.4 / 6.5.16.1: NULL pointer constant 0 is allowed, but a nonzero
    * integer constant cannot be returned from a pointer-returning function. */
-  if (ret.is_pointer && node->lhs->kind == ND_NUM) {
+  if (return_type && ps_type_is_pointer(return_type) &&
+      node->lhs->kind == ND_NUM) {
     node_num_t *num = (node_num_t *)node->lhs;
     if (num->val != 0) {
       ps_diag_ctx((token_t *)tok, "return",
@@ -352,10 +334,20 @@ static void semantic_resolve_function_call(
       call->callee ? ps_node_get_type(call->callee) : NULL,
       call->base.is_implicit_func_decl, &resolution);
   if (resolution.status == PSX_FUNCTION_CALL_RESOLUTION_OK) {
-    if (!call->function_type && resolution.function_type)
-      call->function_type = ps_type_clone(resolution.function_type);
-    semantic_bind_result_type((node_t *)call, resolution.result_type);
-    return;
+    if (resolution.function_type) {
+      if (!call->function_type)
+        call->function_type = ps_type_clone(resolution.function_type);
+      semantic_bind_result_type(
+          (node_t *)call,
+          ps_type_clone(
+              ps_type_function_return_type(resolution.function_type)));
+      return;
+    }
+    if (call->base.is_implicit_func_decl) {
+      semantic_bind_result_type(
+          (node_t *)call, ps_type_new_integer(TK_INT, 4, 0));
+      return;
+    }
   }
   ps_diag_ctx(call->base.tok
                   ? call->base.tok
@@ -428,7 +420,10 @@ static void semantic_resolve_generic_selection(
       break;
   }
   selection->selected_index = resolution.selected_index;
-  semantic_bind_result_type((node_t *)selection, resolution.result_type);
+  semantic_bind_result_type(
+      (node_t *)selection,
+      ps_type_clone(ps_node_get_type(
+          selection->associations[resolution.selected_index].expression)));
 }
 
 static void semantic_mark_usage_evaluated(node_t *node) {

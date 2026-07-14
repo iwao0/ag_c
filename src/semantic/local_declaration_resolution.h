@@ -34,7 +34,6 @@ typedef struct {
 typedef struct {
   psx_local_declaration_status_t status;
   psx_local_storage_kind_t storage_kind;
-  int element_size;
   psx_local_vla_dimension_t *dimensions;
   int dimension_count;
   node_t *pointer_row_dimension;

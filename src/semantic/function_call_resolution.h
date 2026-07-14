@@ -11,7 +11,6 @@ typedef enum {
 typedef struct {
   psx_function_call_resolution_status_t status;
   const psx_type_t *function_type;
-  psx_type_t *result_type;
 } psx_function_call_resolution_t;
 
 void psx_resolve_function_call_type(

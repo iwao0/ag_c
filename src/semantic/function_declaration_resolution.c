@@ -20,21 +20,19 @@ void psx_resolve_function_declaration(
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
     return;
   }
-  if (!psx_plan_function_declaration(
-          &(psx_function_declaration_request_t){
-              .function_type = request->function_type,
-          },
-          &resolution->declaration_plan)) {
+  if (!request->function_type->base ||
+      !ps_type_is_well_formed(request->function_type)) {
     return;
   }
-  if (!ps_ctx_register_function_type(
-          request->name, request->name_len,
-          resolution->declaration_plan.function_type)) {
+  resolution->function = ps_ctx_register_function_type(
+      request->name, request->name_len, request->function_type);
+  if (!resolution->function) {
     resolution->status = PSX_FUNCTION_DECLARATION_TYPE_CONFLICT;
     return;
   }
   if (request->is_definition &&
       !ps_ctx_track_function_defined(request->name, request->name_len)) {
+    resolution->function = NULL;
     resolution->status = PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION;
     return;
   }
