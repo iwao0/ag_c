@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include "../parser/diag.h"
+#include "../diag/diag.h"
 
 typedef enum {
   NODE_SEMANTIC_ROLE_INVALID = 0,
@@ -249,26 +249,35 @@ static const char *semantic_invariant_status_name(
   return "unknown semantic invariant failure";
 }
 
+static void emit_semantic_invariant_failure(
+    const psx_semantic_invariant_failure_t *failure,
+    const token_t *fallback_diag_tok) {
+  const node_t *node = failure ? failure->node : NULL;
+  const token_t *tok = node && node->tok ? node->tok : fallback_diag_tok;
+  const char *detail = semantic_invariant_status_name(
+      failure ? failure->status : PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND);
+  if (tok) {
+    diag_emit_tokf(
+        DIAG_ERR_INTERNAL_INVARIANT_FAILED, tok, "%s: %s (node kind %d)",
+        diag_message_for(DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
+        node ? (int)node->kind : -1);
+  }
+  diag_emit_internalf(
+      DIAG_ERR_INTERNAL_INVARIANT_FAILED, "%s: %s (node kind %d)",
+      diag_message_for(DIAG_ERR_INTERNAL_INVARIANT_FAILED), detail,
+      node ? (int)node->kind : -1);
+}
+
 void psx_require_semantic_tree_has_canonical_expression_types(
     const node_t *root, const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure;
   if (validate_node(root, &failure, 0)) return;
-  token_t *tok = failure.node && failure.node->tok
-                     ? failure.node->tok
-                     : (token_t *)fallback_diag_tok;
-  ps_diag_ctx(tok, "semantic-invariant", "%s (node kind %d)",
-              semantic_invariant_status_name(failure.status),
-              failure.node ? (int)failure.node->kind : -1);
+  emit_semantic_invariant_failure(&failure, fallback_diag_tok);
 }
 
 void psx_require_semantic_initializer_has_canonical_expression_types(
     const node_t *root, const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
   if (validate_node(root, &failure, 1)) return;
-  token_t *tok = failure.node && failure.node->tok
-                     ? failure.node->tok
-                     : (token_t *)fallback_diag_tok;
-  ps_diag_ctx(tok, "semantic-invariant", "%s (node kind %d)",
-              semantic_invariant_status_name(failure.status),
-              failure.node ? (int)failure.node->kind : -1);
+  emit_semantic_invariant_failure(&failure, fallback_diag_tok);
 }

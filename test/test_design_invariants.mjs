@@ -1117,6 +1117,12 @@ const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",
 );
+if (!/\bDIAG_ERR_INTERNAL_INVARIANT_FAILED\b/.test(semanticInvariantsSource) ||
+    /\bps_diag_ctx\s*\(/.test(semanticInvariantsSource)) {
+  throw new Error(
+    "semantic invariant failures must be reported as internal compiler errors",
+  );
+}
 const nodeKindEnum = astSource.match(
   /typedef enum\s*\{([\s\S]*?)\}\s*node_kind_t\s*;/,
 );

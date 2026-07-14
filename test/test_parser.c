@@ -865,6 +865,44 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
   ASSERT_TRUE(strstr(buf, needle) == NULL);
 }
 
+static void expect_semantic_invariant_internal_error(
+    node_t *node, const token_t *fallback_diag_tok) {
+  int fds[2];
+  ASSERT_TRUE(pipe(fds) == 0);
+
+  fflush(NULL);
+  pid_t pid = fork();
+  if (pid == 0) {
+    close(fds[0]);
+    dup2(fds[1], STDERR_FILENO);
+    close(fds[1]);
+    freopen("/dev/null", "w", stdout);
+    diag_reset_records();
+    psx_require_semantic_tree_has_canonical_expression_types(
+        node, fallback_diag_tok);
+    _exit(0);
+  }
+
+  close(fds[1]);
+  char buf[4096];
+  size_t used = 0;
+  for (;;) {
+    ssize_t nread = read(fds[0], buf + used, sizeof(buf) - 1 - used);
+    if (nread <= 0) break;
+    used += (size_t)nread;
+    if (used >= sizeof(buf) - 1) break;
+  }
+  buf[used] = '\0';
+  close(fds[0]);
+
+  int status;
+  waitpid(pid, &status, 0);
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_TRUE(WEXITSTATUS(status) != 0);
+  ASSERT_TRUE(strstr(buf, "E0006") != NULL);
+  ASSERT_TRUE(strstr(buf, "E3064") == NULL);
+}
+
 static void expect_parse_ok_without_message(const char *input, const char *needle) {
   int fds[2];
   ASSERT_TRUE(pipe(fds) == 0);
@@ -14621,6 +14659,9 @@ static void test_semantic_canonical_type_invariant() {
       (node_t *)&untyped, &failure));
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, failure.status);
   ASSERT_TRUE(failure.node == (node_t *)&untyped);
+  token_t *invariant_tok = tk_tokenize((char *)"untyped");
+  expect_semantic_invariant_internal_error(
+      (node_t *)&untyped, invariant_tok);
 
   node_t raw_subscript = {.kind = ND_SUBSCRIPT};
   ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
