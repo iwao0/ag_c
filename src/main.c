@@ -329,7 +329,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
       wasm_publish_and_dispose_session(session);
       return -3;
     }
-    psx_frontend_free_processed_ast();
+    psx_frontend_free_processed_ast_in_compiler_context(session);
   }
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
@@ -342,7 +342,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     return -5;
   }
 
-  ir_data_module_t *data_module = lower_ir_translation_unit_data();
+  ir_data_module_t *data_module =
+      lower_ir_translation_unit_data_in_compiler_context(session);
   if (!data_module) {
     clear_output_callback();
     gen_set_simple_formatter(0);
@@ -595,7 +596,7 @@ int main(int argc, char **argv) {
       free(source);
       return 1;
     }
-    psx_frontend_free_processed_ast();
+    psx_frontend_free_processed_ast_in_compiler_context(&session);
   }
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
@@ -613,7 +614,8 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  ir_data_module_t *data_module = lower_ir_translation_unit_data();
+  ir_data_module_t *data_module =
+      lower_ir_translation_unit_data_in_compiler_context(&session);
   if (!data_module) {
 #ifdef AGC_TARGET_WASM32
     if (wasm_object_mode) {

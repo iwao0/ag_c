@@ -149,18 +149,30 @@ void ps_iter_globals(global_var_visitor_t fn, void *user) {
   ps_iter_globals_in(active_global_registry, fn, user);
 }
 
+bool ps_iter_string_literals_in(
+    psx_global_registry_t *registry,
+    string_lit_visitor_t fn, void *user) {
+  if (!registry || !registry->string_literals || !fn) return false;
+  for (string_lit_t *lit = registry->string_literals;
+       lit; lit = lit->next) fn(lit, user);
+  return true;
+}
+
 bool ps_iter_string_literals(string_lit_visitor_t fn, void *user) {
-  if (!active_global_registry->string_literals) return false;
-  for (string_lit_t *lit = active_global_registry->string_literals;
+  return ps_iter_string_literals_in(active_global_registry, fn, user);
+}
+
+bool ps_iter_float_literals_in(
+    psx_global_registry_t *registry,
+    float_lit_visitor_t fn, void *user) {
+  if (!registry || !registry->float_literals || !fn) return false;
+  for (float_lit_t *lit = registry->float_literals;
        lit; lit = lit->next) fn(lit, user);
   return true;
 }
 
 bool ps_iter_float_literals(float_lit_visitor_t fn, void *user) {
-  if (!active_global_registry->float_literals) return false;
-  for (float_lit_t *lit = active_global_registry->float_literals;
-       lit; lit = lit->next) fn(lit, user);
-  return true;
+  return ps_iter_float_literals_in(active_global_registry, fn, user);
 }
 
 bool ps_has_string_literals(void) {

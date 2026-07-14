@@ -21,7 +21,7 @@ static int frontend_session_has_registries(
     const ag_compilation_session_t *session) {
   return session && session->semantic_context && session->global_registry &&
          session->local_registry && session->parser_runtime_context &&
-         session->lowering_context;
+         session->lowering_context && session->arena_context;
 }
 
 static void reset_translation_unit_state(
@@ -29,14 +29,15 @@ static void reset_translation_unit_state(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
-    psx_lowering_context_t *lowering_context) {
+    psx_lowering_context_t *lowering_context,
+    arena_context_t *arena_context) {
   ps_global_registry_reset_translation_unit_in(global_registry);
   ps_decl_reset_translation_unit_state_in(local_registry);
   ps_ctx_reset_translation_unit_scope_in(semantic_context);
   ps_parser_runtime_context_reset_translation_unit(runtime_context);
   psx_declaration_pipeline_reset_translation_unit_state_in(
       lowering_context);
-  arena_free_all();
+  arena_free_all_in(arena_context);
 }
 
 void psx_frontend_reset_translation_unit_state(void) {
@@ -52,7 +53,8 @@ int psx_frontend_reset_translation_unit_state_in_compiler_context(
       session->global_registry,
       session->local_registry,
       session->parser_runtime_context,
-      session->lowering_context);
+      session->lowering_context,
+      session->arena_context);
   return 1;
 }
 
@@ -115,7 +117,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       continue;
     }
     if (item.kind == PSX_TOPLEVEL_ITEM_FUNCTION_HEADER) {
-      arena_checkpoint_t arena_mark = arena_checkpoint();
+      arena_checkpoint_t arena_mark =
+          arena_checkpoint_in(session->arena_context);
       token_ident_t *function_name =
           item.value.function_header.declarator.identifier;
       psx_function_registration_checkpoint_t checkpoint;
@@ -139,7 +142,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
         ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);
-        arena_rollback(arena_mark);
+        arena_rollback_in(session->arena_context, arena_mark);
         if (diag_active_limit_kind()) return NULL;
         continue;
       }
@@ -164,8 +167,16 @@ void psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   stream->is_started = 0;
 }
 
+int psx_frontend_free_processed_ast_in_compiler_context(
+    ag_compilation_session_t *session) {
+  if (!frontend_session_has_registries(session)) return 0;
+  arena_free_all_in(session->arena_context);
+  return 1;
+}
+
 void psx_frontend_free_processed_ast(void) {
-  arena_free_all();
+  (void)psx_frontend_free_processed_ast_in_compiler_context(
+      ag_compilation_session_active());
 }
 
 node_t **psx_frontend_program_in_compiler_context(

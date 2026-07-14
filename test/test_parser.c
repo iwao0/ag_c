@@ -66,6 +66,7 @@
 #include "../src/lowering/vla_lowering.h"
 #include "../src/lowering/static_data_initializer.h"
 #include "../src/lowering/static_local_lowering.h"
+#include "../src/lowering/translation_unit_data_lowering.h"
 #include "../src/pragma_pack.h"
 #include "../src/tokenizer/tokenizer.h"
 #include "../src/tokenizer/allocator.h"
@@ -15304,8 +15305,59 @@ static void test_compiler_context_registry_isolation() {
       .init_val = 99,
       .has_init = 1,
   };
-  string_lit_t first_literal = {.label = (char *)".Lshared"};
-  string_lit_t second_literal = {.label = (char *)".Lshared"};
+  psx_type_t *session_callback_type = ps_type_new_pointer(
+      ps_type_new_function(ps_type_new_integer(TK_INT, 4, 0)));
+  global_var_t first_callback = {
+      .name = (char *)"session_callback",
+      .name_len = 16,
+      .init_symbol = (char *)"session_fn",
+      .init_symbol_len = 10,
+      .has_init = 1,
+      .decl_type = session_callback_type,
+  };
+  global_var_t second_callback = {
+      .name = (char *)"session_callback",
+      .name_len = 16,
+      .init_symbol = (char *)"session_fn",
+      .init_symbol_len = 10,
+      .has_init = 1,
+      .decl_type = session_callback_type,
+  };
+  char session_aggregate_name[] = "SessionAggregate";
+  psx_type_t *first_aggregate_type = ps_type_new_tag(
+      TK_STRUCT, session_aggregate_name, 16, 0, 8);
+  psx_type_t *second_aggregate_type = ps_type_new_tag(
+      TK_STRUCT, session_aggregate_name, 16, 0, 12);
+  long long first_aggregate_values[2] = {11, 22};
+  long long second_aggregate_values[2] = {33, 44};
+  global_var_t first_aggregate = {
+      .name = (char *)"session_aggregate",
+      .name_len = 17,
+      .init_values = first_aggregate_values,
+      .init_count = 2,
+      .has_init = 1,
+      .decl_type = first_aggregate_type,
+  };
+  global_var_t second_aggregate = {
+      .name = (char *)"session_aggregate",
+      .name_len = 17,
+      .init_values = second_aggregate_values,
+      .init_count = 2,
+      .has_init = 1,
+      .decl_type = second_aggregate_type,
+  };
+  string_lit_t first_literal = {
+      .label = (char *)".Lshared",
+      .str = (char *)"first",
+      .len = 5,
+      .char_width = TK_CHAR_WIDTH_CHAR,
+  };
+  string_lit_t second_literal = {
+      .label = (char *)".Lshared",
+      .str = (char *)"second",
+      .len = 6,
+      .char_width = TK_CHAR_WIDTH_CHAR,
+  };
   lvar_t first_local = {
       .name = (char *)"shared_local",
       .len = 12,
@@ -15324,7 +15376,48 @@ static void test_compiler_context_registry_isolation() {
 
   ps_register_global_var_in(first.global_registry, &first_global);
   ps_register_global_var_in(second.global_registry, &second_global);
+  ps_register_global_var_in(first.global_registry, &first_callback);
+  ps_register_global_var_in(second.global_registry, &second_callback);
+  ps_register_global_var_in(first.global_registry, &first_aggregate);
+  ps_register_global_var_in(second.global_registry, &second_aggregate);
   psx_register_string_lit_in(first.global_registry, &first_literal);
+  psx_type_t *session_function_type = ps_type_new_function(
+      ps_type_new_integer(TK_INT, 4, 0));
+  ASSERT_TRUE(ps_ctx_register_function_type_in(
+      first.semantic_context, (char *)"session_fn", 10,
+      session_function_type) != NULL);
+  tag_member_info_t first_aggregate_members[2] = {
+      {.name = (char *)"left", .len = 4, .offset = 0,
+       .decl_type = ps_type_new_integer(TK_INT, 4, 0)},
+      {.name = (char *)"right", .len = 5, .offset = 4,
+       .decl_type = ps_type_new_integer(TK_INT, 4, 0)},
+  };
+  tag_member_info_t second_aggregate_members[2] = {
+      {.name = (char *)"left", .len = 4, .offset = 0,
+       .decl_type = ps_type_new_integer(TK_INT, 4, 0)},
+      {.name = (char *)"right", .len = 5, .offset = 8,
+       .decl_type = ps_type_new_integer(TK_INT, 4, 0)},
+  };
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      first.semantic_context, first.local_registry,
+      TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
+  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+      first.semantic_context, TK_STRUCT,
+      session_aggregate_name, 16,
+      first_aggregate_members, 2, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      first.semantic_context, first.local_registry,
+      TK_STRUCT, session_aggregate_name, 16, 1, 2, 8, 4));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      second.semantic_context, second.local_registry,
+      TK_STRUCT, session_aggregate_name, 16, 0, 0, 0, 0));
+  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+      second.semantic_context, TK_STRUCT,
+      session_aggregate_name, 16,
+      second_aggregate_members, 2, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      second.semantic_context, second.local_registry,
+      TK_STRUCT, session_aggregate_name, 16, 1, 2, 12, 4));
   ASSERT_TRUE(ps_find_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);
@@ -15526,6 +15619,28 @@ static void test_compiler_context_registry_isolation() {
                   (char *)".Lshared") == &second_literal);
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &second_local);
+  ir_data_module_t *first_data =
+      lower_ir_translation_unit_data_in_compiler_context(&first);
+  ASSERT_TRUE(first_data != NULL);
+  ir_data_object_t *first_global_data =
+      ir_data_module_find_object(first_data, "shared_global", 13);
+  ir_data_object_t *first_literal_data =
+      ir_data_module_find_object(first_data, ".Lshared", 8);
+  ir_data_object_t *first_callback_data =
+      ir_data_module_find_object(first_data, "session_callback", 16);
+  ir_data_object_t *first_aggregate_data =
+      ir_data_module_find_object(first_data, "session_aggregate", 17);
+  ASSERT_TRUE(first_global_data != NULL);
+  ASSERT_TRUE(first_literal_data != NULL);
+  ASSERT_TRUE(first_callback_data != NULL);
+  ASSERT_TRUE(first_callback_data->relocs != NULL);
+  ASSERT_EQ(IR_DATA_RELOC_FUNCTION, first_callback_data->relocs->kind);
+  ASSERT_TRUE(first_aggregate_data != NULL);
+  ASSERT_EQ(11, first_aggregate_data->bytes[0]);
+  ASSERT_EQ(22, first_aggregate_data->bytes[4]);
+  ASSERT_EQ(41, first_global_data->bytes[0]);
+  ASSERT_TRUE(memcmp(first_literal_data->bytes, "first\0", 6) == 0);
+  ir_data_module_free(first_data);
   ag_compiler_context_deactivate(&second);
 
   ASSERT_TRUE(ag_compiler_context_activate(&first));
@@ -15539,6 +15654,28 @@ static void test_compiler_context_registry_isolation() {
   psx_local_registry_add(&first_local);
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &first_local);
+  ir_data_module_t *second_data =
+      lower_ir_translation_unit_data_in_compiler_context(&second);
+  ASSERT_TRUE(second_data != NULL);
+  ir_data_object_t *second_global_data =
+      ir_data_module_find_object(second_data, "shared_global", 13);
+  ir_data_object_t *second_literal_data =
+      ir_data_module_find_object(second_data, ".Lshared", 8);
+  ir_data_object_t *second_callback_data =
+      ir_data_module_find_object(second_data, "session_callback", 16);
+  ir_data_object_t *second_aggregate_data =
+      ir_data_module_find_object(second_data, "session_aggregate", 17);
+  ASSERT_TRUE(second_global_data != NULL);
+  ASSERT_TRUE(second_literal_data != NULL);
+  ASSERT_TRUE(second_callback_data != NULL);
+  ASSERT_TRUE(second_callback_data->relocs != NULL);
+  ASSERT_EQ(IR_DATA_RELOC_DATA, second_callback_data->relocs->kind);
+  ASSERT_TRUE(second_aggregate_data != NULL);
+  ASSERT_EQ(33, second_aggregate_data->bytes[0]);
+  ASSERT_EQ(44, second_aggregate_data->bytes[8]);
+  ASSERT_EQ(99, second_global_data->bytes[0]);
+  ASSERT_TRUE(memcmp(second_literal_data->bytes, "second\0", 7) == 0);
+  ir_data_module_free(second_data);
   ag_compiler_context_deactivate(&first);
 
   ASSERT_TRUE(ag_compiler_context_activate(&second));
@@ -15637,6 +15774,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.codegen_emit_context != NULL);
   ASSERT_TRUE(wasm.codegen_emit_context != NULL);
   ASSERT_TRUE(host.codegen_emit_context != wasm.codegen_emit_context);
+  ASSERT_TRUE(arena_alloc_in(host.arena_context, 16) != NULL);
+  ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
+  ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);
+  ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ag_preprocessor_context_t *previous_pp = pp_context_active();
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
@@ -15713,6 +15854,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, pragma_pack_current_alignment());
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
+  ASSERT_TRUE(psx_frontend_free_processed_ast_in_compiler_context(&host));
+  ASSERT_EQ(0, arena_current_reserved_bytes_in(host.arena_context));
+  ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ag_compilation_session_deactivate(&wasm);
   ASSERT_TRUE(ag_compilation_session_active() == &host);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);

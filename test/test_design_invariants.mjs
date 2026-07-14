@@ -87,6 +87,7 @@ const parserRuntimeConsumerSource = await readFile(
   "src/parser/parser.c",
   "utf8",
 );
+const parserArenaSource = await readFile("src/parser/arena.c", "utf8");
 const parserExprSource = await readFile("src/parser/expr.c", "utf8");
 const parserPragmaPackSource = await readFile(
   "src/parser/pragma_pack.c",
@@ -99,6 +100,10 @@ const loweringRuntimeHeader = await readFile(
 );
 const loweringRuntimeSource = await readFile(
   "src/lowering/runtime_context.c",
+  "utf8",
+);
+const translationUnitDataLoweringSource = await readFile(
+  "src/lowering/translation_unit_data_lowering.c",
   "utf8",
 );
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
@@ -201,6 +206,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/wasm_adapter_session_live/.test(compilerMainSource) ||
     !/ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
       compilerMainSource,
+    ) ||
+    !/psx_frontend_free_processed_ast_in_compiler_context\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/lower_ir_translation_unit_data_in_compiler_context\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    /\bpsx_frontend_free_processed_ast\s*\(\s*\)/.test(
+      compilerMainSource,
+    ) ||
+    /\blower_ir_translation_unit_data\s*\(\s*\)/.test(
+      compilerMainSource,
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
@@ -211,6 +228,46 @@ const frontendTranslationUnitSessionSource = await readFile(
   "src/frontend/translation_unit.c",
   "utf8",
 );
+
+if (!/arena_alloc_in\s*\(/.test(parserArenaSource) ||
+    !/arena_checkpoint_in\s*\(/.test(parserArenaSource) ||
+    !/arena_rollback_in\s*\(/.test(parserArenaSource) ||
+    !/arena_free_all_in\s*\(/.test(parserArenaSource) ||
+    /\barena_(?:checkpoint|rollback|free_all)\s*\(/.test(
+      frontendTranslationUnitSessionSource,
+    )) {
+  throw new Error(
+    "frontend arena lifecycle must operate on the CompilationSession arena",
+  );
+}
+
+if (!/lower_ir_translation_unit_data_in_compiler_context\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/ps_iter_string_literals_in\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/ps_iter_float_literals_in\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/ps_iter_globals_in\s*\(/.test(translationUnitDataLoweringSource) ||
+    !/ps_gvar_symbol_ref_named_function_in\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/ps_gvar_walk_aggregate_initializer_in\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    /\bps_gvar_symbol_ref_named_function\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    /\bps_gvar_walk_aggregate_initializer\s*\(/.test(
+      translationUnitDataLoweringSource,
+    )) {
+  throw new Error(
+    "translation-unit data lowering must enumerate the requested CompilationSession registry",
+  );
+}
+
 if (/active_session_view\s*\(/.test(frontendTranslationUnitSessionSource) ||
     /ps_(?:ctx|global_registry|local_registry|parser_runtime_context|lowering_context)_active\s*\(/.test(
       frontendTranslationUnitSessionSource,

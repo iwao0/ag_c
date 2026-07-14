@@ -114,6 +114,9 @@ int ps_ctx_get_tag_member_count_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
 int ps_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth);
+int ps_ctx_get_tag_member_count_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int scope_depth);
 int ps_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len);
 int ps_ctx_get_tag_scope_depth_in(
     psx_semantic_context_t *context,

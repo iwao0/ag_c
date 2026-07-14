@@ -6,6 +6,7 @@
 
 typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
+typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 
 typedef enum {
@@ -138,11 +139,18 @@ int ps_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,
                               char **out_name, int *out_len);
 int ps_gvar_symbol_ref_named_function(psx_gvar_symbol_ref_t ref,
                                        char **out_name, int *out_len);
+int ps_gvar_symbol_ref_named_function_in(
+    psx_semantic_context_t *semantic_context,
+    psx_gvar_symbol_ref_t ref, char **out_name, int *out_len);
 int ps_gvar_init_value_named_function(psx_gvar_init_value_t value,
                                         char **out_name, int *out_len);
 int ps_gvar_walk_aggregate_initializer(global_var_t *gv, long long base_offset,
                                         const psx_gvar_aggregate_walk_ops_t *ops,
                                         void *user);
+int ps_gvar_walk_aggregate_initializer_in(
+    psx_semantic_context_t *semantic_context,
+    global_var_t *gv, long long base_offset,
+    const psx_gvar_aggregate_walk_ops_t *ops, void *user);
 unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,
                                                     int bit_width, int bit_offset);
 int ps_gvar_is_extern_decl(const global_var_t *gv);

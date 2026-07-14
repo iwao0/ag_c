@@ -2,6 +2,7 @@
 #define PARSER_GLOBAL_REGISTRY_H
 
 #include "gvar_public.h"
+#include "literal_public.h"
 
 typedef struct psx_type_t psx_type_t;
 typedef struct string_lit_t string_lit_t;
@@ -25,6 +26,12 @@ global_var_t *ps_find_global_var_in(
 void ps_iter_globals_in(
     psx_global_registry_t *registry,
     global_var_visitor_t visitor, void *user);
+bool ps_iter_string_literals_in(
+    psx_global_registry_t *registry,
+    string_lit_visitor_t visitor, void *user);
+bool ps_iter_float_literals_in(
+    psx_global_registry_t *registry,
+    float_lit_visitor_t visitor, void *user);
 void psx_register_string_lit_in(
     psx_global_registry_t *registry, string_lit_t *literal);
 void psx_register_float_lit_in(

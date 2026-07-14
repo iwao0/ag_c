@@ -1,6 +1,7 @@
 #include "translation_unit_data_lowering.h"
 
 #include "abi_lowering.h"
+#include "../parser/global_registry.h"
 #include "../parser/gvar_public.h"
 #include "../parser/literal_public.h"
 #include "../parser/type.h"
@@ -12,6 +13,7 @@
 
 typedef struct {
   ir_data_module_t *module;
+  psx_semantic_context_t *semantic_context;
   int failed;
 } translation_unit_data_lowering_t;
 
@@ -134,7 +136,8 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
   if (value.symbol_ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
     name = value.symbol_ref.symbol;
     name_len = name ? (int)strlen(name) : 0;
-  } else if (ps_gvar_symbol_ref_named_function(
+  } else if (ps_gvar_symbol_ref_named_function_in(
+          ctx->lowering->semantic_context,
           value.symbol_ref, &name, &name_len)) {
     kind = IR_DATA_RELOC_FUNCTION;
     if (ir_abi_callable_sig_from_type(callable_type, &callable_sig))
@@ -226,7 +229,8 @@ static int lower_global_aggregate(
     void *user, const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   global_data_lowering_t *ctx = user;
-  return ps_gvar_walk_aggregate_initializer(
+  return ps_gvar_walk_aggregate_initializer_in(
+      ctx->lowering->semantic_context,
       ctx->global, 0, &aggregate_lowering_ops, ctx);
 }
 
@@ -295,16 +299,34 @@ static void lower_global_object(global_var_t *global, void *user) {
     lowering->failed = 1;
 }
 
-ir_data_module_t *lower_ir_translation_unit_data(void) {
+static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *registry) {
+  if (!semantic_context || !registry) return NULL;
   ir_data_module_t *module = ir_data_module_new();
   if (!module) return NULL;
-  translation_unit_data_lowering_t lowering = {module, 0};
-  ps_iter_string_literals(lower_string_literal, &lowering);
-  ps_iter_float_literals(lower_float_literal, &lowering);
-  ps_iter_globals(lower_global_object, &lowering);
+  translation_unit_data_lowering_t lowering = {
+      .module = module,
+      .semantic_context = semantic_context,
+  };
+  ps_iter_string_literals_in(registry, lower_string_literal, &lowering);
+  ps_iter_float_literals_in(registry, lower_float_literal, &lowering);
+  ps_iter_globals_in(registry, lower_global_object, &lowering);
   if (lowering.failed) {
     ir_data_module_free(module);
     return NULL;
   }
   return module;
+}
+
+ir_data_module_t *lower_ir_translation_unit_data_in_compiler_context(
+    const ag_compilation_session_t *session) {
+  return lower_ir_translation_unit_data_in_registry(
+      session ? session->semantic_context : NULL,
+      session ? session->global_registry : NULL);
+}
+
+ir_data_module_t *lower_ir_translation_unit_data(void) {
+  return lower_ir_translation_unit_data_in_compiler_context(
+      ag_compilation_session_active());
 }

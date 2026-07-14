@@ -1200,10 +1200,14 @@ void ps_ctx_promote_tag_to_file_scope(
       active_semantic_context, kind, name, len);
 }
 
-int ps_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth) {
+int ps_ctx_get_tag_member_count_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int scope_depth) {
+  if (!context) return -1;
   /* 該当スコープの tag を線形検索 (find_tag_type は最も内側を返すので使えない)。 */
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
-  for (tag_type_t *t = tag_types_by_bucket[bucket]; t; t = t->next_hash) {
+  for (tag_type_t *t = context->tags_by_bucket[bucket];
+       t; t = t->next_hash) {
     if (t->kind == kind && t->len == len &&
         t->scope_depth == scope_depth &&
         strncmp(t->name, name, (size_t)len) == 0) {
@@ -1211,6 +1215,12 @@ int ps_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len,
     }
   }
   return -1;
+}
+
+int ps_ctx_get_tag_member_count_at_scope(
+    token_kind_t kind, char *name, int len, int scope_depth) {
+  return ps_ctx_get_tag_member_count_at_scope_in(
+      active_semantic_context, kind, name, len, scope_depth);
 }
 
 // 任意のスコープから名前一致の enum_const を返す。なければ NULL。
