@@ -102,8 +102,10 @@ int psx_begin_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result) {
   if (result) *result = (psx_global_declaration_pipeline_result_t){0};
-  if (!request || !result || !request->name || request->name_len <= 0 ||
-      !request->type || !request->initializer) return 0;
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry || !request->local_registry ||
+      !request->name || request->name_len <= 0 || !request->type ||
+      !request->initializer) return 0;
 
   psx_global_declaration_resolution_t resolution;
   psx_resolve_global_declaration(
@@ -144,8 +146,9 @@ int psx_begin_global_declaration_pipeline(
 int psx_finish_global_declaration_pipeline(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_pipeline_result_t *result) {
-  if (!request || !result || !result->global || !request->initializer)
-    return 0;
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry || !request->local_registry ||
+      !result->global || !request->initializer) return 0;
   global_var_t *global = result->global;
   if (!request->is_extern_decl) {
     global->is_thread_local = request->is_thread_local;
@@ -171,24 +174,16 @@ int psx_finish_global_declaration_pipeline(
         initializer_resolution.initializer =
             psx_frontend_analyze_initializer_syntax_in_contexts(
                 request->semantic_context,
-                request->global_registry
-                    ? request->global_registry
-                    : ps_global_registry_active(),
-                request->local_registry
-                    ? request->local_registry
-                    : ps_local_registry_active(),
+                request->global_registry,
+                request->local_registry,
                 initializer_resolution.initializer,
                 request->initializer->value_tok);
       } else {
         initializer_resolution.initializer =
             psx_frontend_analyze_expression_in_contexts(
                 request->semantic_context,
-                request->global_registry
-                    ? request->global_registry
-                    : ps_global_registry_active(),
-                request->local_registry
-                    ? request->local_registry
-                    : ps_local_registry_active(),
+                request->global_registry,
+                request->local_registry,
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
                     ? initializer_resolution.initializer->tok
@@ -243,7 +238,8 @@ static void diagnose_function_declaration(
 
 int psx_apply_function_declaration_pipeline(
     const psx_function_declaration_pipeline_request_t *request) {
-  if (!request || !request->name || request->name_len <= 0 ||
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->name || request->name_len <= 0 ||
       !request->function_type ||
       request->function_type->kind != PSX_TYPE_FUNCTION) return 0;
   psx_function_declaration_resolution_t resolution;
@@ -477,9 +473,10 @@ int psx_begin_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result) {
   if (result) *result = (psx_static_local_declaration_pipeline_result_t){0};
-  if (!request || !result || !request->name || request->name_len <= 0 ||
-      !request->type || !request->initializer || !request->global_registry ||
-      !request->local_registry) return 0;
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry || !request->local_registry ||
+      !request->name || request->name_len <= 0 || !request->type ||
+      !request->initializer) return 0;
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
   if (request->type->kind == PSX_TYPE_VOID) {
     ps_diag_ctx(request->diag_tok, "decl",
@@ -515,8 +512,7 @@ int psx_begin_static_local_declaration_pipeline(
       leaf->tag_len >= 11 &&
       memcmp(leaf->tag_name, "__anon_tag_", 11) == 0) {
     ps_ctx_promote_tag_to_file_scope_in(
-        request->semantic_context
-            ? request->semantic_context : ps_ctx_active(),
+        request->semantic_context,
         leaf->tag_kind, leaf->tag_name, leaf->tag_len);
   }
 
@@ -553,8 +549,9 @@ int psx_begin_static_local_declaration_pipeline(
 int psx_finish_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result) {
-  if (!request || !result || !result->global || !result->alias ||
-      !request->initializer) return 0;
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry || !request->local_registry ||
+      !result->global || !result->alias || !request->initializer) return 0;
   if (!request->initializer->has_initializer) return 1;
 
   psx_static_initializer_resolution_t resolution;
@@ -788,7 +785,8 @@ int psx_apply_automatic_local_declaration_pipeline(
 
 int psx_apply_block_extern_declaration_pipeline(
     const psx_block_extern_declaration_pipeline_request_t *request) {
-  if (!request || !request->name || request->name_len <= 0 ||
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->local_registry || !request->name || request->name_len <= 0 ||
       !request->type) return 0;
   if (request->has_initializer) {
     ps_diag_ctx(request->diag_tok, "decl",

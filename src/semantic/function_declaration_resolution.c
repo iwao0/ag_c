@@ -12,13 +12,13 @@ void psx_resolve_function_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_FUNCTION_DECLARATION_INVALID;
-  if (!request || !request->name || request->name_len <= 0 ||
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->name || request->name_len <= 0 ||
       !request->function_type ||
       request->function_type->kind != PSX_TYPE_FUNCTION) {
     return;
   }
-  psx_global_registry_t *global_registry = request->global_registry
-      ? request->global_registry : ps_global_registry_active();
+  psx_global_registry_t *global_registry = request->global_registry;
   if (ps_find_global_var_in(
           global_registry, request->name, request->name_len)) {
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
@@ -28,8 +28,7 @@ void psx_resolve_function_declaration(
       !ps_type_is_well_formed(request->function_type)) {
     return;
   }
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
+  psx_semantic_context_t *semantic_context = request->semantic_context;
   resolution->function = ps_ctx_register_function_type_in(
       semantic_context, request->name, request->name_len,
       request->function_type);

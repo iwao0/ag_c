@@ -15,14 +15,14 @@ void psx_resolve_typedef_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_TYPEDEF_DECLARATION_INVALID;
-  if (!request || !request->name || request->name_len <= 0 ||
-      !request->type) return;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
-  psx_local_registry_t *local_registry = request->local_registry
-      ? request->local_registry : ps_local_registry_active();
-  psx_global_registry_t *global_registry = request->global_registry
-      ? request->global_registry : ps_global_registry_active();
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->local_registry || !request->name || request->name_len <= 0 ||
+      !request->type) {
+    return;
+  }
+  psx_semantic_context_t *semantic_context = request->semantic_context;
+  psx_local_registry_t *local_registry = request->local_registry;
+  psx_global_registry_t *global_registry = request->global_registry;
 
   int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
   if (ps_ctx_has_enum_const_in_current_scope_in(

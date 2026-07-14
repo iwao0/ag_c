@@ -410,6 +410,9 @@ static void assert_identifier_resolution_kind(
   psx_identifier_resolution_t resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = name,
           .name_len = name_len,
           .is_call = is_call,
@@ -446,6 +449,9 @@ static void test_identifier_resolution_boundary() {
   psx_identifier_resolution_t function_call;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"__identifier_function",
           .name_len = 21,
           .is_call = 1,
@@ -505,6 +511,9 @@ static void test_persistent_local_scope_lookup_boundary() {
   psx_identifier_resolution_t delayed_resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_local_lookup_point = 1,
@@ -515,6 +524,9 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_TRUE(delayed_resolution.local == outer);
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_local_lookup_point = 1,
@@ -2570,6 +2582,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_function_declaration_resolution_t planned_function = {0};
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = planned_function_name,
           .name_len = (int)sizeof(planned_function_name) - 1,
           .function_type = function_input,
@@ -2593,6 +2607,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(!ps_type_is_well_formed(cyclic_function_type));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__cyclic_function",
           .name_len = 17,
           .function_type = cyclic_function_type,
@@ -2627,6 +2643,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_function_declaration_resolution_t funcptr_resolution = {0};
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = funcptr_function_name,
           .name_len = (int)sizeof(funcptr_function_name) - 1,
           .function_type = funcptr_function_input,
@@ -2656,6 +2674,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ps_type_set_function_params(
       resolution_function_type, parameter_types, 2, 1);
   psx_function_declaration_resolution_request_t resolution_request = {
+      .semantic_context = ps_ctx_active(),
+      .global_registry = ps_global_registry_active(),
       .name = (char *)"__resolution_fn",
       .name_len = 15,
       .function_type = integer,
@@ -2709,6 +2729,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t first_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = incomplete,
@@ -2720,6 +2742,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_object_result_t first = {0};
   ASSERT_TRUE(lower_resolved_global_object_declaration(
       &(psx_resolved_global_object_request_t){
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = incomplete,
@@ -2737,6 +2760,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t merged_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = complete,
@@ -2749,6 +2774,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_object_result_t merged = {0};
   ASSERT_TRUE(lower_resolved_global_object_declaration(
       &(psx_resolved_global_object_request_t){
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = complete,
@@ -2765,6 +2791,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t repeated_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = complete,
@@ -2775,6 +2803,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_object_result_t repeated = {0};
   ASSERT_TRUE(lower_resolved_global_object_declaration(
       &(psx_resolved_global_object_request_t){
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = complete,
@@ -2786,6 +2815,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t rejected_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
           .type = incomplete,
@@ -2795,6 +2826,8 @@ static void test_global_declaration_resolution_boundary() {
             rejected_resolution.status);
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
           .type = incomplete,
@@ -2806,6 +2839,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
           .type = pointer,
@@ -2816,6 +2851,8 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_object_result_t internal = {0};
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__boundary_static",
           .name_len = 17,
           .type = pointer,
@@ -2836,6 +2873,9 @@ static void test_declaration_pipeline_order_boundary() {
   char *name = (char *)"__pipeline_object";
   int name_len = 17;
   psx_global_declaration_pipeline_request_t request = {
+      .semantic_context = ps_ctx_active(),
+      .global_registry = ps_global_registry_active(),
+      .local_registry = ps_local_registry_active(),
       .name = name,
       .name_len = name_len,
       .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -2860,6 +2900,8 @@ static void test_tag_declaration_resolution_boundary() {
   printf("test_tag_declaration_resolution_boundary...\n");
   psx_frontend_reset_translation_unit_state();
   psx_tag_declaration_resolution_request_t request = {
+      .semantic_context = ps_ctx_active(),
+      .local_registry = ps_local_registry_active(),
       .kind = TK_STRUCT,
       .name = (char *)"__TagBoundary",
       .name_len = 13,
@@ -3003,6 +3045,8 @@ static void test_aggregate_body_phase_boundary() {
   psx_tag_declaration_resolution_t tag;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"__ParsedBody",
           .name_len = 12,
@@ -3687,6 +3731,8 @@ static void test_aggregate_member_resolution_boundary() {
   psx_tag_declaration_resolution_t tag_resolution;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"__AlignedMember",
           .name_len = 15,
@@ -3704,6 +3750,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"__IncompleteMember",
           .name_len = 18,
@@ -3952,6 +4000,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"PromSrc",
           .name_len = 7,
@@ -3964,6 +4014,8 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"PromDst",
           .name_len = 7,
@@ -4016,6 +4068,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchSrc",
           .name_len = 8,
@@ -4028,6 +4082,8 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .local_registry = ps_local_registry_active(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchDst",
           .name_len = 8,
@@ -4102,6 +4158,9 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_frontend_reset_translation_unit_state();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_typedef_declaration_resolution_request_t request = {
+      .semantic_context = ps_ctx_active(),
+      .global_registry = ps_global_registry_active(),
+      .local_registry = ps_local_registry_active(),
       .name = (char *)"__TypeBoundary",
       .name_len = 14,
       .type = integer,
@@ -4140,6 +4199,8 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_global_object_result_t object;
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__TypeObject",
           .name_len = 12,
           .type = integer,
@@ -4157,6 +4218,8 @@ static void test_typedef_declaration_resolution_boundary() {
       ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__TypeFunction",
           .name_len = 14,
           .function_type = function_type,
@@ -4182,6 +4245,9 @@ static void test_enum_constant_resolution_boundary() {
   printf("test_enum_constant_resolution_boundary...\n");
   psx_frontend_reset_translation_unit_state();
   psx_enum_constant_resolution_request_t request = {
+      .semantic_context = ps_ctx_active(),
+      .global_registry = ps_global_registry_active(),
+      .local_registry = ps_local_registry_active(),
       .name = (char *)"__EnumBoundary",
       .name_len = 14,
       .value = 7,
@@ -4213,6 +4279,8 @@ static void test_enum_constant_resolution_boundary() {
   psx_global_object_result_t object;
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__EnumObject",
           .name_len = 12,
           .type = integer,
@@ -4228,6 +4296,8 @@ static void test_enum_constant_resolution_boundary() {
       ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
           .name = (char *)"__EnumFunction",
           .name_len = 14,
           .function_type = function_type,
@@ -4242,6 +4312,9 @@ static void test_enum_constant_resolution_boundary() {
   psx_typedef_declaration_resolution_t typedef_resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
+          .semantic_context = ps_ctx_active(),
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"__EnumType",
           .name_len = 10,
           .type = integer,
@@ -14772,6 +14845,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = function_name,
           .name_len = 15,
           .is_call = 1,
@@ -14787,6 +14862,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = direct_enum_name,
           .name_len = 10,
           .value = 37,
@@ -14802,6 +14879,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = direct_enum_name,
           .name_len = 10,
       },
@@ -14823,6 +14902,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = direct_typedef_name,
           .name_len = 13,
           .type = direct_typedef_type,
@@ -14841,6 +14922,7 @@ static void test_semantic_context_isolation() {
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = first,
+          .global_registry = ps_global_registry_active(),
           .name = direct_typedef_name,
           .name_len = 13,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -14852,6 +14934,7 @@ static void test_semantic_context_isolation() {
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
           .name = direct_typedef_name,
           .name_len = 13,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -15016,6 +15099,8 @@ static void test_semantic_context_isolation() {
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
+          .global_registry = ps_global_registry_active(),
+          .local_registry = ps_local_registry_active(),
           .name = (char *)"StreamType",
           .name_len = 10,
           .type = ps_type_new_integer(TK_INT, 4, 0),

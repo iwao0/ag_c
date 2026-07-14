@@ -215,6 +215,13 @@ const localDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
 );
+if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
+      localDeclarationPipelineSource,
+    )) {
+  throw new Error(
+    "declaration pipelines must use only their explicit compiler contexts",
+  );
+}
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -488,6 +495,31 @@ const ordinaryNamespaceResolutionSources = [
   typedefDeclarationResolutionSource,
   globalDeclarationResolutionSource,
 ].join("\n");
+const strictResolverRequestSources = [
+  [identifierResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
+  [enumConstantResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
+  [typedefDeclarationResolutionSource, ["semantic_context", "global_registry", "local_registry"]],
+  [functionDeclarationResolutionSource, ["semantic_context", "global_registry"]],
+  [globalDeclarationResolutionSource, ["semantic_context", "global_registry"]],
+  [tagDeclarationResolutionSource, ["semantic_context", "local_registry"]],
+];
+for (const [source, fields] of strictResolverRequestSources) {
+  for (const field of fields) {
+    if (!new RegExp(`!request->${field}\\b`).test(source)) {
+      throw new Error(
+        `semantic resolver request must require an explicit ${field}`,
+      );
+    }
+  }
+}
+const implicitResolverContextFallback =
+  /request->(?:semantic_context|global_registry|local_registry)\s*\?[\s\S]{0,120}:\s*ps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(\)/;
+if (strictResolverRequestSources.some(([source]) =>
+      implicitResolverContextFallback.test(source))) {
+  throw new Error(
+    "semantic resolver request APIs must not fall back to active contexts",
+  );
+}
 const contextFreeOrdinaryNamespaceCall =
   /\bps_ctx_(?:has_function_name|find_typedef_name|find_enum_const|find_enum_const_at|has_typedef_in_current_scope|has_enum_const_in_current_scope|register_typedef_name|register_enum_const|current_tag_scope_depth)\s*\(/;
 if (contextFreeOrdinaryNamespaceCall.test(
@@ -533,6 +565,9 @@ if (!/ps_find_global_var_in\s*\(/.test(
       globalObjectLoweringSource,
     ) ||
     /\bps_register_global_var\s*\(/.test(globalObjectLoweringSource) ||
+    /\bps_global_registry_active\s*\(/.test(globalObjectLoweringSource) ||
+    !/!request->semantic_context\b/.test(globalObjectLoweringSource) ||
+    !/!request->global_registry\b/.test(globalObjectLoweringSource) ||
     !/psx_lower_semantic_tree_in_contexts\s*\(/.test(
       semanticPipelineSource,
     ) ||

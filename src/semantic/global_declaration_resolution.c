@@ -30,12 +30,12 @@ void psx_resolve_global_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_GLOBAL_DECLARATION_INVALID;
-  if (!request || !request->name || request->name_len <= 0 ||
-      !request->type) return;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
-  psx_global_registry_t *global_registry = request->global_registry
-      ? request->global_registry : ps_global_registry_active();
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->name || request->name_len <= 0 || !request->type) {
+    return;
+  }
+  psx_semantic_context_t *semantic_context = request->semantic_context;
+  psx_global_registry_t *global_registry = request->global_registry;
 
   if (is_incomplete_object_type(request->type) ||
       (request->type->kind == PSX_TYPE_ARRAY &&

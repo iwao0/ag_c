@@ -10,12 +10,11 @@
 int lower_resolved_global_object_declaration(
     const psx_resolved_global_object_request_t *request,
     psx_global_object_result_t *result) {
-  if (!request || !result || !request->name || request->name_len <= 0 ||
-      !request->type || !request->resolution ||
+  if (!request || !result || !request->global_registry || !request->name ||
+      request->name_len <= 0 || !request->type || !request->resolution ||
       request->resolution->status != PSX_GLOBAL_DECLARATION_OK) return 0;
   memset(result, 0, sizeof(*result));
-  psx_global_registry_t *global_registry = request->global_registry
-      ? request->global_registry : ps_global_registry_active();
+  psx_global_registry_t *global_registry = request->global_registry;
 
   global_var_t *existing = request->resolution->existing;
   if (existing) {
@@ -84,7 +83,8 @@ static void diagnose_global_resolution(
 int lower_global_object_declaration(
     const psx_global_object_request_t *request,
     psx_global_object_result_t *result) {
-  if (!request || !result) return 0;
+  if (!request || !result || !request->semantic_context ||
+      !request->global_registry) return 0;
   psx_global_declaration_resolution_t resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){

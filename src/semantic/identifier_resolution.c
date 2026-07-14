@@ -24,13 +24,13 @@ void psx_resolve_identifier(
     psx_identifier_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
-  if (!request || !request->name || request->name_len <= 0) return;
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
-  psx_local_registry_t *local_registry = request->local_registry
-      ? request->local_registry : ps_local_registry_active();
-  psx_global_registry_t *global_registry = request->global_registry
-      ? request->global_registry : ps_global_registry_active();
+  if (!request || !request->semantic_context || !request->global_registry ||
+      !request->local_registry || !request->name || request->name_len <= 0) {
+    return;
+  }
+  psx_semantic_context_t *semantic_context = request->semantic_context;
+  psx_local_registry_t *local_registry = request->local_registry;
+  psx_global_registry_t *global_registry = request->global_registry;
 
   resolution->local = request->has_local_lookup_point
       ? ps_local_registry_find_visible_in(

@@ -15,15 +15,14 @@ void psx_resolve_tag_declaration(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_TAG_DECLARATION_INVALID;
-  if (!request || !is_tag_kind(request->kind) || !request->name ||
+  if (!request || !request->semantic_context || !request->local_registry ||
+      !is_tag_kind(request->kind) || !request->name ||
       request->name_len <= 0 || request->member_count < 0 ||
       request->size < 0 || request->alignment < 0) {
     return;
   }
-  psx_semantic_context_t *semantic_context = request->semantic_context
-      ? request->semantic_context : ps_ctx_active();
-  psx_local_registry_t *local_registry = request->local_registry
-      ? request->local_registry : ps_local_registry_active();
+  psx_semantic_context_t *semantic_context = request->semantic_context;
+  psx_local_registry_t *local_registry = request->local_registry;
 
   token_kind_t current_kind = TK_EOF;
   if (ps_ctx_find_tag_kind_at_current_scope_in(
