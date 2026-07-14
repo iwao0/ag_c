@@ -335,7 +335,6 @@ void psx_apply_runtime_parsed_declarator_ex(
   for (int i = 0; i < declarator->function_suffix_count; i++) {
     const psx_parsed_function_suffix_t *suffix =
         &declarator->function_suffixes[i];
-    if (suffix->declarator_op_index == skipped_function_op_index) continue;
     if (suffix->declarator_op_index < 0 ||
         suffix->declarator_op_index >= application->shape.count ||
         application->shape.ops[suffix->declarator_op_index].kind !=
@@ -343,9 +342,15 @@ void psx_apply_runtime_parsed_declarator_ex(
       ps_diag_ctx(declarator->diagnostic_token, "declarator-resolution",
                    "invalid local function suffix target");
     }
+    psx_declarator_op_t *function_op =
+        &application->shape.ops[suffix->declarator_op_index];
+    if (suffix->declarator_op_index == skipped_function_op_index) {
+      function_op->function_is_variadic =
+          suffix->parameters && suffix->parameters->is_variadic;
+      continue;
+    }
     psx_apply_parsed_function_parameters(
-        suffix->parameters,
-        &application->shape.ops[suffix->declarator_op_index],
+        suffix->parameters, function_op,
         declarator->diagnostic_token);
   }
 }

@@ -55,9 +55,6 @@ void psx_resolve_identifier(
     resolution->kind = PSX_IDENTIFIER_FUNCTION;
     resolution->function_type = ps_ctx_get_function_type(
         request->name, request->name_len);
-    resolution->is_variadic = ps_ctx_get_function_is_variadic(
-        request->name, request->name_len,
-        &resolution->parameter_count) ? 1 : 0;
     return;
   }
 

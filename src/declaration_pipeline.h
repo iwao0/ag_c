@@ -57,10 +57,8 @@ typedef struct {
 typedef struct {
   node_t **args;
   int nargs;
-  int is_variadic;
   int has_unnamed_parameter;
   psx_type_t *function_type;
-  psx_type_t *return_type;
 } psx_function_definition_pipeline_result_t;
 
 typedef struct {

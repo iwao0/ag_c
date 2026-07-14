@@ -26,13 +26,14 @@ static struct lvar_t *create_aggregate_temporary(
   token_t *tok = access->base.tok
                      ? access->base.tok
                      : (token_t *)fallback_diag_tok;
-  if (!access->resolved_object_type ||
-      ps_type_sizeof(access->resolved_object_type) <= 0) {
+  const psx_type_t *object_type = ps_type_find_aggregate_object_type(
+      ps_node_get_type(access->base.lhs));
+  if (!object_type || ps_type_sizeof(object_type) <= 0) {
     ps_diag_ctx(tok, "member", "aggregate rvalue size resolution failed");
   }
   char *name = new_member_rvalue_name();
   if (!name) ps_diag_ctx(tok, "member", "temporary name allocation failed");
-  psx_type_t *type = ps_type_clone(access->resolved_object_type);
+  psx_type_t *type = ps_type_clone(object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
       &(psx_temporary_local_declaration_pipeline_request_t){
           .name = name,
@@ -87,7 +88,8 @@ node_t *lower_member_access_expression(
       base = materialize_call_rvalue(
           access, base, fallback_diag_tok);
     } else if (base->kind == ND_TERNARY &&
-               access->resolved_object_type) {
+               ps_type_find_aggregate_object_type(
+                   ps_node_get_type(base))) {
       base = materialize_ternary_rvalue(
           access, base, fallback_diag_tok);
     }

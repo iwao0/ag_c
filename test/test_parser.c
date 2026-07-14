@@ -396,8 +396,10 @@ static void test_identifier_resolution_boundary() {
       },
       &function_call);
   ASSERT_EQ(PSX_IDENTIFIER_FUNCTION, function_call.kind);
-  ASSERT_EQ(1, function_call.parameter_count);
-  ASSERT_TRUE(!function_call.is_variadic);
+  ASSERT_TRUE(function_call.function_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, function_call.function_type->kind);
+  ASSERT_EQ(1, function_call.function_type->param_count);
+  ASSERT_TRUE(!function_call.function_type->is_variadic_function);
   assert_identifier_resolution_kind(
       (char *)"__identifier_missing", 20, 0,
       PSX_IDENTIFIER_UNDEFINED);
@@ -571,9 +573,9 @@ static void test_member_access_resolution_boundary() {
   node_t *lowered_access = psx_frontend_analyze_expression(
       raw_access, raw_access->tok);
   ASSERT_EQ(ND_DEREF, lowered_access->kind);
-  ASSERT_TRUE(member_syntax->resolved_object_type != NULL);
   ASSERT_TRUE(ps_type_is_tag_aggregate(
-      member_syntax->resolved_object_type));
+      ps_type_find_aggregate_object_type(
+          ps_node_get_type(member_syntax->base.lhs))));
   ASSERT_TRUE(lowered_access->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, lowered_access->type->kind);
   ASSERT_EQ(4, ps_type_sizeof(lowered_access->type));
@@ -1514,9 +1516,6 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(reference->type == NULL);
   reference = psx_frontend_analyze_expression(reference, NULL);
   ASSERT_EQ(ND_FUNCREF, reference->kind);
-  node_funcref_t *function_reference = (node_funcref_t *)reference;
-  ASSERT_TRUE(function_reference->function_type != NULL);
-  ASSERT_EQ(PSX_TYPE_FUNCTION, function_reference->function_type->kind);
   ASSERT_TRUE(reference->type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference->type->kind);
   ASSERT_TRUE(ps_type_find_function(reference->type) != NULL);
@@ -5586,6 +5585,14 @@ static void test_funcdef_with_params() {
   parsed_code = parse_program_input("int sum(int a[], int n) { return n; }");
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_EQ(2, as_func(parsed_code[0])->nargs);
+
+  parsed_code = parse_program_input(
+      "int sum_variadic(int first, ...) { return first; }");
+  node_func_t *variadic = as_func(parsed_code[0]);
+  ASSERT_EQ(ND_FUNCDEF, variadic->base.kind);
+  ASSERT_TRUE(variadic->function_type != NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION, variadic->function_type->kind);
+  ASSERT_TRUE(variadic->function_type->is_variadic_function);
 
   // プロトタイプ宣言では名前なし仮引数を許容
   parsed_code = parse_program_input("int proto(int); int main() { return 0; }");
@@ -11528,11 +11535,11 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(psx_ctx_track_function_type(
       (char *)many_param_name, (int)sizeof(many_param_name) - 1,
       many_param_function));
-  ASSERT_EQ(17, ps_ctx_get_function_nargs_fixed(
-                    (char *)many_param_name,
-                    (int)sizeof(many_param_name) - 1));
-  const psx_type_t *many_param_last = ps_ctx_get_function_param_type(
-      (char *)many_param_name, (int)sizeof(many_param_name) - 1, 16);
+  const psx_type_t *tracked_many_param = ps_ctx_get_function_type(
+      (char *)many_param_name, (int)sizeof(many_param_name) - 1);
+  ASSERT_TRUE(tracked_many_param != NULL);
+  ASSERT_EQ(17, tracked_many_param->param_count);
+  const psx_type_t *many_param_last = tracked_many_param->param_types[16];
   ASSERT_TRUE(many_param_last != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, many_param_last->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, many_param_last->fp_kind);
@@ -11545,13 +11552,13 @@ static void test_type_metadata_bridge() {
       "double p16){return p0;}");
   ASSERT_TRUE(many_param_source_program != NULL);
   ASSERT_TRUE(many_param_source_program[0] != NULL);
-  ASSERT_EQ(17, ps_ctx_get_function_nargs_fixed(
-                    (char *)many_param_source_name,
-                    (int)sizeof(many_param_source_name) - 1));
+  const psx_type_t *many_param_source = ps_ctx_get_function_type(
+      (char *)many_param_source_name,
+      (int)sizeof(many_param_source_name) - 1);
+  ASSERT_TRUE(many_param_source != NULL);
+  ASSERT_EQ(17, many_param_source->param_count);
   const psx_type_t *many_param_source_last =
-      ps_ctx_get_function_param_type(
-          (char *)many_param_source_name,
-          (int)sizeof(many_param_source_name) - 1, 16);
+      many_param_source->param_types[16];
   ASSERT_TRUE(many_param_source_last != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, many_param_source_last->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, many_param_source_last->fp_kind);
@@ -13123,9 +13130,10 @@ static void test_type_metadata_bridge() {
   pick_add_ref.base.kind = ND_FUNCREF;
   pick_add_ref.funcname = "__tm698_add";
   pick_add_ref.funcname_len = 11;
-  pick_add_ref.function_type = ps_type_clone(
+  pick_add_ref.base.type = ps_type_clone(
       as_func(parsed_code[0])->function_type);
-  ASSERT_TRUE(ps_node_get_type((node_t *)&pick_add_ref) == NULL);
+  ASSERT_EQ(PSX_TYPE_FUNCTION,
+            ps_node_get_type((node_t *)&pick_add_ref)->kind);
   psx_frontend_analyze_expression((node_t *)&pick_add_ref, NULL);
   psx_type_t *pick_add_ref_type = ps_node_get_type((node_t *)&pick_add_ref);
   ASSERT_TRUE(pick_add_ref_type != NULL);
@@ -14012,6 +14020,28 @@ static void test_semantic_canonical_type_invariant() {
   ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW,
             failure.status);
   ASSERT_TRUE(failure.node == &invalid_vla_view);
+
+  node_funcref_t invalid_function_reference = {0};
+  invalid_function_reference.base.kind = ND_FUNCREF;
+  invalid_function_reference.base.type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&invalid_function_reference, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
+            failure.status);
+  ASSERT_TRUE(failure.node == (node_t *)&invalid_function_reference);
+
+  node_func_t invalid_function_call = {0};
+  invalid_function_call.base.kind = ND_FUNCALL;
+  invalid_function_call.base.type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  invalid_function_call.function_type = ps_type_new_function(
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  ASSERT_TRUE(!psx_semantic_tree_has_canonical_expression_types(
+      (node_t *)&invalid_function_call, &failure));
+  ASSERT_EQ(PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE,
+            failure.status);
+  ASSERT_TRUE(failure.node == (node_t *)&invalid_function_call);
 }
 
 static void test_recursive_declarator_capacity_boundary() {

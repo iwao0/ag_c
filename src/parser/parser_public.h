@@ -12,7 +12,7 @@
  *   - node_utils 由来の型・幅・signedness helper
  *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
  *      ps_node_*_is_unsigned など)
- *   - ps_ctx_get_function_is_variadic / _param_type (function_public)
+ *   - canonical function type lookup (function_public)
  *   - global_var_t (opaque pointer) と読み取り helper
  *   - tag_member_info_t + ps_ctx_get_tag_member_count / _info
  *     (codegen が global struct/union を展開するのに必要)
@@ -54,8 +54,7 @@ bool ps_has_string_literals(void);
 bool ps_has_float_literals(void);
 
 /* function_public.h / tag_member_public.h からの公開:
- * - 関数呼出側 IR が必要とする ps_ctx_get_function_is_variadic /
- *   _get_function_param_type
+ * - 関数呼出側 IR が必要とする ps_ctx_get_function_type
  * - codegen (arm64_apple.c) が global struct/union 初期化子を展開する
  *   ための tag_member_info_t と ps_ctx_get_tag_member_count /
  *   _get_tag_member_info (Phase A1 統合 API)

@@ -1057,6 +1057,15 @@ int ps_type_is_tag_aggregate(const psx_type_t *type) {
   return type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION;
 }
 
+const psx_type_t *ps_type_find_aggregate_object_type(
+    const psx_type_t *type) {
+  for (const psx_type_t *current = type; current;
+       current = current->base) {
+    if (ps_type_is_tag_aggregate(current)) return current;
+  }
+  return NULL;
+}
+
 const tag_member_info_t *ps_type_find_aggregate_member(
     const psx_type_t *type, token_kind_t tag_kind,
     const char *tag_name, int tag_len,

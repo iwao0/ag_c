@@ -389,8 +389,6 @@ int psx_begin_function_definition_pipeline(
                                ? primary_suffix->parameters->count : 0;
   state->args_capacity = 16;
   result->args = calloc((size_t)state->args_capacity, sizeof(node_t *));
-  result->is_variadic = primary_suffix->parameters
-                            ? primary_suffix->parameters->is_variadic : 0;
   return result->args != NULL;
 }
 
@@ -423,7 +421,8 @@ int psx_finish_function_definition_pipeline(
   for (int i = 0; i < result->nargs; i++)
     parameter_types[i] = ps_node_get_type(result->args[i]);
   psx_set_resolved_function_parameter_types(
-      primary, parameter_types, result->nargs, result->is_variadic);
+      primary, parameter_types, result->nargs,
+      primary->function_is_variadic);
   free(parameter_types);
 
   result->function_type = psx_resolve_decl_type(
@@ -431,10 +430,9 @@ int psx_finish_function_definition_pipeline(
           .base_type = state->base_type,
           .declarator_shape = &state->application.shape,
       });
-  if (!result->function_type ||
-      result->function_type->kind != PSX_TYPE_FUNCTION) return 0;
-  result->return_type = ps_type_clone(result->function_type->base);
-  return result->return_type != NULL;
+  return result->function_type &&
+         result->function_type->kind == PSX_TYPE_FUNCTION &&
+         result->function_type->base;
 }
 
 static int static_local_type_contains_vla(const psx_type_t *type) {

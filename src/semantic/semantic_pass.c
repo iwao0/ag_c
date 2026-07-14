@@ -271,14 +271,12 @@ static void semantic_resolve_member_access(
 
   access->resolved_member = arena_alloc(sizeof(*access->resolved_member));
   *access->resolved_member = resolution.member;
-  access->resolved_object_type =
-      ps_type_clone(resolution.base_object_type);
 
   const psx_type_t *decl_type =
       ps_tag_member_decl_type(access->resolved_member);
   ps_node_bind_type(
       (node_t *)access, decl_type ? ps_type_clone(decl_type) : NULL);
-  const psx_type_t *object_type = access->resolved_object_type;
+  const psx_type_t *object_type = resolution.base_object_type;
   if (access->base.type && object_type) {
     if (object_type->is_const_qualified)
       access->base.type->is_const_qualified = 1;
@@ -298,8 +296,12 @@ static void semantic_resolve_function_reference(
     node_funcref_t *reference,
     const token_t *fallback_diag_tok) {
   if (!reference) return;
-  psx_type_t *type = psx_resolve_function_reference_type(
-      reference->function_type);
+  const psx_type_t *source_type = ps_node_get_type((node_t *)reference);
+  psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
+      ? psx_resolve_function_reference_type(source_type)
+      : NULL;
+  if (!type && ps_type_find_function(source_type))
+    type = ps_type_clone(source_type);
   if (!type) {
     ps_diag_ctx(reference->base.tok
                     ? reference->base.tok

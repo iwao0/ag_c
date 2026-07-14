@@ -108,6 +108,10 @@ ir_abi_param_info_t ir_abi_classify_function_param(char *name, int name_len,
   ir_abi_param_info_t builtin =
       abi_compiler_builtin_param(name, name_len, param_idx);
   if (builtin.param_class != IR_ABI_PARAM_UNKNOWN) return builtin;
-  return ir_abi_classify_param_type(
-      ps_ctx_get_function_param_type(name, name_len, param_idx));
+  const psx_type_t *function = ps_ctx_get_function_type(name, name_len);
+  if (!function || function->kind != PSX_TYPE_FUNCTION || param_idx < 0 ||
+      param_idx >= function->param_count || !function->param_types) {
+    return abi_param_unknown();
+  }
+  return ir_abi_classify_param_type(function->param_types[param_idx]);
 }

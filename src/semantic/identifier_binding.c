@@ -62,9 +62,11 @@ static node_t *materialize_function(
     const psx_identifier_resolution_t *resolution) {
   node_funcref_t *reference = arena_alloc(sizeof(*reference));
   reference->base.kind = ND_FUNCREF;
-  reference->function_type = resolution->function_type
-      ? ps_type_clone(resolution->function_type)
-      : NULL;
+  ps_node_bind_type(
+      (node_t *)reference,
+      resolution->function_type
+          ? ps_type_clone(resolution->function_type)
+          : NULL);
   reference->funcname = identifier->name;
   reference->funcname_len = identifier->name_len;
   copy_identifier_source_state((node_t *)reference, identifier);
@@ -214,8 +216,18 @@ static void bind_direct_call(
   call->function_type = resolution.function_type
       ? ps_type_clone(resolution.function_type)
       : NULL;
-  int expected = resolution.parameter_count;
-  int mismatch = resolution.is_variadic
+  if (!call->function_type ||
+      call->function_type->kind != PSX_TYPE_FUNCTION) {
+    ps_diag_ctx(
+        identifier->base.tok
+            ? identifier->base.tok
+            : (token_t *)fallback_diag_tok,
+        "funcall", "canonical function type is missing for '%.*s'",
+        identifier->name_len, identifier->name);
+  }
+  int expected = call->function_type->param_count;
+  int is_variadic = call->function_type->is_variadic_function;
+  int mismatch = is_variadic
       ? call->nargs < expected
       : call->nargs != expected;
   if (mismatch) {
@@ -226,7 +238,7 @@ static void bind_direct_call(
         "funcall",
         "関数呼び出しの引数数が一致しません: '%.*s' 期待 %s%d、実際 %d",
         identifier->name_len, identifier->name,
-        resolution.is_variadic ? ">=" : "", expected, call->nargs);
+        is_variadic ? ">=" : "", expected, call->nargs);
   }
 }
 

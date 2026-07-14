@@ -1179,23 +1179,6 @@ bool ps_ctx_has_function_name(char *name, int len) {
   return find_function_name(name, len) != NULL;
 }
 
-static const psx_type_t *ctx_function_param_type(const func_name_t *f,
-                                                 int param_idx) {
-  if (!f || !f->function_type ||
-      f->function_type->kind != PSX_TYPE_FUNCTION || param_idx < 0 ||
-      param_idx >= f->function_type->param_count ||
-      !f->function_type->param_types) {
-    return NULL;
-  }
-  return f->function_type->param_types[param_idx];
-}
-
-const psx_type_t *ps_ctx_get_function_param_type(char *name, int len,
-                                                 int param_idx) {
-  func_name_t *f = find_function_name(name, len);
-  return ctx_function_param_type(f, param_idx);
-}
-
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
  * 初回 (まだ立っていない) なら 1 を返してフラグを立てる、すでに定義済みなら 0 を返す。 */
 int ps_ctx_track_function_defined(char *name, int len) {
@@ -1242,21 +1225,6 @@ int psx_ctx_track_function_type(char *name, int len,
 const psx_type_t *ps_ctx_get_function_type(char *name, int len) {
   func_name_t *f = find_function_name(name, len);
   return f ? f->function_type : NULL;
-}
-
-bool ps_ctx_get_function_is_variadic(char *name, int len, int *out_nargs_fixed) {
-  func_name_t *f = find_function_name(name, len);
-  if (!f || !f->function_type) {
-    if (out_nargs_fixed) *out_nargs_fixed = 0;
-    return false;
-  }
-  if (out_nargs_fixed) *out_nargs_fixed = f->function_type->param_count;
-  return f->function_type->is_variadic_function != 0;
-}
-
-int ps_ctx_get_function_nargs_fixed(char *name, int len) {
-  func_name_t *f = find_function_name(name, len);
-  return f && f->function_type ? f->function_type->param_count : 0;
 }
 
 int ps_ctx_format_function_signature(char *name, int len,

@@ -12,14 +12,6 @@ static int node_is_single_tag_array_view(node_t *node) {
          ps_type_is_tag_aggregate(type->base);
 }
 
-static const psx_type_t *find_aggregate_object_type(
-    const psx_type_t *type) {
-  for (const psx_type_t *cur = type; cur; cur = cur->base) {
-    if (ps_type_is_tag_aggregate(cur)) return cur;
-  }
-  return NULL;
-}
-
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution) {
@@ -32,7 +24,8 @@ void psx_resolve_member_access(
   }
 
   psx_type_t *base_type = ps_node_get_type(request->base);
-  const psx_type_t *object_type = find_aggregate_object_type(base_type);
+  const psx_type_t *object_type =
+      ps_type_find_aggregate_object_type(base_type);
   int base_is_pointer = base_type &&
                         (base_type->kind == PSX_TYPE_POINTER ||
                          base_type->kind == PSX_TYPE_ARRAY);

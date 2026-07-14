@@ -802,7 +802,9 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
     node_funcref_t *fr = (node_funcref_t *)callee;
     node->funcname = fr->funcname;
     node->funcname_len = fr->funcname_len;
-    node->function_type = fr->function_type;
+    const psx_type_t *function = ps_type_find_function(
+        ps_node_get_type((node_t *)fr));
+    node->function_type = function ? ps_type_clone(function) : NULL;
     node->callee = NULL;
     callee = NULL;
   } else {

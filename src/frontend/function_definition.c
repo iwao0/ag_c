@@ -58,7 +58,7 @@ node_func_t *psx_apply_function_definition_header(
         definition->declarator.diagnostic_token,
         diag_text_for(DIAG_TEXT_PARAMETER));
   }
-  psx_type_t *return_type = applied.return_type;
+  const psx_type_t *return_type = applied.function_type->base;
   if (!return_type) {
     ps_diag_ctx(definition->diagnostic_token, "funcdef",
                 "canonical function return type construction failed");
@@ -68,7 +68,6 @@ node_func_t *psx_apply_function_definition_header(
   node_func_t *node = arena_alloc(sizeof(node_func_t));
   node->base.kind = ND_FUNCDEF;
   node->base.tok = (token_t *)name;
-  ps_node_bind_type((node_t *)node, return_type);
   node->base.is_implicit_int_return =
       definition->has_implicit_int_return ? 1 : 0;
   node->funcname = name->str;
@@ -76,7 +75,6 @@ node_func_t *psx_apply_function_definition_header(
   node->is_static = definition->is_static;
   node->args = applied.args;
   node->nargs = applied.nargs;
-  node->is_variadic = applied.is_variadic;
 
   psx_type_t **parameter_types = node->nargs > 0
                                     ? calloc((size_t)node->nargs,
@@ -95,7 +93,7 @@ node_func_t *psx_apply_function_definition_header(
               .return_type = return_type,
               .parameter_types = parameter_types,
               .parameter_count = node->nargs,
-              .is_variadic = node->is_variadic,
+              .is_variadic = applied.function_type->is_variadic_function,
               .is_definition = 1,
               .function_node = node,
               .diag_context = "funcdef",
@@ -107,6 +105,7 @@ node_func_t *psx_apply_function_definition_header(
                 "function declaration pipeline failed");
   }
   ps_decl_set_current_funcname(name->str, name->len);
-  if (node->is_variadic) ps_decl_reserve_variadic_regs();
+  if (node->function_type->is_variadic_function)
+    ps_decl_reserve_variadic_regs();
   return node;
 }

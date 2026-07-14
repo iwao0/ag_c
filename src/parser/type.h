@@ -194,6 +194,8 @@ int ps_type_contains_vla_array(const psx_type_t *type);
 int ps_type_is_unsigned(const psx_type_t *type);
 int ps_type_is_scalar(const psx_type_t *type);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
+const psx_type_t *ps_type_find_aggregate_object_type(
+    const psx_type_t *type);
 int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b);
 const struct tag_member_info_t *ps_type_find_aggregate_member(

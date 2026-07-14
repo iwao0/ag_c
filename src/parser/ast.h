@@ -201,7 +201,6 @@ typedef struct {
   char *member_name;
   int member_name_len;
   struct tag_member_info_t *resolved_member;
-  psx_type_t *resolved_object_type;
   unsigned char from_pointer;
 } node_member_access_t;
 
@@ -307,7 +306,6 @@ struct node_func_t {
   psx_type_t *function_type; // bound canonical callable type
   char *funcname;   // 関数名
   int funcname_len; // 関数名の長さ
-  int is_variadic;  // 1: 可変長引数関数 (funcdef時のみ)
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
   // 関数定義のローカル変数連結リスト (next_all で辿る)。
   // 関数解析完了時に保存し、IR builder 等が後段で参照する。
@@ -319,7 +317,6 @@ struct node_func_t {
 typedef struct node_funcref_t node_funcref_t;
 struct node_funcref_t {
   node_t base;
-  psx_type_t *function_type; // bound canonical function type
   char *funcname;
   int funcname_len;
 };

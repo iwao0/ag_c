@@ -1365,7 +1365,9 @@ static ir_val_t build_node_funcref_with_type(
     ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
   node_funcref_t *fr = (node_funcref_t *)node;
   const psx_type_t *callable_type =
-      ps_type_find_function(expected_type) ? expected_type : fr->function_type;
+      ps_type_find_function(expected_type)
+          ? expected_type
+          : ps_node_get_type(node);
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -1704,21 +1706,15 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = fn->nargs;
-  if (!fn->callee) {
-    int fixed = 0;
-    if (ps_ctx_get_function_is_variadic(fn->funcname, fn->funcname_len, &fixed) &&
-        fixed < fn->nargs) {
-      is_variadic_call = 1;
-      nargs_fixed = fixed;
-    }
-  } else {
-    const psx_type_t *function = ps_type_find_function(
+  const psx_type_t *function = ps_type_find_function(fn->function_type);
+  if (!function && fn->callee) {
+    function = ps_type_find_function(
         callable_type_for_callee(ctx, fn->callee));
-    if (function && function->is_variadic_function &&
-        function->param_count < fn->nargs) {
-      is_variadic_call = 1;
-      nargs_fixed = function->param_count;
-    }
+  }
+  if (function && function->is_variadic_function &&
+      function->param_count < fn->nargs) {
+    is_variadic_call = 1;
+    nargs_fixed = function->param_count;
   }
   /* 9 個以降の int 引数は codegen 側 IR_CALL が stack に積むので、ここでは
    * 制限せず通す (Apple ARM64 ABI)。float/double が 9 番目以降になる場合は
@@ -3491,7 +3487,7 @@ static int build_function(ir_build_ctx_t *ctx, node_func_t *fn) {
     ctx->f->ret_complex_half =
         (ps_node_value_fp_kind((node_t *)fn) == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
   }
-  ctx->f->is_variadic = fn->is_variadic;
+  ctx->f->is_variadic = fn->function_type->is_variadic_function;
   ctx->f->is_static = fn->is_static;
   ctx->f->nargs_fixed = fn->nargs;
   ctx->cur_fn = fn;

@@ -87,6 +87,26 @@ static int validate_node(const node_t *node,
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
   if (node->type && !validate_type(node->type, NULL))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
+  if (node->kind == ND_FUNCREF &&
+      (node->type->kind != PSX_TYPE_POINTER || !node->type->base ||
+       node->type->base->kind != PSX_TYPE_FUNCTION)) {
+    return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+  }
+  if (node->kind == ND_FUNCDEF || node->kind == ND_FUNCALL) {
+    const node_func_t *function = (const node_func_t *)node;
+    if (function->function_type) {
+      if (function->function_type->kind != PSX_TYPE_FUNCTION ||
+          !validate_type(function->function_type, NULL) ||
+          !ps_type_shape_matches(node->type, function->function_type->base)) {
+        return fail(
+            failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+      }
+    } else if (node->kind == ND_FUNCDEF ||
+               !node->is_implicit_func_decl) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+    }
+  }
   int runtime_stride_off =
       node->type_state.vla_runtime.row_stride_frame_off;
   int runtime_strides_remaining =

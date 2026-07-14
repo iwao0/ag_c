@@ -27,8 +27,6 @@ typedef struct {
   global_var_t *global;
   const psx_type_t *function_type;
   long long enum_value;
-  int parameter_count;
-  int is_variadic;
 } psx_identifier_resolution_t;
 
 void psx_resolve_identifier(
