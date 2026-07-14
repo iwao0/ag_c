@@ -133,10 +133,6 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
 void ps_parse_runtime_declarator_expressions(
     psx_parsed_declarator_t *declarator);
-void ps_parse_runtime_declarator_expressions_in_context(
-    psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations);
 void ps_parse_runtime_declarator_expressions_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,

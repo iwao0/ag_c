@@ -177,8 +177,9 @@ static node_t *parse_compound_literal_from_type(
   ps_decl_get_current_funcname(&current_funcname, &current_funcname_len);
   (void)current_funcname_len;
   token_t *initializer_tok = curtok();
-  node_t *initializer = psx_parse_initializer_syntax_list_in_context(
-      ctx->semantic_context, ctx->local_declarations);
+  node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
+      ctx->semantic_context, ctx->local_registry,
+      ctx->local_declarations);
   node_t *syntax = psx_node_new_compound_literal(
       type_name, initializer, initializer_tok,
       0, current_funcname == NULL);
@@ -262,8 +263,9 @@ static int capture_type_name_ref_at(
     return 0;
   }
   if (runtime_bounds)
-    ps_parse_runtime_declarator_expressions_in_context(
+    ps_parse_runtime_declarator_expressions_in_contexts(
         &syntax->declarator, ctx->semantic_context,
+        ctx->local_registry,
         ctx->local_declarations);
   psx_local_lookup_point_t point =
       ps_local_registry_capture_lookup_point_in(ctx->local_registry);
@@ -303,20 +305,15 @@ void ps_expr_reset_translation_unit_state(void) {
 
 // expr = assign ("," assign)*
 node_t *psx_expr_expr(void) {
-  return psx_expr_expr_in_context(ps_ctx_active(), NULL);
-}
-
-node_t *psx_expr_expr_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations) {
   return psx_expr_expr_in_contexts(
-      semantic_context, ps_local_registry_active(), local_declarations);
+      ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 node_t *psx_expr_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  if (!semantic_context || !local_registry) return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
       semantic_context, local_registry, local_declarations);
   return expr_internal_ctx(&ctx);
@@ -324,20 +321,15 @@ node_t *psx_expr_expr_in_contexts(
 
 // assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
 node_t *psx_expr_assign(void) {
-  return psx_expr_assign_in_context(ps_ctx_active(), NULL);
-}
-
-node_t *psx_expr_assign_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations) {
   return psx_expr_assign_in_contexts(
-      semantic_context, ps_local_registry_active(), local_declarations);
+      ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 node_t *psx_expr_assign_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
+  if (!semantic_context || !local_registry) return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
       semantic_context, local_registry, local_declarations);
   return assign_ctx(&ctx);

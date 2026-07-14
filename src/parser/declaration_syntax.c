@@ -514,17 +514,8 @@ psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree(
 
 void ps_parse_runtime_declarator_expressions(
     psx_parsed_declarator_t *declarator) {
-  ps_parse_runtime_declarator_expressions_in_context(
-      declarator, ps_ctx_active(), NULL);
-}
-
-void ps_parse_runtime_declarator_expressions_in_context(
-    psx_parsed_declarator_t *declarator,
-    psx_semantic_context_t *semantic_context,
-    const psx_local_declaration_callbacks_t *local_declarations) {
   ps_parse_runtime_declarator_expressions_in_contexts(
-      declarator, semantic_context,
-      ps_local_registry_active(), local_declarations);
+      declarator, ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 void ps_parse_runtime_declarator_expressions_in_contexts(
@@ -532,7 +523,7 @@ void ps_parse_runtime_declarator_expressions_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!declarator) return;
+  if (!declarator || !semantic_context || !local_registry) return;
   token_t *saved = current_token();
   for (int i = 0; i < declarator->array_bound_count; i++) {
     psx_parsed_const_expr_t *expression =

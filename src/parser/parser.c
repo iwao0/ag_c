@@ -245,17 +245,8 @@ void ps_parser_stream_begin(
     psx_parser_stream_t *stream,
     tokenizer_context_t *tk_ctx, token_t *start,
     const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
-  ps_parser_stream_begin_in_context(
-      stream, ps_ctx_active(), tk_ctx, start, toplevel_declarations);
-}
-
-void ps_parser_stream_begin_in_context(
-    psx_parser_stream_t *stream,
-    psx_semantic_context_t *semantic_context,
-    tokenizer_context_t *tk_ctx, token_t *start,
-    const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
   ps_parser_stream_begin_in_contexts(
-      stream, semantic_context, ps_local_registry_active(),
+      stream, ps_ctx_active(), ps_local_registry_active(),
       tk_ctx, start, toplevel_declarations);
 }
 

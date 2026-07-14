@@ -472,6 +472,21 @@ for (const sourcePath of [
     );
   }
 }
+const splitParserContextApi =
+  /(?:psx_(?:expr_(?:expr|assign)|parse_statement_expression|stmt_stmt)|ps_parse_runtime_declarator_expressions|ps_parser_stream_begin)_in_context\s*\(/;
+for (const sourcePath of [
+  "src/parser/expr.c",
+  "src/parser/declaration_syntax.c",
+  "src/parser/stmt.c",
+  "src/parser/parser.c",
+]) {
+  const source = await readFile(sourcePath, "utf8");
+  if (splitParserContextApi.test(source)) {
+    throw new Error(
+      `${sourcePath} must not combine a semantic context with the active local registry`,
+    );
+  }
+}
 const frontendDeclarationSources = [
   await readFile("src/frontend/toplevel_declaration.c", "utf8"),
   await readFile("src/frontend/local_declaration.c", "utf8"),
@@ -762,7 +777,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
     !/psx_parse_statement_expression_in_contexts\s*\(/.test(
       expressionParserSource,
     ) ||
-    !/psx_parse_initializer_syntax_list_in_context\s*\(/.test(
+    !/psx_parse_initializer_syntax_list_in_contexts\s*\(/.test(
       expressionParserSource,
     ) ||
     !/ps_ctx_record_unsupported_gnu_extension_warning_in\s*\(/.test(

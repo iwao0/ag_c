@@ -15179,8 +15179,8 @@ static void test_semantic_context_isolation() {
   psx_ctx_register_goto_ref_in(
       second, streamed_label_name, 14, NULL);
   psx_parser_stream_t parser_stream = {0};
-  ps_parser_stream_begin_in_context(
-      &parser_stream, second, NULL,
+  ps_parser_stream_begin_in_contexts(
+      &parser_stream, second, ps_local_registry_active(), NULL,
       tk_tokenize((char *)
           "{ StreamType value = 0; "
           "{ streamed_label: return value; } }"),
