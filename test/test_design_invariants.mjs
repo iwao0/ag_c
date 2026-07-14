@@ -64,6 +64,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/ag_compiler_context_dispose\s*\(/.test(compilerMainSource)) {
   throw new Error("compilation entry points must own semantic state through CompilerContext");
 }
+const frontendTranslationUnitHeader = await readFile(
+  "src/frontend/translation_unit.h",
+  "utf8",
+);
+if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
+      frontendTranslationUnitHeader,
+    ) ||
+    !/psx_frontend_stream_begin\s*\([\s\S]*?ag_compiler_context_t\s*\*compiler_context/.test(
+      frontendTranslationUnitHeader,
+    )) {
+  throw new Error("frontend stream must receive the compilation-unit context explicitly");
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

@@ -2050,7 +2050,7 @@ static void test_frontend_stream_lifecycle_boundary() {
 
   psx_frontend_stream_t frontend_stream = {0};
   psx_frontend_stream_begin(
-      &frontend_stream, NULL, tk_tokenize((char *)""));
+      &frontend_stream, NULL, NULL, tk_tokenize((char *)""));
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__stream_previous", 17) == NULL);
   psx_frontend_stream_end(&frontend_stream);

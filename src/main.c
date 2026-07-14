@@ -206,7 +206,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   }
 
   psx_frontend_stream_t stream = {0};
-  psx_frontend_stream_begin(&stream, tk_ctx, tok);
+  psx_frontend_stream_begin(&stream, &compiler_context, tk_ctx, tok);
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode)) {
       clear_output_callback();
@@ -404,7 +404,7 @@ int main(int argc, char **argv) {
   // 非関数のトップレベル宣言はfrontend item driverが逐次適用し、データセクションは末尾。
   // AG_DUMP_IR=1 で各関数の IR を stderr にダンプ。
   psx_frontend_stream_t stream = {0};
-  psx_frontend_stream_begin(&stream, tk_ctx, tok);
+  psx_frontend_stream_begin(&stream, &compiler_context, tk_ctx, tok);
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
     if (!wasm_emit_function_direct(fn, wasm_object_mode)) {

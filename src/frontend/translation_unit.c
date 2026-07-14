@@ -27,8 +27,10 @@ void psx_frontend_reset_translation_unit_state(void) {
 
 void psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
+    ag_compiler_context_t *compiler_context,
     tokenizer_context_t *tk_ctx, token_t *start) {
   if (!stream) return;
+  stream->compiler_context = compiler_context;
   ps_global_registry_reset_diag_state();
   ps_ctx_reset_function_diag_state();
   ps_ctx_reset_tag_diag_state();
@@ -102,7 +104,7 @@ void psx_frontend_free_processed_ast(void) {
 node_t **psx_frontend_program_ctx(
     tokenizer_context_t *tk_ctx, token_t *start) {
   psx_frontend_stream_t stream = {0};
-  psx_frontend_stream_begin(&stream, tk_ctx, start);
+  psx_frontend_stream_begin(&stream, NULL, tk_ctx, start);
   int capacity = 16;
   int count = 0;
   node_t **program = calloc((size_t)capacity, sizeof(*program));
