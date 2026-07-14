@@ -15058,10 +15058,12 @@ static void test_compiler_context_registry_isolation() {
   global_var_t first_global = {
       .name = (char *)"shared_global",
       .name_len = 13,
+      .decl_type = ps_type_new_integer(TK_INT, 4, 0),
   };
   global_var_t second_global = {
       .name = (char *)"shared_global",
       .name_len = 13,
+      .decl_type = ps_type_new_integer(TK_LONG, 8, 0),
   };
   string_lit_t first_literal = {.label = (char *)".Lshared"};
   string_lit_t second_literal = {.label = (char *)".Lshared"};
@@ -15082,13 +15084,14 @@ static void test_compiler_context_registry_isolation() {
   };
 
   ps_register_global_var_in(first.global_registry, &first_global);
+  ps_register_global_var_in(second.global_registry, &second_global);
   psx_register_string_lit_in(first.global_registry, &first_literal);
   ASSERT_TRUE(ps_find_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);
   ASSERT_TRUE(ps_find_global_var_in(
                   second.global_registry,
-                  (char *)"shared_global", 13) == NULL);
+                  (char *)"shared_global", 13) == &second_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
                   first.global_registry,
                   (char *)".Lshared") == &first_literal);
@@ -15148,11 +15151,38 @@ static void test_compiler_context_registry_isolation() {
   };
   const psx_type_t *isolated_resolved_type =
       psx_resolve_bound_type_name_ref_in_contexts(
-          first.semantic_context, first.local_registry,
+          first.semantic_context, first.global_registry,
+          first.local_registry,
           &isolated_type_name);
   ASSERT_TRUE(isolated_resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, isolated_resolved_type->kind);
   ASSERT_EQ(4, isolated_resolved_type->size);
+  psx_identifier_resolution_t isolated_global_resolution;
+  psx_resolve_identifier(
+      &(psx_identifier_resolution_request_t){
+          .semantic_context = first.semantic_context,
+          .global_registry = first.global_registry,
+          .local_registry = first.local_registry,
+          .name = (char *)"shared_global",
+          .name_len = 13,
+      },
+      &isolated_global_resolution);
+  ASSERT_EQ(PSX_IDENTIFIER_GLOBAL_OBJECT,
+            isolated_global_resolution.kind);
+  ASSERT_TRUE(isolated_global_resolution.global == &first_global);
+  node_identifier_t isolated_global_identifier = {
+      .base = {.kind = ND_IDENTIFIER},
+      .name = (char *)"shared_global",
+      .name_len = 13,
+      .scope_seq = first_namespace_point.scope_seq,
+      .declaration_seq = first_namespace_point.declaration_seq,
+  };
+  node_t *isolated_global_node = psx_bind_identifier_tree_in_contexts(
+      first.semantic_context, first.global_registry,
+      first.local_registry, (node_t *)&isolated_global_identifier, NULL);
+  ASSERT_TRUE(isolated_global_node != NULL);
+  ASSERT_EQ(ND_GVAR, isolated_global_node->kind);
+  ASSERT_EQ(4, ps_node_type_size(isolated_global_node));
   psx_parsed_initializer_t isolated_global_initializer = {0};
   psx_global_declaration_pipeline_result_t isolated_global_result;
   ASSERT_TRUE(psx_apply_global_declaration_pipeline(
@@ -15208,7 +15238,6 @@ static void test_compiler_context_registry_isolation() {
                   first.local_registry,
                   (char *)"explicit_first_local", 20,
                   explicit_first_point) == &explicit_first_local);
-  ps_register_global_var(&second_global);
   psx_register_string_lit(&second_literal);
   psx_local_registry_add(&second_local);
   ASSERT_TRUE(ps_find_global_var(

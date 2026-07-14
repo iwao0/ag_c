@@ -21,7 +21,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   ps_ctx_reset_function_scope_in(semantic_context);
 
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, local_registry, &definition->return_specifier);
+      semantic_context, global_registry, local_registry,
+      &definition->return_specifier);
   if (!base_type) {
     ps_diag_ctx(definition->diagnostic_token, "funcdef",
                 "canonical function return base type resolution failed");

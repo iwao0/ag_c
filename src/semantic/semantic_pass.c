@@ -3,6 +3,7 @@
 #include "../parser/declaration_syntax.h"
 #include "../parser/diag.h"
 #include "../parser/arena.h"
+#include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
@@ -19,6 +20,7 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   node_function_definition_t *current_func;
   const token_t *fallback_diag_tok;
@@ -366,25 +368,29 @@ static void semantic_resolve_function_call(
 
 static const psx_type_t *semantic_resolve_type_name_ref(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
   return psx_resolve_bound_type_name_ref_in_contexts(
-      semantic_context, local_registry, type_name);
+      semantic_context, global_registry, local_registry, type_name);
 }
 
 static void semantic_resolve_source_cast(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_source_cast_t *cast) {
   if (!cast || !cast->base.is_source_cast) return;
   semantic_bind_result_type(
       (node_t *)cast,
       ps_type_clone(semantic_resolve_type_name_ref(
-          semantic_context, local_registry, &cast->type_name)));
+          semantic_context, global_registry, local_registry,
+          &cast->type_name)));
 }
 
 static void semantic_resolve_compound_literal(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_compound_literal_t *compound) {
   if (!compound) return;
@@ -392,7 +398,8 @@ static void semantic_resolve_compound_literal(
   if (!object_type) {
     psx_type_t *resolved = ps_type_clone(
         semantic_resolve_type_name_ref(
-            semantic_context, local_registry, &compound->type_name));
+            semantic_context, global_registry, local_registry,
+            &compound->type_name));
     ps_ctx_attach_aggregate_definitions_in(
         semantic_context, resolved);
     compound->type_name.resolved_type = resolved;
@@ -407,6 +414,7 @@ static void semantic_resolve_compound_literal(
 
 static void semantic_resolve_generic_selection(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_generic_selection_t *selection,
     const token_t *fallback_diag_tok) {
@@ -418,7 +426,8 @@ static void semantic_resolve_generic_selection(
   selection->base.type = NULL;
   psx_generic_selection_resolution_t resolution;
   psx_resolve_generic_selection_in_contexts(
-      semantic_context, local_registry, selection, &resolution);
+      semantic_context, global_registry, local_registry,
+      selection, &resolution);
   token_t *conflict_tok = tok;
   if (resolution.conflict_index >= 0 &&
       resolution.conflict_index < selection->association_count &&
@@ -519,7 +528,8 @@ static void semantic_resolve_sizeof_query(
 
   psx_sizeof_query_resolution_t resolution;
   psx_resolve_sizeof_query_in_contexts(
-      traversal->semantic_context, traversal->local_registry,
+      traversal->semantic_context, traversal->global_registry,
+      traversal->local_registry,
       query, &resolution);
   node_t *issue_bound = NULL;
   if (syntax && resolution.issue_bound_index >= 0 &&
@@ -667,7 +677,8 @@ static void semantic_transform_node(
             traversal);
       }
       semantic_resolve_generic_selection(
-          traversal->semantic_context, traversal->local_registry,
+          traversal->semantic_context, traversal->global_registry,
+          traversal->local_registry,
           selection, fallback_diag_tok);
       break;
     }
@@ -681,18 +692,21 @@ static void semantic_transform_node(
     }
     case ND_ALIGNOF_QUERY:
       psx_resolve_alignof_query_in_contexts(
-          traversal->semantic_context, traversal->local_registry,
+          traversal->semantic_context, traversal->global_registry,
+          traversal->local_registry,
           (node_alignof_query_t *)node);
       break;
     case ND_CAST:
       semantic_transform_node(node->lhs, traversal);
       semantic_resolve_source_cast(
-          traversal->semantic_context, traversal->local_registry,
+          traversal->semantic_context, traversal->global_registry,
+          traversal->local_registry,
           (node_source_cast_t *)node);
       break;
     case ND_COMPOUND_LITERAL:
       semantic_resolve_compound_literal(
-          traversal->semantic_context, traversal->local_registry,
+          traversal->semantic_context, traversal->global_registry,
+          traversal->local_registry,
           (node_compound_literal_t *)node);
       semantic_transform_initializer_syntax(
           node->rhs, traversal);
@@ -779,7 +793,8 @@ void psx_semantic_resolve_tree(
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   psx_semantic_resolve_tree_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(),
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(),
       node, current_func, fallback_diag_tok);
 }
 
@@ -789,17 +804,20 @@ void psx_semantic_resolve_tree_in_context(
     const token_t *fallback_diag_tok) {
   psx_semantic_resolve_tree_in_contexts(
       semantic_context ? semantic_context : ps_ctx_active(),
+      ps_global_registry_active(),
       ps_local_registry_active(),
       node, current_func, fallback_diag_tok);
 }
 
 void psx_semantic_resolve_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   psx_semantic_traversal_t traversal = {
       .semantic_context = semantic_context,
+      .global_registry = global_registry,
       .local_registry = local_registry,
       .current_func = current_func,
       .fallback_diag_tok = fallback_diag_tok,
@@ -811,7 +829,8 @@ void psx_semantic_resolve_initializer_tree(
     node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   psx_semantic_resolve_initializer_tree_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(),
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(),
       syntax, current_func, fallback_diag_tok);
 }
 
@@ -821,17 +840,20 @@ void psx_semantic_resolve_initializer_tree_in_context(
     const token_t *fallback_diag_tok) {
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context ? semantic_context : ps_ctx_active(),
+      ps_global_registry_active(),
       ps_local_registry_active(),
       syntax, current_func, fallback_diag_tok);
 }
 
 void psx_semantic_resolve_initializer_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *syntax, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   psx_semantic_traversal_t traversal = {
       .semantic_context = semantic_context,
+      .global_registry = global_registry,
       .local_registry = local_registry,
       .current_func = current_func,
       .fallback_diag_tok = fallback_diag_tok,

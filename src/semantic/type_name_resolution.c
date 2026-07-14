@@ -5,6 +5,7 @@
 #include "declaration_type_builder.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/declarator_shape_builder.h"
+#include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
@@ -29,6 +30,7 @@ static psx_type_t *apply_reference_qualifiers(
 
 static const psx_type_t *bind_base_type(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
   psx_parsed_type_name_t *syntax = type_name->syntax;
@@ -41,7 +43,7 @@ static const psx_type_t *bind_base_type(
     };
     psx_type_t *type = ps_type_clone(
         psx_resolve_bound_type_name_ref_in_contexts(
-            semantic_context, local_registry, &inner));
+            semantic_context, global_registry, local_registry, &inner));
     if (type) type->is_atomic = 1;
     return type;
   }
@@ -68,57 +70,64 @@ static const psx_type_t *bind_base_type(
     return apply_reference_qualifiers(bound, specifier);
   }
   return psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, local_registry, specifier);
+      semantic_context, global_registry, local_registry, specifier);
 }
 
 int psx_bind_type_name_ref(psx_type_name_ref_t *type_name) {
   return psx_bind_type_name_ref_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), type_name);
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), type_name);
 }
 
 int psx_bind_type_name_ref_in_context(
     psx_semantic_context_t *semantic_context,
     psx_type_name_ref_t *type_name) {
   return psx_bind_type_name_ref_in_contexts(
-      semantic_context, ps_local_registry_active(), type_name);
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(), type_name);
 }
 
 int psx_bind_type_name_ref_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
   if (!type_name || !type_name->syntax) return 0;
   if (type_name->bound_base_type) return 1;
   type_name->bound_base_type = bind_base_type(
-      semantic_context, local_registry, type_name);
+      semantic_context, global_registry, local_registry, type_name);
   return type_name->bound_base_type != NULL;
 }
 
 const psx_type_t *psx_resolve_bound_type_name_ref(
     psx_type_name_ref_t *type_name) {
   return psx_resolve_bound_type_name_ref_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), type_name);
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), type_name);
 }
 
 const psx_type_t *psx_resolve_bound_type_name_ref_in_context(
     psx_semantic_context_t *semantic_context,
     psx_type_name_ref_t *type_name) {
   return psx_resolve_bound_type_name_ref_in_contexts(
-      semantic_context, ps_local_registry_active(), type_name);
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(), type_name);
 }
 
 const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_type_name_ref_t *type_name) {
   if (!type_name) return NULL;
   if (type_name->resolved_type) return type_name->resolved_type;
   if (!psx_bind_type_name_ref_in_contexts(
-          semantic_context, local_registry, type_name)) return NULL;
+          semantic_context, global_registry, local_registry,
+          type_name)) return NULL;
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
   psx_apply_parsed_declarator_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       &type_name->syntax->declarator, &shape, NULL);
   psx_type_t *resolved = psx_build_decl_type(
       &(psx_decl_type_request_t){

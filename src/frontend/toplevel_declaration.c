@@ -68,13 +68,15 @@ static void *begin_declaration(
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
     psx_apply_parsed_standalone_tag_in_contexts(
-        application->semantic_context, application->local_registry,
+        application->semantic_context, application->global_registry,
+        application->local_registry,
         &declaration->specifier);
     return application;
   }
 
   application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      application->semantic_context, application->local_registry,
+      application->semantic_context, application->global_registry,
+      application->local_registry,
       &declaration->specifier);
   if (!application->base_type) {
     ps_diag_ctx(declaration->diagnostic_token, "decl",
@@ -93,7 +95,8 @@ static void begin_declarator(
   application->current_kind = PSX_TOPLEVEL_APPLY_NONE;
   application->current_initializer = *initializer;
   application->current_type = psx_apply_parsed_declarator_type_in_contexts(
-      application->semantic_context, application->local_registry,
+      application->semantic_context, application->global_registry,
+      application->local_registry,
       application->base_type, declarator);
   if (!application->current_type) {
     ps_diag_ctx(declarator->diagnostic_token, "decl",
@@ -107,7 +110,8 @@ static void begin_declarator(
                   name->len, name->str);
     }
     psx_apply_parsed_typedef_declaration_in_contexts(
-        application->semantic_context, application->local_registry,
+        application->semantic_context, application->global_registry,
+        application->local_registry,
         name->str, name->len, application->current_type,
         declarator->diagnostic_token);
     application->current_kind = PSX_TOPLEVEL_APPLY_TYPEDEF;

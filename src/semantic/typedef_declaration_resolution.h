@@ -5,6 +5,7 @@
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef enum {
   PSX_TYPEDEF_DECLARATION_OK = 0,
@@ -17,6 +18,7 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   char *name;
   int name_len;

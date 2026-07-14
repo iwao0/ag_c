@@ -18,19 +18,19 @@ static void analyze_function_in_contexts(
   if (!semantic_context || !local_registry ||
       !function || function->kind != ND_FUNCDEF) return;
   function = psx_bind_identifier_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       function, fallback_diag_tok);
   node_function_definition_t *current_function =
       (node_function_definition_t *)function;
   psx_validate_control_flow(function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       function, current_function, fallback_diag_tok);
   function = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       function, current_function, fallback_diag_tok);
   current_function->lvars = ps_decl_get_locals_in(local_registry);
   psx_emit_semantic_warnings(
@@ -87,16 +87,16 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     psx_local_registry_t *local_registry,
     node_t *expression, const token_t *fallback_diag_tok) {
   expression = psx_bind_identifier_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       expression, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       expression, NULL, fallback_diag_tok);
   expression = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       expression, NULL, fallback_diag_tok);
   psx_lower_implicit_conversions(expression, NULL, fallback_diag_tok);
   return expression;
@@ -123,16 +123,16 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     node_t *syntax, const token_t *fallback_diag_tok) {
   syntax = psx_bind_identifier_initializer_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       syntax, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       syntax, NULL, fallback_diag_tok);
   syntax = psx_lower_semantic_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
       syntax, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
-      semantic_context, local_registry,
+      semantic_context, global_registry, local_registry,
       syntax, NULL, fallback_diag_tok);
   return syntax;
 }
@@ -159,16 +159,16 @@ void psx_frontend_analyze_program_in_contexts(
   for (int i = 0; program[i]; i++) {
     if (program[i]->kind == ND_FUNCDEF) continue;
     program[i] = psx_bind_identifier_tree_in_contexts(
-        semantic_context, local_registry,
+        semantic_context, global_registry, local_registry,
         program[i], program[i]->tok);
     psx_semantic_resolve_tree_in_contexts(
-        semantic_context, local_registry,
+        semantic_context, global_registry, local_registry,
         program[i], NULL, program[i]->tok);
     program[i] = psx_lower_semantic_tree_in_contexts(
         semantic_context, global_registry, local_registry,
         program[i], program[i]->tok);
     psx_semantic_resolve_tree_in_contexts(
-        semantic_context, local_registry,
+        semantic_context, global_registry, local_registry,
         program[i], NULL, program[i]->tok);
     psx_lower_implicit_conversions(program[i], NULL, program[i]->tok);
   }

@@ -6,6 +6,7 @@
 #include "../parser/symtab.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef enum {
   PSX_IDENTIFIER_UNDEFINED = 0,
@@ -18,6 +19,7 @@ typedef enum {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   char *name;
   int name_len;
@@ -38,6 +40,9 @@ void psx_resolve_identifier(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution);
 global_var_t *psx_resolve_global_object_symbol(
+    char *name, int name_len);
+global_var_t *psx_resolve_global_object_symbol_in(
+    psx_global_registry_t *global_registry,
     char *name, int name_len);
 
 #endif

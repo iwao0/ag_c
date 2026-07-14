@@ -1,14 +1,22 @@
 #include "identifier_resolution.h"
 
 #include "../parser/decl.h"
+#include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 
 #include <string.h>
 
 global_var_t *psx_resolve_global_object_symbol(
     char *name, int name_len) {
+  return psx_resolve_global_object_symbol_in(
+      ps_global_registry_active(), name, name_len);
+}
+
+global_var_t *psx_resolve_global_object_symbol_in(
+    psx_global_registry_t *global_registry,
+    char *name, int name_len) {
   if (!name || name_len <= 0) return NULL;
-  return ps_find_global_var(name, name_len);
+  return ps_find_global_var_in(global_registry, name, name_len);
 }
 
 void psx_resolve_identifier(
@@ -21,6 +29,8 @@ void psx_resolve_identifier(
       ? request->semantic_context : ps_ctx_active();
   psx_local_registry_t *local_registry = request->local_registry
       ? request->local_registry : ps_local_registry_active();
+  psx_global_registry_t *global_registry = request->global_registry
+      ? request->global_registry : ps_global_registry_active();
 
   resolution->local = request->has_local_lookup_point
       ? ps_local_registry_find_visible_in(
@@ -47,8 +57,8 @@ void psx_resolve_identifier(
     return;
   }
 
-  resolution->global = psx_resolve_global_object_symbol(
-      request->name, request->name_len);
+  resolution->global = psx_resolve_global_object_symbol_in(
+      global_registry, request->name, request->name_len);
   const psx_function_symbol_t *function =
       ps_ctx_find_function_symbol_in(
           semantic_context,

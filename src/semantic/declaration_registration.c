@@ -10,6 +10,7 @@
 #include "static_assert_resolution.h"
 #include "typedef_declaration_resolution.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 
 void psx_apply_parsed_typedef_declaration(
@@ -22,18 +23,21 @@ void psx_apply_parsed_typedef_declaration_in_context(
     psx_semantic_context_t *semantic_context,
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
   psx_apply_parsed_typedef_declaration_in_contexts(
-      semantic_context, ps_local_registry_active(),
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(),
       name, name_len, type, diag_tok);
 }
 
 void psx_apply_parsed_typedef_declaration_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     char *name, int name_len, const psx_type_t *type, token_t *diag_tok) {
   psx_typedef_declaration_resolution_t resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = semantic_context,
+          .global_registry = global_registry,
           .local_registry = local_registry,
           .name = name,
           .name_len = name_len,
@@ -76,18 +80,21 @@ void psx_apply_parsed_enum_constant_in_context(
     psx_semantic_context_t *semantic_context,
     char *name, int name_len, long long value, token_t *diag_tok) {
   psx_apply_parsed_enum_constant_in_contexts(
-      semantic_context, ps_local_registry_active(),
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(),
       name, name_len, value, diag_tok);
 }
 
 void psx_apply_parsed_enum_constant_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     char *name, int name_len, long long value, token_t *diag_tok) {
   psx_enum_constant_resolution_t resolution;
   psx_resolve_enum_constant(
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = semantic_context,
+          .global_registry = global_registry,
           .local_registry = local_registry,
           .name = name,
           .name_len = name_len,
@@ -222,18 +229,22 @@ void psx_apply_static_assert_in_context(
     psx_semantic_context_t *semantic_context,
     node_t *condition, token_t *diag_tok) {
   psx_apply_static_assert_in_contexts(
-      semantic_context, ps_local_registry_active(), condition, diag_tok);
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(), condition, diag_tok);
 }
 
 void psx_apply_static_assert_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t *condition, token_t *diag_tok) {
   if (!condition) return;
   condition = psx_bind_identifier_tree_in_contexts(
-      semantic_context, local_registry, condition, diag_tok);
+      semantic_context, global_registry, local_registry,
+      condition, diag_tok);
   psx_semantic_resolve_tree_in_contexts(
-      semantic_context, local_registry, condition, NULL, diag_tok);
+      semantic_context, global_registry, local_registry,
+      condition, NULL, diag_tok);
   int is_constant = 1;
   long long value = psx_eval_const_int(condition, &is_constant);
   psx_static_assert_resolution_t resolution;

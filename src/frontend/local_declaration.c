@@ -46,7 +46,8 @@ static void apply_static_assert(
     void *context, node_t *condition, token_t *diagnostic_token) {
   const psx_local_declaration_callbacks_t *callbacks = context;
   psx_apply_static_assert_in_contexts(
-      callbacks->semantic_context, callbacks->local_registry,
+      callbacks->semantic_context, callbacks->global_registry,
+      callbacks->local_registry,
       condition, diagnostic_token);
 }
 
@@ -66,12 +67,14 @@ static void *begin_declaration(
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
     psx_apply_parsed_standalone_tag_in_contexts(
-        application->semantic_context, application->local_registry,
+        application->semantic_context, application->global_registry,
+        application->local_registry,
         specifier);
     return application;
   }
   application->base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      application->semantic_context, application->local_registry,
+      application->semantic_context, application->global_registry,
+      application->local_registry,
       specifier);
   if (!application->base_type) {
     ps_diag_ctx(specifier->diagnostic_token, "local-declaration",
@@ -93,7 +96,8 @@ static void begin_declarator(
   application->current_kind = PSX_LOCAL_APPLY_NONE;
   application->current_initializer = *initializer;
   psx_apply_runtime_parsed_declarator_in_contexts(
-      application->semantic_context, application->local_registry,
+      application->semantic_context, application->global_registry,
+      application->local_registry,
       declarator,
       &application->current_application);
   application->current_type = psx_apply_runtime_declarator_type_in_context(
@@ -112,7 +116,8 @@ static void begin_declarator(
                   name->len, name->str);
     }
     psx_apply_parsed_typedef_declaration_in_contexts(
-        application->semantic_context, application->local_registry,
+        application->semantic_context, application->global_registry,
+        application->local_registry,
         name->str, name->len, application->current_type, (token_t *)name);
     application->current_kind = PSX_LOCAL_APPLY_TYPEDEF;
     return;

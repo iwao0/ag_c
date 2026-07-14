@@ -1,6 +1,7 @@
 #include "generic_selection_resolution.h"
 
 #include "type_name_resolution.h"
+#include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
@@ -12,7 +13,8 @@ void psx_resolve_generic_selection(
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution) {
   psx_resolve_generic_selection_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), selection, resolution);
+      ps_ctx_active(), ps_global_registry_active(),
+      ps_local_registry_active(), selection, resolution);
 }
 
 void psx_resolve_generic_selection_in_context(
@@ -20,11 +22,13 @@ void psx_resolve_generic_selection_in_context(
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution) {
   psx_resolve_generic_selection_in_contexts(
-      semantic_context, ps_local_registry_active(), selection, resolution);
+      semantic_context, ps_global_registry_active(),
+      ps_local_registry_active(), selection, resolution);
 }
 
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_generic_selection_t *selection,
     psx_generic_selection_resolution_t *resolution) {
@@ -52,7 +56,8 @@ void psx_resolve_generic_selection_in_contexts(
     }
     const psx_type_t *resolved =
         psx_resolve_bound_type_name_ref_in_contexts(
-            semantic_context, local_registry, &association->type_name);
+            semantic_context, global_registry, local_registry,
+            &association->type_name);
     if (resolved) {
       psx_type_t *normalized = ps_type_clone(resolved);
       ps_type_normalize_integer_identity(normalized);

@@ -5,6 +5,7 @@
 #include "../parser/gvar_public.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
+#include "../parser/global_registry.h"
 
 #include <string.h>
 
@@ -20,6 +21,8 @@ void psx_resolve_typedef_declaration(
       ? request->semantic_context : ps_ctx_active();
   psx_local_registry_t *local_registry = request->local_registry
       ? request->local_registry : ps_local_registry_active();
+  psx_global_registry_t *global_registry = request->global_registry
+      ? request->global_registry : ps_global_registry_active();
 
   int scope_depth = ps_ctx_current_tag_scope_depth_in(semantic_context);
   if (ps_ctx_has_enum_const_in_current_scope_in(
@@ -28,7 +31,8 @@ void psx_resolve_typedef_declaration(
     return;
   }
   if (scope_depth == 0) {
-    if (ps_find_global_var(request->name, request->name_len)) {
+    if (ps_find_global_var_in(
+            global_registry, request->name, request->name_len)) {
       resolution->status = PSX_TYPEDEF_DECLARATION_OBJECT_NAME_CONFLICT;
       return;
     }

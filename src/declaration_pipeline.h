@@ -72,6 +72,7 @@ typedef struct {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const psx_type_t *base_type;
   psx_runtime_declarator_application_t application;

@@ -103,6 +103,9 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
           stream->compiler_context
               ? stream->compiler_context->semantic_context : ps_ctx_active(),
           stream->compiler_context
+              ? stream->compiler_context->global_registry
+              : ps_global_registry_active(),
+          stream->compiler_context
               ? stream->compiler_context->local_registry
               : ps_local_registry_active(),
           item.value.static_assertion.condition,

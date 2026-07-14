@@ -326,18 +326,21 @@ static int resolve_definition_parameter(
 
 static int append_definition_parameter(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_function_definition_pipeline_result_t *result, int *capacity,
     psx_parsed_function_parameter_t *parameter) {
   const psx_type_t *base_type = psx_apply_parsed_decl_specifier_in_contexts(
-      semantic_context, local_registry, &parameter->specifier);
+      semantic_context, global_registry, local_registry,
+      &parameter->specifier);
   if (!base_type) {
     ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
                  "canonical parameter base type resolution failed");
   }
   psx_runtime_declarator_application_t applied;
   psx_apply_runtime_parsed_declarator_in_contexts(
-      semantic_context, local_registry, &parameter->declarator, &applied);
+      semantic_context, global_registry, local_registry,
+      &parameter->declarator, &applied);
   token_ident_t *name = parameter->declarator.identifier;
   int has_pointer = ps_declarator_shape_count_ops(
       &applied.shape, PSX_DECL_OP_POINTER) > 0;
@@ -391,14 +394,16 @@ int psx_begin_function_definition_pipeline(
   if (result) *result = (psx_function_definition_pipeline_result_t){0};
   if (state) *state = (psx_function_definition_pipeline_state_t){0};
   if (!request || !result || !request->base_type || !request->declarator ||
-      !request->semantic_context || !request->local_registry ||
+      !request->semantic_context || !request->global_registry ||
+      !request->local_registry ||
       !request->declarator->identifier ||
       request->declarator->function_suffix_count <= 0 || !state) return 0;
 
   psx_parsed_function_suffix_t *primary_suffix =
       &request->declarator->function_suffixes[0];
   psx_apply_runtime_parsed_declarator_ex_in_contexts(
-      request->semantic_context, request->local_registry,
+      request->semantic_context, request->global_registry,
+      request->local_registry,
       request->declarator, &state->application,
       primary_suffix->declarator_op_index);
   if (primary_suffix->declarator_op_index < 0 ||
@@ -409,6 +414,7 @@ int psx_begin_function_definition_pipeline(
   }
 
   state->semantic_context = request->semantic_context;
+  state->global_registry = request->global_registry;
   state->local_registry = request->local_registry;
   state->base_type = request->base_type;
   state->result = result;
@@ -426,7 +432,8 @@ int psx_apply_function_definition_parameter_pipeline(
     psx_parsed_function_parameter_t *parameter) {
   if (!state || !state->result || !parameter) return 0;
   int applied = append_definition_parameter(
-      state->semantic_context, state->local_registry, state->result,
+      state->semantic_context, state->global_registry,
+      state->local_registry, state->result,
       &state->args_capacity, parameter);
   if (applied < 0) {
     if (state->parameter_count != 1) {
