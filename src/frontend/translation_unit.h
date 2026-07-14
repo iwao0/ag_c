@@ -14,6 +14,8 @@ typedef struct {
 void psx_frontend_reset_translation_unit_state(void);
 void psx_frontend_reset_translation_unit_state_in_context(
     psx_semantic_context_t *semantic_context);
+void psx_frontend_reset_translation_unit_state_in_compiler_context(
+    ag_compiler_context_t *compiler_context);
 void psx_frontend_stream_begin(
     psx_frontend_stream_t *stream,
     ag_compiler_context_t *compiler_context,

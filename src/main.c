@@ -169,8 +169,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     return -4;
   }
 
-  psx_frontend_reset_translation_unit_state_in_context(
-      compiler_context.semantic_context);
+  psx_frontend_reset_translation_unit_state_in_compiler_context(
+      &compiler_context);
 
   char *source = (char *)(long)source_addr;
   const char *source_name = source_name_addr ? (const char *)(long)source_name_addr : "input.c";
@@ -363,8 +363,8 @@ int main(int argc, char **argv) {
     free(source);
     return 1;
   }
-  psx_frontend_reset_translation_unit_state_in_context(
-      compiler_context.semantic_context);
+  psx_frontend_reset_translation_unit_state_in_compiler_context(
+      &compiler_context);
 
   load_config_toml(input_path);
 

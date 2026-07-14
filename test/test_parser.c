@@ -1,4 +1,5 @@
 #include "../src/parser/parser.h"
+#include "../src/compiler_context.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
 #include "../src/parser/decl.h"
@@ -18,6 +19,7 @@
 #include "../src/parser/tag_public.h"
 #include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
+#include "../src/parser/symtab.h"
 #include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
 #include "../src/semantic/declaration_application.h"
@@ -15034,11 +15036,65 @@ static void test_semantic_context_isolation() {
   ps_ctx_destroy(second);
 }
 
+static void test_compiler_context_global_registry_isolation() {
+  printf("test_compiler_context_global_registry_isolation...\n");
+  ag_compiler_context_t first;
+  ag_compiler_context_t second;
+  ASSERT_TRUE(ag_compiler_context_init(&first));
+  ASSERT_TRUE(ag_compiler_context_init(&second));
+
+  global_var_t first_global = {
+      .name = (char *)"shared_global",
+      .name_len = 13,
+  };
+  global_var_t second_global = {
+      .name = (char *)"shared_global",
+      .name_len = 13,
+  };
+  string_lit_t first_literal = {.label = (char *)".Lshared"};
+  string_lit_t second_literal = {.label = (char *)".Lshared"};
+
+  ps_register_global_var_in(first.global_registry, &first_global);
+  psx_register_string_lit_in(first.global_registry, &first_literal);
+  ASSERT_TRUE(ps_find_global_var_in(
+                  first.global_registry,
+                  (char *)"shared_global", 13) == &first_global);
+  ASSERT_TRUE(ps_find_global_var_in(
+                  second.global_registry,
+                  (char *)"shared_global", 13) == NULL);
+  ASSERT_TRUE(ps_find_string_lit_by_label_in(
+                  first.global_registry,
+                  (char *)".Lshared") == &first_literal);
+  ASSERT_TRUE(ps_find_string_lit_by_label_in(
+                  second.global_registry,
+                  (char *)".Lshared") == NULL);
+
+  ASSERT_TRUE(ag_compiler_context_activate(&second));
+  ps_register_global_var(&second_global);
+  psx_register_string_lit(&second_literal);
+  ASSERT_TRUE(ps_find_global_var(
+                  (char *)"shared_global", 13) == &second_global);
+  ASSERT_TRUE(ps_find_string_lit_by_label(
+                  (char *)".Lshared") == &second_literal);
+  ag_compiler_context_deactivate(&second);
+
+  ASSERT_TRUE(ag_compiler_context_activate(&first));
+  ASSERT_TRUE(ps_find_global_var(
+                  (char *)"shared_global", 13) == &first_global);
+  ASSERT_TRUE(ps_find_string_lit_by_label(
+                  (char *)".Lshared") == &first_literal);
+  ag_compiler_context_deactivate(&first);
+
+  ag_compiler_context_dispose(&first);
+  ag_compiler_context_dispose(&second);
+}
+
 int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
   test_semantic_context_isolation();
+  test_compiler_context_global_registry_isolation();
   test_expr_number();
   test_expr_add_sub();
   test_additive_semantic_lowering_boundary();

@@ -55,17 +55,55 @@ if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
 }
 const compilerContextHeader = await readFile("src/compiler_context.h", "utf8");
+const compilerContextSource = await readFile("src/compiler_context.c", "utf8");
 const compilerMainSource = await readFile("src/main.c", "utf8");
 if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
       compilerContextHeader,
+    ) ||
+    !/psx_global_registry_t\s*\*global_registry\s*;/.test(
+      compilerContextHeader,
+    ) ||
+    !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
+    !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
+    !/ps_global_registry_destroy\s*\(/.test(compilerContextSource) ||
+    !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
+      compilerMainSource,
     ) ||
     !/ag_compiler_context_init\s*\(/.test(compilerMainSource) ||
     !/ag_compiler_context_activate\s*\(/.test(compilerMainSource) ||
     !/ag_compiler_context_dispose\s*\(/.test(compilerMainSource)) {
   throw new Error("compilation entry points must own semantic state through CompilerContext");
 }
+const globalRegistrySource = await readFile(
+  "src/parser/global_registry.c",
+  "utf8",
+);
+if (!/struct\s+psx_global_registry_t\s*\{/.test(globalRegistrySource) ||
+    !/psx_global_registry_t\s*\*ps_global_registry_create\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/psx_global_registry_t\s*\*ps_global_registry_activate\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/void\s+ps_global_registry_destroy\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    /^static\s+(?:string_lit_t|float_lit_t|global_var_t)\s*\*(?:string_literals|float_literals|global_vars)\s*;/m.test(
+      globalRegistrySource,
+    ) ||
+    /^static\s+global_var_t\s*\*gvars_by_bucket\s*\[/m.test(
+      globalRegistrySource,
+    )) {
+  throw new Error(
+    "global symbols and literals must be owned by an explicit registry",
+  );
+}
 const frontendTranslationUnitHeader = await readFile(
   "src/frontend/translation_unit.h",
+  "utf8",
+);
+const frontendTranslationUnitSource = await readFile(
+  "src/frontend/translation_unit.c",
   "utf8",
 );
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
@@ -73,6 +111,9 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
     ) ||
     !/psx_frontend_stream_begin\s*\([\s\S]*?ag_compiler_context_t\s*\*compiler_context/.test(
       frontendTranslationUnitHeader,
+    ) ||
+    !/ps_global_registry_reset_diag_state_in\s*\(/.test(
+      frontendTranslationUnitSource,
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
 }
@@ -259,10 +300,6 @@ if (contextFreeOrdinaryNamespaceCall.test(
     "ordinary namespace resolution must use the passed semantic context",
   );
 }
-const frontendTranslationUnitSource = await readFile(
-  "src/frontend/translation_unit.c",
-  "utf8",
-);
 const frontendFunctionDefinitionSource = await readFile(
   "src/frontend/function_definition.c",
   "utf8",
@@ -351,7 +388,7 @@ if (contextFreeLifecycleCall.test(explicitLifecycleCallers) ||
       toplevelDeclarationSyntaxSource,
     ) ||
     !/ps_ctx_find_enum_const_in\s*\(/.test(enumConstSource) ||
-    !/psx_frontend_reset_translation_unit_state_in_context\s*\(/.test(
+    !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
       compilerMainSource,
     ) ||
     !/ps_ctx_reset_function_scope_in\s*\(/.test(

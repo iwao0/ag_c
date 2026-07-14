@@ -15,20 +15,38 @@
 #include "../parser/semantic_ctx.h"
 #include <stdlib.h>
 
-void psx_frontend_reset_translation_unit_state(void) {
-  psx_frontend_reset_translation_unit_state_in_context(
-      ps_ctx_active());
-}
-
-void psx_frontend_reset_translation_unit_state_in_context(
-    psx_semantic_context_t *semantic_context) {
-  ps_global_registry_reset_translation_unit();
+static void reset_translation_unit_state(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry) {
+  ps_global_registry_reset_translation_unit_in(global_registry);
   ps_anon_tag_reset_translation_unit_state();
   ps_expr_reset_translation_unit_state();
   ps_decl_reset_translation_unit_state();
   ps_ctx_reset_translation_unit_scope_in(semantic_context);
   pragma_pack_reset();
   arena_free_all();
+}
+
+void psx_frontend_reset_translation_unit_state(void) {
+  reset_translation_unit_state(
+      ps_ctx_active(), ps_global_registry_active());
+}
+
+void psx_frontend_reset_translation_unit_state_in_context(
+    psx_semantic_context_t *semantic_context) {
+  reset_translation_unit_state(
+      semantic_context, ps_global_registry_active());
+}
+
+void psx_frontend_reset_translation_unit_state_in_compiler_context(
+    ag_compiler_context_t *compiler_context) {
+  if (!compiler_context) {
+    psx_frontend_reset_translation_unit_state();
+    return;
+  }
+  reset_translation_unit_state(
+      compiler_context->semantic_context,
+      compiler_context->global_registry);
 }
 
 void psx_frontend_stream_begin(
@@ -39,7 +57,10 @@ void psx_frontend_stream_begin(
   stream->compiler_context = compiler_context;
   psx_semantic_context_t *semantic_context = compiler_context
       ? compiler_context->semantic_context : ps_ctx_active();
-  ps_global_registry_reset_diag_state();
+  ps_global_registry_reset_diag_state_in(
+      compiler_context
+          ? compiler_context->global_registry
+          : ps_global_registry_active());
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
   ps_ctx_reset_function_names_in(semantic_context);

@@ -2,10 +2,13 @@
 #define AG_COMPILER_CONTEXT_H
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_semantic_context_t *previous_semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_global_registry_t *previous_global_registry;
   unsigned char is_active;
 } ag_compiler_context_t;
 

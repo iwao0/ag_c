@@ -4,6 +4,33 @@
 #include "gvar_public.h"
 
 typedef struct psx_type_t psx_type_t;
+typedef struct string_lit_t string_lit_t;
+typedef struct float_lit_t float_lit_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
+
+psx_global_registry_t *ps_global_registry_create(void);
+void ps_global_registry_destroy(psx_global_registry_t *registry);
+psx_global_registry_t *ps_global_registry_activate(
+    psx_global_registry_t *registry);
+psx_global_registry_t *ps_global_registry_active(void);
+
+void ps_global_registry_reset_translation_unit_in(
+    psx_global_registry_t *registry);
+void ps_global_registry_reset_diag_state_in(
+    psx_global_registry_t *registry);
+void ps_register_global_var_in(
+    psx_global_registry_t *registry, global_var_t *global);
+global_var_t *ps_find_global_var_in(
+    psx_global_registry_t *registry, char *name, int len);
+void ps_iter_globals_in(
+    psx_global_registry_t *registry,
+    global_var_visitor_t visitor, void *user);
+void psx_register_string_lit_in(
+    psx_global_registry_t *registry, string_lit_t *literal);
+void psx_register_float_lit_in(
+    psx_global_registry_t *registry, float_lit_t *literal);
+string_lit_t *ps_find_string_lit_by_label_in(
+    psx_global_registry_t *registry, char *label);
 
 void ps_global_registry_reset_translation_unit(void);
 void ps_global_registry_reset_diag_state(void);
