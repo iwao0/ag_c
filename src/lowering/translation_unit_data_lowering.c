@@ -321,9 +321,10 @@ static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
 
 ir_data_module_t *lower_ir_translation_unit_data_in_compiler_context(
     const ag_compilation_session_t *session) {
+  if (!ag_compilation_session_is_complete(session)) return NULL;
   return lower_ir_translation_unit_data_in_registry(
-      session ? session->semantic_context : NULL,
-      session ? session->global_registry : NULL);
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session));
 }
 
 ir_data_module_t *lower_ir_translation_unit_data(void) {

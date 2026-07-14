@@ -17,11 +17,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int frontend_session_has_registries(
+static int frontend_session_is_complete(
     const ag_compilation_session_t *session) {
-  return session && session->semantic_context && session->global_registry &&
-         session->local_registry && session->parser_runtime_context &&
-         session->lowering_context && session->arena_context;
+  return ag_compilation_session_is_complete(session);
 }
 
 static void reset_translation_unit_state(
@@ -47,14 +45,14 @@ void psx_frontend_reset_translation_unit_state(void) {
 
 int psx_frontend_reset_translation_unit_state_in_compiler_context(
     ag_compilation_session_t *session) {
-  if (!frontend_session_has_registries(session)) return 0;
+  if (!frontend_session_is_complete(session)) return 0;
   reset_translation_unit_state(
-      session->semantic_context,
-      session->global_registry,
-      session->local_registry,
-      session->parser_runtime_context,
-      session->lowering_context,
-      session->arena_context);
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session),
+      ag_compilation_session_local_registry(session),
+      ag_compilation_session_parser_runtime_context(session),
+      ag_compilation_session_lowering_context(session),
+      ag_compilation_session_arena_context(session));
   return 1;
 }
 
@@ -64,11 +62,18 @@ int psx_frontend_stream_begin(
     tokenizer_context_t *tk_ctx, token_t *start) {
   if (!stream) return 0;
   memset(stream, 0, sizeof(*stream));
-  if (!frontend_session_has_registries(session)) return 0;
+  if (!frontend_session_is_complete(session)) return 0;
+  if (ag_compilation_session_active() != session) {
+    if (!ag_compilation_session_activate(session)) return 0;
+    stream->owns_session_activation = 1;
+  }
   stream->session = session;
-  psx_semantic_context_t *semantic_context = session->semantic_context;
-  psx_global_registry_t *global_registry = session->global_registry;
-  psx_local_registry_t *local_registry = session->local_registry;
+  psx_semantic_context_t *semantic_context =
+      ag_compilation_session_semantic_context(session);
+  psx_global_registry_t *global_registry =
+      ag_compilation_session_global_registry(session);
+  psx_local_registry_t *local_registry =
+      ag_compilation_session_local_registry(session);
   ps_global_registry_reset_diag_state_in(global_registry);
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
@@ -81,7 +86,7 @@ int psx_frontend_stream_begin(
       global_registry, local_registry);
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context, local_registry,
-      session->parser_runtime_context,
+      ag_compilation_session_parser_runtime_context(session),
       tk_ctx, start,
       &stream->toplevel_declarations);
   stream->is_started = 1;
@@ -90,15 +95,17 @@ int psx_frontend_stream_begin(
 
 node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
-      !frontend_session_has_registries(stream->session)) {
+      !frontend_session_is_complete(stream->session) ||
+      ag_compilation_session_active() != stream->session) {
     return NULL;
   }
   ag_compilation_session_t *session = stream->session;
   psx_semantic_context_t *semantic_context =
-      session->semantic_context;
+      ag_compilation_session_semantic_context(session);
   psx_global_registry_t *global_registry =
-      session->global_registry;
-  psx_local_registry_t *local_registry = session->local_registry;
+      ag_compilation_session_global_registry(session);
+  psx_local_registry_t *local_registry =
+      ag_compilation_session_local_registry(session);
   psx_parsed_toplevel_item_t item;
   while (ps_parse_next_toplevel_item(&stream->parser, &item)) {
     if (item.kind == PSX_TOPLEVEL_ITEM_STATIC_ASSERT) {
@@ -118,7 +125,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
     }
     if (item.kind == PSX_TOPLEVEL_ITEM_FUNCTION_HEADER) {
       arena_checkpoint_t arena_mark =
-          arena_checkpoint_in(session->arena_context);
+          arena_checkpoint_in(
+              ag_compilation_session_arena_context(session));
       token_ident_t *function_name =
           item.value.function_header.declarator.identifier;
       psx_function_registration_checkpoint_t checkpoint;
@@ -142,7 +150,8 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
         ps_ctx_reset_function_scope_in(semantic_context);
         ps_dispose_function_definition_header_syntax(
             &item.value.function_header);
-        arena_rollback_in(session->arena_context, arena_mark);
+        arena_rollback_in(
+            ag_compilation_session_arena_context(session), arena_mark);
         if (diag_active_limit_kind()) return NULL;
         continue;
       }
@@ -156,21 +165,26 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
   return NULL;
 }
 
-void psx_frontend_stream_end(psx_frontend_stream_t *stream) {
+int psx_frontend_stream_end(psx_frontend_stream_t *stream) {
   if (!stream || !stream->is_started ||
-      !frontend_session_has_registries(stream->session)) {
-    return;
-  }
+      !frontend_session_is_complete(stream->session) ||
+      ag_compilation_session_active() != stream->session)
+    return 0;
   ps_ctx_emit_deferred_parser_warnings_in(
-      stream->session->semantic_context);
+      ag_compilation_session_semantic_context(stream->session));
   ps_parser_stream_end(&stream->parser);
   stream->is_started = 0;
+  if (stream->owns_session_activation) {
+    if (!ag_compilation_session_deactivate(stream->session)) return 0;
+    stream->owns_session_activation = 0;
+  }
+  return 1;
 }
 
 int psx_frontend_free_processed_ast_in_compiler_context(
     ag_compilation_session_t *session) {
-  if (!frontend_session_has_registries(session)) return 0;
-  arena_free_all_in(session->arena_context);
+  if (!frontend_session_is_complete(session)) return 0;
+  arena_free_all_in(ag_compilation_session_arena_context(session));
   return 1;
 }
 
@@ -210,12 +224,15 @@ node_t **psx_frontend_program_in_compiler_context(
     program[count++] = function;
   }
   program[count] = NULL;
-  psx_frontend_stream_end(&stream);
   psx_frontend_analyze_program_in_contexts(
-      session->semantic_context,
-      session->global_registry,
-      session->local_registry,
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session),
+      ag_compilation_session_local_registry(session),
       program);
+  if (!psx_frontend_stream_end(&stream)) {
+    free(program);
+    return NULL;
+  }
   return program;
 }
 

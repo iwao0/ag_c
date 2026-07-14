@@ -1,5 +1,6 @@
 #include "../src/parser/parser.h"
 #include "../src/compiler_context.h"
+#include "../src/compilation_session_internal.h"
 #include "../src/frontend/translation_unit.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"

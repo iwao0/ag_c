@@ -78,6 +78,7 @@ typedef struct {
   int case_map_count;
   label_map_entry_t labels[MAX_LABELS];
   int label_count;
+  const ag_continuation_options_t *configured_continuation;
   const ag_continuation_options_t *continuation;
   node_t *continuation_while;
 } ir_build_ctx_t;
@@ -178,8 +179,9 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
 
 static int prepare_continuation_entry(ir_build_ctx_t *ctx,
                                       node_function_definition_t *fn) {
-  const ag_continuation_options_t *options =
-      ag_compilation_session_continuation(ag_compilation_session_active());
+  ctx->continuation = NULL;
+  ctx->continuation_while = NULL;
+  const ag_continuation_options_t *options = ctx->configured_continuation;
   if (!options || !name_matches(fn->name, fn->name_len, options->entry))
     return 1;
   /* A same-named internal-linkage function in another translation unit is
@@ -3748,10 +3750,11 @@ static int build_function(
 
 static int g_ir_dump_enabled(void);
 
-ir_module_t *ir_build_module_for_target(
-    node_t **code, const ag_target_info_t *target) {
+ir_module_t *ir_build_module_with_options(
+    node_t **code, const ir_build_options_t *options) {
   ir_build_ctx_t ctx = {0};
-  ctx.target = target;
+  ctx.target = options ? options->target : NULL;
+  ctx.configured_continuation = options ? options->continuation : NULL;
   ctx.m = ir_module_new();
   if (!code) return ctx.m;
   for (int i = 0; code[i]; i++) {
@@ -3771,8 +3774,24 @@ ir_module_t *ir_build_module_for_target(
   return ctx.m;
 }
 
+static ir_build_options_t ir_build_options_for_active_session(
+    const ag_target_info_t *target) {
+  return (ir_build_options_t){
+      .target = target,
+      .continuation = ag_compilation_session_continuation(
+          ag_compilation_session_active()),
+  };
+}
+
+ir_module_t *ir_build_module_for_target(
+    node_t **code, const ag_target_info_t *target) {
+  ir_build_options_t options =
+      ir_build_options_for_active_session(target);
+  return ir_build_module_with_options(code, &options);
+}
+
 ir_module_t *ir_build_module(node_t **code) {
-  ag_target_info_t target = {ag_target_pointer_size()};
+  ag_target_info_t target = ag_compilation_session_effective_target();
   return ir_build_module_for_target(code, &target);
 }
 
@@ -3789,8 +3808,16 @@ static int g_ir_dump_enabled(void) {
 int ir_build_emit_function_for_target(
     node_t *fn, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
+  ir_build_options_t options =
+      ir_build_options_for_active_session(target);
+  return ir_build_emit_function_with_options(fn, &options, emit_module);
+}
+
+int ir_build_emit_function_with_options(
+    node_t *fn, const ir_build_options_t *options,
+    void (*emit_module)(ir_module_t *)) {
   if (!fn || fn->kind != ND_FUNCDEF) return 0;
-  ir_module_t *m = ir_build_function_module_for_target(fn, target);
+  ir_module_t *m = ir_build_function_module_with_options(fn, options);
   if (!m) {
     return 0;
   }
@@ -3806,15 +3833,23 @@ int ir_build_emit_function_for_target(
 }
 
 int ir_build_emit_function(node_t *fn, void (*emit_module)(ir_module_t *)) {
-  ag_target_info_t target = {ag_target_pointer_size()};
+  ag_target_info_t target = ag_compilation_session_effective_target();
   return ir_build_emit_function_for_target(fn, &target, emit_module);
 }
 
 ir_module_t *ir_build_function_module_for_target(
     node_t *fn, const ag_target_info_t *target) {
+  ir_build_options_t options =
+      ir_build_options_for_active_session(target);
+  return ir_build_function_module_with_options(fn, &options);
+}
+
+ir_module_t *ir_build_function_module_with_options(
+    node_t *fn, const ir_build_options_t *options) {
   if (!fn || fn->kind != ND_FUNCDEF) return NULL;
   ir_build_ctx_t ctx = {0};
-  ctx.target = target;
+  ctx.target = options ? options->target : NULL;
+  ctx.configured_continuation = options ? options->continuation : NULL;
   ctx.m = ir_module_new();
   if (!build_function(&ctx, (node_function_definition_t *)fn)) {
     ir_module_free(ctx.m);
@@ -3824,22 +3859,30 @@ ir_module_t *ir_build_function_module_for_target(
 }
 
 ir_module_t *ir_build_function_module(node_t *fn) {
-  ag_target_info_t target = {ag_target_pointer_size()};
+  ag_target_info_t target = ag_compilation_session_effective_target();
   return ir_build_function_module_for_target(fn, &target);
 }
 
 int ir_build_each_and_emit_for_target(
     node_t **code, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
+  ir_build_options_t options =
+      ir_build_options_for_active_session(target);
+  return ir_build_each_and_emit_with_options(code, &options, emit_module);
+}
+
+int ir_build_each_and_emit_with_options(
+    node_t **code, const ir_build_options_t *options,
+    void (*emit_module)(ir_module_t *)) {
   if (!code) return 1;
   for (int i = 0; code[i]; i++) {
-    if (!ir_build_emit_function_for_target(
-            code[i], target, emit_module)) return 0;
+    if (!ir_build_emit_function_with_options(
+            code[i], options, emit_module)) return 0;
   }
   return 1;
 }
 
 int ir_build_each_and_emit(node_t **code, void (*emit_module)(ir_module_t *)) {
-  ag_target_info_t target = {ag_target_pointer_size()};
+  ag_target_info_t target = ag_compilation_session_effective_target();
   return ir_build_each_and_emit_for_target(code, &target, emit_module);
 }

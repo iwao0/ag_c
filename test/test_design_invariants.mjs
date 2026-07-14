@@ -106,41 +106,34 @@ const translationUnitDataLoweringSource = await readFile(
   "src/lowering/translation_unit_data_lowering.c",
   "utf8",
 );
-if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/psx_global_registry_t\s*\*global_registry\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/tokenizer_context_t\s+tokenizer\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/ag_target_info_t\s+target\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/ag_preprocessor_context_t\s*\*preprocessor_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/arena_context_t\s*\*arena_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/tk_allocator_context_t\s*\*token_allocator_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/psx_parser_runtime_context_t\s*\*parser_runtime_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/psx_lowering_context_t\s*\*lowering_context\s*;/.test(
-      compilationSessionHeader,
-    ) ||
-    !/ag_codegen_emit_context_t\s*\*codegen_emit_context\s*;/.test(
-      compilationSessionHeader,
+const irBuilderSource = await readFile(
+  "src/lowering/ir_builder.c",
+  "utf8",
+);
+const irBuilderHeader = await readFile(
+  "src/lowering/ir_builder.h",
+  "utf8",
+);
+const compilationSessionInternalHeader = await readFile(
+  "src/compilation_session_internal.h",
+  "utf8",
+);
+const sessionContextAccessorNames = [
+  "semantic_context",
+  "global_registry",
+  "local_registry",
+  "arena_context",
+  "diagnostic_context",
+  "parser_runtime_context",
+  "lowering_context",
+];
+if (sessionContextAccessorNames.some((name) =>
+      !new RegExp(`ag_compilation_session_${name}\\s*\\(`).test(
+        compilationSessionHeader,
+      ) ||
+      !new RegExp(`ag_compilation_session_${name}\\s*\\(`).test(
+        compilerContextSource,
+      )
     ) ||
     !/ps_global_registry_create\s*\(/.test(compilerContextSource) ||
     !/ps_global_registry_activate\s*\(/.test(compilerContextSource) ||
@@ -195,16 +188,18 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     !/psx_frontend_reset_translation_unit_state_in_compiler_context\s*\(/.test(
       compilerMainSource,
     ) ||
-    !/ag_compilation_session_init\s*\(/.test(compilerMainSource) ||
+    !/ag_compilation_session_create\s*\(/.test(compilerMainSource) ||
     !/ag_compilation_session_activate\s*\(/.test(compilerMainSource) ||
-    !/ag_compilation_session_dispose\s*\(/.test(compilerMainSource) ||
+    !/ag_compilation_session_destroy\s*\(/.test(compilerMainSource) ||
     !/ag_compilation_session_tokenizer\s*\(/.test(compilerMainSource) ||
     /tk_get_default_context\s*\(/.test(compilerMainSource) ||
     /ag_target_set_pointer_size\s*\(/.test(compilerMainSource) ||
     !/pp_stream_open_for_target\s*\(/.test(compilerMainSource) ||
     !/diag_context_publish\s*\(/.test(compilerMainSource) ||
-    !/wasm_adapter_session_live/.test(compilerMainSource) ||
-    !/ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
+    !/static\s+ag_compilation_session_t\s*\*wasm_adapter_session\s*;/.test(
+      compilerMainSource,
+    ) ||
+    !/ir_build_(?:function_module|emit_function)_with_options\s*\(/.test(
       compilerMainSource,
     ) ||
     !/psx_frontend_free_processed_ast_in_compiler_context\s*\(/.test(
@@ -221,6 +216,93 @@ if (!/psx_semantic_context_t\s*\*semantic_context\s*;/.test(
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+
+if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;/.test(
+      compilationSessionHeader,
+    ) ||
+    /struct\s+ag_compilation_session_t\s*\{/.test(
+      compilationSessionHeader,
+    ) ||
+    !/struct\s+ag_compilation_session_t\s*\{/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    !/#include\s+"compilation_session_internal\.h"/.test(
+      compilerContextSource,
+    ) ||
+    !/ag_compilation_session_t\s*\*ag_compilation_session_create\s*\(/.test(
+      compilerContextSource,
+    ) ||
+    !/int\s+ag_compilation_session_destroy\s*\(/.test(
+      compilerContextSource,
+    ) ||
+    /ag_compilation_session_t\s+\w+\s*;/.test(compilerMainSource)) {
+  throw new Error(
+    "CompilationSession representation must remain private behind create/destroy lifecycle APIs",
+  );
+}
+
+const irBuilderActiveSessionReads =
+  irBuilderSource.match(/\bag_compilation_session_active\s*\(\)/g) ?? [];
+if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
+      irBuilderHeader,
+    ) ||
+    !/ctx->configured_continuation/.test(irBuilderSource) ||
+    !/ctx->continuation\s*=\s*NULL\s*;[\s\S]*?ctx->continuation_while\s*=\s*NULL\s*;/.test(
+      irBuilderSource,
+    ) ||
+    irBuilderActiveSessionReads.length !== 1 ||
+    !/ir_build_options_for_active_session\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_active\s*\(\)/.test(
+      irBuilderSource,
+    ) ||
+    !/\.target\s*=\s*ag_compilation_session_target\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/\.continuation\s*=\s*ag_compilation_session_continuation\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    /ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
+      compilerMainSource,
+    )) {
+  throw new Error(
+    "explicit IR build paths must receive target and continuation options without reading the active CompilationSession",
+  );
+}
+
+if (!/int\s+ag_compilation_session_deactivate\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/int\s+ag_compilation_session_dispose\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/active_compilation_session\s*!=\s*session/.test(
+      compilerContextSource,
+    ) ||
+    !/session->is_active\s*&&\s*!ag_compilation_session_deactivate\s*\(session\)/.test(
+      compilerContextSource,
+    )) {
+  throw new Error(
+    "CompilationSession lifecycle must reject out-of-order deactivation and disposal",
+  );
+}
+
+const preprocessEffectiveTargetCalls =
+  preprocessSource.match(/\bag_compilation_session_effective_target\s*\(/g) ?? [];
+const irBuilderEffectiveTargetCalls =
+  irBuilderSource.match(/\bag_compilation_session_effective_target\s*\(/g) ?? [];
+if (!/ag_target_info_t\s+ag_compilation_session_effective_target\s*\(void\)/.test(
+      compilationSessionHeader,
+    ) ||
+    !/ag_compiler_context_init\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_effective_target\s*\(\)/.test(
+      compilerContextSource,
+    ) ||
+    preprocessEffectiveTargetCalls.length !== 2 ||
+    irBuilderEffectiveTargetCalls.length !== 4 ||
+    /\bag_target_pointer_size\s*\(/.test(preprocessSource) ||
+    /\bag_target_pointer_size\s*\(/.test(irBuilderSource)) {
+  throw new Error(
+    "context-free frontend and IR APIs must resolve target through the active CompilationSession",
   );
 }
 
@@ -583,6 +665,9 @@ if (/psx_semantic_resolve_(?:initializer_)?tree_in_context\s*\(/.test(
 if (!/ag_compilation_session_t\s*\*session\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
+    !/unsigned\s+char\s+owns_session_activation\s*;/.test(
+      frontendTranslationUnitHeader,
+    ) ||
     !/int\s+psx_frontend_stream_begin\s*\(/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -623,11 +708,60 @@ const frontendStreamCore = frontendTranslationUnitSource.slice(
 if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
       frontendStreamCore,
     ) ||
-    !/frontend_session_has_registries\s*\(stream->session\)/.test(
+    !/frontend_session_is_complete\s*\(stream->session\)/.test(
+      frontendStreamCore,
+    ) ||
+    !/ag_compilation_session_active\s*\(\)\s*!=\s*session/.test(
+      frontendStreamCore,
+    ) ||
+    !/ag_compilation_session_activate\s*\(session\)/.test(
+      frontendStreamCore,
+    ) ||
+    !/ag_compilation_session_active\s*\(\)\s*!=\s*stream->session/.test(
+      frontendStreamCore,
+    ) ||
+    !/ag_compilation_session_deactivate\s*\(stream->session\)/.test(
       frontendStreamCore,
     )) {
   throw new Error(
-    "frontend stream core must require an explicit CompilationSession without active-state fallback",
+    "frontend stream core must bind explicit registries and active compatibility state to one CompilationSession scope",
+  );
+}
+if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_session_is_complete\s*\(session\)\s*;\s*\}/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/ag_compilation_session_is_complete\s*\(session\)/.test(
+      semanticPipelineSource,
+    ) ||
+    !/ag_compilation_session_is_complete\s*\(session\)/.test(
+      identifierBindingSource,
+    ) ||
+    !/ag_compilation_session_is_complete\s*\(session\)/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    /!session\s*\|\|\s*!session->/.test(
+      `${semanticPipelineSource}\n${identifierBindingSource}`,
+    )) {
+  throw new Error(
+    "explicit frontend and lowering APIs must use CompilationSession completeness as their validity source",
+  );
+}
+const directSessionContextField =
+  /(?:\bsession|stream->session)->(?:semantic_context|global_registry|local_registry|arena_context|diagnostic_context|parser_runtime_context|lowering_context)\b/;
+const productionSessionConsumers = [
+  compilerMainSource,
+  frontendTranslationUnitSessionSource,
+  semanticPipelineSource,
+  identifierBindingSource,
+  translationUnitDataLoweringSource,
+  irBuilderSource,
+];
+if (directSessionContextField.test(productionSessionConsumers.join("\n")) ||
+    productionSessionConsumers.some((source) =>
+      /compilation_session_internal\.h/.test(source)
+    )) {
+  throw new Error(
+    "CompilationSession consumers must use ownership accessors instead of public struct fields",
   );
 }
 const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(
@@ -1280,7 +1414,6 @@ if (wasmObjFunctionCodegenViolations.length ||
 }
 
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
-const irBuilderSource = await readFile("src/lowering/ir_builder.c", "utf8");
 const resolvedGlobalAstSource = await readFile("src/parser/ast.h", "utf8");
 const constantExpressionSource = await readFile(
   "src/semantic/constant_expression.c",

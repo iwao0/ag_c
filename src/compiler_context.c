@@ -1,4 +1,5 @@
 #include "compiler_context.h"
+#include "compilation_session_internal.h"
 
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
@@ -32,6 +33,17 @@ static void dispose_continuation_options(ag_continuation_options_t *options) {
   free(options->status_export);
   free(options->result_export);
   memset(options, 0, sizeof(*options));
+}
+
+ag_compilation_session_t *ag_compilation_session_create(
+    const ag_target_info_t *target) {
+  ag_compilation_session_t *session = malloc(sizeof(*session));
+  if (!session) return NULL;
+  if (!ag_compilation_session_init(session, target)) {
+    free(session);
+    return NULL;
+  }
+  return session;
 }
 
 int ag_compilation_session_init(
@@ -123,8 +135,16 @@ ag_compilation_session_t *ag_compilation_session_active(void) {
   return active_compilation_session;
 }
 
-void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
-  if (!session || !session->is_active) return;
+ag_target_info_t ag_compilation_session_effective_target(void) {
+  if (ag_compilation_session_is_complete(active_compilation_session))
+    return active_compilation_session->target;
+  return (ag_target_info_t){ag_target_pointer_size()};
+}
+
+int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
+  if (!session || !session->is_active ||
+      active_compilation_session != session)
+    return 0;
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
   cg_context_activate(session->previous_codegen_emit_context);
@@ -153,11 +173,13 @@ void ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   session->previous_global_registry = NULL;
   session->previous_semantic_context = NULL;
   session->is_active = 0;
+  return 1;
 }
 
-void ag_compilation_session_dispose(ag_compilation_session_t *session) {
-  if (!session) return;
-  ag_compilation_session_deactivate(session);
+int ag_compilation_session_dispose(ag_compilation_session_t *session) {
+  if (!session) return 0;
+  if (session->is_active && !ag_compilation_session_deactivate(session))
+    return 0;
   ps_ctx_destroy(session->semantic_context);
   ps_global_registry_destroy(session->global_registry);
   ps_local_registry_destroy(session->local_registry);
@@ -173,12 +195,68 @@ void ag_compilation_session_dispose(ag_compilation_session_t *session) {
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
   memset(session, 0, sizeof(*session));
+  return 1;
+}
+
+int ag_compilation_session_destroy(ag_compilation_session_t *session) {
+  if (!session || !ag_compilation_session_dispose(session)) return 0;
+  free(session);
+  return 1;
 }
 
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? &session->tokenizer
+             : NULL;
+}
+
+psx_semantic_context_t *ag_compilation_session_semantic_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->semantic_context
+             : NULL;
+}
+
+psx_global_registry_t *ag_compilation_session_global_registry(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->global_registry
+             : NULL;
+}
+
+psx_local_registry_t *ag_compilation_session_local_registry(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->local_registry
+             : NULL;
+}
+
+arena_context_t *ag_compilation_session_arena_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->arena_context
+             : NULL;
+}
+
+ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->diagnostic_context
+             : NULL;
+}
+
+psx_parser_runtime_context_t *ag_compilation_session_parser_runtime_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->parser_runtime_context
+             : NULL;
+}
+
+psx_lowering_context_t *ag_compilation_session_lowering_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->lowering_context
              : NULL;
 }
 
@@ -244,23 +322,22 @@ const ag_continuation_options_t *ag_compilation_session_continuation(
 }
 
 int ag_compiler_context_init(ag_compiler_context_t *context) {
-  ag_target_info_t target = {ag_target_pointer_size()};
+  ag_target_info_t target = ag_compilation_session_effective_target();
   return ag_compilation_session_init(context, &target);
 }
 
 int ag_compiler_context_is_complete(const ag_compiler_context_t *context) {
-  return context && context->semantic_context && context->global_registry &&
-         context->local_registry;
+  return ag_compilation_session_is_complete(context);
 }
 
 int ag_compiler_context_activate(ag_compiler_context_t *context) {
   return ag_compilation_session_activate(context);
 }
 
-void ag_compiler_context_deactivate(ag_compiler_context_t *context) {
-  ag_compilation_session_deactivate(context);
+int ag_compiler_context_deactivate(ag_compiler_context_t *context) {
+  return ag_compilation_session_deactivate(context);
 }
 
-void ag_compiler_context_dispose(ag_compiler_context_t *context) {
-  ag_compilation_session_dispose(context);
+int ag_compiler_context_dispose(ag_compiler_context_t *context) {
+  return ag_compilation_session_dispose(context);
 }

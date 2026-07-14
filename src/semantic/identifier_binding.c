@@ -411,12 +411,11 @@ node_t *psx_bind_identifier_tree_in_contexts(
 node_t *psx_bind_identifier_tree_in_compiler_context(
     ag_compilation_session_t *session,
     node_t *node, const token_t *fallback_diag_tok) {
-  if (!session || !session->semantic_context || !session->global_registry ||
-      !session->local_registry) return node;
+  if (!ag_compilation_session_is_complete(session)) return node;
   return psx_bind_identifier_tree_in_contexts(
-      session->semantic_context,
-      session->global_registry,
-      session->local_registry,
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session),
+      ag_compilation_session_local_registry(session),
       node, fallback_diag_tok);
 }
 
@@ -445,12 +444,11 @@ node_t *psx_bind_identifier_initializer_tree_in_contexts(
 node_t *psx_bind_identifier_initializer_tree_in_compiler_context(
     ag_compilation_session_t *session,
     node_t *syntax, const token_t *fallback_diag_tok) {
-  if (!session || !session->semantic_context || !session->global_registry ||
-      !session->local_registry) return syntax;
+  if (!ag_compilation_session_is_complete(session)) return syntax;
   return psx_bind_identifier_initializer_tree_in_contexts(
-      session->semantic_context,
-      session->global_registry,
-      session->local_registry,
+      ag_compilation_session_semantic_context(session),
+      ag_compilation_session_global_registry(session),
+      ag_compilation_session_local_registry(session),
       syntax, fallback_diag_tok);
 }
 
