@@ -137,15 +137,15 @@ int psx_finish_toplevel_declaration_syntax(
     const psx_toplevel_declaration_callbacks_t *callbacks) {
   return psx_finish_toplevel_declaration_syntax_in_context(
       declaration, callbacks,
-      callbacks && callbacks->context
-          ? callbacks->context : ps_ctx_active());
+      callbacks && callbacks->semantic_context
+          ? callbacks->semantic_context : ps_ctx_active());
 }
 
 int psx_finish_toplevel_declaration_syntax_in_context(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context) {
-  if (!declaration) return 0;
+  if (!declaration || !semantic_context) return 0;
   void *declaration_context = callbacks && callbacks->begin_declaration
       ? callbacks->begin_declaration(callbacks->context, declaration)
       : NULL;

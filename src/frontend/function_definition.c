@@ -16,7 +16,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parsed_function_definition_t *definition) {
-  if (!definition || !semantic_context || !local_registry) return NULL;
+  if (!definition || !semantic_context || !global_registry || !local_registry)
+    return NULL;
   ps_decl_reset_locals_in(local_registry);
   ps_ctx_reset_function_scope_in(semantic_context);
 
@@ -110,9 +111,9 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
 node_function_definition_t *psx_apply_function_definition_header_in_context(
     psx_semantic_context_t *semantic_context,
     psx_parsed_function_definition_t *definition) {
+  if (!semantic_context) return NULL;
   return psx_apply_function_definition_header_in_contexts(
-      semantic_context ? semantic_context : ps_ctx_active(),
-      ps_global_registry_active(),
+      semantic_context, ps_global_registry_active(),
       ps_local_registry_active(), definition);
 }
 
@@ -120,5 +121,5 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
 node_function_definition_t *psx_apply_function_definition_header(
     psx_parsed_function_definition_t *definition) {
   return psx_apply_function_definition_header_in_context(
-      NULL, definition);
+      ps_ctx_active(), definition);
 }

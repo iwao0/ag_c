@@ -196,6 +196,10 @@ const toplevelDeclarationFrontendSource = await readFile(
   "src/frontend/toplevel_declaration.c",
   "utf8",
 );
+const toplevelDeclarationSyntaxSource = await readFile(
+  "src/parser/toplevel_declaration_syntax.c",
+  "utf8",
+);
 const localObjectLoweringSource = await readFile(
   "src/lowering/local_object_lowering.c",
   "utf8",
@@ -272,6 +276,25 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
     /if\s*\(\s*!compiler_context\s*\)/.test(semanticPipelineSource)) {
   throw new Error(
     "frontend stream core must require a complete CompilerContext without active-state fallback",
+  );
+}
+const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(
+  toplevelDeclarationFrontendSource.indexOf("static void *begin_declaration("),
+  toplevelDeclarationFrontendSource.indexOf(
+    "const psx_toplevel_declaration_callbacks_t *",
+  ),
+);
+if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test(
+      toplevelCallbackCore,
+    ) ||
+    /callbacks\s*\?\s*callbacks->(?:semantic_context|global_registry|local_registry)/.test(
+      toplevelCallbackCore,
+    ) ||
+    /callbacks\s*&&\s*callbacks->context\s*\?\s*callbacks->context/.test(
+      toplevelDeclarationSyntaxSource,
+    )) {
+  throw new Error(
+    "declaration callback core must use its explicit registry ownership",
   );
 }
 if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
@@ -620,10 +643,6 @@ const initializerSyntaxSource = await readFile(
 );
 const localDeclarationSyntaxSource = await readFile(
   "src/parser/local_declaration_syntax.c",
-  "utf8",
-);
-const toplevelDeclarationSyntaxSource = await readFile(
-  "src/parser/toplevel_declaration_syntax.c",
   "utf8",
 );
 const enumConstSource = await readFile("src/parser/enum_const.c", "utf8");

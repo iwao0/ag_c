@@ -1960,6 +1960,22 @@ static void test_toplevel_declaration_frontend_boundary() {
   ps_parser_stream_end(&stream);
 }
 
+static void test_toplevel_callback_context_boundary() {
+  printf("test_toplevel_callback_context_boundary...\n");
+  psx_frontend_reset_translation_unit_state();
+  tk_tokenize((char *)"int __callback_global = 23;");
+  psx_parsed_toplevel_declaration_t declaration;
+  ASSERT_TRUE(psx_parse_toplevel_declaration_syntax(
+      &declaration, psx_frontend_toplevel_declaration_callbacks()));
+  ASSERT_TRUE(declaration.applied_during_parse);
+  global_var_t *global = ps_find_global_var(
+      (char *)"__callback_global", 17);
+  ASSERT_TRUE(global != NULL);
+  ASSERT_TRUE(global->has_init);
+  ASSERT_EQ(23, global->init_val);
+  ps_dispose_toplevel_declaration_syntax(&declaration);
+}
+
 static void test_toplevel_compound_initializer_frontend_boundary() {
   printf("test_toplevel_compound_initializer_frontend_boundary...\n");
   const char *source =
@@ -15441,6 +15457,7 @@ int main() {
   test_translation_unit_frontend_boundary();
   test_toplevel_static_assert_frontend_boundary();
   test_toplevel_declaration_frontend_boundary();
+  test_toplevel_callback_context_boundary();
   test_toplevel_compound_initializer_frontend_boundary();
   test_toplevel_point_of_declaration_boundary();
   test_toplevel_single_parse_classification_boundary();
