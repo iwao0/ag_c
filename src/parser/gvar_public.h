@@ -6,6 +6,7 @@
 
 typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
+typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 
 typedef enum {
   PSX_GVAR_INIT_KIND_INTEGER = 0,
@@ -97,6 +98,7 @@ typedef struct {
 } psx_gvar_initializer_visit_ops_t;
 
 global_var_t *ps_find_global_var(char *name, int len);
+void ps_iter_globals(global_var_visitor_t fn, void *user);
 int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
 int ps_gvar_storage_size(const global_var_t *gv, int fallback_size);
 int ps_gvar_is_array(const global_var_t *gv);

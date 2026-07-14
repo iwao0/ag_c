@@ -1,6 +1,6 @@
 #include "parser.h"
 #include "parser_recovery.h"
-#include "parser_public.h"  /* ps_iter_globals prototype */
+#include "literal_public.h"
 #include "arena.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"

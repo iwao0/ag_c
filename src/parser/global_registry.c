@@ -1,5 +1,5 @@
 #include "global_registry.h"
-#include "parser_public.h"
+#include "literal_public.h"
 #include "symtab.h"
 #include "type.h"
 #include "type_builder.h"

@@ -39,6 +39,13 @@ const backendFiles = [
   ...irFiles,
 ];
 
+for (const file of await sourceFilesUnder("src")) {
+  const source = await readFile(file, "utf8");
+  if (/#[ \t]*include[^\n]*parser_public\.h/.test(source)) {
+    throw new Error(`${file} must include narrow parser API headers`);
+  }
+}
+
 const actual = new Map();
 const contextBridgeRe =
   /\b(?:psx?_ctx_[A-Za-z0-9_]+|ir_abi_classify_function_param)\b/g;

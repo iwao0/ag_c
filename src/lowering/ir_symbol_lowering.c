@@ -1,7 +1,7 @@
 #include "ir_symbol_lowering.h"
 
 #include "abi_lowering.h"
-#include "../parser/parser_public.h"
+#include "../parser/gvar_public.h"
 
 typedef struct {
   ir_symbol_t *symbol;

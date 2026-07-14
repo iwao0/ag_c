@@ -1,7 +1,9 @@
 #include "translation_unit_data_lowering.h"
 
 #include "abi_lowering.h"
-#include "../parser/parser_public.h"
+#include "../parser/gvar_public.h"
+#include "../parser/literal_public.h"
+#include "../parser/type.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>

@@ -22,10 +22,11 @@
 #include "abi_lowering.h"
 #include "../target_info.h"
 #include "ir_symbol_lowering.h"
-/* Phase C2: parser の公開 API は parser_public.h 1 本に集約。
- * internal ヘッダへの直接 include は禁止 (parser_public.h が必要に応じて
- * transitively 取り込む形で内部実装の変更を吸収する)。 */
-#include "../parser/parser_public.h"
+#include "../parser/ast.h"
+#include "../parser/lvar_public.h"
+#include "../parser/node_type_public.h"
+#include "../parser/node_vla_public.h"
+#include "../parser/type.h"
 #include "../diag/diag.h"
 #include "../diag/warning_catalog.h"
 #include <stdio.h>
