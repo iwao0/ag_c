@@ -44,7 +44,7 @@ typedef struct psx_aggregate_definition_t {
   int size;
   int align;
   int member_count;
-  struct tag_member_info_t *members;
+  const struct tag_member_info_t *members;
 } psx_aggregate_definition_t;
 
 typedef enum {
@@ -90,7 +90,7 @@ struct psx_type_t {
   char *tag_name;
   int tag_len;
   int tag_scope_depth_p1;
-  psx_aggregate_definition_t *aggregate_definition;
+  const psx_aggregate_definition_t *aggregate_definition;
 
   unsigned int is_unsigned : 1;
   unsigned int is_const_qualified : 1;

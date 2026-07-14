@@ -28,8 +28,9 @@ typedef struct {
   int array_bound_count;
 } psx_runtime_declarator_application_t;
 
-psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request);
-psx_type_t *psx_resolve_decl_specifier_syntax(
+const psx_type_t *psx_resolve_decl_type(
+    const psx_decl_type_request_t *request);
+const psx_type_t *psx_resolve_decl_specifier_syntax(
     const psx_parsed_decl_specifier_t *specifier);
 int psx_resolve_incomplete_array_type(
     psx_type_t *type, const psx_incomplete_array_resolution_t *request);

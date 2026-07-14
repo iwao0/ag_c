@@ -114,16 +114,36 @@ const typeSource = await readFile("src/parser/type.h", "utf8");
 const canonicalTypeStruct = typeSource.match(
   /struct psx_type_t\s*\{([\s\S]*?)\n\};/,
 );
+const aggregateDefinitionStruct = typeSource.match(
+  /typedef struct psx_aggregate_definition_t\s*\{([\s\S]*?)\}\s*psx_aggregate_definition_t\s*;/,
+);
 if (!canonicalTypeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*base\s*;/.test(
       canonicalTypeStruct[1],
     ) ||
     !/\bconst\s+psx_type_t\s*\*\s*const\s*\*\s*param_types\s*;/.test(
       canonicalTypeStruct[1],
+    ) ||
+    !/\bconst\s+psx_aggregate_definition_t\s*\*\s*aggregate_definition\s*;/.test(
+      canonicalTypeStruct[1],
+    ) ||
+    !aggregateDefinitionStruct ||
+    !/\bconst\s+struct\s+tag_member_info_t\s*\*\s*members\s*;/.test(
+      aggregateDefinitionStruct[1],
     )) {
   throw new Error(
-    "canonical recursive type children must be exposed as const views",
+    "canonical recursive type children and aggregate definitions must be exposed as const views",
   );
+}
+
+const semanticContextSource = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
+if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition\s*\(/.test(
+  semanticContextSource,
+)) {
+  throw new Error("aggregate definition lookup must return a const view");
 }
 
 const lvarInternalSource = await readFile("src/parser/lvar_internal.h", "utf8");
@@ -166,6 +186,7 @@ if (!staticInitializerRequest ||
 }
 
 const readonlyTypeFields = [
+  ["src/semantic/declaration_application.h", "psx_declaration_phase_t", "base_type"],
   ["src/declaration_pipeline.h", "psx_global_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_static_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_automatic_local_declaration_pipeline_request_t", "type"],
@@ -195,6 +216,57 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
   if (!body || !field.test(body[1])) {
     throw new Error(`${typeName}.${fieldName} must be a const type view`);
   }
+}
+
+const readonlySemanticTypeResults = [
+  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_type"],
+  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type"],
+  ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_indirection_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_arithmetic_unary_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_binary_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_conditional_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_sequence_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_address_result_type"],
+  ["src/semantic/expression_operand_resolution.h", "psx_resolve_incdec_result_type"],
+  ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
+  ["src/parser/node_utils.h", "ps_node_row_decay_pointer_arith_type"],
+];
+for (const [file, functionName] of readonlySemanticTypeResults) {
+  const source = await readFile(file, "utf8");
+  const signature = new RegExp(
+    `\\bconst\\s+psx_type_t\\s*\\*\\s*${functionName}\\s*\\(`,
+  );
+  if (!signature.test(source)) {
+    throw new Error(`${functionName} must publish a const type view`);
+  }
+}
+
+const declarationTypeBuilderUsers = new Set([
+  "src/semantic/declaration_type_builder.h",
+  "src/semantic/declaration_resolution.c",
+  "src/semantic/declaration_application.c",
+  "src/semantic/type_name_resolution.c",
+  "src/semantic/type_query_resolution.c",
+  "src/semantic/aggregate_member_resolution.c",
+  "src/semantic/parameter_declaration_resolution.c",
+]);
+const declarationTypeBuilderViolations = [];
+for (const file of sourceFiles) {
+  const source = await readFile(file, "utf8");
+  if (!declarationTypeBuilderUsers.has(file) &&
+      /\bpsx_build_decl_(?:type|specifier_type)\b/.test(source)) {
+    declarationTypeBuilderViolations.push(file);
+  }
+}
+if (declarationTypeBuilderViolations.length) {
+  throw new Error(
+    "mutable declaration type builders must stay inside semantic construction owners:\n" +
+      declarationTypeBuilderViolations.sort().join("\n"),
+  );
 }
 
 const staticDataInitializerSource = await readFile(

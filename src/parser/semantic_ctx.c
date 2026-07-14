@@ -48,6 +48,7 @@ struct tag_type_t {
   unsigned scope_seq;
   unsigned declaration_seq;
   psx_aggregate_definition_t *definition;
+  tag_member_info_t *definition_members;
 };
 typedef struct tag_member_t tag_member_t;
 struct tag_member_t {
@@ -73,25 +74,29 @@ static bool get_tag_member_info_impl(
 static void refresh_cached_tag_definition(tag_type_t *tag) {
   if (!tag || !tag->definition) return;
   psx_aggregate_definition_t *definition = tag->definition;
+  tag_member_info_t *members = NULL;
+  int member_count = tag->member_count;
+  if (member_count > 0) {
+    members = calloc((size_t)member_count, sizeof(tag_member_info_t));
+    for (int i = 0; i < member_count; i++) {
+      if (!get_tag_member_info_impl(
+              tag->kind, tag->name, tag->len, tag->scope_depth,
+              i, &members[i])) {
+        member_count = i;
+        break;
+      }
+    }
+  }
+
+  free(tag->definition_members);
+  tag->definition_members = members;
   definition->tag_kind = tag->kind;
   definition->tag_name = tag->name;
   definition->tag_len = tag->len;
   definition->size = tag->size;
   definition->align = tag->align;
-  definition->member_count = tag->member_count;
-  free(definition->members);
-  definition->members = NULL;
-  if (definition->member_count <= 0) return;
-  definition->members = calloc(
-      (size_t)definition->member_count, sizeof(tag_member_info_t));
-  for (int i = 0; i < definition->member_count; i++) {
-    if (!get_tag_member_info_impl(
-            tag->kind, tag->name, tag->len, tag->scope_depth,
-            i, &definition->members[i])) {
-      definition->member_count = i;
-      break;
-    }
-  }
+  definition->member_count = member_count;
+  definition->members = tag->definition_members;
 }
 
 typedef struct enum_const_t enum_const_t;
@@ -256,7 +261,10 @@ void ps_ctx_reset_tag_diag_state(void) {
     for (tag_type_t *t = tag_types_by_bucket[i]; t; t = t->next_hash) {
       t->member_count = 0;
       t->is_complete = 0;
+      /* Published definitions remain valid for canonical types from the
+       * previous parse. A later parse starts a new registry-owned generation. */
       t->definition = NULL;
+      t->definition_members = NULL;
     }
   }
   memset(tag_members_by_bucket, 0, sizeof(tag_members_by_bucket));
@@ -567,7 +575,7 @@ int ps_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
   return t ? t->member_count : -1;
 }
 
-psx_aggregate_definition_t *ps_ctx_get_tag_definition(
+const psx_aggregate_definition_t *ps_ctx_get_tag_definition(
     token_kind_t kind, char *name, int len) {
   tag_type_t *tag = find_tag_type(kind, name, len);
   if (!tag) return NULL;
@@ -575,24 +583,8 @@ psx_aggregate_definition_t *ps_ctx_get_tag_definition(
 
   psx_aggregate_definition_t *definition =
       calloc(1, sizeof(psx_aggregate_definition_t));
-  definition->tag_kind = tag->kind;
-  definition->tag_name = tag->name;
-  definition->tag_len = tag->len;
-  definition->size = tag->size;
-  definition->align = tag->align;
-  definition->member_count = tag->member_count;
   tag->definition = definition;
-  if (definition->member_count > 0) {
-    definition->members = calloc((size_t)definition->member_count,
-                                 sizeof(tag_member_info_t));
-    for (int i = 0; i < definition->member_count; i++) {
-      if (!get_tag_member_info_impl(kind, name, len, tag->scope_depth,
-                                    i, &definition->members[i])) {
-        definition->member_count = i;
-        break;
-      }
-    }
-  }
+  refresh_cached_tag_definition(tag);
   return definition;
 }
 

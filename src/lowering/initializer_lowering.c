@@ -973,7 +973,7 @@ static node_t *lower_typed_initializer_list(
 static node_t *lower_struct_list_initializer(node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  psx_aggregate_definition_t *definition =
+  const psx_aggregate_definition_t *definition =
       type ? type->aggregate_definition : NULL;
   if (!var || !definition || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
@@ -993,7 +993,7 @@ static node_t *lower_struct_list_initializer(node_decl_init_t *initializer) {
                    "init", "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for(
         var, member->offset, member);
     chain = append_init(
@@ -1006,7 +1006,7 @@ static node_t *lower_struct_list_initializer(node_decl_init_t *initializer) {
 static node_t *lower_union_list_initializer(node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  psx_aggregate_definition_t *definition =
+  const psx_aggregate_definition_t *definition =
       type ? type->aggregate_definition : NULL;
   if (!var || !definition || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
@@ -1031,7 +1031,7 @@ static node_t *lower_union_list_initializer(node_decl_init_t *initializer) {
                    "init", "%s",
                    diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
-    tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for(
         var, member->offset, member);
     chain = append_init(
@@ -1075,7 +1075,7 @@ static node_t *lower_aggregate_expr_initializer(
                      DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
 
-  psx_aggregate_definition_t *definition =
+  const psx_aggregate_definition_t *definition =
       target_type->aggregate_definition;
   if (!definition) {
     ps_diag_ctx(tok, "decl", "%s",
@@ -1083,7 +1083,7 @@ static node_t *lower_aggregate_expr_initializer(
                      DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
   for (int i = 0; i < definition->member_count; i++) {
-    tag_member_info_t *member = &definition->members[i];
+    const tag_member_info_t *member = &definition->members[i];
     if (member->len <= 0) continue;
     node_t *target = ps_node_new_tag_member_lvar_ref_for(
         var, member->offset, member);

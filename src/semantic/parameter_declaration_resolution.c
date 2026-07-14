@@ -1,4 +1,5 @@
 #include "parameter_declaration_resolution.h"
+#include "declaration_type_builder.h"
 #include "../parser/arena.h"
 
 #include <string.h>
@@ -29,7 +30,7 @@ int psx_resolve_parameter_declaration(
     return 0;
   }
   memset(resolution, 0, sizeof(*resolution));
-  psx_type_t *type = psx_resolve_decl_type(&request->type);
+  psx_type_t *type = psx_build_decl_type(&request->type);
   if (!type) return 0;
   type = ps_type_adjust_parameter_type(type);
   if (!type ||

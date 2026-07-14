@@ -1,5 +1,6 @@
 #include "declaration_application.h"
 #include "declaration_registration.h"
+#include "declaration_type_builder.h"
 
 #include "../parser/arena.h"
 #include "../parser/diag.h"
@@ -56,7 +57,7 @@ int psx_apply_parsed_aggregate_body_layout(
     psx_parsed_aggregate_member_declaration_t *declaration =
         &item->value.member_declaration;
     ps_prepare_decl_specifier_alignments(&declaration->specifier);
-    psx_type_t *member_base_type =
+    const psx_type_t *member_base_type =
         psx_apply_parsed_decl_specifier(&declaration->specifier);
     if (!member_base_type) {
       ps_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
@@ -127,30 +128,36 @@ static void apply_decl_tag_action(
       action->diagnostic_token);
 }
 
-psx_type_t *psx_apply_parsed_type_name(
+static psx_type_t *build_parsed_type_name(
     const psx_parsed_type_name_t *type_name) {
   if (!type_name) return NULL;
   psx_type_t *base_type = NULL;
   if (type_name->atomic_inner) {
-    base_type = psx_apply_parsed_type_name(type_name->atomic_inner);
+    base_type = build_parsed_type_name(type_name->atomic_inner);
     if (!base_type) return NULL;
     base_type->is_atomic = 1;
   } else {
-    base_type = psx_apply_parsed_decl_specifier(&type_name->specifier);
+    apply_decl_tag_action(&type_name->specifier.tag_action, NULL);
+    base_type = psx_build_decl_specifier_type(&type_name->specifier);
     if (!base_type) return NULL;
   }
 
   psx_declarator_shape_t shape;
   ps_declarator_shape_init(&shape);
   psx_apply_parsed_declarator(&type_name->declarator, &shape, NULL);
-  return psx_resolve_decl_type(
+  return psx_build_decl_type(
       &(psx_decl_type_request_t){
           .base_type = base_type,
           .declarator_shape = &shape,
       });
 }
 
-psx_type_t *psx_apply_parsed_declarator_type(
+const psx_type_t *psx_apply_parsed_type_name(
+    const psx_parsed_type_name_t *type_name) {
+  return build_parsed_type_name(type_name);
+}
+
+const psx_type_t *psx_apply_parsed_declarator_type(
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator) {
   if (!base_type || !declarator) return NULL;
@@ -164,7 +171,7 @@ psx_type_t *psx_apply_parsed_declarator_type(
       });
 }
 
-psx_type_t *psx_apply_runtime_declarator_type(
+const psx_type_t *psx_apply_runtime_declarator_type(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application) {
   if (!base_type || !application) return NULL;
@@ -208,11 +215,11 @@ void psx_dispose_declaration_phase(psx_declaration_phase_t *phase) {
   *phase = (psx_declaration_phase_t){0};
 }
 
-psx_type_t *psx_apply_parsed_decl_specifier(
+const psx_type_t *psx_apply_parsed_decl_specifier(
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
   apply_decl_tag_action(&specifier->tag_action, NULL);
-  return psx_resolve_decl_specifier_syntax(specifier);
+  return psx_build_decl_specifier_type(specifier);
 }
 
 int psx_apply_parsed_decl_alignment(
@@ -374,7 +381,7 @@ void psx_apply_parsed_function_parameters(
   ps_decl_enter_scope();
   for (int i = 0; i < parameters->count; i++) {
     psx_parsed_function_parameter_t *parameter = &parameters->items[i];
-    psx_type_t *base =
+    const psx_type_t *base =
         psx_apply_parsed_decl_specifier(&parameter->specifier);
     if (!base) {
       ps_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
@@ -384,8 +391,11 @@ void psx_apply_parsed_function_parameters(
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator(
         &parameter->declarator, &parameter_application);
-    psx_type_t *type = psx_apply_runtime_declarator_type(
-        base, &parameter_application);
+    psx_type_t *type = psx_build_decl_type(
+        &(psx_decl_type_request_t){
+            .base_type = base,
+            .declarator_shape = &parameter_application.shape,
+        });
     if (parameters->count == 1 && type && type->kind == PSX_TYPE_VOID &&
         parameter_application.shape.count == 0) {
       resolved_count = 0;

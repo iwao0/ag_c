@@ -18,7 +18,8 @@
 static void semantic_transform_node(node_t *node, node_func_t *current_func,
                                     const token_t *fallback_diag_tok);
 
-static void semantic_bind_result_type(node_t *node, psx_type_t *type) {
+static void semantic_bind_result_type(
+    node_t *node, const psx_type_t *type) {
   ps_node_bind_type(node, type);
 }
 
@@ -212,7 +213,7 @@ static void semantic_resolve_incdec(
                      : (token_t *)fallback_diag_tok;
   ps_node_expect_lvalue_at(node->lhs, op, tok);
   ps_node_reject_const_assign_at(node->lhs, op, tok);
-  psx_type_t *type = psx_resolve_incdec_result_type(node->lhs);
+  const psx_type_t *type = psx_resolve_incdec_result_type(node->lhs);
   if (!type) {
     ps_diag_ctx(tok, "incdec",
                 "%s のオペランドは実数型またはポインタ型でなければなりません",
@@ -276,7 +277,7 @@ static void semantic_resolve_function_reference(
     const token_t *fallback_diag_tok) {
   if (!reference) return;
   const psx_type_t *source_type = ps_node_get_type((node_t *)reference);
-  psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
+  const psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
       ? psx_resolve_function_reference_type(source_type)
       : NULL;
   if (!type && ps_type_callable_function(source_type))
@@ -373,7 +374,7 @@ static void semantic_resolve_compound_literal(
     ps_ctx_attach_aggregate_definitions(object_type);
     compound->object_type = object_type;
   }
-  psx_type_t *result = ps_type_clone(compound->object_type);
+  const psx_type_t *result = ps_type_clone(compound->object_type);
   if (compound->requires_addressable_object)
     result = psx_resolve_address_result_type(
         &(node_t){.type = result});

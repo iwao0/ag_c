@@ -41,7 +41,7 @@ int ps_ctx_find_tag_kind_at_current_scope(
 int ps_ctx_get_tag_size(token_kind_t kind, char *name, int len);
 void ps_ctx_refresh_type_completeness(psx_type_t *type);
 int ps_ctx_get_tag_align(token_kind_t kind, char *name, int len);
-psx_aggregate_definition_t *ps_ctx_get_tag_definition(
+const psx_aggregate_definition_t *ps_ctx_get_tag_definition(
     token_kind_t kind, char *name, int len);
 void ps_ctx_attach_aggregate_definitions(psx_type_t *type);
 /* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を

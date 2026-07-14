@@ -305,7 +305,7 @@ static int resolve_definition_parameter(
 static int append_definition_parameter(
     psx_function_definition_pipeline_result_t *result, int *capacity,
     psx_parsed_function_parameter_t *parameter) {
-  psx_type_t *base_type =
+  const psx_type_t *base_type =
       psx_apply_parsed_decl_specifier(&parameter->specifier);
   if (!base_type) {
     ps_diag_ctx(parameter->specifier.diagnostic_token, "param",

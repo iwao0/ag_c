@@ -22,7 +22,7 @@ void psx_resolve_function_call_type(
     resolution->status = PSX_FUNCTION_CALL_RESOLUTION_OK;
 }
 
-psx_type_t *psx_resolve_function_reference_type(
+const psx_type_t *psx_resolve_function_reference_type(
     const psx_type_t *function_type) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION)
     return NULL;

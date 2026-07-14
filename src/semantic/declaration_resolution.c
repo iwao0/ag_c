@@ -1,4 +1,5 @@
 #include "declaration_resolution.h"
+#include "declaration_type_builder.h"
 
 #include "constant_expression.h"
 
@@ -71,7 +72,7 @@ static void apply_decl_specifier_type_properties(
   if (specifier->is_long_double) type->is_long_double = 1;
 }
 
-psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
+psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
   if (!request || !request->base_type) return NULL;
   psx_type_t *type = ps_type_clone(request->base_type);
   if (!type) return NULL;
@@ -83,7 +84,12 @@ psx_type_t *psx_resolve_decl_type(const psx_decl_type_request_t *request) {
   return type;
 }
 
-psx_type_t *psx_resolve_decl_specifier_syntax(
+const psx_type_t *psx_resolve_decl_type(
+    const psx_decl_type_request_t *request) {
+  return psx_build_decl_type(request);
+}
+
+psx_type_t *psx_build_decl_specifier_type(
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
 
@@ -121,6 +127,11 @@ psx_type_t *psx_resolve_decl_specifier_syntax(
   apply_decl_specifier_type_properties(type, syntax, override_plain_char);
   ps_ctx_attach_aggregate_definitions(type);
   return type;
+}
+
+const psx_type_t *psx_resolve_decl_specifier_syntax(
+    const psx_parsed_decl_specifier_t *specifier) {
+  return psx_build_decl_specifier_type(specifier);
 }
 
 static int object_scalar_slots(const psx_type_t *type) {

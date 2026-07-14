@@ -17,7 +17,7 @@ void psx_resolve_function_call_type(
     const psx_type_t *bound_function_type,
     const psx_type_t *callee_type, int is_implicit_declaration,
     psx_function_call_resolution_t *resolution);
-psx_type_t *psx_resolve_function_reference_type(
+const psx_type_t *psx_resolve_function_reference_type(
     const psx_type_t *function_type);
 
 #endif

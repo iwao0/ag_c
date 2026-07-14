@@ -1,4 +1,5 @@
 #include "type_query_resolution.h"
+#include "declaration_type_builder.h"
 
 #include "constant_expression.h"
 #include "declaration_resolution.h"
@@ -95,7 +96,7 @@ static void resolve_sizeof_type_name(
     op->is_vla_array = is_constant ? 0 : 1;
   }
 
-  psx_type_t *resolved_type = psx_resolve_decl_type(
+  psx_type_t *resolved_type = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .base_type = base_type,
           .declarator_shape = shape,

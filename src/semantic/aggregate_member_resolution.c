@@ -1,4 +1,5 @@
 #include "aggregate_member_resolution.h"
+#include "declaration_type_builder.h"
 
 #include "../parser/semantic_ctx.h"
 
@@ -253,7 +254,7 @@ void psx_resolve_aggregate_member_declaration(
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
-  psx_type_t *type = psx_resolve_decl_type(
+  psx_type_t *type = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .base_type = request->base_type,
           .declarator_shape = request->declarator_shape,

@@ -2,6 +2,7 @@
 
 #include "declaration_resolution.h"
 #include "declaration_application.h"
+#include "declaration_type_builder.h"
 #include "../parser/declaration_syntax.h"
 #include "../parser/semantic_ctx.h"
 
@@ -23,7 +24,7 @@ static psx_type_t *apply_reference_qualifiers(
   return base;
 }
 
-static psx_type_t *bind_base_type(
+static const psx_type_t *bind_base_type(
     psx_type_name_ref_t *type_name) {
   psx_parsed_type_name_t *syntax = type_name->syntax;
   psx_local_lookup_point_t point = type_name_lookup_point(type_name);
@@ -77,7 +78,7 @@ const psx_type_t *psx_resolve_bound_type_name_ref(
   ps_declarator_shape_init(&shape);
   psx_apply_parsed_declarator(
       &type_name->syntax->declarator, &shape, NULL);
-  psx_type_t *resolved = psx_resolve_decl_type(
+  psx_type_t *resolved = psx_build_decl_type(
       &(psx_decl_type_request_t){
           .base_type = type_name->bound_base_type,
           .declarator_shape = &shape,

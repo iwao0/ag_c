@@ -39,7 +39,7 @@ int ps_node_integer_value_is_unsigned(node_t *node);
 void ps_node_set_unsigned(node_t *node, int is_unsigned);
 int ps_node_scalar_ptr_member_lvalue(node_t *node);
 int ps_node_subscript_deref_uses_base_address(node_t *node);
-psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node);
+const psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node);
 int ps_node_bitfield_width(node_t *node);
 
 node_t *ps_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);

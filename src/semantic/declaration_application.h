@@ -15,7 +15,7 @@ typedef enum {
 
 typedef struct {
   psx_parsed_decl_specifier_t syntax;
-  psx_type_t *base_type;
+  const psx_type_t *base_type;
   int requested_alignment;
   psx_declaration_phase_state_t state;
 } psx_declaration_phase_t;
@@ -27,14 +27,14 @@ int psx_apply_declaration_phase(
     psx_declaration_phase_t *phase, int standalone_tag);
 void psx_dispose_declaration_phase(psx_declaration_phase_t *phase);
 
-psx_type_t *psx_apply_parsed_decl_specifier(
+const psx_type_t *psx_apply_parsed_decl_specifier(
     const psx_parsed_decl_specifier_t *specifier);
-psx_type_t *psx_apply_parsed_type_name(
+const psx_type_t *psx_apply_parsed_type_name(
     const psx_parsed_type_name_t *type_name);
-psx_type_t *psx_apply_parsed_declarator_type(
+const psx_type_t *psx_apply_parsed_declarator_type(
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator);
-psx_type_t *psx_apply_runtime_declarator_type(
+const psx_type_t *psx_apply_runtime_declarator_type(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application);
 int psx_apply_parsed_decl_alignment(

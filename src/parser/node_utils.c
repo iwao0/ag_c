@@ -2538,7 +2538,7 @@ int ps_node_deref_decays_to_address(node_t *node) {
   return type && type->kind == PSX_TYPE_ARRAY;
 }
 
-psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
+const psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node) {
   if (!node || (node->kind != ND_DEREF && node->kind != ND_ADDR)) return NULL;
   int ds = ps_node_deref_size(node);
   if (ds <= 0 || ps_node_type_size(node) <= ds) return NULL;

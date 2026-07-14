@@ -19,7 +19,7 @@ typedef enum {
 } psx_local_apply_kind_t;
 
 typedef struct {
-  psx_type_t *base_type;
+  const psx_type_t *base_type;
   int requested_alignment;
   int is_typedef;
   int is_extern;
@@ -27,7 +27,7 @@ typedef struct {
   node_t *initialization;
 
   psx_local_apply_kind_t current_kind;
-  psx_type_t *current_type;
+  const psx_type_t *current_type;
   psx_runtime_declarator_application_t current_application;
   psx_parsed_initializer_t current_initializer;
   psx_static_local_declaration_pipeline_request_t static_request;

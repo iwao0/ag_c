@@ -153,7 +153,7 @@ static node_t **parse_program_input(const char *input) {
   return program;
 }
 
-static psx_type_t *resolve_tag_base_for_test(
+static const psx_type_t *resolve_tag_base_for_test(
     token_kind_t kind, char *name, int name_len) {
   psx_parsed_decl_specifier_t specifier = {
       .source = PSX_PARSED_DECL_TYPE_TAG,
@@ -1568,7 +1568,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(ps_type_callable_function(function_pointer_array) == NULL);
   ASSERT_TRUE(ps_type_function_return_type(function_pointer_array) == NULL);
 
-  psx_type_t *reference_type =
+  const psx_type_t *reference_type =
       psx_resolve_function_reference_type(function);
   ASSERT_TRUE(reference_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference_type->kind);
@@ -2824,7 +2824,7 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(!resolution.registered);
-  psx_aggregate_definition_t *cached_definition =
+  const psx_aggregate_definition_t *cached_definition =
       ps_ctx_get_tag_definition(
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(cached_definition != NULL);
@@ -2865,9 +2865,61 @@ static void test_tag_declaration_resolution_boundary() {
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
 
+static void test_aggregate_definition_ownership_boundary() {
+  printf("test_aggregate_definition_ownership_boundary...\n");
+  psx_frontend_reset_translation_unit_state();
+
+  char tag_name[] = "__DefinitionOwner";
+  int tag_name_len = (int)(sizeof(tag_name) - 1);
+  ASSERT_TRUE(ps_ctx_register_tag_type(
+      TK_STRUCT, tag_name, tag_name_len, 0, 0, 0, 0));
+  const psx_aggregate_definition_t *first =
+      ps_ctx_get_tag_definition(TK_STRUCT, tag_name, tag_name_len);
+  ASSERT_TRUE(first != NULL);
+  ASSERT_EQ(0, first->member_count);
+
+  psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  tag_member_info_t member = {
+      .name = (char *)"value",
+      .len = 5,
+      .offset = 0,
+      .decl_type = integer,
+  };
+  ASSERT_TRUE(ps_ctx_register_tag_members(
+      TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type(
+      TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
+  ASSERT_TRUE(first ==
+              ps_ctx_get_tag_definition(
+                  TK_STRUCT, tag_name, tag_name_len));
+  ASSERT_EQ(1, first->member_count);
+  ASSERT_TRUE(first->members != NULL);
+  ASSERT_EQ(5, first->members[0].len);
+  ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
+  const tag_member_info_t *first_members = first->members;
+
+  ps_ctx_reset_tag_diag_state();
+  ASSERT_TRUE(first->members == first_members);
+  ASSERT_EQ(5, first->members[0].len);
+
+  ASSERT_TRUE(ps_ctx_register_tag_members(
+      TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type(
+      TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
+  const psx_aggregate_definition_t *second =
+      ps_ctx_get_tag_definition(TK_STRUCT, tag_name, tag_name_len);
+  ASSERT_TRUE(second != NULL);
+  ASSERT_TRUE(second != first);
+  ASSERT_EQ(1, second->member_count);
+  ASSERT_EQ(5, second->members[0].len);
+  ASSERT_TRUE(first->members == first_members);
+  ASSERT_EQ(5, first->members[0].len);
+}
+
 static int register_boundary_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_name_len,
-    char *member_name, int member_name_len, int offset, psx_type_t *type,
+    char *member_name, int member_name_len, int offset,
+    const psx_type_t *type,
     int bit_width, int bit_offset, int bit_is_signed) {
   tag_member_info_t member = {
       .name = member_name,
@@ -3115,7 +3167,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
-  psx_type_t *unapplied_type =
+  const psx_type_t *unapplied_type =
       psx_resolve_decl_specifier_syntax(&phase.syntax);
   ASSERT_TRUE(unapplied_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, unapplied_type->kind);
@@ -3157,7 +3209,7 @@ static void test_type_name_phase_boundary() {
   ASSERT_EQ(TK_COMMA, syntax.end->kind);
   ASSERT_TRUE(syntax.atomic_inner == NULL);
 
-  psx_type_t *type = psx_apply_parsed_type_name(&syntax);
+  const psx_type_t *type = psx_apply_parsed_type_name(&syntax);
   ASSERT_TRUE(type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, type->kind);
   ASSERT_TRUE(type->base != NULL);
@@ -3438,7 +3490,7 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_aggregate_layout_state_t bitfield_sign_layout;
   psx_aggregate_layout_init(&bitfield_sign_layout, TK_STRUCT);
-  psx_type_t *canonical_enum = resolve_tag_base_for_test(
+  const psx_type_t *canonical_enum = resolve_tag_base_for_test(
       TK_ENUM, (char *)"E", 1);
   ASSERT_TRUE(canonical_enum != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, canonical_enum->kind);
@@ -3539,7 +3591,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_init(&member_shape);
   ps_declarator_shape_append_pointer(&member_shape, 0, 0);
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
-  psx_type_t *member_type = psx_resolve_decl_type(
+  const psx_type_t *member_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &member_shape,
@@ -3567,7 +3619,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_pointer(
       &pointer_array_shape, 0, 0);
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
-  psx_type_t *pointer_array_member = psx_resolve_decl_type(
+  const psx_type_t *pointer_array_member = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &pointer_array_shape,
@@ -3593,7 +3645,7 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_type_t *aligned_member = resolve_tag_base_for_test(
+  const psx_type_t *aligned_member = resolve_tag_base_for_test(
       TK_STRUCT, (char *)"__AlignedMember", 15);
   ASSERT_TRUE(aligned_member != NULL);
   ASSERT_EQ(12, ps_type_sizeof(aligned_member));
@@ -3608,7 +3660,7 @@ static void test_aggregate_member_resolution_boundary() {
       },
       &tag_resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
-  psx_type_t *incomplete_base = resolve_tag_base_for_test(
+  const psx_type_t *incomplete_base = resolve_tag_base_for_test(
       TK_STRUCT, (char *)"__IncompleteMember", 18);
   ASSERT_TRUE(incomplete_base != NULL);
   psx_aggregate_layout_state_t constraint_layout;
@@ -3630,7 +3682,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_init(&incomplete_pointer_shape);
   ps_declarator_shape_append_pointer(
       &incomplete_pointer_shape, 0, 0);
-  psx_type_t *incomplete_pointer = psx_resolve_decl_type(
+  const psx_type_t *incomplete_pointer = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
           .base_type = incomplete_base,
           .declarator_shape = &incomplete_pointer_shape,
@@ -8346,7 +8398,7 @@ static void test_type_metadata_bridge() {
   typed_row_array.kind = ND_DEREF;
   psx_type_t *typed_row_base = ps_type_new_integer(TK_INT, 4, 0);
   typed_row_array.type = ps_type_new_array(typed_row_base, 4, 16, 0);
-  psx_type_t *typed_row_decay =
+  const psx_type_t *typed_row_decay =
       ps_node_row_decay_pointer_arith_type(&typed_row_array);
   ASSERT_TRUE(typed_row_decay != NULL);
   ASSERT_TRUE(typed_row_decay->kind == PSX_TYPE_POINTER);
@@ -14607,6 +14659,7 @@ int main() {
   test_global_declaration_resolution_boundary();
   test_declaration_pipeline_order_boundary();
   test_tag_declaration_resolution_boundary();
+  test_aggregate_definition_ownership_boundary();
   test_aggregate_body_phase_boundary();
   test_declaration_phase_boundary();
   test_type_name_phase_boundary();

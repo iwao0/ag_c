@@ -16,9 +16,9 @@ typedef enum {
 
 typedef struct {
   psx_parsed_toplevel_declaration_t *declaration;
-  psx_type_t *base_type;
+  const psx_type_t *base_type;
   psx_toplevel_apply_kind_t current_kind;
-  psx_type_t *current_type;
+  const psx_type_t *current_type;
   psx_parsed_initializer_t current_initializer;
   psx_global_declaration_pipeline_request_t global_request;
   psx_global_declaration_pipeline_result_t global_result;

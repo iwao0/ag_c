@@ -163,7 +163,7 @@ static node_t *lower_aggregate_cast(node_t *operand,
 
   tag_member_info_t member = {0};
   int member_found = 0;
-  psx_aggregate_definition_t *definition =
+  const psx_aggregate_definition_t *definition =
       view.value->aggregate_definition;
   if (definition) {
     for (int i = 0; i < definition->member_count; i++) {
