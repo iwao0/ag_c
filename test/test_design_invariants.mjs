@@ -109,6 +109,48 @@ if (wasmFunctionCodegenViolations.length ||
   );
 }
 
+const wasmObjSource = await readFile("src/arch/wasm32/wasm32_obj.c", "utf8");
+const wasmObjFunctionCodegenStart = wasmObjSource.indexOf(
+  "static void gen_func_body",
+);
+const wasmObjFunctionCodegenEnd = wasmObjSource.indexOf(
+  "static void emit_obj_string_literal",
+);
+if (wasmObjFunctionCodegenStart < 0 ||
+    wasmObjFunctionCodegenEnd <= wasmObjFunctionCodegenStart) {
+  throw new Error("Wasm object function codegen boundary markers are missing");
+}
+const wasmObjFunctionCodegen = wasmObjSource.slice(
+  wasmObjFunctionCodegenStart,
+  wasmObjFunctionCodegenEnd,
+);
+const wasmObjParserReads = [
+  /\bpsx?_[A-Za-z0-9_]+\b/g,
+  /\bglobal_var_t\b/g,
+  /\bstring_lit_t\b/g,
+  /\btag_member_info_t\b/g,
+];
+const wasmObjFunctionCodegenViolations = [];
+for (const pattern of wasmObjParserReads) {
+  for (const match of wasmObjFunctionCodegen.matchAll(pattern)) {
+    wasmObjFunctionCodegenViolations.push(match[0]);
+  }
+}
+if (wasmObjFunctionCodegenViolations.length ||
+    !/\bdata_for_ir_inst\s*\(\s*module\s*,/.test(
+      wasmObjFunctionCodegen,
+    ) ||
+    !/static obj_data_t \*data_for_ir_inst[\s\S]*?\bir_module_find_symbol\s*\(/.test(
+      wasmObjSource,
+    )) {
+  throw new Error(
+    "Wasm object function codegen must consume resolved IR symbols instead of parser registries" +
+      (wasmObjFunctionCodegenViolations.length
+        ? `:\n${wasmObjFunctionCodegenViolations.sort().join("\n")}`
+        : ""),
+  );
+}
+
 const irHeaderSource = await readFile("src/ir/ir.h", "utf8");
 const irBuilderSource = await readFile("src/ir/ir_builder.c", "utf8");
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||

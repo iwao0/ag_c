@@ -325,13 +325,30 @@ static void wb_zero(wb_t *b, int size) {
   b->len += (uint32_t)size;
 }
 
-static obj_data_t *data_for_symbol(char *sym, int sym_len, int *out_addend) {
+static obj_data_t *data_for_parser_symbol(char *sym, int sym_len,
+                                          int *out_addend) {
   if (!sym) return NULL;
   int name_len = sym_len >= 0 ? sym_len : (int)strlen(sym);
   int is_undefined = sym_len >= 0 ? ps_gvar_is_extern_decl_by_name(sym, sym_len) : 0;
   int is_static = sym_len >= 0 ? ps_gvar_is_static_storage_by_name(sym, sym_len) : 0;
   if (out_addend) *out_addend = 0;
   return intern_data(sym, name_len, 2, is_static, is_undefined);
+}
+
+static obj_data_t *data_for_ir_inst(const ir_module_t *module,
+                                    const ir_inst_t *inst,
+                                    int *out_addend) {
+  if (!module || !inst || !inst->sym || inst->sym_len <= 0) return NULL;
+  if (out_addend) *out_addend = 0;
+  if (inst->op == IR_LOAD_STR)
+    return intern_data(inst->sym, inst->sym_len, 0, 1, 0);
+  const ir_symbol_t *symbol =
+      ir_module_find_symbol(module, inst->sym, inst->sym_len);
+  if (!symbol)
+    obj_unsupported_msg("missing resolved IR global symbol in Wasm object mode");
+  return intern_data(symbol->name, symbol->name_len,
+                     align_log2_for_size(symbol->alignment),
+                     symbol->is_static, symbol->is_extern);
 }
 
 static int sig_equal(const obj_sig_t *a, const obj_sig_t *b) {
@@ -1383,7 +1400,8 @@ static void emit_complex_ret_copy(wb_t *b, ir_inst_t *i, int param_count) {
   emit_memarg(b, ty);
 }
 
-static void gen_func_body(obj_func_t *of, ir_func_t *f) {
+static void gen_func_body(const ir_module_t *module, obj_func_t *of,
+                          ir_func_t *f) {
   int of_index = (int)(of - g_obj.funcs);
   int param_count = of->sig.nparams;
   int has_ret_area = func_has_ret_area(f);
@@ -1546,7 +1564,8 @@ static void gen_func_body(obj_func_t *of, ir_func_t *f) {
             break;
           }
           int addend = 0;
-          obj_data_t *d = data_for_symbol(i->sym, i->op == IR_LOAD_STR ? -1 : i->sym_len, &addend);
+          obj_data_t *d = data_for_ir_inst(module, i, &addend);
+          if (!d) obj_unsupported_msg("missing IR data symbol in Wasm object mode");
           wb_u8(&body, 0x41);
           uint32_t imm_off = wb_uleb5(&body, 0);
           func_add_reloc(of, R_WASM_MEMORY_ADDR_LEB, imm_off, data_index(d), 1, addend);
@@ -2278,7 +2297,7 @@ void wasm32_obj_gen_ir_module(ir_module_t *m) {
     }
     of->defined = 1;
     of->is_static = f->is_static;
-    gen_func_body(of, f);
+    gen_func_body(m, of, f);
   }
 }
 
@@ -2296,12 +2315,12 @@ static void emit_obj_string_literal(string_lit_t *lit, void *user) {
 
 static obj_data_t *data_for_symbol_ref(psx_gvar_symbol_ref_t ref, int *out_addend) {
   if (ref.kind == PSX_GVAR_SYMBOL_REF_STRING_LITERAL) {
-    return data_for_symbol(ref.symbol, -1, out_addend);
+    return data_for_parser_symbol(ref.symbol, -1, out_addend);
   }
   char *name = NULL;
   int name_len = 0;
   if (ps_gvar_symbol_ref_named(ref, &name, &name_len)) {
-    return data_for_symbol(name, name_len, out_addend);
+    return data_for_parser_symbol(name, name_len, out_addend);
   }
   obj_unsupported_msg("missing symbol initializer in Wasm object mode");
   return NULL;
