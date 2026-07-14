@@ -5,10 +5,10 @@
 
 
 static int is_pointer_arithmetic_operand(node_t *node) {
-  if (ps_node_is_pointer(node)) return 1;
+  if (ps_node_value_is_pointer_like(node)) return 1;
 
   if ((node->kind == ND_DEREF || node->kind == ND_ADDR) &&
-      !ps_node_is_pointer(node)) {
+      !ps_node_value_is_pointer_like(node)) {
     int deref_size = ps_node_deref_size(node);
     if (deref_size > 0 && ps_node_type_size(node) > deref_size) return 1;
   }

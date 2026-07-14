@@ -2,15 +2,6 @@
 
 #include <string.h>
 
-static const psx_type_t *callable_function_type(const psx_type_t *type) {
-  if (!type) return NULL;
-  if (type->kind == PSX_TYPE_FUNCTION) return type;
-  if (type->kind == PSX_TYPE_POINTER && type->base &&
-      type->base->kind == PSX_TYPE_FUNCTION)
-    return type->base;
-  return NULL;
-}
-
 void psx_resolve_function_call_type(
     const psx_type_t *bound_function_type,
     const psx_type_t *callee_type, int is_implicit_declaration,
@@ -19,8 +10,9 @@ void psx_resolve_function_call_type(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_FUNCTION_CALL_RESOLUTION_NOT_CALLABLE;
 
-  const psx_type_t *function = callable_function_type(callee_type);
-  if (!function) function = callable_function_type(bound_function_type);
+  const psx_type_t *function = ps_type_callable_function(callee_type);
+  if (!function)
+    function = ps_type_callable_function(bound_function_type);
   if (function && function->base) {
     resolution->status = PSX_FUNCTION_CALL_RESOLUTION_OK;
     resolution->function_type = function;

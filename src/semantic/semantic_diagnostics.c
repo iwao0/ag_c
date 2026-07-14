@@ -43,7 +43,7 @@ static void warn_decl_initializer_overflow(
   if (!lhs || !rhs || lhs->kind != ND_LVAR || rhs->kind != ND_NUM) return;
   if (node_fp_kind(lhs) != TK_FLOAT_KIND_NONE ||
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE ||
-      ps_node_is_pointer(lhs) || ps_node_aggregate_value_size(lhs) > 0)
+      ps_node_value_is_pointer_like(lhs) || ps_node_aggregate_value_size(lhs) > 0)
     return;
   psx_type_t *lhs_type = ps_node_get_type(lhs);
   if (lhs_type && lhs_type->kind == PSX_TYPE_BOOL) return;
@@ -84,7 +84,7 @@ static void warn_assignment(node_t *node, const token_t *fallback) {
         DIAG_WARN_PARSER_SELF_ASSIGN, tok,
         "変数を自身に代入しています (タイプミスの可能性)");
   }
-  if (lhs && rhs && !ps_node_is_pointer(lhs) &&
+  if (lhs && rhs && !ps_node_value_is_pointer_like(lhs) &&
       node_fp_kind(lhs) == TK_FLOAT_KIND_NONE &&
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE) {
     if (node->is_decl_initializer) {
@@ -260,12 +260,12 @@ static void warn_comparison(node_t *node, const token_t *fallback) {
     warn_sign_compare(lhs, rhs, op, tok);
     node_t *pointer = NULL;
     node_t *number = NULL;
-    if (lhs && rhs && ps_node_is_pointer(lhs) &&
-        !ps_node_is_pointer(rhs) && rhs->kind == ND_NUM) {
+    if (lhs && rhs && ps_node_value_is_pointer_like(lhs) &&
+        !ps_node_value_is_pointer_like(rhs) && rhs->kind == ND_NUM) {
       pointer = lhs;
       number = rhs;
-    } else if (lhs && rhs && ps_node_is_pointer(rhs) &&
-               !ps_node_is_pointer(lhs) && lhs->kind == ND_NUM) {
+    } else if (lhs && rhs && ps_node_value_is_pointer_like(rhs) &&
+               !ps_node_value_is_pointer_like(lhs) && lhs->kind == ND_NUM) {
       pointer = rhs;
       number = lhs;
     }

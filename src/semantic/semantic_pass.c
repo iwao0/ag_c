@@ -130,7 +130,7 @@ static void semantic_validate_assignment(node_t *node,
     if (!lhs_is_pointer && lhs_type &&
         !ps_type_is_tag_aggregate(lhs_type) &&
         lhs_type->kind != PSX_TYPE_ARRAY) {
-      if (ps_node_is_pointer(node->rhs)) {
+      if (ps_node_value_is_pointer_like(node->rhs)) {
         ps_diag_ctx(tok, "init",
                      "スカラ変数をポインタ型で初期化できません (C11 6.5.16.1)");
       }
@@ -282,7 +282,7 @@ static void semantic_resolve_function_reference(
   psx_type_t *type = source_type && source_type->kind == PSX_TYPE_FUNCTION
       ? psx_resolve_function_reference_type(source_type)
       : NULL;
-  if (!type && ps_type_find_function(source_type))
+  if (!type && ps_type_callable_function(source_type))
     type = ps_type_clone(source_type);
   if (!type) {
     ps_diag_ctx(reference->base.tok

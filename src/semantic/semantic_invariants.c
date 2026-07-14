@@ -73,6 +73,11 @@ static int validate_node(const node_t *node,
   }
   if (node->kind == ND_FUNCDEF || node->kind == ND_FUNCALL) {
     const node_func_t *function = (const node_func_t *)node;
+    if (node->kind == ND_FUNCALL && function->callee &&
+        !ps_type_callable_function(function->callee->type)) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_INVALID_CALLABLE_TYPE, node);
+    }
     if (function->function_type) {
       if (function->function_type->kind != PSX_TYPE_FUNCTION ||
           !ps_type_is_well_formed(function->function_type) ||

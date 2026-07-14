@@ -193,14 +193,19 @@ psx_type_t *ps_type_binary_result(
     return ps_type_usual_arithmetic_result(
         lhs, NULL, TK_FLOAT_KIND_NONE, 0);
 
-  int lhs_pointer = ps_type_is_pointer(lhs);
-  int rhs_pointer = ps_type_is_pointer(rhs);
+  int lhs_pointer = ps_type_is_pointer_like(lhs);
+  int rhs_pointer = ps_type_is_pointer_like(rhs);
   if (op == PSX_TYPE_BINARY_ADD && lhs_pointer != rhs_pointer)
-    return ps_type_clone(lhs_pointer ? lhs : rhs);
+    return (lhs_pointer ? lhs : rhs)->kind == PSX_TYPE_ARRAY
+               ? ps_type_decay_array(lhs_pointer ? lhs : rhs)
+               : ps_type_clone(lhs_pointer ? lhs : rhs);
   if (op == PSX_TYPE_BINARY_SUB) {
     if (lhs_pointer && rhs_pointer)
       return ps_type_new_integer(TK_LONG, 8, 0);
-    if (lhs_pointer) return ps_type_clone(lhs);
+    if (lhs_pointer)
+      return lhs->kind == PSX_TYPE_ARRAY
+                 ? ps_type_decay_array(lhs)
+                 : ps_type_clone(lhs);
   }
   return ps_type_usual_arithmetic_result(
       lhs, rhs, TK_FLOAT_KIND_NONE,
@@ -210,8 +215,14 @@ psx_type_t *ps_type_binary_result(
 
 psx_type_t *ps_type_conditional_result(
     const psx_type_t *then_type, const psx_type_t *else_type) {
-  if (ps_type_is_pointer(then_type)) return ps_type_clone(then_type);
-  if (ps_type_is_pointer(else_type)) return ps_type_clone(else_type);
+  if (ps_type_is_pointer_like(then_type))
+    return then_type->kind == PSX_TYPE_ARRAY
+               ? ps_type_decay_array(then_type)
+               : ps_type_clone(then_type);
+  if (ps_type_is_pointer_like(else_type))
+    return else_type->kind == PSX_TYPE_ARRAY
+               ? ps_type_decay_array(else_type)
+               : ps_type_clone(else_type);
   if (then_type && else_type && then_type->kind == else_type->kind &&
       ps_type_is_tag_aggregate(then_type))
     return ps_type_clone(then_type);
@@ -261,8 +272,17 @@ const psx_type_t *ps_type_find_function(const psx_type_t *type) {
   return NULL;
 }
 
+const psx_type_t *ps_type_callable_function(const psx_type_t *type) {
+  if (!type) return NULL;
+  if (type->kind == PSX_TYPE_FUNCTION) return type;
+  if (type->kind == PSX_TYPE_POINTER && type->base &&
+      type->base->kind == PSX_TYPE_FUNCTION)
+    return type->base;
+  return NULL;
+}
+
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
-  const psx_type_t *function = ps_type_find_function(type);
+  const psx_type_t *function = ps_type_callable_function(type);
   return function ? function->base : NULL;
 }
 
@@ -286,6 +306,11 @@ int ps_type_complete_array(psx_type_t *type, int array_len) {
   type->array_len = array_len;
   type->size = array_len * child_size;
   return 1;
+}
+
+int ps_type_is_incomplete_array(const psx_type_t *type) {
+  return type && type->kind == PSX_TYPE_ARRAY &&
+         type->array_len <= 0 && !type->is_vla;
 }
 
 psx_type_t *ps_type_clone(const psx_type_t *src) {
@@ -780,8 +805,12 @@ int ps_type_subscript_static_stride(const psx_type_t *type) {
 }
 
 int ps_type_is_pointer(const psx_type_t *type) {
-  if (!type) return 0;
-  return type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY;
+  return type && type->kind == PSX_TYPE_POINTER;
+}
+
+int ps_type_is_pointer_like(const psx_type_t *type) {
+  return type &&
+         (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
 }
 
 int ps_type_contains_vla_array(const psx_type_t *type) {

@@ -94,9 +94,8 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
 
 static ir_abi_param_info_t classify_call_param(
     const node_func_t *call, int param_idx) {
-  const psx_type_t *function_type = call ? call->function_type : NULL;
-  if (function_type && function_type->kind == PSX_TYPE_POINTER)
-    function_type = function_type->base;
+  const psx_type_t *function_type =
+      ps_type_callable_function(call ? call->function_type : NULL);
   if (function_type && function_type->kind == PSX_TYPE_FUNCTION &&
       param_idx >= 0 && param_idx < function_type->param_count) {
     return ir_abi_classify_param_type(function_type->param_types[param_idx]);
@@ -1335,7 +1334,7 @@ static const psx_type_t *callable_type_for_callee(
     ir_build_ctx_t *ctx, node_t *callee) {
   if (!callee) return NULL;
   const psx_type_t *type = ps_node_get_type(callee);
-  if (ps_type_find_function(type)) return type;
+  if (ps_type_callable_function(type)) return type;
   if (callee->kind == ND_LVAR) {
     lvar_t *lv = find_owning_lvar(ctx, ((node_lvar_t *)callee)->offset);
     type = lv ? ps_lvar_get_decl_type(lv) : NULL;
@@ -1344,7 +1343,7 @@ static const psx_type_t *callable_type_for_callee(
     global_var_t *gv = ps_find_global_var(gvn->name, gvn->name_len);
     type = gv ? ps_gvar_get_decl_type(gv) : NULL;
   }
-  return ps_type_find_function(type) ? type : NULL;
+  return ps_type_callable_function(type) ? type : NULL;
 }
 
 static void attach_callable_type_from_callee(
@@ -1706,9 +1705,10 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = fn->nargs;
-  const psx_type_t *function = ps_type_find_function(fn->function_type);
+  const psx_type_t *function =
+      ps_type_callable_function(fn->function_type);
   if (!function && fn->callee) {
-    function = ps_type_find_function(
+    function = ps_type_callable_function(
         callable_type_for_callee(ctx, fn->callee));
   }
   if (function && function->is_variadic_function &&
@@ -2195,7 +2195,7 @@ static ir_val_t build_node_ternary_with_type(
   /* `&x` (ND_ADDR) は常にポインタ値だが is_pointer フラグを持たないことがあるため
    * 明示的に判定に加える (`(c ? &a : &b)->m` が 8 バイトで扱われるように)。 */
   if (res_ty == IR_TY_I32 &&
-      (ps_node_is_pointer(node->rhs) || ps_node_is_pointer(c->els) ||
+      (ps_node_value_is_pointer_like(node->rhs) || ps_node_value_is_pointer_like(c->els) ||
        node->rhs->kind == ND_FUNCREF || node->rhs->kind == ND_ADDR ||
        (c->els && (c->els->kind == ND_FUNCREF || c->els->kind == ND_ADDR)))) {
     res_ty = IR_TY_PTR;
@@ -2433,8 +2433,8 @@ static ir_val_t build_node_inc_dec(ir_build_ctx_t *ctx, node_t *node) {
   /* step: スカラは 1、ポインタ (deref_size > 1) は pointee サイズ。
    * `short *p; p++` を 2 バイトステップにするため deref_size を参照する。 */
   long long step = 1;
-  int vla_rsf = ps_node_is_pointer(target) ? ps_node_vla_row_stride_frame_off(target) : 0;
-  if (ps_node_is_pointer(target) && vla_rsf == 0) {
+  int vla_rsf = ps_node_value_is_pointer_like(target) ? ps_node_vla_row_stride_frame_off(target) : 0;
+  if (ps_node_value_is_pointer_like(target) && vla_rsf == 0) {
     int ds = ps_node_deref_size(target);
     if (ds > 1) step = ds;
   }
@@ -3298,7 +3298,7 @@ static int setup_function_params(ir_build_ctx_t *ctx, node_func_t *fn) {
       ir_abi_param_info_t param =
           ir_abi_classify_param_type(ps_node_get_type(arg));
       int is_pointer =
-          ps_node_is_pointer(arg) ||
+          ps_node_value_is_pointer_like(arg) ||
           ps_node_value_is_pointer_like((node_t *)lv) ||
           ps_lvar_value_is_pointer_like(owner);
       ir_type_t abi_type = is_pointer ? IR_TY_PTR : param.type;

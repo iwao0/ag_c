@@ -109,7 +109,7 @@ static psx_type_t *gvar_decl_type_consistent(global_var_t *gv) {
 
 int ps_lvar_value_is_pointer_like(const lvar_t *var) {
   psx_type_t *type = lvar_decl_type_view(var);
-  return type ? ps_type_is_pointer(type) : 0;
+  return type ? ps_type_is_pointer_like(type) : 0;
 }
 
 int ps_lvar_is_struct_aggregate(const lvar_t *var) {
@@ -752,11 +752,13 @@ static int gvar_walk_struct_initializer(token_kind_t tag_kind, char *tag_name, i
     int member_storage_size = ps_tag_member_decl_storage_size(&mi);
     int member_array_count =
         ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
-    token_kind_t member_tag_kind = TK_EOF;
-    char *member_tag_name = NULL;
-    int member_tag_len = 0;
-    ps_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
-                                     &member_tag_len, NULL);
+    const psx_type_t *member_tag_type =
+        ps_tag_member_decl_tag_type(&mi);
+    token_kind_t member_tag_kind = member_tag_type
+                                       ? member_tag_type->tag_kind : TK_EOF;
+    char *member_tag_name = member_tag_type
+                                ? member_tag_type->tag_name : NULL;
+    int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
     const psx_aggregate_definition_t *member_definition =
         gvar_member_aggregate_definition(&mi);
     if (member_array_count > 0) {
@@ -861,11 +863,12 @@ static int gvar_walk_union_initializer(token_kind_t tag_kind, char *tag_name, in
   int member_array_count =
       ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
   int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
-  token_kind_t member_tag_kind = TK_EOF;
-  char *member_tag_name = NULL;
-  int member_tag_len = 0;
-  ps_tag_member_decl_tag_identity(&mi, &member_tag_kind, &member_tag_name,
-                                   &member_tag_len, NULL);
+  const psx_type_t *member_tag_type = ps_tag_member_decl_tag_type(&mi);
+  token_kind_t member_tag_kind = member_tag_type
+                                     ? member_tag_type->tag_kind : TK_EOF;
+  char *member_tag_name = member_tag_type
+                              ? member_tag_type->tag_name : NULL;
+  int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
   const psx_aggregate_definition_t *member_definition =
       gvar_member_aggregate_definition(&mi);
   if (mi.offset > 0) gvar_walk_emit_padding(ops, user, base_offset, mi.offset);
@@ -1384,10 +1387,10 @@ int ps_tag_find_unnamed_union_covering_offset(token_kind_t tag_kind, char *tag_n
       return 1;
     }
     if (ps_tag_member_is_struct_aggregate(&mi)) {
-      token_kind_t child_kind = TK_EOF;
-      char *child_name = NULL;
-      int child_len = 0;
-      ps_tag_member_decl_tag_identity(&mi, &child_kind, &child_name, &child_len, NULL);
+      const psx_type_t *child_type = ps_tag_member_decl_tag_type(&mi);
+      token_kind_t child_kind = child_type ? child_type->tag_kind : TK_EOF;
+      char *child_name = child_type ? child_type->tag_name : NULL;
+      int child_len = child_type ? child_type->tag_len : 0;
       if (ps_tag_find_unnamed_union_covering_offset(child_kind, child_name, child_len,
                                                      start, target_off, out_off, out_size)) {
         return 1;
@@ -1739,10 +1742,6 @@ int ps_node_storage_type_size(node_t *node) {
 
 int ps_node_deref_size(node_t *node) {
   return node ? ps_type_deref_size(ps_node_get_type(node)) : 0;
-}
-
-int ps_node_is_pointer(node_t *node) {
-  return node ? ps_type_is_pointer(ps_node_get_type(node)) : 0;
 }
 
 static int type_is_pointer_view_type(const psx_type_t *type) {
@@ -2341,10 +2340,12 @@ node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
                    member_value_type->kind == PSX_TYPE_POINTER;
   int member_is_const =
       node_pointee_is_const_qualified(base) ||
-      (!ps_node_is_pointer(base) && node_self_is_const_qualified(base));
+      (!ps_node_value_is_pointer_like(base) &&
+       node_self_is_const_qualified(base));
   int member_is_volatile =
       node_pointee_is_volatile_qualified(base) ||
-      (!ps_node_is_pointer(base) && node_self_is_volatile_qualified(base));
+      (!ps_node_value_is_pointer_like(base) &&
+       node_self_is_volatile_qualified(base));
   deref->type_state.bit_width = (unsigned char)info->bit_width;
   deref->type_state.bit_offset = (unsigned char)info->bit_offset;
   deref->type_state.bit_is_signed = info->bit_is_signed ? 1 : 0;
@@ -2562,7 +2563,7 @@ int ps_node_bitfield_info(node_t *node, int *bit_width, int *bit_offset,
 
 int ps_node_value_is_pointer_like(node_t *node) {
   if (!node) return 0;
-  if (ps_type_is_pointer(ps_node_get_type(node))) return 1;
+  if (ps_type_is_pointer_like(ps_node_get_type(node))) return 1;
   if (ps_node_scalar_ptr_member_lvalue(node)) return 1;
   return 0;
 }
@@ -2699,7 +2700,7 @@ void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
                                            token_t *tok) {
   if (!lhs || !rhs) return;
   if (lhs->kind != ND_LVAR && lhs->kind != ND_GVAR) return;
-  if (!ps_node_is_pointer(lhs)) return;
+  if (!ps_node_value_is_pointer_like(lhs)) return;
   if (ps_type_find_function(ps_node_get_type(lhs)) &&
       ps_type_find_function(ps_node_get_type(rhs))) {
     return;

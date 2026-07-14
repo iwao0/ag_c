@@ -67,8 +67,7 @@ void psx_resolve_local_declaration(
     return;
   }
 
-  if (type->kind == PSX_TYPE_ARRAY && type->array_len <= 0 &&
-      !type->is_vla) {
+  if (ps_type_is_incomplete_array(type)) {
     if (element_size <= 0) {
       resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
       return;

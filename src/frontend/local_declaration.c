@@ -34,7 +34,6 @@ typedef struct {
   psx_static_local_declaration_pipeline_result_t static_result;
   psx_automatic_local_declaration_pipeline_request_t automatic_request;
   psx_automatic_local_declaration_pipeline_result_t automatic_result;
-  int automatic_storage_kind;
 } psx_local_declaration_application_t;
 
 static void apply_static_assert(
@@ -153,8 +152,8 @@ static void begin_declarator(
           .diag_tok = (token_t *)name,
       };
   if (!psx_begin_automatic_local_declaration_pipeline(
-          &application->automatic_request, &application->automatic_result,
-          &application->automatic_storage_kind)) {
+          &application->automatic_request,
+          &application->automatic_result)) {
     ps_diag_ctx((token_t *)name, "local-declaration",
                 "automatic local declaration pipeline failed for '%.*s'",
                 name->len, name->str);
@@ -179,8 +178,7 @@ static void finish_declarator(
     case PSX_LOCAL_APPLY_AUTOMATIC:
       if (!psx_finish_automatic_local_declaration_pipeline(
               &application->automatic_request,
-              &application->automatic_result,
-              application->automatic_storage_kind)) {
+              &application->automatic_result)) {
         ps_diag_ctx(application->automatic_request.diag_tok,
                     "local-declaration",
                     "automatic local declaration finalization failed");

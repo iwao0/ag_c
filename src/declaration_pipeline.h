@@ -124,12 +124,10 @@ int psx_apply_automatic_local_declaration_pipeline(
     psx_automatic_local_declaration_pipeline_result_t *result);
 int psx_begin_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result,
-    int *storage_kind);
+    psx_automatic_local_declaration_pipeline_result_t *result);
 int psx_finish_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result,
-    int storage_kind);
+    psx_automatic_local_declaration_pipeline_result_t *result);
 
 typedef struct {
   char *name;

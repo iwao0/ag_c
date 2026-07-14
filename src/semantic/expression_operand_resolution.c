@@ -8,7 +8,7 @@
 psx_deref_operand_status_t psx_resolve_deref_operand(node_t *operand) {
   if (!operand) return PSX_DEREF_OPERAND_NOT_POINTER;
   psx_type_t *type = ps_node_get_type(operand);
-  if (!type || !ps_type_is_pointer(type))
+  if (!type || !ps_type_is_pointer_like(type))
     return PSX_DEREF_OPERAND_NOT_POINTER;
   if (type->base && type->base->kind == PSX_TYPE_VOID)
     return PSX_DEREF_OPERAND_VOID_POINTER;

@@ -128,6 +128,7 @@ void ps_type_set_function_params(psx_type_t *function_type,
                                   psx_type_t *const *param_types,
                                   int param_count, int is_variadic);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
+const psx_type_t *ps_type_callable_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
                                      const int *dims, int dim_count);
@@ -174,6 +175,7 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 
 int ps_type_sizeof(const psx_type_t *type);
 int ps_type_deref_size(const psx_type_t *type);
+int ps_type_is_incomplete_array(const psx_type_t *type);
 const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type);
 const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type);
 int ps_type_pointee_value_size(const psx_type_t *type);
@@ -191,6 +193,7 @@ psx_type_t *ps_type_dereference_result(const psx_type_t *type);
 psx_type_t *ps_type_subscript_result(const psx_type_t *type);
 int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
+int ps_type_is_pointer_like(const psx_type_t *type);
 int ps_type_contains_vla_array(const psx_type_t *type);
 int ps_type_is_unsigned(const psx_type_t *type);
 int ps_type_is_scalar(const psx_type_t *type);

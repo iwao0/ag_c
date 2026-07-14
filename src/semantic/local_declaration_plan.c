@@ -1,17 +1,10 @@
 #include "local_declaration_plan.h"
 
-static int type_chain_contains_vla(const psx_type_t *type) {
-  for (const psx_type_t *cursor = type; cursor; cursor = cursor->base) {
-    if (cursor->is_vla) return 1;
-  }
-  return 0;
-}
-
 int psx_plan_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *out) {
   if (!type || !out || type->kind == PSX_TYPE_FUNCTION ||
       type->kind == PSX_TYPE_VOID ||
-      type_chain_contains_vla(type)) return 0;
+      ps_type_contains_vla_array(type)) return 0;
   const psx_type_t *leaf = type;
   while (leaf && leaf->kind == PSX_TYPE_ARRAY) {
     if (leaf->array_len <= 0 || ps_type_sizeof(leaf) <= 0) return 0;

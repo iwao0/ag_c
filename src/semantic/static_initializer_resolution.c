@@ -23,8 +23,7 @@ void psx_resolve_static_initializer(
   resolution->initializer = request->initializer;
   ps_ctx_attach_aggregate_definitions(resolution->type);
 
-  if (resolution->type->kind == PSX_TYPE_ARRAY &&
-      resolution->type->array_len <= 0 && !resolution->type->is_vla) {
+  if (ps_type_is_incomplete_array(resolution->type)) {
     if (!psx_resolve_incomplete_array_initializer(
             resolution->type, resolution->kind,
             resolution->initializer)) {

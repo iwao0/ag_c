@@ -10,7 +10,7 @@
  * 現状の公開シンボル:
  *   - lvar_t (opaque pointer) と読み取り/走査 helper
  *   - node_utils 由来の型・幅・signedness helper
- *     (ps_node_is_pointer / ps_node_deref_size / ps_node_type_size /
+ *     (ps_node_value_is_pointer_like / ps_node_deref_size / ps_node_type_size /
  *      ps_node_*_is_unsigned など)
  *   - canonical function type lookup (function_public)
  *   - global_var_t (opaque pointer) と読み取り helper

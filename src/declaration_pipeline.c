@@ -434,15 +434,6 @@ int psx_finish_function_definition_pipeline(
          result->function_type->base;
 }
 
-static int static_local_type_contains_vla(const psx_type_t *type) {
-  for (const psx_type_t *cursor = type; cursor; cursor = cursor->base) {
-    if (cursor->kind == PSX_TYPE_ARRAY && cursor->is_vla) return 1;
-    if (cursor->kind != PSX_TYPE_ARRAY && cursor->kind != PSX_TYPE_POINTER)
-      break;
-  }
-  return 0;
-}
-
 int psx_begin_static_local_declaration_pipeline(
     const psx_static_local_declaration_pipeline_request_t *request,
     psx_static_local_declaration_pipeline_result_t *result) {
@@ -455,7 +446,7 @@ int psx_begin_static_local_declaration_pipeline(
                  diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
                  request->name_len, request->name);
   }
-  if (static_local_type_contains_vla(request->type)) {
+  if (ps_type_contains_vla_array(request->type)) {
     ps_diag_ctx(request->diag_tok, "decl",
                  "static local object '%.*s' cannot have variably modified type",
                  request->name_len, request->name);
@@ -604,14 +595,11 @@ static node_t *append_local_initialization(node_t *chain, node_t *node) {
 
 int psx_begin_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result,
-    int *storage_kind) {
+    psx_automatic_local_declaration_pipeline_result_t *result) {
   if (result)
     *result = (psx_automatic_local_declaration_pipeline_result_t){0};
-  if (storage_kind) *storage_kind = -1;
   if (!request || !result || !request->name || request->name_len <= 0 ||
-      !request->type || !request->application || !request->initializer ||
-      !storage_kind)
+      !request->type || !request->application || !request->initializer)
     return 0;
 
   psx_local_declaration_resolution_t resolution;
@@ -624,7 +612,6 @@ int psx_begin_automatic_local_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_LOCAL_DECLARATION_OK)
     diagnose_local_declaration(request, resolution.status);
-  *storage_kind = (int)resolution.storage_kind;
 
   psx_vla_lowering_result_t vla = {0};
   switch (resolution.storage_kind) {
@@ -695,11 +682,10 @@ int psx_begin_automatic_local_declaration_pipeline(
 
 int psx_finish_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
-    psx_automatic_local_declaration_pipeline_result_t *result,
-    int storage_kind) {
+    psx_automatic_local_declaration_pipeline_result_t *result) {
   if (!request || !result || !result->var || !request->initializer)
     return 0;
-  if (storage_kind == PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY) {
+  if (ps_type_is_incomplete_array(request->type)) {
     if (!request->initializer->has_initializer ||
         !psx_resolve_incomplete_array_initializer(
             request->type, request->initializer->kind,
@@ -733,13 +719,12 @@ int psx_finish_automatic_local_declaration_pipeline(
 int psx_apply_automatic_local_declaration_pipeline(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_automatic_local_declaration_pipeline_result_t *result) {
-  int storage_kind = -1;
   if (!psx_begin_automatic_local_declaration_pipeline(
-          request, result, &storage_kind)) {
+          request, result)) {
     return 0;
   }
   return psx_finish_automatic_local_declaration_pipeline(
-      request, result, storage_kind);
+      request, result);
 }
 
 int psx_apply_block_extern_declaration_pipeline(

@@ -78,33 +78,14 @@ static inline int ps_tag_member_decl_is_unsigned(const tag_member_info_t *m) {
   return 0;
 }
 
-static inline void ps_tag_member_decl_tag_identity(
-    const tag_member_info_t *m, token_kind_t *out_kind, char **out_name,
-    int *out_len, int *out_is_pointer) {
-  token_kind_t kind = TK_EOF;
-  char *name = NULL;
-  int len = 0;
-  int is_pointer = 0;
-  const psx_type_t *decl_type = ps_tag_member_decl_type(m);
-  if (decl_type) {
-    const psx_type_t *type = decl_type;
-    while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
-    is_pointer = type && type->kind == PSX_TYPE_POINTER ? 1 : 0;
-    if (type && type->kind == PSX_TYPE_POINTER && type->base) type = type->base;
-    if (ps_type_is_tag_aggregate(type)) {
-      kind = type->tag_kind;
-      name = type->tag_name;
-      len = type->tag_len;
-    } else {
-      kind = TK_EOF;
-      name = NULL;
-      len = 0;
-    }
+static inline const psx_type_t *ps_tag_member_decl_tag_type(
+    const tag_member_info_t *m) {
+  const psx_type_t *type = ps_tag_member_decl_type(m);
+  while (type &&
+         (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
+    type = type->base;
   }
-  if (out_kind) *out_kind = kind;
-  if (out_name) *out_name = name;
-  if (out_len) *out_len = len;
-  if (out_is_pointer) *out_is_pointer = is_pointer;
+  return ps_type_is_tag_aggregate(type) ? type : NULL;
 }
 
 bool ps_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,

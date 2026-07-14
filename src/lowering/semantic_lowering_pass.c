@@ -204,11 +204,7 @@ node_t *psx_lower_semantic_tree(
 
 static const psx_type_t *call_function_type(node_func_t *call) {
   if (!call) return NULL;
-  if (call->function_type &&
-      call->function_type->kind == PSX_TYPE_FUNCTION) {
-    return call->function_type;
-  }
-  return NULL;
+  return ps_type_callable_function(call->function_type);
 }
 
 static void lower_call_arguments(

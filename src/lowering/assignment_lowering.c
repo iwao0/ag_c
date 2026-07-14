@@ -60,7 +60,7 @@ void lower_compound_assignment_expression(node_t *node) {
   node_t *target = materialize_lvalue_address_once(node->lhs, &prefix);
   node_t *rhs = node->rhs;
   if ((binary_kind == ND_ADD || binary_kind == ND_SUB) &&
-      ps_node_is_pointer(target)) {
+      ps_node_value_is_pointer_like(target)) {
     int scale = ps_node_deref_size(target);
     if (scale > 1)
       rhs = ps_node_new_binary(ND_MUL, rhs, ps_node_new_num(scale));

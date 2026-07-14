@@ -234,7 +234,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
         ps_node_set_unsigned(operand, view.is_unsigned);
         return annotate(operand, view.target);
       }
-      if (!ps_node_is_pointer(operand)) {
+      if (!ps_node_value_is_pointer_like(operand)) {
         int zext = ps_node_integer_value_is_unsigned(operand) &&
                    ps_node_type_size(operand) >= 1 &&
                    ps_node_type_size(operand) < 8;
@@ -250,12 +250,12 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
       return pointer_result(operand, view);
 
     if (view.is_pointer && view.elem_size > 0 &&
-        ps_node_is_pointer(operand) &&
+        ps_node_value_is_pointer_like(operand) &&
         ps_type_pointer_depth(
             ps_node_get_type(operand)) <= 1)
       return pointer_result(operand, view);
     if (!view.is_pointer && view.kind == TK_LONG &&
-        ps_node_is_pointer(operand))
+        ps_node_value_is_pointer_like(operand))
       return integer_result(operand, view);
     if (view.is_pointer) return pointer_result(operand, view);
     return annotate(operand, view.target);
@@ -281,13 +281,13 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
       if (target_unsigned) ps_node_set_unsigned(number, 1);
       return annotate(number, view.target);
     }
-    if (ps_node_type_size(operand) > 4 && !ps_node_is_pointer(operand))
+    if (ps_node_type_size(operand) > 4 && !ps_node_value_is_pointer_like(operand))
       return ps_node_new_i64_to_i32_trunc_cast(
           operand, view.target);
     int size = ps_node_type_size(operand);
     if (target_unsigned && size >= 1 && size < 4 &&
         ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
-        !ps_node_is_pointer(operand)) {
+        !ps_node_value_is_pointer_like(operand)) {
       node_t *masked = ps_node_new_binary(
           ND_BITAND, operand, ps_node_new_num(0xffffffffLL));
       ps_node_set_unsigned(masked, 1);
@@ -370,7 +370,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
     return operand;
   }
   psx_type_t *source_type = ps_node_get_type(operand);
-  if (source_type && ps_type_is_pointer(source_type) &&
+  if (source_type && ps_type_is_pointer_like(source_type) &&
       ps_type_is_pointer(target_type)) {
     return operand;
   }
