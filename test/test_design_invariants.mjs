@@ -178,6 +178,10 @@ const staticLocalLoweringSource = await readFile(
   "src/lowering/static_local_lowering.c",
   "utf8",
 );
+const localDeclarationPipelineSource = await readFile(
+  "src/declaration_pipeline.c",
+  "utf8",
+);
 if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       frontendTranslationUnitHeader,
     ) ||
@@ -201,6 +205,9 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
       identifierBindingSource,
     ) ||
     !/psx_analyze_function_lvar_usage_in\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_lower_semantic_tree_in\s*\(/.test(
       semanticPipelineSource,
     ) ||
     !/ps_decl_replay_lvar_usage_events_in\s*\(/.test(
@@ -246,6 +253,16 @@ if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
     !/ps_register_global_var_in\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
     "local declaration and parameter lowering must use explicitly passed registries",
+  );
+}
+if (!/psx_frontend_analyze_initializer_syntax_in_contexts\s*\([\s\S]*?request->local_registry/.test(
+      localDeclarationPipelineSource,
+    ) ||
+    !/psx_frontend_analyze_expression_in_contexts\s*\([\s\S]*?request->local_registry/.test(
+      localDeclarationPipelineSource,
+    )) {
+  throw new Error(
+    "static local initializer semantics must use the declaration registry",
   );
 }
 const identifierResolutionSource = await readFile(

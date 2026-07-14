@@ -85,6 +85,7 @@ static node_t *lower_file_scope_compound_literal(
 }
 
 static node_t *lower_local_compound_literal(
+    psx_local_registry_t *local_registry,
     node_compound_literal_t *compound,
     const token_t *fallback_diag_tok) {
   const psx_type_t *type = compound->type_name.resolved_type;
@@ -103,7 +104,7 @@ static node_t *lower_local_compound_literal(
   if (!storage_name ||
       !psx_apply_automatic_local_declaration_pipeline(
           &(psx_automatic_local_declaration_pipeline_request_t){
-              .local_registry = ps_local_registry_active(),
+              .local_registry = local_registry,
               .name = storage_name,
               .name_len = storage_name ? (int)strlen(storage_name) : 0,
               .type = type,
@@ -128,7 +129,8 @@ static node_t *lower_local_compound_literal(
       ND_COMMA, object.initialization, reference);
 }
 
-node_t *lower_compound_literal_expression(
+node_t *lower_compound_literal_expression_in(
+    psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_COMPOUND_LITERAL) return node;
   node_compound_literal_t *compound = (node_compound_literal_t *)node;
@@ -136,8 +138,14 @@ node_t *lower_compound_literal_expression(
                         ? lower_file_scope_compound_literal(
                               compound, fallback_diag_tok)
                         : lower_local_compound_literal(
-                              compound, fallback_diag_tok);
+                              local_registry, compound, fallback_diag_tok);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = node->tok;
   return lowered;
+}
+
+node_t *lower_compound_literal_expression(
+    node_t *node, const token_t *fallback_diag_tok) {
+  return lower_compound_literal_expression_in(
+      ps_local_registry_active(), node, fallback_diag_tok);
 }

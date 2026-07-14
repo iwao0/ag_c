@@ -550,12 +550,12 @@ int psx_finish_static_local_declaration_pipeline(
         request->name, request->name_len, resolution.status);
   }
   if (resolution.is_aggregate_initializer) {
-    resolution.initializer = psx_frontend_analyze_initializer_syntax_in_context(
-        request->semantic_context,
+    resolution.initializer = psx_frontend_analyze_initializer_syntax_in_contexts(
+        request->semantic_context, request->local_registry,
         resolution.initializer, request->initializer->value_tok);
   } else {
-    resolution.initializer = psx_frontend_analyze_expression_in_context(
-        request->semantic_context,
+    resolution.initializer = psx_frontend_analyze_expression_in_contexts(
+        request->semantic_context, request->local_registry,
         resolution.initializer,
         resolution.initializer->tok
             ? resolution.initializer->tok
