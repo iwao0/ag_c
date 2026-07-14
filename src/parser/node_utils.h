@@ -13,7 +13,7 @@ struct lvar_t;
 struct global_var_t;
 struct tag_member_info_t;
 
-void ps_node_bind_type(node_t *node, psx_type_t *type);
+void ps_node_bind_type(node_t *node, const psx_type_t *type);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);
@@ -55,7 +55,7 @@ node_t *psx_node_new_lvar(int offset);
 node_t *ps_node_new_lvar_typed(int offset, int type_size);
 node_t *ps_node_new_lvar_typed_at_for(struct lvar_t *owner, int offset, int type_size);
 node_t *ps_node_new_lvar_type_at_for(struct lvar_t *owner, int offset,
-                                      psx_type_t *type);
+                                      const psx_type_t *type);
 node_t *psx_node_new_lvar_scalar_slot_at(int offset, int type_size,
                                          tk_float_kind_t fp_kind, int is_bool);
 node_t *psx_node_new_lvar_fp_slot_at(int offset, int type_size, tk_float_kind_t fp_kind);

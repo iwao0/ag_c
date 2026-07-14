@@ -63,7 +63,7 @@ static int ctx_get_tag_member_info_scoped(token_kind_t tk, char *tn, int tl,
   return ps_ctx_get_tag_member_info(tk, tn, tl, idx, out);
 }
 
-static psx_type_t *type_with_self_qualifiers(psx_type_t *type,
+static psx_type_t *type_with_self_qualifiers(const psx_type_t *type,
                                              int is_const_qualified,
                                              int is_volatile_qualified) {
   if (!type) return NULL;
@@ -1664,7 +1664,7 @@ int ps_node_generic_selection_index(node_generic_selection_t *selection) {
       ps_node_get_type(selection->control), types, defaults, count);
 }
 
-psx_type_t *ps_node_get_type(node_t *node) {
+const psx_type_t *ps_node_get_type(const node_t *node) {
   return node ? node->type : NULL;
 }
 
@@ -1711,7 +1711,7 @@ void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
       strides_remaining > 0 ? strides_remaining : 0;
 }
 
-void ps_node_bind_type(node_t *node, psx_type_t *type) {
+void ps_node_bind_type(node_t *node, const psx_type_t *type) {
   if (!node) return;
   node->type = type;
   if (!node_type_accepts_vla_runtime_view(node)) {
@@ -2050,7 +2050,7 @@ node_t *ps_node_new_num(long long val) {
 }
 
 static node_lvar_t *new_lvar_symbol_node(int offset, lvar_t *var,
-                                         psx_type_t *type) {
+                                         const psx_type_t *type) {
   node_lvar_t *node = arena_alloc(sizeof(node_lvar_t));
   node->base.kind = ND_LVAR;
   node->base.type = type;
@@ -2092,7 +2092,7 @@ node_t *ps_node_new_lvar_typed_at_for(lvar_t *owner, int offset, int type_size) 
 }
 
 node_t *ps_node_new_lvar_type_at_for(lvar_t *owner, int offset,
-                                      psx_type_t *type) {
+                                      const psx_type_t *type) {
   return (node_t *)new_lvar_symbol_node(offset, owner, type);
 }
 
@@ -2349,7 +2349,7 @@ node_t *ps_node_new_tag_member_deref_for(node_t *addr_base, node_t *base,
   deref->type_state.bit_width = (unsigned char)info->bit_width;
   deref->type_state.bit_offset = (unsigned char)info->bit_offset;
   deref->type_state.bit_is_signed = info->bit_is_signed ? 1 : 0;
-  psx_type_t *decl_type = (psx_type_t *)ps_tag_member_decl_type(info);
+  const psx_type_t *decl_type = ps_tag_member_decl_type(info);
   if (decl_type) {
     ps_node_bind_type(
         deref, type_with_self_qualifiers(
@@ -2409,8 +2409,8 @@ node_t *ps_node_new_subscript_deref_for(node_t *base, node_t *base_addr,
 
 node_t *ps_node_new_tag_member_lvar_ref_for(lvar_t *owner, int member_offset,
                                              const tag_member_info_t *info) {
-  psx_type_t *decl_type = (psx_type_t *)ps_tag_member_decl_type(info);
-  psx_type_t *member_type = decl_type;
+  const psx_type_t *decl_type = ps_tag_member_decl_type(info);
+  const psx_type_t *member_type = decl_type;
   if (decl_type) {
     int owner_is_const = lvar_self_is_const_qualified(owner);
     int owner_is_volatile = lvar_self_is_volatile_qualified(owner);

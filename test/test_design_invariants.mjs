@@ -1,5 +1,18 @@
 import { readFile, readdir } from "node:fs/promises";
 
+async function sourceFilesUnder(directory) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory()) {
+      files.push(...(await sourceFilesUnder(path)));
+    } else if (entry.isFile() && /\.[ch]$/.test(entry.name)) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
 const irFiles = (await readdir("src/ir", { withFileTypes: true }))
   .filter((entry) => entry.isFile() && entry.name.endsWith(".c"))
   .map((entry) => `src/ir/${entry.name}`)
@@ -43,4 +56,23 @@ if (actual.size) {
   );
 }
 
-console.log("design invariants: ok (backend parser context isolation verified)");
+const sourceFiles = (await sourceFilesUnder("src")).sort();
+const legacyTypeMutationRe =
+  /\b(?:psx_ctx_add_tag_member|ps_ctx_typedef_set_decl_type|ps_tag_member_set_decl_type|ps_tag_member_decl_type_mut|tag_member_record_set_decl_type|typedef_record_set_decl_type)\b/g;
+const legacyTypeMutations = [];
+for (const file of sourceFiles) {
+  const source = await readFile(file, "utf8");
+  for (const match of source.matchAll(legacyTypeMutationRe)) {
+    legacyTypeMutations.push(`${file}:${match[0]}`);
+  }
+}
+if (legacyTypeMutations.length) {
+  throw new Error(
+    "canonical typedef and tag-member records must not expose generic type mutation APIs:\n" +
+      legacyTypeMutations.sort().join("\n"),
+  );
+}
+
+console.log(
+  "design invariants: ok (backend parser context isolation and canonical type ownership verified)",
+);

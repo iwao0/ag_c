@@ -233,18 +233,18 @@ static void lower_array_initializer_entries(
 }
 
 static node_t *lower_typed_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok);
 static node_t *append_object_zero_fill(lvar_t *var, node_t *chain);
 static node_t *append_typed_object_zero_fill(
-    lvar_t *var, psx_type_t *type, node_t *chain);
+    lvar_t *var, const psx_type_t *type, node_t *chain);
 static node_t *try_lower_typed_array_copy(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_t *value, node_t *chain);
 
 typedef struct {
   lvar_t *var;
-  psx_type_t *element_type;
+  const psx_type_t *element_type;
   node_t *chain;
   int relative_offset;
   int element_size;
@@ -266,10 +266,9 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
 }
 
 static node_t *lower_typed_character_array_string(
-    lvar_t *var, psx_type_t *array_type, int relative_offset,
+    lvar_t *var, const psx_type_t *array_type, int relative_offset,
     node_string_t *string, node_t *chain, token_t *tok) {
-  psx_type_t *element =
-      (psx_type_t *)ps_type_array_leaf_type(array_type);
+  const psx_type_t *element = ps_type_array_leaf_type(array_type);
   int element_size = ps_type_sizeof(element);
   int capacity = element_size > 0
                      ? ps_type_sizeof(array_type) / element_size
@@ -431,11 +430,11 @@ typedef psx_initializer_target_t typed_designator_target_t;
 
 static int descend_array_designators(
     const psx_initializer_entry_t *entry, int first_index_pos,
-    psx_type_t **type_inout, int *relative_offset_inout,
+    const psx_type_t **type_inout, int *relative_offset_inout,
     token_t *fallback_tok) {
   int first_index = -1;
   for (int d = first_index_pos; d < entry->index_expr_count; d++) {
-    psx_type_t *array = *type_inout;
+    const psx_type_t *array = *type_inout;
     if (!array || array->kind != PSX_TYPE_ARRAY || !array->base) {
       ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
                    diag_message_for(
@@ -456,7 +455,7 @@ static int descend_array_designators(
 }
 
 static node_t *lower_typed_initializer_value(
-    lvar_t *var, psx_type_t *type, int relative_offset, node_t *value,
+    lvar_t *var, const psx_type_t *type, int relative_offset, node_t *value,
     const tag_member_info_t *direct_member, node_t *chain,
     token_t *fallback_tok) {
   if (value && value->kind == ND_INIT_LIST) {
@@ -521,14 +520,14 @@ typedef psx_initializer_scalar_leaf_t typed_scalar_leaf_t;
 typedef psx_initializer_scalar_leaf_list_t typed_scalar_leaf_list_t;
 
 static node_t *append_typed_object_zero_fill(
-    lvar_t *var, psx_type_t *type, node_t *chain) {
+    lvar_t *var, const psx_type_t *type, node_t *chain) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(type, 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(var, chain);
   }
   for (int i = 0; i < leaves.count; i++) {
-    typed_scalar_leaf_t *leaf = &leaves.items[i];
+    const typed_scalar_leaf_t *leaf = &leaves.items[i];
     node_t *target = leaf->direct_member
                          ? ps_node_new_tag_member_lvar_ref_for(
                                var, leaf->relative_offset,
@@ -544,7 +543,7 @@ static node_t *append_typed_object_zero_fill(
 }
 
 static node_t *lower_flat_typed_object_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
@@ -563,7 +562,7 @@ static node_t *lower_flat_typed_object_initializer_list(
                    diag_message_for(
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    typed_scalar_leaf_t *leaf = &leaves.items[leaf_index];
+    const typed_scalar_leaf_t *leaf = &leaves.items[leaf_index];
     if (list->entries[i].value->kind == ND_STRING &&
         leaf->string_array_type) {
       node_t *lowered = lower_typed_character_array_string(
@@ -604,7 +603,7 @@ static int initializer_value_requires_immediate_subobject(
 }
 
 static int immediate_subobject_at_leaf_cursor(
-    psx_type_t *type, int relative_offset,
+    const psx_type_t *type, int relative_offset,
     const typed_scalar_leaf_list_t *leaves, int leaf_cursor,
     typed_designator_target_t *out) {
   if (!type || !leaves || leaf_cursor < 0 || leaf_cursor >= leaves->count ||
@@ -627,10 +626,10 @@ static int immediate_subobject_at_leaf_cursor(
            ps_type_is_tag_aggregate(type->base);
   }
   if (type->kind == PSX_TYPE_STRUCT && type->aggregate_definition) {
-    psx_aggregate_definition_t *definition = type->aggregate_definition;
+    const psx_aggregate_definition_t *definition = type->aggregate_definition;
     for (int i = 0; i < definition->member_count; i++) {
-      tag_member_info_t *member = &definition->members[i];
-      psx_type_t *member_type = ps_tag_member_decl_type_mut(member);
+      const tag_member_info_t *member = &definition->members[i];
+      const psx_type_t *member_type = ps_tag_member_decl_type(member);
       int member_offset = relative_offset + member->offset;
       if (member_offset != leaf_offset || !member_type) continue;
       if (member_type->kind != PSX_TYPE_ARRAY &&
@@ -649,7 +648,7 @@ static int immediate_subobject_at_leaf_cursor(
 }
 
 static node_t *lower_mixed_typed_object_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
@@ -679,7 +678,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
                    diag_message_for(
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    typed_scalar_leaf_t *leaf = &leaves.items[leaf_cursor];
+    const typed_scalar_leaf_t *leaf = &leaves.items[leaf_cursor];
     if (initializer_value_requires_immediate_subobject(entry->value)) {
       typed_designator_target_t target = {0};
       if (immediate_subobject_at_leaf_cursor(
@@ -721,7 +720,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
 }
 
 static node_t *try_lower_typed_array_copy(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_t *value, node_t *chain) {
   if (!var || !type || type->kind != PSX_TYPE_ARRAY || !value ||
       value->kind != ND_ADDR || !value->lhs ||
@@ -738,7 +737,7 @@ static node_t *try_lower_typed_array_copy(
     return NULL;
   }
   for (int i = 0; i < leaves.count; i++) {
-    typed_scalar_leaf_t *leaf = &leaves.items[i];
+    const typed_scalar_leaf_t *leaf = &leaves.items[i];
     int source_offset = source->offset +
                         (leaf->relative_offset - relative_offset);
     node_t *src = ps_node_new_lvar_type_at_for(
@@ -756,9 +755,9 @@ static node_t *try_lower_typed_array_copy(
 }
 
 static node_t *lower_flat_typed_array_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
-  psx_type_t *leaf = (psx_type_t *)ps_type_array_leaf_type(type);
+  const psx_type_t *leaf = ps_type_array_leaf_type(type);
   int leaf_size = ps_type_sizeof(leaf);
   int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
@@ -776,7 +775,7 @@ static node_t *lower_flat_typed_array_initializer_list(
 }
 
 static node_t *lower_typed_array_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   if (list->entry_count == 1 &&
       initializer_value_is_zero(list->entries[0].value) &&
@@ -812,7 +811,7 @@ static node_t *lower_typed_array_initializer_list(
                    diag_message_for(
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
-    psx_type_t *target_type = type->base;
+    const psx_type_t *target_type = type->base;
     int target_offset = relative_offset;
     int selected_index = next_index;
     if (entry->designator_count > 0) {
@@ -854,9 +853,9 @@ static node_t *lower_typed_array_initializer_list(
 }
 
 static node_t *lower_typed_aggregate_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
-  psx_aggregate_definition_t *definition = type->aggregate_definition;
+  const psx_aggregate_definition_t *definition = type->aggregate_definition;
   if (!definition) return chain;
   if (type->kind == PSX_TYPE_UNION && definition->member_count > 0 &&
       initializer_list_has_no_nested_values(list)) {
@@ -868,8 +867,8 @@ static node_t *lower_typed_aggregate_initializer_list(
         break;
       }
     }
-    tag_member_info_t *first = &definition->members[0];
-    psx_type_t *first_type = ps_tag_member_decl_type_mut(first);
+    const tag_member_info_t *first = &definition->members[0];
+    const psx_type_t *first_type = ps_tag_member_decl_type(first);
     if (!has_designator && first_type &&
         first_type->kind == PSX_TYPE_ARRAY) {
       if (!ps_get_enable_union_array_member_nonbrace_init()) {
@@ -931,8 +930,8 @@ static node_t *lower_typed_aggregate_initializer_list(
                            ? DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND
                            : DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    tag_member_info_t *member = &definition->members[member_index];
-    psx_type_t *target_type = ps_tag_member_decl_type_mut(member);
+    const tag_member_info_t *member = &definition->members[member_index];
+    const psx_type_t *target_type = ps_tag_member_decl_type(member);
     int target_offset = relative_offset + member->offset;
     const tag_member_info_t *direct_member = member;
     if (entry->index_expr_count > 0) {
@@ -950,7 +949,7 @@ static node_t *lower_typed_aggregate_initializer_list(
 }
 
 static node_t *lower_typed_initializer_list(
-    lvar_t *var, psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   if (!type || !list) return chain;
   if (type->kind == PSX_TYPE_ARRAY) {

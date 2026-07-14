@@ -47,10 +47,6 @@ void ps_ctx_attach_aggregate_definitions(psx_type_t *type);
 /* 現在見えている tag とそのメンバを file scope に昇格する。関数内 static aggregate を
  * global lowering した後も codegen が匿名タグのレイアウトを参照できるようにする。 */
 void ps_ctx_promote_tag_to_file_scope(token_kind_t kind, char *name, int len);
-/* (tag_kind, tag_name, tag_len) で識別される tag に、メンバ記述子 *m を追加/上書きする。
- * m->decl_type は型情報の唯一の正本として必須。 */
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            const tag_member_info_t *m);
 /* canonical member descriptorを現在のtag scopeへ新規登録する。
  * 名前付きmemberの同一scope重複は0を返し、既存descriptorを変更しない。
  * 無名aggregate placeholder (m->len == 0) は複数登録できる。 */
@@ -74,21 +70,12 @@ bool ps_ctx_find_enum_const_at(
     long long *out_value);
 int ps_ctx_has_enum_const_in_current_scope(char *name, int len);
 typedef struct {
-  psx_type_t *decl_type;
+  const psx_type_t *decl_type;
 } psx_typedef_info_t;
 
 static inline const psx_type_t *ps_ctx_typedef_decl_type(
     const psx_typedef_info_t *info) {
   return info ? info->decl_type : NULL;
-}
-
-static inline psx_type_t *psx_ctx_typedef_decl_type_mut(psx_typedef_info_t *info) {
-  return info ? info->decl_type : NULL;
-}
-
-static inline void ps_ctx_typedef_set_decl_type(psx_typedef_info_t *info,
-                                                 psx_type_t *decl_type) {
-  if (info) info->decl_type = decl_type;
 }
 
 /* typedef 名を登録する。info->decl_type は正本として必須。

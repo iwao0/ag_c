@@ -2850,6 +2850,15 @@ static int register_boundary_tag_member(
          created;
 }
 
+static int register_test_tag_member(
+    token_kind_t tag_kind, char *tag_name, int tag_name_len,
+    const tag_member_info_t *member) {
+  int created = 0;
+  return psx_ctx_register_tag_member(
+             tag_kind, tag_name, tag_name_len, member, &created) &&
+         created;
+}
+
 static void test_aggregate_body_phase_boundary() {
   printf("test_aggregate_body_phase_boundary...\n");
   psx_frontend_reset_translation_unit_state();
@@ -2960,14 +2969,12 @@ static void test_aggregate_body_phase_boundary() {
       (char *)"DeferredAlias", 13, &deferred_alias_type));
 
   psx_typedef_info_t deferred_alias = {0};
-  ps_ctx_typedef_set_decl_type(
-      &deferred_alias, ps_type_new_integer(TK_INT, 4, 0));
+  deferred_alias.decl_type = ps_type_new_integer(TK_INT, 4, 0);
   ASSERT_TRUE(psx_ctx_define_typedef_name(
       (char *)"DeferredAlias", 13, &deferred_alias));
   psx_typedef_info_t deferred_parameter = {0};
-  ps_ctx_typedef_set_decl_type(
-      &deferred_parameter,
-      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
+  deferred_parameter.decl_type =
+      ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   ASSERT_TRUE(psx_ctx_define_typedef_name(
       (char *)"DeferredParam", 13, &deferred_parameter));
 
@@ -3656,6 +3663,34 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(1, transaction.registered_member_count);
   ASSERT_TRUE(transaction.type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, transaction.type->kind);
+  tag_member_info_t transaction_member_before = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+      TK_STRUCT, (char *)"Txn", 3, 0, (char *)"a", 1,
+      &transaction_member_before));
+  const psx_type_t *transaction_type_before =
+      ps_tag_member_decl_type(&transaction_member_before);
+  tag_member_info_t replacement_member = {
+      .name = (char *)"a",
+      .len = 1,
+      .offset = 99,
+      .bit_width = 7,
+      .bit_offset = 3,
+      .decl_type = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
+  };
+  int replacement_created = 1;
+  ASSERT_TRUE(!psx_ctx_register_tag_member(
+      TK_STRUCT, (char *)"Txn", 3, &replacement_member,
+      &replacement_created));
+  ASSERT_EQ(0, replacement_created);
+  tag_member_info_t transaction_member_after = {0};
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+      TK_STRUCT, (char *)"Txn", 3, 0, (char *)"a", 1,
+      &transaction_member_after));
+  ASSERT_TRUE(ps_tag_member_decl_type(&transaction_member_after) ==
+              transaction_type_before);
+  ASSERT_EQ(0, transaction_member_after.offset);
+  ASSERT_EQ(0, transaction_member_after.bit_width);
+  ASSERT_EQ(0, transaction_member_after.bit_offset);
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
@@ -3939,10 +3974,19 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(0, resolution.scope_depth);
+  const psx_type_t *canonical_typedef_type = NULL;
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type(
+      request.name, request.name_len, &canonical_typedef_type));
+  ASSERT_TRUE(canonical_typedef_type != NULL);
 
+  request.type = ps_type_new_integer(TK_INT, 4, 0);
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.redeclared);
+  const psx_type_t *redeclared_typedef_type = NULL;
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type(
+      request.name, request.name_len, &redeclared_typedef_type));
+  ASSERT_TRUE(redeclared_typedef_type == canonical_typedef_type);
 
   psx_type_t *long_type = ps_type_new_integer(TK_LONG, 8, 0);
   request.type = long_type;
@@ -10939,7 +10983,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_union_ptr_gv));
 
   tag_member_info_t tmp_member = {0};
-  tmp_member.decl_type = ps_type_new_tag(TK_STRUCT, NULL, 0, 0, 8);
+  psx_type_t *tmp_member_tag_type =
+      ps_type_new_tag(TK_STRUCT, NULL, 0, 0, 8);
+  tmp_member.decl_type = tmp_member_tag_type;
   ASSERT_TRUE(ps_tag_member_is_tag_aggregate(&tmp_member));
   ASSERT_TRUE(ps_tag_member_is_struct_aggregate(&tmp_member));
   ASSERT_TRUE(!ps_tag_member_is_union_aggregate(&tmp_member));
@@ -10954,7 +11000,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_tag_member_is_union_aggregate(&tmp_member));
   ASSERT_TRUE(ps_tag_member_is_unnamed_union(&tmp_member));
   ASSERT_TRUE(ps_tag_member_is_unnamed_aggregate(&tmp_member));
-  tmp_member.decl_type = ps_type_new_pointer(tmp_member.decl_type);
+  tmp_member.decl_type = ps_type_new_pointer(tmp_member_tag_type);
   ASSERT_TRUE(!ps_tag_member_is_tag_aggregate(&tmp_member));
   ASSERT_TRUE(!ps_tag_member_is_unnamed_union(&tmp_member));
   ASSERT_TRUE(!ps_tag_member_is_unnamed_aggregate(&tmp_member));
@@ -10979,17 +11025,17 @@ static void test_type_metadata_bridge() {
   flat_decl_inner_a.name = "a";
   flat_decl_inner_a.len = 1;
   flat_decl_inner_a.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)flat_decl_inner_tag,
-                         (int)sizeof(flat_decl_inner_tag) - 1,
-                         &flat_decl_inner_a);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)flat_decl_inner_tag,
+      (int)sizeof(flat_decl_inner_tag) - 1, &flat_decl_inner_a));
   tag_member_info_t flat_decl_inner_b = {0};
   flat_decl_inner_b.name = "b";
   flat_decl_inner_b.len = 1;
   flat_decl_inner_b.offset = 4;
   flat_decl_inner_b.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)flat_decl_inner_tag,
-                         (int)sizeof(flat_decl_inner_tag) - 1,
-                         &flat_decl_inner_b);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)flat_decl_inner_tag,
+      (int)sizeof(flat_decl_inner_tag) - 1, &flat_decl_inner_b));
   tag_member_info_t flat_decl_array_member = {0};
   flat_decl_array_member.name = "arr";
   flat_decl_array_member.len = 3;
@@ -11013,12 +11059,12 @@ static void test_type_metadata_bridge() {
   flat_decl_union_large.decl_type =
       ps_type_new_array(ps_type_new_integer(TK_CHAR, 1, 0),
                          20, 20, 0);
-  psx_ctx_add_tag_member(TK_UNION, (char *)flat_decl_union_tag,
-                         (int)sizeof(flat_decl_union_tag) - 1,
-                         &flat_decl_union_large);
-  psx_ctx_add_tag_member(TK_UNION, (char *)flat_decl_union_tag,
-                         (int)sizeof(flat_decl_union_tag) - 1,
-                         &flat_decl_array_member);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_UNION, (char *)flat_decl_union_tag,
+      (int)sizeof(flat_decl_union_tag) - 1, &flat_decl_union_large));
+  ASSERT_TRUE(register_test_tag_member(
+      TK_UNION, (char *)flat_decl_union_tag,
+      (int)sizeof(flat_decl_union_tag) - 1, &flat_decl_array_member));
   ASSERT_EQ(6, ps_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
                                        (int)sizeof(flat_decl_union_tag) - 1));
 
@@ -11049,8 +11095,9 @@ static void test_type_metadata_bridge() {
   member_sync_stale.name = "x";
   member_sync_stale.len = 1;
   member_sync_stale.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)member_sync_tag, member_sync_len,
-                         &member_sync_stale);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)member_sync_tag, member_sync_len,
+      &member_sync_stale));
   tag_member_info_t member_sync_out = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, (char *)member_sync_tag,
                                            member_sync_len, "x", 1,
@@ -11083,8 +11130,9 @@ static void test_type_metadata_bridge() {
   canonical_member_desc.len = 1;
   canonical_member_desc.decl_type = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 1));
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)canonical_member_tag,
-                         canonical_member_tag_len, &canonical_member_desc);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)canonical_member_tag, canonical_member_tag_len,
+      &canonical_member_desc));
   tag_member_info_t canonical_member_out = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(
       TK_STRUCT, (char *)canonical_member_tag, canonical_member_tag_len,
@@ -11103,15 +11151,15 @@ static void test_type_metadata_bridge() {
   walk_inner_a.name = "a";
   walk_inner_a.len = 1;
   walk_inner_a.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len,
-                         &walk_inner_a);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_inner_tag, walk_inner_len, &walk_inner_a));
   tag_member_info_t walk_inner_b = {0};
   walk_inner_b.name = "b";
   walk_inner_b.len = 1;
   walk_inner_b.offset = 4;
   walk_inner_b.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len,
-                         &walk_inner_b);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_inner_tag, walk_inner_len, &walk_inner_b));
 
   const char walk_outer_tag[] = "__tm_walk_outer";
   int walk_outer_len = (int)sizeof(walk_outer_tag) - 1;
@@ -11123,15 +11171,15 @@ static void test_type_metadata_bridge() {
   walk_outer_arr.decl_type = ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)walk_inner_tag, walk_inner_len, 0, 8),
       2, 16, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
-                         &walk_outer_arr);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, &walk_outer_arr));
   tag_member_info_t walk_outer_tail = {0};
   walk_outer_tail.name = "tail";
   walk_outer_tail.len = 4;
   walk_outer_tail.offset = 16;
   walk_outer_tail.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
-                         &walk_outer_tail);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, &walk_outer_tail));
 
   global_var_t walk_gv = {0};
   walk_gv.decl_type =
@@ -11167,15 +11215,15 @@ static void test_type_metadata_bridge() {
   walk_array_a.name = "a";
   walk_array_a.len = 1;
   walk_array_a.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_array_tag, walk_array_len,
-                         &walk_array_a);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_array_tag, walk_array_len, &walk_array_a));
   tag_member_info_t walk_array_b = {0};
   walk_array_b.name = "b";
   walk_array_b.len = 1;
   walk_array_b.offset = 4;
   walk_array_b.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)walk_array_tag, walk_array_len,
-                         &walk_array_b);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)walk_array_tag, walk_array_len, &walk_array_b));
 
   global_var_t walk_array_gv = {0};
   walk_array_gv.decl_type = ps_type_new_array(
@@ -11797,9 +11845,9 @@ static void test_type_metadata_bridge() {
       ps_type_new_array(tag_member_desc_leaf, 3, 3, 0);
   tag_member_desc.decl_type =
       ps_type_new_array(tag_member_desc_inner, 2, 6, 0);
-  psx_ctx_add_tag_member(TK_STRUCT, (char *)tag_member_desc_tag,
-                         (int)sizeof(tag_member_desc_tag) - 1,
-                         &tag_member_desc);
+  ASSERT_TRUE(register_test_tag_member(
+      TK_STRUCT, (char *)tag_member_desc_tag,
+      (int)sizeof(tag_member_desc_tag) - 1, &tag_member_desc));
   tag_member_info_t tag_member_desc_out = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(
       TK_STRUCT, (char *)tag_member_desc_tag,
@@ -12422,7 +12470,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, partial_sig_function->param_types[0]->fp_kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, partial_sig_function->base->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, partial_sig_function->base->fp_kind);
-  psx_type_t *partial_sig_member_decl_type = partial_sig_member.decl_type;
+  const psx_type_t *partial_sig_member_decl_type =
+      partial_sig_member.decl_type;
   ASSERT_TRUE(partial_sig_member.decl_type == partial_sig_member_decl_type);
   node_t *partial_sig_node = ps_node_new_tag_member_deref_for(
       ps_node_new_num(0), ps_node_new_num(0), &partial_sig_member);
@@ -13040,7 +13089,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(td_fp.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, td_fp.decl_type->kind);
   assert_canonical_type_signature(td_fp.decl_type, "p<f64()>");
-  psx_type_t *td_fp_decl_type = td_fp.decl_type;
+  const psx_type_t *td_fp_decl_type = td_fp.decl_type;
   ASSERT_TRUE(td_fp.decl_type == td_fp_decl_type);
   fn = as_func(parsed_code[1]);
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");

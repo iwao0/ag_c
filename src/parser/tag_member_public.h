@@ -14,21 +14,12 @@ typedef struct tag_member_info_t {
   int bit_width;
   int bit_offset;
   int bit_is_signed;
-  psx_type_t *decl_type;
+  const psx_type_t *decl_type;
 } tag_member_info_t;
 
 static inline const psx_type_t *ps_tag_member_decl_type(
     const tag_member_info_t *m) {
   return m ? m->decl_type : NULL;
-}
-
-static inline psx_type_t *ps_tag_member_decl_type_mut(tag_member_info_t *m) {
-  return m ? m->decl_type : NULL;
-}
-
-static inline void ps_tag_member_set_decl_type(tag_member_info_t *m,
-                                                psx_type_t *decl_type) {
-  if (m) m->decl_type = decl_type;
 }
 
 static inline const psx_type_t *ps_tag_member_decl_value_type(

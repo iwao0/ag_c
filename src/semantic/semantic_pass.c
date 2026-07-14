@@ -256,22 +256,19 @@ static void semantic_resolve_member_access(
 
   const psx_type_t *decl_type =
       ps_tag_member_decl_type(access->resolved_member);
-  ps_node_bind_type(
-      (node_t *)access, decl_type ? ps_type_clone(decl_type) : NULL);
   const psx_type_t *object_type = resolution.base_object_type;
-  if (access->base.type && object_type) {
-    if (object_type->is_const_qualified)
-      access->base.type->is_const_qualified = 1;
-    if (object_type->is_volatile_qualified)
-      access->base.type->is_volatile_qualified = 1;
-  }
+  psx_type_t *access_type = decl_type ? ps_type_clone(decl_type) : NULL;
+  if (access_type && object_type)
+    ps_type_set_decl_spec_qualifiers(
+        access_type, object_type->is_const_qualified,
+        object_type->is_volatile_qualified);
+  ps_node_bind_type((node_t *)access, access_type);
   access->base.type_state.bit_width =
       (unsigned char)access->resolved_member->bit_width;
   access->base.type_state.bit_offset =
       (unsigned char)access->resolved_member->bit_offset;
   access->base.type_state.bit_is_signed =
       access->resolved_member->bit_is_signed ? 1 : 0;
-  ps_node_get_type((node_t *)access);
 }
 
 static void semantic_resolve_function_reference(

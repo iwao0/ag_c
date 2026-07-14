@@ -41,7 +41,7 @@ static int leaf_index_for_target(
 }
 
 static psx_initializer_target_t positional_target(
-    psx_type_t *context_type, int context_offset,
+    const psx_type_t *context_type, int context_offset,
     const psx_initializer_scalar_leaf_list_t *leaves, int cursor,
     int preserve_subobject) {
   psx_initializer_target_t target = {
@@ -52,17 +52,17 @@ static psx_initializer_target_t positional_target(
   };
   if (!context_type || !leaves || cursor < 0 || cursor >= leaves->count)
     return target;
-  psx_initializer_scalar_leaf_t *leaf = &leaves->items[cursor];
+  const psx_initializer_scalar_leaf_t *leaf = &leaves->items[cursor];
   target.type = leaf->type;
   target.relative_offset = leaf->relative_offset;
   target.direct_member = leaf->direct_member;
   if (context_type->kind == PSX_TYPE_UNION &&
       context_type->aggregate_definition &&
       context_type->aggregate_definition->member_count > 0) {
-    tag_member_info_t *member =
+    const tag_member_info_t *member =
         &context_type->aggregate_definition->members[0];
     if (preserve_subobject) {
-      target.type = ps_tag_member_decl_type_mut(member);
+      target.type = ps_tag_member_decl_type(member);
       target.relative_offset = context_offset + member->offset;
       target.direct_member = member;
     }
@@ -74,11 +74,11 @@ static psx_initializer_target_t positional_target(
   if (!preserve_subobject) return target;
   if (context_type->kind == PSX_TYPE_STRUCT &&
       context_type->aggregate_definition) {
-    psx_aggregate_definition_t *definition =
+    const psx_aggregate_definition_t *definition =
         context_type->aggregate_definition;
     for (int i = 0; i < definition->member_count; i++) {
-      tag_member_info_t *member = &definition->members[i];
-      psx_type_t *member_type = ps_tag_member_decl_type_mut(member);
+      const tag_member_info_t *member = &definition->members[i];
+      const psx_type_t *member_type = ps_tag_member_decl_type(member);
       int member_offset = context_offset + member->offset;
       if (member_offset != leaf->relative_offset || !member_type) continue;
       if (member_type->kind != PSX_TYPE_ARRAY &&
@@ -129,7 +129,7 @@ static void write_scalar_value(
                  diag_message_for(
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
-  psx_type_t *type = target->type;
+  const psx_type_t *type = target->type;
   char *symbol = NULL;
   int symbol_len = 0;
   long long integer = 0;
@@ -161,10 +161,9 @@ static void write_scalar_value(
 }
 
 static void write_string_value(
-    static_array_lowering_t *lowering, psx_type_t *array_type,
+    static_array_lowering_t *lowering, const psx_type_t *array_type,
     int relative_offset, node_string_t *string, token_t *tok) {
-  psx_type_t *element =
-      (psx_type_t *)ps_type_array_leaf_type(array_type);
+  const psx_type_t *element = ps_type_array_leaf_type(array_type);
   int element_size = ps_type_sizeof(element);
   int total_size = ps_type_sizeof(array_type);
   int capacity = element_size > 0 ? total_size / element_size : 0;
@@ -189,9 +188,9 @@ static void write_string_value(
 }
 
 static int is_character_array_for_string(
-    psx_type_t *type, const node_string_t *string) {
+    const psx_type_t *type, const node_string_t *string) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !string) return 0;
-  psx_type_t *element = (psx_type_t *)ps_type_array_leaf_type(type);
+  const psx_type_t *element = ps_type_array_leaf_type(type);
   if (!element || element->kind == PSX_TYPE_POINTER ||
       element->kind == PSX_TYPE_FUNCTION ||
       ps_type_is_tag_aggregate(element)) return 0;
@@ -201,7 +200,7 @@ static int is_character_array_for_string(
 }
 
 static void lower_array_list(
-    static_array_lowering_t *lowering, psx_type_t *context_type,
+    static_array_lowering_t *lowering, const psx_type_t *context_type,
     int context_offset, node_init_list_t *list) {
   int cursor = leaf_index_at_offset(&lowering->leaves, context_offset);
   if (cursor < 0) cursor = 0;
@@ -232,7 +231,7 @@ static void lower_array_list(
                  is_character_array_for_string(
                      lowering->leaves.items[cursor].string_array_type,
                      (node_string_t *)entry->value)))) {
-      psx_type_t *string_type = target.type;
+      const psx_type_t *string_type = target.type;
       int string_offset = target.relative_offset;
       if (string_type->kind != PSX_TYPE_ARRAY && cursor >= 0 &&
           cursor < lowering->leaves.count) {

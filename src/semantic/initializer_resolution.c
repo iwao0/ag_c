@@ -40,7 +40,7 @@ static int aggregate_member_index_by_name(
 }
 
 psx_initializer_target_t psx_resolve_initializer_designator_path(
-    const psx_initializer_entry_t *entry, psx_type_t *root_type,
+    const psx_initializer_entry_t *entry, const psx_type_t *root_type,
     int root_relative_offset, token_t *fallback_tok) {
   psx_initializer_target_t target = {
       .type = root_type,
@@ -80,8 +80,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       continue;
     }
 
-    psx_type_t *aggregate_type = target.type;
-    psx_aggregate_definition_t *definition =
+    const psx_type_t *aggregate_type = target.type;
+    const psx_aggregate_definition_t *definition =
         target.type ? target.type->aggregate_definition : NULL;
     int member_index = aggregate_member_index_by_name(definition, designator);
     if (member_index < 0) {
@@ -96,18 +96,18 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       target.union_relative_offset = target.relative_offset;
       target.union_member_index = member_index;
     }
-    tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &definition->members[member_index];
     target.relative_offset += member->offset;
-    target.type = ps_tag_member_decl_type_mut(member);
+    target.type = ps_tag_member_decl_type(member);
     target.direct_member = member;
   }
   return target;
 }
 
 static int append_scalar_leaf(
-    psx_initializer_scalar_leaf_list_t *list, psx_type_t *type,
-    int relative_offset, tag_member_info_t *direct_member,
-    psx_type_t *string_array_type, int string_array_offset) {
+    psx_initializer_scalar_leaf_list_t *list, const psx_type_t *type,
+    int relative_offset, const tag_member_info_t *direct_member,
+    const psx_type_t *string_array_type, int string_array_offset) {
   if (list->count == list->capacity) {
     int next_capacity = list->capacity ? list->capacity * 2 : 16;
     psx_initializer_scalar_leaf_t *next = realloc(
@@ -123,7 +123,7 @@ static int append_scalar_leaf(
 }
 
 int psx_collect_initializer_scalar_leaves(
-    psx_type_t *type, int relative_offset,
+    const psx_type_t *type, int relative_offset,
     psx_initializer_scalar_leaf_list_t *list) {
   if (!type || !list) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
@@ -146,7 +146,7 @@ int psx_collect_initializer_scalar_leaves(
     return 1;
   }
   if (ps_type_is_tag_aggregate(type)) {
-    psx_aggregate_definition_t *definition = type->aggregate_definition;
+    const psx_aggregate_definition_t *definition = type->aggregate_definition;
     if (!definition || definition->member_count <= 0) return 0;
     int first_member = 0;
     int member_count = definition->member_count;
@@ -154,7 +154,7 @@ int psx_collect_initializer_scalar_leaves(
       int max_bytes = -1;
       int max_slots = -1;
       for (int i = 0; i < definition->member_count; i++) {
-        tag_member_info_t *candidate = &definition->members[i];
+        const tag_member_info_t *candidate = &definition->members[i];
         int bytes = ps_tag_member_decl_storage_size(candidate);
         int slots = ps_tag_member_flat_slots(candidate);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
@@ -167,10 +167,10 @@ int psx_collect_initializer_scalar_leaves(
     }
     int covered_end = -1;
     for (int i = first_member; i < member_count; i++) {
-      tag_member_info_t *member = &definition->members[i];
+      const tag_member_info_t *member = &definition->members[i];
       if (type->kind == PSX_TYPE_STRUCT && member->offset < covered_end)
         continue;
-      psx_type_t *member_type = ps_tag_member_decl_type_mut(member);
+      const psx_type_t *member_type = ps_tag_member_decl_type(member);
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||
                           ps_type_is_tag_aggregate(member_type))) {
         if (!psx_collect_initializer_scalar_leaves(

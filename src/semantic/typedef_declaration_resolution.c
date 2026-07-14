@@ -41,8 +41,7 @@ void psx_resolve_typedef_declaration(
     }
   }
 
-  psx_typedef_info_t info = {0};
-  ps_ctx_typedef_set_decl_type(&info, (psx_type_t *)request->type);
+  const psx_typedef_info_t info = {.decl_type = request->type};
   if (!ps_ctx_register_typedef_name(
           request->name, request->name_len, &info,
           &resolution->created, &resolution->redeclared)) {

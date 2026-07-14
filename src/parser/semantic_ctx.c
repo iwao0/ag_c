@@ -120,22 +120,12 @@ static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *m) {
   return m ? m->decl_type : NULL;
 }
 
-static void tag_member_record_set_decl_type(tag_member_t *m,
-                                            psx_type_t *decl_type) {
-  if (m) m->decl_type = decl_type;
-}
-
 static const psx_type_t *typedef_record_decl_type(const typedef_name_t *t) {
   return t ? t->decl_type : NULL;
 }
 
 static psx_type_t *typedef_record_decl_type_mut(typedef_name_t *t) {
   return t ? t->decl_type : NULL;
-}
-
-static void typedef_record_set_decl_type(typedef_name_t *t,
-                                         psx_type_t *decl_type) {
-  if (t) t->decl_type = decl_type;
 }
 
 static psx_type_t *ctx_type_clone_persistent(const psx_type_t *src) {
@@ -153,15 +143,15 @@ struct psx_function_symbol_t {
   int is_defined;
 };
 
-static void tag_member_record_apply_desc(tag_member_t *m,
+static void initialize_tag_member_record(tag_member_t *m,
                                          const tag_member_info_t *desc) {
-  if (!m || !desc) return;
+  if (!m || !desc || m->decl_type) return;
   m->offset = desc->offset;
   m->bit_width = desc->bit_width;
   m->bit_offset = desc->bit_offset;
   m->bit_is_signed = desc->bit_is_signed;
   const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
-  tag_member_record_set_decl_type(m, ctx_type_clone_persistent(desc_type));
+  m->decl_type = ctx_type_clone_persistent(desc_type);
 }
 
 static goto_ref_t *goto_refs_all = NULL;
@@ -640,7 +630,7 @@ static void insert_tag_member_record(
   m->tag_len = tag_len;
   m->member_name = desc->name;
   m->member_len = desc->len;
-  tag_member_record_apply_desc(m, desc);
+  initialize_tag_member_record(m, desc);
   m->decl_order = tag_member_decl_order++;
   m->scope_depth = tag_scope_depth;
   m->next_hash = tag_members_by_bucket[bucket];
@@ -704,25 +694,6 @@ int ps_ctx_register_tag_members(
   return 1;
 }
 
-void psx_ctx_add_tag_member(token_kind_t tag_kind, char *tag_name, int tag_len,
-                            const tag_member_info_t *desc) {
-  if (!desc || !ps_tag_member_decl_type(desc)) return;
-  unsigned bucket = (psx_ctx_hash_tag(tag_kind, tag_name, tag_len) ^
-                     psx_ctx_hash_name(desc->name, desc->len)) &
-                    (PCTX_HASH_BUCKETS - 1u);
-  tag_member_t *existing = find_tag_member_record_at_current_scope(
-      tag_kind, tag_name, tag_len, desc, bucket);
-  if (existing) {
-    tag_member_record_apply_desc(existing, desc);
-    tag_type_t *tag = find_tag_type(tag_kind, tag_name, tag_len);
-    if (tag && tag->definition) refresh_cached_tag_definition(tag);
-    return;
-  }
-  insert_tag_member_record(tag_kind, tag_name, tag_len, desc, bucket);
-  tag_type_t *tag = find_tag_type(tag_kind, tag_name, tag_len);
-  if (tag && tag->definition) refresh_cached_tag_definition(tag);
-}
-
 static int cmp_tag_member_ptr(const void *a, const void *b) {
   const tag_member_t *ma = *(const tag_member_t * const *)a;
   const tag_member_t *mb = *(const tag_member_t * const *)b;
@@ -756,7 +727,7 @@ static void fill_tag_member_info(const tag_member_t *m, tag_member_info_t *out) 
   psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
   ps_ctx_refresh_type_completeness(decl_type);
   ps_ctx_attach_aggregate_definitions(decl_type);
-  ps_tag_member_set_decl_type(out, decl_type);
+  out->decl_type = decl_type;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
@@ -1016,9 +987,10 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
   }
 }
 
-static void assign_typedef_fields(typedef_name_t *t, const psx_typedef_info_t *info) {
-  typedef_record_set_decl_type(
-      t, ctx_type_clone_persistent(ps_ctx_typedef_decl_type(info)));
+static void initialize_typedef_record(
+    typedef_name_t *t, const psx_typedef_info_t *info) {
+  if (!t || !info || t->decl_type) return;
+  t->decl_type = ctx_type_clone_persistent(ps_ctx_typedef_decl_type(info));
 }
 
 int ps_ctx_register_typedef_name(
@@ -1049,7 +1021,7 @@ int ps_ctx_register_typedef_name(
   typedefs_by_bucket[bucket] = t;
   t->next_all = all_typedefs;
   all_typedefs = t;
-  assign_typedef_fields(t, info);
+  initialize_typedef_record(t, info);
   if (out_created) *out_created = 1;
   return 1;
 }
@@ -1074,8 +1046,7 @@ bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
   ps_ctx_refresh_type_completeness(typedef_record_decl_type_mut(t));
   if (out) {
     memset(out, 0, sizeof(*out));
-    psx_type_t *decl_type = typedef_record_decl_type_mut(t);
-    ps_ctx_typedef_set_decl_type(out, decl_type);
+    out->decl_type = typedef_record_decl_type(t);
   }
   return true;
 }

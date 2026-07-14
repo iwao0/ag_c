@@ -908,11 +908,10 @@ static node_t *parse_num_literal(void) {
     node->int_is_long_long = (tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG) ? 1 : 0;
     int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
     int int_size = node->int_is_long ? 8 : 4;
-    ps_node_bind_type((node_t *)node,
-                      ps_type_new_integer(
-                          is_unsigned ? TK_UNSIGNED : TK_INT,
-                          int_size, is_unsigned));
-    node->base.type->is_long_long = node->int_is_long_long ? 1 : 0;
+    psx_type_t *literal_type = ps_type_new_integer(
+        is_unsigned ? TK_UNSIGNED : TK_INT, int_size, is_unsigned);
+    literal_type->is_long_long = node->int_is_long_long ? 1 : 0;
+    ps_node_bind_type((node_t *)node, literal_type);
   } else {
     tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;
     node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;

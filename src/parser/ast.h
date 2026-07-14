@@ -166,7 +166,7 @@ struct node_t {
   unsigned int is_source_compound_assignment : 1;
 
   /* Canonical semantic type. */
-  psx_type_t *type;
+  const psx_type_t *type;
   psx_expr_type_state_t type_state;
 };
 
