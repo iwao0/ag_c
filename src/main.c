@@ -9,6 +9,7 @@
 #include "diag/diag.h"
 #include "ir/ir.h"
 #include "ir/ir_builder.h"
+#include "lowering/translation_unit_data_lowering.h"
 #include "arch/arm64_apple/arm64_apple_ir.h"
 #include "arch/wasm32/wasm32_ir.h"
 #include "arch/wasm32/wasm32_obj.h"
@@ -215,8 +216,17 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     return -5;
   }
 
+  ir_data_module_t *data_module = lower_ir_translation_unit_data();
+  if (!data_module) {
+    clear_output_callback();
+    gen_set_simple_formatter(0);
+    if (object_mode) wasm32_obj_capture_output(0);
+    return -3;
+  }
+
   if (object_mode) {
-    wasm32_obj_emit_data_segments();
+    wasm32_obj_emit_data_segments(data_module);
+    ir_data_module_free(data_module);
     wasm32_obj_end();
     wasm32_obj_capture_output(0);
     if (wasm32_obj_capture_limit_exceeded()) return -2;
@@ -230,7 +240,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     free(obj_bytes);
     return (int)obj_len;
   } else {
-    wasm32_emit_data_segments();
+    wasm32_emit_data_segments(data_module);
+    ir_data_module_free(data_module);
     wasm32_module_end();
     clear_output_callback();
     gen_set_simple_formatter(0);
@@ -388,22 +399,36 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  ir_data_module_t *data_module = lower_ir_translation_unit_data();
+  if (!data_module) {
+#ifdef AGC_TARGET_WASM32
+    if (wasm_object_mode) {
+      fclose(wasm_obj_out);
+      remove(output_path);
+    }
+#endif
+    clear_output_callback();
+    free(source);
+    return 1;
+  }
+
 #ifdef AGC_TARGET_WASM32
   if (wasm_object_mode) {
-    wasm32_obj_emit_data_segments();
+    wasm32_obj_emit_data_segments(data_module);
     wasm32_obj_end();
     fclose(wasm_obj_out);
   } else {
-    wasm32_emit_data_segments();
+    wasm32_emit_data_segments(data_module);
     wasm32_module_end();
   }
 #else
   // 文字列・浮動小数点定数・グローバル変数のデータセクションを emit。
   // (parser が tokenize/parse 中に登録したテーブルを順に書き出す)
-  gen_string_literals();
+  gen_string_literals(data_module);
   gen_float_literals();
   gen_global_vars();
 #endif
+  ir_data_module_free(data_module);
   if (!wasm_object_mode) clear_output_callback();
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));

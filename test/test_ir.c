@@ -6,6 +6,7 @@
  */
 
 #include "../src/ir/ir.h"
+#include "../src/ir/ir_data.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -276,9 +277,59 @@ static void test_resolved_symbols(void) {
   ir_module_free(m);
 }
 
+/* ---- test 7: translation-unit data moduleの所有権とrelocation ---- */
+static void test_data_module(void) {
+  ir_data_module_t *module = ir_data_module_new();
+  char object_name[] = "callbacks";
+  unsigned char bytes[] = {1, 2, 3, 4, 0, 0, 0, 0};
+  ir_data_object_t *object = ir_data_module_add_object(
+      module, object_name, 9, IR_DATA_OBJECT);
+  if (!object || !ir_data_object_set_bytes(object, bytes, 8)) {
+    failures++;
+    fprintf(stderr, "FAIL: IR data object creation\n");
+    ir_data_module_free(module);
+    return;
+  }
+  object->alignment = 8;
+  object->is_static = 1;
+
+  char target_name[] = "handler";
+  ir_callable_sig_t sig = {0};
+  sig.result = IR_TY_I32;
+  sig.param_count = 1;
+  sig.params[0] = IR_TY_PTR;
+  ir_data_reloc_t *reloc = ir_data_object_add_reloc(
+      object, 4, 4, IR_DATA_RELOC_FUNCTION,
+      target_name, 7, 12, &sig);
+
+  object_name[0] = 'X';
+  target_name[0] = 'Y';
+  bytes[0] = 99;
+  if (ir_data_module_find_object(module, "callbacks", 9) != object ||
+      ir_data_module_find_object(module, "callback", 8) != NULL ||
+      strcmp(object->name, "callbacks") != 0 || object->bytes[0] != 1 ||
+      object->byte_size != 8 || object->alignment != 8 ||
+      !object->is_static) {
+    failures++;
+    fprintf(stderr, "FAIL: IR data object metadata and ownership\n");
+  }
+  if (!reloc || strcmp(reloc->target, "handler") != 0 ||
+      reloc->offset != 4 || reloc->width != 4 || reloc->addend != 12 ||
+      reloc->kind != IR_DATA_RELOC_FUNCTION || !reloc->has_callable_sig ||
+      reloc->callable_sig.result != IR_TY_I32 ||
+      reloc->callable_sig.param_count != 1 ||
+      reloc->callable_sig.params[0] != IR_TY_PTR) {
+    failures++;
+    fprintf(stderr, "FAIL: IR data relocation metadata and ownership\n");
+  }
+
+  ir_data_module_free(module);
+}
+
 int main(void) {
   test_helpers();
   test_resolved_symbols();
+  test_data_module();
   test_simple_add();
   test_globals();
   test_control_flow();

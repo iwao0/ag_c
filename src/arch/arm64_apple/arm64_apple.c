@@ -17,7 +17,6 @@
 /* arm64_apple.c は AST node 型を使わない。
  * Phase C2-3: tag_member_info_t / psx_ctx_* は parser_public.h 経由。 */
 #include "../../parser/parser_public.h"
-#include "../../tokenizer/literals.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -51,53 +50,42 @@ void cg_emit_mov_imm(const char *reg, long long val) {
 /* データセクション (parser が tokenize/parse 中に登録したテーブルを emit) */
 /* ------------------------------------------------------------------ */
 
-/* string_literals walk 用の状態 (visitor 経由で渡す)。 */
 typedef struct {
   int has_narrow;
   int has_wide;
 } string_lit_kind_scan_t;
 
-static void scan_string_lit_kinds(string_lit_t *lit, void *user) {
-  string_lit_kind_scan_t *s = user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  if (view.char_width == TK_CHAR_WIDTH_CHAR) s->has_narrow = 1;
-  else s->has_wide = 1;
+static void emit_string_literal_object(const ir_data_object_t *object) {
+  cg_emitf("%s:\n", object->name);
+  for (int i = 0; i < object->byte_size; i++)
+    cg_emitf("  .byte %u\n", (unsigned)object->bytes[i]);
 }
 
-static void emit_string_literal_asm_byte(unsigned char byte, void *user) {
-  (void)user;
-  cg_emitf("  .byte %u\n", (unsigned)byte);
-}
-
-static void emit_narrow_string_literal(string_lit_t *lit, void *user) {
-  (void)user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  if (view.char_width != TK_CHAR_WIDTH_CHAR) return;
-  cg_emitf("%s:\n", view.label);
-  tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
-                               emit_string_literal_asm_byte, NULL);
-}
-
-static void emit_wide_string_literal(string_lit_t *lit, void *user) {
-  (void)user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  if (view.char_width == TK_CHAR_WIDTH_CHAR) return;
-  cg_emitf("%s:\n", view.label);
-  tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
-                               emit_string_literal_asm_byte, NULL);
-}
-
-void gen_string_literals(void) {
+void gen_string_literals(const ir_data_module_t *data_module) {
   /* narrow char 文字列のみ __TEXT,__cstring に置く。
    * u"..." / U"..." / L"..." は内部にゼロバイトを含み得るため __DATA,__const へ。 */
   string_lit_kind_scan_t scan = {0};
-  if (!ps_iter_string_literals(scan_string_lit_kinds, &scan)) return;
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind != IR_DATA_STRING) continue;
+    if (object->element_size == 1) scan.has_narrow = 1;
+    else scan.has_wide = 1;
+  }
+  if (!scan.has_narrow && !scan.has_wide) return;
   if (scan.has_narrow) cg_emitf(".section __TEXT,__cstring\n");
-  ps_iter_string_literals(emit_narrow_string_literal, NULL);
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind == IR_DATA_STRING && object->element_size == 1)
+      emit_string_literal_object(object);
+  }
   if (scan.has_wide) {
     cg_emitf(".section __DATA,__const\n");
     cg_emitf(".align 2\n");
-    ps_iter_string_literals(emit_wide_string_literal, NULL);
+    for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+         object; object = object->next) {
+      if (object->kind == IR_DATA_STRING && object->element_size != 1)
+        emit_string_literal_object(object);
+    }
   }
   cg_emitf(".text\n");
 }

@@ -55,7 +55,7 @@ PARSER_LIB_OBJS+=$(OBJROOT)/declaration_pipeline.o $(OBJROOT)/semantic/declarati
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/semantic_invariants.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
-IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_print.o
+IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_print.o
 WASM_MAIN_OBJ=$(OBJROOT)/main_wasm32.o
 WASM_OBJS=$(filter-out $(OBJROOT)/main.o,$(OBJS)) $(WASM_MAIN_OBJ)
 

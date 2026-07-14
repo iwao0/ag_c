@@ -43,6 +43,8 @@ const actual = new Map();
 const contextBridgeRe =
   /\b(?:psx?_ctx_[A-Za-z0-9_]+|ir_abi_classify_function_param)\b/g;
 const irSymbolTypeRe = /\bps_(?:lvar|gvar)_get_decl_type\b/g;
+const parserLiteralRegistryRe =
+  /\b(?:ps_iter_string_literals|ps_string_lit_view|string_lit_t)\b/g;
 for (const file of backendFiles) {
   const source = await readFile(file, "utf8");
   if (/#[ \t]*include[^\n]*parser\/semantic_ctx\.h/.test(source)) {
@@ -50,7 +52,7 @@ for (const file of backendFiles) {
   }
   const forbidden = file.startsWith("src/ir/")
     ? [contextBridgeRe, irSymbolTypeRe]
-    : [contextBridgeRe];
+    : [contextBridgeRe, parserLiteralRegistryRe];
   for (const pattern of forbidden) {
     for (const match of source.matchAll(pattern)) {
       const key = `${file}:${match[0]}`;
@@ -74,7 +76,7 @@ const wasmFunctionCodegenStart = wasmIrSource.indexOf(
   "static void set_vreg_global_ref",
 );
 const wasmFunctionCodegenEnd = wasmIrSource.indexOf(
-  "static void emit_string_literal_wat_byte",
+  "static void emit_string_literal_data",
 );
 if (wasmFunctionCodegenStart < 0 ||
     wasmFunctionCodegenEnd <= wasmFunctionCodegenStart) {

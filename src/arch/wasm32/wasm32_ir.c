@@ -3,7 +3,6 @@
 #include "../../diag/diag.h"
 #include "../../ir/abi_lowering.h"
 #include "../../parser/parser_public.h"
-#include "../../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -102,6 +101,7 @@ typedef struct {
 } wasm_function_symbol_ctx_t;
 
 static wasm_data_ctx_t g_data = {WASM_STATIC_BASE, NULL, 0, 0};
+static const ir_data_module_t *g_data_module;
 static wasm_func_table_ctx_t g_func_table = {NULL, 0, 0, 0};
 static wasm_function_symbol_ctx_t g_function_symbols = {NULL, 0, 0};
 static const char k_wasm_indent_spaces[] = "                                ";
@@ -288,34 +288,14 @@ static wasm_data_symbol_t *intern_data_symbol(const char *name, int name_len, in
   return s;
 }
 
-typedef struct {
-  const char *label;
-  int label_len;
-  string_lit_t *found;
-} string_find_ctx_t;
-
-static void find_string_lit_cb(string_lit_t *lit, void *user) {
-  string_find_ctx_t *ctx = user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  if (!ctx->found && view.label &&
-      name_eq(view.label, (int)strlen(view.label), ctx->label, ctx->label_len)) {
-    ctx->found = lit;
-  }
-}
-
-static int narrow_string_encoded_size(string_lit_t *lit) {
-  if (!lit) return 1;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  return tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width,
-                                      true, NULL, NULL);
-}
-
 static int data_addr_for_string_label(const char *sym) {
   if (!sym) return -1;
-  string_find_ctx_t ctx = {sym, (int)strlen(sym), NULL};
-  ps_iter_string_literals(find_string_lit_cb, &ctx);
-  int size = narrow_string_encoded_size(ctx.found);
-  return intern_data_symbol(sym, ctx.label_len, size, 1)->addr;
+  int sym_len = (int)strlen(sym);
+  ir_data_object_t *object =
+      ir_data_module_find_object(g_data_module, sym, sym_len);
+  if (!object || object->kind != IR_DATA_STRING) return -1;
+  return intern_data_symbol(sym, sym_len, object->byte_size,
+                            object->alignment)->addr;
 }
 
 static int data_addr_for_ir_string(const char *sym, int sym_len, int size) {
@@ -1838,19 +1818,12 @@ static void emit_wat_escaped_byte(unsigned char c) {
   }
 }
 
-static void emit_string_literal_wat_byte(unsigned char byte, void *user) {
-  (void)user;
-  emit_wat_escaped_byte(byte);
-}
-
-static void emit_string_literal_data(string_lit_t *lit, void *user) {
-  (void)user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  int addr = data_addr_for_string_label(view.label);
+static void emit_string_literal_data(const ir_data_object_t *object) {
+  int addr = data_addr_for_string_label(object->name);
   if (addr < 0) wasm_unsupported_msg("string literal label in Wasm backend");
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
-  tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
-                               emit_string_literal_wat_byte, NULL);
+  for (int i = 0; i < object->byte_size; i++)
+    emit_wat_escaped_byte(object->bytes[i]);
   cg_emitf("\")\n");
 }
 
@@ -2083,8 +2056,12 @@ static void emit_global_data(global_var_t *gv, void *user) {
   }
 }
 
-void wasm32_emit_data_segments(void) {
-  ps_iter_string_literals(emit_string_literal_data, NULL);
+void wasm32_emit_data_segments(const ir_data_module_t *data_module) {
+  g_data_module = data_module;
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind == IR_DATA_STRING) emit_string_literal_data(object);
+  }
   ps_iter_globals(emit_global_data, NULL);
 }
 

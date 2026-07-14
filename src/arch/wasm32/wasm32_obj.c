@@ -2,7 +2,6 @@
 #include "../../diag/diag.h"
 #include "../../ir/abi_lowering.h"
 #include "../../parser/parser_public.h"
-#include "../../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -189,10 +188,6 @@ static int wb_reserve(wb_t *b, size_t add) {
 static void wb_u8(wb_t *b, unsigned v) {
   if (!wb_reserve(b, 1)) return;
   b->data[b->len++] = (unsigned char)v;
-}
-
-static void obj_emit_string_literal_byte(unsigned char byte, void *user) {
-  wb_u8((wb_t *)user, byte);
 }
 
 static void wb_bytes(wb_t *b, const void *p, size_t n) {
@@ -2301,15 +2296,13 @@ void wasm32_obj_gen_ir_module(ir_module_t *m) {
   }
 }
 
-static void emit_obj_string_literal(string_lit_t *lit, void *user) {
-  (void)user;
-  psx_string_lit_view_t view = ps_string_lit_view(lit);
-  int name_len = view.label ? (int)strlen(view.label) : 0;
-  if (!view.label || name_len == 0) obj_unsupported_msg("string literal label in Wasm object mode");
-  obj_data_t *d = intern_data(view.label, name_len, 0, 1, 0);
+static void emit_obj_string_literal(const ir_data_object_t *object) {
+  obj_data_t *d = intern_data(
+      object->name, object->name_len,
+      align_log2_for_size(object->alignment), 1, 0);
   if (d->is_emitted) return;
-  tk_emit_string_literal_bytes(view.str, view.len, (int)view.char_width, true,
-                               obj_emit_string_literal_byte, &d->bytes);
+  wb_bytes(&d->bytes, object->bytes, (size_t)object->byte_size);
+  data_note_alloc_size(d, (size_t)object->byte_size);
   d->is_emitted = 1;
 }
 
@@ -2617,8 +2610,11 @@ static void count_obj_global(global_var_t *gv, void *user) {
   (*count)++;
 }
 
-void wasm32_obj_emit_data_segments(void) {
-  ps_iter_string_literals(emit_obj_string_literal, NULL);
+void wasm32_obj_emit_data_segments(const ir_data_module_t *data_module) {
+  for (const ir_data_object_t *object = data_module ? data_module->objects : NULL;
+       object; object = object->next) {
+    if (object->kind == IR_DATA_STRING) emit_obj_string_literal(object);
+  }
   int global_count = 0;
   ps_iter_globals(count_obj_global, &global_count);
   reserve_data_capacity(g_obj.data_count + global_count + 8);
