@@ -96,6 +96,40 @@ if (!/ps_ctx_find_function_symbol_in\s*\(/.test(identifierResolutionSource) ||
     "semantic function-symbol resolution must use the passed semantic context",
   );
 }
+const tagDeclarationResolutionSource = await readFile(
+  "src/semantic/tag_declaration_resolution.c",
+  "utf8",
+);
+const aggregateMemberResolutionSource = await readFile(
+  "src/semantic/aggregate_member_resolution.c",
+  "utf8",
+);
+const declarationApplicationSource = await readFile(
+  "src/semantic/declaration_application.c",
+  "utf8",
+);
+const frontendDeclarationSources = [
+  await readFile("src/frontend/toplevel_declaration.c", "utf8"),
+  await readFile("src/frontend/local_declaration.c", "utf8"),
+  await readFile("src/frontend/function_definition.c", "utf8"),
+].join("\n");
+const contextFreeTagRegistryCall =
+  /\bps_ctx_(?:has_tag_type|register_tag_type|get_tag_size|get_tag_align|get_tag_definition|get_tag_member_count|register_tag_members|find_tag_member_info)\s*\(/;
+if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
+    contextFreeTagRegistryCall.test(aggregateMemberResolutionSource) ||
+    !/psx_apply_parsed_tag_declaration_in_context\s*\(/.test(
+      declarationApplicationSource,
+    ) ||
+    !/psx_apply_parsed_decl_specifier_in_context\s*\(/.test(
+      frontendDeclarationSources,
+    ) ||
+    !/psx_apply_parsed_standalone_tag_in_context\s*\(/.test(
+      frontendDeclarationSources,
+    )) {
+  throw new Error(
+    "tag registration and layout resolution must use the passed semantic context",
+  );
+}
 
 for (const file of await sourceFilesUnder("src")) {
   const source = await readFile(file, "utf8");

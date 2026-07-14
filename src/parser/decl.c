@@ -5,11 +5,13 @@
 #include "expr.h"
 #include "initializer_syntax.h"
 #include "lvar_internal.h"
+#include "local_registry.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"
 #include "config_runtime.h"
 #include "../declaration_pipeline.h"
 #include "../diag/diag.h"
+#include "../lowering/local_storage.h"
 #include "../tokenizer/tokenizer.h"
 #include <limits.h>
 #include <stdio.h>
@@ -19,6 +21,23 @@
 static char *current_funcname;
 static int current_funcname_len;
 static inline token_t *curtok(void) { return tk_get_current_token(); }
+
+lvar_t *ps_decl_register_lvar_typed_align(
+    char *name, int len, int size, int align, const psx_type_t *type) {
+  if (!type) return NULL;
+  int offset = local_storage_allocate(size, align);
+  return ps_local_registry_create_storage_object(
+      name, len, offset, size, align, type);
+}
+
+void ps_decl_reset_locals(void) {
+  ps_local_registry_reset();
+  local_storage_reset();
+}
+
+void ps_decl_reserve_variadic_regs(void) {
+  local_storage_reserve_prefix(64);
+}
 
 void ps_decl_set_current_funcname(char *name, int len) {
   current_funcname = name;

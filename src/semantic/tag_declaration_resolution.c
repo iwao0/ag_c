@@ -19,24 +19,29 @@ void psx_resolve_tag_declaration(
       request->size < 0 || request->alignment < 0) {
     return;
   }
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
 
   token_kind_t current_kind = TK_EOF;
-  if (ps_ctx_find_tag_kind_at_current_scope(
-          request->name, request->name_len, &current_kind) &&
+  if (ps_ctx_find_tag_kind_at_current_scope_in(
+          semantic_context, request->name, request->name_len,
+          &current_kind) &&
       current_kind != request->kind) {
     resolution->status = PSX_TAG_DECLARATION_KIND_CONFLICT;
     return;
   }
 
   if (request->mode == PSX_TAG_DECLARATION_REFERENCE &&
-      ps_ctx_has_tag_type(
-          request->kind, request->name, request->name_len)) {
+      ps_ctx_has_tag_type_in(
+          semantic_context, request->kind,
+          request->name, request->name_len)) {
     resolution->status = PSX_TAG_DECLARATION_OK;
   } else {
     int is_complete =
         request->mode == PSX_TAG_DECLARATION_DEFINITION;
-    if (!ps_ctx_register_tag_type(
-            request->kind, request->name, request->name_len,
+    if (!ps_ctx_register_tag_type_in(
+            semantic_context, request->kind,
+            request->name, request->name_len,
             is_complete, request->member_count, request->size,
             request->alignment)) {
       resolution->status = is_complete
@@ -47,10 +52,13 @@ void psx_resolve_tag_declaration(
     resolution->registered = 1;
     resolution->status = PSX_TAG_DECLARATION_OK;
   }
-  resolution->scope_depth = ps_ctx_get_tag_scope_depth(
-      request->kind, request->name, request->name_len);
-  resolution->size = ps_ctx_get_tag_size(
-      request->kind, request->name, request->name_len);
-  resolution->alignment = ps_ctx_get_tag_align(
-      request->kind, request->name, request->name_len);
+  resolution->scope_depth = ps_ctx_get_tag_scope_depth_in(
+      semantic_context, request->kind,
+      request->name, request->name_len);
+  resolution->size = ps_ctx_get_tag_size_in(
+      semantic_context, request->kind,
+      request->name, request->name_len);
+  resolution->alignment = ps_ctx_get_tag_align_in(
+      semantic_context, request->kind,
+      request->name, request->name_len);
 }

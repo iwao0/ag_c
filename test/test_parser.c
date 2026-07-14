@@ -21,6 +21,7 @@
 #include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
 #include "../src/semantic/declaration_application.h"
+#include "../src/semantic/declaration_registration.h"
 #include "../src/frontend/function_definition.h"
 #include "../src/frontend/local_declaration.h"
 #include "../src/frontend/semantic_pipeline.h"
@@ -14762,6 +14763,64 @@ static void test_semantic_context_isolation() {
   ASSERT_TRUE(function_resolution.function ==
               ps_ctx_find_function_symbol_in(
                   second, function_name, 15));
+
+  char direct_tag_name[] = "DirectTag";
+  char direct_member_name[] = "value";
+  tag_member_info_t direct_member = {
+      .name = direct_member_name,
+      .len = 5,
+      .offset = 0,
+      .decl_type = ps_type_new_integer(TK_INT, 4, 0),
+  };
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second, TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
+  ASSERT_TRUE(ps_ctx_register_tag_members_in(
+      second, TK_STRUCT, direct_tag_name, 9,
+      &direct_member, 1, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in(
+      second, TK_STRUCT, direct_tag_name, 9, 1, 1, 4, 4));
+  ASSERT_TRUE(!ps_ctx_has_tag_type_in(
+      first, TK_STRUCT, direct_tag_name, 9));
+  ASSERT_TRUE(ps_ctx_has_tag_type_in(
+      second, TK_STRUCT, direct_tag_name, 9));
+  ASSERT_EQ(-1, ps_ctx_get_tag_size_in(
+      first, TK_STRUCT, direct_tag_name, 9));
+  ASSERT_EQ(4, ps_ctx_get_tag_size_in(
+      second, TK_STRUCT, direct_tag_name, 9));
+  tag_member_info_t direct_member_result = {0};
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(
+      first, TK_STRUCT, direct_tag_name, 9,
+      direct_member_name, 5, &direct_member_result));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(
+      second, TK_STRUCT, direct_tag_name, 9,
+      direct_member_name, 5, &direct_member_result));
+  ASSERT_EQ(0, direct_member_result.offset);
+  ASSERT_EQ(4, ps_type_sizeof(direct_member_result.decl_type));
+  psx_parsed_decl_specifier_t direct_tag_specifier = {
+      .source = PSX_PARSED_DECL_TYPE_TAG,
+      .tag_action = {
+          .kind = TK_STRUCT,
+          .name = direct_tag_name,
+          .name_len = 9,
+      },
+  };
+  const psx_type_t *direct_tag_type =
+      psx_apply_parsed_decl_specifier_in_context(
+          second, &direct_tag_specifier);
+  ASSERT_TRUE(direct_tag_type != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
+  ASSERT_EQ(4, ps_type_sizeof(direct_tag_type));
+  ASSERT_TRUE(direct_tag_type->aggregate_definition != NULL);
+  ASSERT_EQ(1, direct_tag_type->aggregate_definition->member_count);
+
+  char applied_tag_name[] = "AppliedTag";
+  psx_apply_parsed_tag_declaration_in_context(
+      second, TK_STRUCT, applied_tag_name, 10,
+      PSX_TAG_DECLARATION_DEFINITION, 0, 8, 8, NULL);
+  ASSERT_TRUE(!ps_ctx_has_tag_type_in(
+      first, TK_STRUCT, applied_tag_name, 10));
+  ASSERT_EQ(8, ps_ctx_get_tag_size_in(
+      second, TK_STRUCT, applied_tag_name, 10));
 
   ps_ctx_activate(previous);
   ps_ctx_destroy(first);

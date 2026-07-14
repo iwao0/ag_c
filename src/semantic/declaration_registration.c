@@ -81,13 +81,15 @@ void psx_apply_parsed_enum_constant(
                name_len, name);
 }
 
-void psx_apply_parsed_tag_declaration(
+void psx_apply_parsed_tag_declaration_in_context(
+    psx_semantic_context_t *semantic_context,
     token_kind_t kind, char *name, int name_len,
     psx_tag_declaration_mode_t mode, int member_count,
     int size, int alignment, token_t *diag_tok) {
   psx_tag_declaration_resolution_t resolution;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
+          .semantic_context = semantic_context,
           .kind = kind,
           .name = name,
           .name_len = name_len,
@@ -111,6 +113,15 @@ void psx_apply_parsed_tag_declaration(
   ps_diag_ctx(diag_tok, "tag",
                "canonical tag declaration resolution failed for '%.*s'",
                name_len, name);
+}
+
+void psx_apply_parsed_tag_declaration(
+    token_kind_t kind, char *name, int name_len,
+    psx_tag_declaration_mode_t mode, int member_count,
+    int size, int alignment, token_t *diag_tok) {
+  psx_apply_parsed_tag_declaration_in_context(
+      NULL, kind, name, name_len, mode, member_count,
+      size, alignment, diag_tok);
 }
 
 int psx_apply_aggregate_member_declaration(

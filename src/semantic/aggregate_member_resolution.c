@@ -197,6 +197,7 @@ int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state) {
 }
 
 static int collect_promoted_aggregate_members(
+    psx_semantic_context_t *semantic_context,
     const psx_type_t *source_type, int base_offset,
     tag_member_info_t **out_members, int *out_member_count) {
   *out_members = NULL;
@@ -204,8 +205,8 @@ static int collect_promoted_aggregate_members(
   if (!ps_type_is_tag_aggregate(source_type) || !source_type->tag_name ||
       source_type->tag_len <= 0 || base_offset < 0)
     return 0;
-  int source_count = ps_ctx_get_tag_member_count(
-      source_type->tag_kind, source_type->tag_name,
+  int source_count = ps_ctx_get_tag_member_count_in(
+      semantic_context, source_type->tag_kind, source_type->tag_name,
       source_type->tag_len);
   if (source_count < 0) return 0;
   tag_member_info_t *members = source_count > 0
@@ -216,8 +217,8 @@ static int collect_promoted_aggregate_members(
   int member_count = 0;
   for (int i = 0; i < source_count; i++) {
     tag_member_info_t source = {0};
-    if (!ps_ctx_get_tag_member_info(
-            source_type->tag_kind, source_type->tag_name,
+    if (!ps_ctx_get_tag_member_info_in(
+            semantic_context, source_type->tag_kind, source_type->tag_name,
             source_type->tag_len, i, &source)) {
       free(members);
       return 0;
@@ -251,6 +252,8 @@ void psx_resolve_aggregate_member_declaration(
       request->requested_alignment < 0) {
     return;
   }
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
   psx_aggregate_layout_state_t working_layout = *layout;
 
   int has_name = request->member_name != NULL;
@@ -314,7 +317,7 @@ void psx_resolve_aggregate_member_declaration(
   int promoted_count = 0;
   if (is_anonymous_aggregate) {
     if (!collect_promoted_aggregate_members(
-            type, resolution->offset,
+            semantic_context, type, resolution->offset,
             &promoted_members, &promoted_count))
       return;
   }
@@ -347,8 +350,9 @@ void psx_resolve_aggregate_member_declaration(
 
   int conflict_index = -1;
   if (batch_count > 0 &&
-      !ps_ctx_register_tag_members(
-          request->target_tag_kind, request->target_tag_name,
+      !ps_ctx_register_tag_members_in(
+          semantic_context, request->target_tag_kind,
+          request->target_tag_name,
           request->target_tag_name_len, batch, batch_count,
           &conflict_index)) {
     resolution->status = PSX_AGGREGATE_MEMBER_DUPLICATE;

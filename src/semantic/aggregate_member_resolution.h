@@ -27,6 +27,7 @@ typedef struct {
 } psx_aggregate_layout_state_t;
 
 typedef struct {
+  psx_semantic_context_t *semantic_context;
   token_kind_t target_tag_kind;
   char *target_tag_name;
   int target_tag_name_len;

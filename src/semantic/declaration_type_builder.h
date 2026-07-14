@@ -8,5 +8,8 @@
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request);
 psx_type_t *psx_build_decl_specifier_type(
     const psx_parsed_decl_specifier_t *specifier);
+psx_type_t *psx_build_decl_specifier_type_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier);
 
 #endif

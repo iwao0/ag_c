@@ -55,10 +55,12 @@ static void *begin_declaration(
   application->semantic_context = context;
   application->is_typedef = is_typedef;
   if (is_standalone_tag) {
-    psx_apply_parsed_standalone_tag(specifier);
+    psx_apply_parsed_standalone_tag_in_context(
+        application->semantic_context, specifier);
     return application;
   }
-  application->base_type = psx_apply_parsed_decl_specifier(specifier);
+  application->base_type = psx_apply_parsed_decl_specifier_in_context(
+      application->semantic_context, specifier);
   if (!application->base_type) {
     ps_diag_ctx(specifier->diagnostic_token, "local-declaration",
                 "canonical local declaration type resolution failed");
@@ -80,8 +82,9 @@ static void begin_declarator(
   application->current_initializer = *initializer;
   psx_apply_runtime_parsed_declarator(
       declarator, &application->current_application);
-  application->current_type = psx_apply_runtime_declarator_type(
-      application->base_type, &application->current_application);
+  application->current_type = psx_apply_runtime_declarator_type_in_context(
+      application->semantic_context, application->base_type,
+      &application->current_application);
   if (!application->current_type) {
     ps_diag_ctx((token_t *)name, "local-declaration",
                 "canonical declarator type resolution failed for '%.*s'",

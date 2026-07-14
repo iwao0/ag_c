@@ -9,20 +9,23 @@
 
 #include <limits.h>
 
-static psx_type_t *resolve_tag_base_type(token_kind_t kind,
-                                         char *name, int name_len) {
-  int scope_depth = ps_ctx_get_tag_scope_depth(kind, name, name_len);
+static psx_type_t *resolve_tag_base_type(
+    psx_semantic_context_t *semantic_context,
+    token_kind_t kind, char *name, int name_len) {
+  int scope_depth = ps_ctx_get_tag_scope_depth_in(
+      semantic_context, kind, name, name_len);
   if (kind == TK_ENUM) {
     return ps_type_new_enum(
         name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, 4);
   }
   if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
-  int size = ps_ctx_get_tag_size(kind, name, name_len);
+  int size = ps_ctx_get_tag_size_in(
+      semantic_context, kind, name, name_len);
   if (size < 0) size = 0;
   psx_type_t *type = ps_type_new_tag(
       kind, name, name_len, scope_depth >= 0 ? scope_depth + 1 : 0, size);
-  type->aggregate_definition = ps_ctx_get_tag_definition(
-      kind, name, name_len);
+  type->aggregate_definition = ps_ctx_get_tag_definition_in(
+      semantic_context, kind, name, name_len);
   if (type->aggregate_definition && type->aggregate_definition->align > 0)
     type->align = type->aggregate_definition->align;
   return type;
@@ -75,13 +78,15 @@ static void apply_decl_specifier_type_properties(
 
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
   if (!request || !request->base_type) return NULL;
+  psx_semantic_context_t *semantic_context = request->semantic_context
+      ? request->semantic_context : ps_ctx_active();
   psx_type_t *type = ps_type_clone(request->base_type);
   if (!type) return NULL;
   if (request->declarator_shape) {
     type = ps_type_apply_declarator_shape(
         type, request->declarator_shape);
   }
-  ps_ctx_attach_aggregate_definitions(type);
+  ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
   return type;
 }
 
@@ -90,9 +95,11 @@ const psx_type_t *psx_resolve_decl_type(
   return psx_build_decl_type(request);
 }
 
-psx_type_t *psx_build_decl_specifier_type(
+psx_type_t *psx_build_decl_specifier_type_in_context(
+    psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
+  if (!semantic_context) semantic_context = ps_ctx_active();
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
   psx_type_t *type = NULL;
@@ -104,6 +111,7 @@ psx_type_t *psx_build_decl_specifier_type(
       break;
     case PSX_PARSED_DECL_TYPE_TAG:
       type = resolve_tag_base_type(
+          semantic_context,
           specifier->tag_action.kind,
           specifier->tag_action.name,
           specifier->tag_action.name_len);
@@ -111,7 +119,8 @@ psx_type_t *psx_build_decl_specifier_type(
     case PSX_PARSED_DECL_TYPEDEF_NAME: {
       const psx_type_t *typedef_type = NULL;
       if (!specifier->typedef_name ||
-          !ps_ctx_find_typedef_decl_type(
+          !ps_ctx_find_typedef_decl_type_in(
+              semantic_context,
               specifier->typedef_name->str,
               specifier->typedef_name->len,
               &typedef_type))
@@ -126,13 +135,27 @@ psx_type_t *psx_build_decl_specifier_type(
       return NULL;
   }
   apply_decl_specifier_type_properties(type, syntax, override_plain_char);
-  ps_ctx_attach_aggregate_definitions(type);
+  ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
   return type;
+}
+
+psx_type_t *psx_build_decl_specifier_type(
+    const psx_parsed_decl_specifier_t *specifier) {
+  return psx_build_decl_specifier_type_in_context(
+      NULL, specifier);
 }
 
 const psx_type_t *psx_resolve_decl_specifier_syntax(
     const psx_parsed_decl_specifier_t *specifier) {
-  return psx_build_decl_specifier_type(specifier);
+  return psx_resolve_decl_specifier_syntax_in_context(
+      NULL, specifier);
+}
+
+const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier) {
+  return psx_build_decl_specifier_type_in_context(
+      semantic_context, specifier);
 }
 
 static int object_scalar_slots(const psx_type_t *type) {

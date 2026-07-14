@@ -39,7 +39,8 @@ int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body) {
   return body->member_count;
 }
 
-int psx_apply_parsed_aggregate_body_layout(
+int psx_apply_parsed_aggregate_body_layout_in_context(
+    psx_semantic_context_t *semantic_context,
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align) {
@@ -50,7 +51,8 @@ int psx_apply_parsed_aggregate_body_layout(
   for (int i = 0; i < body->item_count; i++) {
     psx_parsed_aggregate_item_t *item = &body->items[i];
     if (item->kind == PSX_PARSED_AGGREGATE_STATIC_ASSERT) {
-      psx_apply_static_assert(
+      psx_apply_static_assert_in_context(
+          semantic_context,
           item->value.static_assertion.condition,
           item->value.static_assertion.diagnostic_token);
       continue;
@@ -60,7 +62,8 @@ int psx_apply_parsed_aggregate_body_layout(
         &item->value.member_declaration;
     ps_prepare_decl_specifier_alignments(&declaration->specifier);
     const psx_type_t *member_base_type =
-        psx_apply_parsed_decl_specifier(&declaration->specifier);
+        psx_apply_parsed_decl_specifier_in_context(
+            semantic_context, &declaration->specifier);
     if (!member_base_type) {
       ps_diag_ctx(declaration->specifier.diagnostic_token, "decl", "%s",
                    diag_message_for(
@@ -78,6 +81,7 @@ int psx_apply_parsed_aggregate_body_layout(
       member_count += psx_apply_aggregate_member_declaration(
           &layout,
           &(psx_aggregate_member_declaration_request_t){
+              .semantic_context = semantic_context,
               .target_tag_kind = tag_kind,
               .target_tag_name = tag_name,
               .target_tag_name_len = tag_len,
@@ -102,11 +106,20 @@ int psx_apply_parsed_aggregate_body_layout(
   return member_count;
 }
 
+int psx_apply_parsed_aggregate_body_layout(
+    psx_parsed_aggregate_body_t *body,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int *out_size, int *out_align) {
+  return psx_apply_parsed_aggregate_body_layout_in_context(
+      NULL, body, tag_kind, tag_name, tag_len, out_size, out_align);
+}
+
 static void apply_decl_tag_action(
     const psx_parsed_tag_action_t *action, void *context) {
-  (void)context;
+  psx_semantic_context_t *semantic_context = context;
   if (!action || action->action == PSX_PARSED_TAG_NONE) return;
-  psx_apply_parsed_tag_declaration(
+  psx_apply_parsed_tag_declaration_in_context(
+      semantic_context,
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_REFERENCE, 0, 0, 0,
       action->diagnostic_token);
@@ -120,27 +133,33 @@ static void apply_decl_tag_action(
     size = 4;
     alignment = 4;
   } else {
-    member_count = psx_apply_parsed_aggregate_body_layout(
+    member_count = psx_apply_parsed_aggregate_body_layout_in_context(
+        semantic_context,
         action->aggregate_body, action->kind,
         action->name, action->name_len, &size, &alignment);
   }
-  psx_apply_parsed_tag_declaration(
+  psx_apply_parsed_tag_declaration_in_context(
+      semantic_context,
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_DEFINITION, member_count, size, alignment,
       action->diagnostic_token);
 }
 
 static psx_type_t *build_parsed_type_name(
+    psx_semantic_context_t *semantic_context,
     const psx_parsed_type_name_t *type_name) {
   if (!type_name) return NULL;
   psx_type_t *base_type = NULL;
   if (type_name->atomic_inner) {
-    base_type = build_parsed_type_name(type_name->atomic_inner);
+    base_type = build_parsed_type_name(
+        semantic_context, type_name->atomic_inner);
     if (!base_type) return NULL;
     base_type->is_atomic = 1;
   } else {
-    apply_decl_tag_action(&type_name->specifier.tag_action, NULL);
-    base_type = psx_build_decl_specifier_type(&type_name->specifier);
+    apply_decl_tag_action(
+        &type_name->specifier.tag_action, semantic_context);
+    base_type = psx_build_decl_specifier_type_in_context(
+        semantic_context, &type_name->specifier);
     if (!base_type) return NULL;
   }
 
@@ -149,6 +168,7 @@ static psx_type_t *build_parsed_type_name(
   psx_apply_parsed_declarator(&type_name->declarator, &shape, NULL);
   return psx_build_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = semantic_context,
           .base_type = base_type,
           .declarator_shape = &shape,
       });
@@ -156,10 +176,17 @@ static psx_type_t *build_parsed_type_name(
 
 const psx_type_t *psx_apply_parsed_type_name(
     const psx_parsed_type_name_t *type_name) {
-  return build_parsed_type_name(type_name);
+  return psx_apply_parsed_type_name_in_context(NULL, type_name);
 }
 
-const psx_type_t *psx_apply_parsed_declarator_type(
+const psx_type_t *psx_apply_parsed_type_name_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_type_name_t *type_name) {
+  return build_parsed_type_name(semantic_context, type_name);
+}
+
+const psx_type_t *psx_apply_parsed_declarator_type_in_context(
+    psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator) {
   if (!base_type || !declarator) return NULL;
@@ -168,20 +195,37 @@ const psx_type_t *psx_apply_parsed_declarator_type(
   psx_apply_parsed_declarator(declarator, &shape, NULL);
   return psx_resolve_decl_type(
       &(psx_decl_type_request_t){
+          .semantic_context = semantic_context,
           .base_type = base_type,
           .declarator_shape = &shape,
+      });
+}
+
+const psx_type_t *psx_apply_parsed_declarator_type(
+    const psx_type_t *base_type,
+    const psx_parsed_declarator_t *declarator) {
+  return psx_apply_parsed_declarator_type_in_context(
+      NULL, base_type, declarator);
+}
+
+const psx_type_t *psx_apply_runtime_declarator_type_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *base_type,
+    const psx_runtime_declarator_application_t *application) {
+  if (!base_type || !application) return NULL;
+  return psx_resolve_decl_type(
+      &(psx_decl_type_request_t){
+          .semantic_context = semantic_context,
+          .base_type = base_type,
+          .declarator_shape = &application->shape,
       });
 }
 
 const psx_type_t *psx_apply_runtime_declarator_type(
     const psx_type_t *base_type,
     const psx_runtime_declarator_application_t *application) {
-  if (!base_type || !application) return NULL;
-  return psx_resolve_decl_type(
-      &(psx_decl_type_request_t){
-          .base_type = base_type,
-          .declarator_shape = &application->shape,
-      });
+  return psx_apply_runtime_declarator_type_in_context(
+      NULL, base_type, application);
 }
 
 void psx_begin_declaration_phase(
@@ -219,9 +263,16 @@ void psx_dispose_declaration_phase(psx_declaration_phase_t *phase) {
 
 const psx_type_t *psx_apply_parsed_decl_specifier(
     const psx_parsed_decl_specifier_t *specifier) {
+  return psx_apply_parsed_decl_specifier_in_context(NULL, specifier);
+}
+
+const psx_type_t *psx_apply_parsed_decl_specifier_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier) return NULL;
-  apply_decl_tag_action(&specifier->tag_action, NULL);
-  return psx_build_decl_specifier_type(specifier);
+  apply_decl_tag_action(&specifier->tag_action, semantic_context);
+  return psx_build_decl_specifier_type_in_context(
+      semantic_context, specifier);
 }
 
 int psx_apply_parsed_decl_alignment(
@@ -243,13 +294,20 @@ int psx_apply_parsed_decl_alignment(
 
 void psx_apply_parsed_standalone_tag(
     const psx_parsed_decl_specifier_t *specifier) {
+  psx_apply_parsed_standalone_tag_in_context(NULL, specifier);
+}
+
+void psx_apply_parsed_standalone_tag_in_context(
+    psx_semantic_context_t *semantic_context,
+    const psx_parsed_decl_specifier_t *specifier) {
   if (!specifier || specifier->source != PSX_PARSED_DECL_TYPE_TAG) return;
   const psx_parsed_tag_action_t *action = &specifier->tag_action;
   if (action->action == PSX_PARSED_TAG_DEFINITION) {
-    apply_decl_tag_action(action, NULL);
+    apply_decl_tag_action(action, semantic_context);
     return;
   }
-  psx_apply_parsed_tag_declaration(
+  psx_apply_parsed_tag_declaration_in_context(
+      semantic_context,
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_FORWARD, 0, 0, 0,
       action->diagnostic_token);

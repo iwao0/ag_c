@@ -37,6 +37,44 @@ void ps_ctx_rollback_function_registration_in(
     psx_semantic_context_t *context, char *name, int len,
     const psx_function_registration_checkpoint_t *checkpoint);
 
+/* Explicit-context tag and aggregate-layout operations. */
+bool ps_ctx_has_tag_type_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+psx_type_t *ps_ctx_clone_tag_type_at_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len,
+    psx_local_lookup_point_t point);
+int ps_ctx_register_tag_type_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len,
+    int is_complete, int member_count, int tag_size, int tag_align);
+int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context);
+int ps_ctx_find_tag_kind_at_current_scope_in(
+    psx_semantic_context_t *context,
+    char *name, int len, token_kind_t *out_kind);
+const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+int ps_ctx_get_tag_size_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+int ps_ctx_get_tag_align_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+int ps_ctx_register_tag_members_in(
+    psx_semantic_context_t *context,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *members, int member_count,
+    int *out_conflict_index);
+void ps_ctx_attach_aggregate_definitions_in(
+    psx_semantic_context_t *context, psx_type_t *type);
+void ps_ctx_refresh_type_completeness_in(
+    psx_semantic_context_t *context, psx_type_t *type);
+void ps_ctx_promote_tag_to_file_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+
 void ps_ctx_reset_function_scope(void);
 void ps_ctx_reset_translation_unit_scope(void);
 void ps_ctx_reset_function_names(void);
@@ -116,6 +154,9 @@ int ps_ctx_register_typedef_name(
  * out が NULL のときは存在判定のみ (記述子は書かない)。 */
 bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out);
 bool ps_ctx_find_typedef_decl_type(
+    char *name, int len, const psx_type_t **out_type);
+bool ps_ctx_find_typedef_decl_type_in(
+    psx_semantic_context_t *context,
     char *name, int len, const psx_type_t **out_type);
 bool ps_ctx_find_typedef_decl_type_at(
     char *name, int len, psx_local_lookup_point_t point,
