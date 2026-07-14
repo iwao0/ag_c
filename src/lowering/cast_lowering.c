@@ -251,7 +251,7 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
 
     if (view.is_pointer && view.elem_size > 0 &&
         ps_node_is_pointer(operand) &&
-        ps_type_pointer_view_structural_qual_levels(
+        ps_type_pointer_depth(
             ps_node_get_type(operand)) <= 1)
       return pointer_result(operand, view);
     if (!view.is_pointer && view.kind == TK_LONG &&

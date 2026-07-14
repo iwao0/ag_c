@@ -61,14 +61,15 @@ typedef struct {
   unsigned int is_incomplete_array : 1;
   unsigned int is_vla_array : 1;
   unsigned int has_canonical_function_params : 1;
-  psx_type_t *function_param_types[16];
+  psx_type_t **function_param_types;
   int function_param_count;
   int function_is_variadic;
 } psx_declarator_op_t;
 
 typedef struct {
-  psx_declarator_op_t ops[24];
+  psx_declarator_op_t *ops;
   int count;
+  int capacity;
 } psx_declarator_shape_t;
 
 /* Operators are stored from the declared identifier outward. Applying them in
@@ -100,7 +101,7 @@ struct psx_type_t {
   unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
-  psx_type_t *param_types[16];
+  psx_type_t **param_types;
   int param_count;
   unsigned char is_variadic_function;
 
@@ -128,18 +129,14 @@ void ps_type_set_function_params(psx_type_t *function_type,
                                   int param_count, int is_variadic);
 const psx_type_t *ps_type_find_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
-psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
-                                          unsigned int const_mask,
-                                          unsigned int volatile_mask);
 psx_type_t *ps_type_wrap_array_dims(psx_type_t *base,
                                      const int *dims, int dim_count);
 void ps_declarator_shape_init(psx_declarator_shape_t *shape);
+int ps_declarator_shape_copy(psx_declarator_shape_t *dst,
+                             const psx_declarator_shape_t *src);
 int ps_declarator_shape_append_pointer(
     psx_declarator_shape_t *shape, int is_const_qualified,
     int is_volatile_qualified);
-int ps_declarator_shape_append_pointer_levels(
-    psx_declarator_shape_t *shape, int levels,
-    unsigned int const_mask, unsigned int volatile_mask);
 int ps_declarator_shape_append_array(
     psx_declarator_shape_t *shape, int array_len);
 int ps_declarator_shape_append_array_ex(
@@ -149,6 +146,9 @@ int ps_declarator_shape_append_vla_array(
 int psx_declarator_shape_append_array_dims(
     psx_declarator_shape_t *shape, const int *dims, int dim_count);
 int ps_declarator_shape_append_function(psx_declarator_shape_t *shape);
+int ps_declarator_op_set_function_params(
+    psx_declarator_op_t *op, psx_type_t *const *param_types,
+    int param_count, int is_variadic);
 int ps_declarator_shape_append_shape(
     psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix);
 int ps_declarator_shape_count_ops(
@@ -209,10 +209,6 @@ int ps_type_generic_select_index(
     const psx_type_t *control, psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
-int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type);
-/* bit 0 is the outermost pointer node; higher bits follow base pointers. */
-unsigned int ps_type_pointer_view_structural_qual_mask(
-    const psx_type_t *type, int is_volatile);
 int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
 int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
     const psx_type_t *type);

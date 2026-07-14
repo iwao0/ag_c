@@ -24,7 +24,7 @@ typedef struct {
 
 typedef struct {
   psx_declarator_shape_t shape;
-  psx_runtime_array_bound_t array_bounds[24];
+  psx_runtime_array_bound_t *array_bounds;
   int array_bound_count;
 } psx_runtime_declarator_application_t;
 

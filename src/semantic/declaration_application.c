@@ -1,6 +1,7 @@
 #include "declaration_application.h"
 #include "declaration_registration.h"
 
+#include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/enum_const.h"
 #include "../parser/decl.h"
@@ -278,9 +279,17 @@ void psx_apply_runtime_parsed_declarator_ex(
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index) {
   if (!declarator || !application) return;
-  *application = (psx_runtime_declarator_application_t){
-      .shape = declarator->declarator_shape,
-  };
+  *application = (psx_runtime_declarator_application_t){0};
+  if (!ps_declarator_shape_copy(
+          &application->shape, &declarator->declarator_shape)) {
+    ps_diag_ctx(declarator->diagnostic_token, "declarator-resolution",
+                "invalid local declarator shape");
+  }
+  if (declarator->array_bound_count > 0) {
+    application->array_bounds = arena_alloc(
+        (size_t)declarator->array_bound_count *
+        sizeof(*application->array_bounds));
+  }
   for (int i = 0; i < declarator->array_bound_count; i++) {
     const psx_parsed_array_bound_t *parsed = &declarator->array_bounds[i];
     if (parsed->declarator_op_index < 0 ||

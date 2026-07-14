@@ -7,7 +7,12 @@
 void psx_resolve_declarator_syntax(
     const psx_parsed_declarator_t *parsed,
     psx_declarator_shape_t *shape, int *bit_width) {
-  *shape = parsed->declarator_shape;
+  if (!parsed || !shape ||
+      !ps_declarator_shape_copy(shape, &parsed->declarator_shape)) {
+    ps_diag_ctx(parsed ? parsed->diagnostic_token : NULL,
+                "declarator-resolution",
+                "invalid declarator shape");
+  }
   for (int i = 0; i < parsed->array_bound_count; i++) {
     const psx_parsed_array_bound_t *bound = &parsed->array_bounds[i];
     if (!bound->expression.has_constant_value) {
@@ -49,9 +54,6 @@ void psx_set_resolved_function_parameter_types(
     psx_declarator_op_t *function_op, psx_type_t **parameter_types,
     int parameter_count, int is_variadic) {
   if (!function_op || function_op->kind != PSX_DECL_OP_FUNCTION) return;
-  function_op->has_canonical_function_params = 1;
-  function_op->function_param_count = parameter_count;
-  function_op->function_is_variadic = is_variadic;
-  for (int i = 0; i < parameter_count && i < 16; i++)
-    function_op->function_param_types[i] = parameter_types[i];
+  (void)ps_declarator_op_set_function_params(
+      function_op, parameter_types, parameter_count, is_variadic);
 }

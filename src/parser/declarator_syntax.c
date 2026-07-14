@@ -1,6 +1,10 @@
 #include "declarator_syntax.h"
 
+#include "arena.h"
+#include "dynarray.h"
 #include "../tokenizer/tokenizer.h"
+
+#include <string.h>
 
 static token_t *current_token(void) { return tk_get_current_token(); }
 
@@ -9,25 +13,36 @@ typedef struct {
   int pointer_count;
 } declarator_parse_result_t;
 
+typedef struct {
+  unsigned char is_const;
+  unsigned char is_volatile;
+} declarator_pointer_qualifiers_t;
+
 static declarator_parse_result_t parse_declarator_recursive(
     const psx_declarator_syntax_t *syntax, int nesting_depth) {
   psx_skip_gnu_attributes();
-  unsigned char pointer_const[24] = {0};
-  unsigned char pointer_volatile[24] = {0};
+  declarator_pointer_qualifiers_t *pointer_qualifiers = NULL;
   int pointer_count = 0;
+  int pointer_capacity = 0;
   while (tk_consume('*')) {
-    if (pointer_count >= 24) {
-      if (syntax->diagnose_too_complex)
-        syntax->diagnose_too_complex(syntax->context, current_token());
-      return (declarator_parse_result_t){0};
+    if (pointer_count == pointer_capacity) {
+      int capacity = pda_next_cap(pointer_capacity, pointer_count + 1);
+      declarator_pointer_qualifiers_t *qualifiers =
+          arena_alloc((size_t)capacity * sizeof(*qualifiers));
+      if (pointer_qualifiers && pointer_count > 0) {
+        memcpy(qualifiers, pointer_qualifiers,
+               (size_t)pointer_count * sizeof(*qualifiers));
+      }
+      pointer_qualifiers = qualifiers;
+      pointer_capacity = capacity;
     }
     while (current_token()->kind == TK_CONST ||
            current_token()->kind == TK_VOLATILE ||
            current_token()->kind == TK_RESTRICT) {
       if (current_token()->kind == TK_CONST)
-        pointer_const[pointer_count] = 1;
+        pointer_qualifiers[pointer_count].is_const = 1;
       if (current_token()->kind == TK_VOLATILE)
-        pointer_volatile[pointer_count] = 1;
+        pointer_qualifiers[pointer_count].is_volatile = 1;
       tk_set_current_token(current_token()->next);
     }
     pointer_count++;
@@ -64,8 +79,9 @@ static declarator_parse_result_t parse_declarator_recursive(
   }
   for (int i = pointer_count - 1; i >= 0; i--) {
     if (syntax->append_pointer &&
-        !syntax->append_pointer(syntax->context, pointer_const[i],
-                                pointer_volatile[i], nesting_depth)) {
+        !syntax->append_pointer(
+            syntax->context, pointer_qualifiers[i].is_const,
+            pointer_qualifiers[i].is_volatile, nesting_depth)) {
       if (syntax->diagnose_too_complex)
         syntax->diagnose_too_complex(syntax->context, current_token());
       return (declarator_parse_result_t){

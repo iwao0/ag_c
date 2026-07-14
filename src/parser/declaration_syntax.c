@@ -3,8 +3,10 @@
 #include "aggregate_member_syntax.h"
 #include "alignas_value.h"
 #include "anon_tag.h"
+#include "arena.h"
 #include "declarator_syntax.h"
 #include "diag.h"
+#include "dynarray.h"
 #include "enum_const.h"
 #include "expr.h"
 #include "function_parameter_syntax.h"
@@ -98,6 +100,58 @@ static void consume_declaration_alignas(
 static void diagnose_declarator_too_complex(void *context, token_t *tok) {
   (void)context;
   ps_diag_ctx(tok, "declaration-syntax", "declarator is too complex");
+}
+
+static psx_parsed_array_bound_t *append_array_bound(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator || declarator->array_bound_count < 0 ||
+      declarator->array_bound_capacity < 0 ||
+      declarator->array_bound_count > declarator->array_bound_capacity)
+    return NULL;
+  if (declarator->array_bound_count == declarator->array_bound_capacity) {
+    int capacity = pda_next_cap(
+        declarator->array_bound_capacity,
+        declarator->array_bound_count + 1);
+    psx_parsed_array_bound_t *bounds =
+        arena_alloc((size_t)capacity * sizeof(*bounds));
+    if (declarator->array_bounds && declarator->array_bound_count > 0) {
+      memcpy(bounds, declarator->array_bounds,
+             (size_t)declarator->array_bound_count * sizeof(*bounds));
+    }
+    declarator->array_bounds = bounds;
+    declarator->array_bound_capacity = capacity;
+  }
+  psx_parsed_array_bound_t *bound =
+      &declarator->array_bounds[declarator->array_bound_count++];
+  *bound = (psx_parsed_array_bound_t){0};
+  return bound;
+}
+
+static psx_parsed_function_suffix_t *append_function_suffix(
+    psx_parsed_declarator_t *declarator) {
+  if (!declarator || declarator->function_suffix_count < 0 ||
+      declarator->function_suffix_capacity < 0 ||
+      declarator->function_suffix_count > declarator->function_suffix_capacity)
+    return NULL;
+  if (declarator->function_suffix_count ==
+      declarator->function_suffix_capacity) {
+    int capacity = pda_next_cap(
+        declarator->function_suffix_capacity,
+        declarator->function_suffix_count + 1);
+    psx_parsed_function_suffix_t *suffixes =
+        arena_alloc((size_t)capacity * sizeof(*suffixes));
+    if (declarator->function_suffixes &&
+        declarator->function_suffix_count > 0) {
+      memcpy(suffixes, declarator->function_suffixes,
+             (size_t)declarator->function_suffix_count * sizeof(*suffixes));
+    }
+    declarator->function_suffixes = suffixes;
+    declarator->function_suffix_capacity = capacity;
+  }
+  psx_parsed_function_suffix_t *suffix =
+      &declarator->function_suffixes[declarator->function_suffix_count++];
+  *suffix = (psx_parsed_function_suffix_t){0};
+  return suffix;
 }
 
 static int parse_type_name_syntax_at(
@@ -241,18 +295,18 @@ static int consume_declarator_suffix(
       diagnose_declarator_too_complex(context, current_token());
     }
     if (has_size) {
-      if (declarator->array_bound_count >= 24)
+      psx_parsed_array_bound_t *bound = append_array_bound(declarator);
+      if (!bound)
         diagnose_declarator_too_complex(context, current_token());
-      declarator->array_bounds[declarator->array_bound_count++] =
-          (psx_parsed_array_bound_t){
-              .declarator_op_index = op_index,
-              .expression = make_parsed_const_expr(
-                  expression_start, expression_end),
-              .has_static = has_static,
-              .is_const_qualified = is_const,
-              .is_volatile_qualified = is_volatile,
-              .is_restrict_qualified = is_restrict,
-          };
+      *bound = (psx_parsed_array_bound_t){
+          .declarator_op_index = op_index,
+          .expression = make_parsed_const_expr(
+              expression_start, expression_end),
+          .has_static = has_static,
+          .is_const_qualified = is_const,
+          .is_volatile_qualified = is_volatile,
+          .is_restrict_qualified = is_restrict,
+      };
     }
     return 1;
   }
@@ -262,7 +316,9 @@ static int consume_declarator_suffix(
           &declarator->declarator_shape)) {
     diagnose_declarator_too_complex(context, current_token());
   }
-  if (declarator->function_suffix_count >= 24)
+  psx_parsed_function_suffix_t *suffix =
+      append_function_suffix(declarator);
+  if (!suffix)
     diagnose_declarator_too_complex(context, current_token());
   psx_parsed_function_parameters_t *parameters =
       calloc(1, sizeof(*parameters));
@@ -279,11 +335,10 @@ static int consume_declarator_suffix(
                      ? PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT
                      : PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF)))
     parse_context->has_syntax_error = 1;
-  declarator->function_suffixes[declarator->function_suffix_count++] =
-      (psx_parsed_function_suffix_t){
-          .declarator_op_index = op_index,
-          .parameters = parameters,
-      };
+  *suffix = (psx_parsed_function_suffix_t){
+      .declarator_op_index = op_index,
+      .parameters = parameters,
+  };
   return 1;
 }
 

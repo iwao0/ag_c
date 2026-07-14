@@ -1,5 +1,6 @@
 #include "type.h"
 #include "arena.h"
+#include "dynarray.h"
 #include "tag_member_public.h"
 #include <limits.h>
 #include <stdlib.h>
@@ -42,7 +43,7 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
   }
   ps_type_normalize_integer_identity(type->base);
   if (type->kind == PSX_TYPE_FUNCTION) {
-    for (int i = 0; i < type->param_count && i < 16; i++)
+    for (int i = 0; i < type->param_count; i++)
       ps_type_normalize_integer_identity(type->param_types[i]);
   }
 }
@@ -204,12 +205,15 @@ void ps_type_set_function_params(psx_type_t *function_type,
                                   int param_count, int is_variadic) {
   if (!function_type || function_type->kind != PSX_TYPE_FUNCTION) return;
   if (param_count < 0) param_count = 0;
+  function_type->param_types = NULL;
   function_type->param_count = param_count;
   function_type->is_variadic_function = is_variadic ? 1 : 0;
-  for (int i = 0; i < 16; i++) {
+  if (param_count == 0) return;
+  function_type->param_types =
+      arena_alloc((size_t)param_count * sizeof(*function_type->param_types));
+  for (int i = 0; i < param_count; i++)
     function_type->param_types[i] =
-        i < param_count && param_types ? ps_type_clone(param_types[i]) : NULL;
-  }
+        param_types ? ps_type_clone(param_types[i]) : NULL;
 }
 
 const psx_type_t *ps_type_find_function(const psx_type_t *type) {
@@ -225,31 +229,6 @@ const psx_type_t *ps_type_find_function(const psx_type_t *type) {
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
   const psx_type_t *function = ps_type_find_function(type);
   return function ? function->base : NULL;
-}
-
-static unsigned int pointer_mask_for_subtree(unsigned int mask,
-                                             int total_levels,
-                                             int subtree_levels) {
-  if (total_levels <= subtree_levels) return mask;
-  int shift = total_levels - subtree_levels;
-  if (shift >= 32) return 0;
-  return mask >> shift;
-}
-
-psx_type_t *ps_type_wrap_pointer_levels(psx_type_t *base, int levels,
-                                          unsigned int const_mask,
-                                          unsigned int volatile_mask) {
-  if (levels <= 0) return base;
-  psx_type_t *type = base;
-  for (int level = 1; level <= levels; level++) {
-    psx_type_t *ptr = ps_type_new_pointer(type);
-    ptr->is_const_qualified =
-        (pointer_mask_for_subtree(const_mask, levels, level) & 1u) ? 1 : 0;
-    ptr->is_volatile_qualified =
-        (pointer_mask_for_subtree(volatile_mask, levels, level) & 1u) ? 1 : 0;
-    type = ptr;
-  }
-  return type;
 }
 
 psx_type_t *ps_type_new_array(psx_type_t *base, int array_len, int size,
@@ -278,9 +257,15 @@ psx_type_t *ps_type_clone(const psx_type_t *src) {
   if (!src) return NULL;
   psx_type_t *dst = ps_type_new(src->kind);
   *dst = *src;
+  dst->param_types = NULL;
   dst->base = ps_type_clone(src->base);
-  for (int i = 0; i < src->param_count && i < 16; i++)
-    dst->param_types[i] = ps_type_clone(src->param_types[i]);
+  if (src->param_count > 0) {
+    dst->param_types =
+        arena_alloc((size_t)src->param_count * sizeof(*dst->param_types));
+    for (int i = 0; i < src->param_count; i++)
+      dst->param_types[i] = ps_type_clone(
+          src->param_types ? src->param_types[i] : NULL);
+  }
   return dst;
 }
 
@@ -289,9 +274,16 @@ psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {
   psx_type_t *dst = calloc(1, sizeof(psx_type_t));
   if (!dst) return NULL;
   *dst = *src;
+  dst->param_types = NULL;
   dst->base = ps_type_clone_persistent(src->base);
-  for (int i = 0; i < src->param_count && i < 16; i++)
-    dst->param_types[i] = ps_type_clone_persistent(src->param_types[i]);
+  if (src->param_count > 0) {
+    dst->param_types = calloc(
+        (size_t)src->param_count, sizeof(*dst->param_types));
+    if (!dst->param_types) return NULL;
+    for (int i = 0; i < src->param_count; i++)
+      dst->param_types[i] = ps_type_clone_persistent(
+          src->param_types ? src->param_types[i] : NULL);
+  }
   return dst;
 }
 
@@ -337,7 +329,18 @@ void ps_declarator_shape_init(psx_declarator_shape_t *shape) {
 
 static psx_declarator_op_t *declarator_shape_append(
     psx_declarator_shape_t *shape, psx_declarator_op_kind_t kind) {
-  if (!shape || shape->count < 0 || shape->count >= 24) return NULL;
+  if (!shape || shape->count < 0 || shape->capacity < 0 ||
+      shape->count > shape->capacity)
+    return NULL;
+  if (shape->count == shape->capacity) {
+    int capacity = pda_next_cap(shape->capacity, shape->count + 1);
+    psx_declarator_op_t *ops =
+        arena_alloc((size_t)capacity * sizeof(*ops));
+    if (shape->ops && shape->count > 0)
+      memcpy(ops, shape->ops, (size_t)shape->count * sizeof(*ops));
+    shape->ops = ops;
+    shape->capacity = capacity;
+  }
   psx_declarator_op_t *op = &shape->ops[shape->count++];
   *op = (psx_declarator_op_t){0};
   op->kind = kind;
@@ -352,20 +355,6 @@ int ps_declarator_shape_append_pointer(
   if (!op) return 0;
   op->is_const_qualified = is_const_qualified ? 1u : 0u;
   op->is_volatile_qualified = is_volatile_qualified ? 1u : 0u;
-  return 1;
-}
-
-int ps_declarator_shape_append_pointer_levels(
-    psx_declarator_shape_t *shape, int levels,
-    unsigned int const_mask, unsigned int volatile_mask) {
-  if (!shape || levels < 0) return 0;
-  for (int level = 0; level < levels; level++) {
-    if (!ps_declarator_shape_append_pointer(
-            shape, level < 32 && (const_mask & (1u << level)),
-            level < 32 && (volatile_mask & (1u << level)))) {
-      return 0;
-    }
-  }
   return 1;
 }
 
@@ -406,10 +395,28 @@ int ps_declarator_shape_append_function(psx_declarator_shape_t *shape) {
   return declarator_shape_append(shape, PSX_DECL_OP_FUNCTION) != NULL;
 }
 
+int ps_declarator_op_set_function_params(
+    psx_declarator_op_t *op, psx_type_t *const *param_types,
+    int param_count, int is_variadic) {
+  if (!op || op->kind != PSX_DECL_OP_FUNCTION || param_count < 0)
+    return 0;
+  op->function_param_types = NULL;
+  op->function_param_count = param_count;
+  op->function_is_variadic = is_variadic ? 1 : 0;
+  op->has_canonical_function_params = 1;
+  if (param_count == 0) return 1;
+  op->function_param_types =
+      arena_alloc((size_t)param_count * sizeof(*op->function_param_types));
+  for (int i = 0; i < param_count; i++)
+    op->function_param_types[i] = param_types ? param_types[i] : NULL;
+  return 1;
+}
+
 int ps_declarator_shape_append_shape(
     psx_declarator_shape_t *shape, const psx_declarator_shape_t *suffix) {
   if (!shape || !suffix || suffix->count < 0) return 0;
-  for (int i = 0; i < suffix->count; i++) {
+  int suffix_count = suffix->count;
+  for (int i = 0; i < suffix_count; i++) {
     const psx_declarator_op_t *op = &suffix->ops[i];
     int appended = 0;
     if (op->kind == PSX_DECL_OP_POINTER) {
@@ -423,19 +430,23 @@ int ps_declarator_shape_append_shape(
             shape, op->array_len, op->is_incomplete_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       appended = ps_declarator_shape_append_function(shape);
-      if (appended) {
+      if (appended && op->has_canonical_function_params) {
         psx_declarator_op_t *copy = &shape->ops[shape->count - 1];
-        copy->has_canonical_function_params =
-            op->has_canonical_function_params;
-        for (int j = 0; j < 16; j++)
-          copy->function_param_types[j] = op->function_param_types[j];
-        copy->function_param_count = op->function_param_count;
-        copy->function_is_variadic = op->function_is_variadic;
+        appended = ps_declarator_op_set_function_params(
+            copy, op->function_param_types, op->function_param_count,
+            op->function_is_variadic);
       }
     }
     if (!appended) return 0;
   }
   return 1;
+}
+
+int ps_declarator_shape_copy(psx_declarator_shape_t *dst,
+                             const psx_declarator_shape_t *src) {
+  if (!dst || !src) return 0;
+  ps_declarator_shape_init(dst);
+  return ps_declarator_shape_append_shape(dst, src);
 }
 
 int ps_declarator_shape_count_ops(
@@ -786,7 +797,9 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
           !ps_type_shape_matches(a->base, b->base)) {
         return 0;
       }
-      for (int i = 0; i < a->param_count && i < 16; i++) {
+      if (a->param_count > 0 && (!a->param_types || !b->param_types))
+        return 0;
+      for (int i = 0; i < a->param_count; i++) {
         if (!ps_type_shape_matches(a->param_types[i], b->param_types[i]))
           return 0;
       }
@@ -824,6 +837,21 @@ typedef struct {
   int failed;
 } canonical_sig_writer_t;
 
+typedef struct canonical_sig_path_t canonical_sig_path_t;
+struct canonical_sig_path_t {
+  const psx_type_t *type;
+  const canonical_sig_path_t *parent;
+};
+
+static int canonical_sig_path_contains(
+    const canonical_sig_path_t *path, const psx_type_t *type) {
+  for (const canonical_sig_path_t *current = path; current;
+       current = current->parent) {
+    if (current->type == type) return 1;
+  }
+  return 0;
+}
+
 static void canonical_sig_bytes(canonical_sig_writer_t *w,
                                 const char *s, size_t len) {
   if (!w || w->failed || !s) return;
@@ -854,11 +882,16 @@ static void canonical_sig_uint(canonical_sig_writer_t *w, unsigned int value) {
 }
 
 static void canonical_sig_type(canonical_sig_writer_t *w,
-                               const psx_type_t *type, int depth) {
-  if (!type || depth > 64) {
+                               const psx_type_t *type,
+                               const canonical_sig_path_t *path) {
+  if (!type || canonical_sig_path_contains(path, type)) {
     w->failed = 1;
     return;
   }
+  canonical_sig_path_t current_path = {
+      .type = type,
+      .parent = path,
+  };
   if (type->is_const_qualified) canonical_sig_lit(w, "k");
   if (type->is_volatile_qualified) canonical_sig_lit(w, "V");
   if (type->is_atomic) canonical_sig_lit(w, "A");
@@ -906,26 +939,27 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       return;
     case PSX_TYPE_POINTER:
       canonical_sig_lit(w, "p<");
-      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_type(w, type->base, &current_path);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_ARRAY:
       canonical_sig_lit(w, "a");
       canonical_sig_uint(w, (unsigned int)(type->array_len > 0 ? type->array_len : 0));
       canonical_sig_lit(w, "<");
-      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_type(w, type->base, &current_path);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_FUNCTION:
-      if (type->param_count < 0 || type->param_count > 16) {
+      if (type->param_count < 0 ||
+          (type->param_count > 0 && !type->param_types)) {
         w->failed = 1;
         return;
       }
-      canonical_sig_type(w, type->base, depth + 1);
+      canonical_sig_type(w, type->base, &current_path);
       canonical_sig_lit(w, "(");
-      for (int i = 0; i < type->param_count && i < 16; i++) {
+      for (int i = 0; i < type->param_count; i++) {
         if (i > 0) canonical_sig_lit(w, ",");
-        canonical_sig_type(w, type->param_types[i], depth + 1);
+        canonical_sig_type(w, type->param_types[i], &current_path);
       }
       if (type->is_variadic_function) {
         if (type->param_count > 0) canonical_sig_lit(w, ",");
@@ -951,7 +985,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
 int ps_type_format_canonical_signature(const psx_type_t *type,
                                        char *out, size_t out_size) {
   canonical_sig_writer_t writer = {out, out_size, 0, 0};
-  canonical_sig_type(&writer, type, 0);
+  canonical_sig_type(&writer, type, NULL);
   if (out && out_size > 0) {
     size_t terminator = writer.len < out_size ? writer.len : out_size - 1;
     out[terminator] = '\0';
@@ -1190,40 +1224,6 @@ int ps_type_pointer_view_stride_metadata(const psx_type_t *type,
   return type_array_stride_metadata(array, inner_stride, next_stride,
                                     extra_strides, extra_strides_count);
 }
-
-static int type_structural_pointer_qual_levels(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return 0;
-  int levels = ps_type_pointer_depth(type);
-  return levels > 0 ? levels : 1;
-}
-
-int ps_type_pointer_view_structural_qual_levels(const psx_type_t *type) {
-  return type_structural_pointer_qual_levels(type);
-}
-
-static unsigned int type_structural_pointer_qual_mask(const psx_type_t *type,
-                                                      int is_volatile) {
-  if (!type || type->kind != PSX_TYPE_POINTER || !type->base) return 0;
-  unsigned int mask =
-      (is_volatile ? type->is_volatile_qualified
-                   : type->is_const_qualified)
-          ? 1u
-          : 0u;
-  if (type->base->kind == PSX_TYPE_POINTER)
-    mask |= type_structural_pointer_qual_mask(type->base, is_volatile) << 1;
-  int depth = ps_type_pointer_depth(type);
-  if (depth > 0 && depth < 32) mask &= (1u << depth) - 1u;
-  return mask;
-}
-
-unsigned int ps_type_pointer_view_structural_qual_mask(
-    const psx_type_t *type, int is_volatile) {
-  if (!psx_type_is_pointer_view_type(type)) return 0;
-  int structural_levels = type_structural_pointer_qual_levels(type);
-  if (structural_levels <= 0) return 0;
-  return type_structural_pointer_qual_mask(type, is_volatile);
-}
-
 
 void psx_type_copy_common_qualifiers(psx_type_t *dst, const psx_type_t *src) {
   if (!dst || !src) return;

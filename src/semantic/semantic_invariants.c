@@ -51,12 +51,29 @@ static int fail(psx_semantic_invariant_failure_t *failure,
   return 0;
 }
 
-static int validate_type(const psx_type_t *type, int depth) {
+typedef struct psx_type_validation_path_t psx_type_validation_path_t;
+struct psx_type_validation_path_t {
+  const psx_type_t *type;
+  const psx_type_validation_path_t *parent;
+};
+
+static int validate_type(
+    const psx_type_t *type, const psx_type_validation_path_t *path) {
   if (!type) return 1;
-  if (depth > 64) return 0;
-  if (!validate_type(type->base, depth + 1)) return 0;
-  for (int i = 0; i < type->param_count && i < 16; i++) {
-    if (!validate_type(type->param_types[i], depth + 1)) return 0;
+  for (const psx_type_validation_path_t *current = path; current;
+       current = current->parent) {
+    if (current->type == type) return 0;
+  }
+  if (type->param_count < 0 ||
+      (type->param_count > 0 && !type->param_types))
+    return 0;
+  psx_type_validation_path_t current_path = {
+      .type = type,
+      .parent = path,
+  };
+  if (!validate_type(type->base, &current_path)) return 0;
+  for (int i = 0; i < type->param_count; i++) {
+    if (!validate_type(type->param_types[i], &current_path)) return 0;
   }
   return 1;
 }
@@ -68,7 +85,7 @@ static int validate_node(const node_t *node,
     return fail(failure, PSX_SEMANTIC_INVARIANT_RAW_EXPRESSION, node);
   if (expression_kind_requires_type(node->kind) && !node->type)
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
-  if (node->type && !validate_type(node->type, 0))
+  if (node->type && !validate_type(node->type, NULL))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
   int runtime_stride_off =
       node->type_state.vla_runtime.row_stride_frame_off;

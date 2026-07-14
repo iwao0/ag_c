@@ -130,9 +130,7 @@ static int lvar_self_is_const_qualified(const lvar_t *var) {
   psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
   if (type_is_pointer_view_type(value_type))
-    return (ps_type_pointer_view_structural_qual_mask(value_type, 0) & 1u)
-               ? 1
-               : 0;
+    return value_type->is_const_qualified ? 1 : 0;
   return value_type && value_type->is_const_qualified ? 1 : 0;
 }
 
@@ -140,9 +138,7 @@ static int lvar_self_is_volatile_qualified(const lvar_t *var) {
   psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
   if (type_is_pointer_view_type(value_type))
-    return (ps_type_pointer_view_structural_qual_mask(value_type, 1) & 1u)
-               ? 1
-               : 0;
+    return value_type->is_volatile_qualified ? 1 : 0;
   return value_type && value_type->is_volatile_qualified ? 1 : 0;
 }
 
@@ -1831,7 +1827,7 @@ static int node_self_is_const_qualified(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = ps_node_get_type(node);
   if (type_is_pointer_view_type(type))
-    return (ps_type_pointer_view_structural_qual_mask(type, 0) & 1u) ? 1 : 0;
+    return type->is_const_qualified ? 1 : 0;
   return type && type->is_const_qualified ? 1 : 0;
 }
 
@@ -1839,7 +1835,7 @@ static int node_self_is_volatile_qualified(node_t *node) {
   if (!node) return 0;
   psx_type_t *type = ps_node_get_type(node);
   if (type_is_pointer_view_type(type))
-    return (ps_type_pointer_view_structural_qual_mask(type, 1) & 1u) ? 1 : 0;
+    return type->is_volatile_qualified ? 1 : 0;
   return type && type->is_volatile_qualified ? 1 : 0;
 }
 

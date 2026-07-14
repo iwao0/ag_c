@@ -3,6 +3,7 @@
 #include "constant_expression.h"
 #include "declaration_resolution.h"
 #include "type_name_resolution.h"
+#include "../parser/arena.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
@@ -59,6 +60,11 @@ static void resolve_sizeof_type_name(
 
   psx_type_t *base_type = query->type_name.bound_base_type;
   psx_declarator_shape_t *shape = &syntax->declarator.declarator_shape;
+  if (syntax->declarator.array_bound_count > 0) {
+    resolution->zero_length_bound_indices = arena_alloc(
+        (size_t)syntax->declarator.array_bound_count *
+        sizeof(*resolution->zero_length_bound_indices));
+  }
   for (int i = 0; i < syntax->declarator.array_bound_count; i++) {
     psx_parsed_array_bound_t *parsed_bound =
         &syntax->declarator.array_bounds[i];
@@ -71,8 +77,10 @@ static void resolve_sizeof_type_name(
       resolution->issue_bound_index = i;
       return;
     }
-    if (is_constant && value == 0 && i < 32)
-      resolution->zero_length_bound_mask |= 1u << i;
+    if (is_constant && value == 0) {
+      resolution->zero_length_bound_indices[
+          resolution->zero_length_bound_count++] = i;
+    }
     int op_index = parsed_bound->declarator_op_index;
     if (op_index < 0 || op_index >= shape->count ||
         shape->ops[op_index].kind != PSX_DECL_OP_ARRAY) {

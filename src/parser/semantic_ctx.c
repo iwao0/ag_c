@@ -1011,7 +1011,7 @@ void ps_ctx_refresh_type_completeness(psx_type_t *type) {
     }
   }
   if (type->kind == PSX_TYPE_FUNCTION) {
-    for (int i = 0; i < type->param_count && i < 16; i++)
+    for (int i = 0; i < type->param_count; i++)
       ps_ctx_refresh_type_completeness(type->param_types[i]);
   }
 }
@@ -1183,7 +1183,8 @@ static const psx_type_t *ctx_function_param_type(const func_name_t *f,
                                                  int param_idx) {
   if (!f || !f->function_type ||
       f->function_type->kind != PSX_TYPE_FUNCTION || param_idx < 0 ||
-      param_idx >= f->function_type->param_count || param_idx >= 16) {
+      param_idx >= f->function_type->param_count ||
+      !f->function_type->param_types) {
     return NULL;
   }
   return f->function_type->param_types[param_idx];

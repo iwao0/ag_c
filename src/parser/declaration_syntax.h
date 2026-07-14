@@ -84,10 +84,12 @@ typedef struct {
   psx_declarator_shape_t declarator_shape;
   int has_bitfield;
   psx_parsed_const_expr_t bit_width_expression;
-  psx_parsed_array_bound_t array_bounds[24];
+  psx_parsed_array_bound_t *array_bounds;
   int array_bound_count;
-  psx_parsed_function_suffix_t function_suffixes[24];
+  int array_bound_capacity;
+  psx_parsed_function_suffix_t *function_suffixes;
   int function_suffix_count;
+  int function_suffix_capacity;
 } psx_parsed_declarator_t;
 
 typedef struct psx_parsed_type_name_t {

@@ -13,7 +13,8 @@ typedef enum {
 typedef struct {
   psx_type_query_resolution_status_t status;
   int issue_bound_index;
-  unsigned int zero_length_bound_mask;
+  int *zero_length_bound_indices;
+  int zero_length_bound_count;
   node_t *usage_root;
   int evaluates_vla_operand;
 } psx_sizeof_query_resolution_t;

@@ -525,9 +525,13 @@ static void semantic_resolve_sizeof_query(
       break;
   }
   if (syntax) {
-    for (int i = 0; i < syntax->declarator.array_bound_count && i < 32; i++) {
-      if ((resolution.zero_length_bound_mask & (1u << i)) == 0) continue;
-      node_t *bound = syntax->declarator.array_bounds[i].expression.node;
+    for (int i = 0; i < resolution.zero_length_bound_count; i++) {
+      int bound_index = resolution.zero_length_bound_indices[i];
+      if (bound_index < 0 ||
+          bound_index >= syntax->declarator.array_bound_count)
+        continue;
+      node_t *bound =
+          syntax->declarator.array_bounds[bound_index].expression.node;
       ps_ctx_record_unsupported_gnu_extension_warning(
           bound && bound->tok ? bound->tok : query->base.tok,
           "zero-length array");
