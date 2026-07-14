@@ -438,6 +438,13 @@ const declarationApplicationSource = await readFile(
   "src/semantic/declaration_application.c",
   "utf8",
 );
+const splitDeclarationApplicationApi =
+  /psx_apply_(?:parsed_(?:enum_body|aggregate_body_layout|type_name|declarator_type|decl_specifier|standalone_tag|declarator|function_parameters)|runtime_parsed_declarator(?:_ex)?)_in_context\s*\(/;
+if (splitDeclarationApplicationApi.test(declarationApplicationSource)) {
+  throw new Error(
+    "declaration application APIs must not combine one context with active registries",
+  );
+}
 const frontendDeclarationSources = [
   await readFile("src/frontend/toplevel_declaration.c", "utf8"),
   await readFile("src/frontend/local_declaration.c", "utf8"),

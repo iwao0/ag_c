@@ -15050,8 +15050,9 @@ static void test_semantic_context_isolation() {
       },
   };
   const psx_type_t *direct_tag_type =
-      psx_apply_parsed_decl_specifier_in_context(
-          second, &direct_tag_specifier);
+      psx_apply_parsed_decl_specifier_in_contexts(
+          second, ps_global_registry_active(),
+          ps_local_registry_active(), &direct_tag_specifier);
   ASSERT_TRUE(direct_tag_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
   ASSERT_EQ(4, ps_type_sizeof(direct_tag_type));

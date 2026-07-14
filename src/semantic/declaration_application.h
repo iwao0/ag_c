@@ -33,13 +33,7 @@ void psx_dispose_declaration_phase(psx_declaration_phase_t *phase);
 
 const psx_type_t *psx_apply_parsed_decl_specifier(
     const psx_parsed_decl_specifier_t *specifier);
-const psx_type_t *psx_apply_parsed_decl_specifier_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_parsed_decl_specifier_t *specifier);
 const psx_type_t *psx_apply_parsed_type_name(
-    const psx_parsed_type_name_t *type_name);
-const psx_type_t *psx_apply_parsed_type_name_in_context(
-    psx_semantic_context_t *semantic_context,
     const psx_parsed_type_name_t *type_name);
 const psx_type_t *psx_apply_parsed_type_name_in_contexts(
     psx_semantic_context_t *semantic_context,
@@ -47,10 +41,6 @@ const psx_type_t *psx_apply_parsed_type_name_in_contexts(
     psx_local_registry_t *local_registry,
     const psx_parsed_type_name_t *type_name);
 const psx_type_t *psx_apply_parsed_declarator_type(
-    const psx_type_t *base_type,
-    const psx_parsed_declarator_t *declarator);
-const psx_type_t *psx_apply_parsed_declarator_type_in_context(
-    psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
     const psx_parsed_declarator_t *declarator);
 const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
@@ -70,14 +60,7 @@ int psx_apply_parsed_decl_alignment(
     const psx_parsed_decl_specifier_t *specifier);
 void psx_apply_parsed_standalone_tag(
     const psx_parsed_decl_specifier_t *specifier);
-void psx_apply_parsed_standalone_tag_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_parsed_decl_specifier_t *specifier);
 void psx_apply_parsed_declarator(
-    const psx_parsed_declarator_t *declarator,
-    psx_declarator_shape_t *shape, int *bit_width);
-void psx_apply_parsed_declarator_in_context(
-    psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *declarator,
     psx_declarator_shape_t *shape, int *bit_width);
 void psx_apply_parsed_declarator_in_contexts(
@@ -89,10 +72,6 @@ void psx_apply_parsed_declarator_in_contexts(
 void psx_apply_runtime_parsed_declarator(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
-void psx_apply_runtime_parsed_declarator_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_parsed_declarator_t *declarator,
-    psx_runtime_declarator_application_t *application);
 void psx_apply_runtime_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -100,11 +79,6 @@ void psx_apply_runtime_parsed_declarator_in_contexts(
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application);
 void psx_apply_runtime_parsed_declarator_ex(
-    const psx_parsed_declarator_t *declarator,
-    psx_runtime_declarator_application_t *application,
-    int skipped_function_op_index);
-void psx_apply_runtime_parsed_declarator_ex_in_context(
-    psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *declarator,
     psx_runtime_declarator_application_t *application,
     int skipped_function_op_index);
@@ -118,10 +92,6 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
 void psx_apply_parsed_function_parameters(
     psx_parsed_function_parameters_t *parameters,
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
-void psx_apply_parsed_function_parameters_in_context(
-    psx_semantic_context_t *semantic_context,
-    psx_parsed_function_parameters_t *parameters,
-    psx_declarator_op_t *function_op, token_t *diagnostic_token);
 void psx_apply_parsed_function_parameters_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -130,20 +100,12 @@ void psx_apply_parsed_function_parameters_in_contexts(
     psx_declarator_op_t *function_op, token_t *diagnostic_token);
 
 int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body);
-int psx_apply_parsed_enum_body_in_context(
-    psx_semantic_context_t *semantic_context,
-    const psx_parsed_enum_body_t *body);
 int psx_apply_parsed_enum_body_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_parsed_enum_body_t *body);
 int psx_apply_parsed_aggregate_body_layout(
-    psx_parsed_aggregate_body_t *body,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int *out_size, int *out_align);
-int psx_apply_parsed_aggregate_body_layout_in_context(
-    psx_semantic_context_t *semantic_context,
     psx_parsed_aggregate_body_t *body,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int *out_size, int *out_align);
