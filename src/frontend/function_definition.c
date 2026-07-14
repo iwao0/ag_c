@@ -6,12 +6,14 @@
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
+#include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
 
 node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parsed_function_definition_t *definition) {
   if (!definition || !semantic_context || !local_registry) return NULL;
@@ -31,6 +33,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   if (!psx_begin_function_definition_pipeline(
           &(psx_function_definition_pipeline_request_t){
               .semantic_context = semantic_context,
+              .global_registry = global_registry,
               .local_registry = local_registry,
               .base_type = base_type,
               .declarator = &definition->declarator,
@@ -84,6 +87,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   int registered = psx_apply_function_declaration_pipeline(
           &(psx_function_declaration_pipeline_request_t){
               .semantic_context = semantic_context,
+              .global_registry = global_registry,
               .name = name->str,
               .name_len = name->len,
               .function_type = applied.function_type,
@@ -107,6 +111,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_context(
     psx_parsed_function_definition_t *definition) {
   return psx_apply_function_definition_header_in_contexts(
       semantic_context ? semantic_context : ps_ctx_active(),
+      ps_global_registry_active(),
       ps_local_registry_active(), definition);
 }
 

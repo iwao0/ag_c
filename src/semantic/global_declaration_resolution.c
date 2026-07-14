@@ -34,6 +34,8 @@ void psx_resolve_global_declaration(
       !request->type) return;
   psx_semantic_context_t *semantic_context = request->semantic_context
       ? request->semantic_context : ps_ctx_active();
+  psx_global_registry_t *global_registry = request->global_registry
+      ? request->global_registry : ps_global_registry_active();
 
   if (is_incomplete_object_type(request->type) ||
       (request->type->kind == PSX_TYPE_ARRAY &&
@@ -68,8 +70,8 @@ void psx_resolve_global_declaration(
     return;
   }
 
-  resolution->existing = ps_find_global_var(
-      request->name, request->name_len);
+  resolution->existing = ps_find_global_var_in(
+      global_registry, request->name, request->name_len);
   if (resolution->existing) {
     const psx_type_t *existing_type =
         ps_gvar_get_decl_type(resolution->existing);

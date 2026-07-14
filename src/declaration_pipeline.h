@@ -12,6 +12,8 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -40,6 +42,7 @@ int psx_finish_global_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   const psx_type_t *function_type;
@@ -54,6 +57,7 @@ int psx_apply_function_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const psx_type_t *base_type;
   psx_parsed_declarator_t *declarator;
@@ -146,6 +150,8 @@ int psx_finish_automatic_local_declaration_pipeline(
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   char *name;
   int name_len;
   const psx_type_t *type;

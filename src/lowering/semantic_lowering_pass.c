@@ -13,26 +13,37 @@
 #include "unary_deref_lowering.h"
 #include "unary_operator_lowering.h"
 #include "../parser/node_utils.h"
+#include "../parser/global_registry.h"
 #include "../parser/local_registry.h"
 
 #include "../parser/semantic_ctx.h"
 
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
+} psx_semantic_lowering_context_t;
+
+static node_t *lower_tree(
+    const psx_semantic_lowering_context_t *context,
+    node_t *node, const token_t *fallback_diag_tok);
+
 static void lower_node_array(
-    psx_local_registry_t *local_registry,
+    const psx_semantic_lowering_context_t *context,
     node_t **nodes, const token_t *fallback_diag_tok) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++)
-    nodes[i] = psx_lower_semantic_tree_in(
-        local_registry, nodes[i], fallback_diag_tok);
+    nodes[i] = lower_tree(
+        context, nodes[i], fallback_diag_tok);
 }
 
-node_t *psx_lower_semantic_initializer_syntax_in(
-    psx_local_registry_t *local_registry,
+static node_t *lower_initializer(
+    const psx_semantic_lowering_context_t *context,
     node_t *syntax, const token_t *fallback_diag_tok) {
   if (!syntax) return NULL;
   if (syntax->kind != ND_INIT_LIST) {
-    return psx_lower_semantic_tree_in(
-        local_registry, syntax, fallback_diag_tok);
+    return lower_tree(
+        context, syntax, fallback_diag_tok);
   }
   node_init_list_t *list = (node_init_list_t *)syntax;
   for (int i = 0; i < list->entry_count; i++) {
@@ -42,18 +53,18 @@ node_t *psx_lower_semantic_initializer_syntax_in(
         psx_initializer_designator_t *designator =
             &entry->designators[d];
         if (designator->kind != PSX_INIT_DESIGNATOR_INDEX) continue;
-        designator->index_expr = psx_lower_semantic_tree_in(
-            local_registry, designator->index_expr, fallback_diag_tok);
-        designator->range_end_expr = psx_lower_semantic_tree_in(
-            local_registry, designator->range_end_expr, fallback_diag_tok);
+        designator->index_expr = lower_tree(
+            context, designator->index_expr, fallback_diag_tok);
+        designator->range_end_expr = lower_tree(
+            context, designator->range_end_expr, fallback_diag_tok);
       }
     } else {
       for (int d = 0; d < entry->index_expr_count; d++)
-        entry->index_exprs[d] = psx_lower_semantic_tree_in(
-            local_registry, entry->index_exprs[d], fallback_diag_tok);
+        entry->index_exprs[d] = lower_tree(
+            context, entry->index_exprs[d], fallback_diag_tok);
     }
-    entry->value = psx_lower_semantic_initializer_syntax_in(
-        local_registry, entry->value, fallback_diag_tok);
+    entry->value = lower_initializer(
+        context, entry->value, fallback_diag_tok);
   }
   return syntax;
 }
@@ -73,13 +84,13 @@ static node_t *lower_additive_expression_node(node_t *node) {
 }
 
 static node_t *lower_sizeof_vla_indices(
-    psx_local_registry_t *local_registry,
+    const psx_semantic_lowering_context_t *context,
     node_t *operand, const token_t *fallback_diag_tok) {
   if (!operand || operand->kind != ND_SUBSCRIPT) return NULL;
   node_t *prefix = lower_sizeof_vla_indices(
-      local_registry, operand->lhs, fallback_diag_tok);
-  node_t *index = psx_lower_semantic_tree_in(
-      local_registry, operand->rhs, fallback_diag_tok);
+      context, operand->lhs, fallback_diag_tok);
+  node_t *index = lower_tree(
+      context, operand->rhs, fallback_diag_tok);
   return prefix ? ps_node_new_binary(ND_COMMA, prefix, index) : index;
 }
 
@@ -90,40 +101,41 @@ static node_t *lower_source_cast_node(
       node, (token_t *)fallback_diag_tok);
 }
 
-node_t *psx_lower_semantic_tree_in(
-    psx_local_registry_t *local_registry,
+static node_t *lower_tree(
+    const psx_semantic_lowering_context_t *context,
     node_t *node, const token_t *fallback_diag_tok) {
   if (!node) return NULL;
   switch (node->kind) {
     case ND_COMPOUND_LITERAL:
-      node->rhs = psx_lower_semantic_initializer_syntax_in(
-          local_registry, node->rhs, fallback_diag_tok);
-      node = lower_compound_literal_expression_in(
-          local_registry, node, fallback_diag_tok);
+      node->rhs = lower_initializer(
+          context, node->rhs, fallback_diag_tok);
+      node = lower_compound_literal_expression_in_contexts(
+          context->semantic_context, context->global_registry,
+          context->local_registry, node, fallback_diag_tok);
       return node->kind == ND_COMPOUND_LITERAL
                  ? node
-                 : psx_lower_semantic_tree_in(
-                       local_registry, node, fallback_diag_tok);
+                 : lower_tree(
+                       context, node, fallback_diag_tok);
     case ND_GENERIC_SELECTION: {
       node_t *selected = lower_generic_selection_expression(node);
       return selected == node
                  ? node
-                 : psx_lower_semantic_tree_in(
-                       local_registry, selected, fallback_diag_tok);
+                 : lower_tree(
+                       context, selected, fallback_diag_tok);
     }
     case ND_SIZEOF_QUERY: {
       node_sizeof_query_t *query = (node_sizeof_query_t *)node;
       if (query->runtime_size_expr) {
-        query->runtime_size_expr = psx_lower_semantic_tree_in(
-            local_registry, query->runtime_size_expr, fallback_diag_tok);
+        query->runtime_size_expr = lower_tree(
+            context, query->runtime_size_expr, fallback_diag_tok);
       }
       node_t *prefix = query->evaluates_vla_operand
                            ? lower_sizeof_vla_indices(
-                                 local_registry, query->operand,
+                                 context, query->operand,
                                  fallback_diag_tok)
                            : NULL;
-      return psx_lower_semantic_tree_in(
-          local_registry, lower_sizeof_query_expression(query, prefix),
+      return lower_tree(
+          context, lower_sizeof_query_expression(query, prefix),
           fallback_diag_tok);
     }
     case ND_ALIGNOF_QUERY:
@@ -131,93 +143,94 @@ node_t *psx_lower_semantic_tree_in(
           (node_alignof_query_t *)node);
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
       if (init->init_kind == PSX_DECL_INIT_LIST) {
-        node->rhs = psx_lower_semantic_initializer_syntax_in(
-            local_registry, node->rhs, fallback_diag_tok);
+        node->rhs = lower_initializer(
+            context, node->rhs, fallback_diag_tok);
       } else {
-        node->rhs = psx_lower_semantic_tree_in(
-            local_registry, node->rhs, fallback_diag_tok);
+        node->rhs = lower_tree(
+            context, node->rhs, fallback_diag_tok);
       }
       node = lower_decl_initializer(node);
       break;
     }
     case ND_BLOCK:
       lower_node_array(
-          local_registry, ((node_block_t *)node)->body, fallback_diag_tok);
+          context, ((node_block_t *)node)->body, fallback_diag_tok);
       break;
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++)
-        function->parameters[i] = psx_lower_semantic_tree_in(
-            local_registry, function->parameters[i], fallback_diag_tok);
-      node->rhs = psx_lower_semantic_tree_in(
-          local_registry, node->rhs, fallback_diag_tok);
+        function->parameters[i] = lower_tree(
+            context, function->parameters[i], fallback_diag_tok);
+      node->rhs = lower_tree(
+          context, node->rhs, fallback_diag_tok);
       break;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
-      call->callee = psx_lower_semantic_tree_in(
-          local_registry, call->callee, fallback_diag_tok);
+      call->callee = lower_tree(
+          context, call->callee, fallback_diag_tok);
       for (int i = 0; i < call->argument_count; i++)
-        call->arguments[i] = psx_lower_semantic_tree_in(
-            local_registry, call->arguments[i], fallback_diag_tok);
+        call->arguments[i] = lower_tree(
+            context, call->arguments[i], fallback_diag_tok);
       break;
     }
     case ND_SUBSCRIPT:
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
-      node->rhs = psx_lower_semantic_tree_in(
-          local_registry, node->rhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      node->rhs = lower_tree(
+          context, node->rhs, fallback_diag_tok);
       return lower_subscript_expression(node);
     case ND_MEMBER_ACCESS:
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
       return lower_member_access_expression_in(
-          local_registry, (node_member_access_t *)node, fallback_diag_tok);
+          context->local_registry,
+          (node_member_access_t *)node, fallback_diag_tok);
     case ND_UNARY_DEREF:
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
       return lower_unary_deref_expression(node);
     case ND_UNARY_NEGATE:
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
-      return psx_lower_semantic_tree_in(
-          local_registry, lower_unary_negate_expression(node),
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      return lower_tree(
+          context, lower_unary_negate_expression(node),
           fallback_diag_tok);
     case ND_CREAL:
     case ND_CIMAG: {
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
       node_t *lowered = lower_complex_part_expression(node);
       return lowered == node
                  ? node
-                 : psx_lower_semantic_tree_in(
-                       local_registry, lowered, fallback_diag_tok);
+                 : lower_tree(
+                       context, lowered, fallback_diag_tok);
     }
     case ND_IF:
     case ND_FOR:
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
-      control->init = psx_lower_semantic_tree_in(
-          local_registry, control->init, fallback_diag_tok);
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
-      node->rhs = psx_lower_semantic_tree_in(
-          local_registry, node->rhs, fallback_diag_tok);
-      control->inc = psx_lower_semantic_tree_in(
-          local_registry, control->inc, fallback_diag_tok);
-      control->els = psx_lower_semantic_tree_in(
-          local_registry, control->els, fallback_diag_tok);
+      control->init = lower_tree(
+          context, control->init, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      node->rhs = lower_tree(
+          context, node->rhs, fallback_diag_tok);
+      control->inc = lower_tree(
+          context, control->inc, fallback_diag_tok);
+      control->els = lower_tree(
+          context, control->els, fallback_diag_tok);
       break;
     }
     default:
-      node->lhs = psx_lower_semantic_tree_in(
-          local_registry, node->lhs, fallback_diag_tok);
-      node->rhs = psx_lower_semantic_tree_in(
-          local_registry, node->rhs, fallback_diag_tok);
+      node->lhs = lower_tree(
+          context, node->lhs, fallback_diag_tok);
+      node->rhs = lower_tree(
+          context, node->rhs, fallback_diag_tok);
       node = lower_source_cast_node(node, fallback_diag_tok);
       node = lower_aggregate_address_expression(node);
       node = lower_additive_expression_node(node);
@@ -225,6 +238,48 @@ node_t *psx_lower_semantic_tree_in(
       break;
   }
   return node;
+}
+
+node_t *psx_lower_semantic_tree_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    node_t *node, const token_t *fallback_diag_tok) {
+  const psx_semantic_lowering_context_t context = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+  };
+  return lower_tree(&context, node, fallback_diag_tok);
+}
+
+node_t *psx_lower_semantic_initializer_syntax_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  const psx_semantic_lowering_context_t context = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+  };
+  return lower_initializer(&context, syntax, fallback_diag_tok);
+}
+
+node_t *psx_lower_semantic_tree_in(
+    psx_local_registry_t *local_registry,
+    node_t *node, const token_t *fallback_diag_tok) {
+  return psx_lower_semantic_tree_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(), local_registry,
+      node, fallback_diag_tok);
+}
+
+node_t *psx_lower_semantic_initializer_syntax_in(
+    psx_local_registry_t *local_registry,
+    node_t *syntax, const token_t *fallback_diag_tok) {
+  return psx_lower_semantic_initializer_syntax_in_contexts(
+      ps_ctx_active(), ps_global_registry_active(), local_registry,
+      syntax, fallback_diag_tok);
 }
 
 node_t *psx_lower_semantic_tree(

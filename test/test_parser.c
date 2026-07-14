@@ -15153,6 +15153,25 @@ static void test_compiler_context_registry_isolation() {
   ASSERT_TRUE(isolated_resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, isolated_resolved_type->kind);
   ASSERT_EQ(4, isolated_resolved_type->size);
+  psx_parsed_initializer_t isolated_global_initializer = {0};
+  psx_global_declaration_pipeline_result_t isolated_global_result;
+  ASSERT_TRUE(psx_apply_global_declaration_pipeline(
+      &(psx_global_declaration_pipeline_request_t){
+          .semantic_context = first.semantic_context,
+          .global_registry = first.global_registry,
+          .local_registry = first.local_registry,
+          .name = (char *)"pipeline_first",
+          .name_len = 14,
+          .type = ps_type_new_integer(TK_INT, 4, 0),
+          .initializer = &isolated_global_initializer,
+      },
+      &isolated_global_result));
+  ASSERT_TRUE(isolated_global_result.global != NULL);
+  ASSERT_TRUE(ps_find_global_var_in(
+      first.global_registry, (char *)"pipeline_first", 14) ==
+      isolated_global_result.global);
+  ASSERT_TRUE(ps_find_global_var(
+      (char *)"pipeline_first", 14) == NULL);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
       second.semantic_context, (char *)"FirstType", 9, NULL));
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(

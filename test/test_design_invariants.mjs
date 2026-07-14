@@ -187,6 +187,14 @@ const localDeclarationFrontendSource = await readFile(
   "src/frontend/local_declaration.c",
   "utf8",
 );
+const toplevelDeclarationHeader = await readFile(
+  "src/parser/toplevel_declaration_syntax.h",
+  "utf8",
+);
+const toplevelDeclarationFrontendSource = await readFile(
+  "src/frontend/toplevel_declaration.c",
+  "utf8",
+);
 const localObjectLoweringSource = await readFile(
   "src/lowering/local_object_lowering.c",
   "utf8",
@@ -232,13 +240,38 @@ if (!/ag_compiler_context_t\s*\*compiler_context\s*;/.test(
     !/psx_analyze_function_lvar_usage_in\s*\(/.test(
       semanticPipelineSource,
     ) ||
-    !/psx_lower_semantic_tree_in\s*\(/.test(
+    !/psx_lower_semantic_tree_in_contexts\s*\(/.test(
       semanticPipelineSource,
     ) ||
     !/ps_decl_replay_lvar_usage_events_in\s*\(/.test(
       lvarUsageAnalysisSource,
     )) {
   throw new Error("frontend stream must receive the compilation-unit context explicitly");
+}
+if (!/psx_global_registry_t\s*\*global_registry\s*;/.test(
+      toplevelDeclarationHeader,
+    ) ||
+    !/psx_local_registry_t\s*\*local_registry\s*;/.test(
+      toplevelDeclarationHeader,
+    ) ||
+    !/\.context\s*=\s*callbacks/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/psx_apply_parsed_decl_specifier_in_contexts\s*\(/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/psx_apply_parsed_declarator_type_in_contexts\s*\(/.test(
+      toplevelDeclarationFrontendSource,
+    ) ||
+    !/psx_frontend_init_toplevel_declaration_callbacks_in_contexts\s*\(/.test(
+      frontendTranslationUnitSource,
+    ) ||
+    !/psx_apply_toplevel_declaration_in_contexts\s*\(/.test(
+      frontendTranslationUnitSource,
+    )) {
+  throw new Error(
+    "top-level declaration callbacks must carry all compilation registries",
+  );
 }
 const explicitLocalDeclarationLowering = [
   localObjectLoweringSource,
@@ -472,7 +505,7 @@ if (contextFreeOrdinaryNamespaceCall.test(
     !/ps_ctx_find_typedef_name_in\s*\(/.test(
       globalDeclarationResolutionSource,
     ) ||
-    !/psx_apply_parsed_typedef_declaration_in_context\s*\(/.test(
+    !/psx_apply_parsed_typedef_declaration_in_contexts\s*\(/.test(
       frontendDeclarationSources,
     ) ||
     !/\.semantic_context\s*=\s*semantic_context/.test(
@@ -480,6 +513,40 @@ if (contextFreeOrdinaryNamespaceCall.test(
     )) {
   throw new Error(
     "ordinary namespace resolution must use the passed semantic context",
+  );
+}
+const globalObjectLoweringSource = await readFile(
+  "src/lowering/global_object_lowering.c",
+  "utf8",
+);
+const semanticLoweringPassSource = await readFile(
+  "src/lowering/semantic_lowering_pass.c",
+  "utf8",
+);
+if (!/ps_find_global_var_in\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/ps_find_global_var_in\s*\(/.test(
+      functionDeclarationResolutionSource,
+    ) ||
+    !/ps_register_global_var_in\s*\(/.test(
+      globalObjectLoweringSource,
+    ) ||
+    /\bps_register_global_var\s*\(/.test(globalObjectLoweringSource) ||
+    !/psx_lower_semantic_tree_in_contexts\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/psx_lower_semantic_initializer_syntax_in_contexts\s*\(/.test(
+      semanticPipelineSource,
+    ) ||
+    !/lower_compound_literal_expression_in_contexts\s*\(/.test(
+      semanticLoweringPassSource,
+    ) ||
+    !/\.global_registry\s*=\s*global_registry/.test(
+      semanticLoweringPassSource,
+    )) {
+  throw new Error(
+    "global declaration and semantic lowering must use explicit registries",
   );
 }
 const frontendFunctionDefinitionSource = await readFile(

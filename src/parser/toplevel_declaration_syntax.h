@@ -5,6 +5,8 @@
 #include "initializer_syntax.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct psx_local_registry_t psx_local_registry_t;
 
 typedef struct {
   psx_parsed_decl_specifier_t specifier;
@@ -22,6 +24,9 @@ typedef struct {
 
 typedef struct {
   void *context;
+  psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
+  psx_local_registry_t *local_registry;
   void *(*begin_declaration)(
       void *context, psx_parsed_toplevel_declaration_t *declaration);
   void (*begin_declarator)(

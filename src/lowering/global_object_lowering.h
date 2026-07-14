@@ -8,6 +8,7 @@
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -26,6 +27,7 @@ int lower_global_object_declaration(
     psx_global_object_result_t *result);
 
 typedef struct {
+  psx_global_registry_t *global_registry;
   char *name;
   int name_len;
   const psx_type_t *type;

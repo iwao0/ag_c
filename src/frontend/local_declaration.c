@@ -123,6 +123,8 @@ static void begin_declarator(
     if (!psx_apply_block_extern_declaration_pipeline(
             &(psx_block_extern_declaration_pipeline_request_t){
                 .semantic_context = application->semantic_context,
+                .global_registry = application->global_registry,
+                .local_registry = application->local_registry,
                 .name = name->str,
                 .name_len = name->len,
                 .type = application->current_type,

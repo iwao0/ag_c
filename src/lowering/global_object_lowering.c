@@ -14,6 +14,8 @@ int lower_resolved_global_object_declaration(
       !request->type || !request->resolution ||
       request->resolution->status != PSX_GLOBAL_DECLARATION_OK) return 0;
   memset(result, 0, sizeof(*result));
+  psx_global_registry_t *global_registry = request->global_registry
+      ? request->global_registry : ps_global_registry_active();
 
   global_var_t *existing = request->resolution->existing;
   if (existing) {
@@ -38,7 +40,7 @@ int lower_resolved_global_object_declaration(
     free(global);
     return 0;
   }
-  ps_register_global_var(global);
+  ps_register_global_var_in(global_registry, global);
   result->global = global;
   result->created = 1;
   return 1;
@@ -87,6 +89,7 @@ int lower_global_object_declaration(
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
+          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,
@@ -99,6 +102,7 @@ int lower_global_object_declaration(
   }
   return lower_resolved_global_object_declaration(
       &(psx_resolved_global_object_request_t){
+          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,

@@ -10,6 +10,7 @@
 #include "parser/declarator_shape_builder.h"
 #include "parser/arena.h"
 #include "parser/diag.h"
+#include "parser/global_registry.h"
 #include "parser/local_registry.h"
 #include "semantic/declaration_application.h"
 #include "frontend/semantic_pipeline.h"
@@ -108,6 +109,7 @@ int psx_begin_global_declaration_pipeline(
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
+          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .type = request->type,
@@ -121,6 +123,7 @@ int psx_begin_global_declaration_pipeline(
   psx_global_object_result_t lowered = {0};
   if (!lower_resolved_global_object_declaration(
           &(psx_resolved_global_object_request_t){
+              .global_registry = request->global_registry,
               .name = request->name,
               .name_len = request->name_len,
               .type = request->type,
@@ -166,14 +169,26 @@ int psx_finish_global_declaration_pipeline(
             initializer_resolution.status);
       if (initializer_resolution.is_aggregate_initializer) {
         initializer_resolution.initializer =
-            psx_frontend_analyze_initializer_syntax_in_context(
+            psx_frontend_analyze_initializer_syntax_in_contexts(
                 request->semantic_context,
+                request->global_registry
+                    ? request->global_registry
+                    : ps_global_registry_active(),
+                request->local_registry
+                    ? request->local_registry
+                    : ps_local_registry_active(),
                 initializer_resolution.initializer,
                 request->initializer->value_tok);
       } else {
         initializer_resolution.initializer =
-            psx_frontend_analyze_expression_in_context(
+            psx_frontend_analyze_expression_in_contexts(
                 request->semantic_context,
+                request->global_registry
+                    ? request->global_registry
+                    : ps_global_registry_active(),
+                request->local_registry
+                    ? request->local_registry
+                    : ps_local_registry_active(),
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
                     ? initializer_resolution.initializer->tok
@@ -235,6 +250,7 @@ int psx_apply_function_declaration_pipeline(
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
           .semantic_context = request->semantic_context,
+          .global_registry = request->global_registry,
           .name = request->name,
           .name_len = request->name_len,
           .function_type = request->function_type,
@@ -552,11 +568,13 @@ int psx_finish_static_local_declaration_pipeline(
   }
   if (resolution.is_aggregate_initializer) {
     resolution.initializer = psx_frontend_analyze_initializer_syntax_in_contexts(
-        request->semantic_context, request->local_registry,
+        request->semantic_context, request->global_registry,
+        request->local_registry,
         resolution.initializer, request->initializer->value_tok);
   } else {
     resolution.initializer = psx_frontend_analyze_expression_in_contexts(
-        request->semantic_context, request->local_registry,
+        request->semantic_context, request->global_registry,
+        request->local_registry,
         resolution.initializer,
         resolution.initializer->tok
             ? resolution.initializer->tok
@@ -775,6 +793,7 @@ int psx_apply_block_extern_declaration_pipeline(
     if (!psx_apply_function_declaration_pipeline(
             &(psx_function_declaration_pipeline_request_t){
                 .semantic_context = request->semantic_context,
+                .global_registry = request->global_registry,
                 .name = request->name,
                 .name_len = request->name_len,
                 .function_type = request->type,
@@ -790,6 +809,9 @@ int psx_apply_block_extern_declaration_pipeline(
   psx_global_declaration_pipeline_result_t global;
   if (!psx_apply_global_declaration_pipeline(
           &(psx_global_declaration_pipeline_request_t){
+              .semantic_context = request->semantic_context,
+              .global_registry = request->global_registry,
+              .local_registry = request->local_registry,
               .name = request->name,
               .name_len = request->name_len,
               .type = request->type,

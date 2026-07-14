@@ -1,6 +1,7 @@
 #include "function_declaration_resolution.h"
 
 #include "../parser/gvar_public.h"
+#include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
 
 #include <string.h>
@@ -16,7 +17,10 @@ void psx_resolve_function_declaration(
       request->function_type->kind != PSX_TYPE_FUNCTION) {
     return;
   }
-  if (ps_find_global_var(request->name, request->name_len)) {
+  psx_global_registry_t *global_registry = request->global_registry
+      ? request->global_registry : ps_global_registry_active();
+  if (ps_find_global_var_in(
+          global_registry, request->name, request->name_len)) {
     resolution->status = PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT;
     return;
   }
