@@ -357,7 +357,6 @@ static int test_materialize_tag_member_info(
   *out = ps_tag_member_declaration_view(declaration);
   out->offset = layout->offset;
   out->bit_offset = layout->bit_offset;
-  out->bit_width = layout->bit_width;
   return 1;
 }
 
@@ -433,7 +432,6 @@ static int test_semantic_register_tag_member(
   psx_record_member_layout_t layout = {
       .offset = member->offset,
       .bit_offset = member->bit_offset,
-      .bit_width = member->bit_width,
   };
   return psx_ctx_register_tag_member_in(
       test_semantic_context(), kind, name, len,
@@ -465,7 +463,6 @@ static int test_register_tag_members_in_context(
     layouts[i] = (psx_record_member_layout_t){
         .offset = members[i].offset,
         .bit_offset = members[i].bit_offset,
-        .bit_width = members[i].bit_width,
     };
   }
   int registered = ps_ctx_register_tag_members_in(
@@ -4990,12 +4987,12 @@ static void test_record_decl_ownership_boundary() {
   psx_record_member_layout_t member_layout = {
       .offset = 0,
   };
-  psx_record_member_layout_t mismatched_layout = member_layout;
-  mismatched_layout.bit_width = 1;
+  psx_record_member_layout_t invalid_layout = member_layout;
+  invalid_layout.bit_offset = -1;
   int conflict_index = -1;
   ASSERT_TRUE(!ps_ctx_register_record_members_in(
       test_semantic_context(), first->record_id,
-      &member_declaration, &mismatched_layout, 1, &conflict_index));
+      &member_declaration, &invalid_layout, 1, &conflict_index));
   ASSERT_EQ(0, conflict_index);
   ASSERT_TRUE(ps_ctx_register_record_members_in(
       test_semantic_context(), first->record_id,

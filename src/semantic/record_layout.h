@@ -9,7 +9,6 @@ typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 typedef struct {
   int offset;
   int bit_offset;
-  int bit_width;
 } psx_record_member_layout_t;
 
 typedef struct {

@@ -167,7 +167,7 @@ node_t *lower_member_access_expression_in(
       ps_lowering_arena(lowering_context),
       ps_lowering_target(lowering_context), address, base,
       member_layout->offset, psx_record_member_decl_type(member),
-      member->bit_is_signed, member_layout->bit_width,
+      member->bit_is_signed, member->bit_width,
       member_layout->bit_offset);
   if (result) result->tok = access->base.tok;
   return result ? result : (node_t *)access;

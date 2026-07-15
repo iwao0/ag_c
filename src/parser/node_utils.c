@@ -61,7 +61,6 @@ static int materialize_tag_member_compat_view(
   *out = ps_tag_member_declaration_view(declaration);
   out->offset = layout->offset;
   out->bit_offset = layout->bit_offset;
-  out->bit_width = layout->bit_width;
   return 1;
 }
 
@@ -671,7 +670,6 @@ static int record_decl_member_tag_view_in(
   if (!member_layout) return 0;
   out->offset = member_layout->offset;
   out->bit_offset = member_layout->bit_offset;
-  out->bit_width = member_layout->bit_width;
   return 1;
 }
 
@@ -692,7 +690,6 @@ static int gvar_apply_record_member_layout(
   if (!member_layout) return 0;
   member->offset = member_layout->offset;
   member->bit_offset = member_layout->bit_offset;
-  member->bit_width = member_layout->bit_width;
   return 1;
 }
 
@@ -853,7 +850,6 @@ static void gvar_walk_emit_bitfield_member(
   psx_record_member_layout_t layout = {
       .offset = member->offset,
       .bit_offset = member->bit_offset,
-      .bit_width = member->bit_width,
   };
   ops->bitfield_member(
       user, &declaration, &layout, value_type_id, slot, offset);

@@ -250,7 +250,7 @@ static node_t *lower_aggregate_cast(
           ps_lowering_arena(lowering_context),
           temp, member_layout->offset,
           psx_record_member_decl_type(member), member->bit_is_signed,
-          member_layout->bit_width, member_layout->bit_offset);
+          member->bit_width, member_layout->bit_offset);
   node_t *assign = ps_node_new_assign_in(
       ps_lowering_arena(lowering_context), member_ref, operand);
   node_t *result = ps_node_new_lvar_expr_ref_for_in(

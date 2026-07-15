@@ -405,7 +405,6 @@ void psx_resolve_aggregate_member_declaration(
     batch_layouts[0] = (psx_record_member_layout_t){
         .offset = resolution->offset,
         .bit_offset = resolution->bit_offset,
-        .bit_width = request->has_bitfield ? request->bit_width : 0,
     };
   }
   if (promoted_count > 0) {

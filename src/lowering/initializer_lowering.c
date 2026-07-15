@@ -108,7 +108,7 @@ static node_t *new_initializer_member_lvar_ref(
       context->arena_context, owner, relative_offset,
       member_ref->declaration->decl_type,
       member_ref->declaration->bit_is_signed,
-      member_ref->layout.bit_width,
+      member_ref->declaration->bit_width,
       member_ref->layout.bit_offset);
 }
 

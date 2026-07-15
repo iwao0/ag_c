@@ -1188,8 +1188,7 @@ int ps_ctx_register_tag_members_in(
     const psx_record_member_layout_t *layout = &layouts[i];
     if (!declaration->name || declaration->len < 0 ||
         !psx_record_member_decl_type(declaration) || layout->offset < 0 ||
-        layout->bit_offset < 0 || layout->bit_width < 0 ||
-        layout->bit_width != declaration->bit_width) {
+        layout->bit_offset < 0) {
       if (out_conflict_index) *out_conflict_index = i;
       return 0;
     }

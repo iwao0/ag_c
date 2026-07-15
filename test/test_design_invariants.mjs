@@ -3551,6 +3551,10 @@ const tagMemberPublicSource = await readFile(
   "src/parser/tag_member_public.h",
   "utf8",
 );
+const recordLayoutHeaderSource = await readFile(
+  "src/semantic/record_layout.h",
+  "utf8",
+);
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
       `${tagContextSource}\n${tagMemberPublicSource}`,
     )) {
@@ -3591,6 +3595,9 @@ const recordDeclStruct = typeSource.match(
 const recordMemberDeclStruct = typeSource.match(
   /typedef struct psx_record_member_decl_t\s*\{([\s\S]*?)\}\s*psx_record_member_decl_t\s*;/,
 );
+const recordMemberLayoutStruct = recordLayoutHeaderSource.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_record_member_layout_t\s*;/,
+);
 if (!publishRecordLayoutFunction ||
     !/\bcollect_tag_member_declarations_in\s*\(/.test(
       publishRecordLayoutFunction[0],
@@ -3627,7 +3634,12 @@ if (!recordMemberDeclStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*decl_type\s*;/.test(
       recordMemberDeclStruct[1],
     ) ||
+    !/\bint\s+bit_width\s*;/.test(recordMemberDeclStruct[1]) ||
     /\b(?:offset|bit_offset)\s*;/.test(recordMemberDeclStruct[1]) ||
+    !recordMemberLayoutStruct ||
+    !/\bint\s+offset\s*;/.test(recordMemberLayoutStruct[1]) ||
+    !/\bint\s+bit_offset\s*;/.test(recordMemberLayoutStruct[1]) ||
+    /\bbit_width\s*;/.test(recordMemberLayoutStruct[1]) ||
     !recordDeclStruct ||
     !/\bconst\s+psx_record_member_decl_t\s*\*\s*members\s*;/.test(
       recordDeclStruct[1],
