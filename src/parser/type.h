@@ -57,19 +57,22 @@ typedef enum {
 } psx_type_binary_op_t;
 
 typedef struct arena_context_t arena_context_t;
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 
 typedef struct psx_record_member_decl_t {
   char *name;
   int len;
   int bit_width;
   int bit_is_signed;
+  const psx_semantic_type_table_t *decl_type_table;
+  psx_qual_type_t decl_qual_type;
+  /* Compatibility projection. Registered declarations are materialized from
+   * decl_qual_type through decl_type_table. */
   const psx_type_t *decl_type;
 } psx_record_member_decl_t;
 
-static inline const psx_type_t *psx_record_member_decl_type(
-    const psx_record_member_decl_t *member) {
-  return member ? member->decl_type : NULL;
-}
+const psx_type_t *psx_record_member_decl_type(
+    const psx_record_member_decl_t *member);
 
 typedef struct psx_record_decl_t {
   psx_record_id_t record_id;

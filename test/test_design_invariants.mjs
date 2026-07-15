@@ -4670,10 +4670,10 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     ) ||
     !lvarDeclTypeViewFunction ||
     !gvarDeclTypeViewFunction ||
-    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup\s*\(/.test(
+    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
       lvarDeclTypeViewFunction[0],
     ) ||
-    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup\s*\(/.test(
+    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
       gvarDeclTypeViewFunction[0],
     ) ||
     !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
@@ -4686,6 +4686,22 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
     !/\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource)) {
   throw new Error(
     "production symbol type views must materialize from declaration QualType identity",
+  );
+}
+if (!/typedef\s+struct\s+psx_record_member_decl_t\s*\{[^]*?decl_type_table[^]*?decl_qual_type[^]*?decl_type[^]*?\}/.test(
+      typeSource,
+    ) ||
+    !/psx_record_member_decl_type\s*\([^]*?psx_semantic_type_table_lookup_qual_type\s*\(/.test(
+      parserTypeImplementationSource,
+    ) ||
+    !/ps_ctx_intern_qual_type_in\s*\([^]*?m->declaration\.qual_type\s*=\s*identity/.test(
+      parserSemanticContextImplementation,
+    ) ||
+    !/qualified_views\s*\[PSX_QUALIFIER_VIEW_COUNT\]/.test(
+      semanticTypeIdentitySource,
+    )) {
+  throw new Error(
+    "record member and symbol compatibility views must be materialized from QualType",
   );
 }
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||

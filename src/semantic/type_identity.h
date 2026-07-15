@@ -21,6 +21,11 @@ psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
     psx_semantic_type_table_t *table, psx_qual_type_t pointee);
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
+/* Compatibility view for consumers still reading psx_type_t. The returned
+ * immutable view restores qualifiers from QualType, including derived
+ * relations, while TypeId remains the semantic identity. */
+const psx_type_t *psx_semantic_type_table_lookup_qual_type(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type);
 psx_qual_type_t psx_semantic_type_table_base(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 psx_qual_type_t psx_semantic_type_table_array_leaf(

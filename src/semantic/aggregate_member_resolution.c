@@ -400,6 +400,9 @@ void psx_resolve_aggregate_member_declaration(
         .len = has_name ? request->member_name_len : 0,
         .bit_width = request->has_bitfield ? request->bit_width : 0,
         .bit_is_signed = resolution->bit_is_signed,
+        .decl_type_table = ps_ctx_semantic_type_table_in(
+            semantic_context),
+        .decl_qual_type = identity,
         .decl_type = type,
     };
     batch_layouts[0] = (psx_record_member_layout_t){

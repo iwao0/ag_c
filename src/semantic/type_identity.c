@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+enum { PSX_QUALIFIER_VIEW_COUNT = 8 };
+
 typedef struct {
   psx_type_t *type;
   psx_qual_type_t base_type;
@@ -16,6 +18,8 @@ typedef struct {
   int parameter_count;
   psx_qual_type_t *record_member_types;
   int record_member_count;
+  psx_type_t *qualified_views[PSX_QUALIFIER_VIEW_COUNT];
+  unsigned char qualified_view_materializing[PSX_QUALIFIER_VIEW_COUNT];
   unsigned char relations_populating;
   unsigned char canonical_relations_materialized;
 } psx_semantic_type_entry_t;
@@ -375,6 +379,84 @@ const psx_type_t *psx_semantic_type_table_lookup(
     return NULL;
   }
   return table->entries[type_id].type;
+}
+
+static const psx_type_t *materialize_qual_type_view(
+    psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  const psx_type_qualifiers_t supported =
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |
+      PSX_TYPE_QUALIFIER_ATOMIC;
+  if (!table || type.type_id == PSX_TYPE_ID_INVALID ||
+      (type.qualifiers & ~supported) != 0 ||
+      type.type_id > table->next_id ||
+      (size_t)type.type_id >= table->capacity) {
+    return NULL;
+  }
+  psx_semantic_type_entry_t *entry = &table->entries[type.type_id];
+  unsigned view_index = type.qualifiers;
+  if (entry->qualified_views[view_index])
+    return entry->qualified_views[view_index];
+  if (!entry->type ||
+      entry->qualified_view_materializing[view_index])
+    return NULL;
+  entry->qualified_view_materializing[view_index] = 1;
+
+  const psx_type_t *base_view = NULL;
+  if (entry->base_type.type_id != PSX_TYPE_ID_INVALID) {
+    base_view = materialize_qual_type_view(
+        table, entry->base_type);
+    if (!base_view) goto fail;
+  }
+  int needs_view = type.qualifiers != PSX_TYPE_QUALIFIER_NONE ||
+                   base_view != entry->type->base;
+  for (int i = 0; i < entry->parameter_count; i++) {
+    const psx_type_t *parameter = materialize_qual_type_view(
+        table, entry->parameter_types[i]);
+    if (!parameter) goto fail;
+    if (!entry->type->param_types ||
+        parameter != entry->type->param_types[i])
+      needs_view = 1;
+  }
+  if (!needs_view) {
+    entry->qualified_views[view_index] = entry->type;
+    entry->qualified_view_materializing[view_index] = 0;
+    return entry->type;
+  }
+
+  psx_type_t *view = arena_alloc_in(
+      table->arena_context, sizeof(*view));
+  if (!view) goto fail;
+  *view = *entry->type;
+  view->qualifiers = type.qualifiers;
+  view->base = base_view;
+  if (entry->parameter_count > 0) {
+    const psx_type_t **parameters = arena_alloc_in(
+        table->arena_context,
+        (size_t)entry->parameter_count * sizeof(*parameters));
+    if (!parameters) goto fail;
+    for (int i = 0; i < entry->parameter_count; i++) {
+      parameters[i] = materialize_qual_type_view(
+          table, entry->parameter_types[i]);
+      if (!parameters[i]) goto fail;
+    }
+    view->param_types = parameters;
+  } else {
+    view->param_types = NULL;
+  }
+  entry->qualified_views[view_index] = view;
+  entry->qualified_view_materializing[view_index] = 0;
+  return view;
+
+fail:
+  entry->qualified_view_materializing[view_index] = 0;
+  entry->qualified_views[view_index] = NULL;
+  return NULL;
+}
+
+const psx_type_t *psx_semantic_type_table_lookup_qual_type(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  return materialize_qual_type_view(
+      (psx_semantic_type_table_t *)table, type);
 }
 
 static psx_qual_type_t related_type(

@@ -113,8 +113,8 @@ static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
   if (!var) return NULL;
   if (var->decl_type_table &&
       var->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    return psx_semantic_type_table_lookup(
-        var->decl_type_table, var->decl_qual_type.type_id);
+    return psx_semantic_type_table_lookup_qual_type(
+        var->decl_type_table, var->decl_qual_type);
   }
   return var->decl_type;
 }
@@ -123,8 +123,8 @@ static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
   if (!gv) return NULL;
   if (gv->decl_type_table &&
       gv->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
-    return psx_semantic_type_table_lookup(
-        gv->decl_type_table, gv->decl_qual_type.type_id);
+    return psx_semantic_type_table_lookup_qual_type(
+        gv->decl_type_table, gv->decl_qual_type);
   }
   return gv->decl_type;
 }
@@ -823,7 +823,8 @@ static const psx_record_decl_t *gvar_member_declaration_record_decl(
     const psx_record_decl_table_t *record_decls,
     const psx_record_member_decl_t *member) {
   const psx_type_t *type = member
-                               ? ps_type_array_leaf_type(member->decl_type)
+                               ? ps_type_array_leaf_type(
+                                     psx_record_member_decl_type(member))
                                : NULL;
   return type && ps_type_is_tag_aggregate(type)
              ? psx_record_decl_table_lookup(
@@ -941,7 +942,7 @@ static psx_type_id_t gvar_member_value_type_id(
 
 static const psx_type_t *record_member_decl_tag_type(
     const psx_record_member_decl_t *declaration) {
-  const psx_type_t *type = declaration ? declaration->decl_type : NULL;
+  const psx_type_t *type = psx_record_member_decl_type(declaration);
   while (type &&
          (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
     type = type->base;
@@ -1472,7 +1473,7 @@ static int record_member_declaration_storage_size_in(
     psx_semantic_context_t *semantic_context,
     const psx_record_member_decl_t *member) {
   return ps_ctx_type_sizeof_in(semantic_context,
-                               member ? member->decl_type : NULL);
+                               psx_record_member_decl_type(member));
 }
 
 static int gvar_init_cursor_consume_resolved_type_zero_padding(
@@ -1686,7 +1687,7 @@ static int record_member_decl_fp_size(
     const psx_record_member_decl_t *declaration) {
   const psx_type_t *type = declaration
                                ? ps_type_array_leaf_type(
-                                     declaration->decl_type)
+                                     psx_record_member_decl_type(declaration))
                                : NULL;
   tk_float_kind_t fp_kind =
       type && (type->kind == PSX_TYPE_FLOAT ||
@@ -1699,7 +1700,7 @@ static int record_member_decl_fp_size(
 
 static const psx_type_t *record_member_decl_direct_tag_leaf(
     const psx_record_member_decl_t *declaration) {
-  const psx_type_t *type = declaration ? declaration->decl_type : NULL;
+  const psx_type_t *type = psx_record_member_decl_type(declaration);
   if (!type || type->kind == PSX_TYPE_POINTER) return NULL;
   type = ps_type_array_leaf_type(type);
   return ps_type_is_tag_aggregate(type) ? type : NULL;
@@ -1840,7 +1841,7 @@ int ps_record_member_decl_flat_slots_in(
         leaf->tag_name, leaf->tag_len);
   }
   int count = ps_type_array_flat_element_count(
-      declaration ? declaration->decl_type : NULL);
+      psx_record_member_decl_type(declaration));
   return count > 0 ? count * per : per;
 }
 
@@ -1850,7 +1851,8 @@ int ps_record_member_decl_elem_flat_slots_in(
   if (!declaration) return 1;
   int total = ps_record_member_decl_flat_slots_in(
       semantic_context, declaration);
-  int count = ps_type_array_flat_element_count(declaration->decl_type);
+  int count = ps_type_array_flat_element_count(
+      psx_record_member_decl_type(declaration));
   if (count > 0) {
     int per = total / count;
     return per > 0 ? per : 1;
@@ -1863,7 +1865,7 @@ int ps_record_member_decl_subscript_stride_slots_in(
     const psx_record_member_decl_t *declaration) {
   int per = ps_record_member_decl_elem_flat_slots_in(
       semantic_context, declaration);
-  const psx_type_t *type = declaration ? declaration->decl_type : NULL;
+  const psx_type_t *type = psx_record_member_decl_type(declaration);
   if (!type || type->kind != PSX_TYPE_ARRAY) return per;
   int stride = ps_type_array_flat_element_count(type->base);
   if (stride > 0) per *= stride;

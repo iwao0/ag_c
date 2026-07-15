@@ -104,7 +104,7 @@ static tag_member_info_t ps_tag_member_declaration_view(
                    .len = member->len,
                    .bit_width = member->bit_width,
                    .bit_is_signed = member->bit_is_signed,
-                   .decl_type = member->decl_type,
+                   .decl_type = psx_record_member_decl_type(member),
                }
              : (tag_member_info_t){0};
 }
@@ -4043,11 +4043,14 @@ static void test_local_declaration_storage_plan_boundary() {
             ps_lvar_decl_qual_type(qualified_local).qualifiers);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_lvar_decl_qual_type(qualified_local).qualifiers);
-  ASSERT_TRUE(ps_lvar_get_decl_type(qualified_local) ==
+  ASSERT_TRUE(ps_lvar_get_decl_type(qualified_local) !=
               ps_ctx_type_by_id_in(
                   test_semantic_context(),
                   qualified_local_identity.type_id));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
+            ps_type_qualifiers(ps_lvar_get_decl_type(qualified_local)));
+  qualified_local->decl_type = NULL;
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_type_qualifiers(ps_lvar_get_decl_type(qualified_local)));
 
   reset_test_locals();
@@ -5345,10 +5348,13 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_EQ(0, first->member_count);
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *const_integer = ps_type_clone(integer);
+  ps_type_add_qualifiers(
+      const_integer, PSX_TYPE_QUALIFIER_CONST);
   psx_record_member_decl_t member_declaration = {
       .name = (char *)"value",
       .len = 5,
-      .decl_type = integer,
+      .decl_type = const_integer,
   };
   psx_record_member_layout_t member_layout = {
       .offset = 0,
@@ -5375,7 +5381,23 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(first->is_complete);
   ASSERT_TRUE(first->members != NULL);
   ASSERT_EQ(5, first->members[0].len);
-  ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
+  ASSERT_TRUE(first->members[0].decl_type_table ==
+              ps_ctx_semantic_type_table_in(test_semantic_context()));
+  ASSERT_TRUE(first->members[0].decl_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            first->members[0].decl_qual_type.qualifiers);
+  ASSERT_EQ(4, ps_ctx_type_sizeof_in(
+                   test_semantic_context(),
+                   psx_record_member_decl_type(&first->members[0])));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      psx_record_member_decl_type(&first->members[0]),
+      PSX_TYPE_QUALIFIER_CONST));
+  psx_record_member_decl_t member_without_projection = first->members[0];
+  member_without_projection.decl_type = NULL;
+  ASSERT_TRUE(ps_type_has_qualifier(
+      psx_record_member_decl_type(&member_without_projection),
+      PSX_TYPE_QUALIFIER_CONST));
   const psx_record_member_decl_t *first_members = first->members;
 
   char order_tag_name[] = "__DeclarationOrder";
@@ -7280,11 +7302,14 @@ static void test_static_data_initializer_boundary() {
             ps_gvar_decl_qual_type(&qualified_global).type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_gvar_decl_qual_type(&qualified_global).qualifiers);
-  ASSERT_TRUE(ps_gvar_get_decl_type(&qualified_global) ==
+  ASSERT_TRUE(ps_gvar_get_decl_type(&qualified_global) !=
               ps_ctx_type_by_id_in(
                   test_semantic_context(),
                   qualified_global_identity.type_id));
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_type_qualifiers(ps_gvar_get_decl_type(&qualified_global)));
+  qualified_global.decl_type = NULL;
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(ps_gvar_get_decl_type(&qualified_global)));
 
   ASSERT_TRUE(lower_static_scalar_array_initializer(
@@ -9900,7 +9925,10 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_type_qualifiers(atomic_ref_lvar->decl_type));
   node_t *atomic_ref_node = psx_node_new_lvar_for(atomic_ref_lvar);
-  ASSERT_TRUE(ps_node_get_type(atomic_ref_node) == atomic_ref_lvar->decl_type);
+  ASSERT_TRUE(ps_node_get_type(atomic_ref_node) ==
+              ps_lvar_get_decl_type(atomic_ref_lvar));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(atomic_ref_node), PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_TRUE((ps_node_qual_type(atomic_ref_node).qualifiers &
                PSX_TYPE_QUALIFIER_ATOMIC) != 0);
 
@@ -9936,7 +9964,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_ptr_alias_type->kind);
   ASSERT_TRUE((ps_lvar_decl_qual_type(qualified_ptr_alias).qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(qualified_ptr_alias_type));
   ASSERT_TRUE(qualified_ptr_alias_type->base != NULL);
   ASSERT_TRUE(!ps_type_has_qualifier(qualified_ptr_alias_type->base, PSX_TYPE_QUALIFIER_CONST));
@@ -9961,7 +9989,7 @@ static void test_type_metadata_bridge() {
                PSX_TYPE_QUALIFIER_CONST) != 0);
   ASSERT_TRUE((qualified_array_leaf.qualifiers &
                PSX_TYPE_QUALIFIER_VOLATILE) != 0);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
             ps_type_qualifiers(qualified_array_alias_type->base));
 
   psx_type_t *typed_atomic_int = ps_type_new_integer(TK_INT, 4, 0);
@@ -10233,7 +10261,7 @@ static void test_type_metadata_bridge() {
             ps_lvar_get_decl_type(alias_value)->kind);
   ASSERT_TRUE((ps_lvar_decl_qual_type(alias_value).qualifiers &
                PSX_TYPE_QUALIFIER_CONST) != 0);
-  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_type_qualifiers(ps_lvar_get_decl_type(alias_value)));
   ASSERT_TRUE(sig_lvar != NULL);
   const psx_type_t *sig_lvar_type = ps_lvar_get_decl_type(sig_lvar);
@@ -17881,6 +17909,12 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(interned_int != NULL);
   ASSERT_TRUE(interned_int != plain_int);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, ps_type_qualifiers(interned_int));
+  const psx_type_t *materialized_const_int =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(context), const_int_identity);
+  ASSERT_TRUE(materialized_const_int != NULL);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_type_qualifiers(materialized_const_int));
 
   psx_type_t *host_pointer = ps_type_new_pointer(plain_int);
   psx_type_t *wasm_pointer = ps_type_clone(host_pointer);
@@ -17918,6 +17952,15 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_type_qualifiers(canonical_pointer_to_const->base));
   ASSERT_TRUE(canonical_pointer_to_const->base == interned_int);
+  const psx_type_t *materialized_pointer_to_const =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(context),
+          pointer_to_const_identity);
+  ASSERT_TRUE(materialized_pointer_to_const != NULL);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(materialized_pointer_to_const));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_type_qualifiers(materialized_pointer_to_const->base));
 
   psx_type_t *const_int_array = ps_type_new_array(const_int, 3, 12, 0);
   psx_type_t *nested_const_int_array = ps_type_new_array(
@@ -18000,6 +18043,15 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(canonical_function->param_types[0] == interned_int);
   ASSERT_TRUE(canonical_function->param_types[1] ==
               ps_ctx_type_by_id_in(context, host_pointer_identity.type_id));
+  const psx_type_t *materialized_function =
+      psx_semantic_type_table_lookup_qual_type(
+          ps_ctx_semantic_type_table_in(context), function_identity);
+  ASSERT_TRUE(materialized_function != NULL);
+  ASSERT_TRUE(materialized_function != canonical_function);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_type_qualifiers(materialized_function->param_types[0]));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(materialized_function->param_types[1]));
   ASSERT_EQ(function_identity.type_id,
             ps_ctx_find_interned_qual_type_in(
                 context, canonical_function).type_id);

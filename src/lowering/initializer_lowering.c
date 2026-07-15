@@ -106,7 +106,7 @@ static node_t *new_initializer_member_lvar_ref(
   if (!member_ref || !member_ref->declaration) return NULL;
   return ps_node_new_tag_member_lvar_ref_with_layout_for_in(
       context->arena_context, owner, relative_offset,
-      member_ref->declaration->decl_type,
+      psx_record_member_decl_type(member_ref->declaration),
       member_ref->declaration->bit_is_signed,
       member_ref->declaration->bit_width,
       member_ref->layout.bit_offset);

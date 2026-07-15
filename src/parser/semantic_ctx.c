@@ -63,7 +63,9 @@ typedef struct tag_member_decl_t {
   int len;
   int bit_width;
   int bit_is_signed;
-  psx_type_t *type;
+  const psx_semantic_type_table_t *type_table;
+  psx_qual_type_t qual_type;
+  const psx_type_t *type;
 } tag_member_decl_t;
 
 struct tag_member_t {
@@ -102,7 +104,8 @@ static bool get_tag_member_impl_in(
     token_kind_t kind, char *name, int len, int scope_depth,
     int index, psx_record_member_decl_t *out_declaration,
     psx_record_member_layout_t *out_layout);
-static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *member);
+static const psx_type_t *tag_member_record_decl_type(
+    const tag_member_t *member);
 static int collect_tag_member_declarations_in(
     psx_semantic_context_t *context, const tag_type_t *tag,
     tag_member_t ***out_members);
@@ -125,13 +128,14 @@ static void refresh_cached_record_decl(
     }
     for (int i = 0; i < member_count; i++) {
       tag_member_t *member = source_members[i];
-      psx_type_t *decl_type = tag_member_record_decl_type_mut(member);
-      ps_ctx_bind_record_ids_in(context, decl_type);
+      const psx_type_t *decl_type = tag_member_record_decl_type(member);
       members[i] = (psx_record_member_decl_t){
           .name = member->declaration.name,
           .len = member->declaration.len,
           .bit_width = member->declaration.bit_width,
           .bit_is_signed = member->declaration.bit_is_signed,
+          .decl_type_table = member->declaration.type_table,
+          .decl_qual_type = member->declaration.qual_type,
           .decl_type = decl_type,
       };
     }
@@ -170,7 +174,8 @@ struct typedef_name_t {
   unsigned declaration_seq;
 };
 
-static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *m) {
+static const psx_type_t *tag_member_record_decl_type(
+    const tag_member_t *m) {
   return m ? m->declaration.type : NULL;
 }
 
@@ -501,9 +506,18 @@ static int initialize_tag_member_record(
   m->declaration.bit_width = declaration->bit_width;
   m->declaration.bit_is_signed = declaration->bit_is_signed;
   const psx_type_t *desc_type = psx_record_member_decl_type(declaration);
-  m->declaration.type = ctx_type_clone_persistent_in(context, desc_type);
+  psx_type_t *resolved_type = ctx_type_clone_persistent_in(
+      context, desc_type);
+  if (!resolved_type) return 0;
+  ps_ctx_bind_record_ids_in(context, resolved_type);
+  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
+      context, resolved_type);
+  if (identity.type_id == PSX_TYPE_ID_INVALID) return 0;
+  m->declaration.type_table = context->semantic_types;
+  m->declaration.qual_type = identity;
+  m->declaration.type = psx_semantic_type_table_lookup(
+      context->semantic_types, identity.type_id);
   if (!m->declaration.type) return 0;
-  ps_ctx_bind_record_ids_in(context, m->declaration.type);
   tag_member_layout_draft_t *draft = ctx_calloc_in(
       context, 1, sizeof(*draft));
   if (!draft) return 0;
@@ -1289,14 +1303,15 @@ static bool fill_tag_member_in(
   const psx_record_member_layout_t *layout =
       find_tag_member_layout_draft(context, member);
   if (!layout) return false;
-  psx_type_t *decl_type = tag_member_record_decl_type_mut(member);
-  ps_ctx_bind_record_ids_in(context, decl_type);
+  const psx_type_t *decl_type = tag_member_record_decl_type(member);
   if (out_declaration) {
     *out_declaration = (psx_record_member_decl_t){
         .name = member->declaration.name,
         .len = member->declaration.len,
         .bit_width = member->declaration.bit_width,
         .bit_is_signed = member->declaration.bit_is_signed,
+        .decl_type_table = member->declaration.type_table,
+        .decl_qual_type = member->declaration.qual_type,
         .decl_type = decl_type,
     };
   }
