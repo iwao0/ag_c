@@ -4577,6 +4577,11 @@ static void test_aggregate_member_resolution_boundary() {
       &boundary);
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, boundary.status);
   ASSERT_EQ(0, boundary.offset);
+  ASSERT_TRUE(boundary.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(1, ps_type_sizeof_id_for_target(
+                   ps_ctx_semantic_type_table_in(test_semantic_context()),
+                   boundary.type_id,
+                   ps_ctx_target_info(test_semantic_context())));
 
   psx_type_t *bitfield_integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_resolve_aggregate_member_declaration(

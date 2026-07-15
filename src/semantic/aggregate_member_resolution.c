@@ -19,6 +19,8 @@ static int is_aggregate_kind(token_kind_t kind) {
 
 typedef struct {
   const psx_type_t *type;
+  const psx_semantic_type_table_t *semantic_types;
+  psx_type_id_t type_id;
   int bit_width;
 } aggregate_bitfield_request_t;
 
@@ -44,7 +46,10 @@ typedef struct {
 } aggregate_object_placement_t;
 
 static psx_aggregate_member_status_t validate_aggregate_member_type(
-    const psx_type_t *type, const ag_target_info_t *target) {
+    const psx_semantic_type_table_t *semantic_types,
+    psx_type_id_t type_id) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      semantic_types, type_id);
   if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
   const psx_type_t *stored = ps_type_array_leaf_type(type);
   if (!stored) return PSX_AGGREGATE_MEMBER_INVALID;
@@ -53,9 +58,8 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
   if (stored->kind == PSX_TYPE_FUNCTION)
     return PSX_AGGREGATE_MEMBER_FUNCTION_TYPE;
   if (ps_type_is_tag_aggregate(stored) &&
-      ps_type_sizeof_for_target(stored, target) <= 0 &&
       (!stored->aggregate_definition ||
-       stored->aggregate_definition->align <= 0)) {
+       !stored->aggregate_definition->is_complete)) {
     return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
   }
   return PSX_AGGREGATE_MEMBER_OK;
@@ -87,7 +91,8 @@ static void resolve_aggregate_bitfield_placement(
     resolution->status = PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE;
     return;
   }
-  int storage_size = ps_type_sizeof_for_target(type, target);
+  int storage_size = ps_type_sizeof_id_for_target(
+      request->semantic_types, request->type_id, target);
   if (storage_size <= 0) return;
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
@@ -273,6 +278,10 @@ void psx_resolve_aggregate_member_declaration(
     resolution->status = PSX_AGGREGATE_MEMBER_MISSING_NAME;
     return;
   }
+  psx_qual_type_t identity = ps_ctx_intern_qual_type_in(
+      semantic_context, type);
+  if (identity.type_id == PSX_TYPE_ID_INVALID) return;
+  resolution->type_id = identity.type_id;
 
   if (request->has_bitfield) {
     aggregate_bitfield_resolution_t bitfield;
@@ -280,6 +289,9 @@ void psx_resolve_aggregate_member_declaration(
         &working_layout,
         &(aggregate_bitfield_request_t){
             .type = type,
+            .semantic_types = ps_ctx_semantic_type_table_in(
+                semantic_context),
+            .type_id = identity.type_id,
             .bit_width = request->bit_width,
         },
         ps_ctx_target_info(semantic_context),
@@ -296,10 +308,15 @@ void psx_resolve_aggregate_member_declaration(
     }
   } else {
     const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
-    resolution->status = validate_aggregate_member_type(type, target);
+    const psx_semantic_type_table_t *semantic_types =
+        ps_ctx_semantic_type_table_in(semantic_context);
+    resolution->status = validate_aggregate_member_type(
+        semantic_types, identity.type_id);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
-    int storage_size = ps_type_sizeof_for_target(type, target);
-    int storage_alignment = ps_type_alignof_for_target(type, target);
+    int storage_size = ps_type_sizeof_id_for_target(
+        semantic_types, identity.type_id, target);
+    int storage_alignment = ps_type_alignof_id_for_target(
+        semantic_types, identity.type_id, target);
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;

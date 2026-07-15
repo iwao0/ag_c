@@ -1682,6 +1682,36 @@ const aggregateMemberResolutionSource = await readFile(
   "src/semantic/aggregate_member_resolution.c",
   "utf8",
 );
+const aggregateMemberResolutionHeader = await readFile(
+  "src/semantic/aggregate_member_resolution.h",
+  "utf8",
+);
+const aggregateMemberResolutionType = aggregateMemberResolutionHeader.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_resolution_t\s*;/,
+);
+if (!aggregateMemberResolutionType ||
+    !/\bpsx_type_id_t\s+type_id\s*;/.test(
+      aggregateMemberResolutionType[1],
+    ) ||
+    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bps_type_alignof_id_for_target\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/aggregate_definition->is_complete/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    /\bps_type_(?:size|align)of_for_target\s*\(/.test(
+      aggregateMemberResolutionSource,
+    )) {
+  throw new Error(
+    "aggregate member resolution must separate RecordDecl completeness from TypeId target layout",
+  );
+}
 const declarationApplicationSource = await readFile(
   "src/semantic/declaration_application.c",
   "utf8",

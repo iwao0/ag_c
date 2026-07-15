@@ -2,6 +2,7 @@
 #define SEMANTIC_AGGREGATE_MEMBER_RESOLUTION_H
 
 #include "declaration_resolution.h"
+#include "type_identity.h"
 #include "../parser/declarator_shape.h"
 #include "../parser/tag_member_public.h"
 
@@ -44,6 +45,7 @@ typedef struct {
 typedef struct {
   psx_aggregate_member_status_t status;
   const psx_type_t *type;
+  psx_type_id_t type_id;
   int offset;
   int storage_size;
   int bit_offset;
