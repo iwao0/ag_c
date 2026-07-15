@@ -3598,6 +3598,14 @@ const initializerLoweringSource = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
 );
+if (/\bmember->offset\b/.test(initializerLoweringSource) ||
+    /\bmember->offset\b/.test(staticDataInitializerSource) ||
+    !/\brecord_member_offset\s*\(/.test(initializerLoweringSource) ||
+    !/\brecord_member_offset\s*\(/.test(staticDataInitializerSource)) {
+  throw new Error(
+    "initializer lowering must resolve member offsets from RecordLayoutTable",
+  );
+}
 for (const functionName of [
   "lower_static_object_initializer",
   "lower_static_scalar_array_initializer",

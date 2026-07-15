@@ -48,6 +48,19 @@ static int type_size_id(
       type_id, context->target);
 }
 
+static int record_member_offset(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *aggregate_type, int member_index) {
+  if (!context || !aggregate_type ||
+      aggregate_type->record_id == PSX_RECORD_ID_INVALID)
+    return -1;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      context->record_layouts, aggregate_type->record_id, context->target);
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(layout, member_index);
+  return member_layout ? member_layout->offset : -1;
+}
+
 static ag_diagnostic_context_t *diagnostics(
     const initializer_lowering_context_t *context) {
   return context->diagnostic_context;
@@ -480,20 +493,26 @@ static node_t *append_object_zero_fill(
 }
 
 static int aggregate_member_index(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *aggregate_type, psx_type_id_t aggregate_type_id,
     const psx_aggregate_definition_t *definition,
     const psx_initializer_entry_t *entry, int positional_index) {
   if (!entry->has_member) {
     int covered_end = -1;
     for (int i = 0; i < definition->member_count; i++) {
       const tag_member_info_t *member = &definition->members[i];
-      int member_size = ps_tag_member_decl_storage_size(member);
+      psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
+          context->semantic_types, aggregate_type_id, i).type_id;
+      int member_size = type_size_id(context, member_type_id);
+      int member_offset = record_member_offset(
+          context, aggregate_type, i);
       if (member->len <= 0 && member_size > 0) {
         if (i >= positional_index) return i;
-        int end = member->offset + member_size;
+        int end = member_offset + member_size;
         if (end > covered_end) covered_end = end;
         continue;
       }
-      if (member->offset < covered_end) continue;
+      if (member_offset < covered_end) continue;
       if (i >= positional_index) return i;
     }
     return -1;
@@ -781,7 +800,8 @@ static int immediate_subobject_at_leaf_cursor(
     for (int i = 0; i < definition->member_count; i++) {
       const tag_member_info_t *member = &definition->members[i];
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
-      int member_offset = relative_offset + member->offset;
+      int member_offset = relative_offset +
+                          record_member_offset(context, type, i);
       if (member_offset != leaf_offset || !member_type) continue;
       if (member_type->kind != PSX_TYPE_ARRAY &&
           !ps_type_is_tag_aggregate(member_type)) return 0;
@@ -1128,7 +1148,8 @@ static node_t *lower_typed_aggregate_initializer_list(
             definition, target.first_member_index);
       continue;
     }
-    int member_index = aggregate_member_index(definition, entry, ordinal);
+    int member_index = aggregate_member_index(
+        context, type, type_id, definition, entry, ordinal);
     if (member_index < 0 || member_index >= definition->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
                    diag_message_for_in(diagnostics(context),
@@ -1140,7 +1161,8 @@ static node_t *lower_typed_aggregate_initializer_list(
     const psx_type_t *target_type = ps_tag_member_decl_type(member);
     psx_type_id_t target_type_id = psx_semantic_type_table_record_member(
         context->semantic_types, type_id, member_index).type_id;
-    int target_offset = relative_offset + member->offset;
+    int target_offset = relative_offset +
+                        record_member_offset(context, type, member_index);
     const tag_member_info_t *direct_member = member;
     if (entry->index_expr_count > 0) {
       descend_array_designators(
@@ -1206,7 +1228,9 @@ static node_t *lower_struct_list_initializer(
   int ordinal = 0;
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
-    int member_index = aggregate_member_index(definition, entry, ordinal);
+    int member_index = aggregate_member_index(
+        context, type, ps_lvar_decl_type_id(var),
+        definition, entry, ordinal);
     if (member_index < 0 || member_index >= definition->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
@@ -1214,7 +1238,8 @@ static node_t *lower_struct_list_initializer(
     }
     const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var, member->offset, member);
+        context->arena_context, var,
+        record_member_offset(context, type, member_index), member);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -1252,7 +1277,8 @@ static node_t *lower_union_list_initializer(
                    "init", "%s",
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
     }
-    int member_index = aggregate_member_index(definition, entry, 0);
+    int member_index = aggregate_member_index(
+        context, type, ps_lvar_decl_type_id(var), definition, entry, 0);
     if (member_index < 0 || member_index >= definition->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
@@ -1260,7 +1286,8 @@ static node_t *lower_union_list_initializer(
     }
     const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var, member->offset, member);
+        context->arena_context, var,
+        record_member_offset(context, type, member_index), member);
     chain = append_init(
         context, chain,
         ps_node_new_assign_in(
@@ -1320,7 +1347,8 @@ static node_t *lower_aggregate_expr_initializer(
     const tag_member_info_t *member = &definition->members[i];
     if (member->len <= 0) continue;
     node_t *target = ps_node_new_tag_member_lvar_ref_for_in(
-        context->arena_context, var, member->offset, member);
+        context->arena_context, var,
+        record_member_offset(context, target_type, i), member);
     return new_decl_initializer_assign(
         context, target, initializer->base.rhs, tok);
   }

@@ -39,6 +39,23 @@ static int type_size(
   return lowering_type_size(lowering->lowering_context, type);
 }
 
+static int record_member_offset(
+    const static_array_lowering_t *lowering,
+    const psx_type_t *aggregate_type, int member_index) {
+  const psx_lowering_context_t *context = lowering
+                                              ? lowering->lowering_context
+                                              : NULL;
+  if (!context || !aggregate_type ||
+      aggregate_type->record_id == PSX_RECORD_ID_INVALID)
+    return -1;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      ps_lowering_record_layouts(context), aggregate_type->record_id,
+      ps_lowering_target(context));
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(layout, member_index);
+  return member_layout ? member_layout->offset : -1;
+}
+
 static int leaf_index_at_offset(
     const psx_initializer_scalar_leaf_list_t *leaves, int offset) {
   if (!leaves) return -1;
@@ -89,7 +106,9 @@ static psx_initializer_target_t positional_target(
       target.type = ps_tag_member_decl_type(member);
       target.type_id = ps_lowering_type_id(
           lowering->lowering_context, target.type);
-      target.relative_offset = context_offset + member->offset;
+      target.relative_offset = context_offset +
+                               record_member_offset(
+                                   lowering, context_type, 0);
       target.direct_member = member;
     }
     target.first_member_index = 0;
@@ -105,7 +124,9 @@ static psx_initializer_target_t positional_target(
     for (int i = 0; i < definition->member_count; i++) {
       const tag_member_info_t *member = &definition->members[i];
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
-      int member_offset = context_offset + member->offset;
+      int member_offset = context_offset +
+                          record_member_offset(
+                              lowering, context_type, i);
       if (member_offset != leaf->relative_offset || !member_type) continue;
       if (member_type->kind != PSX_TYPE_ARRAY &&
           !ps_type_is_tag_aggregate(member_type)) continue;
