@@ -58,9 +58,9 @@ void psx_resolve_local_declaration(
     if (op->is_vla_array) leading_array_has_vla = 1;
   }
 
-  const psx_type_t *element = ps_type_pointee_value_type(type);
   psx_qual_type_t element_identity =
-      psx_semantic_type_table_find(request->semantic_types, element);
+      psx_semantic_type_table_pointee_value(
+          request->semantic_types, request->type_id);
   int element_size = ps_type_sizeof_id_for_target(
       request->semantic_types, element_identity.type_id, request->target);
 

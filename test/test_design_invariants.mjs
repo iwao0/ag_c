@@ -3113,6 +3113,37 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
   );
 }
 
+const semanticTypeTraversalSource = await readFile(
+  "src/semantic/type_identity.c",
+  "utf8",
+);
+const localDeclarationResolutionTraversalSource = await readFile(
+  "src/semantic/local_declaration_resolution.c",
+  "utf8",
+);
+for (const functionName of [
+  "psx_semantic_type_table_array_leaf",
+  "psx_semantic_type_table_pointee_value",
+]) {
+  if (!new RegExp(`\\b${functionName}\\s*\\(`).test(
+        semanticTypeTraversalSource,
+      )) {
+    throw new Error(
+      "derived type traversal must be owned by the semantic TypeId graph",
+    );
+  }
+}
+for (const source of [
+  localDeclarationPlanSource,
+  localDeclarationResolutionTraversalSource,
+]) {
+  if (/\bpsx_semantic_type_table_find\s*\(/.test(source)) {
+    throw new Error(
+      "local declaration planning and resolution must not reverse-map type pointers",
+    );
+  }
+}
+
 for (const [name, header, source, functionName] of [
   ["local", localDeclarationPlanHeader, localDeclarationPlanSource,
    "psx_plan_local_storage_for_type_id"],
@@ -3126,6 +3157,7 @@ for (const [name, header, source, functionName] of [
   if (!signature.test(header) || !signature.test(source) ||
       !/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
+      (name === "local" && /storage_size\s*>=/.test(source)) ||
       /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
         header,
       )) {

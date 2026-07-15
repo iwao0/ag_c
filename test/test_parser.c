@@ -16109,6 +16109,33 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(plain_int_identity.type_id, qualified_pointer_base.type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, qualified_pointer_base.qualifiers);
 
+  psx_type_t *const_int_array = ps_type_new_array(const_int, 3, 12, 0);
+  psx_type_t *nested_const_int_array = ps_type_new_array(
+      const_int_array, 2, 24, 0);
+  psx_type_t *nested_array_pointer = ps_type_new_pointer(
+      nested_const_int_array);
+  psx_qual_type_t nested_array_identity =
+      ps_ctx_intern_qual_type_in(context, nested_const_int_array);
+  psx_qual_type_t nested_array_pointer_identity =
+      ps_ctx_intern_qual_type_in(context, nested_array_pointer);
+  psx_qual_type_t array_leaf_identity =
+      psx_semantic_type_table_array_leaf(
+          ps_ctx_semantic_type_table_in(context),
+          nested_array_identity.type_id);
+  ASSERT_EQ(plain_int_identity.type_id, array_leaf_identity.type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, array_leaf_identity.qualifiers);
+  psx_qual_type_t pointee_value_identity =
+      psx_semantic_type_table_pointee_value(
+          ps_ctx_semantic_type_table_in(context),
+          nested_array_pointer_identity.type_id);
+  ASSERT_EQ(array_leaf_identity.type_id, pointee_value_identity.type_id);
+  ASSERT_EQ(array_leaf_identity.qualifiers,
+            pointee_value_identity.qualifiers);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            psx_semantic_type_table_pointee_value(
+                ps_ctx_semantic_type_table_in(context),
+                plain_int_identity.type_id).type_id);
+
   const psx_type_t *function_parameters[2] = {const_int, host_pointer};
   psx_type_t *function_type = ps_type_new_function(plain_int);
   ps_type_set_function_params(function_type, function_parameters, 2, 0);

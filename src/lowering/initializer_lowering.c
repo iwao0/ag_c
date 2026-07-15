@@ -45,20 +45,6 @@ static int type_size_id(
       context->semantic_types, type_id, context->target);
 }
 
-static psx_type_id_t array_leaf_type_id(
-    const initializer_lowering_context_t *context,
-    psx_type_id_t type_id) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      context ? context->semantic_types : NULL, type_id);
-  while (type && type->kind == PSX_TYPE_ARRAY) {
-    type_id = psx_semantic_type_table_base(
-        context->semantic_types, type_id).type_id;
-    type = psx_semantic_type_table_lookup(
-        context->semantic_types, type_id);
-  }
-  return type ? type_id : PSX_TYPE_ID_INVALID;
-}
-
 static ag_diagnostic_context_t *diagnostics(
     const initializer_lowering_context_t *context) {
   return context->diagnostic_context;
@@ -382,8 +368,8 @@ static node_t *lower_typed_character_array_string(
     psx_type_id_t array_type_id, int relative_offset,
     node_string_t *string, node_t *chain, token_t *tok) {
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  psx_type_id_t element_type_id = array_leaf_type_id(
-      context, array_type_id);
+  psx_type_id_t element_type_id = psx_semantic_type_table_array_leaf(
+      context->semantic_types, array_type_id).type_id;
   int element_size = type_size_id(context, element_type_id);
   int capacity = element_size > 0
                      ? type_size_id(context, array_type_id) / element_size
@@ -944,7 +930,8 @@ static node_t *lower_flat_typed_array_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
   int leaf_size = type_size_id(
-      context, array_leaf_type_id(context, type_id));
+      context, psx_semantic_type_table_array_leaf(
+                   context->semantic_types, type_id).type_id);
   int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
