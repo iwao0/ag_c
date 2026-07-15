@@ -7,6 +7,7 @@
 #include "tag_member_public.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
+#include "../semantic/type_identity.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
 
@@ -36,6 +37,10 @@ psx_semantic_expr_id_t ps_ctx_register_semantic_expression_in(
 node_t *ps_ctx_semantic_expression_in(
     const psx_semantic_context_t *context,
     psx_semantic_expr_id_t expression_id);
+psx_qual_type_t ps_ctx_intern_qual_type_in(
+    psx_semantic_context_t *context, const psx_type_t *type);
+const psx_type_t *ps_ctx_type_by_id_in(
+    const psx_semantic_context_t *context, psx_type_id_t type_id);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */
 void ps_ctx_reset_translation_unit_scope_in(

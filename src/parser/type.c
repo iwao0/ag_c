@@ -913,6 +913,81 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
   }
 }
 
+static int semantic_integer_rank(const psx_type_t *type) {
+  if (!type) return 0;
+  if (type->is_plain_char) return 1;
+  if (type->is_long_long) return 5;
+  switch (type->scalar_kind) {
+    case TK_CHAR:
+      return 1;
+    case TK_SHORT:
+      return 2;
+    case TK_INT:
+      return 3;
+    case TK_LONG:
+      return 4;
+    default:
+      if (type->size <= 1) return 1;
+      if (type->size <= 2) return 2;
+      if (type->size <= 4) return 3;
+      return 4;
+  }
+}
+
+static int semantic_type_matches(
+    const psx_type_t *a, const psx_type_t *b, int compare_qualifiers) {
+  if (a == b) return 1;
+  if (!a || !b || a->kind != b->kind) return 0;
+  if (compare_qualifiers && a->qualifiers != b->qualifiers) return 0;
+  switch (a->kind) {
+    case PSX_TYPE_BOOL:
+      return a->is_unsigned == b->is_unsigned;
+    case PSX_TYPE_INTEGER:
+      if (a->scalar_kind == TK_ENUM || b->scalar_kind == TK_ENUM ||
+          a->tag_kind == TK_ENUM || b->tag_kind == TK_ENUM) {
+        return ps_type_tag_identity_matches(a, b);
+      }
+      return a->is_unsigned == b->is_unsigned &&
+             a->is_plain_char == b->is_plain_char &&
+             semantic_integer_rank(a) == semantic_integer_rank(b);
+    case PSX_TYPE_FLOAT:
+    case PSX_TYPE_COMPLEX:
+      return a->fp_kind == b->fp_kind &&
+             a->is_long_double == b->is_long_double;
+    case PSX_TYPE_POINTER:
+      return semantic_type_matches(a->base, b->base, 1);
+    case PSX_TYPE_ARRAY:
+      return a->array_len == b->array_len && a->is_vla == b->is_vla &&
+             semantic_type_matches(a->base, b->base, 1);
+    case PSX_TYPE_STRUCT:
+    case PSX_TYPE_UNION:
+      return ps_type_tag_identity_matches(a, b);
+    case PSX_TYPE_FUNCTION:
+      if (a->param_count != b->param_count ||
+          a->is_variadic_function != b->is_variadic_function ||
+          !semantic_type_matches(a->base, b->base, 1)) {
+        return 0;
+      }
+      if (a->param_count > 0 && (!a->param_types || !b->param_types))
+        return 0;
+      for (int i = 0; i < a->param_count; i++) {
+        if (!semantic_type_matches(a->param_types[i], b->param_types[i], 1))
+          return 0;
+      }
+      return 1;
+    case PSX_TYPE_VOID:
+    case PSX_TYPE_INVALID:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+int ps_type_unqualified_semantic_matches(
+    const psx_type_t *a, const psx_type_t *b) {
+  return semantic_type_matches(a, b, 0);
+}
+
 static int type_derivation_to_function_matches(const psx_type_t *a,
                                                const psx_type_t *b) {
   while (a && b && a->kind != PSX_TYPE_FUNCTION &&

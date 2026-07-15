@@ -15920,6 +15920,73 @@ static void test_arena_checkpoint_rollback() {
   arena_free_all_in(arena_context);
 }
 
+static void test_semantic_type_identity() {
+  printf("test_semantic_type_identity...\n");
+  psx_semantic_context_t *context = ps_ctx_create(test_arena_context());
+  ASSERT_TRUE(context != NULL);
+  if (!context) return;
+
+  psx_type_t *plain_int = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *const_int = ps_type_clone(plain_int);
+  ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);
+  psx_qual_type_t plain_int_identity =
+      ps_ctx_intern_qual_type_in(context, plain_int);
+  psx_qual_type_t const_int_identity =
+      ps_ctx_intern_qual_type_in(context, const_int);
+  ASSERT_TRUE(plain_int_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(plain_int_identity.type_id, const_int_identity.type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, plain_int_identity.qualifiers);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, const_int_identity.qualifiers);
+  const psx_type_t *interned_int =
+      ps_ctx_type_by_id_in(context, plain_int_identity.type_id);
+  ASSERT_TRUE(interned_int != NULL);
+  ASSERT_TRUE(interned_int != plain_int);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, ps_type_qualifiers(interned_int));
+
+  psx_type_t *host_pointer = ps_type_new_pointer(plain_int);
+  host_pointer->size = 8;
+  host_pointer->align = 8;
+  psx_type_t *wasm_pointer = ps_type_clone(host_pointer);
+  wasm_pointer->size = 4;
+  wasm_pointer->align = 4;
+  psx_qual_type_t host_pointer_identity =
+      ps_ctx_intern_qual_type_in(context, host_pointer);
+  psx_qual_type_t wasm_pointer_identity =
+      ps_ctx_intern_qual_type_in(context, wasm_pointer);
+  ASSERT_EQ(host_pointer_identity.type_id, wasm_pointer_identity.type_id);
+
+  psx_type_t *pointer_to_const = ps_type_new_pointer(const_int);
+  psx_qual_type_t pointer_to_const_identity =
+      ps_ctx_intern_qual_type_in(context, pointer_to_const);
+  ASSERT_TRUE(pointer_to_const_identity.type_id !=
+              host_pointer_identity.type_id);
+
+  char record_name[] = "IdentityRecord";
+  psx_type_t *first_record = ps_type_new_tag(
+      TK_STRUCT, record_name, 14, 1, 8);
+  first_record->record_id = 41;
+  first_record->align = 8;
+  psx_type_t *same_record = ps_type_clone(first_record);
+  same_record->size = 4;
+  same_record->align = 4;
+  psx_type_t *other_record = ps_type_clone(first_record);
+  other_record->record_id = 42;
+  psx_qual_type_t first_record_identity =
+      ps_ctx_intern_qual_type_in(context, first_record);
+  psx_qual_type_t same_record_identity =
+      ps_ctx_intern_qual_type_in(context, same_record);
+  psx_qual_type_t other_record_identity =
+      ps_ctx_intern_qual_type_in(context, other_record);
+  ASSERT_EQ(first_record_identity.type_id, same_record_identity.type_id);
+  ASSERT_TRUE(first_record_identity.type_id != other_record_identity.type_id);
+
+  psx_type_id_t retained_id = pointer_to_const_identity.type_id;
+  ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
+  ps_ctx_reset_translation_unit_scope_in(context);
+  ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) == NULL);
+  ps_ctx_destroy(context);
+}
+
 static void test_semantic_context_isolation() {
   printf("test_semantic_context_isolation...\n");
   arena_context_t *arena_context =
@@ -17085,6 +17152,7 @@ int main() {
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
+  test_semantic_type_identity();
   test_semantic_context_isolation();
   test_compilation_session_owns_target_and_tokenizer();
   test_compilation_session_registry_isolation();

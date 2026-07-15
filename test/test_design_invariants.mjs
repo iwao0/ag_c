@@ -2750,6 +2750,7 @@ const typeBuilderUsers = new Set([
   "src/semantic/identifier_binding.c",
   "src/semantic/function_call_resolution.c",
   "src/semantic/expression_operand_resolution.c",
+  "src/semantic/type_identity.c",
   "src/lowering/vla_lowering.c",
   "src/lowering/sizeof_lowering.c",
   "src/lowering/cast_lowering.c",
@@ -2943,14 +2944,48 @@ if (!tagIdentityFunction ||
   throw new Error("tag identity must prefer stable RecordId values");
 }
 
+const semanticTypeIdentityHeader = await readFile(
+  "src/semantic/type_identity.h",
+  "utf8",
+);
+const semanticTypeIdentitySource = await readFile(
+  "src/semantic/type_identity.c",
+  "utf8",
+);
+const qualTypeStruct = semanticTypeIdentityHeader.match(
+  /typedef\s+struct\s*\{([^]*?)\}\s*psx_qual_type_t\s*;/,
+);
+if (!qualTypeStruct ||
+    !/\bpsx_type_id_t\s+type_id\s*;/.test(qualTypeStruct[1]) ||
+    !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(qualTypeStruct[1]) ||
+    !/\bps_type_unqualified_semantic_matches\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    /#include\s+"\.\.\/(?:target_info|type_layout)\.h"/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    /->(?:size|align)\b/.test(semanticTypeIdentitySource)) {
+  throw new Error(
+    "QualType must pair an interned TypeId with qualifiers, independent of target layout",
+  );
+}
+
 const semanticContextSource = await readFile(
   "src/parser/semantic_ctx.h",
   "utf8",
 );
 if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s*\(/.test(
-  semanticContextSource,
-)) {
-  throw new Error("aggregate definition lookup must return a const view");
+      semanticContextSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+ps_ctx_intern_qual_type_in\s*\(/.test(
+      semanticContextSource,
+    ) ||
+    !/\bconst\s+psx_type_t\s*\*\s*ps_ctx_type_by_id_in\s*\(/.test(
+      semanticContextSource,
+    )) {
+  throw new Error(
+    "semantic context must expose const record and interned QualType views",
+  );
 }
 
 const vlaDeclarationResolutionSource = await readFile(

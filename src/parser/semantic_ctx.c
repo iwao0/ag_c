@@ -4,6 +4,7 @@
 #include "type.h"
 #include "type_builder.h"
 #include "../diag/diag.h"
+#include "../semantic/type_identity.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
 #include <limits.h>
@@ -169,6 +170,7 @@ struct psx_semantic_context_t {
   ag_target_info_t target;
   psx_record_id_t next_record_id;
   psx_semantic_expression_table_t *semantic_expressions;
+  psx_semantic_type_table_t *semantic_types;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -249,13 +251,32 @@ node_t *ps_ctx_semantic_expression_in(
              : NULL;
 }
 
+psx_qual_type_t ps_ctx_intern_qual_type_in(
+    psx_semantic_context_t *context, const psx_type_t *type) {
+  if (!context) {
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  }
+  return psx_semantic_type_table_intern(context->semantic_types, type);
+}
+
+const psx_type_t *ps_ctx_type_by_id_in(
+    const psx_semantic_context_t *context, psx_type_id_t type_id) {
+  return context
+             ? psx_semantic_type_table_lookup(context->semantic_types, type_id)
+             : NULL;
+}
+
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
   if (context) {
     context->semantic_expressions =
         psx_semantic_expression_table_create();
-    if (!context->semantic_expressions) {
+    context->semantic_types = psx_semantic_type_table_create();
+    if (!context->semantic_expressions || !context->semantic_types) {
+      psx_semantic_expression_table_destroy(context->semantic_expressions);
+      psx_semantic_type_table_destroy(context->semantic_types);
       free(context);
       return NULL;
     }
@@ -269,6 +290,7 @@ void ps_ctx_destroy(psx_semantic_context_t *context) {
   if (!context) return;
   ctx_release_all(context);
   psx_semantic_expression_table_destroy(context->semantic_expressions);
+  psx_semantic_type_table_destroy(context->semantic_types);
   free(context);
 }
 
@@ -383,13 +405,16 @@ void ps_ctx_reset_translation_unit_scope_in(
   ag_target_info_t target = context->target;
   psx_semantic_expression_table_t *semantic_expressions =
       context->semantic_expressions;
+  psx_semantic_type_table_t *semantic_types = context->semantic_types;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
   context->diagnostic_context = diagnostic_context;
   context->target = target;
   context->semantic_expressions = semantic_expressions;
+  context->semantic_types = semantic_types;
   psx_semantic_expression_table_reset(semantic_expressions);
+  psx_semantic_type_table_reset(semantic_types);
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(
