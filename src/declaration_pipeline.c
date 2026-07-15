@@ -752,6 +752,12 @@ int psx_begin_automatic_local_declaration_pipeline(
       !request->local_registry || !request->lowering_context)
     return 0;
 
+  if (ps_ctx_intern_qual_type_in(
+          request->semantic_context, request->type).type_id ==
+      PSX_TYPE_ID_INVALID) {
+    return 0;
+  }
+
   psx_local_declaration_resolution_t resolution;
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){

@@ -17,13 +17,18 @@ typedef struct {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   const ag_compilation_options_t *options;
+  const psx_semantic_type_table_t *semantic_types;
   const ag_target_info_t *target;
 } initializer_lowering_context_t;
 
 static int type_size(
     const initializer_lowering_context_t *context,
     const psx_type_t *type) {
-  return ps_type_sizeof_for_target(type, context ? context->target : NULL);
+  if (!context) return 0;
+  psx_qual_type_t identity = psx_semantic_type_table_find(
+      context->semantic_types, type);
+  return ps_type_sizeof_id_for_target(
+      context->semantic_types, identity.type_id, context->target);
 }
 
 static ag_diagnostic_context_t *diagnostics(
@@ -1347,6 +1352,7 @@ node_t *lower_decl_initializer(
       .arena_context = ps_lowering_arena(lowering_context),
       .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,
+      .semantic_types = ps_lowering_semantic_types(lowering_context),
       .target = ps_lowering_target(lowering_context),
   };
 

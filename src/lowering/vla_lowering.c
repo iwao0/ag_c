@@ -24,6 +24,15 @@ static node_t *append_init(
              : node;
 }
 
+static int type_size(
+    const psx_lowering_context_t *lowering_context,
+    const psx_type_t *type) {
+  return ps_type_sizeof_id_for_target(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_type_id(lowering_context, type),
+      ps_lowering_target(lowering_context));
+}
+
 static lvar_t *create_vla_storage(
     psx_local_registry_t *local_registry,
     psx_lowering_context_t *lowering_context,
@@ -57,9 +66,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->dimension_count;
-  int element_size = ps_type_sizeof_for_target(
-      ps_type_pointee_value_type(request->type),
-      ps_lowering_target(request->lowering_context));
+  int element_size = type_size(
+      request->lowering_context,
+      ps_type_pointee_value_type(request->type));
   if (!request->local_registry ||
       !request->type || count <= 0 ||
       element_size <= 0 || !request->dimensions || !request->const_values ||
@@ -143,9 +152,9 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   if (!request || !request->lowering_context) return result;
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
-  int element_size = ps_type_sizeof_for_target(
-      ps_type_pointee_value_type(request->type),
-      ps_lowering_target(request->lowering_context));
+  int element_size = type_size(
+      request->lowering_context,
+      ps_type_pointee_value_type(request->type));
   if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||
@@ -200,9 +209,9 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->inner_dimension_count;
-  int element_size = ps_type_sizeof_for_target(
-      ps_type_pointee_value_type(request->type),
-      ps_lowering_target(request->lowering_context));
+  int element_size = type_size(
+      request->lowering_context,
+      ps_type_pointee_value_type(request->type));
   if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||

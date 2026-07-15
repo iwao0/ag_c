@@ -2423,6 +2423,10 @@ const semanticTypeIdentityPassSource = await readFile(
   "src/semantic/type_identity_pass.c",
   "utf8",
 );
+const parameterDeclarationResolutionSource = await readFile(
+  "src/semantic/parameter_declaration_resolution.c",
+  "utf8",
+);
 const controlFlowValidationSource = await readFile(
   "src/semantic/control_flow_validation.c",
   "utf8",
@@ -2999,6 +3003,8 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
 for (const [name, source] of [
   ["expression", expressionLoweringSource],
   ["subscript", subscriptLoweringSource],
+  ["initializer", explicitDiagnosticInitializerLoweringSource],
+  ["VLA", vlaLoweringSource],
 ]) {
   if (!/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
       /\bps_type_sizeof_for_target\s*\(/.test(source)) {
@@ -3006,6 +3012,20 @@ for (const [name, source] of [
       `${name} lowering must obtain target layout through an interned TypeId`,
     );
   }
+}
+const automaticLocalPipeline = declarationPipelineSource.match(
+  /int\s+psx_begin_automatic_local_declaration_pipeline\s*\([^]*?\n\}/,
+);
+if (!automaticLocalPipeline ||
+    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_resolve_local_declaration\s*\(/.test(
+      automaticLocalPipeline[0],
+    ) ||
+    !/\bps_ctx_intern_qual_type_in\s*\([^]*?\bpsx_plan_parameter_storage_for_target\s*\(/.test(
+      parameterDeclarationResolutionSource,
+    )) {
+  throw new Error(
+    "local and parameter declaration types must be interned before layout-dependent planning and lowering",
+  );
 }
 if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       loweringRuntimeHeader,

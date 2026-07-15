@@ -40,6 +40,12 @@ const psx_semantic_type_table_t *ps_lowering_semantic_types(
   return ctx ? ctx->semantic_types : NULL;
 }
 
+psx_type_id_t ps_lowering_type_id(
+    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+  return psx_semantic_type_table_find(
+             ps_lowering_semantic_types(ctx), type).type_id;
+}
+
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx) {
   return ctx ? &ctx->target : NULL;
