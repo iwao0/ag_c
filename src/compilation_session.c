@@ -58,13 +58,19 @@ int ag_compilation_session_init(
   session->semantic_context = ps_ctx_create(session->arena_context);
   session->global_registry = ps_global_registry_create();
   session->local_registry = ps_local_registry_create();
-  session->preprocessor_context = pp_context_create();
   session->diagnostic_context = diag_context_create();
+  diag_context_bind_tokenizer(
+      session->diagnostic_context, &session->tokenizer);
+  ps_ctx_bind_diagnostic_context(
+      session->semantic_context, session->diagnostic_context);
+  session->preprocessor_context = pp_context_create(
+      session->diagnostic_context);
   session->token_allocator_context = tk_allocator_context_create();
   tk_context_set_allocator(
       &session->tokenizer, session->token_allocator_context);
   session->parser_runtime_context = ps_parser_runtime_context_create(
-      session->arena_context, &session->tokenizer);
+      session->arena_context, &session->tokenizer,
+      session->diagnostic_context);
   session->lowering_context = ps_lowering_context_create(
       session->arena_context);
   session->codegen_emit_context = cg_context_create();
@@ -109,8 +115,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
   active_compilation_session = session;
   session->previous_diagnostic_context =
       diag_context_activate(session->diagnostic_context);
-  session->previous_codegen_emit_context =
-      cg_context_activate(session->codegen_emit_context);
   if (session->backend_activate)
     session->backend_activate(session->backend_context);
   session->is_active = 1;
@@ -129,12 +133,10 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
     return 0;
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
-  cg_context_activate(session->previous_codegen_emit_context);
   diag_context_activate(session->previous_diagnostic_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
   session->previous_diagnostic_context = NULL;
-  session->previous_codegen_emit_context = NULL;
   session->is_active = 0;
   return 1;
 }

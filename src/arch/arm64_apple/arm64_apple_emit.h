@@ -8,6 +8,8 @@
 #include "../../codegen_emit.h"
 
 /* 16bit に収まらない大きい即値も movz+movk シーケンスで安全にロードする。 */
-void cg_emit_mov_imm(const char *reg, long long val);
+void cg_emit_mov_imm_in(
+    ag_codegen_emit_context_t *emit_context,
+    const char *reg, long long val);
 
 #endif

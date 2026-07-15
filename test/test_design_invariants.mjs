@@ -163,8 +163,11 @@ const parserCoreHeader = await readFile("src/parser/core.h", "utf8");
 if (!/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
       parserRuntimeOwnershipHeader,
     ) ||
-    !/ps_parser_runtime_context_create\s*\(\s*session->arena_context\s*,\s*&session->tokenizer\s*\)/.test(
+    !/ps_parser_runtime_context_create\s*\(\s*session->arena_context\s*,\s*&session->tokenizer\s*,\s*session->diagnostic_context\s*\)/.test(
       compilationSessionArenaSource,
+    ) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      parserRuntimeOwnershipHeader,
     ) ||
     !/ps_parser_runtime_tokenizer\s*\(\s*runtime_context\s*\)/.test(
       parserStatementSource,
@@ -499,10 +502,20 @@ const compilationSessionSource = await readFile(
 );
 const compilerMainSource = await readFile("src/main.c", "utf8");
 const codegenEmitSource = await readFile("src/codegen_emit.c", "utf8");
+const codegenEmitHeader = await readFile("src/codegen_emit.h", "utf8");
+const arm64DataEmitSource = await readFile(
+  "src/arch/arm64_apple/arm64_apple.c",
+  "utf8",
+);
+const arm64IrEmitSource = await readFile(
+  "src/arch/arm64_apple/arm64_apple_ir.c",
+  "utf8",
+);
 const wasmBackendContextSource = await readFile(
   "src/arch/wasm32/backend_context.c",
   "utf8",
 );
+const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
 const tokenizerHeader = await readFile("src/tokenizer/tokenizer.h", "utf8");
 const tokenizerSource = await readFile("src/tokenizer/tokenizer.c", "utf8");
 const tokenizerAllocatorSource = await readFile(
@@ -631,7 +644,8 @@ if (sessionContextAccessorNames.some((name) =>
     /ps_lowering_context_activate\s*\(/.test(compilationSessionSource) ||
     /previous_lowering_context/.test(compilationSessionSource) ||
     !/cg_context_create\s*\(/.test(compilationSessionSource) ||
-    !/cg_context_activate\s*\(/.test(compilationSessionSource) ||
+    /cg_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_codegen_emit_context/.test(compilationSessionSource) ||
     !/cg_context_destroy\s*\(/.test(compilationSessionSource) ||
     !/ag_compilation_session_set_backend_context\s*\(/.test(
       compilationSessionSource,
@@ -889,6 +903,57 @@ if (/^static\s+(?:gen_output_line_fn|void\s*\*|char\s+|int\s+)\b(?:gen_output|cg
     ) ||
     !/struct\s+ag_codegen_emit_context_t\s*\{/.test(codegenEmitSource)) {
   throw new Error("backend output routing and formatting must be context-owned");
+}
+
+if (!/ag_compilation_session_codegen_emit_context\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/gen_set_output_callback_in\s*\(/.test(compilerMainSource) ||
+    !/gen_set_simple_formatter_in\s*\(/.test(compilerMainSource) ||
+    /\bgen_set_output_callback\s*\(/.test(compilerMainSource) ||
+    /\bgen_set_simple_formatter\s*\(/.test(compilerMainSource)) {
+  throw new Error(
+    "compiler entry output routing must use its CompilationSession emit context",
+  );
+}
+
+if (!/wasm32_backend_context_create\s*\(\s*ag_codegen_emit_context_t\s*\*emit_context\s*\)/.test(
+      wasmBackendContextSource,
+    ) ||
+    !/wasm32_ir_context_create\s*\(emit_context\)/.test(
+      wasmBackendContextSource,
+    ) ||
+    !/ag_codegen_emit_context_t\s*\*emit_context\s*;/.test(wasmIrSource) ||
+    !/cg_emitf_in\s*\(wasm32_ir_emit_context\s*\(\)/.test(wasmIrSource) ||
+    /\bcg_context_active\s*\(/.test(wasmIrSource) ||
+    /\bcg_emitf\s*\(/.test(wasmIrSource)) {
+  throw new Error(
+    "Wasm text backend must emit through its injected CompilationSession context",
+  );
+}
+
+const explicitCodegenEmitSources = [
+  compilationSessionSource,
+  codegenEmitSource,
+  codegenEmitHeader,
+  arm64DataEmitSource,
+  arm64IrEmitSource,
+  wasmIrSource,
+];
+if (explicitCodegenEmitSources.some((source) =>
+      /\bcg_context_(?:active|activate)\s*\(/.test(source) ||
+      /\bcg_emitf\s*\(/.test(source)
+    ) ||
+    !/gen_ir_module_in\s*\(/.test(arm64IrEmitSource) ||
+    !/ir_build_emit_function_with_options_in\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/gen_(?:string_literals|float_literals|global_vars)_in\s*\(/.test(
+      compilerMainSource,
+    )) {
+  throw new Error(
+    "CompilationSession codegen must use explicit emit contexts end to end",
+  );
 }
 
 if (/^static\s+.*\bfilename_table(?:_count)?\b/gm.test(
@@ -1969,7 +2034,6 @@ if (actual.size) {
   );
 }
 
-const wasmIrSource = await readFile("src/arch/wasm32/wasm32_ir.c", "utf8");
 const wasmFunctionCodegenStart = wasmIrSource.indexOf(
   "static void set_vreg_global_ref",
 );

@@ -5,8 +5,10 @@
 #include "../../ir/ir_data.h"
 
 typedef struct wasm32_ir_context_t wasm32_ir_context_t;
+typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
 
-wasm32_ir_context_t *wasm32_ir_context_create(void);
+wasm32_ir_context_t *wasm32_ir_context_create(
+    ag_codegen_emit_context_t *emit_context);
 void wasm32_ir_context_destroy(wasm32_ir_context_t *ctx);
 wasm32_ir_context_t *wasm32_ir_context_activate(wasm32_ir_context_t *ctx);
 wasm32_ir_context_t *wasm32_ir_context_active(void);

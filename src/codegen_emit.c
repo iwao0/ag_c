@@ -11,29 +11,13 @@ struct ag_codegen_emit_context_t {
   int simple_formatter;
 };
 
-static ag_codegen_emit_context_t default_codegen_emit_context;
-static ag_codegen_emit_context_t *active_codegen_emit_context;
-
 ag_codegen_emit_context_t *cg_context_create(void) {
   return calloc(1, sizeof(ag_codegen_emit_context_t));
 }
 
 void cg_context_destroy(ag_codegen_emit_context_t *ctx) {
-  if (!ctx || ctx == &default_codegen_emit_context) return;
-  if (active_codegen_emit_context == ctx) active_codegen_emit_context = NULL;
+  if (!ctx) return;
   free(ctx);
-}
-
-ag_codegen_emit_context_t *cg_context_activate(
-    ag_codegen_emit_context_t *ctx) {
-  ag_codegen_emit_context_t *previous = active_codegen_emit_context;
-  active_codegen_emit_context = ctx;
-  return previous;
-}
-
-ag_codegen_emit_context_t *cg_context_active(void) {
-  return active_codegen_emit_context ? active_codegen_emit_context
-                                     : &default_codegen_emit_context;
 }
 
 static void cg_raw_emit(
@@ -213,13 +197,6 @@ void cg_emitf_in(
   va_end(args);
 }
 
-void cg_emitf(const char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
-  cg_vemitf_in(cg_context_active(), fmt, args);
-  va_end(args);
-}
-
 void gen_set_output_callback_in(
     ag_codegen_emit_context_t *ctx,
     gen_output_line_fn cb, void *user_data) {
@@ -228,16 +205,8 @@ void gen_set_output_callback_in(
   ctx->output_user_data = user_data;
 }
 
-void gen_set_output_callback(gen_output_line_fn cb, void *user_data) {
-  gen_set_output_callback_in(cg_context_active(), cb, user_data);
-}
-
 void gen_set_simple_formatter_in(
     ag_codegen_emit_context_t *ctx, int enable) {
   if (!ctx) abort();
   ctx->simple_formatter = enable;
-}
-
-void gen_set_simple_formatter(int enable) {
-  gen_set_simple_formatter_in(cg_context_active(), enable);
 }

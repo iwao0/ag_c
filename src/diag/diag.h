@@ -7,6 +7,7 @@
 #include "../tokenizer/token.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct tokenizer_context_t tokenizer_context_t;
 
 ag_diagnostic_context_t *diag_context_create(void);
 void diag_context_destroy(ag_diagnostic_context_t *context);
@@ -14,6 +15,9 @@ ag_diagnostic_context_t *diag_context_activate(
     ag_diagnostic_context_t *context);
 ag_diagnostic_context_t *diag_context_active(void);
 void diag_context_publish(const ag_diagnostic_context_t *context);
+void diag_context_bind_tokenizer(
+    ag_diagnostic_context_t *context,
+    tokenizer_context_t *tokenizer_context);
 void diag_context_set_locale(
     ag_diagnostic_context_t *context, const char *locale);
 const char *diag_context_get_locale(
@@ -37,13 +41,18 @@ const char *diag_get_locale(void);
  * @return エラーIDに対応するメッセージ文字列。未定義IDの場合は汎用メッセージ。
  */
 const char *diag_message_for(diag_error_id_t id);
+const char *diag_message_for_in(
+    const ag_diagnostic_context_t *context, diag_error_id_t id);
 const char *diag_warn_message_for(diag_warn_id_t id);
+const char *diag_warn_message_for_in(
+    const ag_diagnostic_context_t *context, diag_warn_id_t id);
 
 /**
  * 構造化診断の座標は正規化済みUTF-8入力上のbyte基準。
  * offsetは0始まり、line/columnは1始まり、endは範囲外終端(exclusive)を表す。
  */
 void diag_reset_records(void);
+void diag_reset_records_in(ag_diagnostic_context_t *context);
 int agc_wasm_diagnostic_set_limits(int max_records, int max_bytes);
 int agc_wasm_diagnostic_api_version(void);
 int agc_wasm_diagnostic_count(void);
@@ -60,7 +69,9 @@ int agc_wasm_diagnostic_end_line(int index);
 int agc_wasm_diagnostic_end_column(int index);
 int agc_wasm_diagnostic_end_offset(int index);
 int diag_has_error_records(void);
+int diag_has_error_records_in(const ag_diagnostic_context_t *context);
 int diag_active_limit_kind(void);
+int diag_limit_kind_in(const ag_diagnostic_context_t *context);
 
 /**
  * @brief テキストIDに対応するローカライズ済みテキストを取得する。
@@ -68,6 +79,8 @@ int diag_active_limit_kind(void);
  * @return ローカライズ済みテキスト。未定義時は "unknown.text"。
  */
 const char *diag_text_for(diag_text_id_t id);
+const char *diag_text_for_in(
+    const ag_diagnostic_context_t *context, diag_text_id_t id);
 
 /**
  * @brief 入力位置を指定して診断を出力し、プロセスを終了する。
@@ -79,6 +92,10 @@ const char *diag_text_for(diag_text_id_t id);
  */
 void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const char *fmt, ...)
     __attribute__((noreturn));
+void diag_emit_atf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const char *input, const char *loc, const char *fmt, ...)
+    __attribute__((noreturn));
 
 /**
  * @brief トークン位置を指定して診断を出力し、プロセスを終了する。
@@ -89,12 +106,22 @@ void diag_emit_atf(diag_error_id_t id, const char *input, const char *loc, const
  */
 void diag_emit_tokf(diag_error_id_t id, const token_t *tok, const char *fmt, ...)
     __attribute__((noreturn));
+void diag_emit_tokf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const token_t *tok, const char *fmt, ...)
+    __attribute__((noreturn));
 
 /** Store and print a recoverable source diagnostic without terminating. */
 int diag_report_atf(diag_error_id_t id, const char *input, const char *loc,
                     const char *fmt, ...);
+int diag_report_atf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const char *input, const char *loc, const char *fmt, ...);
 int diag_report_tokf(diag_error_id_t id, const token_t *tok,
                      const char *fmt, ...);
+int diag_report_tokf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const token_t *tok, const char *fmt, ...);
 
 /**
  * @brief トークン位置を指定して警告を出力する（プロセスは終了しない）。
@@ -103,6 +130,9 @@ int diag_report_tokf(diag_error_id_t id, const token_t *tok,
  * @param fmt 可変引数付きフォーマット文字列。
  */
 void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...);
+void diag_warn_tokf_in(
+    ag_diagnostic_context_t *context, diag_warn_id_t id,
+    const token_t *tok, const char *fmt, ...);
 
 /**
  * @brief 入力位置なしの内部診断を出力し、プロセスを終了する。
@@ -111,6 +141,9 @@ void diag_warn_tokf(diag_warn_id_t id, const token_t *tok, const char *fmt, ...)
  * @return 戻らない。
  */
 void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) __attribute__((noreturn));
+void diag_emit_internalf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const char *fmt, ...) __attribute__((noreturn));
 
 /**
  * @brief 入力位置なしの内部診断を出力する（プロセスは終了しない）。
@@ -118,5 +151,8 @@ void diag_emit_internalf(diag_error_id_t id, const char *fmt, ...) __attribute__
  * @param fmt 可変引数付きフォーマット文字列。
  */
 void diag_report_internalf(diag_error_id_t id, const char *fmt, ...);
+void diag_report_internalf_in(
+    ag_diagnostic_context_t *context, diag_error_id_t id,
+    const char *fmt, ...);
 
 #endif

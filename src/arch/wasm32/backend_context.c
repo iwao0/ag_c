@@ -12,10 +12,12 @@ struct wasm32_backend_context_t {
   int is_active;
 };
 
-wasm32_backend_context_t *wasm32_backend_context_create(void) {
+wasm32_backend_context_t *wasm32_backend_context_create(
+    ag_codegen_emit_context_t *emit_context) {
+  if (!emit_context) return NULL;
   wasm32_backend_context_t *ctx = calloc(1, sizeof(*ctx));
   if (!ctx) return NULL;
-  ctx->ir = wasm32_ir_context_create();
+  ctx->ir = wasm32_ir_context_create(emit_context);
   ctx->obj = wasm32_obj_context_create();
   if (!ctx->ir || !ctx->obj) {
     wasm32_ir_context_destroy(ctx->ir);

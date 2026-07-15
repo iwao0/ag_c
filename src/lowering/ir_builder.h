@@ -16,6 +16,7 @@
 #include "../target_info.h"
 
 struct node_t;
+typedef void (*ir_emit_module_in_fn)(ir_module_t *module, void *context);
 
 typedef struct {
   const ag_target_info_t *target;
@@ -48,6 +49,9 @@ int ir_build_emit_function_for_target(
 int ir_build_emit_function_with_options(
     struct node_t *fn, const ir_build_options_t *options,
     void (*emit_module)(ir_module_t *));
+int ir_build_emit_function_with_options_in(
+    struct node_t *fn, const ir_build_options_t *options,
+    ir_emit_module_in_fn emit_module, void *emit_context);
 
 /* 1 関数だけを IR モジュールへ変換して返す。呼び出し側が直接 codegen したい経路用。
  * 成功時は ir_module_free で解放する。変換不可なら NULL。 */

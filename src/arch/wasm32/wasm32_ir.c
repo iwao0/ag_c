@@ -99,6 +99,7 @@ typedef struct {
 } wasm_function_symbol_ctx_t;
 
 struct wasm32_ir_context_t {
+  ag_codegen_emit_context_t *emit_context;
   wasm_data_ctx_t data;
   const ir_data_module_t *data_module;
   wasm_func_table_ctx_t func_table;
@@ -110,9 +111,14 @@ static wasm32_ir_context_t default_wasm32_ir_context = {
 };
 static wasm32_ir_context_t *active_wasm32_ir_context;
 
-wasm32_ir_context_t *wasm32_ir_context_create(void) {
+wasm32_ir_context_t *wasm32_ir_context_create(
+    ag_codegen_emit_context_t *emit_context) {
+  if (!emit_context) return NULL;
   wasm32_ir_context_t *ctx = calloc(1, sizeof(*ctx));
-  if (ctx) ctx->data.next_data_off = WASM_STATIC_BASE;
+  if (ctx) {
+    ctx->emit_context = emit_context;
+    ctx->data.next_data_off = WASM_STATIC_BASE;
+  }
   return ctx;
 }
 
@@ -146,21 +152,29 @@ wasm32_ir_context_t *wasm32_ir_context_active(void) {
 #define g_data_module (wasm32_ir_context_active()->data_module)
 #define g_func_table (wasm32_ir_context_active()->func_table)
 #define g_function_symbols (wasm32_ir_context_active()->function_symbols)
+static ag_codegen_emit_context_t *wasm32_ir_emit_context(void) {
+  wasm32_ir_context_t *ctx = wasm32_ir_context_active();
+  if (!ctx->emit_context) abort();
+  return ctx->emit_context;
+}
+
+#define wasm_cg_emitf(...) \
+  cg_emitf_in(wasm32_ir_emit_context(), __VA_ARGS__)
 static const char k_wasm_indent_spaces[] = "                                ";
 
 static void wasm_emit_indent(int spaces) {
   int chunk = (int)sizeof(k_wasm_indent_spaces) - 1;
   while (spaces > chunk) {
-    cg_emitf("%s", k_wasm_indent_spaces);
+    wasm_cg_emitf("%s", k_wasm_indent_spaces);
     spaces -= chunk;
   }
-  if (spaces > 0) cg_emitf("%.*s", spaces, k_wasm_indent_spaces);
+  if (spaces > 0) wasm_cg_emitf("%.*s", spaces, k_wasm_indent_spaces);
 }
 
 #define wasm_emitf(spaces, ...)       \
   do {                                \
     wasm_emit_indent((spaces));       \
-    cg_emitf(__VA_ARGS__);            \
+    wasm_cg_emitf(__VA_ARGS__);            \
   } while (0)
 
 static const char *wasm_type(ir_type_t t) {
@@ -524,12 +538,12 @@ static void emit_function_table(void) {
     int name_len = g_func_table.refs[i].name_len;
     if (name_len == 7 && memcmp(name, "fprintf", 7) == 0 &&
         !has_defined_function(name, name_len)) {
-      cg_emitf(" $__ag_funcptr_fprintf");
+      wasm_cg_emitf(" $__ag_funcptr_fprintf");
     } else {
-      cg_emitf(" $%.*s", name_len, name);
+      wasm_cg_emitf(" $%.*s", name_len, name);
     }
   }
-  cg_emitf(")\n");
+  wasm_cg_emitf(")\n");
 }
 
 static ir_type_t func_param_type_from_decl(ir_func_t *f, int idx, ir_type_t raw) {
@@ -813,14 +827,14 @@ static void emit_val_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
   if (!ty) wasm_unsupported_msg("unsupported Wasm value type");
   if (v.id == IR_VAL_IMM) {
     if (is_fp_type(type)) {
-      cg_emitf("(%s.const %.17g)", ty, v.fp_imm);
+      wasm_cg_emitf("(%s.const %.17g)", ty, v.fp_imm);
     } else if (type == IR_TY_I64) {
-      cg_emitf("(%s.const %lld)", ty, v.imm);
+      wasm_cg_emitf("(%s.const %lld)", ty, v.imm);
     } else {
-      cg_emitf("(%s.const %d)", ty, (int32_t)v.imm);
+      wasm_cg_emitf("(%s.const %d)", ty, (int32_t)v.imm);
     }
   } else if (v.id >= 0) {
-    cg_emitf("(local.get $v%d)", v.id);
+    wasm_cg_emitf("(local.get $v%d)", v.id);
   } else {
     wasm_unsupported_msg("missing Wasm value");
   }
@@ -836,18 +850,18 @@ static void emit_val_expr_as(wasm_func_ctx_t *ctx, ir_val_t v, ir_type_t target)
   }
   if (target == IR_TY_I64 && src != IR_TY_I64) {
     if (v.id == IR_VAL_IMM && !is_fp_type(src)) {
-      cg_emitf("(i64.const %lld)", v.imm);
+      wasm_cg_emitf("(i64.const %lld)", v.imm);
       return;
     }
-    cg_emitf("(%s ", val_is_unsigned(ctx, v) ? "i64.extend_i32_u" : "i64.extend_i32_s");
+    wasm_cg_emitf("(%s ", val_is_unsigned(ctx, v) ? "i64.extend_i32_u" : "i64.extend_i32_s");
     emit_val_expr(ctx, v);
-    cg_emitf(")");
+    wasm_cg_emitf(")");
     return;
   }
   if (target != IR_TY_I64 && src == IR_TY_I64) {
-    cg_emitf("(i32.wrap_i64 ");
+    wasm_cg_emitf("(i32.wrap_i64 ");
     emit_val_expr(ctx, v);
-    cg_emitf(")");
+    wasm_cg_emitf(")");
     return;
   }
   emit_val_expr(ctx, v);
@@ -858,16 +872,16 @@ static void emit_wasm_type_cast_prefix(ir_type_t from, ir_type_t to, int is_unsi
   if (to == IR_TY_PTR) to = IR_TY_I32;
   if (from == to) return;
   if (to == IR_TY_I64 && from != IR_TY_I64) {
-    cg_emitf("(%s ", is_unsigned ? "i64.extend_i32_u" : "i64.extend_i32_s");
+    wasm_cg_emitf("(%s ", is_unsigned ? "i64.extend_i32_u" : "i64.extend_i32_s");
   } else if (to != IR_TY_I64 && from == IR_TY_I64) {
-    cg_emitf("(i32.wrap_i64 ");
+    wasm_cg_emitf("(i32.wrap_i64 ");
   }
 }
 
 static void emit_wasm_type_cast_suffix(ir_type_t from, ir_type_t to) {
   if (from == IR_TY_PTR) from = IR_TY_I32;
   if (to == IR_TY_PTR) to = IR_TY_I32;
-  if (from != to && (from == IR_TY_I64 || to == IR_TY_I64)) cg_emitf(")");
+  if (from != to && (from == IR_TY_I64 || to == IR_TY_I64)) wasm_cg_emitf(")");
 }
 
 static void emit_addr_expr(wasm_func_ctx_t *ctx, ir_val_t v) {
@@ -879,9 +893,9 @@ static void emit_addr_plus_const(wasm_func_ctx_t *ctx, ir_val_t base, int off) {
     emit_addr_expr(ctx, base);
     return;
   }
-  cg_emitf("(i32.add ");
+  wasm_cg_emitf("(i32.add ");
   emit_addr_expr(ctx, base);
-  cg_emitf(" (i32.const %d))", off);
+  wasm_cg_emitf(" (i32.const %d))", off);
 }
 
 static const char *wasm_binop(ir_op_t op, ir_type_t t) {
@@ -951,7 +965,7 @@ static void emit_load(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
   wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
   emit_addr_expr(ctx, i->src1);
-  cg_emitf("))\n");
+  wasm_cg_emitf("))\n");
   if (slot && slot->func_ref_name) {
     set_vreg_func_ref(ctx, i->dst.id, slot->func_ref_name, slot->func_ref_name_len);
   } else {
@@ -983,9 +997,9 @@ static void emit_store(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   }
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, i->src1);
-  cg_emitf(" ");
+  wasm_cg_emitf(" ");
   emit_val_expr_as(ctx, i->src2, store_ty);
-  cg_emitf(")\n");
+  wasm_cg_emitf(")\n");
   if (slot) {
     int name_len = 0;
     char *name = get_vreg_func_ref(ctx, i->src2.id, &name_len);
@@ -1030,9 +1044,9 @@ static const char *atomic_store_op(ir_inst_t *i) {
 static void emit_atomic_load_expr(wasm_func_ctx_t *ctx, ir_inst_t *i) {
   const char *op = atomic_load_op(i);
   if (!op) wasm_unsupported_op(i->op);
-  cg_emitf("(%s ", op);
+  wasm_cg_emitf("(%s ", op);
   emit_addr_expr(ctx, i->src1);
-  cg_emitf(")");
+  wasm_cg_emitf(")");
 }
 
 static void emit_atomic_store(wasm_func_ctx_t *ctx, ir_inst_t *i, ir_val_t ptr, ir_val_t val,
@@ -1041,9 +1055,9 @@ static void emit_atomic_store(wasm_func_ctx_t *ctx, ir_inst_t *i, ir_val_t ptr, 
   if (!op) wasm_unsupported_op(i->op);
   wasm_emitf(indent, "(%s ", op);
   emit_addr_expr(ctx, ptr);
-  cg_emitf(" ");
+  wasm_cg_emitf(" ");
   emit_val_expr_as(ctx, val, atomic_mem_type(i));
-  cg_emitf(")\n");
+  wasm_cg_emitf(")\n");
 }
 
 static const char *atomic_rmw_wasm_op(ir_inst_t *i) {
@@ -1071,7 +1085,7 @@ static void emit_atomic_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
     emit_atomic_load_expr(ctx, i);
     emit_wasm_type_cast_suffix(mem_ty, dst_ty);
-    cg_emitf(")\n");
+    wasm_cg_emitf(")\n");
     return;
   }
 
@@ -1086,25 +1100,25 @@ static void emit_atomic_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     emit_wasm_type_cast_prefix(mem_ty, dst_ty, i->is_unsigned);
     emit_atomic_load_expr(ctx, i);
     emit_wasm_type_cast_suffix(mem_ty, dst_ty);
-    cg_emitf(")\n");
+    wasm_cg_emitf(")\n");
 
     const char *store_op = atomic_store_op(i);
     if (!store_op) wasm_unsupported_op(i->op);
     wasm_emitf(indent, "(%s ", store_op);
     emit_addr_expr(ctx, i->src1);
-    cg_emitf(" ");
+    wasm_cg_emitf(" ");
     if (i->atomic_rmw_op == IR_ARMW_XCHG) {
       emit_val_expr_as(ctx, i->src2, mem_ty);
     } else {
       const char *op = atomic_rmw_wasm_op(i);
       if (!op) wasm_unsupported_op(i->op);
-      cg_emitf("(%s ", op);
+      wasm_cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->dst, mem_ty);
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, mem_ty);
-      cg_emitf(")");
+      wasm_cg_emitf(")");
     }
-    cg_emitf(")\n");
+    wasm_cg_emitf(")\n");
     return;
   }
 
@@ -1118,24 +1132,24 @@ static void emit_atomic_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
 
     wasm_emitf(indent, "(local.set %s (%s ", tmp, load_op);
     emit_addr_expr(ctx, i->src1);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
     wasm_emitf(indent, "(local.set %s (%s ", exp, load_op);
     emit_addr_expr(ctx, i->src2);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
     wasm_emitf(indent, "(local.set $v%d (%s (local.get %s) (local.get %s)))\n",
                i->dst.id, eq_op, tmp, exp);
     wasm_emitf(indent, "(if (local.get $v%d)\n", i->dst.id);
     wasm_emitf(indent + 2, "(then\n");
     wasm_emitf(indent + 4, "(%s ", store_op);
     emit_addr_expr(ctx, i->src1);
-    cg_emitf(" ");
+    wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, i->src3, mem_ty);
-    cg_emitf(")\n");
+    wasm_cg_emitf(")\n");
     wasm_emitf(indent + 2, ")\n");
     wasm_emitf(indent, ")\n");
     wasm_emitf(indent, "(%s ", store_op);
     emit_addr_expr(ctx, i->src2);
-    cg_emitf(" (local.get %s))\n", tmp);
+    wasm_cg_emitf(" (local.get %s))\n", tmp);
     return;
   }
 
@@ -1163,30 +1177,30 @@ static void emit_memcpy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   for (; off + 8 <= n; off += 8) {
     wasm_emitf(indent, "(i64.store ");
     emit_addr_plus_const(ctx, i->src1, off);
-    cg_emitf(" (i64.load ");
+    wasm_cg_emitf(" (i64.load ");
     emit_addr_plus_const(ctx, i->src2, off);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
   }
   for (; off + 4 <= n; off += 4) {
     wasm_emitf(indent, "(i32.store ");
     emit_addr_plus_const(ctx, i->src1, off);
-    cg_emitf(" (i32.load ");
+    wasm_cg_emitf(" (i32.load ");
     emit_addr_plus_const(ctx, i->src2, off);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
   }
   for (; off + 2 <= n; off += 2) {
     wasm_emitf(indent, "(i32.store16 ");
     emit_addr_plus_const(ctx, i->src1, off);
-    cg_emitf(" (i32.load16_u ");
+    wasm_cg_emitf(" (i32.load16_u ");
     emit_addr_plus_const(ctx, i->src2, off);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
   }
   for (; off < n; off++) {
     wasm_emitf(indent, "(i32.store8 ");
     emit_addr_plus_const(ctx, i->src1, off);
-    cg_emitf(" (i32.load8_u ");
+    wasm_cg_emitf(" (i32.load8_u ");
     emit_addr_plus_const(ctx, i->src2, off);
-    cg_emitf("))\n");
+    wasm_cg_emitf("))\n");
   }
 }
 
@@ -1230,15 +1244,15 @@ static int emit_variadic_arg_area_prepare(wasm_func_ctx_t *ctx, ir_inst_t *i, in
     if (arg_ty == IR_TY_F64) {
       wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
       emit_val_expr_as(ctx, i->args[a], IR_TY_F64);
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
     } else if (arg_ty == IR_TY_F32) {
       wasm_emitf(indent, "(f64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) (f64.promote_f32 ", off);
       emit_val_expr_as(ctx, i->args[a], IR_TY_F32);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
     } else {
       wasm_emitf(indent, "(i64.store (i32.add (global.get $__ag_va_arg_area) (i32.const %d)) ", off);
       emit_val_expr_as(ctx, i->args[a], IR_TY_I64);
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
     }
   }
   return bytes;
@@ -1271,9 +1285,9 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     if (result_unused) wasm_emitf(indent, "(drop ");
     else if (!returns_void) wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
     else wasm_emitf(indent, "");
-    cg_emitf("(call_indirect");
+    wasm_cg_emitf("(call_indirect");
     int call_nargs = i->is_variadic_call ? i->nargs_fixed : i->nargs;
-    if (returns_aggregate) cg_emitf(" (param i32)");
+    if (returns_aggregate) wasm_cg_emitf(" (param i32)");
     for (int a = 0; a < call_nargs; a++) {
       ir_type_t raw_arg_ty = effective_val_type(ctx, i->args[a]);
       ir_type_t arg_ty = raw_arg_ty;
@@ -1284,11 +1298,11 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
-      cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
+      wasm_cg_emitf(" (param %s)", wasm_any_type_or_unsupported(arg_ty));
     }
-    if (!returns_void) cg_emitf(" (result %s)", ret_ty);
+    if (!returns_void) wasm_cg_emitf(" (result %s)", ret_ty);
     if (returns_aggregate) {
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->ret_struct_area, IR_TY_PTR);
     }
     for (int a = 0; a < call_nargs; a++) {
@@ -1301,14 +1315,14 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
       if (null_ptr_pair_arg) arg_ty = IR_TY_I32;
       if (arg_ty == IR_TY_PTR) arg_ty = IR_TY_I32;
       else if (!from_callable_sig && !is_fp_type(arg_ty) && !null_ptr_pair_arg) arg_ty = IR_TY_I64;
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->args[a], arg_ty);
     }
-    cg_emitf(" ");
+    wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, i->callee, IR_TY_I32);
-    cg_emitf(")");
-    if (result_unused || !returns_void) cg_emitf(")");
-    cg_emitf("\n");
+    wasm_cg_emitf(")");
+    if (result_unused || !returns_void) wasm_cg_emitf(")");
+    wasm_cg_emitf("\n");
     emit_variadic_arg_area_restore(vararg_area_bytes, indent);
     return;
   }
@@ -1358,7 +1372,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
   for (int a = 0; a < call_nargs; a++) {
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
         a >= i->nargs) {
-      cg_emitf(" (i64.const 0)");
+      wasm_cg_emitf(" (i64.const 0)");
       continue;
     }
     ir_type_t arg_ty = effective_val_type(ctx, i->args[a]);
@@ -1366,7 +1380,7 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
                                             : i->args[a].type;
     if ((is_minimal_fixed2_format || is_minimal_output_count || is_minimal_sscanf || is_minimal_swscanf) &&
         a >= i->nargs_fixed && is_fp_type(arg_ty)) {
-      cg_emitf(" (i64.const 0)");
+      wasm_cg_emitf(" (i64.const 0)");
       continue;
     }
     int minimal_stub_ptr_arg =
@@ -1396,15 +1410,15 @@ static void emit_call(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent) {
     } else if (abi_arg_ty == IR_TY_I64 || arg_ty == IR_TY_I64) {
       arg_ty = IR_TY_I64;
     }
-    cg_emitf(" ");
+    wasm_cg_emitf(" ");
     emit_val_expr_as(ctx, i->args[a], arg_ty);
   }
-  cg_emitf(")");
+  wasm_cg_emitf(")");
   if (i->ret_struct_size == 0 && i->ret_complex_half == 0 &&
       !returns_void && i->dst.id >= 0 && i->dst.type != IR_TY_VOID) {
-    cg_emitf(")");
+    wasm_cg_emitf(")");
   }
-  cg_emitf("\n");
+  wasm_cg_emitf("\n");
   emit_variadic_arg_area_restore(vararg_area_bytes, indent);
 }
 
@@ -1413,10 +1427,10 @@ static void emit_complex_ret_copy(wasm_func_ctx_t *ctx, ir_inst_t *i, int indent
   const char *ty = half == 4 ? "f32" : "f64";
   wasm_emitf(indent, "(%s.store (local.get $p0) (%s.load ", ty, ty);
   emit_addr_expr(ctx, i->src1);
-  cg_emitf("))\n");
+  wasm_cg_emitf("))\n");
   wasm_emitf(indent, "(%s.store (i32.add (local.get $p0) (i32.const %d)) (%s.load ", ty, half, ty);
   emit_addr_plus_const(ctx, i->src1, half);
-  cg_emitf("))\n");
+  wasm_cg_emitf("))\n");
 }
 
 static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int indent) {
@@ -1442,13 +1456,13 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_LOAD_IMM:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_val_expr(ctx, i->src1);
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
       if (!is_fp_type(i->dst.type)) set_vreg_const(ctx, i->dst.id, i->src1.imm);
       return;
     case IR_LOAD_FP_IMM:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_val_expr(ctx, i->src1);
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
       return;
     case IR_LOAD_STR: {
       int addr = data_addr_for_ir_string(i->sym, i->sym_len, i->object_size);
@@ -1486,17 +1500,17 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_TRUNC:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (i->dst.type == IR_TY_I64 && i->src1.type != IR_TY_I64) {
-        cg_emitf("(%s ", i->op == IR_ZEXT ? "i64.extend_i32_u" : "i64.extend_i32_s");
+        wasm_cg_emitf("(%s ", i->op == IR_ZEXT ? "i64.extend_i32_u" : "i64.extend_i32_s");
         emit_val_expr(ctx, i->src1);
-        cg_emitf(")");
+        wasm_cg_emitf(")");
       } else if (i->dst.type != IR_TY_I64 && i->src1.type == IR_TY_I64) {
-        cg_emitf("(i32.wrap_i64 ");
+        wasm_cg_emitf("(i32.wrap_i64 ");
         emit_val_expr(ctx, i->src1);
-        cg_emitf(")");
+        wasm_cg_emitf(")");
       } else {
         emit_val_expr(ctx, i->src1);
       }
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
       return;
     case IR_I2F:
       wasm_emitf(indent, "(local.set $v%d (%s.convert_%s_%c ", i->dst.id,
@@ -1504,7 +1518,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
                  wasm_int_type_or_unsupported(effective_val_type(ctx, i->src1)),
                  (i->is_unsigned || val_is_unsigned(ctx, i->src1)) ? 'u' : 's');
       emit_val_expr(ctx, i->src1);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     case IR_F2I:
       wasm_emitf(indent, "(local.set $v%d (%s.trunc_%s_%c ", i->dst.id,
@@ -1512,22 +1526,22 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
                  wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)),
                  i->is_unsigned ? 'u' : 's');
       emit_val_expr(ctx, i->src1);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     case IR_F2F:
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       if (i->dst.type == IR_TY_F64 && effective_val_type(ctx, i->src1) == IR_TY_F32) {
-        cg_emitf("(f64.promote_f32 ");
+        wasm_cg_emitf("(f64.promote_f32 ");
         emit_val_expr(ctx, i->src1);
-        cg_emitf(")");
+        wasm_cg_emitf(")");
       } else if (i->dst.type == IR_TY_F32 && effective_val_type(ctx, i->src1) == IR_TY_F64) {
-        cg_emitf("(f32.demote_f64 ");
+        wasm_cg_emitf("(f32.demote_f64 ");
         emit_val_expr(ctx, i->src1);
-        cg_emitf(")");
+        wasm_cg_emitf(")");
       } else {
         emit_val_expr(ctx, i->src1);
       }
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
       return;
     case IR_LOAD:
       emit_load(ctx, i, indent);
@@ -1545,14 +1559,14 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       int align = i->alloca_align > 0 ? i->alloca_align : 16;
       wasm_emitf(indent, "(local.set $v%d (i32.and (i32.add ", i->dst.id);
       emit_addr_expr(ctx, i->src1);
-      cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
+      wasm_cg_emitf(" (i32.const %d)) (i32.const %d)))\n", align - 1, -align);
       return;
     }
     case IR_VLA_ALLOC:
       wasm_emitf(indent, "(local.set $v%d (i32.sub (global.get $__stack_pointer) ", i->dst.id);
-      cg_emitf("(i32.and (i32.add ");
+      wasm_cg_emitf("(i32.and (i32.add ");
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
-      cg_emitf(" (i32.const 15)) (i32.const -16))))\n");
+      wasm_cg_emitf(" (i32.const 15)) (i32.const -16))))\n");
       wasm_emitf(indent, "(global.set $__stack_pointer (local.get $v%d))\n", i->dst.id);
       return;
     case IR_VA_ARG_AREA:
@@ -1561,27 +1575,27 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
     case IR_LEA:
       wasm_emitf(indent, "(local.set $v%d (i32.add ", i->dst.id);
       emit_addr_expr(ctx, i->src1);
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_addr_expr(ctx, i->src2);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     case IR_NEG:
       wasm_emitf(indent, "(local.set $v%d (%s.sub (%s.const 0) ", i->dst.id,
                i->dst.type == IR_TY_I64 ? "i64" : "i32",
                i->dst.type == IR_TY_I64 ? "i64" : "i32");
       emit_val_expr(ctx, i->src1);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     case IR_NOT:
       wasm_emitf(indent, "(local.set $v%d (%s.xor ", i->dst.id, i->dst.type == IR_TY_I64 ? "i64" : "i32");
       emit_val_expr(ctx, i->src1);
-      cg_emitf(" (%s.const -1)))\n", i->dst.type == IR_TY_I64 ? "i64" : "i32");
+      wasm_cg_emitf(" (%s.const -1)))\n", i->dst.type == IR_TY_I64 ? "i64" : "i32");
       return;
     case IR_FNEG:
       wasm_emitf(indent, "(local.set $v%d (%s.neg ", i->dst.id,
                  wasm_fp_type_or_unsupported(effective_val_type(ctx, i->src1)));
       emit_val_expr(ctx, i->src1);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     case IR_FADD: case IR_FSUB: case IR_FMUL: case IR_FDIV:
     case IR_FEQ: case IR_FNE: case IR_FLT: case IR_FLE: {
@@ -1591,9 +1605,9 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (!op) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(local.set $v%d (%s ", i->dst.id, op);
       emit_val_expr_as(ctx, i->src1, op_ty);
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, op_ty);
-      cg_emitf("))\n");
+      wasm_cg_emitf("))\n");
       return;
     }
     case IR_ADD: case IR_SUB: case IR_MUL: case IR_DIV: case IR_UDIV:
@@ -1627,18 +1641,18 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
         emit_wasm_type_cast_prefix(op_ty, dst_ty, result_unsigned);
         emit_val_expr_as(ctx, i->src1, op_ty);
         emit_wasm_type_cast_suffix(op_ty, dst_ty);
-        cg_emitf(")\n");
+        wasm_cg_emitf(")\n");
         return;
       }
       wasm_emitf(indent, "(local.set $v%d ", i->dst.id);
       emit_wasm_type_cast_prefix(result_ty, dst_ty, result_unsigned);
-      cg_emitf("(%s ", op);
+      wasm_cg_emitf("(%s ", op);
       emit_val_expr_as(ctx, i->src1, op_ty);
-      cg_emitf(" ");
+      wasm_cg_emitf(" ");
       emit_val_expr_as(ctx, i->src2, op_ty);
-      cg_emitf(")");
+      wasm_cg_emitf(")");
       emit_wasm_type_cast_suffix(result_ty, dst_ty);
-      cg_emitf(")\n");
+      wasm_cg_emitf(")\n");
       if ((i->op == IR_ADD || i->op == IR_SUB) && !is_cmp) {
         int base_off = 0;
         const ir_symbol_t *symbol =
@@ -1668,7 +1682,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (!dispatch_mode) wasm_unsupported_op(i->op);
       wasm_emitf(indent, "(if ");
       emit_val_expr_as(ctx, i->src1, IR_TY_I32);
-      cg_emitf("\n");
+      wasm_cg_emitf("\n");
       wasm_emitf(indent + 2, "(then (local.set $pc (i32.const %d)))\n", i->label_id);
       wasm_emitf(indent + 2, "(else (local.set $pc (i32.const %d)))\n", i->else_label_id);
       wasm_emitf(indent, ")\n");
@@ -1685,7 +1699,7 @@ static void emit_inst(wasm_func_ctx_t *ctx, ir_inst_t *i, int dispatch_mode, int
       if (i->src1.id != IR_VAL_NONE) {
         wasm_emitf(indent, "(return ");
         emit_val_expr_as(ctx, i->src1, ctx->f->ret_type);
-        cg_emitf(")\n");
+        wasm_cg_emitf(")\n");
       } else {
         wasm_emitf(indent, "return\n");
       }
@@ -1739,14 +1753,14 @@ static void emit_func(const ir_module_t *module, ir_func_t *f) {
   for (int p = 0; p < nparams; p++) {
     const char *pt = wasm_type(func_param_type(f, p));
     if (!pt) wasm_unsupported_msg("non-integer Wasm function parameter");
-    cg_emitf(" (param $p%d %s)", p, pt);
+    wasm_cg_emitf(" (param $p%d %s)", p, pt);
   }
   if (f->ret_type != IR_TY_VOID && !func_has_hidden_ret_area(f)) {
     const char *rt = wasm_type(f->ret_type);
     if (!rt) wasm_unsupported_msg("non-integer Wasm function return");
-    cg_emitf(" (result %s)", rt);
+    wasm_cg_emitf(" (result %s)", rt);
   }
-  cg_emitf("\n");
+  wasm_cg_emitf("\n");
   for (int v = 0; v < f->next_vreg_id; v++) {
     if (!ctx.vreg_type_seen[v]) continue;
     const char *vt = wasm_type(ctx.vreg_types[v]);
@@ -1822,7 +1836,7 @@ void wasm32_module_begin(void) {
   g_func_table.ref_count = 0;
   g_func_table.needs_table = 0;
   reset_function_symbols();
-  cg_emitf("(module\n");
+  wasm_cg_emitf("(module\n");
 }
 
 void wasm32_gen_ir_module(ir_module_t *m) {
@@ -1836,11 +1850,11 @@ void wasm32_gen_ir_module(ir_module_t *m) {
 
 static void emit_wat_escaped_byte(unsigned char c) {
   if (c == '"' || c == '\\') {
-    cg_emitf("\\%02x", (unsigned)c);
+    wasm_cg_emitf("\\%02x", (unsigned)c);
   } else if (c >= 0x20 && c <= 0x7e) {
-    cg_emitf("%c", c);
+    wasm_cg_emitf("%c", c);
   } else {
-    cg_emitf("\\%02x", (unsigned)c);
+    wasm_cg_emitf("\\%02x", (unsigned)c);
   }
 }
 
@@ -1850,13 +1864,13 @@ static void emit_string_literal_data(const ir_data_object_t *object) {
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < object->byte_size; i++)
     emit_wat_escaped_byte(object->bytes[i]);
-  cg_emitf("\")\n");
+  wasm_cg_emitf("\")\n");
 }
 
 static void emit_i32_data_bytes(int addr, long long value, int size) {
   wasm_emitf(2, "(data (i32.const %d) \"", addr);
   for (int i = 0; i < size; i++) emit_wat_escaped_byte((unsigned char)((uint64_t)value >> (8 * i)));
-  cg_emitf("\")\n");
+  wasm_cg_emitf("\")\n");
 }
 
 static long long data_relocation_value(const ir_data_reloc_t *reloc) {
@@ -1906,7 +1920,7 @@ static void emit_global_data_object(const ir_data_object_t *object) {
     }
   }
   if (reloc) wasm_unsupported_msg("global data relocation outside object");
-  cg_emitf("\")\n");
+  wasm_cg_emitf("\")\n");
 }
 
 void wasm32_emit_data_segments(const ir_data_module_t *data_module) {
@@ -2471,7 +2485,7 @@ static int emit_declared_fixed_function_params(const char *name, int name_len) {
   for (int i = 0; i < nparams; i++) {
     const char *type = wasm_type(symbol->param_types[i]);
     if (!type) wasm_unsupported_msg("function-pointer parameter type in Wasm backend");
-    cg_emitf(" (param $p%d %s)", i, type);
+    wasm_cg_emitf(" (param $p%d %s)", i, type);
   }
   return nparams;
 }
@@ -2507,7 +2521,7 @@ static void emit_wasm_printf_stubs(void) {
           !format_type || strcmp(format_type, "i32") != 0) {
         wasm_unsupported_msg("fprintf function-pointer declaration in Wasm backend");
       }
-      cg_emitf(" (result i32)\n");
+      wasm_cg_emitf(" (result i32)\n");
       wasm_emitf(4, "(call $__ag_vsnprintf_impl (i32.const 0) (i64.const 0) (local.get $p1) (i64.extend_i32_u (global.get $__ag_va_arg_area)))\n");
       wasm_emitf(2, ")\n");
     }
@@ -7284,5 +7298,5 @@ void wasm32_module_end(void) {
   emit_minimal_libc_stubs();
   emit_function_table();
   emit_memory_layout_decls();
-  cg_emitf(")\n");
+  wasm_cg_emitf(")\n");
 }

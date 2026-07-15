@@ -24,6 +24,7 @@ typedef struct pp_cond_incl cond_incl_t;
 #define PP_MAX_INCLUDE_DEPTH 64
 
 struct ag_preprocessor_context_t {
+  ag_diagnostic_context_t *diagnostic_context;
   macro_t *macros;
   pp_owned_source_t *retired_include_sources;
   include_frame_t *include_stack;
@@ -93,8 +94,8 @@ static void retain_include_source(
   if (!buf) return;
   pp_owned_source_t *source = calloc(1, sizeof(*source));
   if (!source) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s",
-                        diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+                        diag_message_for_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   source->buf = buf;
   source->next = retired_include_sources;
@@ -153,11 +154,15 @@ struct pp_virtual_header {
   size_t source_len;
 };
 
-static char *normalize_include_path_or_die(const char *path);
-static char *dirname_dup_or_null(const char *path);
+static char *normalize_include_path_or_die(
+    ag_preprocessor_context_t *context, const char *path);
+static char *dirname_dup_or_null(
+    ag_preprocessor_context_t *context, const char *path);
 static char *my_strndup(const char *s, size_t n);
 /* false のとき #if 定数式をトークン消費のみ (短絡評価の未選択側)。 */
-static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
+static void pp_error(
+    ag_preprocessor_context_t *context,
+    diag_error_id_t id, const char *arg) __attribute__((noreturn));
 static const char *k_pp_month_names[] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -166,7 +171,7 @@ static const char *k_pp_month_names[] = {
 static void if_expr_step_or_die(ag_preprocessor_context_t *context) {
   if_expr_eval_steps++;
   if (if_expr_eval_steps > PP_MAX_IF_EXPR_EVAL_STEPS) {
-    pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_IF_EXPR_EVAL_LIMIT_EXCEEDED, NULL);
   }
 }
 
@@ -187,26 +192,37 @@ static void record_include_errno(
   }
 }
 
-static void *xrealloc(void *ptr, size_t size) {
+static void *xrealloc(
+    ag_preprocessor_context_t *context, void *ptr, size_t size) {
   void *p = realloc(ptr, size);
   if (!p) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(
+            context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   return p;
 }
 
-static void *xreallocarray(void *ptr, size_t n, size_t size) {
+static void *xreallocarray(
+    ag_preprocessor_context_t *context,
+    void *ptr, size_t n, size_t size) {
   if (n != 0 && size > SIZE_MAX / n) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(
+            context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
-  return xrealloc(ptr, n * size);
+  return xrealloc(context, ptr, n * size);
 }
 
-static void pp_error(diag_error_id_t id, const char *arg) __attribute__((noreturn));
-static void pp_error(diag_error_id_t id, const char *arg) {
-  const char *msg = diag_message_for(id);
-  if (arg) diag_emit_internalf(id, msg, arg);
-  diag_emit_internalf(id, "%s", msg);
+static void pp_error(
+    ag_preprocessor_context_t *context,
+    diag_error_id_t id, const char *arg) {
+  const char *msg = diag_message_for_in(context->diagnostic_context, id);
+  if (arg)
+    diag_emit_internalf_in(context->diagnostic_context, id, msg, arg);
+  diag_emit_internalf_in(context->diagnostic_context, id, "%s", msg);
 }
 
 void pp_virtual_headers_clear_in(ag_preprocessor_context_t *context) {
@@ -264,14 +280,15 @@ static diag_error_id_t virtual_path_error(const char *path) {
   }
 }
 
-static void validate_virtual_path_or_die(const char *path) {
+static void validate_virtual_path_or_die(
+    ag_preprocessor_context_t *context, const char *path) {
   diag_error_id_t id = virtual_path_error(path);
   if (!id) return;
   if (id == DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH ||
       id == DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN) {
-    pp_error(id, path);
+    pp_error(context, id, path);
   }
-  pp_error(id, NULL);
+  pp_error(context, id, NULL);
 }
 
 void pp_virtual_headers_configure_in(
@@ -280,26 +297,26 @@ void pp_virtual_headers_configure_in(
     int max_files, int max_file_bytes,
     int max_total_bytes, int max_include_depth) {
   if (!context) {
-    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
   pp_virtual_headers_clear_in(context);
   if (!bundle || bundle_len < 4 || max_files < 0 || max_file_bytes < 0 ||
       max_total_bytes < 0 || max_include_depth <= 0 ||
       max_include_depth > PP_MAX_INCLUDE_DEPTH) {
-    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
   uint32_t count = virtual_bundle_u32(bundle);
   if (count > (uint32_t)max_files || count > (uint32_t)INT_MAX) {
-    pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_COUNT_LIMIT_EXCEEDED, NULL);
   }
   pp_virtual_header_t *headers = calloc(count ? count : 1, sizeof(*headers));
-  if (!headers) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+  if (!headers) pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
   size_t offset = 4;
   size_t total = 0;
   for (uint32_t i = 0; i < count; i++) {
     if (offset > bundle_len || bundle_len - offset < 8) {
       free(headers);
-      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
     }
     uint32_t path_len = virtual_bundle_u32(bundle + offset);
     uint32_t source_len = virtual_bundle_u32(bundle + offset + 4);
@@ -307,38 +324,38 @@ void pp_virtual_headers_configure_in(
     size_t need = (size_t)path_len + 1 + (size_t)source_len + 1;
     if (need < (size_t)path_len || offset > bundle_len || need > bundle_len - offset) {
       free(headers);
-      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
     }
     const char *path = (const char *)(bundle + offset);
     const char *source = path + path_len + 1;
     if (path[path_len] != '\0' || source[source_len] != '\0' ||
         memchr(path, '\0', path_len) || memchr(source, '\0', source_len)) {
       free(headers);
-      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
     }
     diag_error_id_t path_error = virtual_path_error(path);
     if (path_error) {
       free(headers);
       if (path_error == DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH ||
           path_error == DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN) {
-        pp_error(path_error, path);
+        pp_error(context, path_error, path);
       }
-      pp_error(path_error, NULL);
+      pp_error(context, path_error, NULL);
     }
     if (source_len > (uint32_t)max_file_bytes) {
       free(headers);
-      pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED, path);
+      pp_error(context, DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_FILE_SIZE_LIMIT_EXCEEDED, path);
     }
     if (source_len > (uint32_t)max_total_bytes ||
         total > (size_t)max_total_bytes - (size_t)source_len) {
       free(headers);
-      pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_TOTAL_SIZE_LIMIT_EXCEEDED, NULL);
     }
     total += source_len;
     for (uint32_t j = 0; j < i; j++) {
       if (!strcmp(headers[j].path, path)) {
         free(headers);
-        pp_error(DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH, path);
+        pp_error(context, DIAG_ERR_PREPROCESS_VIRTUAL_HEADER_DUPLICATE_PATH, path);
       }
     }
     headers[i].path = path;
@@ -348,7 +365,7 @@ void pp_virtual_headers_configure_in(
   }
   if (offset != bundle_len) {
     free(headers);
-    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
   context->virtual_headers = headers;
   context->virtual_header_count = (int)count;
@@ -369,16 +386,16 @@ static const pp_virtual_header_t *resolve_virtual_header(
                                                          const char *path,
                                                          const char *current_file,
                                                          char **out_path) {
-  validate_virtual_path_or_die(path);
+  validate_virtual_path_or_die(context, path);
   if (virtual_path_is_canonical(current_file)) {
-    char *dir = dirname_dup_or_null(current_file);
+    char *dir = dirname_dup_or_null(context, current_file);
     if (dir) {
       size_t len = strlen(dir) + strlen(path) + 1;
       char *candidate = calloc(len, 1);
-      if (!candidate) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+      if (!candidate) pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
       snprintf(candidate, len, "%s%s", dir, path);
       free(dir);
-      validate_virtual_path_or_die(candidate);
+      validate_virtual_path_or_die(context, candidate);
       const pp_virtual_header_t *relative = find_virtual_header(context, candidate);
       if (relative) {
         *out_path = candidate;
@@ -395,78 +412,82 @@ static const pp_virtual_header_t *resolve_virtual_header(
   return NULL;
 }
 
-static void validate_include_path_or_die(const char *path, const char *current_file) {
+static void validate_include_path_or_die(
+    ag_preprocessor_context_t *context,
+    const char *path, const char *current_file) {
   if (!path || !*path) {
-    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
   int allow_parent_ref = current_file && strncmp(current_file, "src/", 4) == 0;
   if (isalpha((unsigned char)path[0]) && path[1] == ':') {
-    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
+    pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
   }
   if (path[0] == '/' || path[0] == '\\') {
-    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
+    pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
   }
   for (const char *p = path; *p; p++) {
     if (*p == '\\') {
-      pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
+      pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, path);
     }
     if (!allow_parent_ref &&
         (p == path || p[-1] == '/') && p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0')) {
-      pp_error(DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN, path);
+      pp_error(context, DIAG_ERR_PREPROCESS_PARENT_DIR_INCLUDE_FORBIDDEN, path);
     }
   }
 }
 
-static void validate_line_filename_or_die(const char *name, int len) {
+static void validate_line_filename_or_die(
+    ag_preprocessor_context_t *context,
+    const char *name, int len) {
   if (!name || len <= 0 || len > PP_MAX_LINE_FILENAME_LEN) {
-    pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
   for (int i = 0; i < len; ) {
     unsigned char c = (unsigned char)name[i];
     if (c < 0x20 || c == 0x7F) {
-      pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
     }
     if (c < 0x80) {
       i++;
       continue;
     }
     if ((c & 0xE0) == 0xC0) {
-      if (i + 1 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      if (i + 1 >= len) pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       unsigned char c1 = (unsigned char)name[i + 1];
       if ((c1 & 0xC0) != 0x80 || (c & 0xFE) == 0xC0) {
-        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       }
       i += 2;
       continue;
     }
     if ((c & 0xF0) == 0xE0) {
-      if (i + 2 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      if (i + 2 >= len) pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       unsigned char c1 = (unsigned char)name[i + 1];
       unsigned char c2 = (unsigned char)name[i + 2];
       if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80) {
-        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       }
       if ((c == 0xE0 && c1 < 0xA0) || (c == 0xED && c1 >= 0xA0)) {
-        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       }
       i += 3;
       continue;
     }
     if ((c & 0xF8) == 0xF0) {
-      if (i + 3 >= len) pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+      if (i + 3 >= len) pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       unsigned char c1 = (unsigned char)name[i + 1];
       unsigned char c2 = (unsigned char)name[i + 2];
       unsigned char c3 = (unsigned char)name[i + 3];
       if ((c1 & 0xC0) != 0x80 || (c2 & 0xC0) != 0x80 || (c3 & 0xC0) != 0x80) {
-        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       }
       if ((c == 0xF0 && c1 < 0x90) || (c == 0xF4 && c1 >= 0x90) || c > 0xF4) {
-        pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
       }
       i += 4;
       continue;
     }
-    pp_error(DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_LINE_FILENAME_INVALID, NULL);
   }
 }
 
@@ -493,11 +514,13 @@ static bool include_path_is_allowed(const char *resolved) {
          (have_include_root && path_is_within(resolved, include_root));
 }
 
-static void validate_include_realpath_or_die(const char *candidate, const char *display_path) {
+static void validate_include_realpath_or_die(
+    ag_preprocessor_context_t *context,
+    const char *candidate, const char *display_path) {
   char resolved[PATH_MAX];
   if (!realpath(candidate, resolved)) return;
   if (!include_path_is_allowed(resolved)) {
-    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
+    pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
 }
 
@@ -556,7 +579,7 @@ static char *read_include_file_secure(
   }
   if (have_opened_path && !include_path_is_allowed(opened_path)) {
     fclose(fp);
-    pp_error(DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
+    pp_error(context, DIAG_ERR_PREPROCESS_DISALLOWED_INCLUDE_PATH, display_path);
   }
 
   if (fseek(fp, 0, SEEK_END) == -1) {
@@ -599,14 +622,15 @@ static char *read_include_file_secure(
   return buf;
 }
 
-static char *dirname_dup_or_null(const char *path) {
+static char *dirname_dup_or_null(
+    ag_preprocessor_context_t *context, const char *path) {
   if (!path) return NULL;
   const char *slash = strrchr(path, '/');
   if (!slash) return NULL;
   size_t len = (size_t)(slash - path + 1);
   char *dir = calloc(len + 1, 1);
   if (!dir) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   memcpy(dir, path, len);
   dir[len] = '\0';
@@ -619,13 +643,13 @@ static char *try_load_include_candidate(
   size_t cand_len = strlen(root) + strlen(filename) + 1;
   char *candidate = calloc(cand_len, 1);
   if (!candidate) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   snprintf(candidate, cand_len, "%s%s", root, filename);
-  validate_include_realpath_or_die(candidate, filename);
+  validate_include_realpath_or_die(context, candidate, filename);
   char *buf = read_include_file_secure(context, candidate, filename);
   if (buf && out_loaded_path) {
-    *out_loaded_path = normalize_include_path_or_die(candidate);
+    *out_loaded_path = normalize_include_path_or_die(context, candidate);
   }
   free(candidate);
   return buf;
@@ -637,7 +661,7 @@ static char *load_include_with_allowlist_or_die(
                                                 char **out_loaded_path) {
   include_last_errno = 0;
   if (out_loaded_path) *out_loaded_path = NULL;
-  char *current_dir = dirname_dup_or_null(current_file);
+  char *current_dir = dirname_dup_or_null(context, current_file);
   if (current_dir) {
     char *buf = try_load_include_candidate(
         context, current_dir, filename, out_loaded_path);
@@ -652,11 +676,12 @@ static char *load_include_with_allowlist_or_die(
   return NULL;
 }
 
-static char *normalize_include_path_or_die(const char *path) {
+static char *normalize_include_path_or_die(
+    ag_preprocessor_context_t *context, const char *path) {
   size_t n = strlen(path);
   char *out = calloc(n + 1, 1);
   if (!out) {
-    pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+    pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
   }
   size_t j = 0;
   size_t i = 0;
@@ -687,17 +712,17 @@ static void push_include_or_die(
   if (g_virtual_headers_enabled) {
     for (include_frame_t *f = include_stack; f; f = f->next) {
       if (!strcmp(f->path, path)) {
-        pp_error(DIAG_ERR_PREPROCESS_INCLUDE_CYCLE_DETECTED, path);
+        pp_error(context, DIAG_ERR_PREPROCESS_INCLUDE_CYCLE_DETECTED, path);
       }
     }
   }
   int depth_limit = g_virtual_headers_enabled ? g_virtual_include_depth_limit : PP_MAX_INCLUDE_DEPTH;
   if (include_depth >= depth_limit) {
-    pp_error(DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_INCLUDE_NEST_TOO_DEEP, NULL);
   }
   include_frame_t *f = calloc(1, sizeof(include_frame_t));
   if (!f) {
-    pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+    pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
   }
   f->path = path;
   f->next = include_stack;
@@ -717,7 +742,7 @@ static void count_macro_expansion_or_die(
     ag_preprocessor_context_t *context) {
   macro_expand_steps++;
   if (macro_expand_steps > PP_MAX_MACRO_EXPANSIONS) {
-    pp_error(DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_MACRO_EXPANSION_LIMIT_EXCEEDED, NULL);
   }
 }
 
@@ -1085,14 +1110,14 @@ static long primary(
   if (tok->kind == TK_LPAREN) {
     long val = const_expr(context, &tok, tok->next);
     if (!(tok->kind == TK_RPAREN)) {
-      pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
     }
     *rest = tok->next;
     return val;
   }
   if (tok->kind == TK_NUM) {
     if (tk_as_num(tok)->num_kind != TK_NUM_KIND_INT) {
-      pp_error(DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_IF_INT_LITERAL_REQUIRED, NULL);
     }
     long val = tk_as_num_int(tok)->val;
     *rest = tok->next;
@@ -1102,7 +1127,7 @@ static long primary(
     *rest = tok->next;
     return 0; // undefined macro to 0
   }
-  pp_error(DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
+  pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_UNEXPECTED_TOKEN, NULL);
 }
 
 static long unary(
@@ -1135,14 +1160,14 @@ static long mul(
       if_expr_step_or_die(context);
       long rhs = unary(context, &tok, tok->next);
       if (g_if_expr_eval) {
-        if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        if (rhs == 0) pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
         val /= rhs;
       }
     } else if (tok->kind == TK_MOD) {
       if_expr_step_or_die(context);
       long rhs = unary(context, &tok, tok->next);
       if (g_if_expr_eval) {
-        if (rhs == 0) pp_error(DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
+        if (rhs == 0) pp_error(context, DIAG_ERR_PREPROCESS_DIVISION_BY_ZERO, NULL);
         val %= rhs;
       }
     } else {
@@ -1334,7 +1359,7 @@ static long conditional(
   if (cond) {
     long then_val = const_expr(context, &tok, tok->next);
     if (tok->kind != TK_COLON) {
-      pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
     }
     skip_const_expr(context, &tok, tok->next);
     *rest = tok;
@@ -1342,7 +1367,7 @@ static long conditional(
   }
   skip_const_expr(context, &tok, tok->next);
   if (tok->kind != TK_COLON) {
-    pp_error(DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_RPAREN_REQUIRED, NULL);
   }
   long else_val = conditional(context, &tok, tok->next);
   *rest = tok;
@@ -1399,7 +1424,7 @@ static bool evaluate_constexpr(
    while (tok->kind != TK_EOF && !tok->at_bol) {
       if_expr_token_count++;
       if (if_expr_token_count > PP_MAX_IF_EXPR_TOKENS) {
-        pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, NULL);
       }
       cur->next = copy_token(context, tok);
       cur->next->at_bol = false; 
@@ -1422,7 +1447,7 @@ static bool evaluate_constexpr(
             has_paren = true;
             t = t->next;
          }
-         if (t->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED, NULL);
+         if (t->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_DEFINED_MACRO_NAME_REQUIRED, NULL);
          token_ident_t *id = as_ident(t);
          char *name = my_strndup(id->str, id->len);
          bool is_def = find_macro(context, name) != NULL;
@@ -1430,7 +1455,7 @@ static bool evaluate_constexpr(
          t = t->next;
          if (has_paren) {
             if (!(t->kind == TK_RPAREN)) {
-              pp_error(DIAG_ERR_PREPROCESS_DEFINED_RPAREN_MISSING, NULL);
+              pp_error(context, DIAG_ERR_PREPROCESS_DEFINED_RPAREN_MISSING, NULL);
             }
             t = t->next;
          }
@@ -1466,7 +1491,7 @@ static bool evaluate_constexpr(
    token_t *rest;
   long val = const_expr(context, &rest, expanded);
   if (rest->kind != TK_EOF) {
-    pp_error(DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_CONST_EXPR_EXTRA_TOKEN, NULL);
   }
    return val != 0;
 }
@@ -1482,10 +1507,10 @@ static token_t *stringify_tokens(
     if (len > 0 && t->has_space) {
         if (len + 1 >= cap) {
           if (cap > SIZE_MAX / 2) {
-            pp_error(DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
+            pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
           }
           cap *= 2;
-          buf = xrealloc(buf, cap);
+          buf = xrealloc(context, buf, cap);
         }
         buf[len++] = ' ';
       }
@@ -1514,19 +1539,19 @@ static token_t *stringify_tokens(
     }
     if (!ts) ts = "";
     if (tlen < 0 || (size_t)tlen > SIZE_MAX - len - 1) {
-      pp_error(DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
     }
     size_t need = len + (size_t)tlen + 1;
     while (need > cap) {
       if (cap > SIZE_MAX / 2) {
-        pp_error(DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_SIZE_TOO_LARGE, NULL);
       }
       cap *= 2;
     }
     if (need > len + (size_t)tlen + 1) {
-      pp_error(DIAG_ERR_PREPROCESS_STRINGIZE_INVALID_SIZE, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_STRINGIZE_INVALID_SIZE, NULL);
     }
-    buf = xrealloc(buf, cap);
+    buf = xrealloc(context, buf, cap);
     memcpy(buf + len, ts, (size_t)tlen);
     len += (size_t)tlen;
     free(tmp_quoted);
@@ -1562,7 +1587,7 @@ static token_t *paste_tokens(
       const char *s_l = token_text(cur, &len_l);
       const char *s_r = token_text(rhs, &len_r);
       if (len_l < 0 || len_r < 0 || (size_t)len_l > SIZE_MAX - (size_t)len_r - 1) {
-        pp_error(DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_SIZE_TOO_LARGE, NULL);
       }
       size_t len = (size_t)len_l + (size_t)len_r;
       char *buf = calloc(1, len + 1);
@@ -1577,7 +1602,7 @@ static token_t *paste_tokens(
       token_t *merged = tk_tokenize_ctx(g_preprocess_tk_ctx, buf);
       // Token-pasting must produce exactly one preprocessing token.
       if (merged->kind == TK_EOF || !merged->next || merged->next->kind != TK_EOF) {
-        pp_error(DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_TOKEN_PASTE_INVALID_RESULT, NULL);
       }
 
       tk_set_filename_ctx(g_preprocess_tk_ctx, saved_filename);
@@ -1605,8 +1630,9 @@ static token_t *skip_to_next_line(token_t *tok) {
 
 // 識別子トークンを必須として取り出し、my_strndup したコピーを返す。
 // 失敗時は pp_error で中断。
-static char *consume_required_macro_name(token_t **ptok) {
-  if ((*ptok)->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
+static char *consume_required_macro_name(
+    ag_preprocessor_context_t *context, token_t **ptok) {
+  if ((*ptok)->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
   token_ident_t *id = as_ident(*ptok);
   char *name = my_strndup(id->str, id->len);
   *ptok = (*ptok)->next;
@@ -1627,7 +1653,7 @@ static void push_cond_incl(
 static token_t *handle_ifdef_or_ifndef(
     ag_preprocessor_context_t *context, token_t *tok, bool negated) {
   tok = tok->next; // skip directive name
-  char *name = consume_required_macro_name(&tok);
+  char *name = consume_required_macro_name(context, &tok);
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
@@ -1639,8 +1665,8 @@ static token_t *handle_ifdef_or_ifndef(
 
 static token_t *handle_else(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
   cond_incl->ctx = IN_ELSE;
   tok = skip_to_next_line(tok->next);
   if (cond_incl->included) {
@@ -1653,8 +1679,8 @@ static token_t *handle_else(
 
 static token_t *handle_elif(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
   tok = tok->next;
   if (cond_incl->included) {
@@ -1678,7 +1704,7 @@ static token_t *handle_if(
 
 static token_t *handle_endif(
     ag_preprocessor_context_t *context, token_t *tok) {
-  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
+  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ENDIF_WITHOUT_IF, NULL);
   cond_incl_t *ci = cond_incl;
   cond_incl = cond_incl->next;
   free(ci);
@@ -1687,23 +1713,24 @@ static token_t *handle_endif(
 
 // "name.h" や <name.h> 形式のファイル名トークンを読み取り、calloc 済みの
 // バッファに正規化前の文字列を組み立てて返す。tok は閉じ '>' or 文字列の次へ進む。
-static char *consume_include_filename(token_t **ptok) {
+static char *consume_include_filename(
+    ag_preprocessor_context_t *context, token_t **ptok) {
   token_t *tok = *ptok;
   size_t filename_cap = 64;
   size_t filename_len = 0;
   char *filename = calloc(filename_cap, 1);
   if (!filename) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   if (tok->kind == TK_STRING) {
     token_string_t *st = as_string(tok);
     size_t need = (size_t)st->len + 1;
     if (st->len < 0 || need == 0) {
-      pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
     }
     if (need > filename_cap) {
       filename_cap = need;
-      filename = xrealloc(filename, filename_cap);
+      filename = xrealloc(context, filename, filename_cap);
     }
     memcpy(filename, st->str, (size_t)st->len);
     filename[st->len] = '\0';
@@ -1717,17 +1744,17 @@ static char *consume_include_filename(token_t **ptok) {
       const char *ts = token_text(tok, &tlen);
       if (!ts) ts = "";
       if (tlen < 0 || (size_t)tlen > SIZE_MAX - filename_len - 1) {
-        pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
+        pp_error(context, DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
       }
       size_t need = filename_len + (size_t)tlen + 1;
       if (need > filename_cap) {
         while (filename_cap < need) {
           if (filename_cap > SIZE_MAX / 2) {
-            pp_error(DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
+            pp_error(context, DIAG_ERR_PREPROCESS_INCLUDE_FILENAME_TOO_LARGE, NULL);
           }
           filename_cap *= 2;
         }
-        filename = xrealloc(filename, filename_cap);
+        filename = xrealloc(context, filename, filename_cap);
       }
       memcpy(filename + filename_len, ts, (size_t)tlen);
       filename_len += (size_t)tlen;
@@ -1735,7 +1762,7 @@ static char *consume_include_filename(token_t **ptok) {
       tok = tok->next;
     }
     if (tok->kind == TK_EOF) {
-      pp_error(DIAG_ERR_PREPROCESS_GT_REQUIRED, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_GT_REQUIRED, NULL);
     }
     tok = tok->next; // '>' をスキップ
   }
@@ -1757,7 +1784,7 @@ static token_t *handle_define(
     ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
   if (tok->kind != TK_IDENT) {
-    pp_error(DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_MACRO_NAME_REQUIRED, NULL);
   }
   token_ident_t *id = as_ident(tok);
   char *name = my_strndup(id->str, id->len);
@@ -1781,21 +1808,21 @@ static token_t *handle_define(
           params = calloc((size_t)cap * 2, sizeof(char *));
           for (int j = 0; j < num_params; j++) params[j] = inline_params_buf[j];
         } else {
-          params = xreallocarray(params, (size_t)cap * 2, sizeof(char *));
+          params = xreallocarray(context, params, (size_t)cap * 2, sizeof(char *));
         }
         cap *= 2;
       }
       if (tok->kind == TK_ELLIPSIS) {
         // C99 6.10.3: `...` は最後のパラメータでなければならない。
         if (tok->next->kind != TK_RPAREN) {
-          pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+          pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
         }
         params[num_params++] = my_strndup("__VA_ARGS__", 11);
         is_variadic = true;
         tok = tok->next; // `)` へ
         break;
       }
-      if (tok->kind != TK_IDENT) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+      if (tok->kind != TK_IDENT) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
       token_ident_t *pid = as_ident(tok);
       params[num_params++] = my_strndup(pid->str, pid->len);
       tok = tok->next;
@@ -1835,26 +1862,27 @@ static void remove_macro_by_name(
 static token_t *handle_undef(
     ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
-  char *name = consume_required_macro_name(&tok);
+  char *name = consume_required_macro_name(context, &tok);
   remove_macro_by_name(context, name);
   free(name);
   return skip_to_next_line(tok);
 }
 
 // #error directive: 残りトークンを文字列化して診断を出す。
-static token_t *handle_error(token_t *tok) {
+static token_t *handle_error(
+    ag_preprocessor_context_t *context, token_t *tok) {
   tok = tok->next;
   size_t cap = 64;
   size_t len = 0;
   char *msg = calloc(cap, 1);
   if (!msg) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for_in(context->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   const char *prefix = "error: ";
   size_t pfx_len = strlen(prefix);
   if (cap <= pfx_len) {
     cap = pfx_len + 1;
-    msg = xrealloc(msg, cap);
+    msg = xrealloc(context, msg, cap);
   }
   memcpy(msg, prefix, pfx_len);
   len = pfx_len;
@@ -1875,19 +1903,19 @@ static token_t *handle_error(token_t *tok) {
     if (ts && tlen > 0) {
       size_t need = len + (size_t)tlen + 2;
       while (need > cap) {
-        if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
+        if (cap > SIZE_MAX / 2) pp_error(context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
         cap *= 2;
       }
-      msg = xrealloc(msg, cap);
+      msg = xrealloc(context, msg, cap);
       memcpy(msg + len, ts, (size_t)tlen);
       len += (size_t)tlen;
       msg[len] = '\0';
     }
     if (tok->has_space) {
       if (len + 2 > cap) {
-        if (cap > SIZE_MAX / 2) pp_error(DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
+        if (cap > SIZE_MAX / 2) pp_error(context, DIAG_ERR_PREPROCESS_ERROR_MESSAGE_TOO_LARGE, NULL);
         cap *= 2;
-        msg = xrealloc(msg, cap);
+        msg = xrealloc(context, msg, cap);
       }
       msg[len++] = ' ';
       msg[len] = '\0';
@@ -1898,8 +1926,8 @@ static token_t *handle_error(token_t *tok) {
   if (strncmp(detail, prefix, pfx_len) == 0) {
     detail += pfx_len;
   }
-  diag_emit_internalf(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE,
-                      diag_message_for(DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE), detail);
+  diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE,
+                      diag_message_for_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_ERROR_DIRECTIVE), detail);
   return tok;
 }
 
@@ -1928,13 +1956,14 @@ static token_t *pp_expand_directive_line(
 }
 
 /* マクロ展開済み #line 引数を解釈する。行番号が無効なら診断で中断。 */
-static bool pp_parse_line_directive_args(token_t *tok, long long *out_line, char **out_file) {
+static bool pp_parse_line_directive_args(ag_preprocessor_context_t *context, token_t *tok,
+                                         long long *out_line, char **out_file) {
   if (!(tok && tok->kind == TK_NUM && tk_as_num(tok)->num_kind == TK_NUM_KIND_INT)) {
     return false;
   }
   long long new_line = tk_as_num_int(tok)->val;
   if (new_line <= 0 || new_line > INT_MAX) {
-    pp_error(DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_LINE_NUMBER_INVALID, NULL);
   }
   *out_line = new_line;
   tok = tok->next;
@@ -1944,7 +1973,7 @@ static bool pp_parse_line_directive_args(token_t *tok, long long *out_line, char
       return false;
     }
     token_string_t *st = as_string(tok);
-    validate_line_filename_or_die(st->str, st->len);
+    validate_line_filename_or_die(context, st->str, st->len);
     *out_file = my_strndup(st->str, st->len);
   }
   return true;
@@ -1957,7 +1986,7 @@ static token_t *handle_line(
   token_t *expanded = pp_expand_directive_line(context, args);
   long long new_line;
   char *new_file = NULL;
-  if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
+  if (!pp_parse_line_directive_args(context, expanded, &new_line, &new_file)) {
     return skip_to_next_line(args);
   }
   tok = skip_to_next_line(args);
@@ -2015,12 +2044,13 @@ static token_t *handle_pragma_pack_body(
   return tok;
 }
 
-static void warn_unsupported_gnu_extension_token(const token_t *tok) {
+static void warn_unsupported_gnu_extension_token(ag_preprocessor_context_t *context,
+                                                 const token_t *tok) {
   if (!tok || tok->kind != TK_IDENT) return;
   const token_ident_t *id = (const token_ident_t *)tok;
-  diag_warn_tokf(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
+  diag_warn_tokf_in(context->diagnostic_context, DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION, tok,
                  "%s: %.*s",
-                 diag_warn_message_for(DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
+                 diag_warn_message_for_in(context->diagnostic_context, DIAG_WARN_PARSER_UNSUPPORTED_GNU_EXTENSION),
                  id->len, id->str);
 }
 
@@ -2039,7 +2069,7 @@ static token_t *handle_pragma(
       tok = handle_pragma_pack_body(context, tok, pcur);
     }
   } else if (ident_is(tok, "push_macro") || ident_is(tok, "pop_macro")) {
-    warn_unsupported_gnu_extension_token(tok);
+    warn_unsupported_gnu_extension_token(context, tok);
   }
   return skip_to_next_line(tok);
 }
@@ -2099,13 +2129,13 @@ static token_t **pp_collect_args(
     }
   }
   if (tok->kind != TK_RPAREN) {
-    pp_error(DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
+    pp_error(context, DIAG_ERR_PREPROCESS_FUNC_MACRO_ARG_NOT_CLOSED, NULL);
   }
   (void)has_empty_arg;  // C99 6.10.3p4: 空引数は合法 (placemarker)
   if (m->is_variadic) {
-    if (parsed_args < num_named) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+    if (parsed_args < num_named) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
   } else {
-    if (parsed_args != m->num_params) pp_error(DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
+    if (parsed_args != m->num_params) pp_error(context, DIAG_ERR_PREPROCESS_INVALID_MACRO_ARGUMENT, NULL);
   }
   *out_rparen = tok;
   return args;
@@ -2136,10 +2166,10 @@ static token_t *pp_expand_funclike(
   for (token_t *bt = m->body; bt; bt = bt->next) {
     if (bt->kind != TK_HASHHASH) { prev_body = bt; continue; }
     if (!prev_body || !bt->next) {
-      pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
     }
     if (prev_body->kind == TK_HASHHASH || bt->next->kind == TK_HASHHASH || bt->next->kind == TK_HASH) {
-      pp_error(DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
+      pp_error(context, DIAG_ERR_PREPROCESS_MACRO_TOKEN_PASTE_INVALID_POSITION, NULL);
     }
     prev_body = bt;
   }
@@ -2282,7 +2312,7 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
       
       if (is_dir(tok, "define")) { tok = handle_define(context, tok); continue; }
       if (is_dir(tok, "undef"))  { tok = handle_undef(context, tok);  continue; }
-      if (is_dir(tok, "error"))  { tok = handle_error(tok); }
+      if (is_dir(tok, "error"))  { tok = handle_error(context, tok); }
       if (is_dir(tok, "line"))   { tok = handle_line(context, tok);   continue; }
       if (is_dir(tok, "pragma")) { tok = handle_pragma(context, tok, &cur); continue; }
 
@@ -2750,7 +2780,7 @@ static void pps_handle_if(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) {
   ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;
-  char *name = consume_required_macro_name(&tok);
+  char *name = consume_required_macro_name(context, &tok);
   bool defined = find_macro(context, name) != NULL;
   free(name);
   bool is_true = negated ? !defined : defined;
@@ -2759,8 +2789,8 @@ static void pps_handle_ifdef(pp_stream_t *s, token_t *after_hash, bool negated) 
 }
 static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
-  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
+  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_ELIF_AFTER_ELSE, NULL);
   cond_incl->ctx = IN_ELIF;
   token_t *tok = after_hash->next;
   if (cond_incl->included) { pps_skip_cond_incl(s); return; }
@@ -2771,8 +2801,8 @@ static void pps_handle_elif(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_else(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   (void)after_hash;
-  if (!cond_incl) pp_error(DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
-  if (cond_incl->ctx == IN_ELSE) pp_error(DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
+  if (!cond_incl) pp_error(context, DIAG_ERR_PREPROCESS_ELSE_WITHOUT_IF, NULL);
+  if (cond_incl->ctx == IN_ELSE) pp_error(context, DIAG_ERR_PREPROCESS_DUPLICATE_ELSE, NULL);
   cond_incl->ctx = IN_ELSE;
   if (cond_incl->included) pps_skip_cond_incl(s);
   else cond_incl->included = true;
@@ -2789,7 +2819,7 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
       s->context, after_hash->next);
   long long new_line;
   char *new_file = NULL;
-  if (!pp_parse_line_directive_args(expanded, &new_line, &new_file)) {
+  if (!pp_parse_line_directive_args(s->context, expanded, &new_line, &new_file)) {
     return;  // バッチ: skip_to_next_line で無視 (デルタ変更なし)
   }
   /* 次の物理トークンを 1 つ覗いて素の line_no を得る (pull で旧デルタ適用済みなので差し引く)。
@@ -2818,7 +2848,7 @@ static void pps_handle_line(pp_stream_t *s, token_t *after_hash) {
 static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
   ag_preprocessor_context_t *context = s->context;
   token_t *tok = after_hash->next;  // skip "include"
-  char *filename = consume_include_filename(&tok);
+  char *filename = consume_include_filename(context, &tok);
   const char *current_file = tk_get_filename_ctx(g_preprocess_tk_ctx);
   char *loaded_path = NULL;
   char *buf = NULL;
@@ -2826,20 +2856,20 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
     const pp_virtual_header_t *header = resolve_virtual_header(
         s->context, filename, current_file, &loaded_path);
     if (!header) {
-      diag_emit_internalf(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND,
-                          diag_message_for(DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND), filename);
+      diag_emit_internalf_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND,
+                          diag_message_for_in(context->diagnostic_context, DIAG_ERR_PREPROCESS_INCLUDE_NOT_FOUND), filename);
     }
     buf = (char *)header->source;
   } else {
-    validate_include_path_or_die(filename, current_file);
-    char *normalized = normalize_include_path_or_die(filename);
+    validate_include_path_or_die(context, filename, current_file);
+    char *normalized = normalize_include_path_or_die(context, filename);
     free(filename);
     filename = normalized;
     buf = load_include_with_allowlist_or_die(
         s->context, filename, current_file, &loaded_path);
     if (!buf) {  // not found / 権限 / symlink loop: 診断して終了
       diag_error_id_t id = include_read_failure_diag_id(context);
-      diag_emit_internalf(id, diag_message_for(id), filename);
+      diag_emit_internalf_in(context->diagnostic_context, id, diag_message_for_in(context->diagnostic_context, id), filename);
     }
   }
   if (!loaded_path) loaded_path = my_strndup(filename, strlen(filename));
@@ -2851,7 +2881,7 @@ static void pps_handle_include(pp_stream_t *s, token_t *after_hash) {
 
   /* ctx 切替前に親状態を保存する。 */
   pp_include_frame_t *f = calloc(1, sizeof(*f));
-  if (!f) pp_error(DIAG_ERR_INTERNAL_OOM, NULL);
+  if (!f) pp_error(context, DIAG_ERR_INTERNAL_OOM, NULL);
   f->parent                  = s->frames;
   f->parent_lex              = s->lex;
   f->buf                     = buf;
@@ -2912,7 +2942,7 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   }
   if (is_dir(tok, "undef"))  { handle_undef(context, tok); return; }
   if (is_dir(tok, "line"))   { pps_handle_line(s, tok); return; }
-  if (is_dir(tok, "error"))  { handle_error(tok); return; }
+  if (is_dir(tok, "error"))  { handle_error(context, tok); return; }
   if (is_dir(tok, "pragma")) {
     token_t lc; lc.next = NULL; token_t *cur = &lc;
     handle_pragma(context, tok, &cur);        // pragma pack マーカーを lc に append
@@ -3011,8 +3041,8 @@ static int pps_step(pp_stream_t *s) {
     /* TK_UNKNOWN は `#if 0` 偽分岐の先読み等で許容生成された「トークナイズ不能文字」。
      * ここまで来た＝active コードに現れたということなので、翻訳フェーズ 7 相当で E2028。
      * (偽分岐内のものは skip が捨てるのでここには到達しない。) */
-    diag_emit_tokf(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, tok, "%s",
-                   diag_message_for(DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
+    diag_emit_tokf_in(context->diagnostic_context, DIAG_ERR_TOKENIZER_TOKENIZE_FAILED, tok, "%s",
+                   diag_message_for_in(context->diagnostic_context, DIAG_ERR_TOKENIZER_TOKENIZE_FAILED));
   }
   pps_append(s, tok);  // 通過 (raw トークンを再利用)
   return 1;
@@ -3139,12 +3169,20 @@ void pp_stream_close(pp_stream_t *s) {
   free(s);
 }
 
-ag_preprocessor_context_t *pp_context_create(void) {
+ag_preprocessor_context_t *pp_context_create(
+    ag_diagnostic_context_t *diagnostic_context) {
+  if (!diagnostic_context) return NULL;
   ag_preprocessor_context_t *context = calloc(1, sizeof(*context));
   if (!context) return NULL;
+  context->diagnostic_context = diagnostic_context;
   context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
   context->if_expr_eval = true;
   return context;
+}
+
+ag_diagnostic_context_t *pp_context_diagnostics(
+    const ag_preprocessor_context_t *context) {
+  return context ? context->diagnostic_context : NULL;
 }
 
 void pp_context_destroy(ag_preprocessor_context_t *context) {

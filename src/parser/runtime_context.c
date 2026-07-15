@@ -4,12 +4,14 @@
 
 psx_parser_runtime_context_t *ps_parser_runtime_context_create(
     arena_context_t *arena_context,
-    tokenizer_context_t *tokenizer_context) {
-  if (!arena_context || !tokenizer_context) return NULL;
+    tokenizer_context_t *tokenizer_context,
+    ag_diagnostic_context_t *diagnostic_context) {
+  if (!arena_context || !tokenizer_context || !diagnostic_context) return NULL;
   psx_parser_runtime_context_t *ctx = calloc(1, sizeof(*ctx));
   if (ctx) {
     ctx->arena_context = arena_context;
     ctx->tokenizer_context = tokenizer_context;
+    ctx->diagnostic_context = diagnostic_context;
   }
   return ctx;
 }
@@ -27,6 +29,11 @@ arena_context_t *ps_parser_runtime_arena(
 tokenizer_context_t *ps_parser_runtime_tokenizer(
     const psx_parser_runtime_context_t *ctx) {
   return ctx ? ctx->tokenizer_context : NULL;
+}
+
+ag_diagnostic_context_t *ps_parser_runtime_diagnostics(
+    const psx_parser_runtime_context_t *ctx) {
+  return ctx ? ctx->diagnostic_context : NULL;
 }
 
 tokenizer_context_t *ps_parser_runtime_bind_tokenizer(

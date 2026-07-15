@@ -22,7 +22,6 @@ struct ag_compilation_session_t {
   psx_parser_runtime_context_t *parser_runtime_context;
   psx_lowering_context_t *lowering_context;
   ag_codegen_emit_context_t *codegen_emit_context;
-  ag_codegen_emit_context_t *previous_codegen_emit_context;
   ag_compilation_options_t options;
   ag_continuation_options_t continuation;
   void *backend_context;

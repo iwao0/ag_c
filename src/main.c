@@ -1,4 +1,4 @@
-#include "codegen_backend.h"
+#include "codegen_emit.h"
 #include "compilation_session.h"
 #include "target_info.h"
 #include "config/config.h"
@@ -91,10 +91,9 @@ static void write_line_to_memory(const char *line, size_t len, void *user_data) 
   }
 }
 
-static void clear_output_callback(void) {
-  gen_output_line_fn cb = 0;
-  void *user_data = 0;
-  gen_set_output_callback(cb, user_data);
+static void clear_output_callback(
+    ag_codegen_emit_context_t *emit_context) {
+  gen_set_output_callback_in(emit_context, NULL, NULL);
 }
 
 static int wasm_emit_function_direct(
@@ -120,6 +119,13 @@ static int wasm_emit_function_direct(
   ir_module_free(m);
   return 1;
 }
+
+#ifndef AGC_TARGET_WASM32
+static void arm64_emit_ir_module(
+    ir_module_t *module, void *context) {
+  gen_ir_module_in((ag_codegen_emit_context_t *)context, module);
+}
+#endif
 
 static char *read_file_contents(const char *path) {
   FILE *fp = fopen(path, "rb");
@@ -206,7 +212,8 @@ int agc_wasm_set_continuation_options(
 
 static int attach_wasm_backend_context(
     ag_compilation_session_t *session) {
-  wasm32_backend_context_t *backend = wasm32_backend_context_create();
+  wasm32_backend_context_t *backend = wasm32_backend_context_create(
+      ag_compilation_session_codegen_emit_context(session));
   if (!backend) return 0;
   if (!ag_compilation_session_set_backend_context(
           session, backend,
@@ -267,6 +274,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm_publish_and_destroy_session(session);
     return -4;
   }
+  ag_codegen_emit_context_t *emit_context =
+      ag_compilation_session_codegen_emit_context(session);
 
   if (!psx_frontend_reset_translation_unit_state_in_session(
           session)) {
@@ -307,16 +316,16 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm32_obj_set_capture_limit((size_t)out_cap);
     wasm32_obj_begin();
   } else {
-    gen_set_simple_formatter(1);
-    gen_set_output_callback(write_line_to_memory, &out);
+    gen_set_simple_formatter_in(emit_context, 1);
+    gen_set_output_callback_in(emit_context, write_line_to_memory, &out);
     wasm32_module_begin();
   }
 
   psx_frontend_stream_t stream = {0};
   if (!psx_frontend_stream_begin(
           &stream, session, tk_ctx, tok)) {
-    clear_output_callback();
-    gen_set_simple_formatter(0);
+    clear_output_callback(emit_context);
+    gen_set_simple_formatter_in(emit_context, 0);
     if (pps) pp_stream_close(pps);
     wasm32_obj_capture_output(0);
     wasm_publish_and_destroy_session(session);
@@ -328,8 +337,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   };
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode, &ir_options)) {
-      clear_output_callback();
-      gen_set_simple_formatter(0);
+      clear_output_callback(emit_context);
+      gen_set_simple_formatter_in(emit_context, 0);
       if (pps) pp_stream_close(pps);
       wasm32_obj_capture_output(0);
       wasm_publish_and_destroy_session(session);
@@ -341,8 +350,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   if (pps) pp_stream_close(pps);
 
   if (diag_has_error_records()) {
-    clear_output_callback();
-    gen_set_simple_formatter(0);
+    clear_output_callback(emit_context);
+    gen_set_simple_formatter_in(emit_context, 0);
     if (object_mode) wasm32_obj_capture_output(0);
     wasm_publish_and_destroy_session(session);
     return -5;
@@ -351,8 +360,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   ir_data_module_t *data_module =
       lower_ir_translation_unit_data_in_session(session);
   if (!data_module) {
-    clear_output_callback();
-    gen_set_simple_formatter(0);
+    clear_output_callback(emit_context);
+    gen_set_simple_formatter_in(emit_context, 0);
     if (object_mode) wasm32_obj_capture_output(0);
     wasm_publish_and_destroy_session(session);
     return -3;
@@ -385,8 +394,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm32_emit_data_segments(data_module);
     ir_data_module_free(data_module);
     wasm32_module_end();
-    clear_output_callback();
-    gen_set_simple_formatter(0);
+    clear_output_callback(emit_context);
+    gen_set_simple_formatter_in(emit_context, 0);
   }
 
   int result = out.overflow ? -2 : out.len;
@@ -527,6 +536,8 @@ int main(int argc, char **argv) {
     free(source);
     return 1;
   }
+  ag_codegen_emit_context_t *emit_context =
+      ag_compilation_session_codegen_emit_context(session);
   if (!psx_frontend_reset_translation_unit_state_in_session(
           session)) {
     ag_compilation_session_destroy(session);
@@ -563,11 +574,11 @@ int main(int argc, char **argv) {
     wasm32_obj_set_output_file(wasm_obj_out);
     wasm32_obj_begin();
   } else {
-    gen_set_output_callback(write_line_to_file, stdout);
+    gen_set_output_callback_in(emit_context, write_line_to_file, stdout);
     wasm32_module_begin();
   }
 #else
-  gen_set_output_callback(write_line_to_file, stdout);
+  gen_set_output_callback_in(emit_context, write_line_to_file, stdout);
 #endif
 
   // 関数ごとストリーミング: パース→IR build→最適化+codegen→AST/IR 解放 を 1 関数ずつ
@@ -585,7 +596,7 @@ int main(int argc, char **argv) {
       remove(output_path);
     }
 #endif
-    clear_output_callback();
+    clear_output_callback(emit_context);
     ag_compilation_session_destroy(session);
     free(source);
     return 1;
@@ -598,8 +609,8 @@ int main(int argc, char **argv) {
 #ifdef AGC_TARGET_WASM32
     if (!wasm_emit_function_direct(fn, wasm_object_mode, &ir_options)) {
 #else
-    if (!ir_build_emit_function_with_options(
-            fn, &ir_options, gen_ir_module)) {
+    if (!ir_build_emit_function_with_options_in(
+            fn, &ir_options, arm64_emit_ir_module, emit_context)) {
 #endif
       diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
                           diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
@@ -620,7 +631,7 @@ int main(int argc, char **argv) {
       remove(output_path);
     }
 #endif
-    clear_output_callback();
+    clear_output_callback(emit_context);
     ag_compilation_session_destroy(session);
     free(source);
     return 1;
@@ -635,7 +646,7 @@ int main(int argc, char **argv) {
       remove(output_path);
     }
 #endif
-    clear_output_callback();
+    clear_output_callback(emit_context);
     ag_compilation_session_destroy(session);
     free(source);
     return 1;
@@ -652,12 +663,12 @@ int main(int argc, char **argv) {
   }
 #else
   // lowering 済みの文字列・浮動小数点定数・global object を emit。
-  gen_string_literals(data_module);
-  gen_float_literals(data_module);
-  gen_global_vars(data_module);
+  gen_string_literals_in(emit_context, data_module);
+  gen_float_literals_in(emit_context, data_module);
+  gen_global_vars_in(emit_context, data_module);
 #endif
   ir_data_module_free(data_module);
-  if (!wasm_object_mode) clear_output_callback();
+  if (!wasm_object_mode) clear_output_callback(emit_context);
 
   if (getenv("AG_MEM_STATS")) print_mem_stats(session, strlen(source));
 

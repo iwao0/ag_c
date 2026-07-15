@@ -5,9 +5,13 @@
 #include "../tokenizer/tokenizer.h"
 
 typedef struct ag_preprocessor_context_t ag_preprocessor_context_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-ag_preprocessor_context_t *pp_context_create(void);
+ag_preprocessor_context_t *pp_context_create(
+    ag_diagnostic_context_t *diagnostic_context);
 void pp_context_destroy(ag_preprocessor_context_t *context);
+ag_diagnostic_context_t *pp_context_diagnostics(
+    const ag_preprocessor_context_t *context);
 
 /** @brief 明示Preprocessor/Tokenizer/targetでプリプロセスを実行する。 */
 token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,

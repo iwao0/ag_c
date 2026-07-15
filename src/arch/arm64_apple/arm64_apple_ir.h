@@ -7,6 +7,9 @@
 
 #include "../../ir/ir.h"
 
-void gen_ir_module(ir_module_t *m);
+typedef struct ag_codegen_emit_context_t ag_codegen_emit_context_t;
+
+void gen_ir_module_in(
+    ag_codegen_emit_context_t *emit_context, ir_module_t *m);
 
 #endif

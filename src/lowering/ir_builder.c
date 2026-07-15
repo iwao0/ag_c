@@ -3812,6 +3812,16 @@ static int g_ir_dump_enabled(void) {
   return e && strcmp(e, "1") == 0;
 }
 
+typedef struct {
+  void (*emit_module)(ir_module_t *);
+} legacy_ir_emit_t;
+
+static void emit_legacy_ir_module(
+    ir_module_t *module, void *context) {
+  legacy_ir_emit_t *legacy = context;
+  legacy->emit_module(module);
+}
+
 /* 関数 1 つを「単一関数モジュールへ build → emit (最適化+codegen) → 即解放」する。
  * 関数ごとストリーミングの中核。全関数の IR を同時保持しないので IR のピークメモリは
  * 「最大の 1 関数」になる。関数間に IR 依存はない (呼び出しは sym 名で解決) ため、
@@ -3828,6 +3838,14 @@ int ir_build_emit_function_for_target(
 int ir_build_emit_function_with_options(
     node_t *fn, const ir_build_options_t *options,
     void (*emit_module)(ir_module_t *)) {
+  legacy_ir_emit_t legacy = {.emit_module = emit_module};
+  return ir_build_emit_function_with_options_in(
+      fn, options, emit_module ? emit_legacy_ir_module : NULL, &legacy);
+}
+
+int ir_build_emit_function_with_options_in(
+    node_t *fn, const ir_build_options_t *options,
+    ir_emit_module_in_fn emit_module, void *emit_context) {
   if (!fn || fn->kind != ND_FUNCDEF) return 0;
   ir_module_t *m = ir_build_function_module_with_options(fn, options);
   if (!m) {
@@ -3839,7 +3857,7 @@ int ir_build_emit_function_with_options(
     fprintf(stderr, "%s", buf);
     free(buf);
   }
-  if (emit_module) emit_module(m);
+  if (emit_module) emit_module(m, emit_context);
   ir_module_free(m);
   return 1;
 }

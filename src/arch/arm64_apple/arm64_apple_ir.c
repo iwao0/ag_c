@@ -22,6 +22,7 @@
 #include <string.h>
 
 typedef struct {
+  ag_codegen_emit_context_t *emit_context;
   ir_func_t *f;
   int *vreg_off;
   int alloca_base;
@@ -33,6 +34,9 @@ typedef struct {
   int saved_count;
   int saved_area_size;  /* prologue で確保する saved area のバイト数 */
 } gen_ctx_t;
+
+#define arm64_cg_emitf(ctx, ...) \
+  cg_emitf_in((ctx)->emit_context, __VA_ARGS__)
 
 static int round_up(int v, int a) {
   return (v + a - 1) / a * a;
@@ -94,13 +98,15 @@ static void layout_frame(gen_ctx_t *ctx) {
  * imm12<<12 (4096 の倍数) しか符号化できず、`sub sp, sp, #4112` や `add x19, x29, #8576`
  * のような 4095 超の即値は無効命令になる (大きいスタックフレームで発生)。4095 を超える場合は
  * 4096 の倍数部 (lsl #12) と端数の 2 命令に分割する (clang と同じ)。imm は非負・16MB 未満を想定。 */
-static void emit_addsub_imm(const char *op, const char *dst, const char *src, int imm) {
+static void emit_addsub_imm(
+    gen_ctx_t *ctx, const char *op,
+    const char *dst, const char *src, int imm) {
   if (imm <= 4095) {
-    cg_emitf("  %s %s, %s, #%d\n", op, dst, src, imm);
+    arm64_cg_emitf(ctx, "  %s %s, %s, #%d\n", op, dst, src, imm);
     return;
   }
-  cg_emitf("  %s %s, %s, #%d, lsl #12\n", op, dst, src, (imm >> 12) & 0xfff);
-  if (imm & 0xfff) cg_emitf("  %s %s, %s, #%d\n", op, dst, dst, imm & 0xfff);
+  arm64_cg_emitf(ctx, "  %s %s, %s, #%d, lsl #12\n", op, dst, src, (imm >> 12) & 0xfff);
+  if (imm & 0xfff) arm64_cg_emitf(ctx, "  %s %s, %s, #%d\n", op, dst, dst, imm & 0xfff);
 }
 
 static int frame_offset_scale_for_reg(const char *reg) {
@@ -119,23 +125,23 @@ static int frame_offset_fits_unsigned(const char *reg, int off) {
   return off >= 0 && off <= 4095 * scale && (off % scale) == 0;
 }
 
-static void emit_frame_load(const char *reg, int off) {
+static void emit_frame_load(gen_ctx_t *ctx, const char *reg, int off) {
   if (frame_offset_fits_unsigned(reg, off)) {
-    cg_emitf("  ldr %s, [x29, #%d]\n", reg, off);
+    arm64_cg_emitf(ctx, "  ldr %s, [x29, #%d]\n", reg, off);
     return;
   }
-  emit_addsub_imm("add", "x16", "x29", off);
-  cg_emitf("  ldr %s, [x16]\n", reg);
+  emit_addsub_imm(ctx, "add", "x16", "x29", off);
+  arm64_cg_emitf(ctx, "  ldr %s, [x16]\n", reg);
 }
 
-static void emit_frame_store(const char *reg, int off) {
+static void emit_frame_store(gen_ctx_t *ctx, const char *reg, int off) {
   if (frame_offset_fits_unsigned(reg, off)) {
-    cg_emitf("  str %s, [x29, #%d]\n", reg, off);
+    arm64_cg_emitf(ctx, "  str %s, [x29, #%d]\n", reg, off);
     return;
   }
   const char *addr = (strcmp(reg, "x16") == 0 || strcmp(reg, "w16") == 0) ? "x17" : "x16";
-  emit_addsub_imm("add", addr, "x29", off);
-  cg_emitf("  str %s, [%s]\n", reg, addr);
+  emit_addsub_imm(ctx, "add", addr, "x29", off);
+  arm64_cg_emitf(ctx, "  str %s, [%s]\n", reg, addr);
 }
 
 /* prologue: x29/x30 のあと、使われた callee-saved reg を保存する。 */
@@ -143,7 +149,7 @@ static void emit_save_regs(gen_ctx_t *ctx) {
   int off = 16;
   for (int i = 0; i < 10; i++) {
     if (!ctx->reg_used[i]) continue;
-    cg_emitf("  str x%d, [x29, #%d]\n", 19 + i, off);
+    arm64_cg_emitf(ctx, "  str x%d, [x29, #%d]\n", 19 + i, off);
     off += 8;
   }
 }
@@ -153,7 +159,7 @@ static void emit_restore_regs(gen_ctx_t *ctx) {
   int off = 16;
   for (int i = 0; i < 10; i++) {
     if (!ctx->reg_used[i]) continue;
-    cg_emitf("  ldr x%d, [x29, #%d]\n", 19 + i, off);
+    arm64_cg_emitf(ctx, "  ldr x%d, [x29, #%d]\n", 19 + i, off);
     off += 8;
   }
 }
@@ -173,12 +179,12 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
   int is_fp = (v.type == IR_TY_F32 || v.type == IR_TY_F64);
   if (v.id == IR_VAL_IMM) {
     snprintf(out_buf, out_size, "%s", scratch);
-    cg_emit_mov_imm(scratch, v.imm);
+    cg_emit_mov_imm_in(ctx->emit_context, scratch, v.imm);
     return out_buf;
   }
   if (v.id == IR_VAL_NONE) {
     snprintf(out_buf, out_size, "%s", scratch);
-    cg_emitf("  mov %s, #0\n", scratch);
+    arm64_cg_emitf(ctx, "  mov %s, #0\n", scratch);
     return out_buf;
   }
   int vv = v.id;
@@ -189,11 +195,11 @@ static const char *ensure_val_in(gen_ctx_t *ctx, ir_val_t v, const char *scratch
   }
   if (vv >= 0 && vv < ctx->f->next_vreg_id) {
     snprintf(out_buf, out_size, "%s", scratch);
-    emit_frame_load(scratch, ctx->vreg_off[vv]);
+    emit_frame_load(ctx, scratch, ctx->vreg_off[vv]);
     return out_buf;
   }
   snprintf(out_buf, out_size, "%s", scratch);
-  cg_emitf("  mov %s, #0\n", scratch);
+  arm64_cg_emitf(ctx, "  mov %s, #0\n", scratch);
   return out_buf;
 }
 
@@ -219,7 +225,7 @@ static const char *acquire_dst(gen_ctx_t *ctx, ir_val_t dst, const char *scratch
 static void release_dst(gen_ctx_t *ctx, ir_val_t dst, const char *reg, int needs_spill) {
   if (!needs_spill) return;
   if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) return;
-  emit_frame_store(reg, ctx->vreg_off[dst.id]);
+  emit_frame_store(ctx, reg, ctx->vreg_off[dst.id]);
 }
 
 /* "x9" → "w9" の変換。phys reg / scratch 共通。out 長 8 想定。 */
@@ -279,7 +285,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_VLA_ALLOC:     gen_inst_vla_alloc(ctx, inst); return;
     case IR_VA_ARG_AREA:   gen_inst_va_arg_area(ctx, inst); return;
     case IR_LABEL:
-      cg_emitf(".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
+      arm64_cg_emitf(ctx, ".L%.*s_%d:\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
     case IR_LOAD_IMM:      gen_inst_load_imm(ctx, inst); return;
     case IR_LOAD_FP_IMM:   gen_inst_load_fp_imm(ctx, inst); return;
@@ -314,7 +320,7 @@ static void gen_inst(gen_ctx_t *ctx, ir_inst_t *inst) {
     case IR_PARAM:         gen_inst_param(ctx, inst); return;
     case IR_CALL:          gen_inst_call(ctx, inst); return;
     case IR_BR:
-      cg_emitf("  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
+      arm64_cg_emitf(ctx, "  b .L%.*s_%d\n", ctx->f->name_len, ctx->f->name, inst->label_id);
       return;
     case IR_BR_COND:       gen_inst_br_cond(ctx, inst); return;
     case IR_RET:           gen_inst_ret(ctx, inst); return;
@@ -332,8 +338,8 @@ static void gen_inst_load_str(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-      cg_emitf("  adrp %s, %.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-      cg_emitf("  add %s, %s, %.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  adrp %s, %.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  add %s, %s, %.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -345,12 +351,12 @@ static void gen_inst_load_sym(gen_ctx_t *ctx, ir_inst_t *inst) {
         /* 関数アドレス: GOT 経由 (外部 libc 関数は @PAGE 直参照だと「does not have
          * address」でリンク失敗。GOT はローカル定義にも有効)。
          *   adrp d, _sym@GOTPAGE ; ldr d, [d, _sym@GOTPAGEOFF] */
-        cg_emitf("  adrp %s, _%.*s@GOTPAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-        cg_emitf("  ldr %s, [%s, _%.*s@GOTPAGEOFF]\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  adrp %s, _%.*s@GOTPAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  ldr %s, [%s, _%.*s@GOTPAGEOFF]\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
       } else {
         /* グローバル変数のアドレス (_<name>@PAGE/PAGEOFF) を vreg に */
-        cg_emitf("  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
-        cg_emitf("  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  adrp %s, _%.*s@PAGE\n", d, inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  add %s, %s, _%.*s@PAGEOFF\n", d, d, inst->sym_len, inst->sym ? inst->sym : "");
       }
   release_dst(ctx, inst->dst, d, spill);
 }
@@ -363,12 +369,12 @@ static void gen_inst_load_tlv_addr(gen_ctx_t *ctx, ir_inst_t *inst) {
        *   blr  x8                             ; returns TLS address in x0
        * 戻り値 (TLS のアドレス) を dst slot へ。CALL 同様 caller-saved を
        * 全 clobber する想定 (regalloc/DCE は callee 相当として扱う)。 */
-      cg_emitf("  adrp x0, _%.*s@TLVPPAGE\n", inst->sym_len, inst->sym ? inst->sym : "");
-      cg_emitf("  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", inst->sym_len, inst->sym ? inst->sym : "");
-      cg_emitf("  ldr x8, [x0]\n");
-      cg_emitf("  blr x8\n");
+      arm64_cg_emitf(ctx, "  adrp x0, _%.*s@TLVPPAGE\n", inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  ldr x0, [x0, _%.*s@TLVPPAGEOFF]\n", inst->sym_len, inst->sym ? inst->sym : "");
+      arm64_cg_emitf(ctx, "  ldr x8, [x0]\n");
+      arm64_cg_emitf(ctx, "  blr x8\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    emit_frame_store("x0", ctx->vreg_off[inst->dst.id]);
+    emit_frame_store(ctx, "x0", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -386,11 +392,11 @@ static void gen_inst_int_cast(gen_ctx_t *ctx, ir_inst_t *inst) {
       to_w_name(src, w_src, sizeof(w_src));
       to_w_name(d, w_dst, sizeof(w_dst));
       if (inst->op == IR_ZEXT) {
-        cg_emitf("  uxtw %s, %s\n", d, w_src);
+        arm64_cg_emitf(ctx, "  uxtw %s, %s\n", d, w_src);
       } else if (inst->op == IR_SEXT) {
-        cg_emitf("  sxtw %s, %s\n", d, w_src);
+        arm64_cg_emitf(ctx, "  sxtw %s, %s\n", d, w_src);
       } else {
-        cg_emitf("  mov %s, %s\n", w_dst, w_src);
+        arm64_cg_emitf(ctx, "  mov %s, %s\n", w_dst, w_src);
       }
   release_dst(ctx, inst->dst, d, spill);
 }
@@ -403,13 +409,13 @@ static void gen_inst_vla_alloc(gen_ctx_t *ctx, ir_inst_t *inst) {
        *   dst (frame slot) = sp  */
       char b1[8];
       const char *src = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
-      if (strcmp(src, "x9") != 0) cg_emitf("  mov x9, %s\n", src);
-      cg_emitf("  add x9, x9, #15\n");
-      cg_emitf("  and x9, x9, #-16\n");
-      cg_emitf("  sub sp, sp, x9\n");
-      cg_emitf("  mov x9, sp\n");
+      if (strcmp(src, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", src);
+      arm64_cg_emitf(ctx, "  add x9, x9, #15\n");
+      arm64_cg_emitf(ctx, "  and x9, x9, #-16\n");
+      arm64_cg_emitf(ctx, "  sub sp, sp, x9\n");
+      arm64_cg_emitf(ctx, "  mov x9, sp\n");
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-    emit_frame_store("x9", ctx->vreg_off[inst->dst.id]);
+    emit_frame_store(ctx, "x9", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -419,7 +425,7 @@ static void gen_inst_va_arg_area(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  emit_addsub_imm("add", d, "x29", ctx->total_size);
+  emit_addsub_imm(ctx, "add", d, "x29", ctx->total_size);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -427,7 +433,7 @@ static void gen_inst_load_imm(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emit_mov_imm(d, inst->src1.imm);
+  cg_emit_mov_imm_in(ctx->emit_context, d, inst->src1.imm);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -437,14 +443,14 @@ static void gen_inst_load_fp_imm(gen_ctx_t *ctx, ir_inst_t *inst) {
       if (inst->dst.id < 0 || inst->dst.id >= ctx->f->next_vreg_id) return;
       if (inst->dst.type == IR_TY_F32) {
         union { float f; uint32_t i; } u = { .f = (float)inst->src1.fp_imm };
-        cg_emit_mov_imm("x9", (long long)u.i);
-        cg_emitf("  fmov s0, w9\n");
-        emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
+        cg_emit_mov_imm_in(ctx->emit_context, "x9", (long long)u.i);
+        arm64_cg_emitf(ctx, "  fmov s0, w9\n");
+        emit_frame_store(ctx, "s0", ctx->vreg_off[inst->dst.id]);
       } else {
         union { double d; uint64_t i; } u = { .d = inst->src1.fp_imm };
-        cg_emit_mov_imm("x9", (long long)u.i);
-        cg_emitf("  fmov d0, x9\n");
-        emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
+        cg_emit_mov_imm_in(ctx->emit_context, "x9", (long long)u.i);
+        arm64_cg_emitf(ctx, "  fmov d0, x9\n");
+        emit_frame_store(ctx, "d0", ctx->vreg_off[inst->dst.id]);
   }
 }
 
@@ -455,8 +461,8 @@ static void gen_inst_fp_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
       char r0[4], r1[4];
       snprintf(r0, sizeof(r0), "%s0", suf);
       snprintf(r1, sizeof(r1), "%s1", suf);
-      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
-      emit_frame_load(r1, ctx->vreg_off[inst->src2.id]);
+      emit_frame_load(ctx, r0, ctx->vreg_off[inst->src1.id]);
+      emit_frame_load(ctx, r1, ctx->vreg_off[inst->src2.id]);
       const char *op = "fadd";
       switch (inst->op) {
         case IR_FADD: op = "fadd"; break;
@@ -465,8 +471,8 @@ static void gen_inst_fp_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_FDIV: op = "fdiv"; break;
         default: break;
       }
-      cg_emitf("  %s %s0, %s0, %s1\n", op, suf, suf, suf);
-  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
+      arm64_cg_emitf(ctx, "  %s %s0, %s0, %s1\n", op, suf, suf, suf);
+  emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_fp_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -475,9 +481,9 @@ static void gen_inst_fp_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
       char r0[4], r1[4];
       snprintf(r0, sizeof(r0), "%s0", suf);
       snprintf(r1, sizeof(r1), "%s1", suf);
-      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
-      emit_frame_load(r1, ctx->vreg_off[inst->src2.id]);
-      cg_emitf("  fcmp %s0, %s1\n", suf, suf);
+      emit_frame_load(ctx, r0, ctx->vreg_off[inst->src1.id]);
+      emit_frame_load(ctx, r1, ctx->vreg_off[inst->src2.id]);
+      arm64_cg_emitf(ctx, "  fcmp %s0, %s1\n", suf, suf);
       const char *cond = "eq";
       switch (inst->op) {
         case IR_FEQ: cond = "eq"; break;
@@ -489,7 +495,7 @@ static void gen_inst_fp_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  cset %s, %s\n", d, cond);
+  arm64_cg_emitf(ctx, "  cset %s, %s\n", d, cond);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -498,11 +504,11 @@ static void gen_inst_f2i(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *suf = src_double ? "d" : "s";
       char r0[4];
       snprintf(r0, sizeof(r0), "%s0", suf);
-      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
+      emit_frame_load(ctx, r0, ctx->vreg_off[inst->src1.id]);
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  %s %s, %s0\n", inst->is_unsigned ? "fcvtzu" : "fcvtzs", d, suf);
+  arm64_cg_emitf(ctx, "  %s %s, %s0\n", inst->is_unsigned ? "fcvtzu" : "fcvtzs", d, suf);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -511,10 +517,10 @@ static void gen_inst_i2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       int is_double = (inst->dst.type == IR_TY_F64);
       const char *suf = is_double ? "d" : "s";
-  cg_emitf("  %s %s0, %s\n", inst->is_unsigned ? "ucvtf" : "scvtf", suf, s1);
+  arm64_cg_emitf(ctx, "  %s %s0, %s\n", inst->is_unsigned ? "ucvtf" : "scvtf", suf, s1);
   char r0[4];
   snprintf(r0, sizeof(r0), "%s0", suf);
-  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
+  emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_f2f(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -526,9 +532,9 @@ static void gen_inst_f2f(gen_ctx_t *ctx, ir_inst_t *inst) {
       char r0[4], r1[4];
       snprintf(r0, sizeof(r0), "%s0", src_suf);
       snprintf(r1, sizeof(r1), "%s1", dst_suf);
-      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
-  cg_emitf("  fcvt %s1, %s0\n", dst_suf, src_suf);
-  emit_frame_store(r1, ctx->vreg_off[inst->dst.id]);
+      emit_frame_load(ctx, r0, ctx->vreg_off[inst->src1.id]);
+  arm64_cg_emitf(ctx, "  fcvt %s1, %s0\n", dst_suf, src_suf);
+  emit_frame_store(ctx, r1, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_alloca(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -543,7 +549,7 @@ static void gen_inst_alloca(gen_ctx_t *ctx, ir_inst_t *inst) {
       char bd[8];
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  emit_addsub_imm("add", d, "x29", off);
+  emit_addsub_imm(ctx, "add", d, "x29", off);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -552,13 +558,13 @@ static void gen_inst_load(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *ptr = ensure_val_in(ctx, inst->src1, "x9", bp, sizeof(bp));
       /* float/double: frame に書く (spill 経路で統一) */
       if (inst->dst.type == IR_TY_F32) {
-        cg_emitf("  ldr s0, [%s]\n", ptr);
-        emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
+        arm64_cg_emitf(ctx, "  ldr s0, [%s]\n", ptr);
+        emit_frame_store(ctx, "s0", ctx->vreg_off[inst->dst.id]);
         return;
       }
       if (inst->dst.type == IR_TY_F64) {
-        cg_emitf("  ldr d0, [%s]\n", ptr);
-        emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
+        arm64_cg_emitf(ctx, "  ldr d0, [%s]\n", ptr);
+        emit_frame_store(ctx, "d0", ctx->vreg_off[inst->dst.id]);
         return;
       }
       char bd[8];
@@ -569,17 +575,17 @@ static void gen_inst_load(gen_ctx_t *ctx, ir_inst_t *inst) {
       if (inst->is_unsigned) {
         switch (inst->dst.type) {
           /* unsigned: ldrb/ldrh/ldr w は自動で zero-extend する */
-          case IR_TY_I8:  cg_emitf("  ldrb %s, [%s]\n", w_d, ptr); break;
-          case IR_TY_I16: cg_emitf("  ldrh %s, [%s]\n", w_d, ptr); break;
-          case IR_TY_I32: cg_emitf("  ldr %s, [%s]\n", w_d, ptr); break;
-          default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
+          case IR_TY_I8:  arm64_cg_emitf(ctx, "  ldrb %s, [%s]\n", w_d, ptr); break;
+          case IR_TY_I16: arm64_cg_emitf(ctx, "  ldrh %s, [%s]\n", w_d, ptr); break;
+          case IR_TY_I32: arm64_cg_emitf(ctx, "  ldr %s, [%s]\n", w_d, ptr); break;
+          default:        arm64_cg_emitf(ctx, "  ldr %s, [%s]\n", d, ptr); break;
         }
       } else {
         switch (inst->dst.type) {
-          case IR_TY_I8:  cg_emitf("  ldrsb %s, [%s]\n", d, ptr); break;
-          case IR_TY_I16: cg_emitf("  ldrsh %s, [%s]\n", d, ptr); break;
-          case IR_TY_I32: cg_emitf("  ldrsw %s, [%s]\n", d, ptr); break;
-          default:        cg_emitf("  ldr %s, [%s]\n", d, ptr); break;
+          case IR_TY_I8:  arm64_cg_emitf(ctx, "  ldrsb %s, [%s]\n", d, ptr); break;
+          case IR_TY_I16: arm64_cg_emitf(ctx, "  ldrsh %s, [%s]\n", d, ptr); break;
+          case IR_TY_I32: arm64_cg_emitf(ctx, "  ldrsw %s, [%s]\n", d, ptr); break;
+          default:        arm64_cg_emitf(ctx, "  ldr %s, [%s]\n", d, ptr); break;
         }
       }
   release_dst(ctx, inst->dst, d, spill);
@@ -591,16 +597,16 @@ static void gen_inst_store(gen_ctx_t *ctx, ir_inst_t *inst) {
       /* float/double store: src2 vreg は frame 上にある (spill 経路)。 */
       if (inst->src2.type == IR_TY_F32) {
         if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
-          emit_frame_load("s0", ctx->vreg_off[inst->src2.id]);
+          emit_frame_load(ctx, "s0", ctx->vreg_off[inst->src2.id]);
         }
-        cg_emitf("  str s0, [%s]\n", ptr);
+        arm64_cg_emitf(ctx, "  str s0, [%s]\n", ptr);
         return;
       }
       if (inst->src2.type == IR_TY_F64) {
         if (inst->src2.id >= 0 && inst->src2.id < ctx->f->next_vreg_id) {
-          emit_frame_load("d0", ctx->vreg_off[inst->src2.id]);
+          emit_frame_load(ctx, "d0", ctx->vreg_off[inst->src2.id]);
         }
-        cg_emitf("  str d0, [%s]\n", ptr);
+        arm64_cg_emitf(ctx, "  str d0, [%s]\n", ptr);
         return;
       }
       char bv[8];
@@ -608,10 +614,10 @@ static void gen_inst_store(gen_ctx_t *ctx, ir_inst_t *inst) {
       char wval[8];
       to_w_name(val, wval, sizeof(wval));
       switch (inst->src2.type) {
-        case IR_TY_I8:  cg_emitf("  strb %s, [%s]\n", wval, ptr); break;
-        case IR_TY_I16: cg_emitf("  strh %s, [%s]\n", wval, ptr); break;
-        case IR_TY_I32: cg_emitf("  str %s, [%s]\n", wval, ptr); break;
-    default:        cg_emitf("  str %s, [%s]\n", val, ptr); break;
+        case IR_TY_I8:  arm64_cg_emitf(ctx, "  strb %s, [%s]\n", wval, ptr); break;
+        case IR_TY_I16: arm64_cg_emitf(ctx, "  strh %s, [%s]\n", wval, ptr); break;
+        case IR_TY_I32: arm64_cg_emitf(ctx, "  str %s, [%s]\n", wval, ptr); break;
+    default:        arm64_cg_emitf(ctx, "  str %s, [%s]\n", val, ptr); break;
   }
 }
 
@@ -620,7 +626,7 @@ static void gen_inst_neg(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  neg %s, %s\n", d, s1);
+  arm64_cg_emitf(ctx, "  neg %s, %s\n", d, s1);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -629,7 +635,7 @@ static void gen_inst_not(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  mvn %s, %s\n", d, s1);
+  arm64_cg_emitf(ctx, "  mvn %s, %s\n", d, s1);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -638,9 +644,9 @@ static void gen_inst_fneg(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *suf = is_double ? "d" : "s";
       char r0[4];
       snprintf(r0, sizeof(r0), "%s0", suf);
-      emit_frame_load(r0, ctx->vreg_off[inst->src1.id]);
-  cg_emitf("  fneg %s0, %s0\n", suf, suf);
-  emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
+      emit_frame_load(ctx, r0, ctx->vreg_off[inst->src1.id]);
+  arm64_cg_emitf(ctx, "  fneg %s0, %s0\n", suf, suf);
+  emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
 }
 
 static void gen_inst_lea(gen_ctx_t *ctx, ir_inst_t *inst) {
@@ -649,7 +655,7 @@ static void gen_inst_lea(gen_ctx_t *ctx, ir_inst_t *inst) {
       const char *s2 = ensure_val_in(ctx, inst->src2, "x10", b2, sizeof(b2));
       int spill = 0;
       const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  cg_emitf("  add %s, %s, %s\n", d, s1, s2);
+  arm64_cg_emitf(ctx, "  add %s, %s, %s\n", d, s1, s2);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -660,20 +666,20 @@ static void gen_inst_memcpy(gen_ctx_t *ctx, ir_inst_t *inst) {
       int n = inst->alloca_size;
       int off = 0;
       for (; off + 8 <= n; off += 8) {
-        cg_emitf("  ldr x11, [%s, #%d]\n", src_ptr, off);
-        cg_emitf("  str x11, [%s, #%d]\n", dst_ptr, off);
+        arm64_cg_emitf(ctx, "  ldr x11, [%s, #%d]\n", src_ptr, off);
+        arm64_cg_emitf(ctx, "  str x11, [%s, #%d]\n", dst_ptr, off);
       }
       for (; off + 4 <= n; off += 4) {
-        cg_emitf("  ldr w11, [%s, #%d]\n", src_ptr, off);
-        cg_emitf("  str w11, [%s, #%d]\n", dst_ptr, off);
+        arm64_cg_emitf(ctx, "  ldr w11, [%s, #%d]\n", src_ptr, off);
+        arm64_cg_emitf(ctx, "  str w11, [%s, #%d]\n", dst_ptr, off);
       }
       for (; off + 2 <= n; off += 2) {
-        cg_emitf("  ldrh w11, [%s, #%d]\n", src_ptr, off);
-        cg_emitf("  strh w11, [%s, #%d]\n", dst_ptr, off);
+        arm64_cg_emitf(ctx, "  ldrh w11, [%s, #%d]\n", src_ptr, off);
+        arm64_cg_emitf(ctx, "  strh w11, [%s, #%d]\n", dst_ptr, off);
       }
   for (; off < n; off++) {
-    cg_emitf("  ldrb w11, [%s, #%d]\n", src_ptr, off);
-    cg_emitf("  strb w11, [%s, #%d]\n", dst_ptr, off);
+    arm64_cg_emitf(ctx, "  ldrb w11, [%s, #%d]\n", src_ptr, off);
+    arm64_cg_emitf(ctx, "  strb w11, [%s, #%d]\n", dst_ptr, off);
   }
 }
 
@@ -692,25 +698,25 @@ static void gen_inst_int_binop(gen_ctx_t *ctx, ir_inst_t *inst) {
         s1 = w1; s2 = w2; d = wd;
       }
       switch (inst->op) {
-        case IR_ADD: cg_emitf("  add %s, %s, %s\n", d, s1, s2); break;
-        case IR_SUB: cg_emitf("  sub %s, %s, %s\n", d, s1, s2); break;
-        case IR_MUL: cg_emitf("  mul %s, %s, %s\n", d, s1, s2); break;
-        case IR_DIV: cg_emitf("  sdiv %s, %s, %s\n", d, s1, s2); break;
-        case IR_UDIV: cg_emitf("  udiv %s, %s, %s\n", d, s1, s2); break;
+        case IR_ADD: arm64_cg_emitf(ctx, "  add %s, %s, %s\n", d, s1, s2); break;
+        case IR_SUB: arm64_cg_emitf(ctx, "  sub %s, %s, %s\n", d, s1, s2); break;
+        case IR_MUL: arm64_cg_emitf(ctx, "  mul %s, %s, %s\n", d, s1, s2); break;
+        case IR_DIV: arm64_cg_emitf(ctx, "  sdiv %s, %s, %s\n", d, s1, s2); break;
+        case IR_UDIV: arm64_cg_emitf(ctx, "  udiv %s, %s, %s\n", d, s1, s2); break;
         case IR_MOD:
-          cg_emitf("  sdiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
-          cg_emitf("  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
+          arm64_cg_emitf(ctx, "  sdiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
         case IR_UMOD:
-          cg_emitf("  udiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
-          cg_emitf("  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
+          arm64_cg_emitf(ctx, "  udiv %s11, %s, %s\n", ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s1, s2);
+          arm64_cg_emitf(ctx, "  msub %s, %s11, %s, %s\n", d, ir_type_size(inst->dst.type) <= 4 ? "w" : "x", s2, s1);
           break;
-        case IR_AND: cg_emitf("  and %s, %s, %s\n", d, s1, s2); break;
-        case IR_OR:  cg_emitf("  orr %s, %s, %s\n", d, s1, s2); break;
-        case IR_XOR: cg_emitf("  eor %s, %s, %s\n", d, s1, s2); break;
-        case IR_SHL: cg_emitf("  lsl %s, %s, %s\n", d, s1, s2); break;
-        case IR_SHR: cg_emitf("  asr %s, %s, %s\n", d, s1, s2); break;
-    case IR_LSR: cg_emitf("  lsr %s, %s, %s\n", d, s1, s2); break;
+        case IR_AND: arm64_cg_emitf(ctx, "  and %s, %s, %s\n", d, s1, s2); break;
+        case IR_OR:  arm64_cg_emitf(ctx, "  orr %s, %s, %s\n", d, s1, s2); break;
+        case IR_XOR: arm64_cg_emitf(ctx, "  eor %s, %s, %s\n", d, s1, s2); break;
+        case IR_SHL: arm64_cg_emitf(ctx, "  lsl %s, %s, %s\n", d, s1, s2); break;
+        case IR_SHR: arm64_cg_emitf(ctx, "  asr %s, %s, %s\n", d, s1, s2); break;
+    case IR_LSR: arm64_cg_emitf(ctx, "  lsr %s, %s, %s\n", d, s1, s2); break;
     default: break;
   }
   release_dst(ctx, inst->dst, spill_reg, spill);
@@ -734,7 +740,7 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
         to_w_name(s2, w2, sizeof(w2));
         s1 = w1; s2 = w2;
       }
-      cg_emitf("  cmp %s, %s\n", s1, s2);
+      arm64_cg_emitf(ctx, "  cmp %s, %s\n", s1, s2);
       const char *cond = "eq";
       switch (inst->op) {
         case IR_LT:  cond = "lt"; break;
@@ -745,7 +751,7 @@ static void gen_inst_int_cmp(gen_ctx_t *ctx, ir_inst_t *inst) {
         case IR_NE:  cond = "ne"; break;
         default: break;
       }
-  cg_emitf("  cset %s, %s\n", d, cond);
+  arm64_cg_emitf(ctx, "  cset %s, %s\n", d, cond);
   release_dst(ctx, inst->dst, d, spill);
 }
 
@@ -764,13 +770,13 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
         /* stack-passed integer arg: ldr to a scratch reg then write to slot. */
         int stack_off = ctx->total_size + (idx - 8) * 8;
         const char *tmp = "x9";
-        emit_frame_load(tmp, stack_off);
+        emit_frame_load(ctx, tmp, stack_off);
         if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
           if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
             int r = ctx->f->vreg_phys_reg[inst->dst.id];
-            cg_emitf("  mov x%d, %s\n", r, tmp);
+            arm64_cg_emitf(ctx, "  mov x%d, %s\n", r, tmp);
           } else {
-            emit_frame_store(tmp, ctx->vreg_off[inst->dst.id]);
+            emit_frame_store(ctx, tmp, ctx->vreg_off[inst->dst.id]);
           }
         }
         return;
@@ -781,9 +787,9 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
         const char *suf = (inst->dst.type == IR_TY_F64) ? "d" : "s";
         char r0[4];
         snprintf(r0, sizeof(r0), "%s0", suf);
-        emit_frame_load(r0, stack_off);
+        emit_frame_load(ctx, r0, stack_off);
         if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
-          emit_frame_store(r0, ctx->vreg_off[inst->dst.id]);
+          emit_frame_store(ctx, r0, ctx->vreg_off[inst->dst.id]);
         }
         return;
       } else if (is_fp) {
@@ -798,10 +804,10 @@ static void gen_inst_param(gen_ctx_t *ctx, ir_inst_t *inst) {
     if (!is_fp && ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[inst->dst.id] >= 0) {
       int r = ctx->f->vreg_phys_reg[inst->dst.id];
       if (r != idx && !(idx == -1 && r == 8)) {
-        cg_emitf("  mov x%d, %s\n", r, src_reg);
+        arm64_cg_emitf(ctx, "  mov x%d, %s\n", r, src_reg);
       }
     } else {
-      emit_frame_store(src_reg, ctx->vreg_off[inst->dst.id]);
+      emit_frame_store(ctx, src_reg, ctx->vreg_off[inst->dst.id]);
     }
   }
 }
@@ -837,7 +843,7 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         if (stack_n > 0) {
           extra_stack_args = stack_n;
           var_stack_bytes = ((extra_stack_args + 1) / 2) * 16;
-          cg_emitf("  sub sp, sp, #%d\n", var_stack_bytes);
+          arm64_cg_emitf(ctx, "  sub sp, sp, #%d\n", var_stack_bytes);
           for (int k = 0; k < stack_n; k++) {
             ir_val_t arg = inst->args[stack_idx[k]];
             int slot_off = k * 8;
@@ -848,11 +854,11 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
               char tmp_reg[8];
               snprintf(tmp_reg, sizeof(tmp_reg), "%s0", suf);
               const char *src = ensure_val_in(ctx, arg, tmp_reg, buf, sizeof(buf));
-              if (strcmp(src, tmp_reg) != 0) cg_emitf("  fmov %s, %s\n", tmp_reg, src);
-              cg_emitf("  str %s, [sp, #%d]\n", tmp_reg, slot_off);
+              if (strcmp(src, tmp_reg) != 0) arm64_cg_emitf(ctx, "  fmov %s, %s\n", tmp_reg, src);
+              arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", tmp_reg, slot_off);
             } else {
               const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
-              cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
+              arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", src, slot_off);
             }
           }
         }
@@ -861,7 +867,7 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         int nargs_var = inst->nargs - inst->nargs_fixed;
         var_stack_bytes = ((nargs_var + 1) / 2) * 16;
         if (var_stack_bytes > 0) {
-          cg_emitf("  sub sp, sp, #%d\n", var_stack_bytes);
+          arm64_cg_emitf(ctx, "  sub sp, sp, #%d\n", var_stack_bytes);
         }
         /* 可変引数を stack slot に書く */
         for (int i = inst->nargs_fixed; i < inst->nargs; i++) {
@@ -871,18 +877,18 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
             /* float → double に昇格して書く */
             char buf[8];
             const char *src = ensure_val_in(ctx, arg, "s0", buf, sizeof(buf));
-            if (strcmp(src, "s0") != 0) cg_emitf("  fmov s0, %s\n", src);
-            cg_emitf("  fcvt d0, s0\n");
-            cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+            if (strcmp(src, "s0") != 0) arm64_cg_emitf(ctx, "  fmov s0, %s\n", src);
+            arm64_cg_emitf(ctx, "  fcvt d0, s0\n");
+            arm64_cg_emitf(ctx, "  str d0, [sp, #%d]\n", slot_off);
           } else if (arg.type == IR_TY_F64) {
             char buf[8];
             const char *src = ensure_val_in(ctx, arg, "d0", buf, sizeof(buf));
-            if (strcmp(src, "d0") != 0) cg_emitf("  fmov d0, %s\n", src);
-            cg_emitf("  str d0, [sp, #%d]\n", slot_off);
+            if (strcmp(src, "d0") != 0) arm64_cg_emitf(ctx, "  fmov d0, %s\n", src);
+            arm64_cg_emitf(ctx, "  str d0, [sp, #%d]\n", slot_off);
           } else {
             char buf[8];
             const char *src = ensure_val_in(ctx, arg, "x9", buf, sizeof(buf));
-            cg_emitf("  str %s, [sp, #%d]\n", src, slot_off);
+            arm64_cg_emitf(ctx, "  str %s, [sp, #%d]\n", src, slot_off);
           }
         }
       }
@@ -906,9 +912,9 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         const char *src = ensure_val_in(ctx, arg, regname, buf, sizeof(buf));
         if (strcmp(src, regname) != 0) {
           if (is_fp) {
-            cg_emitf("  fmov %s, %s\n", regname, src);
+            arm64_cg_emitf(ctx, "  fmov %s, %s\n", regname, src);
           } else {
-            cg_emitf("  mov %s, %s\n", regname, src);
+            arm64_cg_emitf(ctx, "  mov %s, %s\n", regname, src);
           }
         }
       }
@@ -917,7 +923,7 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
         char buf[8];
         const char *src = ensure_val_in(ctx, inst->ret_struct_area, "x8", buf, sizeof(buf));
         if (strcmp(src, "x8") != 0) {
-          cg_emitf("  mov x8, %s\n", src);
+          arm64_cg_emitf(ctx, "  mov x8, %s\n", src);
         }
       }
       if (inst->callee.id != IR_VAL_NONE) {
@@ -925,33 +931,33 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
          * にロードして blr。引数 reg (x0..x7) とは衝突しない。 */
         char buf[8];
         const char *src = ensure_val_in(ctx, inst->callee, "x16", buf, sizeof(buf));
-        if (strcmp(src, "x16") != 0) cg_emitf("  mov x16, %s\n", src);
-        cg_emitf("  blr x16\n");
+        if (strcmp(src, "x16") != 0) arm64_cg_emitf(ctx, "  mov x16, %s\n", src);
+        arm64_cg_emitf(ctx, "  blr x16\n");
       } else {
-        cg_emitf("  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
+        arm64_cg_emitf(ctx, "  bl _%.*s\n", inst->sym_len, inst->sym ? inst->sym : "");
       }
       /* variadic で stack を使った分を戻す */
       if (var_stack_bytes > 0) {
-        cg_emitf("  add sp, sp, #%d\n", var_stack_bytes);
+        arm64_cg_emitf(ctx, "  add sp, sp, #%d\n", var_stack_bytes);
       }
       /* _Complex 戻り値 (HFA): dst は {re,im} スロットの PTR。d0/d1 (s0/s1) を書き戻す。 */
   if (inst->ret_complex_half > 0 && inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
     char buf[8];
     const char *p = ensure_val_in(ctx, inst->dst, "x9", buf, sizeof(buf));
-    if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
-    cg_emitf("  str %s0, [x9]\n", suf);
-    cg_emitf("  str %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+    if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
+    arm64_cg_emitf(ctx, "  str %s0, [x9]\n", suf);
+    arm64_cg_emitf(ctx, "  str %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
     return;
   }
       /* 戻り値: float なら s0/d0、それ以外 x0 を dst slot へ。 */
   if (inst->dst.id >= 0 && inst->dst.id < ctx->f->next_vreg_id) {
     if (inst->dst.type == IR_TY_F32) {
-      emit_frame_store("s0", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store(ctx, "s0", ctx->vreg_off[inst->dst.id]);
     } else if (inst->dst.type == IR_TY_F64) {
-      emit_frame_store("d0", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store(ctx, "d0", ctx->vreg_off[inst->dst.id]);
     } else {
-      emit_frame_store("x0", ctx->vreg_off[inst->dst.id]);
+      emit_frame_store(ctx, "x0", ctx->vreg_off[inst->dst.id]);
     }
   }
 }
@@ -959,9 +965,9 @@ static void gen_inst_call(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void gen_inst_br_cond(gen_ctx_t *ctx, ir_inst_t *inst) {
       char b1[8];
       const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
-  cg_emitf("  cbnz %s, .L%.*s_%d\n", s1,
+  arm64_cg_emitf(ctx, "  cbnz %s, .L%.*s_%d\n", s1,
             ctx->f->name_len, ctx->f->name, inst->label_id);
-  cg_emitf("  b .L%.*s_%d\n",
+  arm64_cg_emitf(ctx, "  b .L%.*s_%d\n",
             ctx->f->name_len, ctx->f->name, inst->else_label_id);
 }
 
@@ -971,31 +977,31 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
         const char *suf = (inst->ret_complex_half == 8) ? "d" : "s";
         char buf[8];
         const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
-        if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
-        cg_emitf("  ldr %s0, [x9]\n", suf);
-        cg_emitf("  ldr %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
+        if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
+        arm64_cg_emitf(ctx, "  ldr %s0, [x9]\n", suf);
+        arm64_cg_emitf(ctx, "  ldr %s1, [x9, #%d]\n", suf, (int)inst->ret_complex_half);
       } else if (inst->src1.id != IR_VAL_NONE) {
         if (inst->src1.type == IR_TY_F32) {
           char buf[8];
           const char *src = ensure_val_in(ctx, inst->src1, "s0", buf, sizeof(buf));
-          if (strcmp(src, "s0") != 0) cg_emitf("  fmov s0, %s\n", src);
+          if (strcmp(src, "s0") != 0) arm64_cg_emitf(ctx, "  fmov s0, %s\n", src);
         } else if (inst->src1.type == IR_TY_F64) {
           char buf[8];
           const char *src = ensure_val_in(ctx, inst->src1, "d0", buf, sizeof(buf));
-          if (strcmp(src, "d0") != 0) cg_emitf("  fmov d0, %s\n", src);
+          if (strcmp(src, "d0") != 0) arm64_cg_emitf(ctx, "  fmov d0, %s\n", src);
         } else {
           char buf[8];
           const char *src = ensure_val_in(ctx, inst->src1, "x0", buf, sizeof(buf));
-          if (strcmp(src, "x0") != 0) cg_emitf("  mov x0, %s\n", src);
+          if (strcmp(src, "x0") != 0) arm64_cg_emitf(ctx, "  mov x0, %s\n", src);
         }
       } else {
-        cg_emitf("  mov x0, #0\n");
+        arm64_cg_emitf(ctx, "  mov x0, #0\n");
       }
       emit_restore_regs(ctx);
-      cg_emitf("  mov sp, x29\n");
-      cg_emitf("  ldp x29, x30, [sp]\n");
-      emit_addsub_imm("add", "sp", "sp", ctx->total_size);
-  cg_emitf("  ret\n");
+      arm64_cg_emitf(ctx, "  mov sp, x29\n");
+      arm64_cg_emitf(ctx, "  ldp x29, x30, [sp]\n");
+      emit_addsub_imm(ctx, "add", "sp", "sp", ctx->total_size);
+  arm64_cg_emitf(ctx, "  ret\n");
 }
 
 /* アトミック演算の結果 (reg11 = w11/x11) を dst へ書く。dst が phys reg なら
@@ -1003,11 +1009,11 @@ static void gen_inst_ret(gen_ctx_t *ctx, ir_inst_t *inst) {
 static void atomic_store_result(gen_ctx_t *ctx, ir_val_t dst, const char *RL) {
   if (dst.id < 0 || dst.id >= ctx->f->next_vreg_id) return;
   if (ctx->f->vreg_phys_reg && ctx->f->vreg_phys_reg[dst.id] >= 0) {
-    cg_emitf("  mov %s%d, %s11\n", RL, ctx->f->vreg_phys_reg[dst.id], RL);
+    arm64_cg_emitf(ctx, "  mov %s%d, %s11\n", RL, ctx->f->vreg_phys_reg[dst.id], RL);
   } else {
     char reg[8];
     snprintf(reg, sizeof(reg), "%s11", RL);
-    emit_frame_store(reg, ctx->vreg_off[dst.id]);
+    emit_frame_store(ctx, reg, ctx->vreg_off[dst.id]);
   }
 }
 
@@ -1023,19 +1029,19 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
   char buf[8];
 
   if (inst->atomic_kind == IR_ATOMIC_FENCE) {
-    cg_emitf("  dmb ish\n");
+    arm64_cg_emitf(ctx, "  dmb ish\n");
     return;
   }
 
   /* ptr を x9 に。 */
   const char *p = ensure_val_in(ctx, inst->src1, "x9", buf, sizeof(buf));
-  if (strcmp(p, "x9") != 0) cg_emitf("  mov x9, %s\n", p);
+  if (strcmp(p, "x9") != 0) arm64_cg_emitf(ctx, "  mov x9, %s\n", p);
 
   if (inst->atomic_kind == IR_ATOMIC_LOAD) {
-    cg_emitf("  ldar%s %s11, [x9]\n", wsfx, RL);
+    arm64_cg_emitf(ctx, "  ldar%s %s11, [x9]\n", wsfx, RL);
     /* 符号付き 1/2 バイトは sign-extend (ldar は zero-extend)。 */
     if (!x64 && w < 4 && !inst->is_unsigned) {
-      cg_emitf("  sxt%s w11, w11\n", wsfx);
+      arm64_cg_emitf(ctx, "  sxt%s w11, w11\n", wsfx);
     }
     atomic_store_result(ctx, inst->dst, RL);
     return;
@@ -1043,27 +1049,27 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
 
   if (inst->atomic_kind == IR_ATOMIC_STORE) {
     const char *v = ensure_val_in(ctx, inst->src2, "x10", buf, sizeof(buf));
-    if (strcmp(v, "x10") != 0) cg_emitf("  mov x10, %s\n", v);
-    cg_emitf("  stlr%s %s10, [x9]\n", wsfx, RL);
+    if (strcmp(v, "x10") != 0) arm64_cg_emitf(ctx, "  mov x10, %s\n", v);
+    arm64_cg_emitf(ctx, "  stlr%s %s10, [x9]\n", wsfx, RL);
     return;
   }
 
   if (inst->atomic_kind == IR_ATOMIC_RMW) {
     const char *v = ensure_val_in(ctx, inst->src2, "x10", buf, sizeof(buf));
-    if (strcmp(v, "x10") != 0) cg_emitf("  mov x10, %s\n", v);
+    if (strcmp(v, "x10") != 0) arm64_cg_emitf(ctx, "  mov x10, %s\n", v);
     const char *op = NULL;
     switch (inst->atomic_rmw_op) {
       case IR_ARMW_ADD: op = "ldaddal"; break;
-      case IR_ARMW_SUB: op = "ldaddal"; cg_emitf("  neg %s10, %s10\n", RL, RL); break;
+      case IR_ARMW_SUB: op = "ldaddal"; arm64_cg_emitf(ctx, "  neg %s10, %s10\n", RL, RL); break;
       case IR_ARMW_OR:  op = "ldsetal"; break;
       case IR_ARMW_XOR: op = "ldeoral"; break;
-      case IR_ARMW_AND: op = "ldclral"; cg_emitf("  mvn %s10, %s10\n", RL, RL); break;
+      case IR_ARMW_AND: op = "ldclral"; arm64_cg_emitf(ctx, "  mvn %s10, %s10\n", RL, RL); break;
       case IR_ARMW_XCHG: op = "swpal"; break;
       default: op = "ldaddal"; break;
     }
-    cg_emitf("  %s%s %s10, %s11, [x9]\n", op, wsfx, RL, RL);  /* old → reg11 */
+    arm64_cg_emitf(ctx, "  %s%s %s10, %s11, [x9]\n", op, wsfx, RL, RL);  /* old → reg11 */
     if (!x64 && w < 4 && !inst->is_unsigned) {
-      cg_emitf("  sxt%s w11, w11\n", wsfx);
+      arm64_cg_emitf(ctx, "  sxt%s w11, w11\n", wsfx);
     }
     atomic_store_result(ctx, inst->dst, RL);
     return;
@@ -1073,15 +1079,15 @@ static void gen_inst_atomic(gen_ctx_t *ctx, ir_inst_t *inst) {
     /* src2 = expected の PTR、src3 = desired。CASAL: Ws=expected(in)/old(out)。 */
     char bep[8], bde[8];
     const char *ep = ensure_val_in(ctx, inst->src2, "x10", bep, sizeof(bep));
-    if (strcmp(ep, "x10") != 0) cg_emitf("  mov x10, %s\n", ep);
-    cg_emitf("  ldr%s %s12, [x10]\n", wsfx, RL);  /* expected 値 */
+    if (strcmp(ep, "x10") != 0) arm64_cg_emitf(ctx, "  mov x10, %s\n", ep);
+    arm64_cg_emitf(ctx, "  ldr%s %s12, [x10]\n", wsfx, RL);  /* expected 値 */
     const char *de = ensure_val_in(ctx, inst->src3, "x13", bde, sizeof(bde));
-    if (strcmp(de, "x13") != 0) cg_emitf("  mov x13, %s\n", de);
-    cg_emitf("  mov %s14, %s12\n", RL, RL);        /* Ws = expected */
-    cg_emitf("  casal%s %s14, %s13, [x9]\n", wsfx, RL, RL);  /* w14 = old */
-    cg_emitf("  cmp %s14, %s12\n", RL, RL);
-    cg_emitf("  cset w11, eq\n");                  /* 成否 */
-    cg_emitf("  str%s %s14, [x10]\n", wsfx, RL);   /* *expected = old (成功時は不変) */
+    if (strcmp(de, "x13") != 0) arm64_cg_emitf(ctx, "  mov x13, %s\n", de);
+    arm64_cg_emitf(ctx, "  mov %s14, %s12\n", RL, RL);        /* Ws = expected */
+    arm64_cg_emitf(ctx, "  casal%s %s14, %s13, [x9]\n", wsfx, RL, RL);  /* w14 = old */
+    arm64_cg_emitf(ctx, "  cmp %s14, %s12\n", RL, RL);
+    arm64_cg_emitf(ctx, "  cset w11, eq\n");                  /* 成否 */
+    arm64_cg_emitf(ctx, "  str%s %s14, [x10]\n", wsfx, RL);   /* *expected = old (成功時は不変) */
     atomic_store_result(ctx, inst->dst, "w");
     return;
   }
@@ -1097,27 +1103,30 @@ static void gen_inst_align_ptr(gen_ctx_t *ctx, ir_inst_t *inst) {
   const char *s1 = ensure_val_in(ctx, inst->src1, "x9", b1, sizeof(b1));
   int spill = 0;
   const char *d = acquire_dst(ctx, inst->dst, "x9", bd, sizeof(bd), &spill);
-  emit_addsub_imm("add", d, s1, a - 1);
-  cg_emitf("  and %s, %s, #%d\n", d, d, -a);
+  emit_addsub_imm(ctx, "add", d, s1, a - 1);
+  arm64_cg_emitf(ctx, "  and %s, %s, #%d\n", d, d, -a);
   release_dst(ctx, inst->dst, d, spill);
 }
 
-static void gen_func(ir_func_t *f) {
+static void gen_func(
+    ag_codegen_emit_context_t *emit_context, ir_func_t *f) {
   /* レジスタ割り付け */
   ir_regalloc_function(f);
 
   gen_ctx_t ctx = {0};
+  ctx.emit_context = emit_context;
   ctx.f = f;
   layout_frame(&ctx);
 
   /* static 関数 (内部リンケージ) は .global を出さない (C11 6.2.2p3)。
    * 出すと別 TU の同名 static とリンク衝突する (duplicate symbol)。 */
-  if (!f->is_static) cg_emitf(".global _%.*s\n", f->name_len, f->name);
-  cg_emitf(".align 2\n");
-  cg_emitf("_%.*s:\n", f->name_len, f->name);
-  emit_addsub_imm("sub", "sp", "sp", ctx.total_size);
-  cg_emitf("  stp x29, x30, [sp]\n");
-  cg_emitf("  mov x29, sp\n");
+  if (!f->is_static)
+    arm64_cg_emitf(&ctx, ".global _%.*s\n", f->name_len, f->name);
+  arm64_cg_emitf(&ctx, ".align 2\n");
+  arm64_cg_emitf(&ctx, "_%.*s:\n", f->name_len, f->name);
+  emit_addsub_imm(&ctx, "sub", "sp", "sp", ctx.total_size);
+  arm64_cg_emitf(&ctx, "  stp x29, x30, [sp]\n");
+  arm64_cg_emitf(&ctx, "  mov x29, sp\n");
   emit_save_regs(&ctx);
 
   for (ir_block_t *b = f->entry; b; b = b->next) {
@@ -1130,13 +1139,15 @@ static void gen_func(ir_func_t *f) {
   free(ctx.alloca_region_off);
 }
 
-void gen_ir_module(ir_module_t *m) {
+void gen_ir_module_in(
+    ag_codegen_emit_context_t *emit_context, ir_module_t *m) {
+  if (!emit_context) abort();
   if (!m) return;
   /* Phase 6: 最適化パス。const fold で即値伝播と算術畳み込みを行い、
    * DCE で使われない命令 (LOAD_IMM だけ残ったものなど) を IR_NOP に置換。 */
   ir_opt_const_fold(m);
   ir_opt_dce(m);
   for (ir_func_t *f = m->funcs; f; f = f->next) {
-    gen_func(f);
+    gen_func(emit_context, f);
   }
 }

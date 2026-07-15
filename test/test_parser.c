@@ -16561,6 +16561,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.arena_context);
   ASSERT_TRUE(ag_compilation_session_diagnostic_context(&host) ==
               host.diagnostic_context);
+  ASSERT_TRUE(ps_ctx_diagnostics(host.semantic_context) ==
+              host.diagnostic_context);
+  ASSERT_TRUE(ps_parser_runtime_diagnostics(host.parser_runtime_context) ==
+              host.diagnostic_context);
+  ASSERT_TRUE(pp_context_diagnostics(host.preprocessor_context) ==
+              host.diagnostic_context);
+  ASSERT_TRUE(ag_compilation_session_codegen_emit_context(&host) ==
+              host.codegen_emit_context);
   ASSERT_TRUE(ag_compilation_session_parser_runtime_context(&host) ==
               host.parser_runtime_context);
   ASSERT_TRUE(ag_compilation_session_lowering_context(&host) ==
@@ -16588,6 +16596,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               wasm.local_registry);
   ASSERT_TRUE(ag_compilation_session_preprocessor_context(&wasm) ==
               wasm.preprocessor_context);
+  ASSERT_TRUE(ps_ctx_diagnostics(wasm.semantic_context) ==
+              wasm.diagnostic_context);
+  ASSERT_TRUE(ps_parser_runtime_diagnostics(wasm.parser_runtime_context) ==
+              wasm.diagnostic_context);
+  ASSERT_TRUE(pp_context_diagnostics(wasm.preprocessor_context) ==
+              wasm.diagnostic_context);
+  ASSERT_TRUE(ag_compilation_session_codegen_emit_context(&wasm) ==
+              wasm.codegen_emit_context);
   ASSERT_TRUE(ps_ctx_arena(wasm.semantic_context) == wasm.arena_context);
   ASSERT_TRUE(ps_parser_runtime_arena(wasm.parser_runtime_context) ==
               wasm.arena_context);
@@ -16610,6 +16626,19 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.diagnostic_context != NULL);
   ASSERT_TRUE(wasm.diagnostic_context != NULL);
   ASSERT_TRUE(host.diagnostic_context != wasm.diagnostic_context);
+  diag_context_set_locale(host.diagnostic_context, "en");
+  diag_context_set_locale(wasm.diagnostic_context, "ja");
+  ASSERT_TRUE(strcmp(
+      diag_context_get_locale(host.diagnostic_context), "en") == 0);
+  ASSERT_TRUE(strcmp(
+      diag_context_get_locale(wasm.diagnostic_context), "ja") == 0);
+  diag_report_internalf_in(
+      host.diagnostic_context, DIAG_ERR_INTERNAL_USAGE,
+      "%s", "host diagnostic isolation");
+  ASSERT_TRUE(diag_has_error_records_in(host.diagnostic_context));
+  ASSERT_TRUE(!diag_has_error_records_in(wasm.diagnostic_context));
+  diag_reset_records_in(host.diagnostic_context);
+  ASSERT_TRUE(!diag_has_error_records_in(host.diagnostic_context));
   ASSERT_TRUE(host.token_allocator_context != NULL);
   ASSERT_TRUE(wasm.token_allocator_context != NULL);
   ASSERT_TRUE(host.token_allocator_context != wasm.token_allocator_context);
@@ -16651,7 +16680,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
-  ag_codegen_emit_context_t *previous_codegen = cg_context_active();
   ag_compilation_session_t *previous_session = test_suite_session;
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
@@ -16664,9 +16692,17 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
-  gen_set_output_callback(test_codegen_capture, &host_output);
-  cg_emitf("host-a");
+  gen_set_output_callback_in(
+      ag_compilation_session_codegen_emit_context(&host),
+      test_codegen_capture, &host_output);
+  gen_set_output_callback_in(
+      ag_compilation_session_codegen_emit_context(&wasm),
+      test_codegen_capture, &wasm_output);
+  cg_emitf_in(
+      ag_compilation_session_codegen_emit_context(&host), "host-a");
+  cg_emitf_in(
+      ag_compilation_session_codegen_emit_context(&wasm),
+      "wasm-explicit-");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, host_backend.activate_count);
   uint16_t host_filename = tk_filename_intern_ctx(
@@ -16702,9 +16738,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
-  gen_set_output_callback(test_codegen_capture, &wasm_output);
-  cg_emitf("wasm");
+  cg_emitf_in(
+      ag_compilation_session_codegen_emit_context(&wasm), "wasm");
+  cg_emitf_in(
+      ag_compilation_session_codegen_emit_context(&host),
+      "-host-explicit");
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(1, wasm_backend.activate_count);
   uint16_t wasm_filename = tk_filename_intern_ctx(
@@ -16727,7 +16765,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(0, host_backend.deactivate_count);
   ASSERT_TRUE(!ag_compilation_session_dispose(&host));
@@ -16749,8 +16786,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
-  cg_emitf("-host-b");
+  cg_emitf_in(
+      ag_compilation_session_codegen_emit_context(&host), "-host-b");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
   ASSERT_EQ(1, wasm_backend.deactivate_count);
   ASSERT_TRUE(strcmp(tk_filename_lookup_ctx(
@@ -16768,9 +16805,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(cg_context_active() == previous_codegen);
-  ASSERT_TRUE(strcmp(host_output.bytes, "host-a-host-b") == 0);
-  ASSERT_TRUE(strcmp(wasm_output.bytes, "wasm") == 0);
+  ASSERT_TRUE(strcmp(
+      host_output.bytes, "host-a-host-explicit-host-b") == 0);
+  ASSERT_TRUE(strcmp(wasm_output.bytes, "wasm-explicit-wasm") == 0);
   ASSERT_TRUE(test_active_backend_context == NULL);
   ASSERT_EQ(1, host_backend.deactivate_count);
 

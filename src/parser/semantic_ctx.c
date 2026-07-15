@@ -163,6 +163,7 @@ struct psx_function_symbol_t {
 
 struct psx_semantic_context_t {
   arena_context_t *arena_context;
+  ag_diagnostic_context_t *diagnostic_context;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -233,6 +234,17 @@ void ps_ctx_destroy(psx_semantic_context_t *context) {
 arena_context_t *ps_ctx_arena(
     const psx_semantic_context_t *context) {
   return context ? context->arena_context : NULL;
+}
+
+void ps_ctx_bind_diagnostic_context(
+    psx_semantic_context_t *context,
+    ag_diagnostic_context_t *diagnostic_context) {
+  if (context) context->diagnostic_context = diagnostic_context;
+}
+
+ag_diagnostic_context_t *ps_ctx_diagnostics(
+    const psx_semantic_context_t *context) {
+  return context ? context->diagnostic_context : NULL;
 }
 
 static psx_type_t *ctx_type_clone_persistent_in(
