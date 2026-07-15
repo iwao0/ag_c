@@ -4252,6 +4252,12 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
     !/\bag_target_info_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_scalar_alignment\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_equal\s*\(/.test(targetInfoHeaderSource) ||
+    !/target\s*&&\s*target->pointer_size\s*>\s*0/.test(
+      targetInfoImplementationSource,
+    ) ||
+    /target->pointer_size\s*==\s*4\s*\?\s*4\s*:\s*8/.test(
+      targetInfoImplementationSource,
+    ) ||
     /\bag_target_(?:pointer_size|set_pointer_size)\s*\(/.test(
       targetInfoHeaderSource + targetInfoImplementationSource,
     ) ||

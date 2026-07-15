@@ -30,7 +30,9 @@ ag_target_info_t ag_target_info_wasm32(void) {
 }
 
 int ag_target_info_pointer_size(const ag_target_info_t *target) {
-  return target && target->pointer_size == 4 ? 4 : 8;
+  return target && target->pointer_size > 0
+             ? target->pointer_size
+             : standard_target.pointer_size;
 }
 
 int ag_target_info_pointer_alignment(const ag_target_info_t *target) {

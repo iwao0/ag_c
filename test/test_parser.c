@@ -4144,6 +4144,17 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(4, ps_type_alignof_for_target(pointer, &wasm));
   ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
   ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
+  ag_target_info_t wide_pointer_target = host;
+  wide_pointer_target.pointer_size = 16;
+  wide_pointer_target.pointer_alignment = 16;
+  ASSERT_EQ(16, ag_target_info_pointer_size(&wide_pointer_target));
+  ASSERT_EQ(16, ps_type_sizeof_for_target(
+                    pointer, &wide_pointer_target));
+  ASSERT_EQ(16, ps_type_alignof_for_target(
+                    pointer, &wide_pointer_target));
+  ASSERT_EQ(48, ps_type_sizeof_for_target(
+                    pointer_array, &wide_pointer_target));
+  ASSERT_TRUE(!ag_target_info_equal(&host, &wide_pointer_target));
   ASSERT_EQ(4, ps_type_sizeof_for_target(stale_integer, &host));
   ASSERT_TRUE(ps_type_shape_matches(integer, stale_integer));
   ag_target_info_t narrow_int_target = host;
@@ -19169,14 +19180,27 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   printf("test_compilation_session_owns_target_and_tokenizer...\n");
   ag_target_info_t host_target = ag_target_info_host();
   ag_target_info_t wasm_target = ag_target_info_wasm32();
+  ag_target_info_t wide_pointer_target = host_target;
+  wide_pointer_target.pointer_size = 16;
+  wide_pointer_target.pointer_alignment = 16;
   ag_compilation_session_t host;
   ag_compilation_session_t wasm;
+  ag_compilation_session_t wide_pointer;
   test_backend_context_t host_backend = {0};
   test_backend_context_t wasm_backend = {0};
   test_codegen_output_t host_output = {0};
   test_codegen_output_t wasm_output = {0};
   ASSERT_TRUE(ag_compilation_session_init(&host, &host_target));
   ASSERT_TRUE(ag_compilation_session_init(&wasm, &wasm_target));
+  ASSERT_TRUE(ag_compilation_session_init(
+      &wide_pointer, &wide_pointer_target));
+  ASSERT_EQ(16, ag_target_info_pointer_size(
+                    &wide_pointer.target));
+  ASSERT_EQ(16, ag_target_info_pointer_size(
+                    ps_ctx_target_info(wide_pointer.semantic_context)));
+  ASSERT_EQ(16, ag_target_info_pointer_size(
+                    ps_lowering_target(wide_pointer.lowering_context)));
+  ASSERT_TRUE(ag_compilation_session_dispose(&wide_pointer));
   ASSERT_TRUE(ag_compilation_session_set_backend_context(
       &host, &host_backend, test_backend_activate,
       test_backend_deactivate, test_backend_destroy));
