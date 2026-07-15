@@ -105,7 +105,7 @@ static void resolve_aggregate_bitfield_placement(
   resolution->storage_size = storage_size;
   resolution->bit_is_signed =
       type->kind != PSX_TYPE_BOOL && !ps_type_is_unsigned(type) &&
-      type->scalar_kind != TK_ENUM;
+      type->integer_kind != PSX_INTEGER_KIND_ENUM;
   int storage_bits = storage_size * 8;
   if (request->bit_width > storage_bits) {
     resolution->status = PSX_AGGREGATE_MEMBER_BIT_WIDTH_EXCEEDS_STORAGE;

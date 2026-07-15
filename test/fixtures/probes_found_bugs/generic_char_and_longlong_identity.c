@@ -1,7 +1,7 @@
 // _Generic は char/signed char/unsigned char、long/long long を別型として扱う
 // (C11 6.2.5/6.7.2.1)。しかし変数の制御式ではサイズ (1 や 8) しか見ておらず、
 // plain char が signed char に、long long が long に誤マッチしていた。型識別フラグ
-// (is_plain_char / is_long_long) を宣言→lvar→参照ノード→制御式型推論へ伝播して区別する。
+// (is_plain_char / integer_kind) を宣言→lvar→参照ノード→制御式型推論へ伝播して区別する。
 #include <assert.h>
 
 int main(void) {

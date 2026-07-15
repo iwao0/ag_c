@@ -3437,6 +3437,11 @@ if (!canonicalTypeStruct ||
     /\bis_(?:const_qualified|volatile_qualified|atomic)\b/.test(
       canonicalTypeStruct[1],
     ) ||
+    !/\bpsx_integer_kind_t\s+integer_kind\s*;/.test(
+      canonicalTypeStruct[1],
+    ) ||
+    /\btoken_kind_t\s+scalar_kind\s*;/.test(canonicalTypeStruct[1]) ||
+    /\bis_long_long\b/.test(canonicalTypeStruct[1]) ||
     !/\btk_float_kind_t\s+fp_kind\s*;/.test(canonicalTypeStruct[1]) ||
     /\bis_long_double\b/.test(canonicalTypeStruct[1]) ||
     !recordDeclStruct ||
@@ -3727,7 +3732,7 @@ if (!targetCanonicalSignatureSection ||
 const scalarIdentityNormalizer = canonicalTypeSource.match(
   /void\s+ps_type_normalize_scalar_identity\s*\([^]*?\n\}/,
 );
-if (!/static\s+token_kind_t\s+canonical_integer_scalar_kind\s*\(\s*token_kind_t\s+scalar_kind\s*\)/.test(
+if (!/static\s+psx_integer_kind_t\s+integer_kind_from_token\s*\(\s*token_kind_t\s+token_kind\s*\)/.test(
       canonicalTypeSource,
     ) ||
     !scalarIdentityNormalizer ||

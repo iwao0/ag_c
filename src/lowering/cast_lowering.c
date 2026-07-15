@@ -49,9 +49,25 @@ typedef struct {
   int is_pointer;
   int elem_size;
   int is_unsigned;
-  int is_long_long;
   int is_plain_char;
 } cast_target_view_t;
+
+static token_kind_t integer_token_kind(const psx_type_t *type) {
+  if (!type) return TK_EOF;
+  switch (type->integer_kind) {
+    case PSX_INTEGER_KIND_BOOL: return TK_BOOL;
+    case PSX_INTEGER_KIND_CHAR: return TK_CHAR;
+    case PSX_INTEGER_KIND_SHORT: return TK_SHORT;
+    case PSX_INTEGER_KIND_INT: return TK_INT;
+    case PSX_INTEGER_KIND_LONG:
+    case PSX_INTEGER_KIND_LONG_LONG:
+      return TK_LONG;
+    case PSX_INTEGER_KIND_ENUM: return TK_ENUM;
+    case PSX_INTEGER_KIND_NONE:
+    default:
+      return TK_EOF;
+  }
+}
 
 static const psx_type_t *target_value_type(const psx_type_t *type) {
   const psx_type_t *value = type;
@@ -68,12 +84,11 @@ static cast_target_view_t target_view(
   cast_target_view_t view = {0};
   view.target = target;
   view.value = target_value_type(target);
-  view.kind = view.value ? view.value->scalar_kind : TK_EOF;
+  view.kind = integer_token_kind(view.value);
   view.tag_kind = view.value ? view.value->tag_kind : TK_EOF;
   view.is_pointer = ps_type_is_pointer(target);
   view.elem_size = ps_lowering_type_size(lowering_context, view.value);
   view.is_unsigned = view.value ? ps_type_is_unsigned(view.value) : 0;
-  view.is_long_long = view.value ? view.value->is_long_long : 0;
   view.is_plain_char = view.value ? view.value->is_plain_char : 0;
   if (view.value) {
     if (view.value->kind == PSX_TYPE_VOID) view.kind = TK_VOID;
@@ -415,7 +430,7 @@ node_t *lower_implicit_value_conversion(
       ps_type_is_tag_aggregate(target_type))
     return operand;
   if (target_type->kind == PSX_TYPE_INTEGER &&
-      target_type->scalar_kind == TK_EOF &&
+      target_type->integer_kind == PSX_INTEGER_KIND_NONE &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE) {
     return ps_node_new_fp_to_int_cast_in(
         ps_lowering_arena(lowering_context), operand, target_type);

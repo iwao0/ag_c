@@ -49,10 +49,8 @@ static psx_type_t *resolve_builtin_base_type(
     return ps_type_new_float_in(ps_ctx_arena(semantic_context), fp_kind);
   }
   if (kind == TK_VOID) {
-    psx_type_t *type = ps_type_new_in(
+    return ps_type_new_in(
         ps_ctx_arena(semantic_context), PSX_TYPE_VOID);
-    type->scalar_kind = TK_VOID;
-    return type;
   }
   return ps_type_new_integer_in(
       ps_ctx_arena(semantic_context), kind, specifier->is_unsigned);
@@ -70,7 +68,8 @@ static void apply_decl_specifier_type_properties(
           specifier->is_volatile_qualified);
   if (specifier->is_atomic)
     ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
-  if (specifier->is_long_long) type->is_long_long = 1;
+  if (specifier->is_long_long)
+    type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;
   if (specifier->is_long_double) {

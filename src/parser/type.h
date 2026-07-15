@@ -22,6 +22,17 @@ typedef enum {
 } psx_type_kind_t;
 
 typedef enum {
+  PSX_INTEGER_KIND_NONE = 0,
+  PSX_INTEGER_KIND_BOOL,
+  PSX_INTEGER_KIND_CHAR,
+  PSX_INTEGER_KIND_SHORT,
+  PSX_INTEGER_KIND_INT,
+  PSX_INTEGER_KIND_LONG,
+  PSX_INTEGER_KIND_LONG_LONG,
+  PSX_INTEGER_KIND_ENUM,
+} psx_integer_kind_t;
+
+typedef enum {
   PSX_TYPE_BINARY_COMMA = 0,
   PSX_TYPE_BINARY_ADD,
   PSX_TYPE_BINARY_SUB,
@@ -68,7 +79,7 @@ struct psx_type_t {
 
   int array_len;
 
-  token_kind_t scalar_kind;
+  psx_integer_kind_t integer_kind;
   tk_float_kind_t fp_kind;
   token_kind_t tag_kind;
   char *tag_name;
@@ -78,7 +89,6 @@ struct psx_type_t {
 
   psx_type_qualifiers_t qualifiers;
   unsigned int is_unsigned : 1;
-  unsigned int is_long_long : 1;
   unsigned int is_plain_char : 1;
   unsigned int is_vla : 1;
 

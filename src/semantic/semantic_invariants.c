@@ -80,7 +80,7 @@ static int fail(psx_semantic_invariant_failure_t *failure,
 
 static int is_implicit_function_result_type(const psx_type_t *type) {
   return type && type->kind == PSX_TYPE_INTEGER &&
-         type->scalar_kind == TK_INT &&
+         type->integer_kind == PSX_INTEGER_KIND_INT &&
          !type->is_unsigned;
 }
 

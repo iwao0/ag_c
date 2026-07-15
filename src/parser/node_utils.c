@@ -2244,7 +2244,7 @@ static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag
     case NODE_SCALAR_UNSIGNED:
       return ps_type_is_unsigned(type);
     case NODE_SCALAR_LONG_LONG:
-      return type->is_long_long ? 1 : 0;
+      return type->integer_kind == PSX_INTEGER_KIND_LONG_LONG ? 1 : 0;
     case NODE_SCALAR_PLAIN_CHAR:
       return type->is_plain_char ? 1 : 0;
     case NODE_SCALAR_LONG_DOUBLE:
@@ -2436,8 +2436,8 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
       arena_context, execution_size >= 8 ? TK_LONG : TK_INT,
       is_unsigned ? 1 : 0);
   if (operand_type && operand_type->kind == PSX_TYPE_INTEGER &&
-      operand_type->is_long_long)
-    execution_type->is_long_long = 1;
+      operand_type->integer_kind == PSX_INTEGER_KIND_LONG_LONG)
+    execution_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   node_t *shl = psx_node_new_raw_binary_in(
       arena_context, ND_SHL, operand,
       ps_node_new_num_in(arena_context, left_shift));

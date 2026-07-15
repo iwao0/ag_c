@@ -10,7 +10,7 @@ typedef struct arena_context_t arena_context_t;
 psx_type_t *ps_type_new_in(
     arena_context_t *arena_context, psx_type_kind_t kind);
 psx_type_t *ps_type_new_integer_in(
-    arena_context_t *arena_context, token_kind_t scalar_kind,
+    arena_context_t *arena_context, token_kind_t scalar_token_kind,
     int is_unsigned);
 psx_type_t *ps_type_new_enum_in(
     arena_context_t *arena_context, char *tag_name, int tag_len,

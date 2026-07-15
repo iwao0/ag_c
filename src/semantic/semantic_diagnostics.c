@@ -321,7 +321,7 @@ static int is_plain_int_literal(node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   node_num_t *number = (node_num_t *)node;
   return type && type->kind == PSX_TYPE_INTEGER &&
-         type->scalar_kind == TK_INT && !type->is_long_long &&
+         type->integer_kind == PSX_INTEGER_KIND_INT &&
          number->val >= -2147483648LL && number->val <= 2147483647LL;
 }
 

@@ -1043,7 +1043,8 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
         ctx->arena_context,
         is_long ? TK_LONG : (is_unsigned ? TK_UNSIGNED : TK_INT),
         is_unsigned);
-    literal_type->is_long_long = is_long_long ? 1 : 0;
+    if (is_long_long)
+      literal_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
     ps_node_bind_type((node_t *)node, literal_type);
   } else {
     tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;

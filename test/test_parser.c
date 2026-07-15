@@ -2155,17 +2155,19 @@ static void test_expr_number() {
 
   node_t *long_node = parse_expr_input("0L");
   ASSERT_EQ(ND_NUM, long_node->kind);
-  ASSERT_EQ(TK_LONG, ps_node_get_type(long_node)->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, ps_node_get_type(long_node)->integer_kind);
   ASSERT_EQ(8, ps_node_type_size(long_node));
 
   node_t *unsigned_long_node = parse_expr_input("0UL");
   ASSERT_EQ(ND_NUM, unsigned_long_node->kind);
-  ASSERT_EQ(TK_LONG, ps_node_get_type(unsigned_long_node)->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG,
+            ps_node_get_type(unsigned_long_node)->integer_kind);
   ASSERT_TRUE(ps_node_is_unsigned_type(unsigned_long_node));
 
   node_t *long_long_node = parse_expr_input("0LL");
   ASSERT_EQ(ND_NUM, long_long_node->kind);
-  ASSERT_EQ(TK_LONG, ps_node_get_type(long_long_node)->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
+            ps_node_get_type(long_long_node)->integer_kind);
   ASSERT_TRUE(ps_node_is_long_long_type(long_long_node));
 }
 
@@ -2509,7 +2511,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
           test_semantic_context(), ND_UNARY_NEGATE,
           stale_wide_char_value);
   ASSERT_TRUE(promoted_stale_char != NULL);
-  ASSERT_EQ(TK_INT, promoted_stale_char->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, promoted_stale_char->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(promoted_stale_char));
 
   reset_test_locals();
@@ -2934,7 +2936,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(implicit_call->callee_type == NULL);
   ASSERT_TRUE(implicit->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, implicit->type->kind);
-  ASSERT_EQ(TK_INT, implicit->type->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT, implicit->type->integer_kind);
   ASSERT_EQ(4, ps_type_sizeof(implicit->type));
 }
 
@@ -3724,7 +3726,7 @@ static void test_target_type_layout_boundary() {
           test_arena_context(), &host,
           stale_signed_long, stale_unsigned_int,
           TK_FLOAT_KIND_NONE, 0);
-  ASSERT_EQ(TK_LONG, host_conversion->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_conversion->integer_kind);
   ASSERT_EQ(8, ps_type_sizeof_for_target(host_conversion, &host));
   ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
 
@@ -3736,7 +3738,7 @@ static void test_target_type_layout_boundary() {
           test_arena_context(), &equal_width_integer_target,
           stale_signed_long, stale_unsigned_int,
           TK_FLOAT_KIND_NONE, 0);
-  ASSERT_EQ(TK_LONG, equal_width_conversion->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG, equal_width_conversion->integer_kind);
   ASSERT_EQ(4, ps_type_sizeof_for_target(
                    equal_width_conversion, &equal_width_integer_target));
   ASSERT_TRUE(ps_type_is_unsigned(equal_width_conversion));
@@ -5575,7 +5577,7 @@ static void test_aggregate_member_resolution_boundary() {
       TK_ENUM, (char *)"E", 1);
   ASSERT_TRUE(canonical_enum != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, canonical_enum->kind);
-  ASSERT_EQ(TK_ENUM, canonical_enum->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_ENUM, canonical_enum->integer_kind);
   ASSERT_EQ(TK_ENUM, canonical_enum->tag_kind);
   ASSERT_TRUE(ps_type_shape_matches(
       canonical_enum, ps_type_clone(canonical_enum)));
@@ -5824,7 +5826,7 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_TYPE_BOOL, bool_base->kind);
   ASSERT_TRUE(ps_type_is_unsigned(bool_base));
   ASSERT_TRUE(ps_type_has_qualifier(bool_base, PSX_TYPE_QUALIFIER_ATOMIC));
-  ASSERT_EQ(TK_BOOL, bool_base->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_BOOL, bool_base->integer_kind);
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_declarator_shape_t transaction_shape;
@@ -7934,7 +7936,7 @@ static void test_expr_sizeof() {
   ASSERT_EQ(PSX_TYPE_INTEGER, uac_long_long_ty->kind);
   ASSERT_EQ(8, ps_type_sizeof(uac_long_long_ty));
   ASSERT_TRUE(ps_type_is_unsigned(uac_long_long_ty));
-  ASSERT_TRUE(uac_long_long_ty->is_long_long);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG, uac_long_long_ty->integer_kind);
   ASSERT_EQ(8, ps_node_type_size(uac_long_long));
   ASSERT_TRUE(ps_node_integer_value_is_unsigned(uac_long_long));
   ASSERT_TRUE(ps_node_usual_arith_is_unsigned(uac_long_long));
@@ -8603,7 +8605,7 @@ static void test_expr_string() {
   ASSERT_EQ(PSX_TYPE_POINTER, node->type->kind);
   ASSERT_TRUE(node->type->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, node->type->base->kind);
-  ASSERT_EQ(TK_CHAR, node->type->base->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_CHAR, node->type->base->integer_kind);
   node_string_t *string = as_string(node);
   ASSERT_EQ(5, string->literal_length);
   ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
@@ -9277,7 +9279,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(param_ch != NULL && param_ch->decl_type != NULL);
   ASSERT_TRUE(param_ai != NULL && param_ai->decl_type != NULL);
   ASSERT_TRUE(ps_type_has_qualifier(param_ll->decl_type, PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(param_ll->decl_type->is_long_long);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG, param_ll->decl_type->integer_kind);
   ASSERT_TRUE(ps_type_has_qualifier(param_ch->decl_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(param_ch->decl_type->is_plain_char);
   ASSERT_TRUE(ps_type_has_qualifier(param_ai->decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
@@ -9745,7 +9747,8 @@ static void test_type_metadata_bridge() {
       (int)(sizeof("__tm_ret_explicit") - 1));
   ASSERT_TRUE(explicit_return_function != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, explicit_return_function->base->kind);
-  ASSERT_EQ(TK_INT, explicit_return_function->base->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            explicit_return_function->base->integer_kind);
 
   parsed_code = parse_program_input(
       "int (*(*__tm_sig_nested_gfp)(void))(double); "
@@ -10097,7 +10100,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_type_has_qualifier(qualified_member_c.decl_type, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_TRUE(ps_type_has_qualifier(qualified_member_v.decl_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(qualified_member_v.decl_type->is_unsigned);
-  ASSERT_TRUE(qualified_member_v.decl_type->is_long_long);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
+            qualified_member_v.decl_type->integer_kind);
   ASSERT_EQ(8, ps_type_sizeof(qualified_member_v.decl_type));
   ASSERT_TRUE(ps_type_has_qualifier(qualified_member_a.decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_EQ(0, qualified_member_y.offset % 8);
@@ -10339,7 +10343,7 @@ static void test_type_metadata_bridge() {
   lvar_t tmp_void_ptr_lvar = {0};
   tmp_void_ptr_lvar.size = 8;
   psx_type_t *tmp_void_type = ps_type_new(PSX_TYPE_VOID);
-  tmp_void_type->scalar_kind = TK_VOID;
+  tmp_void_type->integer_kind = PSX_INTEGER_KIND_NONE;
   set_test_storage_fixture_type(
       &tmp_void_ptr_lvar, ps_type_new_pointer(tmp_void_type));
   ASSERT_TRUE(ps_lvar_value_is_pointer_like(&tmp_void_ptr_lvar));
@@ -12170,7 +12174,7 @@ static void test_type_metadata_bridge() {
   typed_cached_unsigned_call.base.kind = ND_FUNCALL;
   psx_type_t *typed_cached_unsigned_type =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
-  typed_cached_unsigned_type->is_long_long = 1;
+  typed_cached_unsigned_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   typed_cached_unsigned_call.base.type = typed_cached_unsigned_type;
   ps_node_bind_type((node_t *)&typed_cached_unsigned_call,
                     typed_cached_unsigned_call.base.type);
@@ -12283,7 +12287,7 @@ static void test_type_metadata_bridge() {
   typed_unsigned_ll_lhs.kind = ND_NUM;
   psx_type_t *typed_unsigned_ll_type =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
-  typed_unsigned_ll_type->is_long_long = 1;
+  typed_unsigned_ll_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   typed_unsigned_ll_lhs.type = typed_unsigned_ll_type;
   node_t *typed_constructed_unsigned_ll =
       ps_node_new_binary(ND_MUL, &typed_unsigned_ll_lhs, ps_node_new_num(2));
@@ -12319,7 +12323,7 @@ static void test_type_metadata_bridge() {
   typed_cached_ternary.base.kind = ND_TERNARY;
   psx_type_t *typed_cached_ternary_type =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
-  typed_cached_ternary_type->is_long_long = 1;
+  typed_cached_ternary_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   typed_cached_ternary.base.type = typed_cached_ternary_type;
   ASSERT_TRUE(ps_node_get_type((node_t *)&typed_cached_ternary) ==
               typed_cached_ternary.base.type);
@@ -12433,7 +12437,7 @@ static void test_type_metadata_bridge() {
   cached_unsigned_comma.rhs = &cached_scalar_rhs;
   psx_type_t *cached_unsigned_comma_type =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
-  cached_unsigned_comma_type->is_long_long = 1;
+  cached_unsigned_comma_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   cached_unsigned_comma.type = cached_unsigned_comma_type;
   ASSERT_TRUE(ps_node_is_unsigned_type(&cached_unsigned_comma));
   ASSERT_TRUE(ps_node_is_long_long_type(&cached_unsigned_comma));
@@ -17149,12 +17153,14 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(3, ps_type_integer_rank(stale_wide_int));
   ASSERT_TRUE(ps_type_unqualified_semantic_matches(
       plain_int, stale_wide_int));
-  ASSERT_EQ(TK_INT, stale_narrow_unsigned_int->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            stale_narrow_unsigned_int->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_narrow_unsigned_int));
   ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
       stale_narrow_unsigned_int,
       ps_ctx_target_info(test_semantic_context())));
-  ASSERT_EQ(TK_INT, stale_wide_unsigned_int->scalar_kind);
+  ASSERT_EQ(PSX_INTEGER_KIND_INT,
+            stale_wide_unsigned_int->integer_kind);
   ASSERT_EQ(3, ps_type_integer_rank(stale_wide_unsigned_int));
   ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
       stale_wide_unsigned_int,

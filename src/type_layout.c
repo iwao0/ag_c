@@ -7,11 +7,11 @@
 
 static ag_target_scalar_kind_t integer_target_kind(
     const psx_type_t *type) {
-  if (type && type->is_long_long) return AG_TARGET_SCALAR_LONG_LONG;
-  switch (type ? type->scalar_kind : TK_INT) {
-    case TK_CHAR: return AG_TARGET_SCALAR_CHAR;
-    case TK_SHORT: return AG_TARGET_SCALAR_SHORT;
-    case TK_LONG: return AG_TARGET_SCALAR_LONG;
+  switch (type ? type->integer_kind : PSX_INTEGER_KIND_INT) {
+    case PSX_INTEGER_KIND_CHAR: return AG_TARGET_SCALAR_CHAR;
+    case PSX_INTEGER_KIND_SHORT: return AG_TARGET_SCALAR_SHORT;
+    case PSX_INTEGER_KIND_LONG: return AG_TARGET_SCALAR_LONG;
+    case PSX_INTEGER_KIND_LONG_LONG: return AG_TARGET_SCALAR_LONG_LONG;
     default: return AG_TARGET_SCALAR_INT;
   }
 }
@@ -33,10 +33,13 @@ static ag_target_scalar_kind_t floating_target_kind(
 static int layout_scalar(
     const psx_type_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
-  if (type->kind == PSX_TYPE_INTEGER && !type->is_long_long &&
-      type->scalar_kind != TK_CHAR && type->scalar_kind != TK_SHORT &&
-      type->scalar_kind != TK_INT && type->scalar_kind != TK_LONG &&
-      type->scalar_kind != TK_ENUM) {
+  if (type->kind == PSX_TYPE_INTEGER &&
+      type->integer_kind != PSX_INTEGER_KIND_CHAR &&
+      type->integer_kind != PSX_INTEGER_KIND_SHORT &&
+      type->integer_kind != PSX_INTEGER_KIND_INT &&
+      type->integer_kind != PSX_INTEGER_KIND_LONG &&
+      type->integer_kind != PSX_INTEGER_KIND_LONG_LONG &&
+      type->integer_kind != PSX_INTEGER_KIND_ENUM) {
     return 1;
   }
   ag_target_scalar_kind_t kind;

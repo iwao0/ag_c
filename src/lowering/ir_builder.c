@@ -175,7 +175,8 @@ static int is_exact_int_void_function(const psx_type_t *type) {
   const psx_type_t *result = ps_type_function_return_type(function);
   return function && function->param_count == 0 &&
          !function->is_variadic_function && result &&
-         result->kind == PSX_TYPE_INTEGER && result->scalar_kind == TK_INT &&
+         result->kind == PSX_TYPE_INTEGER &&
+         result->integer_kind == PSX_INTEGER_KIND_INT &&
          !result->is_unsigned;
 }
 

@@ -78,11 +78,20 @@ psx_type_t *psx_type_owned_param_mut(psx_type_t *owner, int index) {
   return (psx_type_t *)owner->param_types[index];
 }
 
-static token_kind_t canonical_integer_scalar_kind(token_kind_t scalar_kind) {
-  if (scalar_kind != TK_SIGNED && scalar_kind != TK_UNSIGNED &&
-      scalar_kind != TK_EOF)
-    return scalar_kind;
-  return TK_INT;
+static psx_integer_kind_t integer_kind_from_token(token_kind_t token_kind) {
+  switch (token_kind) {
+    case TK_BOOL: return PSX_INTEGER_KIND_BOOL;
+    case TK_CHAR: return PSX_INTEGER_KIND_CHAR;
+    case TK_SHORT: return PSX_INTEGER_KIND_SHORT;
+    case TK_LONG: return PSX_INTEGER_KIND_LONG;
+    case TK_ENUM: return PSX_INTEGER_KIND_ENUM;
+    case TK_INT:
+    case TK_SIGNED:
+    case TK_UNSIGNED:
+    case TK_EOF:
+    default:
+      return PSX_INTEGER_KIND_INT;
+  }
 }
 
 psx_type_t *ps_type_new_in(
@@ -90,7 +99,7 @@ psx_type_t *ps_type_new_in(
   psx_type_t *type = arena_alloc_in(arena_context, sizeof(psx_type_t));
   if (!type) return NULL;
   type->kind = kind;
-  type->scalar_kind = TK_EOF;
+  type->integer_kind = PSX_INTEGER_KIND_NONE;
   type->tag_kind = TK_EOF;
   return type;
 }
@@ -98,9 +107,10 @@ psx_type_t *ps_type_new_in(
 void ps_type_normalize_scalar_identity(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_INTEGER) {
-    if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
-    else
-      type->scalar_kind = canonical_integer_scalar_kind(type->scalar_kind);
+    if (type->tag_kind == TK_ENUM)
+      type->integer_kind = PSX_INTEGER_KIND_ENUM;
+    else if (type->integer_kind == PSX_INTEGER_KIND_NONE)
+      type->integer_kind = PSX_INTEGER_KIND_INT;
   }
   ps_type_normalize_scalar_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
@@ -111,15 +121,15 @@ void ps_type_normalize_scalar_identity(psx_type_t *type) {
 }
 
 psx_type_t *ps_type_new_integer_in(
-    arena_context_t *arena_context, token_kind_t scalar_kind,
+    arena_context_t *arena_context, token_kind_t scalar_token_kind,
     int is_unsigned) {
   psx_type_t *type = ps_type_new_in(
       arena_context,
-      scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
+      scalar_token_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
   if (!type) return NULL;
-  type->scalar_kind = canonical_integer_scalar_kind(scalar_kind);
+  type->integer_kind = integer_kind_from_token(scalar_token_kind);
   type->is_unsigned = is_unsigned ? 1 : 0;
-  if (scalar_kind == TK_CHAR) type->is_plain_char = 1;
+  if (scalar_token_kind == TK_CHAR) type->is_plain_char = 1;
   return type;
 }
 
@@ -149,17 +159,18 @@ int ps_type_integer_rank(const psx_type_t *type) {
   if (type->kind == PSX_TYPE_BOOL) return 0;
   if (type->kind != PSX_TYPE_INTEGER) return 0;
   if (type->is_plain_char) return 1;
-  if (type->is_long_long) return 5;
-  switch (type->scalar_kind) {
-    case TK_CHAR:
+  switch (type->integer_kind) {
+    case PSX_INTEGER_KIND_CHAR:
       return 1;
-    case TK_SHORT:
+    case PSX_INTEGER_KIND_SHORT:
       return 2;
-    case TK_INT:
-    case TK_ENUM:
+    case PSX_INTEGER_KIND_INT:
+    case PSX_INTEGER_KIND_ENUM:
       return 3;
-    case TK_LONG:
+    case PSX_INTEGER_KIND_LONG:
       return 4;
+    case PSX_INTEGER_KIND_LONG_LONG:
+      return 5;
     default:
       return 0;
   }
@@ -169,12 +180,12 @@ int ps_type_character_code_unit_width(const psx_type_t *type) {
   if (!type || type->kind != PSX_TYPE_INTEGER ||
       type->tag_kind == TK_ENUM)
     return 0;
-  switch (type->scalar_kind) {
-    case TK_CHAR:
+  switch (type->integer_kind) {
+    case PSX_INTEGER_KIND_CHAR:
       return 1;
-    case TK_SHORT:
+    case PSX_INTEGER_KIND_SHORT:
       return 2;
-    case TK_INT:
+    case PSX_INTEGER_KIND_INT:
       return 4;
     default:
       return 0;
@@ -308,10 +319,11 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
   }
 
   integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
-  token_kind_t scalar_kind = result.rank >= 4 ? TK_LONG : TK_INT;
+  token_kind_t result_token_kind = result.rank >= 4 ? TK_LONG : TK_INT;
   psx_type_t *type = ps_type_new_integer_in(
-      arena_context, scalar_kind, result.is_unsigned);
-  type->is_long_long = result.rank >= 5;
+      arena_context, result_token_kind, result.is_unsigned);
+  if (result.rank >= 5)
+    type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   return type;
 }
 
@@ -896,17 +908,17 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
   if (!a || !b || a->kind != b->kind) return 0;
   if (a->qualifiers != b->qualifiers ||
       a->is_unsigned != b->is_unsigned ||
-      a->is_long_long != b->is_long_long ||
       a->is_plain_char != b->is_plain_char) {
     return 0;
   }
   switch (a->kind) {
     case PSX_TYPE_BOOL:
     case PSX_TYPE_INTEGER:
-      if ((a->scalar_kind == TK_ENUM || b->scalar_kind == TK_ENUM) &&
+      if ((a->integer_kind == PSX_INTEGER_KIND_ENUM ||
+           b->integer_kind == PSX_INTEGER_KIND_ENUM) &&
           !ps_type_tag_identity_matches(a, b))
         return 0;
-      return a->scalar_kind == b->scalar_kind;
+      return a->integer_kind == b->integer_kind;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
       return a->fp_kind == b->fp_kind;
@@ -948,7 +960,8 @@ static int semantic_type_matches(
     case PSX_TYPE_BOOL:
       return a->is_unsigned == b->is_unsigned;
     case PSX_TYPE_INTEGER:
-      if (a->scalar_kind == TK_ENUM || b->scalar_kind == TK_ENUM ||
+      if (a->integer_kind == PSX_INTEGER_KIND_ENUM ||
+          b->integer_kind == PSX_INTEGER_KIND_ENUM ||
           a->tag_kind == TK_ENUM || b->tag_kind == TK_ENUM) {
         return ps_type_tag_identity_matches(a, b);
       }
@@ -1093,7 +1106,8 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       int rank = ps_type_integer_rank(type);
       if (rank <= 0) rank = 3;
       unsigned int bits = (unsigned int)(integer_rank_size(rank, target) * 8);
-      if (type->scalar_kind == TK_ENUM || type->tag_kind == TK_ENUM) {
+      if (type->integer_kind == PSX_INTEGER_KIND_ENUM ||
+          type->tag_kind == TK_ENUM) {
         canonical_sig_lit(w, "e{");
         canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));
         canonical_sig_lit(w, ":");
@@ -1103,10 +1117,10 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       } else if (type->is_plain_char) {
         canonical_sig_lit(w, "c");
         canonical_sig_uint(w, bits);
-      } else if (type->is_long_long) {
+      } else if (type->integer_kind == PSX_INTEGER_KIND_LONG_LONG) {
         canonical_sig_lit(w, type->is_unsigned ? "ull" : "ll");
         canonical_sig_uint(w, bits);
-      } else if (type->scalar_kind == TK_LONG) {
+      } else if (type->integer_kind == PSX_INTEGER_KIND_LONG) {
         canonical_sig_lit(w, type->is_unsigned ? "ul" : "l");
         canonical_sig_uint(w, bits);
       } else {
@@ -1252,10 +1266,10 @@ int ps_type_generic_select_index(
                        : control;
     normalized = decayed;
   } else if (normalized.kind == PSX_TYPE_INTEGER) {
-    if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;
-    else
-      normalized.scalar_kind = canonical_integer_scalar_kind(
-          normalized.scalar_kind);
+    if (normalized.tag_kind == TK_ENUM)
+      normalized.integer_kind = PSX_INTEGER_KIND_ENUM;
+    else if (normalized.integer_kind == PSX_INTEGER_KIND_NONE)
+      normalized.integer_kind = PSX_INTEGER_KIND_INT;
   }
   int default_index = -1;
   for (int i = 0; i < association_count; i++) {
