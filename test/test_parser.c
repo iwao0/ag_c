@@ -12765,6 +12765,17 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(walk_gv.decl_type != NULL);
   walk_gv.decl_type_id = intern_test_type_id(walk_gv.decl_type);
   ASSERT_TRUE(walk_gv.decl_type_id != PSX_TYPE_ID_INVALID);
+  psx_record_decl_t *walk_outer_record = (psx_record_decl_t *)
+      walk_gv.decl_type->aggregate_definition;
+  ASSERT_TRUE(walk_outer_record != NULL);
+  ((tag_member_info_t *)walk_outer_record->members)[1].offset = 77;
+  psx_type_t *walk_inner_type = (psx_type_t *)
+      ps_tag_member_decl_type(&walk_outer_record->members[0])->base;
+  ASSERT_TRUE(walk_inner_type != NULL);
+  psx_record_decl_t *walk_inner_record = (psx_record_decl_t *)
+      walk_inner_type->aggregate_definition;
+  ASSERT_TRUE(walk_inner_record != NULL);
+  ((tag_member_info_t *)walk_inner_record->members)[1].offset = 55;
   ps_gvar_init_slots_alloc(&walk_gv, 5, 0);
   walk_gv.init_count = 5;
   for (int i = 0; i < 5; i++)
@@ -12818,6 +12829,10 @@ static void test_type_metadata_bridge() {
   walk_array_gv.decl_type_id = intern_test_type_id(
       walk_array_gv.decl_type);
   ASSERT_TRUE(walk_array_gv.decl_type_id != PSX_TYPE_ID_INVALID);
+  psx_record_decl_t *walk_array_record = (psx_record_decl_t *)
+      walk_array_element->aggregate_definition;
+  ASSERT_TRUE(walk_array_record != NULL);
+  ((tag_member_info_t *)walk_array_record->members)[1].offset = 66;
   ps_gvar_init_slots_alloc(&walk_array_gv, 4, 0);
   walk_array_gv.init_count = 4;
   for (int i = 0; i < 4; i++)

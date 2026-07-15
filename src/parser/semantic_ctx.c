@@ -1027,8 +1027,13 @@ int ps_ctx_register_tag_members_in(
   }
   tag_type_t *tag = find_tag_type_in(
       context, tag_kind, tag_name, tag_len);
-  if (tag && tag->definition)
+  if (tag && tag->definition) {
     refresh_cached_tag_definition(context, tag);
+    if (tag->is_complete)
+      (void)ps_ctx_publish_record_layout_in(
+          context, tag->definition->record_id,
+          tag->size, tag->align > 0 ? tag->align : 1);
+  }
   return 1;
 }
 

@@ -8,6 +8,7 @@
 typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_record_layout_table_t psx_record_layout_table_t;
 typedef struct ag_target_info_t ag_target_info_t;
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 
@@ -148,6 +149,7 @@ int ps_gvar_walk_aggregate_initializer_in(
     const psx_gvar_aggregate_walk_ops_t *ops, void *user);
 int ps_gvar_walk_resolved_aggregate_initializer(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t root_type_id,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user);

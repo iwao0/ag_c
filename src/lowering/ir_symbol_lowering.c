@@ -64,6 +64,7 @@ static const psx_gvar_aggregate_walk_ops_t func_ref_walk_ops = {
 ir_symbol_t *lower_ir_global_symbol(
     ir_module_t *module, global_var_t *global,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target) {
   if (!module || !global || !global->name || global->name_len <= 0)
     return NULL;
@@ -86,16 +87,27 @@ ir_symbol_t *lower_ir_global_symbol(
     host_target = ag_target_info_host();
     target = &host_target;
   }
-  int storage_size = ps_type_sizeof_id_for_target(
-      semantic_types, type_id, target);
+  int storage_size = record_layouts
+                         ? ps_type_sizeof_id_with_records(
+                               semantic_types, record_layouts,
+                               type_id, target)
+                         : ps_type_sizeof_id_for_target(
+                               semantic_types, type_id, target);
   if (storage_size <= 0 && ps_gvar_is_extern_decl(global)) {
     psx_type_id_t base_type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
-    storage_size = ps_type_sizeof_id_for_target(
-        semantic_types, base_type_id, target);
+    storage_size = record_layouts
+                       ? ps_type_sizeof_id_with_records(
+                             semantic_types, record_layouts,
+                             base_type_id, target)
+                       : ps_type_sizeof_id_for_target(
+                             semantic_types, base_type_id, target);
   }
-  int alignment = ps_type_alignof_id_for_target(
-      semantic_types, type_id, target);
+  int alignment = record_layouts
+                      ? ps_type_alignof_id_with_records(
+                            semantic_types, record_layouts, type_id, target)
+                      : ps_type_alignof_id_for_target(
+                            semantic_types, type_id, target);
   if (storage_size <= 0 || alignment <= 0) {
     psx_semantic_type_table_destroy(owned_types);
     return NULL;
@@ -125,7 +137,7 @@ ir_symbol_t *lower_ir_global_symbol(
   };
   if (ps_gvar_has_aggregate_initializer(global)) {
     ps_gvar_walk_resolved_aggregate_initializer(
-        semantic_types, target, type_id,
+        semantic_types, record_layouts, target, type_id,
         global, 0, &func_ref_walk_ops, &ctx);
   }
   psx_semantic_type_table_destroy(owned_types);
