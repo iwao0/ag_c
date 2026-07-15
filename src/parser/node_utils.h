@@ -138,6 +138,11 @@ node_t *ps_node_new_tag_member_deref_for_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     node_t *addr_base, node_t *base,
     const struct tag_member_info_t *info);
+node_t *ps_node_new_tag_member_deref_with_layout_for_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *addr_base, node_t *base, int member_offset,
+    const psx_type_t *member_type, int bit_is_signed,
+    int bit_width, int bit_offset);
 node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
                                        node_t *operand);
 node_t *psx_node_new_unary_deref_syntax_for_in(

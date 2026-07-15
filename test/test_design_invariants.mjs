@@ -1923,6 +1923,12 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
     ) ||
     !/\bpsx_record_layout_member\s*\(/.test(
       memberAccessTargetLoweringSource,
+    ) ||
+    /member->(?:offset|bit_offset|bit_width)\s*=/.test(
+      memberAccessTargetLoweringSource,
+    ) ||
+    !/\bps_node_new_tag_member_deref_with_layout_for_in\s*\(/.test(
+      memberAccessTargetLoweringSource,
     )) {
   throw new Error(
     "member access semantics must retain RecordId and ordinal while lowering resolves target offsets",

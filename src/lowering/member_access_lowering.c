@@ -21,23 +21,17 @@ static char *new_member_rvalue_name(
   return name;
 }
 
-static int resolve_target_member_layout(
+static const psx_record_member_layout_t *resolve_target_member_layout(
     const psx_lowering_context_t *lowering_context,
-    const node_member_access_t *access, tag_member_info_t *member) {
-  if (!lowering_context || !access || !member ||
+    const node_member_access_t *access) {
+  if (!lowering_context || !access ||
       access->resolved_record_id == PSX_RECORD_ID_INVALID ||
       access->resolved_member_index < 0)
-    return 0;
+    return NULL;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       ps_lowering_record_layouts(lowering_context),
       access->resolved_record_id, ps_lowering_target(lowering_context));
-  const psx_record_member_layout_t *member_layout =
-      psx_record_layout_member(layout, access->resolved_member_index);
-  if (!member_layout) return 0;
-  member->offset = member_layout->offset;
-  member->bit_offset = member_layout->bit_offset;
-  member->bit_width = member_layout->bit_width;
-  return 1;
+  return psx_record_layout_member(layout, access->resolved_member_index);
 }
 
 static struct lvar_t *create_aggregate_temporary(
@@ -132,9 +126,10 @@ node_t *lower_member_access_expression_in(
   if (!lowering_context || !local_registry || !access ||
       !access->base.lhs || !access->resolved_member)
     return (node_t *)access;
-  tag_member_info_t target_member = *access->resolved_member;
-  if (!resolve_target_member_layout(
-          lowering_context, access, &target_member)) {
+  const tag_member_info_t *member = access->resolved_member;
+  const psx_record_member_layout_t *member_layout =
+      resolve_target_member_layout(lowering_context, access);
+  if (!member_layout) {
     ps_diag_ctx_in(
         ps_lowering_diagnostics(lowering_context), access->base.tok,
         "member", "resolved member layout is unavailable");
@@ -168,9 +163,12 @@ node_t *lower_member_access_expression_in(
           ps_lowering_arena(lowering_context), base);
     }
   }
-  node_t *result = ps_node_new_tag_member_deref_for_in(
+  node_t *result = ps_node_new_tag_member_deref_with_layout_for_in(
       ps_lowering_arena(lowering_context),
-      ps_lowering_target(lowering_context), address, base, &target_member);
+      ps_lowering_target(lowering_context), address, base,
+      member_layout->offset, ps_tag_member_decl_type(member),
+      member->bit_is_signed, member_layout->bit_width,
+      member_layout->bit_offset);
   if (result) result->tok = access->base.tok;
   return result ? result : (node_t *)access;
 }

@@ -2868,19 +2868,21 @@ static void advance_subscript_vla_runtime_view(node_t *result,
       remaining > 0 ? remaining - 1 : 0);
 }
 
-node_t *ps_node_new_tag_member_deref_for_in(
+node_t *ps_node_new_tag_member_deref_with_layout_for_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
-    node_t *addr_base, node_t *base, const tag_member_info_t *info) {
-  if (!info) return NULL;
+    node_t *addr_base, node_t *base, int member_offset,
+    const psx_type_t *member_type, int bit_is_signed,
+    int bit_width, int bit_offset) {
+  if (!member_type) return NULL;
   node_t *addr = ps_node_new_binary_for_target_in(
       arena_context, target, ND_ADD, addr_base,
-      ps_node_new_num_in(arena_context, info->offset));
+      ps_node_new_num_in(arena_context, member_offset));
   node_t *deref = arena_alloc_in(arena_context, sizeof(node_t));
   deref->kind = ND_DEREF;
   deref->lhs = addr;
   int mem_array_len =
-      ps_type_array_flat_element_count(ps_tag_member_decl_type(info));
-  const psx_type_t *member_value_type = ps_tag_member_decl_value_type(info);
+      ps_type_array_flat_element_count(member_type);
+  const psx_type_t *member_value_type = ps_type_array_leaf_type(member_type);
   int mem_is_ptr = member_value_type &&
                    member_value_type->kind == PSX_TYPE_POINTER;
   int member_is_const =
@@ -2891,19 +2893,27 @@ node_t *ps_node_new_tag_member_deref_for_in(
       node_pointee_is_volatile_qualified(base) ||
       (!ps_node_value_is_pointer_like(base) &&
        node_self_is_volatile_qualified(base));
-  deref->type_state.bit_width = (unsigned char)info->bit_width;
-  deref->type_state.bit_offset = (unsigned char)info->bit_offset;
-  deref->type_state.bit_is_signed = info->bit_is_signed ? 1 : 0;
-  const psx_type_t *decl_type = ps_tag_member_decl_type(info);
-  if (decl_type) {
-    ps_node_bind_type(
-        deref, type_with_self_qualifiers_in(
-                   arena_context, decl_type,
-                   member_is_const, member_is_volatile));
-    deref->type_state.is_scalar_ptr_member_lvalue =
-        mem_is_ptr && mem_array_len <= 0;
-  }
+  deref->type_state.bit_width = (unsigned char)bit_width;
+  deref->type_state.bit_offset = (unsigned char)bit_offset;
+  deref->type_state.bit_is_signed = bit_is_signed ? 1 : 0;
+  ps_node_bind_type(
+      deref, type_with_self_qualifiers_in(
+                 arena_context, member_type,
+                 member_is_const, member_is_volatile));
+  deref->type_state.is_scalar_ptr_member_lvalue =
+      mem_is_ptr && mem_array_len <= 0;
   return deref;
+}
+
+node_t *ps_node_new_tag_member_deref_for_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    node_t *addr_base, node_t *base, const tag_member_info_t *info) {
+  return info
+             ? ps_node_new_tag_member_deref_with_layout_for_in(
+                   arena_context, target, addr_base, base, info->offset,
+                   ps_tag_member_decl_type(info), info->bit_is_signed,
+                   info->bit_width, info->bit_offset)
+             : NULL;
 }
 
 node_t *ps_node_new_unary_deref_for_in(arena_context_t *arena_context,
