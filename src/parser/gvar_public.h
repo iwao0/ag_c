@@ -103,18 +103,13 @@ typedef struct {
                 const psx_gvar_initializer_class_t *init_class);
 } psx_gvar_initializer_visit_ops_t;
 
-int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size);
-int ps_gvar_storage_size(const global_var_t *gv, int fallback_size);
 int ps_gvar_is_array(const global_var_t *gv);
 int ps_gvar_is_tag_aggregate(const global_var_t *gv);
 int ps_gvar_is_struct_aggregate(const global_var_t *gv);
 int ps_gvar_is_union_aggregate(const global_var_t *gv);
 int ps_gvar_is_bool_scalar(const global_var_t *gv);
 int ps_gvar_array_element_is_bool(const global_var_t *gv);
-int ps_gvar_array_element_size(const global_var_t *gv);
 int ps_gvar_array_element_count(const global_var_t *gv);
-int ps_gvar_initializer_element_size(const global_var_t *gv, int fallback_size);
-int ps_gvar_initializer_element_count(const global_var_t *gv, int fallback_size);
 int ps_gvar_has_aggregate_initializer(const global_var_t *gv);
 int ps_gvar_has_explicit_initializer(const global_var_t *gv);
 psx_gvar_initializer_class_t
@@ -132,11 +127,8 @@ psx_gvar_init_scalar_value_t
 ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
 int ps_gvar_visit_initializer_classified(
     const global_var_t *gv, const psx_gvar_initializer_class_t *init_class,
-    int fallback_size, const psx_gvar_initializer_visit_ops_t *ops, void *user);
-int ps_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
-                               int fallback_size,
-                               const psx_gvar_initializer_visit_ops_t *ops,
-                               void *user);
+    int scalar_size, int slot_element_size, int slot_element_count,
+    const psx_gvar_initializer_visit_ops_t *ops, void *user);
 int ps_gvar_fp_bit_pattern(tk_float_kind_t fp_kind, double value,
                             psx_gvar_fp_bits_t *out);
 int ps_gvar_symbol_ref_named(psx_gvar_symbol_ref_t ref,

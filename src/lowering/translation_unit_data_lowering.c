@@ -56,6 +56,21 @@ static int type_alignment_id(
       lowering ? lowering->target : NULL);
 }
 
+static psx_type_id_t scalar_element_type_id(
+    const translation_unit_data_lowering_t *lowering,
+    psx_type_id_t type_id) {
+  if (!lowering || !lowering->semantic_types) return PSX_TYPE_ID_INVALID;
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      lowering->semantic_types, type_id);
+  while (type && type->kind == PSX_TYPE_ARRAY) {
+    type_id = psx_semantic_type_table_base(
+        lowering->semantic_types, type_id).type_id;
+    type = psx_semantic_type_table_lookup(
+        lowering->semantic_types, type_id);
+  }
+  return type ? type_id : PSX_TYPE_ID_INVALID;
+}
+
 static void write_byte(unsigned char byte, void *user) {
   byte_writer_t *writer = user;
   if (!writer || writer->length >= writer->capacity) return;
@@ -357,8 +372,14 @@ static void lower_global_object(global_var_t *global, void *user) {
       .object = object,
       .global = global,
   };
+  psx_type_id_t scalar_element_id = scalar_element_type_id(
+      lowering, ps_gvar_decl_type_id(global));
+  int slot_element_size = type_size_id(lowering, scalar_element_id);
+  int slot_element_count =
+      slot_element_size > 0 ? storage_size / slot_element_size : 0;
   if (!ps_gvar_visit_initializer_classified(
           global, &init_class, storage_size,
+          slot_element_size, slot_element_count,
           &global_lowering_ops, &global_lowering))
     lowering->failed = 1;
 }

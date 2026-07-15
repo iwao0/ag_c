@@ -2554,6 +2554,42 @@ for (const removedApi of [
     );
   }
 }
+for (const removedApi of [
+  "ps_gvar_decl_sizeof",
+  "ps_gvar_storage_size",
+  "ps_gvar_array_element_size",
+  "ps_gvar_initializer_element_size",
+  "ps_gvar_initializer_element_count",
+  "ps_gvar_visit_initializer",
+]) {
+  if (new RegExp(`\\b${removedApi}\\s*\\(`).test(
+        `${parserLayerSource}\n${loweringLayerSource}`,
+      )) {
+    throw new Error(
+      `context-free global layout API ${removedApi} must not return`,
+    );
+  }
+}
+const classifiedInitializerVisitor = nodeUtilsSource.match(
+  /int\s+ps_gvar_visit_initializer_classified\s*\([^]*?\n\}/,
+);
+if (!classifiedInitializerVisitor ||
+    /\bps_type_(?:size|align)of\s*\(/.test(
+      classifiedInitializerVisitor[0],
+    ) ||
+    !/int\s+scalar_size\s*,\s*int\s+slot_element_size\s*,\s*int\s+slot_element_count/.test(
+      gvarPublicHeaderSource,
+    ) ||
+    !/scalar_element_type_id\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
+    !/ps_gvar_visit_initializer_classified\s*\([^;]*slot_element_size\s*,\s*slot_element_count/s.test(
+      translationUnitDataLoweringSource,
+    )) {
+  throw new Error(
+    "global initializer visitors must consume layout values resolved from TypeId and TargetSpec",
+  );
+}
 if (!arrayDecayPointerArithmeticType ||
     /\bps_type_(?:size|align)of\s*\(/.test(
       arrayDecayPointerArithmeticType[0],
@@ -3981,7 +4017,7 @@ if (!/void\s*\(\s*\*scalar\s*\)\s*\([^;]*\bpsx_type_id_t\s+value_type_id\b/.test
   );
 }
 const aggregateWalkerLayoutSection = nodeUtilsSource.match(
-  /static\s+int\s+gvar_member_value_size_for_target\s*\([^]*?int\s+ps_gvar_initializer_element_size\s*\(/,
+  /static\s+int\s+gvar_member_value_size_for_target\s*\([^]*?psx_gvar_init_slot_t\s+ps_gvar_init_slot_view\s*\(/,
 );
 if (!aggregateWalkerLayoutSection ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(

@@ -173,6 +173,14 @@ static arena_context_t *test_arena_context(void) {
   test_node_cast_i64_extension_info(__VA_ARGS__)
 #define ps_node_i64_widen_source_is_unsigned(...) \
   test_node_i64_widen_source_is_unsigned(__VA_ARGS__)
+#define ps_gvar_decl_sizeof(...) test_gvar_decl_sizeof(__VA_ARGS__)
+#define ps_gvar_storage_size(...) test_gvar_decl_sizeof(__VA_ARGS__)
+#define ps_gvar_array_element_size(...) \
+  test_gvar_array_element_size(__VA_ARGS__)
+#define ps_gvar_initializer_element_size(...) \
+  test_gvar_initializer_element_size(__VA_ARGS__)
+#define ps_gvar_initializer_element_count(...) \
+  test_gvar_initializer_element_count(__VA_ARGS__)
 #define psx_node_new_raw_binary(...) \
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_shift_trunc_extend(...) \
@@ -466,6 +474,45 @@ static int test_node_i64_widen_source_is_unsigned(node_t *node) {
   }
   return test_node_type_size(node) >= 4 &&
          ps_node_conversion_value_is_unsigned(node);
+}
+
+static int test_gvar_decl_sizeof(
+    const global_var_t *global, int fallback_size) {
+  int size = ps_type_sizeof_for_target(
+      ps_gvar_get_decl_type(global),
+      ps_ctx_target_info(test_semantic_context()));
+  return size > 0 ? size : fallback_size;
+}
+
+static int test_gvar_array_element_size(const global_var_t *global) {
+  const psx_type_t *type = ps_gvar_get_decl_type(global);
+  if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return 0;
+  return ps_type_sizeof_for_target(
+      type->base, ps_ctx_target_info(test_semantic_context()));
+}
+
+static int test_gvar_initializer_element_size(
+    const global_var_t *global, int fallback_size) {
+  const psx_type_t *type = ps_gvar_get_decl_type(global);
+  if (!type || type->kind != PSX_TYPE_ARRAY) return fallback_size;
+  return ps_type_sizeof_for_target(
+      ps_type_array_leaf_type(type),
+      ps_ctx_target_info(test_semantic_context()));
+}
+
+static int test_gvar_initializer_element_count(
+    const global_var_t *global, int fallback_size) {
+  const psx_type_t *type = ps_gvar_get_decl_type(global);
+  if (!type || type->kind != PSX_TYPE_ARRAY) {
+    return ps_gvar_has_explicit_initializer(global) ? 1 : 0;
+  }
+  if (ps_type_is_incomplete_array(type)) return 0;
+  int element_size = test_gvar_initializer_element_size(
+      global, fallback_size);
+  int storage_size = test_gvar_decl_sizeof(global, fallback_size);
+  return element_size > 0
+             ? (storage_size + element_size - 1) / element_size
+             : 0;
 }
 
 static int plan_test_local_storage(

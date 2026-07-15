@@ -151,16 +151,6 @@ psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var) {
   return var ? var->decl_type_id : PSX_TYPE_ID_INVALID;
 }
 
-int ps_gvar_storage_size(const global_var_t *gv, int fallback_size) {
-  return ps_gvar_decl_sizeof(gv, fallback_size);
-}
-
-int ps_gvar_decl_sizeof(const global_var_t *gv, int fallback_size) {
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  int size = ps_type_sizeof(type);
-  return size > 0 ? size : fallback_size;
-}
-
 int ps_gvar_is_array(const global_var_t *gv) {
   const psx_type_t *type = gvar_decl_type_view(gv);
   return type && type->kind == PSX_TYPE_ARRAY ? 1 : 0;
@@ -246,12 +236,12 @@ int ps_gvar_has_explicit_initializer(const global_var_t *gv) {
   return ps_gvar_initializer_class(gv, 0).has_explicit_initializer;
 }
 
-static psx_gvar_init_slots_layout_t gvar_init_slots_layout(const global_var_t *gv,
-                                                           int fallback_size) {
+static psx_gvar_init_slots_layout_t gvar_init_slots_layout(
+    const global_var_t *gv, int element_size, int element_count) {
   tk_float_kind_t fp_kind = gvar_initializer_fp_kind(gv);
   psx_gvar_init_slots_layout_t layout = {
-      .elem_size = ps_gvar_initializer_element_size(gv, fallback_size),
-      .elem_count = ps_gvar_initializer_element_count(gv, fallback_size),
+      .elem_size = element_size > 0 ? element_size : 0,
+      .elem_count = element_count > 0 ? element_count : 0,
       .init_count = gv ? gv->init_count : 0,
       .is_fp_array = gv && gv->init_fvalues &&
                      (fp_kind == TK_FLOAT_KIND_FLOAT ||
@@ -418,7 +408,7 @@ ps_gvar_init_member_value(const global_var_t *gv, int idx,
 }
 
 psx_gvar_init_scalar_value_t
-ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
+ps_gvar_init_scalar_value(const global_var_t *gv, int storage_size) {
   int has_init = gv && gv->has_init;
   tk_float_kind_t fp_kind = gvar_initializer_fp_kind(gv);
   psx_gvar_init_scalar_value_t value = {
@@ -427,7 +417,7 @@ ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
       .value = has_init ? gv->init_val : 0,
       .fvalue = has_init ? gv->fval : 0.0,
       .fp_kind = TK_FLOAT_KIND_NONE,
-      .size = ps_gvar_storage_size(gv, fallback_size),
+      .size = storage_size > 0 ? storage_size : 0,
   };
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
     value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
@@ -442,48 +432,27 @@ ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size) {
 
 int ps_gvar_visit_initializer_classified(
     const global_var_t *gv, const psx_gvar_initializer_class_t *init_class,
-    int fallback_size, const psx_gvar_initializer_visit_ops_t *ops, void *user) {
+    int scalar_size, int slot_element_size, int slot_element_count,
+    const psx_gvar_initializer_visit_ops_t *ops, void *user) {
   if (!init_class || !ops) return 0;
   if (init_class->kind == PSX_GVAR_INIT_KIND_AGGREGATE) {
     return ops->aggregate ? ops->aggregate(user, init_class) : 0;
   }
   if (init_class->kind == PSX_GVAR_INIT_KIND_SLOTS) {
     psx_gvar_init_slots_layout_t layout =
-        gvar_init_slots_layout(gv, fallback_size);
+        gvar_init_slots_layout(gv, slot_element_size, slot_element_count);
     return ops->slots ? ops->slots(user, &layout, init_class) : 0;
   }
   psx_gvar_init_scalar_value_t value =
-      ps_gvar_init_scalar_value(gv, fallback_size);
+      ps_gvar_init_scalar_value(gv, scalar_size);
   return ops->scalar ? ops->scalar(user, value, init_class) : 0;
-}
-
-int ps_gvar_visit_initializer(const global_var_t *gv, int include_empty_aggregate,
-                               int fallback_size,
-                               const psx_gvar_initializer_visit_ops_t *ops,
-                               void *user) {
-  psx_gvar_initializer_class_t init_class =
-      ps_gvar_initializer_class(gv, include_empty_aggregate);
-  return ps_gvar_visit_initializer_classified(gv, &init_class, fallback_size,
-                                               ops, user);
-}
-
-int ps_gvar_array_element_size(const global_var_t *gv) {
-  if (!ps_gvar_is_array(gv)) return 0;
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  if (!type || type->kind != PSX_TYPE_ARRAY || !type->base) return 0;
-  int elem = ps_type_sizeof(type->base);
-  if (elem <= 0) elem = ps_type_deref_size(type);
-  return elem > 0 ? elem : 0;
 }
 
 int ps_gvar_array_element_count(const global_var_t *gv) {
   const psx_type_t *type = gvar_decl_type_view(gv);
   if (type && type->kind == PSX_TYPE_ARRAY && type->array_len > 0)
     return type->array_len;
-  int elem = ps_gvar_array_element_size(gv);
-  int size = ps_type_sizeof(type);
-  if (elem <= 0 || size <= 0) return 0;
-  return size / elem;
+  return 0;
 }
 
 static int gvar_tag_identity_from_type(const global_var_t *gv, token_kind_t *kind,
@@ -1342,27 +1311,6 @@ int ps_gvar_walk_resolved_aggregate_initializer(
   return gvar_walk_aggregate_initializer(
       NULL, semantic_types, record_layouts, target, root_type_id,
       gv, base_offset, ops, user, 1);
-}
-
-int ps_gvar_initializer_element_size(const global_var_t *gv, int fallback_size) {
-  if (ps_gvar_is_array(gv)) {
-    const psx_type_t *type = gvar_decl_type_view(gv);
-    int leaf_elem = ps_type_array_scalar_element_size(type);
-    if (leaf_elem > 0) return leaf_elem;
-    int elem = ps_gvar_array_element_size(gv);
-    if (elem > 0) return elem;
-  }
-  return fallback_size;
-}
-
-int ps_gvar_initializer_element_count(const global_var_t *gv, int fallback_size) {
-  if (gv && !ps_gvar_is_array(gv)) return gv->has_init ? 1 : 0;
-  int elem = ps_gvar_initializer_element_size(gv, fallback_size);
-  const psx_type_t *type = gvar_decl_type_view(gv);
-  if (ps_type_is_incomplete_array(type)) return 0;
-  int size = ps_type_sizeof(type);
-  if (size <= 0) size = ps_gvar_storage_size(gv, fallback_size);
-  return elem > 0 ? (size + elem - 1) / elem : 0;
 }
 
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const global_var_t *gv, int idx) {
