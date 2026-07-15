@@ -346,16 +346,6 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
   return type;
 }
 
-const psx_type_t *ps_type_usual_arithmetic_result_in(
-    arena_context_t *arena_context,
-    const psx_type_t *lhs, const psx_type_t *rhs,
-    tk_float_kind_t fallback_fp_kind, int force_complex) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_usual_arithmetic_result_for_target_in(
-      arena_context, &target, lhs, rhs,
-      fallback_fp_kind, force_complex);
-}
-
 const psx_type_t *ps_type_binary_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     psx_type_binary_op_t op,
@@ -391,14 +381,6 @@ const psx_type_t *ps_type_binary_result_for_target_in(
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_binary_result_in(
-    arena_context_t *arena_context, psx_type_binary_op_t op,
-    const psx_type_t *lhs, const psx_type_t *rhs) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_binary_result_for_target_in(
-      arena_context, &target, op, lhs, rhs);
-}
-
 const psx_type_t *ps_type_conditional_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *then_type, const psx_type_t *else_type) {
@@ -417,14 +399,6 @@ const psx_type_t *ps_type_conditional_result_for_target_in(
       arena_context, target, then_type, else_type, TK_FLOAT_KIND_NONE,
       (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
-}
-
-const psx_type_t *ps_type_conditional_result_in(
-    arena_context_t *arena_context,
-    const psx_type_t *then_type, const psx_type_t *else_type) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_conditional_result_for_target_in(
-      arena_context, &target, then_type, else_type);
 }
 
 psx_type_t *ps_type_new_pointer_in(
@@ -1252,13 +1226,6 @@ int ps_type_format_canonical_signature_for_target(
   }
   if (writer.failed || writer.len > (size_t)INT_MAX) return -1;
   return (int)writer.len;
-}
-
-int ps_type_format_canonical_signature(const psx_type_t *type,
-                                       char *out, size_t out_size) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_format_canonical_signature_for_target(
-      type, &target, out, out_size);
 }
 
 int ps_type_generic_matches(const psx_type_t *control,

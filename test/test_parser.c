@@ -126,11 +126,19 @@ static arena_context_t *test_arena_context(void) {
 #define ps_type_adjust_parameter_type(...) \
   ps_type_adjust_parameter_type_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_usual_arithmetic_result(...) \
-  ps_type_usual_arithmetic_result_in(test_arena_context(), __VA_ARGS__)
+  ps_type_usual_arithmetic_result_for_target_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_type_binary_result(...) \
-  ps_type_binary_result_in(test_arena_context(), __VA_ARGS__)
+  ps_type_binary_result_for_target_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_type_conditional_result(...) \
-  ps_type_conditional_result_in(test_arena_context(), __VA_ARGS__)
+  ps_type_conditional_result_for_target_in( \
+      test_arena_context(), \
+      ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
+#define ps_type_format_canonical_signature(...) \
+  test_type_format_canonical_signature(__VA_ARGS__)
 #define ps_type_address_result(...) \
   ps_type_address_result_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_decay_array(...) \
@@ -1196,6 +1204,12 @@ static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 static int test_type_sizeof(const psx_type_t *type) {
   ag_target_info_t target = ag_target_info_host();
   return ps_type_sizeof_for_target(type, &target);
+}
+
+static int test_type_format_canonical_signature(
+    const psx_type_t *type, char *out, size_t out_size) {
+  return ps_type_format_canonical_signature_for_target(
+      type, ps_ctx_target_info(test_semantic_context()), out, out_size);
 }
 
 static int test_type_deref_size(const psx_type_t *type) {

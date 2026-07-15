@@ -93,10 +93,6 @@ struct psx_type_t {
 
 };
 
-const psx_type_t *ps_type_usual_arithmetic_result_in(
-    arena_context_t *arena_context,
-    const psx_type_t *lhs, const psx_type_t *rhs,
-    tk_float_kind_t fallback_fp_kind, int force_complex);
 const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *lhs, const psx_type_t *rhs,
@@ -106,16 +102,10 @@ int ps_type_integer_promotion_is_unsigned_for_target(
 int ps_type_usual_arithmetic_result_is_unsigned_for_target(
     const psx_type_t *lhs, const psx_type_t *rhs,
     const ag_target_info_t *target);
-const psx_type_t *ps_type_binary_result_in(
-    arena_context_t *arena_context, psx_type_binary_op_t op,
-    const psx_type_t *lhs, const psx_type_t *rhs);
 const psx_type_t *ps_type_binary_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     psx_type_binary_op_t op,
     const psx_type_t *lhs, const psx_type_t *rhs);
-const psx_type_t *ps_type_conditional_result_in(
-    arena_context_t *arena_context,
-    const psx_type_t *then_type, const psx_type_t *else_type);
 const psx_type_t *ps_type_conditional_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *then_type, const psx_type_t *else_type);
@@ -168,8 +158,6 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
  * layout. Recursive child qualifiers remain part of the containing type. */
 int ps_type_unqualified_semantic_matches(
     const psx_type_t *a, const psx_type_t *b);
-int ps_type_format_canonical_signature(const psx_type_t *type,
-                                       char *out, size_t out_size);
 int ps_type_format_canonical_signature_for_target(
     const psx_type_t *type, const ag_target_info_t *target,
     char *out, size_t out_size);

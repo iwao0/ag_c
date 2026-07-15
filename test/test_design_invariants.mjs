@@ -391,6 +391,10 @@ const removedContextFreeParserApis = [
   "ps_node_integer_promotion_is_unsigned",
   "ps_node_usual_arith_operands_is_unsigned",
   "ps_node_usual_arith_is_unsigned",
+  "ps_type_usual_arithmetic_result_in",
+  "ps_type_binary_result_in",
+  "ps_type_conditional_result_in",
+  "ps_type_format_canonical_signature",
   "psx_eval_parsed_alignas_value",
   "psx_parse_case_const_expr",
   "psx_eval_parsed_enum_const_expr",
@@ -3352,11 +3356,8 @@ if (declaratorShapeBuilderViolations.length) {
 }
 
 for (const functionName of [
-  "ps_type_usual_arithmetic_result_in",
   "ps_type_usual_arithmetic_result_for_target_in",
-  "ps_type_binary_result_in",
   "ps_type_binary_result_for_target_in",
-  "ps_type_conditional_result_in",
   "ps_type_conditional_result_for_target_in",
   "ps_type_address_result_in",
   "ps_type_decay_array_in",
@@ -3664,7 +3665,7 @@ if (!targetIntegerConversionSection ||
   );
 }
 const targetCanonicalSignatureSection = canonicalTypeSource.match(
-  /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature\s*\(/,
+  /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature_for_target\s*\([^]*?\n\}/,
 );
 if (!targetCanonicalSignatureSection ||
     /\bps_type_sizeof\s*\(/.test(targetCanonicalSignatureSection[0]) ||
