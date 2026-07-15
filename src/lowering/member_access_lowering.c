@@ -6,6 +6,7 @@
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
 #include "../parser/type_builder.h"
+#include "../semantic/type_identity.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -169,6 +170,18 @@ node_t *lower_member_access_expression_in(
       member_layout->offset, psx_record_member_decl_type(member),
       member->bit_is_signed, member->bit_width,
       member_layout->bit_offset);
+  if (result && result->lhs &&
+      access->base_address_qual_type.type_id != PSX_TYPE_ID_INVALID) {
+    const psx_type_t *canonical_address =
+        psx_semantic_type_table_lookup(
+            ps_lowering_semantic_types(lowering_context),
+            access->base_address_qual_type.type_id);
+    ps_node_bind_qual_type(
+        result->lhs, canonical_address,
+        (psx_qual_type_t){
+            access->base_address_qual_type.type_id,
+            PSX_TYPE_QUALIFIER_NONE});
+  }
   if (result) result->tok = access->base.tok;
   return result ? result : (node_t *)access;
 }

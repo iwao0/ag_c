@@ -4531,13 +4531,14 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       localRegistrySource,
     ) ||
-    !/\bstatic\s+psx_qual_type_t\s+local_decl_qual_type\s*\(/.test(
+    !/\bstatic\s+int\s+resolve_local_decl_type\s*\(/.test(
       localRegistrySource,
     ) ||
-    !/\bdecl_qual_type\s*=\s*local_decl_qual_type\s*\(/.test(
+    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       localRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
+    /\bps_type_clone_persistent\s*\(/.test(localRegistrySource) ||
     !/\bps_local_registry_bind_semantic_types\s*\(/.test(
       compilationSessionSource,
     )) {
@@ -4556,18 +4557,40 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       globalRegistrySource,
     ) ||
-    !/\bstatic\s+psx_qual_type_t\s+global_decl_qual_type\s*\(/.test(
+    !/\bstatic\s+int\s+resolve_global_decl_type\s*\(/.test(
       globalRegistrySource,
     ) ||
-    !/\bdecl_qual_type\s*=\s*global_decl_qual_type\s*\(/.test(
+    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       globalRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
+    /\bps_type_clone_persistent\s*\(/.test(globalRegistrySource) ||
+    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
+      globalRegistrySource,
+    ) ||
     !/\bps_global_registry_bind_semantic_types\s*\(/.test(
       compilationSessionSource,
     )) {
   throw new Error(
     "global symbols must retain their declaration QualType from the compilation unit semantic type table",
+  );
+}
+
+const globalDeclarationResolutionHeader = await readFile(
+  "src/semantic/global_declaration_resolution.h",
+  "utf8",
+);
+if (!/\bpsx_qual_type_t\s+declaration_qual_type\s*;/.test(
+      globalDeclarationResolutionHeader,
+    ) ||
+    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/\bps_global_registry_bind_decl_qual_type\s*\(/.test(
+      await readFile("src/lowering/global_object_lowering.c", "utf8"),
+    )) {
+  throw new Error(
+    "global declaration resolution must pass an interned QualType identity to lowering",
   );
 }
 

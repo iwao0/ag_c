@@ -16,6 +16,9 @@ struct global_var_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 void ps_node_bind_type(node_t *node, const psx_type_t *type);
+void ps_node_bind_qual_type(
+    node_t *node, const psx_type_t *canonical_type,
+    psx_qual_type_t qual_type);
 int ps_node_generic_selection_index(node_generic_selection_t *selection);
 psx_gvar_init_slot_t ps_gvar_init_slot_view(const struct global_var_t *gv, int idx);
 tk_float_kind_t ps_gvar_init_slot_fp_kind(const struct global_var_t *gv, int idx);

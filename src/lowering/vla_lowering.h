@@ -57,6 +57,7 @@ typedef struct {
   psx_parameter_vla_dimension_t *inner_dimensions;
   int inner_dimension_count;
   const psx_type_t *type;
+  const psx_type_t *stride_storage_type;
   token_t *diag_tok;
 } psx_parameter_vla_lowering_request_t;
 

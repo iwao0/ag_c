@@ -37,6 +37,12 @@ static int intern_available_type(node_t *node, void *user) {
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
     return 1;
   }
+  if (node->qual_type.type_id != PSX_TYPE_ID_INVALID &&
+      node->type == ps_ctx_type_by_id_in(
+                        pass->semantic_context,
+                        node->qual_type.type_id)) {
+    return 1;
+  }
   psx_qual_type_t type =
       ps_ctx_intern_qual_type_in(pass->semantic_context, node->type);
   if (type.type_id != PSX_TYPE_ID_INVALID) {

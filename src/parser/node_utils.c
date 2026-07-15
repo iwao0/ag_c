@@ -2319,6 +2319,16 @@ void ps_node_bind_type(node_t *node, const psx_type_t *type) {
   }
 }
 
+void ps_node_bind_qual_type(
+    node_t *node, const psx_type_t *canonical_type,
+    psx_qual_type_t qual_type) {
+  if (!node || !canonical_type ||
+      qual_type.type_id == PSX_TYPE_ID_INVALID)
+    return;
+  ps_node_bind_type(node, canonical_type);
+  node->qual_type = qual_type;
+}
+
 static int type_is_pointer_view_type(const psx_type_t *type) {
   return type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
 }
@@ -2549,6 +2559,8 @@ static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,
   node_lvar_t *node = arena_alloc_in(arena_context, sizeof(node_lvar_t));
   node->base.kind = ND_LVAR;
   node->base.type = type;
+  if (var && type == ps_lvar_get_decl_type(var))
+    node->base.qual_type = ps_lvar_decl_qual_type(var);
   node->offset = offset;
   node->var = var;
   if (var) {
@@ -3003,6 +3015,7 @@ node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
   if (gv) {
     node->symbol = gv;
     node->base.type = ps_gvar_get_decl_type(gv);
+    node->base.qual_type = ps_gvar_decl_qual_type(gv);
     node->name = gv->name;
     node->name_len = gv->name_len;
     node->is_thread_local = gv->is_thread_local ? 1 : 0;
@@ -3018,6 +3031,7 @@ node_t *psx_node_new_gvar_array_base_for_in(
   if (gv) {
     node->symbol = gv;
     node->base.type = ps_gvar_get_decl_type(gv);
+    node->base.qual_type = ps_gvar_decl_qual_type(gv);
     node->name = gv->name;
     node->name_len = gv->name_len;
     node->is_thread_local = gv->is_thread_local ? 1 : 0;
@@ -3033,7 +3047,12 @@ node_t *psx_node_new_static_local_gvar_for_in(
   if (var) {
     node->symbol = var->static_global;
     node->base.type = static_local_backing_decl_type(var);
-    if (!node->base.type) node->base.type = ps_lvar_get_decl_type(var);
+    if (node->base.type && var->static_global) {
+      node->base.qual_type = ps_gvar_decl_qual_type(var->static_global);
+    } else {
+      node->base.type = ps_lvar_get_decl_type(var);
+      node->base.qual_type = ps_lvar_decl_qual_type(var);
+    }
     node->name = var->static_global_name;
     node->name_len = var->static_global_name_len;
   }

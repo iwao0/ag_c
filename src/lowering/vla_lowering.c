@@ -49,18 +49,6 @@ static lvar_t *create_vla_storage(
       diagnostic_token);
 }
 
-static psx_type_t *runtime_stride_storage_type(
-    psx_lowering_context_t *lowering_context, int count) {
-  if (count <= 0) return NULL;
-  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
-  psx_type_t *slot = ps_type_new_integer_in(
-      arena_context, TK_LONG, 0);
-  return count == 1
-             ? slot
-             : ps_type_new_array_in(
-                   arena_context, slot, count, 0);
-}
-
 psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
@@ -246,13 +234,14 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   }
 
   if (has_runtime_dimension) {
+    if (!request->stride_storage_type) return result;
     int stride_name_len = 0;
     char *stride_name = parameter_stride_storage_name(
         request->name, request->name_len, &stride_name_len);
     result.stride_storage = create_vla_storage(
         request->local_registry, request->lowering_context,
         stride_name, stride_name_len, 8 * count, 0,
-        runtime_stride_storage_type(request->lowering_context, count),
+        request->stride_storage_type,
         request->diag_tok);
     if (!result.stride_storage) return result;
 

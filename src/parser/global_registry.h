@@ -47,8 +47,14 @@ int ps_global_registry_next_float_literal_id(
 int ps_global_registry_bind_decl_type(
     psx_global_registry_t *registry, global_var_t *global,
     const psx_type_t *type);
+int ps_global_registry_bind_decl_qual_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    psx_qual_type_t type);
 int ps_global_registry_complete_array_type(
     psx_global_registry_t *registry, global_var_t *global,
     const psx_type_t *complete_type);
+int ps_global_registry_complete_array_qual_type(
+    psx_global_registry_t *registry, global_var_t *global,
+    psx_qual_type_t complete_type);
 
 #endif

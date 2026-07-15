@@ -316,6 +316,19 @@ static void semantic_resolve_member_access(
         (resolution.base_object_qual_type.qualifiers &
          PSX_TYPE_QUALIFIER_VOLATILE) != 0);
   ps_node_bind_type((node_t *)access, access_type);
+  const psx_type_t *base_type = ps_node_get_type(access->base.lhs);
+  if (access->from_pointer) {
+    access->base_address_qual_type = ps_node_qual_type(access->base.lhs);
+    if (access->base_address_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      access->base_address_qual_type = ps_ctx_intern_qual_type_in(
+          semantic_context, base_type);
+    }
+  } else {
+    const psx_type_t *address_type = ps_type_address_result_in(
+        ps_ctx_arena(semantic_context), base_type);
+    access->base_address_qual_type = ps_ctx_intern_qual_type_in(
+        semantic_context, address_type);
+  }
   access->base.type_state.bit_width =
       (unsigned char)access->resolved_member->bit_width;
   access->base.type_state.bit_offset = 0;

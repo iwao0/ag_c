@@ -200,6 +200,7 @@ typedef struct {
   psx_record_member_decl_t *resolved_member;
   psx_record_id_t resolved_record_id;
   int resolved_member_index;
+  psx_qual_type_t base_address_qual_type;
   unsigned char from_pointer;
 } node_member_access_t;
 

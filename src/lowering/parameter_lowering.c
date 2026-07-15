@@ -6,6 +6,7 @@
 #include "../parser/arena.h"
 #include "../parser/decl.h"
 #include "../parser/local_registry.h"
+#include "../semantic/type_identity.h"
 
 static lvar_t *lower_parameter_with_plan(
     psx_local_registry_t *local_registry,
@@ -68,6 +69,9 @@ lvar_t *lower_resolved_parameter_declaration(
       .name_len = request->name_len,
       .inner_dimension_count = resolution->inner_dimension_count,
       .type = resolution->type,
+      .stride_storage_type = psx_semantic_type_table_lookup(
+          ps_lowering_semantic_types(request->lowering_context),
+          resolution->runtime_stride_storage_type_id),
       .diag_tok = request->diag_tok,
   };
   if (resolution->inner_dimension_count > 0) {

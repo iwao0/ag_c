@@ -55,8 +55,13 @@ void psx_resolve_member_access(
   const psx_semantic_type_table_t *semantic_types =
       ps_ctx_semantic_type_table_in(semantic_context);
   const psx_type_t *base_type = ps_node_get_type(request->base);
-  psx_qual_type_t base_qual_type = ps_ctx_intern_qual_type_in(
-      semantic_context, base_type);
+  psx_qual_type_t base_qual_type = ps_node_qual_type(request->base);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID ||
+      base_type != psx_semantic_type_table_lookup(
+                       semantic_types, base_qual_type.type_id)) {
+    base_qual_type = ps_ctx_intern_qual_type_in(
+        semantic_context, base_type);
+  }
   if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
     resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
     return;

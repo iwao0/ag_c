@@ -26,6 +26,13 @@ void psx_resolve_generic_selection_in_contexts(
     return;
 
   int default_index = -1;
+  psx_qual_type_t *association_types = arena_alloc_in(
+      ps_ctx_arena(semantic_context),
+      (size_t)selection->association_count * sizeof(*association_types));
+  if (!association_types) return;
+  memset(
+      association_types, 0,
+      (size_t)selection->association_count * sizeof(*association_types));
   for (int i = 0; i < selection->association_count; i++) {
     psx_generic_association_t *association = &selection->associations[i];
     if (association->is_default) {
@@ -53,11 +60,16 @@ void psx_resolve_generic_selection_in_contexts(
       resolution->conflict_index = i;
       return;
     }
+    association_types[i] = ps_ctx_intern_qual_type_in(
+        semantic_context, resolved);
+    if (association_types[i].type_id == PSX_TYPE_ID_INVALID) {
+      resolution->conflict_index = i;
+      return;
+    }
     for (int j = 0; j < i; j++) {
       psx_generic_association_t *previous = &selection->associations[j];
       if (!previous->is_default &&
-          ps_type_generic_matches(
-              resolved, previous->type_name.resolved_type)) {
+          association_types[i].type_id == association_types[j].type_id) {
         resolution->status =
             PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE;
         resolution->conflict_index = i;
@@ -66,7 +78,22 @@ void psx_resolve_generic_selection_in_contexts(
     }
   }
 
-  int selected = ps_node_generic_selection_index(selection);
+  psx_qual_type_t control_type = ps_node_qual_type(selection->control);
+  if (control_type.type_id == PSX_TYPE_ID_INVALID) {
+    control_type = ps_ctx_intern_qual_type_in(
+        semantic_context, ps_node_get_type(selection->control));
+  }
+  int selected = -1;
+  if (control_type.type_id != PSX_TYPE_ID_INVALID) {
+    for (int i = 0; i < selection->association_count; i++) {
+      if (!selection->associations[i].is_default &&
+          control_type.type_id == association_types[i].type_id) {
+        selected = i;
+        break;
+      }
+    }
+  }
+  if (selected < 0) selected = default_index;
   if (selected < 0) {
     resolution->status = PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH;
     return;

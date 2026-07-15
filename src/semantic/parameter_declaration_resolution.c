@@ -61,6 +61,22 @@ int psx_resolve_parameter_declaration(
     resolution->lowering_kind = PSX_PARAMETER_LOWER_VLA;
   }
 
+  if (resolution->lowering_kind == PSX_PARAMETER_LOWER_VLA &&
+      has_runtime_inner_dimension(request)) {
+    psx_type_t *slot = ps_type_new_integer_in(
+        ps_ctx_arena(request->type.semantic_context), TK_LONG, 0);
+    psx_type_t *storage_type = request->inner_dimension_count == 1
+        ? slot
+        : ps_type_new_array_in(
+              ps_ctx_arena(request->type.semantic_context), slot,
+              request->inner_dimension_count, 0);
+    psx_qual_type_t storage_identity = ps_ctx_intern_qual_type_in(
+        request->type.semantic_context, storage_type);
+    if (storage_identity.type_id == PSX_TYPE_ID_INVALID) return 0;
+    resolution->runtime_stride_storage_type_id =
+        storage_identity.type_id;
+  }
+
   resolution->inner_dimension_count = request->inner_dimension_count;
   if (request->inner_dimension_count > 0) {
     resolution->inner_dimensions = arena_alloc_in(

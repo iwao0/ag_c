@@ -82,6 +82,12 @@ void psx_resolve_global_declaration(
   if (!type_is_complete_object(semantic_context, object_type)) {
     return;
   }
+  resolution->declaration_qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, request->type);
+  if (resolution->declaration_qual_type.type_id ==
+      PSX_TYPE_ID_INVALID) {
+    return;
+  }
   if (ps_ctx_has_function_name_in(
           semantic_context, request->name, request->name_len)) {
     resolution->status = PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT;

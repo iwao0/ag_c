@@ -28,6 +28,7 @@ typedef struct {
 
 typedef struct {
   psx_global_declaration_status_t status;
+  psx_qual_type_t declaration_qual_type;
   global_var_t *existing;
   int complete_existing_array;
   int clear_existing_extern;
