@@ -1758,7 +1758,6 @@ static void test_member_access_resolution_boundary() {
       ps_type_find_aggregate_object_type(ps_node_get_type(base)));
   ASSERT_TRUE(member_record != NULL);
   ASSERT_EQ(2, member_record->member_count);
-  ((tag_member_info_t *)member_record->members)[1].offset = 77;
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       test_semantic_context(), member_record->record_id, 8, 4));
   const psx_record_layout_t *member_layout =
@@ -4912,7 +4911,7 @@ static void test_record_decl_ownership_boundary() {
   ASSERT_TRUE(first->members != NULL);
   ASSERT_EQ(5, first->members[0].len);
   ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
-  const tag_member_info_t *first_members = first->members;
+  const psx_record_member_decl_t *first_members = first->members;
 
   ps_ctx_reset_tag_diag_state_in(test_semantic_context());
   ASSERT_EQ(1, first->member_count);
@@ -6435,10 +6434,10 @@ static void test_initializer_resolution_boundary() {
   printf("test_initializer_resolution_boundary...\n");
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *array = ps_type_new_array(integer, 2, 8, 0);
-  tag_member_info_t members[2] = {
-      {.name = (char *)"x", .len = 1, .offset = 40,
+  psx_record_member_decl_t members[2] = {
+      {.name = (char *)"x", .len = 1,
        .decl_type = integer},
-      {.name = (char *)"a", .len = 1, .offset = 44,
+      {.name = (char *)"a", .len = 1,
        .decl_type = array},
   };
   psx_record_decl_t definition = {
@@ -6518,10 +6517,10 @@ static void test_initializer_resolution_boundary() {
 
   psx_type_t *recursive = ps_type_new_tag(
       TK_STRUCT, (char *)"RecursiveInit", 13, 0, 16);
-  tag_member_info_t recursive_members[2] = {
-      {.name = (char *)"next", .len = 4, .offset = 0,
+  psx_record_member_decl_t recursive_members[2] = {
+      {.name = (char *)"next", .len = 4,
        .decl_type = ps_type_new_pointer(recursive)},
-      {.name = (char *)"value", .len = 5, .offset = 8,
+      {.name = (char *)"value", .len = 5,
        .decl_type = integer},
   };
   psx_record_decl_t recursive_definition = {
@@ -6563,10 +6562,10 @@ static void test_local_initializer_parse_lowering_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *function_pointer =
       test_function_pointer(integer, NULL, 0, 0);
-  tag_member_info_t members[2] = {
-      {.name = (char *)"fn", .len = 2, .offset = 0,
+  psx_record_member_decl_t members[2] = {
+      {.name = (char *)"fn", .len = 2,
        .decl_type = function_pointer},
-      {.name = (char *)"value", .len = 5, .offset = 8,
+      {.name = (char *)"value", .len = 5,
        .decl_type = integer},
   };
   psx_record_decl_t definition = {
@@ -6622,8 +6621,8 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_TRUE(raw->is_decl_initializer);
 
-  tag_member_info_t union_members[1] = {
-      {.name = (char *)"value", .len = 5, .offset = 0,
+  psx_record_member_decl_t union_members[1] = {
+      {.name = (char *)"value", .len = 5,
        .decl_type = integer},
   };
   psx_record_decl_t union_definition = {
@@ -6749,10 +6748,10 @@ static void test_static_data_initializer_boundary() {
 
   psx_type_t *wide = ps_type_new_integer(TK_LONG, 8, 0);
   psx_type_t *pair = ps_type_new_array(integer, 2, 8, 0);
-  tag_member_info_t union_members[2] = {
-      {.name = (char *)"raw", .len = 3, .offset = 0,
+  psx_record_member_decl_t union_members[2] = {
+      {.name = (char *)"raw", .len = 3,
        .decl_type = wide},
-      {.name = (char *)"a", .len = 1, .offset = 0,
+      {.name = (char *)"a", .len = 1,
        .decl_type = pair},
   };
   psx_record_decl_t union_definition = {
@@ -13777,14 +13776,12 @@ static void test_type_metadata_bridge() {
   psx_record_decl_t *walk_outer_record =
       test_record_decl_mut(walk_gv.decl_type);
   ASSERT_TRUE(walk_outer_record != NULL);
-  ((tag_member_info_t *)walk_outer_record->members)[1].offset = 77;
   psx_type_t *walk_inner_type = (psx_type_t *)
-      ps_tag_member_decl_type(&walk_outer_record->members[0])->base;
+      psx_record_member_decl_type(&walk_outer_record->members[0])->base;
   ASSERT_TRUE(walk_inner_type != NULL);
   psx_record_decl_t *walk_inner_record =
       test_record_decl_mut(walk_inner_type);
   ASSERT_TRUE(walk_inner_record != NULL);
-  ((tag_member_info_t *)walk_inner_record->members)[1].offset = 55;
   ps_gvar_init_slots_alloc(&walk_gv, 5, 0);
   walk_gv.init_count = 5;
   for (int i = 0; i < 5; i++)
@@ -13842,7 +13839,6 @@ static void test_type_metadata_bridge() {
   psx_record_decl_t *walk_array_record =
       test_record_decl_mut(walk_array_element);
   ASSERT_TRUE(walk_array_record != NULL);
-  ((tag_member_info_t *)walk_array_record->members)[1].offset = 66;
   ps_gvar_init_slots_alloc(&walk_array_gv, 4, 0);
   walk_array_gv.init_count = 4;
   for (int i = 0; i < 4; i++)
@@ -13880,17 +13876,13 @@ static void test_type_metadata_bridge() {
       test_record_decl_mut(walk_anon_gv->decl_type);
   ASSERT_TRUE(walk_anon_outer_record != NULL);
   ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
-  const psx_type_t *walk_anon_inner_type = ps_tag_member_decl_tag_type(
-      &walk_anon_outer_record->members[0]);
+  const psx_type_t *walk_anon_inner_type = ps_type_array_leaf_type(
+      psx_record_member_decl_type(&walk_anon_outer_record->members[0]));
   ASSERT_TRUE(walk_anon_inner_type != NULL);
   psx_record_decl_t *walk_anon_inner_record =
       test_record_decl_mut(walk_anon_inner_type);
   ASSERT_TRUE(walk_anon_inner_record != NULL);
   ASSERT_TRUE(walk_anon_inner_record->member_count >= 1);
-  for (int i = 0; i < walk_anon_outer_record->member_count; i++)
-    ((tag_member_info_t *)walk_anon_outer_record->members)[i].offset = 80 + i;
-  for (int i = 0; i < walk_anon_inner_record->member_count; i++)
-    ((tag_member_info_t *)walk_anon_inner_record->members)[i].offset = 60 + i;
   aggregate_walk_trace_t walk_anon_trace = {.gv = walk_anon_gv};
   ASSERT_TRUE(test_gvar_walk_aggregate_initializer(
       walk_anon_gv, 0, &walk_ops, &walk_anon_trace));
@@ -17430,7 +17422,7 @@ static void test_semantic_type_identity() {
       TK_STRUCT, recursive_name, 23, 1, 8);
   recursive_record->record_id = 43;
   psx_type_t *recursive_pointer = ps_type_new_pointer(recursive_record);
-  tag_member_info_t recursive_member = {
+  psx_record_member_decl_t recursive_member = {
       .name = (char *)"next",
       .len = 4,
       .decl_type = recursive_pointer,
@@ -17482,7 +17474,7 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_record_member(
                 ps_ctx_semantic_type_table_in(context),
                 incomplete_record_identity.type_id, 0).type_id);
-  tag_member_info_t completed_member = {
+  psx_record_member_decl_t completed_member = {
       .name = (char *)"value",
       .len = 5,
       .decl_type = const_int,

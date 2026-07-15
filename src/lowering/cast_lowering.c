@@ -200,7 +200,7 @@ static node_t *lower_aggregate_cast(
         ps_ctx_tag_kind_spelling(view.tag_kind));
   }
 
-  tag_member_info_t member = {0};
+  const psx_record_member_decl_t *member = NULL;
   int member_index = -1;
   int member_found = 0;
   const psx_record_decl_t *record = psx_record_decl_table_lookup(
@@ -209,7 +209,7 @@ static node_t *lower_aggregate_cast(
   if (record) {
     for (int i = 0; i < record->member_count; i++) {
       if (record->members[i].len <= 0) continue;
-      member = record->members[i];
+      member = &record->members[i];
       member_index = i;
       member_found = 1;
       break;
@@ -248,7 +248,8 @@ static node_t *lower_aggregate_cast(
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_with_layout_for_in(
           ps_lowering_arena(lowering_context),
-          temp, member_layout->offset, &member,
+          temp, member_layout->offset,
+          psx_record_member_decl_type(member), member->bit_is_signed,
           member_layout->bit_width, member_layout->bit_offset);
   node_t *assign = ps_node_new_assign_in(
       ps_lowering_arena(lowering_context), member_ref, operand);

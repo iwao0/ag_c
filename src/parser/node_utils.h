@@ -152,8 +152,8 @@ node_t *ps_node_new_tag_member_lvar_ref_for_in(
     int member_offset, const struct tag_member_info_t *info);
 node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
     arena_context_t *arena_context, struct lvar_t *owner,
-    int member_offset, const struct tag_member_info_t *declaration,
-    int bit_width, int bit_offset);
+    int member_offset, const psx_type_t *member_type,
+    int bit_is_signed, int bit_width, int bit_offset);
 node_t *ps_node_new_gvar_for_in(arena_context_t *arena_context,
                                 struct global_var_t *gv);
 node_t *psx_node_new_gvar_array_base_for_in(

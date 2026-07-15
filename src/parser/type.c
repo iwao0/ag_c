@@ -1337,6 +1337,38 @@ int ps_type_pointer_depth(const psx_type_t *type) {
   return depth;
 }
 
+int psx_record_member_decl_is_tag_aggregate(
+    const psx_record_member_decl_t *member) {
+  const psx_type_t *type = member
+                               ? ps_type_array_leaf_type(member->decl_type)
+                               : NULL;
+  return ps_type_is_tag_aggregate(type);
+}
+
+int psx_record_member_decl_is_unnamed_struct(
+    const psx_record_member_decl_t *member) {
+  const psx_type_t *type = member
+                               ? ps_type_array_leaf_type(member->decl_type)
+                               : NULL;
+  return member && member->len <= 0 && type &&
+         type->kind == PSX_TYPE_STRUCT;
+}
+
+int psx_record_member_decl_is_unnamed_union(
+    const psx_record_member_decl_t *member) {
+  const psx_type_t *type = member
+                               ? ps_type_array_leaf_type(member->decl_type)
+                               : NULL;
+  return member && member->len <= 0 && type &&
+         type->kind == PSX_TYPE_UNION;
+}
+
+int psx_record_member_decl_is_unnamed_aggregate(
+    const psx_record_member_decl_t *member) {
+  return psx_record_member_decl_is_unnamed_struct(member) ||
+         psx_record_member_decl_is_unnamed_union(member);
+}
+
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                        int is_const_qualified,
                                        int is_volatile_qualified) {

@@ -49,7 +49,7 @@ struct tag_type_t {
   unsigned scope_seq;
   unsigned declaration_seq;
   psx_record_decl_t *record_decl;
-  tag_member_info_t *record_decl_members;
+  psx_record_member_decl_t *record_decl_members;
 };
 
 static int tag_type_is_complete(const tag_type_t *tag) {
@@ -94,21 +94,27 @@ static void refresh_cached_record_decl(
     psx_semantic_context_t *context, tag_type_t *tag) {
   if (!context || !tag || !tag->record_decl) return;
   psx_record_decl_t *record_decl = tag->record_decl;
-  tag_member_info_t *members = NULL;
+  psx_record_member_decl_t *members = NULL;
   int member_count = record_decl->member_count;
   if (member_count > 0) {
     members = ctx_calloc_in(
-        context, (size_t)member_count, sizeof(tag_member_info_t));
+        context, (size_t)member_count, sizeof(*members));
     for (int i = 0; i < member_count; i++) {
+      tag_member_info_t member = {0};
       if (!get_tag_member_info_impl_in(
               context,
               tag->kind, tag->name, tag->len, tag->scope_depth,
-              i, &members[i])) {
+              i, &member)) {
         member_count = i;
         break;
       }
-      members[i].offset = 0;
-      members[i].bit_offset = 0;
+      members[i] = (psx_record_member_decl_t){
+          .name = member.name,
+          .len = member.len,
+          .bit_width = member.bit_width,
+          .bit_is_signed = member.bit_is_signed,
+          .decl_type = member.decl_type,
+      };
     }
   }
 

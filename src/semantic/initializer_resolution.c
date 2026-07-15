@@ -41,7 +41,7 @@ static int initializer_member_offset(
 static psx_initializer_member_ref_t initializer_member_ref(
     const psx_record_layout_table_t *record_layouts,
     const psx_type_t *aggregate_type, const ag_target_info_t *target,
-    int member_index, const tag_member_info_t *declaration) {
+    int member_index, const psx_record_member_decl_t *declaration) {
   psx_initializer_member_ref_t ref = {
       .declaration = declaration,
       .record_id = ps_type_record_id(aggregate_type),
@@ -83,7 +83,7 @@ static int aggregate_member_index_by_name(
     const psx_initializer_designator_t *designator) {
   if (!record || !designator) return -1;
   for (int i = 0; i < record->member_count; i++) {
-    const tag_member_info_t *member = &record->members[i];
+    const psx_record_member_decl_t *member = &record->members[i];
     if (member->len == designator->member_len && member->name &&
         memcmp(member->name, designator->member_name,
                (size_t)designator->member_len) == 0)
@@ -172,11 +172,11 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
       target.union_relative_offset = target.relative_offset;
       target.union_member_index = member_index;
     }
-    const tag_member_info_t *member = &record->members[member_index];
+    const psx_record_member_decl_t *member = &record->members[member_index];
     target.relative_offset += initializer_member_offset(
         record_layouts, aggregate_type, layout_target,
         member_index);
-    target.type = ps_tag_member_decl_type(member);
+    target.type = psx_record_member_decl_type(member);
     target.type_id = psx_semantic_type_table_record_member(
         semantic_types, target.type_id, member_index).type_id;
     target.member_ref = initializer_member_ref(
@@ -217,12 +217,14 @@ static int canonical_member_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
-    const ag_target_info_t *target, const tag_member_info_t *member,
+    const ag_target_info_t *target,
+    const psx_record_member_decl_t *member,
     psx_type_id_t member_type_id) {
-  if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
+  if (!member || psx_record_member_decl_is_unnamed_struct(member)) return 0;
   int per = 1;
-  const psx_type_t *member_type = ps_tag_member_decl_type(member);
-  psx_type_id_t aggregate_type_id = ps_tag_member_is_tag_aggregate(member)
+  const psx_type_t *member_type = psx_record_member_decl_type(member);
+  psx_type_id_t aggregate_type_id =
+      psx_record_member_decl_is_tag_aggregate(member)
                                         ? psx_semantic_type_table_array_leaf(
                                               semantic_types,
                                               member_type_id).type_id
@@ -256,7 +258,7 @@ static int canonical_definition_flat_slot_count(
   int covered_union_offset = 0;
   int covered_union_size = 0;
   for (int i = 0; i < record->member_count; i++) {
-    const tag_member_info_t *member = &record->members[i];
+    const psx_record_member_decl_t *member = &record->members[i];
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
         semantic_types, aggregate_type_id, i).type_id;
     int member_slots = canonical_member_flat_slot_count(
@@ -272,7 +274,7 @@ static int canonical_definition_flat_slot_count(
       }
       continue;
     }
-    if (ps_tag_member_is_unnamed_struct(member)) continue;
+    if (psx_record_member_decl_is_unnamed_struct(member)) continue;
     int member_offset = initializer_member_offset(
         record_layouts, aggregate_type, target, i);
     if (covered_union_size > 0 &&
@@ -281,7 +283,7 @@ static int canonical_definition_flat_slot_count(
       continue;
     }
     slots += member_slots;
-    if (ps_tag_member_is_unnamed_union(member)) {
+    if (psx_record_member_decl_is_unnamed_union(member)) {
       covered_union_offset = member_offset;
       covered_union_size = initializer_type_size(
           semantic_types, record_layouts, member_type_id, target);
@@ -336,7 +338,7 @@ static int collect_initializer_scalar_leaves(
       int max_bytes = -1;
       int max_slots = -1;
       for (int i = 0; i < record->member_count; i++) {
-        const tag_member_info_t *candidate = &record->members[i];
+        const psx_record_member_decl_t *candidate = &record->members[i];
         psx_type_id_t candidate_type_id =
             psx_semantic_type_table_record_member(
                 semantic_types, type_id, i).type_id;
@@ -355,12 +357,12 @@ static int collect_initializer_scalar_leaves(
     }
     int covered_end = -1;
     for (int i = first_member; i < member_count; i++) {
-      const tag_member_info_t *member = &record->members[i];
+      const psx_record_member_decl_t *member = &record->members[i];
       int member_offset = initializer_member_offset(
           record_layouts, type, target, i);
       if (type->kind == PSX_TYPE_STRUCT && member_offset < covered_end)
         continue;
-      const psx_type_t *member_type = ps_tag_member_decl_type(member);
+      const psx_type_t *member_type = psx_record_member_decl_type(member);
       psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
           semantic_types, type_id, i).type_id;
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||

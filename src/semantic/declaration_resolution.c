@@ -199,7 +199,7 @@ static int object_scalar_slots_by_id(
   int slots = 0;
   int covered_end = -1;
   for (int i = 0; i < record->member_count; i++) {
-    const tag_member_info_t *member = &record->members[i];
+    const psx_record_member_decl_t *member = &record->members[i];
     const psx_record_member_layout_t *member_layout =
         psx_record_layout_member(layout, i);
     if (!member_layout) return 0;

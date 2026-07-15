@@ -56,8 +56,20 @@ typedef enum {
   PSX_TYPE_BINARY_LOGICAL,
 } psx_type_binary_op_t;
 
-struct tag_member_info_t;
 typedef struct arena_context_t arena_context_t;
+
+typedef struct psx_record_member_decl_t {
+  char *name;
+  int len;
+  int bit_width;
+  int bit_is_signed;
+  const psx_type_t *decl_type;
+} psx_record_member_decl_t;
+
+static inline const psx_type_t *psx_record_member_decl_type(
+    const psx_record_member_decl_t *member) {
+  return member ? member->decl_type : NULL;
+}
 
 typedef struct psx_record_decl_t {
   psx_record_id_t record_id;
@@ -66,7 +78,7 @@ typedef struct psx_record_decl_t {
   int tag_len;
   unsigned char is_complete;
   int member_count;
-  const struct tag_member_info_t *members;
+  const psx_record_member_decl_t *members;
 } psx_record_decl_t;
 
 struct psx_type_t {
@@ -172,5 +184,13 @@ int ps_type_generic_select_index(
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
+int psx_record_member_decl_is_tag_aggregate(
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_unnamed_struct(
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_unnamed_union(
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_unnamed_aggregate(
+    const psx_record_member_decl_t *member);
 
 #endif

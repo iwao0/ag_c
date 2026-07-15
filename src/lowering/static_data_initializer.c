@@ -75,7 +75,7 @@ static int record_member_offset(
 static psx_initializer_member_ref_t initializer_member_ref(
     const static_array_lowering_t *lowering,
     const psx_type_t *aggregate_type, int member_index,
-    const tag_member_info_t *declaration) {
+    const psx_record_member_decl_t *declaration) {
   psx_initializer_member_ref_t ref = {
       .declaration = declaration,
       .record_id = ps_type_record_id(aggregate_type),
@@ -135,9 +135,9 @@ static psx_initializer_target_t positional_target(
       lowering->lowering_context, context_type);
   if (context_type->kind == PSX_TYPE_UNION &&
       record && record->member_count > 0) {
-    const tag_member_info_t *member = &record->members[0];
+    const psx_record_member_decl_t *member = &record->members[0];
     if (preserve_subobject) {
-      target.type = ps_tag_member_decl_type(member);
+      target.type = psx_record_member_decl_type(member);
       target.type_id = ps_lowering_type_id(
           lowering->lowering_context, target.type);
       target.relative_offset = context_offset +
@@ -154,8 +154,8 @@ static psx_initializer_target_t positional_target(
   if (!preserve_subobject) return target;
   if (context_type->kind == PSX_TYPE_STRUCT && record) {
     for (int i = 0; i < record->member_count; i++) {
-      const tag_member_info_t *member = &record->members[i];
-      const psx_type_t *member_type = ps_tag_member_decl_type(member);
+      const psx_record_member_decl_t *member = &record->members[i];
+      const psx_type_t *member_type = psx_record_member_decl_type(member);
       int member_offset = context_offset +
                           record_member_offset(
                               lowering, context_type, i);
@@ -378,7 +378,7 @@ static int type_contains_float(
     for (int i = 0; i < record->member_count; i++) {
       if (type_contains_float(
               lowering_context,
-              ps_tag_member_decl_type(&record->members[i]))) return 1;
+              psx_record_member_decl_type(&record->members[i]))) return 1;
     }
   }
   return 0;

@@ -19,6 +19,19 @@ typedef struct tag_member_info_t {
   const psx_type_t *decl_type;
 } tag_member_info_t;
 
+static inline tag_member_info_t ps_tag_member_declaration_view(
+    const psx_record_member_decl_t *member) {
+  return member
+             ? (tag_member_info_t){
+                   .name = member->name,
+                   .len = member->len,
+                   .bit_width = member->bit_width,
+                   .bit_is_signed = member->bit_is_signed,
+                   .decl_type = member->decl_type,
+               }
+             : (tag_member_info_t){0};
+}
+
 static inline const psx_type_t *ps_tag_member_decl_type(
     const tag_member_info_t *m) {
   return m ? m->decl_type : NULL;

@@ -11,7 +11,7 @@ typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
 
 typedef struct {
-  const tag_member_info_t *declaration;
+  const psx_record_member_decl_t *declaration;
   psx_record_id_t record_id;
   int member_index;
   psx_record_member_layout_t layout;

@@ -13,14 +13,11 @@ static int node_is_single_tag_array_view(node_t *node) {
 }
 
 static int aggregate_member_index(
-    const psx_record_decl_t *record, const tag_member_info_t *member,
-    const char *member_name, int member_name_len) {
-  if (!record || !member || !record->members) return -1;
+    const psx_record_decl_t *record, const char *member_name,
+    int member_name_len) {
+  if (!record || !record->members) return -1;
   for (int i = 0; i < record->member_count; i++) {
-    if (member == &record->members[i]) return i;
-  }
-  for (int i = 0; i < record->member_count; i++) {
-    const tag_member_info_t *candidate = &record->members[i];
+    const psx_record_member_decl_t *candidate = &record->members[i];
     if (candidate->name && candidate->len == member_name_len &&
         memcmp(candidate->name, member_name, (size_t)member_name_len) == 0)
       return i;
@@ -28,13 +25,13 @@ static int aggregate_member_index(
   return -1;
 }
 
-static const tag_member_info_t *aggregate_member_named(
+static const psx_record_member_decl_t *aggregate_member_named(
     const psx_record_decl_t *record, const char *member_name,
     int member_name_len) {
   if (!record || !record->members || !member_name || member_name_len <= 0)
     return NULL;
   for (int i = 0; i < record->member_count; i++) {
-    const tag_member_info_t *member = &record->members[i];
+    const psx_record_member_decl_t *member = &record->members[i];
     if (member->name && member->len == member_name_len &&
         memcmp(member->name, member_name, (size_t)member_name_len) == 0)
       return member;
@@ -85,13 +82,12 @@ void psx_resolve_member_access(
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, resolution->record_id);
 
-  const tag_member_info_t *member = aggregate_member_named(
+  const psx_record_member_decl_t *member = aggregate_member_named(
       record, request->member_name, request->member_name_len);
   if (member) {
     resolution->member_index = aggregate_member_index(
-        record, member,
-        request->member_name, request->member_name_len);
-    resolution->member = member_declaration_view(member);
+        record, request->member_name, request->member_name_len);
+    resolution->member = ps_tag_member_declaration_view(member);
     resolution->status = PSX_MEMBER_ACCESS_OK;
     return;
   }
@@ -116,8 +112,7 @@ void psx_resolve_member_access(
                              : PSX_MEMBER_ACCESS_NOT_FOUND;
   if (found) {
     resolution->member_index = aggregate_member_index(
-        record, &resolution->member,
-        request->member_name, request->member_name_len);
+        record, request->member_name, request->member_name_len);
     resolution->member = member_declaration_view(&resolution->member);
   }
 }
