@@ -1937,6 +1937,15 @@ const globalDeclarationResolutionSource = await readFile(
   "src/semantic/global_declaration_resolution.c",
   "utf8",
 );
+if (!/\bps_ctx_get_record_decl_in\s*\(/.test(
+      globalDeclarationResolutionSource,
+    ) ||
+    !/record->is_complete/.test(globalDeclarationResolutionSource) ||
+    /\bps_type_sizeof\s*\(/.test(globalDeclarationResolutionSource)) {
+  throw new Error(
+    "global object completeness must come from recursive type meaning and RecordDecl state",
+  );
+}
 const declarationRegistrationSource = await readFile(
   "src/semantic/declaration_registration.c",
   "utf8",

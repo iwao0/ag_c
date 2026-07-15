@@ -3949,6 +3949,60 @@ static void test_global_declaration_resolution_boundary() {
   printf("test_global_declaration_resolution_boundary...\n");
   reset_test_global_registry_translation_unit();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+
+  char *incomplete_tag_name = (char *)"__BoundaryIncompleteRecord";
+  int incomplete_tag_len = 26;
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      test_semantic_context(), test_local_registry(), TK_STRUCT,
+      incomplete_tag_name, incomplete_tag_len, 0, 0, 0, 1));
+  const psx_record_decl_t *incomplete_record =
+      ps_ctx_get_tag_definition_in(
+          test_semantic_context(), TK_STRUCT,
+          incomplete_tag_name, incomplete_tag_len);
+  ASSERT_TRUE(incomplete_record != NULL);
+  ASSERT_TRUE(!incomplete_record->is_complete);
+  psx_type_t *stale_complete_view = ps_type_new_tag(
+      TK_STRUCT, incomplete_tag_name, incomplete_tag_len, 1, 64);
+  stale_complete_view->record_id = incomplete_record->record_id;
+  stale_complete_view->aggregate_definition = incomplete_record;
+  psx_global_declaration_resolution_t record_resolution;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = (char *)"__boundary_stale_complete_record",
+          .name_len = 32,
+          .type = stale_complete_view,
+      },
+      &record_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT,
+            record_resolution.status);
+
+  char *complete_tag_name = (char *)"__BoundaryCompleteRecord";
+  int complete_tag_len = 24;
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      test_semantic_context(), test_local_registry(), TK_STRUCT,
+      complete_tag_name, complete_tag_len, 1, 0, 16, 8));
+  const psx_record_decl_t *complete_record = ps_ctx_get_tag_definition_in(
+      test_semantic_context(), TK_STRUCT,
+      complete_tag_name, complete_tag_len);
+  ASSERT_TRUE(complete_record != NULL);
+  ASSERT_TRUE(complete_record->is_complete);
+  psx_type_t *stale_incomplete_view = ps_type_new_tag(
+      TK_STRUCT, complete_tag_name, complete_tag_len, 1, 0);
+  stale_incomplete_view->record_id = complete_record->record_id;
+  stale_incomplete_view->aggregate_definition = complete_record;
+  psx_resolve_global_declaration(
+      &(psx_global_declaration_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .global_registry = test_global_registry(),
+          .name = (char *)"__boundary_stale_incomplete_record",
+          .name_len = 34,
+          .type = stale_incomplete_view,
+      },
+      &record_resolution);
+  ASSERT_EQ(PSX_GLOBAL_DECLARATION_OK, record_resolution.status);
+
   psx_type_t *incomplete = ps_type_new_array(
       integer, 0, 0, 0);
   psx_global_declaration_resolution_t first_resolution;

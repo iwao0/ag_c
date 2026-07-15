@@ -17,11 +17,39 @@ static int global_types_compatible(
   return ps_type_shape_matches(existing->base, incoming->base);
 }
 
-static int is_incomplete_object_type(const psx_type_t *type) {
-  if (!type) return 0;
-  const psx_type_t *value = ps_type_array_leaf_type(type);
-  return value && value->kind != PSX_TYPE_POINTER &&
-         ps_type_is_tag_aggregate(value) && ps_type_sizeof(value) <= 0;
+static int record_type_is_complete(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+  if (!semantic_context || !ps_type_is_tag_aggregate(type)) return 0;
+  psx_record_id_t record_id = ps_type_record_id(type);
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, record_id);
+  return record && record->is_complete;
+}
+
+static int type_contains_incomplete_record(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+  if (!type || type->kind == PSX_TYPE_POINTER ||
+      type->kind == PSX_TYPE_FUNCTION)
+    return 0;
+  if (ps_type_is_tag_aggregate(type))
+    return !record_type_is_complete(semantic_context, type);
+  if (type->kind == PSX_TYPE_ARRAY)
+    return type_contains_incomplete_record(semantic_context, type->base);
+  return 0;
+}
+
+static int type_is_complete_object(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+  if (!type || type->kind == PSX_TYPE_INVALID ||
+      type->kind == PSX_TYPE_VOID || type->kind == PSX_TYPE_FUNCTION)
+    return 0;
+  if (type->kind == PSX_TYPE_POINTER) return 1;
+  if (ps_type_is_tag_aggregate(type))
+    return record_type_is_complete(semantic_context, type);
+  if (type->kind == PSX_TYPE_ARRAY)
+    return type->array_len > 0 &&
+           type_is_complete_object(semantic_context, type->base);
+  return 1;
 }
 
 void psx_resolve_global_declaration(
@@ -37,7 +65,8 @@ void psx_resolve_global_declaration(
   psx_semantic_context_t *semantic_context = request->semantic_context;
   psx_global_registry_t *global_registry = request->global_registry;
 
-  if (is_incomplete_object_type(request->type) ||
+  if (type_contains_incomplete_record(
+          semantic_context, request->type) ||
       (request->type->kind == PSX_TYPE_ARRAY &&
        request->type->array_len <= 0 && !request->is_extern_decl &&
        !request->has_initializer)) {
@@ -47,7 +76,10 @@ void psx_resolve_global_declaration(
   int incoming_is_incomplete_array =
       request->type->kind == PSX_TYPE_ARRAY &&
       request->type->array_len <= 0;
-  if (!incoming_is_incomplete_array && ps_type_sizeof(request->type) <= 0) {
+  const psx_type_t *object_type = incoming_is_incomplete_array
+                                      ? request->type->base
+                                      : request->type;
+  if (!type_is_complete_object(semantic_context, object_type)) {
     return;
   }
   if (ps_ctx_has_function_name_in(
