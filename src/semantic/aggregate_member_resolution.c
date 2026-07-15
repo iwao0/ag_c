@@ -46,21 +46,26 @@ typedef struct {
 } aggregate_object_placement_t;
 
 static psx_aggregate_member_status_t validate_aggregate_member_type(
-    const psx_semantic_type_table_t *semantic_types,
-    psx_type_id_t type_id) {
+    psx_semantic_context_t *semantic_context, psx_type_id_t type_id) {
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
   const psx_type_t *type = psx_semantic_type_table_lookup(
       semantic_types, type_id);
   if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
-  const psx_type_t *stored = ps_type_array_leaf_type(type);
+  psx_qual_type_t stored_identity = psx_semantic_type_table_array_leaf(
+      semantic_types, type_id);
+  const psx_type_t *stored = psx_semantic_type_table_lookup(
+      semantic_types, stored_identity.type_id);
   if (!stored) return PSX_AGGREGATE_MEMBER_INVALID;
   if (stored->kind == PSX_TYPE_POINTER)
     return PSX_AGGREGATE_MEMBER_OK;
   if (stored->kind == PSX_TYPE_FUNCTION)
     return PSX_AGGREGATE_MEMBER_FUNCTION_TYPE;
-  if (ps_type_is_tag_aggregate(stored) &&
-      (!stored->aggregate_definition ||
-       !stored->aggregate_definition->is_complete)) {
-    return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
+  if (ps_type_is_tag_aggregate(stored)) {
+    const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+        semantic_context, ps_type_record_id(stored));
+    if (!record || !record->is_complete)
+      return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
   }
   return PSX_AGGREGATE_MEMBER_OK;
 }
@@ -314,7 +319,7 @@ void psx_resolve_aggregate_member_declaration(
     const psx_semantic_type_table_t *semantic_types =
         ps_ctx_semantic_type_table_in(semantic_context);
     resolution->status = validate_aggregate_member_type(
-        semantic_types, identity.type_id);
+        semantic_context, identity.type_id);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
     const psx_record_layout_table_t *record_layouts =
         ps_ctx_record_layout_table_in(semantic_context);

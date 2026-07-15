@@ -1783,9 +1783,14 @@ if (!aggregateMemberResolutionType ||
     !/\bps_ctx_record_layout_table_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/aggregate_definition->is_complete/.test(
+    /\baggregate_definition\b/.test(aggregateMemberResolutionSource) ||
+    !/\bpsx_semantic_type_table_array_leaf\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
+    !/\bps_ctx_get_record_decl_in\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/record->is_complete/.test(aggregateMemberResolutionSource) ||
     !aggregateLayoutStateType ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(
       aggregateLayoutStateType[1],
