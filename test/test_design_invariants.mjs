@@ -3619,7 +3619,6 @@ if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
 }
 const compatibilityTagMemberViolations = [];
 for (const file of parserSourceFiles) {
-  if (file === "src/parser/node_utils.c") continue;
   const source = await readFile(file, "utf8");
   if (/\btag_member_info_t\b|tag_member_public\.h/.test(source)) {
     compatibilityTagMemberViolations.push(file);
@@ -3628,7 +3627,7 @@ for (const file of parserSourceFiles) {
 if (allSourceFiles.includes("src/parser/tag_member_public.h") ||
     compatibilityTagMemberViolations.length) {
   throw new Error(
-    "combined compatibility member views must stay private to node_utils.c:\n" +
+    "combined compatibility member views must not exist in the parser:\n" +
       compatibilityTagMemberViolations.join("\n"),
   );
 }
@@ -4721,9 +4720,10 @@ if (!aggregateWalkerLayoutSection ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bgvar_apply_record_member_layout\s*\(/.test(
+    !/\bgvar_get_record_member_layout\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
+    /\btag_member_info_t\b/.test(aggregateWalkerLayoutSection[0]) ||
     !/\bgvar_resolved_record_find_unnamed_union_covering_offset\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||

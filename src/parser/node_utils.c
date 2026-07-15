@@ -14,44 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-  char *name;
-  int len;
-  int offset;
-  int bit_width;
-  int bit_offset;
-  int bit_is_signed;
-  const psx_type_t *decl_type;
-} tag_member_info_t;
-
-static tag_member_info_t ps_tag_member_declaration_view(
-    const psx_record_member_decl_t *member) {
-  return member
-             ? (tag_member_info_t){
-                   .name = member->name,
-                   .len = member->len,
-                   .bit_width = member->bit_width,
-                   .bit_is_signed = member->bit_is_signed,
-                   .decl_type = member->decl_type,
-               }
-             : (tag_member_info_t){0};
-}
-
-static const psx_type_t *ps_tag_member_decl_type(
-    const tag_member_info_t *member) {
-  return member ? member->decl_type : NULL;
-}
-
-static const psx_type_t *ps_tag_member_decl_tag_type(
-    const tag_member_info_t *member) {
-  const psx_type_t *type = ps_tag_member_decl_type(member);
-  while (type &&
-         (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
-    type = type->base;
-  }
-  return ps_type_is_tag_aggregate(type) ? type : NULL;
-}
-
 static int type_is_pointer_view_type(const psx_type_t *type);
 static const psx_type_t *lvar_decl_type_view(const lvar_t *var);
 static const psx_type_t *gvar_decl_type_view(const global_var_t *gv);
@@ -91,49 +53,20 @@ static int ctx_get_tag_member_count_scoped(
   return ps_ctx_get_tag_member_count_in(semantic_context, tk, tn, tl);
 }
 
-static int materialize_tag_member_compat_view(
-    const psx_record_member_decl_t *declaration,
-    const psx_record_member_layout_t *layout,
-    tag_member_info_t *out) {
-  if (!declaration || !layout || !out) return 0;
-  *out = ps_tag_member_declaration_view(declaration);
-  out->offset = layout->offset;
-  out->bit_offset = layout->bit_offset;
-  return 1;
-}
-
-static int ctx_get_tag_member_compat_view(
-    psx_semantic_context_t *semantic_context,
-    token_kind_t tk, char *tn, int tl, int idx,
-    tag_member_info_t *out) {
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  return ps_ctx_get_tag_member_in(
-             semantic_context, tk, tn, tl, idx,
-             &declaration, &layout) &&
-         materialize_tag_member_compat_view(
-             &declaration, &layout, out);
-}
-
-static int ctx_get_tag_member_info_scoped(
+static int ctx_get_tag_member_scoped(
     psx_semantic_context_t *semantic_context,
     token_kind_t tk, char *tn, int tl, int scope_depth_p1, int idx,
-    tag_member_info_t *out) {
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
   int scope_depth = tag_scope_depth_from_p1(scope_depth_p1);
-  psx_record_member_decl_t declaration = {0};
-  psx_record_member_layout_t layout = {0};
-  int found = 0;
   if (scope_depth >= 0) {
-    found = ps_ctx_get_tag_member_at_scope_in(
+    return ps_ctx_get_tag_member_at_scope_in(
         semantic_context, tk, tn, tl, scope_depth, idx,
-        &declaration, &layout);
-  } else {
-    found = ps_ctx_get_tag_member_in(
-        semantic_context, tk, tn, tl, idx,
-        &declaration, &layout);
+        out_declaration, out_layout);
   }
-  return found && materialize_tag_member_compat_view(
-                      &declaration, &layout, out);
+  return ps_ctx_get_tag_member_in(
+      semantic_context, tk, tn, tl, idx,
+      out_declaration, out_layout);
 }
 
 static psx_type_t *type_with_self_qualifiers_in(
@@ -612,7 +545,9 @@ static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
     int tag_scope_depth_p1,
     const psx_record_decl_t *record_decl);
 static int gvar_aggregate_member_next(gvar_aggregate_member_iter_t *iter,
-                                      tag_member_info_t *out, int *out_ordinal);
+                                      psx_record_member_decl_t *out_declaration,
+                                      psx_record_member_layout_t *out_layout,
+                                      int *out_ordinal);
 static void gvar_aggregate_member_iter_set_next(gvar_aggregate_member_iter_t *iter,
                                                 int next_ordinal);
 static int gvar_walk_struct_initializer(
@@ -666,25 +601,13 @@ static int tag_union_init_member_for_slot_scoped(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int tag_scope_depth_p1,
     const psx_record_decl_t *record_decl,
-    const global_var_t *gv, int idx, tag_member_info_t *out,
+    const global_var_t *gv, int idx,
+    psx_record_member_decl_t *out_declaration,
     int *out_ordinal);
-static const psx_record_decl_t *gvar_member_record_decl(
-    const psx_record_decl_table_t *record_decls,
-    const tag_member_info_t *member);
-static int ps_tag_member_is_tag_aggregate(
-    const tag_member_info_t *member);
-static int ps_tag_member_is_struct_aggregate(
-    const tag_member_info_t *member);
-static int ps_tag_member_is_union_aggregate(
-    const tag_member_info_t *member);
-static int ps_tag_member_is_unnamed_struct(
-    const tag_member_info_t *member);
-static int ps_tag_member_is_unnamed_union(
-    const tag_member_info_t *member);
-static int ps_tag_member_is_unnamed_aggregate(
-    const tag_member_info_t *member);
 static void gvar_aggregate_member_iter_note_cover(
-    gvar_aggregate_member_iter_t *iter, const tag_member_info_t *member,
+    gvar_aggregate_member_iter_t *iter,
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout,
     int member_ordinal);
 
 static int gvar_member_value_size_for_target(
@@ -715,23 +638,22 @@ static const psx_record_member_layout_t *record_decl_member_layout_in(
   return psx_record_layout_member(layout, member_index);
 }
 
-static int gvar_apply_record_member_layout(
+static int gvar_get_record_member_layout(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
-    int member_ordinal, tag_member_info_t *member) {
+    int member_ordinal, psx_record_member_layout_t *out_layout) {
   const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
       semantic_types, aggregate_type_id);
   if (!aggregate_type ||
-      aggregate_type->record_id == PSX_RECORD_ID_INVALID || !member)
+      aggregate_type->record_id == PSX_RECORD_ID_INVALID || !out_layout)
     return 0;
   const psx_record_layout_t *layout = psx_record_layout_table_lookup(
       record_layouts, aggregate_type->record_id, target);
   const psx_record_member_layout_t *member_layout =
       psx_record_layout_member(layout, member_ordinal);
   if (!member_layout) return 0;
-  member->offset = member_layout->offset;
-  member->bit_offset = member_layout->bit_offset;
+  *out_layout = *member_layout;
   return 1;
 }
 
@@ -813,30 +735,35 @@ static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
 }
 
 static int gvar_aggregate_member_next(gvar_aggregate_member_iter_t *iter,
-                                      tag_member_info_t *out, int *out_ordinal) {
-  if (!iter || !out) return 0;
+                                      psx_record_member_decl_t *out_declaration,
+                                      psx_record_member_layout_t *out_layout,
+                                      int *out_ordinal) {
+  if (!iter || !out_declaration || !out_layout) return 0;
   while (iter->ordinal < iter->count) {
     int ordinal = iter->ordinal++;
-    tag_member_info_t mi = {0};
+    psx_record_member_decl_t declaration = {0};
+    psx_record_member_layout_t layout = {0};
     if (iter->record_decl) {
-      mi = ps_tag_member_declaration_view(
-          &iter->record_decl->members[ordinal]);
-    } else if (!ctx_get_tag_member_info_scoped(
+      declaration = iter->record_decl->members[ordinal];
+    } else if (!ctx_get_tag_member_scoped(
                    iter->semantic_context,
                    iter->tag_kind, iter->tag_name, iter->tag_len,
-                   iter->tag_scope_depth_p1, ordinal, &mi)) {
+                   iter->tag_scope_depth_p1, ordinal,
+                   &declaration, &layout)) {
         return 0;
       }
-    if (ps_tag_member_is_unnamed_struct(&mi)) continue;
-    if (!gvar_apply_record_member_layout(
+    if (ps_record_member_decl_is_unnamed_struct(&declaration)) continue;
+    if (!gvar_get_record_member_layout(
             iter->semantic_types, iter->record_layouts, iter->target,
-            iter->aggregate_type_id, ordinal, &mi))
+            iter->aggregate_type_id, ordinal, &layout))
       return 0;
     if (ps_tag_flat_cover_state_covers(
-            &iter->cover_state, mi.offset))
+            &iter->cover_state, layout.offset))
       continue;
-    gvar_aggregate_member_iter_note_cover(iter, &mi, ordinal);
-    *out = mi;
+    gvar_aggregate_member_iter_note_cover(
+        iter, &declaration, &layout, ordinal);
+    *out_declaration = declaration;
+    *out_layout = layout;
     if (out_ordinal) *out_ordinal = ordinal;
     return 1;
   }
@@ -863,82 +790,22 @@ static int gvar_walk_require_bitfield_member(const psx_gvar_aggregate_walk_ops_t
   return ops && ops->bitfield_member;
 }
 
-static psx_record_member_decl_t gvar_member_declaration_view(
-    const tag_member_info_t *member) {
-  return member
-             ? (psx_record_member_decl_t){
-                   .name = member->name,
-                   .len = member->len,
-                   .bit_width = member->bit_width,
-                   .bit_is_signed = member->bit_is_signed,
-                   .decl_type = ps_tag_member_decl_type(member),
-               }
-             : (psx_record_member_decl_t){0};
-}
-
-static int ps_tag_member_is_tag_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_tag_aggregate(&declaration);
-}
-
-static int ps_tag_member_is_struct_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_struct_aggregate(&declaration);
-}
-
-static int ps_tag_member_is_union_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_union_aggregate(&declaration);
-}
-
-static int ps_tag_member_is_unnamed_struct(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_unnamed_struct(&declaration);
-}
-
-static int ps_tag_member_is_unnamed_union(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_unnamed_union(&declaration);
-}
-
-static int ps_tag_member_is_unnamed_aggregate(
-    const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return ps_record_member_decl_is_unnamed_aggregate(&declaration);
-}
-
 static void gvar_walk_emit_scalar(
     const psx_gvar_aggregate_walk_ops_t *ops, void *user,
-    const tag_member_info_t *member, psx_type_id_t value_type_id,
+    const psx_record_member_decl_t *declaration,
+    psx_type_id_t value_type_id,
     int slot, long long offset) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  ops->scalar(user, &declaration, value_type_id, slot, offset);
+  ops->scalar(user, declaration, value_type_id, slot, offset);
 }
 
 static void gvar_walk_emit_bitfield_member(
     const psx_gvar_aggregate_walk_ops_t *ops, void *user,
-    const tag_member_info_t *member, psx_type_id_t value_type_id,
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout,
+    psx_type_id_t value_type_id,
     int slot, long long offset) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  psx_record_member_layout_t layout = {
-      .offset = member->offset,
-      .bit_offset = member->bit_offset,
-  };
   ops->bitfield_member(
-      user, &declaration, &layout, value_type_id, slot, offset);
+      user, declaration, layout, value_type_id, slot, offset);
 }
 
 static void gvar_walk_emit_padding(const psx_gvar_aggregate_walk_ops_t *ops,
@@ -948,17 +815,6 @@ static void gvar_walk_emit_padding(const psx_gvar_aggregate_walk_ops_t *ops,
 
 static int gvar_walk_needs_padding(const psx_gvar_aggregate_walk_ops_t *ops) {
   return ops && ops->padding;
-}
-
-static const psx_record_decl_t *gvar_member_record_decl(
-    const psx_record_decl_table_t *record_decls,
-    const tag_member_info_t *member) {
-  const psx_type_t *type =
-      ps_type_array_leaf_type(ps_tag_member_decl_type(member));
-  return type && ps_type_is_tag_aggregate(type)
-             ? psx_record_decl_table_lookup(
-                   record_decls, ps_type_record_id(type))
-             : NULL;
 }
 
 static const psx_record_decl_t *gvar_member_declaration_record_decl(
@@ -992,22 +848,22 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
   int member_count = record_decl->member_count;
   if (layout->member_count < member_count) member_count = layout->member_count;
   for (int i = 0; i < member_count; i++) {
-    tag_member_info_t member = ps_tag_member_declaration_view(
-        &record_decl->members[i]);
-    if (!ps_tag_member_is_unnamed_aggregate(&member) ||
-        !gvar_apply_record_member_layout(
+    const psx_record_member_decl_t *member = &record_decl->members[i];
+    psx_record_member_layout_t member_layout = {0};
+    if (!ps_record_member_decl_is_unnamed_aggregate(member) ||
+        !gvar_get_record_member_layout(
             semantic_types, record_layouts, target, aggregate_type_id,
-            i, &member))
+            i, &member_layout))
       continue;
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
         semantic_types, aggregate_type_id, i).type_id;
     int member_size = ps_type_sizeof_id_with_records(
         semantic_types, record_layouts, member_type_id, target);
-    int start = base_offset + member.offset;
+    int start = base_offset + member_layout.offset;
     if (member_size <= 0 || target_offset < start ||
         target_offset >= start + member_size)
       continue;
-    if (ps_tag_member_is_unnamed_union(&member)) {
+    if (ps_record_member_decl_is_unnamed_union(member)) {
       if (out_offset) *out_offset = start;
       if (out_size) *out_size = member_size;
       return 1;
@@ -1017,7 +873,7 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
     if (gvar_resolved_record_find_unnamed_union_covering_offset(
             semantic_types, record_decls, record_layouts, target,
             child_type_id,
-            gvar_member_record_decl(record_decls, &member), start,
+            gvar_member_declaration_record_decl(record_decls, member), start,
             target_offset, out_offset, out_size))
       return 1;
   }
@@ -1025,30 +881,26 @@ static int gvar_resolved_record_find_unnamed_union_covering_offset(
 }
 
 static void gvar_aggregate_member_iter_note_cover(
-    gvar_aggregate_member_iter_t *iter, const tag_member_info_t *member,
+    gvar_aggregate_member_iter_t *iter,
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout,
     int member_ordinal) {
-  if (!iter || !member) return;
+  if (!iter || !declaration || !layout) return;
   if (!iter->record_decl) {
-    psx_record_member_decl_t declaration =
-        gvar_member_declaration_view(member);
-    psx_record_member_layout_t layout = {
-        .offset = member->offset,
-        .bit_offset = member->bit_offset,
-    };
     ps_tag_flat_cover_state_note_in(
         iter->semantic_context, &iter->cover_state, iter->tag_kind,
-        iter->tag_name, iter->tag_len, &declaration, &layout);
+        iter->tag_name, iter->tag_len, declaration, layout);
     return;
   }
   psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
       iter->semantic_types, iter->aggregate_type_id,
       member_ordinal).type_id;
-  if (ps_tag_member_is_unnamed_union(member)) {
+  if (ps_record_member_decl_is_unnamed_union(declaration)) {
     int member_size = ps_type_sizeof_id_with_records(
         iter->semantic_types, iter->record_layouts, member_type_id,
         iter->target);
     if (member_size > 0) {
-      iter->cover_state.covered_union_off = member->offset;
+      iter->cover_state.covered_union_off = layout->offset;
       iter->cover_state.covered_union_size = member_size;
     }
     return;
@@ -1058,7 +910,7 @@ static void gvar_aggregate_member_iter_note_cover(
   if (gvar_resolved_record_find_unnamed_union_covering_offset(
           iter->semantic_types, iter->record_decls,
           iter->record_layouts, iter->target,
-          iter->aggregate_type_id, iter->record_decl, 0, member->offset,
+          iter->aggregate_type_id, iter->record_decl, 0, layout->offset,
           &cover_offset, &cover_size)) {
     iter->cover_state.covered_union_off = cover_offset;
     iter->cover_state.covered_union_size = cover_size;
@@ -1085,6 +937,16 @@ static psx_type_id_t gvar_member_value_type_id(
              : member_type_id;
 }
 
+static const psx_type_t *record_member_decl_tag_type(
+    const psx_record_member_decl_t *declaration) {
+  const psx_type_t *type = declaration ? declaration->decl_type : NULL;
+  while (type &&
+         (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
+    type = type->base;
+  }
+  return ps_type_is_tag_aggregate(type) ? type : NULL;
+}
+
 static int gvar_walk_struct_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
@@ -1107,9 +969,12 @@ static int gvar_walk_struct_initializer(
           aggregate_type_id, tag_kind, tag_name, tag_len,
           tag_scope_depth_p1, record_decl);
   while (gvar_init_cursor_has(cur)) {
-    tag_member_info_t mi = {0};
+    psx_record_member_decl_t member = {0};
+    psx_record_member_layout_t member_layout = {0};
     int ordinal = 0;
-    if (!gvar_aggregate_member_next(&iter, &mi, &ordinal)) break;
+    if (!gvar_aggregate_member_next(
+            &iter, &member, &member_layout, &ordinal))
+      break;
     psx_type_id_t member_type_id = gvar_member_type_id(
         semantic_types, aggregate_type_id, ordinal);
     psx_type_id_t member_value_type_id = gvar_member_value_type_id(
@@ -1117,10 +982,12 @@ static int gvar_walk_struct_initializer(
     psx_type_id_t member_aggregate_type_id =
         psx_semantic_type_table_array_leaf(
             semantic_types, member_type_id).type_id;
-    if (mi.offset > prev_end) {
-      gvar_walk_emit_padding(ops, user, base_offset + prev_end, mi.offset - prev_end);
+    if (member_layout.offset > prev_end) {
+      gvar_walk_emit_padding(
+          ops, user, base_offset + prev_end,
+          member_layout.offset - prev_end);
     }
-    if (mi.bit_width > 0) {
+    if (member.bit_width > 0) {
       if (!gvar_walk_require_bitfield_unit(ops)) return 0;
       psx_gvar_bitfield_unit_t unit = {0};
       if (!gvar_init_cursor_pack_bitfield_unit(
@@ -1142,9 +1009,9 @@ static int gvar_walk_struct_initializer(
         gvar_member_storage_size_for_target(
             semantic_types, record_layouts, member_type_id, target);
     int member_array_count =
-        ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
+        ps_type_array_flat_element_count(member.decl_type);
     const psx_type_t *member_tag_type =
-        ps_tag_member_decl_tag_type(&mi);
+        record_member_decl_tag_type(&member);
     token_kind_t member_tag_kind = member_tag_type
                                        ? ps_type_tag_token_kind(member_tag_type)
                                        : TK_EOF;
@@ -1152,14 +1019,15 @@ static int gvar_walk_struct_initializer(
                                 ? member_tag_type->tag_name : NULL;
     int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
     const psx_record_decl_t *member_record =
-        gvar_member_record_decl(record_decls, &mi);
+        gvar_member_declaration_record_decl(record_decls, &member);
     if (member_array_count > 0) {
-      if (ps_tag_member_is_tag_aggregate(&mi)) {
+      if (ps_record_member_decl_is_tag_aggregate(&member)) {
         for (int k = 0; k < member_array_count; k++) {
           if (!gvar_init_cursor_has(cur) && !gvar_walk_needs_padding(ops)) break;
           int elem_start_idx = gvar_init_cursor_index(cur);
-          long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
-          int ok = ps_tag_member_is_union_aggregate(&mi)
+          long long elem_off = base_offset + member_layout.offset +
+                               (long long)k * member_value_size;
+          int ok = ps_record_member_decl_is_union_aggregate(&member)
               ? gvar_walk_union_initializer(semantic_context,
                                             semantic_types,
                                             record_decls,
@@ -1188,7 +1056,8 @@ static int gvar_walk_struct_initializer(
       } else {
         if (!gvar_walk_require_scalar(ops)) return 0;
         for (int k = 0; k < member_array_count; k++) {
-          long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
+          long long elem_off = base_offset + member_layout.offset +
+                               (long long)k * member_value_size;
           if (!gvar_init_cursor_has(cur)) {
             if (gvar_walk_needs_padding(ops)) {
               gvar_walk_emit_padding(ops, user, elem_off, member_value_size);
@@ -1198,13 +1067,13 @@ static int gvar_walk_struct_initializer(
           }
           int slot = gvar_init_cursor_advance(cur);
           gvar_walk_emit_scalar(
-              ops, user, &mi, member_value_type_id, slot, elem_off);
+              ops, user, &member, member_value_type_id, slot, elem_off);
         }
       }
-      prev_end = mi.offset + member_storage_size;
+      prev_end = member_layout.offset + member_storage_size;
       continue;
     }
-    if (ps_tag_member_is_struct_aggregate(&mi)) {
+    if (ps_record_member_decl_is_struct_aggregate(&member)) {
       int member_start_idx = gvar_init_cursor_index(cur);
       if (!gvar_walk_struct_initializer(semantic_context,
                                         semantic_types,
@@ -1214,7 +1083,8 @@ static int gvar_walk_struct_initializer(
                                         member_aggregate_type_id,
                                         member_tag_kind, member_tag_name,
                                         member_tag_len, 0, member_record,
-                                        gv, cur, base_offset + mi.offset,
+                                        gv, cur,
+                                        base_offset + member_layout.offset,
                                         member_value_size,
                                         ops, user)) {
         return 0;
@@ -1222,10 +1092,10 @@ static int gvar_walk_struct_initializer(
       gvar_init_cursor_consume_tag_zero_padding(
           semantic_context, member_tag_kind, member_tag_name,
           member_tag_len, member_record, cur, member_start_idx);
-      prev_end = mi.offset + member_value_size;
+      prev_end = member_layout.offset + member_value_size;
       continue;
     }
-    if (ps_tag_member_is_union_aggregate(&mi)) {
+    if (ps_record_member_decl_is_union_aggregate(&member)) {
       if (!gvar_walk_union_initializer(semantic_context,
                                        semantic_types,
                                        record_decls,
@@ -1234,20 +1104,21 @@ static int gvar_walk_struct_initializer(
                                        member_aggregate_type_id,
                                        member_tag_kind, member_tag_name,
                                        member_tag_len, 0, member_record,
-                                       gv, cur, base_offset + mi.offset,
+                                       gv, cur,
+                                       base_offset + member_layout.offset,
                                        member_value_size,
                                        ops, user)) {
         return 0;
       }
-      prev_end = mi.offset + member_value_size;
+      prev_end = member_layout.offset + member_value_size;
       continue;
     }
     if (!gvar_walk_require_scalar(ops)) return 0;
     int slot = gvar_init_cursor_advance(cur);
     gvar_walk_emit_scalar(
-        ops, user, &mi, member_value_type_id, slot,
-        base_offset + mi.offset);
-    prev_end = mi.offset + member_value_size;
+        ops, user, &member, member_value_type_id, slot,
+        base_offset + member_layout.offset);
+    prev_end = member_layout.offset + member_value_size;
   }
   if (prev_end < struct_size) {
     gvar_walk_emit_padding(ops, user, base_offset + prev_end, struct_size - prev_end);
@@ -1273,12 +1144,13 @@ static int gvar_walk_union_initializer(
     return 1;
   }
   int start_idx = gvar_init_cursor_index(cur);
-  tag_member_info_t mi = {0};
+  psx_record_member_decl_t member = {0};
+  psx_record_member_layout_t member_layout = {0};
   int member_ordinal = -1;
   if (!tag_union_init_member_for_slot_scoped(semantic_context,
                                             tag_kind, tag_name, tag_len,
                                             tag_scope_depth_p1, record_decl, gv,
-                                            gvar_init_cursor_index(cur), &mi,
+                                            gvar_init_cursor_index(cur), &member,
                                             &member_ordinal)) {
     if (ops && ops->padding) {
       gvar_walk_emit_padding(ops, user, base_offset, union_size);
@@ -1286,9 +1158,9 @@ static int gvar_walk_union_initializer(
     }
     return 0;
   }
-  if (!gvar_apply_record_member_layout(
+  if (!gvar_get_record_member_layout(
           semantic_types, record_layouts, target, aggregate_type_id,
-          member_ordinal, &mi))
+          member_ordinal, &member_layout))
     return 0;
   psx_type_id_t member_type_id = gvar_member_type_id(
       semantic_types, aggregate_type_id, member_ordinal);
@@ -1304,9 +1176,9 @@ static int gvar_walk_union_initializer(
       gvar_member_storage_size_for_target(
           semantic_types, record_layouts, member_type_id, target);
   int member_array_count =
-      ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
+      ps_type_array_flat_element_count(member.decl_type);
   int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
-  const psx_type_t *member_tag_type = ps_tag_member_decl_tag_type(&mi);
+  const psx_type_t *member_tag_type = record_member_decl_tag_type(&member);
   token_kind_t member_tag_kind = member_tag_type
                                      ? ps_type_tag_token_kind(member_tag_type)
                                      : TK_EOF;
@@ -1314,29 +1186,32 @@ static int gvar_walk_union_initializer(
                               ? member_tag_type->tag_name : NULL;
   int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
   const psx_record_decl_t *member_record =
-      gvar_member_record_decl(record_decls, &mi);
-  if (mi.offset > 0) gvar_walk_emit_padding(ops, user, base_offset, mi.offset);
-  if (mi.bit_width > 0) {
+      gvar_member_declaration_record_decl(record_decls, &member);
+  if (member_layout.offset > 0)
+    gvar_walk_emit_padding(ops, user, base_offset, member_layout.offset);
+  if (member.bit_width > 0) {
     if (!gvar_walk_require_bitfield_member(ops)) return 0;
     int slot = gvar_init_cursor_advance(cur);
     gvar_walk_emit_bitfield_member(
-        ops, user, &mi, member_value_type_id, slot,
-        base_offset + mi.offset);
+        ops, user, &member, &member_layout, member_value_type_id, slot,
+        base_offset + member_layout.offset);
     gvar_init_cursor_consume_tag_zero_padding(
         semantic_context, tag_kind, tag_name, tag_len,
         record_decl, cur, start_idx);
-    if (mi.offset + member_value_size < union_size) {
-      gvar_walk_emit_padding(ops, user, base_offset + mi.offset + member_value_size,
-                             union_size - (mi.offset + member_value_size));
+    if (member_layout.offset + member_value_size < union_size) {
+      gvar_walk_emit_padding(
+          ops, user, base_offset + member_layout.offset + member_value_size,
+          union_size - (member_layout.offset + member_value_size));
     }
     return 1;
   }
   if (member_array_count > 0) {
-    if (ps_tag_member_is_tag_aggregate(&mi)) {
+    if (ps_record_member_decl_is_tag_aggregate(&member)) {
       for (int k = 0; k < member_array_count; k++) {
         if (!gvar_init_cursor_has(cur) && !gvar_walk_needs_padding(ops)) break;
-        long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
-        int ok = ps_tag_member_is_struct_aggregate(&mi)
+        long long elem_off = base_offset + member_layout.offset +
+                             (long long)k * member_value_size;
+        int ok = ps_record_member_decl_is_struct_aggregate(&member)
             ? gvar_walk_struct_initializer(semantic_context,
                                            semantic_types,
                                            record_decls,
@@ -1362,7 +1237,8 @@ static int gvar_walk_union_initializer(
     } else {
       if (!gvar_walk_require_scalar(ops)) return 0;
       for (int k = 0; k < member_array_count; k++) {
-        long long elem_off = base_offset + mi.offset + (long long)k * member_value_size;
+        long long elem_off = base_offset + member_layout.offset +
+                             (long long)k * member_value_size;
         if (!gvar_init_cursor_has(cur)) {
           if (gvar_walk_needs_padding(ops)) {
             gvar_walk_emit_padding(ops, user, elem_off, member_value_size);
@@ -1372,17 +1248,18 @@ static int gvar_walk_union_initializer(
         }
         int slot = gvar_init_cursor_advance(cur);
         gvar_walk_emit_scalar(
-            ops, user, &mi, member_value_type_id, slot, elem_off);
+            ops, user, &member, member_value_type_id, slot, elem_off);
       }
     }
-    if (mi.offset + emitted < union_size) {
-      gvar_walk_emit_padding(ops, user, base_offset + mi.offset + emitted,
-                             union_size - (mi.offset + emitted));
+    if (member_layout.offset + emitted < union_size) {
+      gvar_walk_emit_padding(
+          ops, user, base_offset + member_layout.offset + emitted,
+          union_size - (member_layout.offset + emitted));
     }
     return 1;
   }
-  if (ps_tag_member_is_tag_aggregate(&mi)) {
-    int ok = ps_tag_member_is_struct_aggregate(&mi)
+  if (ps_record_member_decl_is_tag_aggregate(&member)) {
+    int ok = ps_record_member_decl_is_struct_aggregate(&member)
         ? gvar_walk_struct_initializer(semantic_context,
                                        semantic_types,
                                        record_decls,
@@ -1391,7 +1268,7 @@ static int gvar_walk_union_initializer(
                                        member_aggregate_type_id,
                                        member_tag_kind, member_tag_name, member_tag_len,
                                        0, member_record,
-                                       gv, cur, base_offset + mi.offset,
+                                       gv, cur, base_offset + member_layout.offset,
                                        member_value_size, ops, user)
         : gvar_walk_union_initializer(semantic_context,
                                       semantic_types,
@@ -1401,29 +1278,31 @@ static int gvar_walk_union_initializer(
                                       member_aggregate_type_id,
                                       member_tag_kind, member_tag_name, member_tag_len,
                                       0, member_record,
-                                      gv, cur, base_offset + mi.offset,
+                                      gv, cur, base_offset + member_layout.offset,
                                       member_value_size, ops, user);
     if (!ok) return 0;
     gvar_init_cursor_consume_tag_zero_padding(
         semantic_context, tag_kind, tag_name, tag_len,
         record_decl, cur, start_idx);
-    if (mi.offset + emitted < union_size) {
-      gvar_walk_emit_padding(ops, user, base_offset + mi.offset + emitted,
-                             union_size - (mi.offset + emitted));
+    if (member_layout.offset + emitted < union_size) {
+      gvar_walk_emit_padding(
+          ops, user, base_offset + member_layout.offset + emitted,
+          union_size - (member_layout.offset + emitted));
     }
     return 1;
   }
   if (!gvar_walk_require_scalar(ops)) return 0;
   int slot = gvar_init_cursor_advance(cur);
   gvar_walk_emit_scalar(
-      ops, user, &mi, member_value_type_id, slot,
-      base_offset + mi.offset);
+      ops, user, &member, member_value_type_id, slot,
+      base_offset + member_layout.offset);
   gvar_init_cursor_consume_tag_zero_padding(
       semantic_context, tag_kind, tag_name, tag_len,
       record_decl, cur, start_idx);
-  if (mi.offset + member_value_size < union_size) {
-    gvar_walk_emit_padding(ops, user, base_offset + mi.offset + member_value_size,
-                           union_size - (mi.offset + member_value_size));
+  if (member_layout.offset + member_value_size < union_size) {
+    gvar_walk_emit_padding(
+        ops, user, base_offset + member_layout.offset + member_value_size,
+        union_size - (member_layout.offset + member_value_size));
   }
   return 1;
 }
@@ -1732,24 +1611,25 @@ static int gvar_init_cursor_pack_bitfield_unit(
     int member_index, gvar_init_cursor_t *cur,
     psx_gvar_bitfield_unit_t *out) {
   if (!cur || !out) return 0;
-  tag_member_info_t first = {0};
+  psx_record_member_decl_t first = {0};
+  psx_record_member_layout_t first_layout = {0};
   int n_members = record_decl
                       ? record_decl->member_count
                       : ps_ctx_get_tag_member_count_in(
                             semantic_context, tag_kind, tag_name, tag_len);
-  if (record_decl && member_index >= 0 && member_index < n_members)
-    first = ps_tag_member_declaration_view(
-        &record_decl->members[member_index]);
-  else if (!ctx_get_tag_member_compat_view(
-               semantic_context, tag_kind, tag_name, tag_len,
-               member_index, &first))
+  if (record_decl && member_index >= 0 && member_index < n_members) {
+    first = record_decl->members[member_index];
+  } else if (!ps_ctx_get_tag_member_in(
+                 semantic_context, tag_kind, tag_name, tag_len,
+                 member_index, &first, &first_layout)) {
     return 0;
-  if (!gvar_apply_record_member_layout(
+  }
+  if (!gvar_get_record_member_layout(
           semantic_types, record_layouts, target, aggregate_type_id,
-          member_index, &first))
+          member_index, &first_layout))
     return 0;
   if (first.bit_width <= 0) return 0;
-  int unit_off = first.offset;
+  int unit_off = first_layout.offset;
   psx_type_id_t unit_type_id = gvar_member_value_type_id(
       semantic_types, aggregate_type_id, member_index);
   int unit_size = ps_type_sizeof_id_with_records(
@@ -1759,19 +1639,23 @@ static int gvar_init_cursor_pack_bitfield_unit(
   int m = member_index;
   int last = member_index;
   while (m < n_members && gvar_init_cursor_has(cur)) {
-    tag_member_info_t mi = {0};
-    if (record_decl)
-      mi = ps_tag_member_declaration_view(&record_decl->members[m]);
-    else if (!ctx_get_tag_member_compat_view(
-                 semantic_context, tag_kind, tag_name, tag_len, m, &mi))
+    psx_record_member_decl_t member = {0};
+    psx_record_member_layout_t member_layout = {0};
+    if (record_decl) {
+      member = record_decl->members[m];
+    } else if (!ps_ctx_get_tag_member_in(
+                   semantic_context, tag_kind, tag_name, tag_len, m,
+                   &member, &member_layout)) {
       break;
-    if (!gvar_apply_record_member_layout(
+    }
+    if (!gvar_get_record_member_layout(
             semantic_types, record_layouts, target, aggregate_type_id,
-            m, &mi))
+            m, &member_layout))
       break;
-    if (mi.bit_width <= 0 || mi.offset != unit_off) break;
+    if (member.bit_width <= 0 || member_layout.offset != unit_off) break;
     packed |= ps_gvar_init_slot_bitfield_bits(cur->gv, cur->index,
-                                               mi.bit_width, mi.bit_offset);
+                                               member.bit_width,
+                                               member_layout.bit_offset);
     gvar_init_cursor_advance(cur);
     last = m;
     m++;
@@ -1917,12 +1801,6 @@ static int record_member_decl_fp_size(
           : TK_FLOAT_KIND_NONE;
   return fp_kind == TK_FLOAT_KIND_FLOAT ? 4
        : fp_kind >= TK_FLOAT_KIND_DOUBLE ? 8 : 0;
-}
-
-static int tag_member_fp_size(const tag_member_info_t *member) {
-  psx_record_member_decl_t declaration =
-      gvar_member_declaration_view(member);
-  return record_member_decl_fp_size(&declaration);
 }
 
 static const psx_type_t *record_member_decl_direct_tag_leaf(
@@ -2300,51 +2178,53 @@ static int tag_union_init_member_for_slot_scoped(
     token_kind_t tag_kind, char *tag_name, int tag_len,
     int tag_scope_depth_p1,
     const psx_record_decl_t *record_decl,
-    const global_var_t *gv, int idx, tag_member_info_t *out,
+    const global_var_t *gv, int idx,
+    psx_record_member_decl_t *out_declaration,
     int *out_ordinal) {
-  if (!out) return 0;
+  if (!out_declaration) return 0;
   int ordinal = ps_gvar_union_init_slot_ordinal(gv, idx);
   if (record_decl) {
     if (ordinal < 0 || ordinal >= record_decl->member_count) return 0;
-    *out = ps_tag_member_declaration_view(&record_decl->members[ordinal]);
+    *out_declaration = record_decl->members[ordinal];
     int init_fp_size = ps_gvar_union_init_slot_fp_size(gv, idx);
-    int selected_fp_size = tag_member_fp_size(out);
+    int selected_fp_size = record_member_decl_fp_size(out_declaration);
     if (init_fp_size != selected_fp_size &&
         !(init_fp_size == 0 && selected_fp_size == 0)) {
       for (int i = 0; i < record_decl->member_count; i++) {
-        tag_member_info_t candidate = ps_tag_member_declaration_view(
-            &record_decl->members[i]);
-        int candidate_fp_size = tag_member_fp_size(&candidate);
+        psx_record_member_decl_t candidate = record_decl->members[i];
+        int candidate_fp_size = record_member_decl_fp_size(&candidate);
         if ((init_fp_size > 0 && candidate_fp_size == init_fp_size) ||
             (init_fp_size == 0 && candidate_fp_size == 0)) {
-          *out = candidate;
+          *out_declaration = candidate;
           ordinal = i;
           break;
         }
       }
     }
   } else {
-    if (!ctx_get_tag_member_info_scoped(
-                                        semantic_context,
-                                        tag_kind, tag_name, tag_len,
-                                        tag_scope_depth_p1, ordinal, out))
+    psx_record_member_layout_t ignored_layout = {0};
+    if (!ctx_get_tag_member_scoped(
+            semantic_context, tag_kind, tag_name, tag_len,
+            tag_scope_depth_p1, ordinal, out_declaration, &ignored_layout))
       return 0;
     int init_fp_size = ps_gvar_union_init_slot_fp_size(gv, idx);
-    int selected_fp_size = tag_member_fp_size(out);
+    int selected_fp_size = record_member_decl_fp_size(out_declaration);
     if (init_fp_size != selected_fp_size &&
         !(init_fp_size == 0 && selected_fp_size == 0)) {
-      int count = ps_ctx_get_tag_member_count_in(
-          semantic_context, tag_kind, tag_name, tag_len);
+      int count = ctx_get_tag_member_count_scoped(
+          semantic_context, tag_kind, tag_name, tag_len,
+          tag_scope_depth_p1);
       for (int i = 0; i < count; i++) {
-        tag_member_info_t candidate = {0};
-        if (!ctx_get_tag_member_compat_view(
+        psx_record_member_decl_t candidate = {0};
+        psx_record_member_layout_t candidate_layout = {0};
+        if (!ctx_get_tag_member_scoped(
                 semantic_context, tag_kind, tag_name, tag_len,
-                i, &candidate))
+                tag_scope_depth_p1, i, &candidate, &candidate_layout))
           break;
-        int candidate_fp_size = tag_member_fp_size(&candidate);
+        int candidate_fp_size = record_member_decl_fp_size(&candidate);
         if ((init_fp_size > 0 && candidate_fp_size == init_fp_size) ||
             (init_fp_size == 0 && candidate_fp_size == 0)) {
-          *out = candidate;
+          *out_declaration = candidate;
           ordinal = i;
           break;
         }
