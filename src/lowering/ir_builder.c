@@ -3902,6 +3902,7 @@ ir_module_t *ir_build_function_module_with_options(
   ir_build_ctx_t ctx = {0};
   ctx.target = options ? options->target : NULL;
   ctx.semantic_types = options ? options->semantic_types : NULL;
+  ctx.record_layouts = options ? options->record_layouts : NULL;
   ctx.configured_continuation = options ? options->continuation : NULL;
   ctx.diagnostic_context = options ? options->diagnostic_context : NULL;
   if (!ctx.diagnostic_context) return NULL;

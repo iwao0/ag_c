@@ -3715,6 +3715,15 @@ if (!aggregateWalkerLayoutSection ||
     !/\bps_type_(?:size|align)of_id_with_records\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
+    /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    /\bpsx_semantic_type_table_(?:create|intern)\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    (irBuilderSource.match(
+      /ctx\.record_layouts\s*=\s*options\s*\?\s*options->record_layouts\s*:\s*NULL\s*;/g,
+    ) ?? []).length !== 2 ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*semantic_types\s*;/.test(
       irBuilderHeader,
     ) ||

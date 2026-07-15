@@ -66,58 +66,30 @@ ir_symbol_t *lower_ir_global_symbol(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target) {
-  if (!module || !global || !global->name || global->name_len <= 0)
+  if (!module || !global || !semantic_types || !record_layouts || !target ||
+      !global->name || global->name_len <= 0)
     return NULL;
   const char *name = global->name;
   int name_len = global->name_len;
   ir_symbol_t *symbol = ir_module_find_symbol(module, name, name_len);
   if (symbol) return symbol;
 
-  psx_semantic_type_table_t *owned_types = NULL;
   psx_type_id_t type_id = ps_gvar_decl_type_id(global);
-  if (!psx_semantic_type_table_lookup(semantic_types, type_id)) {
-    owned_types = psx_semantic_type_table_create();
-    if (!owned_types) return NULL;
-    semantic_types = owned_types;
-    type_id = psx_semantic_type_table_intern(
-        owned_types, ps_gvar_get_decl_type(global)).type_id;
-  }
-  ag_target_info_t host_target;
-  if (!target) {
-    host_target = ag_target_info_host();
-    target = &host_target;
-  }
-  int storage_size = record_layouts
-                         ? ps_type_sizeof_id_with_records(
-                               semantic_types, record_layouts,
-                               type_id, target)
-                         : ps_type_sizeof_id_for_target(
-                               semantic_types, type_id, target);
+  if (!psx_semantic_type_table_lookup(semantic_types, type_id)) return NULL;
+  int storage_size = ps_type_sizeof_id_with_records(
+      semantic_types, record_layouts, type_id, target);
   if (storage_size <= 0 && ps_gvar_is_extern_decl(global)) {
     psx_type_id_t base_type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
-    storage_size = record_layouts
-                       ? ps_type_sizeof_id_with_records(
-                             semantic_types, record_layouts,
-                             base_type_id, target)
-                       : ps_type_sizeof_id_for_target(
-                             semantic_types, base_type_id, target);
+    storage_size = ps_type_sizeof_id_with_records(
+        semantic_types, record_layouts, base_type_id, target);
   }
-  int alignment = record_layouts
-                      ? ps_type_alignof_id_with_records(
-                            semantic_types, record_layouts, type_id, target)
-                      : ps_type_alignof_id_for_target(
-                            semantic_types, type_id, target);
-  if (storage_size <= 0 || alignment <= 0) {
-    psx_semantic_type_table_destroy(owned_types);
-    return NULL;
-  }
+  int alignment = ps_type_alignof_id_with_records(
+      semantic_types, record_layouts, type_id, target);
+  if (storage_size <= 0 || alignment <= 0) return NULL;
 
   symbol = ir_module_add_symbol(module, name, name_len);
-  if (!symbol) {
-    psx_semantic_type_table_destroy(owned_types);
-    return NULL;
-  }
+  if (!symbol) return NULL;
   symbol->byte_size = storage_size;
   symbol->alignment = alignment;
   symbol->is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
@@ -140,6 +112,5 @@ ir_symbol_t *lower_ir_global_symbol(
         semantic_types, record_layouts, target, type_id,
         global, 0, &func_ref_walk_ops, &ctx);
   }
-  psx_semantic_type_table_destroy(owned_types);
   return symbol;
 }
