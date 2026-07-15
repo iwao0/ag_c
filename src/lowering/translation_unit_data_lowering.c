@@ -231,9 +231,9 @@ static int lower_init_slot(void *user, int index,
   return 1;
 }
 
-static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
-                                   psx_type_id_t value_type_id,
-                                   int slot, long long offset) {
+static void lower_aggregate_scalar(
+    void *user, const psx_record_member_decl_t *member,
+    psx_type_id_t value_type_id, int slot, long long offset) {
   global_data_lowering_t *ctx = user;
   psx_gvar_init_member_value_t value =
       ps_gvar_init_member_value(
@@ -255,12 +255,13 @@ static void lower_aggregate_bitfield_unit(
 }
 
 static void lower_aggregate_bitfield_member(
-    void *user, const tag_member_info_t *member,
+    void *user, const psx_record_member_decl_t *member,
+    const psx_record_member_layout_t *layout,
     psx_type_id_t value_type_id, int slot,
     long long offset) {
   global_data_lowering_t *ctx = user;
   unsigned long long packed = ps_gvar_init_slot_bitfield_bits(
-      ctx->global, slot, member->bit_width, member->bit_offset);
+      ctx->global, slot, member->bit_width, layout->bit_offset);
   int size = type_size_id(ctx->lowering, value_type_id);
   if (offset < 0 || offset > INT32_MAX ||
       !write_bits(ctx->object, (int)offset, packed, size))

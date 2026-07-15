@@ -192,5 +192,9 @@ int psx_record_member_decl_is_unnamed_union(
     const psx_record_member_decl_t *member);
 int psx_record_member_decl_is_unnamed_aggregate(
     const psx_record_member_decl_t *member);
+tk_float_kind_t psx_record_member_decl_fp_kind(
+    const psx_record_member_decl_t *member);
+int psx_record_member_decl_is_bool(
+    const psx_record_member_decl_t *member);
 
 #endif

@@ -1864,15 +1864,15 @@ typedef struct {
   int padding_sizes[16];
 } aggregate_walk_trace_t;
 
-static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
-                                        psx_type_id_t value_type_id,
-                                        int slot, long long offset) {
+static void aggregate_walk_trace_scalar(
+    void *user, const psx_record_member_decl_t *member,
+    psx_type_id_t value_type_id, int slot, long long offset) {
   aggregate_walk_trace_t *trace = user;
   if (!trace || trace->scalar_count >= 16) return;
   int idx = trace->scalar_count++;
   psx_gvar_init_member_value_t value =
       ps_gvar_init_member_value(
-          trace->gv, slot, mi, test_type_size_id(value_type_id));
+          trace->gv, slot, member, test_type_size_id(value_type_id));
   trace->scalar_offsets[idx] = offset;
   trace->scalar_values[idx] = value.value;
   trace->scalar_sizes[idx] = value.size;
@@ -13044,7 +13044,7 @@ static void test_type_metadata_bridge() {
   ps_gvar_init_slots_alloc(&tmp_member_value_gv, 1, 1);
   tmp_member_value_gv.init_count = 1;
   ps_gvar_init_slot_write(&tmp_member_value_gv, 0, 42, 3.5, NULL, 0);
-  tag_member_info_t tmp_member_value_double = {0};
+  psx_record_member_decl_t tmp_member_value_double = {0};
   tmp_member_value_double.decl_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   psx_gvar_init_member_value_t tmp_member_value =
@@ -13057,7 +13057,7 @@ static void test_type_metadata_bridge() {
   ps_gvar_init_slots_alloc(&tmp_member_bool_gv, 1, 0);
   tmp_member_bool_gv.init_count = 1;
   ps_gvar_init_slot_write(&tmp_member_bool_gv, 0, 7, 0.0, NULL, 0);
-  tag_member_info_t tmp_member_value_bool = {0};
+  psx_record_member_decl_t tmp_member_value_bool = {0};
   tmp_member_value_bool.decl_type = ps_type_new_integer(TK_BOOL, 1, 1);
   tmp_member_value = ps_gvar_init_member_value(
       &tmp_member_bool_gv, 0, &tmp_member_value_bool, 1);

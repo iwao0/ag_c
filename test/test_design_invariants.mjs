@@ -338,6 +338,16 @@ if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
     ) ||
     !/ps_gvar_init_member_value\s*\(\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
       irSymbolLoweringSourceForMemberLayout,
+    ) ||
+    /\btag_member_info_t\b/.test(gvarPublicHeaderSource) ||
+    /\btag_member_info_t\b/.test(
+      translationUnitDataLoweringSourceForMemberLayout,
+    ) ||
+    /\btag_member_info_t\b/.test(
+      irSymbolLoweringSourceForMemberLayout,
+    ) ||
+    !/bitfield_member\)\s*\(\s*void\s*\*[^,]*,\s*const\s+psx_record_member_decl_t\s*\*[^,]*,\s*const\s+psx_record_member_layout_t\s*\*/s.test(
+      gvarPublicHeaderSource,
     )) {
   throw new Error(
     "member descriptors must remain layout-free and lowering must pass member size from TypeId and TargetSpec",

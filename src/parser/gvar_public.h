@@ -2,7 +2,8 @@
 #define PARSER_GVAR_PUBLIC_H
 
 #include "core.h"
-#include "tag_member_public.h"
+#include "type.h"
+#include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"
 
 typedef struct global_var_t global_var_t;
@@ -82,11 +83,13 @@ typedef struct {
 } psx_gvar_bitfield_unit_t;
 
 typedef struct {
-  void (*scalar)(void *user, const tag_member_info_t *mi,
+  void (*scalar)(void *user, const psx_record_member_decl_t *member,
                  psx_type_id_t value_type_id, int slot, long long offset);
   void (*bitfield_unit)(void *user, const psx_gvar_bitfield_unit_t *unit,
                         long long base_offset);
-  void (*bitfield_member)(void *user, const tag_member_info_t *mi,
+  void (*bitfield_member)(void *user,
+                          const psx_record_member_decl_t *member,
+                          const psx_record_member_layout_t *layout,
                           psx_type_id_t value_type_id, int slot,
                           long long offset);
   void (*padding)(void *user, long long offset, int size);
@@ -122,7 +125,7 @@ int ps_gvar_walk_init_slot_values(const global_var_t *gv,
                                    void *user);
 psx_gvar_init_member_value_t
 ps_gvar_init_member_value(const global_var_t *gv, int idx,
-                           const tag_member_info_t *member,
+                           const psx_record_member_decl_t *member,
                            int member_size);
 psx_gvar_init_scalar_value_t
 ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);

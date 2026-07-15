@@ -384,10 +384,10 @@ int ps_gvar_symbol_ref_named_function_in(
 
 psx_gvar_init_member_value_t
 ps_gvar_init_member_value(const global_var_t *gv, int idx,
-                           const tag_member_info_t *member,
+                           const psx_record_member_decl_t *member,
                            int member_size) {
   psx_gvar_init_slot_t slot = ps_gvar_init_slot_view(gv, idx);
-  tk_float_kind_t member_fp_kind = ps_tag_member_decl_fp_kind(member);
+  tk_float_kind_t member_fp_kind = psx_record_member_decl_fp_kind(member);
   psx_gvar_init_member_value_t value = {
       .kind = PSX_GVAR_INIT_VALUE_INTEGER,
       .symbol_ref = gvar_init_slot_symbol_ref(&slot),
@@ -396,7 +396,7 @@ ps_gvar_init_member_value(const global_var_t *gv, int idx,
       .fp_kind = TK_FLOAT_KIND_NONE,
       .size = member_size > 0 ? member_size : 0,
   };
-  if (ps_tag_member_decl_is_bool(member)) value.value = value.value != 0;
+  if (psx_record_member_decl_is_bool(member)) value.value = value.value != 0;
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
     value.kind = PSX_GVAR_INIT_VALUE_SYMBOL;
     return value;
@@ -789,6 +789,43 @@ static int gvar_walk_require_bitfield_member(const psx_gvar_aggregate_walk_ops_t
   return ops && ops->bitfield_member;
 }
 
+static psx_record_member_decl_t gvar_member_declaration_view(
+    const tag_member_info_t *member) {
+  return member
+             ? (psx_record_member_decl_t){
+                   .name = member->name,
+                   .len = member->len,
+                   .bit_width = member->bit_width,
+                   .bit_is_signed = member->bit_is_signed,
+                   .decl_type = ps_tag_member_decl_type(member),
+               }
+             : (psx_record_member_decl_t){0};
+}
+
+static void gvar_walk_emit_scalar(
+    const psx_gvar_aggregate_walk_ops_t *ops, void *user,
+    const tag_member_info_t *member, psx_type_id_t value_type_id,
+    int slot, long long offset) {
+  psx_record_member_decl_t declaration =
+      gvar_member_declaration_view(member);
+  ops->scalar(user, &declaration, value_type_id, slot, offset);
+}
+
+static void gvar_walk_emit_bitfield_member(
+    const psx_gvar_aggregate_walk_ops_t *ops, void *user,
+    const tag_member_info_t *member, psx_type_id_t value_type_id,
+    int slot, long long offset) {
+  psx_record_member_decl_t declaration =
+      gvar_member_declaration_view(member);
+  psx_record_member_layout_t layout = {
+      .offset = member->offset,
+      .bit_offset = member->bit_offset,
+      .bit_width = member->bit_width,
+  };
+  ops->bitfield_member(
+      user, &declaration, &layout, value_type_id, slot, offset);
+}
+
 static void gvar_walk_emit_padding(const psx_gvar_aggregate_walk_ops_t *ops,
                                    void *user, long long offset, int size) {
   if (ops && ops->padding && size > 0) ops->padding(user, offset, size);
@@ -1027,8 +1064,8 @@ static int gvar_walk_struct_initializer(
             break;
           }
           int slot = gvar_init_cursor_advance(cur);
-          ops->scalar(
-              user, &mi, member_value_type_id, slot, elem_off);
+          gvar_walk_emit_scalar(
+              ops, user, &mi, member_value_type_id, slot, elem_off);
         }
       }
       prev_end = mi.offset + member_storage_size;
@@ -1074,8 +1111,8 @@ static int gvar_walk_struct_initializer(
     }
     if (!gvar_walk_require_scalar(ops)) return 0;
     int slot = gvar_init_cursor_advance(cur);
-    ops->scalar(
-        user, &mi, member_value_type_id, slot,
+    gvar_walk_emit_scalar(
+        ops, user, &mi, member_value_type_id, slot,
         base_offset + mi.offset);
     prev_end = mi.offset + member_value_size;
   }
@@ -1149,8 +1186,8 @@ static int gvar_walk_union_initializer(
   if (mi.bit_width > 0) {
     if (!gvar_walk_require_bitfield_member(ops)) return 0;
     int slot = gvar_init_cursor_advance(cur);
-    ops->bitfield_member(
-        user, &mi, member_value_type_id, slot,
+    gvar_walk_emit_bitfield_member(
+        ops, user, &mi, member_value_type_id, slot,
         base_offset + mi.offset);
     gvar_init_cursor_consume_tag_zero_padding(
         semantic_context, tag_kind, tag_name, tag_len,
@@ -1201,8 +1238,8 @@ static int gvar_walk_union_initializer(
           break;
         }
         int slot = gvar_init_cursor_advance(cur);
-        ops->scalar(
-            user, &mi, member_value_type_id, slot, elem_off);
+        gvar_walk_emit_scalar(
+            ops, user, &mi, member_value_type_id, slot, elem_off);
       }
     }
     if (mi.offset + emitted < union_size) {
@@ -1245,8 +1282,8 @@ static int gvar_walk_union_initializer(
   }
   if (!gvar_walk_require_scalar(ops)) return 0;
   int slot = gvar_init_cursor_advance(cur);
-  ops->scalar(
-      user, &mi, member_value_type_id, slot,
+  gvar_walk_emit_scalar(
+      ops, user, &mi, member_value_type_id, slot,
       base_offset + mi.offset);
   gvar_init_cursor_consume_tag_zero_padding(
       semantic_context, tag_kind, tag_name, tag_len,

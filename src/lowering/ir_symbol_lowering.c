@@ -34,9 +34,9 @@ static void lower_func_ref(
       ctx->symbol, offset, name, name_len, &callable_sig);
 }
 
-static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
-                                   psx_type_id_t value_type_id,
-                                   int slot, long long offset) {
+static void lower_aggregate_scalar(
+    void *user, const psx_record_member_decl_t *member,
+    psx_type_id_t value_type_id, int slot, long long offset) {
   ir_symbol_func_ref_lowering_t *ctx = user;
   int value_size = ps_type_sizeof_id_with_records(
       ctx->semantic_types, ctx->record_layouts, value_type_id,
@@ -56,11 +56,13 @@ static void ignore_bitfield_unit(void *user,
 }
 
 static void ignore_bitfield_member(void *user,
-                                   const tag_member_info_t *member,
+                                   const psx_record_member_decl_t *member,
+                                   const psx_record_member_layout_t *layout,
                                    psx_type_id_t value_type_id,
                                    int slot, long long offset) {
   (void)user;
   (void)member;
+  (void)layout;
   (void)value_type_id;
   (void)slot;
   (void)offset;

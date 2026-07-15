@@ -1369,6 +1369,25 @@ int psx_record_member_decl_is_unnamed_aggregate(
          psx_record_member_decl_is_unnamed_union(member);
 }
 
+tk_float_kind_t psx_record_member_decl_fp_kind(
+    const psx_record_member_decl_t *member) {
+  const psx_type_t *type = member
+                               ? ps_type_array_leaf_type(member->decl_type)
+                               : NULL;
+  if (!type ||
+      (type->kind != PSX_TYPE_FLOAT && type->kind != PSX_TYPE_COMPLEX))
+    return TK_FLOAT_KIND_NONE;
+  return ps_type_floating_token_kind(type);
+}
+
+int psx_record_member_decl_is_bool(
+    const psx_record_member_decl_t *member) {
+  const psx_type_t *type = member
+                               ? ps_type_array_leaf_type(member->decl_type)
+                               : NULL;
+  return type && type->kind == PSX_TYPE_BOOL;
+}
+
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                        int is_const_qualified,
                                        int is_volatile_qualified) {
