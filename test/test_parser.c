@@ -4128,6 +4128,22 @@ static void test_target_type_layout_boundary() {
             semantic_long_double_complex->floating_kind);
   ASSERT_TRUE(ps_type_new_floating_in(
       test_arena_context(), PSX_FLOATING_KIND_NONE, 0) == NULL);
+  psx_record_decl_t semantic_record = {
+      .record_id = 0xf001u,
+      .record_kind = PSX_TYPE_STRUCT,
+      .tag_name = (char *)"SemanticRecord",
+      .tag_len = 14,
+  };
+  psx_type_t *semantic_record_type = ps_type_new_record_in(
+      test_arena_context(), &semantic_record);
+  ASSERT_TRUE(semantic_record_type != NULL);
+  ASSERT_EQ(PSX_TYPE_STRUCT, semantic_record_type->kind);
+  ASSERT_EQ(semantic_record.record_id,
+            ps_type_record_id(semantic_record_type));
+  ASSERT_TRUE(semantic_record_type->tag_name == semantic_record.tag_name);
+  semantic_record.record_kind = PSX_TYPE_INTEGER;
+  ASSERT_TRUE(ps_type_new_record_in(
+      test_arena_context(), &semantic_record) == NULL);
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
   psx_type_t *float_complex = ps_type_new_floating_in(

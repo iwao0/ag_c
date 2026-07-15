@@ -902,16 +902,12 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
         !ps_local_registry_scope_is_visible_from_in(
             local_registry, tag->scope_seq, point.scope_seq))
       continue;
-    psx_type_t *type = kind == TK_ENUM
-        ? ps_type_new_enum_in(
-              context->arena_context, name, len, tag->scope_depth + 1)
-        : ps_type_new_tag_in(
-              context->arena_context, kind, name, len,
-              tag->scope_depth + 1);
-    type->record_id = tag->record_decl
-                          ? tag->record_decl->record_id
-                          : PSX_RECORD_ID_INVALID;
-    return type;
+    if (kind == TK_ENUM) {
+      return ps_type_new_enum_in(
+          context->arena_context, name, len, tag->scope_depth + 1);
+    }
+    return ps_type_new_record_in(
+        context->arena_context, tag->record_decl);
   }
   return NULL;
 }

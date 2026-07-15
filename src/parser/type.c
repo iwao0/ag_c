@@ -181,6 +181,21 @@ psx_type_t *ps_type_new_enum_in(
   return type;
 }
 
+psx_type_t *ps_type_new_record_in(
+    arena_context_t *arena_context, const psx_record_decl_t *record) {
+  if (!record || record->record_id == PSX_RECORD_ID_INVALID ||
+      (record->record_kind != PSX_TYPE_STRUCT &&
+       record->record_kind != PSX_TYPE_UNION))
+    return NULL;
+  psx_type_t *type = ps_type_new_in(
+      arena_context, record->record_kind);
+  if (!type) return NULL;
+  type->record_id = record->record_id;
+  type->tag_name = record->tag_name;
+  type->tag_len = record->tag_len;
+  return type;
+}
+
 psx_type_t *ps_type_new_floating_in(
     arena_context_t *arena_context, psx_floating_kind_t floating_kind,
     int is_complex) {

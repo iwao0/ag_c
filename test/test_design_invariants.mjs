@@ -2187,6 +2187,12 @@ if (!/\bps_type_character_code_unit_width\s*\(/.test(
     !/\bps_ctx_resolve_tag_record_id_in\s*\(/.test(
       declarationResolutionSource,
     ) ||
+    !/\bps_type_new_record_in\s*\(/.test(
+      declarationResolutionSource,
+    ) ||
+    /\btype->(?:record_id|is_plain_char|floating_kind)\s*=/.test(
+      declarationResolutionSource,
+    ) ||
     !/\bpsx_semantic_type_table_record_member\s*\(/.test(
       declarationResolutionSource,
     ) ||
@@ -3517,8 +3523,11 @@ const typeBuilderSource = await readFile(
 );
 const typeBuilderApiNames = [
   "ps_type_new_in",
+  "ps_type_new_integer_kind_in",
   "ps_type_new_integer_in",
   "ps_type_new_enum_in",
+  "ps_type_new_record_in",
+  "ps_type_new_floating_in",
   "ps_type_new_float_in",
   "ps_type_new_pointer_in",
   "ps_type_new_function_in",
@@ -3547,8 +3556,11 @@ for (const functionName of typeBuilderApiNames) {
   }
 }
 for (const functionName of [
+  "ps_type_new_integer_kind_in",
   "ps_type_new_integer_in",
   "ps_type_new_enum_in",
+  "ps_type_new_record_in",
+  "ps_type_new_floating_in",
   "ps_type_new_float_in",
   "ps_type_new_array_in",
   "ps_type_new_tag_in",
@@ -4029,7 +4041,7 @@ if (!tagTypeStruct ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       tagAlignLookupFunction[0],
     ) ||
-    !/ps_type_new_tag_in\s*\([^]*?tag->scope_depth\s*\+\s*1\s*\)/.test(
+    !/ps_type_new_record_in\s*\([^]*?tag->record_decl\s*\)/.test(
       tagContextSource,
     )) {
   throw new Error(

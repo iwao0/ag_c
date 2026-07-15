@@ -20,19 +20,24 @@ static psx_type_t *resolve_tag_base_type(
         scope_depth >= 0 ? scope_depth + 1 : 0);
   }
   if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
-  psx_type_t *type = ps_type_new_tag_in(
-      ps_ctx_arena(semantic_context), kind, name, name_len,
-      scope_depth >= 0 ? scope_depth + 1 : 0);
-  type->record_id = ps_ctx_resolve_tag_record_id_in(
+  psx_record_id_t record_id = ps_ctx_resolve_tag_record_id_in(
       semantic_context, kind, name, name_len);
-  return type;
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, record_id);
+  return record
+             ? ps_type_new_record_in(ps_ctx_arena(semantic_context), record)
+             : ps_type_new_tag_in(
+                   ps_ctx_arena(semantic_context), kind, name, name_len,
+                   scope_depth >= 0 ? scope_depth + 1 : 0);
 }
 
 static psx_type_t *resolve_builtin_base_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, const psx_type_spec_result_t *specifier) {
   psx_floating_kind_t floating_kind = PSX_FLOATING_KIND_NONE;
-  if (kind == TK_FLOAT)
+  if (specifier->is_long_double)
+    floating_kind = PSX_FLOATING_KIND_LONG_DOUBLE;
+  else if (kind == TK_FLOAT)
     floating_kind = PSX_FLOATING_KIND_FLOAT;
   else if (kind == TK_DOUBLE)
     floating_kind = PSX_FLOATING_KIND_DOUBLE;
@@ -67,8 +72,7 @@ static psx_type_t *resolve_builtin_base_type(
 }
 
 static void apply_decl_specifier_type_properties(
-    psx_type_t *type, const psx_type_spec_result_t *specifier,
-    int override_plain_char) {
+    psx_type_t *type, const psx_type_spec_result_t *specifier) {
   if (!type || !specifier) return;
   ps_type_set_decl_spec_qualifiers(
       type,
@@ -78,11 +82,6 @@ static void apply_decl_specifier_type_properties(
           specifier->is_volatile_qualified);
   if (specifier->is_atomic)
     ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
-  if (override_plain_char)
-    type->is_plain_char = specifier->is_plain_char ? 1 : 0;
-  if (specifier->is_long_double) {
-    type->floating_kind = PSX_FLOATING_KIND_LONG_DOUBLE;
-  }
 }
 
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
@@ -113,12 +112,10 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
 
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
   psx_type_t *type = NULL;
-  int override_plain_char = 0;
   switch (specifier->source) {
     case PSX_PARSED_DECL_TYPE_BUILTIN:
       type = resolve_builtin_base_type(
           semantic_context, syntax->kind, syntax);
-      override_plain_char = syntax->kind == TK_CHAR;
       break;
     case PSX_PARSED_DECL_TYPE_TAG:
       type = resolve_tag_base_type(
@@ -147,7 +144,7 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
     default:
       return NULL;
   }
-  apply_decl_specifier_type_properties(type, syntax, override_plain_char);
+  apply_decl_specifier_type_properties(type, syntax);
   ps_ctx_bind_record_ids_in(semantic_context, type);
   return type;
 }
