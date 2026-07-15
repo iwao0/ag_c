@@ -2681,6 +2681,15 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
+      nodeUtilsSource,
+    ) ||
+    !/\bps_ctx_get_tag_member_in\s*\(/.test(nodeUtilsSource) ||
+    !/\bps_ctx_get_tag_member_at_scope_in\s*\(/.test(nodeUtilsSource)) {
+  throw new Error(
+    "parser node utilities must query member declarations and layouts through the split API",
+  );
+}
 const initializerLoweringSourceForLocalLayout = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
@@ -3545,8 +3554,8 @@ const publishRecordLayoutFunction = tagContextSource.match(
 const refreshRecordDeclFunction = tagContextSource.match(
   /static\s+void\s+refresh_cached_record_decl\s*\([^]*?\n\}/,
 );
-const getTagMemberInfoFunction = tagContextSource.match(
-  /static\s+bool\s+get_tag_member_info_impl_in\s*\([^]*?\n\}/,
+const getTagMemberFunction = tagContextSource.match(
+  /static\s+bool\s+get_tag_member_impl_in\s*\([^]*?\n\}/,
 );
 const recordDeclStruct = typeSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
@@ -3571,13 +3580,19 @@ if (!publishRecordLayoutFunction ||
     "RecordLayout publication must pair declaration-order members with target layout drafts",
   );
 }
-if (!getTagMemberInfoFunction ||
+if (!getTagMemberFunction ||
     !/\bcollect_tag_member_declarations_in\s*\(/.test(
-      getTagMemberInfoFunction[0],
+      getTagMemberFunction[0],
     ) ||
-    /\bsort_tag_members_in\s*\(/.test(getTagMemberInfoFunction[0])) {
+    /\bsort_tag_members_in\s*\(/.test(getTagMemberFunction[0]) ||
+    !/\bps_ctx_get_tag_member_in\s*\([^;]*psx_record_member_decl_t\s*\*\s*out_declaration\s*,[^;]*psx_record_member_layout_t\s*\*\s*out_layout/s.test(
+      aggregateRegistryHeader,
+    ) ||
+    !/\bps_ctx_find_tag_member_in\s*\([^;]*psx_record_member_decl_t\s*\*\s*out_declaration\s*,[^;]*psx_record_member_layout_t\s*\*\s*out_layout/s.test(
+      aggregateRegistryHeader,
+    )) {
   throw new Error(
-    "parser member compatibility views must preserve declaration order",
+    "tag member queries must preserve declaration order and return declaration and layout separately",
   );
 }
 if (!recordMemberDeclStruct ||

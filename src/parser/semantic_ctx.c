@@ -97,10 +97,11 @@ static void *ctx_calloc_in(
 static void ctx_release_in(
     psx_semantic_context_t *context, void *pointer);
 
-static bool get_tag_member_info_impl_in(
+static bool get_tag_member_impl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth,
-    int index, tag_member_info_t *out);
+    int index, psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout);
 static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *member);
 static int collect_tag_member_declarations_in(
     psx_semantic_context_t *context, const tag_type_t *tag,
@@ -1280,34 +1281,39 @@ void ps_ctx_bind_record_ids_in(
         context, psx_type_owned_param_mut(type, i));
 }
 
-/* tag_member_t の全属性を tag_member_info_t へ写す。get/find_tag_member_info が
- * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
-static bool fill_tag_member_info_in(
+static bool fill_tag_member_in(
     psx_semantic_context_t *context,
-    tag_member_t *m, tag_member_info_t *out) {
+    tag_member_t *member,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  if (!context || !member || (!out_declaration && !out_layout)) return false;
   const psx_record_member_layout_t *layout =
-      find_tag_member_layout_draft(context, m);
+      find_tag_member_layout_draft(context, member);
   if (!layout) return false;
-  memset(out, 0, sizeof(*out));
-  out->name = m->declaration.name;
-  out->len = m->declaration.len;
-  out->offset = layout->offset;
-  out->bit_width = m->declaration.bit_width;
-  out->bit_offset = layout->bit_offset;
-  out->bit_is_signed = m->declaration.bit_is_signed;
-  psx_type_t *decl_type = tag_member_record_decl_type_mut(m);
+  psx_type_t *decl_type = tag_member_record_decl_type_mut(member);
   ps_ctx_bind_record_ids_in(context, decl_type);
-  out->decl_type = decl_type;
+  if (out_declaration) {
+    *out_declaration = (psx_record_member_decl_t){
+        .name = member->declaration.name,
+        .len = member->declaration.len,
+        .bit_width = member->declaration.bit_width,
+        .bit_is_signed = member->declaration.bit_is_signed,
+        .decl_type = decl_type,
+    };
+  }
+  if (out_layout) *out_layout = *layout;
   return true;
 }
 
 /* 内部実装: scope_depth が指定 (>=0) ならその深度に固定、負なら find_tag_type の
  * 最も内側 tag の scope_depth を使う。 */
-static bool get_tag_member_info_impl_in(
+static bool get_tag_member_impl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
-    int scope_depth, int index, tag_member_info_t *out) {
-  if (!context || !out) return false;
+    int scope_depth, int index,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  if (!context || (!out_declaration && !out_layout)) return false;
   tag_type_t *tag = scope_depth >= 0
                         ? find_tag_type_at_scope_in(
                               context, kind, name, len, scope_depth)
@@ -1319,16 +1325,19 @@ static bool get_tag_member_info_impl_in(
     free(members);
     return false;
   }
-  bool found = fill_tag_member_info_in(context, members[index], out);
+  bool found = fill_tag_member_in(
+      context, members[index], out_declaration, out_layout);
   free(members);
   return found;
 }
 
-static bool find_tag_member_info_impl_in(
+static bool find_tag_member_impl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth,
-    char *member_name, int member_len, tag_member_info_t *out) {
-  if (!context || !out) return false;
+    char *member_name, int member_len,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  if (!context || (!out_declaration && !out_layout)) return false;
   int target_scope = scope_depth;
   if (target_scope < 0) {
     tag_type_t *tt = find_tag_type_in(context, kind, name, len);
@@ -1344,10 +1353,54 @@ static bool find_tag_member_info_impl_in(
         strncmp(m->tag_name, name, (size_t)len) == 0 &&
         strncmp(m->declaration.name, member_name, (size_t)member_len) == 0 &&
         m->scope_depth == target_scope) {
-      return fill_tag_member_info_in(context, m, out);
+      return fill_tag_member_in(
+          context, m, out_declaration, out_layout);
     }
   }
   return false;
+}
+
+bool ps_ctx_get_tag_member_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int index,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  return get_tag_member_impl_in(
+      context, kind, name, len, -1, index,
+      out_declaration, out_layout);
+}
+
+bool ps_ctx_get_tag_member_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len,
+    int scope_depth, int index,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  return get_tag_member_impl_in(
+      context, kind, name, len, scope_depth, index,
+      out_declaration, out_layout);
+}
+
+bool ps_ctx_find_tag_member_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len,
+    char *member_name, int member_len,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  return find_tag_member_impl_in(
+      context, kind, name, len, -1, member_name, member_len,
+      out_declaration, out_layout);
+}
+
+bool ps_ctx_find_tag_member_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int scope_depth,
+    char *member_name, int member_len,
+    psx_record_member_decl_t *out_declaration,
+    psx_record_member_layout_t *out_layout) {
+  return find_tag_member_impl_in(
+      context, kind, name, len, scope_depth, member_name, member_len,
+      out_declaration, out_layout);
 }
 
 /* tag の index 番目 (宣言順) のメンバ全属性を取得する。最も内側 tag の scope_depth に
@@ -1356,8 +1409,17 @@ bool ps_ctx_get_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int index,
     tag_member_info_t *out) {
-  return get_tag_member_info_impl_in(
-      context, kind, name, len, -1, index, out);
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  if (!out || !ps_ctx_get_tag_member_in(
+                  context, kind, name, len, index,
+                  &declaration, &layout))
+    return false;
+  *out = ps_tag_member_declaration_view(&declaration);
+  out->offset = layout.offset;
+  out->bit_offset = layout.bit_offset;
+  out->bit_width = layout.bit_width;
+  return true;
 }
 
 /* 名前検索版の統合 API。 */
@@ -1365,8 +1427,17 @@ bool ps_ctx_find_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     char *member_name, int member_len, tag_member_info_t *out) {
-  return find_tag_member_info_impl_in(
-      context, kind, name, len, -1, member_name, member_len, out);
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  if (!out || !ps_ctx_find_tag_member_in(
+                  context, kind, name, len, member_name, member_len,
+                  &declaration, &layout))
+    return false;
+  *out = ps_tag_member_declaration_view(&declaration);
+  out->offset = layout.offset;
+  out->bit_offset = layout.bit_offset;
+  out->bit_width = layout.bit_width;
+  return true;
 }
 
 /* 特定 scope_depth に固定した版。タグ shadowing の応用形で、変数の宣言時 scope を引数で
@@ -1375,17 +1446,34 @@ bool ps_ctx_get_tag_member_info_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     int scope_depth, int index, tag_member_info_t *out) {
-  return get_tag_member_info_impl_in(
-      context, kind, name, len, scope_depth, index, out);
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  if (!out || !ps_ctx_get_tag_member_at_scope_in(
+                  context, kind, name, len, scope_depth, index,
+                  &declaration, &layout))
+    return false;
+  *out = ps_tag_member_declaration_view(&declaration);
+  out->offset = layout.offset;
+  out->bit_offset = layout.bit_offset;
+  out->bit_width = layout.bit_width;
+  return true;
 }
 
 bool ps_ctx_find_tag_member_info_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth,
     char *member_name, int member_len, tag_member_info_t *out) {
-  return find_tag_member_info_impl_in(
-      context, kind, name, len, scope_depth,
-      member_name, member_len, out);
+  psx_record_member_decl_t declaration = {0};
+  psx_record_member_layout_t layout = {0};
+  if (!out || !ps_ctx_find_tag_member_at_scope_in(
+                  context, kind, name, len, scope_depth,
+                  member_name, member_len, &declaration, &layout))
+    return false;
+  *out = ps_tag_member_declaration_view(&declaration);
+  out->offset = layout.offset;
+  out->bit_offset = layout.bit_offset;
+  out->bit_width = layout.bit_width;
+  return true;
 }
 
 int ps_ctx_get_tag_scope_depth_in(
