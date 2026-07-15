@@ -10,11 +10,14 @@
 #include <stdbool.h>
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct arena_context_t arena_context_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
 
-psx_semantic_context_t *ps_ctx_create(void);
+psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context);
 void ps_ctx_destroy(psx_semantic_context_t *context);
+arena_context_t *ps_ctx_arena(
+    const psx_semantic_context_t *context);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */
 void ps_ctx_reset_translation_unit_scope_in(

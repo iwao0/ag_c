@@ -627,7 +627,8 @@ static node_block_t *parse_funcdef_body_block(
     const psx_local_declaration_callbacks_t *local_declarations) {
   ps_ctx_enter_block_scope_in(semantic_context);
   ps_parser_enter_recovery_block_in(runtime_context);
-  node_block_t *body = arena_alloc(sizeof(node_block_t));
+  node_block_t *body = arena_alloc_in(
+      ps_parser_runtime_arena(runtime_context), sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
   int body_cap = 16;

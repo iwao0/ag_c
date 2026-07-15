@@ -54,15 +54,17 @@ int ag_compilation_session_init(
   session->target = target ? *target : ag_target_info_host();
   session->target.pointer_size =
       ag_target_info_pointer_size(&session->target);
-  session->semantic_context = ps_ctx_create();
+  session->arena_context = arena_context_create();
+  session->semantic_context = ps_ctx_create(session->arena_context);
   session->global_registry = ps_global_registry_create();
   session->local_registry = ps_local_registry_create();
   session->preprocessor_context = pp_context_create();
-  session->arena_context = arena_context_create();
   session->diagnostic_context = diag_context_create();
   session->token_allocator_context = tk_allocator_context_create();
-  session->parser_runtime_context = ps_parser_runtime_context_create();
-  session->lowering_context = ps_lowering_context_create();
+  session->parser_runtime_context = ps_parser_runtime_context_create(
+      session->arena_context);
+  session->lowering_context = ps_lowering_context_create(
+      session->arena_context);
   session->codegen_emit_context = cg_context_create();
   if (!session->semantic_context || !session->global_registry ||
       !session->local_registry || !session->preprocessor_context ||
@@ -73,12 +75,12 @@ int ag_compilation_session_init(
     ps_global_registry_destroy(session->global_registry);
     ps_local_registry_destroy(session->local_registry);
     pp_context_destroy(session->preprocessor_context);
-    arena_context_destroy(session->arena_context);
     diag_context_destroy(session->diagnostic_context);
     tk_allocator_context_destroy(session->token_allocator_context);
     ps_parser_runtime_context_destroy(session->parser_runtime_context);
     ps_lowering_context_destroy(session->lowering_context);
     cg_context_destroy(session->codegen_emit_context);
+    arena_context_destroy(session->arena_context);
     memset(session, 0, sizeof(*session));
     return 0;
   }
@@ -155,7 +157,6 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   ps_global_registry_destroy(session->global_registry);
   ps_local_registry_destroy(session->local_registry);
   pp_context_destroy(session->preprocessor_context);
-  arena_context_destroy(session->arena_context);
   diag_context_destroy(session->diagnostic_context);
   tk_allocator_context_destroy(session->token_allocator_context);
   ps_parser_runtime_context_destroy(session->parser_runtime_context);
@@ -165,6 +166,7 @@ int ag_compilation_session_dispose(ag_compilation_session_t *session) {
   dispose_continuation_options(&session->continuation);
   if (session->backend_destroy)
     session->backend_destroy(session->backend_context);
+  arena_context_destroy(session->arena_context);
   memset(session, 0, sizeof(*session));
   return 1;
 }

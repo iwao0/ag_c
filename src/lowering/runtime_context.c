@@ -3,13 +3,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-psx_lowering_context_t *ps_lowering_context_create(void) {
-  return calloc(1, sizeof(psx_lowering_context_t));
+psx_lowering_context_t *ps_lowering_context_create(
+    arena_context_t *arena_context) {
+  if (!arena_context) return NULL;
+  psx_lowering_context_t *ctx = calloc(1, sizeof(*ctx));
+  if (ctx) ctx->arena_context = arena_context;
+  return ctx;
 }
 
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx) {
   if (!ctx) return;
   free(ctx);
+}
+
+arena_context_t *ps_lowering_arena(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? ctx->arena_context : NULL;
 }
 
 void ps_lowering_context_reset_translation_unit(psx_lowering_context_t *ctx) {

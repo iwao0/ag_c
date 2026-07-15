@@ -15519,8 +15519,10 @@ static void test_arena_checkpoint_rollback() {
 
 static void test_semantic_context_isolation() {
   printf("test_semantic_context_isolation...\n");
-  psx_semantic_context_t *first = ps_ctx_create();
-  psx_semantic_context_t *second = ps_ctx_create();
+  arena_context_t *arena_context =
+      ag_compilation_session_arena_context(test_suite_session);
+  psx_semantic_context_t *first = ps_ctx_create(arena_context);
+  psx_semantic_context_t *second = ps_ctx_create(arena_context);
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(second != NULL);
   if (!first || !second) {
@@ -16359,6 +16361,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.parser_runtime_context);
   ASSERT_TRUE(ag_compilation_session_lowering_context(&host) ==
               host.lowering_context);
+  ASSERT_TRUE(ps_ctx_arena(host.semantic_context) == host.arena_context);
+  ASSERT_TRUE(ps_parser_runtime_arena(host.parser_runtime_context) ==
+              host.arena_context);
+  ASSERT_TRUE(ps_lowering_arena(host.lowering_context) ==
+              host.arena_context);
   ASSERT_TRUE(ag_compilation_session_options(&host) == &host.options);
   ASSERT_TRUE(ag_compilation_session_options(&wasm) == &wasm.options);
   ASSERT_TRUE(ag_compilation_session_options(&host) !=
@@ -16375,6 +16382,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               wasm.local_registry);
   ASSERT_TRUE(ag_compilation_session_preprocessor_context(&wasm) ==
               wasm.preprocessor_context);
+  ASSERT_TRUE(ps_ctx_arena(wasm.semantic_context) == wasm.arena_context);
+  ASSERT_TRUE(ps_parser_runtime_arena(wasm.parser_runtime_context) ==
+              wasm.arena_context);
+  ASSERT_TRUE(ps_lowering_arena(wasm.lowering_context) ==
+              wasm.arena_context);
   ASSERT_EQ(8, ag_target_info_pointer_size(
                    ag_compilation_session_target(&host)));
   ASSERT_EQ(4, ag_target_info_pointer_size(

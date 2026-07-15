@@ -2,13 +2,22 @@
 
 #include <stdlib.h>
 
-psx_parser_runtime_context_t *ps_parser_runtime_context_create(void) {
-  return calloc(1, sizeof(psx_parser_runtime_context_t));
+psx_parser_runtime_context_t *ps_parser_runtime_context_create(
+    arena_context_t *arena_context) {
+  if (!arena_context) return NULL;
+  psx_parser_runtime_context_t *ctx = calloc(1, sizeof(*ctx));
+  if (ctx) ctx->arena_context = arena_context;
+  return ctx;
 }
 
 void ps_parser_runtime_context_destroy(psx_parser_runtime_context_t *ctx) {
   if (!ctx) return;
   free(ctx);
+}
+
+arena_context_t *ps_parser_runtime_arena(
+    const psx_parser_runtime_context_t *ctx) {
+  return ctx ? ctx->arena_context : NULL;
 }
 
 void ps_parser_runtime_context_reset_translation_unit(

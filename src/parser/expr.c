@@ -8,6 +8,7 @@
 #include "global_registry.h"
 #include "local_registry.h"
 #include "node_utils.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
 #include "type.h"
@@ -32,6 +33,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
+  arena_context_t *arena_context;
   const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
   int expr_nest_depth;
@@ -54,6 +56,7 @@ static expr_parse_ctx_t expr_parse_ctx_default(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .runtime_context = runtime_context,
+      .arena_context = ps_parser_runtime_arena(runtime_context),
       .local_declarations = local_declarations,
   };
   return ctx;
@@ -156,12 +159,14 @@ static int parse_generic_assoc_type(
   return 1;
 }
 
-static node_t *build_member_access(node_t *base, int from_ptr, token_t *op_tok) {
+static node_t *build_member_access(
+    node_t *base, int from_ptr, token_t *op_tok, expr_parse_ctx_t *ctx) {
   token_ident_t *member = tk_consume_ident();
   if (!member) {
     ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
   }
-  node_member_access_t *syntax = arena_alloc(sizeof(*syntax));
+  node_member_access_t *syntax = arena_alloc_in(
+      ctx->arena_context, sizeof(*syntax));
   syntax->base.kind = ND_MEMBER_ACCESS;
   syntax->base.lhs = base;
   syntax->base.tok = op_tok;
@@ -245,7 +250,7 @@ static int capture_type_name_ref_at(
     token_t **out_end, expr_parse_ctx_t *ctx) {
   if (!start || !out || !is_type_name_start_token(start, ctx)) return 0;
   psx_parsed_type_name_t *syntax =
-      arena_alloc(sizeof(psx_parsed_type_name_t));
+      arena_alloc_in(ctx->arena_context, sizeof(psx_parsed_type_name_t));
   int parsed = runtime_bounds
                    ? psx_parse_runtime_type_name_syntax_at(
                          start,
@@ -416,7 +421,8 @@ static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = logical_or_ctx(ctx);
   if (curtok()->kind == TK_QUESTION) {
     set_curtok(curtok()->next);
-    node_ctrl_t *ternary = arena_alloc(sizeof(node_ctrl_t));
+    node_ctrl_t *ternary = arena_alloc_in(
+        ctx->arena_context, sizeof(node_ctrl_t));
     ternary->base.kind = ND_TERNARY;
     ternary->base.lhs = node;
     ternary->base.rhs = expr_internal_ctx(ctx);
@@ -584,7 +590,8 @@ static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
 }
 
 static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
-  node_sizeof_query_t *query = arena_alloc(sizeof(node_sizeof_query_t));
+  node_sizeof_query_t *query = arena_alloc_in(
+      ctx->arena_context, sizeof(node_sizeof_query_t));
   query->base.kind = ND_SIZEOF_QUERY;
   query->base.tok = op_tok;
   query->base.type = ps_type_new_integer(TK_UNSIGNED, 8, 1);
@@ -629,7 +636,8 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
 
 static node_t *parse_alignof_type_name(
     token_t *op_tok, expr_parse_ctx_t *ctx) {
-  node_alignof_query_t *query = arena_alloc(sizeof(node_alignof_query_t));
+  node_alignof_query_t *query = arena_alloc_in(
+      ctx->arena_context, sizeof(node_alignof_query_t));
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
   query->base.type = ps_type_new_integer(TK_UNSIGNED, 8, 1);
@@ -663,7 +671,7 @@ static node_t *parse_alignof_type_name(
 static node_t *build_pre_inc_dec_node(
     node_kind_t kind, token_t *op_tok, expr_parse_ctx_t *ctx) {
   node_t *target = unary_ctx(ctx);
-  node_t *node = arena_alloc(sizeof(node_t));
+  node_t *node = arena_alloc_in(ctx->arena_context, sizeof(node_t));
   node->kind = kind;
   node->lhs = target;
   node->tok = op_tok;
@@ -729,7 +737,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
       int is_real = (kid->str[2] == 'r');
       set_curtok(curtok()->next);
       node_t *operand = cast_ctx(ctx);
-      node_t *n = arena_alloc(sizeof(node_t));
+      node_t *n = arena_alloc_in(ctx->arena_context, sizeof(node_t));
       n->kind = is_real ? ND_CREAL : ND_CIMAG;
       n->lhs = operand;
       n->tok = (token_t *)kid;
@@ -753,7 +761,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     token_t *op_tok = curtok();
     set_curtok(curtok()->next);
     node_t *operand = cast_ctx(ctx);
-    node_t *negate = arena_alloc(sizeof(node_t));
+    node_t *negate = arena_alloc_in(ctx->arena_context, sizeof(node_t));
     negate->kind = ND_UNARY_NEGATE;
     negate->lhs = operand;
     negate->tok = op_tok;
@@ -795,8 +803,9 @@ static node_t *build_subscript_syntax(node_t *node, node_t *idx,
 }
 
 static node_t *build_post_inc_dec_node(
-    node_kind_t kind, node_t *operand, token_t *op_tok) {
-  node_t *n = arena_alloc(sizeof(node_t));
+    node_kind_t kind, node_t *operand, token_t *op_tok,
+    expr_parse_ctx_t *ctx) {
+  node_t *n = arena_alloc_in(ctx->arena_context, sizeof(node_t));
   n->kind = kind;
   n->lhs = operand;
   n->tok = op_tok;
@@ -831,19 +840,20 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
     if (k == TK_DOT || k == TK_ARROW) {
       token_t *op_tok = curtok();
       set_curtok(curtok()->next);
-      node = build_member_access(node, k == TK_ARROW ? 1 : 0, op_tok);
+      node = build_member_access(
+          node, k == TK_ARROW ? 1 : 0, op_tok, ctx);
       continue;
     }
     if (k == TK_INC) {
       token_t *op_tok = curtok();
       set_curtok(curtok()->next);
-      node = build_post_inc_dec_node(ND_POST_INC, node, op_tok);
+      node = build_post_inc_dec_node(ND_POST_INC, node, op_tok, ctx);
       continue;
     }
     if (k == TK_DEC) {
       token_t *op_tok = curtok();
       set_curtok(curtok()->next);
-      node = build_post_inc_dec_node(ND_POST_DEC, node, op_tok);
+      node = build_post_inc_dec_node(ND_POST_DEC, node, op_tok, ctx);
       continue;
     }
     return node;
@@ -854,7 +864,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   token_t *call_tok = curtok();
   tk_expect('(');
   node_function_call_t *node =
-      arena_alloc(sizeof(node_function_call_t));
+      arena_alloc_in(ctx->arena_context, sizeof(node_function_call_t));
   node->base.kind = ND_FUNCALL;
   node->base.tok = call_tok;
   /* callee が bare 関数参照 (ND_FUNCREF) のとき — 典型的には `_Generic(...)(args)` が
@@ -949,7 +959,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
   tk_expect(')');
 
   node_generic_selection_t *selection =
-      arena_alloc(sizeof(node_generic_selection_t));
+      arena_alloc_in(ctx->arena_context, sizeof(node_generic_selection_t));
   selection->base.kind = ND_GENERIC_SELECTION;
   selection->base.tok = generic_tok;
   selection->control = control;
@@ -962,7 +972,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
 static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
   token_t *tok = curtok();
   token_num_t *num = (token_num_t *)tok;
-  node_num_t *node = arena_alloc(sizeof(node_num_t));
+  node_num_t *node = arena_alloc_in(ctx->arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
   if (num->num_kind == TK_NUM_KIND_INT) {
     node->float_suffix_kind = TK_FLOAT_SUFFIX_NONE;
@@ -1006,7 +1016,8 @@ static node_string_t *make_string_lit_node(
                                            char *str, int len,
                                            tk_char_width_t char_width,
                                            tk_string_prefix_kind_t prefix_kind) {
-  node_string_t *snode = arena_alloc(sizeof(node_string_t));
+  node_string_t *snode = arena_alloc_in(
+      ctx->arena_context, sizeof(node_string_t));
   snode->base.kind = ND_STRING;
   int id = ps_global_registry_next_string_literal_id(
       ctx->global_registry);
@@ -1124,7 +1135,7 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
   if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0)
     return make_func_name_string_node(ctx);
   if (tok->len == 13 && memcmp(tok->str, "__va_arg_area", 13) == 0) {
-    node_t *node = arena_alloc(sizeof(*node));
+    node_t *node = arena_alloc_in(ctx->arena_context, sizeof(*node));
     node->kind = ND_VA_ARG_AREA;
     node->tok = (token_t *)tok;
     return node;
@@ -1136,7 +1147,8 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
 
   psx_local_lookup_point_t point =
       ps_local_registry_capture_lookup_point_in(ctx->local_registry);
-  node_identifier_t *identifier = arena_alloc(sizeof(*identifier));
+  node_identifier_t *identifier = arena_alloc_in(
+      ctx->arena_context, sizeof(*identifier));
   identifier->base.kind = ND_IDENTIFIER;
   identifier->base.tok = (token_t *)tok;
   identifier->base.lvar_usage_unevaluated =

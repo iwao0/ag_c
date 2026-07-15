@@ -162,6 +162,7 @@ struct psx_function_symbol_t {
 };
 
 struct psx_semantic_context_t {
+  arena_context_t *arena_context;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -216,14 +217,22 @@ static void ctx_release_all(psx_semantic_context_t *context) {
   }
 }
 
-psx_semantic_context_t *ps_ctx_create(void) {
-  return calloc(1, sizeof(psx_semantic_context_t));
+psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
+  if (!arena_context) return NULL;
+  psx_semantic_context_t *context = calloc(1, sizeof(*context));
+  if (context) context->arena_context = arena_context;
+  return context;
 }
 
 void ps_ctx_destroy(psx_semantic_context_t *context) {
   if (!context) return;
   ctx_release_all(context);
   free(context);
+}
+
+arena_context_t *ps_ctx_arena(
+    const psx_semantic_context_t *context) {
+  return context ? context->arena_context : NULL;
 }
 
 static psx_type_t *ctx_type_clone_persistent_in(

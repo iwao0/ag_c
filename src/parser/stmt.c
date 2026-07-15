@@ -10,6 +10,7 @@
 #include "expr.h"
 #include "node_utils.h"
 #include "parser_recovery.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -30,6 +31,7 @@ typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
+  arena_context_t *arena_context;
   const psx_local_declaration_callbacks_t *local_declarations;
 } psx_statement_parse_context_t;
 
@@ -86,8 +88,10 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context);
 static node_t *parse_stmt_switch(psx_statement_parse_context_t *context);
 static node_t *parse_stmt_case(psx_statement_parse_context_t *context);
 static node_t *parse_stmt_default(psx_statement_parse_context_t *context);
-static node_t *parse_stmt_break(void);
-static node_t *parse_stmt_continue(void);
+static node_t *parse_stmt_break(
+    psx_statement_parse_context_t *context);
+static node_t *parse_stmt_continue(
+    psx_statement_parse_context_t *context);
 static node_t *parse_stmt_goto(psx_statement_parse_context_t *context);
 static node_t *parse_stmt_label(psx_statement_parse_context_t *context);
 
@@ -106,8 +110,8 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
     case TK_SWITCH:   return parse_stmt_switch(context);
     case TK_CASE:     return parse_stmt_case(context);
     case TK_DEFAULT:  return parse_stmt_default(context);
-    case TK_BREAK:    return parse_stmt_break();
-    case TK_CONTINUE: return parse_stmt_continue();
+    case TK_BREAK:    return parse_stmt_break(context);
+    case TK_CONTINUE: return parse_stmt_continue(context);
     case TK_GOTO:     return parse_stmt_goto(context);
     default: break;
   }
@@ -125,7 +129,8 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
   ps_ctx_enter_block_scope_in(context->semantic_context);
   ps_decl_enter_scope_in(context->local_registry);
   ps_parser_enter_recovery_block_in(context->runtime_context);
-  node_block_t *node = arena_alloc(sizeof(node_block_t));
+  node_block_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_block_t));
   node->base.kind = ND_BLOCK;
   int i = 0;
   int cap = 16;
@@ -200,6 +205,7 @@ node_t *psx_parse_statement_expression_in_contexts(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .runtime_context = runtime_context,
+      .arena_context = ps_parser_runtime_arena(runtime_context),
       .local_declarations = local_declarations,
   };
   tk_expect('(');
@@ -213,7 +219,7 @@ node_t *psx_parse_statement_expression_in_contexts(
     }
   }
   if (!value) value = ps_node_new_num(0);
-  node_t *node = calloc(1, sizeof(node_t));
+  node_t *node = arena_alloc_in(context.arena_context, sizeof(node_t));
   node->kind = ND_STMT_EXPR;
   node->lhs = block;
   node->rhs = value;
@@ -224,7 +230,7 @@ static node_t *parse_stmt_return(
     psx_statement_parse_context_t *context) {
   token_t *return_tok = curtok();
   set_curtok(curtok()->next);
-  node_t *node = arena_alloc(sizeof(node_t));
+  node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_RETURN;
   node->tok = return_tok;
   if (tk_consume(';')) {
@@ -242,7 +248,8 @@ static node_t *parse_stmt_return(
 static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
   tk_expect('(');
-  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node_ctrl_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_IF;
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
@@ -263,7 +270,8 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
 static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
   tk_expect('(');
-  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node_ctrl_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_WHILE;
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
@@ -276,7 +284,8 @@ static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
 
 static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
-  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node_ctrl_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_DO_WHILE;
   node->base.rhs = stmt_internal(context);
   if (curtok()->kind != TK_WHILE) {
@@ -296,7 +305,8 @@ static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
 static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
   tk_expect('(');
-  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node_ctrl_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_FOR;
   int for_has_decl = 0;
   if (!tk_consume(';')) {
@@ -335,7 +345,8 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
   token_t *switch_tok = curtok();
   set_curtok(curtok()->next);
   tk_expect('(');
-  node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
+  node_ctrl_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_SWITCH;
   node->base.tok = switch_tok;
   node->base.lhs = psx_expr_expr_in_contexts(
@@ -350,7 +361,8 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
 static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
   token_t *case_tok = curtok();
   set_curtok(curtok()->next);
-  node_case_t *node = arena_alloc(sizeof(node_case_t));
+  node_case_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
   node->val = psx_parse_case_const_expr_in_context(
@@ -363,7 +375,8 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
 static node_t *parse_stmt_default(psx_statement_parse_context_t *context) {
   token_t *default_tok = curtok();
   set_curtok(curtok()->next);
-  node_default_t *node = arena_alloc(sizeof(node_default_t));
+  node_default_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_default_t));
   node->base.kind = ND_DEFAULT;
   node->base.tok = default_tok;
   tk_expect(':');
@@ -371,17 +384,19 @@ static node_t *parse_stmt_default(psx_statement_parse_context_t *context) {
   return (node_t *)node;
 }
 
-static node_t *parse_stmt_break(void) {
+static node_t *parse_stmt_break(
+    psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
-  node_t *node = arena_alloc(sizeof(node_t));
+  node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_BREAK;
   tk_expect(';');
   return node;
 }
 
-static node_t *parse_stmt_continue(void) {
+static node_t *parse_stmt_continue(
+    psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
-  node_t *node = arena_alloc(sizeof(node_t));
+  node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_CONTINUE;
   tk_expect(';');
   return node;
@@ -394,7 +409,8 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   if (!ident) {
     ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
   }
-  node_jump_t *node = arena_alloc(sizeof(node_jump_t));
+  node_jump_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_jump_t));
   node->base.kind = ND_GOTO;
   node->name = ident->str;
   node->name_len = ident->len;
@@ -407,7 +423,8 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
 static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
   token_ident_t *ident = tk_consume_ident();
   tk_expect(':');
-  node_jump_t *node = arena_alloc(sizeof(node_jump_t));
+  node_jump_t *node = arena_alloc_in(
+      context->arena_context, sizeof(node_jump_t));
   node->base.kind = ND_LABEL;
   node->name = ident->str;
   node->name_len = ident->len;
@@ -431,6 +448,7 @@ node_t *psx_stmt_stmt_in_contexts(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .runtime_context = runtime_context,
+      .arena_context = ps_parser_runtime_arena(runtime_context),
       .local_declarations = local_declarations,
   };
   node_t *result = stmt_internal(&context);
