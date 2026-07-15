@@ -64,6 +64,7 @@ typedef struct {
   ir_module_t *m;
   ir_func_t *f;
   const ag_target_info_t *target;
+  ag_diagnostic_context_t *diagnostic_context;
   /* 現在処理中の関数 AST。lvars リストを引くため。 */
   node_function_definition_t *cur_fn;
   int failed;
@@ -196,15 +197,18 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
    * unrelated to the configured external entry. */
   if (fn->is_static) return 1;
   if (!is_exact_int_void_function(fn->signature)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, fn->base.tok, "%s",
-                   "continuation entry must have type int(void)");
+    diag_emit_tokf_in(
+        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
+        fn->base.tok, "%s",
+        "continuation entry must have type int(void)");
     return 0;
   }
   continuation_scan_t scan = {.options = options};
   scan_continuation_node(fn->base.rhs, &scan);
   if (scan.invalid_node) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT,
-                   scan.invalid_node->tok, "%s", scan.invalid_reason);
+    diag_emit_tokf_in(
+        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
+        scan.invalid_node->tok, "%s", scan.invalid_reason);
     return 0;
   }
   int is_synchronous =
@@ -212,17 +216,18 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
   int is_frame_continuation =
       scan.frame_while_count == 1 && scan.condition_call_count == 1;
   if (!is_synchronous && !is_frame_continuation) {
-    diag_emit_tokf(
-        DIAG_ERR_PARSER_INVALID_CONTEXT, fn->base.tok, "%s",
+    diag_emit_tokf_in(
+        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
+        fn->base.tok, "%s",
         scan.frame_while_count == 0
             ? "continuation entry requires one direct while(frame_condition()) loop"
             : "continuation entry permits exactly one frame condition call");
     return 0;
   }
   if (is_frame_continuation && scan.frame_invalid_node) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT,
-                   scan.frame_invalid_node->tok, "%s",
-                   scan.frame_invalid_reason);
+    diag_emit_tokf_in(
+        ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
+        scan.frame_invalid_node->tok, "%s", scan.frame_invalid_reason);
     return 0;
   }
   ctx->continuation = options;
@@ -3595,9 +3600,10 @@ static void emit_implicit_return_if_missing(
     /* C11 6.9.1p12: 非 void 関数で値を返さずに到達するのは未定義動作。main は例外で
      * 暗黙 return 0 が標準化されている (C11 5.1.2.2.3)。 */
     if (!is_main && !returns_void) {
-      diag_warn_tokf(DIAG_WARN_PARSER_MISSING_RETURN, NULL,
-                     "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
-                     fn->name_len, fn->name);
+      diag_warn_tokf_in(
+          ctx->diagnostic_context, DIAG_WARN_PARSER_MISSING_RETURN, NULL,
+          "関数 '%.*s' は値を返さずに終端します (C11 6.9.1p12)",
+          fn->name_len, fn->name);
     }
     ir_inst_t *r = ir_inst_new(IR_RET);
     r->src1 = returns_void ? ir_val_none()
@@ -3774,6 +3780,8 @@ ir_module_t *ir_build_module_with_options(
   ir_build_ctx_t ctx = {0};
   ctx.target = options ? options->target : NULL;
   ctx.configured_continuation = options ? options->continuation : NULL;
+  ctx.diagnostic_context = options ? options->diagnostic_context : NULL;
+  if (!ctx.diagnostic_context) return NULL;
   ctx.m = ir_module_new();
   if (!code) return ctx.m;
   for (int i = 0; code[i]; i++) {
@@ -3794,17 +3802,22 @@ ir_module_t *ir_build_module_with_options(
 }
 
 static ir_build_options_t ir_build_options_for_target(
-    const ag_target_info_t *target) {
+    const ag_target_info_t *target,
+    ag_diagnostic_context_t *diagnostic_context) {
   return (ir_build_options_t){
       .target = target,
+      .diagnostic_context = diagnostic_context,
   };
 }
 
 ir_module_t *ir_build_module_for_target(
     node_t **code, const ag_target_info_t *target) {
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
   ir_build_options_t options =
-      ir_build_options_for_target(target);
-  return ir_build_module_with_options(code, &options);
+      ir_build_options_for_target(target, diagnostics);
+  ir_module_t *module = ir_build_module_with_options(code, &options);
+  diag_context_destroy(diagnostics);
+  return module;
 }
 
 static int g_ir_dump_enabled(void) {
@@ -3830,9 +3843,13 @@ static void emit_legacy_ir_module(
 int ir_build_emit_function_for_target(
     node_t *fn, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
   ir_build_options_t options =
-      ir_build_options_for_target(target);
-  return ir_build_emit_function_with_options(fn, &options, emit_module);
+      ir_build_options_for_target(target, diagnostics);
+  int result = ir_build_emit_function_with_options(
+      fn, &options, emit_module);
+  diag_context_destroy(diagnostics);
+  return result;
 }
 
 int ir_build_emit_function_with_options(
@@ -3864,9 +3881,13 @@ int ir_build_emit_function_with_options_in(
 
 ir_module_t *ir_build_function_module_for_target(
     node_t *fn, const ag_target_info_t *target) {
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
   ir_build_options_t options =
-      ir_build_options_for_target(target);
-  return ir_build_function_module_with_options(fn, &options);
+      ir_build_options_for_target(target, diagnostics);
+  ir_module_t *module =
+      ir_build_function_module_with_options(fn, &options);
+  diag_context_destroy(diagnostics);
+  return module;
 }
 
 ir_module_t *ir_build_function_module_with_options(
@@ -3875,6 +3896,8 @@ ir_module_t *ir_build_function_module_with_options(
   ir_build_ctx_t ctx = {0};
   ctx.target = options ? options->target : NULL;
   ctx.configured_continuation = options ? options->continuation : NULL;
+  ctx.diagnostic_context = options ? options->diagnostic_context : NULL;
+  if (!ctx.diagnostic_context) return NULL;
   ctx.m = ir_module_new();
   if (!build_function(&ctx, (node_function_definition_t *)fn)) {
     ir_module_free(ctx.m);
@@ -3886,9 +3909,13 @@ ir_module_t *ir_build_function_module_with_options(
 int ir_build_each_and_emit_for_target(
     node_t **code, const ag_target_info_t *target,
     void (*emit_module)(ir_module_t *)) {
+  ag_diagnostic_context_t *diagnostics = diag_context_create();
   ir_build_options_t options =
-      ir_build_options_for_target(target);
-  return ir_build_each_and_emit_with_options(code, &options, emit_module);
+      ir_build_options_for_target(target, diagnostics);
+  int result = ir_build_each_and_emit_with_options(
+      code, &options, emit_module);
+  diag_context_destroy(diagnostics);
+  return result;
 }
 
 int ir_build_each_and_emit_with_options(

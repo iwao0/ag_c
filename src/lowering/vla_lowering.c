@@ -52,15 +52,19 @@ static psx_type_t *runtime_stride_storage_type(
 psx_vla_lowering_result_t lower_vla_declaration(
     const psx_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
-  int count = request ? request->dimension_count : 0;
-  int element_size =
-      request ? ps_type_pointee_value_size(request->type) : 0;
-  if (!request || !request->local_registry || !request->lowering_context ||
+  if (!request || !request->lowering_context) return result;
+  ag_diagnostic_context_t *diagnostics =
+      ps_lowering_diagnostics(request->lowering_context);
+  int count = request->dimension_count;
+  int element_size = ps_type_pointee_value_size(request->type);
+  if (!request->local_registry ||
       !request->type || count <= 0 ||
       element_size <= 0 || !request->dimensions || !request->const_values ||
       !request->is_const) {
-    ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    ps_diag_ctx_in(
+        diagnostics, request->diag_tok, "vla-lowering", "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
 
   frame_vla_layout_t layout = frame_layout_vla_storage(
@@ -133,15 +137,18 @@ psx_vla_lowering_result_t lower_vla_declaration(
 psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
     const psx_pointer_vla_lowering_request_t *request) {
   psx_vla_lowering_result_t result = {0};
-  int element_size =
-      request ? ps_type_pointee_value_size(request->type) : 0;
-  if (!request || !request->local_registry || !request->lowering_context ||
+  if (!request || !request->lowering_context) return result;
+  ag_diagnostic_context_t *diagnostics =
+      ps_lowering_diagnostics(request->lowering_context);
+  int element_size = ps_type_pointee_value_size(request->type);
+  if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||
       element_size <= 0 || !request->row_dimension) {
-    ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
-                 diag_message_for(
-                     DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    ps_diag_ctx_in(
+        diagnostics, request->diag_tok, "vla-lowering", "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
 
   frame_vla_layout_t layout = frame_layout_pointer_vla_storage();
@@ -184,17 +191,20 @@ static char *parameter_stride_storage_name(
 psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     const psx_parameter_vla_lowering_request_t *request) {
   psx_parameter_vla_lowering_result_t result = {0};
-  int count = request ? request->inner_dimension_count : 0;
-  int element_size =
-      request ? ps_type_pointee_value_size(request->type) : 0;
-  if (!request || !request->local_registry || !request->lowering_context ||
+  if (!request || !request->lowering_context) return result;
+  ag_diagnostic_context_t *diagnostics =
+      ps_lowering_diagnostics(request->lowering_context);
+  int count = request->inner_dimension_count;
+  int element_size = ps_type_pointee_value_size(request->type);
+  if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||
       element_size <= 0 || count < 0 ||
       (count > 0 && !request->inner_dimensions)) {
-    ps_diag_ctx(request ? request->diag_tok : NULL, "vla-lowering", "%s",
-                 diag_message_for(
-                     DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+    ps_diag_ctx_in(
+        diagnostics, request->diag_tok, "vla-lowering", "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
   }
 
   result.var = create_vla_storage(
@@ -227,8 +237,9 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     if (!constants || !source_offsets) {
       free(constants);
       free(source_offsets);
-      ps_diag_ctx(request->diag_tok, "param",
-                  "VLA parameter dimension allocation failed");
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "param",
+          "VLA parameter dimension allocation failed");
     }
     for (int i = 0; i < count; i++) {
       const psx_parameter_vla_dimension_t *dimension =
@@ -239,9 +250,10 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
           request->local_registry,
           dimension->source_name, dimension->source_name_len);
       if (!source || !ps_lvar_is_param(source)) {
-        ps_diag_ctx(
-            request->diag_tok, "param",
-            diag_message_for(
+        ps_diag_ctx_in(
+            diagnostics, request->diag_tok, "param",
+            diag_message_for_in(
+                diagnostics,
                 DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
             dimension->source_name_len, dimension->source_name);
       }
@@ -252,7 +264,8 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
         result.var, ps_lvar_offset(result.stride_storage), count - 1,
         0, element_size);
     ps_local_registry_set_vla_param_inner_dims(
-        result.var, constants, source_offsets, count,
+        request->local_registry, result.var,
+        constants, source_offsets, count,
         request->diag_tok);
     if (count == 1 && constants[0] == 0) {
       ps_local_registry_set_vla_descriptor(

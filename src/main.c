@@ -246,14 +246,18 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     ag_compilation_session_destroy(wasm_adapter_session);
     wasm_adapter_session = NULL;
   }
-  diag_reset_records();
-  if (!source_addr || !out_addr || out_cap <= 0) return -1;
-
   ag_target_info_t target = ag_target_info_wasm32();
   ag_compilation_session_t *session =
       ag_compilation_session_create(&target);
   if (!session) return -4;
   wasm_adapter_session = session;
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(session);
+  diag_reset_records_in(diagnostics);
+  if (!source_addr || !out_addr || out_cap <= 0) {
+    wasm_publish_and_destroy_session(session);
+    return -1;
+  }
   if (wasm_pending_continuation.enabled &&
       !ag_compilation_session_set_continuation(
           session, wasm_pending_continuation.entry,
@@ -334,6 +338,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(session),
       .continuation = ag_compilation_session_continuation(session),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(session),
   };
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
     if (!wasm_emit_function_direct(fn, object_mode, &ir_options)) {
@@ -349,7 +355,7 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
-  if (diag_has_error_records()) {
+  if (diag_has_error_records_in(diagnostics)) {
     clear_output_callback(emit_context);
     gen_set_simple_formatter_in(emit_context, 0);
     if (object_mode) wasm32_obj_capture_output(0);
@@ -448,6 +454,17 @@ int agc_wasm_compile_object_virtual(int source_addr, int source_name_addr,
 }
 
 int main(int argc, char **argv) {
+  ag_target_info_t target =
+#ifdef AGC_TARGET_WASM32
+      ag_target_info_wasm32();
+#else
+      ag_target_info_host();
+#endif
+  ag_compilation_session_t *session =
+      ag_compilation_session_create(&target);
+  if (!session) return 1;
+  ag_diagnostic_context_t *diagnostics =
+      ag_compilation_session_diagnostic_context(session);
   const char *prog_disp = (argc > 0) ? diag_display_path(argv[0]) : "ag_c";
   const char *input_path = NULL;
   int wasm_object_mode = 0;
@@ -492,14 +509,18 @@ int main(int argc, char **argv) {
   if (!input_path || (wasm_object_mode && !output_path) ||
       (continuation_entry && !wasm_object_mode) ||
       (!!continuation_entry != !!continuation_condition)) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
-                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_USAGE,
+        diag_message_for_in(diagnostics, DIAG_ERR_INTERNAL_USAGE),
+        prog_disp);
     return 1;
   }
 #else
   if (argc != 2) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE,
-                        diag_message_for(DIAG_ERR_INTERNAL_USAGE), prog_disp);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_USAGE,
+        diag_message_for_in(diagnostics, DIAG_ERR_INTERNAL_USAGE),
+        prog_disp);
     return 1;
   }
   input_path = argv[1];
@@ -508,20 +529,15 @@ int main(int argc, char **argv) {
   const char *input_disp = diag_display_path(input_path);
   char *source = read_file_contents(input_path);
   if (!source) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_INPUT_READ_FAILED,
-                        diag_message_for(DIAG_ERR_INTERNAL_INPUT_READ_FAILED), input_disp);
+    diag_emit_internalf_in(
+        diagnostics, DIAG_ERR_INTERNAL_INPUT_READ_FAILED,
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_INTERNAL_INPUT_READ_FAILED),
+        input_disp);
     return 1;
   }
 
-  ag_target_info_t target =
-#ifdef AGC_TARGET_WASM32
-      ag_target_info_wasm32();
-#else
-      ag_target_info_host();
-#endif
-  ag_compilation_session_t *session =
-      ag_compilation_session_create(&target);
-  int session_ready = session != NULL;
+  int session_ready = 1;
 #ifdef AGC_TARGET_WASM32
   if (session_ready && continuation_entry) {
     session_ready = ag_compilation_session_set_continuation(
@@ -565,7 +581,9 @@ int main(int argc, char **argv) {
   if (wasm_object_mode) {
     wasm_obj_out = fopen(output_path, "wb");
     if (!wasm_obj_out) {
-      diag_emit_internalf(DIAG_ERR_INTERNAL_USAGE, "%s", "failed to open Wasm object output");
+      diag_emit_internalf_in(
+          diagnostics, DIAG_ERR_INTERNAL_USAGE, "%s",
+          "failed to open Wasm object output");
       if (pps) pp_stream_close(pps);
       ag_compilation_session_destroy(session);
       free(source);
@@ -604,6 +622,8 @@ int main(int argc, char **argv) {
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(session),
       .continuation = ag_compilation_session_continuation(session),
+      .diagnostic_context =
+          ag_compilation_session_diagnostic_context(session),
   };
   for (node_t *fn; (fn = psx_frontend_next_function(&stream)) != NULL; ) {
 #ifdef AGC_TARGET_WASM32
@@ -612,8 +632,10 @@ int main(int argc, char **argv) {
     if (!ir_build_emit_function_with_options_in(
             fn, &ir_options, arm64_emit_ir_module, emit_context)) {
 #endif
-      diag_emit_internalf(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
-                          diag_message_for(DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
+      diag_emit_internalf_in(
+          diagnostics, DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED, "%s",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_CODEGEN_IR_BUILD_EMIT_FAILED));
       if (pps) pp_stream_close(pps);
       ag_compilation_session_destroy(session);
       free(source);
@@ -624,7 +646,7 @@ int main(int argc, char **argv) {
   psx_frontend_stream_end(&stream);
   if (pps) pp_stream_close(pps);
 
-  if (diag_has_error_records()) {
+  if (diag_has_error_records_in(diagnostics)) {
 #ifdef AGC_TARGET_WASM32
     if (wasm_object_mode) {
       fclose(wasm_obj_out);

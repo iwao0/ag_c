@@ -517,6 +517,7 @@ static int parse_declarator_syntax_tree_into(
           .context = &parse_context,
           .arena_context = ps_parser_runtime_arena(runtime_context),
           .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
+          .diagnostic_context = diagnostics(runtime_context),
           .is_grouping_parenthesis =
               is_grouping_parenthesis
                   ? is_grouping_parenthesis

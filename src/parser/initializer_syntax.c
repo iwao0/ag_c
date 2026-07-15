@@ -21,6 +21,11 @@ static inline token_t *curtok(
   return tk_get_current_token_ctx(tokenizer(runtime_context));
 }
 
+static inline ag_diagnostic_context_t *diagnostics(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_diagnostics(runtime_context);
+}
+
 void psx_prepare_optional_initializer_syntax(
     psx_parsed_initializer_t *out,
     psx_parser_runtime_context_t *runtime_context) {
@@ -83,9 +88,13 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
     for (;;) {
       if (count >= PS_MAX_INITIALIZER_ELEMENTS) {
         free(entries);
-        ps_diag_ctx(curtok(runtime_context), "initializer-syntax",
-                     diag_message_for(DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
-                     PS_MAX_INITIALIZER_ELEMENTS);
+        ps_diag_ctx_in(
+            diagnostics(runtime_context), curtok(runtime_context),
+            "initializer-syntax",
+            diag_message_for_in(
+                diagnostics(runtime_context),
+                DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
+            PS_MAX_INITIALIZER_ELEMENTS);
       }
       if (count == capacity) {
         int next_capacity = capacity ? capacity * 2 : 8;
@@ -93,8 +102,9 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
             entries, sizeof(*entries) * (size_t)next_capacity);
         if (!next) {
           free(entries);
-          ps_diag_ctx(curtok(runtime_context), "initializer-syntax",
-                       "initializer allocation failed");
+          ps_diag_ctx_in(
+              diagnostics(runtime_context), curtok(runtime_context),
+              "initializer-syntax", "initializer allocation failed");
         }
         entries = next;
         capacity = next_capacity;
@@ -110,17 +120,22 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
              curtok(runtime_context)->kind == TK_LBRACKET) {
         if (designator_count >= 8) {
           free(entries);
-          ps_diag_ctx(curtok(runtime_context), "initializer-syntax", "%s",
-                       diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+          ps_diag_ctx_in(
+              diagnostics(runtime_context), curtok(runtime_context),
+              "initializer-syntax", "%s",
+              diag_message_for_in(
+                  diagnostics(runtime_context),
+                  DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
         }
         token_t *designator_tok = curtok(runtime_context);
         if (tk_consume_ctx(tk_ctx, '.')) {
           token_ident_t *current_member = tk_consume_ident_ctx(tk_ctx);
           if (!current_member) {
             free(entries);
-            ps_diag_missing(
-                curtok(runtime_context),
-                diag_text_for(DIAG_TEXT_MEMBER_NAME));
+            ps_diag_missing_in(
+                diagnostics(runtime_context), curtok(runtime_context),
+                diag_text_for_in(
+                    diagnostics(runtime_context), DIAG_TEXT_MEMBER_NAME));
           }
           if (!member) member = current_member;
           designators[designator_count++] = (psx_initializer_designator_t){

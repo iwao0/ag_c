@@ -16,11 +16,13 @@
 #include "../target_info.h"
 
 struct node_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 typedef void (*ir_emit_module_in_fn)(ir_module_t *module, void *context);
 
 typedef struct {
   const ag_target_info_t *target;
   const ag_continuation_options_t *continuation;
+  ag_diagnostic_context_t *diagnostic_context;
 } ir_build_options_t;
 
 /* AST 列 (NULL 終端) を IR モジュールに変換する。

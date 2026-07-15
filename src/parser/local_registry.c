@@ -27,6 +27,7 @@ struct lvar_usage_event_t {
 };
 
 struct psx_local_registry_t {
+  ag_diagnostic_context_t *diagnostic_context;
   lvar_t *locals;
   lvar_t *all_locals;
   lvar_t *all_bindings;
@@ -47,8 +48,12 @@ struct psx_local_registry_t {
   int current_function_name_len;
 };
 
-psx_local_registry_t *ps_local_registry_create(void) {
-  return calloc(1, sizeof(psx_local_registry_t));
+psx_local_registry_t *ps_local_registry_create(
+    ag_diagnostic_context_t *diagnostic_context) {
+  psx_local_registry_t *registry =
+      calloc(1, sizeof(psx_local_registry_t));
+  if (registry) registry->diagnostic_context = diagnostic_context;
+  return registry;
 }
 
 void ps_local_registry_destroy(psx_local_registry_t *registry) {
@@ -79,8 +84,9 @@ static void ensure_scope_parent_capacity(
       registry->scope_parent_by_seq,
       capacity * sizeof(*registry->scope_parent_by_seq));
   if (!grown) {
-    ps_diag_ctx(NULL, "scope",
-                "local scope ancestry allocation failed");
+    ps_diag_ctx_in(
+        registry->diagnostic_context, NULL, "scope",
+        "local scope ancestry allocation failed");
   }
   memset(grown + registry->scope_parent_capacity, 0,
          (capacity - registry->scope_parent_capacity) * sizeof(*grown));
@@ -197,8 +203,9 @@ lvar_t *ps_local_registry_create_storage_object_in(
   if (previous &&
       previous->scope_seq ==
           ps_local_registry_current_scope_seq_in(registry)) {
-    ps_diag_duplicate_with_name(
-        diagnostic_token, "variable", name, name_len);
+    ps_diag_duplicate_with_name_in(
+        registry->diagnostic_context, diagnostic_token,
+        "variable", name, name_len);
   }
 
   lvar_t *var = calloc(1, sizeof(*var));
@@ -227,8 +234,9 @@ lvar_t *ps_local_registry_create_type_binding_in(
   if (previous &&
       previous->scope_seq ==
           ps_local_registry_current_scope_seq_in(registry)) {
-    ps_diag_duplicate_with_name(
-        diagnostic_token, "parameter", name, name_len);
+    ps_diag_duplicate_with_name_in(
+        registry->diagnostic_context, diagnostic_token,
+        "parameter", name, name_len);
   }
   lvar_t *var = calloc(1, sizeof(*var));
   if (!var) return NULL;
@@ -324,10 +332,11 @@ void ps_local_registry_set_vla_descriptor(
 }
 
 void ps_local_registry_set_vla_param_inner_dims(
-    lvar_t *var, const int *inner_dim_consts,
+    psx_local_registry_t *registry, lvar_t *var,
+    const int *inner_dim_consts,
     const int *inner_dim_src_offsets, int inner_dim_count,
     token_t *diagnostic_token) {
-  if (!var) return;
+  if (!registry || !var) return;
   if (inner_dim_count < 0) inner_dim_count = 0;
   int *constants = NULL;
   int *source_offsets = NULL;
@@ -337,8 +346,9 @@ void ps_local_registry_set_vla_param_inner_dims(
     if (!constants || !source_offsets) {
       free(constants);
       free(source_offsets);
-      ps_diag_ctx(diagnostic_token, "vla",
-                  "VLA runtime dimension allocation failed");
+      ps_diag_ctx_in(
+          registry->diagnostic_context, diagnostic_token, "vla",
+          "VLA runtime dimension allocation failed");
       return;
     }
     if (inner_dim_consts)

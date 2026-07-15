@@ -45,6 +45,11 @@ typedef struct {
   psx_automatic_local_declaration_pipeline_result_t automatic_result;
 } psx_local_declaration_application_t;
 
+static ag_diagnostic_context_t *application_diagnostics(
+    const psx_local_declaration_application_t *application) {
+  return ps_ctx_diagnostics(application->semantic_context);
+}
+
 static void apply_static_assert(
     void *context, node_t *condition, token_t *diagnostic_token) {
   const psx_local_declaration_callbacks_t *callbacks = context;
@@ -61,8 +66,10 @@ static void *begin_declaration(
   psx_local_declaration_application_t *application =
       calloc(1, sizeof(*application));
   if (!application) {
-    ps_diag_ctx(specifier ? specifier->diagnostic_token : NULL,
-                "local-declaration", "local declaration allocation failed");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(callbacks->semantic_context),
+        specifier ? specifier->diagnostic_token : NULL,
+        "local-declaration", "local declaration allocation failed");
   }
   application->semantic_context = callbacks->semantic_context;
   application->global_registry = callbacks->global_registry;
@@ -82,8 +89,10 @@ static void *begin_declaration(
       application->local_registry,
       specifier);
   if (!application->base_type) {
-    ps_diag_ctx(specifier->diagnostic_token, "local-declaration",
-                "canonical local declaration type resolution failed");
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        specifier->diagnostic_token, "local-declaration",
+        "canonical local declaration type resolution failed");
   }
   application->requested_alignment =
       psx_apply_parsed_decl_alignment(
@@ -110,16 +119,20 @@ static void begin_declarator(
       application->semantic_context, application->base_type,
       &application->current_application);
   if (!application->current_type) {
-    ps_diag_ctx((token_t *)name, "local-declaration",
-                "canonical declarator type resolution failed for '%.*s'",
-                name->len, name->str);
+    ps_diag_ctx_in(
+        application_diagnostics(application), (token_t *)name,
+        "local-declaration",
+        "canonical declarator type resolution failed for '%.*s'",
+        name->len, name->str);
   }
 
   if (application->is_typedef) {
     if (initializer->has_initializer) {
-      ps_diag_ctx((token_t *)name, "typedef",
-                  "typedef declaration '%.*s' cannot have an initializer",
-                  name->len, name->str);
+      ps_diag_ctx_in(
+          application_diagnostics(application), (token_t *)name,
+          "typedef",
+          "typedef declaration '%.*s' cannot have an initializer",
+          name->len, name->str);
     }
     psx_apply_parsed_typedef_declaration_in_contexts(
         application->semantic_context, application->global_registry,
@@ -144,9 +157,11 @@ static void begin_declarator(
                 .has_initializer = initializer->has_initializer,
                 .diag_tok = (token_t *)name,
             })) {
-      ps_diag_ctx((token_t *)name, "local-declaration",
-                  "block declaration pipeline failed for '%.*s'",
-                  name->len, name->str);
+      ps_diag_ctx_in(
+          application_diagnostics(application), (token_t *)name,
+          "local-declaration",
+          "block declaration pipeline failed for '%.*s'",
+          name->len, name->str);
     }
     application->current_kind = PSX_LOCAL_APPLY_EXTERN;
     return;
@@ -175,9 +190,11 @@ static void begin_declarator(
         };
     if (!psx_begin_static_local_declaration_pipeline(
             &application->static_request, &application->static_result)) {
-      ps_diag_ctx((token_t *)name, "local-declaration",
-                  "static local declaration pipeline failed for '%.*s'",
-                  name->len, name->str);
+      ps_diag_ctx_in(
+          application_diagnostics(application), (token_t *)name,
+          "local-declaration",
+          "static local declaration pipeline failed for '%.*s'",
+          name->len, name->str);
     }
     application->current_kind = PSX_LOCAL_APPLY_STATIC;
     return;
@@ -199,9 +216,11 @@ static void begin_declarator(
   if (!psx_begin_automatic_local_declaration_pipeline(
           &application->automatic_request,
           &application->automatic_result)) {
-    ps_diag_ctx((token_t *)name, "local-declaration",
-                "automatic local declaration pipeline failed for '%.*s'",
-                name->len, name->str);
+    ps_diag_ctx_in(
+        application_diagnostics(application), (token_t *)name,
+        "local-declaration",
+        "automatic local declaration pipeline failed for '%.*s'",
+        name->len, name->str);
   }
   application->current_kind = PSX_LOCAL_APPLY_AUTOMATIC;
 }
@@ -215,18 +234,22 @@ static void finish_declarator(
     case PSX_LOCAL_APPLY_STATIC:
       if (!psx_finish_static_local_declaration_pipeline(
               &application->static_request, &application->static_result)) {
-        ps_diag_ctx(application->static_request.diag_tok,
-                    "local-declaration",
-                    "static local declaration finalization failed");
+        ps_diag_ctx_in(
+            application_diagnostics(application),
+            application->static_request.diag_tok,
+            "local-declaration",
+            "static local declaration finalization failed");
       }
       break;
     case PSX_LOCAL_APPLY_AUTOMATIC:
       if (!psx_finish_automatic_local_declaration_pipeline(
               &application->automatic_request,
               &application->automatic_result)) {
-        ps_diag_ctx(application->automatic_request.diag_tok,
-                    "local-declaration",
-                    "automatic local declaration finalization failed");
+        ps_diag_ctx_in(
+            application_diagnostics(application),
+            application->automatic_request.diag_tok,
+            "local-declaration",
+            "automatic local declaration finalization failed");
       }
       if (application->automatic_result.initialization) {
         application->initialization = application->initialization

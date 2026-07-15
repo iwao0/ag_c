@@ -21,6 +21,11 @@ static inline token_t *curtok(enum_const_eval_ctx_t *ctx) {
   return tk_get_current_token_ctx(ctx->tokenizer_context);
 }
 
+static inline ag_diagnostic_context_t *diagnostics(
+    enum_const_eval_ctx_t *ctx) {
+  return ps_ctx_diagnostics(ctx->semantic_context);
+}
+
 static inline void set_curtok(
     enum_const_eval_ctx_t *ctx, token_t *tok) {
   tk_set_current_token_ctx(ctx->tokenizer_context, tok);
@@ -65,19 +70,23 @@ long long psx_eval_parsed_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
     token_t *start, token_t *end) {
   if (!start || !end) {
-    ps_diag_ctx(start, "constant-expression",
-                 "missing parsed constant expression range");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), start,
+        "constant-expression", "missing parsed constant expression range");
   }
   tokenizer_context_t tokenizer_context;
   tk_context_init(&tokenizer_context);
+  tk_context_bind_diagnostic_context(
+      &tokenizer_context, ps_ctx_diagnostics(semantic_context));
   tk_set_current_token_ctx(&tokenizer_context, start);
   long long value = psx_parse_enum_const_expr_in_contexts(
       semantic_context, &tokenizer_context);
   if (tk_get_current_token_ctx(&tokenizer_context) != end) {
-    ps_diag_ctx(
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
         tk_get_current_token_ctx(&tokenizer_context),
         "constant-expression",
-                 "parsed constant expression was not fully consumed");
+        "parsed constant expression was not fully consumed");
   }
   tk_context_dispose(&tokenizer_context);
   return value;
@@ -286,8 +295,11 @@ static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx) {
     long long v = 0;
     if (!ps_ctx_find_enum_const_in(
             ctx->semantic_context, id->str, id->len, &v)) {
-      ps_diag_ctx(curtok(ctx), "enum", diag_message_for(DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
-                   id->len, id->str);
+      ps_diag_ctx_in(
+          diagnostics(ctx), curtok(ctx), "enum",
+          diag_message_for_in(
+              diagnostics(ctx), DIAG_ERR_PARSER_ENUM_CONST_UNDEFINED),
+          id->len, id->str);
     }
     return v;
   }
@@ -310,8 +322,9 @@ static psx_parsed_enum_expr_t *new_prepared_expr(
     psx_parsed_enum_expr_t *lhs, psx_parsed_enum_expr_t *rhs) {
   psx_parsed_enum_expr_t *expression = calloc(1, sizeof(*expression));
   if (!expression) {
-    ps_diag_ctx(curtok(ctx), "enum-syntax",
-                 "enum expression allocation failed");
+    ps_diag_ctx_in(
+        diagnostics(ctx), curtok(ctx), "enum-syntax",
+        "enum expression allocation failed");
   }
   expression->kind = kind;
   expression->op = op;
@@ -491,23 +504,27 @@ void psx_parse_enum_body_in_contexts(
   memset(body, 0, sizeof(*body));
   while (!tk_consume_ctx(tokenizer_context, '}')) {
     if (body->member_count >= PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx(curtok(&ctx), "enum-syntax",
-                   "enum member limit exceeded");
+      ps_diag_ctx_in(
+          diagnostics(&ctx), curtok(&ctx), "enum-syntax",
+          "enum member limit exceeded");
     }
     if (body->member_count == body->member_capacity) {
-      body->member_capacity = pda_next_cap(
-          body->member_capacity, body->member_count + 1);
-      body->members = pda_xreallocarray(
-          body->members, (size_t)body->member_capacity,
-          sizeof(*body->members));
+      body->member_capacity = pda_next_cap_in(
+          diagnostics(&ctx), body->member_capacity,
+          body->member_count + 1);
+      body->members = pda_xreallocarray_in(
+          diagnostics(&ctx), body->members,
+          (size_t)body->member_capacity, sizeof(*body->members));
     }
     psx_parsed_enum_member_t *member =
         &body->members[body->member_count++];
     memset(member, 0, sizeof(*member));
     member->enumerator = tk_consume_ident_ctx(tokenizer_context);
     if (!member->enumerator) {
-      ps_diag_missing(
-          curtok(&ctx), diag_text_for(DIAG_TEXT_ENUMERATOR_NAME));
+      ps_diag_missing_in(
+          diagnostics(&ctx), curtok(&ctx),
+          diag_text_for_in(
+              diagnostics(&ctx), DIAG_TEXT_ENUMERATOR_NAME));
     }
     if (tk_consume_ctx(tokenizer_context, '=')) {
       member->initializer = parse_prepared_conditional(&ctx);

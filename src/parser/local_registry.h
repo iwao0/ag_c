@@ -7,13 +7,15 @@ typedef struct psx_type_t psx_type_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct global_var_t global_var_t;
 typedef struct token_t token_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 typedef struct {
   unsigned scope_seq;
   unsigned declaration_seq;
 } psx_local_lookup_point_t;
 
-psx_local_registry_t *ps_local_registry_create(void);
+psx_local_registry_t *ps_local_registry_create(
+    ag_diagnostic_context_t *diagnostic_context);
 void ps_local_registry_destroy(psx_local_registry_t *registry);
 
 unsigned ps_local_registry_current_scope_seq_in(
@@ -62,7 +64,8 @@ void ps_local_registry_set_vla_descriptor(
     int row_stride_src_offset,
     int row_stride_elem_size);
 void ps_local_registry_set_vla_param_inner_dims(
-    lvar_t *var, const int *inner_dim_consts,
+    psx_local_registry_t *registry, lvar_t *var,
+    const int *inner_dim_consts,
     const int *inner_dim_src_offsets, int inner_dim_count,
     token_t *diagnostic_token);
 

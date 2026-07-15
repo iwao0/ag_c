@@ -35,7 +35,9 @@ static declarator_parse_result_t parse_declarator_recursive(
   int pointer_capacity = 0;
   while (tk_consume_ctx(syntax->tokenizer_context, '*')) {
     if (pointer_count == pointer_capacity) {
-      int capacity = pda_next_cap(pointer_capacity, pointer_count + 1);
+      int capacity = pda_next_cap_in(
+          syntax->diagnostic_context, pointer_capacity,
+          pointer_count + 1);
       declarator_pointer_qualifiers_t *qualifiers =
           arena_alloc_in(
               syntax->arena_context,

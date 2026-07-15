@@ -32,6 +32,11 @@ static inline token_t *curtok(psx_statement_parse_context_t *context) {
   return tk_get_current_token_ctx(context->tokenizer_context);
 }
 
+static inline ag_diagnostic_context_t *diagnostics(
+    psx_statement_parse_context_t *context) {
+  return ps_parser_runtime_diagnostics(context->runtime_context);
+}
+
 static inline void set_curtok(
     psx_statement_parse_context_t *context, token_t *tok) {
   tk_set_current_token_ctx(context->tokenizer_context, tok);
@@ -144,8 +149,10 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
     if (psx_try_consume_pragma_pack_marker_in(context->runtime_context))
       continue;
     if (i >= cap - 1) {
-      cap = pda_next_cap(cap, i + 2);
-      node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
+      cap = pda_next_cap_in(diagnostics(context), cap, i + 2);
+      node->body = pda_xreallocarray_in(
+          diagnostics(context), node->body, (size_t)cap,
+          sizeof(node_t *));
     }
     token_t *stmt_tok = curtok(context);
     psx_lvar_usage_region_t *region =
@@ -295,7 +302,9 @@ static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
   node->base.kind = ND_DO_WHILE;
   node->base.rhs = stmt_internal(context);
   if (curtok(context)->kind != TK_WHILE) {
-    ps_diag_missing(curtok(context), diag_text_for(DIAG_TEXT_WHILE));
+    ps_diag_missing_in(
+        diagnostics(context), curtok(context),
+        diag_text_for_in(diagnostics(context), DIAG_TEXT_WHILE));
   }
   set_curtok(context, curtok(context)->next);
   tk_expect_ctx(context->tokenizer_context, '(');
@@ -413,8 +422,10 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   set_curtok(context, curtok(context)->next);
   token_ident_t *ident = tk_consume_ident_ctx(context->tokenizer_context);
   if (!ident) {
-    ps_diag_missing(
-        curtok(context), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
+    ps_diag_missing_in(
+        diagnostics(context), curtok(context),
+        diag_text_for_in(
+            diagnostics(context), DIAG_TEXT_GOTO_LABEL_AFTER));
   }
   node_jump_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_jump_t));

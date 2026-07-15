@@ -40,61 +40,78 @@ void psx_declaration_pipeline_reset_translation_unit_state_in(
 static void diagnose_global_declaration(
     const psx_global_declaration_pipeline_request_t *request,
     psx_global_declaration_status_t status) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(request->semantic_context);
   switch (status) {
     case PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT:
-      ps_diag_ctx(request->diag_tok, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl", "%s",
+          diag_message_for_in(
+              diagnostics,
                        DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
       return;
     case PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_TYPE_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     default:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "canonical global declaration resolution failed for '%.*s'",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "canonical global declaration resolution failed for '%.*s'",
+          request->name_len, request->name);
   }
 }
 
 static void diagnose_static_initializer(
+    ag_diagnostic_context_t *diagnostics,
     token_t *tok, const char *name, int name_len,
     psx_static_initializer_status_t status) {
   switch (status) {
     case PSX_STATIC_INITIALIZER_DUPLICATE_DEFINITION:
-      ps_diag_ctx(tok, "decl",
-                   "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
-                   name_len, name);
+      ps_diag_ctx_in(
+          diagnostics, tok, "decl",
+          "グローバル変数 '%.*s' は重複定義されています (C11 6.9.2)",
+          name_len, name);
       return;
     case PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED:
-      ps_diag_ctx(tok, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics, tok, "decl", "%s",
+          diag_message_for_in(
+              diagnostics,
                        DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       return;
     case PSX_STATIC_INITIALIZER_INVALID_SCALAR_LIST:
-      ps_diag_ctx(tok, "static-init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics, tok, "static-init", "%s",
+          diag_message_for_in(
+              diagnostics,
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       return;
     default:
-      ps_diag_ctx(tok, "static-init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics, tok, "static-init", "%s",
+          diag_message_for_in(
+              diagnostics,
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
 }
@@ -136,9 +153,11 @@ int psx_begin_global_declaration_pipeline(
               .resolution = &resolution,
           },
           &lowered)) {
-    ps_diag_ctx(request->diag_tok, "decl",
-                 "canonical global storage planning failed for '%.*s'",
-                 request->name_len, request->name);
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        "canonical global storage planning failed for '%.*s'",
+        request->name_len, request->name);
   }
   result->global = lowered.global;
   result->created = lowered.created;
@@ -169,6 +188,7 @@ int psx_finish_global_declaration_pipeline(
           &initializer_resolution);
       if (initializer_resolution.status != PSX_STATIC_INITIALIZER_OK)
         diagnose_static_initializer(
+            ps_ctx_diagnostics(request->semantic_context),
             request->initializer->value_tok
                 ? request->initializer->value_tok : request->diag_tok,
             global->name, global->name_len,
@@ -197,11 +217,15 @@ int psx_finish_global_declaration_pipeline(
                     : request->initializer->value_tok);
       }
       if (!lower_resolved_global_declaration_initializer(
-              global, &initializer_resolution,
+              request->lowering_context, global,
+              &initializer_resolution,
               request->initializer->value_tok)) {
-        ps_diag_ctx(request->initializer->value_tok, "static-init", "%s",
-                     diag_message_for(
-                         DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+        ps_diag_ctx_in(
+            ps_ctx_diagnostics(request->semantic_context),
+            request->initializer->value_tok, "static-init", "%s",
+            diag_message_for_in(
+                ps_ctx_diagnostics(request->semantic_context),
+                DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
       result->initialized = 1;
     }
@@ -219,27 +243,33 @@ int psx_apply_global_declaration_pipeline(
 static void diagnose_function_declaration(
     const psx_function_declaration_pipeline_request_t *request,
     psx_function_declaration_status_t status) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(request->semantic_context);
   const char *context = request->diag_context ? request->diag_context : "decl";
   switch (status) {
     case PSX_FUNCTION_DECLARATION_OBJECT_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, context,
-                   "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "'%.*s' はグローバル変数として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_FUNCTION_DECLARATION_TYPE_CONFLICT:
-      ps_diag_ctx(request->diag_tok, context,
-                   "関数 '%.*s' の型が以前の宣言と異なります (C11 6.7p3-4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "関数 '%.*s' の型が以前の宣言と異なります (C11 6.7p3-4)",
+          request->name_len, request->name);
       return;
     case PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION:
-      ps_diag_ctx(request->diag_tok, context,
-                   "関数 '%.*s' の重複定義 (C11 6.9p3)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "関数 '%.*s' の重複定義 (C11 6.9p3)",
+          request->name_len, request->name);
       return;
     default:
-      ps_diag_ctx(request->diag_tok, context,
-                   "canonical function declaration resolution failed for '%.*s'",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, context,
+          "canonical function declaration resolution failed for '%.*s'",
+          request->name_len, request->name);
   }
 }
 
@@ -339,8 +369,10 @@ static int append_definition_parameter(
       semantic_context, global_registry, local_registry,
       &parameter->specifier);
   if (!base_type) {
-    ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
-                 "canonical parameter base type resolution failed");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        parameter->specifier.diagnostic_token, "param",
+        "canonical parameter base type resolution failed");
   }
   psx_local_lookup_point_t parameter_lookup_point =
       ps_local_registry_capture_lookup_point_in(local_registry);
@@ -369,13 +401,18 @@ static int append_definition_parameter(
   if (!resolve_definition_parameter(
           semantic_context, base_type, &parameter->declarator,
           &applied, &resolution)) {
-    ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
-                 "canonical parameter declaration resolution failed");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        parameter->declarator.diagnostic_token, "param",
+        "canonical parameter declaration resolution failed");
   }
   if (result->nargs + 1 >= *capacity) {
-    *capacity = pda_next_cap(*capacity, result->nargs + 2);
-    result->args = pda_xreallocarray(
-        result->args, (size_t)*capacity, sizeof(node_t *));
+    *capacity = pda_next_cap_in(
+        ps_ctx_diagnostics(semantic_context),
+        *capacity, result->nargs + 2);
+    result->args = pda_xreallocarray_in(
+        ps_ctx_diagnostics(semantic_context), result->args,
+        (size_t)*capacity, sizeof(node_t *));
   }
   if (!name) {
     result->args[result->nargs++] =
@@ -395,9 +432,11 @@ static int append_definition_parameter(
               .diag_tok = parameter->declarator.diagnostic_token,
           });
   if (!lowered) {
-    ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
-                 "canonical parameter lowering failed for '%.*s'",
-                 name->len, name->str);
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context),
+        parameter->declarator.diagnostic_token, "param",
+        "canonical parameter lowering failed for '%.*s'",
+        name->len, name->str);
   }
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
@@ -457,8 +496,10 @@ int psx_apply_function_definition_parameter_pipeline(
       &state->args_capacity, parameter);
   if (applied < 0) {
     if (state->parameter_count != 1) {
-      ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
-                  "void parameter must be the only parameter");
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(state->semantic_context),
+          parameter->specifier.diagnostic_token, "param",
+          "void parameter must be the only parameter");
     }
     state->result->nargs = 0;
     state->result->args[0] = NULL;
@@ -506,30 +547,42 @@ int psx_begin_static_local_declaration_pipeline(
       !request->initializer) return 0;
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
   if (request->type->kind == PSX_TYPE_VOID) {
-    ps_diag_ctx(request->diag_tok, "decl",
-                 diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
-                 request->name_len, request->name);
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        diag_message_for_in(
+            ps_ctx_diagnostics(request->semantic_context),
+            DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
+        request->name_len, request->name);
   }
   if (ps_type_contains_vla_array(request->type)) {
-    ps_diag_ctx(request->diag_tok, "decl",
-                 "static local object '%.*s' cannot have variably modified type",
-                 request->name_len, request->name);
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        "static local object '%.*s' cannot have variably modified type",
+        request->name_len, request->name);
   }
 
   const psx_type_t *leaf = ps_type_array_leaf_type(request->type);
   int object_size = ps_type_sizeof(request->type);
   int leaf_size = ps_type_sizeof(leaf);
   if (leaf && ps_type_is_tag_aggregate(leaf) && leaf_size <= 0) {
-    ps_diag_ctx(request->diag_tok, "decl", "%s",
-                 diag_message_for(
-                     DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl", "%s",
+        diag_message_for_in(
+            ps_ctx_diagnostics(request->semantic_context),
+            DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
   }
   if (request->type->kind == PSX_TYPE_ARRAY) {
     if (leaf_size <= 0 ||
         (object_size <= 0 && !request->initializer->has_initializer)) {
-      ps_diag_ctx(request->diag_tok, "decl", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(request->semantic_context),
+          request->diag_tok, "decl", "%s",
+          diag_message_for_in(
+              ps_ctx_diagnostics(request->semantic_context),
+              DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
   } else if (object_size <= 0) {
     return 0;
@@ -595,6 +648,7 @@ int psx_finish_static_local_declaration_pipeline(
       &resolution);
   if (resolution.status != PSX_STATIC_INITIALIZER_OK) {
     diagnose_static_initializer(
+        ps_ctx_diagnostics(request->semantic_context),
         request->initializer->value_tok
             ? request->initializer->value_tok : request->diag_tok,
         request->name, request->name_len, resolution.status);
@@ -616,7 +670,8 @@ int psx_finish_static_local_declaration_pipeline(
             : request->initializer->value_tok);
   }
   if (!lower_static_local_declaration_initializer(
-          result->global, &resolution, request->initializer->value_tok,
+          request->lowering_context, result->global,
+          &resolution, request->initializer->value_tok,
           &result->type_completed)) {
     return 0;
   }
@@ -639,31 +694,41 @@ int psx_apply_static_local_declaration_pipeline(
 static void diagnose_local_declaration(
     const psx_automatic_local_declaration_pipeline_request_t *request,
     psx_local_declaration_status_t status) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_lowering_diagnostics(request->lowering_context);
   switch (status) {
     case PSX_LOCAL_DECLARATION_VOID_OBJECT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   diag_message_for(DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          diag_message_for_in(
+              diagnostics, DIAG_ERR_PARSER_VOID_OBJECT_FORBIDDEN),
+          request->name_len, request->name);
       return;
     case PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT:
-      ps_diag_ctx(request->diag_tok, "decl", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
       return;
     case PSX_LOCAL_DECLARATION_INCOMPLETE_ARRAY_NEEDS_INITIALIZER:
-      ps_diag_ctx(request->diag_tok, "decl", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
       return;
     case PSX_LOCAL_DECLARATION_VLA_INITIALIZER_FORBIDDEN:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "variable length array '%.*s' cannot be initialized",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "variable length array '%.*s' cannot be initialized",
+          request->name_len, request->name);
       return;
     default:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "canonical local declaration resolution failed for '%.*s'",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "canonical local declaration resolution failed for '%.*s'",
+          request->name_len, request->name);
   }
 }
 
@@ -791,9 +856,12 @@ int psx_finish_automatic_local_declaration_pipeline(
         !psx_resolve_incomplete_array_initializer(
             completed_type, request->initializer->kind,
             request->initializer->value)) {
-      ps_diag_ctx(request->initializer->value_tok, "decl", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
+      ps_diag_ctx_in(
+          ps_lowering_diagnostics(request->lowering_context),
+          request->initializer->value_tok, "decl", "%s",
+          diag_message_for_in(
+              ps_lowering_diagnostics(request->lowering_context),
+              DIAG_ERR_PARSER_ARRAY_SIZE_POSITIVE_REQUIRED));
     }
     if (!complete_declared_local_object(
             result->var,
@@ -841,9 +909,11 @@ int psx_apply_block_extern_declaration_pipeline(
       !request->name || request->name_len <= 0 ||
       !request->type) return 0;
   if (request->has_initializer) {
-    ps_diag_ctx(request->diag_tok, "decl",
-                 "block scope extern declaration '%.*s' cannot have an initializer",
-                 request->name_len, request->name);
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(request->semantic_context),
+        request->diag_tok, "decl",
+        "block scope extern declaration '%.*s' cannot have an initializer",
+        request->name_len, request->name);
   }
 
   if (request->type->kind == PSX_TYPE_FUNCTION) {

@@ -14,8 +14,14 @@
 
 typedef struct {
   arena_context_t *arena_context;
+  ag_diagnostic_context_t *diagnostic_context;
   const ag_compilation_options_t *options;
 } initializer_lowering_context_t;
+
+static ag_diagnostic_context_t *diagnostics(
+    const initializer_lowering_context_t *context) {
+  return context->diagnostic_context;
+}
 
 static node_t *append_init(
     const initializer_lowering_context_t *context,
@@ -94,8 +100,8 @@ static node_t *lower_array_string_initializer_at(
     lvar_t *var, node_string_t *string, int base_index, int capacity,
     int array_len, unsigned char *assigned, node_t *chain, token_t *tok) {
   if (!string->literal_contents) {
-    ps_diag_ctx(tok, "init", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+    ps_diag_ctx_in(diagnostics(context), tok, "init", "%s",
+                 diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
 
   int elem_size = ps_lvar_array_scalar_element_size(var);
@@ -181,6 +187,7 @@ static node_t *lower_array_expr_initializer(
 }
 
 static int resolve_initializer_entry_index(
+    const initializer_lowering_context_t *context,
     const psx_initializer_entry_t *entry, token_t *fallback_tok,
     lvar_t *var, int depth, int implicit_index, int base_index) {
   if (entry->index_expr_count == 0 && !entry->has_index) return implicit_index;
@@ -194,14 +201,14 @@ static int resolve_initializer_entry_index(
     int ok = 1;
     long long resolved = psx_eval_const_int(entry->index_exprs[d], &ok);
     if (!ok) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init",
-                   diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
-                   diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+                   diag_text_for_in(diagnostics(context), DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
     }
     if (resolved < 0) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init",
-                   diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
-                   diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
+                   diag_text_for_in(diagnostics(context), DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
     }
     int stride = ps_lvar_array_designator_stride_elements(var, depth + d);
     if (stride <= 0) stride = 1;
@@ -230,11 +237,12 @@ static void lower_array_initializer_entries(
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
     int index = resolve_initializer_entry_index(
-        entry, fallback_tok, var, depth, next_index, base_index);
+        context, entry, fallback_tok, var,
+        depth, next_index, base_index);
     if (index < 0 || index >= array_len) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok,
                    "init", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     if (entry->value && entry->value->kind == ND_INIT_LIST) {
       lower_array_initializer_entries(
@@ -244,9 +252,9 @@ static void lower_array_initializer_entries(
     } else if (entry_initializes_character_subarray(
                    var, entry->value, stride)) {
       if (index + stride > array_len) {
-        ps_diag_ctx(entry->tok ? entry->tok : fallback_tok,
+        ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok,
                      "init", "%s",
-                     diag_message_for(
+                     diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       *chain = lower_array_string_initializer_at(
@@ -321,8 +329,8 @@ static node_t *lower_typed_character_array_string(
   if (!element || capacity <= 0 || element_size != char_width) return NULL;
 
   if (!string->literal_contents) {
-    ps_diag_ctx(tok, "init", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
+    ps_diag_ctx_in(diagnostics(context), tok, "init", "%s",
+                 diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
   typed_string_lowering_ctx_t ctx = {
       context, var, element, chain, relative_offset,
@@ -467,19 +475,20 @@ static int aggregate_ordinal_after_member(
 }
 
 static long long resolve_typed_designator_index(
+    const initializer_lowering_context_t *context,
     const psx_initializer_entry_t *entry, int index_pos,
     token_t *fallback_tok) {
   int ok = 1;
   long long index = psx_eval_const_int(entry->index_exprs[index_pos], &ok);
   if (!ok) {
-    ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init",
-                 diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
-                 diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+    ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
+                 diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+                 diag_text_for_in(diagnostics(context), DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
   if (index < 0) {
-    ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init",
-                 diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
-                 diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+    ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init",
+                 diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
+                 diag_text_for_in(diagnostics(context), DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
   return index;
 }
@@ -487,6 +496,7 @@ static long long resolve_typed_designator_index(
 typedef psx_initializer_target_t typed_designator_target_t;
 
 static int descend_array_designators(
+    const initializer_lowering_context_t *context,
     const psx_initializer_entry_t *entry, int first_index_pos,
     const psx_type_t **type_inout, int *relative_offset_inout,
     token_t *fallback_tok) {
@@ -494,14 +504,15 @@ static int descend_array_designators(
   for (int d = first_index_pos; d < entry->index_expr_count; d++) {
     const psx_type_t *array = *type_inout;
     if (!array || array->kind != PSX_TYPE_ARRAY || !array->base) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
-    long long index = resolve_typed_designator_index(entry, d, fallback_tok);
+    long long index = resolve_typed_designator_index(
+        context, entry, d, fallback_tok);
     if (index >= array->array_len) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     if (first_index < 0) first_index = (int)index;
@@ -619,17 +630,17 @@ static node_t *lower_flat_typed_object_initializer_list(
   if (!psx_collect_initializer_scalar_leaves(
           type, relative_offset, &leaves)) {
     free(leaves.items);
-    ps_diag_ctx(fallback_tok, "init", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
   int leaf_index = 0;
   for (int i = 0; i < list->entry_count; i++) {
     if (leaf_index >= leaves.count) {
       free(leaves.items);
-      ps_diag_ctx(list->entries[i].tok ? list->entries[i].tok : fallback_tok,
+      ps_diag_ctx_in(diagnostics(context), list->entries[i].tok ? list->entries[i].tok : fallback_tok,
                    "init", "%s",
-                   diag_message_for(
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const typed_scalar_leaf_t *leaf = &leaves.items[leaf_index];
@@ -733,7 +744,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (entry->designator_count > 0) {
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-          entry, type, relative_offset, fallback_tok);
+              diagnostics(context), entry,
+              type, relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
           target.direct_member, chain,
@@ -744,9 +756,9 @@ static node_t *lower_mixed_typed_object_initializer_list(
     }
     if (leaf_cursor >= leaves.count) {
       free(leaves.items);
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok,
                    "init", "%s",
-                   diag_message_for(
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const typed_scalar_leaf_t *leaf = &leaves.items[leaf_cursor];
@@ -838,8 +850,8 @@ static node_t *lower_flat_typed_array_initializer_list(
   int leaf_size = ps_type_sizeof(leaf);
   int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
-    ps_diag_ctx(fallback_tok, "init", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
   for (int i = 0; i < list->entry_count; i++) {
@@ -888,8 +900,8 @@ static node_t *lower_typed_array_initializer_list(
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
     if (entry->has_member && entry->designator_count == 0) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     const psx_type_t *target_type = type->base;
@@ -897,13 +909,14 @@ static node_t *lower_typed_array_initializer_list(
     int selected_index = next_index;
     if (entry->designator_count > 0) {
       if (entry->designators[0].kind != PSX_INIT_DESIGNATOR_INDEX) {
-        ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                     diag_message_for(
+        ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                     diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-          entry, type, relative_offset, fallback_tok);
+              diagnostics(context), entry,
+              type, relative_offset, fallback_tok);
       target_type = target.type;
       target_offset = target.relative_offset;
       selected_index = target.first_array_index;
@@ -916,11 +929,12 @@ static node_t *lower_typed_array_initializer_list(
     } else if (entry->index_expr_count > 0) {
       target_type = type;
       selected_index = descend_array_designators(
-          entry, 0, &target_type, &target_offset, fallback_tok);
+          context, entry, 0, &target_type,
+          &target_offset, fallback_tok);
     } else {
       if (selected_index < 0 || selected_index >= type->array_len) {
-        ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                     diag_message_for(
+        ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                     diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       target_offset += selected_index * ps_type_sizeof(target_type);
@@ -954,8 +968,8 @@ static node_t *lower_typed_aggregate_initializer_list(
     if (!has_designator && first_type &&
         first_type->kind == PSX_TYPE_ARRAY) {
       if (!context->options->enable_union_array_member_nonbrace_init) {
-        ps_diag_ctx(fallback_tok, "decl", "%s",
-                     diag_message_for(
+        ps_diag_ctx_in(diagnostics(context), fallback_tok, "decl", "%s",
+                     diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
       }
       return lower_typed_array_initializer_list(
@@ -981,20 +995,21 @@ static node_t *lower_typed_aggregate_initializer_list(
     psx_initializer_entry_t *entry = &list->entries[i];
     if (type->kind == PSX_TYPE_UNION && i > 0 &&
         entry->designator_count == 0 && !entry->has_member) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok,
                    "init", "%s",
-                   diag_message_for(
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
     }
     if (entry->designator_count > 0) {
       if (entry->designators[0].kind != PSX_INIT_DESIGNATOR_MEMBER) {
-        ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                     diag_message_for(
+        ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                     diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-          entry, type, relative_offset, fallback_tok);
+              diagnostics(context), entry,
+              type, relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
           target.direct_member, chain,
@@ -1006,8 +1021,8 @@ static node_t *lower_typed_aggregate_initializer_list(
     }
     int member_index = aggregate_member_index(definition, entry, ordinal);
     if (member_index < 0 || member_index >= definition->member_count) {
-      ps_diag_ctx(entry->tok ? entry->tok : fallback_tok, "init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
+                   diag_message_for_in(diagnostics(context),
                        type->kind == PSX_TYPE_UNION
                            ? DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND
                            : DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
@@ -1018,7 +1033,8 @@ static node_t *lower_typed_aggregate_initializer_list(
     const tag_member_info_t *direct_member = member;
     if (entry->index_expr_count > 0) {
       descend_array_designators(
-          entry, 0, &target_type, &target_offset, fallback_tok);
+          context, entry, 0, &target_type,
+          &target_offset, fallback_tok);
       direct_member = NULL;
     }
     chain = lower_typed_initializer_value(
@@ -1048,8 +1064,8 @@ static node_t *lower_typed_initializer_list(
         context, var, type, relative_offset, list->entries[0].value, NULL,
         chain, fallback_tok);
   }
-  ps_diag_ctx(fallback_tok, "init", "%s",
-               diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+  ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
+               diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   return chain;
 }
 
@@ -1075,9 +1091,9 @@ static node_t *lower_struct_list_initializer(
     psx_initializer_entry_t *entry = &list->entries[i];
     int member_index = aggregate_member_index(definition, entry, ordinal);
     if (member_index < 0 || member_index >= definition->member_count) {
-      ps_diag_ctx(entry->tok ? entry->tok : initializer->base.tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
@@ -1114,15 +1130,15 @@ static node_t *lower_union_list_initializer(
   for (int i = 0; i < list->entry_count; i++) {
     psx_initializer_entry_t *entry = &list->entries[i];
     if (i > 0 && !entry->has_member) {
-      ps_diag_ctx(entry->tok ? entry->tok : initializer->base.tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
     }
     int member_index = aggregate_member_index(definition, entry, 0);
     if (member_index < 0 || member_index >= definition->member_count) {
-      ps_diag_ctx(entry->tok ? entry->tok : initializer->base.tok,
+      ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
-                   diag_message_for(DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+                   diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
     const tag_member_info_t *member = &definition->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
@@ -1168,16 +1184,16 @@ static node_t *lower_aggregate_expr_initializer(
         context, initializer->base.lhs, initializer->base.rhs, tok);
   }
   if (!allow_union_scalar) {
-    ps_diag_ctx(tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), tok, "decl", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
 
   const psx_aggregate_definition_t *definition =
       target_type->aggregate_definition;
   if (!definition) {
-    ps_diag_ctx(tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), tok, "decl", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
   for (int i = 0; i < definition->member_count; i++) {
@@ -1188,8 +1204,8 @@ static node_t *lower_aggregate_expr_initializer(
     return new_decl_initializer_assign(
         context, target, initializer->base.rhs, tok);
   }
-  ps_diag_ctx(tok, "decl", "%s",
-               diag_message_for(
+  ps_diag_ctx_in(diagnostics(context), tok, "decl", "%s",
+               diag_message_for_in(diagnostics(context),
                    DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   return NULL;
 }
@@ -1207,8 +1223,8 @@ static node_t *lower_scalar_list_initializer(
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   if (list->entry_count != 1 ||
       !initializer_entry_is_plain_scalar(&list->entries[0])) {
-    ps_diag_ctx(initializer->base.tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), initializer->base.tok, "decl", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
   }
   return new_decl_initializer_assign(
@@ -1221,14 +1237,14 @@ static node_t *lower_complex_list_initializer(
     node_decl_init_t *initializer, lvar_t *var) {
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   if (list->entry_count < 1 || list->entry_count > 2) {
-    ps_diag_ctx(initializer->base.tok, "decl", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(diagnostics(context), initializer->base.tok, "decl", "%s",
+                 diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
   }
   for (int i = 0; i < list->entry_count; i++) {
     if (!initializer_entry_is_plain_scalar(&list->entries[i])) {
-      ps_diag_ctx(initializer->base.tok, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(diagnostics(context), initializer->base.tok, "decl", "%s",
+                   diag_message_for_in(diagnostics(context),
                        DIAG_ERR_PARSER_SCALAR_BRACE_SINGLE_ELEMENT_ONLY));
     }
   }
@@ -1299,6 +1315,7 @@ node_t *lower_decl_initializer(
     return node;
   initializer_lowering_context_t context = {
       .arena_context = ps_lowering_arena(lowering_context),
+      .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,
   };
 

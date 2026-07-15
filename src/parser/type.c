@@ -2,7 +2,6 @@
 #include "type_builder.h"
 #include "declarator_shape_builder.h"
 #include "arena.h"
-#include "dynarray.h"
 #include "tag_member_public.h"
 #include "type_owned_internal.h"
 #include <limits.h>
@@ -430,6 +429,17 @@ void ps_declarator_shape_init(psx_declarator_shape_t *shape) {
   *shape = (psx_declarator_shape_t){0};
 }
 
+static int declarator_shape_next_capacity(
+    int current_capacity, int required_capacity) {
+  if (current_capacity < 0 || required_capacity <= 0) return 0;
+  int capacity = current_capacity > 0 ? current_capacity : 8;
+  while (capacity < required_capacity) {
+    if (capacity > INT_MAX / 2) return 0;
+    capacity *= 2;
+  }
+  return capacity;
+}
+
 static psx_declarator_op_t *declarator_shape_append(
     arena_context_t *arena_context, psx_declarator_shape_t *shape,
     psx_declarator_op_kind_t kind) {
@@ -437,7 +447,9 @@ static psx_declarator_op_t *declarator_shape_append(
       shape->count > shape->capacity)
     return NULL;
   if (shape->count == shape->capacity) {
-    int capacity = pda_next_cap(shape->capacity, shape->count + 1);
+    int capacity = declarator_shape_next_capacity(
+        shape->capacity, shape->count + 1);
+    if (capacity <= 0) return NULL;
     psx_declarator_op_t *ops =
         arena_alloc_in(
             arena_context, (size_t)capacity * sizeof(*ops));

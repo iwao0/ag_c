@@ -5,11 +5,13 @@
 
 typedef struct arena_context_t arena_context_t;
 typedef struct tokenizer_context_t tokenizer_context_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 typedef struct {
   void *context;
   arena_context_t *arena_context;
   tokenizer_context_t *tokenizer_context;
+  ag_diagnostic_context_t *diagnostic_context;
   int require_identifier;
   int (*consume_suffix)(void *context, int nesting_depth,
                         int direct_was_parenthesized,

@@ -1,4 +1,5 @@
 #include "static_data_initializer.h"
+#include "runtime_context.h"
 
 #include "../diag/diag.h"
 #include "../parser/diag.h"
@@ -11,10 +12,16 @@
 #include "../tokenizer/literals.h"
 
 typedef struct {
+  psx_lowering_context_t *lowering_context;
   global_var_t *global;
   psx_initializer_scalar_leaf_list_t leaves;
   token_t *fallback_tok;
 } static_array_lowering_t;
+
+static ag_diagnostic_context_t *diagnostics(
+    const static_array_lowering_t *lowering) {
+  return ps_lowering_diagnostics(lowering->lowering_context);
+}
 
 static int leaf_index_at_offset(
     const psx_initializer_scalar_leaf_list_t *leaves, int offset) {
@@ -124,8 +131,11 @@ static void write_scalar_value(
     token_t *tok) {
   int index = leaf_index_for_target(&lowering->leaves, target);
   if (index < 0 || index >= lowering->leaves.count) {
-    ps_diag_ctx(tok ? tok : lowering->fallback_tok, "static-init", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics(lowering), tok ? tok : lowering->fallback_tok,
+        "static-init", "%s",
+        diag_message_for_in(
+            diagnostics(lowering),
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
   const psx_type_t *type = target->type;
@@ -170,13 +180,19 @@ static void write_string_value(
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;
   if (!element || capacity <= 0 || start < 0 || element_size != char_width) {
-    ps_diag_ctx(tok ? tok : lowering->fallback_tok, "static-init", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics(lowering), tok ? tok : lowering->fallback_tok,
+        "static-init", "%s",
+        diag_message_for_in(
+            diagnostics(lowering),
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
   if (!string->literal_contents) {
-    ps_diag_ctx(tok ? tok : lowering->fallback_tok, "static-init", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics(lowering), tok ? tok : lowering->fallback_tok,
+        "static-init", "%s",
+        diag_message_for_in(
+            diagnostics(lowering),
                      DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
   ps_gvar_init_slots_write_string_units(
@@ -207,13 +223,16 @@ static void lower_array_list(
     token_t *tok = entry->tok ? entry->tok : lowering->fallback_tok;
     psx_initializer_target_t target = entry->designator_count > 0
         ? psx_resolve_initializer_designator_path(
-              entry, context_type, context_offset, tok)
+              diagnostics(lowering), entry,
+              context_type, context_offset, tok)
         : positional_target(
               context_type, context_offset, &lowering->leaves, cursor,
               entry->value && entry->value->kind == ND_INIT_LIST);
     if (!target.type) {
-      ps_diag_ctx(tok, "static-init", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics(lowering), tok, "static-init", "%s",
+          diag_message_for_in(
+              diagnostics(lowering),
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     mark_union_target(lowering, &target);
@@ -269,12 +288,14 @@ static int type_contains_float(const psx_type_t *type) {
 }
 
 int lower_static_object_initializer(
+    psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type,
     node_init_list_t *initializer, token_t *fallback_tok) {
-  if (!global || !type || !initializer ||
+  if (!lowering_context || !global || !type || !initializer ||
       (type->kind != PSX_TYPE_ARRAY && !ps_type_is_tag_aggregate(type)))
     return 0;
   static_array_lowering_t lowering = {
+      .lowering_context = lowering_context,
       .global = global,
       .fallback_tok = fallback_tok,
   };
@@ -294,11 +315,12 @@ int lower_static_object_initializer(
 }
 
 int lower_static_scalar_array_initializer(
+    psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type,
     node_init_list_t *initializer, token_t *fallback_tok) {
   if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
   return lower_static_object_initializer(
-      global, type, initializer, fallback_tok);
+      lowering_context, global, type, initializer, fallback_tok);
 }
 
 static int lower_static_string_expression(
@@ -371,12 +393,12 @@ static int lower_static_scalar_expression(
 }
 
 int lower_resolved_static_initializer(
-    global_var_t *global,
+    psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *tok,
     psx_static_declaration_initializer_result_t *result) {
   if (result) *result = (psx_static_declaration_initializer_result_t){0};
-  if (!global || !resolution ||
+  if (!lowering_context || !global || !resolution ||
       resolution->status != PSX_STATIC_INITIALIZER_OK ||
       !resolution->type || !resolution->initializer)
     return 0;
@@ -389,7 +411,8 @@ int lower_resolved_static_initializer(
 
   if (resolution->is_aggregate_initializer) {
     if (!lower_static_object_initializer(
-            global, type, (node_init_list_t *)resolution->initializer, tok))
+            lowering_context, global, type,
+            (node_init_list_t *)resolution->initializer, tok))
       return 0;
     global->has_init = 1;
     if (result) result->initialized = 1;

@@ -4,8 +4,10 @@
 #include <stddef.h>
 
 typedef struct tk_allocator_context_t tk_allocator_context_t;
+typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
-tk_allocator_context_t *tk_allocator_context_create(void);
+tk_allocator_context_t *tk_allocator_context_create(
+    ag_diagnostic_context_t *diagnostic_context);
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx);
 tk_allocator_context_t *tk_allocator_default_context(void);
 

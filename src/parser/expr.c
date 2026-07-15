@@ -42,6 +42,11 @@ static inline token_t *curtok(expr_parse_ctx_t *ctx) {
   return tk_get_current_token_ctx(ctx->tokenizer_context);
 }
 
+static inline ag_diagnostic_context_t *diagnostics(
+    expr_parse_ctx_t *ctx) {
+  return ps_parser_runtime_diagnostics(ctx->runtime_context);
+}
+
 static inline void set_curtok(
     expr_parse_ctx_t *ctx, token_t *tok) {
   tk_set_current_token_ctx(ctx->tokenizer_context, tok);
@@ -91,9 +96,11 @@ static void enter_expr_nest_or_die(expr_parse_ctx_t *ctx) {
   if (!ctx) return;
   ctx->expr_nest_depth++;
   if (ctx->expr_nest_depth > PS_MAX_EXPR_NEST_DEPTH) {
-    ps_diag_ctx(curtok(ctx), "expr",
-                 diag_message_for(DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP),
-                 PS_MAX_EXPR_NEST_DEPTH);
+    ps_diag_ctx_in(
+        diagnostics(ctx), curtok(ctx), "expr",
+        diag_message_for_in(
+            diagnostics(ctx), DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP),
+        PS_MAX_EXPR_NEST_DEPTH);
   }
 }
 
@@ -105,9 +112,11 @@ static void enter_paren_nest_or_die(expr_parse_ctx_t *ctx) {
   if (!ctx) return;
   ctx->paren_nest_depth++;
   if (ctx->paren_nest_depth > PS_MAX_PAREN_NEST_DEPTH) {
-    ps_diag_ctx(curtok(ctx), "paren",
-                 diag_message_for(DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP),
-                 PS_MAX_PAREN_NEST_DEPTH);
+    ps_diag_ctx_in(
+        diagnostics(ctx), curtok(ctx), "paren",
+        diag_message_for_in(
+            diagnostics(ctx), DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP),
+        PS_MAX_PAREN_NEST_DEPTH);
   }
 }
 
@@ -153,10 +162,12 @@ static int expr_type_name_is_typedef(token_t *token, void *context) {
 
 static void diagnose_type_name_complex_requires_float(
     void *context, token_t *token) {
-  (void)context;
-  diag_emit_tokf(
+  psx_semantic_context_t *semantic_context = context;
+  diag_emit_tokf_in(
+      ps_ctx_diagnostics(semantic_context),
       DIAG_ERR_PARSER_INVALID_CONTEXT, token, "%s",
-      diag_message_for(
+      diag_message_for_in(
+          ps_ctx_diagnostics(semantic_context),
           DIAG_ERR_PARSER_COMPLEX_IMAGINARY_CAST_REQUIRES_FLOAT));
 }
 
@@ -173,7 +184,9 @@ static node_t *build_member_access(
     node_t *base, int from_ptr, token_t *op_tok, expr_parse_ctx_t *ctx) {
   token_ident_t *member = tk_consume_ident_ctx(ctx->tokenizer_context);
   if (!member) {
-    ps_diag_missing(curtok(ctx), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    ps_diag_missing_in(
+        diagnostics(ctx), curtok(ctx),
+        diag_text_for_in(diagnostics(ctx), DIAG_TEXT_MEMBER_NAME));
   }
   node_member_access_t *syntax = arena_alloc_in(
       ctx->arena_context, sizeof(*syntax));
@@ -685,8 +698,11 @@ static node_t *parse_alignof_type_name(
     set_curtok(ctx, type_end->next->next);
     return (node_t *)query;
   }
-  ps_diag_ctx(curtok(ctx), "alignof", "%s",
-              diag_message_for(DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));
+  ps_diag_ctx_in(
+      diagnostics(ctx), curtok(ctx), "alignof", "%s",
+      diag_message_for_in(
+          diagnostics(ctx),
+          DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));
   return (node_t *)query;
 }
 
@@ -929,9 +945,11 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
     while (curtok(ctx)->kind == TK_COMMA) {
       set_curtok(ctx, curtok(ctx)->next);
       if (nargs >= arg_cap) {
-        arg_cap = pda_next_cap(arg_cap, nargs + 1);
-        node->arguments = pda_xreallocarray(
-            node->arguments, (size_t)arg_cap, sizeof(node_t *));
+        arg_cap = pda_next_cap_in(
+            diagnostics(ctx), arg_cap, nargs + 1);
+        node->arguments = pda_xreallocarray_in(
+            diagnostics(ctx), node->arguments,
+            (size_t)arg_cap, sizeof(node_t *));
       }
       node->arguments[nargs++] = assign_ctx(ctx);
     }
@@ -970,9 +988,10 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
       calloc((size_t)capacity, sizeof(psx_generic_association_t));
   for (;;) {
     if (count >= capacity) {
-      capacity = pda_next_cap(capacity, count + 1);
-      associations = pda_xreallocarray(
-          associations, (size_t)capacity,
+      capacity = pda_next_cap_in(
+          diagnostics(ctx), capacity, count + 1);
+      associations = pda_xreallocarray_in(
+          diagnostics(ctx), associations, (size_t)capacity,
           sizeof(psx_generic_association_t));
     }
     psx_generic_association_t *association = &associations[count++];
@@ -983,9 +1002,11 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
       set_curtok(ctx, curtok(ctx)->next);
     } else if (!parse_generic_assoc_type(
                    &association->type_name, ctx)) {
-      ps_diag_ctx(curtok(ctx), "generic", "%s",
-                  diag_message_for(
-                      DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
+      ps_diag_ctx_in(
+          diagnostics(ctx), curtok(ctx), "generic", "%s",
+          diag_message_for_in(
+              diagnostics(ctx),
+              DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
     }
     tk_expect_ctx(ctx->tokenizer_context, ':');
     association->expression = assign_ctx(ctx);
@@ -1122,30 +1143,47 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
       merged_width = tw;
       merged_prefix_kind = st->str_prefix_kind;
     } else if (merged_width != tw) {
-      diag_emit_tokf(DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
+      diag_emit_tokf_in(
+          diagnostics(ctx), DIAG_ERR_PARSER_UNEXPECTED_TOKEN, t, "%s",
+          diag_message_for_in(
+              diagnostics(ctx),
+              DIAG_ERR_PARSER_STRING_PREFIX_MISMATCH));
     }
     if (st->len < 0 || (size_t)st->len > SIZE_MAX - total_len - 1) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, t, "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
+      diag_emit_tokf_in(
+          diagnostics(ctx), DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE,
+          t, "%s",
+          diag_message_for_in(
+              diagnostics(ctx),
+              DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
     }
     total_len += (size_t)st->len;
     t = t->next;
   }
   if (total_len > (size_t)INT_MAX) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(ctx), "%s",
-                   diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
+    diag_emit_tokf_in(
+        diagnostics(ctx), DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE,
+        curtok(ctx), "%s",
+        diag_message_for_in(
+            diagnostics(ctx),
+            DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
   }
   char *merged = calloc(total_len + 1, 1);
   if (!merged) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        diagnostics(ctx), DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(diagnostics(ctx), DIAG_ERR_INTERNAL_OOM));
   }
   size_t off = 0;
   while (curtok(ctx) && curtok(ctx)->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)curtok(ctx);
     if (st->len < 0 || (size_t)st->len > total_len - off) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(ctx), "%s",
-                     diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
+      diag_emit_tokf_in(
+          diagnostics(ctx), DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID,
+          curtok(ctx), "%s",
+          diag_message_for_in(
+              diagnostics(ctx),
+              DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
     }
     memcpy(merged + off, st->str, (size_t)st->len);
     off += (size_t)st->len;
@@ -1228,7 +1266,10 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
     return parse_string_literal_sequence(ctx);
   }
 
-  ps_diag_ctx(curtok(ctx), "primary", "%s",
-               diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
+  ps_diag_ctx_in(
+      diagnostics(ctx), curtok(ctx), "primary", "%s",
+      diag_message_for_in(
+          diagnostics(ctx),
+          DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
   return NULL;
 }

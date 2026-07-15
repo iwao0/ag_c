@@ -1436,7 +1436,9 @@ static void expect_const_assign_ok_for_node(node_t *node) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_assign_at(node, "=", NULL);
+    ps_node_reject_const_assign_at_in(
+        ag_compilation_session_diagnostic_context(test_suite_session),
+        node, "=", NULL);
     _exit(0);
   }
   int status;
@@ -1451,7 +1453,9 @@ static void expect_const_assign_fail_for_node(node_t *node) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_assign_at(node, "=", NULL);
+    ps_node_reject_const_assign_at_in(
+        ag_compilation_session_diagnostic_context(test_suite_session),
+        node, "=", NULL);
     _exit(0);
   }
   int status;
@@ -1466,7 +1470,9 @@ static void expect_const_qual_discard_fail_for_nodes(node_t *lhs, node_t *rhs) {
   if (pid == 0) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
-    ps_node_reject_const_qual_discard_at(lhs, rhs, NULL);
+    ps_node_reject_const_qual_discard_at_in(
+        ag_compilation_session_diagnostic_context(test_suite_session),
+        lhs, rhs, NULL);
     _exit(0);
   }
   int status;
@@ -5246,6 +5252,7 @@ static void test_initializer_resolution_boundary() {
   };
   psx_initializer_target_t target =
       psx_resolve_initializer_designator_path(
+          ps_ctx_diagnostics(test_semantic_context()),
           &entry, aggregate, 0, NULL);
   ASSERT_EQ(integer, target.type);
   ASSERT_EQ(8, target.relative_offset);
@@ -5430,7 +5437,7 @@ static void test_static_data_initializer_boundary() {
   global_var_t global = {0};
   ps_global_registry_bind_decl_type(&global, array);
   ASSERT_TRUE(lower_static_scalar_array_initializer(
-      &global, array, &list, NULL));
+      test_lowering_context(), &global, array, &list, NULL));
   ASSERT_EQ(3, global.init_count);
   ASSERT_EQ(1, ps_gvar_init_slot_view(&global, 0).value);
   ASSERT_EQ(0, ps_gvar_init_slot_view(&global, 1).value);
@@ -5482,7 +5489,8 @@ static void test_static_data_initializer_boundary() {
   global_var_t union_global = {0};
   ps_global_registry_bind_decl_type(&union_global, union_type);
   ASSERT_TRUE(lower_static_object_initializer(
-      &union_global, union_type, &union_list, NULL));
+      test_lowering_context(), &union_global,
+      union_type, &union_list, NULL));
   ASSERT_EQ(2, union_global.init_count);
   ASSERT_EQ(0, ps_gvar_init_slot_view(&union_global, 0).value);
   ASSERT_EQ(7, ps_gvar_init_slot_view(&union_global, 1).value);
@@ -5520,7 +5528,8 @@ static void test_static_data_initializer_boundary() {
 
   psx_static_declaration_initializer_result_t inferred_result = {0};
   ASSERT_TRUE(lower_resolved_static_initializer(
-      &inferred_global, &inferred_resolution, NULL,
+      test_lowering_context(), &inferred_global,
+      &inferred_resolution, NULL,
       &inferred_result));
   ASSERT_EQ(1, inferred_result.type_completed);
   ASSERT_EQ(1, inferred_result.initialized);
@@ -5558,7 +5567,8 @@ static void test_static_data_initializer_boundary() {
       &pointer_resolution);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, pointer_resolution.status);
   ASSERT_TRUE(lower_resolved_static_initializer(
-      &pointer_array_global, &pointer_resolution, NULL, NULL));
+      test_lowering_context(), &pointer_array_global,
+      &pointer_resolution, NULL, NULL));
   ASSERT_EQ(0, pointer_array_type->array_len);
   ASSERT_EQ(1, pointer_resolution.type->array_len);
   ASSERT_EQ(1, ps_gvar_get_decl_type(&pointer_array_global)->array_len);

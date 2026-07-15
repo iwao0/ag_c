@@ -63,7 +63,7 @@ int lower_static_local_declaration_storage(
     const psx_static_local_declaration_request_t *request,
     psx_static_local_declaration_result_t *result);
 int lower_static_local_declaration_initializer(
-    global_var_t *global,
+    psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok, int *type_completed);
 

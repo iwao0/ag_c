@@ -27,6 +27,7 @@ static const unsigned char *chunk_data_const(const arena_chunk_t *c) {
  * トークンのピークメモリを O(ウィンドウ) に抑える。永続データ (predefined マクロ本体等) は
  * g_recyc_mode=0 のとき従来の arena_head 側へ確保され、ここでは解放しない。 */
 struct tk_allocator_context_t {
+  ag_diagnostic_context_t *diagnostic_context;
   arena_chunk_t *arena_head;
   size_t total_chunks;
   size_t total_reserved_bytes;
@@ -44,9 +45,13 @@ static tk_allocator_context_t default_allocator_context = {
     .next_chunk_hint = 16 * 1024,
 };
 
-tk_allocator_context_t *tk_allocator_context_create(void) {
+tk_allocator_context_t *tk_allocator_context_create(
+    ag_diagnostic_context_t *diagnostic_context) {
   tk_allocator_context_t *ctx = calloc(1, sizeof(*ctx));
-  if (ctx) ctx->next_chunk_hint = 16 * 1024;
+  if (ctx) {
+    ctx->diagnostic_context = diagnostic_context;
+    ctx->next_chunk_hint = 16 * 1024;
+  }
   return ctx;
 }
 
@@ -103,7 +108,10 @@ static arena_chunk_t *new_chunk(
   if (cap < size) cap = align_up(size, 4096);
   arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + cap);
   if (!chunk) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(
+            ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   chunk->next = NULL;
   chunk->used = 0;
@@ -263,7 +271,10 @@ void *tk_allocator_calloc_in(
     tk_allocator_context_t *ctx, size_t n, size_t size) {
   if (!ctx) return NULL;
   if (n != 0 && size > SIZE_MAX / n) {
-    diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
+    diag_emit_internalf_in(
+        ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM, "%s",
+        diag_message_for_in(
+            ctx->diagnostic_context, DIAG_ERR_INTERNAL_OOM));
   }
   size_t total = n * size;
   void *p = arena_alloc(ctx, total);

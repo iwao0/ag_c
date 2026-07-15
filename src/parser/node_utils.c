@@ -3046,23 +3046,6 @@ void ps_node_expect_lvalue_at_in(
   }
 }
 
-void ps_node_reject_const_assign_at(node_t *node, const char *op,
-                                    token_t *tok) {
-  ps_node_reject_const_assign_at_in(
-      diag_context_active(), node, op, tok);
-}
-
-void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
-                                          token_t *tok) {
-  ps_node_reject_const_qual_discard_at_in(
-      diag_context_active(), lhs, rhs, tok);
-}
-
-void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok) {
-  ps_node_expect_lvalue_at_in(
-      diag_context_active(), node, op, tok);
-}
-
 int ps_node_compound_literal_array_size(node_t *node) {
   if (!node) return 0;
   if (node->kind == ND_COMMA)

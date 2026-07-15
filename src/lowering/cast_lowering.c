@@ -142,32 +142,42 @@ static node_t *lower_aggregate_cast(
         ps_lowering_arena(lowering_context), operand, view.target);
   }
   if (!lowering_context || !local_registry) return operand;
+  ag_diagnostic_context_t *diagnostics =
+      ps_lowering_diagnostics(lowering_context);
 
   const psx_type_t *operand_type = ps_node_get_type(operand);
   if (ps_type_is_tag_aggregate(operand_type)) {
-    ps_diag_ctx(diag_tok, "cast",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast",
+        diag_message_for_in(
+            diagnostics,
                      DIAG_ERR_PARSER_CAST_NONSCALAR_TYPE_MISMATCH),
-                 ps_ctx_tag_kind_spelling(view.tag_kind));
+        ps_ctx_tag_kind_spelling(view.tag_kind));
   }
 
   if (view.tag_kind == TK_STRUCT &&
       !options->enable_struct_scalar_pointer_cast) {
-    ps_diag_ctx(diag_tok, "cast", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast", "%s",
+        diag_message_for_in(
+            diagnostics,
                      DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
   }
   if (view.tag_kind == TK_UNION &&
       !options->enable_union_scalar_pointer_cast) {
-    ps_diag_ctx(diag_tok, "cast", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast", "%s",
+        diag_message_for_in(
+            diagnostics,
                      DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
   }
   if (view.tag_kind != TK_STRUCT && view.tag_kind != TK_UNION) {
-    ps_diag_ctx(diag_tok, "cast",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast",
+        diag_message_for_in(
+            diagnostics,
                      DIAG_ERR_PARSER_CAST_NONSCALAR_UNSUPPORTED),
-                 ps_ctx_tag_kind_spelling(view.tag_kind));
+        ps_ctx_tag_kind_spelling(view.tag_kind));
   }
 
   tag_member_info_t member = {0};
@@ -183,8 +193,10 @@ static node_t *lower_aggregate_cast(
     }
   }
   if (!member_found) {
-    ps_diag_ctx(diag_tok, "cast", "%s",
-                 diag_message_for(
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast", "%s",
+        diag_message_for_in(
+            diagnostics,
                      DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
 
@@ -353,8 +365,10 @@ static node_t *lower_cast(
     return integer_result_ex(arena_context, truncated, view, 0);
   }
 
-  ps_diag_ctx(diag_tok, "cast", "%s",
-               diag_message_for(
+  ps_diag_ctx_in(
+      ps_lowering_diagnostics(lowering_context), diag_tok, "cast", "%s",
+      diag_message_for_in(
+          ps_lowering_diagnostics(lowering_context),
                    DIAG_ERR_PARSER_CAST_TYPE_RESOLVE_FAILED));
   return annotate(operand, view.target);
 }

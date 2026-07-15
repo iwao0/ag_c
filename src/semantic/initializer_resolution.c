@@ -8,19 +8,26 @@
 #include <string.h>
 
 static long long resolve_designator_index(
-    node_t *expr, token_t *designator_tok, token_t *fallback_tok) {
+    ag_diagnostic_context_t *diagnostics, node_t *expr,
+    token_t *designator_tok, token_t *fallback_tok) {
   int ok = 1;
   long long index = psx_eval_const_int(expr, &ok);
   token_t *tok = designator_tok ? designator_tok : fallback_tok;
   if (!ok) {
-    ps_diag_ctx(tok, "init", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
-                 diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+    ps_diag_ctx_in(
+        diagnostics, tok, "init", "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_NONNEG_CONSTEXPR_REQUIRED),
+        diag_text_for_in(
+            diagnostics, DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
   if (index < 0) {
-    ps_diag_ctx(tok, "init", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
-                 diag_text_for(DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
+    ps_diag_ctx_in(
+        diagnostics, tok, "init", "%s",
+        diag_message_for_in(
+            diagnostics, DIAG_ERR_PARSER_NONNEG_VALUE_REQUIRED),
+        diag_text_for_in(
+            diagnostics, DIAG_TEXT_ARRAY_DESIGNATOR_INDEX));
   }
   return index;
 }
@@ -40,6 +47,7 @@ static int aggregate_member_index_by_name(
 }
 
 psx_initializer_target_t psx_resolve_initializer_designator_path(
+    ag_diagnostic_context_t *diagnostics,
     const psx_initializer_entry_t *entry, const psx_type_t *root_type,
     int root_relative_offset, token_t *fallback_tok) {
   psx_initializer_target_t target = {
@@ -56,20 +64,26 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
     if (designator->kind == PSX_INIT_DESIGNATOR_INDEX) {
       if (!target.type || target.type->kind != PSX_TYPE_ARRAY ||
           !target.type->base) {
-        ps_diag_ctx(
+        ps_diag_ctx_in(
+            diagnostics,
             designator->tok ? designator->tok : fallback_tok,
             "init", "%s",
-            diag_message_for(
+            diag_message_for_in(
+                diagnostics,
                 d > 0 ? DIAG_ERR_PARSER_NESTED_DESIG_NOT_ARRAY
                       : DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       long long index = resolve_designator_index(
-          designator->index_expr, designator->tok, fallback_tok);
+          diagnostics, designator->index_expr,
+          designator->tok, fallback_tok);
       if (index >= target.type->array_len) {
-        ps_diag_ctx(designator->tok ? designator->tok : fallback_tok,
-                     "init", "%s",
-                     diag_message_for(
-                         DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
+        ps_diag_ctx_in(
+            diagnostics,
+            designator->tok ? designator->tok : fallback_tok,
+            "init", "%s",
+            diag_message_for_in(
+                diagnostics,
+                DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
       if (target.first_array_index < 0)
         target.first_array_index = (int)index;
@@ -85,10 +99,13 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
         target.type ? target.type->aggregate_definition : NULL;
     int member_index = aggregate_member_index_by_name(definition, designator);
     if (member_index < 0) {
-      ps_diag_ctx(designator->tok ? designator->tok : fallback_tok,
-                   "init", "%s",
-                   diag_message_for(
-                       DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
+      ps_diag_ctx_in(
+          diagnostics,
+          designator->tok ? designator->tok : fallback_tok,
+          "init", "%s",
+          diag_message_for_in(
+              diagnostics,
+              DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
     if (target.first_member_index < 0)
       target.first_member_index = member_index;

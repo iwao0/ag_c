@@ -163,7 +163,9 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
             &item.value.function_header);
         arena_rollback_in(
             ag_compilation_session_arena_context(session), arena_mark);
-        if (diag_active_limit_kind()) return NULL;
+        if (diag_limit_kind_in(
+                ag_compilation_session_diagnostic_context(session)))
+          return NULL;
         continue;
       }
       ps_dispose_function_definition_header_syntax(

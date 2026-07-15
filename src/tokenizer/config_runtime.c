@@ -1,5 +1,6 @@
 #include "tokenizer.h"
 #include "allocator.h"
+#include "../diag/diag.h"
 #include <limits.h>
 
 static tokenizer_context_t default_ctx = {
@@ -22,6 +23,13 @@ static tokenizer_context_t default_ctx = {
 };
 
 static tokenizer_context_t *active_ctx;
+static ag_diagnostic_context_t *default_diagnostic_context;
+
+static ag_diagnostic_context_t *default_tokenizer_diagnostics(void) {
+  if (!default_diagnostic_context)
+    default_diagnostic_context = diag_context_create();
+  return default_diagnostic_context;
+}
 
 tokenizer_context_t *tk_get_default_context(void) {
   return &default_ctx;
@@ -34,6 +42,8 @@ tokenizer_context_t *tk_context_activate(tokenizer_context_t *ctx) {
 }
 
 tokenizer_context_t *tk_context_active(void) {
+  if (!default_ctx.diagnostic_context)
+    default_ctx.diagnostic_context = default_tokenizer_diagnostics();
   return active_ctx ? active_ctx : &default_ctx;
 }
 
@@ -46,8 +56,24 @@ void tk_context_init(tokenizer_context_t *ctx) {
       .enable_c11_audit_extensions =
           default_ctx.enable_c11_audit_extensions,
       .allocator_context = tk_allocator_default_context(),
+      .diagnostic_context = default_tokenizer_diagnostics(),
       .max_token_len_for_test = (size_t)INT_MAX,
   };
+}
+
+void tk_context_bind_diagnostic_context(
+    tokenizer_context_t *ctx,
+    ag_diagnostic_context_t *diagnostic_context) {
+  if (ctx) ctx->diagnostic_context = diagnostic_context;
+}
+
+ag_diagnostic_context_t *tk_context_diagnostics(
+    tokenizer_context_t *ctx) {
+  tokenizer_context_t *use_ctx = ctx ? ctx : tk_context_active();
+  if (!use_ctx) return default_tokenizer_diagnostics();
+  if (!use_ctx->diagnostic_context)
+    use_ctx->diagnostic_context = default_tokenizer_diagnostics();
+  return use_ctx->diagnostic_context;
 }
 
 void tk_context_set_allocator(

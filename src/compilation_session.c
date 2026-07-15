@@ -54,18 +54,22 @@ int ag_compilation_session_init(
   session->target = target ? *target : ag_target_info_host();
   session->target.pointer_size =
       ag_target_info_pointer_size(&session->target);
-  session->arena_context = arena_context_create();
-  session->semantic_context = ps_ctx_create(session->arena_context);
-  session->global_registry = ps_global_registry_create();
-  session->local_registry = ps_local_registry_create();
   session->diagnostic_context = diag_context_create();
   diag_context_bind_tokenizer(
       session->diagnostic_context, &session->tokenizer);
+  tk_context_bind_diagnostic_context(
+      &session->tokenizer, session->diagnostic_context);
+  session->arena_context = arena_context_create();
+  session->semantic_context = ps_ctx_create(session->arena_context);
+  session->global_registry = ps_global_registry_create();
+  session->local_registry = ps_local_registry_create(
+      session->diagnostic_context);
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
   session->preprocessor_context = pp_context_create(
       session->diagnostic_context);
-  session->token_allocator_context = tk_allocator_context_create();
+  session->token_allocator_context = tk_allocator_context_create(
+      session->diagnostic_context);
   tk_context_set_allocator(
       &session->tokenizer, session->token_allocator_context);
   session->parser_runtime_context = ps_parser_runtime_context_create(

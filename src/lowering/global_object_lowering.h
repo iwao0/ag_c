@@ -6,6 +6,8 @@
 #include "../semantic/global_declaration_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 
+typedef struct psx_lowering_context_t psx_lowering_context_t;
+
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
@@ -41,7 +43,7 @@ int lower_resolved_global_object_declaration(
     psx_global_object_result_t *result);
 
 int lower_resolved_global_declaration_initializer(
-    global_var_t *global,
+    psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok);
 

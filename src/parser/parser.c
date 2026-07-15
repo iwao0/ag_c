@@ -126,6 +126,11 @@ static inline void set_curtok_in(
   tk_set_current_token_ctx(tokenizer_context, tok);
 }
 
+static inline ag_diagnostic_context_t *diagnostics(
+    psx_semantic_context_t *semantic_context) {
+  return ps_ctx_diagnostics(semantic_context);
+}
+
 static void skip_cv_qualifiers_into_ex(
     psx_semantic_context_t *semantic_context,
     tokenizer_context_t *tokenizer_context,
@@ -162,8 +167,12 @@ static void skip_cv_qualifiers_into_ex(
       set_curtok_in(
           tokenizer_context, curtok_in(tokenizer_context)->next);
       if (curtok_in(tokenizer_context)->kind != TK_LPAREN) {
-        ps_diag_ctx(curtok_in(tokenizer_context), "decl", "%s",
-                     diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
+        ps_diag_ctx_in(
+            diagnostics(semantic_context), curtok_in(tokenizer_context),
+            "decl", "%s",
+            diag_message_for_in(
+                diagnostics(semantic_context),
+                DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
       int av = psx_parse_alignas_value_in_contexts(
           semantic_context, tokenizer_context);
@@ -188,8 +197,9 @@ static void skip_cv_qualifiers_into_ex(
    * `_Thread_local` 単独は storage_count に数えていないので
    * `_Thread_local int x;` は 0 で通り、`static _Thread_local int x;` は 1 で通る。 */
   if (storage_count > 1) {
-    ps_diag_ctx(first_storage_tok, "decl",
-                 "storage class 指定子は1つまでです (C11 6.7.1p2)");
+    ps_diag_ctx_in(
+        diagnostics(semantic_context), first_storage_tok, "decl",
+        "storage class 指定子は1つまでです (C11 6.7.1p2)");
   }
   (void)saw_thread_local;
   psx_skip_gnu_attributes_ctx(tokenizer_context);
@@ -209,8 +219,12 @@ static token_kind_t parse_atomic_type_specifier(
   token_kind_t inner = psx_consume_type_kind_in_contexts(
       semantic_context, tokenizer_context, &inner_spec);
   if (inner == TK_EOF) {
-    ps_diag_ctx(curtok_in(tokenizer_context), "decl", "%s",
-                 diag_message_for(DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED));
+    ps_diag_ctx_in(
+        diagnostics(semantic_context), curtok_in(tokenizer_context),
+        "decl", "%s",
+        diag_message_for_in(
+            diagnostics(semantic_context),
+            DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED));
   }
   // Minimal support for derived declarators in _Atomic(type), e.g. _Atomic(int*).
   while (tk_consume_ctx(tokenizer_context, '*')) {
@@ -352,7 +366,7 @@ int ps_parse_next_toplevel_item(
             stream->local_registry, stream->runtime_context)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
       psx_synchronize_toplevel_declaration(tokenizer_context);
-      if (diag_active_limit_kind()) break;
+      if (diag_limit_kind_in(diagnostics(semantic_context))) break;
       continue;
     }
     psx_skip_gnu_attributes_ctx(tokenizer_context);
@@ -361,9 +375,12 @@ int ps_parse_next_toplevel_item(
       psx_parsed_declarator_t *declarator = &declaration.declarators[0];
       if (declaration.is_typedef ||
           declarator->function_suffix_count <= 0) {
-        ps_diag_ctx(declarator->diagnostic_token, "funcdef", "%s",
-                    diag_message_for(
-                        DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
+        ps_diag_ctx_in(
+            diagnostics(semantic_context), declarator->diagnostic_token,
+            "funcdef", "%s",
+            diag_message_for_in(
+                diagnostics(semantic_context),
+                DIAG_ERR_PARSER_FUNCTION_DEF_EXPECTED));
       }
       item->kind = PSX_TOPLEVEL_ITEM_FUNCTION_HEADER;
       psx_move_toplevel_declaration_head_to_function_definition(
@@ -379,7 +396,7 @@ int ps_parse_next_toplevel_item(
         ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
         item->kind = PSX_TOPLEVEL_ITEM_EOF;
         psx_synchronize_toplevel_declaration(tokenizer_context);
-        if (diag_active_limit_kind()) break;
+        if (diag_limit_kind_in(diagnostics(semantic_context))) break;
         continue;
       }
     }
@@ -412,10 +429,14 @@ static void psx_type_spec_result_reset(psx_type_spec_result_t *out) {
 }
 
 static void emit_invalid_type_spec_diag(
+    psx_semantic_context_t *semantic_context,
     tokenizer_context_t *tokenizer_context) {
-  diag_emit_tokf(
+  diag_emit_tokf_in(
+      diagnostics(semantic_context),
       DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok_in(tokenizer_context), "%s",
-                 diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
+      diag_message_for_in(
+          diagnostics(semantic_context),
+          DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
 }
 
 // consume_type: 型キーワードがあれば読み進め、そのトークン種別を返す（0=型なし）
@@ -508,7 +529,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     token_kind_t k = curtok_in(tokenizer_context)->kind;
     if (k == TK_COMPLEX) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_complex = 1;
       set_curtok_in(
@@ -517,7 +538,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_IMAGINARY) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_imaginary = 1;
       set_curtok_in(
@@ -526,7 +547,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_signed = 1;
       set_curtok_in(
@@ -535,7 +556,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_UNSIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_unsigned = 1;
       set_curtok_in(
@@ -544,7 +565,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_LONG) {
       if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       long_count++;
       set_curtok_in(
@@ -553,7 +574,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_SHORT) {
       if (saw_char || saw_short || long_count || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_short = 1;
       set_curtok_in(
@@ -562,7 +583,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_INT) {
       if (saw_int || saw_char || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_int = 1;
       set_curtok_in(
@@ -571,7 +592,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_CHAR) {
       if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_char = 1;
       set_curtok_in(
@@ -580,7 +601,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_VOID) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_void = 1;
       set_curtok_in(
@@ -589,7 +610,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_FLOAT) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_float = 1;
       set_curtok_in(
@@ -598,7 +619,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_DOUBLE) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_double = 1;
       set_curtok_in(
@@ -607,7 +628,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     }
     if (k == TK_BOOL) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
-        emit_invalid_type_spec_diag(tokenizer_context);
+        emit_invalid_type_spec_diag(semantic_context, tokenizer_context);
       }
       saw_bool = 1;
       set_curtok_in(
@@ -628,8 +649,10 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       int is_new_storage = (k == TK_STATIC || k == TK_EXTERN ||
                             k == TK_AUTO || k == TK_REGISTER);
       if (is_new_storage && (out->is_static || out->is_extern)) {
-        ps_diag_ctx(curtok_in(tokenizer_context), "decl",
-                     "storage class 指定子は1つまでです (C11 6.7.1p2)");
+        ps_diag_ctx_in(
+            diagnostics(semantic_context), curtok_in(tokenizer_context),
+            "decl",
+            "storage class 指定子は1つまでです (C11 6.7.1p2)");
       }
       if (k == TK_CONST)        out->is_const_qualified = 1;
       else if (k == TK_VOLATILE) out->is_volatile_qualified = 1;
@@ -669,9 +692,11 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
     if (syntax && syntax->diagnose_complex_requires_float) {
       syntax->diagnose_complex_requires_float(syntax->context, start);
     } else {
-      diag_emit_tokf(
+      diag_emit_tokf_in(
+          diagnostics(semantic_context),
           DIAG_ERR_PARSER_INVALID_CONTEXT, start, "%s",
-          diag_message_for(
+          diag_message_for_in(
+              diagnostics(semantic_context),
               DIAG_ERR_PARSER_COMPLEX_IMAGINARY_TYPE_REQUIRES_FLOAT));
     }
   }
@@ -706,8 +731,12 @@ static node_block_t *parse_funcdef_body_block(
     // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
     if (psx_try_consume_pragma_pack_marker_in(runtime_context)) continue;
     if (i >= body_cap - 1) {
-      body_cap = pda_next_cap(body_cap, i + 2);
-      body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
+      body_cap = pda_next_cap_in(
+          ps_parser_runtime_diagnostics(runtime_context),
+          body_cap, i + 2);
+      body->body = pda_xreallocarray_in(
+          ps_parser_runtime_diagnostics(runtime_context), body->body,
+          (size_t)body_cap, sizeof(node_t *));
     }
     token_t *stmt_tok = curtok_in(tokenizer_context);
     psx_lvar_usage_region_t *region =

@@ -32,6 +32,11 @@ typedef struct {
   psx_global_declaration_pipeline_result_t global_result;
 } psx_toplevel_declaration_application_t;
 
+static ag_diagnostic_context_t *application_diagnostics(
+    const psx_toplevel_declaration_application_t *application) {
+  return ps_ctx_diagnostics(application->semantic_context);
+}
+
 static void apply_function_prototype(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -47,8 +52,9 @@ static void apply_function_prototype(
               .diag_context = "decl",
               .diag_tok = (token_t *)name,
           })) {
-    ps_diag_ctx((token_t *)name, "decl",
-                "function declaration pipeline failed");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(semantic_context), (token_t *)name,
+        "decl", "function declaration pipeline failed");
   }
 }
 
@@ -59,14 +65,15 @@ static void *begin_declaration(
       !callbacks->global_registry || !callbacks->local_registry ||
       !callbacks->runtime_context || !callbacks->lowering_context ||
       !callbacks->options) {
-    ps_diag_ctx(declaration ? declaration->diagnostic_token : NULL,
-                "decl", "complete top-level declaration context is required");
+    return NULL;
   }
   psx_toplevel_declaration_application_t *application =
       calloc(1, sizeof(*application));
   if (!application) {
-    ps_diag_ctx(declaration ? declaration->diagnostic_token : NULL,
-                "decl", "top-level declaration allocation failed");
+    ps_diag_ctx_in(
+        ps_ctx_diagnostics(callbacks->semantic_context),
+        declaration ? declaration->diagnostic_token : NULL,
+        "decl", "top-level declaration allocation failed");
   }
   application->semantic_context = callbacks->semantic_context;
   application->global_registry = callbacks->global_registry;
@@ -87,8 +94,10 @@ static void *begin_declaration(
       application->local_registry,
       &declaration->specifier);
   if (!application->base_type) {
-    ps_diag_ctx(declaration->diagnostic_token, "decl",
-                "canonical top-level base type resolution failed");
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        declaration->diagnostic_token, "decl",
+        "canonical top-level base type resolution failed");
   }
   return application;
 }
@@ -107,15 +116,19 @@ static void begin_declarator(
       application->local_registry,
       application->base_type, declarator);
   if (!application->current_type) {
-    ps_diag_ctx(declarator->diagnostic_token, "decl",
-                "canonical top-level declarator type resolution failed");
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        declarator->diagnostic_token, "decl",
+        "canonical top-level declarator type resolution failed");
   }
 
   if (declaration->is_typedef) {
     if (initializer->has_initializer) {
-      ps_diag_ctx((token_t *)name, "typedef",
-                  "typedef declaration '%.*s' cannot have an initializer",
-                  name->len, name->str);
+      ps_diag_ctx_in(
+          application_diagnostics(application), (token_t *)name,
+          "typedef",
+          "typedef declaration '%.*s' cannot have an initializer",
+          name->len, name->str);
     }
     psx_apply_parsed_typedef_declaration_in_contexts(
         application->semantic_context, application->global_registry,
@@ -127,9 +140,11 @@ static void begin_declarator(
   }
   if (application->current_type->kind == PSX_TYPE_FUNCTION) {
     if (initializer->has_initializer) {
-      ps_diag_ctx((token_t *)name, "decl",
-                  "function declaration '%.*s' cannot have an initializer",
-                  name->len, name->str);
+      ps_diag_ctx_in(
+          application_diagnostics(application), (token_t *)name,
+          "decl",
+          "function declaration '%.*s' cannot have an initializer",
+          name->len, name->str);
     }
     apply_function_prototype(
         application->semantic_context, application->global_registry,
@@ -156,8 +171,10 @@ static void begin_declarator(
       };
   if (!psx_begin_global_declaration_pipeline(
           &application->global_request, &application->global_result)) {
-    ps_diag_ctx(declarator->diagnostic_token, "decl",
-                "global declaration storage pipeline failed");
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        declarator->diagnostic_token, "decl",
+        "global declaration storage pipeline failed");
   }
   application->current_kind = PSX_TOPLEVEL_APPLY_GLOBAL;
 }
@@ -178,8 +195,10 @@ static void finish_declarator(
   }
   if (!psx_finish_global_declaration_pipeline(
           &application->global_request, &application->global_result)) {
-    ps_diag_ctx(application->global_request.diag_tok, "decl",
-                "global declaration initializer pipeline failed");
+    ps_diag_ctx_in(
+        application_diagnostics(application),
+        application->global_request.diag_tok, "decl",
+        "global declaration initializer pipeline failed");
   }
 }
 

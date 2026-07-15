@@ -130,14 +130,15 @@ int lower_static_local_declaration_storage(
 }
 
 int lower_static_local_declaration_initializer(
-    global_var_t *global,
+    psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok, int *type_completed) {
   if (type_completed) *type_completed = 0;
   if (!global || !resolution) return 0;
   psx_static_declaration_initializer_result_t initializer_result = {0};
   if (!lower_resolved_static_initializer(
-          global, resolution, diag_tok, &initializer_result)) {
+          lowering_context, global, resolution, diag_tok,
+          &initializer_result)) {
     return 0;
   }
   if (type_completed)
@@ -152,7 +153,8 @@ int lower_static_local_declaration(
   if (!lower_static_local_declaration_storage(request, &lowered)) return 0;
   if (request->initializer_resolution &&
       !lower_static_local_declaration_initializer(
-          lowered.global, request->initializer_resolution,
+          request->lowering_context, lowered.global,
+          request->initializer_resolution,
           request->diag_tok, &lowered.type_completed)) {
     return 0;
   }

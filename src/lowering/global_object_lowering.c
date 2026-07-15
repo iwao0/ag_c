@@ -2,6 +2,7 @@
 
 #include "../parser/diag.h"
 #include "../parser/global_registry.h"
+#include "../parser/semantic_ctx.h"
 #include "static_data_initializer.h"
 #include "../diag/diag.h"
 #include <stdlib.h>
@@ -48,30 +49,37 @@ int lower_resolved_global_object_declaration(
 static void diagnose_global_resolution(
     const psx_global_object_request_t *request,
     psx_global_declaration_status_t status) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(request->semantic_context);
   switch (status) {
     case PSX_GLOBAL_DECLARATION_INCOMPLETE_OBJECT:
-      ps_diag_ctx(request->diag_tok, "decl", "%s",
-                   diag_message_for(
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl", "%s",
+          diag_message_for_in(
+              diagnostics,
                        DIAG_ERR_PARSER_INCOMPLETE_OBJECT_FORBIDDEN));
       return;
     case PSX_GLOBAL_DECLARATION_FUNCTION_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は関数として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_TYPEDEF_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は typedef 名として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_ENUM_NAME_CONFLICT:
-      ps_diag_ctx(request->diag_tok, "decl",
-                   "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
-                   request->name_len, request->name);
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
+          "'%.*s' は enum 定数として既に宣言されています (C11 6.7p4)",
+          request->name_len, request->name);
       return;
     case PSX_GLOBAL_DECLARATION_TYPE_CONFLICT:
-      ps_diag_ctx(
-          request->diag_tok, "decl",
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "decl",
           "グローバル変数 '%.*s' の型が以前の宣言と異なります (C11 6.7p4)",
           request->name_len, request->name);
       return;
@@ -114,9 +122,9 @@ int lower_global_object_declaration(
 }
 
 int lower_resolved_global_declaration_initializer(
-    global_var_t *global,
+    psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok) {
   return lower_resolved_static_initializer(
-      global, resolution, diag_tok, NULL);
+      lowering_context, global, resolution, diag_tok, NULL);
 }

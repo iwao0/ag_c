@@ -177,17 +177,12 @@ node_t *psx_node_new_initializer_list_in(
     arena_context_t *arena_context,
     psx_initializer_entry_t *entries, int entry_count, token_t *tok);
 
-void ps_node_reject_const_assign_at(node_t *node, const char *op,
-                                     token_t *tok);
 void ps_node_reject_const_assign_at_in(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const char *op, token_t *tok);
-void ps_node_reject_const_qual_discard_at(node_t *lhs, node_t *rhs,
-                                           token_t *tok);
 void ps_node_reject_const_qual_discard_at_in(
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     token_t *tok);
-void ps_node_expect_lvalue_at(node_t *node, const char *op, token_t *tok);
 void ps_node_expect_lvalue_at_in(
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const char *op, token_t *tok);

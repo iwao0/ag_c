@@ -32,10 +32,15 @@ static struct lvar_t *create_aggregate_temporary(
   const psx_type_t *object_type = ps_type_find_aggregate_object_type(
       ps_node_get_type(access->base.lhs));
   if (!object_type || ps_type_sizeof(object_type) <= 0) {
-    ps_diag_ctx(tok, "member", "aggregate rvalue size resolution failed");
+    ps_diag_ctx_in(
+        ps_lowering_diagnostics(lowering_context), tok, "member",
+        "aggregate rvalue size resolution failed");
   }
   char *name = new_member_rvalue_name(lowering_context);
-  if (!name) ps_diag_ctx(tok, "member", "temporary name allocation failed");
+  if (!name)
+    ps_diag_ctx_in(
+        ps_lowering_diagnostics(lowering_context), tok, "member",
+        "temporary name allocation failed");
   psx_type_t *type = ps_type_clone_in(
       ps_lowering_arena(lowering_context), object_type);
   struct lvar_t *temporary = psx_apply_temporary_local_declaration_pipeline(
@@ -47,7 +52,9 @@ static struct lvar_t *create_aggregate_temporary(
           .type = type,
       });
   if (!temporary)
-    ps_diag_ctx(tok, "member", "failed to create aggregate temporary");
+    ps_diag_ctx_in(
+        ps_lowering_diagnostics(lowering_context), tok, "member",
+        "failed to create aggregate temporary");
   return temporary;
 }
 

@@ -611,7 +611,9 @@ if (sessionContextAccessorNames.some((name) =>
     /previous_global_registry/.test(compilationSessionSource) ||
     /ps_ctx_activate\s*\(/.test(compilationSessionSource) ||
     /previous_semantic_context/.test(compilationSessionSource) ||
-    !/ps_local_registry_create\s*\(/.test(compilationSessionSource) ||
+    !/ps_local_registry_create\s*\(\s*session->diagnostic_context\s*\)/.test(
+      compilationSessionSource,
+    ) ||
     !/ps_local_registry_destroy\s*\(/.test(compilationSessionSource) ||
     /ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
     /previous_local_registry/.test(compilationSessionSource) ||
@@ -778,18 +780,18 @@ const irTargetOnlyEntryBodies = [
   ),
   irBuilderRange(
     "ir_build_emit_function_for_target(",
-    "ir_build_emit_function_with_options(",
+    "\nint ir_build_emit_function_with_options(",
   ),
   irBuilderRange(
     "ir_build_function_module_for_target(",
-    "ir_build_function_module_with_options(",
+    "\nir_module_t *ir_build_function_module_with_options(",
   ),
   irBuilderRange(
     "ir_build_each_and_emit_for_target(",
-    "ir_build_each_and_emit_with_options(",
+    "\nint ir_build_each_and_emit_with_options(",
   ),
 ];
-if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
+if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
       irBuilderHeader,
     ) ||
     !/ctx->configured_continuation/.test(irBuilderSource) ||
@@ -799,12 +801,17 @@ if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]
     irBuilderActiveSessionReads.length !== 0 ||
     irTargetOnlyEntryBodies.some((body) =>
       !body.includes("ir_build_options_for_target(") ||
+      !body.includes("diag_context_create(") ||
+      !body.includes("diag_context_destroy(") ||
       body.includes("ir_build_options_for_active_session(")
     ) ||
     !/\.target\s*=\s*ag_compilation_session_target\s*\(/.test(
       compilerMainSource,
     ) ||
     !/\.continuation\s*=\s*ag_compilation_session_continuation\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/\.diagnostic_context\s*=\s*\n?\s*ag_compilation_session_diagnostic_context\s*\(/.test(
       compilerMainSource,
     ) ||
     /ir_build_(?:function_module|emit_function)_for_target\s*\(/.test(
@@ -1193,6 +1200,9 @@ const legacyLocalRegistryGlobals =
 const legacyActiveLocalRegistryMacros =
   /^#define\s+(?:locals|all_locals|all_bindings|lvar_scope_stack|lvar_scope_seq_stack|lvar_scope_depth|next_scope_seq|current_scope_seq|next_declaration_seq|scope_parent_by_seq|scope_parent_capacity|lvars_by_bucket|lvars_by_offset|usage_events_head|usage_events_tail|current_usage_region)\b/gm;
 if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
+    !/ag_diagnostic_context_t\s*\*diagnostic_context\s*;/.test(
+      localRegistrySource,
+    ) ||
     !/psx_local_registry_t\s*\*ps_local_registry_create\s*\(/.test(
       localRegistrySource,
     ) ||
@@ -2332,6 +2342,34 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const parserTypeImplementationSource = await readFile(
+  "src/parser/type.c",
+  "utf8",
+);
+const memberAccessLoweringSource = await readFile(
+  "src/lowering/member_access_lowering.c",
+  "utf8",
+);
+const explicitDiagnosticCompoundLiteralLoweringSource = await readFile(
+  "src/lowering/compound_literal_lowering.c",
+  "utf8",
+);
+const explicitDiagnosticCastLoweringSource = await readFile(
+  "src/lowering/cast_lowering.c",
+  "utf8",
+);
+const explicitDiagnosticInitializerResolutionSource = await readFile(
+  "src/semantic/initializer_resolution.c",
+  "utf8",
+);
+const explicitDiagnosticInitializerLoweringSource = await readFile(
+  "src/lowering/initializer_lowering.c",
+  "utf8",
+);
+const explicitDiagnosticStaticDataInitializerSource = await readFile(
+  "src/lowering/static_data_initializer.c",
+  "utf8",
+);
 const nodeTypePublicSource = await readFile(
   "src/parser/node_type_public.h",
   "utf8",
@@ -2360,6 +2398,10 @@ const parserDeclarationSyntaxSource = await readFile(
   "src/parser/declaration_syntax.c",
   "utf8",
 );
+const declaratorSyntaxSource = await readFile(
+  "src/parser/declarator_syntax.c",
+  "utf8",
+);
 const aggregateMemberSyntaxSource = await readFile(
   "src/parser/aggregate_member_syntax.c",
   "utf8",
@@ -2373,7 +2415,7 @@ const parserSemanticContextImplementation = await readFile(
   "utf8",
 );
 const contextFreeParserDiagnosticApi =
-  /\b(?:diag_(?:emit_atf|emit_tokf|report_atf|report_tokf|warn_tokf|emit_internalf|report_internalf|message_for|warn_message_for|text_for|has_error_records|limit_kind)|ps_diag_ctx|ps_diag_missing|psx_diag_undefined_with_name|ps_diag_duplicate_with_name|ps_diag_only_in|pda_next_cap|pda_xreallocarray)\s*\(/;
+  /\b(?:diag_(?:emit_atf|emit_tokf|report_atf|report_tokf|warn_tokf|emit_internalf|report_internalf|message_for|warn_message_for|text_for|has_error_records|active_limit_kind|limit_kind|reset_records)|ps_diag_ctx|ps_diag_missing|psx_diag_undefined_with_name|ps_diag_duplicate_with_name|ps_diag_only_in|pda_next_cap|pda_xreallocarray)\s*\(/;
 if (!/\bDIAG_ERR_INTERNAL_INVARIANT_FAILED\b/.test(semanticInvariantsSource) ||
     /\bps_diag_ctx\s*\(/.test(semanticInvariantsSource)) {
   throw new Error(
@@ -2392,12 +2434,35 @@ if ([
       declarationApplicationSource,
       functionParameterResolutionSource,
       functionParameterSyntaxSource,
+      parserSource,
+      expressionParserSource,
       parserDeclarationSyntaxSource,
+      declaratorSyntaxSource,
       aggregateMemberSyntaxSource,
       localDeclarationSyntaxSource,
       toplevelDeclarationSyntaxSource,
+      initializerSyntaxSource,
+      enumConstSource,
+      statementParserSource,
       staticAssertDeclarationSource,
       parserSemanticContextImplementation,
+      localRegistrySource,
+      nodeUtilsSource,
+      parserTypeImplementationSource,
+      frontendFunctionDefinitionSource,
+      localDeclarationFrontendSource,
+      toplevelDeclarationFrontendSource,
+      frontendTranslationUnitSource,
+      vlaLoweringSource,
+      globalObjectLoweringSource,
+      explicitDiagnosticCompoundLiteralLoweringSource,
+      memberAccessLoweringSource,
+      explicitDiagnosticCastLoweringSource,
+      irBuilderSource,
+      compilerMainSource,
+      explicitDiagnosticInitializerResolutionSource,
+      explicitDiagnosticInitializerLoweringSource,
+      explicitDiagnosticStaticDataInitializerSource,
     ].some((source) => contextFreeParserDiagnosticApi.test(source)) ||
     !/ag_diagnostic_context_t\s*\*diagnostic_context\s*=\s*context->diagnostic_context\s*;/.test(
       parserSemanticContextImplementation,

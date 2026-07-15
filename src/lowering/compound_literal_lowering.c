@@ -76,8 +76,11 @@ static node_t *lower_file_scope_compound_literal(
               .diag_tok = diag_tok,
           },
           &object)) {
-    ps_diag_ctx(diag_tok, "compound-literal", "%s",
-                diag_message_for(
+    ps_diag_ctx_in(
+        ps_lowering_diagnostics(lowering_context), diag_tok,
+        "compound-literal", "%s",
+        diag_message_for_in(
+            ps_lowering_diagnostics(lowering_context),
                     DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
   }
   node_t *reference = is_array
@@ -128,8 +131,10 @@ static node_t *lower_local_compound_literal(
               .diag_tok = diag_tok,
           },
           &object)) {
-    ps_diag_ctx(diag_tok, "compound-literal",
-                "compound literal local storage lowering failed");
+    ps_diag_ctx_in(
+        ps_lowering_diagnostics(lowering_context), diag_tok,
+        "compound-literal",
+        "compound literal local storage lowering failed");
   }
   int is_array = type && type->kind == PSX_TYPE_ARRAY;
   node_t *reference = is_array
