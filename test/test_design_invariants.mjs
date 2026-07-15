@@ -147,6 +147,23 @@ if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(
     "ordinary parser APIs must receive explicit CompilationSession-owned contexts",
   );
 }
+const parserRuntimeLifecycleFiles = new Set([
+  "src/parser/runtime_context.c",
+  "src/parser/runtime_context.h",
+]);
+const parserSyntaxSource = (
+  await Promise.all(
+    parserSourceFiles
+      .filter((path) => !parserContextLifecycleFiles.has(path))
+      .filter((path) => !parserRuntimeLifecycleFiles.has(path))
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\bps_parser_runtime_context_active\s*\(/.test(parserSyntaxSource)) {
+  throw new Error(
+    "ordinary parser syntax must receive explicit CompilationSession-owned runtime context",
+  );
+}
 const removedContextFreeParserApis = [
   "psx_eval_parsed_alignas_value",
   "psx_parse_case_const_expr",
@@ -207,6 +224,18 @@ const removedContextFreeParserApis = [
   "psx_register_string_lit",
   "psx_register_float_lit",
   "ps_find_string_lit_by_label",
+  "psx_make_anonymous_tag_name",
+  "ps_anon_tag_reset_translation_unit_state",
+  "psx_try_consume_pragma_pack_marker",
+  "ps_parser_mark_recoverable_syntax_error",
+  "ps_parser_has_recoverable_syntax_error",
+  "ps_parser_enter_recovery_block",
+  "ps_parser_leave_recovery_block",
+  "pragma_pack_push",
+  "pragma_pack_pop",
+  "pragma_pack_set",
+  "pragma_pack_reset",
+  "pragma_pack_current_alignment",
 ];
 for (const name of removedContextFreeParserApis) {
   if (new RegExp(`\\b${name}\\s*\\(`).test(parserLayerSource)) {
@@ -222,6 +251,8 @@ for (const path of [
   }
 }
 const forbiddenCompatibilityFiles = [
+  "src/parser/config_runtime.c",
+  "src/parser/config_runtime.h",
   "src/compilation_session_compat.h",
   "src/frontend/translation_unit_compat.c",
   "src/frontend/translation_unit_compat.h",
@@ -315,6 +346,16 @@ const parserRuntimeSource = await readFile(
   "src/parser/runtime_context.c",
   "utf8",
 );
+const parserRuntimeHeader = await readFile(
+  "src/parser/runtime_context.h",
+  "utf8",
+);
+const compilationOptionsHeader = await readFile(
+  "src/compilation_options.h",
+  "utf8",
+);
+const configHeader = await readFile("src/config/config.h", "utf8");
+const configSource = await readFile("src/config/config.c", "utf8");
 const parserRuntimeConsumerSource = await readFile(
   "src/parser/parser.c",
   "utf8",
@@ -449,6 +490,30 @@ if (sessionContextAccessorNames.some((name) =>
     )) {
   throw new Error(
     "compilation entry points must own registries, tokenizer, and target through CompilationSession",
+  );
+}
+
+if (!/typedef\s+struct\s+ag_compilation_options_t\s*\{/.test(
+      compilationOptionsHeader,
+    ) ||
+    !/ag_compilation_options_t\s+options\s*;/.test(
+      compilationSessionInternalHeader,
+    ) ||
+    !/ag_compilation_session_options\s*\(/.test(compilationSessionHeader) ||
+    !/ag_compilation_session_options_view\s*\(/.test(
+      compilationSessionHeader,
+    ) ||
+    !/load_config_toml_in_session\s*\(/.test(configHeader) ||
+    /\bload_config_toml\s*\(/.test(configHeader) ||
+    !/ag_compilation_session_options\s*\(session\)/.test(configSource) ||
+    /parser\/config_runtime\.h/.test(
+      `${configSource}\n${loweringLayerSource}`,
+    ) ||
+    /enable_(?:size_compatible_nonscalar_cast|struct_scalar_pointer_cast|union_scalar_pointer_cast|union_array_member_nonbrace_init)/.test(
+      parserRuntimeHeader,
+    )) {
+  throw new Error(
+    "compilation compatibility options must be owned by CompilationSession and passed explicitly to lowering",
   );
 }
 

@@ -7,7 +7,6 @@
 #include "lvar_internal.h"
 #include "local_registry.h"
 #include "node_utils.h"
-#include "config_runtime.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"
 #include "../tokenizer/tokenizer.h"

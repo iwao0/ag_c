@@ -15,6 +15,7 @@ static void analyze_function_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    const ag_compilation_options_t *options,
     node_t *function, const token_t *fallback_diag_tok) {
   if (!semantic_context || !local_registry ||
       !function || function->kind != ND_FUNCDEF) return;
@@ -29,6 +30,7 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   function = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
+      options,
       function, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -38,7 +40,7 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   psx_emit_unreachable_warnings(function, fallback_diag_tok);
   psx_lower_implicit_conversions(
-      function, current_function, fallback_diag_tok);
+      function, current_function, fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
       function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
@@ -53,6 +55,7 @@ void psx_frontend_analyze_function_in_session(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
+      ag_compilation_session_options_view(session),
       function, fallback_diag_tok);
 }
 
@@ -60,6 +63,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    const ag_compilation_options_t *options,
     node_t *expression, const token_t *fallback_diag_tok) {
   expression = psx_bind_identifier_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -69,11 +73,13 @@ node_t *psx_frontend_analyze_expression_in_contexts(
       expression, NULL, fallback_diag_tok);
   expression = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
+      options,
       expression, fallback_diag_tok);
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, NULL, fallback_diag_tok);
-  psx_lower_implicit_conversions(expression, NULL, fallback_diag_tok);
+  psx_lower_implicit_conversions(
+      expression, NULL, fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
       expression, fallback_diag_tok);
   return expression;
@@ -87,6 +93,7 @@ node_t *psx_frontend_analyze_expression_in_session(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
+      ag_compilation_session_options_view(session),
       expression, fallback_diag_tok);
 }
 
@@ -94,6 +101,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    const ag_compilation_options_t *options,
     node_t *syntax, const token_t *fallback_diag_tok) {
   syntax = psx_bind_identifier_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -103,6 +111,7 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
       syntax, NULL, fallback_diag_tok);
   syntax = psx_lower_semantic_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
+      options,
       syntax, fallback_diag_tok);
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
@@ -116,6 +125,7 @@ void psx_frontend_analyze_program_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    const ag_compilation_options_t *options,
     node_t **program) {
   if (!program) return;
   for (int i = 0; program[i]; i++) {
@@ -128,11 +138,13 @@ void psx_frontend_analyze_program_in_contexts(
         program[i], NULL, program[i]->tok);
     program[i] = psx_lower_semantic_tree_in_contexts(
         semantic_context, global_registry, local_registry,
+        options,
         program[i], program[i]->tok);
     psx_semantic_resolve_tree_in_contexts(
         semantic_context, global_registry, local_registry,
         program[i], NULL, program[i]->tok);
-    psx_lower_implicit_conversions(program[i], NULL, program[i]->tok);
+    psx_lower_implicit_conversions(
+        program[i], NULL, program[i]->tok, options);
     psx_require_semantic_tree_has_canonical_expression_types(
         program[i], program[i]->tok);
   }
@@ -144,5 +156,6 @@ void psx_frontend_analyze_program_in_session(
   psx_frontend_analyze_program_in_contexts(
       ag_compilation_session_semantic_context(session),
       ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session), program);
+      ag_compilation_session_local_registry(session),
+      ag_compilation_session_options_view(session), program);
 }

@@ -110,6 +110,7 @@ int psx_begin_global_declaration_pipeline(
   if (result) *result = (psx_global_declaration_pipeline_result_t){0};
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
+      !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
 
@@ -154,6 +155,7 @@ int psx_finish_global_declaration_pipeline(
     psx_global_declaration_pipeline_result_t *result) {
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
+      !request->options ||
       !result->global || !request->initializer) return 0;
   global_var_t *global = result->global;
   if (!request->is_extern_decl) {
@@ -182,6 +184,7 @@ int psx_finish_global_declaration_pipeline(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
+                request->options,
                 initializer_resolution.initializer,
                 request->initializer->value_tok);
       } else {
@@ -190,6 +193,7 @@ int psx_finish_global_declaration_pipeline(
                 request->semantic_context,
                 request->global_registry,
                 request->local_registry,
+                request->options,
                 initializer_resolution.initializer,
                 initializer_resolution.initializer->tok
                     ? initializer_resolution.initializer->tok
@@ -490,6 +494,7 @@ int psx_begin_static_local_declaration_pipeline(
   if (result) *result = (psx_static_local_declaration_pipeline_result_t){0};
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
+      !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
@@ -566,6 +571,7 @@ int psx_finish_static_local_declaration_pipeline(
     psx_static_local_declaration_pipeline_result_t *result) {
   if (!request || !result || !request->semantic_context ||
       !request->global_registry || !request->local_registry ||
+      !request->options ||
       !result->global || !result->alias || !request->initializer) return 0;
   if (!request->initializer->has_initializer) return 1;
 
@@ -589,11 +595,13 @@ int psx_finish_static_local_declaration_pipeline(
     resolution.initializer = psx_frontend_analyze_initializer_syntax_in_contexts(
         request->semantic_context, request->global_registry,
         request->local_registry,
+        request->options,
         resolution.initializer, request->initializer->value_tok);
   } else {
     resolution.initializer = psx_frontend_analyze_expression_in_contexts(
         request->semantic_context, request->global_registry,
         request->local_registry,
+        request->options,
         resolution.initializer,
         resolution.initializer->tok
             ? resolution.initializer->tok
@@ -801,7 +809,8 @@ int psx_apply_automatic_local_declaration_pipeline(
 int psx_apply_block_extern_declaration_pipeline(
     const psx_block_extern_declaration_pipeline_request_t *request) {
   if (!request || !request->semantic_context || !request->global_registry ||
-      !request->local_registry || !request->name || request->name_len <= 0 ||
+      !request->local_registry || !request->options ||
+      !request->name || request->name_len <= 0 ||
       !request->type) return 0;
   if (request->has_initializer) {
     ps_diag_ctx(request->diag_tok, "decl",
@@ -832,6 +841,7 @@ int psx_apply_block_extern_declaration_pipeline(
               .semantic_context = request->semantic_context,
               .global_registry = request->global_registry,
               .local_registry = request->local_registry,
+              .options = request->options,
               .name = request->name,
               .name_len = request->name_len,
               .type = request->type,

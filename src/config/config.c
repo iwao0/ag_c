@@ -1,21 +1,33 @@
 #include "config.h"
 #include "toml_reader.h"
+#include "../compilation_session.h"
 #include "../diag/diag.h"
-#include "../parser/config_runtime.h"
 #include "../tokenizer/tokenizer.h"
 #include <stdio.h>
 #include <string.h>
 
-static void apply_config_values(const config_values_t *cfg) {
-  diag_set_locale(cfg->locale);
-  tk_set_strict_c11_mode(cfg->strict_c11);
-  tk_set_enable_trigraphs(cfg->enable_trigraphs);
-  tk_set_enable_binary_literals(cfg->enable_binary_literals);
-  tk_set_enable_c11_audit_extensions(cfg->enable_c11_audit_extensions);
-  ps_set_enable_size_compatible_nonscalar_cast(cfg->enable_size_compatible_nonscalar_cast);
-  ps_set_enable_struct_scalar_pointer_cast(cfg->enable_struct_scalar_pointer_cast);
-  ps_set_enable_union_scalar_pointer_cast(cfg->enable_union_scalar_pointer_cast);
-  ps_set_enable_union_array_member_nonbrace_init(cfg->enable_union_array_member_nonbrace_init);
+static void apply_config_values(
+    ag_compilation_session_t *session, const config_values_t *cfg) {
+  if (!ag_compilation_session_is_complete(session) || !cfg) return;
+  diag_context_set_locale(
+      ag_compilation_session_diagnostic_context(session), cfg->locale);
+  tokenizer_context_t *tokenizer =
+      ag_compilation_session_tokenizer(session);
+  tk_ctx_set_strict_c11_mode(tokenizer, cfg->strict_c11);
+  tk_ctx_set_enable_trigraphs(tokenizer, cfg->enable_trigraphs);
+  tk_ctx_set_enable_binary_literals(tokenizer, cfg->enable_binary_literals);
+  tk_ctx_set_enable_c11_audit_extensions(
+      tokenizer, cfg->enable_c11_audit_extensions);
+  ag_compilation_options_t *options =
+      ag_compilation_session_options(session);
+  options->enable_size_compatible_nonscalar_cast =
+      cfg->enable_size_compatible_nonscalar_cast;
+  options->enable_struct_scalar_pointer_cast =
+      cfg->enable_struct_scalar_pointer_cast;
+  options->enable_union_scalar_pointer_cast =
+      cfg->enable_union_scalar_pointer_cast;
+  options->enable_union_array_member_nonbrace_init =
+      cfg->enable_union_array_member_nonbrace_init;
 }
 
 static const char *config_string_error_label(const char *locale, config_toml_error_kind_t kind) {
@@ -112,14 +124,16 @@ static void format_config_toml_error(const config_toml_error_t *err, const char 
   }
 }
 
-void load_config_toml(const char *source_path) {
+void load_config_toml_in_session(
+    ag_compilation_session_t *session, const char *source_path) {
+  if (!ag_compilation_session_is_complete(session)) return;
   config_values_t cfg;
   config_values_init_defaults(&cfg);
-  apply_config_values(&cfg);
+  apply_config_values(session, &cfg);
 
   config_toml_error_t err = {0};
   if (config_toml_read(source_path, &cfg, &err)) {
-    apply_config_values(&cfg);
+    apply_config_values(session, &cfg);
     return;
   }
   char detail[512];
@@ -130,5 +144,5 @@ void load_config_toml(const char *source_path) {
   diag_report_internalf(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS,
                         "%s", diag_message_for(DIAG_ERR_INTERNAL_CONFIG_TOML_FALLBACK_DEFAULTS));
   config_values_init_defaults(&cfg);
-  apply_config_values(&cfg);
+  apply_config_values(session, &cfg);
 }

@@ -71,16 +71,18 @@ int psx_frontend_stream_begin(
       ag_compilation_session_local_registry(session);
   psx_parser_runtime_context_t *runtime_context =
       ag_compilation_session_parser_runtime_context(session);
+  const ag_compilation_options_t *options =
+      ag_compilation_session_options_view(session);
   ps_global_registry_reset_diag_state_in(global_registry);
   ps_ctx_reset_function_diag_state_in(semantic_context);
   ps_ctx_reset_tag_diag_state_in(semantic_context);
   ps_ctx_reset_function_names_in(semantic_context);
   psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
       &stream->toplevel_declarations, semantic_context,
-      global_registry, local_registry, runtime_context);
+      global_registry, local_registry, runtime_context, options);
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &stream->local_declarations, semantic_context,
-      global_registry, local_registry, runtime_context);
+      global_registry, local_registry, runtime_context, options);
   ps_parser_stream_begin_in_contexts(
       &stream->parser, semantic_context, global_registry, local_registry,
       runtime_context,
@@ -116,6 +118,7 @@ node_t *psx_frontend_next_function(psx_frontend_stream_t *stream) {
       psx_apply_toplevel_declaration_in_contexts(
           semantic_context, global_registry, local_registry,
           ag_compilation_session_parser_runtime_context(stream->session),
+          ag_compilation_session_options_view(stream->session),
           &item.value.declaration);
       ps_dispose_toplevel_declaration_syntax(
           &item.value.declaration);

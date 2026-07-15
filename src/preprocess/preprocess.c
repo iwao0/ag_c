@@ -1,6 +1,5 @@
 #include "preprocess.h"
 #include "../target_info.h"
-#include "../parser/config_runtime.h"
 #include "../diag/diag.h"
 #include "../tokenizer/allocator.h"
 #include <stdlib.h>

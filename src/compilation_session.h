@@ -1,6 +1,7 @@
 #ifndef AG_COMPILATION_SESSION_H
 #define AG_COMPILATION_SESSION_H
 
+#include "compilation_options.h"
 #include "continuation_options.h"
 #include "target_info.h"
 
@@ -42,6 +43,10 @@ ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(
 psx_parser_runtime_context_t *ag_compilation_session_parser_runtime_context(
     const ag_compilation_session_t *session);
 psx_lowering_context_t *ag_compilation_session_lowering_context(
+    const ag_compilation_session_t *session);
+ag_compilation_options_t *ag_compilation_session_options(
+    ag_compilation_session_t *session);
+const ag_compilation_options_t *ag_compilation_session_options_view(
     const ag_compilation_session_t *session);
 const ag_target_info_t *ag_compilation_session_target(
     const ag_compilation_session_t *session);

@@ -14,6 +14,10 @@ ag_diagnostic_context_t *diag_context_activate(
     ag_diagnostic_context_t *context);
 ag_diagnostic_context_t *diag_context_active(void);
 void diag_context_publish(const ag_diagnostic_context_t *context);
+void diag_context_set_locale(
+    ag_diagnostic_context_t *context, const char *locale);
+const char *diag_context_get_locale(
+    const ag_diagnostic_context_t *context);
 
 /**
  * @brief 診断メッセージのロケールを設定する。

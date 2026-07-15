@@ -4,7 +4,6 @@
 #include "config/config.h"
 #include "parser/parser.h"
 #include "frontend/translation_unit.h"
-#include "parser/config_runtime.h"
 #include "tokenizer/tokenizer.h"
 #include "tokenizer/allocator.h"
 #include "preprocess/preprocess.h"
@@ -530,7 +529,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  load_config_toml(input_path);
+  load_config_toml_in_session(session, input_path);
 
   tokenizer_context_t *tk_ctx = ag_compilation_session_tokenizer(session);
   tk_set_filename_ctx(tk_ctx, input_disp);

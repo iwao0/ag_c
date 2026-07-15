@@ -1,6 +1,5 @@
 #include "local_declaration_syntax.h"
 
-#include "config_runtime.h"
 #include "diag.h"
 #include "node_utils.h"
 #include "parser_recovery.h"
@@ -22,7 +21,8 @@ static void require_callbacks(
       !callbacks->begin_declaration || !callbacks->begin_declarator ||
       !callbacks->finish_declarator || !callbacks->finish_declaration ||
       !callbacks->semantic_context || !callbacks->global_registry ||
-      !callbacks->local_registry || !callbacks->runtime_context) {
+      !callbacks->local_registry || !callbacks->runtime_context ||
+      !callbacks->options) {
     ps_diag_ctx(curtok(), "local-declaration-syntax",
                 "local declaration application callbacks are required");
   }

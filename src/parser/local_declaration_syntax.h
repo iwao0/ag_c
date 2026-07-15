@@ -8,6 +8,7 @@
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
+typedef struct ag_compilation_options_t ag_compilation_options_t;
 
 typedef struct psx_local_declaration_callbacks_t {
   void *context;
@@ -15,6 +16,7 @@ typedef struct psx_local_declaration_callbacks_t {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
+  const ag_compilation_options_t *options;
   void (*apply_static_assert)(
       void *context, node_t *condition, token_t *diagnostic_token);
   void *(*begin_declaration)(

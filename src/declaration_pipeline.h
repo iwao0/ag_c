@@ -1,6 +1,7 @@
 #ifndef DECLARATION_PIPELINE_H
 #define DECLARATION_PIPELINE_H
 
+#include "compilation_options.h"
 #include "semantic/declaration_application.h"
 #include "parser/declaration_syntax.h"
 #include "parser/initializer_syntax.h"
@@ -15,6 +16,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  const ag_compilation_options_t *options;
   char *name;
   int name_len;
   const psx_type_t *type;
@@ -97,6 +99,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  const ag_compilation_options_t *options;
   char *function_name;
   int function_name_len;
   char *name;
@@ -154,6 +157,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  const ag_compilation_options_t *options;
   char *name;
   int name_len;
   const psx_type_t *type;

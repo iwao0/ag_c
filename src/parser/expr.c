@@ -10,7 +10,6 @@
 #include "node_utils.h"
 #include "semantic_ctx.h"
 #include "stmt.h"
-#include "config_runtime.h"
 #include "type.h"
 #include "type_builder.h"
 #include "declaration_syntax.h"

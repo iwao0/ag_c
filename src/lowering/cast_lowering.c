@@ -1,7 +1,6 @@
 #include "cast_lowering.h"
 #include "runtime_context.h"
 #include "../diag/diag.h"
-#include "../parser/config_runtime.h"
 #include "../parser/decl.h"
 #include "../parser/diag.h"
 #include "../parser/local_registry.h"
@@ -125,9 +124,10 @@ static char *new_aggregate_temp_name(void) {
 
 static node_t *lower_aggregate_cast(node_t *operand,
                                     cast_target_view_t view,
-                                    token_t *diag_tok) {
+                                    token_t *diag_tok,
+                                    const ag_compilation_options_t *options) {
   if (same_tag_value(operand, &view) ||
-      (ps_get_enable_size_compatible_nonscalar_cast() &&
+      (options->enable_size_compatible_nonscalar_cast &&
        size_compatible_tag_value(operand, &view))) {
     return ps_node_new_aggregate_cast_result(operand, view.target);
   }
@@ -141,13 +141,13 @@ static node_t *lower_aggregate_cast(node_t *operand,
   }
 
   if (view.tag_kind == TK_STRUCT &&
-      !ps_get_enable_struct_scalar_pointer_cast()) {
+      !options->enable_struct_scalar_pointer_cast) {
     ps_diag_ctx(diag_tok, "cast", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_CAST_STRUCT_SCALAR_POINTER_DISABLED));
   }
   if (view.tag_kind == TK_UNION &&
-      !ps_get_enable_union_scalar_pointer_cast()) {
+      !options->enable_union_scalar_pointer_cast) {
     ps_diag_ctx(diag_tok, "cast", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_CAST_UNION_SCALAR_POINTER_DISABLED));
@@ -205,9 +205,10 @@ static node_t *integer_result_ex(node_t *operand, cast_target_view_t view,
 }
 
 static node_t *lower_cast(node_t *operand, cast_target_view_t view,
-                          token_t *diag_tok) {
+                          token_t *diag_tok,
+                          const ag_compilation_options_t *options) {
   if (!view.is_pointer && ps_ctx_is_tag_aggregate_kind(view.tag_kind))
-    return lower_aggregate_cast(operand, view, diag_tok);
+    return lower_aggregate_cast(operand, view, diag_tok, options);
 
   if (operand && operand->kind == ND_NUM &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE &&
@@ -323,8 +324,10 @@ static node_t *lower_cast(node_t *operand, cast_target_view_t view,
 
 node_t *lower_implicit_value_conversion(node_t *operand,
                                         const psx_type_t *target_type,
-                                        token_t *fallback_diag_tok) {
-  if (!operand || !target_type || ps_type_is_tag_aggregate(target_type))
+                                        token_t *fallback_diag_tok,
+                                        const ag_compilation_options_t *options) {
+  if (!operand || !target_type || !options ||
+      ps_type_is_tag_aggregate(target_type))
     return operand;
   if (target_type->kind == PSX_TYPE_INTEGER &&
       target_type->scalar_kind == TK_EOF &&
@@ -365,17 +368,19 @@ node_t *lower_implicit_value_conversion(node_t *operand,
   }
   if (source_type && ps_type_shape_matches(source_type, target_type))
     return operand;
-  return lower_cast(operand, view, fallback_diag_tok);
+  return lower_cast(operand, view, fallback_diag_tok, options);
 }
 
 node_t *lower_source_cast_expression(node_t *node,
-                                     token_t *fallback_diag_tok) {
-  if (!node || node->kind != ND_CAST || !node->is_source_cast) return node;
+                                     token_t *fallback_diag_tok,
+                                     const ag_compilation_options_t *options) {
+  if (!node || node->kind != ND_CAST || !node->is_source_cast || !options)
+    return node;
   const psx_type_t *target = node->type;
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
       operand, target_view(target),
-      node->tok ? node->tok : fallback_diag_tok);
+      node->tok ? node->tok : fallback_diag_tok, options);
   if (!lowered) return node;
   token_t *source_tok = node->tok;
   if (lowered == operand && lowered->kind != ND_NUM) {

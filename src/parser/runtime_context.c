@@ -2,26 +2,11 @@
 
 #include <stdlib.h>
 
-static psx_parser_runtime_context_t default_parser_runtime_context = {
-    .enable_size_compatible_nonscalar_cast = true,
-    .enable_union_scalar_pointer_cast = true,
-    .enable_union_array_member_nonbrace_init = true,
-    .enable_struct_scalar_pointer_cast = true,
-};
+static psx_parser_runtime_context_t default_parser_runtime_context;
 static psx_parser_runtime_context_t *active_parser_runtime_context;
 
 psx_parser_runtime_context_t *ps_parser_runtime_context_create(void) {
-  psx_parser_runtime_context_t *ctx = calloc(1, sizeof(*ctx));
-  if (!ctx) return NULL;
-  ctx->enable_size_compatible_nonscalar_cast =
-      default_parser_runtime_context.enable_size_compatible_nonscalar_cast;
-  ctx->enable_union_scalar_pointer_cast =
-      default_parser_runtime_context.enable_union_scalar_pointer_cast;
-  ctx->enable_union_array_member_nonbrace_init =
-      default_parser_runtime_context.enable_union_array_member_nonbrace_init;
-  ctx->enable_struct_scalar_pointer_cast =
-      default_parser_runtime_context.enable_struct_scalar_pointer_cast;
-  return ctx;
+  return calloc(1, sizeof(psx_parser_runtime_context_t));
 }
 
 void ps_parser_runtime_context_destroy(psx_parser_runtime_context_t *ctx) {

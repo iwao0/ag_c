@@ -31,7 +31,7 @@ typedef struct {
 } agc_diag_record_t;
 
 struct ag_diagnostic_context_t {
-  const char *locale;
+  char locale[3];
   agc_diag_record_t initial_records[AGC_DIAG_DEFAULT_RECORD_LIMIT];
   agc_diag_record_t *records;
   int record_count;
@@ -222,7 +222,8 @@ void diag_reset_records(void) {
 ag_diagnostic_context_t *diag_context_create(void) {
   ag_diagnostic_context_t *context = calloc(1, sizeof(*context));
   if (!context) return NULL;
-  context->locale = published_diagnostic_context.locale;
+  memcpy(context->locale, published_diagnostic_context.locale,
+         sizeof(context->locale));
   context->records = context->initial_records;
   context->record_cap = AGC_DIAG_DEFAULT_RECORD_LIMIT;
   context->record_limit = published_diagnostic_context.record_limit;
@@ -275,7 +276,7 @@ void diag_context_publish(const ag_diagnostic_context_t *context) {
   if (!context || context == &published_diagnostic_context) return;
   ag_diagnostic_context_t *published = &published_diagnostic_context;
   diag_context_release_records(published);
-  published->locale = context->locale;
+  memcpy(published->locale, context->locale, sizeof(published->locale));
   published->record_limit = context->record_limit;
   published->byte_limit = context->byte_limit;
   published->limits_enforced = context->limits_enforced;
@@ -529,10 +530,21 @@ static int diag_locale_is_en(void) {
  * @brief 診断メッセージのロケールを設定する。
  * @param locale ロケール名（例: "ja", "en"）。
  */
-void diag_set_locale(const char *locale) {
+void diag_context_set_locale(
+    ag_diagnostic_context_t *context, const char *locale) {
+  if (!context) return;
   if (!locale || locale[0] == '\0') return;
   if (strcmp(locale, "ja") != 0 && strcmp(locale, "en") != 0) return;
-  g_diag_locale = locale;
+  memcpy(context->locale, locale, sizeof(context->locale));
+}
+
+const char *diag_context_get_locale(
+    const ag_diagnostic_context_t *context) {
+  return context && context->locale[0] ? context->locale : "ja";
+}
+
+void diag_set_locale(const char *locale) {
+  diag_context_set_locale(diag_current_context(), locale);
 }
 
 /**

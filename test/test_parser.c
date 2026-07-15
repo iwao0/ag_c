@@ -18,7 +18,6 @@
 #include "../src/parser/node_utils.h"
 #include "../src/parser/node_vla_public.h"
 #include "../src/parser/tag_public.h"
-#include "../src/parser/config_runtime.h"
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/runtime_context.h"
 #include "../src/parser/symtab.h"
@@ -85,6 +84,10 @@ static ag_compilation_session_t *test_suite_session;
 
 static psx_semantic_context_t *test_semantic_context(void) {
   return ag_compilation_session_semantic_context(test_suite_session);
+}
+
+static ag_compilation_options_t *test_compilation_options(void) {
+  return ag_compilation_session_options(test_suite_session);
 }
 
 static int test_tag_flat_slot_count(
@@ -348,6 +351,7 @@ static void apply_test_toplevel_declaration(
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
+      ag_compilation_session_options_view(test_suite_session),
       declaration);
 }
 
@@ -358,7 +362,8 @@ static void init_test_local_declaration_callbacks(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session));
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      ag_compilation_session_options_view(test_suite_session));
 }
 
 static void init_test_toplevel_declaration_callbacks(
@@ -368,7 +373,8 @@ static void init_test_toplevel_declaration_callbacks(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
-      ag_compilation_session_parser_runtime_context(test_suite_session));
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      ag_compilation_session_options_view(test_suite_session));
 }
 
 static const psx_type_t *resolve_test_decl_specifier_syntax(
@@ -3394,6 +3400,7 @@ static void test_declaration_pipeline_order_boundary() {
       .semantic_context = ps_ctx_active(),
       .global_registry = ps_global_registry_active(),
       .local_registry = ps_local_registry_active(),
+      .options = test_compilation_options(),
       .name = name,
       .name_len = name_len,
       .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -14593,35 +14600,35 @@ static void test_parse_invalid_diagnostics() {
   expect_parse_fail_without_message("int main() { struct S { int x; }; union U { int y; }; union U u={1}; return (struct S)u; }", "[cast] この型へのキャストは未対応です");
 
   // Parser拡張設定: 同種同サイズの非スカラcast受理を無効化できること。
-  ps_set_enable_size_compatible_nonscalar_cast(false);
+  test_compilation_options()->enable_size_compatible_nonscalar_cast = false;
   expect_parse_fail_with_message(
       "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }",
       "[cast] struct 値へのキャストは未対応です（型不整合）");
   expect_parse_fail_with_message(
       "struct S { int x; }; int main() { struct S outer={1}; { struct S { int y; }; return ((struct S)outer).y; } }",
       "[cast] struct 値へのキャストは未対応です（型不整合）");
-  ps_set_enable_size_compatible_nonscalar_cast(true);
+  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
 
   // Parser拡張設定: struct への scalar/pointer cast 受理を無効化できること。
-  ps_set_enable_struct_scalar_pointer_cast(false);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
   expect_parse_fail_with_message(
       "int main() { struct S { int x; }; int a=0; return (struct S)a; }",
       "[cast] struct への scalar/pointer cast は設定で無効です");
-  ps_set_enable_struct_scalar_pointer_cast(true);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
 
   // Parser拡張設定: union への scalar/pointer cast 受理を無効化できること。
-  ps_set_enable_union_scalar_pointer_cast(false);
+  test_compilation_options()->enable_union_scalar_pointer_cast = false;
   expect_parse_fail_with_message(
       "int main() { union U { int x; char y; }; int a=0; return (union U)a; }",
       "[cast] union への scalar/pointer cast は設定で無効です");
-  ps_set_enable_union_scalar_pointer_cast(true);
+  test_compilation_options()->enable_union_scalar_pointer_cast = true;
 
   // Parser拡張設定: union 先頭配列メンバの非波括弧初期化受理を無効化できること。
-  ps_set_enable_union_array_member_nonbrace_init(false);
+  test_compilation_options()->enable_union_array_member_nonbrace_init = false;
   expect_parse_fail_with_message(
       "int main() { union U { int a[2]; int z; }; union U u={1,2}; return 0; }",
       "[decl] 共用体の配列メンバ非波括弧初期化は設定で無効です");
-  ps_set_enable_union_array_member_nonbrace_init(true);
+  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
 
   // 入れ子 designator: 非配列メンバに .member[idx]=val は診断エラー
   expect_parse_fail_with_message("int main() { struct S { int x; }; struct S s={.x[0]=3}; return 0; }",
@@ -14947,10 +14954,10 @@ static void test_parser_config_matrix() {
       "int main() { struct A { int x; }; struct B { int x; }; struct A a={7}; return ((struct B)a).x; }";
 
   // baseline: all extensions enabled
-  ps_set_enable_struct_scalar_pointer_cast(true);
-  ps_set_enable_union_scalar_pointer_cast(true);
-  ps_set_enable_union_array_member_nonbrace_init(true);
-  ps_set_enable_size_compatible_nonscalar_cast(true);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options()->enable_union_scalar_pointer_cast = true;
+  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
+  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
   expect_parse_ok(struct_scalar_cast);
   expect_parse_ok(struct_pointer_cast);
   expect_parse_ok(union_scalar_cast);
@@ -14959,10 +14966,10 @@ static void test_parser_config_matrix() {
   expect_parse_ok(same_size_nonscalar_cast);
 
   // all extensions disabled: all extension snippets should fail
-  ps_set_enable_struct_scalar_pointer_cast(false);
-  ps_set_enable_union_scalar_pointer_cast(false);
-  ps_set_enable_union_array_member_nonbrace_init(false);
-  ps_set_enable_size_compatible_nonscalar_cast(false);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = false;
+  test_compilation_options()->enable_union_scalar_pointer_cast = false;
+  test_compilation_options()->enable_union_array_member_nonbrace_init = false;
+  test_compilation_options()->enable_size_compatible_nonscalar_cast = false;
   expect_parse_fail(struct_scalar_cast);
   expect_parse_fail(struct_pointer_cast);
   expect_parse_fail(union_scalar_cast);
@@ -14971,10 +14978,10 @@ static void test_parser_config_matrix() {
   expect_parse_fail(same_size_nonscalar_cast);
 
   // restore defaults for subsequent tests
-  ps_set_enable_struct_scalar_pointer_cast(true);
-  ps_set_enable_union_scalar_pointer_cast(true);
-  ps_set_enable_union_array_member_nonbrace_init(true);
-  ps_set_enable_size_compatible_nonscalar_cast(true);
+  test_compilation_options()->enable_struct_scalar_pointer_cast = true;
+  test_compilation_options()->enable_union_scalar_pointer_cast = true;
+  test_compilation_options()->enable_union_array_member_nonbrace_init = true;
+  test_compilation_options()->enable_size_compatible_nonscalar_cast = true;
 }
 
 static char *build_nested_paren_program(int depth) {
@@ -15725,7 +15732,8 @@ static void test_semantic_context_isolation() {
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declarations, second, ps_global_registry_active(),
-      ps_local_registry_active(), ps_parser_runtime_context_active());
+      ps_local_registry_active(), ps_parser_runtime_context_active(),
+      test_compilation_options());
   ASSERT_TRUE(ps_parse_function_definition_body(
                   &parser_stream, &parsed_function,
                   &local_declarations) != NULL);
@@ -16021,6 +16029,7 @@ static void test_compilation_session_registry_isolation() {
           .semantic_context = first.semantic_context,
           .global_registry = first.global_registry,
           .local_registry = first.local_registry,
+          .options = ag_compilation_session_options_view(&first),
           .name = (char *)"pipeline_first",
           .name_len = 14,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -16223,6 +16232,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.parser_runtime_context);
   ASSERT_TRUE(ag_compilation_session_lowering_context(&host) ==
               host.lowering_context);
+  ASSERT_TRUE(ag_compilation_session_options(&host) == &host.options);
+  ASSERT_TRUE(ag_compilation_session_options(&wasm) == &wasm.options);
+  ASSERT_TRUE(ag_compilation_session_options(&host) !=
+              ag_compilation_session_options(&wasm));
+  ASSERT_TRUE(ag_compilation_session_options_view(&host)
+                  ->enable_size_compatible_nonscalar_cast);
+  ASSERT_TRUE(ag_compilation_session_options_view(&wasm)
+                  ->enable_union_array_member_nonbrace_init);
   ASSERT_TRUE(ag_compilation_session_semantic_context(&wasm) ==
               wasm.semantic_context);
   ASSERT_TRUE(ag_compilation_session_global_registry(&wasm) ==
@@ -16304,12 +16321,13 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
   ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
   pragma_pack_set_in(host.parser_runtime_context, 4);
-  ps_set_enable_union_scalar_pointer_cast(false);
+  ag_compilation_session_options(&host)
+      ->enable_union_scalar_pointer_cast = false;
   ASSERT_EQ(4, host.parser_runtime_context->pragma_pack_current);
-  ASSERT_TRUE(!host.parser_runtime_context
+  ASSERT_TRUE(!ag_compilation_session_options_view(&host)
                    ->enable_union_scalar_pointer_cast);
   ASSERT_EQ(0, wasm.parser_runtime_context->pragma_pack_current);
-  ASSERT_TRUE(wasm.parser_runtime_context
+  ASSERT_TRUE(ag_compilation_session_options_view(&wasm)
                   ->enable_union_scalar_pointer_cast);
   tk_set_tolerate_untokenizable(true);
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
@@ -16342,7 +16360,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(0, pragma_pack_current_alignment_in(
                    wasm.parser_runtime_context));
-  ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
+  ASSERT_TRUE(ag_compilation_session_options_view(&wasm)
+                  ->enable_union_scalar_pointer_cast);
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
@@ -16393,7 +16412,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
   ASSERT_EQ(4, pragma_pack_current_alignment_in(
                    host.parser_runtime_context));
-  ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
+  ASSERT_TRUE(!ag_compilation_session_options_view(&host)
+                   ->enable_union_scalar_pointer_cast);
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));

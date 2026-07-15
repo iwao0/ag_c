@@ -49,6 +49,7 @@ int ag_compilation_session_init(
     ag_compilation_session_t *session, const ag_target_info_t *target) {
   if (!session) return 0;
   memset(session, 0, sizeof(*session));
+  ag_compilation_options_init_defaults(&session->options);
   tk_context_init(&session->tokenizer);
   session->target = target ? *target : ag_target_info_host();
   session->target.pointer_size =
@@ -252,6 +253,20 @@ psx_lowering_context_t *ag_compilation_session_lowering_context(
     const ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? session->lowering_context
+             : NULL;
+}
+
+ag_compilation_options_t *ag_compilation_session_options(
+    ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? &session->options
+             : NULL;
+}
+
+const ag_compilation_options_t *ag_compilation_session_options_view(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? &session->options
              : NULL;
 }
 

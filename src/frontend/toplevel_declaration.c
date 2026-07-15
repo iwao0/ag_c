@@ -21,6 +21,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  const ag_compilation_options_t *options;
   psx_parsed_toplevel_declaration_t *declaration;
   const psx_type_t *base_type;
   psx_toplevel_apply_kind_t current_kind;
@@ -54,7 +55,8 @@ static void *begin_declaration(
     void *context, psx_parsed_toplevel_declaration_t *declaration) {
   const psx_toplevel_declaration_callbacks_t *callbacks = context;
   if (!callbacks || !callbacks->semantic_context ||
-      !callbacks->global_registry || !callbacks->local_registry) {
+      !callbacks->global_registry || !callbacks->local_registry ||
+      !callbacks->runtime_context || !callbacks->options) {
     ps_diag_ctx(declaration ? declaration->diagnostic_token : NULL,
                 "decl", "complete top-level declaration context is required");
   }
@@ -67,6 +69,7 @@ static void *begin_declaration(
   application->semantic_context = callbacks->semantic_context;
   application->global_registry = callbacks->global_registry;
   application->local_registry = callbacks->local_registry;
+  application->options = callbacks->options;
   application->declaration = declaration;
   if (declaration->is_standalone_tag) {
     psx_apply_parsed_standalone_tag_in_contexts(
@@ -137,6 +140,7 @@ static void begin_declarator(
           .semantic_context = application->semantic_context,
           .global_registry = application->global_registry,
           .local_registry = application->local_registry,
+          .options = application->options,
           .name = name->str,
           .name_len = name->len,
           .type = application->current_type,
@@ -184,11 +188,12 @@ void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
-    psx_parser_runtime_context_t *runtime_context) {
+    psx_parser_runtime_context_t *runtime_context,
+    const ag_compilation_options_t *options) {
   if (!callbacks) return;
   *callbacks = (psx_toplevel_declaration_callbacks_t){0};
   if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context)
+      !runtime_context || !options)
     return;
   *callbacks = (psx_toplevel_declaration_callbacks_t){
       .context = callbacks,
@@ -196,6 +201,7 @@ void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .runtime_context = runtime_context,
+      .options = options,
       .begin_declaration = begin_declaration,
       .begin_declarator = begin_declarator,
       .finish_declarator = finish_declarator,
@@ -209,14 +215,15 @@ void psx_apply_toplevel_declaration_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
+    const ag_compilation_options_t *options,
     psx_parsed_toplevel_declaration_t *declaration) {
   if (!semantic_context || !global_registry || !local_registry ||
-      !runtime_context ||
+      !runtime_context || !options ||
       !declaration || declaration->applied_during_parse) return;
   psx_toplevel_declaration_callbacks_t callbacks;
   psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
       &callbacks, semantic_context, global_registry, local_registry,
-      runtime_context);
+      runtime_context, options);
   void *application = callbacks.begin_declaration(
       callbacks.context, declaration);
   for (int i = 0; i < declaration->declarator_count; i++) {
