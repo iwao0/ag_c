@@ -133,6 +133,29 @@ void ps_type_clear_cached_layout(psx_type_t *type) {
   }
 }
 
+static int type_layout_contains_record_object(const psx_type_t *type) {
+  if (!type) return 0;
+  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION)
+    return 1;
+  return type->kind == PSX_TYPE_ARRAY &&
+         type_layout_contains_record_object(type->base);
+}
+
+void ps_type_clear_record_layout_cache(psx_type_t *type) {
+  if (!type) return;
+  ps_type_clear_record_layout_cache(psx_type_owned_base_mut(type));
+  if (type->kind == PSX_TYPE_FUNCTION) {
+    for (int i = 0; i < type->param_count; ++i)
+      ps_type_clear_record_layout_cache(psx_type_owned_param_mut(type, i));
+  }
+  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION ||
+      (type->kind == PSX_TYPE_ARRAY &&
+       type_layout_contains_record_object(type->base))) {
+    type->size = 0;
+    type->align = 0;
+  }
+}
+
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_kind,
     int size, int is_unsigned) {
@@ -755,8 +778,12 @@ int ps_type_sizeof(const psx_type_t *type) {
 
 int ps_type_deref_size(const psx_type_t *type) {
   if (!type) return 0;
-  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY)
+  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) {
+    if (type->base && type->base->kind == PSX_TYPE_ARRAY &&
+        ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base)))
+      return 0;
     return ps_type_sizeof(type->base);
+  }
   return 0;
 }
 
@@ -1369,6 +1396,8 @@ int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
       type->base->kind != PSX_TYPE_ARRAY) {
     return 0;
   }
+  if (ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base)))
+    return 0;
   int bytes = ps_type_sizeof(type->base);
   if (bytes <= 0) bytes = ps_type_deref_size(type);
   return bytes > 0 ? bytes : 0;

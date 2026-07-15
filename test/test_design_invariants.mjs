@@ -3186,6 +3186,7 @@ if (!canonicalTypeStruct ||
     !recordDeclStruct ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||
     !/\bunsigned\s+char\s+is_complete\s*;/.test(recordDeclStruct[1]) ||
+    /\b(?:size|align)\s*;/.test(recordDeclStruct[1]) ||
     !/\bconst\s+struct\s+tag_member_info_t\s*\*\s*members\s*;/.test(
       recordDeclStruct[1],
     )) {
@@ -3209,6 +3210,9 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
     !/\blayout_of_id\s*\(/.test(typeIdLayoutFunction[0]) ||
     /\bps_type_layout_of\s*\(/.test(typeIdLayoutFunction[0]) ||
     /out->is_complete\s*=\s*type->aggregate_definition->align/.test(
+      typeLayoutSource,
+    ) ||
+    /aggregate_definition\s*->\s*(?:size|align)/.test(
       typeLayoutSource,
     )) {
   throw new Error(
@@ -3372,6 +3376,9 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
     !/\bag_target_info_equal\s*\(/.test(recordLayoutImplementationSource) ||
     !/\bps_type_clear_cached_layout\s*\(\s*canonical\s*\)/.test(
       typeIdentityImplementationSource,
+    ) ||
+    !/\bps_type_clear_record_layout_cache\s*\(/.test(
+      await readFile("src/semantic/declaration_resolution.c", "utf8"),
     )) {
   throw new Error(
     "scalar size and alignment must be selected by TargetSpec instead of semantic type caches",

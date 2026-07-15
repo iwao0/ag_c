@@ -56,8 +56,6 @@ typedef struct psx_record_decl_t {
   char *tag_name;
   int tag_len;
   unsigned char is_complete;
-  int size;
-  int align;
   int member_count;
   const struct tag_member_info_t *members;
 } psx_record_decl_t;

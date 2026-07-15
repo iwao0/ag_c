@@ -1412,10 +1412,19 @@ static int gvar_init_cursor_consume_plain_zero_padding(gvar_init_cursor_t *cur,
   return consumed;
 }
 
+static int tag_member_decl_storage_size_in(
+    psx_semantic_context_t *semantic_context,
+    const tag_member_info_t *member) {
+  return ps_ctx_type_sizeof_in(
+      semantic_context, ps_tag_member_decl_type(member));
+}
+
 static int gvar_definition_flat_slot_count(
+    psx_semantic_context_t *semantic_context,
     const psx_aggregate_definition_t *definition);
 
 static int gvar_definition_find_unnamed_union_covering_offset(
+    psx_semantic_context_t *semantic_context,
     const psx_aggregate_definition_t *definition,
     int base_offset, int target_offset,
     int *out_offset, int *out_size) {
@@ -1424,7 +1433,7 @@ static int gvar_definition_find_unnamed_union_covering_offset(
     const tag_member_info_t *member = &definition->members[i];
     if (!ps_tag_member_is_unnamed_aggregate(member)) continue;
     int start = base_offset + member->offset;
-    int size = ps_tag_member_decl_storage_size(member);
+    int size = tag_member_decl_storage_size_in(semantic_context, member);
     if (target_offset < start || target_offset >= start + size) continue;
     if (ps_tag_member_is_unnamed_union(member)) {
       if (out_offset) *out_offset = start;
@@ -1434,7 +1443,8 @@ static int gvar_definition_find_unnamed_union_covering_offset(
     const psx_aggregate_definition_t *child =
         gvar_member_aggregate_definition(member);
     if (gvar_definition_find_unnamed_union_covering_offset(
-            child, start, target_offset, out_offset, out_size)) {
+            semantic_context, child, start, target_offset,
+            out_offset, out_size)) {
       return 1;
     }
   }
@@ -1442,38 +1452,43 @@ static int gvar_definition_find_unnamed_union_covering_offset(
 }
 
 static void gvar_definition_flat_cover_state_note(
+    psx_semantic_context_t *semantic_context,
     const psx_aggregate_definition_t *definition,
     psx_tag_flat_cover_state_t *state,
     const tag_member_info_t *member) {
   if (!definition || !state || !member) return;
   if (ps_tag_member_is_unnamed_union(member)) {
     state->covered_union_off = member->offset;
-    state->covered_union_size = ps_tag_member_decl_storage_size(member);
+    state->covered_union_size =
+        tag_member_decl_storage_size_in(semantic_context, member);
     return;
   }
   int cover_offset = 0;
   int cover_size = 0;
   if (gvar_definition_find_unnamed_union_covering_offset(
-          definition, 0, member->offset, &cover_offset, &cover_size)) {
+          semantic_context, definition, 0, member->offset,
+          &cover_offset, &cover_size)) {
     state->covered_union_off = cover_offset;
     state->covered_union_size = cover_size;
   }
 }
 
 static int gvar_member_flat_slot_count(
+    psx_semantic_context_t *semantic_context,
     const tag_member_info_t *member) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
   int per = 1;
   const psx_aggregate_definition_t *definition =
       gvar_member_aggregate_definition(member);
   if (definition)
-    per = gvar_definition_flat_slot_count(definition);
+    per = gvar_definition_flat_slot_count(semantic_context, definition);
   int count =
       ps_type_array_flat_element_count(ps_tag_member_decl_type(member));
   return count > 0 ? count * per : per;
 }
 
 static int gvar_definition_flat_slot_count(
+    psx_semantic_context_t *semantic_context,
     const psx_aggregate_definition_t *definition) {
   if (!definition || definition->member_count <= 0) return 1;
   int slots = 0;
@@ -1482,9 +1497,11 @@ static int gvar_definition_flat_slot_count(
   ps_tag_flat_cover_state_init(&cover_state);
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
-    int member_slots = gvar_member_flat_slot_count(member);
+    int member_slots =
+        gvar_member_flat_slot_count(semantic_context, member);
     if (definition->tag_kind == TK_UNION) {
-      int bytes = ps_tag_member_decl_storage_size(member);
+      int bytes = tag_member_decl_storage_size_in(
+          semantic_context, member);
       if (bytes > union_max_bytes ||
           (bytes == union_max_bytes && member_slots > slots)) {
         union_max_bytes = bytes;
@@ -1497,7 +1514,7 @@ static int gvar_definition_flat_slot_count(
       continue;
     slots += member_slots;
     gvar_definition_flat_cover_state_note(
-        definition, &cover_state, member);
+        semantic_context, definition, &cover_state, member);
   }
   return slots > 0 ? slots : 1;
 }
@@ -1510,7 +1527,7 @@ static int gvar_init_cursor_consume_tag_zero_padding(
   return gvar_init_cursor_consume_plain_zero_padding(
       cur, start_idx,
       definition
-          ? gvar_definition_flat_slot_count(definition)
+          ? gvar_definition_flat_slot_count(semantic_context, definition)
           : ps_tag_flat_slot_count_in(
                 semantic_context, tag_kind, tag_name, tag_len));
 }
@@ -1770,7 +1787,8 @@ void ps_tag_flat_cover_state_note_in(
   if (!state || !mi) return;
   if (ps_tag_member_is_unnamed_union(mi)) {
     state->covered_union_off = mi->offset;
-    state->covered_union_size = ps_tag_member_decl_storage_size(mi);
+    state->covered_union_size =
+        tag_member_decl_storage_size_in(semantic_context, mi);
     return;
   }
   int cover_off = 0;
@@ -1796,7 +1814,8 @@ int ps_tag_find_unnamed_union_covering_offset_in(
       break;
     if (!ps_tag_member_is_unnamed_aggregate(&mi)) continue;
     int start = base_off + mi.offset;
-    int member_storage_size = ps_tag_member_decl_storage_size(&mi);
+    int member_storage_size =
+        tag_member_decl_storage_size_in(semantic_context, &mi);
     int end = start + member_storage_size;
     if (target_off < start || target_off >= end) continue;
     if (ps_tag_member_is_union_aggregate(&mi)) {
@@ -1873,7 +1892,8 @@ int ps_tag_flat_slot_count_in(
       break;
     if (tag_kind == TK_UNION) {
       int ms = ps_tag_member_flat_slots_in(semantic_context, &mi);
-      int bytes = ps_tag_member_decl_storage_size(&mi);
+      int bytes = tag_member_decl_storage_size_in(
+          semantic_context, &mi);
       if (bytes > union_max_bytes || (bytes == union_max_bytes && ms > slots)) {
         union_max_bytes = bytes;
         slots = ms;
@@ -2101,7 +2121,8 @@ int ps_tag_member_designator_slot_in(
     if (ps_tag_member_is_unnamed_union(&mi)) {
       covered_union_slot = slot;
       covered_union_off = mi.offset;
-      covered_union_size = ps_tag_member_decl_storage_size(&mi);
+      covered_union_size =
+          tag_member_decl_storage_size_in(semantic_context, &mi);
       slot += ps_tag_member_flat_slots_in(semantic_context, &mi);
       continue;
     }

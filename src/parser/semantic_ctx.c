@@ -113,8 +113,6 @@ static void refresh_cached_tag_definition(
   definition->tag_name = tag->name;
   definition->tag_len = tag->len;
   definition->is_complete = tag->is_complete ? 1 : 0;
-  definition->size = tag->size;
-  definition->align = tag->align;
   definition->member_count = member_count;
   definition->members = tag->definition_members;
 }

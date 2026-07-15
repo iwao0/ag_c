@@ -74,17 +74,8 @@ static int layout_non_array(
       return layout_scalar(type, target, out);
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      if (type->aggregate_definition) {
-        out->size = type->aggregate_definition->size;
-        out->alignment = type->aggregate_definition->align > 0
-                             ? type->aggregate_definition->align
-                             : 1;
-        out->is_complete = type->aggregate_definition->is_complete;
-        return 1;
-      }
-      out->size = type->size;
-      out->alignment = type->align > 0 ? type->align : 1;
-      out->is_complete = type->size > 0;
+      out->is_complete = type->aggregate_definition &&
+                         type->aggregate_definition->is_complete;
       return 1;
     default:
       out->size = type->size;
