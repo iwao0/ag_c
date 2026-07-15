@@ -1784,9 +1784,8 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_EQ(1, resolution.member_index);
   ASSERT_EQ(member_record->record_id, resolution.record_id);
-  ASSERT_EQ(0, resolution.member.offset);
-  ASSERT_EQ(0, resolution.member.bit_offset);
-  ASSERT_EQ(4, test_tag_member_decl_value_size(&resolution.member));
+  ASSERT_EQ(4, ps_type_sizeof(
+                   psx_record_member_decl_type(&resolution.declaration)));
   ASSERT_TRUE(resolution.base_object_type == ps_node_get_type(base));
   ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
 
@@ -17804,7 +17803,9 @@ static void test_semantic_context_isolation() {
       },
       &detached_resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, detached_resolution.status);
-  ASSERT_EQ(4, ps_type_sizeof(detached_resolution.member.decl_type));
+  ASSERT_EQ(4, ps_type_sizeof(
+                   psx_record_member_decl_type(
+                       &detached_resolution.declaration)));
 
   node_member_access_t detached_access = {
       .base = {

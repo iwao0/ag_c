@@ -1891,6 +1891,14 @@ const memberAccessResolutionSource = await readFile(
   "src/semantic/member_access_resolution.c",
   "utf8",
 );
+const memberAccessResolutionHeader = await readFile(
+  "src/semantic/member_access_resolution.h",
+  "utf8",
+);
+const memberAccessAstHeader = await readFile(
+  "src/parser/ast.h",
+  "utf8",
+);
 const memberAccessTargetLoweringSource = await readFile(
   "src/lowering/member_access_lowering.c",
   "utf8",
@@ -1927,13 +1935,19 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
     !/resolution->record_id\s*=/.test(memberAccessResolutionSource) ||
-    !/declaration\.offset\s*=\s*0\s*;/.test(
-      memberAccessResolutionSource,
+    !/\bpsx_record_member_decl_t\s+declaration\s*;/.test(
+      memberAccessResolutionHeader,
     ) ||
-    !/declaration\.bit_offset\s*=\s*0\s*;/.test(
-      memberAccessResolutionSource,
+    /\btag_member_info_t\s+member\s*;/.test(
+      memberAccessResolutionHeader,
     ) ||
-    /resolution->member\.(?:offset|bit_offset)\s*=/.test(
+    !/\bpsx_record_member_decl_t\s*\*\s*resolved_member\s*;/.test(
+      memberAccessAstHeader,
+    ) ||
+    /\btag_member_info_t\s*\*\s*resolved_member\s*;/.test(
+      memberAccessAstHeader,
+    ) ||
+    /resolution->declaration\.(?:offset|bit_offset)\b/.test(
       memberAccessResolutionSource,
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
@@ -1943,6 +1957,9 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessTargetLoweringSource,
     ) ||
     /member->(?:offset|bit_offset|bit_width)\s*=/.test(
+      memberAccessTargetLoweringSource,
+    ) ||
+    /\btag_member_info_t\b/.test(
       memberAccessTargetLoweringSource,
     ) ||
     !/\bps_node_new_tag_member_deref_with_layout_for_in\s*\(/.test(

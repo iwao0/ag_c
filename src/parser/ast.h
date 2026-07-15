@@ -9,7 +9,6 @@
 struct lvar_t;
 struct psx_lvar_usage_region_t;
 struct psx_parsed_type_name_t;
-struct tag_member_info_t;
 /* シンボルテーブル (global_var_t / string_lit_t / float_lit_t) は symtab.h
  * へ分離済み (Phase C1)。ast.h は AST node 定義のみを担う。
  * symtab 型を使うファイルは symtab.h を個別に include すること。 */
@@ -198,7 +197,7 @@ typedef struct {
   node_t base;
   char *member_name;
   int member_name_len;
-  struct tag_member_info_t *resolved_member;
+  psx_record_member_decl_t *resolved_member;
   psx_record_id_t resolved_record_id;
   int resolved_member_index;
   unsigned char from_pointer;

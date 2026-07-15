@@ -39,14 +39,6 @@ static const psx_record_member_decl_t *aggregate_member_named(
   return NULL;
 }
 
-static tag_member_info_t member_declaration_view(
-    const tag_member_info_t *member) {
-  tag_member_info_t declaration = member ? *member : (tag_member_info_t){0};
-  declaration.offset = 0;
-  declaration.bit_offset = 0;
-  return declaration;
-}
-
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution) {
@@ -87,7 +79,7 @@ void psx_resolve_member_access(
   if (member) {
     resolution->member_index = aggregate_member_index(
         record, request->member_name, request->member_name_len);
-    resolution->member = ps_tag_member_declaration_view(member);
+    resolution->declaration = *member;
     resolution->status = PSX_MEMBER_ACCESS_OK;
     return;
   }
@@ -95,24 +87,31 @@ void psx_resolve_member_access(
   int base_scope = object_type->tag_scope_depth_p1 > 0
                        ? object_type->tag_scope_depth_p1 - 1
                        : -1;
+  tag_member_info_t parser_member = {0};
   int found = base_scope >= 0
       ? ps_ctx_find_tag_member_info_at_scope_in(
             semantic_context,
             ps_type_tag_token_kind(object_type), object_type->tag_name,
             object_type->tag_len, base_scope,
             request->member_name, request->member_name_len,
-            &resolution->member)
+            &parser_member)
       : ps_ctx_find_tag_member_info_in(
             semantic_context,
             ps_type_tag_token_kind(object_type), object_type->tag_name,
             object_type->tag_len,
             request->member_name, request->member_name_len,
-            &resolution->member);
+            &parser_member);
   resolution->status = found ? PSX_MEMBER_ACCESS_OK
                              : PSX_MEMBER_ACCESS_NOT_FOUND;
   if (found) {
     resolution->member_index = aggregate_member_index(
         record, request->member_name, request->member_name_len);
-    resolution->member = member_declaration_view(&resolution->member);
+    resolution->declaration = (psx_record_member_decl_t){
+        .name = parser_member.name,
+        .len = parser_member.len,
+        .bit_width = parser_member.bit_width,
+        .bit_is_signed = parser_member.bit_is_signed,
+        .decl_type = ps_tag_member_decl_type(&parser_member),
+    };
   }
 }

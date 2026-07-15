@@ -297,12 +297,12 @@ static void semantic_resolve_member_access(
 
   access->resolved_member = arena_alloc_in(
       ps_ctx_arena(semantic_context), sizeof(*access->resolved_member));
-  *access->resolved_member = resolution.member;
+  *access->resolved_member = resolution.declaration;
   access->resolved_record_id = resolution.record_id;
   access->resolved_member_index = resolution.member_index;
 
   const psx_type_t *decl_type =
-      ps_tag_member_decl_type(access->resolved_member);
+      psx_record_member_decl_type(access->resolved_member);
   const psx_type_t *object_type = resolution.base_object_type;
   psx_type_t *access_type = decl_type
                                 ? ps_type_clone_in(

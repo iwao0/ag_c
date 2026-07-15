@@ -23,7 +23,7 @@ typedef struct {
   const psx_type_t *base_object_type;
   psx_record_id_t record_id;
   int member_index;
-  tag_member_info_t member;
+  psx_record_member_decl_t declaration;
 } psx_member_access_resolution_t;
 
 void psx_resolve_member_access(

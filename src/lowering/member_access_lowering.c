@@ -126,7 +126,7 @@ node_t *lower_member_access_expression_in(
   if (!lowering_context || !local_registry || !access ||
       !access->base.lhs || !access->resolved_member)
     return (node_t *)access;
-  const tag_member_info_t *member = access->resolved_member;
+  const psx_record_member_decl_t *member = access->resolved_member;
   const psx_record_member_layout_t *member_layout =
       resolve_target_member_layout(lowering_context, access);
   if (!member_layout) {
@@ -166,7 +166,7 @@ node_t *lower_member_access_expression_in(
   node_t *result = ps_node_new_tag_member_deref_with_layout_for_in(
       ps_lowering_arena(lowering_context),
       ps_lowering_target(lowering_context), address, base,
-      member_layout->offset, ps_tag_member_decl_type(member),
+      member_layout->offset, psx_record_member_decl_type(member),
       member->bit_is_signed, member_layout->bit_width,
       member_layout->bit_offset);
   if (result) result->tok = access->base.tok;
