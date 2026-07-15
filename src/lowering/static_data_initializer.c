@@ -278,6 +278,7 @@ static void lower_array_list(
         ? psx_resolve_initializer_designator_path_with_records(
               diagnostics(lowering),
               ps_lowering_semantic_types(lowering->lowering_context),
+              ps_lowering_record_decls(lowering->lowering_context),
               ps_lowering_record_layouts(lowering->lowering_context),
               ps_lowering_target(lowering->lowering_context), entry,
               ps_lowering_type_id(
@@ -370,6 +371,7 @@ int lower_static_object_initializer(
   };
   if (!psx_collect_initializer_scalar_leaves_with_records(
           ps_lowering_semantic_types(lowering_context),
+          ps_lowering_record_decls(lowering_context),
           ps_lowering_record_layouts(lowering_context),
           ps_lowering_target(lowering_context),
           ps_gvar_decl_type_id(global), 0,

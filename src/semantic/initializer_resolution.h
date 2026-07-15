@@ -4,6 +4,7 @@
 #include "../parser/ast.h"
 #include "../parser/tag_member_public.h"
 #include "type_identity.h"
+#include "record_decl_table.h"
 #include "record_layout.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
@@ -39,12 +40,14 @@ typedef struct {
 psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
     ag_diagnostic_context_t *diagnostics,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     const psx_initializer_entry_t *entry, psx_type_id_t root_type_id,
     int root_relative_offset, token_t *fallback_tok);
 int psx_collect_initializer_scalar_leaves_with_records(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t type_id,
     int relative_offset, psx_initializer_scalar_leaf_list_t *list);

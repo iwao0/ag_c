@@ -18,6 +18,7 @@ typedef struct {
   ir_data_module_t *module;
   psx_semantic_context_t *semantic_context;
   const psx_semantic_type_table_t *semantic_types;
+  const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
   int failed;
@@ -297,7 +298,7 @@ static int lower_global_slots(
   psx_type_id_t type_id = ps_gvar_decl_type_id(ctx->global);
   if (!psx_collect_initializer_scalar_leaves_with_records(
           ctx->lowering->semantic_types,
-          ps_ctx_record_layout_table_in(ctx->lowering->semantic_context),
+          ctx->lowering->record_decls, ctx->lowering->record_layouts,
           ctx->lowering->target,
           type_id, 0, &leaves)) {
     return 0;
@@ -397,6 +398,7 @@ static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
       .module = module,
       .semantic_context = semantic_context,
       .semantic_types = semantic_types,
+      .record_decls = ps_ctx_record_decl_table_in(semantic_context),
       .record_layouts = ps_ctx_record_layout_table_in(semantic_context),
       .target = target,
   };

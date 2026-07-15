@@ -713,8 +713,8 @@ static node_t *append_typed_object_zero_fill(
   (void)type;
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
-          context->semantic_types, context->record_layouts, context->target,
-          type_id, 0, &leaves)) {
+          context->semantic_types, context->record_decls,
+          context->record_layouts, context->target, type_id, 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(context, var, chain);
   }
@@ -745,8 +745,9 @@ static node_t *lower_flat_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
-          context->semantic_types, context->record_layouts, context->target,
-          type_id, relative_offset, &leaves)) {
+          context->semantic_types, context->record_decls,
+          context->record_layouts, context->target, type_id,
+          relative_offset, &leaves)) {
     free(leaves.items);
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
                  diag_message_for_in(diagnostics(context),
@@ -861,8 +862,9 @@ static node_t *lower_mixed_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
-          context->semantic_types, context->record_layouts, context->target,
-          type_id, relative_offset, &leaves)) {
+          context->semantic_types, context->record_decls,
+          context->record_layouts, context->target, type_id,
+          relative_offset, &leaves)) {
     free(leaves.items);
     return chain;
   }
@@ -873,8 +875,9 @@ static node_t *lower_mixed_typed_object_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
               diagnostics(context), context->semantic_types,
-              context->record_layouts, context->target, entry, type_id,
-              relative_offset, fallback_tok);
+              context->record_decls, context->record_layouts,
+              context->target, entry, type_id, relative_offset,
+              fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.type_id,
           target.relative_offset, entry->value,
@@ -955,8 +958,9 @@ static node_t *try_lower_typed_array_copy(
 
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves_with_records(
-          context->semantic_types, context->record_layouts, context->target,
-          type_id, relative_offset, &leaves)) {
+          context->semantic_types, context->record_decls,
+          context->record_layouts, context->target, type_id,
+          relative_offset, &leaves)) {
     free(leaves.items);
     return NULL;
   }
@@ -1065,8 +1069,9 @@ static node_t *lower_typed_array_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
               diagnostics(context), context->semantic_types,
-              context->record_layouts, context->target, entry, type_id,
-              relative_offset, fallback_tok);
+              context->record_decls, context->record_layouts,
+              context->target, entry, type_id, relative_offset,
+              fallback_tok);
       target_type = target.type;
       target_type_id = target.type_id;
       target_offset = target.relative_offset;
@@ -1170,8 +1175,9 @@ static node_t *lower_typed_aggregate_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path_with_records(
               diagnostics(context), context->semantic_types,
-              context->record_layouts, context->target, entry, type_id,
-              relative_offset, fallback_tok);
+              context->record_decls, context->record_layouts,
+              context->target, entry, type_id, relative_offset,
+              fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.type_id,
           target.relative_offset, entry->value,

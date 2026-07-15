@@ -4058,6 +4058,10 @@ const initializerLoweringSource = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
 );
+const initializerResolutionSource = await readFile(
+  "src/semantic/initializer_resolution.c",
+  "utf8",
+);
 if (/\bmember->offset\b/.test(initializerLoweringSource) ||
     /\b(?:first|selected|container)->offset\b/.test(
       initializerLoweringSource,
@@ -4075,6 +4079,14 @@ if (/\bmember->offset\b/.test(initializerLoweringSource) ||
     !/\brecord_member_offset\s*\(/.test(staticDataInitializerSource)) {
   throw new Error(
     "initializer lowering must resolve member offsets from RecordLayoutTable",
+  );
+}
+if (/\baggregate_definition\b/.test(initializerResolutionSource) ||
+    !/\bpsx_record_decl_table_lookup\s*\(/.test(
+      initializerResolutionSource,
+    )) {
+  throw new Error(
+    "initializer semantics must resolve aggregate declarations through RecordDeclTable",
   );
 }
 

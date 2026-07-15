@@ -6337,6 +6337,7 @@ static void test_initializer_resolution_boundary() {
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 12);
   aggregate->record_id = definition.record_id;
   aggregate->aggregate_definition = &definition;
+  ASSERT_TRUE(define_test_record_decl(&definition));
   psx_type_id_t aggregate_type_id = ps_ctx_intern_qual_type_in(
       test_semantic_context(), aggregate).type_id;
 
@@ -6354,6 +6355,7 @@ static void test_initializer_resolution_boundary() {
   psx_initializer_scalar_leaf_list_t leaves = {0};
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_decl_table_in(test_semantic_context()),
       record_layouts,
       ps_ctx_target_info(test_semantic_context()),
       aggregate_type_id, 0, &leaves));
@@ -6383,6 +6385,7 @@ static void test_initializer_resolution_boundary() {
       psx_resolve_initializer_designator_path_with_records(
           ps_ctx_diagnostics(test_semantic_context()),
           ps_ctx_semantic_type_table_in(test_semantic_context()),
+          ps_ctx_record_decl_table_in(test_semantic_context()),
           record_layouts,
           ps_ctx_target_info(test_semantic_context()),
           &entry, aggregate_type_id, 0, NULL);
@@ -6416,6 +6419,7 @@ static void test_initializer_resolution_boundary() {
   };
   recursive->record_id = recursive_definition.record_id;
   recursive->aggregate_definition = &recursive_definition;
+  ASSERT_TRUE(define_test_record_decl(&recursive_definition));
   psx_type_id_t recursive_type_id = ps_ctx_intern_qual_type_in(
       test_semantic_context(), recursive).type_id;
   const psx_record_member_layout_t recursive_layout_members[2] = {
@@ -6427,6 +6431,7 @@ static void test_initializer_resolution_boundary() {
       recursive_layout_members, 2));
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves_with_records(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_decl_table_in(test_semantic_context()),
       record_layouts,
       ps_ctx_target_info(test_semantic_context()),
       recursive_type_id, 0, &leaves));
