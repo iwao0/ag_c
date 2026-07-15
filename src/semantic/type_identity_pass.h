@@ -6,7 +6,7 @@
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 
 int psx_intern_available_semantic_tree_types(
-    psx_semantic_context_t *semantic_context, const node_t *root,
+    psx_semantic_context_t *semantic_context, node_t *root,
     const node_t **failed_node);
 
 #endif

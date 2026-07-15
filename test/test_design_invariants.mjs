@@ -2495,9 +2495,10 @@ const astSource = await readFile("src/parser/ast.h", "utf8");
 const nodeStruct = astSource.match(/struct node_t\s*\{([\s\S]*?)\n\};/);
 if (!nodeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(nodeStruct[1]) ||
+    !/\bpsx_qual_type_t\s+qual_type\s*;/.test(nodeStruct[1]) ||
     /\b(?:unsigned_override|has_unsigned_override)\b/.test(nodeStruct[1])) {
   throw new Error(
-    "node_t value identity must come only from its canonical semantic type",
+    "node_t value identity must retain both its canonical type view and QualType",
   );
 }
 const numberNodeStruct = astSource.match(
@@ -3095,7 +3096,18 @@ for (const [
   }
 }
 if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
-    !/\bpsx_walk_semantic_tree\s*\(/.test(semanticTypeIdentityPassSource) ||
+    !/\bpsx_walk_semantic_tree_mut\s*\(/.test(
+      semanticTypeIdentityPassSource,
+    ) ||
+    !/node->qual_type\s*=\s*type\s*;/.test(
+      semanticTypeIdentityPassSource,
+    ) ||
+    !/actual\.type_id\s*!=\s*expected\.type_id/.test(
+      semanticInvariantsSource,
+    ) ||
+    !/actual\.qualifiers\s*!=\s*expected\.qualifiers/.test(
+      semanticInvariantsSource,
+    ) ||
     !/\bwalk_node\s*\(\s*node->lhs\b/.test(semanticTreeWalkSource) ||
     /\bvalidate_tree\s*\(\s*validation\s*,\s*node->(?:lhs|rhs)\b/.test(
       semanticInvariantsSource,
@@ -3765,16 +3777,24 @@ const semanticTypeIdentityHeader = await readFile(
   "src/semantic/type_identity.h",
   "utf8",
 );
+const typeIdsHeader = await readFile(
+  "src/type_system/type_ids.h",
+  "utf8",
+);
 const semanticTypeIdentitySource = await readFile(
   "src/semantic/type_identity.c",
   "utf8",
 );
-const qualTypeStruct = semanticTypeIdentityHeader.match(
+const qualTypeStruct = typeIdsHeader.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_qual_type_t\s*;/,
 );
 if (!qualTypeStruct ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(qualTypeStruct[1]) ||
     !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(qualTypeStruct[1]) ||
+    !/#include\s+"\.\.\/type_system\/type_ids\.h"/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    /#include\s+"\.\.\/semantic\/type_identity\.h"/.test(astSource) ||
     !/relation\.qualifiers\s*==\s*ps_type_qualifiers\s*\(\s*candidate\s*\)/.test(
       semanticTypeIdentitySource,
     ) ||

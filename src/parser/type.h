@@ -1,6 +1,7 @@
 #ifndef PARSER_TYPE_H
 #define PARSER_TYPE_H
 
+#include "../type_system/type_ids.h"
 #include "core.h"
 #include "type_fwd.h"
 #include <stddef.h>
@@ -57,18 +58,6 @@ typedef enum {
 
 struct tag_member_info_t;
 typedef struct arena_context_t arena_context_t;
-
-typedef unsigned int psx_record_id_t;
-typedef unsigned int psx_type_qualifiers_t;
-
-#define PSX_RECORD_ID_INVALID ((psx_record_id_t)0)
-
-enum {
-  PSX_TYPE_QUALIFIER_NONE = 0,
-  PSX_TYPE_QUALIFIER_CONST = 1u << 0,
-  PSX_TYPE_QUALIFIER_VOLATILE = 1u << 1,
-  PSX_TYPE_QUALIFIER_ATOMIC = 1u << 2,
-};
 
 typedef struct psx_record_decl_t {
   psx_record_id_t record_id;

@@ -17461,8 +17461,10 @@ static void test_semantic_type_identity() {
 
   node_t typed_expression = {
       .kind = ND_NUM,
-      .type = plain_int,
+      .type = const_int,
   };
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_node_qual_type(&typed_expression).type_id);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_ctx_find_interned_qual_type_in(
                 context, typed_expression.type).type_id);
@@ -17472,6 +17474,18 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
                   context, typed_expression.type).type_id !=
               PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
+                context, typed_expression.type).type_id,
+            ps_node_qual_type(&typed_expression).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_node_qual_type(&typed_expression).qualifiers);
+  ps_node_bind_type(&typed_expression, plain_int);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_node_qual_type(&typed_expression).type_id);
+  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
+      context, &typed_expression, &failure, 0));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_node_qual_type(&typed_expression).qualifiers);
   ps_ctx_destroy(context);
 }
 

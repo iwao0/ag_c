@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "../diag/diag.h"
+#include "../parser/node_type_public.h"
 #include "../parser/semantic_ctx.h"
 #include "tree_walk.h"
 #include "type_identity_pass.h"
@@ -110,11 +111,16 @@ static int validate_node(const node_t *node, void *user) {
     return fail(failure, PSX_SEMANTIC_INVARIANT_MISSING_CANONICAL_TYPE, node);
   if (node->type && !ps_type_is_well_formed(node->type))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
-  if (semantic_context && node->type &&
-      ps_ctx_find_interned_qual_type_in(semantic_context, node->type).type_id ==
-          PSX_TYPE_ID_INVALID) {
-    return fail(
-        failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
+  if (semantic_context && node->type) {
+    psx_qual_type_t expected = ps_ctx_find_interned_qual_type_in(
+        semantic_context, node->type);
+    psx_qual_type_t actual = ps_node_qual_type(node);
+    if (expected.type_id == PSX_TYPE_ID_INVALID ||
+        actual.type_id != expected.type_id ||
+        actual.qualifiers != expected.qualifiers) {
+      return fail(
+          failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
+    }
   }
   if (node->kind == ND_FUNCREF &&
       (node->type->kind != PSX_TYPE_POINTER || !node->type->base ||
@@ -187,7 +193,7 @@ int psx_semantic_tree_has_canonical_expression_types(
 }
 
 int psx_finalize_semantic_tree_type_identities(
-    psx_semantic_context_t *semantic_context, const node_t *root,
+    psx_semantic_context_t *semantic_context, node_t *root,
     psx_semantic_invariant_failure_t *failure,
     int allow_initializer_syntax) {
   if (failure) memset(failure, 0, sizeof(*failure));
@@ -275,7 +281,7 @@ void psx_require_semantic_initializer_has_canonical_expression_types(
 
 void psx_require_available_semantic_tree_types_interned(
     psx_semantic_context_t *semantic_context,
-    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    ag_diagnostic_context_t *diagnostics, node_t *root,
     const token_t *fallback_diag_tok) {
   const node_t *failed_node = NULL;
   if (psx_intern_available_semantic_tree_types(
@@ -292,7 +298,7 @@ void psx_require_available_semantic_tree_types_interned(
 
 void psx_require_semantic_tree_has_interned_expression_types(
     psx_semantic_context_t *semantic_context,
-    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    ag_diagnostic_context_t *diagnostics, node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
   if (psx_finalize_semantic_tree_type_identities(
@@ -305,7 +311,7 @@ void psx_require_semantic_tree_has_interned_expression_types(
 
 void psx_require_semantic_initializer_has_interned_expression_types(
     psx_semantic_context_t *semantic_context,
-    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    ag_diagnostic_context_t *diagnostics, node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
   if (psx_finalize_semantic_tree_type_identities(

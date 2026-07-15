@@ -2179,6 +2179,12 @@ const psx_type_t *ps_node_get_type(const node_t *node) {
   return node ? node->type : NULL;
 }
 
+psx_qual_type_t ps_node_qual_type(const node_t *node) {
+  return node ? node->qual_type
+              : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                  PSX_TYPE_QUALIFIER_NONE};
+}
+
 const psx_type_t *ps_function_definition_return_type(
     const node_function_definition_t *function) {
   if (!function || !function->signature ||
@@ -2233,6 +2239,8 @@ void ps_node_set_vla_runtime_view(node_t *node, int row_stride_frame_off,
 void ps_node_bind_type(node_t *node, const psx_type_t *type) {
   if (!node) return;
   node->type = type;
+  node->qual_type = (psx_qual_type_t){
+      PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};
   if (!node_type_accepts_vla_runtime_view(node)) {
     node->type_state.vla_runtime = (psx_vla_runtime_view_t){0};
     return;

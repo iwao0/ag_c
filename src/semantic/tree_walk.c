@@ -71,3 +71,23 @@ int psx_walk_semantic_tree(
     const node_t *root, psx_semantic_tree_visitor_t visitor, void *user) {
   return visitor ? walk_node(root, visitor, user) : 0;
 }
+
+typedef struct {
+  psx_semantic_tree_mutating_visitor_t visitor;
+  void *user;
+} mutating_walk_t;
+
+static int visit_mutable_node(const node_t *node, void *user) {
+  mutating_walk_t *walk = user;
+  return walk->visitor((node_t *)node, walk->user);
+}
+
+int psx_walk_semantic_tree_mut(
+    node_t *root, psx_semantic_tree_mutating_visitor_t visitor, void *user) {
+  if (!visitor) return 0;
+  mutating_walk_t walk = {
+      .visitor = visitor,
+      .user = user,
+  };
+  return walk_node(root, visit_mutable_node, &walk);
+}

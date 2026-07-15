@@ -2,6 +2,7 @@
 #define AST_H
 
 #include "../tokenizer/token.h"
+#include "../type_system/type_ids.h"
 #include "core.h"
 #include "type.h"
 #include "vla_runtime.h"
@@ -164,6 +165,7 @@ struct node_t {
 
   /* Canonical semantic type. */
   const psx_type_t *type;
+  psx_qual_type_t qual_type;
   psx_expr_type_state_t type_state;
 };
 
