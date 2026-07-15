@@ -2707,6 +2707,24 @@ if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
     "parser node utilities must query member declarations and layouts through the split API",
   );
 }
+const resolvedRecordMemberHelpers = [
+  /static\s+int\s+gvar_record_find_unnamed_union_covering_offset\s*\([^]*?\n\}/,
+  /static\s+void\s+gvar_record_flat_cover_state_note\s*\([^]*?\n\}/,
+  /static\s+int\s+gvar_member_flat_slot_count\s*\([^]*?\n\}/,
+  /static\s+int\s+gvar_record_flat_slot_count\s*\([^]*?\n\}/,
+].map((pattern) => nodeUtilsSource.match(pattern)?.[0]);
+if (resolvedRecordMemberHelpers.some((source) => !source) ||
+    /\btag_member_info_t\b/.test(resolvedRecordMemberHelpers.join("\n")) ||
+    !resolvedRecordMemberHelpers.every((source) =>
+      /\bpsx_record_member_decl_t\b/.test(source)
+    ) ||
+    !/\brecord_decl_member_layout_in\s*\(/.test(
+      resolvedRecordMemberHelpers.join("\n"),
+    )) {
+  throw new Error(
+    "resolved RecordDecl traversal must keep member declarations separate from target layouts",
+  );
+}
 const initializerLoweringSourceForLocalLayout = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
