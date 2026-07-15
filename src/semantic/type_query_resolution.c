@@ -183,7 +183,8 @@ static const psx_type_t *sizeof_operand_type(
       psx_type_t *completed = ps_type_clone_in(
           ps_ctx_arena(semantic_context), object_type);
       if (completed && psx_resolve_incomplete_array_initializer(
-                           completed, PSX_DECL_INIT_LIST,
+                           semantic_context, completed,
+                           PSX_DECL_INIT_LIST,
                            compound->base.rhs)) {
         compound->type_name.resolved_type = completed;
         object_type = completed;

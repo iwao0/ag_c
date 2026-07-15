@@ -163,11 +163,12 @@ const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
       semantic_context, specifier);
 }
 
-static int object_scalar_slots(const psx_type_t *type) {
+static int object_scalar_slots(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
     if (type->array_len <= 0) return 0;
-    int child = object_scalar_slots(type->base);
+    int child = object_scalar_slots(semantic_context, type->base);
     if (child <= 0 || child > INT_MAX / type->array_len) return 0;
     return child * type->array_len;
   }
@@ -179,8 +180,9 @@ static int object_scalar_slots(const psx_type_t *type) {
     int max_bytes = -1;
     for (int i = 0; i < definition->member_count; i++) {
       const tag_member_info_t *member = &definition->members[i];
-      int slots = object_scalar_slots(ps_tag_member_decl_type(member));
-      int bytes = ps_tag_member_decl_storage_size(member);
+      const psx_type_t *member_type = ps_tag_member_decl_type(member);
+      int slots = object_scalar_slots(semantic_context, member_type);
+      int bytes = ps_ctx_type_sizeof_in(semantic_context, member_type);
       if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
         max_bytes = bytes;
         max_slots = slots;
@@ -193,11 +195,12 @@ static int object_scalar_slots(const psx_type_t *type) {
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
     if (member->offset < covered_end) continue;
-    int member_slots = object_scalar_slots(ps_tag_member_decl_type(member));
+    const psx_type_t *member_type = ps_tag_member_decl_type(member);
+    int member_slots = object_scalar_slots(semantic_context, member_type);
     if (member_slots <= 0 || slots > INT_MAX - member_slots) return 0;
     slots += member_slots;
     if (member->len <= 0) {
-      int size = ps_tag_member_decl_storage_size(member);
+      int size = ps_ctx_type_sizeof_in(semantic_context, member_type);
       int end = member->offset + size;
       if (size > 0 && end > covered_end) covered_end = end;
     }
@@ -206,15 +209,17 @@ static int object_scalar_slots(const psx_type_t *type) {
 }
 
 int psx_resolve_incomplete_array_type(
-    psx_type_t *type, const psx_incomplete_array_resolution_t *request) {
-  if (!type || !request || type->kind != PSX_TYPE_ARRAY || type->is_vla ||
+    psx_semantic_context_t *semantic_context, psx_type_t *type,
+    const psx_incomplete_array_resolution_t *request) {
+  if (!semantic_context || !type || !request ||
+      type->kind != PSX_TYPE_ARRAY || type->is_vla ||
       type->array_len > 0 || request->initializer_count <= 0) return 0;
 
   long long outer_count = request->initializer_count;
   if (!request->entries_initialize_outer_elements && type->base &&
       (type->base->kind == PSX_TYPE_ARRAY ||
        ps_type_is_tag_aggregate(type->base))) {
-    int slots = object_scalar_slots(type->base);
+    int slots = object_scalar_slots(semantic_context, type->base);
     if (slots <= 0) return 0;
     outer_count = (outer_count + slots - 1) / slots;
   }
@@ -271,9 +276,11 @@ static long long initializer_list_count(
 }
 
 int psx_resolve_incomplete_array_initializer(
-    psx_type_t *type, psx_decl_init_kind_t initializer_kind,
+    psx_semantic_context_t *semantic_context, psx_type_t *type,
+    psx_decl_init_kind_t initializer_kind,
     node_t *initializer) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || type->array_len > 0 ||
+  if (!semantic_context || !type || type->kind != PSX_TYPE_ARRAY ||
+      type->array_len > 0 ||
       type->is_vla || !initializer)
     return 0;
 
@@ -292,7 +299,7 @@ int psx_resolve_incomplete_array_initializer(
     }
   }
   return psx_resolve_incomplete_array_type(
-      type, &(psx_incomplete_array_resolution_t){
+      semantic_context, type, &(psx_incomplete_array_resolution_t){
                 .initializer_count = count,
                 .entries_initialize_outer_elements =
                     entries_initialize_outer_elements,

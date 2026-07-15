@@ -527,6 +527,8 @@ static int aggregate_member_index(
 }
 
 static int aggregate_ordinal_after_member(
+    const initializer_lowering_context_t *context,
+    psx_type_id_t aggregate_type_id,
     const psx_aggregate_definition_t *definition, int member_index) {
   if (!definition || member_index < 0 ||
       member_index >= definition->member_count) return member_index + 1;
@@ -534,7 +536,10 @@ static int aggregate_ordinal_after_member(
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *container = &definition->members[i];
     if (container->len > 0) continue;
-    int size = ps_tag_member_decl_storage_size(container);
+    psx_type_id_t container_type_id =
+        psx_semantic_type_table_record_member(
+            context->semantic_types, aggregate_type_id, i).type_id;
+    int size = type_size_id(context, container_type_id);
     if (size <= 0) continue;
     int start = container->offset;
     int end = start + size;
@@ -1145,7 +1150,7 @@ static node_t *lower_typed_aggregate_initializer_list(
           entry->tok ? entry->tok : fallback_tok);
       if (type->kind == PSX_TYPE_STRUCT)
         ordinal = aggregate_ordinal_after_member(
-            definition, target.first_member_index);
+            context, type_id, definition, target.first_member_index);
       continue;
     }
     int member_index = aggregate_member_index(
@@ -1175,7 +1180,8 @@ static node_t *lower_typed_aggregate_initializer_list(
         target_offset, entry->value, direct_member,
         chain, entry->tok ? entry->tok : fallback_tok);
     if (type->kind == PSX_TYPE_STRUCT)
-      ordinal = aggregate_ordinal_after_member(definition, member_index);
+      ordinal = aggregate_ordinal_after_member(
+          context, type_id, definition, member_index);
   }
   return chain;
 }
@@ -1244,7 +1250,8 @@ static node_t *lower_struct_list_initializer(
         context, chain,
         ps_node_new_assign_in(
             context->arena_context, lhs, entry->value));
-    ordinal = aggregate_ordinal_after_member(definition, member_index);
+    ordinal = aggregate_ordinal_after_member(
+        context, ps_lvar_decl_type_id(var), definition, member_index);
   }
   return chain
              ? chain

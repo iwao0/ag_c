@@ -888,7 +888,8 @@ int psx_finish_automatic_local_declaration_pipeline(
     if (!completed_type) return 0;
     if (!request->initializer->has_initializer ||
         !psx_resolve_incomplete_array_initializer(
-            completed_type, request->initializer->kind,
+            request->semantic_context, completed_type,
+            request->initializer->kind,
             request->initializer->value)) {
       ps_diag_ctx_in(
           ps_lowering_diagnostics(request->lowering_context),

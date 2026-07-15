@@ -39,9 +39,11 @@ const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier);
 int psx_resolve_incomplete_array_type(
-    psx_type_t *type, const psx_incomplete_array_resolution_t *request);
+    psx_semantic_context_t *semantic_context, psx_type_t *type,
+    const psx_incomplete_array_resolution_t *request);
 int psx_resolve_incomplete_array_initializer(
-    psx_type_t *type, psx_decl_init_kind_t initializer_kind,
+    psx_semantic_context_t *semantic_context, psx_type_t *type,
+    psx_decl_init_kind_t initializer_kind,
     node_t *initializer);
 
 #endif

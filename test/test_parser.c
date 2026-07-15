@@ -3086,7 +3086,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
   ASSERT_TRUE(!plan_test_local_storage(incomplete, &plan));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      incomplete,
+      test_semantic_context(), incomplete,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
       }));
@@ -3096,7 +3096,7 @@ static void test_local_declaration_storage_plan_boundary() {
 
   psx_type_t *partial_flat_matrix = ps_type_new_array(row, 0, 0, 0);
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      partial_flat_matrix,
+      test_semantic_context(), partial_flat_matrix,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 5,
           .entries_initialize_outer_elements = 0,
@@ -3106,7 +3106,7 @@ static void test_local_declaration_storage_plan_boundary() {
 
   psx_type_t *nested_matrix = ps_type_new_array(row, 0, 0, 0);
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      nested_matrix,
+      test_semantic_context(), nested_matrix,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 2,
           .entries_initialize_outer_elements = 1,
@@ -3177,7 +3177,7 @@ static void test_local_declaration_storage_plan_boundary() {
       ps_type_new_array(
           ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0)));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
-      deferred_type,
+      test_semantic_context(), deferred_type,
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 3,
       }));
@@ -16557,11 +16557,13 @@ static void test_semantic_type_identity() {
   psx_type_t *utf16_array = ps_type_new_array(
       stale_wide_short, 0, 0, 0);
   ASSERT_TRUE(psx_resolve_incomplete_array_initializer(
-      utf16_array, PSX_DECL_INIT_EXPR, (node_t *)&utf16_string));
+      test_semantic_context(), utf16_array, PSX_DECL_INIT_EXPR,
+      (node_t *)&utf16_string));
   ASSERT_EQ(3, utf16_array->array_len);
   psx_type_t *boolean_array = ps_type_new_array(boolean, 0, 0, 0);
   ASSERT_TRUE(!psx_resolve_incomplete_array_initializer(
-      boolean_array, PSX_DECL_INIT_EXPR, (node_t *)&utf16_string));
+      test_semantic_context(), boolean_array, PSX_DECL_INIT_EXPR,
+      (node_t *)&utf16_string));
   ASSERT_EQ(0, boolean_array->array_len);
   psx_type_t *const_int = ps_type_clone(plain_int);
   ps_type_add_qualifiers(const_int, PSX_TYPE_QUALIFIER_CONST);

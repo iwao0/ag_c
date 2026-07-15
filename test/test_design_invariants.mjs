@@ -300,6 +300,13 @@ if (/\bps_node_(?:type|storage_type|deref|aggregate_value)_size\s*\(/.test(
     "semantic passes must classify types or query target layout instead of reading parser node sizes",
   );
 }
+if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
+      `${explicitSemanticLayerSource}\n${loweringLayerSource}`,
+    )) {
+  throw new Error(
+    "semantic and lowering phases must resolve member layout from TypeId and RecordLayoutTable",
+  );
+}
 const parserContextLifecycleFiles = new Set([
   "src/parser/semantic_ctx.c",
   "src/parser/semantic_ctx.h",

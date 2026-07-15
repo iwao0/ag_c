@@ -31,7 +31,7 @@ void psx_resolve_static_initializer(
 
   if (ps_type_is_incomplete_array(type)) {
     if (!psx_resolve_incomplete_array_initializer(
-            type, resolution->kind,
+            semantic_context, type, resolution->kind,
             resolution->initializer)) {
       resolution->status = PSX_STATIC_INITIALIZER_ARRAY_COMPLETION_FAILED;
       return;
