@@ -3569,6 +3569,10 @@ const tagMemberPublicSource = await readFile(
   "src/parser/tag_member_public.h",
   "utf8",
 );
+const tagPublicSource = await readFile(
+  "src/parser/tag_public.h",
+  "utf8",
+);
 const tagFlatCoverSource = await readFile(
   "src/parser/tag_flat_cover.h",
   "utf8",
@@ -3583,6 +3587,38 @@ if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
   throw new Error(
     "semantic context must not expose combined tag member declaration and layout queries",
   );
+}
+if (/\btag_member_info_t\b|#include\s+"tag_member_public\.h"/.test(
+      tagPublicSource,
+    ) ||
+    !/\bps_record_member_decl_is_tag_aggregate\s*\([^;]*const\s+psx_record_member_decl_t\s*\*/s.test(
+      tagPublicSource,
+    ) ||
+    !/\bps_record_member_decl_flat_slots_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*/s.test(
+      tagPublicSource,
+    )) {
+  throw new Error(
+    "public tag APIs must expose semantic member declarations without compatibility member views",
+  );
+}
+for (const functionName of [
+  "ps_tag_member_at_flat_slot_in",
+  "ps_tag_next_named_member_in",
+  "ps_tag_first_named_member_in",
+  "ps_tag_find_named_member_in",
+  "ps_tag_select_union_member_for_init_slot_in",
+  "ps_tag_union_init_member_for_slot_in",
+]) {
+  const signature = tagPublicSource.match(
+    new RegExp(`\\b${functionName}\\s*\\([^;]*;`, "s"),
+  )?.[0];
+  if (!signature ||
+      !/psx_record_member_decl_t\s*\*/.test(signature) ||
+      !/psx_record_member_layout_t\s*\*/.test(signature)) {
+    throw new Error(
+      `${functionName} must return member declarations and target layouts separately`,
+    );
+  }
 }
 if (/\btag_member_info_t\b/.test(tagFlatCoverSource) ||
     !/ps_tag_flat_cover_state_covers\s*\([^;]*int\s+member_offset/s.test(
