@@ -83,6 +83,20 @@ static psx_qual_type_t invalid_qual_type(void) {
                            PSX_TYPE_QUALIFIER_NONE};
 }
 
+static int semantic_type_has_resolved_record_identity(
+    const psx_type_t *type) {
+  if (!type) return 1;
+  if (ps_type_is_tag_aggregate(type) &&
+      ps_type_record_id(type) == PSX_RECORD_ID_INVALID)
+    return 0;
+  if (!semantic_type_has_resolved_record_identity(type->base)) return 0;
+  for (int i = 0; i < type->param_count; i++) {
+    if (!semantic_type_has_resolved_record_identity(type->param_types[i]))
+      return 0;
+  }
+  return 1;
+}
+
 static int semantic_type_node_matches(
     const psx_type_t *canonical, const psx_type_t *candidate) {
   if (!canonical || !candidate || canonical->kind != candidate->kind)
@@ -109,7 +123,9 @@ static int semantic_type_node_matches(
              canonical->is_vla == candidate->is_vla;
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      return ps_type_tag_identity_matches(canonical, candidate);
+      return ps_type_record_id(canonical) != PSX_RECORD_ID_INVALID &&
+             ps_type_record_id(canonical) ==
+                 ps_type_record_id(candidate);
     case PSX_TYPE_FUNCTION:
       return canonical->param_count == candidate->param_count &&
              canonical->is_variadic_function ==
@@ -167,7 +183,8 @@ psx_qual_type_t psx_semantic_type_table_find(
   psx_qual_type_t result = {PSX_TYPE_ID_INVALID,
                             PSX_TYPE_QUALIFIER_NONE};
   if (!table || !type || type->kind == PSX_TYPE_INVALID ||
-      !ps_type_is_well_formed(type)) {
+      !ps_type_is_well_formed(type) ||
+      !semantic_type_has_resolved_record_identity(type)) {
     return result;
   }
   result.qualifiers = ps_type_qualifiers(type);
@@ -242,7 +259,8 @@ static int populate_type_relations(
 psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type) {
   if (!table || !type || type->kind == PSX_TYPE_INVALID ||
-      !ps_type_is_well_formed(type)) {
+      !ps_type_is_well_formed(type) ||
+      !semantic_type_has_resolved_record_identity(type)) {
     return invalid_qual_type();
   }
   psx_qual_type_t result = psx_semantic_type_table_find(table, type);
@@ -314,6 +332,21 @@ psx_qual_type_t psx_semantic_type_table_pointee_value(
   }
   psx_qual_type_t base = psx_semantic_type_table_base(table, type_id);
   return psx_semantic_type_table_array_leaf(table, base.type_id);
+}
+
+psx_qual_type_t psx_semantic_type_table_aggregate_object(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  while (type.type_id != PSX_TYPE_ID_INVALID) {
+    const psx_type_t *current = psx_semantic_type_table_lookup(
+        table, type.type_id);
+    if (!current) return invalid_qual_type();
+    if (ps_type_is_tag_aggregate(current)) return type;
+    if (current->kind != PSX_TYPE_POINTER &&
+        current->kind != PSX_TYPE_ARRAY)
+      return invalid_qual_type();
+    type = psx_semantic_type_table_base(table, type.type_id);
+  }
+  return invalid_qual_type();
 }
 
 psx_qual_type_t psx_semantic_type_table_parameter(

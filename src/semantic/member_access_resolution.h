@@ -20,6 +20,7 @@ typedef struct {
 
 typedef struct {
   psx_member_access_status_t status;
+  psx_qual_type_t base_object_qual_type;
   const psx_type_t *base_object_type;
   psx_record_id_t record_id;
   int member_index;

@@ -51,9 +51,21 @@ void psx_resolve_member_access(
     return;
   }
 
+  psx_semantic_context_t *semantic_context = request->semantic_context;
+  const psx_semantic_type_table_t *semantic_types =
+      ps_ctx_semantic_type_table_in(semantic_context);
   const psx_type_t *base_type = ps_node_get_type(request->base);
-  const psx_type_t *object_type =
-      ps_type_find_aggregate_object_type(base_type);
+  psx_qual_type_t base_qual_type = ps_ctx_intern_qual_type_in(
+      semantic_context, base_type);
+  if (base_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+    resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
+    return;
+  }
+  psx_qual_type_t object_qual_type =
+      psx_semantic_type_table_aggregate_object(
+          semantic_types, base_qual_type);
+  const psx_type_t *object_type = psx_semantic_type_table_lookup(
+      semantic_types, object_qual_type.type_id);
   int base_is_pointer = base_type &&
                         (base_type->kind == PSX_TYPE_POINTER ||
                          base_type->kind == PSX_TYPE_ARRAY);
@@ -68,8 +80,8 @@ void psx_resolve_member_access(
       (request->from_pointer && !base_is_pointer)) {
     return;
   }
+  resolution->base_object_qual_type = object_qual_type;
   resolution->base_object_type = object_type;
-  psx_semantic_context_t *semantic_context = request->semantic_context;
   resolution->record_id = ps_type_record_id(object_type);
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, resolution->record_id);

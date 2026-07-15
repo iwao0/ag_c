@@ -1961,6 +1961,10 @@ const memberNodeUtilsHeader = await readFile(
   "src/parser/node_utils.h",
   "utf8",
 );
+const memberTypeIdentitySource = await readFile(
+  "src/semantic/type_identity.c",
+  "utf8",
+);
 if (/\bps_node_new_tag_member_(?:deref|lvar_ref)_for_in\s*\(/.test(
       memberNodeUtilsSource,
     ) ||
@@ -2017,6 +2021,30 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
     )) {
   throw new Error(
     "member access semantics must retain RecordId and ordinal while lowering resolves target offsets",
+  );
+}
+if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
+      memberAccessResolutionHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_aggregate_object\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    /\bps_type_find_aggregate_object_type\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      memberTypeIdentitySource.match(
+        /psx_qual_type_t\s+psx_semantic_type_table_aggregate_object\s*\([^]*?\n\}/,
+      )?.[0] || "",
+    ) ||
+    !/resolution\.base_object_qual_type\.qualifiers/.test(
+      semanticPassSource,
+    ) ||
+    /ps_type_has_qualifier\s*\(\s*object_type/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "member access owner qualifiers must be resolved through TypeId QualType relations",
   );
 }
 const typeNameResolutionSource = await readFile(
@@ -4231,6 +4259,30 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     )) {
   throw new Error(
     "semantic type interning must resolve record relations through RecordDeclTable without retaining embedded declarations",
+  );
+}
+const resolvedRecordIdentityGuard = semanticTypeIdentitySource.match(
+  /static\s+int\s+semantic_type_has_resolved_record_identity\s*\([^]*?\n\}/,
+);
+const semanticTypeNodeMatcher = semanticTypeIdentitySource.match(
+  /static\s+int\s+semantic_type_node_matches\s*\([^]*?\n\}/,
+);
+if (!resolvedRecordIdentityGuard ||
+    !/\bps_type_record_id\s*\([^)]*\)\s*==\s*PSX_RECORD_ID_INVALID/.test(
+      resolvedRecordIdentityGuard[0],
+    ) ||
+    !semanticTypeNodeMatcher ||
+    !/ps_type_record_id\s*\(\s*canonical\s*\)\s*!=\s*PSX_RECORD_ID_INVALID/.test(
+      semanticTypeNodeMatcher[0],
+    ) ||
+    !/psx_semantic_type_table_find\s*\([^]*?semantic_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/psx_semantic_type_table_intern\s*\([^]*?semantic_type_has_resolved_record_identity\s*\(\s*type\s*\)/.test(
+      semanticTypeIdentitySource,
+    )) {
+  throw new Error(
+    "aggregate TypeId identity must require a resolved RecordId throughout the recursive type",
   );
 }
 if (!/\bpsx_qual_type_t\s+base_type\s*;/.test(

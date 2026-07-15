@@ -302,17 +302,18 @@ static void semantic_resolve_member_access(
 
   const psx_type_t *decl_type =
       psx_record_member_decl_type(access->resolved_member);
-  const psx_type_t *object_type = resolution.base_object_type;
   psx_type_t *access_type = decl_type
                                 ? ps_type_clone_in(
                                       ps_ctx_arena(semantic_context),
                                       decl_type)
                                 : NULL;
-  if (access_type && object_type)
+  if (access_type && resolution.base_object_type)
     ps_type_set_decl_spec_qualifiers(
         access_type,
-        ps_type_has_qualifier(object_type, PSX_TYPE_QUALIFIER_CONST),
-        ps_type_has_qualifier(object_type, PSX_TYPE_QUALIFIER_VOLATILE));
+        (resolution.base_object_qual_type.qualifiers &
+         PSX_TYPE_QUALIFIER_CONST) != 0,
+        (resolution.base_object_qual_type.qualifiers &
+         PSX_TYPE_QUALIFIER_VOLATILE) != 0);
   ps_node_bind_type((node_t *)access, access_type);
   access->base.type_state.bit_width =
       (unsigned char)access->resolved_member->bit_width;

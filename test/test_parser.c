@@ -2022,11 +2022,19 @@ static void test_member_access_resolution_boundary() {
   parsed_code = parse_program_input(
       "struct __MemberBoundary { char prefix; int value; }; "
       "int __member_boundary_function(void) { "
-      "struct __MemberBoundary object; int *pointer; return 0; }");
+      "struct __MemberBoundary object; int *pointer; "
+      "const struct __MemberBoundary const_object; "
+      "const struct __MemberBoundary *const_pointer; return 0; }");
   lvar_t *object = find_func_lvar(as_function_definition(parsed_code[0]), "object");
   lvar_t *pointer = find_func_lvar(as_function_definition(parsed_code[0]), "pointer");
+  lvar_t *const_object = find_func_lvar(
+      as_function_definition(parsed_code[0]), "const_object");
+  lvar_t *const_pointer = find_func_lvar(
+      as_function_definition(parsed_code[0]), "const_pointer");
   ASSERT_TRUE(object != NULL);
   ASSERT_TRUE(pointer != NULL);
+  ASSERT_TRUE(const_object != NULL);
+  ASSERT_TRUE(const_pointer != NULL);
   node_t *base = psx_node_new_lvar_identifier_ref_for(object);
   psx_record_decl_t *member_record = test_record_decl_mut(
       ps_type_find_aggregate_object_type(ps_node_get_type(base)));
@@ -2055,8 +2063,45 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(member_record->record_id, resolution.record_id);
   ASSERT_EQ(4, ps_type_sizeof(
                    psx_record_member_decl_type(&resolution.declaration)));
-  ASSERT_TRUE(resolution.base_object_type == ps_node_get_type(base));
+  ASSERT_TRUE(resolution.base_object_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            resolution.base_object_qual_type.qualifiers);
+  ASSERT_TRUE(
+      psx_semantic_type_table_lookup(
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
+          resolution.base_object_qual_type.type_id) ==
+      resolution.base_object_type);
   ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
+
+  node_t *const_object_base =
+      psx_node_new_lvar_identifier_ref_for(const_object);
+  psx_resolve_member_access(
+      &(psx_member_access_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .base = const_object_base,
+          .member_name = (char *)"value",
+          .member_name_len = 5,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
+  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
+
+  node_t *const_pointer_base =
+      psx_node_new_lvar_identifier_ref_for(const_pointer);
+  psx_resolve_member_access(
+      &(psx_member_access_resolution_request_t){
+          .semantic_context = test_semantic_context(),
+          .base = const_pointer_base,
+          .member_name = (char *)"value",
+          .member_name_len = 5,
+          .from_pointer = 1,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
+  ASSERT_TRUE((resolution.base_object_qual_type.qualifiers &
+               PSX_TYPE_QUALIFIER_CONST) != 0);
 
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
@@ -12835,6 +12880,7 @@ static void test_type_metadata_bridge() {
   typed_stmt_tag_ptr_rhs.kind = ND_LVAR;
   psx_type_t *typed_stmt_tag =
       ps_type_new_tag(TK_STRUCT, "StmtTag", 7, 4, 16);
+  typed_stmt_tag->record_id = 0x57a7u;
   typed_stmt_tag_ptr_rhs.type = ps_type_new_pointer(typed_stmt_tag);
   node_t typed_stmt_tag_ptr = {0};
   typed_stmt_tag_ptr.kind = ND_STMT_EXPR;
@@ -14929,9 +14975,11 @@ static void test_type_metadata_bridge() {
   global_var_t gvar_view_tag_ptr = {0};
   gvar_view_tag_ptr.name = "__tm_gvar_view_tag_ptr";
   gvar_view_tag_ptr.name_len = (int)strlen(gvar_view_tag_ptr.name);
-  gvar_view_tag_ptr.decl_type = ps_type_new_pointer(
-      ps_type_new_tag(TK_STRUCT, (char *)gvar_view_tag_name,
-                       (int)sizeof(gvar_view_tag_name) - 1, 0, 12));
+  psx_type_t *gvar_view_tag_type = ps_type_new_tag(
+      TK_STRUCT, (char *)gvar_view_tag_name,
+      (int)sizeof(gvar_view_tag_name) - 1, 0, 12);
+  gvar_view_tag_type->record_id = 0x6a11u;
+  gvar_view_tag_ptr.decl_type = ps_type_new_pointer(gvar_view_tag_type);
   ASSERT_EQ(8, ps_type_sizeof(gvar_view_tag_ptr.decl_type));
   ASSERT_EQ(PSX_TYPE_POINTER, gvar_view_tag_ptr.decl_type->kind);
   ASSERT_TRUE(gvar_view_tag_ptr.decl_type->base != NULL);
@@ -17764,6 +17812,14 @@ static void test_semantic_type_identity() {
       ps_ctx_intern_qual_type_in(context, other_record);
   ASSERT_EQ(first_record_identity.type_id, same_record_identity.type_id);
   ASSERT_TRUE(first_record_identity.type_id != other_record_identity.type_id);
+  psx_type_t *unresolved_record = ps_type_clone(first_record);
+  unresolved_record->record_id = PSX_RECORD_ID_INVALID;
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_qual_type_in(
+                context, unresolved_record).type_id);
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_intern_qual_type_in(
+                context, ps_type_new_pointer(unresolved_record)).type_id);
 
   char recursive_name[] = "RecursiveIdentityRecord";
   psx_type_t *recursive_record = ps_type_new_tag(
@@ -18190,7 +18246,7 @@ static void test_semantic_context_isolation() {
           .initializer = ps_node_new_num(0),
       },
       &detached_initializer);
-  ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
+  ASSERT_EQ(PSX_STATIC_INITIALIZER_INVALID, detached_initializer.status);
   ASSERT_EQ(PSX_RECORD_ID_INVALID,
             ps_type_record_id(detached_initializer.type));
   psx_resolve_static_initializer(
