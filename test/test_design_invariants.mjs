@@ -3565,10 +3565,6 @@ const tagContextSource = await readFile(
   "src/parser/semantic_ctx.c",
   "utf8",
 );
-const tagMemberPublicSource = await readFile(
-  "src/parser/tag_member_public.h",
-  "utf8",
-);
 const tagPublicSource = await readFile(
   "src/parser/tag_public.h",
   "utf8",
@@ -3590,10 +3586,25 @@ const recordLayoutHeaderSource = await readFile(
   "utf8",
 );
 if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
-      `${tagContextSource}\n${tagMemberPublicSource}`,
+      tagContextSource,
     )) {
   throw new Error(
     "semantic context must not expose combined tag member declaration and layout queries",
+  );
+}
+const compatibilityTagMemberViolations = [];
+for (const file of parserSourceFiles) {
+  if (file === "src/parser/node_utils.c") continue;
+  const source = await readFile(file, "utf8");
+  if (/\btag_member_info_t\b|tag_member_public\.h/.test(source)) {
+    compatibilityTagMemberViolations.push(file);
+  }
+}
+if (allSourceFiles.includes("src/parser/tag_member_public.h") ||
+    compatibilityTagMemberViolations.length) {
+  throw new Error(
+    "combined compatibility member views must stay private to node_utils.c:\n" +
+      compatibilityTagMemberViolations.join("\n"),
   );
 }
 if (/\btag_member_info_t\b|#include\s+"tag_member_public\.h"/.test(

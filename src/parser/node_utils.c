@@ -2,7 +2,6 @@
 #include "lvar_internal.h"
 #include "decl.h"
 #include "semantic_ctx.h"
-#include "tag_member_public.h"
 #include "type_builder.h"
 #include "arena.h"
 #include "diag.h"
@@ -14,6 +13,59 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct {
+  char *name;
+  int len;
+  int offset;
+  int bit_width;
+  int bit_offset;
+  int bit_is_signed;
+  const psx_type_t *decl_type;
+} tag_member_info_t;
+
+static tag_member_info_t ps_tag_member_declaration_view(
+    const psx_record_member_decl_t *member) {
+  return member
+             ? (tag_member_info_t){
+                   .name = member->name,
+                   .len = member->len,
+                   .bit_width = member->bit_width,
+                   .bit_is_signed = member->bit_is_signed,
+                   .decl_type = member->decl_type,
+               }
+             : (tag_member_info_t){0};
+}
+
+static const psx_type_t *ps_tag_member_decl_type(
+    const tag_member_info_t *member) {
+  return member ? member->decl_type : NULL;
+}
+
+static const psx_type_t *ps_tag_member_decl_value_type(
+    const tag_member_info_t *member) {
+  return ps_type_array_leaf_type(ps_tag_member_decl_type(member));
+}
+
+static tk_float_kind_t ps_tag_member_decl_fp_kind(
+    const tag_member_info_t *member) {
+  const psx_type_t *type = ps_tag_member_decl_value_type(member);
+  return type &&
+                 (type->kind == PSX_TYPE_FLOAT ||
+                  type->kind == PSX_TYPE_COMPLEX)
+             ? ps_type_floating_token_kind(type)
+             : TK_FLOAT_KIND_NONE;
+}
+
+static const psx_type_t *ps_tag_member_decl_tag_type(
+    const tag_member_info_t *member) {
+  const psx_type_t *type = ps_tag_member_decl_type(member);
+  while (type &&
+         (type->kind == PSX_TYPE_ARRAY || type->kind == PSX_TYPE_POINTER)) {
+    type = type->base;
+  }
+  return ps_type_is_tag_aggregate(type) ? type : NULL;
+}
 
 static int type_is_pointer_view_type(const psx_type_t *type);
 static const psx_type_t *lvar_decl_type_view(const lvar_t *var);
