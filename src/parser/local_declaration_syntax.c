@@ -33,6 +33,7 @@ node_t *psx_parse_local_declaration_syntax(
     psx_parsed_static_assert_declaration_t assertion;
     psx_parse_static_assert_syntax_in_contexts(
         &assertion, callbacks->semantic_context,
+        callbacks->global_registry,
         callbacks->local_registry, callbacks);
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
@@ -49,6 +50,7 @@ node_t *psx_parse_local_declaration_syntax(
               .is_typedef_name = is_local_typedef_name,
               .context = callbacks->semantic_context,
               .semantic_context = callbacks->semantic_context,
+              .global_registry = callbacks->global_registry,
               .local_registry = callbacks->local_registry,
           })) {
     diag_report_tokf(
@@ -84,10 +86,12 @@ node_t *psx_parse_local_declaration_syntax(
     psx_parsed_declarator_t declarator;
     psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
         &declarator, callbacks->semantic_context,
+        callbacks->global_registry,
         callbacks->local_registry, is_local_typedef_name,
         callbacks->semantic_context);
     ps_parse_runtime_declarator_expressions_in_contexts(
         &declarator, callbacks->semantic_context,
+        callbacks->global_registry,
         callbacks->local_registry, callbacks);
     if (!declarator.identifier) {
       ps_diag_ctx(curtok(), "decl", "%s",
@@ -121,6 +125,7 @@ node_t *psx_parse_local_declaration_syntax(
       tk_expect('=');
       psx_parse_initializer_syntax_value_in_contexts(
           &initializer, assign_tok, callbacks->semantic_context,
+          callbacks->global_registry,
           callbacks->local_registry, callbacks);
     }
     callbacks->finish_declarator(

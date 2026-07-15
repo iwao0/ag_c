@@ -122,6 +122,60 @@ static int append_scalar_leaf(
   return 1;
 }
 
+static int canonical_definition_flat_slot_count(
+    const psx_aggregate_definition_t *definition);
+
+static int canonical_member_flat_slot_count(
+    const tag_member_info_t *member) {
+  if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
+  int per = 1;
+  const psx_type_t *member_type = ps_tag_member_decl_type(member);
+  const psx_type_t *aggregate_type =
+      ps_tag_member_is_tag_aggregate(member)
+          ? ps_type_array_leaf_type(member_type)
+          : NULL;
+  if (aggregate_type && aggregate_type->aggregate_definition) {
+    per = canonical_definition_flat_slot_count(
+        aggregate_type->aggregate_definition);
+  }
+  int count = ps_type_array_flat_element_count(member_type);
+  return count > 0 ? count * per : per;
+}
+
+static int canonical_definition_flat_slot_count(
+    const psx_aggregate_definition_t *definition) {
+  if (!definition || definition->member_count <= 0) return 1;
+  int slots = 0;
+  int union_max_bytes = -1;
+  int covered_union_offset = 0;
+  int covered_union_size = 0;
+  for (int i = 0; i < definition->member_count; i++) {
+    const tag_member_info_t *member = &definition->members[i];
+    int member_slots = canonical_member_flat_slot_count(member);
+    if (definition->tag_kind == TK_UNION) {
+      int bytes = ps_tag_member_decl_storage_size(member);
+      if (bytes > union_max_bytes ||
+          (bytes == union_max_bytes && member_slots > slots)) {
+        union_max_bytes = bytes;
+        slots = member_slots;
+      }
+      continue;
+    }
+    if (ps_tag_member_is_unnamed_struct(member)) continue;
+    if (covered_union_size > 0 &&
+        member->offset >= covered_union_offset &&
+        member->offset < covered_union_offset + covered_union_size) {
+      continue;
+    }
+    slots += member_slots;
+    if (ps_tag_member_is_unnamed_union(member)) {
+      covered_union_offset = member->offset;
+      covered_union_size = ps_tag_member_decl_storage_size(member);
+    }
+  }
+  return slots > 0 ? slots : 1;
+}
+
 int psx_collect_initializer_scalar_leaves(
     const psx_type_t *type, int relative_offset,
     psx_initializer_scalar_leaf_list_t *list) {
@@ -156,7 +210,7 @@ int psx_collect_initializer_scalar_leaves(
       for (int i = 0; i < definition->member_count; i++) {
         const tag_member_info_t *candidate = &definition->members[i];
         int bytes = ps_tag_member_decl_storage_size(candidate);
-        int slots = ps_tag_member_flat_slots(candidate);
+        int slots = canonical_member_flat_slot_count(candidate);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;

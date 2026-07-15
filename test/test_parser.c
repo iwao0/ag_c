@@ -83,6 +83,98 @@
 static node_t **parsed_code;
 static ag_compilation_session_t *test_suite_session;
 
+static psx_semantic_context_t *test_semantic_context(void) {
+  return ag_compilation_session_semantic_context(test_suite_session);
+}
+
+static int test_tag_flat_slot_count(
+    token_kind_t tag_kind, char *tag_name, int tag_len) {
+  return ps_tag_flat_slot_count_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len);
+}
+
+static int test_tag_member_flat_slots(const tag_member_info_t *member) {
+  return ps_tag_member_flat_slots_in(test_semantic_context(), member);
+}
+
+static int test_tag_member_elem_flat_slots(
+    const tag_member_info_t *member) {
+  return ps_tag_member_elem_flat_slots_in(
+      test_semantic_context(), member);
+}
+
+static int test_tag_find_named_member(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    char *member_name, int member_len,
+    tag_member_info_t *out, int *out_ordinal) {
+  return ps_tag_find_named_member_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      member_name, member_len, out, out_ordinal);
+}
+
+static int test_tag_select_union_member_for_init_slot(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const global_var_t *global, int index, tag_member_info_t *member) {
+  return ps_tag_select_union_member_for_init_slot_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      global, index, member);
+}
+
+static int test_tag_union_init_member_for_slot(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const global_var_t *global, int index, tag_member_info_t *out) {
+  return ps_tag_union_init_member_for_slot_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      global, index, out);
+}
+
+static int test_tag_first_named_member(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    tag_member_info_t *out, int *out_ordinal) {
+  return ps_tag_first_named_member_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      out, out_ordinal);
+}
+
+static int test_tag_next_named_member(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int *ordinal_inout, tag_member_info_t *out) {
+  return ps_tag_next_named_member_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      ordinal_inout, out);
+}
+
+static int test_tag_member_at_flat_slot(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int flat_slot, tag_member_info_t *out, int *out_ordinal) {
+  return ps_tag_member_at_flat_slot_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      flat_slot, out, out_ordinal);
+}
+
+static void test_tag_flat_cover_state_note(
+    psx_tag_flat_cover_state_t *state,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *member) {
+  ps_tag_flat_cover_state_note_in(
+      test_semantic_context(), state, tag_kind, tag_name, tag_len, member);
+}
+
+static int test_tag_member_designator_slot(
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    char *member_name, int member_len, int *out_ordinal) {
+  return ps_tag_member_designator_slot_in(
+      test_semantic_context(), tag_kind, tag_name, tag_len,
+      member_name, member_len, out_ordinal);
+}
+
+static int test_gvar_walk_aggregate_initializer(
+    global_var_t *global, long long base_offset,
+    const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
+  return ps_gvar_walk_aggregate_initializer_in(
+      test_semantic_context(), global, base_offset, ops, user);
+}
+
 static void reset_test_locals(void) {
   ps_decl_reset_locals_in(
       ag_compilation_session_local_registry(test_suite_session));
@@ -106,6 +198,7 @@ static node_t **parse_test_program_from(token_t *start) {
 static node_t *parse_test_expression_from(token_t *start) {
   return ps_expr_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       NULL, NULL, start);
 }
@@ -117,6 +210,7 @@ static void begin_test_parser_stream(
   ps_parser_stream_begin_in_contexts(
       stream,
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       ag_compilation_session_parser_runtime_context(test_suite_session),
       tokenizer_context, start, toplevel_declarations);
@@ -128,6 +222,8 @@ static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
+          .global_registry =
+              ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
       });
@@ -139,6 +235,7 @@ static int parse_test_toplevel_declaration_syntax(
   return psx_parse_toplevel_declaration_syntax_in_contexts(
       declaration, callbacks,
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session));
 }
 
@@ -149,6 +246,8 @@ static void parse_test_decl_specifier_syntax(
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
+          .global_registry =
+              ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
       });
@@ -161,6 +260,8 @@ static int parse_test_type_name_syntax_at(
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context =
               ag_compilation_session_semantic_context(test_suite_session),
+          .global_registry =
+              ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
       },
@@ -172,6 +273,7 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
   psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
       &declarator,
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
       NULL, NULL);
   return declarator;
@@ -182,6 +284,7 @@ static void parse_test_runtime_declarator_expressions(
   ps_parse_runtime_declarator_expressions_in_contexts(
       declarator,
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session), NULL);
 }
 
@@ -340,12 +443,14 @@ static void parse_test_initializer_syntax_value(
   psx_parse_initializer_syntax_value_in_contexts(
       initializer, assign_tok,
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session), NULL);
 }
 
 static node_t *parse_test_initializer_for_var(lvar_t *var) {
   return psx_decl_parse_initializer_for_var_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session), NULL, var);
 }
 
@@ -4813,6 +4918,31 @@ static void test_initializer_resolution_boundary() {
   ASSERT_EQ(3, psx_initializer_leaf_cursor_after_target(
                    &leaves, &target));
   psx_initializer_scalar_leaf_list_dispose(&leaves);
+
+  psx_type_t *recursive = ps_type_new_tag(
+      TK_STRUCT, (char *)"RecursiveInit", 13, 0, 16);
+  tag_member_info_t recursive_members[2] = {
+      {.name = (char *)"next", .len = 4, .offset = 0,
+       .decl_type = ps_type_new_pointer(recursive)},
+      {.name = (char *)"value", .len = 5, .offset = 8,
+       .decl_type = integer},
+  };
+  psx_aggregate_definition_t recursive_definition = {
+      .tag_kind = TK_STRUCT,
+      .tag_name = (char *)"RecursiveInit",
+      .tag_len = 13,
+      .size = 16,
+      .align = 8,
+      .member_count = 2,
+      .members = recursive_members,
+  };
+  recursive->aggregate_definition = &recursive_definition;
+  ASSERT_TRUE(psx_collect_initializer_scalar_leaves(
+      recursive, 0, &leaves));
+  ASSERT_EQ(2, leaves.count);
+  ASSERT_EQ(PSX_TYPE_POINTER, leaves.items[0].type->kind);
+  ASSERT_EQ(8, leaves.items[1].relative_offset);
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
 }
 
 static void test_local_initializer_parse_lowering_boundary() {
@@ -6891,8 +7021,12 @@ static void test_expr_string() {
   ASSERT_TRUE(node->type->base != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, node->type->base->kind);
   ASSERT_EQ(TK_CHAR, node->type->base->scalar_kind);
-  // 文字列テーブルに登録されている
-  string_lit_t *lit = ps_find_string_lit_by_label(as_string(node)->string_label);
+  node_string_t *string = as_string(node);
+  ASSERT_EQ(5, string->literal_length);
+  ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
+  string_lit_t *lit = ps_find_string_lit_by_label_in(
+      ag_compilation_session_global_registry(test_suite_session),
+      string->string_label);
   ASSERT_TRUE(lit != NULL);
   ASSERT_EQ(5, lit->len);
   ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
@@ -6903,10 +7037,9 @@ static void test_expr_concat_string() {
     node_t *node = parse_expr_input("\"he\" \"llo\"");
 
   ASSERT_EQ(ND_STRING, node->kind);
-  string_lit_t *lit = ps_find_string_lit_by_label(as_string(node)->string_label);
-  ASSERT_TRUE(lit != NULL);
-  ASSERT_EQ(5, lit->len);
-  ASSERT_TRUE(strncmp(lit->str, "hello", 5) == 0);
+  node_string_t *string = as_string(node);
+  ASSERT_EQ(5, string->literal_length);
+  ASSERT_TRUE(strncmp(string->literal_contents, "hello", 5) == 0);
 }
 
 static void test_type_decl() {
@@ -11095,22 +11228,22 @@ static void test_type_metadata_bridge() {
       "union FlatFpU { int i; float f; double d; };"
       "int main(){ return 0; }");
   (void)parsed_code;
-  ASSERT_EQ(2, ps_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
-  ASSERT_EQ(5, ps_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
-  ASSERT_EQ(2, ps_tag_flat_slot_count(TK_UNION, "FlatU", 5));
+  ASSERT_EQ(2, test_tag_flat_slot_count(TK_STRUCT, "FlatIn", 6));
+  ASSERT_EQ(5, test_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
+  ASSERT_EQ(2, test_tag_flat_slot_count(TK_UNION, "FlatU", 5));
   tag_member_info_t flat_member = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
-  ASSERT_EQ(2, ps_tag_member_flat_slots(&flat_member));
-  ASSERT_EQ(2, ps_tag_member_elem_flat_slots(&flat_member));
+  ASSERT_EQ(2, test_tag_member_flat_slots(&flat_member));
+  ASSERT_EQ(2, test_tag_member_elem_flat_slots(&flat_member));
   int named_ordinal = -1;
   tag_member_info_t named_member = {0};
-  ASSERT_TRUE(ps_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "y", 1,
+  ASSERT_TRUE(test_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "y", 1,
                                         &named_member, &named_ordinal));
   ASSERT_EQ(5, named_ordinal);
   ASSERT_TRUE(named_member.name != NULL);
   ASSERT_EQ(0, strncmp(named_member.name, "y", (size_t)named_member.len));
   named_ordinal = -1;
-  ASSERT_TRUE(!ps_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "missing", 7,
+  ASSERT_TRUE(!test_tag_find_named_member(TK_STRUCT, "FlatOut", 7, "missing", 7,
                                          &named_member, &named_ordinal));
   ASSERT_EQ(-1, named_ordinal);
   global_var_t tmp_no_init = {0};
@@ -11153,14 +11286,14 @@ static void test_type_metadata_bridge() {
                                           &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             ps_tag_member_decl_fp_kind(&selected_union_member));
-  ASSERT_TRUE(ps_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
+  ASSERT_TRUE(test_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
                                                         &tmp_union_init, 0,
                                                         &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
             ps_tag_member_decl_fp_kind(&selected_union_member));
   selected_union_member = (tag_member_info_t){0};
   selected_union_member.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  ASSERT_TRUE(ps_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
+  ASSERT_TRUE(test_tag_select_union_member_for_init_slot(TK_UNION, "FlatFpU", 7,
                                                         &tmp_union_init, 0,
                                                         &selected_union_member));
   ASSERT_TRUE(selected_union_member.name != NULL);
@@ -11193,14 +11326,14 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, tmp_member_value.value);
   ASSERT_EQ(1, tmp_member_value.size);
   selected_union_member = (tag_member_info_t){0};
-  ASSERT_TRUE(ps_tag_union_init_member_for_slot(TK_UNION, "FlatFpU", 7,
+  ASSERT_TRUE(test_tag_union_init_member_for_slot(TK_UNION, "FlatFpU", 7,
                                                  &tmp_union_init, 0,
                                                  &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
             ps_tag_member_decl_fp_kind(&selected_union_member));
   int flatu_in_ordinal = -1;
   tag_member_info_t flatu_in_member = {0};
-  ASSERT_TRUE(ps_tag_find_named_member(TK_UNION, "FlatU", 5, "in", 2,
+  ASSERT_TRUE(test_tag_find_named_member(TK_UNION, "FlatU", 5, "in", 2,
                                         &flatu_in_member, &flatu_in_ordinal));
   int init_ordinals[1] = {flatu_in_ordinal};
   global_var_t tmp_union_ord = {0};
@@ -11215,7 +11348,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_gvar_init_slot_fp_kind(&tmp_union_ord, 0));
   ASSERT_TRUE(ps_gvar_init_slot_is_plain_zero(&tmp_union_ord, 0));
   tag_member_info_t overridden_union_member = {0};
-  ASSERT_TRUE(ps_tag_union_init_member_for_slot(TK_UNION, "FlatU", 5,
+  ASSERT_TRUE(test_tag_union_init_member_for_slot(TK_UNION, "FlatU", 5,
                                                  &tmp_union_ord, 0,
                                                  &overridden_union_member));
   ASSERT_TRUE(overridden_union_member.name != NULL);
@@ -11223,63 +11356,63 @@ static void test_type_metadata_bridge() {
                        (size_t)overridden_union_member.len));
   int first_named_ordinal = -1;
   tag_member_info_t first_named_member = {0};
-  ASSERT_TRUE(ps_tag_first_named_member(TK_STRUCT, "FlatOut", 7,
+  ASSERT_TRUE(test_tag_first_named_member(TK_STRUCT, "FlatOut", 7,
                                          &first_named_member, &first_named_ordinal));
   ASSERT_EQ(0, first_named_ordinal);
   ASSERT_TRUE(first_named_member.name != NULL);
   ASSERT_EQ(0, strncmp(first_named_member.name, "x", (size_t)first_named_member.len));
   first_named_ordinal = -1;
-  ASSERT_TRUE(ps_tag_first_named_member(TK_UNION, "FlatU", 5,
+  ASSERT_TRUE(test_tag_first_named_member(TK_UNION, "FlatU", 5,
                                          &first_named_member, &first_named_ordinal));
   ASSERT_EQ(0, first_named_ordinal);
   ASSERT_TRUE(first_named_member.name != NULL);
   ASSERT_EQ(0, strncmp(first_named_member.name, "i", (size_t)first_named_member.len));
   int next_named_ordinal = 0;
   tag_member_info_t next_named_member = {0};
-  ASSERT_TRUE(ps_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
+  ASSERT_TRUE(test_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
                                         &next_named_ordinal, &next_named_member));
   ASSERT_EQ(1, next_named_ordinal);
   ASSERT_TRUE(next_named_member.name != NULL);
   ASSERT_EQ(0, strncmp(next_named_member.name, "x", (size_t)next_named_member.len));
-  ASSERT_TRUE(ps_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
+  ASSERT_TRUE(test_tag_next_named_member(TK_STRUCT, "FlatOut", 7,
                                         &next_named_ordinal, &next_named_member));
   ASSERT_EQ(2, next_named_ordinal);
   ASSERT_TRUE(next_named_member.name != NULL);
   ASSERT_EQ(0, strncmp(next_named_member.name, "in", (size_t)next_named_member.len));
   int flat_slot_ordinal = -1;
   tag_member_info_t flat_slot_member = {0};
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 0,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 0,
                                           &flat_slot_member, &flat_slot_ordinal));
   ASSERT_EQ(0, flat_slot_ordinal);
   ASSERT_TRUE(flat_slot_member.name != NULL);
   ASSERT_EQ(0, strncmp(flat_slot_member.name, "x", (size_t)flat_slot_member.len));
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 1,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 1,
                                           &flat_slot_member, &flat_slot_ordinal));
   ASSERT_EQ(1, flat_slot_ordinal);
   ASSERT_TRUE(flat_slot_member.name != NULL);
   ASSERT_EQ(0, strncmp(flat_slot_member.name, "in", (size_t)flat_slot_member.len));
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 2,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 2,
                                           &flat_slot_member, &flat_slot_ordinal));
   ASSERT_EQ(1, flat_slot_ordinal);
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 3,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 3,
                                           &flat_slot_member, &flat_slot_ordinal));
   const psx_type_t *flat_slot_tag_type =
       ps_tag_member_decl_tag_type(&flat_slot_member);
   ASSERT_TRUE(flat_slot_tag_type != NULL);
   ASSERT_EQ(TK_UNION, flat_slot_tag_type->tag_kind);
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 4,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 4,
                                           &flat_slot_member, &flat_slot_ordinal));
   ASSERT_EQ(5, flat_slot_ordinal);
   ASSERT_TRUE(flat_slot_member.name != NULL);
   ASSERT_EQ(0, strncmp(flat_slot_member.name, "y", (size_t)flat_slot_member.len));
-  ASSERT_TRUE(!ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 5,
+  ASSERT_TRUE(!test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 5,
                                            &flat_slot_member, &flat_slot_ordinal));
-  ASSERT_TRUE(ps_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 3,
+  ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 3,
                                           &flat_slot_member, &flat_slot_ordinal));
   psx_tag_flat_cover_state_t flat_cover;
   ps_tag_flat_cover_state_init(&flat_cover);
   ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
-  ps_tag_flat_cover_state_note(&flat_cover, TK_STRUCT, "FlatOut", 7, &flat_slot_member);
+  test_tag_flat_cover_state_note(&flat_cover, TK_STRUCT, "FlatOut", 7, &flat_slot_member);
   tag_member_info_t flat_promoted_union_member = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "u", 1,
                                            &flat_promoted_union_member));
@@ -11288,11 +11421,11 @@ static void test_type_metadata_bridge() {
                                            &flat_slot_member));
   ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
   int flat_ordinal = -1;
-  ASSERT_EQ(4, ps_tag_member_designator_slot(TK_STRUCT, "FlatOut", 7, "y", 1,
+  ASSERT_EQ(4, test_tag_member_designator_slot(TK_STRUCT, "FlatOut", 7, "y", 1,
                                               &flat_ordinal));
   ASSERT_EQ(5, flat_ordinal);
   flat_ordinal = -1;
-  ASSERT_EQ(0, ps_tag_member_designator_slot(TK_UNION, "FlatU", 5, "in", 2,
+  ASSERT_EQ(0, test_tag_member_designator_slot(TK_UNION, "FlatU", 5, "in", 2,
                                               &flat_ordinal));
   ASSERT_EQ(1, flat_ordinal);
 
@@ -11308,7 +11441,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_GVAR_INIT_KIND_AGGREGATE, long_union_cls.kind);
   ASSERT_TRUE(long_union_cls.has_aggregate_initializer);
   tag_member_info_t long_union_member = {0};
-  ASSERT_TRUE(ps_tag_union_init_member_for_slot(TK_UNION, "LongMemberU", 11,
+  ASSERT_TRUE(test_tag_union_init_member_for_slot(TK_UNION, "LongMemberU", 11,
                                                  __tm_lu, 0, &long_union_member));
   ASSERT_TRUE(long_union_member.name != NULL);
   ASSERT_EQ(0, strncmp(long_union_member.name, "b",
@@ -11337,7 +11470,7 @@ static void test_type_metadata_bridge() {
       ps_gvar_initializer_class(short_union_su, 0);
   ASSERT_EQ(PSX_GVAR_INIT_KIND_AGGREGATE, short_union_cls.kind);
   tag_member_info_t short_union_member = {0};
-  ASSERT_TRUE(ps_tag_union_init_member_for_slot(TK_UNION, "U", 1,
+  ASSERT_TRUE(test_tag_union_init_member_for_slot(TK_UNION, "U", 1,
                                                  short_union_su, 0,
                                                  &short_union_member));
   ASSERT_TRUE(short_union_member.name != NULL);
@@ -11739,10 +11872,10 @@ static void test_type_metadata_bridge() {
       3, 24, 0);
   ASSERT_EQ(24, ps_type_sizeof(flat_decl_array_member.decl_type));
   ASSERT_EQ(8, ps_type_sizeof(flat_decl_array_member.decl_type->base));
-  ASSERT_EQ(2, ps_tag_flat_slot_count(TK_STRUCT, (char *)flat_decl_inner_tag,
+  ASSERT_EQ(2, test_tag_flat_slot_count(TK_STRUCT, (char *)flat_decl_inner_tag,
                                        (int)sizeof(flat_decl_inner_tag) - 1));
-  ASSERT_EQ(6, ps_tag_member_flat_slots(&flat_decl_array_member));
-  ASSERT_EQ(2, ps_tag_member_elem_flat_slots(&flat_decl_array_member));
+  ASSERT_EQ(6, test_tag_member_flat_slots(&flat_decl_array_member));
+  ASSERT_EQ(2, test_tag_member_elem_flat_slots(&flat_decl_array_member));
   const char flat_decl_union_tag[] = "__tm_flat_decl_union";
   psx_ctx_define_tag_type_with_layout(TK_UNION, (char *)flat_decl_union_tag,
                                       (int)sizeof(flat_decl_union_tag) - 1,
@@ -11759,7 +11892,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(register_test_tag_member(
       TK_UNION, (char *)flat_decl_union_tag,
       (int)sizeof(flat_decl_union_tag) - 1, &flat_decl_array_member));
-  ASSERT_EQ(6, ps_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
+  ASSERT_EQ(6, test_tag_flat_slot_count(TK_UNION, (char *)flat_decl_union_tag,
                                        (int)sizeof(flat_decl_union_tag) - 1));
 
   parsed_code = parse_program_input(
@@ -11887,7 +12020,7 @@ static void test_type_metadata_bridge() {
       .scalar = aggregate_walk_trace_scalar,
       .padding = aggregate_walk_trace_padding,
   };
-  ASSERT_TRUE(ps_gvar_walk_aggregate_initializer(&walk_gv, 0, &walk_ops,
+  ASSERT_TRUE(test_gvar_walk_aggregate_initializer(&walk_gv, 0, &walk_ops,
                                                   &walk_trace));
   ASSERT_EQ(5, walk_trace.scalar_count);
   ASSERT_EQ(0, walk_trace.scalar_offsets[0]);
@@ -11928,7 +12061,7 @@ static void test_type_metadata_bridge() {
   for (int i = 0; i < 4; i++)
     ps_gvar_init_slot_write(&walk_array_gv, i, i + 11, 0.0, NULL, 0);
   aggregate_walk_trace_t walk_array_trace = {.gv = &walk_array_gv};
-  ASSERT_TRUE(ps_gvar_walk_aggregate_initializer(&walk_array_gv, 0, &walk_ops,
+  ASSERT_TRUE(test_gvar_walk_aggregate_initializer(&walk_array_gv, 0, &walk_ops,
                                                   &walk_array_trace));
   ASSERT_EQ(4, walk_array_trace.scalar_count);
   ASSERT_EQ(0, walk_array_trace.scalar_offsets[0]);
@@ -15559,7 +15692,8 @@ static void test_semantic_context_isolation() {
       second, streamed_label_name, 14, NULL);
   psx_parser_stream_t parser_stream = {0};
   ps_parser_stream_begin_in_contexts(
-      &parser_stream, second, ps_local_registry_active(),
+      &parser_stream, second, ps_global_registry_active(),
+      ps_local_registry_active(),
       ps_parser_runtime_context_active(), NULL,
       tk_tokenize((char *)
           "{ StreamType value = 0; "
@@ -15778,6 +15912,7 @@ static void test_compilation_session_registry_isolation() {
       &nested_context_body,
       &(psx_decl_specifier_syntax_options_t){
           .semantic_context = first.semantic_context,
+          .global_registry = first.global_registry,
           .local_registry = first.local_registry,
       });
   ASSERT_EQ(1, nested_context_body.item_count);
@@ -15912,11 +16047,12 @@ static void test_compilation_session_registry_isolation() {
                   first.local_registry,
                   (char *)"explicit_first_local", 20,
                   explicit_first_point) == &explicit_first_local);
-  psx_register_string_lit(&second_literal);
+  psx_register_string_lit_in(second.global_registry, &second_literal);
   psx_local_registry_add(&second_local);
   ASSERT_TRUE(ps_find_global_var(
                   (char *)"shared_global", 13) == &second_global);
-  ASSERT_TRUE(ps_find_string_lit_by_label(
+  ASSERT_TRUE(ps_find_string_lit_by_label_in(
+                  second.global_registry,
                   (char *)".Lshared") == &second_literal);
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == &second_local);
@@ -15948,7 +16084,8 @@ static void test_compilation_session_registry_isolation() {
   ps_local_registry_reset();
   ASSERT_TRUE(ps_find_global_var(
                   (char *)"shared_global", 13) == &first_global);
-  ASSERT_TRUE(ps_find_string_lit_by_label(
+  ASSERT_TRUE(ps_find_string_lit_by_label_in(
+                  first.global_registry,
                   (char *)".Lshared") == &first_literal);
   ASSERT_TRUE(ps_decl_find_lvar(
                   (char *)"shared_local", 12) == NULL);

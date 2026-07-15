@@ -12,6 +12,8 @@ struct psx_global_registry_t {
   string_lit_t *string_literals;
   float_lit_t *float_literals;
   global_var_t *global_vars;
+  int next_string_literal_id;
+  int next_float_literal_id;
   global_var_t *gvars_by_bucket[GVAR_HASH_BUCKETS];
 };
 
@@ -92,19 +94,11 @@ void psx_register_string_lit_in(
   registry->string_literals = lit;
 }
 
-void psx_register_string_lit(string_lit_t *lit) {
-  psx_register_string_lit_in(active_global_registry, lit);
-}
-
 void psx_register_float_lit_in(
     psx_global_registry_t *registry, float_lit_t *lit) {
   if (!registry || !lit) return;
   lit->next = registry->float_literals;
   registry->float_literals = lit;
-}
-
-void psx_register_float_lit(float_lit_t *lit) {
-  psx_register_float_lit_in(active_global_registry, lit);
 }
 
 global_var_t *ps_find_global_var_in(
@@ -133,8 +127,14 @@ string_lit_t *ps_find_string_lit_by_label_in(
   return NULL;
 }
 
-string_lit_t *ps_find_string_lit_by_label(char *label) {
-  return ps_find_string_lit_by_label_in(active_global_registry, label);
+int ps_global_registry_next_string_literal_id(
+    psx_global_registry_t *registry) {
+  return registry ? registry->next_string_literal_id++ : -1;
+}
+
+int ps_global_registry_next_float_literal_id(
+    psx_global_registry_t *registry) {
+  return registry ? registry->next_float_literal_id++ : -1;
 }
 
 void ps_iter_globals_in(
@@ -188,6 +188,8 @@ void ps_global_registry_reset_translation_unit_in(
   registry->global_vars = NULL;
   registry->string_literals = NULL;
   registry->float_literals = NULL;
+  registry->next_string_literal_id = 0;
+  registry->next_float_literal_id = 0;
   memset(registry->gvars_by_bucket, 0,
          sizeof(registry->gvars_by_bucket));
 }

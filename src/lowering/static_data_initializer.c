@@ -4,7 +4,6 @@
 #include "../parser/diag.h"
 #include "../parser/decl.h"
 #include "../parser/global_registry.h"
-#include "../parser/literal_public.h"
 #include "../parser/node_utils.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
@@ -175,15 +174,14 @@ static void write_string_value(
                  diag_message_for(
                      DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
   }
-  psx_string_lit_view_t literal = ps_string_lit_view(
-      ps_find_string_lit_by_label(string->string_label));
-  if (!literal.str) {
+  if (!string->literal_contents) {
     ps_diag_ctx(tok ? tok : lowering->fallback_tok, "static-init", "%s",
                  diag_message_for(
                      DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
   ps_gvar_init_slots_write_string_units(
-      lowering->global, start, literal.str, literal.len,
+      lowering->global, start, string->literal_contents,
+      string->literal_length,
       element_size, capacity);
 }
 
@@ -321,10 +319,9 @@ static int lower_static_string_expression(
 
   int total = string->byte_len + 1;
   ps_gvar_init_slots_alloc(global, total, 0);
-  string_lit_t *literal = ps_find_string_lit_by_label(string->string_label);
-  if (literal) {
+  if (string->literal_contents) {
     ps_gvar_init_slots_write_string_units(
-        global, 0, literal->str, literal->len,
+        global, 0, string->literal_contents, string->literal_length,
         element_size, string->byte_len);
   }
   ps_gvar_init_slot_write(global, string->byte_len, 0, 0.0, NULL, 0);

@@ -19,13 +19,13 @@ static int symbol_alignment(int size) {
 static void lower_func_ref(ir_symbol_t *symbol, int offset,
                            psx_gvar_init_value_t value,
                            const psx_type_t *type) {
+  if (value.kind != PSX_GVAR_INIT_VALUE_SYMBOL) return;
   char *name = NULL;
   int name_len = 0;
-  if (!ps_gvar_init_value_named_function(value, &name, &name_len)) return;
+  if (!ps_gvar_symbol_ref_named(value.symbol_ref, &name, &name_len)) return;
   ir_callable_sig_t callable_sig = {0};
-  const ir_callable_sig_t *sig = NULL;
-  if (ir_abi_callable_sig_from_type(type, &callable_sig)) sig = &callable_sig;
-  ir_symbol_add_func_ref(symbol, offset, name, name_len, sig);
+  if (!ir_abi_callable_sig_from_type(type, &callable_sig)) return;
+  ir_symbol_add_func_ref(symbol, offset, name, name_len, &callable_sig);
 }
 
 static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
@@ -86,7 +86,8 @@ ir_symbol_t *lower_ir_global_symbol(
       .global = global,
   };
   if (ps_gvar_has_aggregate_initializer(global)) {
-    ps_gvar_walk_aggregate_initializer(global, 0, &func_ref_walk_ops, &ctx);
+    ps_gvar_walk_resolved_aggregate_initializer(
+        global, 0, &func_ref_walk_ops, &ctx);
   }
   return symbol;
 }

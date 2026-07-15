@@ -47,8 +47,6 @@ void ps_parser_runtime_context_reset_translation_unit(
     psx_parser_runtime_context_t *ctx) {
   if (!ctx) return;
   ctx->anonymous_tag_seq = 0;
-  ctx->string_label_count = 0;
-  ctx->float_label_count = 0;
   ctx->pragma_pack_current = 0;
   ctx->pragma_pack_stack_depth = 0;
   ctx->recoverable_syntax_error = 0;

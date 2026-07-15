@@ -488,7 +488,8 @@ void psx_apply_parsed_function_parameters_in_contexts(
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
     ps_parse_runtime_declarator_expressions_in_contexts(
-        &parameter->declarator, semantic_context, local_registry, NULL);
+        &parameter->declarator, semantic_context, global_registry,
+        local_registry, NULL);
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator_in_contexts(
         semantic_context, global_registry, local_registry,

@@ -170,10 +170,6 @@ static node_t *lower_aggregate_cast(node_t *operand,
       member_found = 1;
       break;
     }
-  } else {
-    member_found = ps_tag_first_named_member(
-        view.tag_kind, view.value->tag_name, view.value->tag_len,
-        &member, NULL);
   }
   if (!member_found) {
     ps_diag_ctx(diag_tok, "cast", "%s",

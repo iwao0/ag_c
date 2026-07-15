@@ -3,8 +3,6 @@
 #include "../parser/lvar_public.h"
 #include "../parser/config_runtime.h"
 #include "../parser/node_utils.h"
-#include "../parser/literal_public.h"
-#include "../parser/symtab.h"
 #include "../parser/diag.h"
 #include "../parser/tag_public.h"
 #include "../diag/diag.h"
@@ -75,9 +73,7 @@ static void append_array_string_unit(uint32_t unit, void *user) {
 static node_t *lower_array_string_initializer_at(
     lvar_t *var, node_string_t *string, int base_index, int capacity,
     int array_len, unsigned char *assigned, node_t *chain, token_t *tok) {
-  psx_string_lit_view_t literal = ps_string_lit_view(
-      ps_find_string_lit_by_label(string->string_label));
-  if (!literal.str) {
+  if (!string->literal_contents) {
     ps_diag_ctx(tok, "init", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
@@ -88,7 +84,8 @@ static node_t *lower_array_string_initializer_at(
   if (limit > array_len) limit = array_len;
   array_string_lowering_ctx_t ctx = {
       var, chain, base_index, limit, assigned};
-  tk_emit_string_code_units(literal.str, literal.len, elem_size, capacity,
+  tk_emit_string_code_units(
+      string->literal_contents, string->literal_length, elem_size, capacity,
                             append_array_string_unit, &ctx);
   while (ctx.idx < limit) {
     ctx.chain = append_init(
@@ -277,15 +274,15 @@ static node_t *lower_typed_character_array_string(
   if (char_width <= 0) char_width = 1;
   if (!element || capacity <= 0 || element_size != char_width) return NULL;
 
-  psx_string_lit_view_t literal = ps_string_lit_view(
-      ps_find_string_lit_by_label(string->string_label));
-  if (!literal.str) {
+  if (!string->literal_contents) {
     ps_diag_ctx(tok, "init", "%s",
                  diag_message_for(DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
   typed_string_lowering_ctx_t ctx = {
       var, element, chain, relative_offset, element_size, 0, capacity};
-  tk_emit_string_code_units(literal.str, literal.len, element_size, capacity,
+  tk_emit_string_code_units(
+      string->literal_contents, string->literal_length,
+      element_size, capacity,
                             append_typed_string_unit, &ctx);
   while (ctx.index < capacity)
     append_typed_string_unit(0, &ctx);

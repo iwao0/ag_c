@@ -55,7 +55,8 @@ void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
-  if (!options || !options->semantic_context || !options->local_registry) {
+  if (!options || !options->semantic_context || !options->global_registry ||
+      !options->local_registry) {
     ps_diag_ctx(current_token(), "aggregate-syntax",
                 "semantic and local contexts must be provided explicitly");
   }
@@ -67,6 +68,7 @@ void psx_parse_aggregate_body_with_options(
       psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
           options ? options->semantic_context : NULL,
+          options ? options->global_registry : NULL,
           options ? options->local_registry : NULL, NULL);
       continue;
     }
@@ -82,6 +84,7 @@ void psx_parse_aggregate_body_with_options(
           append_aggregate_declarator(declaration);
       psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
           declarator, options ? options->semantic_context : NULL,
+          options ? options->global_registry : NULL,
           options ? options->local_registry : NULL,
           options ? options->is_typedef_name : NULL,
           options ? options->context : NULL);

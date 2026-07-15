@@ -17,6 +17,7 @@ typedef enum {
 
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_declaration_callbacks_t
     psx_local_declaration_callbacks_t;
 
@@ -62,6 +63,7 @@ void ps_decl_get_current_funcname_in(
 
 node_t *psx_decl_parse_initializer_for_var_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations,
     lvar_t *var);

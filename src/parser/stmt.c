@@ -27,6 +27,7 @@ static inline void set_curtok(token_t *tok) {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const psx_local_declaration_callbacks_t *local_declarations;
 } psx_statement_parse_context_t;
@@ -111,8 +112,8 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   }
   /* 式文 (式を評価して結果を捨てる) */
   node_t *node = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(';');
   return node;
 }
@@ -183,11 +184,13 @@ static int is_stmt_expr_value_stmt(node_t *s) {
 
 node_t *psx_parse_statement_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry) return NULL;
   psx_statement_parse_context_t context = {
       .semantic_context = semantic_context,
+      .global_registry = global_registry,
       .local_registry = local_registry,
       .local_declarations = local_declarations,
   };
@@ -221,8 +224,8 @@ static node_t *parse_stmt_return(
     return node;
   }
   node->lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(';');
   return node;
 }
@@ -233,8 +236,8 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
   node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
   node->base.kind = ND_IF;
   node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(')');
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
    * (clang -Wempty-body 相当)。 */
@@ -253,8 +256,8 @@ static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
   node_ctrl_t *node = arena_alloc(sizeof(node_ctrl_t));
   node->base.kind = ND_WHILE;
   node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -271,8 +274,8 @@ static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
   set_curtok(curtok()->next);
   tk_expect('(');
   node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(')');
   tk_expect(';');
   return (node_t *)node;
@@ -291,21 +294,21 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
       node->init = parse_decl_like_stmt(context);
     } else {
       node->init = psx_expr_expr_in_contexts(
-          context->semantic_context, context->local_registry,
-          context->local_declarations);
+          context->semantic_context, context->global_registry,
+          context->local_registry, context->local_declarations);
       tk_expect(';');
     }
   }
   if (!tk_consume(';')) {
     node->base.lhs = psx_expr_expr_in_contexts(
-        context->semantic_context, context->local_registry,
-        context->local_declarations);
+        context->semantic_context, context->global_registry,
+        context->local_registry, context->local_declarations);
     tk_expect(';');
   }
   if (!tk_consume(')')) {
     node->inc = psx_expr_expr_in_contexts(
-        context->semantic_context, context->local_registry,
-        context->local_declarations);
+        context->semantic_context, context->global_registry,
+        context->local_registry, context->local_declarations);
     tk_expect(')');
   }
   node->base.rhs = stmt_internal(context);
@@ -321,8 +324,8 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
   node->base.kind = ND_SWITCH;
   node->base.tok = switch_tok;
   node->base.lhs = psx_expr_expr_in_contexts(
-      context->semantic_context, context->local_registry,
-      context->local_declarations);
+      context->semantic_context, context->global_registry,
+      context->local_registry, context->local_declarations);
   tk_expect(')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
@@ -400,11 +403,13 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
 
 node_t *psx_stmt_stmt_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry) return NULL;
   psx_statement_parse_context_t context = {
       .semantic_context = semantic_context,
+      .global_registry = global_registry,
       .local_registry = local_registry,
       .local_declarations = local_declarations,
   };

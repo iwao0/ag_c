@@ -29,7 +29,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
                 "canonical function return base type resolution failed");
   }
   ps_parse_runtime_declarator_expressions_in_contexts(
-      &definition->declarator, semantic_context, local_registry, NULL);
+      &definition->declarator, semantic_context, global_registry,
+      local_registry, NULL);
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
@@ -52,7 +53,8 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
     ps_parse_runtime_declarator_expressions_in_contexts(
-        &parameter->declarator, semantic_context, local_registry, NULL);
+        &parameter->declarator, semantic_context, global_registry,
+        local_registry, NULL);
     if (!psx_apply_function_definition_parameter_pipeline(
             &pipeline, parameter)) {
       ps_diag_ctx(parameter->declarator.diagnostic_token, "funcdef",

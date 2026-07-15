@@ -5,6 +5,7 @@
 #include "diag.h"
 #include "dynarray.h"
 #include "initializer_syntax.h"
+#include "global_registry.h"
 #include "local_registry.h"
 #include "node_utils.h"
 #include "semantic_ctx.h"
@@ -12,7 +13,6 @@
 #include "config_runtime.h"
 #include "type.h"
 #include "type_builder.h"
-#include "runtime_context.h"
 #include "declaration_syntax.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
@@ -30,6 +30,7 @@ static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
@@ -44,10 +45,12 @@ typedef struct {
 
 static expr_parse_ctx_t expr_parse_ctx_default(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = {
       .semantic_context = semantic_context,
+      .global_registry = global_registry,
       .local_registry = local_registry,
       .local_declarations = local_declarations,
   };
@@ -177,7 +180,7 @@ static node_t *parse_compound_literal_from_type(
   (void)current_funcname_len;
   token_t *initializer_tok = curtok();
   node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
-      ctx->semantic_context, ctx->local_registry,
+      ctx->semantic_context, ctx->global_registry, ctx->local_registry,
       ctx->local_declarations);
   node_t *syntax = psx_node_new_compound_literal(
       type_name, initializer, initializer_tok,
@@ -220,6 +223,7 @@ static int parenthesized_type_name_is_compound_literal(
                   diagnose_type_name_complex_requires_float,
               .context = ctx->semantic_context,
               .semantic_context = ctx->semantic_context,
+              .global_registry = ctx->global_registry,
               .local_registry = ctx->local_registry,
           },
           &syntax)) {
@@ -247,6 +251,7 @@ static int capture_type_name_ref_at(
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,
                              .semantic_context = ctx->semantic_context,
+                             .global_registry = ctx->global_registry,
                              .local_registry = ctx->local_registry,
                          },
                          syntax)
@@ -258,6 +263,7 @@ static int capture_type_name_ref_at(
                                  diagnose_type_name_complex_requires_float,
                              .context = ctx->semantic_context,
                              .semantic_context = ctx->semantic_context,
+                             .global_registry = ctx->global_registry,
                              .local_registry = ctx->local_registry,
                          },
                          syntax);
@@ -267,6 +273,7 @@ static int capture_type_name_ref_at(
   if (runtime_bounds)
     ps_parse_runtime_declarator_expressions_in_contexts(
         &syntax->declarator, ctx->semantic_context,
+        ctx->global_registry,
         ctx->local_registry,
         ctx->local_declarations);
   psx_local_lookup_point_t point =
@@ -300,30 +307,25 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx);
 
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx);
 
-void ps_expr_reset_translation_unit_state(void) {
-  psx_parser_runtime_context_t *runtime =
-      ps_parser_runtime_context_active();
-  runtime->string_label_count = 0;
-  runtime->float_label_count = 0;
-}
-
 node_t *psx_expr_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry) return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, local_registry, local_declarations);
+      semantic_context, global_registry, local_registry, local_declarations);
   return expr_internal_ctx(&ctx);
 }
 
 node_t *psx_expr_assign_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry) return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, local_registry, local_declarations);
+      semantic_context, global_registry, local_registry, local_declarations);
   return assign_ctx(&ctx);
 }
 
@@ -942,7 +944,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
   return (node_t *)selection;
 }
 
-static node_t *parse_num_literal(void) {
+static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
   token_t *tok = curtok();
   token_num_t *num = (token_num_t *)tok;
   node_num_t *node = arena_alloc(sizeof(node_num_t));
@@ -970,11 +972,12 @@ static node_t *parse_num_literal(void) {
                           fp_kind,
                           fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8));
     float_lit_t *lit = calloc(1, sizeof(float_lit_t));
-    lit->id = ps_parser_runtime_context_active()->float_label_count++;
+    lit->id = ps_global_registry_next_float_literal_id(
+        ctx->global_registry);
     lit->fval = node->fval;
     lit->fp_kind = fp_kind;
     lit->float_suffix_kind = node->float_suffix_kind;
-    psx_register_float_lit(lit);
+    psx_register_float_lit_in(ctx->global_registry, lit);
     node->fval_id = lit->id;
   }
   set_curtok(curtok()->next);
@@ -983,22 +986,27 @@ static node_t *parse_num_literal(void) {
 
 // 内容文字列・幅・プレフィックスから ND_STRING ノードと .LC ラベルを生成する。
 // str はコピーせず lit->str に直接渡されるので、呼び出し側で alloc 済みであること。
-static node_string_t *make_string_lit_node(char *str, int len,
+static node_string_t *make_string_lit_node(
+                                           expr_parse_ctx_t *ctx,
+                                           char *str, int len,
                                            tk_char_width_t char_width,
                                            tk_string_prefix_kind_t prefix_kind) {
   node_string_t *snode = arena_alloc(sizeof(node_string_t));
   snode->base.kind = ND_STRING;
-  int id = ps_parser_runtime_context_active()->string_label_count++;
+  int id = ps_global_registry_next_string_literal_id(
+      ctx->global_registry);
   int label_len = snprintf(NULL, 0, ".LC%d", id);
   snode->string_label = calloc((size_t)label_len + 1, 1);
   snprintf(snode->string_label, (size_t)label_len + 1, ".LC%d", id);
+  snode->literal_contents = str;
+  snode->literal_length = len;
   string_lit_t *lit = calloc(1, sizeof(string_lit_t));
   lit->label = snode->string_label;
   lit->str = str;
   lit->len = len;
   lit->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
   lit->str_prefix_kind = prefix_kind;
-  psx_register_string_lit(lit);
+  psx_register_string_lit_in(ctx->global_registry, lit);
   /* 文字列リテラルは char (または wchar) 配列で、式中ではポインタに decay する。
    * `"abc"[1]` の subscript チェックや (ptr + n) のスケーリングに使う。 */
   snode->char_width = char_width ? char_width : TK_CHAR_WIDTH_CHAR;
@@ -1031,11 +1039,12 @@ static node_t *make_func_name_string_node(expr_parse_ctx_t *ctx) {
   int flen = current_funcname ? current_funcname_len : 0;
   char *fstr = calloc((size_t)flen + 1, 1);
   memcpy(fstr, fname, (size_t)flen);
-  return (node_t *)make_string_lit_node(fstr, flen, TK_CHAR_WIDTH_CHAR, TK_STR_PREFIX_NONE);
+  return (node_t *)make_string_lit_node(
+      ctx, fstr, flen, TK_CHAR_WIDTH_CHAR, TK_STR_PREFIX_NONE);
 }
 
 // 連続する TK_STRING リテラルを結合して 1 つの ND_STRING ノードを返す。
-static node_t *parse_string_literal_sequence(void) {
+static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
   tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
   tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
   size_t total_len = 0;
@@ -1080,7 +1089,8 @@ static node_t *parse_string_literal_sequence(void) {
     off += (size_t)st->len;
     set_curtok(curtok()->next);
   }
-  return (node_t *)make_string_lit_node(merged, (int)total_len, merged_width, merged_prefix_kind);
+  return (node_t *)make_string_lit_node(
+      ctx, merged, (int)total_len, merged_width, merged_prefix_kind);
 }
 
 // GCC __builtin_expect(exp, c): 第1引数 exp をそのまま返す (分岐ヒントは無視)。
@@ -1129,12 +1139,12 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
 
   if (curtok()->kind == TK_GENERIC) return parse_generic_selection(ctx);
 
-  if (curtok()->kind == TK_NUM) return parse_num_literal();
+  if (curtok()->kind == TK_NUM) return parse_num_literal(ctx);
 
   if (curtok()->kind == TK_LPAREN && curtok()->next &&
       curtok()->next->kind == TK_LBRACE) {
     return psx_parse_statement_expression_in_contexts(
-        ctx->semantic_context, ctx->local_registry,
+        ctx->semantic_context, ctx->global_registry, ctx->local_registry,
         ctx->local_declarations);
   }
 
@@ -1151,7 +1161,7 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
   if (tok) return parse_identifier_syntax(tok, ctx);
 
   if (curtok()->kind == TK_STRING) {
-    return parse_string_literal_sequence();
+    return parse_string_literal_sequence(ctx);
   }
 
   ps_diag_ctx(curtok(), "primary", "%s",

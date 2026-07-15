@@ -7,8 +7,6 @@
 
 typedef struct psx_parser_runtime_context_t {
   int anonymous_tag_seq;
-  int string_label_count;
-  int float_label_count;
   int pragma_pack_current;
   int pragma_pack_stack[PSX_PRAGMA_PACK_STACK_MAX];
   int pragma_pack_stack_depth;

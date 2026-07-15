@@ -103,6 +103,11 @@ if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(
     "lowering APIs must receive semantic and registry contexts explicitly",
   );
 }
+if (/\bps_find_string_lit_by_label(?:_in)?\s*\(/.test(loweringLayerSource)) {
+  throw new Error(
+    "lowering must consume resolved string literal contents from the AST",
+  );
+}
 const removedContextFreeLoweringApis = [
   "psx_lower_semantic_tree",
   "psx_lower_semantic_initializer_syntax",
@@ -120,6 +125,28 @@ const parserSourceFiles = allSourceFiles.filter(
 const parserLayerSource = (
   await Promise.all(parserSourceFiles.map((path) => readFile(path, "utf8")))
 ).join("\n");
+const parserContextLifecycleFiles = new Set([
+  "src/parser/semantic_ctx.c",
+  "src/parser/semantic_ctx.h",
+  "src/parser/global_registry.c",
+  "src/parser/global_registry.h",
+  "src/parser/local_registry.c",
+  "src/parser/local_registry.h",
+]);
+const ordinaryParserLayerSource = (
+  await Promise.all(
+    parserSourceFiles
+      .filter((path) => !parserContextLifecycleFiles.has(path))
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
+      ordinaryParserLayerSource,
+    )) {
+  throw new Error(
+    "ordinary parser APIs must receive explicit CompilationSession-owned contexts",
+  );
+}
 const removedContextFreeParserApis = [
   "psx_eval_parsed_alignas_value",
   "psx_parse_case_const_expr",
@@ -161,6 +188,25 @@ const removedContextFreeParserApis = [
   "ps_prepare_decl_specifier_alignments",
   "psx_parse_alignas_value",
   "psx_parse_enum_const_expr",
+  "ps_gvar_symbol_ref_named_function",
+  "ps_gvar_init_value_named_function",
+  "ps_gvar_walk_aggregate_initializer",
+  "ps_tag_flat_cover_state_note",
+  "ps_tag_find_unnamed_union_covering_offset",
+  "ps_tag_member_flat_slots",
+  "ps_tag_member_elem_flat_slots",
+  "ps_tag_member_subscript_stride_slots",
+  "ps_tag_flat_slot_count",
+  "ps_tag_member_at_flat_slot",
+  "ps_tag_next_named_member",
+  "ps_tag_first_named_member",
+  "ps_tag_find_named_member",
+  "ps_tag_select_union_member_for_init_slot",
+  "ps_tag_union_init_member_for_slot",
+  "ps_tag_member_designator_slot",
+  "psx_register_string_lit",
+  "psx_register_float_lit",
+  "ps_find_string_lit_by_label",
 ];
 for (const name of removedContextFreeParserApis) {
   if (new RegExp(`\\b${name}\\s*\\(`).test(parserLayerSource)) {
@@ -1725,6 +1771,17 @@ if (!/struct node_gvar_t\s*\{[\s\S]*?struct global_var_t\s*\*symbol\s*;/.test(
     )) {
   throw new Error(
     "resolved global references must retain symbol identity without active-registry lookup",
+  );
+}
+if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/ir_abi_callable_sig_from_type\s*\(/.test(irSymbolLoweringSource)) {
+  throw new Error(
+    "IR symbol lowering must classify resolved function references from canonical types",
   );
 }
 

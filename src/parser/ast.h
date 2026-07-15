@@ -267,6 +267,8 @@ typedef struct node_string_t node_string_t;
 struct node_string_t {
   node_t base;
   char *string_label; // 文字列リテラルのデータラベル
+  char *literal_contents; // エスケープを含むソース由来の文字列内容。
+  int literal_length;     // literal_contents の raw バイト長。
   tk_char_width_t char_width;
   tk_string_prefix_kind_t str_prefix_kind;
   int byte_len;       // 文字列の内容バイト数 (null 終端を含まない)。

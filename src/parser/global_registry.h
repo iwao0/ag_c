@@ -38,6 +38,10 @@ void psx_register_float_lit_in(
     psx_global_registry_t *registry, float_lit_t *literal);
 string_lit_t *ps_find_string_lit_by_label_in(
     psx_global_registry_t *registry, char *label);
+int ps_global_registry_next_string_literal_id(
+    psx_global_registry_t *registry);
+int ps_global_registry_next_float_literal_id(
+    psx_global_registry_t *registry);
 
 void ps_global_registry_reset_translation_unit(void);
 void ps_global_registry_reset_diag_state(void);

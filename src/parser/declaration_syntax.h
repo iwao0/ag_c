@@ -10,6 +10,7 @@ typedef struct psx_parsed_function_parameters_t
     psx_parsed_function_parameters_t;
 typedef struct node_t node_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_local_declaration_callbacks_t
     psx_local_declaration_callbacks_t;
@@ -56,6 +57,7 @@ typedef struct {
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
   void *context;
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   int allow_implicit_int;
 } psx_decl_specifier_syntax_options_t;
@@ -115,25 +117,30 @@ int psx_try_parse_decl_specifier_syntax_ex(
 void psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context);
 int psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context);
 psx_parsed_declarator_t psx_parse_abstract_declarator_syntax_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry);
 psx_parsed_declarator_t psx_parse_parameter_declarator_syntax_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_decl_typedef_name_predicate_t is_typedef_name, void *context);
 void ps_parse_runtime_declarator_expressions_in_contexts(
     psx_parsed_declarator_t *declarator,
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations);
 void ps_prepare_constant_declarator_expressions_in_context(

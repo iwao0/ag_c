@@ -10,12 +10,14 @@
 #include "../tokenizer/tokenizer.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 
 typedef struct {
   tokenizer_context_t *tk_ctx;
   psx_semantic_context_t *semantic_context;
+  psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
   const psx_toplevel_declaration_callbacks_t *toplevel_declarations;
@@ -42,6 +44,7 @@ typedef struct {
 void ps_parser_stream_begin_in_contexts(
     psx_parser_stream_t *stream,
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context,
     tokenizer_context_t *tk_ctx, token_t *start,
@@ -55,6 +58,7 @@ void ps_parser_stream_end(psx_parser_stream_t *stream);
 
 node_t *ps_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     const psx_local_declaration_callbacks_t *local_declarations,
     tokenizer_context_t *tk_ctx, token_t *start);

@@ -80,7 +80,7 @@ int psx_frontend_stream_begin(
       &stream->local_declarations, semantic_context,
       global_registry, local_registry);
   ps_parser_stream_begin_in_contexts(
-      &stream->parser, semantic_context, local_registry,
+      &stream->parser, semantic_context, global_registry, local_registry,
       ag_compilation_session_parser_runtime_context(session),
       tk_ctx, start,
       &stream->toplevel_declarations);
