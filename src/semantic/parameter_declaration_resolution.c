@@ -42,6 +42,7 @@ int psx_resolve_parameter_declaration(
   if (!type || identity.type_id == PSX_TYPE_ID_INVALID ||
       !psx_plan_parameter_storage_for_type_id(
           ps_ctx_semantic_type_table_in(request->type.semantic_context),
+          ps_ctx_record_layout_table_in(request->type.semantic_context),
           identity.type_id,
           ps_ctx_target_info(request->type.semantic_context),
           &resolution->storage)) {

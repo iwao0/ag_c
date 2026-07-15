@@ -374,6 +374,7 @@ static int plan_test_local_storage(
   ag_target_info_t target = ag_target_info_host();
   return psx_plan_local_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_layout_table_in(test_semantic_context()),
       intern_test_type_id(type), &target, plan);
 }
 
@@ -382,6 +383,7 @@ static int plan_test_parameter_storage(
   ag_target_info_t target = ag_target_info_host();
   return psx_plan_parameter_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_layout_table_in(test_semantic_context()),
       intern_test_type_id(type), &target, plan);
 }
 
@@ -3299,20 +3301,51 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(wasm_record_layout != NULL);
   ASSERT_EQ(8, psx_record_layout_member(host_record_layout, 1)->offset);
   ASSERT_EQ(4, psx_record_layout_member(wasm_record_layout, 1)->offset);
-  psx_record_layout_table_destroy(record_layouts);
-
   psx_local_storage_plan_t local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
-      types, pointer_array_identity.type_id, &wasm, &local));
+      types, record_layouts, pointer_array_identity.type_id, &wasm, &local));
   ASSERT_EQ(12, local.storage_size);
   ASSERT_EQ(4, local.alignment);
 
   psx_parameter_storage_plan_t parameter = {0};
   ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
-      types, pointer_identity.type_id, &wasm, &parameter));
+      types, record_layouts, pointer_identity.type_id, &wasm, &parameter));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
+
+  psx_local_storage_plan_t host_record_local = {0};
+  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
+      types, record_layouts, record_identity.type_id, &host,
+      &host_record_local));
+  ASSERT_EQ(16, host_record_local.storage_size);
+  ASSERT_EQ(8, host_record_local.alignment);
+
+  psx_local_storage_plan_t wasm_record_local = {0};
+  ASSERT_TRUE(psx_plan_local_storage_for_type_id(
+      types, record_layouts, record_identity.type_id, &wasm,
+      &wasm_record_local));
+  ASSERT_EQ(8, wasm_record_local.storage_size);
+  ASSERT_EQ(4, wasm_record_local.alignment);
+
+  psx_parameter_storage_plan_t host_record_parameter = {0};
+  ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
+      types, record_layouts, record_identity.type_id, &host,
+      &host_record_parameter));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
+            host_record_parameter.kind);
+  ASSERT_EQ(16, host_record_parameter.storage_size);
+  ASSERT_EQ(8, host_record_parameter.alignment);
+
+  psx_parameter_storage_plan_t wasm_record_parameter = {0};
+  ASSERT_TRUE(psx_plan_parameter_storage_for_type_id(
+      types, record_layouts, record_identity.type_id, &wasm,
+      &wasm_record_parameter));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE,
+            wasm_record_parameter.kind);
+  ASSERT_EQ(8, wasm_record_parameter.storage_size);
+  ASSERT_EQ(4, wasm_record_parameter.alignment);
+  psx_record_layout_table_destroy(record_layouts);
 
   psx_lowering_context_t *lowering = test_lowering_context();
   ps_lowering_context_bind_target(lowering, &wasm);
@@ -3554,16 +3587,28 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
 
-  psx_type_t *small_aggregate = ps_type_new_tag(
-      TK_STRUCT, (char *)"SmallParam", 10, 0, 12);
+  char small_parameter_tag[] = "SmallParam";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, small_parameter_tag, 10, 0, 12, 8);
+  psx_type_t *small_aggregate = ps_ctx_clone_tag_type_at_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      TK_STRUCT, small_parameter_tag, 10,
+      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+  ASSERT_TRUE(small_aggregate != NULL);
   ASSERT_TRUE(plan_test_parameter_storage(small_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_VALUE, plan.kind);
   ASSERT_EQ(12, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
   ASSERT_TRUE(!plan.is_byref);
 
-  psx_type_t *large_aggregate = ps_type_new_tag(
-      TK_STRUCT, (char *)"LargeParam", 10, 0, 24);
+  char large_parameter_tag[] = "LargeParam";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, large_parameter_tag, 10, 0, 24, 8);
+  psx_type_t *large_aggregate = ps_ctx_clone_tag_type_at_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      TK_STRUCT, large_parameter_tag, 10,
+      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+  ASSERT_TRUE(large_aggregate != NULL);
   ASSERT_TRUE(plan_test_parameter_storage(large_aggregate, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_AGGREGATE_BYREF, plan.kind);
   ASSERT_EQ(8, plan.storage_size);
@@ -16776,6 +16821,8 @@ static void test_semantic_context_isolation() {
       second_lowering_context, ps_ctx_target_info(second));
   ps_lowering_context_bind_semantic_types(
       second_lowering_context, ps_ctx_semantic_type_table_in(second));
+  ps_lowering_context_bind_record_layouts(
+      second_lowering_context, ps_ctx_record_layout_table_in(second));
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declarations, second, test_global_registry(),

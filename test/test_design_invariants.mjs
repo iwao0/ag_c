@@ -3200,17 +3200,18 @@ for (const [name, header, source, functionName] of [
    "psx_plan_parameter_storage_for_type_id"],
 ]) {
   const signature = new RegExp(
-    `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
+    `\\b${functionName}\\s*\\(\\s*const\\s+psx_semantic_type_table_t\\s*\\*[^,]*,\\s*const\\s+psx_record_layout_table_t\\s*\\*[^,]*,\\s*psx_type_id_t\\s+type_id`,
   );
   if (!signature.test(header) || !signature.test(source) ||
-      !/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
+      !/\bps_type_sizeof_id_with_records\s*\(/.test(source) ||
+      /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source) ||
       (name === "local" && /storage_size\s*>=/.test(source)) ||
       /\bpsx_plan_(?:local|parameter)_storage_for_target\s*\(/.test(
         header,
       )) {
     throw new Error(
-      `${name} storage planning must accept TypeId and use target layout only through the semantic type table`,
+      `${name} storage planning must accept TypeId and explicit record layouts`,
     );
   }
 }

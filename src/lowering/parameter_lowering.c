@@ -37,6 +37,7 @@ lvar_t *lower_parameter_declaration(
   psx_parameter_storage_plan_t storage;
   if (!psx_plan_parameter_storage_for_type_id(
           ps_lowering_semantic_types(request->lowering_context),
+          ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
           ps_lowering_target(request->lowering_context),
           &storage)) return NULL;

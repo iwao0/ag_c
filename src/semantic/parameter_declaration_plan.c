@@ -4,7 +4,9 @@
 #include <string.h>
 
 int psx_plan_parameter_storage_for_type_id(
-    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_type_id_t type_id,
     const ag_target_info_t *target,
     psx_parameter_storage_plan_t *plan) {
   const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
@@ -18,7 +20,8 @@ int psx_plan_parameter_storage_for_type_id(
     return 1;
   }
 
-  int size = ps_type_sizeof_id_for_target(types, type_id, target);
+  int size = ps_type_sizeof_id_with_records(
+      types, record_layouts, type_id, target);
   if (size <= 0) return 0;
   if (ps_type_is_tag_aggregate(type)) {
     if (size > 16) {
@@ -30,7 +33,8 @@ int psx_plan_parameter_storage_for_type_id(
       plan->kind = PSX_PARAMETER_STORAGE_AGGREGATE_VALUE;
       plan->storage_size = size;
       plan->alignment =
-          ps_type_alignof_id_for_target(types, type_id, target);
+          ps_type_alignof_id_with_records(
+              types, record_layouts, type_id, target);
     }
     return 1;
   }
@@ -38,7 +42,8 @@ int psx_plan_parameter_storage_for_type_id(
     plan->kind = PSX_PARAMETER_STORAGE_COMPLEX;
     plan->storage_size = size;
     plan->alignment =
-        ps_type_alignof_id_for_target(types, type_id, target);
+        ps_type_alignof_id_with_records(
+            types, record_layouts, type_id, target);
     return 1;
   }
   if (!ps_type_is_scalar(type)) return 0;

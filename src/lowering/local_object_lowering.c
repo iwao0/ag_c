@@ -14,6 +14,7 @@ lvar_t *lower_complete_local_object(
   psx_local_storage_plan_t plan = {0};
   if (!psx_plan_local_storage_for_type_id(
           ps_lowering_semantic_types(request->lowering_context),
+          ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
           ps_lowering_target(request->lowering_context),
           &plan)) return NULL;
@@ -51,6 +52,7 @@ int complete_declared_local_object(
   psx_local_storage_plan_t plan = {0};
   if (!psx_plan_local_storage_for_type_id(
           ps_lowering_semantic_types(request->lowering_context),
+          ps_lowering_record_layouts(request->lowering_context),
           ps_lowering_type_id(request->lowering_context, request->type),
           ps_lowering_target(request->lowering_context),
           &plan)) return 0;
