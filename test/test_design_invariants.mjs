@@ -1851,6 +1851,9 @@ const aggregateMemberResolutionType = aggregateMemberResolutionHeader.match(
 const aggregateLayoutStateType = aggregateMemberResolutionHeader.match(
   /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_layout_state_t\s*;/,
 );
+const aggregateMemberRequestType = aggregateMemberResolutionHeader.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_aggregate_member_declaration_request_t\s*;/,
+);
 if (!aggregateMemberResolutionType ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(
       aggregateMemberResolutionType[1],
@@ -1882,8 +1885,25 @@ if (!aggregateMemberResolutionType ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(
       aggregateLayoutStateType[1],
     ) ||
+    !/\bpsx_type_kind_t\s+record_kind\s*;/.test(
+      aggregateLayoutStateType[1],
+    ) ||
+    /\btoken_kind_t\s+kind\s*;/.test(aggregateLayoutStateType[1]) ||
+    !aggregateMemberRequestType ||
+    /\btarget_tag_(?:kind|name|name_len)\b/.test(
+      aggregateMemberRequestType[1],
+    ) ||
     !/\bps_ctx_register_record_members_in\s*\(/.test(
       aggregateMemberResolutionSource,
+    ) ||
+    /\bps_ctx_register_tag_members_in\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    /\bps_ctx_resolve_tag_record_id_in\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bpsx_aggregate_layout_init\s*\([^;]*const\s+psx_record_decl_t\s*\*\s*record\s*\)/s.test(
+      aggregateMemberResolutionHeader,
     ) ||
     /\btag_member_info_t\b/.test(aggregateMemberResolutionSource) ||
     /\bps_ctx_(?:get|find)_tag_member_info/.test(

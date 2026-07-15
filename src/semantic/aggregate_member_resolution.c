@@ -13,8 +13,8 @@ static int align_up(int value, int alignment) {
   return (value + alignment - 1) / alignment * alignment;
 }
 
-static int is_aggregate_kind(token_kind_t kind) {
-  return kind == TK_STRUCT || kind == TK_UNION;
+static int is_aggregate_kind(psx_type_kind_t kind) {
+  return kind == PSX_TYPE_STRUCT || kind == PSX_TYPE_UNION;
 }
 
 typedef struct {
@@ -71,12 +71,12 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
 }
 
 void psx_aggregate_layout_init(
-    psx_aggregate_layout_state_t *state, token_kind_t kind,
-    psx_record_id_t record_id) {
+    psx_aggregate_layout_state_t *state,
+    const psx_record_decl_t *record) {
   if (!state) return;
   memset(state, 0, sizeof(*state));
-  state->kind = kind;
-  state->record_id = record_id;
+  state->record_kind = record ? record->record_kind : PSX_TYPE_INVALID;
+  state->record_id = record ? record->record_id : PSX_RECORD_ID_INVALID;
   state->alignment = 1;
   state->bitfield_storage_offset = -1;
 }
@@ -89,7 +89,7 @@ static void resolve_aggregate_bitfield_placement(
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!state || !request || !is_aggregate_kind(state->kind) ||
+  if (!state || !request || !is_aggregate_kind(state->record_kind) ||
       !request->type || request->bit_width < 0) {
     return;
   }
@@ -115,15 +115,16 @@ static void resolve_aggregate_bitfield_placement(
     state->bitfield_storage_offset = -1;
     state->bitfield_storage_size = 0;
     state->bitfield_bits_used = 0;
-    if (state->kind != TK_UNION)
+    if (state->record_kind != PSX_TYPE_UNION)
       state->current_offset = align_up(state->current_offset, storage_size);
     resolution->storage_size = storage_size;
-    resolution->offset = state->kind == TK_UNION ? 0 : state->current_offset;
+    resolution->offset = state->record_kind == PSX_TYPE_UNION
+                             ? 0 : state->current_offset;
     resolution->status = PSX_AGGREGATE_MEMBER_OK;
     return;
   }
 
-  if (state->kind == TK_UNION) {
+  if (state->record_kind == PSX_TYPE_UNION) {
     state->bitfield_storage_offset = 0;
     state->bitfield_storage_size = storage_size;
     state->bitfield_bits_used = request->bit_width;
@@ -170,7 +171,7 @@ static void resolve_aggregate_object_placement(
   if (!placement) return;
   memset(placement, 0, sizeof(*placement));
   placement->status = PSX_AGGREGATE_MEMBER_INVALID;
-  if (!state || !request || !is_aggregate_kind(state->kind) ||
+  if (!state || !request || !is_aggregate_kind(state->record_kind) ||
       request->storage_size < 0 || request->natural_alignment <= 0 ||
       request->pack_alignment < 0 || request->requested_alignment < 0) {
     return;
@@ -188,7 +189,7 @@ static void resolve_aggregate_object_placement(
   if (alignment > state->alignment) state->alignment = alignment;
 
   placement->offset = 0;
-  if (state->kind == TK_UNION) {
+  if (state->record_kind == PSX_TYPE_UNION) {
     if (request->storage_size > state->union_size)
       state->union_size = request->storage_size;
   } else {
@@ -201,9 +202,9 @@ static void resolve_aggregate_object_placement(
 }
 
 int psx_aggregate_layout_size(const psx_aggregate_layout_state_t *state) {
-  if (!state || !is_aggregate_kind(state->kind)) return 0;
-  int size = state->kind == TK_UNION ? state->union_size
-                                    : state->current_offset;
+  if (!state || !is_aggregate_kind(state->record_kind)) return 0;
+  int size = state->record_kind == PSX_TYPE_UNION
+                 ? state->union_size : state->current_offset;
   return align_up(size, state->alignment);
 }
 
@@ -220,15 +221,10 @@ static int collect_promoted_aggregate_members(
   *out_declarations = NULL;
   *out_layouts = NULL;
   *out_member_count = 0;
-  if (!ps_type_is_tag_aggregate(source_type) || !source_type->tag_name ||
-      source_type->tag_len <= 0 || base_offset < 0)
+  if (!ps_type_is_tag_aggregate(source_type) || base_offset < 0)
     return 0;
   psx_record_id_t record_id = ps_type_record_id(source_type);
-  if (record_id == PSX_RECORD_ID_INVALID) {
-    record_id = ps_ctx_resolve_tag_record_id_in(
-        semantic_context, ps_type_tag_token_kind(source_type),
-        source_type->tag_name, source_type->tag_len);
-  }
+  if (record_id == PSX_RECORD_ID_INVALID) return 0;
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       semantic_context, record_id);
   const psx_record_layout_t *record_layout =
@@ -283,9 +279,8 @@ void psx_resolve_aggregate_member_declaration(
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_AGGREGATE_MEMBER_INVALID;
   if (!layout || !request || !request->semantic_context ||
-      (layout->record_id == PSX_RECORD_ID_INVALID &&
-       (!is_aggregate_kind(request->target_tag_kind) ||
-        !request->target_tag_name || request->target_tag_name_len <= 0)) ||
+      layout->record_id == PSX_RECORD_ID_INVALID ||
+      !is_aggregate_kind(layout->record_kind) ||
       !request->base_type || !request->declarator_shape ||
       request->member_name_len < 0 || request->pack_alignment < 0 ||
       request->requested_alignment < 0) {
@@ -420,19 +415,12 @@ void psx_resolve_aggregate_member_declaration(
   free(promoted_layouts);
 
   int conflict_index = -1;
-  int registered = batch_count <= 0;
-  if (batch_count > 0 && layout->record_id != PSX_RECORD_ID_INVALID) {
-    registered = ps_ctx_register_record_members_in(
-        semantic_context, layout->record_id,
-        batch_declarations, batch_layouts, batch_count,
-        &conflict_index);
-  } else if (batch_count > 0) {
-    registered = ps_ctx_register_tag_members_in(
-        semantic_context, request->target_tag_kind,
-        request->target_tag_name, request->target_tag_name_len,
-        batch_declarations, batch_layouts, batch_count,
-        &conflict_index);
-  }
+  int registered =
+      batch_count <= 0 ||
+      ps_ctx_register_record_members_in(
+          semantic_context, layout->record_id,
+          batch_declarations, batch_layouts, batch_count,
+          &conflict_index);
   if (!registered) {
     resolution->status = PSX_AGGREGATE_MEMBER_DUPLICATE;
     if (conflict_index >= 0 && conflict_index < batch_count) {

@@ -5575,6 +5575,20 @@ static int register_boundary_tag_member(
          created;
 }
 
+static void init_boundary_aggregate_layout(
+    psx_aggregate_layout_state_t *layout, token_kind_t tag_kind,
+    char *tag_name, int tag_name_len) {
+  if (!test_semantic_has_tag_type(tag_kind, tag_name, tag_name_len)) {
+    ASSERT_TRUE(test_semantic_register_tag_type(
+        tag_kind, tag_name, tag_name_len, 0, 0, 0, 0));
+  }
+  const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
+      test_semantic_context(), tag_kind, tag_name, tag_name_len);
+  ASSERT_TRUE(record != NULL);
+  ASSERT_TRUE(record->record_id != PSX_RECORD_ID_INVALID);
+  psx_aggregate_layout_init(layout, record);
+}
+
 static int register_test_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_name_len,
     const tag_member_info_t *member) {
@@ -6124,8 +6138,8 @@ static void test_aggregate_member_resolution_boundary() {
       anonymous_tag, other_anonymous_tag));
 
   psx_aggregate_layout_state_t layout;
-  psx_aggregate_layout_init(
-      &layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &layout, TK_STRUCT, (char *)"__LayoutBoundary", 16);
   psx_declarator_shape_t boundary_shape;
   ps_declarator_shape_init(&boundary_shape);
   psx_aggregate_member_declaration_resolution_t boundary;
@@ -6133,9 +6147,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = ps_type_new_integer(TK_CHAR, 1, 0),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"c",
@@ -6155,9 +6166,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = bitfield_integer,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"a",
@@ -6174,9 +6182,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = bitfield_integer,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"b",
@@ -6192,9 +6197,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = bitfield_integer,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"overflow",
@@ -6210,9 +6212,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = ps_type_new_pointer(bitfield_integer),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"pointer",
@@ -6225,8 +6224,8 @@ static void test_aggregate_member_resolution_boundary() {
             boundary.status);
 
   psx_aggregate_layout_state_t bitfield_sign_layout;
-  psx_aggregate_layout_init(
-      &bitfield_sign_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &bitfield_sign_layout, TK_STRUCT, (char *)"__SignBoundary", 14);
   const psx_type_t *canonical_enum = resolve_tag_base_for_test(
       TK_ENUM, (char *)"E", 1);
   ASSERT_TRUE(canonical_enum != NULL);
@@ -6243,9 +6242,6 @@ static void test_aggregate_member_resolution_boundary() {
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__SignBoundary",
-          .target_tag_name_len = 14,
           .base_type = canonical_enum,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"e",
@@ -6260,9 +6256,6 @@ static void test_aggregate_member_resolution_boundary() {
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__SignBoundary",
-          .target_tag_name_len = 14,
           .base_type = ps_type_new_integer(TK_BOOL, 1, 1),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"b",
@@ -6279,9 +6272,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__LayoutBoundary",
-          .target_tag_name_len = 16,
           .base_type = packed_member,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"tail",
@@ -6294,15 +6284,12 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(12, psx_aggregate_layout_size(&layout));
   ASSERT_EQ(4, psx_aggregate_layout_alignment(&layout));
 
-  psx_aggregate_layout_init(
-      &layout, TK_UNION, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &layout, TK_UNION, (char *)"__UnionBoundary", 15);
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_UNION,
-          .target_tag_name = (char *)"__UnionBoundary",
-          .target_tag_name_len = 15,
           .base_type = bitfield_integer,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"i",
@@ -6315,9 +6302,6 @@ static void test_aggregate_member_resolution_boundary() {
       &layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_UNION,
-          .target_tag_name = (char *)"__UnionBoundary",
-          .target_tag_name_len = 15,
           .base_type = ps_type_new_integer(TK_LONG, 8, 0),
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"l",
@@ -6421,15 +6405,12 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__IncompleteMember", 18);
   ASSERT_TRUE(incomplete_base != NULL);
   psx_aggregate_layout_state_t constraint_layout;
-  psx_aggregate_layout_init(
-      &constraint_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &constraint_layout, TK_STRUCT, (char *)"__ConstraintBoundary", 20);
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__ConstraintBoundary",
-          .target_tag_name_len = 20,
           .base_type = incomplete_base,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"incomplete",
@@ -6451,9 +6432,6 @@ static void test_aggregate_member_resolution_boundary() {
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__ConstraintBoundary",
-          .target_tag_name_len = 20,
           .base_type = incomplete_pointer,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"pointer",
@@ -6468,9 +6446,6 @@ static void test_aggregate_member_resolution_boundary() {
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"__ConstraintBoundary",
-          .target_tag_name_len = 20,
           .base_type = function_member,
           .declarator_shape = &boundary_shape,
           .member_name = (char *)"function",
@@ -6491,16 +6466,13 @@ static void test_aggregate_member_resolution_boundary() {
   psx_declarator_shape_t transaction_shape;
   ps_declarator_shape_init(&transaction_shape);
   psx_aggregate_layout_state_t transaction_layout;
-  psx_aggregate_layout_init(
-      &transaction_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &transaction_layout, TK_STRUCT, (char *)"Txn", 3);
   psx_aggregate_member_declaration_resolution_t transaction;
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = integer,
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"a",
@@ -6545,9 +6517,6 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = integer,
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"b",
@@ -6567,9 +6536,6 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = integer,
           .declarator_shape = &transaction_shape,
           .member_name = (char *)"a",
@@ -6584,9 +6550,6 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = integer,
           .declarator_shape = &transaction_shape,
       },
@@ -6601,9 +6564,6 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = aligned_member,
           .declarator_shape = &unnamed_pointer_shape,
       },
@@ -6619,9 +6579,6 @@ static void test_aggregate_member_resolution_boundary() {
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"Txn",
-          .target_tag_name_len = 3,
           .base_type = aligned_member,
           .declarator_shape = &unnamed_array_shape,
       },
@@ -6700,18 +6657,18 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(promoted_source_record != NULL);
   ASSERT_TRUE(ps_ctx_publish_record_layout_in(
       test_semantic_context(), promoted_source_record->record_id, 8, 4));
+  psx_type_t *promoted_source_type = ps_type_new(PSX_TYPE_STRUCT);
+  promoted_source_type->record_id = promoted_source_record->record_id;
+  ASSERT_TRUE(promoted_source_type->tag_name == NULL);
   psx_aggregate_layout_state_t promoted_layout;
-  psx_aggregate_layout_init(
-      &promoted_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &promoted_layout, TK_STRUCT, (char *)"PromDst", 7);
   psx_declarator_shape_t promoted_shape;
   ps_declarator_shape_init(&promoted_shape);
   psx_resolve_aggregate_member_declaration(
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"PromDst",
-          .target_tag_name_len = 7,
           .base_type = ps_type_new_integer(TK_LONG, 8, 0),
           .declarator_shape = &promoted_shape,
           .member_name = (char *)"prefix",
@@ -6723,11 +6680,7 @@ static void test_aggregate_member_resolution_boundary() {
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"PromDst",
-          .target_tag_name_len = 7,
-          .base_type = ps_type_new_tag(
-              TK_STRUCT, (char *)"PromSrc", 7, 1, 8),
+          .base_type = promoted_source_type,
           .declarator_shape = &promoted_shape,
       },
       &transaction);
@@ -6791,8 +6744,8 @@ static void test_aggregate_member_resolution_boundary() {
       (char *)"a", 1, &absent_promoted));
 
   psx_aggregate_layout_state_t anonymous_layout;
-  psx_aggregate_layout_init(
-      &anonymous_layout, TK_STRUCT, PSX_RECORD_ID_INVALID);
+  init_boundary_aggregate_layout(
+      &anonymous_layout, TK_STRUCT, (char *)"BatchDst", 8);
   psx_declarator_shape_t anonymous_shape;
   ps_declarator_shape_init(&anonymous_shape);
   psx_type_t *batch_source_type =
@@ -6801,9 +6754,6 @@ static void test_aggregate_member_resolution_boundary() {
       &anonymous_layout,
       &(psx_aggregate_member_declaration_request_t){
           .semantic_context = test_semantic_context(),
-          .target_tag_kind = TK_STRUCT,
-          .target_tag_name = (char *)"BatchDst",
-          .target_tag_name_len = 8,
           .base_type = batch_source_type,
           .declarator_shape = &anonymous_shape,
       },

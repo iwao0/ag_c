@@ -17,7 +17,7 @@ typedef enum {
 } psx_aggregate_member_status_t;
 
 typedef struct {
-  token_kind_t kind;
+  psx_type_kind_t record_kind;
   psx_record_id_t record_id;
   int current_offset;
   int union_size;
@@ -29,9 +29,6 @@ typedef struct {
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
-  token_kind_t target_tag_kind;
-  char *target_tag_name;
-  int target_tag_name_len;
   const psx_type_t *base_type;
   const psx_declarator_shape_t *declarator_shape;
   char *member_name;
@@ -56,8 +53,8 @@ typedef struct {
 } psx_aggregate_member_declaration_resolution_t;
 
 void psx_aggregate_layout_init(
-    psx_aggregate_layout_state_t *state, token_kind_t kind,
-    psx_record_id_t record_id);
+    psx_aggregate_layout_state_t *state,
+    const psx_record_decl_t *record);
 int psx_aggregate_layout_size(const psx_aggregate_layout_state_t *state);
 int psx_aggregate_layout_alignment(const psx_aggregate_layout_state_t *state);
 void psx_resolve_aggregate_member_declaration(
