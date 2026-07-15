@@ -2301,6 +2301,12 @@ static void test_expression_type_materialization_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, ternary->type->kind);
   ASSERT_TRUE(ternary->lhs->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ternary->lhs->type->kind);
+  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
+                  test_semantic_context(), ternary->type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
+                  test_semantic_context(), ternary->lhs->type).type_id !=
+              PSX_TYPE_ID_INVALID);
 }
 
 static void test_function_call_type_binding_boundary() {
@@ -15984,6 +15990,20 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
   ps_ctx_reset_translation_unit_scope_in(context);
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) == NULL);
+
+  node_t typed_expression = {
+      .kind = ND_NUM,
+      .type = plain_int,
+  };
+  ASSERT_EQ(PSX_TYPE_ID_INVALID,
+            ps_ctx_find_interned_qual_type_in(
+                context, typed_expression.type).type_id);
+  psx_semantic_invariant_failure_t failure = {0};
+  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
+      context, &typed_expression, &failure, 0));
+  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
+                  context, typed_expression.type).type_id !=
+              PSX_TYPE_ID_INVALID);
   ps_ctx_destroy(context);
 }
 

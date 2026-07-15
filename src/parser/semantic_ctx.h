@@ -39,6 +39,8 @@ node_t *ps_ctx_semantic_expression_in(
     psx_semantic_expr_id_t expression_id);
 psx_qual_type_t ps_ctx_intern_qual_type_in(
     psx_semantic_context_t *context, const psx_type_t *type);
+psx_qual_type_t ps_ctx_find_interned_qual_type_in(
+    const psx_semantic_context_t *context, const psx_type_t *type);
 const psx_type_t *ps_ctx_type_by_id_in(
     const psx_semantic_context_t *context, psx_type_id_t type_id);
 

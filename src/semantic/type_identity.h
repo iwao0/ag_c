@@ -18,6 +18,8 @@ void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table);
 void psx_semantic_type_table_reset(psx_semantic_type_table_t *table);
 psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type);
+psx_qual_type_t psx_semantic_type_table_find(
+    const psx_semantic_type_table_t *table, const psx_type_t *type);
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id);
 

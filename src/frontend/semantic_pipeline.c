@@ -46,6 +46,9 @@ static void analyze_function_in_contexts(
   psx_lower_implicit_conversions(
       lowering_context, function, current_function,
       fallback_diag_tok, options);
+  psx_require_semantic_tree_has_interned_expression_types(
+      semantic_context, ps_ctx_diagnostics(semantic_context), function,
+      fallback_diag_tok);
   psx_require_semantic_tree_has_canonical_expression_types(
       ps_ctx_diagnostics(semantic_context), function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
@@ -88,6 +91,9 @@ node_t *psx_frontend_analyze_expression_in_contexts(
       expression, NULL, fallback_diag_tok);
   psx_lower_implicit_conversions(
       lowering_context, expression, NULL, fallback_diag_tok, options);
+  psx_require_semantic_tree_has_interned_expression_types(
+      semantic_context, ps_ctx_diagnostics(semantic_context), expression,
+      fallback_diag_tok);
   psx_require_semantic_tree_has_canonical_expression_types(
       ps_ctx_diagnostics(semantic_context), expression, fallback_diag_tok);
   return expression;
@@ -126,6 +132,9 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       syntax, NULL, fallback_diag_tok);
+  psx_require_semantic_initializer_has_interned_expression_types(
+      semantic_context, ps_ctx_diagnostics(semantic_context), syntax,
+      fallback_diag_tok);
   psx_require_semantic_initializer_has_canonical_expression_types(
       ps_ctx_diagnostics(semantic_context), syntax, fallback_diag_tok);
   return syntax;
@@ -156,6 +165,9 @@ void psx_frontend_analyze_program_in_contexts(
         program[i], NULL, program[i]->tok);
     psx_lower_implicit_conversions(
         lowering_context, program[i], NULL, program[i]->tok, options);
+    psx_require_semantic_tree_has_interned_expression_types(
+        semantic_context, ps_ctx_diagnostics(semantic_context), program[i],
+        program[i]->tok);
     psx_require_semantic_tree_has_canonical_expression_types(
         ps_ctx_diagnostics(semantic_context), program[i], program[i]->tok);
   }

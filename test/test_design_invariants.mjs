@@ -2574,10 +2574,22 @@ const initializerSemanticBoundaryCheckCount = [
     /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/g,
   ),
 ].length;
+const internedSemanticBoundaryCheckCount = [
+  ...semanticPipelineSource.matchAll(
+    /\bpsx_require_semantic_tree_has_interned_expression_types\s*\(/g,
+  ),
+].length;
+const internedInitializerBoundaryCheckCount = [
+  ...semanticPipelineSource.matchAll(
+    /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\(/g,
+  ),
+].length;
 if (completeSemanticBoundaryCheckCount !== 3 ||
-    initializerSemanticBoundaryCheckCount !== 1) {
+    initializerSemanticBoundaryCheckCount !== 1 ||
+    internedSemanticBoundaryCheckCount !== 3 ||
+    internedInitializerBoundaryCheckCount !== 1) {
   throw new Error(
-    "every semantic pipeline entry must require its canonical expression contract",
+    "every semantic pipeline entry must require interned and canonical expression contracts",
   );
 }
 const semanticPipelineContracts = [
@@ -2585,28 +2597,38 @@ const semanticPipelineContracts = [
     "function",
     /static\s+void\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
   ],
   [
     "expression",
     /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
   ],
   [
     "initializer",
     /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
   ],
   [
     "program",
     /void\s+psx_frontend_analyze_program_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
   ],
 ];
-for (const [name, boundaryPattern, contractPattern] of semanticPipelineContracts) {
+for (const [
+  name,
+  boundaryPattern,
+  contractPattern,
+  internedBeforeCanonicalPattern,
+] of semanticPipelineContracts) {
   const boundary = semanticPipelineSource.match(boundaryPattern);
-  if (!boundary || !contractPattern.test(boundary[1])) {
+  if (!boundary || !contractPattern.test(boundary[1]) ||
+      !internedBeforeCanonicalPattern.test(boundary[1])) {
     throw new Error(
-      `${name} semantic pipeline must enforce its canonical expression contract`,
+      `${name} semantic pipeline must intern types before enforcing its canonical expression contract`,
     );
   }
 }
@@ -2978,6 +3000,9 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
       semanticContextSource,
     ) ||
     !/\bpsx_qual_type_t\s+ps_ctx_intern_qual_type_in\s*\(/.test(
+      semanticContextSource,
+    ) ||
+    !/\bpsx_qual_type_t\s+ps_ctx_find_interned_qual_type_in\s*\(/.test(
       semanticContextSource,
     ) ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_ctx_type_by_id_in\s*\(/.test(

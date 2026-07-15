@@ -60,11 +60,19 @@ static int reserve_type_id(
   return 1;
 }
 
-psx_qual_type_t psx_semantic_type_table_intern(
-    psx_semantic_type_table_t *table, const psx_type_t *type) {
+static psx_qual_type_t invalid_qual_type(void) {
+  return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                           PSX_TYPE_QUALIFIER_NONE};
+}
+
+psx_qual_type_t psx_semantic_type_table_find(
+    const psx_semantic_type_table_t *table, const psx_type_t *type) {
   psx_qual_type_t result = {PSX_TYPE_ID_INVALID,
                             PSX_TYPE_QUALIFIER_NONE};
-  if (!table || !type || !ps_type_is_well_formed(type)) return result;
+  if (!table || !type || type->kind == PSX_TYPE_INVALID ||
+      !ps_type_is_well_formed(type)) {
+    return result;
+  }
   result.qualifiers = ps_type_qualifiers(type);
   for (psx_type_id_t id = 1; id <= table->next_id; id++) {
     if (ps_type_unqualified_semantic_matches(table->types[id], type)) {
@@ -72,6 +80,18 @@ psx_qual_type_t psx_semantic_type_table_intern(
       return result;
     }
   }
+  return invalid_qual_type();
+}
+
+psx_qual_type_t psx_semantic_type_table_intern(
+    psx_semantic_type_table_t *table, const psx_type_t *type) {
+  psx_qual_type_t result = psx_semantic_type_table_find(table, type);
+  if (result.type_id != PSX_TYPE_ID_INVALID) return result;
+  if (!table || !type || type->kind == PSX_TYPE_INVALID ||
+      !ps_type_is_well_formed(type)) {
+    return invalid_qual_type();
+  }
+  result.qualifiers = ps_type_qualifiers(type);
   if (table->next_id == UINT_MAX) return result;
   psx_type_id_t id = table->next_id + 1;
   if (!reserve_type_id(table, id)) return result;
