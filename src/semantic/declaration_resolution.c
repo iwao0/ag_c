@@ -92,7 +92,7 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
         ps_ctx_arena(semantic_context), type,
         request->declarator_shape);
   }
-  ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
+  ps_ctx_bind_record_ids_in(semantic_context, type);
   ps_type_clear_record_layout_cache(type);
   return type;
 }
@@ -144,7 +144,7 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
       return NULL;
   }
   apply_decl_specifier_type_properties(type, syntax, override_plain_char);
-  ps_ctx_attach_aggregate_definitions_in(semantic_context, type);
+  ps_ctx_bind_record_ids_in(semantic_context, type);
   ps_type_clear_record_layout_cache(type);
   return type;
 }

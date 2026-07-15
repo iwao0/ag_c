@@ -443,6 +443,21 @@ static int define_test_record_decl(const psx_record_decl_t *record) {
       record);
 }
 
+static const psx_record_decl_t *test_record_decl_in(
+    psx_semantic_context_t *semantic_context, const psx_type_t *type) {
+  return ps_ctx_get_record_decl_in(
+      semantic_context, ps_type_record_id(type));
+}
+
+static const psx_record_decl_t *test_record_decl(
+    const psx_type_t *type) {
+  return test_record_decl_in(test_semantic_context(), type);
+}
+
+static psx_record_decl_t *test_record_decl_mut(const psx_type_t *type) {
+  return (psx_record_decl_t *)test_record_decl(type);
+}
+
 static int test_type_size_id(psx_type_id_t type_id) {
   return ps_type_sizeof_id_with_records(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
@@ -1736,9 +1751,8 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(object != NULL);
   ASSERT_TRUE(pointer != NULL);
   node_t *base = psx_node_new_lvar_identifier_ref_for(object);
-  psx_record_decl_t *member_record = (psx_record_decl_t *)
-      ps_type_find_aggregate_object_type(
-          ps_node_get_type(base))->aggregate_definition;
+  psx_record_decl_t *member_record = test_record_decl_mut(
+      ps_type_find_aggregate_object_type(ps_node_get_type(base)));
   ASSERT_TRUE(member_record != NULL);
   ASSERT_EQ(2, member_record->member_count);
   ((tag_member_info_t *)member_record->members)[1].offset = 77;
@@ -2975,11 +2989,11 @@ static void test_aggregate_cast_semantic_lowering_boundary() {
   const psx_type_t *type = ps_lvar_get_decl_type(temp);
   ASSERT_TRUE(type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, type->kind);
-  ASSERT_TRUE(type->aggregate_definition != NULL);
-  ASSERT_EQ(2, type->aggregate_definition->member_count);
-  ASSERT_EQ(1, type->aggregate_definition->members[0].len);
-  ASSERT_TRUE(strncmp(type->aggregate_definition->members[0].name,
-                      "x", 1) == 0);
+  const psx_record_decl_t *record = test_record_decl(type);
+  ASSERT_TRUE(record != NULL);
+  ASSERT_EQ(2, record->member_count);
+  ASSERT_EQ(1, record->members[0].len);
+  ASSERT_TRUE(strncmp(record->members[0].name, "x", 1) == 0);
 }
 
 static void test_implicit_conversion_semantic_lowering_boundary() {
@@ -4855,6 +4869,27 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_EQ(5, second->members[0].len);
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);
+
+  psx_type_t *return_record = ps_type_new_tag(
+      TK_STRUCT, tag_name, tag_name_len, 1, 4);
+  return_record->aggregate_definition = first;
+  psx_type_t *parameter_record = ps_type_new_tag(
+      TK_STRUCT, tag_name, tag_name_len, 1, 4);
+  parameter_record->aggregate_definition = second;
+  psx_type_t *function_type = ps_type_new_function(
+      ps_type_new_pointer(return_record));
+  const psx_type_t *parameter_types[] = {
+      ps_type_new_pointer(parameter_record),
+  };
+  ps_type_set_function_params(function_type, parameter_types, 1, 0);
+  ps_ctx_bind_record_ids_in(test_semantic_context(), function_type);
+  ASSERT_EQ(first->record_id,
+            ps_type_record_id(function_type->base->base));
+  ASSERT_TRUE(function_type->base->base->aggregate_definition == NULL);
+  ASSERT_EQ(second->record_id,
+            ps_type_record_id(function_type->param_types[0]->base));
+  ASSERT_TRUE(
+      function_type->param_types[0]->base->aggregate_definition == NULL);
 }
 
 static int register_boundary_tag_member(
@@ -5123,8 +5158,9 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_DECLARATION_PHASE_RESOLVED_TYPE, phase.state);
   ASSERT_TRUE(phase.base_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, phase.base_type->kind);
-  ASSERT_TRUE(phase.base_type->aggregate_definition != NULL);
-  ASSERT_EQ(1, phase.base_type->aggregate_definition->member_count);
+  const psx_record_decl_t *phase_record = test_record_decl(phase.base_type);
+  ASSERT_TRUE(phase_record != NULL);
+  ASSERT_EQ(1, phase_record->member_count);
   ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__PhaseObject", 13));
   psx_dispose_declaration_phase(&phase);
@@ -5375,7 +5411,7 @@ static void test_local_declaration_resolution_boundary() {
       TK_STRUCT, record_element_tag, 18,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(record_element != NULL);
-  ASSERT_TRUE(record_element->aggregate_definition != NULL);
+  ASSERT_TRUE(test_record_decl(record_element) != NULL);
   psx_type_t *incomplete_record_array = ps_type_new_array(
       record_element, 0, 0, 0);
   application = (psx_runtime_declarator_application_t){0};
@@ -13484,7 +13520,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_tag(TK_STRUCT, (char *)flat_decl_inner_tag,
                        (int)sizeof(flat_decl_inner_tag) - 1, 0, 8),
       3, 24, 0);
-  ps_ctx_attach_aggregate_definitions_in(
+  ps_ctx_bind_record_ids_in(
       test_semantic_context(), flat_decl_array_type);
   flat_decl_array_member.decl_type = flat_decl_array_type;
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(
@@ -13637,15 +13673,15 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(walk_gv.decl_type != NULL);
   walk_gv.decl_type_id = intern_test_type_id(walk_gv.decl_type);
   ASSERT_TRUE(walk_gv.decl_type_id != PSX_TYPE_ID_INVALID);
-  psx_record_decl_t *walk_outer_record = (psx_record_decl_t *)
-      walk_gv.decl_type->aggregate_definition;
+  psx_record_decl_t *walk_outer_record =
+      test_record_decl_mut(walk_gv.decl_type);
   ASSERT_TRUE(walk_outer_record != NULL);
   ((tag_member_info_t *)walk_outer_record->members)[1].offset = 77;
   psx_type_t *walk_inner_type = (psx_type_t *)
       ps_tag_member_decl_type(&walk_outer_record->members[0])->base;
   ASSERT_TRUE(walk_inner_type != NULL);
-  psx_record_decl_t *walk_inner_record = (psx_record_decl_t *)
-      walk_inner_type->aggregate_definition;
+  psx_record_decl_t *walk_inner_record =
+      test_record_decl_mut(walk_inner_type);
   ASSERT_TRUE(walk_inner_record != NULL);
   ((tag_member_info_t *)walk_inner_record->members)[1].offset = 55;
   ps_gvar_init_slots_alloc(&walk_gv, 5, 0);
@@ -13701,8 +13737,8 @@ static void test_type_metadata_bridge() {
   walk_array_gv.decl_type_id = intern_test_type_id(
       walk_array_gv.decl_type);
   ASSERT_TRUE(walk_array_gv.decl_type_id != PSX_TYPE_ID_INVALID);
-  psx_record_decl_t *walk_array_record = (psx_record_decl_t *)
-      walk_array_element->aggregate_definition;
+  psx_record_decl_t *walk_array_record =
+      test_record_decl_mut(walk_array_element);
   ASSERT_TRUE(walk_array_record != NULL);
   ((tag_member_info_t *)walk_array_record->members)[1].offset = 66;
   ps_gvar_init_slots_alloc(&walk_array_gv, 4, 0);
@@ -13738,15 +13774,15 @@ static void test_type_metadata_bridge() {
       (int)sizeof(walk_anon_global_name) - 1);
   ASSERT_TRUE(walk_anon_gv != NULL);
   ASSERT_TRUE(walk_anon_gv->decl_type != NULL);
-  psx_record_decl_t *walk_anon_outer_record = (psx_record_decl_t *)
-      walk_anon_gv->decl_type->aggregate_definition;
+  psx_record_decl_t *walk_anon_outer_record =
+      test_record_decl_mut(walk_anon_gv->decl_type);
   ASSERT_TRUE(walk_anon_outer_record != NULL);
   ASSERT_TRUE(walk_anon_outer_record->member_count >= 2);
   const psx_type_t *walk_anon_inner_type = ps_tag_member_decl_tag_type(
       &walk_anon_outer_record->members[0]);
   ASSERT_TRUE(walk_anon_inner_type != NULL);
-  psx_record_decl_t *walk_anon_inner_record = (psx_record_decl_t *)
-      walk_anon_inner_type->aggregate_definition;
+  psx_record_decl_t *walk_anon_inner_record =
+      test_record_decl_mut(walk_anon_inner_type);
   ASSERT_TRUE(walk_anon_inner_record != NULL);
   ASSERT_TRUE(walk_anon_inner_record->member_count >= 1);
   for (int i = 0; i < walk_anon_outer_record->member_count; i++)
@@ -14589,7 +14625,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_tag(TK_STRUCT, (char *)lvar_view_struct_array_tag_name,
                        (int)sizeof(lvar_view_struct_array_tag_name) - 1, 0, 12),
       2, 24, 0);
-  ps_ctx_attach_aggregate_definitions_in(
+  ps_ctx_bind_record_ids_in(
       test_semantic_context(), lvar_view_struct_array_type);
   lvar_view_struct_array_shape.decl_type = lvar_view_struct_array_type;
   ASSERT_TRUE(ps_lvar_is_array(&lvar_view_struct_array_shape));
@@ -14620,7 +14656,7 @@ static void test_type_metadata_bridge() {
   psx_type_t *lvar_view_struct_object_type =
       ps_type_new_tag(TK_STRUCT, (char *)lvar_view_struct_array_tag_name,
                        (int)sizeof(lvar_view_struct_array_tag_name) - 1, 0, 12);
-  ps_ctx_attach_aggregate_definitions_in(
+  ps_ctx_bind_record_ids_in(
       test_semantic_context(), lvar_view_struct_object_type);
   lvar_view_struct_object_size.decl_type = lvar_view_struct_object_type;
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(
@@ -17570,8 +17606,10 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_type_sizeof(direct_tag_type));
   ASSERT_EQ(4, ps_ctx_type_sizeof_in(second, direct_tag_type));
   ASSERT_EQ(4, ps_ctx_type_alignof_in(second, direct_tag_type));
-  ASSERT_TRUE(direct_tag_type->aggregate_definition != NULL);
-  ASSERT_EQ(1, direct_tag_type->aggregate_definition->member_count);
+  const psx_record_decl_t *direct_record =
+      test_record_decl_in(second, direct_tag_type);
+  ASSERT_TRUE(direct_record != NULL);
+  ASSERT_EQ(1, direct_record->member_count);
 
   psx_type_t *detached_tag_type = ps_type_new_tag(
       TK_STRUCT, direct_tag_name, 9, 1, 4);
@@ -17625,7 +17663,8 @@ static void test_semantic_context_isolation() {
       },
       &detached_initializer);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
-  ASSERT_TRUE(detached_initializer.type->aggregate_definition == NULL);
+  ASSERT_EQ(PSX_RECORD_ID_INVALID,
+            ps_type_record_id(detached_initializer.type));
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
           .semantic_context = second,
@@ -17635,9 +17674,10 @@ static void test_semantic_context_isolation() {
       },
       &detached_initializer);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, detached_initializer.status);
-  ASSERT_TRUE(detached_initializer.type->aggregate_definition != NULL);
-  ASSERT_EQ(1,
-            detached_initializer.type->aggregate_definition->member_count);
+  const psx_record_decl_t *initializer_record = test_record_decl_in(
+      second, detached_initializer.type);
+  ASSERT_TRUE(initializer_record != NULL);
+  ASSERT_EQ(1, initializer_record->member_count);
 
   char applied_tag_name[] = "AppliedTag";
   psx_apply_parsed_tag_declaration_in_contexts(

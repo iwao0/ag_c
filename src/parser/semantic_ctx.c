@@ -403,7 +403,7 @@ static void initialize_tag_member_record(
   m->bit_is_signed = desc->bit_is_signed;
   const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
   m->decl_type = ctx_type_clone_persistent_in(context, desc_type);
-  ps_ctx_attach_aggregate_definitions_in(context, m->decl_type);
+  ps_ctx_bind_record_ids_in(context, m->decl_type);
 }
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -770,7 +770,6 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
         : ps_type_new_tag_in(
               context->arena_context, kind, name, len,
               tag->scope_depth + 1);
-    type->aggregate_definition = tag->definition;
     type->record_id = tag->definition
                           ? tag->definition->record_id
                           : PSX_RECORD_ID_INVALID;
@@ -1099,24 +1098,31 @@ static int cmp_tag_member_ptr(const void *a, const void *b) {
   return 0;
 }
 
-/* tag_member_t の全属性を tag_member_info_t へ写す。get/find_tag_member_info が
- * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
-void ps_ctx_attach_aggregate_definitions_in(
+/* Resolve aggregate identity across the complete owned type tree. Record
+ * declarations remain owned by RecordDeclTable and are not retained by types. */
+void ps_ctx_bind_record_ids_in(
     psx_semantic_context_t *context, psx_type_t *type) {
   if (!context || !type) return;
-  if (ps_type_is_tag_aggregate(type) && !type->aggregate_definition) {
-    type->aggregate_definition = ps_ctx_get_tag_definition_in(
-        context, type->tag_kind, type->tag_name, type->tag_len);
+  if (ps_type_is_tag_aggregate(type)) {
+    psx_record_id_t record_id = type->record_id;
+    if (record_id == PSX_RECORD_ID_INVALID && type->aggregate_definition)
+      record_id = type->aggregate_definition->record_id;
+    if (record_id == PSX_RECORD_ID_INVALID && type->tag_name &&
+        type->tag_len > 0) {
+      record_id = ps_ctx_resolve_tag_record_id_in(
+          context, type->tag_kind, type->tag_name, type->tag_len);
+    }
+    type->record_id = record_id;
+    type->aggregate_definition = NULL;
   }
-  if (ps_type_is_tag_aggregate(type) && type->aggregate_definition)
-    type->record_id = type->aggregate_definition->record_id;
-  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY ||
-      type->kind == PSX_TYPE_FUNCTION) {
-    ps_ctx_attach_aggregate_definitions_in(
-        context, psx_type_owned_base_mut(type));
-  }
+  ps_ctx_bind_record_ids_in(context, psx_type_owned_base_mut(type));
+  for (int i = 0; i < type->param_count; i++)
+    ps_ctx_bind_record_ids_in(
+        context, psx_type_owned_param_mut(type, i));
 }
 
+/* tag_member_t の全属性を tag_member_info_t へ写す。get/find_tag_member_info が
+ * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
 static void fill_tag_member_info_in(
     psx_semantic_context_t *context,
     const tag_member_t *m, tag_member_info_t *out) {
@@ -1128,7 +1134,7 @@ static void fill_tag_member_info_in(
   out->bit_offset = m->bit_offset;
   out->bit_is_signed = m->bit_is_signed;
   psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
-  ps_ctx_attach_aggregate_definitions_in(context, decl_type);
+  ps_ctx_bind_record_ids_in(context, decl_type);
   out->decl_type = decl_type;
 }
 
@@ -1413,7 +1419,7 @@ static void initialize_typedef_record(
   if (!t || !info || t->decl_type) return;
   t->decl_type = ctx_type_clone_persistent_in(
       context, ps_ctx_typedef_decl_type(info));
-  ps_ctx_attach_aggregate_definitions_in(context, t->decl_type);
+  ps_ctx_bind_record_ids_in(context, t->decl_type);
 }
 
 int ps_ctx_register_typedef_name_in_contexts(

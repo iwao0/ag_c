@@ -162,7 +162,7 @@ int ps_ctx_register_record_members_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     const tag_member_info_t *members, int member_count,
     int *out_conflict_index);
-void ps_ctx_attach_aggregate_definitions_in(
+void ps_ctx_bind_record_ids_in(
     psx_semantic_context_t *context, psx_type_t *type);
 void ps_ctx_promote_tag_to_file_scope_in(
     psx_semantic_context_t *context,

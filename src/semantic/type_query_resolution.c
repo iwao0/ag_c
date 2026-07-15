@@ -124,7 +124,7 @@ static void resolve_sizeof_type_name(
           .base_type = base_type,
           .declarator_shape = shape,
       });
-  ps_ctx_attach_aggregate_definitions_in(
+  ps_ctx_bind_record_ids_in(
       semantic_context, resolved_type);
   query->type_name.resolved_type = resolved_type;
   if (!query->type_name.resolved_type) {
@@ -234,7 +234,7 @@ void psx_resolve_sizeof_query_in_contexts(
   if (!query->is_type_name && type) {
     psx_type_t *completed_view = ps_type_clone_in(
         ps_ctx_arena(semantic_context), type);
-    ps_ctx_attach_aggregate_definitions_in(
+    ps_ctx_bind_record_ids_in(
         semantic_context, completed_view);
     type = completed_view;
   }

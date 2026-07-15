@@ -2018,7 +2018,7 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     !/psx_bind_type_name_ref_in_contexts\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/ps_ctx_attach_aggregate_definitions_in\s*\(/.test(
+    !/ps_ctx_bind_record_ids_in\s*\(/.test(
       staticInitializerResolutionSource,
     )) {
   throw new Error(
@@ -3839,6 +3839,30 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
     /\bps_type_sizeof\s*\(/.test(parserSemanticContextImplementation)) {
   throw new Error(
     "semantic context must expose immutable type identity and target layout queries",
+  );
+}
+const recordIdBinder = parserSemanticContextImplementation.match(
+  /void\s+ps_ctx_bind_record_ids_in\s*\([^]*?\n\}/,
+);
+const sourcesWithLegacyRecordAttachment = [];
+for (const path of allSourceFiles) {
+  const source = await readFile(path, "utf8");
+  if (/\bps_ctx_attach_aggregate_definitions_in\b/.test(source))
+    sourcesWithLegacyRecordAttachment.push(path);
+}
+if (sourcesWithLegacyRecordAttachment.length > 0 ||
+    !/\bvoid\s+ps_ctx_bind_record_ids_in\s*\(/.test(
+      semanticContextSource,
+    ) ||
+    !recordIdBinder ||
+    !/type->record_id\s*=\s*record_id/.test(recordIdBinder[0]) ||
+    !/type->aggregate_definition\s*=\s*NULL/.test(recordIdBinder[0]) ||
+    !/ps_ctx_resolve_tag_record_id_in\s*\(/.test(recordIdBinder[0]) ||
+    !/psx_type_owned_base_mut\s*\(/.test(recordIdBinder[0]) ||
+    !/psx_type_owned_param_mut\s*\(/.test(recordIdBinder[0]) ||
+    !/i\s*<\s*type->param_count/.test(recordIdBinder[0])) {
+  throw new Error(
+    "semantic type normalization must bind RecordId recursively without attaching RecordDecl pointers",
   );
 }
 if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(

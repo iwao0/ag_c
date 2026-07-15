@@ -448,7 +448,7 @@ static void semantic_resolve_compound_literal(
         semantic_resolve_type_name_ref(
             semantic_context, global_registry, local_registry,
             &compound->type_name));
-    ps_ctx_attach_aggregate_definitions_in(
+    ps_ctx_bind_record_ids_in(
         semantic_context, resolved);
     compound->type_name.resolved_type = resolved;
     object_type = resolved;
