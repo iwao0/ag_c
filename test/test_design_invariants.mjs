@@ -3465,9 +3465,23 @@ const tagSizeLookupFunction = tagContextSource.match(
 const tagAlignLookupFunction = tagContextSource.match(
   /int\s+ps_ctx_get_tag_align_in\s*\([^]*?\n\}/,
 );
+const publishRecordLayoutFunction = tagContextSource.match(
+  /int\s+ps_ctx_publish_record_layout_in\s*\([^]*?\n\}/,
+);
 const recordDeclStruct = typeSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
+if (!publishRecordLayoutFunction ||
+    !/\bget_tag_member_info_impl_in\s*\(/.test(
+      publishRecordLayoutFunction[0],
+    ) ||
+    /record->members\s*\[[^\]]+\]\s*\.(?:offset|bit_offset|bit_width)/.test(
+      publishRecordLayoutFunction[0],
+    )) {
+  throw new Error(
+    "RecordLayout publication must not derive member placement from RecordDecl",
+  );
+}
 if (!canonicalTypeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*base\s*;/.test(
       canonicalTypeStruct[1],

@@ -922,18 +922,26 @@ int ps_ctx_publish_record_layout_in(
     int size, int alignment) {
   const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
       context, record_id);
+  tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
   if (!context || !record || !record->is_complete || size < 0 ||
-      alignment <= 0 || record->member_count < 0)
+      alignment <= 0 || record->member_count < 0 || !tag)
     return 0;
   psx_record_member_layout_t *members = NULL;
   if (record->member_count > 0) {
     members = malloc((size_t)record->member_count * sizeof(*members));
     if (!members) return 0;
     for (int i = 0; i < record->member_count; i++) {
+      tag_member_info_t member = {0};
+      if (!get_tag_member_info_impl_in(
+              context, tag->kind, tag->name, tag->len,
+              tag->scope_depth, i, &member)) {
+        free(members);
+        return 0;
+      }
       members[i] = (psx_record_member_layout_t){
-          .offset = record->members[i].offset,
-          .bit_offset = record->members[i].bit_offset,
-          .bit_width = record->members[i].bit_width,
+          .offset = member.offset,
+          .bit_offset = member.bit_offset,
+          .bit_width = member.bit_width,
       };
     }
   }

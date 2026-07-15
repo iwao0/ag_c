@@ -1759,6 +1759,15 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(member_record != NULL);
   ASSERT_EQ(2, member_record->member_count);
   ((tag_member_info_t *)member_record->members)[1].offset = 77;
+  ASSERT_TRUE(ps_ctx_publish_record_layout_in(
+      test_semantic_context(), member_record->record_id, 8, 4));
+  const psx_record_layout_t *member_layout =
+      psx_record_layout_table_lookup(
+          ps_ctx_record_layout_table_in(test_semantic_context()),
+          member_record->record_id,
+          ps_ctx_target_info(test_semantic_context()));
+  ASSERT_TRUE(member_layout != NULL);
+  ASSERT_EQ(4, psx_record_layout_member(member_layout, 1)->offset);
   psx_member_access_resolution_t resolution;
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
