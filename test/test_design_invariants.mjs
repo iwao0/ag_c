@@ -2981,7 +2981,7 @@ const typeBuilderApiNames = [
   "ps_type_clone_in",
   "ps_type_clone_persistent",
   "ps_type_new_tag_in",
-  "ps_type_normalize_integer_identity",
+  "ps_type_normalize_scalar_identity",
   "ps_type_set_function_params_in",
   "ps_type_wrap_array_dims_in",
   "ps_type_apply_declarator_shape_in",
@@ -3152,8 +3152,11 @@ if (declaratorShapeBuilderViolations.length) {
 
 for (const functionName of [
   "ps_type_usual_arithmetic_result_in",
+  "ps_type_usual_arithmetic_result_for_target_in",
   "ps_type_binary_result_in",
+  "ps_type_binary_result_for_target_in",
   "ps_type_conditional_result_in",
+  "ps_type_conditional_result_for_target_in",
   "ps_type_address_result_in",
   "ps_type_decay_array_in",
   "ps_type_subscript_result_in",
@@ -3437,16 +3440,37 @@ for (const [name, source] of [
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
-const integerIdentityNormalizer = canonicalTypeSource.match(
-  /void\s+ps_type_normalize_integer_identity\s*\([^]*?\n\}\n\nvoid\s+ps_type_clear_cached_layout/,
+const targetIntegerConversionSection = canonicalTypeSource.match(
+  /static\s+int\s+integer_rank_size\s*\([^]*?static\s+ag_target_scalar_kind_t\s+floating_target_kind/,
+);
+if (!targetIntegerConversionSection ||
+    /\bps_type_sizeof\s*\(|->(?:size|align)\b/.test(
+      targetIntegerConversionSection[0],
+    ) ||
+    !/\bag_target_info_scalar_size\s*\(/.test(
+      targetIntegerConversionSection[0],
+    ) ||
+    !/\bps_type_binary_result_for_target_in\s*\([^]*?ps_ctx_target_info\s*\(/.test(
+      expressionOperandResolutionSource,
+    ) ||
+    !/\bps_type_conditional_result_for_target_in\s*\([^]*?ps_ctx_target_info\s*\(/.test(
+      expressionOperandResolutionSource,
+    )) {
+  throw new Error(
+    "semantic arithmetic conversion must use scalar rank and explicit TargetSpec instead of cached type layout",
+  );
+}
+const scalarIdentityNormalizer = canonicalTypeSource.match(
+  /void\s+ps_type_normalize_scalar_identity\s*\([^]*?\n\}\n\nvoid\s+ps_type_clear_cached_layout/,
 );
 if (!/static\s+token_kind_t\s+canonical_integer_scalar_kind\s*\(\s*token_kind_t\s+scalar_kind\s*\)/.test(
       canonicalTypeSource,
     ) ||
-    !integerIdentityNormalizer ||
-    /->(?:size|align)\b/.test(integerIdentityNormalizer[0])) {
+    !scalarIdentityNormalizer ||
+    /->(?:size|align)\b/.test(scalarIdentityNormalizer[0]) ||
+    !/TK_FLOAT_KIND_LONG_DOUBLE/.test(scalarIdentityNormalizer[0])) {
   throw new Error(
-    "integer TypeId identity must follow C scalar kind instead of cached target layout",
+    "scalar TypeId identity must follow C type kind instead of cached target layout",
   );
 }
 const tagIdentityFunction = canonicalTypeSource.match(

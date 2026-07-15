@@ -82,7 +82,10 @@ static void apply_decl_specifier_type_properties(
   if (specifier->is_long_long) type->is_long_long = 1;
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;
-  if (specifier->is_long_double) type->is_long_double = 1;
+  if (specifier->is_long_double) {
+    type->is_long_double = 1;
+    type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+  }
 }
 
 psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {

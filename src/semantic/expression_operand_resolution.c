@@ -62,16 +62,16 @@ const psx_type_t *psx_resolve_binary_result_type(
     node_kind_t kind, node_t *lhs, node_t *rhs) {
   psx_type_binary_op_t op;
   if (!ps_node_binary_type_op(kind, &op)) return NULL;
-  return ps_type_binary_result_in(
-      ps_ctx_arena(semantic_context), op,
+  return ps_type_binary_result_for_target_in(
+      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context), op,
       ps_node_get_type(lhs), ps_node_get_type(rhs));
 }
 
 const psx_type_t *psx_resolve_conditional_result_type(
     psx_semantic_context_t *semantic_context,
     node_t *then_expr, node_t *else_expr) {
-  return ps_type_conditional_result_in(
-      ps_ctx_arena(semantic_context),
+  return ps_type_conditional_result_for_target_in(
+      ps_ctx_arena(semantic_context), ps_ctx_target_info(semantic_context),
       ps_node_get_type(then_expr), ps_node_get_type(else_expr));
 }
 

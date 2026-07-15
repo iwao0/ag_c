@@ -172,7 +172,7 @@ psx_qual_type_t psx_semantic_type_table_intern(
   if (!reserve_type_id(table, id)) return result;
   psx_type_t *canonical = ps_type_clone_in(table->arena_context, type);
   if (!canonical) return result;
-  ps_type_normalize_integer_identity(canonical);
+  ps_type_normalize_scalar_identity(canonical);
   ps_type_clear_cached_layout(canonical);
   ps_type_remove_qualifiers(
       canonical, PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE |

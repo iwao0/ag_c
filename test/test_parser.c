@@ -3284,6 +3284,41 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(2, ps_type_alignof_for_target(
                    float_complex, &packed_complex_target));
 
+  psx_type_t *stale_signed_long =
+      ps_type_new_integer(TK_LONG, 1, 0);
+  psx_type_t *stale_unsigned_int =
+      ps_type_new_integer(TK_INT, 64, 1);
+  const psx_type_t *host_conversion =
+      ps_type_usual_arithmetic_result_for_target_in(
+          test_arena_context(), &host,
+          stale_signed_long, stale_unsigned_int,
+          TK_FLOAT_KIND_NONE, 0);
+  ASSERT_EQ(TK_LONG, host_conversion->scalar_kind);
+  ASSERT_EQ(8, host_conversion->size);
+  ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
+
+  ag_target_info_t equal_width_integer_target = host;
+  equal_width_integer_target.scalar[AG_TARGET_SCALAR_LONG] =
+      (ag_target_scalar_layout_t){4, 4};
+  const psx_type_t *equal_width_conversion =
+      ps_type_usual_arithmetic_result_for_target_in(
+          test_arena_context(), &equal_width_integer_target,
+          stale_signed_long, stale_unsigned_int,
+          TK_FLOAT_KIND_NONE, 0);
+  ASSERT_EQ(TK_LONG, equal_width_conversion->scalar_kind);
+  ASSERT_EQ(4, equal_width_conversion->size);
+  ASSERT_TRUE(ps_type_is_unsigned(equal_width_conversion));
+
+  ag_target_info_t wide_short_target = host;
+  wide_short_target.scalar[AG_TARGET_SCALAR_SHORT] =
+      (ag_target_scalar_layout_t){4, 4};
+  psx_type_t *stale_unsigned_short =
+      ps_type_new_integer(TK_SHORT, 1, 1);
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned_for_target(
+      stale_unsigned_short, &wide_short_target));
+  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned_for_target(
+      stale_unsigned_short, &host));
+
   psx_qual_type_t pointer_identity =
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
   psx_qual_type_t pointer_array_identity =
@@ -7332,7 +7367,7 @@ static void test_expr_sizeof() {
 
     node_t *c4 = parse_expr_input("(long double)1");
   ASSERT_EQ(ND_INT_TO_FP, c4->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(c4));
+  ASSERT_EQ(TK_FLOAT_KIND_LONG_DOUBLE, ps_node_value_fp_kind(c4));
   ASSERT_EQ(ND_NUM, c4->lhs->kind);
 
     node_t *c5 = parse_expr_input("(_Atomic(int))1");

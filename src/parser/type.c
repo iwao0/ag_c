@@ -4,6 +4,7 @@
 #include "arena.h"
 #include "tag_member_public.h"
 #include "type_owned_internal.h"
+#include "../target_info.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,17 +103,23 @@ psx_type_t *ps_type_new_in(
   return type;
 }
 
-void ps_type_normalize_integer_identity(psx_type_t *type) {
+void ps_type_normalize_scalar_identity(psx_type_t *type) {
   if (!type) return;
   if (type->kind == PSX_TYPE_INTEGER) {
     if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
     else
       type->scalar_kind = canonical_integer_scalar_kind(type->scalar_kind);
+  } else if (type->kind == PSX_TYPE_FLOAT ||
+             type->kind == PSX_TYPE_COMPLEX) {
+    if (type->is_long_double)
+      type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+    else if (type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)
+      type->is_long_double = 1;
   }
-  ps_type_normalize_integer_identity(psx_type_owned_base_mut(type));
+  ps_type_normalize_scalar_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
     for (int i = 0; i < type->param_count; i++)
-      ps_type_normalize_integer_identity(
+      ps_type_normalize_scalar_identity(
           psx_type_owned_param_mut(type, i));
   }
 }
@@ -192,12 +199,6 @@ psx_type_t *ps_type_new_float_in(
   return type;
 }
 
-static int type_integer_promotion_size(const psx_type_t *type) {
-  int size = ps_type_sizeof(type);
-  if (size <= 0) return 4;
-  return size < 4 ? 4 : size;
-}
-
 int ps_type_integer_rank(const psx_type_t *type) {
   if (!type) return 0;
   if (type->kind == PSX_TYPE_BOOL) return 0;
@@ -235,34 +236,118 @@ int ps_type_character_code_unit_width(const psx_type_t *type) {
   }
 }
 
-int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
+static ag_target_scalar_kind_t integer_target_kind_for_rank(int rank) {
+  if (rank >= 5) return AG_TARGET_SCALAR_LONG_LONG;
+  if (rank == 4) return AG_TARGET_SCALAR_LONG;
+  if (rank == 2) return AG_TARGET_SCALAR_SHORT;
+  if (rank == 1) return AG_TARGET_SCALAR_CHAR;
+  return AG_TARGET_SCALAR_INT;
+}
+
+static int integer_rank_size(
+    int rank, const ag_target_info_t *target) {
+  return ag_target_info_scalar_size(
+      target, integer_target_kind_for_rank(rank));
+}
+
+int ps_type_integer_promotion_is_unsigned_for_target(
+    const psx_type_t *type, const ag_target_info_t *target) {
   if (!type || (type->kind != PSX_TYPE_BOOL &&
                 type->kind != PSX_TYPE_INTEGER)) {
     return 0;
   }
-  return ps_type_integer_rank(type) >= 3 && ps_type_is_unsigned(type);
+  if (type->kind == PSX_TYPE_BOOL) return 0;
+  int rank = ps_type_integer_rank(type);
+  if (rank >= 3) return ps_type_is_unsigned(type);
+  return ps_type_is_unsigned(type) &&
+         integer_rank_size(rank, target) >=
+             integer_rank_size(3, target);
 }
 
-int ps_type_usual_arithmetic_result_is_unsigned(
-    const psx_type_t *lhs, const psx_type_t *rhs) {
+int ps_type_integer_promotion_is_unsigned(const psx_type_t *type) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_integer_promotion_is_unsigned_for_target(type, &target);
+}
+
+typedef struct {
+  int rank;
+  int is_unsigned;
+} integer_conversion_t;
+
+static integer_conversion_t promoted_integer_conversion(
+    const psx_type_t *type, const ag_target_info_t *target) {
+  int rank = ps_type_integer_rank(type);
+  integer_conversion_t result = {
+      .rank = rank < 3 ? 3 : rank,
+      .is_unsigned =
+          ps_type_integer_promotion_is_unsigned_for_target(type, target),
+  };
+  if (result.rank < 3) result.rank = 3;
+  return result;
+}
+
+static integer_conversion_t usual_integer_conversion(
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    const ag_target_info_t *target) {
+  integer_conversion_t left = promoted_integer_conversion(lhs, target);
+  integer_conversion_t right = promoted_integer_conversion(rhs, target);
+  integer_conversion_t result = {
+      .rank = left.rank > right.rank ? left.rank : right.rank,
+      .is_unsigned = 0,
+  };
+  if (left.is_unsigned == right.is_unsigned) {
+    result.is_unsigned = left.is_unsigned;
+    return result;
+  }
+  integer_conversion_t unsigned_type = left.is_unsigned ? left : right;
+  integer_conversion_t signed_type = left.is_unsigned ? right : left;
+  if (unsigned_type.rank >= signed_type.rank) {
+    result.is_unsigned = 1;
+    return result;
+  }
+  if (integer_rank_size(signed_type.rank, target) >
+      integer_rank_size(unsigned_type.rank, target)) {
+    result.is_unsigned = 0;
+    return result;
+  }
+  result.rank = signed_type.rank;
+  result.is_unsigned = 1;
+  return result;
+}
+
+int ps_type_usual_arithmetic_result_is_unsigned_for_target(
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    const ag_target_info_t *target) {
   if ((lhs && (lhs->kind == PSX_TYPE_FLOAT ||
                lhs->kind == PSX_TYPE_COMPLEX)) ||
       (rhs && (rhs->kind == PSX_TYPE_FLOAT ||
                rhs->kind == PSX_TYPE_COMPLEX))) {
     return 0;
   }
-  int lhs_size = type_integer_promotion_size(lhs);
-  int rhs_size = type_integer_promotion_size(rhs);
-  int lhs_unsigned = ps_type_integer_promotion_is_unsigned(lhs);
-  int rhs_unsigned = ps_type_integer_promotion_is_unsigned(rhs);
-  if (lhs_unsigned == rhs_unsigned) return lhs_unsigned;
-  int unsigned_size = lhs_unsigned ? lhs_size : rhs_size;
-  int signed_size = lhs_unsigned ? rhs_size : lhs_size;
-  return unsigned_size >= signed_size;
+  return usual_integer_conversion(lhs, rhs, target).is_unsigned;
 }
 
-const psx_type_t *ps_type_usual_arithmetic_result_in(
-    arena_context_t *arena_context,
+int ps_type_usual_arithmetic_result_is_unsigned(
+    const psx_type_t *lhs, const psx_type_t *rhs) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_usual_arithmetic_result_is_unsigned_for_target(
+      lhs, rhs, &target);
+}
+
+static ag_target_scalar_kind_t floating_target_kind(
+    tk_float_kind_t fp_kind, int is_complex) {
+  if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)
+    return is_complex ? AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX
+                      : AG_TARGET_SCALAR_LONG_DOUBLE;
+  if (fp_kind == TK_FLOAT_KIND_FLOAT)
+    return is_complex ? AG_TARGET_SCALAR_FLOAT_COMPLEX
+                      : AG_TARGET_SCALAR_FLOAT;
+  return is_complex ? AG_TARGET_SCALAR_DOUBLE_COMPLEX
+                    : AG_TARGET_SCALAR_DOUBLE;
+}
+
+const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *lhs, const psx_type_t *rhs,
     tk_float_kind_t fallback_fp_kind, int force_complex) {
   int result_is_complex =
@@ -273,12 +358,15 @@ const psx_type_t *ps_type_usual_arithmetic_result_in(
     tk_float_kind_t fp = fallback_fp_kind;
     if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
+    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
+      fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    int size = fp == TK_FLOAT_KIND_FLOAT ? 8 : 16;
+    ag_target_scalar_kind_t target_kind = floating_target_kind(fp, 1);
+    int size = ag_target_info_scalar_size(target, target_kind);
     psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
     type->fp_kind = fp;
     type->size = size;
-    type->align = size >= 8 ? 8 : 4;
+    type->align = ag_target_info_scalar_alignment(target, target_kind);
     return type;
   }
 
@@ -288,41 +376,51 @@ const psx_type_t *ps_type_usual_arithmetic_result_in(
     tk_float_kind_t fp = fallback_fp_kind;
     if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
+    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
+      fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
+    ag_target_scalar_kind_t target_kind = floating_target_kind(fp, 0);
     psx_type_t *type = ps_type_new_float_in(
-        arena_context, fp, fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+        arena_context, fp,
+        ag_target_info_scalar_size(target, target_kind));
+    type->align = ag_target_info_scalar_alignment(target, target_kind);
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       type->is_long_double = 1;
     return type;
   }
 
-  int result_unsigned =
-      ps_type_usual_arithmetic_result_is_unsigned(lhs, rhs);
-  int lhs_rank = lhs ? ps_type_integer_rank(lhs) : 0;
-  int rhs_rank = rhs ? ps_type_integer_rank(rhs) : 0;
-  if (lhs_rank > 0 && lhs_rank < 3) lhs_rank = 3;
-  if (rhs_rank > 0 && rhs_rank < 3) rhs_rank = 3;
-  int result_rank = lhs_rank > rhs_rank ? lhs_rank : rhs_rank;
-  if (result_rank < 3) result_rank = 3;
-  token_kind_t scalar_kind = result_rank >= 4 ? TK_LONG : TK_INT;
-  int size = result_rank >= 4 ? 8 : 4;
+  integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
+  token_kind_t scalar_kind = result.rank >= 4 ? TK_LONG : TK_INT;
+  int size = integer_rank_size(result.rank, target);
   psx_type_t *type = ps_type_new_integer_in(
-      arena_context, scalar_kind, size, result_unsigned);
-  type->is_long_long = result_rank >= 5;
+      arena_context, scalar_kind, size, result.is_unsigned);
+  type->is_long_long = result.rank >= 5;
   return type;
 }
 
-const psx_type_t *ps_type_binary_result_in(
-    arena_context_t *arena_context, psx_type_binary_op_t op,
+const psx_type_t *ps_type_usual_arithmetic_result_in(
+    arena_context_t *arena_context,
+    const psx_type_t *lhs, const psx_type_t *rhs,
+    tk_float_kind_t fallback_fp_kind, int force_complex) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_usual_arithmetic_result_for_target_in(
+      arena_context, &target, lhs, rhs,
+      fallback_fp_kind, force_complex);
+}
+
+const psx_type_t *ps_type_binary_result_for_target_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
+    psx_type_binary_op_t op,
     const psx_type_t *lhs,
     const psx_type_t *rhs) {
   if (op == PSX_TYPE_BINARY_COMMA)
     return ps_type_clone_in(arena_context, rhs);
   if (op == PSX_TYPE_BINARY_COMPARE || op == PSX_TYPE_BINARY_LOGICAL)
-    return ps_type_new_integer_in(arena_context, TK_INT, 4, 0);
+    return ps_type_new_integer_in(
+        arena_context, TK_INT, integer_rank_size(3, target), 0);
   if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
-    return ps_type_usual_arithmetic_result_in(
-        arena_context, lhs, NULL, TK_FLOAT_KIND_NONE, 0);
+    return ps_type_usual_arithmetic_result_for_target_in(
+        arena_context, target, lhs, NULL, TK_FLOAT_KIND_NONE, 0);
 
   int lhs_pointer = ps_type_is_pointer_like(lhs);
   int rhs_pointer = ps_type_is_pointer_like(rhs);
@@ -334,20 +432,29 @@ const psx_type_t *ps_type_binary_result_in(
                      arena_context, lhs_pointer ? lhs : rhs);
   if (op == PSX_TYPE_BINARY_SUB) {
     if (lhs_pointer && rhs_pointer)
-      return ps_type_new_integer_in(arena_context, TK_LONG, 8, 0);
+      return ps_type_new_integer_in(
+          arena_context, TK_LONG, integer_rank_size(4, target), 0);
     if (lhs_pointer)
       return lhs->kind == PSX_TYPE_ARRAY
                  ? ps_type_decay_array_in(arena_context, lhs)
                  : ps_type_clone_in(arena_context, lhs);
   }
-  return ps_type_usual_arithmetic_result_in(
-      arena_context, lhs, rhs, TK_FLOAT_KIND_NONE,
+  return ps_type_usual_arithmetic_result_for_target_in(
+      arena_context, target, lhs, rhs, TK_FLOAT_KIND_NONE,
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
 
-const psx_type_t *ps_type_conditional_result_in(
-    arena_context_t *arena_context,
+const psx_type_t *ps_type_binary_result_in(
+    arena_context_t *arena_context, psx_type_binary_op_t op,
+    const psx_type_t *lhs, const psx_type_t *rhs) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_binary_result_for_target_in(
+      arena_context, &target, op, lhs, rhs);
+}
+
+const psx_type_t *ps_type_conditional_result_for_target_in(
+    arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *then_type, const psx_type_t *else_type) {
   if (ps_type_is_pointer_like(then_type))
     return then_type->kind == PSX_TYPE_ARRAY
@@ -360,10 +467,18 @@ const psx_type_t *ps_type_conditional_result_in(
   if (then_type && else_type && then_type->kind == else_type->kind &&
       ps_type_is_tag_aggregate(then_type))
     return ps_type_clone_in(arena_context, then_type);
-  return ps_type_usual_arithmetic_result_in(
-      arena_context, then_type, else_type, TK_FLOAT_KIND_NONE,
+  return ps_type_usual_arithmetic_result_for_target_in(
+      arena_context, target, then_type, else_type, TK_FLOAT_KIND_NONE,
       (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
+}
+
+const psx_type_t *ps_type_conditional_result_in(
+    arena_context_t *arena_context,
+    const psx_type_t *then_type, const psx_type_t *else_type) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_conditional_result_for_target_in(
+      arena_context, &target, then_type, else_type);
 }
 
 psx_type_t *ps_type_new_pointer_in(
@@ -1270,7 +1385,7 @@ const psx_type_t *ps_type_generic_control_in(
   } else if (type->kind == PSX_TYPE_FUNCTION) {
     type = ps_type_new_pointer_in(arena_context, type);
   }
-  ps_type_normalize_integer_identity(type);
+  ps_type_normalize_scalar_identity(type);
   return type;
 }
 
