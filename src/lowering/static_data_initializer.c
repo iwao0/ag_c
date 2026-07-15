@@ -76,6 +76,7 @@ static psx_initializer_target_t positional_target(
     return target;
   const psx_initializer_scalar_leaf_t *leaf = &leaves->items[cursor];
   target.type = leaf->type;
+  target.type_id = leaf->type_id;
   target.relative_offset = leaf->relative_offset;
   target.direct_member = leaf->direct_member;
   if (context_type->kind == PSX_TYPE_UNION &&
@@ -85,6 +86,8 @@ static psx_initializer_target_t positional_target(
         &context_type->aggregate_definition->members[0];
     if (preserve_subobject) {
       target.type = ps_tag_member_decl_type(member);
+      target.type_id = ps_lowering_type_id(
+          lowering->lowering_context, target.type);
       target.relative_offset = context_offset + member->offset;
       target.direct_member = member;
     }
@@ -106,6 +109,8 @@ static psx_initializer_target_t positional_target(
       if (member_type->kind != PSX_TYPE_ARRAY &&
           !ps_type_is_tag_aggregate(member_type)) continue;
       target.type = member_type;
+      target.type_id = ps_lowering_type_id(
+          lowering->lowering_context, member_type);
       target.relative_offset = member_offset;
       target.direct_member = member;
       target.first_member_index = i;
@@ -123,6 +128,8 @@ static psx_initializer_target_t positional_target(
   if (child_index < 0 || child_index >= context_type->array_len ||
       child_offset != leaf->relative_offset) return target;
   target.type = context_type->base;
+  target.type_id = ps_lowering_type_id(
+      lowering->lowering_context, target.type);
   target.relative_offset = child_offset;
   target.direct_member = NULL;
   target.first_array_index = child_index;
@@ -241,8 +248,11 @@ static void lower_array_list(
     psx_initializer_target_t target = entry->designator_count > 0
         ? psx_resolve_initializer_designator_path(
               diagnostics(lowering),
+              ps_lowering_semantic_types(lowering->lowering_context),
               ps_lowering_target(lowering->lowering_context), entry,
-              context_type, context_offset, tok)
+              ps_lowering_type_id(
+                  lowering->lowering_context, context_type),
+              context_offset, tok)
         : positional_target(
               lowering, context_type, context_offset,
               &lowering->leaves, cursor,
@@ -278,6 +288,7 @@ static void lower_array_list(
           string_type = leaf->string_array_type;
           string_offset = leaf->string_array_offset;
           target.type = string_type;
+          target.type_id = leaf->string_array_type_id;
           target.relative_offset = string_offset;
         }
       }
@@ -288,6 +299,7 @@ static void lower_array_list(
       write_scalar_value(lowering, &target, entry->value, tok);
     }
     cursor = psx_initializer_leaf_cursor_after_target(
+        ps_lowering_semantic_types(lowering->lowering_context),
         ps_lowering_target(lowering->lowering_context),
         &lowering->leaves, &target);
   }
@@ -322,7 +334,9 @@ int lower_static_object_initializer(
       .fallback_tok = fallback_tok,
   };
   if (!psx_collect_initializer_scalar_leaves(
-          ps_lowering_target(lowering_context), type, 0,
+          ps_lowering_semantic_types(lowering_context),
+          ps_lowering_target(lowering_context),
+          ps_lowering_type_id(lowering_context, type), 0,
           &lowering.leaves) || lowering.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&lowering.leaves);
     return 0;

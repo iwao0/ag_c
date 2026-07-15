@@ -2409,6 +2409,42 @@ const explicitDiagnosticInitializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
 );
+const initializerResolutionHeader = await readFile(
+  "src/semantic/initializer_resolution.h",
+  "utf8",
+);
+const initializerTargetType = initializerResolutionHeader.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_initializer_target_t\s*;/,
+);
+const initializerLeafType = initializerResolutionHeader.match(
+  /typedef struct\s*\{([\s\S]*?)\}\s*psx_initializer_scalar_leaf_t\s*;/,
+);
+if (!initializerTargetType ||
+    !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerTargetType[1]) ||
+    !initializerLeafType ||
+    !/\bpsx_type_id_t\s+type_id\s*;/.test(initializerLeafType[1]) ||
+    !/\bpsx_type_id_t\s+string_array_type_id\s*;/.test(
+      initializerLeafType[1],
+    ) ||
+    !/\bpsx_resolve_initializer_designator_path\s*\([\s\S]*?\bpsx_type_id_t\s+root_type_id\b/.test(
+      initializerResolutionHeader,
+    ) ||
+    !/\bpsx_collect_initializer_scalar_leaves\s*\([\s\S]*?\bpsx_type_id_t\s+type_id\b/.test(
+      initializerResolutionHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_storage_size\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    )) {
+  throw new Error(
+    "initializer resolution must carry TypeId values and derive target layout through the semantic type table",
+  );
+}
 const explicitDiagnosticInitializerLoweringSource = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",

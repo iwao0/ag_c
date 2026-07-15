@@ -282,9 +282,11 @@ static int lower_global_slots(
   global_data_lowering_t *ctx = user;
   psx_initializer_scalar_leaf_list_t leaves = {0};
   const psx_type_t *type = ps_gvar_get_decl_type(ctx->global);
+  psx_type_id_t type_id = psx_semantic_type_table_find(
+      ctx->lowering->semantic_types, type).type_id;
   if (!psx_collect_initializer_scalar_leaves(
-          ctx->lowering->target,
-          type, 0, &leaves)) {
+          ctx->lowering->semantic_types, ctx->lowering->target,
+          type_id, 0, &leaves)) {
     return 0;
   }
   ctx->leaves = &leaves;

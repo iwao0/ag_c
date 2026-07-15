@@ -8,6 +8,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+static psx_type_id_t initializer_type_id(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_type_t *type) {
+  return psx_semantic_type_table_find(
+      semantic_types, type).type_id;
+}
+
+static int initializer_type_size(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_type_id_t type_id, const ag_target_info_t *target) {
+  return ps_type_sizeof_id_for_target(
+      semantic_types, type_id, target);
+}
+
 static long long resolve_designator_index(
     ag_diagnostic_context_t *diagnostics, node_t *expr,
     token_t *designator_tok, token_t *fallback_tok) {
@@ -49,11 +63,14 @@ static int aggregate_member_index_by_name(
 
 psx_initializer_target_t psx_resolve_initializer_designator_path(
     ag_diagnostic_context_t *diagnostics,
+    const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *layout_target,
-    const psx_initializer_entry_t *entry, const psx_type_t *root_type,
+    const psx_initializer_entry_t *entry, psx_type_id_t root_type_id,
     int root_relative_offset, token_t *fallback_tok) {
   psx_initializer_target_t target = {
-      .type = root_type,
+      .type = psx_semantic_type_table_lookup(
+          semantic_types, root_type_id),
+      .type_id = root_type_id,
       .relative_offset = root_relative_offset,
       .first_array_index = -1,
       .first_member_index = -1,
@@ -89,10 +106,14 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       }
       if (target.first_array_index < 0)
         target.first_array_index = (int)index;
+      psx_type_id_t element_type_id = initializer_type_id(
+          semantic_types, target.type->base);
       target.relative_offset +=
           (int)index *
-              ps_type_sizeof_for_target(target.type->base, layout_target);
+              initializer_type_size(
+                  semantic_types, element_type_id, layout_target);
       target.type = target.type->base;
+      target.type_id = element_type_id;
       target.direct_member = NULL;
       continue;
     }
@@ -119,6 +140,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
     const tag_member_info_t *member = &definition->members[member_index];
     target.relative_offset += member->offset;
     target.type = ps_tag_member_decl_type(member);
+    target.type_id = initializer_type_id(
+        semantic_types, target.type);
     target.direct_member = member;
   }
   return target;
@@ -126,8 +149,10 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
 
 static int append_scalar_leaf(
     psx_initializer_scalar_leaf_list_t *list, const psx_type_t *type,
+    psx_type_id_t type_id,
     int relative_offset, const tag_member_info_t *direct_member,
-    const psx_type_t *string_array_type, int string_array_offset) {
+    const psx_type_t *string_array_type,
+    psx_type_id_t string_array_type_id, int string_array_offset) {
   if (list->count == list->capacity) {
     int next_capacity = list->capacity ? list->capacity * 2 : 16;
     psx_initializer_scalar_leaf_t *next = realloc(
@@ -137,16 +162,18 @@ static int append_scalar_leaf(
     list->capacity = next_capacity;
   }
   list->items[list->count++] = (psx_initializer_scalar_leaf_t){
-      type, relative_offset, direct_member,
-      string_array_type, string_array_offset};
+      type, type_id, relative_offset, direct_member,
+      string_array_type, string_array_type_id, string_array_offset};
   return 1;
 }
 
 static int canonical_definition_flat_slot_count(
+    const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target,
     const psx_aggregate_definition_t *definition);
 
 static int canonical_member_flat_slot_count(
+    const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target, const tag_member_info_t *member) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
   int per = 1;
@@ -157,7 +184,7 @@ static int canonical_member_flat_slot_count(
           : NULL;
   if (aggregate_type && aggregate_type->aggregate_definition) {
     per = canonical_definition_flat_slot_count(
-        target,
+        semantic_types, target,
         aggregate_type->aggregate_definition);
   }
   int count = ps_type_array_flat_element_count(member_type);
@@ -165,6 +192,7 @@ static int canonical_member_flat_slot_count(
 }
 
 static int canonical_definition_flat_slot_count(
+    const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target,
     const psx_aggregate_definition_t *definition) {
   if (!definition || definition->member_count <= 0) return 1;
@@ -174,10 +202,14 @@ static int canonical_definition_flat_slot_count(
   int covered_union_size = 0;
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
-    int member_slots = canonical_member_flat_slot_count(target, member);
+    int member_slots = canonical_member_flat_slot_count(
+        semantic_types, target, member);
     if (definition->tag_kind == TK_UNION) {
-      int bytes = ps_type_sizeof_for_target(
-          ps_tag_member_decl_type(member), target);
+      int bytes = initializer_type_size(
+          semantic_types,
+          initializer_type_id(
+              semantic_types, ps_tag_member_decl_type(member)),
+          target);
       if (bytes > union_max_bytes ||
           (bytes == union_max_bytes && member_slots > slots)) {
         union_max_bytes = bytes;
@@ -194,33 +226,44 @@ static int canonical_definition_flat_slot_count(
     slots += member_slots;
     if (ps_tag_member_is_unnamed_union(member)) {
       covered_union_offset = member->offset;
-      covered_union_size = ps_type_sizeof_for_target(
-          ps_tag_member_decl_type(member), target);
+      covered_union_size = initializer_type_size(
+          semantic_types,
+          initializer_type_id(
+              semantic_types, ps_tag_member_decl_type(member)),
+          target);
     }
   }
   return slots > 0 ? slots : 1;
 }
 
 int psx_collect_initializer_scalar_leaves(
-    const ag_target_info_t *target, const psx_type_t *type,
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *target, psx_type_id_t type_id,
     int relative_offset,
     psx_initializer_scalar_leaf_list_t *list) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      semantic_types, type_id);
   if (!type || !list) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
-    int child_size = ps_type_sizeof_for_target(type->base, target);
+    psx_type_id_t child_type_id = initializer_type_id(
+        semantic_types, type->base);
+    int child_size = initializer_type_size(
+        semantic_types, child_type_id, target);
     if (type->base && type->base->kind != PSX_TYPE_ARRAY &&
         !ps_type_is_tag_aggregate(type->base)) {
       for (int i = 0; i < type->array_len; i++) {
         if (!append_scalar_leaf(
-                list, type->base, relative_offset + i * child_size,
-                NULL, type, relative_offset))
+                list, type->base, child_type_id,
+                relative_offset + i * child_size,
+                NULL, type, type_id, relative_offset))
           return 0;
       }
       return 1;
     }
     for (int i = 0; i < type->array_len; i++) {
       if (!psx_collect_initializer_scalar_leaves(
-              target, type->base, relative_offset + i * child_size, list))
+              semantic_types, target, child_type_id,
+              relative_offset + i * child_size, list))
         return 0;
     }
     return 1;
@@ -235,8 +278,13 @@ int psx_collect_initializer_scalar_leaves(
       int max_slots = -1;
       for (int i = 0; i < definition->member_count; i++) {
         const tag_member_info_t *candidate = &definition->members[i];
-        int bytes = ps_tag_member_decl_storage_size(candidate);
-        int slots = canonical_member_flat_slot_count(target, candidate);
+        int bytes = initializer_type_size(
+            semantic_types,
+            initializer_type_id(
+                semantic_types, ps_tag_member_decl_type(candidate)),
+            target);
+        int slots = canonical_member_flat_slot_count(
+            semantic_types, target, candidate);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;
@@ -251,18 +299,23 @@ int psx_collect_initializer_scalar_leaves(
       if (type->kind == PSX_TYPE_STRUCT && member->offset < covered_end)
         continue;
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
+      psx_type_id_t member_type_id = initializer_type_id(
+          semantic_types, member_type);
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||
                           ps_type_is_tag_aggregate(member_type))) {
         if (!psx_collect_initializer_scalar_leaves(
-                target, member_type, relative_offset + member->offset, list))
+                semantic_types, target, member_type_id,
+                relative_offset + member->offset, list))
           return 0;
       } else if (!append_scalar_leaf(
-                     list, member_type, relative_offset + member->offset,
-                     member, NULL, 0)) {
+                     list, member_type, member_type_id,
+                     relative_offset + member->offset,
+                     member, NULL, PSX_TYPE_ID_INVALID, 0)) {
         return 0;
       }
       if (type->kind == PSX_TYPE_STRUCT && member->len <= 0) {
-        int member_size = ps_type_sizeof_for_target(member_type, target);
+        int member_size = initializer_type_size(
+            semantic_types, member_type_id, target);
         int end = member->offset + member_size;
         if (member_size > 0 && end > covered_end) covered_end = end;
       }
@@ -270,10 +323,12 @@ int psx_collect_initializer_scalar_leaves(
     return 1;
   }
   return append_scalar_leaf(
-      list, type, relative_offset, NULL, NULL, 0);
+      list, type, type_id, relative_offset, NULL,
+      NULL, PSX_TYPE_ID_INVALID, 0);
 }
 
 int psx_initializer_leaf_cursor_after_target(
+    const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *layout_target,
     const psx_initializer_scalar_leaf_list_t *leaves,
     const psx_initializer_target_t *target) {
@@ -287,8 +342,8 @@ int psx_initializer_leaf_cursor_after_target(
         return i + 1;
     }
   }
-  int target_size = ps_type_sizeof_for_target(
-      target->type, layout_target);
+  int target_size = initializer_type_size(
+      semantic_types, target->type_id, layout_target);
   if (target_size <= 0) target_size = 1;
   int end_offset = target->relative_offset + target_size;
   int cursor = 0;

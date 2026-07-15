@@ -5451,15 +5451,21 @@ static void test_initializer_resolution_boundary() {
   psx_type_t *aggregate = ps_type_new_tag(
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 12);
   aggregate->aggregate_definition = &definition;
+  psx_type_id_t aggregate_type_id = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), aggregate).type_id;
 
   psx_initializer_scalar_leaf_list_t leaves = {0};
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves(
-      ps_ctx_target_info(test_semantic_context()), aggregate, 0, &leaves));
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_target_info(test_semantic_context()),
+      aggregate_type_id, 0, &leaves));
   ASSERT_EQ(3, leaves.count);
   ASSERT_EQ(0, leaves.items[0].relative_offset);
   ASSERT_EQ(4, leaves.items[1].relative_offset);
   ASSERT_EQ(8, leaves.items[2].relative_offset);
-  ASSERT_EQ(integer, leaves.items[2].type);
+  ASSERT_TRUE(ps_type_unqualified_semantic_matches(
+      integer, leaves.items[2].type));
+  ASSERT_TRUE(leaves.items[2].type_id != PSX_TYPE_ID_INVALID);
 
   node_num_t index = {0};
   index.base.kind = ND_NUM;
@@ -5478,13 +5484,16 @@ static void test_initializer_resolution_boundary() {
   psx_initializer_target_t target =
       psx_resolve_initializer_designator_path(
           ps_ctx_diagnostics(test_semantic_context()),
+          ps_ctx_semantic_type_table_in(test_semantic_context()),
           ps_ctx_target_info(test_semantic_context()),
-          &entry, aggregate, 0, NULL);
-  ASSERT_EQ(integer, target.type);
+          &entry, aggregate_type_id, 0, NULL);
+  ASSERT_TRUE(ps_type_unqualified_semantic_matches(integer, target.type));
   ASSERT_EQ(8, target.relative_offset);
   ASSERT_EQ(1, target.first_member_index);
   ASSERT_EQ(1, target.first_array_index);
+  ASSERT_EQ(leaves.items[2].type_id, target.type_id);
   ASSERT_EQ(3, psx_initializer_leaf_cursor_after_target(
+                   ps_ctx_semantic_type_table_in(test_semantic_context()),
                    ps_ctx_target_info(test_semantic_context()),
                    &leaves, &target));
   psx_initializer_scalar_leaf_list_dispose(&leaves);
@@ -5507,8 +5516,12 @@ static void test_initializer_resolution_boundary() {
       .members = recursive_members,
   };
   recursive->aggregate_definition = &recursive_definition;
+  psx_type_id_t recursive_type_id = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), recursive).type_id;
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves(
-      ps_ctx_target_info(test_semantic_context()), recursive, 0, &leaves));
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_target_info(test_semantic_context()),
+      recursive_type_id, 0, &leaves));
   ASSERT_EQ(2, leaves.count);
   ASSERT_EQ(PSX_TYPE_POINTER, leaves.items[0].type->kind);
   ASSERT_EQ(8, leaves.items[1].relative_offset);
@@ -5663,6 +5676,7 @@ static void test_static_data_initializer_boundary() {
   list.entry_count = 2;
   global_var_t global = {0};
   ps_global_registry_bind_decl_type(&global, array);
+  ASSERT_TRUE(intern_test_type_id(array) != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(lower_static_scalar_array_initializer(
       test_lowering_context(), &global, array, &list, NULL));
   ASSERT_EQ(3, global.init_count);
@@ -5715,6 +5729,7 @@ static void test_static_data_initializer_boundary() {
   union_list.entry_count = 1;
   global_var_t union_global = {0};
   ps_global_registry_bind_decl_type(&union_global, union_type);
+  ASSERT_TRUE(intern_test_type_id(union_type) != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(lower_static_object_initializer(
       test_lowering_context(), &union_global,
       union_type, &union_list, NULL));

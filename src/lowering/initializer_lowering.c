@@ -21,14 +21,20 @@ typedef struct {
   const ag_target_info_t *target;
 } initializer_lowering_context_t;
 
+static psx_type_id_t type_id(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *type) {
+  if (!context) return PSX_TYPE_ID_INVALID;
+  return psx_semantic_type_table_find(
+      context->semantic_types, type).type_id;
+}
+
 static int type_size(
     const initializer_lowering_context_t *context,
     const psx_type_t *type) {
   if (!context) return 0;
-  psx_qual_type_t identity = psx_semantic_type_table_find(
-      context->semantic_types, type);
   return ps_type_sizeof_id_for_target(
-      context->semantic_types, identity.type_id, context->target);
+      context->semantic_types, type_id(context, type), context->target);
 }
 
 static ag_diagnostic_context_t *diagnostics(
@@ -628,7 +634,8 @@ static node_t *append_typed_object_zero_fill(
     lvar_t *var, const psx_type_t *type, node_t *chain) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          context->target, type, 0, &leaves)) {
+          context->semantic_types, context->target,
+          type_id(context, type), 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(context, var, chain);
   }
@@ -659,7 +666,8 @@ static node_t *lower_flat_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          context->target, type, relative_offset, &leaves)) {
+          context->semantic_types, context->target,
+          type_id(context, type), relative_offset, &leaves)) {
     free(leaves.items);
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
                  diag_message_for_in(diagnostics(context),
@@ -731,6 +739,7 @@ static int immediate_subobject_at_leaf_cursor(
         child_offset != leaf_offset) return 0;
     *out = (typed_designator_target_t){
         .type = type->base,
+        .type_id = type_id(context, type->base),
         .relative_offset = child_offset,
         .first_array_index = child_index,
         .first_member_index = -1,
@@ -749,6 +758,7 @@ static int immediate_subobject_at_leaf_cursor(
           !ps_type_is_tag_aggregate(member_type)) return 0;
       *out = (typed_designator_target_t){
           .type = member_type,
+          .type_id = type_id(context, member_type),
           .relative_offset = member_offset,
           .direct_member = member,
           .first_array_index = -1,
@@ -766,7 +776,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          context->target, type, relative_offset, &leaves)) {
+          context->semantic_types, context->target,
+          type_id(context, type), relative_offset, &leaves)) {
     free(leaves.items);
     return chain;
   }
@@ -776,14 +787,15 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (entry->designator_count > 0) {
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), context->target, entry,
-              type, relative_offset, fallback_tok);
+              diagnostics(context), context->semantic_types,
+              context->target, entry, type_id(context, type),
+              relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
           target.direct_member, chain,
           entry->tok ? entry->tok : fallback_tok);
       leaf_cursor = psx_initializer_leaf_cursor_after_target(
-          context->target, &leaves, &target);
+          context->semantic_types, context->target, &leaves, &target);
       continue;
     }
     if (leaf_cursor >= leaves.count) {
@@ -804,7 +816,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
             target.direct_member, chain,
             entry->tok ? entry->tok : fallback_tok);
         leaf_cursor = psx_initializer_leaf_cursor_after_target(
-            context->target, &leaves, &target);
+            context->semantic_types, context->target, &leaves, &target);
         continue;
       }
     }
@@ -849,7 +861,8 @@ static node_t *try_lower_typed_array_copy(
 
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          context->target, type, relative_offset, &leaves)) {
+          context->semantic_types, context->target,
+          type_id(context, type), relative_offset, &leaves)) {
     free(leaves.items);
     return NULL;
   }
@@ -948,8 +961,9 @@ static node_t *lower_typed_array_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), context->target, entry,
-              type, relative_offset, fallback_tok);
+              diagnostics(context), context->semantic_types,
+              context->target, entry, type_id(context, type),
+              relative_offset, fallback_tok);
       target_type = target.type;
       target_offset = target.relative_offset;
       selected_index = target.first_array_index;
@@ -1041,8 +1055,9 @@ static node_t *lower_typed_aggregate_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), context->target, entry,
-              type, relative_offset, fallback_tok);
+              diagnostics(context), context->semantic_types,
+              context->target, entry, type_id(context, type),
+              relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
           target.direct_member, chain,
