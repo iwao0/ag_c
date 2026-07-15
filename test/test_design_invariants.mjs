@@ -4174,6 +4174,10 @@ const aggregateWalkerLayoutSection = nodeUtilsSource.match(
   /static\s+int\s+gvar_member_value_size_for_target\s*\([^]*?psx_gvar_init_slot_t\s+ps_gvar_init_slot_view\s*\(/,
 );
 if (!aggregateWalkerLayoutSection ||
+    /->\s*aggregate_definition\b/.test(nodeUtilsSource) ||
+    !/\bpsx_record_decl_table_lookup\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||

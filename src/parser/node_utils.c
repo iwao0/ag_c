@@ -506,6 +506,7 @@ typedef struct {
 typedef struct {
   psx_semantic_context_t *semantic_context;
   const psx_semantic_type_table_t *semantic_types;
+  const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
   psx_type_id_t aggregate_type_id;
@@ -528,6 +529,7 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
 static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -540,6 +542,7 @@ static void gvar_aggregate_member_iter_set_next(gvar_aggregate_member_iter_t *it
 static int gvar_walk_struct_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id,
@@ -552,6 +555,7 @@ static int gvar_walk_struct_initializer(
 static int gvar_walk_union_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id,
@@ -588,7 +592,8 @@ static int tag_union_init_member_for_slot_scoped(
     const psx_aggregate_definition_t *definition,
     const global_var_t *gv, int idx, tag_member_info_t *out,
     int *out_ordinal);
-static const psx_aggregate_definition_t *gvar_member_aggregate_definition(
+static const psx_record_decl_t *gvar_member_record_decl(
+    const psx_record_decl_table_t *record_decls,
     const tag_member_info_t *member);
 static void gvar_aggregate_member_iter_note_cover(
     gvar_aggregate_member_iter_t *iter, const tag_member_info_t *member,
@@ -679,6 +684,7 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
 static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -687,6 +693,7 @@ static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
   gvar_aggregate_member_iter_t iter = {
       .semantic_context = semantic_context,
       .semantic_types = semantic_types,
+      .record_decls = record_decls,
       .record_layouts = record_layouts,
       .target = target,
       .aggregate_type_id = aggregate_type_id,
@@ -763,17 +770,20 @@ static int gvar_walk_needs_padding(const psx_gvar_aggregate_walk_ops_t *ops) {
   return ops && ops->padding;
 }
 
-static const psx_aggregate_definition_t *gvar_member_aggregate_definition(
+static const psx_record_decl_t *gvar_member_record_decl(
+    const psx_record_decl_table_t *record_decls,
     const tag_member_info_t *member) {
   const psx_type_t *type =
       ps_type_array_leaf_type(ps_tag_member_decl_type(member));
   return type && ps_type_is_tag_aggregate(type)
-             ? type->aggregate_definition
+             ? psx_record_decl_table_lookup(
+                   record_decls, ps_type_record_id(type))
              : NULL;
 }
 
 static int gvar_record_find_unnamed_union_covering_offset(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     const psx_aggregate_definition_t *definition,
@@ -812,9 +822,10 @@ static int gvar_record_find_unnamed_union_covering_offset(
     psx_type_id_t child_type_id = psx_semantic_type_table_array_leaf(
         semantic_types, member_type_id).type_id;
     if (gvar_record_find_unnamed_union_covering_offset(
-            semantic_types, record_layouts, target, child_type_id,
-            gvar_member_aggregate_definition(&member), start, target_offset,
-            out_offset, out_size))
+            semantic_types, record_decls, record_layouts, target,
+            child_type_id,
+            gvar_member_record_decl(record_decls, &member), start,
+            target_offset, out_offset, out_size))
       return 1;
   }
   return 0;
@@ -846,7 +857,8 @@ static void gvar_aggregate_member_iter_note_cover(
   int cover_offset = 0;
   int cover_size = 0;
   if (gvar_record_find_unnamed_union_covering_offset(
-          iter->semantic_types, iter->record_layouts, iter->target,
+          iter->semantic_types, iter->record_decls,
+          iter->record_layouts, iter->target,
           iter->aggregate_type_id, iter->definition, 0, member->offset,
           &cover_offset, &cover_size)) {
     iter->cover_state.covered_union_off = cover_offset;
@@ -877,6 +889,7 @@ static psx_type_id_t gvar_member_value_type_id(
 static int gvar_walk_struct_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id,
@@ -890,7 +903,8 @@ static int gvar_walk_struct_initializer(
   int prev_end = 0;
   gvar_aggregate_member_iter_t iter =
       gvar_aggregate_member_iter(
-          semantic_context, semantic_types, record_layouts, target,
+          semantic_context, semantic_types, record_decls,
+          record_layouts, target,
           aggregate_type_id, tag_kind, tag_name, tag_len,
           tag_scope_depth_p1, definition);
   while (gvar_init_cursor_has(cur)) {
@@ -937,8 +951,8 @@ static int gvar_walk_struct_initializer(
     char *member_tag_name = member_tag_type
                                 ? member_tag_type->tag_name : NULL;
     int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
-    const psx_aggregate_definition_t *member_definition =
-        gvar_member_aggregate_definition(&mi);
+    const psx_record_decl_t *member_definition =
+        gvar_member_record_decl(record_decls, &mi);
     if (member_array_count > 0) {
       if (ps_tag_member_is_tag_aggregate(&mi)) {
         for (int k = 0; k < member_array_count; k++) {
@@ -948,6 +962,7 @@ static int gvar_walk_struct_initializer(
           int ok = ps_tag_member_is_union_aggregate(&mi)
               ? gvar_walk_union_initializer(semantic_context,
                                             semantic_types,
+                                            record_decls,
                                             record_layouts,
                                             target,
                                             member_aggregate_type_id,
@@ -957,6 +972,7 @@ static int gvar_walk_struct_initializer(
                                             ops, user)
               : gvar_walk_struct_initializer(semantic_context,
                                              semantic_types,
+                                             record_decls,
                                              record_layouts,
                                              target,
                                              member_aggregate_type_id,
@@ -992,6 +1008,7 @@ static int gvar_walk_struct_initializer(
       int member_start_idx = gvar_init_cursor_index(cur);
       if (!gvar_walk_struct_initializer(semantic_context,
                                         semantic_types,
+                                        record_decls,
                                         record_layouts,
                                         target,
                                         member_aggregate_type_id,
@@ -1011,6 +1028,7 @@ static int gvar_walk_struct_initializer(
     if (ps_tag_member_is_union_aggregate(&mi)) {
       if (!gvar_walk_union_initializer(semantic_context,
                                        semantic_types,
+                                       record_decls,
                                        record_layouts,
                                        target,
                                        member_aggregate_type_id,
@@ -1040,6 +1058,7 @@ static int gvar_walk_struct_initializer(
 static int gvar_walk_union_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id,
@@ -1093,8 +1112,8 @@ static int gvar_walk_union_initializer(
   char *member_tag_name = member_tag_type
                               ? member_tag_type->tag_name : NULL;
   int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
-  const psx_aggregate_definition_t *member_definition =
-      gvar_member_aggregate_definition(&mi);
+  const psx_record_decl_t *member_definition =
+      gvar_member_record_decl(record_decls, &mi);
   if (mi.offset > 0) gvar_walk_emit_padding(ops, user, base_offset, mi.offset);
   if (mi.bit_width > 0) {
     if (!gvar_walk_require_bitfield_member(ops)) return 0;
@@ -1119,6 +1138,7 @@ static int gvar_walk_union_initializer(
         int ok = ps_tag_member_is_struct_aggregate(&mi)
             ? gvar_walk_struct_initializer(semantic_context,
                                            semantic_types,
+                                           record_decls,
                                            record_layouts,
                                            target,
                                            member_aggregate_type_id,
@@ -1128,6 +1148,7 @@ static int gvar_walk_union_initializer(
                                            ops, user)
             : gvar_walk_union_initializer(semantic_context,
                                           semantic_types,
+                                          record_decls,
                                           record_layouts,
                                           target,
                                           member_aggregate_type_id,
@@ -1163,6 +1184,7 @@ static int gvar_walk_union_initializer(
     int ok = ps_tag_member_is_struct_aggregate(&mi)
         ? gvar_walk_struct_initializer(semantic_context,
                                        semantic_types,
+                                       record_decls,
                                        record_layouts,
                                        target,
                                        member_aggregate_type_id,
@@ -1172,6 +1194,7 @@ static int gvar_walk_union_initializer(
                                        member_value_size, ops, user)
         : gvar_walk_union_initializer(semantic_context,
                                       semantic_types,
+                                      record_decls,
                                       record_layouts,
                                       target,
                                       member_aggregate_type_id,
@@ -1224,6 +1247,7 @@ static int gvar_walk_aggregate_initializer(
     return layout.is_union
         ? gvar_walk_union_initializer(semantic_context,
                                       semantic_types,
+                                      record_decls,
                                       record_layouts,
                                       target,
                                       layout.aggregate_type_id,
@@ -1234,6 +1258,7 @@ static int gvar_walk_aggregate_initializer(
                                       ops, user)
         : gvar_walk_struct_initializer(semantic_context,
                                        semantic_types,
+                                       record_decls,
                                        record_layouts,
                                        target,
                                        layout.aggregate_type_id,
@@ -1249,6 +1274,7 @@ static int gvar_walk_aggregate_initializer(
     if (layout.is_union) {
       if (!gvar_walk_union_initializer(semantic_context,
                                        semantic_types,
+                                       record_decls,
                                        record_layouts,
                                        target,
                                        layout.aggregate_type_id,
@@ -1263,6 +1289,7 @@ static int gvar_walk_aggregate_initializer(
       int elem_start_idx = gvar_init_cursor_index(&cur);
       if (!gvar_walk_struct_initializer(semantic_context,
                                         semantic_types,
+                                        record_decls,
                                         record_layouts,
                                         target,
                                         layout.aggregate_type_id,
@@ -1387,8 +1414,8 @@ static int gvar_definition_find_unnamed_union_covering_offset(
       if (out_size) *out_size = size;
       return 1;
     }
-    const psx_aggregate_definition_t *child =
-        gvar_member_aggregate_definition(member);
+    const psx_record_decl_t *child = gvar_member_record_decl(
+        ps_ctx_record_decl_table_in(semantic_context), member);
     if (gvar_definition_find_unnamed_union_covering_offset(
             semantic_context, child, start, target_offset,
             out_offset, out_size)) {
@@ -1425,8 +1452,8 @@ static int gvar_member_flat_slot_count(
     const tag_member_info_t *member) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
   int per = 1;
-  const psx_aggregate_definition_t *definition =
-      gvar_member_aggregate_definition(member);
+  const psx_record_decl_t *definition = gvar_member_record_decl(
+      ps_ctx_record_decl_table_in(semantic_context), member);
   if (definition)
     per = gvar_definition_flat_slot_count(semantic_context, definition);
   int count =
