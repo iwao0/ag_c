@@ -85,12 +85,24 @@ psx_qual_type_t psx_semantic_type_table_find(
 
 psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type) {
-  psx_qual_type_t result = psx_semantic_type_table_find(table, type);
-  if (result.type_id != PSX_TYPE_ID_INVALID) return result;
   if (!table || !type || type->kind == PSX_TYPE_INVALID ||
       !ps_type_is_well_formed(type)) {
     return invalid_qual_type();
   }
+  if (type->base &&
+      psx_semantic_type_table_intern(table, type->base).type_id ==
+          PSX_TYPE_ID_INVALID) {
+    return invalid_qual_type();
+  }
+  for (int i = 0; i < type->param_count; i++) {
+    if (!type->param_types ||
+        psx_semantic_type_table_intern(table, type->param_types[i]).type_id ==
+            PSX_TYPE_ID_INVALID) {
+      return invalid_qual_type();
+    }
+  }
+  psx_qual_type_t result = psx_semantic_type_table_find(table, type);
+  if (result.type_id != PSX_TYPE_ID_INVALID) return result;
   result.qualifiers = ps_type_qualifiers(type);
   if (table->next_id == UINT_MAX) return result;
   psx_type_id_t id = table->next_id + 1;

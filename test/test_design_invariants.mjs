@@ -585,6 +585,14 @@ const loweringRuntimeSource = await readFile(
   "src/lowering/runtime_context.c",
   "utf8",
 );
+const expressionLoweringSource = await readFile(
+  "src/lowering/expr_lowering.c",
+  "utf8",
+);
+const subscriptLoweringSource = await readFile(
+  "src/lowering/subscript_lowering.c",
+  "utf8",
+);
 const translationUnitDataLoweringSource = await readFile(
   "src/lowering/translation_unit_data_lowering.c",
   "utf8",
@@ -2407,6 +2415,14 @@ const semanticInvariantsSource = await readFile(
   "src/semantic/semantic_invariants.c",
   "utf8",
 );
+const semanticTreeWalkSource = await readFile(
+  "src/semantic/tree_walk.c",
+  "utf8",
+);
+const semanticTypeIdentityPassSource = await readFile(
+  "src/semantic/type_identity_pass.c",
+  "utf8",
+);
 const controlFlowValidationSource = await readFile(
   "src/semantic/control_flow_validation.c",
   "utf8",
@@ -2584,12 +2600,18 @@ const internedInitializerBoundaryCheckCount = [
     /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\(/g,
   ),
 ].length;
+const availableTypeInterningCheckCount = [
+  ...semanticPipelineSource.matchAll(
+    /\bpsx_require_available_semantic_tree_types_interned\s*\(/g,
+  ),
+].length;
 if (completeSemanticBoundaryCheckCount !== 3 ||
     initializerSemanticBoundaryCheckCount !== 1 ||
     internedSemanticBoundaryCheckCount !== 3 ||
-    internedInitializerBoundaryCheckCount !== 1) {
+    internedInitializerBoundaryCheckCount !== 1 ||
+    availableTypeInterningCheckCount !== 4) {
   throw new Error(
-    "every semantic pipeline entry must require interned and canonical expression contracts",
+    "every semantic pipeline entry must pre-intern available types and require interned and canonical expression contracts",
   );
 }
 const semanticPipelineContracts = [
@@ -2598,24 +2620,28 @@ const semanticPipelineContracts = [
     /static\s+void\s+analyze_function_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
   ],
   [
     "expression",
     /node_t\s*\*psx_frontend_analyze_expression_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
   ],
   [
     "initializer",
     /node_t\s*\*psx_frontend_analyze_initializer_syntax_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_initializer_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_initializer_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_initializer_syntax_in_contexts\s*\(/,
   ],
   [
     "program",
     /void\s+psx_frontend_analyze_program_in_contexts\s*\([^)]*\)\s*\{([\s\S]*?)\n\}/,
     /\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
     /\bpsx_require_semantic_tree_has_interned_expression_types\s*\([\s\S]*?\bpsx_require_semantic_tree_has_canonical_expression_types\s*\(/,
+    /\bpsx_require_available_semantic_tree_types_interned\s*\([\s\S]*?\bpsx_lower_semantic_tree_in_contexts\s*\(/,
   ],
 ];
 for (const [
@@ -2623,14 +2649,26 @@ for (const [
   boundaryPattern,
   contractPattern,
   internedBeforeCanonicalPattern,
+  availableBeforeLoweringPattern,
 ] of semanticPipelineContracts) {
   const boundary = semanticPipelineSource.match(boundaryPattern);
   if (!boundary || !contractPattern.test(boundary[1]) ||
-      !internedBeforeCanonicalPattern.test(boundary[1])) {
+      !internedBeforeCanonicalPattern.test(boundary[1]) ||
+      !availableBeforeLoweringPattern.test(boundary[1])) {
     throw new Error(
-      `${name} semantic pipeline must intern types before enforcing its canonical expression contract`,
+      `${name} semantic pipeline must intern available types before lowering and enforce its final expression contracts`,
     );
   }
+}
+if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
+    !/\bpsx_walk_semantic_tree\s*\(/.test(semanticTypeIdentityPassSource) ||
+    !/\bwalk_node\s*\(\s*node->lhs\b/.test(semanticTreeWalkSource) ||
+    /\bvalidate_tree\s*\(\s*validation\s*,\s*node->(?:lhs|rhs)\b/.test(
+      semanticInvariantsSource,
+    )) {
+  throw new Error(
+    "semantic invariants and type identity prepass must share one AST traversal",
+  );
 }
 const functionNodeBinding = declarationPipelineSource.match(
   /if\s*\(request->function_node\)\s*\{([^{}]*)\}/,
@@ -2955,6 +2993,29 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
     )) {
   throw new Error(
     "layout must resolve TypeId with an explicit target and get record completeness from RecordDecl",
+  );
+}
+
+for (const [name, source] of [
+  ["expression", expressionLoweringSource],
+  ["subscript", subscriptLoweringSource],
+]) {
+  if (!/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
+      /\bps_type_sizeof_for_target\s*\(/.test(source)) {
+    throw new Error(
+      `${name} lowering must obtain target layout through an interned TypeId`,
+    );
+  }
+}
+if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      loweringRuntimeHeader,
+    ) ||
+    /\bpsx_semantic_context_t\b/.test(loweringRuntimeHeader) ||
+    /#include\s+"\.\.\/parser\/semantic_ctx\.h"/.test(
+      loweringRuntimeHeader,
+    )) {
+  throw new Error(
+    "lowering context must receive the semantic type table without owning parser semantic state",
   );
 }
 

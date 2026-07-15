@@ -29,6 +29,17 @@ void ps_lowering_context_bind_target(
   ctx->target.pointer_size = ag_target_info_pointer_size(&ctx->target);
 }
 
+void ps_lowering_context_bind_semantic_types(
+    psx_lowering_context_t *ctx,
+    const psx_semantic_type_table_t *semantic_types) {
+  if (ctx) ctx->semantic_types = semantic_types;
+}
+
+const psx_semantic_type_table_t *ps_lowering_semantic_types(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? ctx->semantic_types : NULL;
+}
+
 const ag_target_info_t *ps_lowering_target(
     const psx_lowering_context_t *ctx) {
   return ctx ? &ctx->target : NULL;

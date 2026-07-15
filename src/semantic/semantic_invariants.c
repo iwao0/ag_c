@@ -4,6 +4,8 @@
 
 #include "../diag/diag.h"
 #include "../parser/semantic_ctx.h"
+#include "tree_walk.h"
+#include "type_identity_pass.h"
 
 typedef enum {
   NODE_SEMANTIC_ROLE_INVALID = 0,
@@ -82,11 +84,18 @@ static int is_implicit_function_result_type(const psx_type_t *type) {
          !type->is_unsigned;
 }
 
-static int validate_node(psx_semantic_context_t *semantic_context,
-                         const node_t *node,
-                         psx_semantic_invariant_failure_t *failure,
-                         int allow_initializer_syntax) {
-  if (!node) return 1;
+typedef struct {
+  psx_semantic_context_t *semantic_context;
+  psx_semantic_invariant_failure_t *failure;
+  int allow_initializer_syntax;
+} semantic_validation_t;
+
+static int validate_node(const node_t *node, void *user) {
+  semantic_validation_t *validation = user;
+  psx_semantic_context_t *semantic_context =
+      validation->semantic_context;
+  psx_semantic_invariant_failure_t *failure = validation->failure;
+  int allow_initializer_syntax = validation->allow_initializer_syntax;
   node_semantic_role_t role = semantic_role(node->kind);
   if (role == NODE_SEMANTIC_ROLE_INVALID)
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_NODE_KIND, node);
@@ -102,7 +111,7 @@ static int validate_node(psx_semantic_context_t *semantic_context,
   if (node->type && !ps_type_is_well_formed(node->type))
     return fail(failure, PSX_SEMANTIC_INVARIANT_INVALID_CANONICAL_TYPE, node);
   if (semantic_context && node->type &&
-      ps_ctx_intern_qual_type_in(semantic_context, node->type).type_id ==
+      ps_ctx_find_interned_qual_type_in(semantic_context, node->type).type_id ==
           PSX_TYPE_ID_INVALID) {
     return fail(
         failure, PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, node);
@@ -156,91 +165,25 @@ static int validate_node(psx_semantic_context_t *semantic_context,
     return fail(
         failure, PSX_SEMANTIC_INVARIANT_INVALID_VLA_RUNTIME_VIEW, node);
   }
+  return 1;
+}
 
-  switch (node->kind) {
-    case ND_BLOCK: {
-      node_t *const *body = ((const node_block_t *)node)->body;
-      for (int i = 0; body && body[i]; i++) {
-        if (!validate_node(semantic_context, body[i], failure,
-                           allow_initializer_syntax))
-          return 0;
-      }
-      return 1;
-    }
-    case ND_FUNCDEF: {
-      const node_function_definition_t *function =
-          (const node_function_definition_t *)node;
-      for (int i = 0; i < function->parameter_count; i++) {
-        if (!validate_node(semantic_context, function->parameters[i], failure,
-                           allow_initializer_syntax))
-          return 0;
-      }
-      break;
-    }
-    case ND_FUNCALL: {
-      const node_function_call_t *call =
-          (const node_function_call_t *)node;
-      if (!validate_node(semantic_context, call->callee, failure,
-                         allow_initializer_syntax))
-        return 0;
-      for (int i = 0; i < call->argument_count; i++) {
-        if (!validate_node(semantic_context, call->arguments[i], failure,
-                           allow_initializer_syntax))
-          return 0;
-      }
-      break;
-    }
-    case ND_IF:
-    case ND_FOR:
-    case ND_TERNARY: {
-      const node_ctrl_t *control = (const node_ctrl_t *)node;
-      if (!validate_node(semantic_context, control->init, failure,
-                         allow_initializer_syntax) ||
-          !validate_node(semantic_context, control->inc, failure,
-                         allow_initializer_syntax) ||
-          !validate_node(semantic_context, control->els, failure,
-                         allow_initializer_syntax))
-        return 0;
-      break;
-    }
-    case ND_INIT_LIST: {
-      const node_init_list_t *list = (const node_init_list_t *)node;
-      for (int i = 0; i < list->entry_count; i++) {
-        const psx_initializer_entry_t *entry = &list->entries[i];
-        if (!validate_node(semantic_context, entry->value, failure,
-                           allow_initializer_syntax))
-          return 0;
-        for (int d = 0; d < entry->designator_count; d++) {
-          if (!validate_node(semantic_context,
-                             entry->designators[d].index_expr, failure,
-                             allow_initializer_syntax) ||
-              !validate_node(semantic_context,
-                             entry->designators[d].range_end_expr, failure,
-                             allow_initializer_syntax))
-            return 0;
-        }
-        for (int d = 0; d < entry->index_expr_count; d++) {
-          if (!validate_node(semantic_context, entry->index_exprs[d], failure,
-                             allow_initializer_syntax))
-            return 0;
-        }
-      }
-      return 1;
-    }
-    default:
-      break;
-  }
-
-  return validate_node(semantic_context, node->lhs, failure,
-                       allow_initializer_syntax) &&
-         validate_node(semantic_context, node->rhs, failure,
-                       allow_initializer_syntax);
+static int validate_tree(
+    psx_semantic_context_t *semantic_context, const node_t *root,
+    psx_semantic_invariant_failure_t *failure,
+    int allow_initializer_syntax) {
+  semantic_validation_t validation = {
+      .semantic_context = semantic_context,
+      .failure = failure,
+      .allow_initializer_syntax = allow_initializer_syntax,
+  };
+  return psx_walk_semantic_tree(root, validate_node, &validation);
 }
 
 int psx_semantic_tree_has_canonical_expression_types(
     const node_t *root, psx_semantic_invariant_failure_t *failure) {
   if (failure) memset(failure, 0, sizeof(*failure));
-  return validate_node(NULL, root, failure, 0);
+  return validate_tree(NULL, root, failure, 0);
 }
 
 int psx_finalize_semantic_tree_type_identities(
@@ -252,7 +195,14 @@ int psx_finalize_semantic_tree_type_identities(
     return fail(failure,
                 PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE, root);
   }
-  return validate_node(semantic_context, root, failure,
+  const node_t *failed_node = NULL;
+  if (!psx_intern_available_semantic_tree_types(
+          semantic_context, root, &failed_node)) {
+    return fail(failure,
+                PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+                failed_node ? failed_node : root);
+  }
+  return validate_tree(semantic_context, root, failure,
                        allow_initializer_syntax ? 1 : 0);
 }
 
@@ -309,7 +259,7 @@ void psx_require_semantic_tree_has_canonical_expression_types(
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure;
-  if (validate_node(NULL, root, &failure, 0)) return;
+  if (validate_tree(NULL, root, &failure, 0)) return;
   emit_semantic_invariant_failure(
       diagnostics, &failure, fallback_diag_tok);
 }
@@ -318,7 +268,24 @@ void psx_require_semantic_initializer_has_canonical_expression_types(
     ag_diagnostic_context_t *diagnostics, const node_t *root,
     const token_t *fallback_diag_tok) {
   psx_semantic_invariant_failure_t failure = {0};
-  if (validate_node(NULL, root, &failure, 1)) return;
+  if (validate_tree(NULL, root, &failure, 1)) return;
+  emit_semantic_invariant_failure(
+      diagnostics, &failure, fallback_diag_tok);
+}
+
+void psx_require_available_semantic_tree_types_interned(
+    psx_semantic_context_t *semantic_context,
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok) {
+  const node_t *failed_node = NULL;
+  if (psx_intern_available_semantic_tree_types(
+          semantic_context, root, &failed_node)) {
+    return;
+  }
+  psx_semantic_invariant_failure_t failure = {
+      .status = PSX_SEMANTIC_INVARIANT_UNINTERNED_CANONICAL_TYPE,
+      .node = failed_node ? failed_node : root,
+  };
   emit_semantic_invariant_failure(
       diagnostics, &failure, fallback_diag_tok);
 }

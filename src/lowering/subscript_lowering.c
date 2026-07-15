@@ -17,8 +17,11 @@ static node_t *make_scaled_offset(
         arena_context, ND_MUL, index, stride);
   }
   const psx_type_t *base_type = ps_node_get_type(base);
-  int stride = ps_type_sizeof_for_target(
-      base_type ? base_type->base : NULL,
+  psx_qual_type_t element = psx_semantic_type_table_find(
+      ps_lowering_semantic_types(lowering_context),
+      base_type ? base_type->base : NULL);
+  int stride = ps_type_sizeof_id_for_target(
+      ps_lowering_semantic_types(lowering_context), element.type_id,
       ps_lowering_target(lowering_context));
   if (stride <= 0) stride = 8;
   return ps_node_new_binary_in(

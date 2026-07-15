@@ -15980,6 +15980,8 @@ static void test_semantic_type_identity() {
   psx_qual_type_t wasm_pointer_identity =
       ps_ctx_intern_qual_type_in(context, wasm_pointer);
   ASSERT_EQ(host_pointer_identity.type_id, wasm_pointer_identity.type_id);
+  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(context, plain_int).type_id !=
+              PSX_TYPE_ID_INVALID);
 
   psx_type_t *pointer_to_const = ps_type_new_pointer(const_int);
   psx_qual_type_t pointer_to_const_identity =

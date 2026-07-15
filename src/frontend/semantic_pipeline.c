@@ -30,6 +30,9 @@ static void analyze_function_in_contexts(
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       function, current_function, fallback_diag_tok);
+  psx_require_available_semantic_tree_types_interned(
+      semantic_context, ps_ctx_diagnostics(semantic_context), function,
+      fallback_diag_tok);
   function = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       lowering_context, options,
@@ -82,6 +85,9 @@ node_t *psx_frontend_analyze_expression_in_contexts(
   psx_semantic_resolve_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, NULL, fallback_diag_tok);
+  psx_require_available_semantic_tree_types_interned(
+      semantic_context, ps_ctx_diagnostics(semantic_context), expression,
+      fallback_diag_tok);
   expression = psx_lower_semantic_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       lowering_context, options,
@@ -125,6 +131,9 @@ node_t *psx_frontend_analyze_initializer_syntax_in_contexts(
   psx_semantic_resolve_initializer_tree_in_contexts(
       semantic_context, global_registry, local_registry,
       syntax, NULL, fallback_diag_tok);
+  psx_require_available_semantic_tree_types_interned(
+      semantic_context, ps_ctx_diagnostics(semantic_context), syntax,
+      fallback_diag_tok);
   syntax = psx_lower_semantic_initializer_syntax_in_contexts(
       semantic_context, global_registry, local_registry,
       lowering_context, options,
@@ -156,6 +165,9 @@ void psx_frontend_analyze_program_in_contexts(
     psx_semantic_resolve_tree_in_contexts(
         semantic_context, global_registry, local_registry,
         program[i], NULL, program[i]->tok);
+    psx_require_available_semantic_tree_types_interned(
+        semantic_context, ps_ctx_diagnostics(semantic_context), program[i],
+        program[i]->tok);
     program[i] = psx_lower_semantic_tree_in_contexts(
         semantic_context, global_registry, local_registry,
         lowering_context, options,

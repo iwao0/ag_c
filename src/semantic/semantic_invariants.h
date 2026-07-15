@@ -29,6 +29,10 @@ int psx_finalize_semantic_tree_type_identities(
     psx_semantic_context_t *semantic_context, const node_t *root,
     psx_semantic_invariant_failure_t *failure,
     int allow_initializer_syntax);
+void psx_require_available_semantic_tree_types_interned(
+    psx_semantic_context_t *semantic_context,
+    ag_diagnostic_context_t *diagnostics, const node_t *root,
+    const token_t *fallback_diag_tok);
 void psx_require_semantic_tree_has_interned_expression_types(
     psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, const node_t *root,

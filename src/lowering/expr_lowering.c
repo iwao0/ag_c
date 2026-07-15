@@ -24,8 +24,11 @@ static int pointer_arithmetic_stride(
   if (type &&
       (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
       type->base) {
-    int stride = ps_type_sizeof_for_target(
-        type->base, ps_lowering_target(lowering_context));
+    psx_qual_type_t pointee = psx_semantic_type_table_find(
+        ps_lowering_semantic_types(lowering_context), type->base);
+    int stride = ps_type_sizeof_id_for_target(
+        ps_lowering_semantic_types(lowering_context), pointee.type_id,
+        ps_lowering_target(lowering_context));
     if (stride > 0) return stride;
   }
   return ps_node_deref_size(pointer);
