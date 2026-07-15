@@ -3565,11 +3565,34 @@ if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*
 }
 if (/\bstorage_alignment\s*\(/.test(translationUnitDataLoweringSource) ||
     /storage_size\s*>=/.test(translationUnitDataLoweringSource) ||
+    /\bpsx_semantic_type_table_find\s*\(/.test(
+      translationUnitDataLoweringSource,
+    ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
       translationUnitDataLoweringSource,
     )) {
   throw new Error(
     "global object storage alignment and incomplete-array element layout must come from TypeId target layout",
+  );
+}
+const globalAggregateScalarLowering =
+  translationUnitDataLoweringSource.match(
+    /static\s+void\s+lower_aggregate_scalar\s*\([^]*?\n\}/,
+  );
+if (!/void\s*\(\s*\*scalar\s*\)\s*\([^;]*\bpsx_type_id_t\s+value_type_id\b/.test(
+      gvarPublicSource,
+    ) ||
+    !globalAggregateScalarLowering ||
+    !/\bvalue_type_id\b/.test(globalAggregateScalarLowering[0]) ||
+    /\bpsx_semantic_type_table_find\s*\(/.test(
+      globalAggregateScalarLowering[0],
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      nodeUtilsSource,
+    ) ||
+    !/\bpsx_semantic_type_table_array_leaf\s*\(/.test(nodeUtilsSource)) {
+  throw new Error(
+    "aggregate initializer scalar events must carry member value TypeIds through recursive traversal",
   );
 }
 const typedInitializerSection = initializerLoweringSource.match(

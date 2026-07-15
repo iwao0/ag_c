@@ -35,16 +35,6 @@ typedef struct {
   const psx_initializer_scalar_leaf_list_t *leaves;
 } global_data_lowering_t;
 
-static int type_size(
-    const translation_unit_data_lowering_t *lowering,
-    const psx_type_t *type) {
-  psx_qual_type_t identity = psx_semantic_type_table_find(
-      lowering ? lowering->semantic_types : NULL, type);
-  return ps_type_sizeof_id_for_target(
-      lowering ? lowering->semantic_types : NULL, identity.type_id,
-      lowering ? lowering->target : NULL);
-}
-
 static int type_size_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
@@ -179,8 +169,8 @@ static int lower_init_value(global_data_lowering_t *ctx, int offset,
                             const psx_type_t *value_type,
                             psx_type_id_t value_type_id) {
   int target_size = type_size_id(ctx->lowering, value_type_id);
-  if (target_size <= 0) target_size = type_size(ctx->lowering, value_type);
-  if (target_size > 0) value.size = target_size;
+  if (target_size <= 0) return 0;
+  value.size = target_size;
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     return lower_symbol_reloc(ctx, offset, value, value_type);
   }
@@ -218,6 +208,7 @@ static int lower_init_slot(void *user, int index,
 }
 
 static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
+                                   psx_type_id_t value_type_id,
                                    int slot, long long offset) {
   global_data_lowering_t *ctx = user;
   psx_gvar_init_member_value_t value =
@@ -225,9 +216,7 @@ static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
   if (offset < 0 || offset > INT32_MAX ||
       !lower_init_value(ctx, (int)offset, value,
                         ps_tag_member_decl_value_type(member),
-                        psx_semantic_type_table_find(
-                            ctx->lowering->semantic_types,
-                            ps_tag_member_decl_value_type(member)).type_id))
+                        value_type_id))
     ctx->lowering->failed = 1;
 }
 

@@ -1402,7 +1402,9 @@ typedef struct {
 } aggregate_walk_trace_t;
 
 static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
+                                        psx_type_id_t value_type_id,
                                         int slot, long long offset) {
+  (void)value_type_id;
   aggregate_walk_trace_t *trace = user;
   if (!trace || trace->scalar_count >= 16) return;
   int idx = trace->scalar_count++;
@@ -16788,6 +16790,18 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second.semantic_context, second.local_registry,
       TK_STRUCT, session_aggregate_name, 16, 1, 2, 12, 4));
+  first_aggregate_type = ps_ctx_clone_tag_type_at_in_contexts(
+      first.semantic_context, first.local_registry,
+      TK_STRUCT, session_aggregate_name, 16,
+      ps_local_registry_capture_lookup_point_in(first.local_registry));
+  second_aggregate_type = ps_ctx_clone_tag_type_at_in_contexts(
+      second.semantic_context, second.local_registry,
+      TK_STRUCT, session_aggregate_name, 16,
+      ps_local_registry_capture_lookup_point_in(second.local_registry));
+  ASSERT_TRUE(first_aggregate_type != NULL);
+  ASSERT_TRUE(second_aggregate_type != NULL);
+  first_aggregate.decl_type = first_aggregate_type;
+  second_aggregate.decl_type = second_aggregate_type;
   first_global.decl_type_id = ps_ctx_intern_qual_type_in(
       first.semantic_context, first_global.decl_type).type_id;
   ASSERT_TRUE(first_global.decl_type_id != PSX_TYPE_ID_INVALID);

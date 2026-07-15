@@ -79,7 +79,8 @@ typedef struct {
 } psx_gvar_bitfield_unit_t;
 
 typedef struct {
-  void (*scalar)(void *user, const tag_member_info_t *mi, int slot, long long offset);
+  void (*scalar)(void *user, const tag_member_info_t *mi,
+                 psx_type_id_t value_type_id, int slot, long long offset);
   void (*bitfield_unit)(void *user, const psx_gvar_bitfield_unit_t *unit,
                         long long base_offset);
   void (*bitfield_member)(void *user, const tag_member_info_t *mi, int slot,
