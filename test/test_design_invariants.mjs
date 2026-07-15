@@ -3348,6 +3348,21 @@ if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
     "local symbols must retain their declaration TypeId from the compilation unit semantic type table",
   );
 }
+if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
+    !/\bpsx_type_id_t\s+ps_gvar_decl_type_id\s*\(/.test(
+      gvarPublicSource,
+    ) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      globalRegistrySource,
+    ) ||
+    !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
+    !/\bps_global_registry_bind_semantic_types\s*\(/.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "global symbols must retain their declaration TypeId from the compilation unit semantic type table",
+  );
+}
 
 const staticInitializerSource = await readFile(
   "src/semantic/static_initializer_resolution.h",

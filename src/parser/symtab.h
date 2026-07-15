@@ -50,6 +50,7 @@ struct global_var_t {
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
   const psx_type_t *decl_type;
+  psx_type_id_t decl_type_id;
 };
 // 文字列リテラルテーブル（連結リスト）
 struct string_lit_t {

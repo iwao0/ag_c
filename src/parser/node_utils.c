@@ -1830,6 +1830,10 @@ const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv) {
   return gvar_decl_type_consistent(gv);
 }
 
+psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv) {
+  return gv ? gv->decl_type_id : PSX_TYPE_ID_INVALID;
+}
+
 static int type_is_integer_like(const psx_type_t *type) {
   if (!type) return 0;
   return type->kind == PSX_TYPE_BOOL || type->kind == PSX_TYPE_INTEGER;

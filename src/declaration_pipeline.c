@@ -223,7 +223,7 @@ int psx_finish_global_declaration_pipeline(
                     : request->initializer->value_tok);
       }
       if (!lower_resolved_global_declaration_initializer(
-              request->lowering_context, global,
+              request->global_registry, request->lowering_context, global,
               &initializer_resolution,
               request->initializer->value_tok)) {
         ps_diag_ctx_in(
@@ -681,7 +681,8 @@ int psx_finish_static_local_declaration_pipeline(
             : request->initializer->value_tok);
   }
   if (!lower_static_local_declaration_initializer(
-          request->lowering_context, result->global,
+          request->global_registry, request->lowering_context,
+          result->global,
           &resolution, request->initializer->value_tok,
           &result->type_completed)) {
     return 0;

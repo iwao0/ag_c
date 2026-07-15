@@ -3,6 +3,7 @@
 
 #include "core.h"
 #include "tag_member_public.h"
+#include "../semantic/type_identity.h"
 
 typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
@@ -153,5 +154,6 @@ int ps_gvar_is_static_storage(const global_var_t *gv);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
 const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv);
+psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv);
 
 #endif

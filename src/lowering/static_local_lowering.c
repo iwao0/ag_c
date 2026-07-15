@@ -17,12 +17,14 @@ void psx_static_local_lowering_reset_in(
          sizeof(lowering_context->static_local_sequences));
 }
 
-int psx_static_local_prepare_global(global_var_t *global,
-                                    const psx_type_t *type) {
+int psx_static_local_prepare_global(
+    psx_global_registry_t *global_registry, global_var_t *global,
+    const psx_type_t *type) {
   if (!global || !type) return 0;
   global->is_static = 1;
   if (global->decl_type) return 1;
-  return ps_global_registry_bind_decl_type(global, type);
+  return ps_global_registry_bind_decl_type(
+      global_registry, global, type);
 }
 
 static char *mangle_static_local_name(
@@ -75,7 +77,8 @@ lvar_t *lower_static_local_object(
   if (!mangled) return NULL;
 
   global_var_t *global = request->global;
-  if (!psx_static_local_prepare_global(global, request->type)) {
+  if (!psx_static_local_prepare_global(
+          request->global_registry, global, request->type)) {
     free(mangled);
     return NULL;
   }
@@ -103,7 +106,8 @@ int lower_static_local_declaration_storage(
 
   global_var_t *global = calloc(1, sizeof(*global));
   if (!global) return 0;
-  if (!psx_static_local_prepare_global(global, request->type)) {
+  if (!psx_static_local_prepare_global(
+          request->global_registry, global, request->type)) {
     free(global);
     return 0;
   }
@@ -130,6 +134,7 @@ int lower_static_local_declaration_storage(
 }
 
 int lower_static_local_declaration_initializer(
+    psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok, int *type_completed) {
@@ -137,7 +142,8 @@ int lower_static_local_declaration_initializer(
   if (!global || !resolution) return 0;
   psx_static_declaration_initializer_result_t initializer_result = {0};
   if (!lower_resolved_static_initializer(
-          lowering_context, global, resolution, diag_tok,
+          global_registry, lowering_context, global,
+          resolution, diag_tok,
           &initializer_result)) {
     return 0;
   }
@@ -153,7 +159,8 @@ int lower_static_local_declaration(
   if (!lower_static_local_declaration_storage(request, &lowered)) return 0;
   if (request->initializer_resolution &&
       !lower_static_local_declaration_initializer(
-          request->lowering_context, lowered.global,
+          request->global_registry, request->lowering_context,
+          lowered.global,
           request->initializer_resolution,
           request->diag_tok, &lowered.type_completed)) {
     return 0;

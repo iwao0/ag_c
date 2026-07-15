@@ -5704,8 +5704,11 @@ static void test_static_data_initializer_boundary() {
   list.entries = entries;
   list.entry_count = 2;
   global_var_t global = {0};
-  ps_global_registry_bind_decl_type(&global, array);
-  ASSERT_TRUE(intern_test_type_id(array) != PSX_TYPE_ID_INVALID);
+  psx_type_id_t array_type_id = intern_test_type_id(array);
+  ASSERT_TRUE(array_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &global, array));
+  ASSERT_EQ(array_type_id, ps_gvar_decl_type_id(&global));
   ASSERT_TRUE(lower_static_scalar_array_initializer(
       test_lowering_context(), &global, array, &list, NULL));
   ASSERT_EQ(3, global.init_count);
@@ -5757,8 +5760,11 @@ static void test_static_data_initializer_boundary() {
   union_list.entries = &union_entry;
   union_list.entry_count = 1;
   global_var_t union_global = {0};
-  ps_global_registry_bind_decl_type(&union_global, union_type);
-  ASSERT_TRUE(intern_test_type_id(union_type) != PSX_TYPE_ID_INVALID);
+  psx_type_id_t union_type_id = intern_test_type_id(union_type);
+  ASSERT_TRUE(union_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &union_global, union_type));
+  ASSERT_EQ(union_type_id, ps_gvar_decl_type_id(&union_global));
   ASSERT_TRUE(lower_static_object_initializer(
       test_lowering_context(), &union_global,
       union_type, &union_list, NULL));
@@ -5769,7 +5775,9 @@ static void test_static_data_initializer_boundary() {
 
   psx_type_t *incomplete = ps_type_new_array(integer, 0, 0, 0);
   global_var_t inferred_global = {0};
-  ps_global_registry_bind_decl_type(&inferred_global, incomplete);
+  ASSERT_TRUE(intern_test_type_id(incomplete) != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &inferred_global, incomplete));
   const psx_type_t *inferred_type = ps_gvar_get_decl_type(&inferred_global);
   psx_initializer_entry_t inferred_entries[3] = {
       {.value = (node_t *)&one},
@@ -5799,7 +5807,7 @@ static void test_static_data_initializer_boundary() {
 
   psx_static_declaration_initializer_result_t inferred_result = {0};
   ASSERT_TRUE(lower_resolved_static_initializer(
-      test_lowering_context(), &inferred_global,
+      test_global_registry(), test_lowering_context(), &inferred_global,
       &inferred_resolution, NULL,
       &inferred_result));
   ASSERT_EQ(1, inferred_result.type_completed);
@@ -5813,7 +5821,9 @@ static void test_static_data_initializer_boundary() {
   psx_type_t *char_pointer = ps_type_new_pointer(char_type);
   psx_type_t *pointer_array = ps_type_new_array(char_pointer, 0, 0, 0);
   global_var_t pointer_array_global = {0};
-  ps_global_registry_bind_decl_type(&pointer_array_global, pointer_array);
+  ASSERT_TRUE(intern_test_type_id(pointer_array) != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &pointer_array_global, pointer_array));
   const psx_type_t *pointer_array_type =
       ps_gvar_get_decl_type(&pointer_array_global);
   node_string_t string = {0};
@@ -5838,7 +5848,7 @@ static void test_static_data_initializer_boundary() {
       &pointer_resolution);
   ASSERT_EQ(PSX_STATIC_INITIALIZER_OK, pointer_resolution.status);
   ASSERT_TRUE(lower_resolved_static_initializer(
-      test_lowering_context(), &pointer_array_global,
+      test_global_registry(), test_lowering_context(), &pointer_array_global,
       &pointer_resolution, NULL, NULL));
   ASSERT_EQ(0, pointer_array_type->array_len);
   ASSERT_EQ(1, pointer_resolution.type->array_len);
@@ -8659,7 +8669,10 @@ static void test_type_metadata_bridge() {
   const psx_type_t *funcptr_sync_gvar_type = test_function_pointer(
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       funcptr_sync_gvar_params, 1, 0);
-  ps_global_registry_bind_decl_type(&funcptr_sync_gvar, funcptr_sync_gvar_type);
+  ASSERT_TRUE(intern_test_type_id(funcptr_sync_gvar_type) !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &funcptr_sync_gvar, funcptr_sync_gvar_type));
   funcptr_sync_gvar_type = ps_gvar_get_decl_type(&funcptr_sync_gvar);
   ASSERT_TRUE(funcptr_sync_gvar_type != NULL);
   assert_canonical_type_signature(funcptr_sync_gvar_type, "p<f64(f64)>");
@@ -12142,8 +12155,12 @@ static void test_type_metadata_bridge() {
   gu->decl_type = gu_decl_a;
 
   global_var_t tmp_gv = {0};
-  ps_global_registry_bind_decl_type(
-      &tmp_gv, ps_type_new_integer(TK_INT, 4, 0));
+  psx_type_t *tmp_gv_int_type = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_id_t tmp_gv_int_type_id = intern_test_type_id(tmp_gv_int_type);
+  ASSERT_TRUE(tmp_gv_int_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &tmp_gv, tmp_gv_int_type));
+  ASSERT_EQ(tmp_gv_int_type_id, ps_gvar_decl_type_id(&tmp_gv));
   const psx_type_t *tmp_gv_int = ps_gvar_get_decl_type(&tmp_gv);
   ASSERT_TRUE(tmp_gv_int != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, tmp_gv_int->kind);
@@ -12153,13 +12170,13 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_is_struct_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_gvar_is_union_aggregate(&tmp_gv));
   ASSERT_TRUE(!ps_global_registry_bind_decl_type(
-      &tmp_gv,
+      test_global_registry(), &tmp_gv,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
   ASSERT_TRUE(tmp_gv.decl_type == tmp_gv_int);
 
   global_var_t tmp_ptr_gv = {0};
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_ptr_gv,
+      test_global_registry(), &tmp_ptr_gv,
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0))));
   const psx_type_t *tmp_gv_ptr = tmp_ptr_gv.decl_type;
   ASSERT_TRUE(tmp_gv_ptr != NULL);
@@ -12168,7 +12185,7 @@ static void test_type_metadata_bridge() {
 
   global_var_t tmp_double_ptr_gv = {0};
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_double_ptr_gv,
+      test_global_registry(), &tmp_double_ptr_gv,
       ps_type_new_pointer(
           ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8))));
   const psx_type_t *tmp_gv_double_ptr = tmp_double_ptr_gv.decl_type;
@@ -12179,10 +12196,14 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_gv_double_ptr->base->fp_kind);
 
   global_var_t tmp_arr_gv = {0};
+  psx_type_t *tmp_arr_incomplete = ps_type_new_array(
+      ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
+  psx_type_id_t tmp_arr_incomplete_id =
+      intern_test_type_id(tmp_arr_incomplete);
+  ASSERT_TRUE(tmp_arr_incomplete_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_arr_gv,
-      ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0),
-                         0, 0, 0)));
+      test_global_registry(), &tmp_arr_gv, tmp_arr_incomplete));
+  ASSERT_EQ(tmp_arr_incomplete_id, ps_gvar_decl_type_id(&tmp_arr_gv));
   ASSERT_EQ(99, ps_gvar_storage_size(&tmp_arr_gv, 99));
   const psx_type_t *tmp_arr_empty = ps_gvar_get_decl_type(&tmp_arr_gv);
   ASSERT_TRUE(tmp_arr_empty != NULL);
@@ -12190,8 +12211,11 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_gvar_is_array(&tmp_arr_gv));
   psx_type_t *tmp_arr_complete = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
+  psx_type_id_t tmp_arr_complete_id = intern_test_type_id(tmp_arr_complete);
+  ASSERT_TRUE(tmp_arr_complete_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_global_registry_complete_array_type(
-      &tmp_arr_gv, tmp_arr_complete));
+      test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
+  ASSERT_EQ(tmp_arr_complete_id, ps_gvar_decl_type_id(&tmp_arr_gv));
   const psx_type_t *tmp_arr_sized = tmp_arr_gv.decl_type;
   ASSERT_TRUE(tmp_arr_sized != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, tmp_arr_sized->kind);
@@ -12202,7 +12226,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(3, ps_gvar_initializer_element_count(&tmp_arr_gv, 12));
   ASSERT_EQ(12, ps_gvar_initializer_element_size(gu, 12));
   ASSERT_TRUE(!ps_global_registry_complete_array_type(
-      &tmp_arr_gv, tmp_arr_complete));
+      test_global_registry(), &tmp_arr_gv, tmp_arr_complete));
 
   global_var_t tmp_arr_stale_size_gv = {0};
   tmp_arr_stale_size_gv.decl_type =
@@ -12421,7 +12445,7 @@ static void test_type_metadata_bridge() {
   global_var_t tmp_tag_arr_gv = {0};
   const char tmp_tag_arr_name[] = "__tm_tmp_tag_arr";
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_tag_arr_gv, ps_type_new_array(
+      test_global_registry(), &tmp_tag_arr_gv, ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)tmp_tag_arr_name,
                        (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
       2, 16, 0)));
@@ -12431,7 +12455,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_gvar_array_element_size(&tmp_tag_arr_gv));
   ASSERT_EQ(2, ps_gvar_array_element_count(&tmp_tag_arr_gv));
   ASSERT_TRUE(!ps_global_registry_bind_decl_type(
-      &tmp_tag_arr_gv,
+      test_global_registry(), &tmp_tag_arr_gv,
       ps_type_new_array(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
                            (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
@@ -12440,7 +12464,7 @@ static void test_type_metadata_bridge() {
 
   global_var_t tmp_union_arr_gv = {0};
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_union_arr_gv,
+      test_global_registry(), &tmp_union_arr_gv,
       ps_type_new_array(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
                            (int)sizeof(tmp_tag_arr_name) - 1, 0, 8),
@@ -12451,7 +12475,7 @@ static void test_type_metadata_bridge() {
 
   global_var_t tmp_union_ptr_gv = {0};
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
-      &tmp_union_ptr_gv,
+      test_global_registry(), &tmp_union_ptr_gv,
       ps_type_new_pointer(
           ps_type_new_tag(TK_UNION, (char *)tmp_tag_arr_name,
                            (int)sizeof(tmp_tag_arr_name) - 1, 0, 8))));

@@ -62,6 +62,9 @@ int ag_compilation_session_init(
   session->arena_context = arena_context_create();
   session->semantic_context = ps_ctx_create(session->arena_context);
   session->global_registry = ps_global_registry_create();
+  ps_global_registry_bind_semantic_types(
+      session->global_registry,
+      ps_ctx_semantic_type_table_in(session->semantic_context));
   session->local_registry = ps_local_registry_create(
       session->diagnostic_context);
   ps_local_registry_bind_semantic_types(

@@ -23,7 +23,7 @@ int lower_resolved_global_object_declaration(
       existing->is_extern_decl = 0;
     if (request->resolution->complete_existing_array &&
         !ps_global_registry_complete_array_type(
-            existing, request->type))
+            global_registry, existing, request->type))
       return 0;
     result->global = existing;
     return 1;
@@ -36,7 +36,8 @@ int lower_resolved_global_object_declaration(
   global->is_extern_decl = request->is_extern_decl ? 1 : 0;
   global->is_static = request->is_extern_decl ? 0
                                                : (request->is_static ? 1 : 0);
-  if (!ps_global_registry_bind_decl_type(global, request->type)) {
+  if (!ps_global_registry_bind_decl_type(
+          global_registry, global, request->type)) {
     free(global);
     return 0;
   }
@@ -122,9 +123,11 @@ int lower_global_object_declaration(
 }
 
 int lower_resolved_global_declaration_initializer(
+    psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok) {
   return lower_resolved_static_initializer(
-      lowering_context, global, resolution, diag_tok, NULL);
+      global_registry, lowering_context, global,
+      resolution, diag_tok, NULL);
 }

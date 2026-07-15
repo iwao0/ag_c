@@ -6,6 +6,7 @@
 #include "../semantic/static_initializer_resolution.h"
 
 typedef struct psx_lowering_context_t psx_lowering_context_t;
+typedef struct psx_global_registry_t psx_global_registry_t;
 
 typedef struct {
   int type_completed;
@@ -13,6 +14,7 @@ typedef struct {
 } psx_static_declaration_initializer_result_t;
 
 int lower_resolved_static_initializer(
+    psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *diag_tok,

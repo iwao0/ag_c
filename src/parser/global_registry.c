@@ -3,12 +3,14 @@
 #include "symtab.h"
 #include "type.h"
 #include "type_builder.h"
+#include "../semantic/type_identity.h"
 #include <stdlib.h>
 #include <string.h>
 
 #define GVAR_HASH_BUCKETS 256u
 
 struct psx_global_registry_t {
+  const psx_semantic_type_table_t *semantic_types;
   string_lit_t *string_literals;
   float_lit_t *float_literals;
   global_var_t *global_vars;
@@ -26,15 +28,30 @@ void ps_global_registry_destroy(psx_global_registry_t *registry) {
   free(registry);
 }
 
+void ps_global_registry_bind_semantic_types(
+    psx_global_registry_t *registry,
+    const psx_semantic_type_table_t *semantic_types) {
+  if (registry) registry->semantic_types = semantic_types;
+}
+
+static psx_type_id_t global_decl_type_id(
+    const psx_global_registry_t *registry, const psx_type_t *type) {
+  return psx_semantic_type_table_find(
+      registry ? registry->semantic_types : NULL, type).type_id;
+}
+
 int ps_global_registry_bind_decl_type(
-    global_var_t *global, const psx_type_t *type) {
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *type) {
   if (!global || global->decl_type || !type) return 0;
   global->decl_type = ps_type_clone_persistent(type);
+  global->decl_type_id = global_decl_type_id(registry, type);
   return global->decl_type != NULL;
 }
 
 int ps_global_registry_complete_array_type(
-    global_var_t *global, const psx_type_t *complete_type) {
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *complete_type) {
   const psx_type_t *current = global ? global->decl_type : NULL;
   if (!ps_type_is_incomplete_array(current) || !complete_type ||
       complete_type->kind != PSX_TYPE_ARRAY ||
@@ -46,6 +63,7 @@ int ps_global_registry_complete_array_type(
   psx_type_t *replacement = ps_type_clone_persistent(complete_type);
   if (!replacement) return 0;
   global->decl_type = replacement;
+  global->decl_type_id = global_decl_type_id(registry, complete_type);
   return 1;
 }
 

@@ -432,19 +432,21 @@ static int lower_static_scalar_expression(
 }
 
 int lower_resolved_static_initializer(
+    psx_global_registry_t *global_registry,
     psx_lowering_context_t *lowering_context, global_var_t *global,
     const psx_static_initializer_resolution_t *resolution,
     token_t *tok,
     psx_static_declaration_initializer_result_t *result) {
   if (result) *result = (psx_static_declaration_initializer_result_t){0};
-  if (!lowering_context || !global || !resolution ||
+  if (!global_registry || !lowering_context || !global || !resolution ||
       resolution->status != PSX_STATIC_INITIALIZER_OK ||
       !resolution->type || !resolution->initializer)
     return 0;
 
   const psx_type_t *type = resolution->type;
   if (resolution->type_completed) {
-    if (!ps_global_registry_complete_array_type(global, type)) return 0;
+    if (!ps_global_registry_complete_array_type(
+            global_registry, global, type)) return 0;
     if (result) result->type_completed = 1;
   }
 

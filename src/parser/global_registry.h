@@ -8,9 +8,13 @@ typedef struct psx_type_t psx_type_t;
 typedef struct string_lit_t string_lit_t;
 typedef struct float_lit_t float_lit_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 
 psx_global_registry_t *ps_global_registry_create(void);
 void ps_global_registry_destroy(psx_global_registry_t *registry);
+void ps_global_registry_bind_semantic_types(
+    psx_global_registry_t *registry,
+    const psx_semantic_type_table_t *semantic_types);
 
 void ps_global_registry_reset_translation_unit_in(
     psx_global_registry_t *registry);
@@ -41,8 +45,10 @@ int ps_global_registry_next_float_literal_id(
     psx_global_registry_t *registry);
 
 int ps_global_registry_bind_decl_type(
-    global_var_t *global, const psx_type_t *type);
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *type);
 int ps_global_registry_complete_array_type(
-    global_var_t *global, const psx_type_t *complete_type);
+    psx_global_registry_t *registry, global_var_t *global,
+    const psx_type_t *complete_type);
 
 #endif
