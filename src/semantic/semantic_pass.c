@@ -298,6 +298,8 @@ static void semantic_resolve_member_access(
   access->resolved_member = arena_alloc_in(
       ps_ctx_arena(semantic_context), sizeof(*access->resolved_member));
   *access->resolved_member = resolution.member;
+  access->resolved_record_id = resolution.record_id;
+  access->resolved_member_index = resolution.member_index;
 
   const psx_type_t *decl_type =
       ps_tag_member_decl_type(access->resolved_member);
@@ -315,8 +317,7 @@ static void semantic_resolve_member_access(
   ps_node_bind_type((node_t *)access, access_type);
   access->base.type_state.bit_width =
       (unsigned char)access->resolved_member->bit_width;
-  access->base.type_state.bit_offset =
-      (unsigned char)access->resolved_member->bit_offset;
+  access->base.type_state.bit_offset = 0;
   access->base.type_state.bit_is_signed =
       access->resolved_member->bit_is_signed ? 1 : 0;
 }

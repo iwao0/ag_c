@@ -1809,17 +1809,25 @@ const memberAccessResolutionSource = await readFile(
   "src/semantic/member_access_resolution.c",
   "utf8",
 );
-if (!/\bpsx_record_layout_table_lookup\s*\(/.test(
-      memberAccessResolutionSource,
-    ) ||
-    !/\bpsx_record_layout_member\s*\(/.test(
+const memberAccessTargetLoweringSource = await readFile(
+  "src/lowering/member_access_lowering.c",
+  "utf8",
+);
+if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
     !/resolution->member_index\s*=\s*aggregate_member_index/.test(
       memberAccessResolutionSource,
+    ) ||
+    !/resolution->record_id\s*=/.test(memberAccessResolutionSource) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      memberAccessTargetLoweringSource,
+    ) ||
+    !/\bpsx_record_layout_member\s*\(/.test(
+      memberAccessTargetLoweringSource,
     )) {
   throw new Error(
-    "member access must resolve member ordinal and offset from RecordLayoutTable",
+    "member access semantics must retain RecordId and ordinal while lowering resolves target offsets",
   );
 }
 const typeNameResolutionSource = await readFile(

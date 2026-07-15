@@ -1334,7 +1334,8 @@ static void test_member_access_resolution_boundary() {
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
   ASSERT_EQ(1, resolution.member_index);
-  ASSERT_EQ(4, resolution.member.offset);
+  ASSERT_EQ(member_record->record_id, resolution.record_id);
+  ASSERT_EQ(77, resolution.member.offset);
   ASSERT_EQ(4, ps_tag_member_decl_value_size(&resolution.member));
   ASSERT_TRUE(resolution.base_object_type == ps_node_get_type(base));
   ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
@@ -1383,6 +1384,8 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(lowered_access->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, lowered_access->type->kind);
   ASSERT_EQ(4, ps_type_sizeof(lowered_access->type));
+  ASSERT_EQ(ND_ADD, lowered_access->lhs->kind);
+  ASSERT_EQ(4, as_num(lowered_access->lhs->rhs)->val);
 
   node_t *pointer_node = psx_node_new_lvar_identifier_ref_for(pointer);
   ASSERT_EQ(PSX_DEREF_OPERAND_OK,

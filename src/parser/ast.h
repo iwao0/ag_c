@@ -197,6 +197,8 @@ typedef struct {
   char *member_name;
   int member_name_len;
   struct tag_member_info_t *resolved_member;
+  psx_record_id_t resolved_record_id;
+  int resolved_member_index;
   unsigned char from_pointer;
 } node_member_access_t;
 
