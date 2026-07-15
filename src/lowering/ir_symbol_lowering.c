@@ -38,8 +38,12 @@ static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
                                    psx_type_id_t value_type_id,
                                    int slot, long long offset) {
   ir_symbol_func_ref_lowering_t *ctx = user;
+  int value_size = ps_type_sizeof_id_with_records(
+      ctx->semantic_types, ctx->record_layouts, value_type_id,
+      ctx->target);
   psx_gvar_init_value_t value =
-      ps_gvar_init_member_value(ctx->global, slot, member);
+      ps_gvar_init_member_value(
+          ctx->global, slot, member, value_size);
   lower_func_ref(ctx, (int)offset, value, value_type_id);
 }
 

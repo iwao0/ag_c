@@ -372,6 +372,23 @@ static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
       test_semantic_context(), type).type_id;
 }
 
+static int test_type_size_id(psx_type_id_t type_id) {
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_ctx_record_layout_table_in(test_semantic_context()),
+      type_id, ps_ctx_target_info(test_semantic_context()));
+}
+
+static int test_tag_member_decl_value_size(const tag_member_info_t *member) {
+  return ps_ctx_type_sizeof_in(
+      test_semantic_context(), ps_tag_member_decl_value_type(member));
+}
+
+static int test_tag_member_decl_storage_size(const tag_member_info_t *member) {
+  return ps_ctx_type_sizeof_in(
+      test_semantic_context(), ps_tag_member_decl_type(member));
+}
+
 static int plan_test_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *plan) {
   ag_target_info_t target = ag_target_info_host();
@@ -1338,7 +1355,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(1, resolution.member_index);
   ASSERT_EQ(member_record->record_id, resolution.record_id);
   ASSERT_EQ(77, resolution.member.offset);
-  ASSERT_EQ(4, ps_tag_member_decl_value_size(&resolution.member));
+  ASSERT_EQ(4, test_tag_member_decl_value_size(&resolution.member));
   ASSERT_TRUE(resolution.base_object_type == ps_node_get_type(base));
   ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
 
@@ -1424,7 +1441,8 @@ static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
   if (!trace || trace->scalar_count >= 16) return;
   int idx = trace->scalar_count++;
   psx_gvar_init_member_value_t value =
-      ps_gvar_init_member_value(trace->gv, slot, mi);
+      ps_gvar_init_member_value(
+          trace->gv, slot, mi, test_type_size_id(value_type_id));
   trace->scalar_offsets[idx] = offset;
   trace->scalar_values[idx] = value.value;
   trace->scalar_sizes[idx] = value.size;
@@ -12445,7 +12463,7 @@ static void test_type_metadata_bridge() {
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
   psx_gvar_init_member_value_t tmp_member_value =
       ps_gvar_init_member_value(&tmp_member_value_gv, 0,
-                                 &tmp_member_value_double);
+                                 &tmp_member_value_double, 8);
   ASSERT_EQ(PSX_GVAR_INIT_VALUE_FLOAT, tmp_member_value.kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_member_value.fp_kind);
   ASSERT_EQ(8, tmp_member_value.size);
@@ -12455,8 +12473,8 @@ static void test_type_metadata_bridge() {
   ps_gvar_init_slot_write(&tmp_member_bool_gv, 0, 7, 0.0, NULL, 0);
   tag_member_info_t tmp_member_value_bool = {0};
   tmp_member_value_bool.decl_type = ps_type_new_integer(TK_BOOL, 1, 1);
-  tmp_member_value = ps_gvar_init_member_value(&tmp_member_bool_gv, 0,
-                                                &tmp_member_value_bool);
+  tmp_member_value = ps_gvar_init_member_value(
+      &tmp_member_bool_gv, 0, &tmp_member_value_bool, 1);
   ASSERT_EQ(PSX_GVAR_INIT_VALUE_INTEGER, tmp_member_value.kind);
   ASSERT_EQ(1, tmp_member_value.value);
   ASSERT_EQ(1, tmp_member_value.size);
@@ -12581,7 +12599,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(long_union_member.name != NULL);
   ASSERT_EQ(0, strncmp(long_union_member.name, "b",
                        (size_t)long_union_member.len));
-  ASSERT_EQ(8, ps_tag_member_decl_value_size(&long_union_member));
+  ASSERT_EQ(8, test_tag_member_decl_value_size(&long_union_member));
 
   parsed_code = parse_program_input("struct P { int x, y; }; "
                                     "union U { int a; long b; }; "
@@ -12611,7 +12629,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(short_union_member.name != NULL);
   ASSERT_EQ(0, strncmp(short_union_member.name, "b",
                        (size_t)short_union_member.len));
-  ASSERT_EQ(8, ps_tag_member_decl_value_size(&short_union_member));
+  ASSERT_EQ(8, test_tag_member_decl_value_size(&short_union_member));
 
   parsed_code = parse_program_input("unsigned int __tm_gu; int *__tm_gp; int __tm_ga[3]; int main(){ return 0; }");
   (void)parsed_code;
@@ -13060,15 +13078,15 @@ static void test_type_metadata_bridge() {
                                            "wide", 4, &bf_wide_info));
   ASSERT_TRUE(bf_wide_info.decl_type != NULL);
   ASSERT_EQ(40, bf_wide_info.bit_width);
-  ASSERT_EQ(8, ps_tag_member_decl_value_size(&bf_wide_info));
-  ASSERT_EQ(8, ps_tag_member_decl_storage_size(&bf_wide_info));
+  ASSERT_EQ(8, test_tag_member_decl_value_size(&bf_wide_info));
+  ASSERT_EQ(8, test_tag_member_decl_storage_size(&bf_wide_info));
   tag_member_info_t bf_bool_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_bf_decl_type", 17,
                                            "flag", 4, &bf_bool_info));
   ASSERT_TRUE(bf_bool_info.decl_type != NULL);
   ASSERT_EQ(1, bf_bool_info.bit_width);
   ASSERT_TRUE(ps_tag_member_decl_is_bool(&bf_bool_info));
-  ASSERT_EQ(1, ps_tag_member_decl_value_size(&bf_bool_info));
+  ASSERT_EQ(1, test_tag_member_decl_value_size(&bf_bool_info));
 
   const char member_sync_tag[] = "__tm_member_sync_clean";
   int member_sync_len = (int)sizeof(member_sync_tag) - 1;
@@ -13102,7 +13120,7 @@ static void test_type_metadata_bridge() {
   };
   ASSERT_TRUE(ps_tag_member_decl_tag_type(&recursive_member) ==
               recursive_member_tag);
-  ASSERT_EQ(4, ps_tag_member_decl_value_size(&member_sync_out));
+  ASSERT_EQ(4, test_tag_member_decl_value_size(&member_sync_out));
 
   const char canonical_member_tag[] = "__tm_canonical_member_desc";
   int canonical_member_tag_len = (int)sizeof(canonical_member_tag) - 1;
@@ -13916,7 +13934,7 @@ static void test_type_metadata_bridge() {
       (int)sizeof(tag_member_desc_tag) - 1,
       (char *)tag_member_desc_name, (int)sizeof(tag_member_desc_name) - 1,
       &tag_member_desc_out));
-  ASSERT_EQ(1, ps_tag_member_decl_value_size(&tag_member_desc_out));
+  ASSERT_EQ(1, test_tag_member_decl_value_size(&tag_member_desc_out));
   const psx_type_t *tag_member_desc_type =
       ps_tag_member_decl_type(&tag_member_desc_out);
   ASSERT_EQ(3, ps_type_subscript_static_stride(tag_member_desc_type));

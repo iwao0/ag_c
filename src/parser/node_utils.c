@@ -387,7 +387,8 @@ int ps_gvar_symbol_ref_named_function_in(
 
 psx_gvar_init_member_value_t
 ps_gvar_init_member_value(const global_var_t *gv, int idx,
-                           const tag_member_info_t *member) {
+                           const tag_member_info_t *member,
+                           int member_size) {
   psx_gvar_init_slot_t slot = ps_gvar_init_slot_view(gv, idx);
   tk_float_kind_t member_fp_kind = ps_tag_member_decl_fp_kind(member);
   psx_gvar_init_member_value_t value = {
@@ -396,7 +397,7 @@ ps_gvar_init_member_value(const global_var_t *gv, int idx,
       .value = slot.value,
       .fvalue = slot.fvalue,
       .fp_kind = TK_FLOAT_KIND_NONE,
-      .size = ps_tag_member_decl_value_size(member),
+      .size = member_size > 0 ? member_size : 0,
   };
   if (ps_tag_member_decl_is_bool(member)) value.value = value.value != 0;
   if (value.symbol_ref.kind != PSX_GVAR_SYMBOL_REF_NONE) {
@@ -2954,7 +2955,6 @@ node_t *ps_node_new_tag_member_deref_for_in(
   node_t *deref = arena_alloc_in(arena_context, sizeof(node_t));
   deref->kind = ND_DEREF;
   deref->lhs = addr;
-  int mem_size = ps_tag_member_decl_value_size(info);
   int mem_array_len =
       ps_type_array_flat_element_count(ps_tag_member_decl_type(info));
   const psx_type_t *member_value_type = ps_tag_member_decl_value_type(info);
@@ -2978,7 +2978,7 @@ node_t *ps_node_new_tag_member_deref_for_in(
                    arena_context, decl_type,
                    member_is_const, member_is_volatile));
     deref->type_state.is_scalar_ptr_member_lvalue =
-        mem_is_ptr && mem_size > 0 && mem_array_len <= 0;
+        mem_is_ptr && mem_array_len <= 0;
   }
   return deref;
 }

@@ -307,11 +307,35 @@ if (/\bps_node_(?:type|storage_type|deref|aggregate_value)_size\s*\(/.test(
     "semantic passes must classify types or query target layout instead of reading parser node sizes",
   );
 }
+const gvarPublicHeaderSource = await readFile(
+  "src/parser/gvar_public.h",
+  "utf8",
+);
+const translationUnitDataLoweringSourceForMemberLayout = await readFile(
+  "src/lowering/translation_unit_data_lowering.c",
+  "utf8",
+);
+const irSymbolLoweringSourceForMemberLayout = await readFile(
+  "src/lowering/ir_symbol_lowering.c",
+  "utf8",
+);
 if (/\bps_tag_member_decl_(?:storage|value)_size\s*\(/.test(
-      `${explicitSemanticLayerSource}\n${loweringLayerSource}`,
+      `${parserLayerSource}\n${explicitSemanticLayerSource}\n${loweringLayerSource}`,
+    ) ||
+    !/ps_gvar_init_member_value\s*\([^;]*\bint\s+member_size\s*\)/s.test(
+      gvarPublicHeaderSource,
+    ) ||
+    !/ps_gvar_init_member_value\s*\([^;]*type_size_id\s*\(/s.test(
+      translationUnitDataLoweringSourceForMemberLayout,
+    ) ||
+    !/int\s+value_size\s*=\s*ps_type_sizeof_id_with_records\s*\(/.test(
+      irSymbolLoweringSourceForMemberLayout,
+    ) ||
+    !/ps_gvar_init_member_value\s*\(\s*ctx->global\s*,\s*slot\s*,\s*member\s*,\s*value_size\s*\)/.test(
+      irSymbolLoweringSourceForMemberLayout,
     )) {
   throw new Error(
-    "semantic and lowering phases must resolve member layout from TypeId and RecordLayoutTable",
+    "member descriptors must remain layout-free and lowering must pass member size from TypeId and TargetSpec",
   );
 }
 const parserContextLifecycleFiles = new Set([

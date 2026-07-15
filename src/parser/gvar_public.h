@@ -126,7 +126,8 @@ int ps_gvar_walk_init_slot_values(const global_var_t *gv,
                                    void *user);
 psx_gvar_init_member_value_t
 ps_gvar_init_member_value(const global_var_t *gv, int idx,
-                           const tag_member_info_t *member);
+                           const tag_member_info_t *member,
+                           int member_size);
 psx_gvar_init_scalar_value_t
 ps_gvar_init_scalar_value(const global_var_t *gv, int fallback_size);
 int ps_gvar_visit_initializer_classified(

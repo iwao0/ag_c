@@ -29,25 +29,6 @@ static inline const psx_type_t *ps_tag_member_decl_value_type(
   return ps_type_array_leaf_type(ps_tag_member_decl_type(m));
 }
 
-static inline int ps_tag_member_decl_value_size(const tag_member_info_t *m) {
-  const psx_type_t *type = ps_tag_member_decl_value_type(m);
-  if (type) {
-    int size = ps_type_sizeof(type);
-    if (size > 0) return size;
-  }
-  return 0;
-}
-
-static inline int ps_tag_member_decl_storage_size(const tag_member_info_t *m) {
-  if (!m) return 0;
-  const psx_type_t *decl_type = ps_tag_member_decl_type(m);
-  if (decl_type) {
-    int size = ps_type_sizeof(decl_type);
-    if (size > 0) return size;
-  }
-  return 0;
-}
-
 static inline tk_float_kind_t ps_tag_member_decl_fp_kind(
     const tag_member_info_t *m) {
   const psx_type_t *type = ps_tag_member_decl_value_type(m);
