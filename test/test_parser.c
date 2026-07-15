@@ -16008,6 +16008,35 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(first_record_identity.type_id, same_record_identity.type_id);
   ASSERT_TRUE(first_record_identity.type_id != other_record_identity.type_id);
 
+  char recursive_name[] = "RecursiveIdentityRecord";
+  psx_type_t *recursive_record = ps_type_new_tag(
+      TK_STRUCT, recursive_name, 23, 1, 8);
+  recursive_record->record_id = 43;
+  psx_type_t *recursive_pointer = ps_type_new_pointer(recursive_record);
+  tag_member_info_t recursive_member = {
+      .name = (char *)"next",
+      .len = 4,
+      .decl_type = recursive_pointer,
+  };
+  psx_aggregate_definition_t recursive_definition = {
+      .record_id = 43,
+      .tag_kind = TK_STRUCT,
+      .tag_name = recursive_name,
+      .tag_len = 23,
+      .is_complete = 1,
+      .size = 8,
+      .align = 8,
+      .member_count = 1,
+      .members = &recursive_member,
+  };
+  recursive_record->aggregate_definition = &recursive_definition;
+  psx_qual_type_t recursive_identity =
+      ps_ctx_intern_qual_type_in(context, recursive_record);
+  ASSERT_TRUE(recursive_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_find_interned_qual_type_in(
+                  context, recursive_pointer).type_id !=
+              PSX_TYPE_ID_INVALID);
+
   psx_type_id_t retained_id = pointer_to_const_identity.type_id;
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);
   ps_ctx_reset_translation_unit_scope_in(context);

@@ -3005,6 +3005,7 @@ for (const [name, source] of [
   ["subscript", subscriptLoweringSource],
   ["initializer", explicitDiagnosticInitializerLoweringSource],
   ["VLA", vlaLoweringSource],
+  ["static data initializer", explicitDiagnosticStaticDataInitializerSource],
 ]) {
   if (!/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
       /\bps_type_sizeof_for_target\s*\(/.test(source)) {
@@ -3072,6 +3073,13 @@ if (!qualTypeStruct ||
     /->(?:size|align)\b/.test(semanticTypeIdentitySource)) {
   throw new Error(
     "QualType must pair an interned TypeId with qualifiers, independent of target layout",
+  );
+}
+if (!/table->types\[id\]\s*=\s*canonical\s*;[^]*?definition->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
+      semanticTypeIdentitySource,
+    )) {
+  throw new Error(
+    "semantic type interning must register aggregate identity before recursively interning member types",
   );
 }
 

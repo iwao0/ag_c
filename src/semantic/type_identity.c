@@ -1,6 +1,7 @@
 #include "type_identity.h"
 
 #include "../parser/arena.h"
+#include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
 
 #include <limits.h>
@@ -89,18 +90,6 @@ psx_qual_type_t psx_semantic_type_table_intern(
       !ps_type_is_well_formed(type)) {
     return invalid_qual_type();
   }
-  if (type->base &&
-      psx_semantic_type_table_intern(table, type->base).type_id ==
-          PSX_TYPE_ID_INVALID) {
-    return invalid_qual_type();
-  }
-  for (int i = 0; i < type->param_count; i++) {
-    if (!type->param_types ||
-        psx_semantic_type_table_intern(table, type->param_types[i]).type_id ==
-            PSX_TYPE_ID_INVALID) {
-      return invalid_qual_type();
-    }
-  }
   psx_qual_type_t result = psx_semantic_type_table_find(table, type);
   if (result.type_id != PSX_TYPE_ID_INVALID) return result;
   result.qualifiers = ps_type_qualifiers(type);
@@ -115,6 +104,30 @@ psx_qual_type_t psx_semantic_type_table_intern(
   table->types[id] = canonical;
   table->next_id = id;
   result.type_id = id;
+
+  if (type->base &&
+      psx_semantic_type_table_intern(table, type->base).type_id ==
+          PSX_TYPE_ID_INVALID) {
+    return invalid_qual_type();
+  }
+  for (int i = 0; i < type->param_count; i++) {
+    if (!type->param_types ||
+        psx_semantic_type_table_intern(table, type->param_types[i]).type_id ==
+            PSX_TYPE_ID_INVALID) {
+      return invalid_qual_type();
+    }
+  }
+  const psx_aggregate_definition_t *definition =
+      type->aggregate_definition;
+  for (int i = 0; definition && i < definition->member_count; i++) {
+    const psx_type_t *member_type =
+        ps_tag_member_decl_type(&definition->members[i]);
+    if (member_type &&
+        psx_semantic_type_table_intern(table, member_type).type_id ==
+            PSX_TYPE_ID_INVALID) {
+      return invalid_qual_type();
+    }
+  }
   return result;
 }
 

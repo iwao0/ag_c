@@ -126,6 +126,12 @@ int psx_begin_global_declaration_pipeline(
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
 
+  if (ps_ctx_intern_qual_type_in(
+          request->semantic_context, request->type).type_id ==
+      PSX_TYPE_ID_INVALID) {
+    return 0;
+  }
+
   psx_global_declaration_resolution_t resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
@@ -545,6 +551,11 @@ int psx_begin_static_local_declaration_pipeline(
       !request->lowering_context || !request->options ||
       !request->name || request->name_len <= 0 || !request->type ||
       !request->initializer) return 0;
+  if (ps_ctx_intern_qual_type_in(
+          request->semantic_context, request->type).type_id ==
+      PSX_TYPE_ID_INVALID) {
+    return 0;
+  }
   if (request->type->kind == PSX_TYPE_FUNCTION) return 0;
   if (request->type->kind == PSX_TYPE_VOID) {
     ps_diag_ctx_in(

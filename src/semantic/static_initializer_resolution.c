@@ -39,6 +39,11 @@ void psx_resolve_static_initializer(
     resolution->type_completed = 1;
   }
 
+  if (ps_ctx_intern_qual_type_in(
+          semantic_context, type).type_id == PSX_TYPE_ID_INVALID) {
+    return;
+  }
+
   if (resolution->kind == PSX_DECL_INIT_LIST) {
     if (resolution->initializer->kind != ND_INIT_LIST) return;
     if (type->kind == PSX_TYPE_ARRAY ||

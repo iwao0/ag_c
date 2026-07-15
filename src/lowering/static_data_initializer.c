@@ -24,10 +24,18 @@ static ag_diagnostic_context_t *diagnostics(
   return ps_lowering_diagnostics(lowering->lowering_context);
 }
 
+static int lowering_type_size(
+    const psx_lowering_context_t *lowering_context,
+    const psx_type_t *type) {
+  return ps_type_sizeof_id_for_target(
+      ps_lowering_semantic_types(lowering_context),
+      ps_lowering_type_id(lowering_context, type),
+      ps_lowering_target(lowering_context));
+}
+
 static int type_size(
     const static_array_lowering_t *lowering, const psx_type_t *type) {
-  return ps_type_sizeof_for_target(
-      type, ps_lowering_target(lowering->lowering_context));
+  return lowering_type_size(lowering->lowering_context, type);
 }
 
 static int leaf_index_at_offset(
@@ -350,8 +358,7 @@ static int lower_static_string_expression(
   if (type->kind != PSX_TYPE_ARRAY) return 0;
 
   const psx_type_t *element = ps_type_array_leaf_type(type);
-  int element_size = ps_type_sizeof_for_target(
-      element, ps_lowering_target(lowering_context));
+  int element_size = lowering_type_size(lowering_context, element);
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;
   if (element_size != char_width) return 0;
