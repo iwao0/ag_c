@@ -16,7 +16,7 @@ int psx_plan_parameter_storage_for_type_id(
   if (type->kind == PSX_TYPE_POINTER) {
     plan->kind = PSX_PARAMETER_STORAGE_POINTER;
     plan->storage_size = ag_target_info_pointer_size(target);
-    plan->alignment = plan->storage_size;
+    plan->alignment = ag_target_info_pointer_alignment(target);
     return 1;
   }
 
@@ -27,7 +27,7 @@ int psx_plan_parameter_storage_for_type_id(
     if (size > 16) {
       plan->kind = PSX_PARAMETER_STORAGE_AGGREGATE_BYREF;
       plan->storage_size = ag_target_info_pointer_size(target);
-      plan->alignment = plan->storage_size;
+      plan->alignment = ag_target_info_pointer_alignment(target);
       plan->is_byref = 1;
     } else {
       plan->kind = PSX_PARAMETER_STORAGE_AGGREGATE_VALUE;

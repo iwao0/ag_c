@@ -3288,9 +3288,23 @@ static void test_target_type_layout_boundary() {
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer);
   psx_qual_type_t pointer_array_identity =
       ps_ctx_intern_qual_type_in(test_semantic_context(), pointer_array);
+  psx_qual_type_t integer_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), integer);
+  psx_qual_type_t stale_integer_identity =
+      ps_ctx_intern_qual_type_in(test_semantic_context(), stale_integer);
   const psx_semantic_type_table_t *types =
       ps_ctx_semantic_type_table_in(test_semantic_context());
   ASSERT_TRUE(types != NULL);
+  ASSERT_EQ(integer_identity.type_id, stale_integer_identity.type_id);
+  const psx_type_t *canonical_pointer_array =
+      psx_semantic_type_table_lookup(types, pointer_array_identity.type_id);
+  ASSERT_TRUE(canonical_pointer_array != NULL);
+  ASSERT_EQ(0, canonical_pointer_array->size);
+  ASSERT_EQ(0, canonical_pointer_array->align);
+  ASSERT_EQ(0, canonical_pointer_array->base->size);
+  ASSERT_EQ(0, canonical_pointer_array->base->align);
+  ASSERT_EQ(0, canonical_pointer_array->base->base->size);
+  ASSERT_EQ(0, canonical_pointer_array->base->base->align);
   ASSERT_EQ(8, ps_type_sizeof_id_for_target(
                    types, pointer_identity.type_id, &host));
   ASSERT_EQ(4, ps_type_sizeof_id_for_target(

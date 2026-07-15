@@ -3358,6 +3358,10 @@ const recordLayoutImplementationSource = await readFile(
   "src/semantic/record_layout.c",
   "utf8",
 );
+const typeIdentityImplementationSource = await readFile(
+  "src/semantic/type_identity.c",
+  "utf8",
+);
 if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) ||
     !/\bpointer_alignment\s*;/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
@@ -3365,7 +3369,10 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
     !/\bag_target_info_equal\s*\(/.test(targetInfoHeaderSource) ||
     !/\blayout_scalar\s*\(/.test(await readFile("src/type_layout.c", "utf8")) ||
     !/\bAG_TARGET_SCALAR_FLOAT_COMPLEX\b/.test(targetInfoImplementationSource) ||
-    !/\bag_target_info_equal\s*\(/.test(recordLayoutImplementationSource)) {
+    !/\bag_target_info_equal\s*\(/.test(recordLayoutImplementationSource) ||
+    !/\bps_type_clear_cached_layout\s*\(\s*canonical\s*\)/.test(
+      typeIdentityImplementationSource,
+    )) {
   throw new Error(
     "scalar size and alignment must be selected by TargetSpec instead of semantic type caches",
   );

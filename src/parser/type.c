@@ -122,6 +122,17 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
   }
 }
 
+void ps_type_clear_cached_layout(psx_type_t *type) {
+  if (!type) return;
+  type->size = 0;
+  type->align = 0;
+  ps_type_clear_cached_layout(psx_type_owned_base_mut(type));
+  if (type->kind == PSX_TYPE_FUNCTION) {
+    for (int i = 0; i < type->param_count; ++i)
+      ps_type_clear_cached_layout(psx_type_owned_param_mut(type, i));
+  }
+}
+
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_kind,
     int size, int is_unsigned) {

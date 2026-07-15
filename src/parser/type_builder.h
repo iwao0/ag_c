@@ -31,6 +31,7 @@ psx_type_t *ps_type_new_tag_in(
     arena_context_t *arena_context, token_kind_t tag_kind,
     char *tag_name, int tag_len, int tag_scope_depth_p1, int size);
 void ps_type_normalize_integer_identity(psx_type_t *type);
+void ps_type_clear_cached_layout(psx_type_t *type);
 void ps_type_set_function_params_in(
     arena_context_t *arena_context, psx_type_t *function_type,
     const psx_type_t *const *param_types,
