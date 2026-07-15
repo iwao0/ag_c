@@ -1,7 +1,7 @@
 #ifndef AG_TARGET_INFO_H
 #define AG_TARGET_INFO_H
 
-typedef struct {
+typedef struct ag_target_info_t {
   int pointer_size;
 } ag_target_info_t;
 

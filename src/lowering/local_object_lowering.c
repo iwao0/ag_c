@@ -1,6 +1,7 @@
 #include "local_object_lowering.h"
 
 #include "local_storage.h"
+#include "runtime_context.h"
 #include "../parser/local_registry.h"
 #include "../semantic/local_declaration_plan.h"
 
@@ -11,7 +12,9 @@ lvar_t *lower_complete_local_object(
       !request->lowering_context) return NULL;
 
   psx_local_storage_plan_t plan = {0};
-  if (!psx_plan_local_storage(request->type, &plan)) return NULL;
+  if (!psx_plan_local_storage_for_target(
+          request->type, ps_lowering_target(request->lowering_context),
+          &plan)) return NULL;
   int alignment = plan.alignment;
   if (request->requested_alignment > 0)
     alignment = request->requested_alignment;
@@ -44,7 +47,9 @@ int complete_declared_local_object(
       !request->lowering_context ||
       request->type->kind != PSX_TYPE_ARRAY) return 0;
   psx_local_storage_plan_t plan = {0};
-  if (!psx_plan_local_storage(request->type, &plan)) return 0;
+  if (!psx_plan_local_storage_for_target(
+          request->type, ps_lowering_target(request->lowering_context),
+          &plan)) return 0;
   int alignment = request->requested_alignment > 0
                       ? request->requested_alignment : plan.alignment;
   int offset = local_storage_allocate(

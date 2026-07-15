@@ -4,6 +4,7 @@
 #include "declaration_resolution.h"
 
 typedef struct arena_context_t arena_context_t;
+typedef struct ag_target_info_t ag_target_info_t;
 
 typedef enum {
   PSX_LOCAL_DECLARATION_OK = 0,
@@ -29,6 +30,7 @@ typedef struct {
 
 typedef struct {
   arena_context_t *arena_context;
+  const ag_target_info_t *target;
   const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int has_initializer;

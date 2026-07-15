@@ -278,8 +278,6 @@ psx_type_t *ps_type_new_pointer_in(
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_POINTER);
   if (!type) return NULL;
   type->base = base;
-  type->size = 8;
-  type->align = 8;
   return type;
 }
 

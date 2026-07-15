@@ -8,6 +8,7 @@
 #include "../diag/diag.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"
+#include "../type_layout.h"
 #include "../tokenizer/literals.h"
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,14 @@ typedef struct {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   const ag_compilation_options_t *options;
+  const ag_target_info_t *target;
 } initializer_lowering_context_t;
+
+static int type_size(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *type) {
+  return ps_type_sizeof_for_target(type, context ? context->target : NULL);
+}
 
 static ag_diagnostic_context_t *diagnostics(
     const initializer_lowering_context_t *context) {
@@ -67,11 +75,24 @@ int psx_initializer_lowering_supports_recursive_aggregate(
 static node_t *new_array_elem_assign(
     const initializer_lowering_context_t *context,
     lvar_t *var, int idx, node_t *value) {
+  const psx_type_t *array_type = ps_lvar_get_decl_type(var);
+  const psx_type_t *element = ps_type_array_leaf_type(array_type);
+  int element_size = type_size(context, element);
+  node_t *target = element && element_size > 0
+                       ? ps_node_new_lvar_type_at_for_in(
+                             context->arena_context, var,
+                             ps_lvar_offset(var) + idx * element_size,
+                             element)
+                       : ps_node_new_array_elem_lvar_for_in(
+                             context->arena_context, var, idx);
   return ps_node_new_assign_in(
-      context->arena_context,
-      ps_node_new_array_elem_lvar_for_in(
-          context->arena_context, var, idx),
-      value);
+      context->arena_context, target, value);
+}
+
+static int array_leaf_size(
+    const initializer_lowering_context_t *context, const lvar_t *var) {
+  return type_size(
+      context, ps_type_array_leaf_type(ps_lvar_get_decl_type(var)));
 }
 
 typedef struct {
@@ -104,7 +125,7 @@ static node_t *lower_array_string_initializer_at(
                  diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRING_INIT_RESOLVE_FAILED));
   }
 
-  int elem_size = ps_lvar_array_scalar_element_size(var);
+  int elem_size = array_leaf_size(context, var);
   if (elem_size <= 0) elem_size = 1;
   int limit = base_index + capacity;
   if (limit > array_len) limit = array_len;
@@ -139,7 +160,7 @@ static node_t *lower_array_expr_initializer(
     node_t *target, node_t *value, token_t *tok) {
   lvar_t *var = ps_node_lvar_symbol(target);
   if (!var) return NULL;
-  int elem_size = ps_lvar_array_scalar_element_size(var);
+  int elem_size = array_leaf_size(context, var);
   int array_len = ps_lvar_array_flat_element_count(var);
   if (array_len <= 0 && elem_size > 0) {
     array_len = ps_lvar_storage_size(var, 0) / elem_size;
@@ -160,8 +181,11 @@ static node_t *lower_array_expr_initializer(
     node_lvar_t *source = (node_lvar_t *)value->rhs->lhs;
     node_t *chain = value->lhs;
     for (int i = 0; i < array_len; i++) {
-      node_t *dst = ps_node_new_array_elem_lvar_for_in(
-          context->arena_context, var, i);
+      const psx_type_t *element =
+          ps_type_array_leaf_type(ps_lvar_get_decl_type(var));
+      node_t *dst = ps_node_new_lvar_type_at_for_in(
+          context->arena_context, var,
+          ps_lvar_offset(var) + i * elem_size, element);
       node_t *src = ps_node_new_lvar_typed_at_for_in(
           context->arena_context, source->var,
           source->offset + i * elem_size, elem_size);
@@ -218,9 +242,10 @@ static int resolve_initializer_entry_index(
 }
 
 static int entry_initializes_character_subarray(
+    const initializer_lowering_context_t *context,
     lvar_t *var, const node_t *value, int stride) {
   if (!var || !value || value->kind != ND_STRING || stride <= 1) return 0;
-  int elem_size = ps_lvar_array_scalar_element_size(var);
+  int elem_size = array_leaf_size(context, var);
   int char_width = (int)((const node_string_t *)value)->char_width;
   if (char_width <= 0) char_width = 1;
   return elem_size == char_width;
@@ -250,7 +275,7 @@ static void lower_array_initializer_entries(
           array_len, assigned, chain, fallback_tok);
       next_index = index + stride;
     } else if (entry_initializes_character_subarray(
-                   var, entry->value, stride)) {
+                   context, var, entry->value, stride)) {
       if (index + stride > array_len) {
         ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok,
                      "init", "%s",
@@ -320,9 +345,9 @@ static node_t *lower_typed_character_array_string(
     lvar_t *var, const psx_type_t *array_type, int relative_offset,
     node_string_t *string, node_t *chain, token_t *tok) {
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  int element_size = ps_type_sizeof(element);
+  int element_size = type_size(context, element);
   int capacity = element_size > 0
-                     ? ps_type_sizeof(array_type) / element_size
+                     ? type_size(context, array_type) / element_size
                      : 0;
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;
@@ -374,7 +399,7 @@ static node_t *lower_array_list_initializer(
         context, var, type, 0, list, chain, initializer->base.tok);
   }
   int array_len = ps_lvar_array_flat_element_count(var);
-  int elem_size = ps_lvar_array_scalar_element_size(var);
+  int elem_size = array_leaf_size(context, var);
   if (array_len <= 0 && elem_size > 0) {
     array_len = ps_lvar_storage_size(var, 0) / elem_size;
   }
@@ -516,7 +541,7 @@ static int descend_array_designators(
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     if (first_index < 0) first_index = (int)index;
-    int child_size = ps_type_sizeof(array->base);
+    int child_size = type_size(context, array->base);
     *relative_offset_inout += (int)index * child_size;
     *type_inout = array->base;
   }
@@ -597,7 +622,8 @@ static node_t *append_typed_object_zero_fill(
     const initializer_lowering_context_t *context,
     lvar_t *var, const psx_type_t *type, node_t *chain) {
   typed_scalar_leaf_list_t leaves = {0};
-  if (!psx_collect_initializer_scalar_leaves(type, 0, &leaves)) {
+  if (!psx_collect_initializer_scalar_leaves(
+          context->target, type, 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(context, var, chain);
   }
@@ -628,7 +654,7 @@ static node_t *lower_flat_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          type, relative_offset, &leaves)) {
+          context->target, type, relative_offset, &leaves)) {
     free(leaves.items);
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
                  diag_message_for_in(diagnostics(context),
@@ -684,6 +710,7 @@ static int initializer_value_requires_immediate_subobject(
 }
 
 static int immediate_subobject_at_leaf_cursor(
+    const initializer_lowering_context_t *context,
     const psx_type_t *type, int relative_offset,
     const typed_scalar_leaf_list_t *leaves, int leaf_cursor,
     typed_designator_target_t *out) {
@@ -691,7 +718,7 @@ static int immediate_subobject_at_leaf_cursor(
       !out) return 0;
   int leaf_offset = leaves->items[leaf_cursor].relative_offset;
   if (type->kind == PSX_TYPE_ARRAY && type->base) {
-    int child_size = ps_type_sizeof(type->base);
+    int child_size = type_size(context, type->base);
     if (child_size <= 0 || leaf_offset < relative_offset) return 0;
     int child_index = (leaf_offset - relative_offset) / child_size;
     int child_offset = relative_offset + child_index * child_size;
@@ -734,7 +761,7 @@ static node_t *lower_mixed_typed_object_initializer_list(
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          type, relative_offset, &leaves)) {
+          context->target, type, relative_offset, &leaves)) {
     free(leaves.items);
     return chain;
   }
@@ -744,14 +771,14 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (entry->designator_count > 0) {
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), entry,
+              diagnostics(context), context->target, entry,
               type, relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
           target.direct_member, chain,
           entry->tok ? entry->tok : fallback_tok);
       leaf_cursor = psx_initializer_leaf_cursor_after_target(
-          &leaves, &target);
+          context->target, &leaves, &target);
       continue;
     }
     if (leaf_cursor >= leaves.count) {
@@ -765,13 +792,14 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (initializer_value_requires_immediate_subobject(entry->value)) {
       typed_designator_target_t target = {0};
       if (immediate_subobject_at_leaf_cursor(
-              type, relative_offset, &leaves, leaf_cursor, &target)) {
+              context, type, relative_offset, &leaves, leaf_cursor,
+              &target)) {
         chain = lower_typed_initializer_value(
             context, var, target.type, target.relative_offset, entry->value,
             target.direct_member, chain,
             entry->tok ? entry->tok : fallback_tok);
         leaf_cursor = psx_initializer_leaf_cursor_after_target(
-            &leaves, &target);
+            context->target, &leaves, &target);
         continue;
       }
     }
@@ -812,11 +840,11 @@ static node_t *try_lower_typed_array_copy(
   node_lvar_t *source = (node_lvar_t *)value->lhs;
   const psx_type_t *source_type = ps_node_get_type(value->lhs);
   if (!source->var || !source_type ||
-      ps_type_sizeof(source_type) < ps_type_sizeof(type)) return NULL;
+      type_size(context, source_type) < type_size(context, type)) return NULL;
 
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
-          type, relative_offset, &leaves)) {
+          context->target, type, relative_offset, &leaves)) {
     free(leaves.items);
     return NULL;
   }
@@ -847,7 +875,7 @@ static node_t *lower_flat_typed_array_initializer_list(
     lvar_t *var, const psx_type_t *type, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
-  int leaf_size = ps_type_sizeof(leaf);
+  int leaf_size = type_size(context, leaf);
   int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
@@ -915,7 +943,7 @@ static node_t *lower_typed_array_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), entry,
+              diagnostics(context), context->target, entry,
               type, relative_offset, fallback_tok);
       target_type = target.type;
       target_offset = target.relative_offset;
@@ -937,7 +965,7 @@ static node_t *lower_typed_array_initializer_list(
                      diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
-      target_offset += selected_index * ps_type_sizeof(target_type);
+      target_offset += selected_index * type_size(context, target_type);
     }
     chain = lower_typed_initializer_value(
         context, var, target_type, target_offset, entry->value, NULL,
@@ -1008,7 +1036,7 @@ static node_t *lower_typed_aggregate_initializer_list(
       }
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
-              diagnostics(context), entry,
+              diagnostics(context), context->target, entry,
               type, relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
           context, var, target.type, target.relative_offset, entry->value,
@@ -1151,12 +1179,14 @@ static node_t *lower_union_list_initializer(
   return chain;
 }
 
-static int aggregate_types_compatible(const psx_type_t *target,
+static int aggregate_types_compatible(
+                                      const initializer_lowering_context_t *context,
+                                      const psx_type_t *target,
                                       const psx_type_t *value) {
   if (!target || !value || !ps_type_is_tag_aggregate(target) ||
       !ps_type_is_tag_aggregate(value)) return 0;
   if (target->kind != value->kind ||
-      ps_type_sizeof(target) != ps_type_sizeof(value)) return 0;
+      type_size(context, target) != type_size(context, value)) return 0;
   return ps_type_tag_identity_matches(target, value);
 }
 
@@ -1179,7 +1209,7 @@ static node_t *lower_aggregate_expr_initializer(
   token_t *tok = initializer->base.tok;
   if (!var || !target_type) return NULL;
 
-  if (aggregate_types_compatible(target_type, value_type)) {
+  if (aggregate_types_compatible(context, target_type, value_type)) {
     return new_decl_initializer_assign(
         context, initializer->base.lhs, initializer->base.rhs, tok);
   }
@@ -1317,6 +1347,7 @@ node_t *lower_decl_initializer(
       .arena_context = ps_lowering_arena(lowering_context),
       .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,
+      .target = ps_lowering_target(lowering_context),
   };
 
   psx_decl_init_kind_t init_kind = ((node_decl_init_t *)node)->init_kind;

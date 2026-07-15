@@ -1,5 +1,6 @@
 #include "../src/parser/parser.h"
 #include "../src/compilation_session_internal.h"
+#include "../src/type_layout.h"
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
@@ -3154,6 +3155,40 @@ static void test_local_declaration_storage_plan_boundary() {
 
 }
 
+static void test_target_type_layout_boundary() {
+  printf("test_target_type_layout_boundary...\n");
+  ag_target_info_t host = ag_target_info_host();
+  ag_target_info_t wasm = ag_target_info_wasm32();
+  psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *pointer = ps_type_new_pointer(integer);
+  psx_type_t *pointer_array = ps_type_new_array(pointer, 3, 24, 0);
+  psx_type_layout_t layout = {0};
+
+  ASSERT_EQ(0, pointer->size);
+  ASSERT_EQ(0, pointer->align);
+  ASSERT_TRUE(ps_type_layout_of(pointer, &host, &layout));
+  ASSERT_TRUE(layout.is_complete);
+  ASSERT_EQ(8, layout.size);
+  ASSERT_EQ(8, layout.alignment);
+  ASSERT_EQ(4, ps_type_sizeof_for_target(pointer, &wasm));
+  ASSERT_EQ(4, ps_type_alignof_for_target(pointer, &wasm));
+  ASSERT_EQ(24, ps_type_sizeof_for_target(pointer_array, &host));
+  ASSERT_EQ(12, ps_type_sizeof_for_target(pointer_array, &wasm));
+
+  psx_local_storage_plan_t local = {0};
+  ASSERT_TRUE(psx_plan_local_storage_for_target(
+      pointer_array, &wasm, &local));
+  ASSERT_EQ(12, local.storage_size);
+  ASSERT_EQ(4, local.alignment);
+
+  psx_parameter_storage_plan_t parameter = {0};
+  ASSERT_TRUE(psx_plan_parameter_storage_for_target(
+      pointer, &wasm, &parameter));
+  ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
+  ASSERT_EQ(4, parameter.storage_size);
+  ASSERT_EQ(4, parameter.alignment);
+}
+
 static void test_vla_lowering_request_boundary() {
   printf("test_vla_lowering_request_boundary...\n");
   reset_test_locals();
@@ -4559,7 +4594,9 @@ static void test_aggregate_member_resolution_boundary() {
             ps_type_pointer_view_structural_ptr_array_pointee_bytes(
                 member_type));
   ASSERT_EQ(8, ps_type_sizeof(member_type));
-  ASSERT_EQ(8, member_type->align);
+  ASSERT_EQ(0, member_type->align);
+  ASSERT_EQ(8, ps_type_alignof_for_target(
+                   member_type, ps_ctx_target_info(test_semantic_context())));
   ASSERT_EQ(1, ps_type_pointer_depth(member_type));
   ASSERT_EQ(12, ps_type_sizeof(member_type->base));
   ASSERT_EQ(4, ps_type_sizeof(member_type->base->base));
@@ -5233,7 +5270,7 @@ static void test_initializer_resolution_boundary() {
 
   psx_initializer_scalar_leaf_list_t leaves = {0};
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves(
-      aggregate, 0, &leaves));
+      ps_ctx_target_info(test_semantic_context()), aggregate, 0, &leaves));
   ASSERT_EQ(3, leaves.count);
   ASSERT_EQ(0, leaves.items[0].relative_offset);
   ASSERT_EQ(4, leaves.items[1].relative_offset);
@@ -5257,12 +5294,14 @@ static void test_initializer_resolution_boundary() {
   psx_initializer_target_t target =
       psx_resolve_initializer_designator_path(
           ps_ctx_diagnostics(test_semantic_context()),
+          ps_ctx_target_info(test_semantic_context()),
           &entry, aggregate, 0, NULL);
   ASSERT_EQ(integer, target.type);
   ASSERT_EQ(8, target.relative_offset);
   ASSERT_EQ(1, target.first_member_index);
   ASSERT_EQ(1, target.first_array_index);
   ASSERT_EQ(3, psx_initializer_leaf_cursor_after_target(
+                   ps_ctx_target_info(test_semantic_context()),
                    &leaves, &target));
   psx_initializer_scalar_leaf_list_dispose(&leaves);
 
@@ -5285,7 +5324,7 @@ static void test_initializer_resolution_boundary() {
   };
   recursive->aggregate_definition = &recursive_definition;
   ASSERT_TRUE(psx_collect_initializer_scalar_leaves(
-      recursive, 0, &leaves));
+      ps_ctx_target_info(test_semantic_context()), recursive, 0, &leaves));
   ASSERT_EQ(2, leaves.count);
   ASSERT_EQ(PSX_TYPE_POINTER, leaves.items[0].type->kind);
   ASSERT_EQ(8, leaves.items[1].relative_offset);
@@ -16641,6 +16680,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    ag_compilation_session_target(&host)));
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
+  ASSERT_EQ(8, ag_target_info_pointer_size(
+                   ps_ctx_target_info(host.semantic_context)));
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ps_ctx_target_info(wasm.semantic_context)));
+  ASSERT_EQ(8, ag_target_info_pointer_size(
+                   ps_lowering_target(host.lowering_context)));
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ps_lowering_target(wasm.lowering_context)));
   ASSERT_TRUE(host.preprocessor_context != NULL);
   ASSERT_TRUE(wasm.preprocessor_context != NULL);
   ASSERT_TRUE(host.preprocessor_context != wasm.preprocessor_context);
@@ -16898,6 +16945,7 @@ int main() {
   test_member_access_resolution_boundary();
   test_complex_initializer_semantic_lowering_boundary();
   test_local_declaration_storage_plan_boundary();
+  test_target_type_layout_boundary();
   test_vla_lowering_request_boundary();
   test_parameter_declaration_storage_plan_boundary();
   test_global_declaration_resolution_boundary();

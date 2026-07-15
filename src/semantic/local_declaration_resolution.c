@@ -1,5 +1,6 @@
 #include "local_declaration_resolution.h"
 #include "../parser/arena.h"
+#include "../type_layout.h"
 
 #include <string.h>
 
@@ -53,7 +54,8 @@ void psx_resolve_local_declaration(
     if (op->is_vla_array) leading_array_has_vla = 1;
   }
 
-  int element_size = ps_type_pointee_value_size(type);
+  int element_size = ps_type_sizeof_for_target(
+      ps_type_pointee_value_type(type), request->target);
 
   if (type->kind == PSX_TYPE_ARRAY && leading_array_has_vla) {
     if (element_size <= 0) {
@@ -99,7 +101,7 @@ void psx_resolve_local_declaration(
     }
   }
 
-  if (ps_type_sizeof(type) <= 0) {
+  if (ps_type_sizeof_for_target(type, request->target) <= 0) {
     resolution->status = PSX_LOCAL_DECLARATION_INCOMPLETE_OBJECT;
     return;
   }

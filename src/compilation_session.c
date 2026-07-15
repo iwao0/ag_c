@@ -66,6 +66,7 @@ int ag_compilation_session_init(
       session->diagnostic_context);
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
+  ps_ctx_bind_target_info(session->semantic_context, &session->target);
   session->preprocessor_context = pp_context_create(
       session->diagnostic_context);
   session->token_allocator_context = tk_allocator_context_create(
@@ -77,6 +78,7 @@ int ag_compilation_session_init(
       session->diagnostic_context);
   session->lowering_context = ps_lowering_context_create(
       session->arena_context, session->diagnostic_context);
+  ps_lowering_context_bind_target(session->lowering_context, &session->target);
   session->codegen_emit_context = cg_context_create(
       session->diagnostic_context);
   if (!session->semantic_context || !session->global_registry ||

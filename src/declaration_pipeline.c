@@ -755,6 +755,7 @@ int psx_begin_automatic_local_declaration_pipeline(
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
           .arena_context = ps_lowering_arena(request->lowering_context),
+          .target = ps_lowering_target(request->lowering_context),
           .type = request->type,
           .application = request->application,
           .has_initializer = request->initializer->has_initializer,

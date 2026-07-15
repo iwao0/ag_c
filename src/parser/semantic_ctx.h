@@ -12,6 +12,7 @@
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct ag_target_info_t ag_target_info_t;
 typedef struct psx_function_registration_checkpoint_t
     psx_function_registration_checkpoint_t;
 
@@ -23,6 +24,10 @@ void ps_ctx_bind_diagnostic_context(
     psx_semantic_context_t *context,
     ag_diagnostic_context_t *diagnostic_context);
 ag_diagnostic_context_t *ps_ctx_diagnostics(
+    const psx_semantic_context_t *context);
+void ps_ctx_bind_target_info(
+    psx_semantic_context_t *context, const ag_target_info_t *target);
+const ag_target_info_t *ps_ctx_target_info(
     const psx_semantic_context_t *context);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */

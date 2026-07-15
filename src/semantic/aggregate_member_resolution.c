@@ -2,6 +2,7 @@
 #include "declaration_type_builder.h"
 
 #include "../parser/semantic_ctx.h"
+#include "../type_layout.h"
 
 #include <limits.h>
 #include <stdlib.h>
@@ -43,7 +44,7 @@ typedef struct {
 } aggregate_object_placement_t;
 
 static psx_aggregate_member_status_t validate_aggregate_member_type(
-    const psx_type_t *type) {
+    const psx_type_t *type, const ag_target_info_t *target) {
   if (!type) return PSX_AGGREGATE_MEMBER_INVALID;
   const psx_type_t *stored = ps_type_array_leaf_type(type);
   if (!stored) return PSX_AGGREGATE_MEMBER_INVALID;
@@ -51,7 +52,8 @@ static psx_aggregate_member_status_t validate_aggregate_member_type(
     return PSX_AGGREGATE_MEMBER_OK;
   if (stored->kind == PSX_TYPE_FUNCTION)
     return PSX_AGGREGATE_MEMBER_FUNCTION_TYPE;
-  if (ps_type_is_tag_aggregate(stored) && ps_type_sizeof(stored) <= 0 &&
+  if (ps_type_is_tag_aggregate(stored) &&
+      ps_type_sizeof_for_target(stored, target) <= 0 &&
       (!stored->aggregate_definition ||
        stored->aggregate_definition->align <= 0)) {
     return PSX_AGGREGATE_MEMBER_INCOMPLETE_TYPE;
@@ -71,6 +73,7 @@ void psx_aggregate_layout_init(
 static void resolve_aggregate_bitfield_placement(
     psx_aggregate_layout_state_t *state,
     const aggregate_bitfield_request_t *request,
+    const ag_target_info_t *target,
     aggregate_bitfield_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
@@ -84,7 +87,7 @@ static void resolve_aggregate_bitfield_placement(
     resolution->status = PSX_AGGREGATE_MEMBER_INVALID_BITFIELD_TYPE;
     return;
   }
-  int storage_size = ps_type_sizeof(type);
+  int storage_size = ps_type_sizeof_for_target(type, target);
   if (storage_size <= 0) return;
   if (storage_size > 8) storage_size = 8;
   resolution->storage_size = storage_size;
@@ -279,6 +282,7 @@ void psx_resolve_aggregate_member_declaration(
             .type = type,
             .bit_width = request->bit_width,
         },
+        ps_ctx_target_info(semantic_context),
         &bitfield);
     resolution->status = bitfield.status;
     resolution->offset = bitfield.offset;
@@ -291,10 +295,11 @@ void psx_resolve_aggregate_member_declaration(
       return;
     }
   } else {
-    resolution->status = validate_aggregate_member_type(type);
+    const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+    resolution->status = validate_aggregate_member_type(type, target);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
-    int storage_size = ps_type_sizeof(type);
-    int storage_alignment = type->align;
+    int storage_size = ps_type_sizeof_for_target(type, target);
+    int storage_alignment = ps_type_alignof_for_target(type, target);
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;

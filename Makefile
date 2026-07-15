@@ -54,7 +54,7 @@ PARSER_LIB_OBJS=$(OBJROOT)/parser/alignas_value.o $(OBJROOT)/parser/anon_tag.o $
 PARSER_LIB_OBJS+=$(OBJROOT)/declaration_pipeline.o $(OBJROOT)/semantic/declaration_registration.o $(OBJROOT)/frontend/function_definition.o $(OBJROOT)/frontend/local_declaration.o $(OBJROOT)/frontend/semantic_pipeline.o $(OBJROOT)/frontend/toplevel_declaration.o $(OBJROOT)/frontend/translation_unit.o $(OBJROOT)/lowering/compound_literal_lowering.o $(OBJROOT)/parser/aggregate_member_syntax.o $(OBJROOT)/parser/declaration_syntax.o $(OBJROOT)/parser/function_definition_syntax.o $(OBJROOT)/parser/function_parameter_syntax.o $(OBJROOT)/parser/local_declaration_syntax.o $(OBJROOT)/parser/static_assert_declaration.o $(OBJROOT)/parser/toplevel_declaration_syntax.o $(OBJROOT)/semantic/control_flow_validation.o $(OBJROOT)/semantic/expression_operand_resolution.o $(OBJROOT)/semantic/function_call_resolution.o $(OBJROOT)/semantic/function_parameter_resolution.o $(OBJROOT)/semantic/generic_selection_resolution.o $(OBJROOT)/semantic/identifier_binding.o $(OBJROOT)/semantic/identifier_resolution.o $(OBJROOT)/semantic/lvar_usage_analysis.o $(OBJROOT)/semantic/member_access_resolution.o $(OBJROOT)/semantic/semantic_diagnostics.o $(OBJROOT)/semantic/static_assert_resolution.o $(OBJROOT)/semantic/static_initializer_resolution.o $(OBJROOT)/semantic/type_name_resolution.o $(OBJROOT)/semantic/type_query_resolution.o
 PARSER_LIB_OBJS+=$(OBJROOT)/semantic/semantic_invariants.o
 PARSER_LIB_OBJS+=$(OBJROOT)/lowering/translation_unit_data_lowering.o $(OBJROOT)/lowering/abi_lowering.o $(OBJROOT)/ir/ir_data.o
-PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
+PARSER_LIB_OBJS+=$(OBJROOT)/compilation_options.o $(OBJROOT)/compilation_session.o $(OBJROOT)/target_info.o $(OBJROOT)/type_layout.o $(OBJROOT)/preprocess/preprocess.o $(OBJROOT)/codegen_emit.o
 DIAG_LIB_OBJS=$(patsubst src/%.c,$(OBJROOT)/%.o,$(DIAG_COMMON_SRCS) $(DIAG_MSG_SRCS))
 # IR (Phase 1): まだ ag_c 本体には組み込まず、単体テスト用にだけビルドする。
 IR_LIB_OBJS=$(OBJROOT)/ir/ir_alloc.o $(OBJROOT)/ir/ir_data.o $(OBJROOT)/ir/ir_print.o
@@ -128,7 +128,7 @@ $(TEST_IR): test/test_ir.c $(IR_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_FRAME_LAYOUT): test/test_frame_layout.c $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o $(OBJROOT)/lowering/runtime_context.o
+$(TEST_FRAME_LAYOUT): test/test_frame_layout.c $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o $(OBJROOT)/lowering/runtime_context.o $(OBJROOT)/target_info.o
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

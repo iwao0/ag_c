@@ -4,6 +4,7 @@
 #include "../diag/diag.h"
 #include "../parser/diag.h"
 #include "../parser/tag_public.h"
+#include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -48,6 +49,7 @@ static int aggregate_member_index_by_name(
 
 psx_initializer_target_t psx_resolve_initializer_designator_path(
     ag_diagnostic_context_t *diagnostics,
+    const ag_target_info_t *layout_target,
     const psx_initializer_entry_t *entry, const psx_type_t *root_type,
     int root_relative_offset, token_t *fallback_tok) {
   psx_initializer_target_t target = {
@@ -88,7 +90,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       if (target.first_array_index < 0)
         target.first_array_index = (int)index;
       target.relative_offset +=
-          (int)index * ps_type_sizeof(target.type->base);
+          (int)index *
+              ps_type_sizeof_for_target(target.type->base, layout_target);
       target.type = target.type->base;
       target.direct_member = NULL;
       continue;
@@ -140,10 +143,11 @@ static int append_scalar_leaf(
 }
 
 static int canonical_definition_flat_slot_count(
+    const ag_target_info_t *target,
     const psx_aggregate_definition_t *definition);
 
 static int canonical_member_flat_slot_count(
-    const tag_member_info_t *member) {
+    const ag_target_info_t *target, const tag_member_info_t *member) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
   int per = 1;
   const psx_type_t *member_type = ps_tag_member_decl_type(member);
@@ -153,6 +157,7 @@ static int canonical_member_flat_slot_count(
           : NULL;
   if (aggregate_type && aggregate_type->aggregate_definition) {
     per = canonical_definition_flat_slot_count(
+        target,
         aggregate_type->aggregate_definition);
   }
   int count = ps_type_array_flat_element_count(member_type);
@@ -160,6 +165,7 @@ static int canonical_member_flat_slot_count(
 }
 
 static int canonical_definition_flat_slot_count(
+    const ag_target_info_t *target,
     const psx_aggregate_definition_t *definition) {
   if (!definition || definition->member_count <= 0) return 1;
   int slots = 0;
@@ -168,9 +174,10 @@ static int canonical_definition_flat_slot_count(
   int covered_union_size = 0;
   for (int i = 0; i < definition->member_count; i++) {
     const tag_member_info_t *member = &definition->members[i];
-    int member_slots = canonical_member_flat_slot_count(member);
+    int member_slots = canonical_member_flat_slot_count(target, member);
     if (definition->tag_kind == TK_UNION) {
-      int bytes = ps_tag_member_decl_storage_size(member);
+      int bytes = ps_type_sizeof_for_target(
+          ps_tag_member_decl_type(member), target);
       if (bytes > union_max_bytes ||
           (bytes == union_max_bytes && member_slots > slots)) {
         union_max_bytes = bytes;
@@ -187,18 +194,20 @@ static int canonical_definition_flat_slot_count(
     slots += member_slots;
     if (ps_tag_member_is_unnamed_union(member)) {
       covered_union_offset = member->offset;
-      covered_union_size = ps_tag_member_decl_storage_size(member);
+      covered_union_size = ps_type_sizeof_for_target(
+          ps_tag_member_decl_type(member), target);
     }
   }
   return slots > 0 ? slots : 1;
 }
 
 int psx_collect_initializer_scalar_leaves(
-    const psx_type_t *type, int relative_offset,
+    const ag_target_info_t *target, const psx_type_t *type,
+    int relative_offset,
     psx_initializer_scalar_leaf_list_t *list) {
   if (!type || !list) return 0;
   if (type->kind == PSX_TYPE_ARRAY) {
-    int child_size = ps_type_sizeof(type->base);
+    int child_size = ps_type_sizeof_for_target(type->base, target);
     if (type->base && type->base->kind != PSX_TYPE_ARRAY &&
         !ps_type_is_tag_aggregate(type->base)) {
       for (int i = 0; i < type->array_len; i++) {
@@ -211,7 +220,7 @@ int psx_collect_initializer_scalar_leaves(
     }
     for (int i = 0; i < type->array_len; i++) {
       if (!psx_collect_initializer_scalar_leaves(
-              type->base, relative_offset + i * child_size, list))
+              target, type->base, relative_offset + i * child_size, list))
         return 0;
     }
     return 1;
@@ -227,7 +236,7 @@ int psx_collect_initializer_scalar_leaves(
       for (int i = 0; i < definition->member_count; i++) {
         const tag_member_info_t *candidate = &definition->members[i];
         int bytes = ps_tag_member_decl_storage_size(candidate);
-        int slots = canonical_member_flat_slot_count(candidate);
+        int slots = canonical_member_flat_slot_count(target, candidate);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;
@@ -245,7 +254,7 @@ int psx_collect_initializer_scalar_leaves(
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||
                           ps_type_is_tag_aggregate(member_type))) {
         if (!psx_collect_initializer_scalar_leaves(
-                member_type, relative_offset + member->offset, list))
+                target, member_type, relative_offset + member->offset, list))
           return 0;
       } else if (!append_scalar_leaf(
                      list, member_type, relative_offset + member->offset,
@@ -253,7 +262,7 @@ int psx_collect_initializer_scalar_leaves(
         return 0;
       }
       if (type->kind == PSX_TYPE_STRUCT && member->len <= 0) {
-        int member_size = ps_tag_member_decl_storage_size(member);
+        int member_size = ps_type_sizeof_for_target(member_type, target);
         int end = member->offset + member_size;
         if (member_size > 0 && end > covered_end) covered_end = end;
       }
@@ -265,6 +274,7 @@ int psx_collect_initializer_scalar_leaves(
 }
 
 int psx_initializer_leaf_cursor_after_target(
+    const ag_target_info_t *layout_target,
     const psx_initializer_scalar_leaf_list_t *leaves,
     const psx_initializer_target_t *target) {
   if (!leaves || !target) return 0;
@@ -277,7 +287,8 @@ int psx_initializer_leaf_cursor_after_target(
         return i + 1;
     }
   }
-  int target_size = ps_type_sizeof(target->type);
+  int target_size = ps_type_sizeof_for_target(
+      target->type, layout_target);
   if (target_size <= 0) target_size = 1;
   int end_offset = target->relative_offset + target_size;
   int cursor = 0;

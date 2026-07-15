@@ -10,6 +10,7 @@
 #include "../semantic/initializer_resolution.h"
 #include "../semantic/static_initializer_resolution.h"
 #include "../tokenizer/literals.h"
+#include "../type_layout.h"
 
 typedef struct {
   psx_lowering_context_t *lowering_context;
@@ -21,6 +22,12 @@ typedef struct {
 static ag_diagnostic_context_t *diagnostics(
     const static_array_lowering_t *lowering) {
   return ps_lowering_diagnostics(lowering->lowering_context);
+}
+
+static int type_size(
+    const static_array_lowering_t *lowering, const psx_type_t *type) {
+  return ps_type_sizeof_for_target(
+      type, ps_lowering_target(lowering->lowering_context));
 }
 
 static int leaf_index_at_offset(
@@ -47,6 +54,7 @@ static int leaf_index_for_target(
 }
 
 static psx_initializer_target_t positional_target(
+    const static_array_lowering_t *lowering,
     const psx_type_t *context_type, int context_offset,
     const psx_initializer_scalar_leaf_list_t *leaves, int cursor,
     int preserve_subobject) {
@@ -100,7 +108,7 @@ static psx_initializer_target_t positional_target(
   if (context_type->kind != PSX_TYPE_ARRAY || !context_type->base)
     return target;
 
-  int child_size = ps_type_sizeof(context_type->base);
+  int child_size = type_size(lowering, context_type->base);
   if (child_size <= 0 || leaf->relative_offset < context_offset) return target;
   int child_index = (leaf->relative_offset - context_offset) / child_size;
   int child_offset = context_offset + child_index * child_size;
@@ -165,7 +173,7 @@ static void write_scalar_value(
   if (!symbol && type && type->kind == PSX_TYPE_FLOAT &&
       target->union_member_index >= 0) {
     ps_gvar_init_slot_write_fp_sentinel(
-        lowering->global, index, type->fp_kind, ps_type_sizeof(type));
+        lowering->global, index, type->fp_kind, type_size(lowering, type));
   }
 }
 
@@ -173,8 +181,8 @@ static void write_string_value(
     static_array_lowering_t *lowering, const psx_type_t *array_type,
     int relative_offset, node_string_t *string, token_t *tok) {
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  int element_size = ps_type_sizeof(element);
-  int total_size = ps_type_sizeof(array_type);
+  int element_size = type_size(lowering, element);
+  int total_size = type_size(lowering, array_type);
   int capacity = element_size > 0 ? total_size / element_size : 0;
   int start = leaf_index_at_offset(&lowering->leaves, relative_offset);
   int char_width = (int)string->char_width;
@@ -202,6 +210,7 @@ static void write_string_value(
 }
 
 static int is_character_array_for_string(
+    const static_array_lowering_t *lowering,
     const psx_type_t *type, const node_string_t *string) {
   if (!type || type->kind != PSX_TYPE_ARRAY || !string) return 0;
   const psx_type_t *element = ps_type_array_leaf_type(type);
@@ -210,7 +219,7 @@ static int is_character_array_for_string(
       ps_type_is_tag_aggregate(element)) return 0;
   int width = (int)string->char_width;
   if (width <= 0) width = 1;
-  return ps_type_sizeof(element) == width;
+  return type_size(lowering, element) == width;
 }
 
 static void lower_array_list(
@@ -223,10 +232,12 @@ static void lower_array_list(
     token_t *tok = entry->tok ? entry->tok : lowering->fallback_tok;
     psx_initializer_target_t target = entry->designator_count > 0
         ? psx_resolve_initializer_designator_path(
-              diagnostics(lowering), entry,
+              diagnostics(lowering),
+              ps_lowering_target(lowering->lowering_context), entry,
               context_type, context_offset, tok)
         : positional_target(
-              context_type, context_offset, &lowering->leaves, cursor,
+              lowering, context_type, context_offset,
+              &lowering->leaves, cursor,
               entry->value && entry->value->kind == ND_INIT_LIST);
     if (!target.type) {
       ps_diag_ctx_in(
@@ -243,9 +254,11 @@ static void lower_array_list(
           (node_init_list_t *)entry->value);
     } else if (entry->value && entry->value->kind == ND_STRING &&
                (is_character_array_for_string(
-                    target.type, (node_string_t *)entry->value) ||
+                    lowering, target.type,
+                    (node_string_t *)entry->value) ||
                 (cursor >= 0 && cursor < lowering->leaves.count &&
                  is_character_array_for_string(
+                     lowering,
                      lowering->leaves.items[cursor].string_array_type,
                      (node_string_t *)entry->value)))) {
       const psx_type_t *string_type = target.type;
@@ -267,6 +280,7 @@ static void lower_array_list(
       write_scalar_value(lowering, &target, entry->value, tok);
     }
     cursor = psx_initializer_leaf_cursor_after_target(
+        ps_lowering_target(lowering->lowering_context),
         &lowering->leaves, &target);
   }
 }
@@ -300,7 +314,8 @@ int lower_static_object_initializer(
       .fallback_tok = fallback_tok,
   };
   if (!psx_collect_initializer_scalar_leaves(
-          type, 0, &lowering.leaves) || lowering.leaves.count <= 0) {
+          ps_lowering_target(lowering_context), type, 0,
+          &lowering.leaves) || lowering.leaves.count <= 0) {
     psx_initializer_scalar_leaf_list_dispose(&lowering.leaves);
     return 0;
   }
@@ -324,6 +339,7 @@ int lower_static_scalar_array_initializer(
 }
 
 static int lower_static_string_expression(
+    psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type, node_string_t *string) {
   if (!global || !type || !string) return 0;
   if (type->kind == PSX_TYPE_POINTER) {
@@ -334,7 +350,8 @@ static int lower_static_string_expression(
   if (type->kind != PSX_TYPE_ARRAY) return 0;
 
   const psx_type_t *element = ps_type_array_leaf_type(type);
-  int element_size = ps_type_sizeof(element);
+  int element_size = ps_type_sizeof_for_target(
+      element, ps_lowering_target(lowering_context));
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;
   if (element_size != char_width) return 0;
@@ -352,11 +369,12 @@ static int lower_static_string_expression(
 }
 
 static int lower_static_scalar_expression(
+    psx_lowering_context_t *lowering_context,
     global_var_t *global, const psx_type_t *type, node_t *initializer) {
   if (!global || !type || !initializer) return 0;
   if (initializer->kind == ND_STRING)
     return lower_static_string_expression(
-        global, type, (node_string_t *)initializer);
+        lowering_context, global, type, (node_string_t *)initializer);
 
   int integer_ok = 1;
   long long integer = psx_eval_const_int(initializer, &integer_ok);
@@ -420,7 +438,7 @@ int lower_resolved_static_initializer(
   }
 
   if (!lower_static_scalar_expression(
-          global, type, resolution->initializer)) return 0;
+          lowering_context, global, type, resolution->initializer)) return 0;
   global->has_init = 1;
   if (result) result->initialized = 1;
   return 1;

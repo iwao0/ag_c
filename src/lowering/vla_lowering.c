@@ -10,6 +10,7 @@
 #include "../parser/type.h"
 #include "../parser/type_builder.h"
 #include "../diag/diag.h"
+#include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -56,7 +57,9 @@ psx_vla_lowering_result_t lower_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->dimension_count;
-  int element_size = ps_type_pointee_value_size(request->type);
+  int element_size = ps_type_sizeof_for_target(
+      ps_type_pointee_value_type(request->type),
+      ps_lowering_target(request->lowering_context));
   if (!request->local_registry ||
       !request->type || count <= 0 ||
       element_size <= 0 || !request->dimensions || !request->const_values ||
@@ -140,7 +143,9 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   if (!request || !request->lowering_context) return result;
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
-  int element_size = ps_type_pointee_value_size(request->type);
+  int element_size = ps_type_sizeof_for_target(
+      ps_type_pointee_value_type(request->type),
+      ps_lowering_target(request->lowering_context));
   if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||
@@ -195,7 +200,9 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   ag_diagnostic_context_t *diagnostics =
       ps_lowering_diagnostics(request->lowering_context);
   int count = request->inner_dimension_count;
-  int element_size = ps_type_pointee_value_size(request->type);
+  int element_size = ps_type_sizeof_for_target(
+      ps_type_pointee_value_type(request->type),
+      ps_lowering_target(request->lowering_context));
   if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||

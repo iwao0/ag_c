@@ -1,4 +1,5 @@
 #include "runtime_context.h"
+#include "../target_info.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@ psx_lowering_context_t *ps_lowering_context_create(
   if (ctx) {
     ctx->arena_context = arena_context;
     ctx->diagnostic_context = diagnostic_context;
+    ctx->target = ag_target_info_host();
   }
   return ctx;
 }
@@ -18,6 +20,18 @@ psx_lowering_context_t *ps_lowering_context_create(
 void ps_lowering_context_destroy(psx_lowering_context_t *ctx) {
   if (!ctx) return;
   free(ctx);
+}
+
+void ps_lowering_context_bind_target(
+    psx_lowering_context_t *ctx, const ag_target_info_t *target) {
+  if (!ctx) return;
+  ctx->target = target ? *target : ag_target_info_host();
+  ctx->target.pointer_size = ag_target_info_pointer_size(&ctx->target);
+}
+
+const ag_target_info_t *ps_lowering_target(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? &ctx->target : NULL;
 }
 
 arena_context_t *ps_lowering_arena(

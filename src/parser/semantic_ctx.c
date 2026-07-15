@@ -5,6 +5,7 @@
 #include "type_builder.h"
 #include "../diag/diag.h"
 #include "../tokenizer/tokenizer.h"
+#include "../target_info.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -164,6 +165,7 @@ struct psx_function_symbol_t {
 struct psx_semantic_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
+  ag_target_info_t target;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -221,7 +223,10 @@ static void ctx_release_all(psx_semantic_context_t *context) {
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
-  if (context) context->arena_context = arena_context;
+  if (context) {
+    context->arena_context = arena_context;
+    context->target = ag_target_info_host();
+  }
   return context;
 }
 
@@ -245,6 +250,19 @@ void ps_ctx_bind_diagnostic_context(
 ag_diagnostic_context_t *ps_ctx_diagnostics(
     const psx_semantic_context_t *context) {
   return context ? context->diagnostic_context : NULL;
+}
+
+void ps_ctx_bind_target_info(
+    psx_semantic_context_t *context, const ag_target_info_t *target) {
+  if (!context) return;
+  context->target = target ? *target : ag_target_info_host();
+  context->target.pointer_size =
+      ag_target_info_pointer_size(&context->target);
+}
+
+const ag_target_info_t *ps_ctx_target_info(
+    const psx_semantic_context_t *context) {
+  return context ? &context->target : NULL;
 }
 
 static psx_type_t *ctx_type_clone_persistent_in(

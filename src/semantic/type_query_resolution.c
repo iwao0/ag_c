@@ -12,6 +12,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../type_layout.h"
 
 #include <string.h>
 
@@ -120,7 +121,8 @@ static void resolve_sizeof_type_name(
     return;
   }
 
-  int base_size = ps_type_sizeof(base_type);
+  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+  int base_size = ps_type_sizeof_for_target(base_type, target);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   node_t *size = widen_size_value(
@@ -130,7 +132,9 @@ static void resolve_sizeof_type_name(
     psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
       size = widen_size_value(
-          semantic_context, ps_node_new_num_in(arena_context, 8));
+          semantic_context,
+          ps_node_new_num_in(
+              arena_context, ag_target_info_pointer_size(target)));
       is_runtime = 0;
       continue;
     }
@@ -260,7 +264,9 @@ void psx_resolve_sizeof_query_in_contexts(
     query->resolved_size = (string->byte_len + 1) * width;
     return;
   }
-  int size = type ? ps_type_sizeof(type) : 0;
+  int size = type ? ps_type_sizeof_for_target(
+                        type, ps_ctx_target_info(semantic_context))
+                  : 0;
   if (type && type->kind == PSX_TYPE_VOID) size = 1;
   if (size <= 0 && query->operand) size = ps_node_type_size(query->operand);
   query->resolved_size = size > 0 ? size : 8;
@@ -277,5 +283,7 @@ void psx_resolve_alignof_query_in_contexts(
       psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
           &query->type_name);
-  query->resolved_alignment = type && type->align > 0 ? type->align : 1;
+  int alignment = ps_type_alignof_for_target(
+      type, ps_ctx_target_info(semantic_context));
+  query->resolved_alignment = alignment > 0 ? alignment : 1;
 }

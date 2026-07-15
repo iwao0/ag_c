@@ -38,8 +38,9 @@ int psx_resolve_parameter_declaration(
   type = ps_type_adjust_parameter_type_in(
       ps_ctx_arena(request->type.semantic_context), type);
   if (!type ||
-      !psx_plan_parameter_storage(type,
-                                  &resolution->storage)) {
+      !psx_plan_parameter_storage_for_target(
+          type, ps_ctx_target_info(request->type.semantic_context),
+          &resolution->storage)) {
     return 0;
   }
   resolution->type = type;

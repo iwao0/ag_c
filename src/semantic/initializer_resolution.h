@@ -5,6 +5,7 @@
 #include "../parser/tag_member_public.h"
 
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct ag_target_info_t ag_target_info_t;
 
 typedef struct {
   const psx_type_t *type;
@@ -32,12 +33,15 @@ typedef struct {
 
 psx_initializer_target_t psx_resolve_initializer_designator_path(
     ag_diagnostic_context_t *diagnostics,
+    const ag_target_info_t *target,
     const psx_initializer_entry_t *entry, const psx_type_t *root_type,
     int root_relative_offset, token_t *fallback_tok);
 int psx_collect_initializer_scalar_leaves(
-    const psx_type_t *type, int relative_offset,
+    const ag_target_info_t *target, const psx_type_t *type,
+    int relative_offset,
     psx_initializer_scalar_leaf_list_t *list);
 int psx_initializer_leaf_cursor_after_target(
+    const ag_target_info_t *layout_target,
     const psx_initializer_scalar_leaf_list_t *leaves,
     const psx_initializer_target_t *target);
 void psx_initializer_scalar_leaf_list_dispose(

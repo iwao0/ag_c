@@ -1,6 +1,7 @@
 #include "subscript_lowering.h"
-
 #include "runtime_context.h"
+#include "../type_layout.h"
+
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
 
@@ -15,7 +16,10 @@ static node_t *make_scaled_offset(
     return ps_node_new_binary_in(
         arena_context, ND_MUL, index, stride);
   }
-  int stride = ps_type_subscript_static_stride(ps_node_get_type(base));
+  const psx_type_t *base_type = ps_node_get_type(base);
+  int stride = ps_type_sizeof_for_target(
+      base_type ? base_type->base : NULL,
+      ps_lowering_target(lowering_context));
   if (stride <= 0) stride = 8;
   return ps_node_new_binary_in(
       arena_context, ND_MUL, index,

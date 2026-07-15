@@ -4,7 +4,10 @@
 #include "../parser/global_registry.h"
 #include "../parser/gvar_public.h"
 #include "../parser/literal_public.h"
+#include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
+#include "../semantic/initializer_resolution.h"
+#include "../type_layout.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -27,6 +30,7 @@ typedef struct {
   translation_unit_data_lowering_t *lowering;
   ir_data_object_t *object;
   global_var_t *global;
+  const psx_initializer_scalar_leaf_list_t *leaves;
 } global_data_lowering_t;
 
 static void write_byte(unsigned char byte, void *user) {
@@ -106,9 +110,13 @@ static void lower_float_literal(float_lit_t *literal, void *user) {
   object->is_static = 1;
 }
 
-static int storage_alignment(const global_var_t *global, int storage_size) {
+static int storage_alignment(
+    const translation_unit_data_lowering_t *lowering,
+    const global_var_t *global, int storage_size) {
   const psx_type_t *type = ps_gvar_get_decl_type(global);
-  if (type && type->align > 0) return type->align;
+  int alignment = ps_type_alignof_for_target(
+      type, ps_ctx_target_info(lowering->semantic_context));
+  if (alignment > 0) return alignment;
   if (storage_size >= 8) return 8;
   if (storage_size >= 4) return 4;
   if (storage_size >= 2) return 2;
@@ -154,8 +162,14 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
 static int lower_init_value(global_data_lowering_t *ctx, int offset,
                             psx_gvar_init_value_t value,
                             const psx_type_t *callable_type) {
-  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL)
+  if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
+    if (ps_type_is_pointer_like(callable_type) ||
+        (callable_type && callable_type->kind == PSX_TYPE_FUNCTION)) {
+      value.size = ag_target_info_pointer_size(
+          ps_ctx_target_info(ctx->lowering->semantic_context));
+    }
     return lower_symbol_reloc(ctx, offset, value, callable_type);
+  }
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
     if (!ps_gvar_fp_bit_pattern(value.fp_kind, value.fvalue, &bits)) return 0;
@@ -169,9 +183,20 @@ static int lower_init_slot(void *user, int index,
                            psx_gvar_init_slot_value_t value,
                            const psx_gvar_init_slots_layout_t *layout) {
   global_data_lowering_t *ctx = user;
-  int offset = index * layout->elem_size;
+  const psx_initializer_scalar_leaf_t *leaf =
+      ctx->leaves && index < ctx->leaves->count
+          ? &ctx->leaves->items[index]
+          : NULL;
+  int offset = leaf ? leaf->relative_offset : index * layout->elem_size;
+  if (leaf) {
+    int size = ps_type_sizeof_for_target(
+        leaf->type,
+        ps_ctx_target_info(ctx->lowering->semantic_context));
+    if (size > 0) value.size = size;
+  }
   if (!lower_init_value(ctx, offset, value,
-                        ps_gvar_get_decl_type(ctx->global))) {
+                        leaf ? leaf->type
+                             : ps_gvar_get_decl_type(ctx->global))) {
     ctx->lowering->failed = 1;
     return 0;
   }
@@ -239,8 +264,19 @@ static int lower_global_slots(
     const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   global_data_lowering_t *ctx = user;
-  return ps_gvar_walk_init_slot_values(
-      ctx->global, layout, layout->elem_count, lower_init_slot, ctx);
+  psx_initializer_scalar_leaf_list_t leaves = {0};
+  const psx_type_t *type = ps_gvar_get_decl_type(ctx->global);
+  if (!psx_collect_initializer_scalar_leaves(
+          ps_ctx_target_info(ctx->lowering->semantic_context),
+          type, 0, &leaves)) {
+    return 0;
+  }
+  ctx->leaves = &leaves;
+  int result = ps_gvar_walk_init_slot_values(
+      ctx->global, layout, leaves.count, lower_init_slot, ctx);
+  ctx->leaves = NULL;
+  psx_initializer_scalar_leaf_list_dispose(&leaves);
+  return result;
 }
 
 static int lower_global_scalar(
@@ -263,7 +299,15 @@ static void lower_global_object(global_var_t *global, void *user) {
   if (!lowering || lowering->failed) return;
   char *name = ps_gvar_name(global);
   int name_len = ps_gvar_name_len(global);
-  int storage_size = ps_gvar_storage_size(global, 4);
+  const psx_type_t *type = ps_gvar_get_decl_type(global);
+  int storage_size = ps_type_sizeof_for_target(
+      type, ps_ctx_target_info(lowering->semantic_context));
+  int is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
+  if (storage_size <= 0 && is_extern && type &&
+      type->kind == PSX_TYPE_ARRAY) {
+    storage_size = ps_type_sizeof_for_target(
+        type->base, ps_ctx_target_info(lowering->semantic_context));
+  }
   ir_data_object_t *object = ir_data_module_add_object(
       lowering->module, name, name_len, IR_DATA_OBJECT);
   if (!object || storage_size <= 0) {
@@ -271,8 +315,8 @@ static void lower_global_object(global_var_t *global, void *user) {
     return;
   }
   object->byte_size = storage_size;
-  object->alignment = storage_alignment(global, storage_size);
-  object->is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
+  object->alignment = storage_alignment(lowering, global, storage_size);
+  object->is_extern = is_extern;
   object->is_static = ps_gvar_is_static_storage(global) ? 1 : 0;
   object->is_thread_local = ps_gvar_is_thread_local(global) ? 1 : 0;
   object->has_explicit_initializer =
