@@ -3468,6 +3468,9 @@ const tagAlignLookupFunction = tagContextSource.match(
 const publishRecordLayoutFunction = tagContextSource.match(
   /int\s+ps_ctx_publish_record_layout_in\s*\([^]*?\n\}/,
 );
+const refreshRecordDeclFunction = tagContextSource.match(
+  /static\s+void\s+refresh_cached_record_decl\s*\([^]*?\n\}/,
+);
 const recordDeclStruct = typeSource.match(
   /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
@@ -3480,6 +3483,14 @@ if (!publishRecordLayoutFunction ||
     )) {
   throw new Error(
     "RecordLayout publication must not derive member placement from RecordDecl",
+  );
+}
+if (!refreshRecordDeclFunction ||
+    !/members\s*\[\s*i\s*\]\.offset\s*=\s*0\s*;/.test(
+      refreshRecordDeclFunction[0],
+    )) {
+  throw new Error(
+    "RecordDecl member snapshots must not retain target byte offsets",
   );
 }
 if (!canonicalTypeStruct ||

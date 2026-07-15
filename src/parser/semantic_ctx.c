@@ -107,6 +107,7 @@ static void refresh_cached_record_decl(
         member_count = i;
         break;
       }
+      members[i].offset = 0;
     }
   }
 
