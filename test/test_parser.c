@@ -61,6 +61,7 @@
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
+#include "../src/lowering/abi_lowering.h"
 #include "../src/lowering/expr_lowering.h"
 #include "../src/lowering/subscript_lowering.h"
 #include "../src/lowering/runtime_context.h"
@@ -3308,6 +3309,23 @@ static void test_target_type_layout_boundary() {
                    types, record_layouts, record_identity.type_id, &host));
   ASSERT_EQ(8, ps_type_sizeof_id_with_records(
                    types, record_layouts, record_identity.type_id, &wasm));
+  ir_abi_type_context_t host_abi = {
+      .semantic_types = types,
+      .record_layouts = record_layouts,
+      .target = &host,
+  };
+  ir_abi_type_context_t wasm_abi = host_abi;
+  wasm_abi.target = &wasm;
+  ir_abi_param_info_t host_record_abi = ir_abi_classify_type_id(
+      &host_abi, record_identity.type_id);
+  ir_abi_param_info_t wasm_record_abi = ir_abi_classify_type_id(
+      &wasm_abi, record_identity.type_id);
+  ASSERT_EQ(IR_ABI_PARAM_AGGREGATE, host_record_abi.param_class);
+  ASSERT_EQ(16, host_record_abi.source_size);
+  ASSERT_EQ(IR_TY_PTR, host_record_abi.type);
+  ASSERT_EQ(IR_ABI_PARAM_AGGREGATE, wasm_record_abi.param_class);
+  ASSERT_EQ(8, wasm_record_abi.source_size);
+  ASSERT_EQ(IR_TY_I64, wasm_record_abi.type);
   ASSERT_EQ(4, ps_type_alignof_id_with_records(
                    types, record_layouts, record_identity.type_id, &wasm));
   const psx_record_layout_t *host_record_layout =

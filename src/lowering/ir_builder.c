@@ -85,6 +85,29 @@ typedef struct {
   node_t *continuation_while;
 } ir_build_ctx_t;
 
+static ir_abi_type_context_t abi_type_context(
+    const ir_build_ctx_t *ctx) {
+  return (ir_abi_type_context_t){
+      .semantic_types = ctx ? ctx->semantic_types : NULL,
+      .record_layouts = ctx ? ctx->record_layouts : NULL,
+      .target = ctx ? ctx->target : NULL,
+  };
+}
+
+static psx_type_id_t ir_type_id(
+    const ir_build_ctx_t *ctx, const psx_type_t *type) {
+  return ctx && ctx->semantic_types
+             ? psx_semantic_type_table_find(
+                   ctx->semantic_types, type).type_id
+             : PSX_TYPE_ID_INVALID;
+}
+
+static ir_abi_param_info_t classify_type(
+    const ir_build_ctx_t *ctx, const psx_type_t *type) {
+  ir_abi_type_context_t abi = abi_type_context(ctx);
+  return ir_abi_classify_type_id(&abi, ir_type_id(ctx, type));
+}
+
 static char *ir_strdup(const char *text) {
   if (!text) return NULL;
   size_t len = strlen(text);
@@ -254,16 +277,19 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
 }
 
 static ir_abi_param_info_t classify_call_param(
+    const ir_build_ctx_t *ctx,
     const node_function_call_t *call, int param_idx) {
   const psx_type_t *function_type =
       ps_type_callable_function(call ? call->callee_type : NULL);
   if (function_type && function_type->kind == PSX_TYPE_FUNCTION &&
       param_idx >= 0 && param_idx < function_type->param_count) {
-    return ir_abi_classify_param_type(function_type->param_types[param_idx]);
+    return classify_type(ctx, function_type->param_types[param_idx]);
   }
-  if (call && !call->callee)
+  if (call && !call->callee) {
+    ir_abi_type_context_t abi = abi_type_context(ctx);
     return ir_abi_classify_builtin_param(
-        call->direct_name, call->direct_name_len, param_idx);
+        &abi, call->direct_name, call->direct_name_len, param_idx);
+  }
   return (ir_abi_param_info_t){0};
 }
 
@@ -1503,10 +1529,13 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
   return ir_val_vreg(ptr_vreg, IR_TY_PTR);
 }
 
-static void attach_callable_type(ir_inst_t *sym, const psx_type_t *type) {
-  if (!sym) return;
+static void attach_callable_type(
+    ir_build_ctx_t *ctx, ir_inst_t *sym, const psx_type_t *type) {
+  if (!ctx || !sym) return;
+  ir_abi_type_context_t abi = abi_type_context(ctx);
   sym->has_callable_sig =
-      ir_abi_callable_sig_from_type(type, &sym->callable_sig) ? 1 : 0;
+      ir_abi_callable_sig_from_type_id(
+          &abi, ir_type_id(ctx, type), &sym->callable_sig) ? 1 : 0;
 }
 
 static const psx_type_t *callable_type_for_callee(node_t *callee) {
@@ -1516,9 +1545,9 @@ static const psx_type_t *callable_type_for_callee(node_t *callee) {
 }
 
 static void attach_callable_type_from_callee(
-    ir_inst_t *call, node_t *callee) {
+    ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  attach_callable_type(call, callable_type_for_callee(callee));
+  attach_callable_type(ctx, call, callable_type_for_callee(callee));
 }
 
 static const psx_type_t *function_callable_return_type(
@@ -1542,7 +1571,7 @@ static ir_val_t build_node_funcref_with_type(
   sym->sym_len = fr->funcname_len;
   sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
   sym->is_function_symbol = 1;
-  attach_callable_type(sym, callable_type);
+  attach_callable_type(ctx, sym, callable_type);
   ir_func_append_inst(ctx->f, sym);
   return ir_val_vreg(v, IR_TY_PTR);
 }
@@ -1904,7 +1933,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       node_t *arg = call_node->arguments[i];
       ir_abi_param_info_t declared_param = {0};
       if (!call_node->callee && i < nargs_fixed) {
-        declared_param = classify_call_param(call_node, i);
+        declared_param = classify_call_param(ctx, call_node, i);
       }
       int forced_arg_full_size = 0;
       /* compound literal `(struct V){...}` は ND_COMMA(init, ND_LVAR temp)。
@@ -2177,13 +2206,13 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   call->is_implicit_call = call_node->base.is_implicit_func_decl ? 1 : 0;
   call->nargs_fixed = nargs_fixed;
   if (call_node->callee)
-    attach_callable_type_from_callee(call, call_node->callee);
+    attach_callable_type_from_callee(ctx, call, call_node->callee);
   if (argc > 0) {
     call->arg_abi_types = calloc((size_t)argc, sizeof(*call->arg_abi_types));
     for (int a = 0; a < argc; a++) {
       ir_type_t abi_type = cargs[a].type;
       if (call->sym && a < call->nargs_fixed) {
-        ir_abi_param_info_t param = classify_call_param(call_node, a);
+        ir_abi_param_info_t param = classify_call_param(ctx, call_node, a);
         if (param.param_class == IR_ABI_PARAM_POINTER ||
             (param.param_class == IR_ABI_PARAM_AGGREGATE &&
              param.type == IR_TY_PTR)) {
@@ -3473,8 +3502,7 @@ static int setup_function_params(
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
-      ir_abi_param_info_t param =
-          ir_abi_classify_param_type(ps_node_get_type(arg));
+      ir_abi_param_info_t param = classify_type(ctx, ps_node_get_type(arg));
       int is_pointer =
           ps_node_value_is_pointer_like(arg) ||
           ps_node_value_is_pointer_like((node_t *)lv) ||

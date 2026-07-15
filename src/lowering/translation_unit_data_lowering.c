@@ -18,6 +18,7 @@ typedef struct {
   ir_data_module_t *module;
   psx_semantic_context_t *semantic_context;
   const psx_semantic_type_table_t *semantic_types;
+  const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
   int failed;
 } translation_unit_data_lowering_t;
@@ -40,8 +41,7 @@ static int type_size_id(
     psx_type_id_t type_id) {
   return ps_type_sizeof_id_with_records(
       lowering ? lowering->semantic_types : NULL,
-      lowering && lowering->semantic_context
-          ? ps_ctx_record_layout_table_in(lowering->semantic_context) : NULL,
+      lowering ? lowering->record_layouts : NULL,
       type_id,
       lowering ? lowering->target : NULL);
 }
@@ -51,8 +51,7 @@ static int type_alignment_id(
     psx_type_id_t type_id) {
   return ps_type_alignof_id_with_records(
       lowering ? lowering->semantic_types : NULL,
-      lowering && lowering->semantic_context
-          ? ps_ctx_record_layout_table_in(lowering->semantic_context) : NULL,
+      lowering ? lowering->record_layouts : NULL,
       type_id,
       lowering ? lowering->target : NULL);
 }
@@ -146,7 +145,7 @@ static int write_bits(ir_data_object_t *object, int offset,
 
 static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
                               psx_gvar_init_value_t value,
-                              const psx_type_t *callable_type) {
+                              psx_type_id_t callable_type_id) {
   char *name = NULL;
   int name_len = 0;
   ir_data_reloc_kind_t kind = IR_DATA_RELOC_DATA;
@@ -159,7 +158,13 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
           ctx->lowering->semantic_context,
           value.symbol_ref, &name, &name_len)) {
     kind = IR_DATA_RELOC_FUNCTION;
-    if (ir_abi_callable_sig_from_type(callable_type, &callable_sig))
+    ir_abi_type_context_t abi = {
+        .semantic_types = ctx->lowering->semantic_types,
+        .record_layouts = ctx->lowering->record_layouts,
+        .target = ctx->lowering->target,
+    };
+    if (ir_abi_callable_sig_from_type_id(
+            &abi, callable_type_id, &callable_sig))
       sig = &callable_sig;
   } else if (!ps_gvar_symbol_ref_named(
                  value.symbol_ref, &name, &name_len)) {
@@ -172,13 +177,12 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
 
 static int lower_init_value(global_data_lowering_t *ctx, int offset,
                             psx_gvar_init_value_t value,
-                            const psx_type_t *value_type,
                             psx_type_id_t value_type_id) {
   int target_size = type_size_id(ctx->lowering, value_type_id);
   if (target_size <= 0) return 0;
   value.size = target_size;
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    return lower_symbol_reloc(ctx, offset, value, value_type);
+    return lower_symbol_reloc(ctx, offset, value, value_type_id);
   }
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
@@ -203,8 +207,6 @@ static int lower_init_slot(void *user, int index,
     if (size > 0) value.size = size;
   }
   if (!lower_init_value(ctx, offset, value,
-                        leaf ? leaf->type
-                             : ps_gvar_get_decl_type(ctx->global),
                         leaf ? leaf->type_id
                              : ps_gvar_decl_type_id(ctx->global))) {
     ctx->lowering->failed = 1;
@@ -220,9 +222,7 @@ static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
   psx_gvar_init_member_value_t value =
       ps_gvar_init_member_value(ctx->global, slot, member);
   if (offset < 0 || offset > INT32_MAX ||
-      !lower_init_value(ctx, (int)offset, value,
-                        ps_tag_member_decl_value_type(member),
-                        value_type_id))
+      !lower_init_value(ctx, (int)offset, value, value_type_id))
     ctx->lowering->failed = 1;
 }
 
@@ -299,8 +299,7 @@ static int lower_global_scalar(
   global_data_lowering_t *ctx = user;
   if (!init_class->has_payload) return 1;
   return lower_init_value(
-      ctx, 0, value, ps_gvar_get_decl_type(ctx->global),
-      ps_gvar_decl_type_id(ctx->global));
+      ctx, 0, value, ps_gvar_decl_type_id(ctx->global));
 }
 
 static const psx_gvar_initializer_visit_ops_t global_lowering_ops = {
@@ -375,6 +374,7 @@ static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
       .module = module,
       .semantic_context = semantic_context,
       .semantic_types = semantic_types,
+      .record_layouts = ps_ctx_record_layout_table_in(semantic_context),
       .target = target,
   };
   ps_iter_string_literals_in(registry, lower_string_literal, &lowering);

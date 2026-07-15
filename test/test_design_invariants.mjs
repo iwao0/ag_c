@@ -2303,6 +2303,10 @@ const irSymbolLoweringSource = await readFile(
   "src/lowering/ir_symbol_lowering.c",
   "utf8",
 );
+const abiLoweringSource = await readFile(
+  "src/lowering/abi_lowering.c",
+  "utf8",
+);
 if (!/typedef struct ir_symbol_t\s*\{/.test(irHeaderSource) ||
     !/\bir_symbol_t\s*\*symbols\s*;/.test(irHeaderSource) ||
     !/\blower_ir_global_symbol\s*\(/.test(irBuilderSource) ||
@@ -2329,9 +2333,13 @@ if (/\b(?:semantic_context|ps_ctx_|ps_gvar_symbol_ref_named_function_in)\b/.test
     !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
       irSymbolLoweringSource,
     ) ||
-    !/ir_abi_callable_sig_from_type\s*\(/.test(irSymbolLoweringSource)) {
+    !/ir_abi_callable_sig_from_type_id\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    /\bps_type_sizeof\s*\(/.test(abiLoweringSource) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(abiLoweringSource)) {
   throw new Error(
-    "IR symbol lowering must classify resolved function references from canonical types",
+    "IR ABI lowering must classify resolved function references from TypeId and target layout",
   );
 }
 
