@@ -74,10 +74,10 @@ node_t *ps_node_new_lvar_type_at_for_in(
     const psx_type_t *type);
 node_t *psx_node_new_lvar_scalar_slot_at_in(
     arena_context_t *arena_context, int offset, int type_size,
-    tk_float_kind_t fp_kind, int is_bool);
+    psx_floating_kind_t floating_kind, int is_bool);
 node_t *psx_node_new_lvar_fp_slot_at_in(
     arena_context_t *arena_context, int offset, int type_size,
-    tk_float_kind_t fp_kind);
+    psx_floating_kind_t floating_kind);
 node_t *ps_node_new_lvar_fp_slot_for_in(
     arena_context_t *arena_context, struct lvar_t *owner, int offset,
     int type_size);

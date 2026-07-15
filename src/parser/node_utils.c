@@ -2631,9 +2631,10 @@ node_t *ps_node_new_lvar_type_at_for_in(
 
 node_t *psx_node_new_lvar_scalar_slot_at_in(
     arena_context_t *arena_context, int offset, int type_size,
-    tk_float_kind_t fp_kind, int is_bool) {
-  psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
-                         ? ps_type_new_float_in(arena_context, fp_kind)
+    psx_floating_kind_t floating_kind, int is_bool) {
+  psx_type_t *type = floating_kind != PSX_FLOATING_KIND_NONE
+                         ? ps_type_new_floating_in(
+                               arena_context, floating_kind, 0)
                      : is_bool
                          ? ps_type_new_integer_kind_in(
                                arena_context, PSX_INTEGER_KIND_BOOL,
@@ -2648,17 +2649,23 @@ node_t *psx_node_new_lvar_scalar_slot_at_in(
 
 node_t *psx_node_new_lvar_fp_slot_at_in(
     arena_context_t *arena_context, int offset, int type_size,
-    tk_float_kind_t fp_kind) {
+    psx_floating_kind_t floating_kind) {
   return psx_node_new_lvar_scalar_slot_at_in(
-      arena_context, offset, type_size, fp_kind, 0);
+      arena_context, offset, type_size, floating_kind, 0);
 }
 
 node_t *ps_node_new_lvar_fp_slot_for_in(
     arena_context_t *arena_context, lvar_t *owner, int offset,
     int type_size) {
-  tk_float_kind_t fp_kind = ps_lvar_fp_kind(owner);
-  psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
-                         ? ps_type_new_float_in(arena_context, fp_kind)
+  const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
+  const psx_type_t *leaf = ps_type_array_leaf_type(owner_type);
+  psx_floating_kind_t floating_kind =
+      leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX)
+          ? leaf->floating_kind
+          : PSX_FLOATING_KIND_NONE;
+  psx_type_t *type = floating_kind != PSX_FLOATING_KIND_NONE
+                         ? ps_type_new_floating_in(
+                               arena_context, floating_kind, 0)
                          : ps_type_new_integer_kind_in(
                                arena_context,
                                integer_kind_for_storage_size(type_size),

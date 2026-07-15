@@ -184,6 +184,9 @@ psx_type_t *ps_type_new_enum_in(
 psx_type_t *ps_type_new_floating_in(
     arena_context_t *arena_context, psx_floating_kind_t floating_kind,
     int is_complex) {
+  if (floating_kind <= PSX_FLOATING_KIND_NONE ||
+      floating_kind > PSX_FLOATING_KIND_LONG_DOUBLE)
+    return NULL;
   psx_type_t *type = ps_type_new_in(
       arena_context, is_complex ? PSX_TYPE_COMPLEX : PSX_TYPE_FLOAT);
   if (!type) return NULL;
@@ -336,13 +339,13 @@ static ag_target_scalar_kind_t floating_target_kind(
 const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     arena_context_t *arena_context, const ag_target_info_t *target,
     const psx_type_t *lhs, const psx_type_t *rhs,
-    tk_float_kind_t fallback_fp_kind, int force_complex) {
+    psx_floating_kind_t fallback_floating_kind, int force_complex) {
   int result_is_complex =
       force_complex ||
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
       (rhs && rhs->kind == PSX_TYPE_COMPLEX);
   if (result_is_complex) {
-    psx_floating_kind_t fp = floating_kind_from_token(fallback_fp_kind);
+    psx_floating_kind_t fp = fallback_floating_kind;
     if (lhs && lhs->floating_kind > fp) fp = lhs->floating_kind;
     if (rhs && rhs->floating_kind > fp) fp = rhs->floating_kind;
     if (fp == PSX_FLOATING_KIND_NONE) fp = PSX_FLOATING_KIND_DOUBLE;
@@ -351,8 +354,8 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
 
   if ((lhs && lhs->kind == PSX_TYPE_FLOAT) ||
       (rhs && rhs->kind == PSX_TYPE_FLOAT) ||
-      fallback_fp_kind != TK_FLOAT_KIND_NONE) {
-    psx_floating_kind_t fp = floating_kind_from_token(fallback_fp_kind);
+      fallback_floating_kind != PSX_FLOATING_KIND_NONE) {
+    psx_floating_kind_t fp = fallback_floating_kind;
     if (lhs && lhs->floating_kind > fp) fp = lhs->floating_kind;
     if (rhs && rhs->floating_kind > fp) fp = rhs->floating_kind;
     if (fp == PSX_FLOATING_KIND_NONE) fp = PSX_FLOATING_KIND_DOUBLE;
@@ -380,7 +383,7 @@ const psx_type_t *ps_type_binary_result_for_target_in(
         arena_context, PSX_INTEGER_KIND_INT, 0, 0);
   if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
     return ps_type_usual_arithmetic_result_for_target_in(
-        arena_context, target, lhs, NULL, TK_FLOAT_KIND_NONE, 0);
+        arena_context, target, lhs, NULL, PSX_FLOATING_KIND_NONE, 0);
 
   int lhs_pointer = ps_type_is_pointer_like(lhs);
   int rhs_pointer = ps_type_is_pointer_like(rhs);
@@ -400,7 +403,7 @@ const psx_type_t *ps_type_binary_result_for_target_in(
                  : ps_type_clone_in(arena_context, lhs);
   }
   return ps_type_usual_arithmetic_result_for_target_in(
-      arena_context, target, lhs, rhs, TK_FLOAT_KIND_NONE,
+      arena_context, target, lhs, rhs, PSX_FLOATING_KIND_NONE,
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
           (rhs && rhs->kind == PSX_TYPE_COMPLEX));
 }
@@ -420,7 +423,7 @@ const psx_type_t *ps_type_conditional_result_for_target_in(
       ps_type_is_tag_aggregate(then_type))
     return ps_type_clone_in(arena_context, then_type);
   return ps_type_usual_arithmetic_result_for_target_in(
-      arena_context, target, then_type, else_type, TK_FLOAT_KIND_NONE,
+      arena_context, target, then_type, else_type, PSX_FLOATING_KIND_NONE,
       (then_type && then_type->kind == PSX_TYPE_COMPLEX) ||
           (else_type && else_type->kind == PSX_TYPE_COMPLEX));
 }

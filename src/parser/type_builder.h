@@ -23,6 +23,8 @@ psx_type_t *ps_type_new_enum_in(
 psx_type_t *ps_type_new_floating_in(
     arena_context_t *arena_context, psx_floating_kind_t floating_kind,
     int is_complex);
+/* Syntax-boundary adapter for floating literals. Semantic and lowering code
+ * should construct from psx_floating_kind_t. */
 psx_type_t *ps_type_new_float_in(
     arena_context_t *arena_context, tk_float_kind_t fp_kind);
 psx_type_t *ps_type_new_pointer_in(

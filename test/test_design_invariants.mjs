@@ -30,6 +30,23 @@ if (/\bps_type_new_integer_in\s*\(/.test(
     "semantic integer construction must use psx_integer_kind_t instead of parser token kinds",
   );
 }
+const semanticFloatingConstructionSource = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) =>
+        path !== "src/parser/expr.c" &&
+        path !== "src/parser/type.c" &&
+        path !== "src/parser/type_builder.h")
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\bps_type_new_float_in\s*\(/.test(
+      semanticFloatingConstructionSource,
+    )) {
+  throw new Error(
+    "semantic floating construction must use psx_floating_kind_t instead of tokenizer literal kinds",
+  );
+}
 const frontendSourceFiles = allSourceFiles.filter(
   (path) => path.startsWith("src/frontend/"),
 );

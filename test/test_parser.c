@@ -2701,7 +2701,7 @@ static void test_additive_semantic_lowering_boundary() {
   const psx_type_t *promoted = ps_type_usual_arithmetic_result(
       ps_type_new_integer(TK_CHAR, 1, 1),
       ps_type_new_integer(TK_SHORT, 2, 0),
-      TK_FLOAT_KIND_NONE, 0);
+      PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_TYPE_INTEGER, promoted->kind);
   ASSERT_EQ(4, ps_type_sizeof(promoted));
   ASSERT_TRUE(!ps_type_is_unsigned(promoted));
@@ -2709,7 +2709,7 @@ static void test_additive_semantic_lowering_boundary() {
   const psx_type_t *ranked = ps_type_usual_arithmetic_result(
       ps_type_new_integer(TK_UNSIGNED, 4, 1),
       ps_type_new_integer(TK_LONG, 8, 0),
-      TK_FLOAT_KIND_NONE, 0);
+      PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(8, ps_type_sizeof(ranked));
   ASSERT_TRUE(!ps_type_is_unsigned(ranked));
 
@@ -2717,7 +2717,7 @@ static void test_additive_semantic_lowering_boundary() {
   complex_float->floating_kind = PSX_FLOATING_KIND_FLOAT;
   const psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
       complex_float, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
-      TK_FLOAT_KIND_NONE, 0);
+      PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_TYPE_COMPLEX, complex_promoted->kind);
   ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, complex_promoted->floating_kind);
   ASSERT_EQ(16, ps_type_sizeof(complex_promoted));
@@ -4117,10 +4117,21 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(PSX_TYPE_BOOL, semantic_bool->kind);
   ASSERT_TRUE(ps_type_new_integer_kind_in(
       test_arena_context(), PSX_INTEGER_KIND_NONE, 0, 0) == NULL);
+  psx_type_t *semantic_float = ps_type_new_floating_in(
+      test_arena_context(), PSX_FLOATING_KIND_FLOAT, 0);
+  psx_type_t *semantic_long_double_complex = ps_type_new_floating_in(
+      test_arena_context(), PSX_FLOATING_KIND_LONG_DOUBLE, 1);
+  ASSERT_EQ(PSX_TYPE_FLOAT, semantic_float->kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT, semantic_float->floating_kind);
+  ASSERT_EQ(PSX_TYPE_COMPLEX, semantic_long_double_complex->kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_LONG_DOUBLE,
+            semantic_long_double_complex->floating_kind);
+  ASSERT_TRUE(ps_type_new_floating_in(
+      test_arena_context(), PSX_FLOATING_KIND_NONE, 0) == NULL);
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
-  psx_type_t *float_complex = ps_type_new(PSX_TYPE_COMPLEX);
-  float_complex->floating_kind = PSX_FLOATING_KIND_FLOAT;
+  psx_type_t *float_complex = ps_type_new_floating_in(
+      test_arena_context(), PSX_FLOATING_KIND_FLOAT, 1);
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_type_t *pointer_array = ps_type_new_array(pointer, 3, 24, 0);
   psx_type_layout_t layout = {0};
@@ -4171,7 +4182,7 @@ static void test_target_type_layout_boundary() {
       ps_type_usual_arithmetic_result_for_target_in(
           test_arena_context(), &host,
           stale_signed_long, stale_unsigned_int,
-          TK_FLOAT_KIND_NONE, 0);
+          PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, host_conversion->integer_kind);
   ASSERT_EQ(8, ps_type_sizeof_for_target(host_conversion, &host));
   ASSERT_TRUE(!ps_type_is_unsigned(host_conversion));
@@ -4183,7 +4194,7 @@ static void test_target_type_layout_boundary() {
       ps_type_usual_arithmetic_result_for_target_in(
           test_arena_context(), &equal_width_integer_target,
           stale_signed_long, stale_unsigned_int,
-          TK_FLOAT_KIND_NONE, 0);
+          PSX_FLOATING_KIND_NONE, 0);
   ASSERT_EQ(PSX_INTEGER_KIND_LONG, equal_width_conversion->integer_kind);
   ASSERT_EQ(4, ps_type_sizeof_for_target(
                    equal_width_conversion, &equal_width_integer_target));
