@@ -575,8 +575,10 @@ int psx_begin_static_local_declaration_pipeline(
   }
 
   const psx_type_t *leaf = ps_type_array_leaf_type(request->type);
-  int object_size = ps_type_sizeof(request->type);
-  int leaf_size = ps_type_sizeof(leaf);
+  int object_size = ps_lowering_type_size(
+      request->lowering_context, request->type);
+  int leaf_size = ps_lowering_type_size(
+      request->lowering_context, leaf);
   if (leaf && ps_type_is_tag_aggregate(leaf) && leaf_size <= 0) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(request->semantic_context),

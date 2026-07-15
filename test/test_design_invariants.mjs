@@ -3298,6 +3298,26 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     "lowering context must receive the semantic type table without owning parser semantic state",
   );
 }
+const targetSensitiveLoweringSources = [
+  loweringRuntimeSource,
+  explicitDiagnosticCastLoweringSource,
+  memberAccessLoweringSource,
+  declarationPipelineSource,
+  irBuilderSource,
+].join("\n");
+if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
+    !/\bps_lowering_type_alignment\s*\(/.test(loweringRuntimeHeader) ||
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
+      loweringRuntimeSource,
+    ) ||
+    /\bps_type_sizeof\s*\(/.test(targetSensitiveLoweringSources)) {
+  throw new Error(
+    "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",
+  );
+}
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
 const tagIdentityFunction = canonicalTypeSource.match(

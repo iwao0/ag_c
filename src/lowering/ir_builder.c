@@ -21,6 +21,7 @@
 #include "../ir/ir.h"
 #include "abi_lowering.h"
 #include "../target_info.h"
+#include "../type_layout.h"
 #include "ir_symbol_lowering.h"
 #include "../parser/ast.h"
 #include "../parser/lvar_public.h"
@@ -108,6 +109,14 @@ static ir_abi_param_info_t classify_type(
   return ir_abi_classify_type_id(&abi, ir_type_id(ctx, type));
 }
 
+static int ir_c_type_size(
+    const ir_build_ctx_t *ctx, const psx_type_t *type) {
+  return ps_type_sizeof_id_with_records(
+      ctx ? ctx->semantic_types : NULL,
+      ctx ? ctx->record_layouts : NULL,
+      ir_type_id(ctx, type), ctx ? ctx->target : NULL);
+}
+
 static char *ir_strdup(const char *text) {
   if (!text) return NULL;
   size_t len = strlen(text);
@@ -127,7 +136,7 @@ static int is_exact_int_void_function(const psx_type_t *type) {
   return function && function->param_count == 0 &&
          !function->is_variadic_function && result &&
          result->kind == PSX_TYPE_INTEGER && result->scalar_kind == TK_INT &&
-         ps_type_sizeof(result) == 4 && !result->is_unsigned;
+         !result->is_unsigned;
 }
 
 typedef struct {
@@ -589,13 +598,16 @@ static int address_of_gvar(ir_build_ctx_t *ctx, node_gvar_t *gv) {
   return emit_load_sym_for_gvar(ctx, gv);
 }
 
-static int aggregate_size_from_node(node_t *node) {
-  return ps_node_aggregate_value_size(node);
+static int aggregate_size_from_node(
+    const ir_build_ctx_t *ctx, node_t *node) {
+  const psx_type_t *type = ps_node_get_type(node);
+  return ps_type_is_tag_aggregate(type) ? ir_c_type_size(ctx, type) : 0;
 }
 
-static int aggregate_size_from_type(const psx_type_t *type) {
+static int aggregate_size_from_type(
+    const ir_build_ctx_t *ctx, const psx_type_t *type) {
   if (!ps_type_is_tag_aggregate(type)) return 0;
-  int size = ps_type_sizeof(type);
+  int size = ir_c_type_size(ctx, type);
   return size > 0 ? size : 0;
 }
 
@@ -1150,8 +1162,9 @@ static ir_val_t build_node_assign(ir_build_ctx_t *ctx, node_t *node) {
   if (ps_node_value_is_complex(node)) return build_assign_complex(ctx, node);
   /* struct/union 値代入: 8B でも scalar 式として評価すると先頭メンバだけを
    * store してしまうため、tag 値そのものなら memcpy/materialize 経路に送る。 */
-  if ((aggregate_size_from_node(node->lhs) > 0 && aggregate_size_from_node(node->rhs) > 0) ||
-      cg_size_needs_indirect_struct(aggregate_size_from_node(node)))
+  if ((aggregate_size_from_node(ctx, node->lhs) > 0 &&
+       aggregate_size_from_node(ctx, node->rhs) > 0) ||
+      cg_size_needs_indirect_struct(aggregate_size_from_node(ctx, node)))
     return build_assign_struct(ctx, node);
   switch (node->lhs->kind) {
     case ND_LVAR:  return build_assign_to_lvar(ctx, node);
@@ -1277,9 +1290,11 @@ static ir_val_t build_assign_complex(ir_build_ctx_t *ctx, node_t *node) {
 /* struct (>8B) 値代入。dst/src アドレスを得て memcpy。
  * rhs が >8B struct 戻り値の関数呼出なら戻り値を dst へ直接書かせる。 */
 static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
-  int assign_size = aggregate_size_from_node(node);
-  if (assign_size <= 0) assign_size = aggregate_size_from_node(node->lhs);
-  if (assign_size <= 0) assign_size = aggregate_size_from_node(node->rhs);
+  int assign_size = aggregate_size_from_node(ctx, node);
+  if (assign_size <= 0)
+    assign_size = aggregate_size_from_node(ctx, node->lhs);
+  if (assign_size <= 0)
+    assign_size = aggregate_size_from_node(ctx, node->rhs);
   int dst_ptr_vreg = -1;
   if (node->lhs->kind == ND_LVAR) {
     dst_ptr_vreg = address_of_lvar(ctx, ((node_lvar_t *)node->lhs)->offset);
@@ -1296,7 +1311,7 @@ static ir_val_t build_assign_struct(ir_build_ctx_t *ctx, node_t *node) {
   if (dst_ptr_vreg < 0) return ir_val_none();
   /* rhs が間接返し (>8B / 3/5/6/7B) struct 戻り値の関数呼び出しなら、戻り値を dst へ
    * 直接書かせる。 */
-  int rhs_ret_struct_size = aggregate_size_from_node(node->rhs);
+  int rhs_ret_struct_size = aggregate_size_from_node(ctx, node->rhs);
   if (node->rhs && node->rhs->kind == ND_FUNCALL &&
       cg_size_needs_indirect_struct(rhs_ret_struct_size)) {
     ir_val_t srcp = build_node_funcall(ctx, node->rhs);
@@ -1377,7 +1392,7 @@ static void materialize_aggregate_expr_to(ir_build_ctx_t *ctx, node_t *src,
     return;
   }
   if (src->kind == ND_FUNCALL) {
-    int ret_size = aggregate_size_from_node(src);
+    int ret_size = aggregate_size_from_node(ctx, src);
     if (ret_size == 1 || ret_size == 2 || ret_size == 4 || ret_size == 8) {
       ir_type_t ret_ty = scalar_value_type(ret_size, 0);
       ir_val_t v = build_expr(ctx, src);
@@ -1945,7 +1960,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
         int cl_sz = owner_cl ? ps_lvar_storage_size(owner_cl, 0)
                              : ps_node_storage_type_size(arg->rhs);
-        if (aggregate_size_from_node(arg->rhs) > 0 &&
+        if (aggregate_size_from_node(ctx, arg->rhs) > 0 &&
             (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
           (void)build_expr(ctx, arg->lhs);
           if (ctx->failed) return ir_val_none();
@@ -2014,7 +2029,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           arg_full_size = ps_node_storage_type_size(arg);
         }
       } else if (arg && arg->kind == ND_GVAR) {
-        arg_full_size = aggregate_size_from_node(arg);
+        arg_full_size = aggregate_size_from_node(ctx, arg);
         if (arg_full_size > 0) {
           if (cg_size_needs_indirect_struct(arg_full_size)) {
             struct_needs_ptr = 1;
@@ -2023,7 +2038,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       } else if (arg && arg->kind == ND_DEREF) {
         /* struct 値の subscript / メンバアクセス (`arr[i]`, `s.member`) は ND_DEREF。
          * tag を持ち >8B ならアドレス渡しの struct 引数として扱う。 */
-        arg_full_size = aggregate_size_from_node(arg);
+        arg_full_size = aggregate_size_from_node(ctx, arg);
         if (arg_full_size > 0) {
           if (arg_full_size != 1 && arg_full_size != 2 &&
               arg_full_size != 4 && arg_full_size != 8) {
@@ -2031,16 +2046,16 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
           }
         }
       } else if (arg && arg->kind == ND_TERNARY) {
-        arg_full_size = aggregate_size_from_node(arg);
+        arg_full_size = aggregate_size_from_node(ctx, arg);
         if (arg_full_size > 0 && cg_size_needs_indirect_struct(arg_full_size)) {
           struct_needs_ptr = 1;
         }
       } else if (arg && arg->kind == ND_FUNCALL &&
-                 aggregate_size_from_node(arg) > 8) {
+                 aggregate_size_from_node(ctx, arg) > 8) {
         /* >8B struct を返す関数呼び出しを直接 struct 引数に (`sum(make())`)。
          * build_node_funcall が ret_area を確保しそのアドレスを返すので、それを
          * そのまま渡す (新規 area なので memcpy 不要)。 */
-        arg_full_size = aggregate_size_from_node(arg);
+        arg_full_size = aggregate_size_from_node(ctx, arg);
       }
       if (declared_param.param_class == IR_ABI_PARAM_AGGREGATE &&
           declared_param.source_size > 0) {
@@ -2054,7 +2069,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
         continue;
       }
       if (arg_full_size == 8 &&
-          aggregate_size_from_node(arg) > 0) {
+          aggregate_size_from_node(ctx, arg) > 0) {
         int src_ptr;
         if (arg->kind == ND_TERNARY) {
           src_ptr = ir_func_new_vreg(ctx->f);
@@ -2175,7 +2190,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *call = ir_inst_new(IR_CALL);
   /* 戻り値型を fp_kind 対応 (関数呼び出しの式 node に fp_kind が乗ってる) */
   ir_type_t ret_ty = ir_type_from_node(node);
-  int ret_struct_size = aggregate_size_from_node(node);
+  int ret_struct_size = aggregate_size_from_node(ctx, node);
   /* 呼び出し結果の IR 型は node 自身の canonical type から読む。direct/indirect
    * それぞれの prototype / funcptr signature は parser 側で node type へ materialize
    * されているので、ここで再度 psx_ctx / callee signature を読まない。 */
@@ -3133,7 +3148,10 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     return;
   }
   int cur_ret_struct_size =
-      ctx->cur_fn ? aggregate_size_from_node((node_t *)ctx->cur_fn) : 0;
+      ctx->cur_fn
+          ? aggregate_size_from_type(
+                ctx, ps_function_definition_return_type(ctx->cur_fn))
+          : 0;
   if (node->lhs && cur_ret_struct_size == 8 && ctx->f->ret_type == IR_TY_I64) {
     ir_val_t sv = build_small_struct_return_value(ctx, node->lhs, cur_ret_struct_size);
     if (ctx->failed) return;
@@ -3656,7 +3674,7 @@ static int build_function(
     fail(ctx, "missing canonical C function return type");
     return 0;
   }
-  int ret_struct_size = aggregate_size_from_type(ret_type);
+  int ret_struct_size = aggregate_size_from_type(ctx, ret_type);
   ir_type_t ret_ty = ir_type_from_type(ret_type);
   if (ret_type->kind == PSX_TYPE_VOID) {
     ret_ty = IR_TY_VOID;
@@ -3674,7 +3692,7 @@ static int build_function(
   /* long / long long 戻り値も 8 バイト。同様に i32 だと return 時に i64 値が
    * 切り詰められる (`long add(long,long){ return a+b; }` 等)。 */
   if (ret_ty == IR_TY_I32 && ret_struct_size <= 0) {
-    if (ps_type_sizeof(ret_type) >= 8) {
+    if (ir_c_type_size(ctx, ret_type) >= 8) {
       ret_ty = IR_TY_I64;
     }
   }

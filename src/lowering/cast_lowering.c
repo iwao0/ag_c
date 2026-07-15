@@ -62,14 +62,16 @@ static const psx_type_t *target_value_type(const psx_type_t *type) {
   return value;
 }
 
-static cast_target_view_t target_view(const psx_type_t *target) {
+static cast_target_view_t target_view(
+    const psx_lowering_context_t *lowering_context,
+    const psx_type_t *target) {
   cast_target_view_t view = {0};
   view.target = target;
   view.value = target_value_type(target);
   view.kind = view.value ? view.value->scalar_kind : TK_EOF;
   view.tag_kind = view.value ? view.value->tag_kind : TK_EOF;
   view.is_pointer = ps_type_is_pointer(target);
-  view.elem_size = view.value ? ps_type_sizeof(view.value) : 0;
+  view.elem_size = ps_lowering_type_size(lowering_context, view.value);
   view.is_unsigned = view.value ? ps_type_is_unsigned(view.value) : 0;
   view.is_long_long = view.value ? view.value->is_long_long : 0;
   view.is_plain_char = view.value ? view.value->is_plain_char : 0;
@@ -101,19 +103,22 @@ static int same_tag_value(node_t *expr, const cast_target_view_t *view) {
          ps_type_tag_identity_matches(value_type, view->value);
 }
 
-static int size_compatible_tag_value(node_t *expr,
-                                     const cast_target_view_t *view) {
+static int size_compatible_tag_value(
+    const psx_lowering_context_t *lowering_context, node_t *expr,
+    const cast_target_view_t *view) {
   if (!expr || !view) return 0;
   node_t *value = expr;
   while (value && value->kind == ND_COMMA) value = value->rhs;
   if (!value) return 0;
   if (value->kind == ND_TERNARY) {
     node_ctrl_t *ternary = (node_ctrl_t *)value;
-    return size_compatible_tag_value(ternary->base.rhs, view) &&
-           size_compatible_tag_value(ternary->els, view);
+    return size_compatible_tag_value(
+               lowering_context, ternary->base.rhs, view) &&
+           size_compatible_tag_value(
+               lowering_context, ternary->els, view);
   }
   const psx_type_t *value_type = ps_node_get_type(value);
-  int value_size = ps_type_sizeof(value_type);
+  int value_size = ps_lowering_type_size(lowering_context, value_type);
   return ps_type_is_tag_aggregate(value_type) &&
          value_type->tag_kind == view->tag_kind &&
          value_size > 0 && view->elem_size > 0 &&
@@ -137,7 +142,7 @@ static node_t *lower_aggregate_cast(
     const ag_compilation_options_t *options) {
   if (same_tag_value(operand, &view) ||
       (options->enable_size_compatible_nonscalar_cast &&
-       size_compatible_tag_value(operand, &view))) {
+       size_compatible_tag_value(lowering_context, operand, &view))) {
     return ps_node_new_aggregate_cast_result_in(
         ps_lowering_arena(lowering_context), operand, view.target);
   }
@@ -402,7 +407,7 @@ node_t *lower_implicit_value_conversion(
   if (target_type->kind == PSX_TYPE_FLOAT)
     return lower_value_to_fp(
         ps_lowering_arena(lowering_context), operand, target_type);
-  cast_target_view_t view = target_view(target_type);
+  cast_target_view_t view = target_view(lowering_context, target_type);
   if (view.kind == TK_EOF ||
       (target_type->kind != PSX_TYPE_BOOL &&
        target_type->kind != PSX_TYPE_INTEGER &&
@@ -420,7 +425,8 @@ node_t *lower_implicit_value_conversion(
        source_type->kind == PSX_TYPE_BOOL) &&
       (target_type->kind == PSX_TYPE_INTEGER ||
        target_type->kind == PSX_TYPE_BOOL) &&
-      ps_type_sizeof(source_type) == ps_type_sizeof(target_type) &&
+      ps_lowering_type_size(lowering_context, source_type) ==
+          ps_lowering_type_size(lowering_context, target_type) &&
       ps_type_is_unsigned(source_type) == ps_type_is_unsigned(target_type)) {
     return operand;
   }
@@ -441,7 +447,8 @@ node_t *lower_source_cast_expression(
   const psx_type_t *target = node->type;
   node_t *operand = node->lhs;
   node_t *lowered = lower_cast(
-      lowering_context, local_registry, operand, target_view(target),
+      lowering_context, local_registry, operand,
+      target_view(lowering_context, target),
       node->tok ? node->tok : fallback_diag_tok, options);
   if (!lowered) return node;
   token_t *source_tok = node->tok;

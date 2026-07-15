@@ -50,7 +50,8 @@ static struct lvar_t *create_aggregate_temporary(
                      : (token_t *)fallback_diag_tok;
   const psx_type_t *object_type = ps_type_find_aggregate_object_type(
       ps_node_get_type(access->base.lhs));
-  if (!object_type || ps_type_sizeof(object_type) <= 0) {
+  if (!object_type ||
+      ps_lowering_type_size(lowering_context, object_type) <= 0) {
     ps_diag_ctx_in(
         ps_lowering_diagnostics(lowering_context), tok, "member",
         "aggregate rvalue size resolution failed");

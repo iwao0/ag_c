@@ -1,5 +1,6 @@
 #include "runtime_context.h"
 #include "../target_info.h"
+#include "../type_layout.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -55,6 +56,20 @@ psx_type_id_t ps_lowering_type_id(
     const psx_lowering_context_t *ctx, const psx_type_t *type) {
   return psx_semantic_type_table_find(
              ps_lowering_semantic_types(ctx), type).type_id;
+}
+
+int ps_lowering_type_size(
+    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+  return ps_type_sizeof_id_with_records(
+      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
+      ps_lowering_type_id(ctx, type), ps_lowering_target(ctx));
+}
+
+int ps_lowering_type_alignment(
+    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+  return ps_type_alignof_id_with_records(
+      ps_lowering_semantic_types(ctx), ps_lowering_record_layouts(ctx),
+      ps_lowering_type_id(ctx, type), ps_lowering_target(ctx));
 }
 
 const ag_target_info_t *ps_lowering_target(

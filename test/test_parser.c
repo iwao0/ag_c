@@ -3388,6 +3388,8 @@ static void test_target_type_layout_boundary() {
       ps_lowering_record_layouts(lowering);
   ps_lowering_context_bind_record_layouts(lowering, record_layouts);
   ps_lowering_context_bind_target(lowering, &wasm);
+  ASSERT_EQ(8, ps_lowering_type_size(lowering, record_type));
+  ASSERT_EQ(4, ps_lowering_type_alignment(lowering, record_type));
   node_t *pointer_value = ps_node_new_num(0);
   ps_node_bind_type(pointer_value, ps_type_new_pointer(pointer));
   node_t *pointer_add = lower_additive_expression(
@@ -3442,6 +3444,8 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(8, as_num(wasm_record_vla.init->lhs->rhs)->val);
 
   ps_lowering_context_bind_target(lowering, &host);
+  ASSERT_EQ(16, ps_lowering_type_size(lowering, record_type));
+  ASSERT_EQ(8, ps_lowering_type_alignment(lowering, record_type));
   node_t *host_record_pointer = ps_node_new_num(0);
   ps_node_bind_type(host_record_pointer, record_pointer);
   node_t *host_record_add = lower_additive_expression(
