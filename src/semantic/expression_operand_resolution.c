@@ -35,8 +35,9 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
     if (type->kind == PSX_TYPE_BOOL ||
         (type->kind == PSX_TYPE_INTEGER &&
          ps_type_integer_rank(type) < 3))
-      return ps_type_new_integer_in(
-          ps_ctx_arena(semantic_context), TK_INT, 0);
+      return ps_type_new_integer_kind_in(
+          ps_ctx_arena(semantic_context),
+          PSX_INTEGER_KIND_INT, 0, 0);
     if (type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT ||
         type->kind == PSX_TYPE_COMPLEX)
       return ps_type_clone_in(ps_ctx_arena(semantic_context), type);

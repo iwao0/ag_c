@@ -2542,12 +2542,14 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
     int execution_size, int is_unsigned) {
   const psx_type_t *operand_type = ps_node_get_type(operand);
   if (execution_size < 4) execution_size = 4;
-  psx_type_t *execution_type = ps_type_new_integer_in(
-      arena_context, execution_size >= 8 ? TK_LONG : TK_INT,
-      is_unsigned ? 1 : 0);
-  if (operand_type && operand_type->kind == PSX_TYPE_INTEGER &&
-      operand_type->integer_kind == PSX_INTEGER_KIND_LONG_LONG)
-    execution_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
+  psx_integer_kind_t execution_kind =
+      operand_type && operand_type->kind == PSX_TYPE_INTEGER &&
+              operand_type->integer_kind == PSX_INTEGER_KIND_LONG_LONG
+          ? PSX_INTEGER_KIND_LONG_LONG
+      : execution_size >= 8 ? PSX_INTEGER_KIND_LONG
+                            : PSX_INTEGER_KIND_INT;
+  psx_type_t *execution_type = ps_type_new_integer_kind_in(
+      arena_context, execution_kind, is_unsigned ? 1 : 0, 0);
   node_t *shl = psx_node_new_raw_binary_in(
       arena_context, ND_SHL, operand,
       ps_node_new_num_in(arena_context, left_shift));
@@ -2562,7 +2564,8 @@ node_t *ps_node_new_shift_trunc_extend_for_width_in(
 node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val) {
   node_num_t *node = arena_alloc_in(arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
-  node->base.type = ps_type_new_integer_in(arena_context, TK_INT, 0);
+  node->base.type = ps_type_new_integer_kind_in(
+      arena_context, PSX_INTEGER_KIND_INT, 0, 0);
   node->val = val;
   return (node_t *)node;
 }
@@ -2585,17 +2588,18 @@ static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,
   return node;
 }
 
-static token_kind_t integer_kind_for_storage_size(int size) {
-  if (size <= 1) return TK_CHAR;
-  if (size == 2) return TK_SHORT;
-  if (size >= 8) return TK_LONG;
-  return TK_INT;
+static psx_integer_kind_t integer_kind_for_storage_size(int size) {
+  if (size <= 1) return PSX_INTEGER_KIND_CHAR;
+  if (size == 2) return PSX_INTEGER_KIND_SHORT;
+  if (size >= 8) return PSX_INTEGER_KIND_LONG;
+  return PSX_INTEGER_KIND_INT;
 }
 
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset) {
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
-      ps_type_new_integer_in(arena_context, TK_LONG, 0));
+      ps_type_new_integer_kind_in(
+          arena_context, PSX_INTEGER_KIND_LONG, 0, 0));
 }
 
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
@@ -2603,17 +2607,17 @@ node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
   int size = type_size > 0 ? type_size : 8;
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
-      ps_type_new_integer_in(
-          arena_context, integer_kind_for_storage_size(size), 0));
+      ps_type_new_integer_kind_in(
+          arena_context, integer_kind_for_storage_size(size), 0, 0));
 }
 
 node_t *ps_node_new_lvar_storage_slot_for_in(
     arena_context_t *arena_context, lvar_t *owner, int offset,
     int type_size) {
-  const psx_type_t *type = ps_type_new_integer_in(
+  const psx_type_t *type = ps_type_new_integer_kind_in(
       arena_context,
       integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
-      0);
+      0, 0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, owner, type);
 }
@@ -2631,12 +2635,13 @@ node_t *psx_node_new_lvar_scalar_slot_at_in(
   psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
                          ? ps_type_new_float_in(arena_context, fp_kind)
                      : is_bool
-                         ? ps_type_new_integer_in(
-                               arena_context, TK_BOOL, 1)
-                         : ps_type_new_integer_in(
+                         ? ps_type_new_integer_kind_in(
+                               arena_context, PSX_INTEGER_KIND_BOOL,
+                               1, 0)
+                         : ps_type_new_integer_kind_in(
                                arena_context,
                                integer_kind_for_storage_size(type_size),
-                               0);
+                               0, 0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL, type);
 }
@@ -2654,9 +2659,10 @@ node_t *ps_node_new_lvar_fp_slot_for_in(
   tk_float_kind_t fp_kind = ps_lvar_fp_kind(owner);
   psx_type_t *type = fp_kind != TK_FLOAT_KIND_NONE
                          ? ps_type_new_float_in(arena_context, fp_kind)
-                         : ps_type_new_integer_in(
+                         : ps_type_new_integer_kind_in(
                                arena_context,
-                               integer_kind_for_storage_size(type_size), 0);
+                               integer_kind_for_storage_size(type_size),
+                               0, 0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, owner, type);
 }
@@ -2671,9 +2677,9 @@ node_t *ps_node_new_unsigned_lvar_typed_in(
     arena_context_t *arena_context, int offset, int type_size) {
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
-      ps_type_new_integer_in(
+      ps_type_new_integer_kind_in(
           arena_context, integer_kind_for_storage_size(type_size),
-          1));
+          1, 0));
 }
 
 node_t *psx_node_new_lvar_for_in(arena_context_t *arena_context,
@@ -3009,7 +3015,8 @@ node_t *ps_node_new_tag_member_lvar_ref_with_layout_for_in(
         owner_is_const, owner_is_volatile);
   }
   if (!member_type)
-    member_type = ps_type_new_integer_in(arena_context, TK_INT, 0);
+    member_type = ps_type_new_integer_kind_in(
+        arena_context, PSX_INTEGER_KIND_INT, 0, 0);
   node_lvar_t *node = new_lvar_symbol_node(
       arena_context, (owner ? owner->offset : 0) + member_offset,
       owner, member_type);

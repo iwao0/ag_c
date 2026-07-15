@@ -9,6 +9,11 @@ typedef struct arena_context_t arena_context_t;
 /* Mutation is restricted to construction-owned types before publication. */
 psx_type_t *ps_type_new_in(
     arena_context_t *arena_context, psx_type_kind_t kind);
+psx_type_t *ps_type_new_integer_kind_in(
+    arena_context_t *arena_context, psx_integer_kind_t integer_kind,
+    int is_unsigned, int is_plain_char);
+/* Syntax-boundary adapter. Semantic and lowering code should construct from
+ * psx_integer_kind_t instead of retaining parser token kinds. */
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_token_kind,
     int is_unsigned);

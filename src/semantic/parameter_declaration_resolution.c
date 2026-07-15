@@ -70,9 +70,9 @@ int psx_resolve_parameter_declaration(
             ps_ctx_target_info(request->type.semantic_context),
             AG_TARGET_SCALAR_LONG_LONG) != PSX_VLA_RUNTIME_SLOT_SIZE)
       return 0;
-    psx_type_t *slot = ps_type_new_integer_in(
-        ps_ctx_arena(request->type.semantic_context), TK_LONG, 1);
-    slot->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
+    psx_type_t *slot = ps_type_new_integer_kind_in(
+        ps_ctx_arena(request->type.semantic_context),
+        PSX_INTEGER_KIND_LONG_LONG, 1, 0);
     psx_type_t *storage_type = request->inner_dimension_count == 1
         ? slot
         : ps_type_new_array_in(

@@ -627,8 +627,8 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
       ctx->arena_context, sizeof(node_sizeof_query_t));
   query->base.kind = ND_SIZEOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer_in(
-      ctx->arena_context, TK_LONG, 1);
+  query->base.type = ps_type_new_integer_kind_in(
+      ctx->arena_context, PSX_INTEGER_KIND_LONG, 1, 0);
 
   if (curtok(ctx)->kind == TK_LPAREN) {
     psx_type_name_ref_t captured = {0};
@@ -674,8 +674,8 @@ static node_t *parse_alignof_type_name(
       ctx->arena_context, sizeof(node_alignof_query_t));
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer_in(
-      ctx->arena_context, TK_LONG, 1);
+  query->base.type = ps_type_new_integer_kind_in(
+      ctx->arena_context, PSX_INTEGER_KIND_LONG, 1, 0);
 
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
@@ -1039,12 +1039,12 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
     int is_long_long =
         tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG;
     int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
-    psx_type_t *literal_type = ps_type_new_integer_in(
-        ctx->arena_context,
-        is_long ? TK_LONG : (is_unsigned ? TK_UNSIGNED : TK_INT),
-        is_unsigned);
-    if (is_long_long)
-      literal_type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
+    psx_integer_kind_t literal_kind =
+        is_long_long ? PSX_INTEGER_KIND_LONG_LONG
+        : is_long ? PSX_INTEGER_KIND_LONG
+                  : PSX_INTEGER_KIND_INT;
+    psx_type_t *literal_type = ps_type_new_integer_kind_in(
+        ctx->arena_context, literal_kind, is_unsigned, 0);
     ps_node_bind_type((node_t *)node, literal_type);
   } else {
     tk_float_kind_t fp_kind = tk_as_num_float(tok)->fp_kind;
@@ -1096,12 +1096,14 @@ static node_string_t *make_string_lit_node(
   int elem_width = snode->char_width;
   int elem_is_unsigned = prefix_kind == TK_STR_PREFIX_u ||
                          prefix_kind == TK_STR_PREFIX_U;
-  token_kind_t elem_kind = elem_width == TK_CHAR_WIDTH_CHAR
-                               ? TK_CHAR
-                           : elem_width == 2 ? TK_SHORT
-                                             : TK_INT;
-  psx_type_t *elem_type = ps_type_new_integer_in(
-      ctx->arena_context, elem_kind, elem_is_unsigned);
+  psx_integer_kind_t elem_kind = elem_width == TK_CHAR_WIDTH_CHAR
+                                     ? PSX_INTEGER_KIND_CHAR
+                                 : elem_width == 2
+                                     ? PSX_INTEGER_KIND_SHORT
+                                     : PSX_INTEGER_KIND_INT;
+  psx_type_t *elem_type = ps_type_new_integer_kind_in(
+      ctx->arena_context, elem_kind, elem_is_unsigned,
+      elem_width == TK_CHAR_WIDTH_CHAR);
   snode->base.type = ps_type_new_pointer_in(ctx->arena_context, elem_type);
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。

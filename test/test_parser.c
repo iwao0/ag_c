@@ -4099,6 +4099,24 @@ static void test_target_type_layout_boundary() {
   printf("test_target_type_layout_boundary...\n");
   ag_target_info_t host = ag_target_info_host();
   ag_target_info_t wasm = ag_target_info_wasm32();
+  psx_type_t *semantic_plain_char = ps_type_new_integer_kind_in(
+      test_arena_context(), PSX_INTEGER_KIND_CHAR, 0, 1);
+  psx_type_t *semantic_signed_char = ps_type_new_integer_kind_in(
+      test_arena_context(), PSX_INTEGER_KIND_CHAR, 0, 0);
+  psx_type_t *semantic_long_long = ps_type_new_integer_kind_in(
+      test_arena_context(), PSX_INTEGER_KIND_LONG_LONG, 1, 0);
+  psx_type_t *semantic_bool = ps_type_new_integer_kind_in(
+      test_arena_context(), PSX_INTEGER_KIND_BOOL, 0, 0);
+  ASSERT_TRUE(semantic_plain_char != NULL);
+  ASSERT_TRUE(semantic_plain_char->is_plain_char);
+  ASSERT_TRUE(semantic_signed_char != NULL);
+  ASSERT_TRUE(!semantic_signed_char->is_plain_char);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
+            semantic_long_long->integer_kind);
+  ASSERT_TRUE(ps_type_is_unsigned(semantic_long_long));
+  ASSERT_EQ(PSX_TYPE_BOOL, semantic_bool->kind);
+  ASSERT_TRUE(ps_type_new_integer_kind_in(
+      test_arena_context(), PSX_INTEGER_KIND_NONE, 0, 0) == NULL);
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
   psx_type_t *float_complex = ps_type_new(PSX_TYPE_COMPLEX);

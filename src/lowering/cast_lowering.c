@@ -22,8 +22,9 @@ static node_t *fp_to_int(
   if (!operand || ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE)
     return operand;
   if (!type)
-    type = ps_type_new_integer_in(
-        ps_lowering_arena(lowering_context), TK_INT, 0);
+    type = ps_type_new_integer_kind_in(
+        ps_lowering_arena(lowering_context),
+        PSX_INTEGER_KIND_INT, 0, 0);
   return ps_node_new_fp_to_int_cast_in(
       ps_lowering_arena(lowering_context), operand, type);
 }

@@ -50,8 +50,20 @@ static psx_type_t *resolve_builtin_base_type(
     return ps_type_new_in(
         ps_ctx_arena(semantic_context), PSX_TYPE_VOID);
   }
-  return ps_type_new_integer_in(
-      ps_ctx_arena(semantic_context), kind, specifier->is_unsigned);
+  psx_integer_kind_t integer_kind = PSX_INTEGER_KIND_INT;
+  if (specifier->is_long_long)
+    integer_kind = PSX_INTEGER_KIND_LONG_LONG;
+  else if (kind == TK_BOOL)
+    integer_kind = PSX_INTEGER_KIND_BOOL;
+  else if (kind == TK_CHAR)
+    integer_kind = PSX_INTEGER_KIND_CHAR;
+  else if (kind == TK_SHORT)
+    integer_kind = PSX_INTEGER_KIND_SHORT;
+  else if (kind == TK_LONG)
+    integer_kind = PSX_INTEGER_KIND_LONG;
+  return ps_type_new_integer_kind_in(
+      ps_ctx_arena(semantic_context), integer_kind,
+      specifier->is_unsigned, specifier->is_plain_char);
 }
 
 static void apply_decl_specifier_type_properties(
@@ -66,8 +78,6 @@ static void apply_decl_specifier_type_properties(
           specifier->is_volatile_qualified);
   if (specifier->is_atomic)
     ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
-  if (specifier->is_long_long)
-    type->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;
   if (specifier->is_long_double) {

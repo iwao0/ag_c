@@ -501,8 +501,9 @@ static void semantic_resolve_function_call(
     if (call->base.is_implicit_func_decl) {
       semantic_bind_result_type(
           (node_t *)call,
-          ps_type_new_integer_in(
-              ps_ctx_arena(semantic_context), TK_INT, 0));
+          ps_type_new_integer_kind_in(
+              ps_ctx_arena(semantic_context),
+              PSX_INTEGER_KIND_INT, 0, 0));
       return;
     }
   }

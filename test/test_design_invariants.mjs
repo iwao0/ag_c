@@ -14,6 +14,22 @@ async function sourceFilesUnder(directory) {
 }
 
 const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const semanticIntegerConstructionSource = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) =>
+        path !== "src/parser/type.c" &&
+        path !== "src/parser/type_builder.h")
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\bps_type_new_integer_in\s*\(/.test(
+      semanticIntegerConstructionSource,
+    )) {
+  throw new Error(
+    "semantic integer construction must use psx_integer_kind_t instead of parser token kinds",
+  );
+}
 const frontendSourceFiles = allSourceFiles.filter(
   (path) => path.startsWith("src/frontend/"),
 );
@@ -4552,7 +4568,7 @@ if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
     !/AG_TARGET_SCALAR_LONG_LONG[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
       parameterDeclarationResolutionSource,
     ) ||
-    !/integer_kind\s*=\s*PSX_INTEGER_KIND_LONG_LONG/.test(
+    !/ps_type_new_integer_kind_in\s*\([^]*?PSX_INTEGER_KIND_LONG_LONG/.test(
       parameterDeclarationResolutionSource,
     ) ||
     /\b8\s*\*\s*(?:count|level|stride_count|subscript_depth)/.test(
