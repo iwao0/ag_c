@@ -291,6 +291,19 @@ static int canonical_definition_flat_slot_count(
   return slots > 0 ? slots : 1;
 }
 
+int psx_initializer_flat_slot_count_with_records(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t aggregate_type_id) {
+  if (!semantic_types || !record_decls || !record_layouts || !target ||
+      aggregate_type_id == PSX_TYPE_ID_INVALID)
+    return 0;
+  return canonical_definition_flat_slot_count(
+      semantic_types, record_decls, record_layouts, target,
+      aggregate_type_id);
+}
+
 static int collect_initializer_scalar_leaves(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_decl_table_t *record_decls,

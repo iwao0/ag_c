@@ -6,6 +6,7 @@
 #include "arena.h"
 #include "diag.h"
 #include "../diag/diag.h"
+#include "../semantic/initializer_resolution.h"
 #include "../semantic/record_decl_table.h"
 #include "../type_layout.h"
 #include "../tokenizer/tokenizer.h"
@@ -582,10 +583,11 @@ static int gvar_init_cursor_index(const gvar_init_cursor_t *cur);
 static int gvar_init_cursor_advance(gvar_init_cursor_t *cur);
 static int gvar_init_cursor_consume_plain_zero_padding(gvar_init_cursor_t *cur,
                                                        int start_idx, int target_slots);
-static int gvar_init_cursor_consume_tag_zero_padding(
-    psx_semantic_context_t *semantic_context,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const psx_record_decl_t *record_decl,
+static int gvar_init_cursor_consume_resolved_type_zero_padding(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     gvar_init_cursor_t *cur, int start_idx);
 static int gvar_init_cursor_pack_bitfield_unit(
     psx_semantic_context_t *semantic_context,
@@ -624,18 +626,6 @@ static int gvar_member_storage_size_for_target(
     psx_type_id_t member_type_id, const ag_target_info_t *target) {
   return ps_type_sizeof_id_with_records(
       semantic_types, record_layouts, member_type_id, target);
-}
-
-static const psx_record_member_layout_t *record_decl_member_layout_in(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_decl_t *record_decl, int member_index) {
-  if (!semantic_context || !record_decl || member_index < 0 ||
-      member_index >= record_decl->member_count)
-    return NULL;
-  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
-      ps_ctx_record_layout_table_in(semantic_context),
-      record_decl->record_id, ps_ctx_target_info(semantic_context));
-  return psx_record_layout_member(layout, member_index);
 }
 
 static int gvar_get_record_member_layout(
@@ -1049,9 +1039,9 @@ static int gvar_walk_struct_initializer(
                                              gv, cur, elem_off, member_value_size,
                                              ops, user);
           if (!ok) return 0;
-          gvar_init_cursor_consume_tag_zero_padding(
-              semantic_context, member_tag_kind, member_tag_name,
-              member_tag_len, member_record, cur, elem_start_idx);
+          gvar_init_cursor_consume_resolved_type_zero_padding(
+              semantic_types, record_decls, record_layouts, target,
+              member_aggregate_type_id, cur, elem_start_idx);
         }
       } else {
         if (!gvar_walk_require_scalar(ops)) return 0;
@@ -1089,9 +1079,9 @@ static int gvar_walk_struct_initializer(
                                         ops, user)) {
         return 0;
       }
-      gvar_init_cursor_consume_tag_zero_padding(
-          semantic_context, member_tag_kind, member_tag_name,
-          member_tag_len, member_record, cur, member_start_idx);
+      gvar_init_cursor_consume_resolved_type_zero_padding(
+          semantic_types, record_decls, record_layouts, target,
+          member_aggregate_type_id, cur, member_start_idx);
       prev_end = member_layout.offset + member_value_size;
       continue;
     }
@@ -1195,9 +1185,9 @@ static int gvar_walk_union_initializer(
     gvar_walk_emit_bitfield_member(
         ops, user, &member, &member_layout, member_value_type_id, slot,
         base_offset + member_layout.offset);
-    gvar_init_cursor_consume_tag_zero_padding(
-        semantic_context, tag_kind, tag_name, tag_len,
-        record_decl, cur, start_idx);
+    gvar_init_cursor_consume_resolved_type_zero_padding(
+        semantic_types, record_decls, record_layouts, target,
+        aggregate_type_id, cur, start_idx);
     if (member_layout.offset + member_value_size < union_size) {
       gvar_walk_emit_padding(
           ops, user, base_offset + member_layout.offset + member_value_size,
@@ -1281,9 +1271,9 @@ static int gvar_walk_union_initializer(
                                       gv, cur, base_offset + member_layout.offset,
                                       member_value_size, ops, user);
     if (!ok) return 0;
-    gvar_init_cursor_consume_tag_zero_padding(
-        semantic_context, tag_kind, tag_name, tag_len,
-        record_decl, cur, start_idx);
+    gvar_init_cursor_consume_resolved_type_zero_padding(
+        semantic_types, record_decls, record_layouts, target,
+        aggregate_type_id, cur, start_idx);
     if (member_layout.offset + emitted < union_size) {
       gvar_walk_emit_padding(
           ops, user, base_offset + member_layout.offset + emitted,
@@ -1296,9 +1286,9 @@ static int gvar_walk_union_initializer(
   gvar_walk_emit_scalar(
       ops, user, &member, member_value_type_id, slot,
       base_offset + member_layout.offset);
-  gvar_init_cursor_consume_tag_zero_padding(
-      semantic_context, tag_kind, tag_name, tag_len,
-      record_decl, cur, start_idx);
+  gvar_init_cursor_consume_resolved_type_zero_padding(
+      semantic_types, record_decls, record_layouts, target,
+      aggregate_type_id, cur, start_idx);
   if (member_layout.offset + member_value_size < union_size) {
     gvar_walk_emit_padding(
         ops, user, base_offset + member_layout.offset + member_value_size,
@@ -1380,9 +1370,9 @@ static int gvar_walk_aggregate_initializer(
                                         ops, user)) {
         return 0;
       }
-      gvar_init_cursor_consume_tag_zero_padding(
-          semantic_context, layout.tag_kind, layout.tag_name,
-          layout.tag_len, layout.record_decl, &cur, elem_start_idx);
+      gvar_init_cursor_consume_resolved_type_zero_padding(
+          semantic_types, record_decls, record_layouts, target,
+          layout.aggregate_type_id, &cur, elem_start_idx);
     }
   }
   return 1;
@@ -1473,125 +1463,17 @@ static int record_member_declaration_storage_size_in(
                                member ? member->decl_type : NULL);
 }
 
-static int gvar_record_flat_slot_count(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_decl_t *record_decl);
-
-static int gvar_record_find_unnamed_union_covering_offset(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_decl_t *record_decl,
-    int base_offset, int target_offset,
-    int *out_offset, int *out_size) {
-  if (!record_decl) return 0;
-  for (int i = 0; i < record_decl->member_count; i++) {
-    const psx_record_member_decl_t *member = &record_decl->members[i];
-    const psx_record_member_layout_t *layout =
-        record_decl_member_layout_in(semantic_context, record_decl, i);
-    if (!layout ||
-        !ps_record_member_decl_is_unnamed_aggregate(member))
-      continue;
-    int start = base_offset + layout->offset;
-    int size =
-        record_member_declaration_storage_size_in(semantic_context, member);
-    if (target_offset < start || target_offset >= start + size) continue;
-    if (ps_record_member_decl_is_unnamed_union(member)) {
-      if (out_offset) *out_offset = start;
-      if (out_size) *out_size = size;
-      return 1;
-    }
-    const psx_record_decl_t *child = gvar_member_declaration_record_decl(
-        ps_ctx_record_decl_table_in(semantic_context), member);
-    if (gvar_record_find_unnamed_union_covering_offset(
-            semantic_context, child, start, target_offset,
-            out_offset, out_size)) {
-      return 1;
-    }
-  }
-  return 0;
-}
-
-static void gvar_record_flat_cover_state_note(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_decl_t *record_decl,
-    psx_tag_flat_cover_state_t *state,
-    const psx_record_member_decl_t *member,
-    const psx_record_member_layout_t *layout) {
-  if (!record_decl || !state || !member || !layout) return;
-  if (ps_record_member_decl_is_unnamed_union(member)) {
-    state->covered_union_off = layout->offset;
-    state->covered_union_size =
-        record_member_declaration_storage_size_in(semantic_context, member);
-    return;
-  }
-  int cover_offset = 0;
-  int cover_size = 0;
-  if (gvar_record_find_unnamed_union_covering_offset(
-          semantic_context, record_decl, 0, layout->offset,
-          &cover_offset, &cover_size)) {
-    state->covered_union_off = cover_offset;
-    state->covered_union_size = cover_size;
-  }
-}
-
-static int gvar_member_flat_slot_count(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_member_decl_t *member) {
-  if (!member || ps_record_member_decl_is_unnamed_struct(member)) return 0;
-  int per = 1;
-  const psx_record_decl_t *record_decl = gvar_member_declaration_record_decl(
-      ps_ctx_record_decl_table_in(semantic_context), member);
-  if (record_decl)
-    per = gvar_record_flat_slot_count(semantic_context, record_decl);
-  int count = ps_type_array_flat_element_count(member->decl_type);
-  return count > 0 ? count * per : per;
-}
-
-static int gvar_record_flat_slot_count(
-    psx_semantic_context_t *semantic_context,
-    const psx_record_decl_t *record_decl) {
-  if (!record_decl || record_decl->member_count <= 0) return 1;
-  int slots = 0;
-  int union_max_bytes = -1;
-  psx_tag_flat_cover_state_t cover_state;
-  ps_tag_flat_cover_state_init(&cover_state);
-  for (int i = 0; i < record_decl->member_count; i++) {
-    const psx_record_member_decl_t *member = &record_decl->members[i];
-    const psx_record_member_layout_t *layout =
-        record_decl_member_layout_in(semantic_context, record_decl, i);
-    if (!layout) return 0;
-    int member_slots =
-        gvar_member_flat_slot_count(semantic_context, member);
-    if (record_decl->record_kind == PSX_TYPE_UNION) {
-      int bytes = record_member_declaration_storage_size_in(
-          semantic_context, member);
-      if (bytes > union_max_bytes ||
-          (bytes == union_max_bytes && member_slots > slots)) {
-        union_max_bytes = bytes;
-        slots = member_slots;
-      }
-      continue;
-    }
-    if (ps_record_member_decl_is_unnamed_struct(member) ||
-        ps_tag_flat_cover_state_covers(&cover_state, layout->offset))
-      continue;
-    slots += member_slots;
-    gvar_record_flat_cover_state_note(
-        semantic_context, record_decl, &cover_state, member, layout);
-  }
-  return slots > 0 ? slots : 1;
-}
-
-static int gvar_init_cursor_consume_tag_zero_padding(
-    psx_semantic_context_t *semantic_context,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const psx_record_decl_t *record_decl,
+static int gvar_init_cursor_consume_resolved_type_zero_padding(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t aggregate_type_id,
     gvar_init_cursor_t *cur, int start_idx) {
   return gvar_init_cursor_consume_plain_zero_padding(
       cur, start_idx,
-      record_decl
-          ? gvar_record_flat_slot_count(semantic_context, record_decl)
-          : ps_tag_flat_slot_count_in(
-                semantic_context, tag_kind, tag_name, tag_len));
+      psx_initializer_flat_slot_count_with_records(
+          semantic_types, record_decls, record_layouts, target,
+          aggregate_type_id));
 }
 
 unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,

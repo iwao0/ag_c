@@ -1696,9 +1696,31 @@ static void assert_pointer_qualifiers(
 static void assert_node_pointer_qualifiers(
     node_t *node, const char *const_levels,
     const char *volatile_levels) {
-  assert_pointer_qualifiers(
-      node ? ps_node_get_type(node) : NULL,
-      const_levels, volatile_levels);
+  ASSERT_TRUE(node != NULL);
+  ASSERT_TRUE(const_levels != NULL);
+  ASSERT_TRUE(volatile_levels != NULL);
+  int levels = (int)strlen(const_levels);
+  ASSERT_EQ(levels, (int)strlen(volatile_levels));
+  ASSERT_EQ(levels, ps_type_pointer_depth(ps_node_get_type(node)));
+  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
+    assert_pointer_qualifiers(
+        ps_node_get_type(node), const_levels, volatile_levels);
+    return;
+  }
+  const psx_semantic_type_table_t *types =
+      ps_ctx_semantic_type_table_in(test_semantic_context());
+  psx_qual_type_t current = ps_node_qual_type(node);
+  for (int i = 0; i < levels; i++) {
+    const psx_type_t *pointer = psx_semantic_type_table_lookup(
+        types, current.type_id);
+    ASSERT_TRUE(pointer != NULL);
+    ASSERT_EQ(PSX_TYPE_POINTER, pointer->kind);
+    ASSERT_EQ(const_levels[i] == '1',
+              (current.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0);
+    ASSERT_EQ(volatile_levels[i] == '1',
+              (current.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0);
+    current = psx_semantic_type_table_base(types, current.type_id);
+  }
 }
 
 static int canonical_node_pointee_is_unsigned(node_t *node) {
@@ -1716,13 +1738,29 @@ static int canonical_node_pointee_is_void(node_t *node) {
 }
 
 static int canonical_node_pointee_is_const_qualified(node_t *node) {
-  const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST);
+  if (!node) return 0;
+  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
+    const psx_type_t *type = canonical_node_pointee_type(node);
+    return type &&
+           ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST);
+  }
+  psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_node_qual_type(node).type_id);
+  return (pointee.qualifiers & PSX_TYPE_QUALIFIER_CONST) != 0;
 }
 
 static int canonical_node_pointee_is_volatile_qualified(node_t *node) {
-  const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE);
+  if (!node) return 0;
+  if (ps_node_qual_type(node).type_id == PSX_TYPE_ID_INVALID) {
+    const psx_type_t *type = canonical_node_pointee_type(node);
+    return type &&
+           ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE);
+  }
+  psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
+      ps_ctx_semantic_type_table_in(test_semantic_context()),
+      ps_node_qual_type(node).type_id);
+  return (pointee.qualifiers & PSX_TYPE_QUALIFIER_VOLATILE) != 0;
 }
 
 static tk_float_kind_t canonical_node_pointee_fp_kind(node_t *node) {
@@ -9325,10 +9363,8 @@ static void test_type_decl() {
   parsed_code = parse_program_input("int main() { int x={3}; return x; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(!ps_type_has_qualifier(
-      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(!ps_type_has_qualifier(
-      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_node_qual_type(body->body[0]->lhs).qualifiers);
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1 }; return (enum E)42; }");
@@ -9339,15 +9375,11 @@ static void test_type_decl() {
   parsed_code = parse_program_input("int main() { const int cx=1; volatile int vx=2; return cx+vx; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(ps_type_has_qualifier(
-      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(!ps_type_has_qualifier(
-      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_node_qual_type(body->body[0]->lhs).qualifiers);
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
-  ASSERT_TRUE(!ps_type_has_qualifier(
-      ps_node_get_type(body->body[1]->lhs), PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(ps_type_has_qualifier(
-      ps_node_get_type(body->body[1]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_VOLATILE,
+            ps_node_qual_type(body->body[1]->lhs).qualifiers);
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
@@ -9365,12 +9397,8 @@ static void test_type_decl() {
       ps_node_get_type(body->body[0]->lhs);
   ASSERT_TRUE(qualified_pp_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_pp_type->kind);
-  ASSERT_TRUE(!ps_type_has_qualifier(qualified_pp_type, PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(ps_type_has_qualifier(qualified_pp_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(qualified_pp_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_pp_type->base->kind);
-  ASSERT_TRUE(ps_type_has_qualifier(qualified_pp_type->base, PSX_TYPE_QUALIFIER_CONST));
-  ASSERT_TRUE(!ps_type_has_qualifier(qualified_pp_type->base, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_EQ(2, canonical_node_pointer_qual_levels(body->body[0]->lhs));
   assert_node_pointer_qualifiers(body->body[0]->lhs, "01", "10");
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
@@ -16389,7 +16417,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(const_struct_ptr_ty->base != NULL);
   ASSERT_EQ(TK_STRUCT,
             ps_type_tag_token_kind(const_struct_ptr_ty->base));
-  ASSERT_TRUE(ps_type_has_qualifier(const_struct_ptr_ty->base, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(canonical_node_pointee_is_const_qualified(
+      const_struct_ptr_call));
   ASSERT_EQ(2, const_struct_ptr_ty->base->tag_len);
   ASSERT_TRUE(strncmp(const_struct_ptr_ty->base->tag_name,
                       "CQ", 2) == 0);
@@ -17748,6 +17777,7 @@ static void test_semantic_type_identity() {
             ps_type_qualifiers(canonical_pointer_to_const));
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_type_qualifiers(canonical_pointer_to_const->base));
+  ASSERT_TRUE(canonical_pointer_to_const->base == interned_int);
 
   psx_type_t *const_int_array = ps_type_new_array(const_int, 3, 12, 0);
   psx_type_t *nested_const_int_array = ps_type_new_array(
@@ -17795,6 +17825,20 @@ static void test_semantic_type_identity() {
   ASSERT_TRUE(canonical_function != NULL);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_type_qualifiers(canonical_function->param_types[0]));
+  ASSERT_TRUE(canonical_function->base == interned_int);
+  ASSERT_TRUE(canonical_function->param_types[0] == interned_int);
+  ASSERT_TRUE(canonical_function->param_types[1] ==
+              ps_ctx_type_by_id_in(context, host_pointer_identity.type_id));
+  ASSERT_EQ(function_identity.type_id,
+            ps_ctx_find_interned_qual_type_in(
+                context, canonical_function).type_id);
+  ASSERT_EQ(function_identity.type_id,
+            ps_ctx_intern_qual_type_in(
+                context, canonical_function).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                function_identity.type_id, 0).qualifiers);
   ASSERT_EQ(host_pointer_identity.type_id,
             psx_semantic_type_table_parameter(
                 ps_ctx_semantic_type_table_in(context),
@@ -17931,6 +17975,9 @@ static void test_semantic_type_identity() {
             ps_node_qual_type(&typed_expression).type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
             ps_node_qual_type(&typed_expression).qualifiers);
+  ASSERT_TRUE(typed_expression.type ==
+              ps_ctx_type_by_id_in(
+                  context, ps_node_qual_type(&typed_expression).type_id));
   ps_node_bind_type(&typed_expression, plain_int);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             ps_node_qual_type(&typed_expression).type_id);
@@ -17947,6 +17994,8 @@ static void test_semantic_type_identity() {
   psx_qual_type_t signature_identity =
       ps_function_definition_signature_qual_type(&typed_function);
   ASSERT_TRUE(signature_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(typed_function.signature ==
+              ps_ctx_type_by_id_in(context, signature_identity.type_id));
   ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
                 context, function_type).type_id,
             signature_identity.type_id);
@@ -17960,6 +18009,11 @@ static void test_semantic_type_identity() {
   psx_qual_type_t callee_identity =
       ps_function_call_callee_qual_type(&typed_call);
   ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
+  ASSERT_TRUE(typed_call.callee_type ==
+              ps_ctx_type_by_id_in(context, callee_identity.type_id));
+  ASSERT_TRUE(typed_call.base.type ==
+              ps_ctx_type_by_id_in(
+                  context, ps_node_qual_type((node_t *)&typed_call).type_id));
   ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
                 context, const_int).type_id,
             psx_semantic_type_table_parameter(

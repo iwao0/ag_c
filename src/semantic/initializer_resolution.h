@@ -57,6 +57,11 @@ int psx_collect_initializer_scalar_leaves_with_records(
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t type_id,
     int relative_offset, psx_initializer_scalar_leaf_list_t *list);
+int psx_initializer_flat_slot_count_with_records(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t aggregate_type_id);
 int psx_initializer_leaf_cursor_after_target_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,

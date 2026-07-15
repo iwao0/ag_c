@@ -2777,22 +2777,30 @@ if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
     "parser node utilities must query member declarations and layouts through the split API",
   );
 }
-const resolvedRecordMemberHelpers = [
+const removedContextBoundSlotHelpers = [
   /static\s+int\s+gvar_record_find_unnamed_union_covering_offset\s*\([^]*?\n\}/,
   /static\s+void\s+gvar_record_flat_cover_state_note\s*\([^]*?\n\}/,
   /static\s+int\s+gvar_member_flat_slot_count\s*\([^]*?\n\}/,
   /static\s+int\s+gvar_record_flat_slot_count\s*\([^]*?\n\}/,
 ].map((pattern) => nodeUtilsSource.match(pattern)?.[0]);
-if (resolvedRecordMemberHelpers.some((source) => !source) ||
-    /\btag_member_info_t\b/.test(resolvedRecordMemberHelpers.join("\n")) ||
-    !resolvedRecordMemberHelpers.every((source) =>
-      /\bpsx_record_member_decl_t\b/.test(source)
+const canonicalInitializerSlotSource = await readFile(
+  "src/semantic/initializer_resolution.c",
+  "utf8",
+);
+const canonicalSlotCounter = canonicalInitializerSlotSource.match(
+  /int\s+psx_initializer_flat_slot_count_with_records\s*\([^]*?\n\}/,
+)?.[0];
+if (removedContextBoundSlotHelpers.some((source) => source) ||
+    !/\bpsx_initializer_flat_slot_count_with_records\s*\(/.test(
+      nodeUtilsSource,
     ) ||
-    !/\brecord_decl_member_layout_in\s*\(/.test(
-      resolvedRecordMemberHelpers.join("\n"),
-    )) {
+    !canonicalSlotCounter ||
+    !/\bpsx_semantic_type_table_t\b/.test(canonicalSlotCounter) ||
+    !/\bpsx_record_decl_table_t\b/.test(canonicalSlotCounter) ||
+    !/\bpsx_record_layout_table_t\b/.test(canonicalSlotCounter) ||
+    !/\bag_target_info_t\b/.test(canonicalSlotCounter)) {
   throw new Error(
-    "resolved RecordDecl traversal must keep member declarations separate from target layouts",
+    "resolved aggregate slot traversal must use the canonical TypeId and target-layout calculation",
   );
 }
 const splitTagTraversalFunctions = [
@@ -3342,10 +3350,13 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
     !/node->qual_type\s*=\s*type\s*;/.test(
       semanticTypeIdentityPassSource,
     ) ||
-    !/actual\.type_id\s*!=\s*expected\.type_id/.test(
+    !/actual\.type_id\s*==\s*PSX_TYPE_ID_INVALID/.test(
       semanticInvariantsSource,
     ) ||
-    !/actual\.qualifiers\s*!=\s*expected\.qualifiers/.test(
+    !/node->type\s*!=\s*ps_ctx_type_by_id_in\s*\(/.test(
+      semanticInvariantsSource,
+    ) ||
+    !/\bpsx_finalize_semantic_tree_types\s*\(/.test(
       semanticInvariantsSource,
     ) ||
     !/\bwalk_node\s*\(\s*node->lhs\b/.test(semanticTreeWalkSource) ||
@@ -3353,7 +3364,7 @@ if (!/\bpsx_walk_semantic_tree\s*\(/.test(semanticInvariantsSource) ||
       semanticInvariantsSource,
     )) {
   throw new Error(
-    "semantic invariants and type identity prepass must share one AST traversal",
+    "semantic type finalization must intern QualType and materialize canonical TypeId objects in one AST traversal",
   );
 }
 const functionNodeBinding = declarationPipelineSource.match(
