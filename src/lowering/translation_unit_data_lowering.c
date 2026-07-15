@@ -239,9 +239,8 @@ static void lower_aggregate_bitfield_unit(
 static void lower_aggregate_bitfield_member(
     void *user, const tag_member_info_t *member,
     psx_type_id_t value_type_id, int slot,
-    long long base_offset) {
+    long long offset) {
   global_data_lowering_t *ctx = user;
-  long long offset = base_offset + member->offset;
   unsigned long long packed = ps_gvar_init_slot_bitfield_bits(
       ctx->global, slot, member->bit_width, member->bit_offset);
   int size = type_size_id(ctx->lowering, value_type_id);

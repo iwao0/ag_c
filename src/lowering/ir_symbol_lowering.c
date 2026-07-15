@@ -47,12 +47,12 @@ static void ignore_bitfield_unit(void *user,
 static void ignore_bitfield_member(void *user,
                                    const tag_member_info_t *member,
                                    psx_type_id_t value_type_id,
-                                   int slot, long long base_offset) {
+                                   int slot, long long offset) {
   (void)user;
   (void)member;
   (void)value_type_id;
   (void)slot;
-  (void)base_offset;
+  (void)offset;
 }
 
 static const psx_gvar_aggregate_walk_ops_t func_ref_walk_ops = {

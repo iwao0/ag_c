@@ -86,7 +86,7 @@ typedef struct {
                         long long base_offset);
   void (*bitfield_member)(void *user, const tag_member_info_t *mi,
                           psx_type_id_t value_type_id, int slot,
-                          long long base_offset);
+                          long long offset);
   void (*padding)(void *user, long long offset, int size);
 } psx_gvar_aggregate_walk_ops_t;
 
