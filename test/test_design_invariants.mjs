@@ -2047,6 +2047,48 @@ if (!/\bpsx_qual_type_t\s+base_object_qual_type\s*;/.test(
     "member access owner qualifiers must be resolved through TypeId QualType relations",
   );
 }
+const semanticQualifierDiagnosticSection = memberNodeUtilsSource.match(
+  /static\s+psx_qual_type_t\s+node_semantic_qual_type\s*\([^]*?void\s+ps_node_expect_lvalue_at_in\s*\(/,
+);
+const pointeeQualTypeRelation = memberTypeIdentitySource.match(
+  /psx_qual_type_t\s+psx_semantic_type_table_pointee_value\s*\([^]*?\n\}/,
+);
+if (!semanticQualifierDiagnosticSection ||
+    !/\bps_node_qual_type\s*\(/.test(
+      semanticQualifierDiagnosticSection[0],
+    ) ||
+    !/\bps_ctx_intern_qual_type_in\s*\(/.test(
+      semanticQualifierDiagnosticSection[0],
+    ) ||
+    !/\bpsx_semantic_type_table_pointee_value\s*\(/.test(
+      semanticQualifierDiagnosticSection[0],
+    ) ||
+    !pointeeQualTypeRelation ||
+    !/semantic_type_table_array_leaf_from\s*\(\s*table\s*,\s*base\s*\)/.test(
+      pointeeQualTypeRelation[0],
+    ) ||
+    /psx_semantic_type_table_array_leaf\s*\(\s*table\s*,\s*base\.type_id\s*\)/.test(
+      pointeeQualTypeRelation[0],
+    ) ||
+    /\bnode_(?:self|pointee)_is_(?:const|volatile)_qualified\s*\(/.test(
+      semanticQualifierDiagnosticSection[0],
+    ) ||
+    !/ps_node_reject_const_assign_at_in\s*\([^;]*psx_semantic_context_t\s*\*/s.test(
+      memberNodeUtilsHeader,
+    ) ||
+    !/ps_node_reject_const_qual_discard_at_in\s*\([^;]*psx_semantic_context_t\s*\*/s.test(
+      memberNodeUtilsHeader,
+    ) ||
+    !/ps_node_reject_const_assign_at_in\s*\(\s*semantic_context\s*,/.test(
+      semanticPassSource,
+    ) ||
+    !/ps_node_reject_const_qual_discard_at_in\s*\(\s*semantic_context\s*,/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "semantic qualifier diagnostics must read self and pointee qualifiers through QualType relations",
+  );
+}
 const typeNameResolutionSource = await readFile(
   "src/semantic/type_name_resolution.c",
   "utf8",

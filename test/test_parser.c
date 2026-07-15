@@ -2244,6 +2244,7 @@ static void expect_const_assign_ok_for_node(node_t *node) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     ps_node_reject_const_assign_at_in(
+        test_semantic_context(),
         ag_compilation_session_diagnostic_context(test_suite_session),
         node, "=", NULL);
     _exit(0);
@@ -2261,6 +2262,7 @@ static void expect_const_assign_fail_for_node(node_t *node) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     ps_node_reject_const_assign_at_in(
+        test_semantic_context(),
         ag_compilation_session_diagnostic_context(test_suite_session),
         node, "=", NULL);
     _exit(0);
@@ -2278,6 +2280,7 @@ static void expect_const_qual_discard_fail_for_nodes(node_t *lhs, node_t *rhs) {
     freopen("/dev/null", "w", stdout);
     freopen("/dev/null", "w", stderr);
     ps_node_reject_const_qual_discard_at_in(
+        test_semantic_context(),
         ag_compilation_session_diagnostic_context(test_suite_session),
         lhs, rhs, NULL);
     _exit(0);
@@ -17734,6 +17737,10 @@ static void test_semantic_type_identity() {
       pointer_to_const_identity.type_id);
   ASSERT_EQ(plain_int_identity.type_id, qualified_pointer_base.type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, qualified_pointer_base.qualifiers);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            psx_semantic_type_table_pointee_value(
+                ps_ctx_semantic_type_table_in(context),
+                pointer_to_const_identity.type_id).qualifiers);
   const psx_type_t *canonical_pointer_to_const =
       ps_ctx_type_by_id_in(context, pointer_to_const_identity.type_id);
   ASSERT_TRUE(canonical_pointer_to_const != NULL);

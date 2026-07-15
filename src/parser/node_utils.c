@@ -3353,7 +3353,37 @@ node_t *psx_node_new_initializer_list_in(
   return (node_t *)node;
 }
 
+static psx_qual_type_t node_semantic_qual_type(
+    psx_semantic_context_t *semantic_context, node_t *node) {
+  if (!node)
+    return (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                             PSX_TYPE_QUALIFIER_NONE};
+  psx_qual_type_t type = ps_node_qual_type(node);
+  return type.type_id != PSX_TYPE_ID_INVALID
+             ? type
+             : ps_ctx_intern_qual_type_in(
+                   semantic_context, ps_node_get_type(node));
+}
+
+static int node_semantic_self_has_qualifier(
+    psx_semantic_context_t *semantic_context, node_t *node,
+    psx_type_qualifiers_t qualifier) {
+  return (node_semantic_qual_type(semantic_context, node).qualifiers &
+          qualifier) == qualifier;
+}
+
+static int node_semantic_pointee_has_qualifier(
+    psx_semantic_context_t *semantic_context, node_t *node,
+    psx_type_qualifiers_t qualifier) {
+  psx_qual_type_t type = node_semantic_qual_type(
+      semantic_context, node);
+  psx_qual_type_t pointee = psx_semantic_type_table_pointee_value(
+      ps_ctx_semantic_type_table_in(semantic_context), type.type_id);
+  return (pointee.qualifiers & qualifier) == qualifier;
+}
+
 void ps_node_reject_const_assign_at_in(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const char *op, token_t *tok) {
   (void)op;
@@ -3366,7 +3396,8 @@ void ps_node_reject_const_assign_at_in(
                        : ps_node_generic_selection_index(selection);
     if (selected >= 0 && selected < selection->association_count) {
       ps_node_reject_const_assign_at_in(
-          diagnostics, selection->associations[selected].expression,
+          semantic_context, diagnostics,
+          selection->associations[selected].expression,
           op, tok);
     }
     return;
@@ -3377,7 +3408,8 @@ void ps_node_reject_const_assign_at_in(
     /* 各再帰型ノードの qualifier はそのノード自身を修飾する。
      * ポインタ自身の const (`int * const p`) と pointee の const
      * (`const int *p`) は pointer node と base node に分かれている。 */
-    if (node_self_is_const_qualified(node)) {
+    if (node_semantic_self_has_qualifier(
+            semantic_context, node, PSX_TYPE_QUALIFIER_CONST)) {
       diag_emit_tokf_in(
           diagnostics, DIAG_ERR_PARSER_CONST_ASSIGNMENT, tok,
           diag_message_for_in(
@@ -3386,12 +3418,8 @@ void ps_node_reject_const_assign_at_in(
   }
 }
 
-static int node_pointee_is_const(node_t *node) {
-  if (!node) return 0;
-  return node_pointee_is_const_qualified(node);
-}
-
 void ps_node_reject_const_qual_discard_at_in(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     token_t *tok) {
   if (!lhs || !rhs) return;
@@ -3401,8 +3429,11 @@ void ps_node_reject_const_qual_discard_at_in(
       ps_type_derived_function(ps_node_get_type(rhs))) {
     return;
   }
-  if (node_pointee_is_const_qualified(lhs)) return;
-  if (node_pointee_is_const(rhs)) {
+  if (node_semantic_pointee_has_qualifier(
+          semantic_context, lhs, PSX_TYPE_QUALIFIER_CONST))
+    return;
+  if (node_semantic_pointee_has_qualifier(
+          semantic_context, rhs, PSX_TYPE_QUALIFIER_CONST)) {
     diag_emit_tokf_in(
         diagnostics, DIAG_ERR_PARSER_CONST_QUAL_DISCARD, tok,
         diag_message_for_in(

@@ -310,10 +310,9 @@ psx_qual_type_t psx_semantic_type_table_base(
   return related_type(table, table->entries[type_id].base_type);
 }
 
-psx_qual_type_t psx_semantic_type_table_array_leaf(
-    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
-  psx_qual_type_t result = related_type(
-      table, (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE});
+static psx_qual_type_t semantic_type_table_array_leaf_from(
+    const psx_semantic_type_table_t *table, psx_qual_type_t result) {
+  result = related_type(table, result);
   const psx_type_t *type = psx_semantic_type_table_lookup(
       table, result.type_id);
   while (type && type->kind == PSX_TYPE_ARRAY) {
@@ -321,6 +320,12 @@ psx_qual_type_t psx_semantic_type_table_array_leaf(
     type = psx_semantic_type_table_lookup(table, result.type_id);
   }
   return type ? result : invalid_qual_type();
+}
+
+psx_qual_type_t psx_semantic_type_table_array_leaf(
+    const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
+  return semantic_type_table_array_leaf_from(
+      table, (psx_qual_type_t){type_id, PSX_TYPE_QUALIFIER_NONE});
 }
 
 psx_qual_type_t psx_semantic_type_table_pointee_value(
@@ -331,7 +336,7 @@ psx_qual_type_t psx_semantic_type_table_pointee_value(
     return invalid_qual_type();
   }
   psx_qual_type_t base = psx_semantic_type_table_base(table, type_id);
-  return psx_semantic_type_table_array_leaf(table, base.type_id);
+  return semantic_type_table_array_leaf_from(table, base);
 }
 
 psx_qual_type_t psx_semantic_type_table_aggregate_object(

@@ -116,9 +116,10 @@ static void semantic_transform_node_array(
   }
 }
 
-static void semantic_validate_assignment(node_t *node,
-                                         ag_diagnostic_context_t *diagnostics,
-                                         const token_t *fallback_diag_tok) {
+static void semantic_validate_assignment(
+    psx_semantic_context_t *semantic_context, node_t *node,
+    ag_diagnostic_context_t *diagnostics,
+    const token_t *fallback_diag_tok) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs) return;
   token_t *tok = node->tok ? node->tok : (token_t *)fallback_diag_tok;
 
@@ -141,7 +142,7 @@ static void semantic_validate_assignment(node_t *node,
     const psx_type_t *lhs_type = ps_node_get_type(node->lhs);
     int lhs_is_pointer = lhs_type && ps_type_is_pointer(lhs_type);
     ps_node_reject_const_qual_discard_at_in(
-        diagnostics, node->lhs, node->rhs, tok);
+        semantic_context, diagnostics, node->lhs, node->rhs, tok);
     if (lhs_is_pointer && node->rhs->kind == ND_NUM &&
         ((node_num_t *)node->rhs)->val != 0) {
       ps_diag_ctx_in(diagnostics, tok, "init",
@@ -172,10 +173,10 @@ static void semantic_validate_assignment(node_t *node,
   }
   ps_node_expect_lvalue_at_in(diagnostics, node->lhs, "=", tok);
   ps_node_reject_const_assign_at_in(
-      diagnostics, node->lhs, "=", tok);
+      semantic_context, diagnostics, node->lhs, "=", tok);
   if (node->is_source_assignment)
     ps_node_reject_const_qual_discard_at_in(
-        diagnostics, node->lhs, node->rhs, tok);
+        semantic_context, diagnostics, node->lhs, node->rhs, tok);
 }
 
 static void semantic_resolve_subscript(
@@ -249,7 +250,7 @@ static void semantic_resolve_incdec(
                      : (token_t *)fallback_diag_tok;
   ps_node_expect_lvalue_at_in(diagnostics, node->lhs, op, tok);
   ps_node_reject_const_assign_at_in(
-      diagnostics, node->lhs, op, tok);
+      semantic_context, diagnostics, node->lhs, op, tok);
   const psx_type_t *type = psx_resolve_incdec_result_type(
       semantic_context, node->lhs);
   if (!type) {
@@ -661,7 +662,9 @@ static void semantic_transform_node(
           node, ps_type_clone_in(
                     ps_ctx_arena(traversal->semantic_context),
                     ps_node_get_type(node->lhs)));
-      semantic_validate_assignment(node, diagnostics, fallback_diag_tok);
+      semantic_validate_assignment(
+          traversal->semantic_context, node, diagnostics,
+          fallback_diag_tok);
       break;
     }
     case ND_RETURN:
@@ -864,7 +867,9 @@ static void semantic_transform_node(
     default:
       semantic_transform_node(node->lhs, traversal);
       semantic_transform_node(node->rhs, traversal);
-      semantic_validate_assignment(node, diagnostics, fallback_diag_tok);
+      semantic_validate_assignment(
+          traversal->semantic_context, node, diagnostics,
+          fallback_diag_tok);
       if (node->kind == ND_ASSIGN)
         ps_node_bind_type(node, ps_node_get_type(node->lhs));
       break;
