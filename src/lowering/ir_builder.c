@@ -1864,7 +1864,7 @@ static ir_val_t build_node_binop(ir_build_ctx_t *ctx, node_t *node) {
 /* -------- Phase B1: build_expr の制御系 case ヘルパ -------- */
 
 /* `__ag_atomic_*(...)` 組込みを IR_ATOMIC に下ろす (stdatomic.h が使う)。
- * 幅と pointee の符号は parser の node metadata reader から取る。全操作 seq_cst 強度。 */
+ * 幅は target layout、符号は canonical pointee type から取る。全操作 seq_cst 強度。 */
 static ir_val_t build_node_atomic_intrinsic(
     ir_build_ctx_t *ctx, node_function_call_t *call) {
   const char *suf = call->direct_name + 12;    /* "__ag_atomic_" の後ろ */
@@ -1879,9 +1879,13 @@ static ir_val_t build_node_atomic_intrinsic(
   if (call->argument_count < 1) { fail(ctx, "__ag_atomic intrinsic missing pointer arg"); return ir_val_none(); }
 
   node_t *parg = call->arguments[0];
-  int width = 4;
-  int unsigned_p = 0;
-  ps_node_atomic_pointer_info(parg, &width, &unsigned_p);
+  int width = ir_type_deref_size(ctx, ps_node_get_type(parg));
+  if (width != 1 && width != 2 && width != 4 && width != 8) width = 4;
+  int unsigned_p =
+      parg->kind == ND_ADDR && parg->lhs
+          ? ps_node_is_unsigned_type(parg->lhs)
+          : ps_type_is_unsigned(
+                ps_type_pointee_value_type(ps_node_get_type(parg)));
   ir_type_t rty = (width == 8) ? IR_TY_I64 : IR_TY_I32;
   ir_val_t ptr = build_expr(ctx, parg);
   if (ctx->failed) return ir_val_none();

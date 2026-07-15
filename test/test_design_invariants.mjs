@@ -654,6 +654,16 @@ const irBuilderHeader = await readFile(
   "src/lowering/ir_builder.h",
   "utf8",
 );
+if (/\bps_node_atomic_pointer_info\s*\(/.test(
+      `${parserLayerSource}\n${loweringLayerSource}`,
+    ) ||
+    !/int\s+width\s*=\s*ir_type_deref_size\s*\(\s*ctx\s*,\s*ps_node_get_type\s*\(\s*parg\s*\)\s*\)/.test(
+      irBuilderSource,
+    )) {
+  throw new Error(
+    "atomic IR width must come from TypeId target layout instead of a parser node size helper",
+  );
+}
 const compilationSessionInternalHeader = await readFile(
   "src/compilation_session_internal.h",
   "utf8",

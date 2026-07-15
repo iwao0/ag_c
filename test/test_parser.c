@@ -389,6 +389,26 @@ static int test_tag_member_decl_storage_size(const tag_member_info_t *member) {
       test_semantic_context(), ps_tag_member_decl_type(member));
 }
 
+static int test_node_atomic_pointer_info(
+    node_t *pointer, const ag_target_info_t *target,
+    int *width, int *is_unsigned) {
+  if (!pointer || !target) return 0;
+  const psx_type_t *pointee = ps_type_pointee_value_type(
+      ps_node_get_type(pointer));
+  int pointee_width = ps_type_sizeof_for_target(pointee, target);
+  if (pointee_width != 1 && pointee_width != 2 &&
+      pointee_width != 4 && pointee_width != 8) {
+    pointee_width = 4;
+  }
+  if (width) *width = pointee_width;
+  if (is_unsigned) {
+    *is_unsigned = pointer->kind == ND_ADDR && pointer->lhs
+                       ? ps_node_is_unsigned_type(pointer->lhs)
+                       : ps_type_is_unsigned(pointee);
+  }
+  return 1;
+}
+
 static int plan_test_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *plan) {
   ag_target_info_t target = ag_target_info_host();
@@ -11427,8 +11447,9 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(canonical_node_pointee_is_unsigned(&typed_unsigned_ptr_mem));
   int atomic_width = 0;
   int atomic_is_unsigned = 0;
-  ASSERT_TRUE(ps_node_atomic_pointer_info(&typed_unsigned_ptr_mem,
-                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_TRUE(test_node_atomic_pointer_info(
+      &typed_unsigned_ptr_mem, ps_ctx_target_info(test_semantic_context()),
+      &atomic_width, &atomic_is_unsigned));
   ASSERT_EQ(4, atomic_width);
   ASSERT_EQ(1, atomic_is_unsigned);
 
@@ -11483,8 +11504,9 @@ static void test_type_metadata_bridge() {
   canonical_atomic_ptr.kind = ND_DEREF;
   canonical_atomic_ptr.type = ps_type_new_pointer(
       ps_type_new_integer(TK_UNSIGNED, 4, 1));
-  ASSERT_TRUE(ps_node_atomic_pointer_info(&canonical_atomic_ptr,
-                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_TRUE(test_node_atomic_pointer_info(
+      &canonical_atomic_ptr, ps_ctx_target_info(test_semantic_context()),
+      &atomic_width, &atomic_is_unsigned));
   ASSERT_EQ(4, atomic_width);
   ASSERT_EQ(1, atomic_is_unsigned);
 
@@ -11494,8 +11516,9 @@ static void test_type_metadata_bridge() {
       ps_type_new_integer(TK_UNSIGNED, 1, 1);
   node_t *unsigned_atomic_addr =
       ps_node_new_unary_addr_for(&unsigned_atomic_target_mem);
-  ASSERT_TRUE(ps_node_atomic_pointer_info(unsigned_atomic_addr,
-                                           &atomic_width, &atomic_is_unsigned));
+  ASSERT_TRUE(test_node_atomic_pointer_info(
+      unsigned_atomic_addr, ps_ctx_target_info(test_semantic_context()),
+      &atomic_width, &atomic_is_unsigned));
   ASSERT_EQ(4, atomic_width);
   ASSERT_EQ(1, atomic_is_unsigned);
 

@@ -2317,21 +2317,6 @@ static int node_pointee_is_volatile_qualified(node_t *node) {
   return ps_type_has_qualifier(pointee, PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
-int ps_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned) {
-  int w = ps_node_deref_size(ptr_arg);
-  if (w != 1 && w != 2 && w != 4 && w != 8) w = 4;
-  if (width) *width = w;
-
-  int u = 0;
-  if (ptr_arg && ptr_arg->kind == ND_ADDR && ptr_arg->lhs) {
-    u = ps_node_is_unsigned_type(ptr_arg->lhs) ? 1 : 0;
-  } else {
-    u = ps_type_is_unsigned(node_pointee_value_type(ptr_arg));
-  }
-  if (is_unsigned) *is_unsigned = u;
-  return ptr_arg != NULL;
-}
-
 int ps_node_cast_i64_extension_info(node_t *node, int *target_size,
                                      int *widen_zext_i64, int *needs_i64_extend) {
   if (target_size) *target_size = 0;
