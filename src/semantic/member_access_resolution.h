@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
   psx_member_access_status_t status;
   const psx_type_t *base_object_type;
+  int member_index;
   tag_member_info_t member;
 } psx_member_access_resolution_t;
 

@@ -12,12 +12,51 @@ static int node_is_single_tag_array_view(node_t *node) {
          ps_type_is_tag_aggregate(type->base);
 }
 
+static int aggregate_member_index(
+    const psx_record_decl_t *record, const tag_member_info_t *member,
+    const char *member_name, int member_name_len) {
+  if (!record || !member || !record->members) return -1;
+  for (int i = 0; i < record->member_count; i++) {
+    if (member == &record->members[i]) return i;
+  }
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *candidate = &record->members[i];
+    if (candidate->name && candidate->len == member_name_len &&
+        memcmp(candidate->name, member_name, (size_t)member_name_len) == 0)
+      return i;
+  }
+  return -1;
+}
+
+static void apply_target_member_layout(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *object_type, int member_index,
+    tag_member_info_t *member) {
+  const psx_record_decl_t *record = object_type
+                                        ? object_type->aggregate_definition
+                                        : NULL;
+  if (!semantic_context || !record ||
+      record->record_id == PSX_RECORD_ID_INVALID || member_index < 0 ||
+      !member)
+    return;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      ps_ctx_record_layout_table_in(semantic_context), record->record_id,
+      ps_ctx_target_info(semantic_context));
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(layout, member_index);
+  if (!member_layout) return;
+  member->offset = member_layout->offset;
+  member->bit_offset = member_layout->bit_offset;
+  member->bit_width = member_layout->bit_width;
+}
+
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution) {
   if (!resolution) return;
   memset(resolution, 0, sizeof(*resolution));
   resolution->status = PSX_MEMBER_ACCESS_INVALID_BASE;
+  resolution->member_index = -1;
   if (!request || !request->semantic_context || !request->base ||
       !request->member_name || request->member_name_len <= 0) {
     return;
@@ -48,7 +87,13 @@ void psx_resolve_member_access(
       object_type->tag_name, object_type->tag_len,
       request->member_name, request->member_name_len);
   if (member) {
+    resolution->member_index = aggregate_member_index(
+        object_type->aggregate_definition, member,
+        request->member_name, request->member_name_len);
     resolution->member = *member;
+    apply_target_member_layout(
+        semantic_context, object_type, resolution->member_index,
+        &resolution->member);
     resolution->status = PSX_MEMBER_ACCESS_OK;
     return;
   }
@@ -71,4 +116,12 @@ void psx_resolve_member_access(
             &resolution->member);
   resolution->status = found ? PSX_MEMBER_ACCESS_OK
                              : PSX_MEMBER_ACCESS_NOT_FOUND;
+  if (found) {
+    resolution->member_index = aggregate_member_index(
+        object_type->aggregate_definition, &resolution->member,
+        request->member_name, request->member_name_len);
+    apply_target_member_layout(
+        semantic_context, object_type, resolution->member_index,
+        &resolution->member);
+  }
 }

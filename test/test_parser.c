@@ -1306,7 +1306,7 @@ static void test_member_access_resolution_boundary() {
   printf("test_member_access_resolution_boundary...\n");
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(
-      "struct __MemberBoundary { int value; }; "
+      "struct __MemberBoundary { char prefix; int value; }; "
       "int __member_boundary_function(void) { "
       "struct __MemberBoundary object; int *pointer; return 0; }");
   lvar_t *object = find_func_lvar(as_function_definition(parsed_code[0]), "object");
@@ -1314,6 +1314,12 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(object != NULL);
   ASSERT_TRUE(pointer != NULL);
   node_t *base = psx_node_new_lvar_identifier_ref_for(object);
+  psx_record_decl_t *member_record = (psx_record_decl_t *)
+      ps_type_find_aggregate_object_type(
+          ps_node_get_type(base))->aggregate_definition;
+  ASSERT_TRUE(member_record != NULL);
+  ASSERT_EQ(2, member_record->member_count);
+  ((tag_member_info_t *)member_record->members)[1].offset = 77;
   psx_member_access_resolution_t resolution;
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
@@ -1324,7 +1330,8 @@ static void test_member_access_resolution_boundary() {
       },
       &resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, resolution.status);
-  ASSERT_EQ(0, resolution.member.offset);
+  ASSERT_EQ(1, resolution.member_index);
+  ASSERT_EQ(4, resolution.member.offset);
   ASSERT_EQ(4, ps_tag_member_decl_value_size(&resolution.member));
   ASSERT_TRUE(resolution.base_object_type == ps_node_get_type(base));
   ASSERT_TRUE(ps_type_is_tag_aggregate(resolution.base_object_type));
@@ -1352,7 +1359,7 @@ static void test_member_access_resolution_boundary() {
   psx_type_t *object_type = ps_type_clone(ps_lvar_get_decl_type(object));
   reset_test_locals();
   lvar_t *raw_object = register_test_storage_fixture(
-      (char *)"object", 6, 4, 4, 0);
+      (char *)"object", 6, 8, 4, 0);
   set_test_storage_fixture_type(raw_object, object_type);
   node_t *raw_access = parse_expr_input_with_existing_locals(
       "object.value");

@@ -1809,6 +1809,19 @@ const memberAccessResolutionSource = await readFile(
   "src/semantic/member_access_resolution.c",
   "utf8",
 );
+if (!/\bpsx_record_layout_table_lookup\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_member\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/resolution->member_index\s*=\s*aggregate_member_index/.test(
+      memberAccessResolutionSource,
+    )) {
+  throw new Error(
+    "member access must resolve member ordinal and offset from RecordLayoutTable",
+  );
+}
 const typeNameResolutionSource = await readFile(
   "src/semantic/type_name_resolution.c",
   "utf8",

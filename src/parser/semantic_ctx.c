@@ -795,6 +795,11 @@ int ps_ctx_register_tag_type_in_contexts(
       (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
     else
       refresh_cached_tag_definition(context, existing);
+    if (existing->is_complete && existing->definition &&
+        (kind == TK_STRUCT || kind == TK_UNION))
+      (void)ps_ctx_publish_record_layout_in(
+          context, existing->definition->record_id,
+          existing->size, existing->align > 0 ? existing->align : 1);
     return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -825,6 +830,10 @@ int ps_ctx_register_tag_type_in_contexts(
   if (t->is_complete) {
     refresh_registered_member_type_completeness_in(context);
     (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
+    if (t->definition)
+      (void)ps_ctx_publish_record_layout_in(
+          context, t->definition->record_id,
+          t->size, t->align > 0 ? t->align : 1);
   }
   return 1;
 }
