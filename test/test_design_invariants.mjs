@@ -3563,6 +3563,15 @@ if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*
     "global data and static initializer root layout must consume the symbol declaration TypeId",
   );
 }
+if (/\bstorage_alignment\s*\(/.test(translationUnitDataLoweringSource) ||
+    /storage_size\s*>=/.test(translationUnitDataLoweringSource) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      translationUnitDataLoweringSource,
+    )) {
+  throw new Error(
+    "global object storage alignment and incomplete-array element layout must come from TypeId target layout",
+  );
+}
 const typedInitializerSection = initializerLoweringSource.match(
   /static\s+node_t\s*\*append_typed_object_zero_fill\s*\([^]*?static\s+node_t\s*\*lower_struct_list_initializer/,
 );

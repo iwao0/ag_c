@@ -165,19 +165,6 @@ static int canonical_definition_flat_slot_count(
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id);
 
-static psx_type_id_t array_leaf_type_id(
-    const psx_semantic_type_table_t *semantic_types,
-    psx_type_id_t type_id) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(
-      semantic_types, type_id);
-  while (type && type->kind == PSX_TYPE_ARRAY) {
-    type_id = psx_semantic_type_table_base(
-        semantic_types, type_id).type_id;
-    type = psx_semantic_type_table_lookup(semantic_types, type_id);
-  }
-  return type ? type_id : PSX_TYPE_ID_INVALID;
-}
-
 static int canonical_member_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
     const ag_target_info_t *target, const tag_member_info_t *member,
@@ -186,8 +173,9 @@ static int canonical_member_flat_slot_count(
   int per = 1;
   const psx_type_t *member_type = ps_tag_member_decl_type(member);
   psx_type_id_t aggregate_type_id = ps_tag_member_is_tag_aggregate(member)
-                                        ? array_leaf_type_id(
-                                              semantic_types, member_type_id)
+                                        ? psx_semantic_type_table_array_leaf(
+                                              semantic_types,
+                                              member_type_id).type_id
                                         : PSX_TYPE_ID_INVALID;
   const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
       semantic_types, aggregate_type_id);

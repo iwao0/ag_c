@@ -138,18 +138,6 @@ static void lower_float_literal(float_lit_t *literal, void *user) {
   object->is_static = 1;
 }
 
-static int storage_alignment(
-    const translation_unit_data_lowering_t *lowering,
-    const global_var_t *global, int storage_size) {
-  int alignment = type_alignment_id(
-      lowering, ps_gvar_decl_type_id(global));
-  if (alignment > 0) return alignment;
-  if (storage_size >= 8) return 8;
-  if (storage_size >= 4) return 4;
-  if (storage_size >= 2) return 2;
-  return 1;
-}
-
 static int write_bits(ir_data_object_t *object, int offset,
                       unsigned long long value, int size) {
   if (!object || !object->bytes || offset < 0 || size <= 0 ||
@@ -335,16 +323,21 @@ static void lower_global_object(global_var_t *global, void *user) {
   int is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
   if (storage_size <= 0 && is_extern && type &&
       type->kind == PSX_TYPE_ARRAY) {
-    storage_size = type_size(lowering, type->base);
+    storage_size = type_size_id(
+        lowering, psx_semantic_type_table_base(
+                      lowering->semantic_types,
+                      ps_gvar_decl_type_id(global)).type_id);
   }
+  int alignment = type_alignment_id(
+      lowering, ps_gvar_decl_type_id(global));
   ir_data_object_t *object = ir_data_module_add_object(
       lowering->module, name, name_len, IR_DATA_OBJECT);
-  if (!object || storage_size <= 0) {
+  if (!object || storage_size <= 0 || alignment <= 0) {
     lowering->failed = 1;
     return;
   }
   object->byte_size = storage_size;
-  object->alignment = storage_alignment(lowering, global, storage_size);
+  object->alignment = alignment;
   object->is_extern = is_extern;
   object->is_static = ps_gvar_is_static_storage(global) ? 1 : 0;
   object->is_thread_local = ps_gvar_is_thread_local(global) ? 1 : 0;
