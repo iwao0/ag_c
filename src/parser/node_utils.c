@@ -110,11 +110,23 @@ static token_kind_t type_tag_aggregate_kind(const psx_type_t *type) {
 }
 
 static const psx_type_t *lvar_decl_type_consistent(const lvar_t *var) {
-  return var ? var->decl_type : NULL;
+  if (!var) return NULL;
+  if (var->decl_type_table &&
+      var->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
+    return psx_semantic_type_table_lookup(
+        var->decl_type_table, var->decl_qual_type.type_id);
+  }
+  return var->decl_type;
 }
 
 static const psx_type_t *gvar_decl_type_consistent(const global_var_t *gv) {
-  return gv ? gv->decl_type : NULL;
+  if (!gv) return NULL;
+  if (gv->decl_type_table &&
+      gv->decl_qual_type.type_id != PSX_TYPE_ID_INVALID) {
+    return psx_semantic_type_table_lookup(
+        gv->decl_type_table, gv->decl_qual_type.type_id);
+  }
+  return gv->decl_type;
 }
 
 int ps_lvar_value_is_pointer_like(const lvar_t *var) {

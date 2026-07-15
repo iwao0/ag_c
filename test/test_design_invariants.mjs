@@ -4582,6 +4582,12 @@ const symtabSource = await readFile("src/parser/symtab.h", "utf8");
 const gvarStruct = symtabSource.match(
   /struct global_var_t\s*\{([\s\S]*?)\n\};/,
 );
+const lvarDeclTypeViewFunction = nodeUtilsSource.match(
+  /static\s+const\s+psx_type_t\s*\*lvar_decl_type_consistent\s*\([^)]*\)\s*\{[^]*?\n\}/,
+);
+const gvarDeclTypeViewFunction = nodeUtilsSource.match(
+  /static\s+const\s+psx_type_t\s*\*gvar_decl_type_consistent\s*\([^)]*\)\s*\{[^]*?\n\}/,
+);
 const lvarPublicSource = await readFile("src/parser/lvar_public.h", "utf8");
 const gvarPublicSource = await readFile("src/parser/gvar_public.h", "utf8");
 if (!lvarStruct ||
@@ -4622,6 +4628,32 @@ if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
     )) {
   throw new Error(
     "local symbols must retain their declaration QualType from the compilation unit semantic type table",
+  );
+}
+if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
+      lvarStruct[1],
+    ) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*decl_type_table\s*;/.test(
+      gvarStruct[1],
+    ) ||
+    !lvarDeclTypeViewFunction ||
+    !gvarDeclTypeViewFunction ||
+    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup\s*\(/.test(
+      lvarDeclTypeViewFunction[0],
+    ) ||
+    !/decl_type_table[^]*?decl_qual_type\.type_id[^]*?psx_semantic_type_table_lookup\s*\(/.test(
+      gvarDeclTypeViewFunction[0],
+    ) ||
+    !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/decl_type_table\s*=\s*registry->semantic_types\s*;/.test(
+      globalRegistrySource,
+    ) ||
+    /\bglobal->decl_type\b/.test(staticLocalLoweringSource) ||
+    !/\bps_gvar_get_decl_type\s*\(/.test(staticLocalLoweringSource)) {
+  throw new Error(
+    "production symbol type views must materialize from declaration QualType identity",
   );
 }
 if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||

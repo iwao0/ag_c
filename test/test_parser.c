@@ -1416,6 +1416,8 @@ static void set_test_storage_fixture_type(
   ASSERT_TRUE(var != NULL);
   ASSERT_TRUE(type != NULL);
   var->decl_qual_type = intern_test_qual_type(type);
+  var->decl_type_table = ps_ctx_semantic_type_table_in(
+      test_semantic_context());
   var->decl_type = var->decl_qual_type.type_id != PSX_TYPE_ID_INVALID
       ? ps_ctx_type_by_id_in(
             test_semantic_context(), var->decl_qual_type.type_id)
@@ -9862,7 +9864,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *x_decl_a = ps_lvar_get_decl_type(x_lvar);
   ASSERT_TRUE(x_decl_a != NULL);
   x_lvar->decl_type = NULL;
-  ASSERT_TRUE(ps_lvar_get_decl_type(x_lvar) == NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(x_lvar) == x_decl_a);
   x_lvar->decl_type = x_decl_a;
 
   parsed_code = parse_program_input("int __tm_local_bool_ref(void) { _Bool b=1; return b; }");
@@ -10236,7 +10238,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_INTEGER,
             sig_lvar_function->param_types[1]->base->kind);
   sig_lvar->decl_type = NULL;
-  ASSERT_TRUE(ps_lvar_get_decl_type(sig_lvar) == NULL);
+  ASSERT_TRUE(ps_lvar_get_decl_type(sig_lvar) == sig_lvar_type);
   sig_lvar->decl_type = sig_lvar_type;
 
   reset_test_locals();
@@ -10323,7 +10325,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *sig_gvar_type = ps_gvar_get_decl_type(sig_gvar);
   ASSERT_TRUE(sig_gvar_type != NULL);
   sig_gvar->decl_type = NULL;
-  ASSERT_TRUE(ps_gvar_get_decl_type(sig_gvar) == NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(sig_gvar) == sig_gvar_type);
   sig_gvar->decl_type = sig_gvar_type;
   global_var_t *top_fp = find_test_global_var(
       "__tm_top_fp", (int)(sizeof("__tm_top_fp") - 1));
@@ -13774,7 +13776,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *gu_decl_a = ps_gvar_get_decl_type(gu);
   ASSERT_TRUE(gu_decl_a != NULL);
   gu->decl_type = NULL;
-  ASSERT_TRUE(ps_gvar_get_decl_type(gu) == NULL);
+  ASSERT_TRUE(ps_gvar_get_decl_type(gu) == gu_decl_a);
   gu->decl_type = gu_decl_a;
 
   global_var_t tmp_gv = {0};

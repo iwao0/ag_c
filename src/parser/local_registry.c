@@ -242,6 +242,7 @@ lvar_t *ps_local_registry_create_storage_object_in(
   var->offset = offset;
   var->size = storage_size;
   var->align_bytes = alignment;
+  var->decl_type_table = registry->semantic_types;
   var->decl_type = canonical_type;
   var->decl_qual_type = qual_type;
   psx_decl_attach_lvar_current_region_in(registry, var);
@@ -274,6 +275,7 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->scope_seq = registry->current_scope_seq;
   var->declaration_seq =
       ps_local_registry_register_binding_event_in(registry);
+  var->decl_type_table = registry->semantic_types;
   var->decl_type = canonical_type;
   var->decl_qual_type = qual_type;
   var->is_param = 1;
@@ -309,6 +311,7 @@ lvar_t *ps_local_registry_create_static_alias_in(
   var->static_global = global;
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
+  var->decl_type_table = registry->semantic_types;
   var->decl_type = canonical_type;
   var->decl_qual_type = qual_type;
   psx_decl_attach_lvar_current_region_in(registry, var);
@@ -338,7 +341,7 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
 int ps_local_registry_complete_array_type(
     psx_local_registry_t *registry, lvar_t *var,
     const psx_type_t *complete_type) {
-  const psx_type_t *current = var ? var->decl_type : NULL;
+  const psx_type_t *current = ps_lvar_get_decl_type(var);
   if (!ps_type_is_incomplete_array(current) || !complete_type ||
       complete_type->kind != PSX_TYPE_ARRAY ||
       complete_type->array_len <= 0 || complete_type->is_vla ||
@@ -359,6 +362,7 @@ int ps_local_registry_complete_array_type(
       current_base.qualifiers != replacement_base.qualifiers)
     return 0;
   var->decl_type = replacement;
+  var->decl_type_table = registry->semantic_types;
   var->decl_qual_type = qual_type;
   return 1;
 }

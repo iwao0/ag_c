@@ -29,6 +29,8 @@ struct lvar_t {
   int static_global_name_len;
   int align_bytes;
   int used_count;
+  const psx_semantic_type_table_t *decl_type_table;
+  /* Canonical projection for legacy readers; QualType/table is authoritative. */
   const psx_type_t *decl_type;
   psx_qual_type_t decl_qual_type;
   psx_vla_runtime_descriptor_t vla_runtime;

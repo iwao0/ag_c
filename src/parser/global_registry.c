@@ -51,7 +51,9 @@ static int resolve_global_decl_type(
 int ps_global_registry_bind_decl_type(
     psx_global_registry_t *registry, global_var_t *global,
     const psx_type_t *type) {
-  if (!global || global->decl_type || !type) return 0;
+  if (!global || global->decl_type ||
+      global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID || !type)
+    return 0;
   const psx_type_t *canonical_type = NULL;
   psx_qual_type_t qual_type = {0};
   if (!resolve_global_decl_type(
@@ -65,11 +67,14 @@ int ps_global_registry_bind_decl_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t type) {
   if (!registry || !registry->semantic_types || !global ||
-      global->decl_type || type.type_id == PSX_TYPE_ID_INVALID)
+      global->decl_type ||
+      global->decl_qual_type.type_id != PSX_TYPE_ID_INVALID ||
+      type.type_id == PSX_TYPE_ID_INVALID)
     return 0;
   const psx_type_t *canonical = psx_semantic_type_table_lookup(
       registry->semantic_types, type.type_id);
   if (!canonical) return 0;
+  global->decl_type_table = registry->semantic_types;
   global->decl_type = canonical;
   global->decl_qual_type = type;
   return 1;
@@ -90,7 +95,10 @@ int ps_global_registry_complete_array_type(
 int ps_global_registry_complete_array_qual_type(
     psx_global_registry_t *registry, global_var_t *global,
     psx_qual_type_t complete_type) {
-  const psx_type_t *current = global ? global->decl_type : NULL;
+  const psx_type_t *current = global && registry
+      ? psx_semantic_type_table_lookup(
+            registry->semantic_types, global->decl_qual_type.type_id)
+      : NULL;
   const psx_type_t *replacement = registry
       ? psx_semantic_type_table_lookup(
             registry->semantic_types, complete_type.type_id)
@@ -111,6 +119,7 @@ int ps_global_registry_complete_array_qual_type(
       current_base.qualifiers != replacement_base.qualifiers)
     return 0;
   global->decl_type = replacement;
+  global->decl_type_table = registry->semantic_types;
   global->decl_qual_type = complete_type;
   return 1;
 }

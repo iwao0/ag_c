@@ -22,7 +22,7 @@ int psx_static_local_prepare_global(
     const psx_type_t *type) {
   if (!global || !type) return 0;
   global->is_static = 1;
-  if (global->decl_type) return 1;
+  if (ps_gvar_get_decl_type(global)) return 1;
   return ps_global_registry_bind_decl_type(
       global_registry, global, type);
 }

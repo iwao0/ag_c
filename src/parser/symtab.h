@@ -10,6 +10,8 @@
 #include "literal_public.h"
 #include "type.h"
 
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+
 // グローバル変数テーブル（連結リスト）
 //
 // フィールドはアライメント降順 (8→4→2→1 バイト) に寄せ、真偽フラグをビットフィールドに
@@ -49,6 +51,8 @@ struct global_var_t {
   unsigned int is_static : 1;      // 1: static (内部リンケージ)。.global を出さず .comm でなく .zerofill に。
   unsigned int has_init : 1;       // 1: 初期化子あり
   unsigned int is_thread_local : 1; // 1: _Thread_local
+  const psx_semantic_type_table_t *decl_type_table;
+  /* Canonical projection for legacy readers; QualType/table is authoritative. */
   const psx_type_t *decl_type;
   psx_qual_type_t decl_qual_type;
 };
