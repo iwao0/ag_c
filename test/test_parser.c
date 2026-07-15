@@ -3258,6 +3258,12 @@ static void test_wasm_target_global_pointer_data_layout() {
       &pointers, 0, 0, 0.0, first.name, first.name_len);
   ps_gvar_init_slot_write(
       &pointers, 1, 0, 0.0, second.name, second.name_len);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  session.semantic_context, integer).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  session.semantic_context, array).type_id !=
+              PSX_TYPE_ID_INVALID);
   ps_register_global_var_in(session.global_registry, &first);
   ps_register_global_var_in(session.global_registry, &second);
   ps_register_global_var_in(session.global_registry, &pointers);
@@ -16565,6 +16571,32 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       second.semantic_context, second.local_registry,
       TK_STRUCT, session_aggregate_name, 16, 1, 2, 12, 4));
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  first.semantic_context, first_global.decl_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  first.semantic_context, session_callback_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  first.semantic_context, first_aggregate_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  first.semantic_context,
+                  first_aggregate_members[0].decl_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  second.semantic_context, second_global.decl_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  second.semantic_context, session_callback_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  second.semantic_context, second_aggregate_type).type_id !=
+              PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(ps_ctx_intern_qual_type_in(
+                  second.semantic_context,
+                  second_aggregate_members[0].decl_type).type_id !=
+              PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_find_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);

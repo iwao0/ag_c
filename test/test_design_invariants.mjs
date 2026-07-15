@@ -3006,9 +3006,10 @@ for (const [name, source] of [
   ["initializer", explicitDiagnosticInitializerLoweringSource],
   ["VLA", vlaLoweringSource],
   ["static data initializer", explicitDiagnosticStaticDataInitializerSource],
+  ["translation unit data", translationUnitDataLoweringSource],
 ]) {
   if (!/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
-      /\bps_type_sizeof_for_target\s*\(/.test(source)) {
+      /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
     throw new Error(
       `${name} lowering must obtain target layout through an interned TypeId`,
     );

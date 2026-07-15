@@ -17,6 +17,8 @@
 typedef struct {
   ir_data_module_t *module;
   psx_semantic_context_t *semantic_context;
+  const psx_semantic_type_table_t *semantic_types;
+  const ag_target_info_t *target;
   int failed;
 } translation_unit_data_lowering_t;
 
@@ -32,6 +34,26 @@ typedef struct {
   global_var_t *global;
   const psx_initializer_scalar_leaf_list_t *leaves;
 } global_data_lowering_t;
+
+static int type_size(
+    const translation_unit_data_lowering_t *lowering,
+    const psx_type_t *type) {
+  psx_qual_type_t identity = psx_semantic_type_table_find(
+      lowering ? lowering->semantic_types : NULL, type);
+  return ps_type_sizeof_id_for_target(
+      lowering ? lowering->semantic_types : NULL, identity.type_id,
+      lowering ? lowering->target : NULL);
+}
+
+static int type_alignment(
+    const translation_unit_data_lowering_t *lowering,
+    const psx_type_t *type) {
+  psx_qual_type_t identity = psx_semantic_type_table_find(
+      lowering ? lowering->semantic_types : NULL, type);
+  return ps_type_alignof_id_for_target(
+      lowering ? lowering->semantic_types : NULL, identity.type_id,
+      lowering ? lowering->target : NULL);
+}
 
 static void write_byte(unsigned char byte, void *user) {
   byte_writer_t *writer = user;
@@ -114,8 +136,7 @@ static int storage_alignment(
     const translation_unit_data_lowering_t *lowering,
     const global_var_t *global, int storage_size) {
   const psx_type_t *type = ps_gvar_get_decl_type(global);
-  int alignment = ps_type_alignof_for_target(
-      type, ps_ctx_target_info(lowering->semantic_context));
+  int alignment = type_alignment(lowering, type);
   if (alignment > 0) return alignment;
   if (storage_size >= 8) return 8;
   if (storage_size >= 4) return 4;
@@ -162,8 +183,7 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
 static int lower_init_value(global_data_lowering_t *ctx, int offset,
                             psx_gvar_init_value_t value,
                             const psx_type_t *value_type) {
-  int target_size = ps_type_sizeof_for_target(
-      value_type, ps_ctx_target_info(ctx->lowering->semantic_context));
+  int target_size = type_size(ctx->lowering, value_type);
   if (target_size > 0) value.size = target_size;
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
     return lower_symbol_reloc(ctx, offset, value, value_type);
@@ -187,9 +207,7 @@ static int lower_init_slot(void *user, int index,
           : NULL;
   int offset = leaf ? leaf->relative_offset : index * layout->elem_size;
   if (leaf) {
-    int size = ps_type_sizeof_for_target(
-        leaf->type,
-        ps_ctx_target_info(ctx->lowering->semantic_context));
+    int size = type_size(ctx->lowering, leaf->type);
     if (size > 0) value.size = size;
   }
   if (!lower_init_value(ctx, offset, value,
@@ -265,7 +283,7 @@ static int lower_global_slots(
   psx_initializer_scalar_leaf_list_t leaves = {0};
   const psx_type_t *type = ps_gvar_get_decl_type(ctx->global);
   if (!psx_collect_initializer_scalar_leaves(
-          ps_ctx_target_info(ctx->lowering->semantic_context),
+          ctx->lowering->target,
           type, 0, &leaves)) {
     return 0;
   }
@@ -298,13 +316,11 @@ static void lower_global_object(global_var_t *global, void *user) {
   char *name = ps_gvar_name(global);
   int name_len = ps_gvar_name_len(global);
   const psx_type_t *type = ps_gvar_get_decl_type(global);
-  int storage_size = ps_type_sizeof_for_target(
-      type, ps_ctx_target_info(lowering->semantic_context));
+  int storage_size = type_size(lowering, type);
   int is_extern = ps_gvar_is_extern_decl(global) ? 1 : 0;
   if (storage_size <= 0 && is_extern && type &&
       type->kind == PSX_TYPE_ARRAY) {
-    storage_size = ps_type_sizeof_for_target(
-        type->base, ps_ctx_target_info(lowering->semantic_context));
+    storage_size = type_size(lowering, type->base);
   }
   ir_data_object_t *object = ir_data_module_add_object(
       lowering->module, name, name_len, IR_DATA_OBJECT);
@@ -343,13 +359,18 @@ static void lower_global_object(global_var_t *global, void *user) {
 
 static ir_data_module_t *lower_ir_translation_unit_data_in_registry(
     psx_semantic_context_t *semantic_context,
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *target,
     psx_global_registry_t *registry) {
-  if (!semantic_context || !registry) return NULL;
+  if (!semantic_context || !semantic_types || !target || !registry)
+    return NULL;
   ir_data_module_t *module = ir_data_module_new();
   if (!module) return NULL;
   translation_unit_data_lowering_t lowering = {
       .module = module,
       .semantic_context = semantic_context,
+      .semantic_types = semantic_types,
+      .target = target,
   };
   ps_iter_string_literals_in(registry, lower_string_literal, &lowering);
   ps_iter_float_literals_in(registry, lower_float_literal, &lowering);
@@ -366,5 +387,8 @@ ir_data_module_t *lower_ir_translation_unit_data_in_session(
   if (!ag_compilation_session_is_complete(session)) return NULL;
   return lower_ir_translation_unit_data_in_registry(
       ag_compilation_session_semantic_context(session),
+      ps_ctx_semantic_type_table_in(
+          ag_compilation_session_semantic_context(session)),
+      ag_compilation_session_target(session),
       ag_compilation_session_global_registry(session));
 }
