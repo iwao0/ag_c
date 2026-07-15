@@ -62,9 +62,6 @@ typedef struct psx_record_decl_t {
   const struct tag_member_info_t *members;
 } psx_record_decl_t;
 
-/* Transitional name for initializer APIs while record ownership migrates. */
-typedef psx_record_decl_t psx_aggregate_definition_t;
-
 struct psx_type_t {
   psx_type_kind_t kind;
   const psx_type_t *base;

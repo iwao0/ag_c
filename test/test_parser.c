@@ -4489,7 +4489,7 @@ static void test_global_declaration_resolution_boundary() {
       test_semantic_context(), test_local_registry(), TK_STRUCT,
       incomplete_tag_name, incomplete_tag_len, 0, 0, 0, 1));
   const psx_record_decl_t *incomplete_record =
-      ps_ctx_get_tag_definition_in(
+      ps_ctx_ensure_tag_record_decl_in(
           test_semantic_context(), TK_STRUCT,
           incomplete_tag_name, incomplete_tag_len);
   ASSERT_TRUE(incomplete_record != NULL);
@@ -4515,7 +4515,7 @@ static void test_global_declaration_resolution_boundary() {
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
       test_semantic_context(), test_local_registry(), TK_STRUCT,
       complete_tag_name, complete_tag_len, 1, 0, 16, 8));
-  const psx_record_decl_t *complete_record = ps_ctx_get_tag_definition_in(
+  const psx_record_decl_t *complete_record = ps_ctx_ensure_tag_record_decl_in(
       test_semantic_context(), TK_STRUCT,
       complete_tag_name, complete_tag_len);
   ASSERT_TRUE(complete_record != NULL);
@@ -4731,8 +4731,8 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(!resolution.registered);
-  const psx_aggregate_definition_t *cached_definition =
-      ps_ctx_get_tag_definition_in(test_semantic_context(),
+  const psx_record_decl_t *cached_definition =
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(cached_definition != NULL);
   ASSERT_TRUE(cached_definition->record_id != PSX_RECORD_ID_INVALID);
@@ -4749,7 +4749,7 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(cached_definition,
-            ps_ctx_get_tag_definition_in(test_semantic_context(),
+            ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
                 TK_STRUCT, (char *)"__TagBoundary", 13));
   ASSERT_TRUE(cached_definition->is_complete);
   ASSERT_EQ(outer_record_id, cached_definition->record_id);
@@ -4776,8 +4776,8 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(1, resolution.scope_depth);
-  const psx_aggregate_definition_t *shadow_definition =
-      ps_ctx_get_tag_definition_in(test_semantic_context(),
+  const psx_record_decl_t *shadow_definition =
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(shadow_definition != NULL);
   ASSERT_TRUE(shadow_definition->record_id != outer_record_id);
@@ -4791,16 +4791,16 @@ static void test_tag_declaration_resolution_boundary() {
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
 
-static void test_aggregate_definition_ownership_boundary() {
-  printf("test_aggregate_definition_ownership_boundary...\n");
+static void test_record_decl_ownership_boundary() {
+  printf("test_record_decl_ownership_boundary...\n");
   reset_test_translation_unit_state();
 
   char tag_name[] = "__DefinitionOwner";
   int tag_name_len = (int)(sizeof(tag_name) - 1);
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 0, 0, 0, 0));
-  const psx_aggregate_definition_t *first =
-      ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
+  const psx_record_decl_t *first =
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(first != NULL);
   ASSERT_TRUE(first->record_id != PSX_RECORD_ID_INVALID);
   ASSERT_EQ(first, ps_ctx_get_record_decl_in(
@@ -4823,7 +4823,7 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   ASSERT_TRUE(first ==
-              ps_ctx_get_tag_definition_in(test_semantic_context(),
+              ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
                   TK_STRUCT, tag_name, tag_name_len));
   ASSERT_EQ(1, first->member_count);
   ASSERT_TRUE(first->is_complete);
@@ -4840,8 +4840,8 @@ static void test_aggregate_definition_ownership_boundary() {
       TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
   ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
-  const psx_aggregate_definition_t *second =
-      ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
+  const psx_record_decl_t *second =
+      ps_ctx_ensure_tag_record_decl_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(second != NULL);
   ASSERT_TRUE(second != first);
   ASSERT_TRUE(second->record_id != first->record_id);
@@ -4871,7 +4871,7 @@ static void test_aggregate_definition_ownership_boundary() {
       TK_STRUCT, parameter_tag_name, parameter_tag_name_len,
       1, 0, 1, 1));
   const psx_record_decl_t *parameter_definition =
-      ps_ctx_get_tag_definition_in(
+      ps_ctx_ensure_tag_record_decl_in(
           test_semantic_context(), TK_STRUCT,
           parameter_tag_name, parameter_tag_name_len);
   ASSERT_TRUE(parameter_definition != NULL);
@@ -6354,7 +6354,7 @@ static void test_initializer_resolution_boundary() {
       {.name = (char *)"a", .len = 1, .offset = 44,
        .decl_type = array},
   };
-  psx_aggregate_definition_t definition = {
+  psx_record_decl_t definition = {
       .record_id = 0x1a11u,
       .tag_kind = TK_STRUCT,
       .tag_name = (char *)"InitBoundary",
@@ -6437,7 +6437,7 @@ static void test_initializer_resolution_boundary() {
       {.name = (char *)"value", .len = 5, .offset = 8,
        .decl_type = integer},
   };
-  psx_aggregate_definition_t recursive_definition = {
+  psx_record_decl_t recursive_definition = {
       .record_id = 0x1a12u,
       .tag_kind = TK_STRUCT,
       .tag_name = (char *)"RecursiveInit",
@@ -6482,7 +6482,7 @@ static void test_local_initializer_parse_lowering_boundary() {
       {.name = (char *)"value", .len = 5, .offset = 8,
        .decl_type = integer},
   };
-  psx_aggregate_definition_t definition = {
+  psx_record_decl_t definition = {
       .record_id = 0x1a20u,
       .tag_kind = TK_STRUCT,
       .tag_name = (char *)"LocalInitBoundary",
@@ -6539,7 +6539,7 @@ static void test_local_initializer_parse_lowering_boundary() {
       {.name = (char *)"value", .len = 5, .offset = 0,
        .decl_type = integer},
   };
-  psx_aggregate_definition_t union_definition = {
+  psx_record_decl_t union_definition = {
       .record_id = 0x1a21u,
       .tag_kind = TK_UNION,
       .tag_name = (char *)"LocalUnionBoundary",
@@ -6653,7 +6653,7 @@ static void test_static_data_initializer_boundary() {
       {.name = (char *)"a", .len = 1, .offset = 0,
        .decl_type = pair},
   };
-  psx_aggregate_definition_t union_definition = {
+  psx_record_decl_t union_definition = {
       .record_id = 0xfacdu,
       .tag_kind = TK_UNION,
       .tag_name = (char *)"InitUnion",
@@ -17293,7 +17293,7 @@ static void test_semantic_type_identity() {
       .len = 4,
       .decl_type = recursive_pointer,
   };
-  psx_aggregate_definition_t recursive_definition = {
+  psx_record_decl_t recursive_definition = {
       .record_id = 43,
       .tag_kind = TK_STRUCT,
       .tag_name = recursive_name,
@@ -17321,7 +17321,7 @@ static void test_semantic_type_identity() {
                 recursive_pointer_identity.type_id).type_id);
 
   char completed_record_name[] = "CompletedIdentityRecord";
-  psx_aggregate_definition_t completed_definition = {
+  psx_record_decl_t completed_definition = {
       .record_id = 44,
       .tag_kind = TK_STRUCT,
       .tag_name = completed_record_name,
@@ -18644,7 +18644,7 @@ int main() {
   test_global_declaration_resolution_boundary();
   test_declaration_pipeline_order_boundary();
   test_tag_declaration_resolution_boundary();
-  test_aggregate_definition_ownership_boundary();
+  test_record_decl_ownership_boundary();
   test_aggregate_body_phase_boundary();
   test_declaration_phase_boundary();
   test_type_name_phase_boundary();

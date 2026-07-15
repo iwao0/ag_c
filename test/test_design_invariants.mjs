@@ -548,7 +548,7 @@ if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
 }
 const contextFreeSemanticRegistryApis =
-  /\b(?:ps_ctx_reset_function_names|ps_ctx_reset_translation_unit_scope|ps_ctx_reset_function_diag_state|ps_ctx_reset_tag_diag_state|ps_ctx_reset_function_scope|ps_ctx_enter_block_scope|ps_ctx_leave_block_scope|ps_ctx_has_tag_type|ps_ctx_register_tag_type|ps_ctx_get_tag_definition|ps_ctx_get_tag_size|ps_ctx_get_tag_align|ps_ctx_register_tag_members|ps_ctx_find_enum_const|ps_ctx_find_typedef_name|ps_ctx_find_typedef_decl_type|ps_ctx_find_function_symbol|ps_ctx_get_function_type)\s*\(/;
+  /\b(?:ps_ctx_reset_function_names|ps_ctx_reset_translation_unit_scope|ps_ctx_reset_function_diag_state|ps_ctx_reset_tag_diag_state|ps_ctx_reset_function_scope|ps_ctx_enter_block_scope|ps_ctx_leave_block_scope|ps_ctx_has_tag_type|ps_ctx_register_tag_type|ps_ctx_ensure_tag_record_decl|ps_ctx_get_tag_size|ps_ctx_get_tag_align|ps_ctx_register_tag_members|ps_ctx_find_enum_const|ps_ctx_find_typedef_name|ps_ctx_find_typedef_decl_type|ps_ctx_find_function_symbol|ps_ctx_get_function_type)\s*\(/;
 if (contextFreeSemanticRegistryApis.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registry operations must require an explicit context");
 }
@@ -1871,7 +1871,7 @@ const frontendDeclarationSources = [
   await readFile("src/frontend/function_definition.c", "utf8"),
 ].join("\n");
 const contextFreeTagRegistryCall =
-  /\bps_ctx_(?:has_tag_type|register_tag_type|get_tag_size|get_tag_align|get_tag_definition|get_tag_member_count|register_tag_members|find_tag_member_info)\s*\(/;
+  /\bps_ctx_(?:has_tag_type|register_tag_type|get_tag_size|get_tag_align|ensure_tag_record_decl|get_tag_member_count|register_tag_members|find_tag_member_info)\s*\(/;
 if (contextFreeTagRegistryCall.test(tagDeclarationResolutionSource) ||
     contextFreeTagRegistryCall.test(aggregateMemberResolutionSource) ||
     !/psx_apply_parsed_tag_declaration_in_contexts\s*\(/.test(
@@ -3765,9 +3765,6 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     !/populate_type_relations_body\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
-    /\bconst\s+psx_aggregate_definition_t\s*\*/.test(
-      semanticTypeIdentitySource,
-    ) ||
     !/\bps_type_clone_in\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
@@ -3814,7 +3811,7 @@ const semanticContextSource = await readFile(
   "src/parser/semantic_ctx.h",
   "utf8",
 );
-if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s*\(/.test(
+if (!/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_ensure_tag_record_decl_in\s*\(/.test(
       semanticContextSource,
     ) ||
     !/\bconst\s+psx_record_decl_t\s*\*\s*ps_ctx_get_record_decl_in\s*\(/.test(
@@ -3845,13 +3842,16 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
 const recordIdBinder = parserSemanticContextImplementation.match(
   /void\s+ps_ctx_bind_record_ids_in\s*\([^]*?\n\}/,
 );
-const sourcesWithLegacyRecordAttachment = [];
+const sourcesWithLegacyRecordOwnership = [];
 for (const path of allSourceFiles) {
   const source = await readFile(path, "utf8");
-  if (/\bps_ctx_attach_aggregate_definitions_in\b/.test(source))
-    sourcesWithLegacyRecordAttachment.push(path);
+  if (/\b(?:ps_ctx_attach_aggregate_definitions_in|ps_ctx_get_tag_definition_in|psx_aggregate_definition_t)\b/.test(
+        source,
+      )) {
+    sourcesWithLegacyRecordOwnership.push(path);
+  }
 }
-if (sourcesWithLegacyRecordAttachment.length > 0 ||
+if (sourcesWithLegacyRecordOwnership.length > 0 ||
     !/\bvoid\s+ps_ctx_bind_record_ids_in\s*\(/.test(
       semanticContextSource,
     ) ||
@@ -3868,7 +3868,7 @@ if (sourcesWithLegacyRecordAttachment.length > 0 ||
 if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(
       semanticContextOwnershipSource,
     ) ||
-    !/\bps_ctx_get_tag_definition_in\s*\([\s\S]*?record->record_id[\s\S]*?psx_aggregate_layout_init\s*\([\s\S]*?record->record_id/.test(
+    !/\bps_ctx_ensure_tag_record_decl_in\s*\([\s\S]*?record->record_id[\s\S]*?psx_aggregate_layout_init\s*\([\s\S]*?record->record_id/.test(
       declarationApplicationSource,
     )) {
   throw new Error(
@@ -4234,7 +4234,7 @@ if (!aggregateWalkerLayoutSection ||
     !/\bgvar_apply_record_member_layout\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bgvar_record_find_unnamed_union_covering_offset\s*\(/.test(
+    !/\bgvar_resolved_record_find_unnamed_union_covering_offset\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
     !/\bgvar_aggregate_member_iter_note_cover\s*\(/.test(

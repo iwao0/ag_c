@@ -56,7 +56,7 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
     int *out_size, int *out_align) {
   if (!semantic_context || !global_registry || !local_registry ||
       !body || !out_size) return 0;
-  const psx_record_decl_t *record = ps_ctx_get_tag_definition_in(
+  const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
       semantic_context, tag_kind, tag_name, tag_len);
   if (!record || record->record_id == PSX_RECORD_ID_INVALID) return 0;
   int member_count = 0;
@@ -159,7 +159,7 @@ static void apply_decl_tag_action(
       PSX_TAG_DECLARATION_DEFINITION, member_count, size, alignment,
       action->diagnostic_token);
   if (action->kind == TK_STRUCT || action->kind == TK_UNION) {
-    const psx_record_decl_t *record = ps_ctx_get_tag_definition_in(
+    const psx_record_decl_t *record = ps_ctx_ensure_tag_record_decl_in(
         semantic_context, action->kind, action->name, action->name_len);
     if (record)
       (void)ps_ctx_publish_record_layout_in(

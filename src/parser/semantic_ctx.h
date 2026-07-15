@@ -139,7 +139,7 @@ int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context);
 int ps_ctx_find_tag_kind_at_current_scope_in(
     psx_semantic_context_t *context,
     char *name, int len, token_kind_t *out_kind);
-const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
+const psx_record_decl_t *ps_ctx_ensure_tag_record_decl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
 psx_record_id_t ps_ctx_resolve_tag_record_id_in(
