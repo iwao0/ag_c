@@ -4,6 +4,7 @@
 #include "../parser/declarator_shape_builder.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../parser/vla_runtime.h"
 
 #include <string.h>
 
@@ -65,8 +66,13 @@ int psx_resolve_parameter_declaration(
 
   if (resolution->lowering_kind == PSX_PARAMETER_LOWER_VLA &&
       has_runtime_inner_dimension(request)) {
+    if (ag_target_info_scalar_size(
+            ps_ctx_target_info(request->type.semantic_context),
+            AG_TARGET_SCALAR_LONG_LONG) != PSX_VLA_RUNTIME_SLOT_SIZE)
+      return 0;
     psx_type_t *slot = ps_type_new_integer_in(
-        ps_ctx_arena(request->type.semantic_context), TK_LONG, 0);
+        ps_ctx_arena(request->type.semantic_context), TK_LONG, 1);
+    slot->integer_kind = PSX_INTEGER_KIND_LONG_LONG;
     psx_type_t *storage_type = request->inner_dimension_count == 1
         ? slot
         : ps_type_new_array_in(

@@ -19,25 +19,29 @@ int frame_layout_allocate(frame_layout_t *layout, int size, int align) {
 }
 
 frame_vla_layout_t frame_layout_vla_storage(int dim_count, int inner_is_const) {
-  frame_vla_layout_t layout = {16, 0, 0};
+  frame_vla_layout_t layout = {
+      PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE, 0, 0};
   if (dim_count <= 1 || (dim_count == 2 && inner_is_const)) return layout;
 
   int stride_count = dim_count - 1;
-  layout.storage_size += 8 * stride_count;
-  layout.row_stride_relative_offset = 16;
+  layout.storage_size += PSX_VLA_RUNTIME_SLOT_SIZE * stride_count;
+  layout.row_stride_relative_offset =
+      PSX_VLA_RUNTIME_FIRST_STRIDE_RELATIVE_OFFSET;
   layout.subsequent_stride_count = stride_count - 1;
   return layout;
 }
 
 frame_vla_layout_t frame_layout_pointer_vla_storage(void) {
-  frame_vla_layout_t layout = {16, 8, 0};
+  frame_vla_layout_t layout = {
+      PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
+      PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET, 0};
   return layout;
 }
 
 int frame_layout_vla_stride_offset(int base_offset, int level) {
-  return base_offset + 16 + 8 * level;
+  return base_offset + psx_vla_runtime_stride_relative_offset(level);
 }
 
 int frame_layout_pointer_vla_stride_offset(int base_offset) {
-  return base_offset + 8;
+  return base_offset + PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET;
 }

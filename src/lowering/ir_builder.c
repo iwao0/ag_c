@@ -28,6 +28,7 @@
 #include "../parser/node_type_public.h"
 #include "../parser/node_vla_public.h"
 #include "../parser/type.h"
+#include "../parser/vla_runtime.h"
 #include "../diag/diag.h"
 #include "../diag/warning_catalog.h"
 #include <stdio.h>
@@ -2840,10 +2841,8 @@ static ir_val_t build_node_cast_wrapper(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
   /* VLA 動的確保: parser は ND_VLA_ALLOC を init_chain (comma) の一部として
-   * 配置する。
-   *   slot[0] = base pointer
-   *   slot[8] = byte size  (sizeof(vla) で読まれる)
-   *   slot[16]= row stride (2D runtime inner のみ。rsf != 0)
+   * 配置する。内部frame ABIは base pointer, byte size, row strideの順に
+   * PSX_VLA_RUNTIME_SLOT_SIZE幅のslotを使う。
    *   1D     : lhs = total bytes (n * elem_size)
    *   2D const: lhs = total bytes (n * outer_stride)
    *   2D rt  : lhs = outer_count(n), rhs = row_stride(m * elem) */
@@ -2880,7 +2879,7 @@ static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
     total_size = build_expr(ctx, node->lhs);
     if (ctx->failed) return ir_val_none();
   }
-  /* total_size を i64 に拡張して slot+8 に store */
+  /* total_size を固定幅runtime slotへ格納する。 */
   int v_sz64 = ir_func_new_vreg(ctx->f);
   ir_inst_t *zext_sz = ir_inst_new(IR_ZEXT);
   zext_sz->dst = ir_val_vreg(v_sz64, IR_TY_I64);
@@ -2890,7 +2889,8 @@ static ir_val_t build_node_vla_alloc(ir_build_ctx_t *ctx, node_t *node) {
   ir_inst_t *lea_sz = ir_inst_new(IR_LEA);
   lea_sz->dst = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
   lea_sz->src1 = ir_val_vreg(desc_ptr, IR_TY_PTR);
-  lea_sz->src2 = ir_val_imm(IR_TY_I32, 8);
+  lea_sz->src2 = ir_val_imm(
+      IR_TY_I32, PSX_VLA_RUNTIME_SIZE_RELATIVE_OFFSET);
   ir_func_append_inst(ctx->f, lea_sz);
   ir_inst_t *st_sz = ir_inst_new(IR_STORE);
   st_sz->src1 = ir_val_vreg(size_slot_ptr, IR_TY_PTR);
@@ -3651,7 +3651,7 @@ static int emit_vla_row_stride_for_params(
     if (elem <= 0) continue;
     /* N-D VLA 仮引数 (vla_param_inner_dim_count >= 1): 各 stride level を
      *   stride[k] = (dim[k] * dim[k+1] * ... * dim[n_inner-1]) * elem
-     * で計算し slot+8*k に store する。後ろから掛けていけば各 level 1 回の MUL で済む。 */
+     * で計算し連続するruntime slotへstoreする。後ろから掛けていけば各level 1回のMULで済む。 */
     int n_inner = ps_lvar_vla_param_inner_dim_count(var);
     if (n_inner >= 1) {
       int v_prev = -1;
@@ -3686,7 +3686,8 @@ static int emit_vla_row_stride_for_params(
         zx->dst = ir_val_vreg(v_64, IR_TY_I64);
         zx->src1 = ir_val_vreg(v_cur, IR_TY_I32);
         ir_func_append_inst(ctx->f, zx);
-        int slot_off = row_stride_frame_off + 8 * level;
+        int slot_off = row_stride_frame_off +
+                       PSX_VLA_RUNTIME_SLOT_SIZE * level;
         int slot_ptr = address_of_lvar(ctx, slot_off);
         if (slot_ptr < 0) return 0;
         ir_inst_t *st = ir_inst_new(IR_STORE);

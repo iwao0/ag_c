@@ -1,6 +1,8 @@
 #ifndef AGC_LOWERING_FRAME_LAYOUT_H
 #define AGC_LOWERING_FRAME_LAYOUT_H
 
+#include "../parser/vla_runtime.h"
+
 typedef struct {
   int next_offset;
 } frame_layout_t;

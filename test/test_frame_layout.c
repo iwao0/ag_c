@@ -28,25 +28,36 @@ static int test_object_layout(void) {
 
 static int test_vla_layout(void) {
   frame_vla_layout_t one_dim = frame_layout_vla_storage(1, 0);
-  ASSERT_EQ(16, one_dim.storage_size);
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
+            one_dim.storage_size);
   ASSERT_EQ(0, one_dim.row_stride_relative_offset);
 
   frame_vla_layout_t const_inner = frame_layout_vla_storage(2, 1);
-  ASSERT_EQ(16, const_inner.storage_size);
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
+            const_inner.storage_size);
 
   frame_vla_layout_t runtime_inner = frame_layout_vla_storage(2, 0);
-  ASSERT_EQ(24, runtime_inner.storage_size);
-  ASSERT_EQ(16, runtime_inner.row_stride_relative_offset);
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE +
+                PSX_VLA_RUNTIME_SLOT_SIZE,
+            runtime_inner.storage_size);
+  ASSERT_EQ(PSX_VLA_RUNTIME_FIRST_STRIDE_RELATIVE_OFFSET,
+            runtime_inner.row_stride_relative_offset);
   ASSERT_EQ(0, runtime_inner.subsequent_stride_count);
 
   frame_vla_layout_t three_dim = frame_layout_vla_storage(3, 0);
-  ASSERT_EQ(32, three_dim.storage_size);
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE +
+                2 * PSX_VLA_RUNTIME_SLOT_SIZE,
+            three_dim.storage_size);
   ASSERT_EQ(1, three_dim.subsequent_stride_count);
-  ASSERT_EQ(56, frame_layout_vla_stride_offset(32, 1));
+  ASSERT_EQ(32 + psx_vla_runtime_stride_relative_offset(1),
+            frame_layout_vla_stride_offset(32, 1));
   frame_vla_layout_t pointer_vla = frame_layout_pointer_vla_storage();
-  ASSERT_EQ(16, pointer_vla.storage_size);
-  ASSERT_EQ(8, pointer_vla.row_stride_relative_offset);
-  ASSERT_EQ(40, frame_layout_pointer_vla_stride_offset(32));
+  ASSERT_EQ(PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE,
+            pointer_vla.storage_size);
+  ASSERT_EQ(PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
+            pointer_vla.row_stride_relative_offset);
+  ASSERT_EQ(32 + PSX_POINTER_VLA_RUNTIME_STRIDE_RELATIVE_OFFSET,
+            frame_layout_pointer_vla_stride_offset(32));
   return 0;
 }
 

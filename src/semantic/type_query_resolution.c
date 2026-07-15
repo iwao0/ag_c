@@ -12,6 +12,7 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
+#include "../parser/vla_runtime.h"
 
 #include <string.h>
 
@@ -246,13 +247,15 @@ void psx_resolve_sizeof_query_in_contexts(
     if (subscript_depth == 0) {
       const psx_type_t *decl_type = ps_lvar_get_decl_type(var);
       if (decl_type && decl_type->kind == PSX_TYPE_ARRAY)
-        query->runtime_size_slot = ps_lvar_offset(var) + 8;
+        query->runtime_size_slot =
+            ps_lvar_offset(var) + PSX_VLA_RUNTIME_SIZE_RELATIVE_OFFSET;
     } else {
       int row_slot = ps_lvar_vla_row_stride_frame_off(var);
       int remaining = ps_lvar_vla_strides_remaining(var);
       if (row_slot != 0 &&
           (subscript_depth == 1 || subscript_depth - 1 <= remaining)) {
-        query->runtime_size_slot = row_slot + 8 * (subscript_depth - 1);
+        query->runtime_size_slot =
+            row_slot + PSX_VLA_RUNTIME_SLOT_SIZE * (subscript_depth - 1);
       }
     }
     if (query->runtime_size_slot != 0 && subscript_depth > 0)

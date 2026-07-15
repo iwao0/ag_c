@@ -133,7 +133,8 @@ psx_vla_lowering_result_t lower_vla_declaration(
           ND_MUL, stride, request->dimensions[i]);
     node_t *slot = ps_node_new_lvar_typed_in(
         arena_context,
-        frame_layout_vla_stride_offset(var_offset, level), 8);
+        frame_layout_vla_stride_offset(var_offset, level),
+        PSX_VLA_RUNTIME_SLOT_SIZE);
     result.init = append_init(
         request->lowering_context, result.init,
         ps_node_new_assign_in(arena_context, slot, stride));
@@ -175,7 +176,7 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
   arena_context_t *arena_context = ps_lowering_arena(
       request->lowering_context);
   node_t *slot = ps_node_new_lvar_typed_in(
-      arena_context, row_stride_offset, 8);
+      arena_context, row_stride_offset, PSX_VLA_RUNTIME_SLOT_SIZE);
   node_t *stride = ps_node_new_binary_for_target_in(
       arena_context, ps_lowering_target(request->lowering_context),
       ND_MUL, request->row_dimension,
@@ -240,13 +241,22 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   }
 
   if (has_runtime_dimension) {
-    if (!request->stride_storage_type) return result;
+    const psx_type_t *stride_slot_type = ps_type_array_leaf_type(
+        request->stride_storage_type);
+    if (!stride_slot_type ||
+        type_size(request->lowering_context, stride_slot_type) !=
+            PSX_VLA_RUNTIME_SLOT_SIZE) {
+      ps_diag_ctx_in(
+          diagnostics, request->diag_tok, "vla-lowering",
+          "VLA runtime stride slot layout mismatch");
+    }
     int stride_name_len = 0;
     char *stride_name = parameter_stride_storage_name(
         request->name, request->name_len, &stride_name_len);
     result.stride_storage = create_vla_storage(
         request->local_registry, request->lowering_context,
-        stride_name, stride_name_len, 8 * count, 0,
+        stride_name, stride_name_len,
+        PSX_VLA_RUNTIME_SLOT_SIZE * count, 0,
         request->stride_storage_type,
         request->diag_tok);
     if (!result.stride_storage) return result;

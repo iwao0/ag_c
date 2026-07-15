@@ -4,6 +4,7 @@
 
 #include "../parser/node_utils.h"
 #include "../parser/type.h"
+#include "../parser/vla_runtime.h"
 
 static node_t *make_scaled_offset(
     psx_lowering_context_t *lowering_context,
@@ -12,7 +13,7 @@ static node_t *make_scaled_offset(
   int runtime_stride_slot = ps_node_vla_row_stride_frame_off(base);
   if (runtime_stride_slot) {
     node_t *stride = ps_node_new_lvar_typed_in(
-        arena_context, runtime_stride_slot, 8);
+        arena_context, runtime_stride_slot, PSX_VLA_RUNTIME_SLOT_SIZE);
     return ps_node_new_binary_for_target_in(
         arena_context, ps_lowering_target(lowering_context),
         ND_MUL, index, stride);

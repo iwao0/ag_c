@@ -129,7 +129,7 @@ $(TEST_IR): test/test_ir.c $(IR_LIB_OBJS)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 
-$(TEST_FRAME_LAYOUT): test/test_frame_layout.c $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o $(OBJROOT)/lowering/runtime_context.o $(OBJROOT)/target_info.o
+$(TEST_FRAME_LAYOUT): test/test_frame_layout.c $(OBJROOT)/lowering/frame_layout.o $(OBJROOT)/lowering/local_storage.o
 	@mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $^
 

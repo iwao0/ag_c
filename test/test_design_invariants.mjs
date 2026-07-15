@@ -1478,6 +1478,14 @@ const vlaLoweringSource = await readFile(
   "src/lowering/vla_lowering.c",
   "utf8",
 );
+const vlaRuntimeHeaderSource = await readFile(
+  "src/parser/vla_runtime.h",
+  "utf8",
+);
+const frameLayoutSource = await readFile(
+  "src/lowering/frame_layout.c",
+  "utf8",
+);
 const staticLocalLoweringSource = await readFile(
   "src/lowering/static_local_lowering.c",
   "utf8",
@@ -4529,6 +4537,30 @@ if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
     /ps_decl_find_lvar_in\s*\(/.test(parameterVlaLoweringFunction[0])) {
   throw new Error(
     "parameter VLA bounds must cross semantic/lowering by expression identity and use target layout",
+  );
+}
+if (!/PSX_VLA_RUNTIME_SLOT_SIZE\s*=\s*8\b/.test(
+      vlaRuntimeHeaderSource,
+    ) ||
+    !/PSX_VLA_RUNTIME_DESCRIPTOR_HEADER_SIZE/.test(frameLayoutSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(frameLayoutSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(vlaLoweringSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(expressionLoweringSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(subscriptLoweringSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(typeQueryResolutionSource) ||
+    !/PSX_VLA_RUNTIME_SLOT_SIZE/.test(irBuilderSource) ||
+    !/AG_TARGET_SCALAR_LONG_LONG[^]*?PSX_VLA_RUNTIME_SLOT_SIZE/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    !/integer_kind\s*=\s*PSX_INTEGER_KIND_LONG_LONG/.test(
+      parameterDeclarationResolutionSource,
+    ) ||
+    /\b8\s*\*\s*(?:count|level|stride_count|subscript_depth)/.test(
+      frameLayoutSource + vlaLoweringSource + typeQueryResolutionSource +
+        irBuilderSource,
+    )) {
+  throw new Error(
+    "VLA runtime descriptor ABI must be explicit and independent from C target layout",
   );
 }
 if (!/static\s+int\s+semantic_bind_address_result_type\s*\([^]*?ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(

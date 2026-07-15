@@ -4828,6 +4828,18 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(4,
             ps_type_pointee_value_size(parameter_resolution.type));
   ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
+  const psx_type_t *runtime_stride_storage = ps_ctx_type_by_id_in(
+      test_semantic_context(),
+      parameter_resolution.runtime_stride_storage_type_id);
+  const psx_type_t *runtime_stride_slot = ps_type_array_leaf_type(
+      runtime_stride_storage);
+  ASSERT_TRUE(runtime_stride_slot != NULL);
+  ASSERT_EQ(PSX_INTEGER_KIND_LONG_LONG,
+            runtime_stride_slot->integer_kind);
+  ASSERT_TRUE(ps_type_is_unsigned(runtime_stride_slot));
+  ASSERT_EQ(PSX_VLA_RUNTIME_SLOT_SIZE,
+            ps_ctx_type_sizeof_in(
+                test_semantic_context(), runtime_stride_slot));
 
   node_t *inner_dimension_expressions[1] = {dimension_expression};
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
@@ -11933,7 +11945,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, canonical_node_array_subscript_stride_bytes(vla3d_node, 2));
   node_t *vla3d_row = ps_node_new_subscript_deref_for(
       vla3d_node, vla3d_node, ps_node_new_num(0));
-  ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(vla3d_a) + 8,
+  ASSERT_EQ(ps_lvar_vla_row_stride_frame_off(vla3d_a) +
+                PSX_VLA_RUNTIME_SLOT_SIZE,
             ps_node_vla_row_stride_frame_off(vla3d_row));
   ASSERT_TRUE(ps_node_get_type(vla3d_row) != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_node_get_type(vla3d_row)->kind);

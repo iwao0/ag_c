@@ -3,6 +3,7 @@
 #include "../parser/node_type_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/node_vla_public.h"
+#include "../parser/vla_runtime.h"
 
 static int is_pointer_arithmetic_operand(
     const psx_lowering_context_t *lowering_context, node_t *node) {
@@ -41,7 +42,8 @@ static node_t *scale_pointer_offset(
   if (stride_offset != 0) {
     return ps_node_new_binary_for_target_in(
         arena_context, ps_lowering_target(lowering_context), ND_MUL, offset,
-        ps_node_new_lvar_typed_in(arena_context, stride_offset, 8));
+        ps_node_new_lvar_typed_in(
+            arena_context, stride_offset, PSX_VLA_RUNTIME_SLOT_SIZE));
   }
 
   int deref_size = pointer_arithmetic_stride(lowering_context, pointer);
