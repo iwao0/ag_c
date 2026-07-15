@@ -4,7 +4,6 @@
 #include "declaration_resolution.h"
 #include "type_identity.h"
 #include "../parser/declarator_shape.h"
-#include "../parser/tag_member_public.h"
 
 typedef enum {
   PSX_AGGREGATE_MEMBER_OK = 0,

@@ -1,7 +1,6 @@
 #include "type_identity.h"
 
 #include "../parser/arena.h"
-#include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
 #include "record_decl_table.h"
 

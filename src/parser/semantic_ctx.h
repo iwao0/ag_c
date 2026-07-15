@@ -187,6 +187,15 @@ bool ps_ctx_find_tag_member_at_scope_in(
     char *member_name, int member_len,
     psx_record_member_decl_t *out_declaration,
     psx_record_member_layout_t *out_layout);
+int ps_ctx_get_tag_member_count_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
+int ps_ctx_get_tag_member_count_at_scope_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len, int scope_depth);
+int ps_ctx_get_tag_scope_depth_in(
+    psx_semantic_context_t *context,
+    token_kind_t kind, char *name, int len);
 int psx_ctx_register_tag_member_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,

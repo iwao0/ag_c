@@ -3,7 +3,6 @@
 #include "constant_expression.h"
 #include "../diag/diag.h"
 #include "../parser/diag.h"
-#include "../parser/tag_public.h"
 #include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>

@@ -4,7 +4,6 @@
 #include "constant_expression.h"
 
 #include "../parser/semantic_ctx.h"
-#include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
 #include "../type_layout.h"
 

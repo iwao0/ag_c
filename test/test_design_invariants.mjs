@@ -63,6 +63,23 @@ if (/\btag_member_info_t\b/.test(explicitSemanticLayerSource) ||
     "semantic passes must resolve aggregate members through RecordDecl",
   );
 }
+const nonParserTypeConsumerSource = (
+  await Promise.all(
+    allSourceFiles
+      .filter((path) =>
+        path.startsWith("src/semantic/") ||
+        path.startsWith("src/lowering/") ||
+        path.startsWith("src/frontend/"))
+      .map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/#include\s+"\.\.\/parser\/(?:tag_public|tag_member_public)\.h"/.test(
+      nonParserTypeConsumerSource,
+    )) {
+  throw new Error(
+    "semantic, lowering, and frontend layers must not depend on parser member compatibility headers",
+  );
+}
 const removedContextFreeSemanticApis = [
   "psx_build_decl_specifier_type",
   "psx_resolve_decl_specifier_syntax",

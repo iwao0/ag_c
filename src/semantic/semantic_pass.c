@@ -7,7 +7,6 @@
 #include "../parser/node_utils.h"
 #include "../parser/local_registry.h"
 #include "../parser/semantic_ctx.h"
-#include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
 #include "../diag/diag.h"
 #include "expression_operand_resolution.h"

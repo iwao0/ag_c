@@ -4,7 +4,6 @@
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/diag.h"
-#include "../parser/tag_public.h"
 #include "../diag/diag.h"
 #include "../semantic/constant_expression.h"
 #include "../semantic/initializer_resolution.h"

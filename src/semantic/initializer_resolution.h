@@ -2,7 +2,6 @@
 #define SEMANTIC_INITIALIZER_RESOLUTION_H
 
 #include "../parser/ast.h"
-#include "../parser/tag_member_public.h"
 #include "type_identity.h"
 #include "record_decl_table.h"
 #include "record_layout.h"
