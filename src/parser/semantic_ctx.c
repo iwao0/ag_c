@@ -44,14 +44,19 @@ struct tag_type_t {
   token_kind_t kind;
   char *name;
   int len;
-  int member_count;
-  int is_complete;
+  unsigned char enum_is_complete;
   int scope_depth;
   unsigned scope_seq;
   unsigned declaration_seq;
   psx_record_decl_t *record_decl;
   tag_member_info_t *record_decl_members;
 };
+
+static int tag_type_is_complete(const tag_type_t *tag) {
+  if (!tag) return 0;
+  if (tag->kind == TK_ENUM) return tag->enum_is_complete ? 1 : 0;
+  return tag->record_decl && tag->record_decl->is_complete;
+}
 typedef struct tag_member_t tag_member_t;
 struct tag_member_t {
   tag_member_t *next_hash;
@@ -90,7 +95,7 @@ static void refresh_cached_record_decl(
   if (!context || !tag || !tag->record_decl) return;
   psx_record_decl_t *record_decl = tag->record_decl;
   tag_member_info_t *members = NULL;
-  int member_count = tag->member_count;
+  int member_count = record_decl->member_count;
   if (member_count > 0) {
     members = ctx_calloc_in(
         context, (size_t)member_count, sizeof(tag_member_info_t));
@@ -110,7 +115,6 @@ static void refresh_cached_record_decl(
   record_decl->tag_kind = tag->kind;
   record_decl->tag_name = tag->name;
   record_decl->tag_len = tag->len;
-  record_decl->is_complete = tag->is_complete ? 1 : 0;
   record_decl->member_count = member_count;
   record_decl->members = tag->record_decl_members;
 }
@@ -509,8 +513,7 @@ void ps_ctx_reset_tag_diag_state_in(
   for (unsigned i = 0; i < PCTX_HASH_BUCKETS; i++) {
     for (tag_type_t *t = context->tags_by_bucket[i];
          t; t = t->next_hash) {
-      t->member_count = 0;
-      t->is_complete = 0;
+      t->enum_is_complete = 0;
       /* Published record declarations remain valid for canonical types from the
        * previous parse. A later parse starts a new registry-owned generation. */
       t->record_decl = NULL;
@@ -794,18 +797,22 @@ int ps_ctx_register_tag_type_in_contexts(
     /* C11 6.7.2.1p1 / 6.7.2.2p2 / 6.7.2.3p3: 同一スコープでの完全型タグの再定義は不可。
      * 既存もメンバを持っている (= 完全型) のに、今回も新しいメンバを持っている (= 完全型) なら
      * 二重定義。一方が前方宣言なら従来どおり update。 */
-    if (existing->is_complete && is_complete) return 0;
-    if (member_count > existing->member_count) existing->member_count = member_count;
-    if (is_complete) existing->is_complete = 1;
-    if (existing->is_complete && !existing->record_decl)
-      (void)ps_ctx_ensure_tag_record_decl_in(context, kind, name, len);
-    else
+    if (tag_type_is_complete(existing) && is_complete) return 0;
+    if (kind == TK_STRUCT || kind == TK_UNION) {
+      psx_record_decl_t *record_decl = (psx_record_decl_t *)
+          ps_ctx_ensure_tag_record_decl_in(context, kind, name, len);
+      if (!record_decl) return 0;
+      if (member_count > record_decl->member_count)
+        record_decl->member_count = member_count;
+      if (is_complete) record_decl->is_complete = 1;
       refresh_cached_record_decl(context, existing);
-    if (is_complete && existing->record_decl &&
-        (kind == TK_STRUCT || kind == TK_UNION))
-      (void)ps_ctx_publish_record_layout_in(
-          context, existing->record_decl->record_id,
-          tag_size, tag_align > 0 ? tag_align : 1);
+      if (is_complete)
+        (void)ps_ctx_publish_record_layout_in(
+            context, record_decl->record_id,
+            tag_size, tag_align > 0 ? tag_align : 1);
+    } else if (kind == TK_ENUM && is_complete) {
+      existing->enum_is_complete = 1;
+    }
     return 1;
   }
   unsigned bucket = psx_ctx_hash_tag(kind, name, len);
@@ -814,8 +821,7 @@ int ps_ctx_register_tag_type_in_contexts(
   t->kind = kind;
   t->name = name;
   t->len = len;
-  t->member_count = member_count;
-  t->is_complete = is_complete ? 1 : 0;
+  t->enum_is_complete = kind == TK_ENUM && is_complete ? 1 : 0;
   t->scope_depth = context->scope_depth;
   t->scope_seq = ps_local_registry_current_scope_seq_in(local_registry);
   t->declaration_seq =
@@ -829,18 +835,20 @@ int ps_ctx_register_tag_type_in_contexts(
         context, 1, sizeof(psx_record_decl_t));
     if (!t->record_decl) return 0;
     t->record_decl->record_id = allocate_record_id(context);
+    t->record_decl->tag_kind = kind;
+    t->record_decl->tag_name = name;
+    t->record_decl->tag_len = len;
+    t->record_decl->is_complete = is_complete ? 1 : 0;
+    t->record_decl->member_count = member_count;
     if (!psx_record_decl_table_define(
             context->record_decls, t->record_decl))
       return 0;
     refresh_cached_record_decl(context, t);
   }
-  if (t->is_complete) {
-    (void)ps_ctx_ensure_tag_record_decl_in(context, kind, name, len);
-    if (t->record_decl)
-      (void)ps_ctx_publish_record_layout_in(
-          context, t->record_decl->record_id,
-          tag_size, tag_align > 0 ? tag_align : 1);
-  }
+  if (tag_type_is_complete(t) && t->record_decl)
+    (void)ps_ctx_publish_record_layout_in(
+        context, t->record_decl->record_id,
+        tag_size, tag_align > 0 ? tag_align : 1);
   return 1;
 }
 
@@ -870,22 +878,24 @@ int ps_ctx_get_tag_member_count_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
-  return t ? t->member_count : -1;
+  return t && t->record_decl ? t->record_decl->member_count : -1;
 }
 
 const psx_record_decl_t *ps_ctx_ensure_tag_record_decl_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *tag = find_tag_type_in(context, kind, name, len);
-  if (!tag) return NULL;
+  if (!tag || (kind != TK_STRUCT && kind != TK_UNION)) return NULL;
   if (tag->record_decl) return tag->record_decl;
 
   psx_record_decl_t *record_decl =
       ctx_calloc_in(context, 1, sizeof(psx_record_decl_t));
   if (!record_decl) return NULL;
   tag->record_decl = record_decl;
-  if (kind == TK_STRUCT || kind == TK_UNION)
-    record_decl->record_id = allocate_record_id(context);
+  record_decl->record_id = allocate_record_id(context);
+  record_decl->tag_kind = kind;
+  record_decl->tag_name = name;
+  record_decl->tag_len = len;
   if (record_decl->record_id != PSX_RECORD_ID_INVALID &&
       !psx_record_decl_table_define(context->record_decls, record_decl))
     return NULL;
@@ -1001,6 +1011,22 @@ static int insert_tag_member_record_in(
   return 1;
 }
 
+static int count_tag_member_records_in(
+    const psx_semantic_context_t *context, const tag_type_t *tag) {
+  if (!context || !tag) return 0;
+  int count = 0;
+  for (int i = 0; i < PCTX_HASH_BUCKETS; i++) {
+    for (const tag_member_t *member = context->aggregate_members_by_bucket[i];
+         member; member = member->next_hash) {
+      if (member->tag_kind == tag->kind && member->tag_len == tag->len &&
+          member->scope_depth == tag->scope_depth &&
+          strncmp(member->tag_name, tag->name, (size_t)tag->len) == 0)
+        count++;
+    }
+  }
+  return count;
+}
+
 int psx_ctx_register_tag_member_in(
     psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -1061,11 +1087,13 @@ int ps_ctx_register_tag_members_in(
   tag_type_t *tag = find_tag_type_in(
       context, tag_kind, tag_name, tag_len);
   if (tag && tag->record_decl) {
+    tag->record_decl->member_count =
+        count_tag_member_records_in(context, tag);
     refresh_cached_record_decl(context, tag);
     const psx_record_layout_t *layout = psx_record_layout_table_lookup(
         context->record_layouts, tag->record_decl->record_id,
         &context->target);
-    if (tag->is_complete && layout) {
+    if (tag->record_decl->is_complete && layout) {
       int size = layout->size;
       int alignment = layout->alignment;
       (void)ps_ctx_publish_record_layout_in(
@@ -1276,7 +1304,7 @@ int ps_ctx_get_tag_member_count_at_scope_in(
     if (t->kind == kind && t->len == len &&
         t->scope_depth == scope_depth &&
         strncmp(t->name, name, (size_t)len) == 0) {
-      return t->member_count;
+      return t->record_decl ? t->record_decl->member_count : -1;
     }
   }
   return -1;

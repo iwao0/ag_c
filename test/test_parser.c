@@ -4826,6 +4826,9 @@ static void test_record_decl_ownership_boundary() {
               ps_ctx_ensure_tag_record_decl_in(test_semantic_context(),
                   TK_STRUCT, tag_name, tag_name_len));
   ASSERT_EQ(1, first->member_count);
+  ASSERT_EQ(first->member_count,
+            ps_ctx_get_tag_member_count_in(
+                test_semantic_context(), TK_STRUCT, tag_name, tag_name_len));
   ASSERT_TRUE(first->is_complete);
   ASSERT_TRUE(first->members != NULL);
   ASSERT_EQ(5, first->members[0].len);
@@ -4833,6 +4836,8 @@ static void test_record_decl_ownership_boundary() {
   const tag_member_info_t *first_members = first->members;
 
   ps_ctx_reset_tag_diag_state_in(test_semantic_context());
+  ASSERT_EQ(1, first->member_count);
+  ASSERT_TRUE(first->is_complete);
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);
 
@@ -4861,6 +4866,9 @@ static void test_record_decl_ownership_boundary() {
   second_type.record_id = second->record_id;
   ASSERT_TRUE(!ps_type_tag_identity_matches(&first_type, &second_type));
   ASSERT_EQ(1, second->member_count);
+  ASSERT_EQ(second->member_count,
+            ps_ctx_get_tag_member_count_in(
+                test_semantic_context(), TK_STRUCT, tag_name, tag_name_len));
   ASSERT_EQ(5, second->members[0].len);
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);

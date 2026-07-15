@@ -3451,6 +3451,12 @@ if (!canonicalTypeStruct ||
 
 if (!tagTypeStruct ||
     /\b(?:size|align)\s*;/.test(tagTypeStruct[1]) ||
+    /\b(?:int\s+)?member_count\s*;/.test(tagTypeStruct[1]) ||
+    /\b(?:int|unsigned\s+char)\s+is_complete\s*;/.test(
+      tagTypeStruct[1],
+    ) ||
+    !/\bunsigned\s+char\s+enum_is_complete\s*;/.test(tagTypeStruct[1]) ||
+    !/\bpsx_record_decl_t\s*\*\s*record_decl\s*;/.test(tagTypeStruct[1]) ||
     !tagSizeLookupFunction ||
     !tagAlignLookupFunction ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
@@ -3463,7 +3469,7 @@ if (!tagTypeStruct ||
       tagContextSource,
     )) {
   throw new Error(
-    "tag declarations must own identity and completeness while target record layout stays in RecordLayoutTable",
+    "RecordDecl must solely own struct/union identity, completeness, and member count while target layout stays in RecordLayoutTable",
   );
 }
 
