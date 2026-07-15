@@ -34,6 +34,12 @@ static ag_target_scalar_kind_t floating_target_kind(
 static int layout_scalar(
     const psx_type_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
+  if (type->kind == PSX_TYPE_INTEGER && !type->is_long_long &&
+      type->scalar_kind != TK_CHAR && type->scalar_kind != TK_SHORT &&
+      type->scalar_kind != TK_INT && type->scalar_kind != TK_LONG &&
+      type->scalar_kind != TK_ENUM) {
+    return 1;
+  }
   ag_target_scalar_kind_t kind;
   if (type->kind == PSX_TYPE_BOOL) {
     kind = AG_TARGET_SCALAR_CHAR;

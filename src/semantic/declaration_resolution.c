@@ -48,7 +48,6 @@ static psx_type_t *resolve_builtin_base_type(
     type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
                         ? fp_kind
                         : TK_FLOAT_KIND_DOUBLE;
-    type->size = elem_size;
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {

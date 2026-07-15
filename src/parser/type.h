@@ -69,7 +69,6 @@ struct psx_type_t {
   psx_type_kind_t kind;
   const psx_type_t *base;
 
-  int size;
   int array_len;
 
   token_kind_t scalar_kind;

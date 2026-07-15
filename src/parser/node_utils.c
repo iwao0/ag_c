@@ -1358,6 +1358,7 @@ int ps_gvar_initializer_element_count(const global_var_t *gv, int fallback_size)
   if (gv && !ps_gvar_is_array(gv)) return gv->has_init ? 1 : 0;
   int elem = ps_gvar_initializer_element_size(gv, fallback_size);
   const psx_type_t *type = gvar_decl_type_view(gv);
+  if (ps_type_is_incomplete_array(type)) return 0;
   int size = ps_type_sizeof(type);
   if (size <= 0) size = ps_gvar_storage_size(gv, fallback_size);
   return elem > 0 ? (size + elem - 1) / elem : 0;

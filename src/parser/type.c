@@ -5,6 +5,7 @@
 #include "tag_member_public.h"
 #include "type_owned_internal.h"
 #include "../target_info.h"
+#include "../type_layout.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,35 +126,11 @@ void ps_type_normalize_scalar_identity(psx_type_t *type) {
 }
 
 void ps_type_clear_cached_layout(psx_type_t *type) {
-  if (!type) return;
-  type->size = 0;
-  ps_type_clear_cached_layout(psx_type_owned_base_mut(type));
-  if (type->kind == PSX_TYPE_FUNCTION) {
-    for (int i = 0; i < type->param_count; ++i)
-      ps_type_clear_cached_layout(psx_type_owned_param_mut(type, i));
-  }
-}
-
-static int type_layout_contains_record_object(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION)
-    return 1;
-  return type->kind == PSX_TYPE_ARRAY &&
-         type_layout_contains_record_object(type->base);
+  (void)type;
 }
 
 void ps_type_clear_record_layout_cache(psx_type_t *type) {
-  if (!type) return;
-  ps_type_clear_record_layout_cache(psx_type_owned_base_mut(type));
-  if (type->kind == PSX_TYPE_FUNCTION) {
-    for (int i = 0; i < type->param_count; ++i)
-      ps_type_clear_record_layout_cache(psx_type_owned_param_mut(type, i));
-  }
-  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION ||
-      (type->kind == PSX_TYPE_ARRAY &&
-       type_layout_contains_record_object(type->base))) {
-    type->size = 0;
-  }
+  (void)type;
 }
 
 psx_type_t *ps_type_new_integer_in(
@@ -164,7 +141,7 @@ psx_type_t *ps_type_new_integer_in(
       scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
   if (!type) return NULL;
   type->scalar_kind = canonical_integer_scalar_kind(scalar_kind);
-  type->size = size;
+  (void)size;
   type->is_unsigned = is_unsigned ? 1 : 0;
   if (scalar_kind == TK_CHAR) type->is_plain_char = 1;
   return type;
@@ -188,7 +165,7 @@ psx_type_t *ps_type_new_float_in(
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FLOAT);
   if (!type) return NULL;
   type->fp_kind = fp_kind;
-  type->size = size;
+  (void)size;
   if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) type->is_long_double = 1;
   return type;
 }
@@ -355,11 +332,8 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    ag_target_scalar_kind_t target_kind = floating_target_kind(fp, 1);
-    int size = ag_target_info_scalar_size(target, target_kind);
     psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
     type->fp_kind = fp;
-    type->size = size;
     return type;
   }
 
@@ -540,7 +514,7 @@ psx_type_t *ps_type_new_array_in(
   if (!type) return NULL;
   type->base = base;
   type->array_len = array_len;
-  type->size = size;
+  (void)size;
   type->is_vla = is_vla ? 1 : 0;
   return type;
 }
@@ -548,11 +522,8 @@ psx_type_t *ps_type_new_array_in(
 int ps_type_complete_array(psx_type_t *type, int array_len) {
   if (!type || type->kind != PSX_TYPE_ARRAY || type->is_vla ||
       array_len <= 0 || !type->base) return 0;
-  int child_size = ps_type_sizeof(type->base);
-  if (child_size <= 0 || array_len > INT_MAX / child_size) return 0;
   if (type->array_len > 0 && type->array_len != array_len) return 0;
   type->array_len = array_len;
-  type->size = array_len * child_size;
   return 1;
 }
 
@@ -608,15 +579,11 @@ psx_type_t *ps_type_wrap_array_dims_in(
   if (!base || !dims || dim_count <= 0) return base;
   const psx_type_t *child = base;
   psx_type_t *result = NULL;
-  int child_size = ps_type_sizeof(base);
-  if (child_size <= 0) child_size = 1;
   for (int i = dim_count - 1; i >= 0; i--) {
     int len = dims[i];
-    int size = len > 0 ? len * child_size : 0;
     result = ps_type_new_array_in(
-        arena_context, child, len, size, 0);
+        arena_context, child, len, 0, 0);
     child = result;
-    child_size = size;
   }
   return result;
 }
@@ -819,13 +786,9 @@ psx_type_t *ps_type_apply_declarator_shape_in(
         qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
       ps_type_add_qualifiers(type, qualifiers);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
-      int elem_size = ps_type_sizeof(type);
-      if (elem_size <= 0) elem_size = ps_type_deref_size(type);
-      if (elem_size <= 0) elem_size = 1;
-      int total_size = op->array_len > 0 ? op->array_len * elem_size : 0;
       type = ps_type_new_array_in(
           arena_context, type, op->array_len,
-          total_size, op->is_vla_array);
+          0, op->is_vla_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       type = ps_type_new_function_in(arena_context, type);
       if (op->has_canonical_function_params) {
@@ -869,15 +832,13 @@ psx_type_t *ps_type_new_tag_in(
   type->tag_name = tag_name;
   type->tag_len = tag_len;
   type->tag_scope_depth_p1 = tag_scope_depth_p1;
-  type->size = size;
+  (void)size;
   return type;
 }
 
 int ps_type_sizeof(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_VOID || type->kind == PSX_TYPE_FUNCTION) return 0;
-  if (type->kind == PSX_TYPE_POINTER) return 8;
-  return type->size;
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_sizeof_for_target(type, &target);
 }
 
 int ps_type_deref_size(const psx_type_t *type) {
@@ -1425,7 +1386,6 @@ int ps_type_generic_select_index(
     decayed.base = normalized.kind == PSX_TYPE_ARRAY
                        ? normalized.base
                        : control;
-    decayed.size = 8;
     normalized = decayed;
   } else if (normalized.kind == PSX_TYPE_INTEGER) {
     if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;
