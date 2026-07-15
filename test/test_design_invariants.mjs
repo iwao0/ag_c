@@ -57,6 +57,12 @@ if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(
     "semantic APIs must receive explicit contexts",
   );
 }
+if (/\btag_member_info_t\b/.test(explicitSemanticLayerSource) ||
+    /\bps_ctx_(?:get|find)_tag_member_info/.test(explicitSemanticLayerSource)) {
+  throw new Error(
+    "semantic passes must resolve aggregate members through RecordDecl",
+  );
+}
 const removedContextFreeSemanticApis = [
   "psx_build_decl_specifier_type",
   "psx_resolve_decl_specifier_syntax",
@@ -2058,8 +2064,6 @@ const semanticTraversalCallers = [
 ].join("\n");
 const contextFreeSemanticTraversalCall =
   /\bpsx_semantic_resolve_(?:tree|initializer_tree)\s*\(/;
-const contextFreeMemberRegistryCall =
-  /\bps_ctx_(?:find_tag_member_info|find_tag_member_info_at_scope)\s*\(/;
 if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
       semanticPassSource,
     ) ||
@@ -2075,13 +2079,6 @@ if (!/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
     contextFreeSemanticTraversalCall.test(semanticTraversalCallers) ||
     !/psx_semantic_resolve_tree_in_contexts\s*\(/.test(
       frontendSemanticPipelineSource,
-    ) ||
-    contextFreeMemberRegistryCall.test(memberAccessResolutionSource) ||
-    !/ps_ctx_find_tag_member_info_at_scope_in\s*\(/.test(
-      memberAccessResolutionSource,
-    ) ||
-    !/ps_ctx_find_tag_member_info_in\s*\(/.test(
-      memberAccessResolutionSource,
     ) ||
     !/ps_ctx_find_typedef_decl_type_at_in_contexts\s*\(/.test(
       typeNameResolutionSource,

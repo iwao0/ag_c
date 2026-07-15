@@ -17853,7 +17853,23 @@ static void test_semantic_context_isolation() {
           .member_name_len = 5,
       },
       &detached_resolution);
+  ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, detached_resolution.status);
+  ASSERT_EQ(PSX_RECORD_ID_INVALID, detached_resolution.record_id);
+
+  node_t canonical_base = {
+      .kind = ND_LVAR,
+      .type = direct_tag_type,
+  };
+  psx_resolve_member_access(
+      &(psx_member_access_resolution_request_t){
+          .semantic_context = second,
+          .base = &canonical_base,
+          .member_name = direct_member_name,
+          .member_name_len = 5,
+      },
+      &detached_resolution);
   ASSERT_EQ(PSX_MEMBER_ACCESS_OK, detached_resolution.status);
+  ASSERT_EQ(direct_record->record_id, detached_resolution.record_id);
   ASSERT_EQ(4, ps_type_sizeof(
                    psx_record_member_decl_type(
                        &detached_resolution.declaration)));
@@ -17861,7 +17877,7 @@ static void test_semantic_context_isolation() {
   node_member_access_t detached_access = {
       .base = {
           .kind = ND_MEMBER_ACCESS,
-          .lhs = &detached_base,
+          .lhs = &canonical_base,
       },
       .member_name = direct_member_name,
       .member_name_len = 5,

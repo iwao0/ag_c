@@ -83,35 +83,5 @@ void psx_resolve_member_access(
     resolution->status = PSX_MEMBER_ACCESS_OK;
     return;
   }
-
-  int base_scope = object_type->tag_scope_depth_p1 > 0
-                       ? object_type->tag_scope_depth_p1 - 1
-                       : -1;
-  tag_member_info_t parser_member = {0};
-  int found = base_scope >= 0
-      ? ps_ctx_find_tag_member_info_at_scope_in(
-            semantic_context,
-            ps_type_tag_token_kind(object_type), object_type->tag_name,
-            object_type->tag_len, base_scope,
-            request->member_name, request->member_name_len,
-            &parser_member)
-      : ps_ctx_find_tag_member_info_in(
-            semantic_context,
-            ps_type_tag_token_kind(object_type), object_type->tag_name,
-            object_type->tag_len,
-            request->member_name, request->member_name_len,
-            &parser_member);
-  resolution->status = found ? PSX_MEMBER_ACCESS_OK
-                             : PSX_MEMBER_ACCESS_NOT_FOUND;
-  if (found) {
-    resolution->member_index = aggregate_member_index(
-        record, request->member_name, request->member_name_len);
-    resolution->declaration = (psx_record_member_decl_t){
-        .name = parser_member.name,
-        .len = parser_member.len,
-        .bit_width = parser_member.bit_width,
-        .bit_is_signed = parser_member.bit_is_signed,
-        .decl_type = ps_tag_member_decl_type(&parser_member),
-    };
-  }
+  resolution->status = PSX_MEMBER_ACCESS_NOT_FOUND;
 }
