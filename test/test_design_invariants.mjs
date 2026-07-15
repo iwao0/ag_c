@@ -2530,6 +2530,9 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bconst\s+psx_type_t\s*\*\s*signature\s*;/.test(
       functionDefinitionStruct[1],
     ) ||
+    !/\bpsx_qual_type_t\s+signature_qual_type\s*;/.test(
+      functionDefinitionStruct[1],
+    ) ||
     /\b(?:arguments|callee|callee_type|direct_name)\b/.test(
       functionDefinitionStruct[1],
     ) ||
@@ -2539,11 +2542,31 @@ if (/\bnode_func_t\b/.test(astSource) ||
     !/\bconst\s+psx_type_t\s*\*\s*callee_type\s*;/.test(
       functionCallStruct[1],
     ) ||
+    !/\bpsx_qual_type_t\s+callee_qual_type\s*;/.test(
+      functionCallStruct[1],
+    ) ||
     /\b(?:parameters|signature|lvars|is_static)\b/.test(
       functionCallStruct[1],
     )) {
   throw new Error(
     "function definitions and calls must use disjoint canonical AST records",
+  );
+}
+const classifyCallParam = irBuilderSource.match(
+  /static\s+ir_abi_param_info_t\s+classify_call_param\s*\([^]*?\n\}/,
+);
+const attachCallableFromCallee = irBuilderSource.match(
+  /static\s+void\s+attach_callable_type_from_callee\s*\([^]*?\n\}/,
+);
+if (!classifyCallParam ||
+    !/ps_function_call_callee_qual_type\s*\(/.test(classifyCallParam[0]) ||
+    !/psx_semantic_type_table_parameter\s*\(/.test(classifyCallParam[0]) ||
+    /(?:callee_type|param_types)\s*(?:->|\[)/.test(classifyCallParam[0]) ||
+    !attachCallableFromCallee ||
+    !/ps_node_qual_type\s*\(/.test(attachCallableFromCallee[0]) ||
+    /ps_node_get_type\s*\(/.test(attachCallableFromCallee[0])) {
+  throw new Error(
+    "IR callable ABI lowering must consume finalized TypeId relations",
   );
 }
 const typeNameRef = astSource.match(

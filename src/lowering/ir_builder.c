@@ -104,10 +104,19 @@ static psx_type_id_t ir_type_id(
              : PSX_TYPE_ID_INVALID;
 }
 
-static ir_abi_param_info_t classify_type(
-    const ir_build_ctx_t *ctx, const psx_type_t *type) {
+static ir_abi_param_info_t classify_type_id(
+    const ir_build_ctx_t *ctx, psx_type_id_t type_id) {
   ir_abi_type_context_t abi = abi_type_context(ctx);
-  return ir_abi_classify_type_id(&abi, ir_type_id(ctx, type));
+  return ir_abi_classify_type_id(&abi, type_id);
+}
+
+static int ir_type_id_derives_function(
+    const ir_build_ctx_t *ctx, psx_type_id_t type_id) {
+  const psx_type_t *type = ctx && ctx->semantic_types
+                               ? psx_semantic_type_table_lookup(
+                                     ctx->semantic_types, type_id)
+                               : NULL;
+  return ps_type_derived_function(type) != NULL;
 }
 
 static int ir_c_type_size(
@@ -174,10 +183,17 @@ static int name_matches(const char *name, int name_len, const char *expected) {
          memcmp(name, expected, (size_t)name_len) == 0;
 }
 
-static int is_exact_int_void_function(const psx_type_t *type) {
-  const psx_type_t *function = ps_type_callable_function(type);
-  const psx_type_t *result = ps_type_function_return_type(function);
-  return function && function->param_count == 0 &&
+static int is_exact_int_void_function_id(
+    const psx_semantic_type_table_t *semantic_types,
+    psx_type_id_t function_type_id) {
+  const psx_type_t *function = psx_semantic_type_table_lookup(
+      semantic_types, function_type_id);
+  psx_type_id_t result_type_id = psx_semantic_type_table_base(
+      semantic_types, function_type_id).type_id;
+  const psx_type_t *result = psx_semantic_type_table_lookup(
+      semantic_types, result_type_id);
+  return function && function->kind == PSX_TYPE_FUNCTION &&
+         function->param_count == 0 &&
          !function->is_variadic_function && result &&
          result->kind == PSX_TYPE_INTEGER &&
          result->integer_kind == PSX_INTEGER_KIND_INT &&
@@ -186,6 +202,7 @@ static int is_exact_int_void_function(const psx_type_t *type) {
 
 typedef struct {
   const ag_continuation_options_t *options;
+  const psx_semantic_type_table_t *semantic_types;
   node_t *frame_while;
   int frame_while_count;
   int condition_call_count;
@@ -218,7 +235,9 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
     if (name_matches(call->direct_name, call->direct_name_len,
                      scan->options->frame_condition)) {
       scan->condition_call_count++;
-      if (!is_exact_int_void_function(call->callee_type)) {
+      if (!is_exact_int_void_function_id(
+              scan->semantic_types,
+              ps_function_call_callee_qual_type(call).type_id)) {
         scan->invalid_node = node;
         scan->invalid_reason =
             "continuation frame condition must have type int(void)";
@@ -275,14 +294,19 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
   /* A same-named internal-linkage function in another translation unit is
    * unrelated to the configured external entry. */
   if (fn->is_static) return 1;
-  if (!is_exact_int_void_function(fn->signature)) {
+  if (!is_exact_int_void_function_id(
+          ctx->semantic_types,
+          ps_function_definition_signature_qual_type(fn).type_id)) {
     diag_emit_tokf_in(
         ctx->diagnostic_context, DIAG_ERR_PARSER_INVALID_CONTEXT,
         fn->base.tok, "%s",
         "continuation entry must have type int(void)");
     return 0;
   }
-  continuation_scan_t scan = {.options = options};
+  continuation_scan_t scan = {
+      .options = options,
+      .semantic_types = ctx->semantic_types,
+  };
   scan_continuation_node(fn->base.rhs, &scan);
   if (scan.invalid_node) {
     diag_emit_tokf_in(
@@ -333,11 +357,12 @@ static void fail(ir_build_ctx_t *ctx, const char *msg) {
 static ir_abi_param_info_t classify_call_param(
     const ir_build_ctx_t *ctx,
     const node_function_call_t *call, int param_idx) {
-  const psx_type_t *function_type =
-      ps_type_callable_function(call ? call->callee_type : NULL);
-  if (function_type && function_type->kind == PSX_TYPE_FUNCTION &&
-      param_idx >= 0 && param_idx < function_type->param_count) {
-    return classify_type(ctx, function_type->param_types[param_idx]);
+  psx_type_id_t function_type_id =
+      ps_function_call_callee_qual_type(call).type_id;
+  psx_qual_type_t param_type = psx_semantic_type_table_parameter(
+      ctx ? ctx->semantic_types : NULL, function_type_id, param_idx);
+  if (param_type.type_id != PSX_TYPE_ID_INVALID) {
+    return classify_type_id(ctx, param_type.type_id);
   }
   if (call && !call->callee) {
     ir_abi_type_context_t abi = abi_type_context(ctx);
@@ -682,11 +707,11 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node);
 static ir_val_t build_node_funcref_with_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id);
 static ir_val_t build_expr_with_callable_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id);
 static ir_val_t build_node_ternary_with_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type);
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id);
 /* bitfield store: *ptr の bit[bo, bo+bw) を rhs で上書きし、rhs (masking 前) を返す。 */
 static ir_val_t emit_bitfield_store(ir_build_ctx_t *ctx, ir_val_t ptr, ir_val_t rhs,
                                      int bit_width, int bit_offset);
@@ -1047,21 +1072,23 @@ static void build_stmt_expr_block_without_value(ir_build_ctx_t *ctx, node_t *blo
 }
 
 static ir_val_t build_expr_with_callable_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id) {
   if (!node || ctx->failed) return ir_val_none();
-  if (!ps_type_derived_function(expected_type))
+  if (!ir_type_id_derives_function(ctx, expected_type_id))
     return build_expr(ctx, node);
   switch (node->kind) {
     case ND_FUNCREF:
-      return build_node_funcref_with_type(ctx, node, expected_type);
+      return build_node_funcref_with_type(ctx, node, expected_type_id);
     case ND_ADDR:
       if (node->lhs && node->lhs->kind == ND_FUNCREF)
-        return build_node_funcref_with_type(ctx, node->lhs, expected_type);
+        return build_node_funcref_with_type(
+            ctx, node->lhs, expected_type_id);
       return build_expr(ctx, node);
     case ND_CAST:
       if (node->lhs && (node->lhs->kind == ND_FUNCREF || node->lhs->kind == ND_COMMA ||
                         node->lhs->kind == ND_TERNARY || node->lhs->kind == ND_STMT_EXPR)) {
-        return build_expr_with_callable_type(ctx, node->lhs, expected_type);
+        return build_expr_with_callable_type(
+            ctx, node->lhs, expected_type_id);
       }
       return build_expr(ctx, node);
     case ND_COMMA:
@@ -1069,14 +1096,16 @@ static ir_val_t build_expr_with_callable_type(
         (void)build_expr(ctx, node->lhs);
         if (ctx->failed) return ir_val_none();
       }
-      return node->rhs ? build_expr_with_callable_type(ctx, node->rhs, expected_type)
+      return node->rhs ? build_expr_with_callable_type(
+                             ctx, node->rhs, expected_type_id)
                        : ir_val_none();
     case ND_TERNARY:
-      return build_node_ternary_with_type(ctx, node, expected_type);
+      return build_node_ternary_with_type(ctx, node, expected_type_id);
     case ND_STMT_EXPR:
       build_stmt_expr_block_without_value(ctx, node->lhs, node->rhs);
       if (ctx->failed) return ir_val_none();
-      return build_expr_with_callable_type(ctx, node->rhs, expected_type);
+      return build_expr_with_callable_type(
+          ctx, node->rhs, expected_type_id);
     default:
       return build_expr(ctx, node);
   }
@@ -1470,8 +1499,8 @@ static ir_val_t build_assign_to_lvar(ir_build_ctx_t *ctx, node_t *node) {
   ir_type_t vty = lvar_value_type(ctx, lv);
   int ptr_vreg = address_of_lvar(ctx, lv->offset);
   if (ptr_vreg < 0) return ir_val_none();
-  const psx_type_t *target_type = ps_node_get_type(node->lhs);
-  ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
+  ir_val_t rhs = build_expr_with_callable_type(
+      ctx, node->rhs, ps_node_qual_type(node->lhs).type_id);
   if (ctx->failed) return ir_val_none();
   /* float ↔ double の暗黙変換 */
   if (is_fp_type(vty) && is_fp_type(rhs.type) && vty != rhs.type) {
@@ -1516,8 +1545,8 @@ static ir_val_t build_assign_to_gvar(ir_build_ctx_t *ctx, node_t *node) {
     vty = scalar_value_type(sz, ps_node_value_is_pointer_like(node->lhs));
   }
   int v_addr = emit_load_sym_for_gvar(ctx, gv);
-  const psx_type_t *target_type = ps_node_get_type(node->lhs);
-  ir_val_t rhs = build_expr_with_callable_type(ctx, node->rhs, target_type);
+  ir_val_t rhs = build_expr_with_callable_type(
+      ctx, node->rhs, ps_node_qual_type(node->lhs).type_id);
   if (ctx->failed) return ir_val_none();
   rhs = coerce_to_type_ex(ctx, rhs, vty, ps_node_is_unsigned_type(node->lhs),
                           ps_node_conversion_value_is_unsigned(node->rhs));
@@ -1541,7 +1570,7 @@ static ir_val_t build_assign_to_deref(ir_build_ctx_t *ctx, node_t *node) {
   ir_val_t ptr = build_expr(ctx, node->lhs->lhs);
   if (ctx->failed) return ir_val_none();
   ir_val_t rhs = build_expr_with_callable_type(
-      ctx, node->rhs, ps_node_get_type(node->lhs));
+      ctx, node->rhs, ps_node_qual_type(node->lhs).type_id);
   if (ctx->failed) return ir_val_none();
   if (ps_node_bitfield_info(node->lhs, &bw, &bo, NULL)) {
     return emit_bitfield_store(ctx, ptr, rhs, bw, bo);
@@ -1591,40 +1620,39 @@ static ir_val_t build_node_addr(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static void attach_callable_type(
-    ir_build_ctx_t *ctx, ir_inst_t *sym, const psx_type_t *type) {
+    ir_build_ctx_t *ctx, ir_inst_t *sym, psx_type_id_t type_id) {
   if (!ctx || !sym) return;
   ir_abi_type_context_t abi = abi_type_context(ctx);
   sym->has_callable_sig =
       ir_abi_callable_sig_from_type_id(
-          &abi, ir_type_id(ctx, type), &sym->callable_sig) ? 1 : 0;
-}
-
-static const psx_type_t *callable_type_for_callee(node_t *callee) {
-  if (!callee) return NULL;
-  const psx_type_t *type = ps_node_get_type(callee);
-  return ps_type_callable_function(type) ? type : NULL;
+          &abi, type_id, &sym->callable_sig) ? 1 : 0;
 }
 
 static void attach_callable_type_from_callee(
     ir_build_ctx_t *ctx, ir_inst_t *call, node_t *callee) {
   if (!call || !callee) return;
-  attach_callable_type(ctx, call, callable_type_for_callee(callee));
+  attach_callable_type(ctx, call, ps_node_qual_type(callee).type_id);
 }
 
-static const psx_type_t *function_callable_return_type(
+static psx_type_id_t function_callable_return_type_id(
+    const ir_build_ctx_t *ctx,
     const node_function_definition_t *fn) {
-  const psx_type_t *return_type =
-      ps_function_definition_return_type(fn);
-  return ps_type_derived_function(return_type) ? return_type : NULL;
+  psx_type_id_t signature_type_id =
+      ps_function_definition_signature_qual_type(fn).type_id;
+  psx_type_id_t return_type_id = psx_semantic_type_table_base(
+      ctx ? ctx->semantic_types : NULL, signature_type_id).type_id;
+  return ir_type_id_derives_function(ctx, return_type_id)
+             ? return_type_id
+             : PSX_TYPE_ID_INVALID;
 }
 
 static ir_val_t build_node_funcref_with_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id) {
   node_funcref_t *fr = (node_funcref_t *)node;
-  const psx_type_t *callable_type =
-      ps_type_derived_function(expected_type)
-          ? expected_type
-          : ps_node_get_type(node);
+  psx_type_id_t callable_type_id =
+      ir_type_id_derives_function(ctx, expected_type_id)
+          ? expected_type_id
+          : ps_node_qual_type(node).type_id;
   int v = ir_func_new_vreg(ctx->f);
   ir_inst_t *sym = ir_inst_new(IR_LOAD_SYM);
   sym->dst = ir_val_vreg(v, IR_TY_PTR);
@@ -1632,7 +1660,7 @@ static ir_val_t build_node_funcref_with_type(
   sym->sym_len = fr->funcname_len;
   sym->is_got_funcref = 1;  /* 関数アドレスは GOT 経由 (外部 libc 関数のため必須) */
   sym->is_function_symbol = 1;
-  attach_callable_type(ctx, sym, callable_type);
+  attach_callable_type(ctx, sym, callable_type_id);
   ir_func_append_inst(ctx->f, sym);
   return ir_val_vreg(v, IR_TY_PTR);
 }
@@ -1671,7 +1699,7 @@ static ir_val_t build_node_deref(ir_build_ctx_t *ctx, node_t *node) {
 
 static ir_val_t build_node_funcref(ir_build_ctx_t *ctx, node_t *node) {
   /* 関数シンボル参照 (関数ポインタ値)。`_<funcname>` のアドレスを vreg に。 */
-  return build_node_funcref_with_type(ctx, node, NULL);
+  return build_node_funcref_with_type(ctx, node, PSX_TYPE_ID_INVALID);
 }
 
 /* -------- Phase B1: build_expr の算術/比較系 case ヘルパ -------- */
@@ -1970,12 +1998,9 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
    * stack 渡し。間接呼出でも同じ ABI が要る)。 */
   int is_variadic_call = 0;
   int nargs_fixed = call_node->argument_count;
-  const psx_type_t *function =
-      ps_type_callable_function(call_node->callee_type);
-  if (!function && call_node->callee) {
-    function = ps_type_callable_function(
-        callable_type_for_callee(call_node->callee));
-  }
+  const psx_type_t *function = psx_semantic_type_table_lookup(
+      ctx->semantic_types,
+      ps_function_call_callee_qual_type(call_node).type_id);
   if (function && function->is_variadic_function &&
       function->param_count < call_node->argument_count) {
     is_variadic_call = 1;
@@ -2440,11 +2465,12 @@ static ir_val_t build_node_stmt_expr(ir_build_ctx_t *ctx, node_t *node) {
 }
 
 static ir_val_t build_node_ternary(ir_build_ctx_t *ctx, node_t *node) {
-  return build_node_ternary_with_type(ctx, node, NULL);
+  return build_node_ternary_with_type(
+      ctx, node, PSX_TYPE_ID_INVALID);
 }
 
 static ir_val_t build_node_ternary_with_type(
-    ir_build_ctx_t *ctx, node_t *node, const psx_type_t *expected_type) {
+    ir_build_ctx_t *ctx, node_t *node, psx_type_id_t expected_type_id) {
   /* cond ? rhs : els 。各分岐で eval して temp slot に STORE、merge で LOAD。
    * 結果型は fp_kind から推定 (整数のみ or float/double)。
    * struct ternary 等は今のところサポート外で fall through する。 */
@@ -2484,7 +2510,8 @@ static ir_val_t build_node_ternary_with_type(
   emit_br_cond(ctx, cond, then_b, else_b);
   /* then */
   switch_to_new_block(ctx, then_b);
-  ir_val_t vt = build_expr_with_callable_type(ctx, node->rhs, expected_type);
+  ir_val_t vt = build_expr_with_callable_type(
+      ctx, node->rhs, expected_type_id);
   if (ctx->failed) return ir_val_none();
   /* 型変換: 結果型が fp で値が int なら I2F、逆も */
   if (is_fp_type(res_ty) && !is_fp_type(vt.type)) {
@@ -2523,7 +2550,8 @@ static ir_val_t build_node_ternary_with_type(
   emit_br(ctx, merge_b);
   /* else */
   switch_to_new_block(ctx, else_b);
-  ir_val_t ve = build_expr_with_callable_type(ctx, c->els, expected_type);
+  ir_val_t ve = build_expr_with_callable_type(
+      ctx, c->els, expected_type_id);
   if (ctx->failed) return ir_val_none();
   if (is_fp_type(res_ty) && !is_fp_type(ve.type)) {
     int v = ir_func_new_vreg(ctx->f);
@@ -3245,11 +3273,11 @@ static void build_stmt_return(ir_build_ctx_t *ctx, node_t *node) {
     return;
   }
   if (node->lhs) {
-    const psx_type_t *callable_return_type =
-        function_callable_return_type(ctx->cur_fn);
-    if (callable_return_type) {
+    psx_type_id_t callable_return_type_id =
+        function_callable_return_type_id(ctx, ctx->cur_fn);
+    if (callable_return_type_id != PSX_TYPE_ID_INVALID) {
       v = build_expr_with_callable_type(
-          ctx, node->lhs, callable_return_type);
+          ctx, node->lhs, callable_return_type_id);
     } else {
       v = build_expr(ctx, node->lhs);
     }
@@ -3573,7 +3601,8 @@ static int setup_function_params(
     p->src1 = ir_val_imm(IR_TY_I32, reg_idx);
     ir_func_append_inst(ctx->f, p);
     if (abi_idx < 32) {
-      ir_abi_param_info_t param = classify_type(ctx, ps_node_get_type(arg));
+      ir_abi_param_info_t param = classify_type_id(
+          ctx, ps_node_qual_type(arg).type_id);
       int is_pointer =
           ps_node_value_is_pointer_like(arg) ||
           ps_node_value_is_pointer_like((node_t *)lv) ||

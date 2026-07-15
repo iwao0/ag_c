@@ -17525,6 +17525,37 @@ static void test_semantic_type_identity() {
       context, &typed_expression, &failure, 0));
   ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
             ps_node_qual_type(&typed_expression).qualifiers);
+
+  node_function_definition_t typed_function = {0};
+  typed_function.base.kind = ND_FUNCDEF;
+  typed_function.signature = function_type;
+  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
+      context, (node_t *)&typed_function, &failure, 0));
+  psx_qual_type_t signature_identity =
+      ps_function_definition_signature_qual_type(&typed_function);
+  ASSERT_TRUE(signature_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
+                context, function_type).type_id,
+            signature_identity.type_id);
+
+  node_function_call_t typed_call = {0};
+  typed_call.base.kind = ND_FUNCALL;
+  typed_call.base.type = function_type->base;
+  typed_call.callee_type = function_type;
+  ASSERT_TRUE(psx_finalize_semantic_tree_type_identities(
+      context, (node_t *)&typed_call, &failure, 0));
+  psx_qual_type_t callee_identity =
+      ps_function_call_callee_qual_type(&typed_call);
+  ASSERT_EQ(signature_identity.type_id, callee_identity.type_id);
+  ASSERT_EQ(ps_ctx_find_interned_qual_type_in(
+                context, const_int).type_id,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                callee_identity.type_id, 0).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            psx_semantic_type_table_parameter(
+                ps_ctx_semantic_type_table_in(context),
+                callee_identity.type_id, 0).qualifiers);
   ps_ctx_destroy(context);
 }
 

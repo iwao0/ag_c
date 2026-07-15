@@ -10,6 +10,28 @@ typedef struct {
 
 static int intern_available_type(node_t *node, void *user) {
   type_identity_pass_t *pass = user;
+  if (node->kind == ND_FUNCDEF) {
+    node_function_definition_t *function =
+        (node_function_definition_t *)node;
+    function->signature_qual_type = ps_ctx_intern_qual_type_in(
+        pass->semantic_context, function->signature);
+    if (function->signature_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      pass->failed_node = node;
+      return 0;
+    }
+  } else if (node->kind == ND_FUNCALL) {
+    node_function_call_t *call = (node_function_call_t *)node;
+    call->callee_qual_type = call->callee_type
+        ? ps_ctx_intern_qual_type_in(
+              pass->semantic_context, call->callee_type)
+        : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                            PSX_TYPE_QUALIFIER_NONE};
+    if (call->callee_type &&
+        call->callee_qual_type.type_id == PSX_TYPE_ID_INVALID) {
+      pass->failed_node = node;
+      return 0;
+    }
+  }
   if (!node->type) {
     node->qual_type = (psx_qual_type_t){
         PSX_TYPE_ID_INVALID, PSX_TYPE_QUALIFIER_NONE};

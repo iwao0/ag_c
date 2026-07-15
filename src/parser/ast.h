@@ -293,6 +293,7 @@ struct node_function_definition_t {
   node_t **parameters;
   int parameter_count;
   const psx_type_t *signature;
+  psx_qual_type_t signature_qual_type;
   char *name;
   int name_len;
   int is_static;    // 1: static 関数 (内部リンケージ)。codegen で .global を抑制する。
@@ -310,6 +311,7 @@ struct node_function_call_t {
   int argument_count;
   node_t *callee;
   const psx_type_t *callee_type;
+  psx_qual_type_t callee_qual_type;
   char *direct_name;
   int direct_name_len;
 };
