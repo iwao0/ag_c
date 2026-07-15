@@ -3776,8 +3776,8 @@ static int build_function(
       return 0;
     }
   }
-  int c_signature_len = ps_type_format_canonical_signature(
-      fn->signature, NULL, 0);
+  int c_signature_len = ps_type_format_canonical_signature_for_target(
+      fn->signature, ctx->target, NULL, 0);
   if (c_signature_len < 0) {
     fail(ctx, "missing canonical C function signature");
     return 0;
@@ -3787,8 +3787,8 @@ static int build_function(
     fail(ctx, "canonical C function signature allocation failed");
     return 0;
   }
-  if (ps_type_format_canonical_signature(
-          fn->signature, ctx->f->c_signature,
+  if (ps_type_format_canonical_signature_for_target(
+          fn->signature, ctx->target, ctx->f->c_signature,
           (size_t)c_signature_len + 1) != c_signature_len) {
     fail(ctx, "canonical C function signature changed during IR build");
     return 0;

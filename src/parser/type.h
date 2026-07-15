@@ -181,6 +181,9 @@ int ps_type_unqualified_semantic_matches(
     const psx_type_t *a, const psx_type_t *b);
 int ps_type_format_canonical_signature(const psx_type_t *type,
                                        char *out, size_t out_size);
+int ps_type_format_canonical_signature_for_target(
+    const psx_type_t *type, const ag_target_info_t *target,
+    char *out, size_t out_size);
 int ps_type_generic_matches(const psx_type_t *control,
                             const psx_type_t *association);
 const psx_type_t *ps_type_generic_control_in(

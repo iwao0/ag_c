@@ -3460,6 +3460,24 @@ if (!targetIntegerConversionSection ||
     "semantic arithmetic conversion must use scalar rank and explicit TargetSpec instead of cached type layout",
   );
 }
+const targetCanonicalSignatureSection = canonicalTypeSource.match(
+  /static\s+void\s+canonical_sig_type\s*\([^]*?int\s+ps_type_format_canonical_signature\s*\(/,
+);
+if (!targetCanonicalSignatureSection ||
+    /\bps_type_sizeof\s*\(/.test(targetCanonicalSignatureSection[0]) ||
+    !/\bconst\s+ag_target_info_t\s*\*target\b/.test(
+      targetCanonicalSignatureSection[0],
+    ) ||
+    !/\bag_target_info_scalar_size\s*\(/.test(
+      targetCanonicalSignatureSection[0],
+    ) ||
+    !/\bps_type_format_canonical_signature_for_target\s*\([^]*?ctx->target/.test(
+      irBuilderSource,
+    )) {
+  throw new Error(
+    "canonical C signatures must derive ABI widths from explicit TargetSpec",
+  );
+}
 const scalarIdentityNormalizer = canonicalTypeSource.match(
   /void\s+ps_type_normalize_scalar_identity\s*\([^]*?\n\}\n\nvoid\s+ps_type_clear_cached_layout/,
 );

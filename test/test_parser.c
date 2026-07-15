@@ -3273,6 +3273,15 @@ static void test_target_type_layout_boundary() {
   ASSERT_TRUE(!ag_target_info_equal(&host, &narrow_int_target));
   ASSERT_EQ(2, ps_type_sizeof_for_target(integer, &narrow_int_target));
   ASSERT_EQ(2, ps_type_alignof_for_target(integer, &narrow_int_target));
+  char target_signature[16];
+  ASSERT_EQ(3, ps_type_format_canonical_signature_for_target(
+                   stale_integer, &host,
+                   target_signature, sizeof(target_signature)));
+  ASSERT_TRUE(strcmp("i32", target_signature) == 0);
+  ASSERT_EQ(3, ps_type_format_canonical_signature_for_target(
+                   stale_integer, &narrow_int_target,
+                   target_signature, sizeof(target_signature)));
+  ASSERT_TRUE(strcmp("i16", target_signature) == 0);
   ASSERT_EQ(8, ps_type_sizeof_for_target(float_complex, &host));
   ASSERT_EQ(8, ps_type_alignof_for_target(float_complex, &host));
   ag_target_info_t packed_complex_target = host;

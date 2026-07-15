@@ -1239,7 +1239,8 @@ static void canonical_sig_uint(canonical_sig_writer_t *w, unsigned int value) {
 
 static void canonical_sig_type(canonical_sig_writer_t *w,
                                const psx_type_t *type,
-                               const canonical_sig_path_t *path) {
+                               const canonical_sig_path_t *path,
+                               const ag_target_info_t *target) {
   if (!type || canonical_sig_path_contains(path, type)) {
     w->failed = 1;
     return;
@@ -1263,9 +1264,9 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       canonical_sig_lit(w, "b");
       return;
     case PSX_TYPE_INTEGER: {
-      unsigned int bits = (unsigned int)(ps_type_sizeof(type) > 0
-                                             ? ps_type_sizeof(type) * 8
-                                             : 32);
+      int rank = ps_type_integer_rank(type);
+      if (rank <= 0) rank = 3;
+      unsigned int bits = (unsigned int)(integer_rank_size(rank, target) * 8);
       if (type->scalar_kind == TK_ENUM || type->tag_kind == TK_ENUM) {
         canonical_sig_lit(w, "e{");
         canonical_sig_uint(w, (unsigned int)(type->tag_len > 0 ? type->tag_len : 0));
@@ -1290,22 +1291,36 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
     }
     case PSX_TYPE_FLOAT:
       canonical_sig_lit(w, "f");
-      canonical_sig_uint(w, (unsigned int)(ps_type_sizeof(type) * 8));
+      canonical_sig_uint(
+          w, (unsigned int)(ag_target_info_scalar_size(
+                                 target, floating_target_kind(
+                                             type->is_long_double
+                                                 ? TK_FLOAT_KIND_LONG_DOUBLE
+                                                 : type->fp_kind,
+                                             0)) *
+                             8));
       return;
     case PSX_TYPE_COMPLEX:
       canonical_sig_lit(w, "x");
-      canonical_sig_uint(w, (unsigned int)(ps_type_sizeof(type) * 8));
+      canonical_sig_uint(
+          w, (unsigned int)(ag_target_info_scalar_size(
+                                 target, floating_target_kind(
+                                             type->is_long_double
+                                                 ? TK_FLOAT_KIND_LONG_DOUBLE
+                                                 : type->fp_kind,
+                                             1)) *
+                             8));
       return;
     case PSX_TYPE_POINTER:
       canonical_sig_lit(w, "p<");
-      canonical_sig_type(w, type->base, &current_path);
+      canonical_sig_type(w, type->base, &current_path, target);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_ARRAY:
       canonical_sig_lit(w, "a");
       canonical_sig_uint(w, (unsigned int)(type->array_len > 0 ? type->array_len : 0));
       canonical_sig_lit(w, "<");
-      canonical_sig_type(w, type->base, &current_path);
+      canonical_sig_type(w, type->base, &current_path, target);
       canonical_sig_lit(w, ">");
       return;
     case PSX_TYPE_FUNCTION:
@@ -1314,11 +1329,11 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
         w->failed = 1;
         return;
       }
-      canonical_sig_type(w, type->base, &current_path);
+      canonical_sig_type(w, type->base, &current_path, target);
       canonical_sig_lit(w, "(");
       for (int i = 0; i < type->param_count; i++) {
         if (i > 0) canonical_sig_lit(w, ",");
-        canonical_sig_type(w, type->param_types[i], &current_path);
+        canonical_sig_type(w, type->param_types[i], &current_path, target);
       }
       if (type->is_variadic_function) {
         if (type->param_count > 0) canonical_sig_lit(w, ",");
@@ -1341,16 +1356,24 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
   }
 }
 
-int ps_type_format_canonical_signature(const psx_type_t *type,
-                                       char *out, size_t out_size) {
+int ps_type_format_canonical_signature_for_target(
+    const psx_type_t *type, const ag_target_info_t *target,
+    char *out, size_t out_size) {
   canonical_sig_writer_t writer = {out, out_size, 0, 0};
-  canonical_sig_type(&writer, type, NULL);
+  canonical_sig_type(&writer, type, NULL, target);
   if (out && out_size > 0) {
     size_t terminator = writer.len < out_size ? writer.len : out_size - 1;
     out[terminator] = '\0';
   }
   if (writer.failed || writer.len > (size_t)INT_MAX) return -1;
   return (int)writer.len;
+}
+
+int ps_type_format_canonical_signature(const psx_type_t *type,
+                                       char *out, size_t out_size) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_format_canonical_signature_for_target(
+      type, &target, out, out_size);
 }
 
 int ps_type_generic_matches(const psx_type_t *control,
