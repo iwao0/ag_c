@@ -4,7 +4,7 @@
  *   - `long double` が _Generic 関連型でパースできない (parse_integer_cast_spec が `long`
  *     だけ食べ `double` を残す)
  *   - `double` 制御式が `long double:` 関連型に誤マッチ (kind=TK_DOUBLE で区別不能)→
- *     is_long_double で区別
+ *     fp_kind で区別
  *   - 外部関数のアドレス取得 (`fp = sqrt`) が adrp @PAGE 直参照でリンク失敗→GOT 経由
  *   - `_Generic(...)(args)` 等の bare funcref 呼び出しが間接化しシグネチャを失い fp 戻り値を
  *     x0 で読んでいた→funcref callee を直接呼び出しへ変換しプロトタイプの ABI を適用

@@ -80,7 +80,6 @@ struct psx_type_t {
   unsigned int is_unsigned : 1;
   unsigned int is_long_long : 1;
   unsigned int is_plain_char : 1;
-  unsigned int is_long_double : 1;
   unsigned int is_vla : 1;
 
   const psx_type_t *const *param_types;

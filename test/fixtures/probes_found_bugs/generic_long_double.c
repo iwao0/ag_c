@@ -1,10 +1,10 @@
 /* `_Generic` で long double を double と区別する (C11 6.2.5: 同表現でも別型)。
  * ag_c は long double を double に lowering し fp_kind=DOUBLE になるため、以前は
  * long double 制御式が `double:` / `default:` に当たっていた。long long / plain char と
- * canonical typeのis_long_doubleをinfer_generic_control_typeが読み、
+ * canonical typeのfp_kindをinfer_generic_control_typeが読み、
  * `long double:` 関連型と一致させる。
  * 値は常に double と同一 (Apple ARM64 で long double==double) なので _Generic の選択のみ
- * が観測差。local/global/param と typedef 経由の宣言へも is_long_double を伝播する。 */
+ * が観測差。local/global/param と typedef 経由の宣言へも fp_kind を伝播する。 */
 #include <assert.h>
 
 #define KIND(x) _Generic((x), long double: 3, double: 2, float: 1, default: 0)

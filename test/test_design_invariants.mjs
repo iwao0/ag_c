@@ -3437,6 +3437,8 @@ if (!canonicalTypeStruct ||
     /\bis_(?:const_qualified|volatile_qualified|atomic)\b/.test(
       canonicalTypeStruct[1],
     ) ||
+    !/\btk_float_kind_t\s+fp_kind\s*;/.test(canonicalTypeStruct[1]) ||
+    /\bis_long_double\b/.test(canonicalTypeStruct[1]) ||
     !recordDeclStruct ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||
     !/\bunsigned\s+char\s+is_complete\s*;/.test(recordDeclStruct[1]) ||
@@ -3729,8 +3731,7 @@ if (!/static\s+token_kind_t\s+canonical_integer_scalar_kind\s*\(\s*token_kind_t\
       canonicalTypeSource,
     ) ||
     !scalarIdentityNormalizer ||
-    /->(?:size|align)\b/.test(scalarIdentityNormalizer[0]) ||
-    !/TK_FLOAT_KIND_LONG_DOUBLE/.test(scalarIdentityNormalizer[0])) {
+    /->(?:size|align)\b/.test(scalarIdentityNormalizer[0])) {
   throw new Error(
     "scalar TypeId identity must follow C type kind instead of cached target layout",
   );

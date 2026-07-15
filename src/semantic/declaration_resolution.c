@@ -74,7 +74,6 @@ static void apply_decl_specifier_type_properties(
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;
   if (specifier->is_long_double) {
-    type->is_long_double = 1;
     type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
   }
 }

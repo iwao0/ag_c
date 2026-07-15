@@ -101,12 +101,6 @@ void ps_type_normalize_scalar_identity(psx_type_t *type) {
     if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
     else
       type->scalar_kind = canonical_integer_scalar_kind(type->scalar_kind);
-  } else if (type->kind == PSX_TYPE_FLOAT ||
-             type->kind == PSX_TYPE_COMPLEX) {
-    if (type->is_long_double)
-      type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
-    else if (type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)
-      type->is_long_double = 1;
   }
   ps_type_normalize_scalar_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
@@ -147,7 +141,6 @@ psx_type_t *ps_type_new_float_in(
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FLOAT);
   if (!type) return NULL;
   type->fp_kind = fp_kind;
-  if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) type->is_long_double = 1;
   return type;
 }
 
@@ -298,8 +291,6 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     tk_float_kind_t fp = fallback_fp_kind;
     if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
-    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
-      fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
     psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
     type->fp_kind = fp;
@@ -312,13 +303,8 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     tk_float_kind_t fp = fallback_fp_kind;
     if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
     if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
-    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
-      fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    psx_type_t *type = ps_type_new_float_in(arena_context, fp);
-    if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
-      type->is_long_double = 1;
-    return type;
+    return ps_type_new_float_in(arena_context, fp);
   }
 
   integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
@@ -911,8 +897,7 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
   if (a->qualifiers != b->qualifiers ||
       a->is_unsigned != b->is_unsigned ||
       a->is_long_long != b->is_long_long ||
-      a->is_plain_char != b->is_plain_char ||
-      a->is_long_double != b->is_long_double) {
+      a->is_plain_char != b->is_plain_char) {
     return 0;
   }
   switch (a->kind) {
@@ -972,8 +957,7 @@ static int semantic_type_matches(
              ps_type_integer_rank(a) == ps_type_integer_rank(b);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return a->fp_kind == b->fp_kind &&
-             a->is_long_double == b->is_long_double;
+      return a->fp_kind == b->fp_kind;
     case PSX_TYPE_POINTER:
       return semantic_type_matches(a->base, b->base, 1);
     case PSX_TYPE_ARRAY:
@@ -1136,9 +1120,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       canonical_sig_uint(
           w, (unsigned int)(ag_target_info_scalar_size(
                                  target, floating_target_kind(
-                                             type->is_long_double
-                                                 ? TK_FLOAT_KIND_LONG_DOUBLE
-                                                 : type->fp_kind,
+                                             type->fp_kind,
                                              0)) *
                              8));
       return;
@@ -1147,9 +1129,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       canonical_sig_uint(
           w, (unsigned int)(ag_target_info_scalar_size(
                                  target, floating_target_kind(
-                                             type->is_long_double
-                                                 ? TK_FLOAT_KIND_LONG_DOUBLE
-                                                 : type->fp_kind,
+                                             type->fp_kind,
                                              1)) *
                              8));
       return;

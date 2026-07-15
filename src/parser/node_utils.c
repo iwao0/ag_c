@@ -2248,7 +2248,7 @@ static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag
     case NODE_SCALAR_PLAIN_CHAR:
       return type->is_plain_char ? 1 : 0;
     case NODE_SCALAR_LONG_DOUBLE:
-      return type->is_long_double ? 1 : 0;
+      return type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE ? 1 : 0;
     default:
       return 0;
   }

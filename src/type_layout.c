@@ -19,8 +19,7 @@ static ag_target_scalar_kind_t integer_target_kind(
 static ag_target_scalar_kind_t floating_target_kind(
     const psx_type_t *type) {
   int is_complex = type && type->kind == PSX_TYPE_COMPLEX;
-  if (type && (type->is_long_double ||
-               type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)) {
+  if (type && type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) {
     return is_complex ? AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX
                       : AG_TARGET_SCALAR_LONG_DOUBLE;
   }

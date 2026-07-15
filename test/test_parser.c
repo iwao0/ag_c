@@ -12361,7 +12361,7 @@ static void test_type_metadata_bridge() {
   typed_cached_long_double_ternary.base.kind = ND_TERNARY;
   psx_type_t *typed_cached_long_double_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  typed_cached_long_double_type->is_long_double = 1;
+  typed_cached_long_double_type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
   typed_cached_long_double_ternary.base.type =
       typed_cached_long_double_type;
   ASSERT_TRUE(ps_node_is_long_double_type(
@@ -12452,7 +12452,7 @@ static void test_type_metadata_bridge() {
   cached_long_double_stmt.rhs = &cached_scalar_rhs;
   psx_type_t *cached_long_double_stmt_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  cached_long_double_stmt_type->is_long_double = 1;
+  cached_long_double_stmt_type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
   cached_long_double_stmt.type = cached_long_double_stmt_type;
   ASSERT_TRUE(ps_node_is_long_double_type(&cached_long_double_stmt));
 
