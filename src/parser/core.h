@@ -43,6 +43,8 @@ bool psx_is_decl_prefix_token(token_kind_t k);
 bool psx_is_gnu_attribute_token(const token_t *t);
 void psx_skip_gnu_attributes(void);
 void psx_skip_gnu_attributes_at(token_t **t);
-bool psx_try_consume_pragma_pack_marker(void);
+typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
+bool psx_try_consume_pragma_pack_marker_in(
+    psx_parser_runtime_context_t *runtime_context);
 
 #endif

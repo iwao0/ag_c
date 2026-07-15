@@ -50,10 +50,11 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context) {
   if (!parameters || !semantic_context || !global_registry ||
-      !local_registry)
+      !local_registry || !runtime_context)
     return 0;
   tk_expect('(');
   if (tk_consume(')')) return 1;
@@ -74,6 +75,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
         .semantic_context = semantic_context,
         .global_registry = global_registry,
         .local_registry = local_registry,
+        .runtime_context = runtime_context,
         .allow_implicit_int =
             type_mode == PSX_PARAMETER_TYPE_ALLOW_IMPLICIT_INT,
     };
@@ -89,6 +91,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     parameter->declarator =
         psx_parse_parameter_declarator_syntax_tree_in_contexts(
             semantic_context, global_registry, local_registry,
+            runtime_context,
             is_typedef_name, typedef_name_context);
     if (tk_consume(',')) continue;
     tk_expect(')');

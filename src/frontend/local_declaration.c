@@ -249,14 +249,18 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_local_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry) {
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context) {
   if (!callbacks) return;
   *callbacks = (psx_local_declaration_callbacks_t){0};
-  if (!semantic_context || !global_registry || !local_registry) return;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return;
   *callbacks = (psx_local_declaration_callbacks_t){
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
+      .runtime_context = runtime_context,
       .apply_static_assert = apply_static_assert,
       .begin_declaration = begin_declaration,
       .begin_declarator = begin_declarator,

@@ -18,6 +18,8 @@ typedef struct {
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   const token_t *fallback_diag_tok;
+  psx_local_lookup_point_t lookup_point;
+  int has_lookup_point_override;
 } psx_identifier_binding_context_t;
 
 static node_t *bind_node(
@@ -89,23 +91,24 @@ static node_t *materialize_function(
 
 static void resolve_identifier(
     const node_identifier_t *identifier, int is_call,
-    psx_semantic_context_t *semantic_context,
-    psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry,
+    const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *resolution) {
+  psx_local_lookup_point_t point = context->has_lookup_point_override
+      ? context->lookup_point
+      : (psx_local_lookup_point_t){
+            .scope_seq = identifier->scope_seq,
+            .declaration_seq = identifier->declaration_seq,
+        };
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = semantic_context,
-          .global_registry = global_registry,
-          .local_registry = local_registry,
+          .semantic_context = context->semantic_context,
+          .global_registry = context->global_registry,
+          .local_registry = context->local_registry,
           .name = identifier->name,
           .name_len = identifier->name_len,
           .is_call = is_call,
           .has_local_lookup_point = 1,
-          .local_lookup_point = {
-              .scope_seq = identifier->scope_seq,
-              .declaration_seq = identifier->declaration_seq,
-          },
+          .local_lookup_point = point,
       },
       resolution);
 }
@@ -115,10 +118,7 @@ static node_t *materialize_identifier(
     const psx_identifier_binding_context_t *context,
     psx_identifier_resolution_t *out_resolution) {
   psx_identifier_resolution_t resolution;
-  resolve_identifier(
-      identifier, is_call,
-      context->semantic_context, context->global_registry,
-      context->local_registry, &resolution);
+  resolve_identifier(identifier, is_call, context, &resolution);
   if (out_resolution) *out_resolution = resolution;
   switch (resolution.kind) {
     case PSX_IDENTIFIER_LOCAL:
@@ -149,10 +149,7 @@ static node_t *materialize_address_operand(
     node_identifier_t *identifier,
     const psx_identifier_binding_context_t *context) {
   psx_identifier_resolution_t resolution;
-  resolve_identifier(
-      identifier, 0,
-      context->semantic_context, context->global_registry,
-      context->local_registry, &resolution);
+  resolve_identifier(identifier, 0, context, &resolution);
   if (resolution.kind == PSX_IDENTIFIER_LOCAL && resolution.local) {
     lvar_t *var = resolution.local;
     node_t *node = NULL;
@@ -404,6 +401,24 @@ node_t *psx_bind_identifier_tree_in_contexts(
       .global_registry = global_registry,
       .local_registry = local_registry,
       .fallback_diag_tok = fallback_diag_tok,
+  };
+  return bind_node(node, &context);
+}
+
+node_t *psx_bind_identifier_tree_at_lookup_point_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
+    psx_local_lookup_point_t lookup_point,
+    node_t *node, const token_t *fallback_diag_tok) {
+  if (!semantic_context || !global_registry || !local_registry) return node;
+  const psx_identifier_binding_context_t context = {
+      .semantic_context = semantic_context,
+      .global_registry = global_registry,
+      .local_registry = local_registry,
+      .fallback_diag_tok = fallback_diag_tok,
+      .lookup_point = lookup_point,
+      .has_lookup_point_override = 1,
   };
   return bind_node(node, &context);
 }

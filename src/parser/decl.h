@@ -65,6 +65,7 @@ node_t *psx_decl_parse_initializer_for_var_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations,
     lvar_t *var);
 node_t *ps_decl_bind_initializer_for_var(

@@ -7,6 +7,7 @@
 typedef struct psx_semantic_context_t psx_semantic_context_t;
 typedef struct psx_global_registry_t psx_global_registry_t;
 typedef struct psx_local_registry_t psx_local_registry_t;
+typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 
 typedef struct {
   psx_parsed_decl_specifier_t specifier;
@@ -27,6 +28,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
   void *(*begin_declaration)(
       void *context, psx_parsed_toplevel_declaration_t *declaration);
   void (*begin_declarator)(
@@ -45,18 +47,21 @@ int psx_parse_toplevel_declaration_syntax_in_contexts(
     const psx_toplevel_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry);
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context);
 int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry);
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context);
 int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
-    psx_local_registry_t *local_registry);
+    psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context);
 void ps_dispose_toplevel_declaration_syntax(
     psx_parsed_toplevel_declaration_t *declaration);
 

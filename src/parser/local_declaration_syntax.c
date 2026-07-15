@@ -20,7 +20,9 @@ static void require_callbacks(
     const psx_local_declaration_callbacks_t *callbacks) {
   if (!callbacks || !callbacks->apply_static_assert ||
       !callbacks->begin_declaration || !callbacks->begin_declarator ||
-      !callbacks->finish_declarator || !callbacks->finish_declaration) {
+      !callbacks->finish_declarator || !callbacks->finish_declaration ||
+      !callbacks->semantic_context || !callbacks->global_registry ||
+      !callbacks->local_registry || !callbacks->runtime_context) {
     ps_diag_ctx(curtok(), "local-declaration-syntax",
                 "local declaration application callbacks are required");
   }
@@ -32,9 +34,10 @@ node_t *psx_parse_local_declaration_syntax(
   if (curtok()->kind == TK_STATIC_ASSERT) {
     psx_parsed_static_assert_declaration_t assertion;
     psx_parse_static_assert_syntax_in_contexts(
-        &assertion, callbacks->semantic_context,
-        callbacks->global_registry,
-        callbacks->local_registry, callbacks);
+          &assertion, callbacks->semantic_context,
+          callbacks->global_registry,
+          callbacks->local_registry, callbacks->runtime_context,
+          callbacks);
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
         assertion.diagnostic_token);
@@ -52,11 +55,13 @@ node_t *psx_parse_local_declaration_syntax(
               .semantic_context = callbacks->semantic_context,
               .global_registry = callbacks->global_registry,
               .local_registry = callbacks->local_registry,
+              .runtime_context = callbacks->runtime_context,
           })) {
     diag_report_tokf(
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(), "%s",
         diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
-    ps_parser_mark_recoverable_syntax_error();
+    ps_parser_mark_recoverable_syntax_error_in(
+        callbacks->runtime_context);
     return NULL;
   }
   ps_prepare_decl_specifier_alignments_in_context(
@@ -87,12 +92,14 @@ node_t *psx_parse_local_declaration_syntax(
     psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
         &declarator, callbacks->semantic_context,
         callbacks->global_registry,
-        callbacks->local_registry, is_local_typedef_name,
+        callbacks->local_registry, callbacks->runtime_context,
+        is_local_typedef_name,
         callbacks->semantic_context);
     ps_parse_runtime_declarator_expressions_in_contexts(
         &declarator, callbacks->semantic_context,
         callbacks->global_registry,
-        callbacks->local_registry, callbacks);
+        callbacks->local_registry, callbacks->runtime_context,
+        callbacks);
     if (!declarator.identifier) {
       ps_diag_ctx(curtok(), "decl", "%s",
                   diag_message_for(
@@ -115,7 +122,8 @@ node_t *psx_parse_local_declaration_syntax(
       else
         callbacks->finish_declaration(declaration_context);
       ps_dispose_decl_specifier_syntax(&specifier);
-      ps_parser_mark_recoverable_syntax_error();
+      ps_parser_mark_recoverable_syntax_error_in(
+          callbacks->runtime_context);
       return NULL;
     }
     callbacks->begin_declarator(
@@ -126,7 +134,8 @@ node_t *psx_parse_local_declaration_syntax(
       psx_parse_initializer_syntax_value_in_contexts(
           &initializer, assign_tok, callbacks->semantic_context,
           callbacks->global_registry,
-          callbacks->local_registry, callbacks);
+          callbacks->local_registry, callbacks->runtime_context,
+          callbacks);
     }
     callbacks->finish_declarator(
         declaration_context, &initializer);

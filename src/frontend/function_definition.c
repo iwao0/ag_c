@@ -15,8 +15,10 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     psx_parsed_function_definition_t *definition) {
-  if (!definition || !semantic_context || !global_registry || !local_registry)
+  if (!definition || !semantic_context || !global_registry ||
+      !local_registry || !runtime_context)
     return NULL;
   ps_decl_reset_locals_in(local_registry);
   ps_ctx_reset_function_scope_in(semantic_context);
@@ -30,7 +32,7 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   }
   ps_parse_runtime_declarator_expressions_in_contexts(
       &definition->declarator, semantic_context, global_registry,
-      local_registry, NULL);
+      local_registry, runtime_context, NULL);
   psx_function_definition_pipeline_result_t applied;
   psx_function_definition_pipeline_state_t pipeline;
   if (!psx_begin_function_definition_pipeline(
@@ -52,9 +54,6 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
   for (int i = 0; parameters && i < parameters->count; i++) {
     psx_parsed_function_parameter_t *parameter =
         &parameters->items[i];
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        &parameter->declarator, semantic_context, global_registry,
-        local_registry, NULL);
     if (!psx_apply_function_definition_parameter_pipeline(
             &pipeline, parameter)) {
       ps_diag_ctx(parameter->declarator.diagnostic_token, "funcdef",

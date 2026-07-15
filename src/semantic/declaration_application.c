@@ -487,9 +487,15 @@ void psx_apply_parsed_function_parameters_in_contexts(
       ps_diag_ctx(parameter->specifier.diagnostic_token, "param", "%s",
                    diag_message_for(DIAG_ERR_PARSER_MEMBER_TYPE_REQUIRED));
     }
-    ps_parse_runtime_declarator_expressions_in_contexts(
-        &parameter->declarator, semantic_context, global_registry,
-        local_registry, NULL);
+    psx_local_lookup_point_t parameter_lookup_point =
+        ps_local_registry_capture_lookup_point_in(local_registry);
+    for (int b = 0; b < parameter->declarator.array_bound_count; b++) {
+      psx_parsed_const_expr_t *bound =
+          &parameter->declarator.array_bounds[b].expression;
+      bound->node = psx_bind_identifier_tree_at_lookup_point_in_contexts(
+          semantic_context, global_registry, local_registry,
+          parameter_lookup_point, bound->node, bound->start);
+    }
     psx_runtime_declarator_application_t parameter_application;
     psx_apply_runtime_parsed_declarator_in_contexts(
         semantic_context, global_registry, local_registry,

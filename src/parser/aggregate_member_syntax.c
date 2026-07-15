@@ -56,9 +56,9 @@ void psx_parse_aggregate_body_with_options(
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
   if (!options || !options->semantic_context || !options->global_registry ||
-      !options->local_registry) {
+      !options->local_registry || !options->runtime_context) {
     ps_diag_ctx(current_token(), "aggregate-syntax",
-                "semantic and local contexts must be provided explicitly");
+                "parser contexts must be provided explicitly");
   }
   memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
@@ -69,7 +69,8 @@ void psx_parse_aggregate_body_with_options(
           &item->value.static_assertion,
           options ? options->semantic_context : NULL,
           options ? options->global_registry : NULL,
-          options ? options->local_registry : NULL, NULL);
+          options ? options->local_registry : NULL,
+          options ? options->runtime_context : NULL, NULL);
       continue;
     }
 
@@ -78,7 +79,8 @@ void psx_parse_aggregate_body_with_options(
         &item->value.member_declaration;
     psx_parse_decl_specifier_syntax_ex(
         &declaration->specifier, options);
-    declaration->pack_alignment = pragma_pack_current_alignment();
+    declaration->pack_alignment = pragma_pack_current_alignment_in(
+        options->runtime_context);
     for (;;) {
       psx_parsed_declarator_t *declarator =
           append_aggregate_declarator(declaration);
@@ -86,6 +88,7 @@ void psx_parse_aggregate_body_with_options(
           declarator, options ? options->semantic_context : NULL,
           options ? options->global_registry : NULL,
           options ? options->local_registry : NULL,
+          options ? options->runtime_context : NULL,
           options ? options->is_typedef_name : NULL,
           options ? options->context : NULL);
       int has_comma = tk_consume(',');

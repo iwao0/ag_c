@@ -23,6 +23,7 @@
 #include "semantic/function_parameter_resolution.h"
 #include "semantic/global_declaration_resolution.h"
 #include "semantic/initializer_resolution.h"
+#include "semantic/identifier_binding.h"
 #include "semantic/local_declaration_resolution.h"
 #include "semantic/static_initializer_resolution.h"
 #include "semantic/parameter_declaration_resolution.h"
@@ -337,6 +338,15 @@ static int append_definition_parameter(
   if (!base_type) {
     ps_diag_ctx(parameter->specifier.diagnostic_token, "param",
                  "canonical parameter base type resolution failed");
+  }
+  psx_local_lookup_point_t parameter_lookup_point =
+      ps_local_registry_capture_lookup_point_in(local_registry);
+  for (int b = 0; b < parameter->declarator.array_bound_count; b++) {
+    psx_parsed_const_expr_t *bound =
+        &parameter->declarator.array_bounds[b].expression;
+    bound->node = psx_bind_identifier_tree_at_lookup_point_in_contexts(
+        semantic_context, global_registry, local_registry,
+        parameter_lookup_point, bound->node, bound->start);
   }
   psx_runtime_declarator_application_t applied;
   psx_apply_runtime_parsed_declarator_in_contexts(

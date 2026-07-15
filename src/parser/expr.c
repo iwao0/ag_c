@@ -32,6 +32,7 @@ typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
+  psx_parser_runtime_context_t *runtime_context;
   const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
   int expr_nest_depth;
@@ -47,11 +48,13 @@ static expr_parse_ctx_t expr_parse_ctx_default(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
   expr_parse_ctx_t ctx = {
       .semantic_context = semantic_context,
       .global_registry = global_registry,
       .local_registry = local_registry,
+      .runtime_context = runtime_context,
       .local_declarations = local_declarations,
   };
   return ctx;
@@ -181,6 +184,7 @@ static node_t *parse_compound_literal_from_type(
   token_t *initializer_tok = curtok();
   node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
       ctx->semantic_context, ctx->global_registry, ctx->local_registry,
+      ctx->runtime_context,
       ctx->local_declarations);
   node_t *syntax = psx_node_new_compound_literal(
       type_name, initializer, initializer_tok,
@@ -225,6 +229,7 @@ static int parenthesized_type_name_is_compound_literal(
               .semantic_context = ctx->semantic_context,
               .global_registry = ctx->global_registry,
               .local_registry = ctx->local_registry,
+              .runtime_context = ctx->runtime_context,
           },
           &syntax)) {
     return 0;
@@ -253,6 +258,7 @@ static int capture_type_name_ref_at(
                              .semantic_context = ctx->semantic_context,
                              .global_registry = ctx->global_registry,
                              .local_registry = ctx->local_registry,
+                             .runtime_context = ctx->runtime_context,
                          },
                          syntax)
                    : psx_parse_type_name_syntax_at(
@@ -265,6 +271,7 @@ static int capture_type_name_ref_at(
                              .semantic_context = ctx->semantic_context,
                              .global_registry = ctx->global_registry,
                              .local_registry = ctx->local_registry,
+                             .runtime_context = ctx->runtime_context,
                          },
                          syntax);
   if (!parsed) {
@@ -275,6 +282,7 @@ static int capture_type_name_ref_at(
         &syntax->declarator, ctx->semantic_context,
         ctx->global_registry,
         ctx->local_registry,
+        ctx->runtime_context,
         ctx->local_declarations);
   psx_local_lookup_point_t point =
       ps_local_registry_capture_lookup_point_in(ctx->local_registry);
@@ -311,10 +319,14 @@ node_t *psx_expr_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, global_registry, local_registry, local_declarations);
+      semantic_context, global_registry, local_registry, runtime_context,
+      local_declarations);
   return expr_internal_ctx(&ctx);
 }
 
@@ -322,10 +334,14 @@ node_t *psx_expr_assign_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return NULL;
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
-      semantic_context, global_registry, local_registry, local_declarations);
+      semantic_context, global_registry, local_registry, runtime_context,
+      local_declarations);
   return assign_ctx(&ctx);
 }
 
@@ -1145,6 +1161,7 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
       curtok()->next->kind == TK_LBRACE) {
     return psx_parse_statement_expression_in_contexts(
         ctx->semantic_context, ctx->global_registry, ctx->local_registry,
+        ctx->runtime_context,
         ctx->local_declarations);
   }
 

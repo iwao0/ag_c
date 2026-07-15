@@ -16,9 +16,10 @@ void psx_parse_static_assert_syntax_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
   if (!declaration || !semantic_context || !global_registry ||
-      !local_registry)
+      !local_registry || !runtime_context)
     return;
   memset(declaration, 0, sizeof(*declaration));
   declaration->diagnostic_token = current_token();
@@ -31,6 +32,7 @@ void psx_parse_static_assert_syntax_in_contexts(
   tk_expect('(');
   declaration->condition = psx_expr_assign_in_contexts(
       semantic_context, global_registry, local_registry,
+      runtime_context,
       local_declarations);
   tk_expect(',');
   if (current_token()->kind != TK_STRING) {

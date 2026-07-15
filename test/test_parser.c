@@ -200,6 +200,7 @@ static node_t *parse_test_expression_from(token_t *start) {
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
       NULL, NULL, start);
 }
 
@@ -226,6 +227,8 @@ static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
               ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(test_suite_session),
       });
 }
 
@@ -236,7 +239,8 @@ static int parse_test_toplevel_declaration_syntax(
       declaration, callbacks,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session));
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session));
 }
 
 static void parse_test_decl_specifier_syntax(
@@ -250,6 +254,8 @@ static void parse_test_decl_specifier_syntax(
               ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(test_suite_session),
       });
 }
 
@@ -264,6 +270,8 @@ static int parse_test_type_name_syntax_at(
               ag_compilation_session_global_registry(test_suite_session),
           .local_registry =
               ag_compilation_session_local_registry(test_suite_session),
+          .runtime_context =
+              ag_compilation_session_parser_runtime_context(test_suite_session),
       },
       type_name);
 }
@@ -275,6 +283,7 @@ static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
       NULL, NULL);
   return declarator;
 }
@@ -285,7 +294,9 @@ static void parse_test_runtime_declarator_expressions(
       declarator,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session), NULL);
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      NULL);
 }
 
 static void prepare_test_constant_declarator_expressions(
@@ -326,6 +337,7 @@ static node_function_definition_t *apply_test_function_definition_header(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
       definition);
 }
 
@@ -335,6 +347,7 @@ static void apply_test_toplevel_declaration(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
       ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
       declaration);
 }
 
@@ -344,7 +357,8 @@ static void init_test_local_declaration_callbacks(
       callbacks,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session));
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session));
 }
 
 static void init_test_toplevel_declaration_callbacks(
@@ -353,7 +367,8 @@ static void init_test_toplevel_declaration_callbacks(
       callbacks,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session));
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session));
 }
 
 static const psx_type_t *resolve_test_decl_specifier_syntax(
@@ -444,14 +459,18 @@ static void parse_test_initializer_syntax_value(
       initializer, assign_tok,
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session), NULL);
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      NULL);
 }
 
 static node_t *parse_test_initializer_for_var(lvar_t *var) {
   return psx_decl_parse_initializer_for_var_in_contexts(
       ag_compilation_session_semantic_context(test_suite_session),
       ag_compilation_session_global_registry(test_suite_session),
-      ag_compilation_session_local_registry(test_suite_session), NULL, var);
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      NULL, var);
 }
 
 /* Test-only storage fixtures may start with a simple scalar/array type and
@@ -14288,14 +14307,16 @@ static void test_translation_unit_reset_decl_locals_state() {
 static void test_translation_unit_reset_pragma_pack_state() {
   printf("test_translation_unit_reset_pragma_pack_state...\n");
 
-  pragma_pack_reset();
-  pragma_pack_set(8);
-  pragma_pack_push(1);
-  ASSERT_EQ(1, pragma_pack_current_alignment());
+  psx_parser_runtime_context_t *runtime_context =
+      ag_compilation_session_parser_runtime_context(test_suite_session);
+  pragma_pack_reset_in(runtime_context);
+  pragma_pack_set_in(runtime_context, 8);
+  pragma_pack_push_in(runtime_context, 1);
+  ASSERT_EQ(1, pragma_pack_current_alignment_in(runtime_context));
   reset_test_translation_unit_state();
-  ASSERT_EQ(0, pragma_pack_current_alignment());
-  pragma_pack_pop();
-  ASSERT_EQ(0, pragma_pack_current_alignment());
+  ASSERT_EQ(0, pragma_pack_current_alignment_in(runtime_context));
+  pragma_pack_pop_in(runtime_context);
+  ASSERT_EQ(0, pragma_pack_current_alignment_in(runtime_context));
 }
 
 static void test_multiple_funcdefs() {
@@ -15704,7 +15725,7 @@ static void test_semantic_context_isolation() {
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declarations, second, ps_global_registry_active(),
-      ps_local_registry_active());
+      ps_local_registry_active(), ps_parser_runtime_context_active());
   ASSERT_TRUE(ps_parse_function_definition_body(
                   &parser_stream, &parsed_function,
                   &local_declarations) != NULL);
@@ -15914,6 +15935,7 @@ static void test_compilation_session_registry_isolation() {
           .semantic_context = first.semantic_context,
           .global_registry = first.global_registry,
           .local_registry = first.local_registry,
+          .runtime_context = first.parser_runtime_context,
       });
   ASSERT_EQ(1, nested_context_body.item_count);
   psx_parsed_declarator_t *nested_context_callback =
@@ -16281,7 +16303,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   tk_set_enable_c11_audit_extensions(true);
   ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
   ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
-  pragma_pack_set(4);
+  pragma_pack_set_in(host.parser_runtime_context, 4);
   ps_set_enable_union_scalar_pointer_cast(false);
   ASSERT_EQ(4, host.parser_runtime_context->pragma_pack_current);
   ASSERT_TRUE(!host.parser_runtime_context
@@ -16318,7 +16340,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   tk_filename_reset_translation_unit();
   ASSERT_TRUE(tk_filename_lookup(wasm_filename) == NULL);
   ASSERT_EQ(0, wasm.lowering_context->aggregate_cast_temp_sequence);
-  ASSERT_EQ(0, pragma_pack_current_alignment());
+  ASSERT_EQ(0, pragma_pack_current_alignment_in(
+                   wasm.parser_runtime_context));
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
@@ -16368,7 +16391,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
                      "host-session.c") == 0);
   ASSERT_EQ(9, host.lowering_context->aggregate_cast_temp_sequence);
-  ASSERT_EQ(4, pragma_pack_current_alignment());
+  ASSERT_EQ(4, pragma_pack_current_alignment_in(
+                   host.parser_runtime_context));
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));

@@ -27,6 +27,7 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context);
 void psx_dispose_function_parameters_syntax(

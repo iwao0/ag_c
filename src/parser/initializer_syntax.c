@@ -27,8 +27,11 @@ void psx_parse_initializer_syntax_value_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!out || !semantic_context || !global_registry || !local_registry) return;
+  if (!out || !semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return;
   *out = (psx_parsed_initializer_t){
       .has_initializer = 1,
       .kind = curtok()->kind == TK_LBRACE ? PSX_DECL_INIT_LIST
@@ -39,9 +42,11 @@ void psx_parse_initializer_syntax_value_in_contexts(
   out->value = out->kind == PSX_DECL_INIT_LIST
                    ? psx_parse_initializer_syntax_list_in_contexts(
                          semantic_context, global_registry, local_registry,
+                         runtime_context,
                          local_declarations)
                    : psx_expr_assign_in_contexts(
                          semantic_context, global_registry, local_registry,
+                         runtime_context,
                          local_declarations);
 }
 
@@ -49,8 +54,11 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
-  if (!semantic_context || !global_registry || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return NULL;
   token_t *brace_tok = curtok();
   tk_expect('{');
   psx_initializer_entry_t *entries = NULL;
@@ -107,6 +115,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
           tk_expect('[');
           node_t *index_expr = psx_expr_assign_in_contexts(
               semantic_context, global_registry, local_registry,
+              runtime_context,
               local_declarations);
           node_t *range_end_expr = NULL;
           int is_range = 0;
@@ -116,6 +125,7 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
             tk_set_current_token(curtok()->next);
             range_end_expr = psx_expr_assign_in_contexts(
                 semantic_context, global_registry, local_registry,
+                runtime_context,
                 local_declarations);
             is_range = 1;
           }
@@ -136,10 +146,12 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
                           ? psx_parse_initializer_syntax_list_in_contexts(
                                 semantic_context, global_registry,
                                 local_registry,
+                                runtime_context,
                                 local_declarations)
                           : psx_expr_assign_in_contexts(
                                 semantic_context, global_registry,
                                 local_registry,
+                                runtime_context,
                                 local_declarations);
       entries[count++] = (psx_initializer_entry_t){
           .value = value,

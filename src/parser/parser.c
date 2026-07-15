@@ -216,25 +216,29 @@ static token_kind_t parse_atomic_type_specifier(
 // 現在のトークンが #pragma pack マーカーなら対応する関数を呼んで消費し true を返す。
 // プリプロセッサはマーカーを出現位置に挿入するだけなので、トップレベルだけでなく
 // 関数本体のブロック内でも遭遇しうる。透過的に処理する。
-bool psx_try_consume_pragma_pack_marker(void) {
+bool psx_try_consume_pragma_pack_marker_in(
+    psx_parser_runtime_context_t *runtime_context) {
+  if (!runtime_context) return false;
   token_kind_t k = curtok()->kind;
   if (k == TK_PRAGMA_PACK_PUSH) {
-    pragma_pack_push((int)((token_num_int_t *)curtok())->val);
+    pragma_pack_push_in(
+        runtime_context, (int)((token_num_int_t *)curtok())->val);
     set_curtok(curtok()->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_POP) {
-    pragma_pack_pop();
+    pragma_pack_pop_in(runtime_context);
     set_curtok(curtok()->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_SET) {
-    pragma_pack_set((int)((token_num_int_t *)curtok())->val);
+    pragma_pack_set_in(
+        runtime_context, (int)((token_num_int_t *)curtok())->val);
     set_curtok(curtok()->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_RESET) {
-    pragma_pack_reset();
+    pragma_pack_reset_in(runtime_context);
     set_curtok(curtok()->next);
     return true;
   }
@@ -304,13 +308,15 @@ int ps_parse_next_toplevel_item(
   psx_semantic_context_t *semantic_context = stream->semantic_context;
   *item = (psx_parsed_toplevel_item_t){0};
   while (!tk_at_eof()) {
-    if (psx_try_consume_pragma_pack_marker()) continue;
+    if (psx_try_consume_pragma_pack_marker_in(stream->runtime_context))
+      continue;
     if (curtok()->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_TOPLEVEL_ITEM_STATIC_ASSERT;
       psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
           semantic_context, stream->global_registry,
           stream->local_registry,
+          stream->runtime_context,
           NULL);
       if (stream && stream->tk_ctx) {
         tk_set_current_token_ctx(stream->tk_ctx, tk_get_current_token());
@@ -320,7 +326,7 @@ int ps_parse_next_toplevel_item(
     psx_parsed_toplevel_declaration_t declaration = {0};
     if (!psx_parse_toplevel_declaration_head_syntax_in_contexts(
             &declaration, semantic_context, stream->global_registry,
-            stream->local_registry)) {
+            stream->local_registry, stream->runtime_context)) {
       ps_dispose_toplevel_declaration_syntax(&declaration);
       psx_synchronize_toplevel_declaration();
       if (diag_active_limit_kind()) break;
@@ -345,7 +351,7 @@ int ps_parse_next_toplevel_item(
               &item->value.declaration,
               stream->toplevel_declarations, semantic_context,
               stream->global_registry,
-              stream->local_registry)) {
+              stream->local_registry, stream->runtime_context)) {
         ps_dispose_toplevel_declaration_syntax(&item->value.declaration);
         item->kind = PSX_TOPLEVEL_ITEM_EOF;
         psx_synchronize_toplevel_declaration();
@@ -629,9 +635,10 @@ static node_block_t *parse_funcdef_body_block(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations) {
   ps_ctx_enter_block_scope_in(semantic_context);
-  ps_parser_enter_recovery_block();
+  ps_parser_enter_recovery_block_in(runtime_context);
   node_block_t *body = arena_alloc(sizeof(node_block_t));
   body->base.kind = ND_BLOCK;
   int i = 0;
@@ -639,7 +646,7 @@ static node_block_t *parse_funcdef_body_block(
   body->body = calloc(body_cap, sizeof(node_t *));
   while (!tk_consume('}')) {
     // #pragma pack マーカーは関数本体冒頭・任意の位置で出現しうる。透過処理。
-    if (psx_try_consume_pragma_pack_marker()) continue;
+    if (psx_try_consume_pragma_pack_marker_in(runtime_context)) continue;
     if (i >= body_cap - 1) {
       body_cap = pda_next_cap(body_cap, i + 2);
       body->body = pda_xreallocarray(body->body, (size_t)body_cap, sizeof(node_t *));
@@ -649,11 +656,12 @@ static node_block_t *parse_funcdef_body_block(
         psx_decl_begin_lvar_usage_region_in(local_registry);
     body->body[i] = psx_stmt_stmt_in_contexts(
         semantic_context, global_registry, local_registry,
+        runtime_context,
         local_declarations);
     psx_decl_end_lvar_usage_region_in(local_registry, region);
-    if (ps_parser_has_recoverable_syntax_error()) {
+    if (ps_parser_has_recoverable_syntax_error_in(runtime_context)) {
       body->body[i] = NULL;
-      ps_parser_leave_recovery_block();
+      ps_parser_leave_recovery_block_in(runtime_context);
       ps_ctx_leave_block_scope_in(semantic_context);
       return NULL;
     }
@@ -664,7 +672,7 @@ static node_block_t *parse_funcdef_body_block(
     i++;
   }
   body->body[i] = NULL;
-  ps_parser_leave_recovery_block();
+  ps_parser_leave_recovery_block_in(runtime_context);
   ps_ctx_leave_block_scope_in(semantic_context);
   return body;
 }
@@ -683,7 +691,8 @@ node_t *ps_parse_function_definition_body(
   function->base.rhs =
       (node_t *)parse_funcdef_body_block(
           semantic_context, stream->global_registry,
-          stream->local_registry, local_declarations);
+          stream->local_registry, stream->runtime_context,
+          local_declarations);
   if (runtime->recoverable_syntax_error) {
     int depth = runtime->recovery_block_depth > 0
         ? runtime->recovery_block_depth : 1;
@@ -713,39 +722,46 @@ node_t *ps_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
+    psx_parser_runtime_context_t *runtime_context,
     const psx_local_declaration_callbacks_t *local_declarations,
     tokenizer_context_t *tk_ctx, token_t *start) {
-  if (!semantic_context || !global_registry || !local_registry) return NULL;
+  if (!semantic_context || !global_registry || !local_registry ||
+      !runtime_context)
+    return NULL;
   if (tk_ctx) {
     tk_set_current_token_ctx(tk_ctx, start);
   }
   tk_set_current_token(start);
   node_t *node = psx_expr_expr_in_contexts(
       semantic_context, global_registry, local_registry,
+      runtime_context,
       local_declarations);
   if (tk_ctx) {
     tk_set_current_token_ctx(tk_ctx, tk_get_current_token());
   }
   return node;
 }
-void ps_parser_mark_recoverable_syntax_error(void) {
-  psx_parser_runtime_context_t *runtime =
-      ps_parser_runtime_context_active();
-  if (!runtime->recoverable_syntax_error)
-    runtime->recovery_block_depth = runtime->function_block_depth;
-  runtime->recoverable_syntax_error = 1;
+void ps_parser_mark_recoverable_syntax_error_in(
+    psx_parser_runtime_context_t *runtime_context) {
+  if (!runtime_context) return;
+  if (!runtime_context->recoverable_syntax_error)
+    runtime_context->recovery_block_depth =
+        runtime_context->function_block_depth;
+  runtime_context->recoverable_syntax_error = 1;
 }
 
-int ps_parser_has_recoverable_syntax_error(void) {
-  return ps_parser_runtime_context_active()->recoverable_syntax_error;
+int ps_parser_has_recoverable_syntax_error_in(
+    const psx_parser_runtime_context_t *runtime_context) {
+  return runtime_context ? runtime_context->recoverable_syntax_error : 0;
 }
 
-void ps_parser_enter_recovery_block(void) {
-  ps_parser_runtime_context_active()->function_block_depth++;
+void ps_parser_enter_recovery_block_in(
+    psx_parser_runtime_context_t *runtime_context) {
+  if (runtime_context) runtime_context->function_block_depth++;
 }
 
-void ps_parser_leave_recovery_block(void) {
-  psx_parser_runtime_context_t *runtime =
-      ps_parser_runtime_context_active();
-  if (runtime->function_block_depth > 0) runtime->function_block_depth--;
+void ps_parser_leave_recovery_block_in(
+    psx_parser_runtime_context_t *runtime_context) {
+  if (runtime_context && runtime_context->function_block_depth > 0)
+    runtime_context->function_block_depth--;
 }
