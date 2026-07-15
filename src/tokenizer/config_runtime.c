@@ -1,4 +1,5 @@
 #include "tokenizer.h"
+#include "allocator.h"
 #include <limits.h>
 
 static tokenizer_context_t default_ctx = {
@@ -44,8 +45,20 @@ void tk_context_init(tokenizer_context_t *ctx) {
       .enable_binary_literals = default_ctx.enable_binary_literals,
       .enable_c11_audit_extensions =
           default_ctx.enable_c11_audit_extensions,
+      .allocator_context = tk_allocator_default_context(),
       .max_token_len_for_test = (size_t)INT_MAX,
   };
+}
+
+void tk_context_set_allocator(
+    tokenizer_context_t *ctx, tk_allocator_context_t *allocator_context) {
+  if (ctx) ctx->allocator_context = allocator_context;
+}
+
+tk_allocator_context_t *tk_context_allocator(
+    const tokenizer_context_t *ctx) {
+  return ctx && ctx->allocator_context
+             ? ctx->allocator_context : tk_allocator_default_context();
 }
 
 void tk_context_dispose(tokenizer_context_t *ctx) {

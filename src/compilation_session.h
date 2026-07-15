@@ -30,6 +30,8 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session);
 int ag_compilation_session_destroy(ag_compilation_session_t *session);
 tokenizer_context_t *ag_compilation_session_tokenizer(
     ag_compilation_session_t *session);
+tk_allocator_context_t *ag_compilation_session_token_allocator_context(
+    const ag_compilation_session_t *session);
 psx_semantic_context_t *ag_compilation_session_semantic_context(
     const ag_compilation_session_t *session);
 psx_global_registry_t *ag_compilation_session_global_registry(

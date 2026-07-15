@@ -22,8 +22,8 @@ static char trigraph_to_char(char c) {
   }
 }
 
-char *tk_replace_trigraphs(const char *in) {
-  if (!tk_ctx_get_enable_trigraphs(tk_runtime_ctx())) return (char *)in;
+char *tk_replace_trigraphs(tokenizer_context_t *context, const char *in) {
+  if (!tk_ctx_get_enable_trigraphs(context)) return (char *)in;
   size_t n = strlen(in);
   bool has_trigraph = false;
   for (size_t i = 0; i + 2 < n; i++) {
@@ -34,7 +34,8 @@ char *tk_replace_trigraphs(const char *in) {
   }
   if (!has_trigraph) return (char *)in;
 
-  char *out = tk_allocator_calloc(n + 1, 1);
+  char *out = tk_allocator_calloc_in(
+      tk_context_allocator(context), n + 1, 1);
   size_t i = 0;
   size_t j = 0;
 

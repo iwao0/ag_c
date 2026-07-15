@@ -43,7 +43,6 @@ struct tk_allocator_context_t {
 static tk_allocator_context_t default_allocator_context = {
     .next_chunk_hint = 16 * 1024,
 };
-static tk_allocator_context_t *active_allocator_context;
 
 tk_allocator_context_t *tk_allocator_context_create(void) {
   tk_allocator_context_t *ctx = calloc(1, sizeof(*ctx));
@@ -61,35 +60,14 @@ static void free_chunk_list(arena_chunk_t *head) {
 
 void tk_allocator_context_destroy(tk_allocator_context_t *ctx) {
   if (!ctx || ctx == &default_allocator_context) return;
-  if (active_allocator_context == ctx) active_allocator_context = NULL;
   free_chunk_list(ctx->arena_head);
   free_chunk_list(ctx->recyc_oldest);
   free(ctx);
 }
 
-tk_allocator_context_t *tk_allocator_context_activate(
-    tk_allocator_context_t *ctx) {
-  tk_allocator_context_t *previous = active_allocator_context;
-  active_allocator_context = ctx;
-  return previous;
+tk_allocator_context_t *tk_allocator_default_context(void) {
+  return &default_allocator_context;
 }
-
-tk_allocator_context_t *tk_allocator_context_active(void) {
-  return active_allocator_context ? active_allocator_context
-                                  : &default_allocator_context;
-}
-
-#define arena_head (tk_allocator_context_active()->arena_head)
-#define total_chunks (tk_allocator_context_active()->total_chunks)
-#define total_reserved_bytes (tk_allocator_context_active()->total_reserved_bytes)
-#define peak_reserved_bytes (tk_allocator_context_active()->peak_reserved_bytes)
-#define next_chunk_hint (tk_allocator_context_active()->next_chunk_hint)
-#define recyc_oldest (tk_allocator_context_active()->recyc_oldest)
-#define recyc_newest (tk_allocator_context_active()->recyc_newest)
-#define g_recyc_mode (tk_allocator_context_active()->recyc_mode)
-#define recyc_pin (tk_allocator_context_active()->recyc_pin)
-#define recyc_stream_pin (tk_allocator_context_active()->recyc_stream_pin)
-#define recyc_cursor_chunk (tk_allocator_context_active()->recyc_cursor_chunk)
 
 static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
   const unsigned char *u = p;
@@ -98,8 +76,10 @@ static int ptr_in_chunk(const void *p, const arena_chunk_t *c) {
 }
 
 // FIFO 上で a が b 以前 (より古いか同じ) かを返す。
-static int chunk_not_after(const arena_chunk_t *a, const arena_chunk_t *b) {
-  for (const arena_chunk_t *c = recyc_oldest; c; c = c->next) {
+static int chunk_not_after(
+    const tk_allocator_context_t *ctx,
+    const arena_chunk_t *a, const arena_chunk_t *b) {
+  for (const arena_chunk_t *c = ctx->recyc_oldest; c; c = c->next) {
     if (c == a) return 1;       // a を先に見つけた → a は b 以前
     if (c == b) return 0;
   }
@@ -117,7 +97,8 @@ static size_t align_up(size_t n, size_t align) {
  * 十分。永続側 (マクロ本体等) は従来どおり入力サイズ連動の大きいチャンク。 */
 #define RECYC_CHUNK_CAP (64 * 1024)
 
-static arena_chunk_t *new_chunk(size_t size, size_t hint) {
+static arena_chunk_t *new_chunk(
+    tk_allocator_context_t *ctx, size_t size, size_t hint) {
   size_t cap = hint;
   if (cap < size) cap = align_up(size, 4096);
   arena_chunk_t *chunk = malloc(sizeof(arena_chunk_t) + cap);
@@ -127,52 +108,70 @@ static arena_chunk_t *new_chunk(size_t size, size_t hint) {
   chunk->next = NULL;
   chunk->used = 0;
   chunk->cap = cap;
-  total_chunks++;
-  total_reserved_bytes += sizeof(arena_chunk_t) + cap;
-  if (total_reserved_bytes > peak_reserved_bytes) peak_reserved_bytes = total_reserved_bytes;
+  ctx->total_chunks++;
+  ctx->total_reserved_bytes += sizeof(arena_chunk_t) + cap;
+  if (ctx->total_reserved_bytes > ctx->peak_reserved_bytes)
+    ctx->peak_reserved_bytes = ctx->total_reserved_bytes;
   return chunk;
 }
 
 /** @brief Tokenizer用アリーナから連続領域を確保する。g_recyc_mode のとき recyclable 側。 */
-static void *arena_alloc(size_t size) {
+static void *arena_alloc(tk_allocator_context_t *ctx, size_t size) {
   if (size == 0) size = 1;
   size = align_up(size, 8);
 
   void *result = NULL;
-  if (g_recyc_mode) {
-    if (!recyc_newest || recyc_newest->used + size > recyc_newest->cap) {
-      arena_chunk_t *chunk = new_chunk(size, RECYC_CHUNK_CAP);
-      if (recyc_newest) recyc_newest->next = chunk; else recyc_oldest = chunk;
-      recyc_newest = chunk;
+  if (ctx->recyc_mode) {
+    if (!ctx->recyc_newest ||
+        ctx->recyc_newest->used + size > ctx->recyc_newest->cap) {
+      arena_chunk_t *chunk = new_chunk(ctx, size, RECYC_CHUNK_CAP);
+      if (ctx->recyc_newest) ctx->recyc_newest->next = chunk;
+      else ctx->recyc_oldest = chunk;
+      ctx->recyc_newest = chunk;
     }
-    result = chunk_data(recyc_newest) + recyc_newest->used;
-    recyc_newest->used += size;
+    result = chunk_data(ctx->recyc_newest) + ctx->recyc_newest->used;
+    ctx->recyc_newest->used += size;
   } else {
-    if (!arena_head || arena_head->used + size > arena_head->cap) {
-      arena_chunk_t *chunk = new_chunk(size, next_chunk_hint);
-      chunk->next = arena_head;  // 永続側は LIFO (prepend)
-      arena_head = chunk;
+    if (!ctx->arena_head || ctx->arena_head->used + size > ctx->arena_head->cap) {
+      arena_chunk_t *chunk = new_chunk(ctx, size, ctx->next_chunk_hint);
+      chunk->next = ctx->arena_head;  // 永続側は LIFO (prepend)
+      ctx->arena_head = chunk;
     }
-    result = chunk_data(arena_head) + arena_head->used;
-    arena_head->used += size;
+    result = chunk_data(ctx->arena_head) + ctx->arena_head->used;
+    ctx->arena_head->used += size;
   }
   return result;
 }
 
 /** @brief recyclable モードを切り替える。streamed トークン生成中だけ 1 にする。 */
-void tk_allocator_set_recyclable(int on) { g_recyc_mode = on ? 1 : 0; }
+void tk_allocator_set_recyclable_in(
+    tk_allocator_context_t *ctx, int on) {
+  if (ctx) ctx->recyc_mode = on ? 1 : 0;
+}
 
 /** @brief _Generic バックトラック等で、この位置より古いトークンの解放を一時的に禁じる。 */
-void tk_allocator_recyc_pin(const void *p) { recyc_pin = p; }
-void tk_allocator_recyc_unpin(void) { recyc_pin = NULL; }
-void tk_allocator_recyc_stream_pin(const void *p) { recyc_stream_pin = p; }
-void tk_allocator_recyc_stream_unpin(void) { recyc_stream_pin = NULL; }
+void tk_allocator_recyc_pin_in(
+    tk_allocator_context_t *ctx, const void *p) {
+  if (ctx) ctx->recyc_pin = p;
+}
+void tk_allocator_recyc_unpin_in(tk_allocator_context_t *ctx) {
+  if (ctx) ctx->recyc_pin = NULL;
+}
+void tk_allocator_recyc_stream_pin_in(
+    tk_allocator_context_t *ctx, const void *p) {
+  if (ctx) ctx->recyc_stream_pin = p;
+}
+void tk_allocator_recyc_stream_unpin_in(tk_allocator_context_t *ctx) {
+  if (ctx) ctx->recyc_stream_pin = NULL;
+}
 
-static void recyc_apply_pin_floor(const unsigned char *pin, arena_chunk_t **floor) {
+static void recyc_apply_pin_floor(
+    const tk_allocator_context_t *ctx,
+    const unsigned char *pin, arena_chunk_t **floor) {
   if (!pin || !floor || !*floor) return;
-  for (arena_chunk_t *c = recyc_oldest; c; c = c->next) {
+  for (arena_chunk_t *c = ctx->recyc_oldest; c; c = c->next) {
     if (ptr_in_chunk(pin, c)) {
-      if (chunk_not_after(c, *floor)) *floor = c;
+      if (chunk_not_after(ctx, c, *floor)) *floor = c;
       break;
     }
   }
@@ -181,96 +180,107 @@ static void recyc_apply_pin_floor(const unsigned char *pin, arena_chunk_t **floo
 /** @brief カーソルが指すトークンより前 (古い) の recyclable チャンクを解放する。
  * floor = min(カーソルのチャンク, pin のチャンク)。floor のチャンクとそれ以降は残す。
  * カーソルが同じチャンク内を進む間は何もしない (チャンク跨ぎ時のみ走査)。 */
-void tk_allocator_recyc_on_cursor(const void *cursor) {
-  if (!g_recyc_mode || !cursor) return;
-  if (recyc_cursor_chunk && ptr_in_chunk(cursor, recyc_cursor_chunk)) return; // 同一チャンク内
+void tk_allocator_recyc_on_cursor_in(
+    tk_allocator_context_t *ctx, const void *cursor) {
+  if (!ctx || !ctx->recyc_mode || !cursor) return;
+  if (ctx->recyc_cursor_chunk &&
+      ptr_in_chunk(cursor, ctx->recyc_cursor_chunk)) return; // 同一チャンク内
   // カーソルのチャンクを探す
   arena_chunk_t *cur_chunk = NULL;
-  for (arena_chunk_t *c = recyc_oldest; c; c = c->next) {
+  for (arena_chunk_t *c = ctx->recyc_oldest; c; c = c->next) {
     if (ptr_in_chunk(cursor, c)) { cur_chunk = c; break; }
   }
   if (!cur_chunk) return;          // recyclable 外 (静的 EOF 等) → 解放しない
-  recyc_cursor_chunk = cur_chunk;
+  ctx->recyc_cursor_chunk = cur_chunk;
   /* floor = カーソルのチャンクの数個前。直前に消費したトークンの構造体フィールド
    * (tok->str 等) や preprocessor の指令処理中に materialize した一時 token をまだ読むため、
    * 複数チャンクぶんのマージンを残す。 */
   arena_chunk_t *floor = cur_chunk;
   for (int keep = 0; keep < 4; keep++) {
     arena_chunk_t *prev = NULL;
-    for (arena_chunk_t *c = recyc_oldest; c && c->next; c = c->next) {
+    for (arena_chunk_t *c = ctx->recyc_oldest; c && c->next; c = c->next) {
       if (c->next == floor) { prev = c; break; }
     }
     if (!prev) break;
     floor = prev;
   }
-  recyc_apply_pin_floor(recyc_pin, &floor);
-  recyc_apply_pin_floor(recyc_stream_pin, &floor);
+  recyc_apply_pin_floor(ctx, ctx->recyc_pin, &floor);
+  recyc_apply_pin_floor(ctx, ctx->recyc_stream_pin, &floor);
   // recyc_oldest .. floor の手前までを解放
-  while (recyc_oldest && recyc_oldest != floor) {
-    arena_chunk_t *dead = recyc_oldest;
-    recyc_oldest = dead->next;
-    total_chunks--;
-    total_reserved_bytes -= sizeof(arena_chunk_t) + dead->cap;
+  while (ctx->recyc_oldest && ctx->recyc_oldest != floor) {
+    arena_chunk_t *dead = ctx->recyc_oldest;
+    ctx->recyc_oldest = dead->next;
+    ctx->total_chunks--;
+    ctx->total_reserved_bytes -= sizeof(arena_chunk_t) + dead->cap;
     free(dead);
   }
 }
 
 /** @brief recyclable アリーナを全解放する (コンパイル終了時)。 */
-void tk_allocator_recyc_reset(void) {
-  for (arena_chunk_t *c = recyc_oldest; c; ) {
+void tk_allocator_recyc_reset_in(tk_allocator_context_t *ctx) {
+  if (!ctx) return;
+  for (arena_chunk_t *c = ctx->recyc_oldest; c; ) {
     arena_chunk_t *next = c->next;
-    total_chunks--;
-    total_reserved_bytes -= sizeof(arena_chunk_t) + c->cap;
+    ctx->total_chunks--;
+    ctx->total_reserved_bytes -= sizeof(arena_chunk_t) + c->cap;
     free(c);
     c = next;
   }
-  recyc_oldest = recyc_newest = recyc_cursor_chunk = NULL;
-  recyc_pin = NULL;
-  recyc_stream_pin = NULL;
+  ctx->recyc_oldest = ctx->recyc_newest = ctx->recyc_cursor_chunk = NULL;
+  ctx->recyc_pin = NULL;
+  ctx->recyc_stream_pin = NULL;
 }
 
-void tk_allocator_reset_translation_unit(void) {
-  tk_allocator_set_recyclable(0);
-  tk_allocator_recyc_reset();
-  for (arena_chunk_t *c = arena_head; c; ) {
+void tk_allocator_reset_translation_unit_in(tk_allocator_context_t *ctx) {
+  if (!ctx) return;
+  tk_allocator_set_recyclable_in(ctx, 0);
+  tk_allocator_recyc_reset_in(ctx);
+  for (arena_chunk_t *c = ctx->arena_head; c; ) {
     arena_chunk_t *next = c->next;
-    total_chunks--;
-    total_reserved_bytes -= sizeof(arena_chunk_t) + c->cap;
+    ctx->total_chunks--;
+    ctx->total_reserved_bytes -= sizeof(arena_chunk_t) + c->cap;
     free(c);
     c = next;
   }
-  arena_head = NULL;
-  next_chunk_hint = 16 * 1024;
+  ctx->arena_head = NULL;
+  ctx->next_chunk_hint = 16 * 1024;
 }
 
 /** @brief 入力サイズから次チャンクサイズのヒントを更新する。 */
-void tk_allocator_set_expected_size(size_t bytes) {
+void tk_allocator_set_expected_size_in(
+    tk_allocator_context_t *ctx, size_t bytes) {
+  if (!ctx) return;
   // Heuristic: expected token arena footprint tends to be multiple of input size.
   // Keep bounded to avoid excessively large chunks.
   size_t hint = align_up(bytes * 3 / 2 + 4096, 4096);
   if (hint < 16 * 1024) hint = 16 * 1024;
   if (hint > 512 * 1024) hint = 512 * 1024;
-  next_chunk_hint = hint;
+  ctx->next_chunk_hint = hint;
 }
 
 /** @brief アリーナ確保 + ゼロ初期化を行う。 */
-void *tk_allocator_calloc(size_t n, size_t size) {
+void *tk_allocator_calloc_in(
+    tk_allocator_context_t *ctx, size_t n, size_t size) {
+  if (!ctx) return NULL;
   if (n != 0 && size > SIZE_MAX / n) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   size_t total = n * size;
-  void *p = arena_alloc(total);
+  void *p = arena_alloc(ctx, total);
   memset(p, 0, total == 0 ? 1 : total);
   return p;
 }
 
 /** @brief これまでに確保したチャンク数を返す。 */
-size_t tk_allocator_total_chunks(void) {
-  return total_chunks;
+size_t tk_allocator_total_chunks_in(const tk_allocator_context_t *ctx) {
+  return ctx ? ctx->total_chunks : 0;
 }
 
 /** @brief 同時 live の最大予約バイト数 (ピーク) を返す。アリーナを reset しない現状では
  * 累計と一致する。将来セグメントごとに reset する経路では「最大の 1 セグメント」を表す。 */
-size_t tk_allocator_total_reserved_bytes(void) {
-  return peak_reserved_bytes > total_reserved_bytes ? peak_reserved_bytes : total_reserved_bytes;
+size_t tk_allocator_total_reserved_bytes_in(
+    const tk_allocator_context_t *ctx) {
+  if (!ctx) return 0;
+  return ctx->peak_reserved_bytes > ctx->total_reserved_bytes
+             ? ctx->peak_reserved_bytes : ctx->total_reserved_bytes;
 }

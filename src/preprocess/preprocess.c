@@ -64,6 +64,11 @@ struct ag_preprocessor_context_t {
 #define g_preprocess_tk_ctx (context->tokenizer)
 #define g_preprocess_target (context->target)
 
+static tk_allocator_context_t *pp_token_allocator(
+    const ag_preprocessor_context_t *context) {
+  return tk_context_allocator(context ? context->tokenizer : NULL);
+}
+
 #define MACRO_INLINE_PARAMS 8
 /* アライメント降順 (ポインタ/配列 → int → bool) に並べてパディングを除き sizeof=104B
  * (並べ替え前は 112B)。 */
@@ -822,11 +827,13 @@ static void copy_source_location(token_t *dst, const token_t *src) {
   dst->byte_length = src->byte_length;
 }
 
-static token_t *make_int_token(long long val, token_t *ref) {
+static token_t *make_int_token(
+    ag_preprocessor_context_t *context, long long val, token_t *ref) {
   char buf[32];
   snprintf(buf, sizeof(buf), "%lld", val);
   int slen = (int)strlen(buf);
-  token_num_int_t *t = tk_allocator_calloc(1, sizeof(token_num_int_t));
+  token_num_int_t *t = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_num_int_t));
   t->base.pp.base.kind = TK_NUM;
   if (ref) {
     copy_source_location(&t->base.pp.base, ref);
@@ -843,9 +850,11 @@ static token_t *make_int_token(long long val, token_t *ref) {
   return (token_t *)t;
 }
 
-static token_t *make_string_token(const char *s, token_t *ref) {
+static token_t *make_string_token(
+    ag_preprocessor_context_t *context, const char *s, token_t *ref) {
   int slen = (int)strlen(s);
-  token_string_t *t = tk_allocator_calloc(1, sizeof(token_string_t));
+  token_string_t *t = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_string_t));
   t->pp.base.kind = TK_STRING;
   if (ref) {
     copy_source_location(&t->pp.base, ref);
@@ -861,13 +870,13 @@ static token_t *make_string_token(const char *s, token_t *ref) {
 
 static void add_int_macro(
     ag_preprocessor_context_t *context, const char *name, long long val) {
-  token_t *tok = make_int_token(val, NULL);
+  token_t *tok = make_int_token(context, val, NULL);
   add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
 static void add_string_macro(
     ag_preprocessor_context_t *context, const char *name, const char *s) {
-  token_t *tok = make_string_token(s, NULL);
+  token_t *tok = make_string_token(context, s, NULL);
   add_macro(context, my_strndup(name, strlen(name)), false, false, NULL, 0, tok);
 }
 
@@ -893,21 +902,25 @@ static void pp_init_predefined_macros(
   add_string_macro(context, "__TIME__", pp_time_buf);
 }
 
-static hideset_t *new_hideset(char *name) {
-  hideset_t *hs = tk_allocator_calloc(1, sizeof(hideset_t));
+static hideset_t *new_hideset(
+    ag_preprocessor_context_t *context, char *name) {
+  hideset_t *hs = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(hideset_t));
   hs->name = my_strndup(name, strlen(name));
   return hs;
 }
 
-static hideset_t *hideset_union(hideset_t *hs1, hideset_t *hs2) {
+static hideset_t *hideset_union(
+    ag_preprocessor_context_t *context,
+    hideset_t *hs1, hideset_t *hs2) {
   hideset_t head;
   hideset_t *cur = &head;
   for (hideset_t *hs = hs1; hs; hs = hs->next) {
-    cur->next = new_hideset(hs->name);
+    cur->next = new_hideset(context, hs->name);
     cur = cur->next;
   }
   for (hideset_t *hs = hs2; hs; hs = hs->next) {
-    cur->next = new_hideset(hs->name);
+    cur->next = new_hideset(context, hs->name);
     cur = cur->next;
   }
   cur->next = NULL;
@@ -922,13 +935,15 @@ static bool hideset_contains(hideset_t *hs, char *name) {
   return false;
 }
 
-static token_t *copy_token(token_t *tok);
+static token_t *copy_token(
+    ag_preprocessor_context_t *context, token_t *tok);
 
-static token_t *copy_token_list(token_t *tok) {
+static token_t *copy_token_list(
+    ag_preprocessor_context_t *context, token_t *tok) {
   token_t head;
   token_t *cur = &head;
   for (token_t *t = tok; t; t = t->next) {
-    cur->next = copy_token(t);
+    cur->next = copy_token(context, t);
     cur = cur->next;
   }
   cur->next = NULL;
@@ -936,14 +951,16 @@ static token_t *copy_token_list(token_t *tok) {
 }
 
 // 新しいトークンを複製して作成するヘルパー
-static token_t *copy_token(token_t *tok) {
+static token_t *copy_token(
+    ag_preprocessor_context_t *context, token_t *tok) {
   if (!tok) return NULL;
   token_t *t = NULL;
 
   switch (tok->kind) {
     case TK_IDENT: {
       token_ident_t *src = as_ident(tok);
-      token_ident_t *dst = tk_allocator_calloc(1, sizeof(token_ident_t));
+      token_ident_t *dst = tk_allocator_calloc_in(
+          pp_token_allocator(context), 1, sizeof(token_ident_t));
       dst->pp.base = src->pp.base;
       dst->pp.hideset = src->pp.hideset;
       dst->str = src->str;
@@ -953,7 +970,8 @@ static token_t *copy_token(token_t *tok) {
     }
     case TK_STRING: {
       token_string_t *src = as_string(tok);
-      token_string_t *dst = tk_allocator_calloc(1, sizeof(token_string_t));
+      token_string_t *dst = tk_allocator_calloc_in(
+          pp_token_allocator(context), 1, sizeof(token_string_t));
       dst->pp.base = src->pp.base;
       dst->pp.hideset = src->pp.hideset;
       dst->str = src->str;
@@ -967,7 +985,8 @@ static token_t *copy_token(token_t *tok) {
       token_num_t *src = as_num(tok);
       if (src->num_kind == TK_NUM_KIND_INT) {
         token_num_int_t *src_i = tk_as_num_int(tok);
-        token_num_int_t *dst = tk_allocator_calloc(1, sizeof(token_num_int_t));
+        token_num_int_t *dst = tk_allocator_calloc_in(
+            pp_token_allocator(context), 1, sizeof(token_num_int_t));
         dst->base.pp.base = src_i->base.pp.base;
         dst->base.pp.hideset = src_i->base.pp.hideset;
         dst->base.str = src_i->base.str;
@@ -983,7 +1002,8 @@ static token_t *copy_token(token_t *tok) {
         t = (token_t *)dst;
       } else {
         token_num_float_t *src_f = tk_as_num_float(tok);
-        token_num_float_t *dst = tk_allocator_calloc(1, sizeof(token_num_float_t));
+        token_num_float_t *dst = tk_allocator_calloc_in(
+            pp_token_allocator(context), 1, sizeof(token_num_float_t));
         dst->base.pp.base = src_f->base.pp.base;
         dst->base.pp.hideset = src_f->base.pp.hideset;
         dst->base.str = src_f->base.str;
@@ -998,7 +1018,8 @@ static token_t *copy_token(token_t *tok) {
     }
     default: {
       token_pp_t *src = as_pp(tok);
-      token_pp_t *dst = tk_allocator_calloc(1, sizeof(token_pp_t));
+      token_pp_t *dst = tk_allocator_calloc_in(
+          pp_token_allocator(context), 1, sizeof(token_pp_t));
       dst->base = src->base;
       dst->hideset = src->hideset;
       t = (token_t *)dst;
@@ -1347,8 +1368,9 @@ static void skip_const_expr(
  * (展開ステップの暴走ガードは維持される)。 */
 static token_t *pp_expand_arg(
     ag_preprocessor_context_t *context, token_t *arg) {
-  token_t *copy = copy_token_list(arg); // NULL 終端の深いコピー
-  token_t *eof = tk_allocator_calloc(1, sizeof(token_t));
+  token_t *copy = copy_token_list(context, arg); // NULL 終端の深いコピー
+  token_t *eof = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_t));
   eof->kind = TK_EOF;
   token_t *list;
   if (copy) {
@@ -1379,12 +1401,13 @@ static bool evaluate_constexpr(
       if (if_expr_token_count > PP_MAX_IF_EXPR_TOKENS) {
         pp_error(DIAG_ERR_PREPROCESS_IF_EXPR_TOKEN_LIMIT_EXCEEDED, NULL);
       }
-      cur->next = copy_token(tok);
+      cur->next = copy_token(context, tok);
       cur->next->at_bol = false; 
       cur = cur->next;
       tok = tok->next;
    }
-   cur->next = tk_allocator_calloc(1, sizeof(token_t));
+   cur->next = tk_allocator_calloc_in(
+       pp_token_allocator(context), 1, sizeof(token_t));
    cur->next->kind = TK_EOF;
    *rest_tok = tok;
 
@@ -1412,7 +1435,8 @@ static bool evaluate_constexpr(
             t = t->next;
          }
          
-         token_num_int_t *num = tk_allocator_calloc(1, sizeof(token_num_int_t));
+         token_num_int_t *num = tk_allocator_calloc_in(
+             pp_token_allocator(context), 1, sizeof(token_num_int_t));
          num->base.pp.base.kind = TK_NUM;
          num->base.num_kind = TK_NUM_KIND_INT;
          num->base.str = "0"; // just dummy
@@ -1425,12 +1449,13 @@ static bool evaluate_constexpr(
          cur2->next = (token_t *)num;
          cur2 = cur2->next;
       } else {
-         cur2->next = copy_token(t);
+         cur2->next = copy_token(context, t);
          cur2 = cur2->next;
          t = t->next;
       }
    }
-   cur2->next = tk_allocator_calloc(1, sizeof(token_t));
+   cur2->next = tk_allocator_calloc_in(
+       pp_token_allocator(context), 1, sizeof(token_t));
    cur2->next->kind = TK_EOF;
 
    token_t *expanded = preprocess_for_target_ctx(
@@ -1446,7 +1471,9 @@ static bool evaluate_constexpr(
    return val != 0;
 }
 
-static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
+static token_t *stringify_tokens(
+    ag_preprocessor_context_t *context,
+    token_t *tok, token_t *macro_tok) {
   size_t cap = 64;
   char *buf = calloc(1, cap);
   size_t len = 0;
@@ -1509,7 +1536,8 @@ static token_t *stringify_tokens(token_t *tok, token_t *macro_tok) {
   char *str_buf = my_strndup(buf, len);
   free(buf);
   
-  token_string_t *res = tk_allocator_calloc(1, sizeof(token_string_t));
+  token_string_t *res = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_string_t));
   res->pp.base.kind = TK_STRING;
   res->str = str_buf;
   res->len = len;
@@ -1780,7 +1808,7 @@ static token_t *handle_define(
   head.next = NULL;
   token_t *cur_body = &head;
   while (tok->kind != TK_EOF && !tok->at_bol) {
-    cur_body->next = copy_token(tok);
+    cur_body->next = copy_token(context, tok);
     cur_body = cur_body->next;
     tok = tok->next;
   }
@@ -1883,12 +1911,13 @@ static token_t *pp_expand_directive_line(
   token_t *cur = &head;
   token_t *tok = args;
   while (tok->kind != TK_EOF && !tok->at_bol) {
-    cur->next = copy_token(tok);
+    cur->next = copy_token(context, tok);
     cur->next->at_bol = false;
     cur = cur->next;
     tok = tok->next;
   }
-  cur->next = tk_allocator_calloc(1, sizeof(token_t));
+  cur->next = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_t));
   cur->next->kind = TK_EOF;
   int saved_depth = include_depth;
   include_depth++;
@@ -1945,13 +1974,15 @@ static token_t *handle_line(
 
 // `#pragma pack(...)` の中身を解釈し、出力チェーンに pragma_pack マーカーを追加する。
 // tok は '(' の次を指す状態で呼ばれ、終了時には ')' を消費した後 (もしくは行末) を指す。
-static token_t *handle_pragma_pack_body(token_t *tok, token_t **pcur) {
+static token_t *handle_pragma_pack_body(
+    ag_preprocessor_context_t *context, token_t *tok, token_t **pcur) {
   if (ident_is(tok, "push")) {
     tok = tok->next;
     if (tok->kind == TK_COMMA) {
       tok = tok->next;
       if (tok->kind == TK_NUM) {
-        token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+        token_t *marker = make_int_token(
+            context, ((token_num_int_t *)tok)->val, tok);
         marker->kind = TK_PRAGMA_PACK_PUSH;
         (*pcur)->next = marker;
         *pcur = (*pcur)->next;
@@ -1960,18 +1991,21 @@ static token_t *handle_pragma_pack_body(token_t *tok, token_t **pcur) {
     }
   } else if (ident_is(tok, "pop")) {
     tok = tok->next;
-    token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
+    token_t *marker = tk_allocator_calloc_in(
+        pp_token_allocator(context), 1, sizeof(token_t));
     marker->kind = TK_PRAGMA_PACK_POP;
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
   } else if (tok->kind == TK_NUM) {
-    token_t *marker = make_int_token(((token_num_int_t *)tok)->val, tok);
+    token_t *marker = make_int_token(
+        context, ((token_num_int_t *)tok)->val, tok);
     marker->kind = TK_PRAGMA_PACK_SET;
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
     tok = tok->next;
   } else if (tok->kind == TK_RPAREN) {
-    token_t *marker = tk_allocator_calloc(1, sizeof(token_t));
+    token_t *marker = tk_allocator_calloc_in(
+        pp_token_allocator(context), 1, sizeof(token_t));
     marker->kind = TK_PRAGMA_PACK_RESET;
     (*pcur)->next = marker;
     *pcur = (*pcur)->next;
@@ -2002,7 +2036,7 @@ static token_t *handle_pragma(
     tok = tok->next;
     if (tok->kind == TK_LPAREN) {
       tok = tok->next;
-      tok = handle_pragma_pack_body(tok, pcur);
+      tok = handle_pragma_pack_body(context, tok, pcur);
     }
   } else if (ident_is(tok, "push_macro") || ident_is(tok, "pop_macro")) {
     warn_unsupported_gnu_extension_token(tok);
@@ -2016,12 +2050,12 @@ static token_t *handle_pragma(
 static token_t *pp_expand_objlike(
     ag_preprocessor_context_t *context, macro_t *m,
     token_t *macro_tok, char *name) {
-  token_t *body_copy = copy_token_list(m->body);
+  token_t *body_copy = copy_token_list(context, m->body);
   body_copy = paste_tokens(context, body_copy);
-  hideset_t *hs = new_hideset(name);
+  hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die(context);
-    as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+    as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
   if (body_copy) {
@@ -2033,7 +2067,9 @@ static token_t *pp_expand_objlike(
 
 /* func-like マクロの実引数を集める。tok = '(' の次のトークン。args[] (calloc、呼び出し側で
  * free) を返し、*out_rparen に ')' トークンを設定。引数個数を検査する。 */
-static token_t **pp_collect_args(macro_t *m, token_t *tok, token_t **out_rparen) {
+static token_t **pp_collect_args(
+    ag_preprocessor_context_t *context,
+    macro_t *m, token_t *tok, token_t **out_rparen) {
   token_t **args = calloc(m->num_params > 0 ? (size_t)m->num_params : 1, sizeof(token_t *));
   int arg_cnt = 0;
   int parsed_args = 0;
@@ -2050,7 +2086,7 @@ static token_t **pp_collect_args(macro_t *m, token_t *tok, token_t **out_rparen)
         if (nest == 0 && tok->kind == TK_COMMA && !collecting_va) break;
         if (tok->kind == TK_LPAREN) nest++;
         if (tok->kind == TK_RPAREN) nest--;
-        cur_arg->next = copy_token(tok);
+        cur_arg->next = copy_token(context, tok);
         cur_arg = cur_arg->next;
         tok = tok->next;
       }
@@ -2119,7 +2155,8 @@ static token_t *pp_expand_funclike(
         }
       }
       if (p_idx != -1) {
-        cur_body->next = stringify_tokens(args[p_idx], macro_tok);
+        cur_body->next = stringify_tokens(
+            context, args[p_idx], macro_tok);
         cur_body = cur_body->next;
         t = t->next;  // skip IDENT
         continue;
@@ -2154,7 +2191,7 @@ static token_t *pp_expand_funclike(
           if (rhs_idx >= 0 && pp_arg_is_empty(args[rhs_idx])) {
             token_t *sub = args[p_idx];
             for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
-              cur_body->next = copy_token(a);
+              cur_body->next = copy_token(context, a);
               cur_body = cur_body->next;
             }
             t = t->next->next;  /* ## と空 RHS パラメータ名をスキップ */
@@ -2165,7 +2202,7 @@ static token_t *pp_expand_funclike(
                            ? args[p_idx]
                            : pp_expand_arg(context, args[p_idx]);
         for (token_t *a = sub; a && a->kind != TK_EOF; a = a->next) {
-          cur_body->next = copy_token(a);
+          cur_body->next = copy_token(context, a);
           cur_body = cur_body->next;
         }
         continue;
@@ -2190,16 +2227,16 @@ static token_t *pp_expand_funclike(
         continue;
       }
     }
-    cur_body->next = copy_token(t);
+    cur_body->next = copy_token(context, t);
     cur_body = cur_body->next;
   }
   cur_body->next = NULL;
 
   token_t *body_copy = paste_tokens(context, body_head.next);
-  hideset_t *hs = new_hideset(name);
+  hideset_t *hs = new_hideset(context, name);
   for (token_t *t = body_copy; t; t = t->next) {
     count_macro_expansion_or_die(context);
-    as_pp(t)->hideset = hideset_union(as_pp(t)->hideset, hs);
+    as_pp(t)->hideset = hideset_union(context, as_pp(t)->hideset, hs);
     copy_source_location(t, macro_tok);
   }
   if (body_copy) {
@@ -2262,7 +2299,7 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
 
       if (!strcmp(name, "__LINE__")) {
         free(name);
-        token_t *lt = make_int_token(tok->line_no, tok);
+        token_t *lt = make_int_token(context, tok->line_no, tok);
         cur->next = lt;
         cur = cur->next;
         tok = tok->next;
@@ -2272,7 +2309,7 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
         free(name);
         const char *fn = tk_filename_lookup(tok->file_name_id);
         const char *fname = fn ? fn : "";
-        token_t *ft = make_string_token(fname, tok);
+        token_t *ft = make_string_token(context, fname, tok);
         cur->next = ft;
         cur = cur->next;
         tok = tok->next;
@@ -2287,7 +2324,8 @@ token_t *preprocess_for_target_ctx(ag_preprocessor_context_t *context,
            if (tok->next && tok->next->kind == TK_LPAREN) {
              token_t *macro_tok = tok;
              token_t *rparen = NULL;
-             token_t **args = pp_collect_args(m, tok->next->next, &rparen);
+             token_t **args = pp_collect_args(
+                 context, m, tok->next->next, &rparen);
              tok = rparen->next;  // skip ')'
              token_t *body_copy = pp_expand_funclike(
                  context, m, macro_tok, args, name);
@@ -2438,17 +2476,26 @@ static void pps_deactivate(pp_stream_t *s) {
 }
 
 static void pps_update_stream_pin(pp_stream_t *s) {
+  tk_allocator_context_t *allocator =
+      s ? pp_token_allocator(s->context) : NULL;
   if (!s) {
-    tk_allocator_recyc_stream_unpin();
     return;
   }
   if (s->pb_head) {
-    tk_allocator_recyc_stream_pin(s->pb_head);
+    tk_allocator_recyc_stream_pin_in(allocator, s->pb_head);
   } else if (s->out_head) {
-    tk_allocator_recyc_stream_pin(s->out_head);
+    tk_allocator_recyc_stream_pin_in(allocator, s->out_head);
   } else {
-    tk_allocator_recyc_stream_unpin();
+    tk_allocator_recyc_stream_unpin_in(allocator);
   }
+}
+
+static void pps_clear_stream_pin(pp_stream_t *s) {
+  if (!s) {
+    return;
+  }
+  tk_allocator_recyc_stream_unpin_in(
+      pp_token_allocator(s->context));
 }
 
 static void pps_append(pp_stream_t *s, token_t *t) {
@@ -2529,7 +2576,7 @@ static int pp_body_is_single_call_replacement(token_t *body) {
 static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
   ag_preprocessor_context_t *context = s->context;
   if (!body) return NULL;
-  token_t *copy = copy_token_list(body);
+  token_t *copy = copy_token_list(context, body);
   token_t *tail = copy;
   while (tail->next) tail = tail->next;
   if (tail->kind != TK_RPAREN || !pp_body_is_single_call_replacement(copy)) return copy;
@@ -2540,20 +2587,21 @@ static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t
     return copy;
   }
 
-  token_t *suffix = copy_token(next_raw);
+  token_t *suffix = copy_token(context, next_raw);
   token_t *suffix_tail = suffix;
   int nest = 1;
   while (nest > 0) {
     token_t *t = pps_pull_raw(s);
     if (!t) break;
-    suffix_tail->next = copy_token(t);
+    suffix_tail->next = copy_token(context, t);
     suffix_tail = suffix_tail->next;
     if (t->kind == TK_LPAREN) nest++;
     if (t->kind == TK_RPAREN) nest--;
   }
   tail->next = suffix;
 
-  token_t *eof = tk_allocator_calloc(1, sizeof(token_t));
+  token_t *eof = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_t));
   eof->kind = TK_EOF;
   suffix_tail->next = eof;
 
@@ -2593,8 +2641,10 @@ static void pps_pushback_list(pp_stream_t *s, token_t *head) {
 }
 
 /* 指令行/マクロ引数バッファの終端用に合成 EOF (at_bol) を作る。recyclable 側に確保。 */
-static token_t *pps_make_eof(token_t *ref) {
-  token_pp_t *t = tk_allocator_calloc(1, sizeof(token_pp_t));
+static token_t *pps_make_eof(
+    ag_preprocessor_context_t *context, token_t *ref) {
+  token_pp_t *t = tk_allocator_calloc_in(
+      pp_token_allocator(context), 1, sizeof(token_pp_t));
   t->base.kind = TK_EOF;
   t->base.at_bol = true;
   if (ref) copy_source_location(&t->base, ref);
@@ -2619,7 +2669,7 @@ static token_t *pps_materialize_line(pp_stream_t *s, token_t *first) {
     cur->next = nx; cur = nx;
   }
   tk_set_tolerate_untokenizable_ctx(s->tk_ctx, false);
-  cur->next = pps_make_eof(first);
+  cur->next = pps_make_eof(s->context, first);
   return first;
 }
 
@@ -2638,7 +2688,7 @@ static token_t *pps_materialize_balanced(pp_stream_t *s, token_t *lparen) {
     cur->next = t; cur = t;
     if (t->kind == TK_RPAREN && nest == 0) break;
   }
-  cur->next = pps_make_eof(lparen);
+  cur->next = pps_make_eof(s->context, lparen);
   return head.next;
 }
 
@@ -2854,9 +2904,10 @@ static void pps_dispatch_directive(pp_stream_t *s, token_t *line) {
   if (is_dir(tok, "endif"))  { handle_endif(context, tok); return; }
   if (is_dir(tok, "include")) { pps_handle_include(s, tok); return; }
   if (is_dir(tok, "define")) {
-    tk_allocator_set_recyclable(0);  // マクロ本体は永続アリーナへ (window 解放で消さない)
+    tk_allocator_set_recyclable_in(
+        pp_token_allocator(context), 0);  // マクロ本体は永続アリーナへ
     handle_define(context, tok);
-    tk_allocator_set_recyclable(1);
+    tk_allocator_set_recyclable_in(pp_token_allocator(context), 1);
     return;
   }
   if (is_dir(tok, "undef"))  { handle_undef(context, tok); return; }
@@ -2897,12 +2948,12 @@ static int pps_step(pp_stream_t *s) {
     token_ident_t *id = as_ident(tok);
     /* __LINE__ / __FILE__ は preprocess_ctx と同じくマクロ表より先に inline 処理。 */
     if (id->len == 8 && memcmp(id->str, "__LINE__", 8) == 0) {
-      pps_append(s, make_int_token(tok->line_no, tok));
+      pps_append(s, make_int_token(context, tok->line_no, tok));
       return 1;
     }
     if (id->len == 8 && memcmp(id->str, "__FILE__", 8) == 0) {
       const char *fn = tk_filename_lookup(tok->file_name_id);
-      pps_append(s, make_string_token(fn ? fn : "", tok));
+      pps_append(s, make_string_token(context, fn ? fn : "", tok));
       return 1;
     }
     char *name = my_strndup(id->str, id->len);
@@ -2918,7 +2969,7 @@ static int pps_step(pp_stream_t *s) {
         if (nx && nx->kind == TK_LPAREN) {
           token_t *grp = pps_materialize_balanced(s, nx);
           token_t *rparen = NULL;
-          token_t **args = pp_collect_args(m, grp, &rparen);
+          token_t **args = pp_collect_args(context, m, grp, &rparen);
           pps_cursor_hook_binding_t saved_hook = pps_suspend_cursor_hook(s);
           token_t *body = pp_expand_funclike(
               context, m, tok, args, name);
@@ -3002,7 +3053,9 @@ static void pps_on_advance(void *user_data, token_t *cursor) {
   /* reclaim_hold が立っている間 (マクロ展開で out 鎖が確保順≠消費順になった区間をカーソルが
    * まだ通過中) は chunk 解放を止める。通常コードでは展開がすぐ終わり reclaim_hold が解け、
    * ウィンドウは O(1) のまま。病的な深い再帰展開では展開上限 (E1029) に達してエラーになる。 */
-  if (!s->reclaim_hold && !s->pb_head) tk_allocator_recyc_on_cursor(cursor);
+  if (!s->reclaim_hold && !s->pb_head)
+    tk_allocator_recyc_on_cursor_in(
+        pp_token_allocator(s->context), cursor);
 }
 
 /* カーソルを進めずに前方を先読みするパーサ経路 (_Generic の型照合等) 用に、現在カーソルの
@@ -3033,8 +3086,8 @@ token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
    * 解放してから token arena / filename intern 表を破棄し、使用量を翻訳回数に依存させない。 */
   reset_macros(context);
   reset_retired_include_sources(context);
-  tk_allocator_reset_translation_unit();
-  tk_filename_reset_translation_unit();
+  tk_allocator_reset_translation_unit_in(pp_token_allocator(context));
+  tk_filename_reset_translation_unit_ctx(s->tk_ctx);
   reset_pragma_once_list(context);
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
@@ -3046,10 +3099,10 @@ token_t *pp_stream_open_for_target(ag_preprocessor_context_t *context,
   if_expr_eval_steps = 0;
   include_last_errno = 0;
   /* predefined マクロは永続アリーナへ (recyclable reset で消えないように)。 */
-  tk_allocator_set_recyclable(0);
+  tk_allocator_set_recyclable_in(pp_token_allocator(context), 0);
   pp_init_predefined_macros(context, target);
   /* 以後の生成は recyclable アリーナ。 */
-  tk_allocator_set_recyclable(1);
+  tk_allocator_set_recyclable_in(pp_token_allocator(context), 1);
   s->lex = tk_stream_new(s->tk_ctx, src);
   s->cursor = NULL;
   /* 先頭を 1 つ生成し、そこから lookahead 分を満たす。 */
@@ -3065,9 +3118,9 @@ void pp_stream_close(pp_stream_t *s) {
   if (!s) return;
   ag_preprocessor_context_t *context = s->context;
   pps_deactivate(s);
-  tk_allocator_set_recyclable(0);
-  tk_allocator_recyc_stream_unpin();
-  tk_allocator_recyc_reset();
+  tk_allocator_set_recyclable_in(pp_token_allocator(context), 0);
+  pps_clear_stream_pin(s);
+  tk_allocator_recyc_reset_in(pp_token_allocator(context));
   /* 早期終了 (パーサが EOF まで来なかった) で残った被 include フレームを後始末する。
    * フックは既に NULL なので tk_stream_delete はフックを発火しない。 */
   while (s->frames) {

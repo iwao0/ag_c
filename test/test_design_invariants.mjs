@@ -344,6 +344,10 @@ const tokenizerAllocatorSource = await readFile(
   "src/tokenizer/allocator.c",
   "utf8",
 );
+const tokenizerAllocatorHeader = await readFile(
+  "src/tokenizer/allocator.h",
+  "utf8",
+);
 const tokenizerFilenameSource = await readFile(
   "src/tokenizer/filename_table.c",
   "utf8",
@@ -410,6 +414,7 @@ const sessionContextAccessorNames = [
   "preprocessor_context",
   "arena_context",
   "diagnostic_context",
+  "token_allocator_context",
   "parser_runtime_context",
   "lowering_context",
 ];
@@ -448,8 +453,9 @@ if (sessionContextAccessorNames.some((name) =>
       compilationSessionSource,
     ) ||
     !/tk_allocator_context_create\s*\(/.test(compilationSessionSource) ||
-    !/tk_allocator_context_activate\s*\(/.test(compilationSessionSource) ||
     !/tk_allocator_context_destroy\s*\(/.test(compilationSessionSource) ||
+    /tk_allocator_context_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_token_allocator_context/.test(compilationSessionSource) ||
     !/ps_parser_runtime_context_create\s*\(/.test(compilationSessionSource) ||
     !/ps_parser_runtime_context_destroy\s*\(/.test(compilationSessionSource) ||
     /ps_parser_runtime_context_activate\s*\(/.test(
@@ -832,8 +838,19 @@ if (!/struct\s+tk_allocator_context_t\s*\{/.test(
     ) ||
     /static\s+size_t\s+total_reserved_bytes\s*;/.test(
       tokenizerAllocatorSource,
+    ) ||
+    /active_allocator_context|tk_allocator_context_(?:active|activate)\s*\(/.test(
+      tokenizerAllocatorSource + tokenizerAllocatorHeader,
+    ) ||
+    !/tk_allocator_calloc_in\s*\(\s*tk_allocator_context_t\s*\*ctx/.test(
+      tokenizerAllocatorSource,
+    ) ||
+    !/tk_allocator_context_t\s*\*allocator_context\s*;/.test(
+      tokenizerHeader,
     )) {
-  throw new Error("token allocator storage must be owned by allocator context");
+  throw new Error(
+    "token allocator storage and operations must require an explicit context",
+  );
 }
 if (!/tk_cursor_hook_t\s+cursor_hook\s*;/.test(
       tokenizerHeader,

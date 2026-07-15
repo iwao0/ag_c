@@ -16403,6 +16403,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.token_allocator_context != NULL);
   ASSERT_TRUE(wasm.token_allocator_context != NULL);
   ASSERT_TRUE(host.token_allocator_context != wasm.token_allocator_context);
+  ASSERT_TRUE(ag_compilation_session_token_allocator_context(&host) ==
+              host.token_allocator_context);
+  ASSERT_TRUE(ag_compilation_session_token_allocator_context(&wasm) ==
+              wasm.token_allocator_context);
+  ASSERT_TRUE(tk_context_allocator(&host.tokenizer) ==
+              host.token_allocator_context);
+  ASSERT_TRUE(tk_context_allocator(&wasm.tokenizer) ==
+              wasm.token_allocator_context);
   ASSERT_TRUE(host.parser_runtime_context != NULL);
   ASSERT_TRUE(wasm.parser_runtime_context != NULL);
   ASSERT_TRUE(host.parser_runtime_context != wasm.parser_runtime_context);
@@ -16419,8 +16427,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   arena_context_t *previous_arena = arena_context_active();
   ag_diagnostic_context_t *previous_diag = diag_context_active();
   tokenizer_context_t *previous_tokenizer = tk_context_active();
-  tk_allocator_context_t *previous_token_allocator =
-      tk_allocator_context_active();
   ag_codegen_emit_context_t *previous_codegen = cg_context_active();
   ag_compilation_session_t *previous_session = test_suite_session;
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
@@ -16435,8 +16441,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
-  ASSERT_TRUE(tk_allocator_context_active() ==
-              host.token_allocator_context);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
   gen_set_output_callback(test_codegen_capture, &host_output);
   cg_emitf("host-a");
@@ -16446,9 +16450,11 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(strcmp(tk_filename_lookup(host_filename),
                      "host-session.c") == 0);
   host.lowering_context->aggregate_cast_temp_sequence = 9;
-  ASSERT_EQ(0, tk_allocator_total_chunks());
-  ASSERT_TRUE(tk_allocator_calloc(1, 16) != NULL);
-  ASSERT_EQ(1, tk_allocator_total_chunks());
+  ASSERT_EQ(0, tk_allocator_total_chunks_in(host.token_allocator_context));
+  ASSERT_TRUE(tk_allocator_calloc_in(
+                  host.token_allocator_context, 1, 16) != NULL);
+  ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
+  ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
   tk_set_enable_c11_audit_extensions(true);
   ASSERT_TRUE(host.tokenizer.enable_c11_audit_extensions);
   ASSERT_TRUE(!wasm.tokenizer.enable_c11_audit_extensions);
@@ -16472,8 +16478,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
-  ASSERT_TRUE(tk_allocator_context_active() ==
-              wasm.token_allocator_context);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
   gen_set_output_callback(test_codegen_capture, &wasm_output);
   cg_emitf("wasm");
@@ -16490,14 +16494,13 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    wasm.parser_runtime_context));
   ASSERT_TRUE(ag_compilation_session_options_view(&wasm)
                   ->enable_union_scalar_pointer_cast);
-  ASSERT_EQ(0, tk_allocator_total_chunks());
+  ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
+  ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &wasm.tokenizer);
-  ASSERT_TRUE(tk_allocator_context_active() ==
-              wasm.token_allocator_context);
   ASSERT_TRUE(cg_context_active() == wasm.codegen_emit_context);
   ASSERT_TRUE(test_active_backend_context == &wasm_backend);
   ASSERT_EQ(0, host_backend.deactivate_count);
@@ -16521,8 +16524,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
   ASSERT_TRUE(tk_context_active() == &host.tokenizer);
-  ASSERT_TRUE(tk_allocator_context_active() ==
-              host.token_allocator_context);
   ASSERT_TRUE(cg_context_active() == host.codegen_emit_context);
   cg_emitf("-host-b");
   ASSERT_TRUE(test_active_backend_context == &host_backend);
@@ -16534,14 +16535,14 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    host.parser_runtime_context));
   ASSERT_TRUE(!ag_compilation_session_options_view(&host)
                    ->enable_union_scalar_pointer_cast);
-  ASSERT_EQ(1, tk_allocator_total_chunks());
+  ASSERT_EQ(1, tk_allocator_total_chunks_in(host.token_allocator_context));
+  ASSERT_EQ(0, tk_allocator_total_chunks_in(wasm.token_allocator_context));
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(arena_context_active() == previous_arena);
   ASSERT_TRUE(diag_context_active() == previous_diag);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
-  ASSERT_TRUE(tk_allocator_context_active() == previous_token_allocator);
   ASSERT_TRUE(cg_context_active() == previous_codegen);
   ASSERT_TRUE(strcmp(host_output.bytes, "host-a-host-b") == 0);
   ASSERT_TRUE(strcmp(wasm_output.bytes, "wasm") == 0);

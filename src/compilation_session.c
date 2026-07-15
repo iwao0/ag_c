@@ -61,6 +61,8 @@ int ag_compilation_session_init(
   session->preprocessor_context = pp_context_create();
   session->diagnostic_context = diag_context_create();
   session->token_allocator_context = tk_allocator_context_create();
+  tk_context_set_allocator(
+      &session->tokenizer, session->token_allocator_context);
   session->parser_runtime_context = ps_parser_runtime_context_create(
       session->arena_context);
   session->lowering_context = ps_lowering_context_create(
@@ -111,8 +113,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
       diag_context_activate(session->diagnostic_context);
   session->previous_tokenizer_context =
       tk_context_activate(&session->tokenizer);
-  session->previous_token_allocator_context =
-      tk_allocator_context_activate(session->token_allocator_context);
   session->previous_codegen_emit_context =
       cg_context_activate(session->codegen_emit_context);
   if (session->backend_activate)
@@ -134,7 +134,6 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   if (session->backend_deactivate)
     session->backend_deactivate(session->backend_context);
   cg_context_activate(session->previous_codegen_emit_context);
-  tk_allocator_context_activate(session->previous_token_allocator_context);
   tk_context_activate(session->previous_tokenizer_context);
   diag_context_activate(session->previous_diagnostic_context);
   arena_context_activate(session->previous_arena_context);
@@ -143,7 +142,6 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   session->previous_arena_context = NULL;
   session->previous_diagnostic_context = NULL;
   session->previous_tokenizer_context = NULL;
-  session->previous_token_allocator_context = NULL;
   session->previous_codegen_emit_context = NULL;
   session->is_active = 0;
   return 1;
@@ -182,6 +180,12 @@ tokenizer_context_t *ag_compilation_session_tokenizer(
   return ag_compilation_session_is_complete(session)
              ? &session->tokenizer
              : NULL;
+}
+
+tk_allocator_context_t *ag_compilation_session_token_allocator_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->token_allocator_context : NULL;
 }
 
 psx_semantic_context_t *ag_compilation_session_semantic_context(

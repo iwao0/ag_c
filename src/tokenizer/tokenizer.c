@@ -136,17 +136,22 @@ void tk_set_user_input_ctx(tokenizer_context_t *ctx, const char *p) {
 /** @brief Tokenizer統計の計測基準点をリセットする。 */
 void tk_reset_tokenizer_stats(void) {
   tokenizer_context_t *ctx = tk_runtime_ctx();
-  ctx->stats_base_chunks = tk_allocator_total_chunks();
-  ctx->stats_base_reserved_bytes = tk_allocator_total_reserved_bytes();
+  tk_allocator_context_t *allocator = tk_context_allocator(ctx);
+  ctx->stats_base_chunks = tk_allocator_total_chunks_in(allocator);
+  ctx->stats_base_reserved_bytes =
+      tk_allocator_total_reserved_bytes_in(allocator);
 }
 
 /** @brief Tokenizer統計（alloc回数/bytes）を取得する。 */
 tokenizer_stats_t tk_get_tokenizer_stats(void) {
   tokenizer_context_t *ctx = tk_runtime_ctx();
+  tk_allocator_context_t *allocator = tk_context_allocator(ctx);
   tokenizer_stats_t stats = {0};
-  stats.alloc_count = tk_allocator_total_chunks() - ctx->stats_base_chunks;
+  stats.alloc_count =
+      tk_allocator_total_chunks_in(allocator) - ctx->stats_base_chunks;
   stats.alloc_bytes =
-      tk_allocator_total_reserved_bytes() - ctx->stats_base_reserved_bytes;
+      tk_allocator_total_reserved_bytes_in(allocator) -
+      ctx->stats_base_reserved_bytes;
   stats.peak_alloc_bytes = stats.alloc_bytes;
   return stats;
 }
@@ -164,7 +169,8 @@ void tk_set_filename_ctx(tokenizer_context_t *ctx, const char *name) {
 }
 
 static void *tcalloc(size_t n, size_t size) {
-  return tk_allocator_calloc(n, size);
+  return tk_allocator_calloc_in(
+      tk_context_allocator(tk_runtime_ctx()), n, size);
 }
 
 static int checked_span_len(char *start, char *end, const char *what) {
@@ -446,7 +452,8 @@ static bool tokenize_ident_or_keyword(
   int id_len = len;
   bool has_ucn = false;
   if (has_ucn_escape) {
-    tk_decode_identifier_ucn(start, len, &id_str, &id_len, &has_ucn);
+    tk_decode_identifier_ucn(
+        tk_runtime_ctx(), start, len, &id_str, &id_len, &has_ucn);
   }
 
   token_kind_t kw_kind = TK_EOF;
@@ -605,8 +612,9 @@ token_t *tk_tokenize(const char *p) {
 
 /** @brief 入力文字列を正規化し、診断用入力参照をコンテキストへ設定する。 */
 static char *tokenize_prepare_input(tokenizer_context_t *ctx, const char *in) {
-  tk_allocator_set_expected_size(strlen(in));
-  char *normalized = tk_replace_trigraphs(in);
+  tk_allocator_set_expected_size_in(
+      tk_context_allocator(ctx), strlen(in));
+  char *normalized = tk_replace_trigraphs(ctx, in);
   tk_set_user_input_ctx(ctx, normalized);
   return normalized;
 }

@@ -25,8 +25,10 @@
  * カウンタ getter は各アロケータが提供する (ir.h / 下記 extern)。 */
 size_t arena_total_reserved_bytes(void);         /* src/parser/arena.c */
 
-static void print_mem_stats(size_t source_bytes) {
-  size_t tok  = tk_allocator_total_reserved_bytes();
+static void print_mem_stats(
+    const ag_compilation_session_t *session, size_t source_bytes) {
+  size_t tok = tk_allocator_total_reserved_bytes_in(
+      ag_compilation_session_token_allocator_context(session));
   size_t ast  = arena_total_reserved_bytes();
   size_t ninst = ir_inst_total_count();
   size_t nblk  = ir_block_total_count();
@@ -656,7 +658,7 @@ int main(int argc, char **argv) {
   ir_data_module_free(data_module);
   if (!wasm_object_mode) clear_output_callback();
 
-  if (getenv("AG_MEM_STATS")) print_mem_stats(strlen(source));
+  if (getenv("AG_MEM_STATS")) print_mem_stats(session, strlen(source));
 
   ag_compilation_session_destroy(session);
   free(source);

@@ -6,6 +6,8 @@
 
 #include "token.h"
 
+typedef struct tokenizer_context_t tokenizer_context_t;
+
 /** @brief `\\uXXXX` / `\\UXXXXXXXX` 形式のUCN開始かを判定する。 */
 bool tk_starts_with_ucn(const char *p, int *len);
 /** @brief UCNをコードポイントにパースする。 */
@@ -54,6 +56,8 @@ void tk_parse_char_prefix(
     tk_char_prefix_kind_t *prefix_kind,
     tk_char_width_t *char_width);
 /** @brief 識別子中のUCNをUTF-8へ展開する。 */
-void tk_decode_identifier_ucn(char *start, int len, char **out_str, int *out_len, bool *has_ucn);
+void tk_decode_identifier_ucn(
+    tokenizer_context_t *context, char *start, int len,
+    char **out_str, int *out_len, bool *has_ucn);
 
 #endif

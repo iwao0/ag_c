@@ -361,9 +361,12 @@ void tk_parse_char_prefix(
 }
 
 /** @brief 識別子中のUCNをUTF-8へ展開する。 */
-void tk_decode_identifier_ucn(char *start, int len, char **out_str, int *out_len, bool *has_ucn) {
+void tk_decode_identifier_ucn(
+    tokenizer_context_t *context, char *start, int len,
+    char **out_str, int *out_len, bool *has_ucn) {
   *has_ucn = false;
-  char *buf = tk_allocator_calloc((size_t)len * 4 + 1, 1);
+  char *buf = tk_allocator_calloc_in(
+      tk_context_allocator(context), (size_t)len * 4 + 1, 1);
   int bi = 0;
   for (int i = 0; i < len;) {
     uint32_t cp = 0;

@@ -5,6 +5,7 @@
 #include <stddef.h>
 
 typedef struct tokenizer_context_t tokenizer_context_t;
+typedef struct tk_allocator_context_t tk_allocator_context_t;
 typedef void (*tk_cursor_hook_t)(void *user_data, token_t *cursor);
 typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 
@@ -12,6 +13,7 @@ typedef void (*tk_ensure_lookahead_hook_t)(void *user_data);
 
 /** @brief Tokenizerの実行時設定コンテキスト。 */
 struct tokenizer_context_t {
+  tk_allocator_context_t *allocator_context;
   bool strict_c11_mode;
   bool enable_trigraphs;
   bool enable_binary_literals;
@@ -267,6 +269,10 @@ tokenizer_context_t *tk_context_active(void);
  * @param ctx 初期化対象コンテキスト。
  */
 void tk_context_init(tokenizer_context_t *ctx);
+void tk_context_set_allocator(
+    tokenizer_context_t *ctx, tk_allocator_context_t *allocator_context);
+tk_allocator_context_t *tk_context_allocator(
+    const tokenizer_context_t *ctx);
 /** @brief コンテキストが所有する実行時領域を解放する。 */
 void tk_context_dispose(tokenizer_context_t *ctx);
 uint16_t tk_filename_intern_ctx(tokenizer_context_t *ctx, const char *name);
