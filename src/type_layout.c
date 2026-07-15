@@ -78,10 +78,7 @@ static int layout_non_array(
                          type->aggregate_definition->is_complete;
       return 1;
     default:
-      out->size = type->size;
-      out->alignment = type->align > 0 ? type->align : 1;
-      out->is_complete = type->size > 0;
-      return 1;
+      return 0;
   }
 }
 

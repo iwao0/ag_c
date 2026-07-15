@@ -3237,6 +3237,7 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
     !/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(typeLayoutSource) ||
+    /\btype\s*->\s*(?:size|align)\b/.test(typeLayoutSource) ||
     !typeIdLayoutFunction ||
     !/\blayout_of_id\s*\(/.test(typeIdLayoutFunction[0]) ||
     /\bps_type_layout_of\s*\(/.test(typeIdLayoutFunction[0]) ||
