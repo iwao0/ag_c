@@ -73,12 +73,6 @@ static const psx_type_t *bind_base_type(
       semantic_context, global_registry, local_registry, specifier);
 }
 
-int psx_bind_type_name_ref(psx_type_name_ref_t *type_name) {
-  return psx_bind_type_name_ref_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), type_name);
-}
-
 int psx_bind_type_name_ref_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -90,13 +84,6 @@ int psx_bind_type_name_ref_in_contexts(
   type_name->bound_base_type = bind_base_type(
       semantic_context, global_registry, local_registry, type_name);
   return type_name->bound_base_type != NULL;
-}
-
-const psx_type_t *psx_resolve_bound_type_name_ref(
-    psx_type_name_ref_t *type_name) {
-  return psx_resolve_bound_type_name_ref_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), type_name);
 }
 
 const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(

@@ -21,9 +21,6 @@ typedef struct {
   int conflict_index;
 } psx_generic_selection_resolution_t;
 
-void psx_resolve_generic_selection(
-    node_generic_selection_t *selection,
-    psx_generic_selection_resolution_t *resolution);
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,

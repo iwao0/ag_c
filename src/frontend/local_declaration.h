@@ -13,7 +13,4 @@ void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry);
 
-const psx_local_declaration_callbacks_t *
-psx_frontend_local_declaration_callbacks(void);
-
 #endif

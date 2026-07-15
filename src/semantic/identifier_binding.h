@@ -23,9 +23,4 @@ node_t *psx_bind_identifier_initializer_tree_in_session(
     ag_compilation_session_t *session,
     node_t *syntax, const token_t *fallback_diag_tok);
 
-node_t *psx_bind_identifier_tree(
-    node_t *node, const token_t *fallback_diag_tok);
-node_t *psx_bind_identifier_initializer_tree(
-    node_t *syntax, const token_t *fallback_diag_tok);
-
 #endif

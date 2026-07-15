@@ -5,9 +5,6 @@
 #include "../parser/declarator_shape.h"
 #include "../parser/function_parameter_syntax.h"
 
-void psx_resolve_declarator_syntax(
-    const psx_parsed_declarator_t *parsed,
-    psx_declarator_shape_t *shape, int *bit_width);
 void psx_resolve_declarator_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *parsed,

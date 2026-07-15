@@ -34,8 +34,6 @@ typedef struct {
 
 const psx_type_t *psx_resolve_decl_type(
     const psx_decl_type_request_t *request);
-const psx_type_t *psx_resolve_decl_specifier_syntax(
-    const psx_parsed_decl_specifier_t *specifier);
 const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier);

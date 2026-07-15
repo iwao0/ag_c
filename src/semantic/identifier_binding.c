@@ -419,13 +419,6 @@ node_t *psx_bind_identifier_tree_in_session(
       node, fallback_diag_tok);
 }
 
-node_t *psx_bind_identifier_tree(
-    node_t *node, const token_t *fallback_diag_tok) {
-  return psx_bind_identifier_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), node, fallback_diag_tok);
-}
-
 node_t *psx_bind_identifier_initializer_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -450,11 +443,4 @@ node_t *psx_bind_identifier_initializer_tree_in_session(
       ag_compilation_session_global_registry(session),
       ag_compilation_session_local_registry(session),
       syntax, fallback_diag_tok);
-}
-
-node_t *psx_bind_identifier_initializer_tree(
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_bind_identifier_initializer_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), syntax, fallback_diag_tok);
 }

@@ -6,12 +6,6 @@
 
 #include <string.h>
 
-global_var_t *psx_resolve_global_object_symbol(
-    char *name, int name_len) {
-  return psx_resolve_global_object_symbol_in(
-      ps_global_registry_active(), name, name_len);
-}
-
 global_var_t *psx_resolve_global_object_symbol_in(
     psx_global_registry_t *global_registry,
     char *name, int name_len) {

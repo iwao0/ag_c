@@ -165,12 +165,6 @@ void psx_collect_lvar_usage_events_in(
   }
 }
 
-void psx_collect_lvar_usage_events(
-    node_t *node, psx_lvar_usage_region_t *inherited_region) {
-  psx_collect_lvar_usage_events_in(
-      ps_local_registry_active(), node, inherited_region);
-}
-
 static void record_preinitialized_locals(
     psx_local_registry_t *local_registry,
     node_function_definition_t *function) {
@@ -223,11 +217,4 @@ void psx_analyze_function_lvar_usage_in(
   ps_decl_replay_lvar_usage_events_in(
       local_registry, function->lvars);
   emit_usage_warnings(function, fallback_diag_tok);
-}
-
-void psx_analyze_function_lvar_usage(
-    node_function_definition_t *function,
-    const token_t *fallback_diag_tok) {
-  psx_analyze_function_lvar_usage_in(
-      ps_local_registry_active(), function, fallback_diag_tok);
 }

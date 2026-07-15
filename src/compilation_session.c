@@ -1,5 +1,4 @@
 #include "compilation_session_internal.h"
-#include "compilation_session_compat.h"
 
 #include "parser/global_registry.h"
 #include "parser/local_registry.h"
@@ -135,16 +134,6 @@ int ag_compilation_session_is_active(
     const ag_compilation_session_t *session) {
   return session && session->is_active &&
          active_compilation_session == session;
-}
-
-ag_compilation_session_t *ag_compilation_session_active_compat(void) {
-  return active_compilation_session;
-}
-
-ag_target_info_t ag_compilation_session_effective_target_compat(void) {
-  if (ag_compilation_session_is_complete(active_compilation_session))
-    return active_compilation_session->target;
-  return (ag_target_info_t){ag_target_pointer_size()};
 }
 
 int ag_compilation_session_deactivate(ag_compilation_session_t *session) {

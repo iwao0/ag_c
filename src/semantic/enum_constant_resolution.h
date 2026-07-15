@@ -33,8 +33,6 @@ typedef struct {
 void psx_resolve_enum_constant(
     const psx_enum_constant_resolution_request_t *request,
     psx_enum_constant_resolution_t *resolution);
-long long psx_resolve_prepared_enum_const_expr(
-    const struct psx_parsed_enum_expr_t *expression);
 long long psx_resolve_prepared_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
     const struct psx_parsed_enum_expr_t *expression);

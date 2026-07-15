@@ -419,7 +419,8 @@ static void semantic_resolve_generic_selection(
     node_generic_selection_t *selection,
     const token_t *fallback_diag_tok) {
   if (!selection) return;
-  psx_collect_lvar_usage_events(selection->control, NULL);
+  psx_collect_lvar_usage_events_in(
+      local_registry, selection->control, NULL);
   token_t *tok = selection->base.tok
                      ? selection->base.tok
                      : (token_t *)fallback_diag_tok;
@@ -575,7 +576,8 @@ static void semantic_resolve_sizeof_query(
     }
   }
   if (resolution.usage_root)
-    psx_collect_lvar_usage_events(resolution.usage_root, NULL);
+    psx_collect_lvar_usage_events_in(
+        traversal->local_registry, resolution.usage_root, NULL);
   if (resolution.evaluates_vla_operand)
     semantic_mark_sizeof_indices_evaluated(query->operand);
   if (query->runtime_size_slot != 0)
@@ -794,15 +796,6 @@ static void semantic_transform_node(
   }
 }
 
-void psx_semantic_resolve_tree(
-    node_t *node, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
-  psx_semantic_resolve_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      node, current_func, fallback_diag_tok);
-}
-
 void psx_semantic_resolve_tree_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -818,15 +811,6 @@ void psx_semantic_resolve_tree_in_contexts(
       .fallback_diag_tok = fallback_diag_tok,
   };
   semantic_transform_node(node, &traversal);
-}
-
-void psx_semantic_resolve_initializer_tree(
-    node_t *syntax, node_function_definition_t *current_func,
-    const token_t *fallback_diag_tok) {
-  psx_semantic_resolve_initializer_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      syntax, current_func, fallback_diag_tok);
 }
 
 void psx_semantic_resolve_initializer_tree_in_contexts(

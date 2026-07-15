@@ -2454,7 +2454,7 @@ static int pp_body_is_single_call_replacement(token_t *body) {
 }
 
 /* `MACRO(args)(more)` 形: 置換列末尾の `)` の直後の `(more)` だけを繋ぎ、
- * その閉じ `)` までを preprocess_ctx で縮約してから pushback する。 */
+ * その閉じ `)` までを preprocess_for_target_ctx で縮約してから pushback する。 */
 static token_t *pp_stream_splice_paren_suffix_and_rescan(pp_stream_t *s, token_t *body) {
   if (!body) return NULL;
   token_t *copy = copy_token_list(body);
@@ -2829,7 +2829,7 @@ static int pps_step(pp_stream_t *s) {
       count_macro_expansion_or_die();  // batch と同じ展開ステップ上限 (E1029)。無いと深い再帰展開でクラッシュ
       /* マクロ展開は batch と同じ pp_expand_objlike / pp_expand_funclike を使い、結果を
        * pushback して rescan する (= batch の splice + continue 相当)。展開中は paste_tokens
-       * (tk_tokenize_ctx) / pp_expand_arg (preprocess_ctx) がネスト session でカーソルフックを
+       * (tk_tokenize_ctx) / pp_expand_arg (preprocess_for_target_ctx) がネスト session でカーソルフックを
        * 発火させるので一時的に外す。 */
       if (m->is_funclike) {
         token_t *nx = pps_pull_raw(s);   // 2-token 先読み: 呼び出しの '(' か
@@ -2841,7 +2841,7 @@ static int pps_step(pp_stream_t *s) {
           token_t *body = pp_expand_funclike(m, tok, args, name);
           free(args);
           if (body) {
-            /* The suffix rescan calls preprocess_ctx() on a synthetic token list.
+            /* The suffix rescan calls preprocess_for_target_ctx() on a synthetic token list.
              * Keep the outer streaming cursor hook disabled so that nested cursor
              * movement cannot refill the outer stream before the expansion result
              * is pushed back. */

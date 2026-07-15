@@ -1,5 +1,4 @@
 #include "../src/parser/parser.h"
-#include "../src/compilation_session_compat.h"
 #include "../src/compilation_session_internal.h"
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
@@ -32,7 +31,6 @@
 #include "../src/frontend/semantic_pipeline.h"
 #include "../src/frontend/toplevel_declaration.h"
 #include "../src/frontend/translation_unit.h"
-#include "../src/frontend/translation_unit_compat.h"
 #include "../src/preprocess/preprocess.h"
 #include "../src/diag/diag.h"
 #include "../src/semantic/aggregate_member_resolution.h"
@@ -83,6 +81,105 @@
 #include "test_common.h"
 
 static node_t **parsed_code;
+static ag_compilation_session_t *test_suite_session;
+
+static void reset_test_translation_unit_state(void) {
+  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(
+      test_suite_session));
+}
+
+static node_t **parse_test_program_from(token_t *start) {
+  return psx_frontend_program_in_session(
+      test_suite_session, NULL, start);
+}
+
+static node_t *analyze_test_expression(
+    node_t *expression, const token_t *fallback_diag_tok) {
+  return psx_frontend_analyze_expression_in_session(
+      test_suite_session, expression, fallback_diag_tok);
+}
+
+static void analyze_test_function(
+    node_t *function, const token_t *fallback_diag_tok) {
+  psx_frontend_analyze_function_in_session(
+      test_suite_session, function, fallback_diag_tok);
+}
+
+static node_t *bind_test_identifier_tree(
+    node_t *node, const token_t *fallback_diag_tok) {
+  return psx_bind_identifier_tree_in_session(
+      test_suite_session, node, fallback_diag_tok);
+}
+
+static node_function_definition_t *apply_test_function_definition_header(
+    psx_parsed_function_definition_t *definition) {
+  return psx_apply_function_definition_header_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      definition);
+}
+
+static void apply_test_toplevel_declaration(
+    psx_parsed_toplevel_declaration_t *declaration) {
+  psx_apply_toplevel_declaration_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      declaration);
+}
+
+static void init_test_local_declaration_callbacks(
+    psx_local_declaration_callbacks_t *callbacks) {
+  psx_frontend_init_local_declaration_callbacks_in_contexts(
+      callbacks,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session));
+}
+
+static void init_test_toplevel_declaration_callbacks(
+    psx_toplevel_declaration_callbacks_t *callbacks) {
+  psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
+      callbacks,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session));
+}
+
+static const psx_type_t *resolve_test_decl_specifier_syntax(
+    const psx_parsed_decl_specifier_t *specifier) {
+  return psx_resolve_decl_specifier_syntax_in_context(
+      ag_compilation_session_semantic_context(test_suite_session),
+      specifier);
+}
+
+static void resolve_test_generic_selection(
+    node_generic_selection_t *selection,
+    psx_generic_selection_resolution_t *resolution) {
+  psx_resolve_generic_selection_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      selection, resolution);
+}
+
+static void resolve_test_sizeof_query(
+    node_sizeof_query_t *query,
+    psx_sizeof_query_resolution_t *resolution) {
+  psx_resolve_sizeof_query_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      query, resolution);
+}
+
+static void resolve_test_alignof_query(node_alignof_query_t *query) {
+  psx_resolve_alignof_query_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session), query);
+}
 
 /* Test-only storage fixtures may start with a simple scalar/array type and
  * replace it with the exact type under test. Production registration accepts
@@ -147,7 +244,7 @@ static node_t *parse_expr_input(const char *input) {
   ps_decl_set_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
   node_t *expr = ps_expr_from(head);
-  node_t *analyzed = psx_frontend_analyze_expression(expr, head);
+  node_t *analyzed = analyze_test_expression(expr, head);
   assert_semantic_tree_invariants(analyzed);
   return analyzed;
 }
@@ -162,14 +259,14 @@ static node_t *parse_analyzed_expr_input_with_existing_locals(
     const char *input) {
   node_t *expr = parse_expr_input_with_existing_locals(input);
   node_t *analyzed =
-      psx_frontend_analyze_expression(expr, expr ? expr->tok : NULL);
+      analyze_test_expression(expr, expr ? expr->tok : NULL);
   assert_semantic_tree_invariants(analyzed);
   return analyzed;
 }
 
 static node_t **parse_program_input(const char *input) {
   token_t *head = tk_tokenize((char *)input);
-  node_t **program = psx_frontend_program_from(head);
+  node_t **program = parse_test_program_from(head);
   for (int i = 0; program && program[i]; i++)
     assert_semantic_tree_invariants(program[i]);
   return program;
@@ -185,17 +282,19 @@ static const psx_type_t *resolve_tag_base_for_test(
           .name_len = name_len,
       },
   };
-  return psx_resolve_decl_specifier_syntax(&specifier);
+  return resolve_test_decl_specifier_syntax(&specifier);
 }
 
 static node_t *parse_raw_function_item(
     psx_parser_stream_t *stream, psx_parsed_toplevel_item_t *item) {
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item->kind);
   node_function_definition_t *header =
-      psx_apply_function_definition_header(
+      apply_test_function_definition_header(
       &item->value.function_header);
+  psx_local_declaration_callbacks_t local_declarations;
+  init_test_local_declaration_callbacks(&local_declarations);
   node_t *function = ps_parse_function_definition_body(
-      stream, header, psx_frontend_local_declaration_callbacks());
+      stream, header, &local_declarations);
   ps_dispose_function_definition_header_syntax(
       &item->value.function_header);
   return function;
@@ -374,7 +473,7 @@ static void test_local_declaration_frontend_boundary() {
 
 static void test_function_parameter_point_of_declaration_boundary() {
   printf("test_function_parameter_point_of_declaration_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(
       "int __parameter_order(int m, int k, int t[][m][3][k]); "
       "int __parameter_order(int m, int k, int t[][m][3][k]) { "
@@ -431,7 +530,7 @@ static void assert_identifier_resolution_kind(
 
 static void test_identifier_resolution_boundary() {
   printf("test_identifier_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(
       "enum __IdentifierEnum { __identifier_enum = 7 }; "
       "int __identifier_global; "
@@ -598,7 +697,7 @@ static void test_persistent_local_scope_lookup_boundary() {
 
 static void test_member_access_resolution_boundary() {
   printf("test_member_access_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(
       "struct __MemberBoundary { int value; }; "
       "int __member_boundary_function(void) { "
@@ -658,7 +757,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_TRUE(strncmp(member_syntax->member_name, "value", 5) == 0);
   ASSERT_TRUE(member_syntax->resolved_member == NULL);
   ASSERT_TRUE(raw_access->type == NULL);
-  node_t *lowered_access = psx_frontend_analyze_expression(
+  node_t *lowered_access = analyze_test_expression(
       raw_access, raw_access->tok);
   ASSERT_EQ(ND_DEREF, lowered_access->kind);
   ASSERT_TRUE(ps_type_is_tag_aggregate(
@@ -723,7 +822,7 @@ static void expect_parse_fail(const char *input) {
     freopen("/dev/null", "w", stderr);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
   int status;
@@ -742,7 +841,7 @@ static void expect_parse_ok(const char *input) {
     freopen("/dev/null", "w", stderr);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
   int status;
@@ -809,7 +908,7 @@ static void expect_parse_fail_with_message(const char *input, const char *needle
     freopen("/dev/null", "w", stdout);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
 
@@ -850,7 +949,7 @@ static void expect_parse_fail_without_message(const char *input, const char *nee
     freopen("/dev/null", "w", stdout);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
 
@@ -924,7 +1023,7 @@ static void expect_parse_ok_without_message(const char *input, const char *needl
     freopen("/dev/null", "w", stdout);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
 
@@ -960,7 +1059,7 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
     freopen("/dev/null", "w", stdout);
     diag_reset_records();
     token_t *head = tk_tokenize((char *)input);
-    parsed_code = psx_frontend_program_from(head);
+    parsed_code = parse_test_program_from(head);
     _exit(diag_has_error_records() ? 1 : 0);
   }
 
@@ -1031,7 +1130,7 @@ static void test_expr_compound_literal() {
   ASSERT_TRUE(compound->type_name.resolved_type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
-  node_t *lowered = psx_frontend_analyze_expression(raw, raw->tok);
+  node_t *lowered = analyze_test_expression(raw, raw->tok);
   ASSERT_TRUE(lowered != raw);
   ASSERT_TRUE(compound->type_name.resolved_type != NULL);
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
@@ -1101,7 +1200,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(2, as_num(node->rhs)->val);
 
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(TK_EOF, node->source_op);
   ASSERT_TRUE(node->type != NULL);
@@ -1114,7 +1213,7 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_EQ(ND_ADD, mixed->kind);
   ASSERT_TRUE(mixed->type == NULL);
   ASSERT_TRUE(ps_node_get_type(mixed) == NULL);
-  mixed = psx_frontend_analyze_expression(mixed, NULL);
+  mixed = analyze_test_expression(mixed, NULL);
   ASSERT_TRUE(mixed->type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, mixed->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, mixed->type->fp_kind);
@@ -1122,7 +1221,7 @@ static void test_additive_semantic_lowering_boundary() {
   node_t *difference = parse_expr_input_with_existing_locals("p - p");
   ASSERT_EQ(ND_SUB, difference->kind);
   ASSERT_TRUE(difference->type == NULL);
-  difference = psx_frontend_analyze_expression(difference, NULL);
+  difference = analyze_test_expression(difference, NULL);
   ASSERT_EQ(ND_DIV, difference->kind);
   ASSERT_EQ(8, ps_node_type_size(difference));
   ASSERT_TRUE(!ps_node_is_unsigned_type(difference));
@@ -1250,7 +1349,7 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
 
   node_t *subscript_syntax = node;
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != subscript_syntax);
   ASSERT_EQ(ND_SUBSCRIPT, subscript_syntax->kind);
   ASSERT_EQ(ND_DEREF, node->kind);
@@ -1263,7 +1362,7 @@ static void test_subscript_semantic_lowering_boundary() {
   ASSERT_EQ(ND_SUBSCRIPT, reversed->kind);
   ASSERT_EQ(ND_NUM, reversed->lhs->kind);
   ASSERT_EQ(ND_IDENTIFIER, reversed->rhs->kind);
-  reversed = psx_frontend_analyze_expression(reversed, NULL);
+  reversed = analyze_test_expression(reversed, NULL);
   ASSERT_EQ(ND_DEREF, reversed->kind);
 }
 
@@ -1289,7 +1388,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(node) == NULL);
   ASSERT_TRUE(ps_node_get_type(node->lhs) == NULL);
   node_t *deref_syntax = node;
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != deref_syntax);
   ASSERT_EQ(ND_UNARY_DEREF, deref_syntax->kind);
   ASSERT_EQ(ND_DEREF, node->kind);
@@ -1302,7 +1401,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_EQ(ND_UNARY_DEREF, assignment->lhs->kind);
   ASSERT_TRUE(assignment->type == NULL);
   ASSERT_TRUE(assignment->lhs->type == NULL);
-  assignment = psx_frontend_analyze_expression(assignment, NULL);
+  assignment = analyze_test_expression(assignment, NULL);
   ASSERT_EQ(ND_DEREF, assignment->lhs->kind);
   ASSERT_TRUE(assignment->type != NULL);
 
@@ -1311,7 +1410,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
   ASSERT_EQ(ND_ADDR, subscript_address->kind);
   ASSERT_EQ(ND_SUBSCRIPT, subscript_address->lhs->kind);
   ASSERT_TRUE(subscript_address->type == NULL);
-  subscript_address = psx_frontend_analyze_expression(
+  subscript_address = analyze_test_expression(
       subscript_address, NULL);
   ASSERT_EQ(ND_ADDR, subscript_address->kind);
   ASSERT_TRUE(subscript_address->type != NULL);
@@ -1345,7 +1444,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
   ASSERT_TRUE(raw_integer->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_integer) == NULL);
   node_t *lowered_integer =
-      psx_frontend_analyze_expression(raw_integer, NULL);
+      analyze_test_expression(raw_integer, NULL);
   ASSERT_EQ(ND_SUB, lowered_integer->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_integer)->kind);
 
@@ -1354,7 +1453,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
   ASSERT_TRUE(raw_floating->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_floating) == NULL);
   node_t *lowered_floating =
-      psx_frontend_analyze_expression(raw_floating, NULL);
+      analyze_test_expression(raw_floating, NULL);
   ASSERT_EQ(ND_FNEG, lowered_floating->kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(lowered_floating)->kind);
 
@@ -1362,7 +1461,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
   ASSERT_EQ(ND_CREAL, raw_real->kind);
   ASSERT_TRUE(raw_real->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw_real) == NULL);
-  node_t *lowered_real = psx_frontend_analyze_expression(raw_real, NULL);
+  node_t *lowered_real = analyze_test_expression(raw_real, NULL);
   ASSERT_EQ(ND_CREAL, lowered_real->kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(lowered_real)->kind);
 
@@ -1371,7 +1470,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
   ASSERT_EQ(ND_CIMAG, raw_integer_imag->kind);
   ASSERT_TRUE(raw_integer_imag->type == NULL);
   node_t *lowered_integer_imag =
-      psx_frontend_analyze_expression(raw_integer_imag, NULL);
+      analyze_test_expression(raw_integer_imag, NULL);
   ASSERT_EQ(ND_CAST, lowered_integer_imag->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(lowered_integer_imag)->kind);
 }
@@ -1410,7 +1509,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
       .selected_index = -1,
   };
   psx_generic_selection_resolution_t resolution;
-  psx_resolve_generic_selection(&direct_selection, &resolution);
+  resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_OK, resolution.status);
   ASSERT_EQ(0, resolution.selected_index);
   ASSERT_EQ(PSX_TYPE_INTEGER,
@@ -1419,7 +1518,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
                     .expression)->kind);
 
   associations[0].is_default = 1;
-  psx_resolve_generic_selection(&direct_selection, &resolution);
+  resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_DEFAULT,
             resolution.status);
   ASSERT_EQ(1, resolution.conflict_index);
@@ -1428,20 +1527,20 @@ static void test_generic_selection_semantic_lowering_boundary() {
   associations[1].is_default = 0;
   associations[1].type_name.resolved_type =
       ps_type_new_integer(TK_INT, 4, 0);
-  psx_resolve_generic_selection(&direct_selection, &resolution);
+  resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_DUPLICATE_COMPATIBLE_TYPE,
             resolution.status);
   ASSERT_EQ(1, resolution.conflict_index);
 
   direct_selection.association_count = 1;
   control.type = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  psx_resolve_generic_selection(&direct_selection, &resolution);
+  resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_NO_MATCH,
             resolution.status);
 
   control.type = ps_type_new_integer(TK_INT, 4, 0);
   integer_result.type = NULL;
-  psx_resolve_generic_selection(&direct_selection, &resolution);
+  resolve_test_generic_selection(&direct_selection, &resolution);
   ASSERT_EQ(PSX_GENERIC_SELECTION_RESOLUTION_TYPE_UNRESOLVED,
             resolution.status);
   ASSERT_EQ(0, resolution.conflict_index);
@@ -1469,7 +1568,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
   ASSERT_TRUE(raw->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
-  node_t *lowered = psx_frontend_analyze_expression(raw, NULL);
+  node_t *lowered = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(selection->associations[0].type_name.resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER,
             selection->associations[0].type_name.resolved_type->kind);
@@ -1497,19 +1596,19 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_sizeof_query_t *expr_query = (node_sizeof_query_t *)raw_expr;
   ASSERT_TRUE(!expr_query->is_type_name);
   ASSERT_EQ(ND_IDENTIFIER, expr_query->operand->kind);
-  raw_expr = psx_bind_identifier_tree(raw_expr, NULL);
+  raw_expr = bind_test_identifier_tree(raw_expr, NULL);
   expr_query = (node_sizeof_query_t *)raw_expr;
   ASSERT_EQ(ND_LVAR, expr_query->operand->kind);
   ASSERT_TRUE(expr_query->operand->records_lvar_usage);
   ASSERT_TRUE(expr_query->operand->lvar_usage_unevaluated);
   psx_sizeof_query_resolution_t direct_resolution;
-  psx_resolve_sizeof_query(expr_query, &direct_resolution);
+  resolve_test_sizeof_query(expr_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
   ASSERT_TRUE(direct_resolution.usage_root == expr_query->operand);
   ASSERT_TRUE(ps_node_get_type(expr_query->operand) != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(expr_query->operand)->kind);
   ASSERT_EQ(4, expr_query->resolved_size);
-  node_t *lowered_expr = psx_frontend_analyze_expression(raw_expr, NULL);
+  node_t *lowered_expr = analyze_test_expression(raw_expr, NULL);
   ASSERT_EQ(ND_NUM, lowered_expr->kind);
   ASSERT_EQ(4, as_num(lowered_expr)->val);
 
@@ -1517,7 +1616,7 @@ static void test_sizeof_semantic_lowering_boundary() {
       parse_expr_input_with_existing_locals("sizeof(int[3])");
   node_sizeof_query_t *direct_type_query =
       (node_sizeof_query_t *)direct_type_raw;
-  psx_resolve_sizeof_query(direct_type_query, &direct_resolution);
+  resolve_test_sizeof_query(direct_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
   ASSERT_TRUE(direct_type_query->type_name.resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY,
@@ -1531,7 +1630,7 @@ static void test_sizeof_semantic_lowering_boundary() {
                                .array_bounds[0].expression.node;
   ASSERT_EQ(ND_NUM, negative_bound->kind);
   as_num(negative_bound)->val = -1;
-  psx_resolve_sizeof_query(negative_type_query, &direct_resolution);
+  resolve_test_sizeof_query(negative_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_NEGATIVE_ARRAY_BOUND,
             direct_resolution.status);
   ASSERT_EQ(0, direct_resolution.issue_bound_index);
@@ -1539,7 +1638,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_sizeof_query_t *zero_type_query =
       (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
           "sizeof(int[0])");
-  psx_resolve_sizeof_query(zero_type_query, &direct_resolution);
+  resolve_test_sizeof_query(zero_type_query, &direct_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK, direct_resolution.status);
   ASSERT_EQ(1, direct_resolution.zero_length_bound_count);
   ASSERT_EQ(0, direct_resolution.zero_length_bound_indices[0]);
@@ -1556,7 +1655,7 @@ static void test_sizeof_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM,
             type_query->type_name.syntax->declarator
                 .array_bounds[0].expression.node->kind);
-  node_t *lowered_type = psx_frontend_analyze_expression(raw_type, NULL);
+  node_t *lowered_type = analyze_test_expression(raw_type, NULL);
   ASSERT_TRUE(type_query->type_name.resolved_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, type_query->type_name.resolved_type->kind);
   ASSERT_EQ(ND_NUM, lowered_type->kind);
@@ -1571,7 +1670,7 @@ static void test_sizeof_semantic_lowering_boundary() {
       parse_expr_input_with_existing_locals("sizeof(&a)");
   ASSERT_EQ(ND_SIZEOF_QUERY, raw_addr->kind);
   ASSERT_TRUE(((node_sizeof_query_t *)raw_addr)->operand->is_explicit_addr_expr);
-  node_t *lowered_addr = psx_frontend_analyze_expression(raw_addr, NULL);
+  node_t *lowered_addr = analyze_test_expression(raw_addr, NULL);
   ASSERT_EQ(ND_NUM, lowered_addr->kind);
   ASSERT_EQ(8, as_num(lowered_addr)->val);
 
@@ -1581,10 +1680,10 @@ static void test_sizeof_semantic_lowering_boundary() {
   node_alignof_query_t *align_query = (node_alignof_query_t *)raw_align;
   ASSERT_TRUE(align_query->type_name.syntax != NULL);
   ASSERT_TRUE(align_query->type_name.resolved_type == NULL);
-  psx_resolve_alignof_query(align_query);
+  resolve_test_alignof_query(align_query);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
   ASSERT_EQ(4, align_query->resolved_alignment);
-  node_t *lowered_align = psx_frontend_analyze_expression(raw_align, NULL);
+  node_t *lowered_align = analyze_test_expression(raw_align, NULL);
   ASSERT_TRUE(align_query->type_name.resolved_type != NULL);
   ASSERT_EQ(ND_NUM, lowered_align->kind);
   ASSERT_EQ(4, as_num(lowered_align)->val);
@@ -1602,7 +1701,7 @@ static void test_expression_type_materialization_boundary() {
   ASSERT_TRUE(ps_node_get_type(ternary) == NULL);
   ASSERT_TRUE(ps_node_get_type(ternary->lhs) == NULL);
 
-  psx_frontend_analyze_expression(ternary, NULL);
+  analyze_test_expression(ternary, NULL);
   ASSERT_TRUE(ternary->type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, ternary->type->kind);
   ASSERT_TRUE(ternary->lhs->type != NULL);
@@ -1688,7 +1787,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(direct_call->callee != NULL);
   ASSERT_EQ(ND_IDENTIFIER, direct_call->callee->kind);
   ASSERT_TRUE(direct->type == NULL);
-  direct = psx_frontend_analyze_expression(direct, NULL);
+  direct = analyze_test_expression(direct, NULL);
   direct_call = (node_function_call_t *)direct;
   ASSERT_TRUE(direct_call->callee_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, direct_call->callee_type->kind);
@@ -1701,7 +1800,7 @@ static void test_function_call_type_binding_boundary() {
       "__call_type_boundary");
   ASSERT_EQ(ND_IDENTIFIER, reference->kind);
   ASSERT_TRUE(reference->type == NULL);
-  reference = psx_frontend_analyze_expression(reference, NULL);
+  reference = analyze_test_expression(reference, NULL);
   ASSERT_EQ(ND_FUNCREF, reference->kind);
   ASSERT_TRUE(reference->type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, reference->type->kind);
@@ -1718,7 +1817,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(indirect_call->callee != NULL);
   ASSERT_TRUE(indirect_call->callee_type == NULL);
   ASSERT_TRUE(indirect->type == NULL);
-  indirect = psx_frontend_analyze_expression(indirect, NULL);
+  indirect = analyze_test_expression(indirect, NULL);
   ASSERT_TRUE(indirect_call->callee_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, indirect_call->callee_type->kind);
   ASSERT_TRUE(indirect->type != NULL);
@@ -1733,7 +1832,7 @@ static void test_function_call_type_binding_boundary() {
   node_function_call_t *implicit_call = (node_function_call_t *)implicit;
   ASSERT_TRUE(implicit_call->callee_type == NULL);
   ASSERT_TRUE(implicit->type == NULL);
-  implicit = psx_frontend_analyze_expression(implicit, NULL);
+  implicit = analyze_test_expression(implicit, NULL);
   implicit_call = (node_function_call_t *)implicit;
   ASSERT_TRUE(implicit_call->base.is_implicit_func_decl);
   ASSERT_TRUE(implicit_call->callee_type == NULL);
@@ -1764,7 +1863,7 @@ static void test_cast_semantic_lowering_boundary() {
   ASSERT_TRUE(inner->type_name.bound_base_type == NULL);
   ASSERT_TRUE(inner->type_name.resolved_type == NULL);
 
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_EQ(ND_CAST, node->kind);
   ASSERT_TRUE(!node->is_source_cast);
   ASSERT_EQ(ND_SHR, node->lhs->kind);
@@ -1856,7 +1955,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_EQ(ND_NUM, node->rhs->kind);
 
   node_t *assignment_syntax = node;
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_TRUE(node != assignment_syntax);
   ASSERT_TRUE(assignment_syntax->is_source_compound_assignment);
   ASSERT_EQ(ND_ASSIGN, node->kind);
@@ -1871,7 +1970,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   node = parse_expr_input_with_existing_locals("*p += 2");
   ASSERT_EQ(ND_ASSIGN, node->kind);
   ASSERT_TRUE(node->is_source_compound_assignment);
-  node = psx_frontend_analyze_expression(node, NULL);
+  node = analyze_test_expression(node, NULL);
   ASSERT_EQ(ND_COMMA, node->kind);
   ASSERT_EQ(ND_ASSIGN, node->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, node->rhs->kind);
@@ -1883,7 +1982,7 @@ static void test_translation_unit_frontend_boundary() {
       "int __frontend_boundary(int input) { "
       "int x=input; x += 2; return x; }";
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   ps_parser_stream_begin(
       &stream, NULL, tk_tokenize((char *)source), NULL);
@@ -1904,9 +2003,9 @@ static void test_translation_unit_frontend_boundary() {
   ASSERT_EQ(TK_PLUSEQ, parsed_body->body[1]->source_op);
   ps_parser_stream_end(&stream);
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   node_t **analyzed =
-      psx_frontend_program_from(tk_tokenize((char *)source));
+      parse_test_program_from(tk_tokenize((char *)source));
   ASSERT_TRUE(analyzed != NULL);
   ASSERT_TRUE(analyzed[0] != NULL);
   node_block_t *analyzed_body = as_block(as_function_definition(analyzed[0])->base.rhs);
@@ -1922,7 +2021,7 @@ static void test_toplevel_static_assert_frontend_boundary() {
       "_Static_assert(0, \"deferred\"); "
       "int __after_static_assert(void) { return 0; }";
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   ps_parser_stream_begin(
       &stream, NULL, tk_tokenize((char *)source), NULL);
@@ -1951,7 +2050,7 @@ static void test_toplevel_declaration_frontend_boundary() {
       "__PhaseWord __phase_initialized = 7; "
       "int __phase_function(void) { return 0; }";
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   ps_parser_stream_begin(
       &stream, NULL, tk_tokenize((char *)source), NULL);
@@ -1964,7 +2063,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   psx_typedef_info_t typedef_info;
   ASSERT_TRUE(!ps_ctx_find_typedef_name(
       (char *)"__PhaseWord", 11, &typedef_info));
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_TRUE(ps_ctx_find_typedef_name(
       (char *)"__PhaseWord", 11, &typedef_info));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
@@ -1974,7 +2073,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_TRUE(item.value.declaration.is_standalone_tag);
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseTag", 10));
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_EQ(1, ps_ctx_get_tag_member_count(
                    TK_STRUCT, (char *)"__PhaseTag", 10));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
@@ -1984,7 +2083,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_EQ(1, item.value.declaration.declarator_count);
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__phase_proto", 13) == NULL);
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__phase_proto", 13) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
@@ -1995,7 +2094,7 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_EQ(PSX_PARSED_DECL_TYPEDEF_NAME,
             item.value.declaration.specifier.source);
   ASSERT_TRUE(ps_find_global_var("__phase_global", 14) == NULL);
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_TRUE(ps_find_global_var("__phase_global", 14) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
@@ -2006,7 +2105,7 @@ static void test_toplevel_declaration_frontend_boundary() {
             item.value.declaration.initializers[0].kind);
   ASSERT_EQ(ND_NUM, item.value.declaration.initializers[0].value->kind);
   ASSERT_TRUE(ps_find_global_var("__phase_initialized", 19) == NULL);
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_TRUE(ps_find_global_var("__phase_initialized", 19) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
@@ -2017,14 +2116,16 @@ static void test_toplevel_declaration_frontend_boundary() {
 
 static void test_toplevel_callback_context_boundary() {
   printf("test_toplevel_callback_context_boundary...\n");
-  ASSERT_TRUE(ag_compilation_session_active_compat() != NULL);
+  ASSERT_TRUE(ag_compilation_session_is_active(test_suite_session));
   ASSERT_TRUE(tk_context_active() ==
-              &ag_compilation_session_active_compat()->tokenizer);
-  psx_frontend_reset_translation_unit_state();
+              ag_compilation_session_tokenizer(test_suite_session));
+  reset_test_translation_unit_state();
   tk_tokenize((char *)"int __callback_global = 23;");
   psx_parsed_toplevel_declaration_t declaration;
+  psx_toplevel_declaration_callbacks_t callbacks;
+  init_test_toplevel_declaration_callbacks(&callbacks);
   ASSERT_TRUE(psx_parse_toplevel_declaration_syntax(
-      &declaration, psx_frontend_toplevel_declaration_callbacks()));
+      &declaration, &callbacks));
   ASSERT_TRUE(declaration.applied_during_parse);
   global_var_t *global = ps_find_global_var(
       (char *)"__callback_global", 17);
@@ -2040,7 +2141,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
       "int *__phase_compound = (int[]){1,2,3}; "
       "int __phase_compound_function(void) { return 0; }";
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   ps_parser_stream_begin(
       &stream, NULL, tk_tokenize((char *)source), NULL);
@@ -2056,7 +2157,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
   ASSERT_TRUE(ps_find_global_var("__phase_compound", 16) == NULL);
   ASSERT_TRUE(ps_find_global_var("__compound_lit_0", 16) == NULL);
 
-  psx_apply_toplevel_declaration(&item.value.declaration);
+  apply_test_toplevel_declaration(&item.value.declaration);
   ASSERT_TRUE(ps_find_global_var("__phase_compound", 16) != NULL);
   ASSERT_TRUE(ps_find_global_var("__compound_lit_0", 16) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
@@ -2087,7 +2188,7 @@ static void test_toplevel_point_of_declaration_boundary() {
 static void assert_toplevel_syntax_kind(
     const char *source, psx_toplevel_item_kind_t expected_kind,
     int expected_declarator_count) {
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
   ps_parser_stream_begin(
       &stream, NULL, tk_tokenize((char *)source), NULL);
@@ -2129,8 +2230,8 @@ static void test_toplevel_single_parse_classification_boundary() {
 
 static void test_frontend_stream_lifecycle_boundary() {
   printf("test_frontend_stream_lifecycle_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
-  node_t **program = psx_frontend_program_from(tk_tokenize(
+  reset_test_translation_unit_state();
+  node_t **program = parse_test_program_from(tk_tokenize(
       (char *)"int __stream_previous(void) { return 0; }"));
   ASSERT_TRUE(program != NULL);
   ASSERT_TRUE(ps_ctx_get_function_type(
@@ -2145,8 +2246,8 @@ static void test_frontend_stream_lifecycle_boundary() {
 
   ag_compilation_session_t session_context;
   ASSERT_TRUE(ag_compilation_session_init(&session_context, NULL));
-  ag_compilation_session_t *outer_session =
-      ag_compilation_session_active_compat();
+  ag_compilation_session_t *outer_session = test_suite_session;
+  ASSERT_TRUE(ag_compilation_session_is_active(outer_session));
   psx_frontend_stream_t frontend_stream = {0};
   ASSERT_TRUE(!psx_frontend_stream_begin(
       &frontend_stream, NULL, NULL, tk_tokenize((char *)"")));
@@ -2171,7 +2272,7 @@ static void test_frontend_stream_lifecycle_boundary() {
       &frontend_stream, &session_context, NULL,
       tk_tokenize((char *)
           "int __stream_explicit(void) { return 0; }")));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &session_context);
+  ASSERT_TRUE(ag_compilation_session_is_active(&session_context));
   ASSERT_TRUE(frontend_stream.owns_session_activation);
   ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) != NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
@@ -2188,10 +2289,10 @@ static void test_frontend_stream_lifecycle_boundary() {
   ASSERT_TRUE(ag_compilation_session_init(&nested_context, NULL));
   ASSERT_TRUE(ag_compilation_session_activate(&nested_context));
   ASSERT_TRUE(!psx_frontend_stream_end(&frontend_stream));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &nested_context);
+  ASSERT_TRUE(ag_compilation_session_is_active(&nested_context));
   ASSERT_TRUE(ag_compilation_session_deactivate(&nested_context));
   ASSERT_TRUE(psx_frontend_stream_end(&frontend_stream));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == outer_session);
+  ASSERT_TRUE(ag_compilation_session_is_active(outer_session));
   ASSERT_TRUE(!frontend_stream.owns_session_activation);
   ASSERT_TRUE(psx_frontend_next_function(&frontend_stream) == NULL);
   ASSERT_TRUE(ag_compilation_session_dispose(&nested_context));
@@ -2221,7 +2322,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
   node_t *initializer_syntax = raw;
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(raw != initializer_syntax);
   ASSERT_EQ(ND_DECL_INIT, initializer_syntax->kind);
   ASSERT_EQ(ND_COMMA, raw->kind);
@@ -2244,7 +2345,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   raw = psx_node_new_raw_decl_initializer_list(
       ps_node_new_lvar_expr_ref_for(float_value),
       PSX_DECL_INIT_LIST, complex_entries, 2, NULL);
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(4, ((node_lvar_t *)raw->rhs->lhs)->offset -
                    ((node_lvar_t *)raw->lhs->lhs)->offset);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(raw->lhs->lhs));
@@ -2263,7 +2364,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_TRUE(raw->type == NULL);
   ASSERT_TRUE(ps_node_get_type(raw) == NULL);
 
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_COMMA, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->lhs->kind);
@@ -2286,7 +2387,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(ND_INIT_LIST, raw->rhs->kind);
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
 
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_COMMA, raw->lhs->kind);
   ASSERT_EQ(8, as_num(raw->lhs->lhs->rhs)->val);
@@ -2702,7 +2803,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   const psx_type_t *parameter_types[2] = {integer, pointer};
   psx_type_t *function_input = ps_type_new_function(ps_type_clone(pointer));
   ps_type_set_function_params(function_input, parameter_types, 2, 1);
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   static char planned_function_name[] = "__planned_function";
   psx_function_declaration_resolution_t planned_function = {0};
   psx_resolve_function_declaration(
@@ -2789,7 +2890,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(PSX_TYPE_FLOAT, planned_callable->base->base->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, planned_callable->base->base->fp_kind);
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   integer = ps_type_new_integer(TK_INT, 4, 0);
   pointer = ps_type_new_pointer(integer);
   parameter_types[0] = integer;
@@ -2990,7 +3091,7 @@ static void test_global_declaration_resolution_boundary() {
 
 static void test_declaration_pipeline_order_boundary() {
   printf("test_declaration_pipeline_order_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   token_t *tokens = tk_tokenize((char *)"= 37");
   tk_set_current_token(tokens);
   psx_parsed_initializer_t initializer;
@@ -3023,7 +3124,7 @@ static void test_declaration_pipeline_order_boundary() {
 
 static void test_tag_declaration_resolution_boundary() {
   printf("test_tag_declaration_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_tag_declaration_resolution_request_t request = {
       .semantic_context = ps_ctx_active(),
       .local_registry = ps_local_registry_active(),
@@ -3085,7 +3186,7 @@ static void test_tag_declaration_resolution_boundary() {
 
 static void test_aggregate_definition_ownership_boundary() {
   printf("test_aggregate_definition_ownership_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   char tag_name[] = "__DefinitionOwner";
   int tag_name_len = (int)(sizeof(tag_name) - 1);
@@ -3165,7 +3266,7 @@ static int register_test_tag_member(
 
 static void test_aggregate_body_phase_boundary() {
   printf("test_aggregate_body_phase_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   psx_tag_declaration_resolution_t tag;
   psx_resolve_tag_declaration(
@@ -3371,7 +3472,7 @@ static void test_aggregate_body_phase_boundary() {
 
 static void test_declaration_phase_boundary() {
   printf("test_declaration_phase_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   token_t *tokens = tk_tokenize(
       (char *)"struct __PhaseObject { int value; }");
@@ -3388,7 +3489,7 @@ static void test_declaration_phase_boundary() {
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   const psx_type_t *unapplied_type =
-      psx_resolve_decl_specifier_syntax(&phase.syntax);
+      resolve_test_decl_specifier_syntax(&phase.syntax);
   ASSERT_TRUE(unapplied_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, unapplied_type->kind);
   ASSERT_TRUE(unapplied_type->aggregate_definition == NULL);
@@ -3419,7 +3520,7 @@ static void test_declaration_phase_boundary() {
 
 static void test_type_name_phase_boundary() {
   printf("test_type_name_phase_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   token_t *tokens = tk_tokenize((char *)"int (*)(double),");
   tk_set_current_token(tokens);
   psx_parsed_type_name_t syntax;
@@ -3443,7 +3544,7 @@ static void test_type_name_phase_boundary() {
 
 static void test_toplevel_declarator_phase_boundary() {
   printf("test_toplevel_declarator_phase_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   parse_program_input("int __phase_fn(int), __phase_object;");
 
@@ -3463,7 +3564,7 @@ static void test_toplevel_declarator_phase_boundary() {
 
 static void test_local_declarator_application_boundary() {
   printf("test_local_declarator_application_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   register_test_default_storage_fixture((char *)"n", 1);
 
   token_t *tokens = tk_tokenize((char *)"matrix[n][4]");
@@ -3591,7 +3692,7 @@ static void test_local_declaration_resolution_boundary() {
 
 static void test_aggregate_member_resolution_boundary() {
   printf("test_aggregate_member_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   psx_type_t *scoped_tag = ps_type_new_tag(
       TK_STRUCT, (char *)"Scoped", 6, 1, 4);
@@ -4305,7 +4406,7 @@ static void test_static_assert_resolution_boundary() {
 
 static void test_typedef_declaration_resolution_boundary() {
   printf("test_typedef_declaration_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_typedef_declaration_resolution_request_t request = {
       .semantic_context = ps_ctx_active(),
@@ -4393,7 +4494,7 @@ static void test_typedef_declaration_resolution_boundary() {
 
 static void test_enum_constant_resolution_boundary() {
   printf("test_enum_constant_resolution_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   psx_enum_constant_resolution_request_t request = {
       .semantic_context = ps_ctx_active(),
       .global_registry = ps_global_registry_active(),
@@ -4586,7 +4687,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
   ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
 
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_TRUE(raw->kind != ND_DECL_INIT);
 
   lvar_t *source = register_test_storage_fixture(
@@ -4599,7 +4700,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(ND_IDENTIFIER, raw->rhs->kind);
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_TRUE(raw->is_decl_initializer);
 
@@ -4628,7 +4729,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_TRUE(raw->is_decl_initializer);
   ASSERT_EQ(9, as_num(raw->rhs)->val);
@@ -4643,7 +4744,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(1, ((node_init_list_t *)raw->rhs)->entry_count);
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_ASSIGN, raw->kind);
   ASSERT_EQ(7, as_num(raw->rhs)->val);
 
@@ -4661,7 +4762,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
   ASSERT_EQ(2, ((node_init_list_t *)raw->rhs)->entry_count);
-  raw = psx_frontend_analyze_expression(raw, NULL);
+  raw = analyze_test_expression(raw, NULL);
   ASSERT_EQ(ND_COMMA, raw->kind);
   ASSERT_EQ(ND_ASSIGN, raw->lhs->kind);
   ASSERT_EQ(ND_ASSIGN, raw->rhs->kind);
@@ -5332,7 +5433,7 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_CAST, canonical_expr_funcptr->kind);
   ASSERT_TRUE(canonical_expr_funcptr->type == NULL);
   ASSERT_TRUE(ps_node_get_type(canonical_expr_funcptr) == NULL);
-  canonical_expr_funcptr = psx_frontend_analyze_expression(
+  canonical_expr_funcptr = analyze_test_expression(
       canonical_expr_funcptr, NULL);
   const psx_type_t *canonical_expr_function =
       ps_type_derived_function(ps_node_get_type(canonical_expr_funcptr));
@@ -5990,7 +6091,7 @@ static void test_expr_inc_dec() {
   ASSERT_TRUE(prei->tok != NULL);
   ASSERT_TRUE(prei->type == NULL);
   ASSERT_TRUE(ps_node_get_type(prei) == NULL);
-  psx_frontend_analyze_expression(prei, NULL);
+  analyze_test_expression(prei, NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, prei->type->kind);
 
   node_t *pred = parse_expr_input_with_existing_locals("--a");
@@ -5998,7 +6099,7 @@ static void test_expr_inc_dec() {
   ASSERT_EQ(ND_IDENTIFIER, pred->lhs->kind);
   ASSERT_TRUE(pred->type == NULL);
   ASSERT_TRUE(ps_node_get_type(pred) == NULL);
-  psx_frontend_analyze_expression(pred, NULL);
+  analyze_test_expression(pred, NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, pred->type->kind);
 
   node_t *posti = parse_expr_input_with_existing_locals("a++");
@@ -6007,7 +6108,7 @@ static void test_expr_inc_dec() {
   ASSERT_TRUE(posti->tok != NULL);
   ASSERT_TRUE(posti->type == NULL);
   ASSERT_TRUE(ps_node_get_type(posti) == NULL);
-  psx_frontend_analyze_expression(posti, NULL);
+  analyze_test_expression(posti, NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, posti->type->kind);
 
   node_t *postd = parse_expr_input_with_existing_locals("a--");
@@ -6015,7 +6116,7 @@ static void test_expr_inc_dec() {
   ASSERT_EQ(ND_IDENTIFIER, postd->lhs->kind);
   ASSERT_TRUE(postd->type == NULL);
   ASSERT_TRUE(ps_node_get_type(postd) == NULL);
-  psx_frontend_analyze_expression(postd, NULL);
+  analyze_test_expression(postd, NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, postd->type->kind);
 }
 
@@ -6406,7 +6507,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ret_meta_type->kind);
   ASSERT_EQ(8, ps_type_sizeof(ret_meta_type));
-  psx_frontend_analyze_function((node_t *)ret_meta_fn, NULL);
+  analyze_test_function((node_t *)ret_meta_fn, NULL);
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type ==
               ps_function_definition_return_type(ret_meta_fn));
@@ -6421,7 +6522,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ret_meta_type->fp_kind);
-  psx_frontend_analyze_function((node_t *)ret_meta_fn, NULL);
+  analyze_test_function((node_t *)ret_meta_fn, NULL);
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type ==
               ps_function_definition_return_type(ret_meta_fn));
@@ -6465,7 +6566,7 @@ static void test_expr_deref_addr() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0)));
   node_t *deref = parse_expr_input_with_existing_locals("*a");
   ASSERT_EQ(ND_UNARY_DEREF, deref->kind);
-  deref = psx_frontend_analyze_expression(deref, NULL);
+  deref = analyze_test_expression(deref, NULL);
   ASSERT_EQ(ND_DEREF, deref->kind);
   ASSERT_EQ(ND_LVAR, deref->lhs->kind);
 }
@@ -8416,7 +8517,7 @@ static void test_type_metadata_bridge() {
       ps_node_new_assign(&typed_bool_lhs_mem, ps_node_new_num(3));
   ASSERT_TRUE(typed_bool_assign->rhs != NULL);
   ASSERT_EQ(ND_NUM, typed_bool_assign->rhs->kind);
-  psx_frontend_analyze_expression(typed_bool_assign, NULL);
+  analyze_test_expression(typed_bool_assign, NULL);
   ASSERT_EQ(ND_NE, typed_bool_assign->rhs->kind);
 
   node_t typed_stale_bool_lhs_mem = {0};
@@ -10365,7 +10466,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_get_type(&typed_stmt_tag_ptr) == NULL);
   ASSERT_EQ(0, ps_node_value_is_pointer_like(&typed_stmt_tag_ptr));
   ASSERT_EQ(0, ps_node_deref_size(&typed_stmt_tag_ptr));
-  psx_frontend_analyze_expression(&typed_stmt_tag_ptr, NULL);
+  analyze_test_expression(&typed_stmt_tag_ptr, NULL);
   ASSERT_EQ(1, ps_node_value_is_pointer_like(&typed_stmt_tag_ptr));
   ASSERT_EQ(16, ps_node_deref_size(&typed_stmt_tag_ptr));
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(&typed_stmt_tag_ptr));
@@ -10389,7 +10490,7 @@ static void test_type_metadata_bridge() {
   typed_stmt_fp_ptr.rhs = &typed_stmt_fp_ptr_rhs;
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             canonical_node_pointee_fp_kind(&typed_stmt_fp_ptr));
-  psx_frontend_analyze_expression(&typed_stmt_fp_ptr, NULL);
+  analyze_test_expression(&typed_stmt_fp_ptr, NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             canonical_node_pointee_fp_kind(&typed_stmt_fp_ptr));
 
@@ -11950,7 +12051,7 @@ static void test_type_metadata_bridge() {
       ps_node_new_lvar_array_addr_for(compound_bool_local);
   ASSERT_TRUE(canonical_node_pointee_is_bool(compound_bool_addr));
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input("int *__tm_compound_lit_global = (int[]){1,2,3}; int main(void) { return 0; }");
   (void)parsed_code;
   global_var_t *compound_lit_global =
@@ -11967,7 +12068,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_bool(compound_global_stale_addr));
   ASSERT_TRUE(!canonical_node_pointee_is_unsigned(compound_global_stale_addr));
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(
       "unsigned char *__tm_compound_u = (unsigned char[]){1,2}; "
       "_Bool *__tm_compound_b = (_Bool[]){0,1}; int main(void) { return 0; }");
@@ -13790,7 +13891,7 @@ static void test_type_metadata_bridge() {
   pick_call.direct_name_len = 12;
   pick_call.callee_type = ps_type_clone(pick_def->signature);
   ASSERT_TRUE(ps_node_get_type((node_t *)&pick_call) == NULL);
-  psx_frontend_analyze_expression((node_t *)&pick_call, NULL);
+  analyze_test_expression((node_t *)&pick_call, NULL);
   const psx_type_t *pick_call_type =
       ps_node_get_type((node_t *)&pick_call);
   ASSERT_TRUE(pick_call_type != NULL);
@@ -13810,7 +13911,7 @@ static void test_type_metadata_bridge() {
       as_function_definition(parsed_code[0])->signature);
   ASSERT_EQ(PSX_TYPE_FUNCTION,
             ps_node_get_type((node_t *)&pick_add_ref)->kind);
-  psx_frontend_analyze_expression((node_t *)&pick_add_ref, NULL);
+  analyze_test_expression((node_t *)&pick_add_ref, NULL);
   const psx_type_t *pick_add_ref_type =
       ps_node_get_type((node_t *)&pick_add_ref);
   ASSERT_TRUE(pick_add_ref_type != NULL);
@@ -13838,38 +13939,38 @@ static void test_translation_unit_reset_static_local_state() {
   printf("test_translation_unit_reset_static_local_state...\n");
 
   const char *input = "int f(void) { static int x=1; return x; }";
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(ps_find_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(ps_find_global_var("f.x.1", 5) == NULL);
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(ND_FUNCDEF, parsed_code[0]->kind);
   ASSERT_TRUE(ps_find_global_var("f.x.0", 5) != NULL);
   ASSERT_TRUE(ps_find_global_var("f.x.1", 5) == NULL);
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 }
 
 static void test_translation_unit_reset_anonymous_tag_state() {
   printf("test_translation_unit_reset_anonymous_tag_state...\n");
 
   const char *input = "struct { int x; } g; int main(void) { return 0; }";
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
   ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
 
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
   ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 }
 
 static void test_translation_unit_reset_decl_locals_state() {
@@ -13879,7 +13980,7 @@ static void test_translation_unit_reset_decl_locals_state() {
   ps_decl_reset_locals();
   ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
   ASSERT_TRUE(ps_decl_find_lvar(name, 1) != NULL);
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   ASSERT_TRUE(ps_decl_find_lvar(name, 1) == NULL);
 }
 
@@ -13890,7 +13991,7 @@ static void test_translation_unit_reset_pragma_pack_state() {
   pragma_pack_set(8);
   pragma_pack_push(1);
   ASSERT_EQ(1, pragma_pack_current_alignment());
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   ASSERT_EQ(0, pragma_pack_current_alignment());
   pragma_pack_pop();
   ASSERT_EQ(0, pragma_pack_current_alignment());
@@ -14645,7 +14746,7 @@ static void test_parser_width_limits() {
 
 static void test_semantic_canonical_type_invariant() {
   printf("test_semantic_canonical_type_invariant...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
   node_t **program = parse_program_input(
       "struct S { int x; int y; }; "
       "int inc(int x) { return x + 1; } "
@@ -14800,7 +14901,7 @@ static void test_semantic_canonical_type_invariant() {
 
 static void test_recursive_declarator_capacity_boundary() {
   printf("test_recursive_declarator_capacity_boundary...\n");
-  psx_frontend_reset_translation_unit_state();
+  reset_test_translation_unit_state();
 
   char pointer_declarator[512] = {0};
   size_t used = 0;
@@ -14905,7 +15006,7 @@ static void test_recursive_declarator_capacity_boundary() {
       (node_sizeof_query_t *)parse_expr_input_with_existing_locals(
           deep_sizeof_expression);
   psx_sizeof_query_resolution_t deep_sizeof_resolution;
-  psx_resolve_sizeof_query(deep_sizeof_query, &deep_sizeof_resolution);
+  resolve_test_sizeof_query(deep_sizeof_query, &deep_sizeof_resolution);
   ASSERT_EQ(PSX_TYPE_QUERY_RESOLUTION_OK,
             deep_sizeof_resolution.status);
   ASSERT_EQ(1, deep_sizeof_resolution.zero_length_bound_count);
@@ -15841,17 +15942,16 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   psx_lowering_context_t *previous_lowering =
       ps_lowering_context_active();
   ag_codegen_emit_context_t *previous_codegen = cg_context_active();
-  ag_compilation_session_t *previous_session =
-      ag_compilation_session_active_compat();
-  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
+  ag_compilation_session_t *previous_session = test_suite_session;
+  ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
+  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(ag_compilation_session_activate(&host));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &host);
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(4);
-  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15888,11 +15988,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(!wasm.tokenizer.tolerate_untokenizable);
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ag_target_set_pointer_size(8);
-  ASSERT_EQ(4, ag_compilation_session_effective_target_compat().pointer_size);
+  ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
@@ -15918,7 +16017,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(0, tk_allocator_total_chunks());
   ASSERT_TRUE(!ag_compilation_session_deactivate(&host));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
+  ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ASSERT_TRUE(pp_context_active() == wasm.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == wasm.arena_context);
   ASSERT_TRUE(diag_context_active() == wasm.diagnostic_context);
@@ -15933,7 +16032,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, host_backend.deactivate_count);
   ASSERT_TRUE(!ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_is_complete(&host));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &wasm);
+  ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
   ASSERT_EQ(0, host_backend.destroy_count);
   ag_compilation_session_t inherited_context;
   ASSERT_TRUE(ag_compilation_session_init(
@@ -15945,10 +16044,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_EQ(0, arena_current_reserved_bytes_in(host.arena_context));
   ASSERT_TRUE(arena_current_reserved_bytes_in(wasm.arena_context) > 0);
   ASSERT_TRUE(ag_compilation_session_deactivate(&wasm));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == &host);
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
-  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(pp_context_active() == host.preprocessor_context);
   ASSERT_TRUE(arena_context_active() == host.arena_context);
   ASSERT_TRUE(diag_context_active() == host.diagnostic_context);
@@ -15969,7 +16067,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(!ps_get_enable_union_scalar_pointer_cast());
   ASSERT_EQ(1, tk_allocator_total_chunks());
   ASSERT_TRUE(ag_compilation_session_deactivate(&host));
-  ASSERT_TRUE(ag_compilation_session_active_compat() == previous_session);
+  ASSERT_TRUE(ag_compilation_session_is_active(previous_session));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(pp_context_active() == previous_pp);
   ASSERT_TRUE(arena_context_active() == previous_arena);
@@ -16002,7 +16100,7 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ag_target_set_pointer_size(4);
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
-  ASSERT_EQ(8, ag_compilation_session_effective_target_compat().pointer_size);
+  ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
   ag_target_set_pointer_size(8);
   ASSERT_TRUE(ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_dispose(&wasm));
@@ -16015,6 +16113,7 @@ int main() {
   ag_target_info_t suite_target = ag_target_info_host();
   ASSERT_TRUE(ag_compilation_session_init(&suite_session, &suite_target));
   ASSERT_TRUE(ag_compilation_session_activate(&suite_session));
+  test_suite_session = &suite_session;
   printf("Running tests for Parser...\n");
 
   test_arena_checkpoint_rollback();
@@ -16125,6 +16224,7 @@ int main() {
   test_semantic_canonical_type_invariant();
 
   ASSERT_TRUE(ag_compilation_session_dispose(&suite_session));
+  test_suite_session = NULL;
   printf("OK: All unit tests passed!\n");
   return 0;
 }

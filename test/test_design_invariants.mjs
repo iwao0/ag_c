@@ -13,6 +13,94 @@ async function sourceFilesUnder(directory) {
   return files;
 }
 
+const allSourceFiles = (await sourceFilesUnder("src")).sort();
+const frontendSourceFiles = allSourceFiles.filter(
+  (path) => path.startsWith("src/frontend/"),
+);
+const frontendLayerSource = (
+  await Promise.all(frontendSourceFiles.map((path) => readFile(path, "utf8")))
+).join("\n");
+if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
+      frontendLayerSource,
+    )) {
+  throw new Error(
+    "frontend APIs must receive CompilationSession or explicit registries",
+  );
+}
+const removedContextFreeFrontendApis = [
+  "psx_frontend_analyze_function",
+  "psx_frontend_analyze_expression",
+  "psx_frontend_analyze_initializer_syntax",
+  "psx_frontend_analyze_program",
+  "psx_apply_function_definition_header",
+  "psx_frontend_local_declaration_callbacks",
+  "psx_apply_toplevel_declaration",
+  "psx_frontend_toplevel_declaration_callbacks",
+];
+for (const name of removedContextFreeFrontendApis) {
+  if (new RegExp(`\\b${name}\\s*\\(`).test(frontendLayerSource)) {
+    throw new Error(`context-free frontend API ${name} must not return`);
+  }
+}
+const explicitSemanticSourceFiles = allSourceFiles.filter(
+  (path) =>
+    path.startsWith("src/semantic/") &&
+    path !== "src/semantic/declaration_application.c",
+);
+const explicitSemanticLayerSource = (
+  await Promise.all(
+    explicitSemanticSourceFiles.map((path) => readFile(path, "utf8")),
+  )
+).join("\n");
+if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
+      explicitSemanticLayerSource,
+    )) {
+  throw new Error(
+    "semantic APIs outside declaration_application must receive explicit contexts",
+  );
+}
+const removedContextFreeSemanticApis = [
+  "psx_build_decl_specifier_type",
+  "psx_resolve_decl_specifier_syntax",
+  "psx_resolve_prepared_enum_const_expr",
+  "psx_resolve_declarator_syntax",
+  "psx_resolve_generic_selection",
+  "psx_resolve_global_object_symbol",
+  "psx_collect_lvar_usage_events",
+  "psx_analyze_function_lvar_usage",
+  "psx_semantic_resolve_tree",
+  "psx_semantic_resolve_initializer_tree",
+  "psx_bind_type_name_ref",
+  "psx_resolve_bound_type_name_ref",
+  "psx_resolve_sizeof_query",
+  "psx_resolve_alignof_query",
+];
+for (const name of removedContextFreeSemanticApis) {
+  if (new RegExp(`\\b${name}\\s*\\(`).test(explicitSemanticLayerSource)) {
+    throw new Error(`context-free semantic API ${name} must not return`);
+  }
+}
+const forbiddenCompatibilityFiles = [
+  "src/compilation_session_compat.h",
+  "src/frontend/translation_unit_compat.c",
+  "src/frontend/translation_unit_compat.h",
+  "src/lowering/ir_builder_compat.c",
+  "src/lowering/ir_builder_compat.h",
+  "src/lowering/translation_unit_data_lowering_compat.c",
+  "src/lowering/translation_unit_data_lowering_compat.h",
+  "src/preprocess/preprocess_compat.c",
+  "src/preprocess/preprocess_compat.h",
+];
+const remainingCompatibilityFiles = forbiddenCompatibilityFiles.filter(
+  (path) => allSourceFiles.includes(path),
+);
+if (remainingCompatibilityFiles.length) {
+  throw new Error(
+    "context-free CompilationSession compatibility files must not return:\n" +
+      remainingCompatibilityFiles.join("\n"),
+  );
+}
+
 const irFiles = (await sourceFilesUnder("src/ir")).sort();
 
 const archEntries = await readdir("src/arch", { withFileTypes: true });
@@ -60,10 +148,6 @@ const compilationSessionHeader = await readFile(
   "src/compilation_session.h",
   "utf8",
 );
-const compilationSessionCompatHeader = await readFile(
-  "src/compilation_session_compat.h",
-  "utf8",
-);
 const compilationSessionSource = await readFile(
   "src/compilation_session.c",
   "utf8",
@@ -86,14 +170,6 @@ const tokenizerFilenameSource = await readFile(
 );
 const preprocessSource = await readFile("src/preprocess/preprocess.c", "utf8");
 const preprocessHeader = await readFile("src/preprocess/preprocess.h", "utf8");
-const preprocessCompatHeader = await readFile(
-  "src/preprocess/preprocess_compat.h",
-  "utf8",
-);
-const preprocessCompatSource = await readFile(
-  "src/preprocess/preprocess_compat.c",
-  "utf8",
-);
 const parserRuntimeSource = await readFile(
   "src/parser/runtime_context.c",
   "utf8",
@@ -125,28 +201,12 @@ const translationUnitDataLoweringHeader = await readFile(
   "src/lowering/translation_unit_data_lowering.h",
   "utf8",
 );
-const translationUnitDataLoweringCompatHeader = await readFile(
-  "src/lowering/translation_unit_data_lowering_compat.h",
-  "utf8",
-);
-const translationUnitDataLoweringCompatSource = await readFile(
-  "src/lowering/translation_unit_data_lowering_compat.c",
-  "utf8",
-);
 const irBuilderSource = await readFile(
   "src/lowering/ir_builder.c",
   "utf8",
 );
 const irBuilderHeader = await readFile(
   "src/lowering/ir_builder.h",
-  "utf8",
-);
-const irBuilderCompatHeader = await readFile(
-  "src/lowering/ir_builder_compat.h",
-  "utf8",
-);
-const irBuilderCompatSource = await readFile(
-  "src/lowering/ir_builder_compat.c",
   "utf8",
 );
 const compilationSessionInternalHeader = await readFile(
@@ -279,13 +339,7 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
       compilationSessionInternalHeader,
     ) ||
     /ag_compilation_session_(?:active_compat|effective_target_compat)\s*\(/.test(
-      compilationSessionHeader,
-    ) ||
-    !/ag_compilation_session_active_compat\s*\(void\)/.test(
-      compilationSessionCompatHeader,
-    ) ||
-    !/ag_compilation_session_effective_target_compat\s*\(void\)/.test(
-      compilationSessionCompatHeader,
+      `${compilationSessionHeader}\n${compilationSessionSource}`,
     ) ||
     !/ag_compilation_session_is_active\s*\(/.test(
       compilationSessionHeader,
@@ -302,10 +356,6 @@ if (!/typedef\s+struct\s+ag_compilation_session_t\s+ag_compilation_session_t\s*;
 
 const irBuilderActiveSessionReads =
   irBuilderSource.match(/\bag_compilation_session_active_compat\s*\(\)/g) ?? [];
-const irBuilderCompatActiveSessionReads =
-  irBuilderCompatSource.match(
-    /\bag_compilation_session_active_compat\s*\(\)/g,
-  ) ?? [];
 const irBuilderRange = (start, end) => {
   const startIndex = irBuilderSource.indexOf(start);
   return irBuilderSource.slice(
@@ -339,10 +389,6 @@ if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]
       irBuilderSource,
     ) ||
     irBuilderActiveSessionReads.length !== 0 ||
-    irBuilderCompatActiveSessionReads.length !== 1 ||
-    !/active_session_options\s*\([^)]*\)\s*\{[\s\S]*?ag_compilation_session_active_compat\s*\(\)/.test(
-      irBuilderCompatSource,
-    ) ||
     irTargetOnlyEntryBodies.some((body) =>
       !body.includes("ir_build_options_for_target(") ||
       body.includes("ir_build_options_for_active_session(")
@@ -381,37 +427,18 @@ if (!/int\s+ag_compilation_session_deactivate\s*\(/.test(
   );
 }
 
-const preprocessCompatTargetCalls =
-  preprocessCompatSource.match(/\bag_compilation_session_effective_target_compat\s*\(/g) ?? [];
-const irBuilderCompatTargetCalls =
-  irBuilderCompatSource.match(/\bag_compilation_session_effective_target_compat\s*\(/g) ?? [];
-if (!/ag_target_info_t\s+ag_compilation_session_effective_target_compat\s*\(void\)/.test(
-      compilationSessionCompatHeader,
+if (/ag_compilation_session_(?:active_compat|effective_target_compat)\s*\(/.test(
+      `${compilationSessionSource}\n${preprocessSource}\n${irBuilderSource}`,
     ) ||
-    !/ag_compilation_session_effective_target_compat\s*\(void\)\s*\{[\s\S]*?active_compilation_session->target/.test(
-      compilationSessionSource,
-    ) ||
-    preprocessCompatTargetCalls.length !== 2 ||
-    irBuilderCompatTargetCalls.length !== 4 ||
-    /compilation_session_compat\.h/.test(preprocessSource) ||
-    /compilation_session_compat\.h/.test(irBuilderSource) ||
     /\bag_target_pointer_size\s*\(/.test(preprocessSource) ||
     /\bag_target_pointer_size\s*\(/.test(irBuilderSource)) {
   throw new Error(
-    "context-free frontend and IR APIs must resolve target through the active CompilationSession",
+    "preprocess and IR core APIs must receive their target explicitly",
   );
 }
 
 const frontendTranslationUnitSessionSource = await readFile(
   "src/frontend/translation_unit.c",
-  "utf8",
-);
-const frontendTranslationUnitCompatHeader = await readFile(
-  "src/frontend/translation_unit_compat.h",
-  "utf8",
-);
-const frontendTranslationUnitCompatSource = await readFile(
-  "src/frontend/translation_unit_compat.c",
   "utf8",
 );
 
@@ -454,18 +481,12 @@ if (!/lower_ir_translation_unit_data_in_session\s*\(/.test(
   );
 }
 
-if (/active_session_view\s*\(/.test(frontendTranslationUnitCompatSource) ||
-    /ps_(?:ctx|global_registry|local_registry|parser_runtime_context|lowering_context)_active\s*\(/.test(
-      frontendTranslationUnitCompatSource,
-    ) ||
-    !/ag_compilation_session_active_compat\s*\(\)/.test(
-      frontendTranslationUnitCompatSource,
-    ) ||
-    /compilation_session_compat\.h/.test(
+if (/active_session_view\s*\(/.test(frontendTranslationUnitSessionSource) ||
+    /ag_compilation_session_active_compat\s*\(\)/.test(
       frontendTranslationUnitSessionSource,
     )) {
   throw new Error(
-    "frontend compatibility APIs must use the active CompilationSession instead of reconstructing one from subsystem globals",
+    "frontend core APIs must receive CompilationSession explicitly",
   );
 }
 
@@ -695,6 +716,17 @@ const identifierBindingSource = await readFile(
   "src/semantic/identifier_binding.c",
   "utf8",
 );
+const identifierBindingHeader = await readFile(
+  "src/semantic/identifier_binding.h",
+  "utf8",
+);
+if (/\bpsx_bind_identifier_(?:tree|initializer_tree)\s*\(/.test(
+      `${identifierBindingHeader}\n${identifierBindingSource}`,
+    )) {
+  throw new Error(
+    "identifier binding must receive CompilationSession or explicit registries",
+  );
+}
 const lvarUsageAnalysisSource = await readFile(
   "src/semantic/lvar_usage_analysis.c",
   "utf8",
@@ -836,7 +868,7 @@ if (/\bps_(?:ctx_active|global_registry_active|local_registry_active)\s*\(/.test
       frontendStreamCore,
     )) {
   throw new Error(
-    "frontend stream core must bind explicit registries and active compatibility state to one CompilationSession scope",
+    "frontend stream core must bind explicit registries and active subsystem state to one CompilationSession scope",
   );
 }
 if (!/frontend_session_is_complete\s*\([^)]*\)\s*\{\s*return\s+ag_compilation_session_is_complete\s*\(session\)\s*;\s*\}/.test(
@@ -881,7 +913,7 @@ if (directSessionContextField.test(productionSessionConsumers.join("\n")) ||
 const contextFreeApiDeclarations = [
   {
     core: frontendTranslationUnitHeader,
-    compat: frontendTranslationUnitCompatHeader,
+    source: frontendTranslationUnitSource,
     names: [
       "psx_frontend_reset_translation_unit_state",
       "psx_frontend_free_processed_ast",
@@ -892,7 +924,7 @@ const contextFreeApiDeclarations = [
   },
   {
     core: irBuilderHeader,
-    compat: irBuilderCompatHeader,
+    source: irBuilderSource,
     names: [
       "ir_build_module",
       "ir_build_each_and_emit",
@@ -902,34 +934,24 @@ const contextFreeApiDeclarations = [
   },
   {
     core: preprocessHeader,
-    compat: preprocessCompatHeader,
+    source: preprocessSource,
     names: ["preprocess", "preprocess_ctx", "pp_stream_open"],
   },
   {
     core: translationUnitDataLoweringHeader,
-    compat: translationUnitDataLoweringCompatHeader,
+    source: translationUnitDataLoweringSource,
     names: ["lower_ir_translation_unit_data"],
   },
 ];
-for (const { core, compat, names } of contextFreeApiDeclarations) {
+for (const { core, source, names } of contextFreeApiDeclarations) {
   for (const name of names) {
     const declaration = new RegExp(`\\b${name}\\s*\\(`);
-    if (declaration.test(core) || !declaration.test(compat)) {
+    if (declaration.test(core) || declaration.test(source)) {
       throw new Error(
-        `context-free API ${name} must be declared only by its compatibility header`,
+        `context-free API ${name} must not return`,
       );
     }
   }
-}
-if (!/ag_compilation_session_active_compat\s*\(\)/.test(
-      translationUnitDataLoweringCompatSource,
-    ) ||
-    /compilation_session_compat\.h/.test(
-      translationUnitDataLoweringSource,
-    )) {
-  throw new Error(
-    "context-free data lowering must remain isolated from the explicit-session core",
-  );
 }
 const toplevelCallbackCore = toplevelDeclarationFrontendSource.slice(
   toplevelDeclarationFrontendSource.indexOf("static void *begin_declaration("),
@@ -2222,7 +2244,7 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
 
 const readonlySemanticTypeResults = [
   ["src/semantic/declaration_resolution.h", "psx_resolve_decl_type"],
-  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax"],
+  ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax_in_context"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name"],
   ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type"],

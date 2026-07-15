@@ -12,6 +12,9 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 void psx_frontend_analyze_function_in_session(
     ag_compilation_session_t *session,
     node_t *function, const token_t *fallback_diag_tok);
+node_t *psx_frontend_analyze_expression_in_session(
+    ag_compilation_session_t *session,
+    node_t *expression, const token_t *fallback_diag_tok);
 node_t *psx_frontend_analyze_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -27,13 +30,7 @@ void psx_frontend_analyze_program_in_contexts(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     node_t **program);
-
-void psx_frontend_analyze_function(
-    node_t *function, const token_t *fallback_diag_tok);
-node_t *psx_frontend_analyze_expression(
-    node_t *expression, const token_t *fallback_diag_tok);
-node_t *psx_frontend_analyze_initializer_syntax(
-    node_t *syntax, const token_t *fallback_diag_tok);
-void psx_frontend_analyze_program(node_t **program);
+void psx_frontend_analyze_program_in_session(
+    ag_compilation_session_t *session, node_t **program);
 
 #endif

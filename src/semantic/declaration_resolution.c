@@ -138,18 +138,6 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
   return type;
 }
 
-psx_type_t *psx_build_decl_specifier_type(
-    const psx_parsed_decl_specifier_t *specifier) {
-  return psx_build_decl_specifier_type_in_context(
-      ps_ctx_active(), specifier);
-}
-
-const psx_type_t *psx_resolve_decl_specifier_syntax(
-    const psx_parsed_decl_specifier_t *specifier) {
-  return psx_resolve_decl_specifier_syntax_in_context(
-      ps_ctx_active(), specifier);
-}
-
 const psx_type_t *psx_resolve_decl_specifier_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_decl_specifier_t *specifier) {

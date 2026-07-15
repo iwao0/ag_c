@@ -1,7 +1,6 @@
 #include "../src/parser/parser.h"
 #include "../src/compilation_session.h"
 #include "../src/frontend/translation_unit.h"
-#include "../src/frontend/translation_unit_compat.h"
 #include "../src/tokenizer/token.h"
 #include "../src/tokenizer/tokenizer.h"
 #include <stdio.h>
@@ -11,18 +10,23 @@
 
 static char *build_input_from_pattern(const char *pattern, size_t approx_bytes) {
   size_t pat_len = strlen(pattern);
-  size_t n = approx_bytes / pat_len + 1;
-  char *buf = calloc(n * pat_len + 1, 1);
+  size_t cap = approx_bytes * 2 + pat_len + 1;
+  char *buf = calloc(cap, 1);
   if (!buf) {
     fprintf(stderr, "failed to allocate benchmark input\n");
     exit(1);
   }
-  char *p = buf;
-  for (size_t i = 0; i < n; i++) {
-    memcpy(p, pattern, pat_len);
-    p += pat_len;
+  size_t pos = 0;
+  for (size_t i = 0; pos < approx_bytes; i++) {
+    int written = snprintf(
+        buf + pos, cap - pos, pattern, i, i, i);
+    if (written < 0 || (size_t)written >= cap - pos) {
+      fprintf(stderr, "failed to build benchmark input\n");
+      free(buf);
+      exit(1);
+    }
+    pos += (size_t)written;
   }
-  *p = '\0';
   return buf;
 }
 
@@ -39,7 +43,9 @@ static size_t count_funcs(node_t **nodes) {
   return n;
 }
 
-static void run_case(const char *name, const char *pattern, size_t bytes) {
+static void run_case(
+    ag_compilation_session_t *session, const char *name,
+    const char *pattern, size_t bytes) {
   char *input = build_input_from_pattern(pattern, bytes);
 
   struct timespec t_tok0;
@@ -52,7 +58,8 @@ static void run_case(const char *name, const char *pattern, size_t bytes) {
   clock_gettime(CLOCK_MONOTONIC, &t_tok1);
 
   clock_gettime(CLOCK_MONOTONIC, &t_par0);
-  node_t **code = psx_frontend_program();
+  node_t **code = psx_frontend_program_in_session(
+      session, NULL, tk_get_current_token());
   clock_gettime(CLOCK_MONOTONIC, &t_par1);
 
   size_t funcs = count_funcs(code);
@@ -75,23 +82,23 @@ int main(void) {
     return 1;
   }
   const char *mixed_pattern =
-      "int add(int a,int b){return a+b;}"
-      "int main(){int s=0;for(int i=0,j=8;i<j;i=i+1){if(i==3)continue;s=s+i;}return s;}\n";
+      "int add_%zu(int a,int b){return a+b;}"
+      "int mixed_%zu(void){int s=0;for(int i=0,j=8;i<j;i=i+1){if(i==3)continue;s=s+i;}return s;}\n";
   const char *expr_heavy_pattern =
-      "int f(int a,int b,int c){return ((a+b*3-c/2)%7)<<2|((a&&b)||c);}"
-      "int main(){return f(10,20,30);}\n";
+      "int expr_%zu(int a,int b,int c){return ((a+b*3-c/2)%%7)<<2|((a&&b)||c);}"
+      "int expr_call_%zu(void){return expr_%zu(10,20,30);}\n";
   const char *control_heavy_pattern =
-      "int main(){int i=0;int s=0;L:i=i+1;if(i<20){if(i==5)goto L;s=s+i;}return s;}\n";
+      "int control_%zu(void){int i=0;int s=0;L:i=i+1;if(i<20){if(i==5)goto L;s=s+i;}return s;}\n";
 
   tk_set_strict_c11_mode(false);
   tk_set_enable_binary_literals(true);
   tk_set_enable_trigraphs(true);
 
   puts("Parser benchmark");
-  run_case("mixed", mixed_pattern, 16 * 1024);
-  run_case("mixed", mixed_pattern, 256 * 1024);
-  run_case("expr-heavy", expr_heavy_pattern, 256 * 1024);
-  run_case("control-heavy", control_heavy_pattern, 256 * 1024);
+  run_case(session, "mixed", mixed_pattern, 16 * 1024);
+  run_case(session, "mixed", mixed_pattern, 256 * 1024);
+  run_case(session, "expr-heavy", expr_heavy_pattern, 256 * 1024);
+  run_case(session, "control-heavy", control_heavy_pattern, 256 * 1024);
   ag_compilation_session_destroy(session);
   return 0;
 }

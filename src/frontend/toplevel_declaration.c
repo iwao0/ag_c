@@ -179,23 +179,6 @@ static void finish_declaration(void *declaration_context) {
   free(declaration_context);
 }
 
-const psx_toplevel_declaration_callbacks_t *
-psx_frontend_toplevel_declaration_callbacks(void) {
-  static psx_toplevel_declaration_callbacks_t callbacks;
-  callbacks = (psx_toplevel_declaration_callbacks_t){
-      .semantic_context = ps_ctx_active(),
-      .global_registry = ps_global_registry_active(),
-      .local_registry = ps_local_registry_active(),
-      .begin_declaration = begin_declaration,
-      .begin_declarator = begin_declarator,
-      .finish_declarator = finish_declarator,
-      .finish_declaration = finish_declaration,
-      .abort_declaration = finish_declaration,
-  };
-  callbacks.context = &callbacks;
-  return &callbacks;
-}
-
 void psx_frontend_init_toplevel_declaration_callbacks_in_contexts(
     psx_toplevel_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,
@@ -237,11 +220,4 @@ void psx_apply_toplevel_declaration_in_contexts(
         application, &declaration->initializers[i]);
   }
   callbacks.finish_declaration(application);
-}
-
-void psx_apply_toplevel_declaration(
-    psx_parsed_toplevel_declaration_t *declaration) {
-  psx_apply_toplevel_declaration_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), declaration);
 }

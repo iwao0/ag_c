@@ -245,24 +245,6 @@ static void abort_declaration(void *declaration_context) {
   free(declaration_context);
 }
 
-const psx_local_declaration_callbacks_t *
-psx_frontend_local_declaration_callbacks(void) {
-  static psx_local_declaration_callbacks_t callbacks;
-  callbacks = (psx_local_declaration_callbacks_t){
-      .semantic_context = ps_ctx_active(),
-      .global_registry = ps_global_registry_active(),
-      .local_registry = ps_local_registry_active(),
-      .apply_static_assert = apply_static_assert,
-      .begin_declaration = begin_declaration,
-      .begin_declarator = begin_declarator,
-      .finish_declarator = finish_declarator,
-      .finish_declaration = finish_declaration,
-      .abort_declaration = abort_declaration,
-  };
-  callbacks.context = &callbacks;
-  return &callbacks;
-}
-
 void psx_frontend_init_local_declaration_callbacks_in_contexts(
     psx_local_declaration_callbacks_t *callbacks,
     psx_semantic_context_t *semantic_context,

@@ -5,13 +5,6 @@
 #include "../parser/diag.h"
 #include "../parser/semantic_ctx.h"
 
-void psx_resolve_declarator_syntax(
-    const psx_parsed_declarator_t *parsed,
-    psx_declarator_shape_t *shape, int *bit_width) {
-  psx_resolve_declarator_syntax_in_context(
-      ps_ctx_active(), parsed, shape, bit_width);
-}
-
 void psx_resolve_declarator_syntax_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_parsed_declarator_t *parsed,

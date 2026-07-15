@@ -214,11 +214,7 @@ node_t **psx_frontend_program_in_session(
     program[count++] = function;
   }
   program[count] = NULL;
-  psx_frontend_analyze_program_in_contexts(
-      ag_compilation_session_semantic_context(session),
-      ag_compilation_session_global_registry(session),
-      ag_compilation_session_local_registry(session),
-      program);
+  psx_frontend_analyze_program_in_session(session, program);
   if (!psx_frontend_stream_end(&stream)) {
     free(program);
     return NULL;

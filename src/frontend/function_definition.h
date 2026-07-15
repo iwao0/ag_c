@@ -14,7 +14,4 @@ node_function_definition_t *psx_apply_function_definition_header_in_contexts(
     psx_local_registry_t *local_registry,
     psx_parsed_function_definition_t *definition);
 
-node_function_definition_t *psx_apply_function_definition_header(
-    psx_parsed_function_definition_t *definition);
-
 #endif

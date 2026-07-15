@@ -39,8 +39,6 @@ typedef struct {
 void psx_resolve_identifier(
     const psx_identifier_resolution_request_t *request,
     psx_identifier_resolution_t *resolution);
-global_var_t *psx_resolve_global_object_symbol(
-    char *name, int name_len);
 global_var_t *psx_resolve_global_object_symbol_in(
     psx_global_registry_t *global_registry,
     char *name, int name_len);

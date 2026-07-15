@@ -9,14 +9,6 @@
 
 #include <string.h>
 
-void psx_resolve_generic_selection(
-    node_generic_selection_t *selection,
-    psx_generic_selection_resolution_t *resolution) {
-  psx_resolve_generic_selection_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), selection, resolution);
-}
-
 void psx_resolve_generic_selection_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
