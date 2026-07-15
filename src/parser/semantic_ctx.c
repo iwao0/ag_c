@@ -58,18 +58,21 @@ static int tag_type_is_complete(const tag_type_t *tag) {
   return tag->record_decl && tag->record_decl->is_complete;
 }
 typedef struct tag_member_t tag_member_t;
+typedef struct tag_member_decl_t {
+  char *name;
+  int len;
+  int bit_width;
+  int bit_is_signed;
+  psx_type_t *type;
+} tag_member_decl_t;
+
 struct tag_member_t {
   tag_member_t *next_hash;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
-  char *member_name;
-  int member_len;
-  int offset;
-  int bit_width;    // ビットフィールド幅（0: 非ビットフィールド）
-  int bit_offset;   // ストレージユニット内ビット位置
-  int bit_is_signed;
-  psx_type_t *decl_type;
+  tag_member_decl_t declaration;
+  psx_record_member_layout_t layout;
   int decl_order;
   int scope_depth;
 };
@@ -151,7 +154,7 @@ struct typedef_name_t {
 };
 
 static psx_type_t *tag_member_record_decl_type_mut(tag_member_t *m) {
-  return m ? m->decl_type : NULL;
+  return m ? m->declaration.type : NULL;
 }
 
 static const psx_type_t *typedef_record_decl_type(const typedef_name_t *t) {
@@ -405,17 +408,20 @@ static psx_type_t *ctx_type_clone_persistent_in(
 }
 
 static void initialize_tag_member_record(
-                                         psx_semantic_context_t *context,
-                                         tag_member_t *m,
-                                         const tag_member_info_t *desc) {
-  if (!context || !m || !desc || m->decl_type) return;
-  m->offset = desc->offset;
-  m->bit_width = desc->bit_width;
-  m->bit_offset = desc->bit_offset;
-  m->bit_is_signed = desc->bit_is_signed;
+    psx_semantic_context_t *context,
+    tag_member_t *m,
+    const tag_member_info_t *desc) {
+  if (!context || !m || !desc || m->declaration.type) return;
+  m->declaration.bit_width = desc->bit_width;
+  m->declaration.bit_is_signed = desc->bit_is_signed;
+  m->layout = (psx_record_member_layout_t){
+      .offset = desc->offset,
+      .bit_offset = desc->bit_offset,
+      .bit_width = desc->bit_width,
+  };
   const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
-  m->decl_type = ctx_type_clone_persistent_in(context, desc_type);
-  ps_ctx_bind_record_ids_in(context, m->decl_type);
+  m->declaration.type = ctx_type_clone_persistent_in(context, desc_type);
+  ps_ctx_bind_record_ids_in(context, m->declaration.type);
 }
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -998,9 +1004,9 @@ static tag_member_t *find_tag_member_record_at_current_scope_in(
   for (tag_member_t *m = context->aggregate_members_by_bucket[bucket];
        m; m = m->next_hash) {
     if (m->tag_kind == tag_kind && m->tag_len == tag_len &&
-        m->member_len == desc->len &&
+        m->declaration.len == desc->len &&
         strncmp(m->tag_name, tag_name, (size_t)tag_len) == 0 &&
-        strncmp(m->member_name, desc->name, (size_t)desc->len) == 0 &&
+        strncmp(m->declaration.name, desc->name, (size_t)desc->len) == 0 &&
         m->scope_depth == context->scope_depth) {
       return m;
     }
@@ -1017,8 +1023,8 @@ static int insert_tag_member_record_in(
   m->tag_kind = tag_kind;
   m->tag_name = tag_name;
   m->tag_len = tag_len;
-  m->member_name = desc->name;
-  m->member_len = desc->len;
+  m->declaration.name = desc->name;
+  m->declaration.len = desc->len;
   initialize_tag_member_record(context, m, desc);
   m->decl_order = context->aggregate_member_decl_order++;
   m->scope_depth = context->scope_depth;
@@ -1137,7 +1143,8 @@ int ps_ctx_register_record_members_in(
 static int cmp_tag_member_ptr(const void *a, const void *b) {
   const tag_member_t *ma = *(const tag_member_t * const *)a;
   const tag_member_t *mb = *(const tag_member_t * const *)b;
-  if (ma->offset != mb->offset) return (ma->offset < mb->offset) ? -1 : 1;
+  if (ma->layout.offset != mb->layout.offset)
+    return (ma->layout.offset < mb->layout.offset) ? -1 : 1;
   if (ma->decl_order != mb->decl_order) return (ma->decl_order < mb->decl_order) ? -1 : 1;
   return 0;
 }
@@ -1167,15 +1174,15 @@ void ps_ctx_bind_record_ids_in(
  * メンバを 1 つ特定したあとに使う (旧実装の複数 getter 呼び分けを 1 箇所に集約)。 */
 static void fill_tag_member_info_in(
     psx_semantic_context_t *context,
-    const tag_member_t *m, tag_member_info_t *out) {
+    tag_member_t *m, tag_member_info_t *out) {
   memset(out, 0, sizeof(*out));
-  out->name = m->member_name;
-  out->len = m->member_len;
-  out->offset = m->offset;
-  out->bit_width = m->bit_width;
-  out->bit_offset = m->bit_offset;
-  out->bit_is_signed = m->bit_is_signed;
-  psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
+  out->name = m->declaration.name;
+  out->len = m->declaration.len;
+  out->offset = m->layout.offset;
+  out->bit_width = m->declaration.bit_width;
+  out->bit_offset = m->layout.bit_offset;
+  out->bit_is_signed = m->declaration.bit_is_signed;
+  psx_type_t *decl_type = tag_member_record_decl_type_mut(m);
   ps_ctx_bind_record_ids_in(context, decl_type);
   out->decl_type = decl_type;
 }
@@ -1235,9 +1242,9 @@ static bool find_tag_member_info_impl_in(
   for (tag_member_t *m = context->aggregate_members_by_bucket[bucket];
        m; m = m->next_hash) {
     if (m->tag_kind == kind && m->tag_len == len &&
-        m->member_len == member_len &&
+        m->declaration.len == member_len &&
         strncmp(m->tag_name, name, (size_t)len) == 0 &&
-        strncmp(m->member_name, member_name, (size_t)member_len) == 0 &&
+        strncmp(m->declaration.name, member_name, (size_t)member_len) == 0 &&
         m->scope_depth == target_scope) {
       fill_tag_member_info_in(context, m, out);
       return true;

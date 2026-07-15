@@ -3483,6 +3483,12 @@ const tagContextSource = await readFile(
 const tagTypeStruct = tagContextSource.match(
   /struct tag_type_t\s*\{([\s\S]*?)\n\};/,
 );
+const tagMemberStruct = tagContextSource.match(
+  /struct tag_member_t\s*\{([\s\S]*?)\n\};/,
+);
+const tagMemberDeclStruct = tagContextSource.match(
+  /typedef struct tag_member_decl_t\s*\{([\s\S]*?)\}\s*tag_member_decl_t\s*;/,
+);
 const tagSizeLookupFunction = tagContextSource.match(
   /int\s+ps_ctx_get_tag_size_in\s*\([^]*?\n\}/,
 );
@@ -3527,6 +3533,17 @@ if (!recordMemberDeclStruct ||
     )) {
   throw new Error(
     "RecordDecl members must be physically independent from target placement",
+  );
+}
+if (!tagMemberStruct ||
+    !/\btag_member_decl_t\s+declaration\s*;/.test(tagMemberStruct[1]) ||
+    !/\bpsx_record_member_layout_t\s+layout\s*;/.test(tagMemberStruct[1]) ||
+    /\b(?:offset|bit_offset|decl_type)\s*;/.test(tagMemberStruct[1]) ||
+    !tagMemberDeclStruct ||
+    !/\bpsx_type_t\s*\*\s*type\s*;/.test(tagMemberDeclStruct[1]) ||
+    /\b(?:offset|bit_offset)\s*;/.test(tagMemberDeclStruct[1])) {
+  throw new Error(
+    "parser-owned record members must keep declarations separate from target layout",
   );
 }
 if (!canonicalTypeStruct ||
