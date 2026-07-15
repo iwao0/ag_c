@@ -3503,6 +3503,10 @@ const staticDataInitializerSource = await readFile(
   "src/lowering/static_data_initializer.c",
   "utf8",
 );
+const initializerLoweringSource = await readFile(
+  "src/lowering/initializer_lowering.c",
+  "utf8",
+);
 for (const functionName of [
   "lower_static_object_initializer",
   "lower_static_scalar_array_initializer",
@@ -3525,6 +3529,22 @@ if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*
     )) {
   throw new Error(
     "global data and static initializer root layout must consume the symbol declaration TypeId",
+  );
+}
+const typedInitializerSection = initializerLoweringSource.match(
+  /static\s+node_t\s*\*append_typed_object_zero_fill\s*\([^]*?static\s+node_t\s*\*lower_struct_list_initializer/,
+);
+if (!typedInitializerSection ||
+    /\btype_id\s*\(\s*context\s*,/.test(typedInitializerSection[0]) ||
+    !/\bps_lvar_decl_type_id\s*\(/.test(initializerLoweringSource) ||
+    !/\bpsx_semantic_type_table_base\s*\(/.test(
+      typedInitializerSection[0],
+    ) ||
+    !/\bpsx_semantic_type_table_record_member\s*\(/.test(
+      typedInitializerSection[0],
+    )) {
+  throw new Error(
+    "typed local initializer lowering must traverse declaration, base, and member TypeIds without type pointer reverse lookup",
   );
 }
 

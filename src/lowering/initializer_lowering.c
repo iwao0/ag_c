@@ -37,6 +37,28 @@ static int type_size(
       context->semantic_types, type_id(context, type), context->target);
 }
 
+static int type_size_id(
+    const initializer_lowering_context_t *context,
+    psx_type_id_t type_id) {
+  if (!context) return 0;
+  return ps_type_sizeof_id_for_target(
+      context->semantic_types, type_id, context->target);
+}
+
+static psx_type_id_t array_leaf_type_id(
+    const initializer_lowering_context_t *context,
+    psx_type_id_t type_id) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(
+      context ? context->semantic_types : NULL, type_id);
+  while (type && type->kind == PSX_TYPE_ARRAY) {
+    type_id = psx_semantic_type_table_base(
+        context->semantic_types, type_id).type_id;
+    type = psx_semantic_type_table_lookup(
+        context->semantic_types, type_id);
+  }
+  return type ? type_id : PSX_TYPE_ID_INVALID;
+}
+
 static ag_diagnostic_context_t *diagnostics(
     const initializer_lowering_context_t *context) {
   return context->diagnostic_context;
@@ -310,17 +332,20 @@ static void lower_array_initializer_entries(
 
 static node_t *lower_typed_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok);
 static node_t *append_object_zero_fill(
     const initializer_lowering_context_t *context,
     lvar_t *var, node_t *chain);
 static node_t *append_typed_object_zero_fill(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, node_t *chain);
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    node_t *chain);
 static node_t *try_lower_typed_array_copy(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_t *value, node_t *chain);
 
 typedef struct {
@@ -353,12 +378,15 @@ static void append_typed_string_unit(uint32_t unit, void *user) {
 
 static node_t *lower_typed_character_array_string(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *array_type, int relative_offset,
+    lvar_t *var, const psx_type_t *array_type,
+    psx_type_id_t array_type_id, int relative_offset,
     node_string_t *string, node_t *chain, token_t *tok) {
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
-  int element_size = type_size(context, element);
+  psx_type_id_t element_type_id = array_leaf_type_id(
+      context, array_type_id);
+  int element_size = type_size_id(context, element_type_id);
   int capacity = element_size > 0
-                     ? type_size(context, array_type) / element_size
+                     ? type_size_id(context, array_type_id) / element_size
                      : 0;
   int char_width = (int)string->char_width;
   if (char_width <= 0) char_width = 1;
@@ -398,16 +426,18 @@ static node_t *lower_array_list_initializer(
         entry->designator_count == 0 && !entry->has_index &&
         !entry->has_member) {
       node_t *lowered = lower_typed_character_array_string(
-          context, var, type, 0, (node_string_t *)entry->value, NULL,
+          context, var, type, ps_lvar_decl_type_id(var), 0,
+          (node_string_t *)entry->value, NULL,
           entry->tok ? entry->tok : initializer->base.tok);
       if (lowered) return lowered;
     }
   }
   if (type_has_aggregate_leaf(type)) {
     node_t *chain = append_typed_object_zero_fill(
-        context, var, type, NULL);
+        context, var, type, ps_lvar_decl_type_id(var), NULL);
     return lower_typed_initializer_list(
-        context, var, type, 0, list, chain, initializer->base.tok);
+        context, var, type, ps_lvar_decl_type_id(var), 0,
+        list, chain, initializer->base.tok);
   }
   int array_len = ps_lvar_array_flat_element_count(var);
   int elem_size = array_leaf_size(context, var);
@@ -534,7 +564,8 @@ typedef psx_initializer_target_t typed_designator_target_t;
 static int descend_array_designators(
     const initializer_lowering_context_t *context,
     const psx_initializer_entry_t *entry, int first_index_pos,
-    const psx_type_t **type_inout, int *relative_offset_inout,
+    const psx_type_t **type_inout, psx_type_id_t *type_id_inout,
+    int *relative_offset_inout,
     token_t *fallback_tok) {
   int first_index = -1;
   for (int d = first_index_pos; d < entry->index_expr_count; d++) {
@@ -552,33 +583,37 @@ static int descend_array_designators(
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     if (first_index < 0) first_index = (int)index;
-    int child_size = type_size(context, array->base);
+    psx_type_id_t child_type_id = psx_semantic_type_table_base(
+        context->semantic_types, *type_id_inout).type_id;
+    int child_size = type_size_id(context, child_type_id);
     *relative_offset_inout += (int)index * child_size;
     *type_inout = array->base;
+    *type_id_inout = child_type_id;
   }
   return first_index;
 }
 
 static node_t *lower_typed_initializer_value(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset, node_t *value,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset, node_t *value,
     const tag_member_info_t *direct_member, node_t *chain,
     token_t *fallback_tok) {
   if (value && value->kind == ND_INIT_LIST) {
     return lower_typed_initializer_list(
-        context, var, type, relative_offset, (node_init_list_t *)value,
-        chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        (node_init_list_t *)value, chain, fallback_tok);
   }
   if (value && value->kind == ND_STRING && type &&
       type->kind == PSX_TYPE_ARRAY) {
     node_t *lowered = lower_typed_character_array_string(
-        context, var, type, relative_offset, (node_string_t *)value,
-        chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        (node_string_t *)value, chain, fallback_tok);
     if (lowered) return lowered;
   }
   if (value && type && type->kind == PSX_TYPE_ARRAY) {
     node_t *copied = try_lower_typed_array_copy(
-        context, var, type, relative_offset, value, chain);
+        context, var, type, type_id, relative_offset, value, chain);
     if (copied) return copied;
   }
   if (initializer_value_is_zero(value) && type &&
@@ -631,11 +666,13 @@ typedef psx_initializer_scalar_leaf_list_t typed_scalar_leaf_list_t;
 
 static node_t *append_typed_object_zero_fill(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, node_t *chain) {
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    node_t *chain) {
+  (void)type;
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
           context->semantic_types, context->target,
-          type_id(context, type), 0, &leaves)) {
+          type_id, 0, &leaves)) {
     free(leaves.items);
     return append_object_zero_fill(context, var, chain);
   }
@@ -662,12 +699,12 @@ static node_t *append_typed_object_zero_fill(
 
 static node_t *lower_flat_typed_object_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, psx_type_id_t type_id, int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
           context->semantic_types, context->target,
-          type_id(context, type), relative_offset, &leaves)) {
+          type_id, relative_offset, &leaves)) {
     free(leaves.items);
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
                  diag_message_for_in(diagnostics(context),
@@ -686,7 +723,8 @@ static node_t *lower_flat_typed_object_initializer_list(
     if (list->entries[i].value->kind == ND_STRING &&
         leaf->string_array_type) {
       node_t *lowered = lower_typed_character_array_string(
-          context, var, leaf->string_array_type, leaf->string_array_offset,
+          context, var, leaf->string_array_type,
+          leaf->string_array_type_id, leaf->string_array_offset,
           (node_string_t *)list->entries[i].value, chain,
           list->entries[i].tok ? list->entries[i].tok : fallback_tok);
       if (lowered) {
@@ -702,7 +740,7 @@ static node_t *lower_flat_typed_object_initializer_list(
       }
     }
     chain = lower_typed_initializer_value(
-        context, var, leaf->type, leaf->relative_offset,
+        context, var, leaf->type, leaf->type_id, leaf->relative_offset,
         list->entries[i].value, leaf->direct_member,
         chain, list->entries[i].tok ? list->entries[i].tok : fallback_tok);
     leaf_index++;
@@ -724,14 +762,16 @@ static int initializer_value_requires_immediate_subobject(
 
 static int immediate_subobject_at_leaf_cursor(
     const initializer_lowering_context_t *context,
-    const psx_type_t *type, int relative_offset,
+    const psx_type_t *type, psx_type_id_t type_id, int relative_offset,
     const typed_scalar_leaf_list_t *leaves, int leaf_cursor,
     typed_designator_target_t *out) {
   if (!type || !leaves || leaf_cursor < 0 || leaf_cursor >= leaves->count ||
       !out) return 0;
   int leaf_offset = leaves->items[leaf_cursor].relative_offset;
   if (type->kind == PSX_TYPE_ARRAY && type->base) {
-    int child_size = type_size(context, type->base);
+    psx_type_id_t child_type_id = psx_semantic_type_table_base(
+        context->semantic_types, type_id).type_id;
+    int child_size = type_size_id(context, child_type_id);
     if (child_size <= 0 || leaf_offset < relative_offset) return 0;
     int child_index = (leaf_offset - relative_offset) / child_size;
     int child_offset = relative_offset + child_index * child_size;
@@ -739,7 +779,7 @@ static int immediate_subobject_at_leaf_cursor(
         child_offset != leaf_offset) return 0;
     *out = (typed_designator_target_t){
         .type = type->base,
-        .type_id = type_id(context, type->base),
+        .type_id = child_type_id,
         .relative_offset = child_offset,
         .first_array_index = child_index,
         .first_member_index = -1,
@@ -758,7 +798,8 @@ static int immediate_subobject_at_leaf_cursor(
           !ps_type_is_tag_aggregate(member_type)) return 0;
       *out = (typed_designator_target_t){
           .type = member_type,
-          .type_id = type_id(context, member_type),
+          .type_id = psx_semantic_type_table_record_member(
+              context->semantic_types, type_id, i).type_id,
           .relative_offset = member_offset,
           .direct_member = member,
           .first_array_index = -1,
@@ -772,12 +813,13 @@ static int immediate_subobject_at_leaf_cursor(
 
 static node_t *lower_mixed_typed_object_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
           context->semantic_types, context->target,
-          type_id(context, type), relative_offset, &leaves)) {
+          type_id, relative_offset, &leaves)) {
     free(leaves.items);
     return chain;
   }
@@ -788,10 +830,11 @@ static node_t *lower_mixed_typed_object_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
               diagnostics(context), context->semantic_types,
-              context->target, entry, type_id(context, type),
+              context->target, entry, type_id,
               relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
-          context, var, target.type, target.relative_offset, entry->value,
+          context, var, target.type, target.type_id,
+          target.relative_offset, entry->value,
           target.direct_member, chain,
           entry->tok ? entry->tok : fallback_tok);
       leaf_cursor = psx_initializer_leaf_cursor_after_target(
@@ -809,10 +852,12 @@ static node_t *lower_mixed_typed_object_initializer_list(
     if (initializer_value_requires_immediate_subobject(entry->value)) {
       typed_designator_target_t target = {0};
       if (immediate_subobject_at_leaf_cursor(
-              context, type, relative_offset, &leaves, leaf_cursor,
+              context, type, type_id, relative_offset,
+              &leaves, leaf_cursor,
               &target)) {
         chain = lower_typed_initializer_value(
-            context, var, target.type, target.relative_offset, entry->value,
+            context, var, target.type, target.type_id,
+            target.relative_offset, entry->value,
             target.direct_member, chain,
             entry->tok ? entry->tok : fallback_tok);
         leaf_cursor = psx_initializer_leaf_cursor_after_target(
@@ -822,7 +867,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
     }
     if (entry->value->kind == ND_STRING && leaf->string_array_type) {
       node_t *lowered = lower_typed_character_array_string(
-          context, var, leaf->string_array_type, leaf->string_array_offset,
+          context, var, leaf->string_array_type,
+          leaf->string_array_type_id, leaf->string_array_offset,
           (node_string_t *)entry->value, chain,
           entry->tok ? entry->tok : fallback_tok);
       if (lowered) {
@@ -838,7 +884,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
       }
     }
     chain = lower_typed_initializer_value(
-        context, var, leaf->type, leaf->relative_offset, entry->value,
+        context, var, leaf->type, leaf->type_id,
+        leaf->relative_offset, entry->value,
         leaf->direct_member, chain,
         entry->tok ? entry->tok : fallback_tok);
     leaf_cursor++;
@@ -849,7 +896,8 @@ static node_t *lower_mixed_typed_object_initializer_list(
 
 static node_t *try_lower_typed_array_copy(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_t *value, node_t *chain) {
   if (!var || !type || type->kind != PSX_TYPE_ARRAY || !value ||
       value->kind != ND_ADDR || !value->lhs ||
@@ -857,12 +905,13 @@ static node_t *try_lower_typed_array_copy(
   node_lvar_t *source = (node_lvar_t *)value->lhs;
   const psx_type_t *source_type = ps_node_get_type(value->lhs);
   if (!source->var || !source_type ||
-      type_size(context, source_type) < type_size(context, type)) return NULL;
+      type_size_id(context, ps_lvar_decl_type_id(source->var)) <
+          type_size_id(context, type_id)) return NULL;
 
   typed_scalar_leaf_list_t leaves = {0};
   if (!psx_collect_initializer_scalar_leaves(
           context->semantic_types, context->target,
-          type_id(context, type), relative_offset, &leaves)) {
+          type_id, relative_offset, &leaves)) {
     free(leaves.items);
     return NULL;
   }
@@ -890,10 +939,12 @@ static node_t *try_lower_typed_array_copy(
 
 static node_t *lower_flat_typed_array_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
-  int leaf_size = type_size(context, leaf);
+  int leaf_size = type_size_id(
+      context, array_leaf_type_id(context, type_id));
   int flat_count = ps_type_array_flat_element_count(type);
   if (!leaf || flat_count <= 0 || list->entry_count > flat_count) {
     ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
@@ -914,7 +965,8 @@ static node_t *lower_flat_typed_array_initializer_list(
 
 static node_t *lower_typed_array_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   if (list->entry_count == 1 &&
       initializer_value_is_zero(list->entries[0].value) &&
@@ -922,7 +974,8 @@ static node_t *lower_typed_array_initializer_list(
   if (type_has_aggregate_leaf(type) &&
       initializer_list_has_no_nested_values(list)) {
     return lower_mixed_typed_object_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   if (type->base && initializer_list_is_flat_positional_scalar(list) &&
       (type->base->kind == PSX_TYPE_ARRAY ||
@@ -937,10 +990,12 @@ static node_t *lower_typed_array_initializer_list(
     }
     if (ps_type_is_tag_aggregate(type->base) || contains_string) {
       return lower_flat_typed_object_initializer_list(
-          context, var, type, relative_offset, list, chain, fallback_tok);
+          context, var, type_id, relative_offset,
+          list, chain, fallback_tok);
     }
     return lower_flat_typed_array_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   int next_index = 0;
   for (int i = 0; i < list->entry_count; i++) {
@@ -951,6 +1006,8 @@ static node_t *lower_typed_array_initializer_list(
                        DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
     }
     const psx_type_t *target_type = type->base;
+    psx_type_id_t target_type_id = psx_semantic_type_table_base(
+        context->semantic_types, type_id).type_id;
     int target_offset = relative_offset;
     int selected_index = next_index;
     if (entry->designator_count > 0) {
@@ -962,21 +1019,24 @@ static node_t *lower_typed_array_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
               diagnostics(context), context->semantic_types,
-              context->target, entry, type_id(context, type),
+              context->target, entry, type_id,
               relative_offset, fallback_tok);
       target_type = target.type;
+      target_type_id = target.type_id;
       target_offset = target.relative_offset;
       selected_index = target.first_array_index;
       chain = lower_typed_initializer_value(
-          context, var, target_type, target_offset, entry->value,
+          context, var, target_type, target_type_id,
+          target_offset, entry->value,
           target.direct_member, chain,
           entry->tok ? entry->tok : fallback_tok);
       next_index = selected_index + 1;
       continue;
     } else if (entry->index_expr_count > 0) {
       target_type = type;
+      target_type_id = type_id;
       selected_index = descend_array_designators(
-          context, entry, 0, &target_type,
+          context, entry, 0, &target_type, &target_type_id,
           &target_offset, fallback_tok);
     } else {
       if (selected_index < 0 || selected_index >= type->array_len) {
@@ -984,10 +1044,12 @@ static node_t *lower_typed_array_initializer_list(
                      diag_message_for_in(diagnostics(context),
                          DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
       }
-      target_offset += selected_index * type_size(context, target_type);
+      target_offset += selected_index *
+                       type_size_id(context, target_type_id);
     }
     chain = lower_typed_initializer_value(
-        context, var, target_type, target_offset, entry->value, NULL,
+        context, var, target_type, target_type_id,
+        target_offset, entry->value, NULL,
         chain, entry->tok ? entry->tok : fallback_tok);
     next_index = selected_index + 1;
   }
@@ -996,7 +1058,8 @@ static node_t *lower_typed_array_initializer_list(
 
 static node_t *lower_typed_aggregate_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   const psx_aggregate_definition_t *definition = type->aggregate_definition;
   if (!definition) return chain;
@@ -1020,7 +1083,10 @@ static node_t *lower_typed_aggregate_initializer_list(
                          DIAG_ERR_PARSER_UNION_ARRAY_MEMBER_NONBRACE_UNSUPPORTED));
       }
       return lower_typed_array_initializer_list(
-          context, var, first_type, relative_offset + first->offset,
+          context, var, first_type,
+          psx_semantic_type_table_record_member(
+              context->semantic_types, type_id, 0).type_id,
+          relative_offset + first->offset,
           list, chain, fallback_tok);
     }
   }
@@ -1030,12 +1096,14 @@ static node_t *lower_typed_aggregate_initializer_list(
   if (type->kind == PSX_TYPE_STRUCT &&
       initializer_list_has_no_nested_values(list)) {
     return lower_mixed_typed_object_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   if (type->kind == PSX_TYPE_STRUCT &&
       initializer_list_is_flat_positional_scalar(list)) {
     return lower_flat_typed_object_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   int ordinal = 0;
   for (int i = 0; i < list->entry_count; i++) {
@@ -1056,10 +1124,11 @@ static node_t *lower_typed_aggregate_initializer_list(
       typed_designator_target_t target =
           psx_resolve_initializer_designator_path(
               diagnostics(context), context->semantic_types,
-              context->target, entry, type_id(context, type),
+              context->target, entry, type_id,
               relative_offset, fallback_tok);
       chain = lower_typed_initializer_value(
-          context, var, target.type, target.relative_offset, entry->value,
+          context, var, target.type, target.type_id,
+          target.relative_offset, entry->value,
           target.direct_member, chain,
           entry->tok ? entry->tok : fallback_tok);
       if (type->kind == PSX_TYPE_STRUCT)
@@ -1077,16 +1146,19 @@ static node_t *lower_typed_aggregate_initializer_list(
     }
     const tag_member_info_t *member = &definition->members[member_index];
     const psx_type_t *target_type = ps_tag_member_decl_type(member);
+    psx_type_id_t target_type_id = psx_semantic_type_table_record_member(
+        context->semantic_types, type_id, member_index).type_id;
     int target_offset = relative_offset + member->offset;
     const tag_member_info_t *direct_member = member;
     if (entry->index_expr_count > 0) {
       descend_array_designators(
-          context, entry, 0, &target_type,
+          context, entry, 0, &target_type, &target_type_id,
           &target_offset, fallback_tok);
       direct_member = NULL;
     }
     chain = lower_typed_initializer_value(
-        context, var, target_type, target_offset, entry->value, direct_member,
+        context, var, target_type, target_type_id,
+        target_offset, entry->value, direct_member,
         chain, entry->tok ? entry->tok : fallback_tok);
     if (type->kind == PSX_TYPE_STRUCT)
       ordinal = aggregate_ordinal_after_member(definition, member_index);
@@ -1096,20 +1168,24 @@ static node_t *lower_typed_aggregate_initializer_list(
 
 static node_t *lower_typed_initializer_list(
     const initializer_lowering_context_t *context,
-    lvar_t *var, const psx_type_t *type, int relative_offset,
+    lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
+    int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
   if (!type || !list) return chain;
   if (type->kind == PSX_TYPE_ARRAY) {
     return lower_typed_array_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   if (ps_type_is_tag_aggregate(type)) {
     return lower_typed_aggregate_initializer_list(
-        context, var, type, relative_offset, list, chain, fallback_tok);
+        context, var, type, type_id, relative_offset,
+        list, chain, fallback_tok);
   }
   if (list->entry_count == 1) {
     return lower_typed_initializer_value(
-        context, var, type, relative_offset, list->entries[0].value, NULL,
+        context, var, type, type_id,
+        relative_offset, list->entries[0].value, NULL,
         chain, fallback_tok);
   }
   ps_diag_ctx_in(diagnostics(context), fallback_tok, "init", "%s",
@@ -1129,9 +1205,10 @@ static node_t *lower_struct_list_initializer(
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   if (psx_initializer_lowering_supports_recursive_aggregate(type)) {
     node_t *chain = append_typed_object_zero_fill(
-        context, var, type, NULL);
+        context, var, type, ps_lvar_decl_type_id(var), NULL);
     return lower_typed_initializer_list(
-        context, var, type, 0, list, chain, initializer->base.tok);
+        context, var, type, ps_lvar_decl_type_id(var), 0,
+        list, chain, initializer->base.tok);
   }
   node_t *chain = append_object_zero_fill(context, var, NULL);
   int ordinal = 0;
@@ -1169,9 +1246,10 @@ static node_t *lower_union_list_initializer(
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
   if (psx_initializer_lowering_supports_recursive_aggregate(type)) {
     node_t *chain = append_typed_object_zero_fill(
-        context, var, type, NULL);
+        context, var, type, ps_lvar_decl_type_id(var), NULL);
     return lower_typed_initializer_list(
-        context, var, type, 0, list, chain, initializer->base.tok);
+        context, var, type, ps_lvar_decl_type_id(var), 0,
+        list, chain, initializer->base.tok);
   }
   node_t *chain = append_object_zero_fill(context, var, NULL);
   if (list->entry_count == 0) return chain;
