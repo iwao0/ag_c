@@ -1771,6 +1771,20 @@ const typeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
 );
+if (!/\bps_ctx_intern_qual_type_in\s*\(/.test(typeQueryResolutionSource) ||
+    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bps_type_alignof_id_for_target\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    /\bps_type_(?:size|align)of_for_target\s*\(/.test(
+      typeQueryResolutionSource,
+    )) {
+  throw new Error(
+    "sizeof and alignof resolution must intern semantic types and query target layout by TypeId",
+  );
+}
 const declarationResolutionSource = await readFile(
   "src/semantic/declaration_resolution.c",
   "utf8",

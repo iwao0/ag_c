@@ -16,6 +16,31 @@
 
 #include <string.h>
 
+static psx_type_id_t query_type_id(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  return ps_ctx_intern_qual_type_in(
+      semantic_context, type).type_id;
+}
+
+static int query_type_size(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  return ps_type_sizeof_id_for_target(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      query_type_id(semantic_context, type),
+      ps_ctx_target_info(semantic_context));
+}
+
+static int query_type_alignment(
+    psx_semantic_context_t *semantic_context,
+    const psx_type_t *type) {
+  return ps_type_alignof_id_for_target(
+      ps_ctx_semantic_type_table_in(semantic_context),
+      query_type_id(semantic_context, type),
+      ps_ctx_target_info(semantic_context));
+}
+
 static node_t *sizeof_base(node_t *operand, int *subscript_depth) {
   int depth = 0;
   node_t *base = operand;
@@ -122,7 +147,7 @@ static void resolve_sizeof_type_name(
   }
 
   const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
-  int base_size = ps_type_sizeof_for_target(base_type, target);
+  int base_size = query_type_size(semantic_context, base_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   node_t *size = widen_size_value(
@@ -264,9 +289,7 @@ void psx_resolve_sizeof_query_in_contexts(
     query->resolved_size = (string->byte_len + 1) * width;
     return;
   }
-  int size = type ? ps_type_sizeof_for_target(
-                        type, ps_ctx_target_info(semantic_context))
-                  : 0;
+  int size = type ? query_type_size(semantic_context, type) : 0;
   if (type && type->kind == PSX_TYPE_VOID) size = 1;
   if (size <= 0 && query->operand) size = ps_node_type_size(query->operand);
   query->resolved_size = size > 0 ? size : 8;
@@ -283,7 +306,6 @@ void psx_resolve_alignof_query_in_contexts(
       psx_resolve_bound_type_name_ref_in_contexts(
           semantic_context, global_registry, local_registry,
           &query->type_name);
-  int alignment = ps_type_alignof_for_target(
-      type, ps_ctx_target_info(semantic_context));
+  int alignment = query_type_alignment(semantic_context, type);
   query->resolved_alignment = alignment > 0 ? alignment : 1;
 }
