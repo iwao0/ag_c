@@ -485,26 +485,40 @@ int ps_type_is_incomplete_array(const psx_type_t *type) {
          type->array_len <= 0 && !type->is_vla;
 }
 
-psx_type_t *ps_type_clone_in(
-    arena_context_t *arena_context, const psx_type_t *src) {
+static psx_type_t *ps_type_clone_with_record_decl_in(
+    arena_context_t *arena_context, const psx_type_t *src,
+    int retain_record_decl) {
   if (!src) return NULL;
   psx_type_t *dst = ps_type_new_in(arena_context, src->kind);
   if (!dst) return NULL;
   *dst = *src;
+  if (!retain_record_decl) dst->aggregate_definition = NULL;
   dst->param_types = NULL;
-  dst->base = ps_type_clone_in(arena_context, src->base);
+  dst->base = ps_type_clone_with_record_decl_in(
+      arena_context, src->base, retain_record_decl);
   if (src->param_count > 0) {
     const psx_type_t **params =
         arena_alloc_in(
             arena_context,
             (size_t)src->param_count * sizeof(*params));
     for (int i = 0; i < src->param_count; i++)
-      params[i] = ps_type_clone_in(
+      params[i] = ps_type_clone_with_record_decl_in(
           arena_context,
-          src->param_types ? src->param_types[i] : NULL);
+          src->param_types ? src->param_types[i] : NULL,
+          retain_record_decl);
     dst->param_types = params;
   }
   return dst;
+}
+
+psx_type_t *ps_type_clone_in(
+    arena_context_t *arena_context, const psx_type_t *src) {
+  return ps_type_clone_with_record_decl_in(arena_context, src, 1);
+}
+
+psx_type_t *ps_type_clone_for_identity_in(
+    arena_context_t *arena_context, const psx_type_t *src) {
+  return ps_type_clone_with_record_decl_in(arena_context, src, 0);
 }
 
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src) {

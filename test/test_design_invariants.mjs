@@ -3753,11 +3753,23 @@ if (!qualTypeStruct ||
 if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id\s*;[^]*?populate_type_relations\s*\(\s*table\s*,\s*id\s*,\s*type\s*\)/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/populate_type_relations_body\s*\([^]*?definition->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
+    !/populate_type_relations_body\s*\([^]*?psx_record_decl_table_lookup\s*\([^]*?record->member_count[^]*?psx_semantic_type_table_intern\s*\(/.test(
       semanticTypeIdentitySource,
+    ) ||
+    /\bconst\s+psx_aggregate_definition_t\s*\*/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bps_type_clone_for_identity_in\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_semantic_type_table_bind_record_decls\s*\(/.test(
+      semanticTypeIdentityHeader,
+    ) ||
+    !/\bpsx_semantic_type_table_bind_record_decls\s*\(/.test(
+      parserSemanticContextImplementation,
     )) {
   throw new Error(
-    "semantic type interning must register aggregate identity before recursively interning member types",
+    "semantic type interning must resolve record relations through RecordDeclTable without retaining embedded declarations",
   );
 }
 if (!/\bpsx_type_id_t\s+base_type_id\s*;/.test(
@@ -3767,6 +3779,9 @@ if (!/\bpsx_type_id_t\s+base_type_id\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
     !/\bpsx_type_id_t\s*\*\s*record_member_type_ids\s*;/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bpsx_type_qualifiers_t\s*\*\s*record_member_qualifiers\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(

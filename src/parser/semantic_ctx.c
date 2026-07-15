@@ -324,6 +324,8 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
       free(context);
       return NULL;
     }
+    psx_semantic_type_table_bind_record_decls(
+        context->semantic_types, context->record_decls);
     context->arena_context = arena_context;
     context->target = ag_target_info_host();
   }

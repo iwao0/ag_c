@@ -3,6 +3,7 @@
 #include "../parser/arena.h"
 #include "../parser/tag_member_public.h"
 #include "../parser/type_builder.h"
+#include "record_decl_table.h"
 
 #include <limits.h>
 #include <stdint.h>
@@ -15,12 +16,14 @@ typedef struct {
   psx_type_id_t *parameter_type_ids;
   int parameter_count;
   psx_type_id_t *record_member_type_ids;
+  psx_type_qualifiers_t *record_member_qualifiers;
   int record_member_count;
   unsigned char relations_populating;
 } psx_semantic_type_entry_t;
 
 struct psx_semantic_type_table_t {
   arena_context_t *arena_context;
+  const psx_record_decl_table_t *record_decls;
   psx_semantic_type_entry_t *entries;
   size_t capacity;
   psx_type_id_t next_id;
@@ -51,6 +54,12 @@ void psx_semantic_type_table_reset(psx_semantic_type_table_t *table) {
   table->entries = NULL;
   table->capacity = 0;
   table->next_id = PSX_TYPE_ID_INVALID;
+}
+
+void psx_semantic_type_table_bind_record_decls(
+    psx_semantic_type_table_t *table,
+    const psx_record_decl_table_t *record_decls) {
+  if (table) table->record_decls = record_decls;
 }
 
 static int reserve_type_id(
@@ -120,25 +129,31 @@ static int populate_type_relations_body(
     if (parameter.type_id == PSX_TYPE_ID_INVALID) return 0;
     table->entries[id].parameter_type_ids[i] = parameter.type_id;
   }
-  const psx_aggregate_definition_t *definition =
-      type->aggregate_definition;
-  if (definition &&
-      definition->member_count > table->entries[id].record_member_count) {
+  const psx_record_decl_t *record = psx_record_decl_table_lookup(
+      table->record_decls, ps_type_record_id(type));
+  if (record &&
+      record->member_count > table->entries[id].record_member_count) {
     psx_type_id_t *record_member_type_ids = arena_alloc_in(
         table->arena_context,
-        (size_t)definition->member_count * sizeof(*record_member_type_ids));
-    if (!record_member_type_ids) return 0;
+        (size_t)record->member_count * sizeof(*record_member_type_ids));
+    psx_type_qualifiers_t *record_member_qualifiers = arena_alloc_in(
+        table->arena_context,
+        (size_t)record->member_count * sizeof(*record_member_qualifiers));
+    if (!record_member_type_ids || !record_member_qualifiers) return 0;
     table->entries[id].record_member_type_ids = record_member_type_ids;
-    table->entries[id].record_member_count = definition->member_count;
+    table->entries[id].record_member_qualifiers =
+        record_member_qualifiers;
+    table->entries[id].record_member_count = record->member_count;
   }
-  for (int i = 0; definition && i < definition->member_count; i++) {
+  for (int i = 0; record && i < record->member_count; i++) {
     const psx_type_t *member_type =
-        ps_tag_member_decl_type(&definition->members[i]);
+        ps_tag_member_decl_type(&record->members[i]);
     if (!member_type) continue;
     psx_qual_type_t member = psx_semantic_type_table_intern(
         table, member_type);
     if (member.type_id == PSX_TYPE_ID_INVALID) return 0;
     table->entries[id].record_member_type_ids[i] = member.type_id;
+    table->entries[id].record_member_qualifiers[i] = member.qualifiers;
   }
   return 1;
 }
@@ -170,7 +185,8 @@ psx_qual_type_t psx_semantic_type_table_intern(
   if (table->next_id == UINT_MAX) return result;
   psx_type_id_t id = table->next_id + 1;
   if (!reserve_type_id(table, id)) return result;
-  psx_type_t *canonical = ps_type_clone_in(table->arena_context, type);
+  psx_type_t *canonical = ps_type_clone_for_identity_in(
+      table->arena_context, type);
   if (!canonical) return result;
   ps_type_normalize_scalar_identity(canonical);
   ps_type_clear_cached_layout(canonical);
@@ -255,12 +271,16 @@ psx_qual_type_t psx_semantic_type_table_record_member(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id,
     int member_index) {
   const psx_type_t *type = psx_semantic_type_table_lookup(table, type_id);
-  const psx_aggregate_definition_t *definition =
-      type ? type->aggregate_definition : NULL;
-  if (!definition || member_index < 0 ||
+  if (!type || !ps_type_is_tag_aggregate(type) || member_index < 0 ||
       member_index >= table->entries[type_id].record_member_count)
     return invalid_qual_type();
-  return related_type(
-      table, table->entries[type_id].record_member_type_ids[member_index],
-      ps_tag_member_decl_type(&definition->members[member_index]));
+  psx_type_id_t member_type_id =
+      table->entries[type_id].record_member_type_ids[member_index];
+  if (!psx_semantic_type_table_lookup(table, member_type_id))
+    return invalid_qual_type();
+  return (psx_qual_type_t){
+      .type_id = member_type_id,
+      .qualifiers =
+          table->entries[type_id].record_member_qualifiers[member_index],
+  };
 }

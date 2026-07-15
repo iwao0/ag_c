@@ -17279,9 +17279,15 @@ static void test_semantic_type_identity() {
       .members = &recursive_member,
   };
   recursive_record->aggregate_definition = &recursive_definition;
+  ASSERT_TRUE(psx_record_decl_table_define(
+      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
+      &recursive_definition));
   psx_qual_type_t recursive_identity =
       ps_ctx_intern_qual_type_in(context, recursive_record);
   ASSERT_TRUE(recursive_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(psx_semantic_type_table_lookup(
+                  ps_ctx_semantic_type_table_in(context),
+                  recursive_identity.type_id)->aggregate_definition == NULL);
   psx_qual_type_t recursive_pointer_identity =
       ps_ctx_find_interned_qual_type_in(context, recursive_pointer);
   ASSERT_TRUE(recursive_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
@@ -17305,6 +17311,9 @@ static void test_semantic_type_identity() {
       TK_STRUCT, completed_record_name, 23, 1, 0);
   completed_record->record_id = completed_definition.record_id;
   completed_record->aggregate_definition = &completed_definition;
+  ASSERT_TRUE(psx_record_decl_table_define(
+      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(context),
+      &completed_definition));
   psx_qual_type_t incomplete_record_identity =
       ps_ctx_intern_qual_type_in(context, completed_record);
   ASSERT_TRUE(incomplete_record_identity.type_id != PSX_TYPE_ID_INVALID);
@@ -17315,7 +17324,7 @@ static void test_semantic_type_identity() {
   tag_member_info_t completed_member = {
       .name = (char *)"value",
       .len = 5,
-      .decl_type = plain_int,
+      .decl_type = const_int,
   };
   completed_definition.is_complete = 1;
   completed_definition.member_count = 1;
@@ -17328,6 +17337,10 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_record_member(
                 ps_ctx_semantic_type_table_in(context),
                 completed_record_identity.type_id, 0).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            psx_semantic_type_table_record_member(
+                ps_ctx_semantic_type_table_in(context),
+                completed_record_identity.type_id, 0).qualifiers);
 
   psx_type_id_t retained_id = pointer_to_const_identity.type_id;
   ASSERT_TRUE(ps_ctx_type_by_id_in(context, retained_id) != NULL);

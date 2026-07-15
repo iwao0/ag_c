@@ -26,6 +26,8 @@ psx_type_t *ps_type_new_array_in(
     int array_len, int is_vla);
 psx_type_t *ps_type_clone_in(
     arena_context_t *arena_context, const psx_type_t *src);
+psx_type_t *ps_type_clone_for_identity_in(
+    arena_context_t *arena_context, const psx_type_t *src);
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src);
 psx_type_t *ps_type_new_tag_in(
     arena_context_t *arena_context, token_kind_t tag_kind,

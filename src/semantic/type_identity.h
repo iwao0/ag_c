@@ -5,6 +5,7 @@
 
 typedef unsigned int psx_type_id_t;
 typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
+typedef struct psx_record_decl_table_t psx_record_decl_table_t;
 
 #define PSX_TYPE_ID_INVALID ((psx_type_id_t)0)
 
@@ -16,6 +17,9 @@ typedef struct {
 psx_semantic_type_table_t *psx_semantic_type_table_create(void);
 void psx_semantic_type_table_destroy(psx_semantic_type_table_t *table);
 void psx_semantic_type_table_reset(psx_semantic_type_table_t *table);
+void psx_semantic_type_table_bind_record_decls(
+    psx_semantic_type_table_t *table,
+    const psx_record_decl_table_t *record_decls);
 psx_qual_type_t psx_semantic_type_table_intern(
     psx_semantic_type_table_t *table, const psx_type_t *type);
 psx_qual_type_t psx_semantic_type_table_find(
