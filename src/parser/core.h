@@ -9,6 +9,8 @@
 #define PS_MAX_DECLARATOR_COUNT 1024
 #define PS_MAX_INITIALIZER_ELEMENTS 4096
 
+typedef struct psx_semantic_context_t psx_semantic_context_t;
+
 typedef struct {
   token_kind_t kind;
   int is_unsigned;
@@ -31,8 +33,11 @@ typedef struct {
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
 } psx_type_spec_syntax_t;
 
-token_kind_t psx_consume_type_kind_ex(psx_type_spec_result_t *out);
+token_kind_t psx_consume_type_kind_ex(
+    psx_semantic_context_t *semantic_context,
+    psx_type_spec_result_t *out);
 token_kind_t psx_consume_type_kind_with_syntax_ex(
+    psx_semantic_context_t *semantic_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 bool psx_is_decl_prefix_token(token_kind_t k);
 bool psx_is_gnu_attribute_token(const token_t *t);

@@ -13,8 +13,6 @@ typedef struct {
   token_t *diagnostic_token;
 } psx_parsed_static_assert_declaration_t;
 
-void psx_parse_static_assert_syntax(
-    psx_parsed_static_assert_declaration_t *declaration);
 void psx_parse_static_assert_syntax_in_contexts(
     psx_parsed_static_assert_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,

@@ -13,8 +13,6 @@ node_t *lower_compound_literal_expression_in_contexts(
     psx_local_registry_t *local_registry,
     node_t *node, const token_t *fallback_diag_tok);
 
-node_t *lower_compound_literal_expression(
-    node_t *node, const token_t *fallback_diag_tok);
 void psx_compound_literal_lowering_reset_translation_unit_state(void);
 
 #endif

@@ -40,18 +40,15 @@ typedef struct {
   void (*abort_declaration)(void *declaration_context);
 } psx_toplevel_declaration_callbacks_t;
 
-int psx_parse_toplevel_declaration_syntax(
+int psx_parse_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
-    const psx_toplevel_declaration_callbacks_t *callbacks);
-int psx_parse_toplevel_declaration_head_syntax(
-    psx_parsed_toplevel_declaration_t *declaration);
+    const psx_toplevel_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry);
 int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry);
-int psx_finish_toplevel_declaration_syntax(
-    psx_parsed_toplevel_declaration_t *declaration,
-    const psx_toplevel_declaration_callbacks_t *callbacks);
 int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,

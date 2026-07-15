@@ -5,10 +5,7 @@
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
 #include "../parser/diag.h"
-#include "../parser/global_registry.h"
 #include "../parser/node_utils.h"
-#include "../parser/local_registry.h"
-#include "../parser/semantic_ctx.h"
 #include "../parser/type.h"
 
 #include <stdio.h>
@@ -157,11 +154,4 @@ node_t *lower_compound_literal_expression_in_contexts(
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = node->tok;
   return lowered;
-}
-
-node_t *lower_compound_literal_expression(
-    node_t *node, const token_t *fallback_diag_tok) {
-  return lower_compound_literal_expression_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), node, fallback_diag_tok);
 }

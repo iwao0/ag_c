@@ -43,9 +43,7 @@ for (const name of removedContextFreeFrontendApis) {
   }
 }
 const explicitSemanticSourceFiles = allSourceFiles.filter(
-  (path) =>
-    path.startsWith("src/semantic/") &&
-    path !== "src/semantic/declaration_application.c",
+  (path) => path.startsWith("src/semantic/"),
 );
 const explicitSemanticLayerSource = (
   await Promise.all(
@@ -56,7 +54,7 @@ if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(
       explicitSemanticLayerSource,
     )) {
   throw new Error(
-    "semantic APIs outside declaration_application must receive explicit contexts",
+    "semantic APIs must receive explicit contexts",
   );
 }
 const removedContextFreeSemanticApis = [
@@ -74,10 +72,107 @@ const removedContextFreeSemanticApis = [
   "psx_resolve_bound_type_name_ref",
   "psx_resolve_sizeof_query",
   "psx_resolve_alignof_query",
+  "psx_apply_parsed_enum_body",
+  "psx_apply_parsed_aggregate_body_layout",
+  "psx_apply_parsed_type_name",
+  "psx_apply_parsed_declarator_type",
+  "psx_apply_runtime_declarator_type",
+  "psx_apply_declaration_phase",
+  "psx_apply_parsed_decl_specifier",
+  "psx_apply_parsed_standalone_tag",
+  "psx_apply_parsed_declarator",
+  "psx_apply_runtime_parsed_declarator",
+  "psx_apply_runtime_parsed_declarator_ex",
+  "psx_apply_parsed_function_parameters",
 ];
 for (const name of removedContextFreeSemanticApis) {
   if (new RegExp(`\\b${name}\\s*\\(`).test(explicitSemanticLayerSource)) {
     throw new Error(`context-free semantic API ${name} must not return`);
+  }
+}
+const loweringSourceFiles = allSourceFiles.filter(
+  (path) => path.startsWith("src/lowering/"),
+);
+const loweringLayerSource = (
+  await Promise.all(loweringSourceFiles.map((path) => readFile(path, "utf8")))
+).join("\n");
+if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
+      loweringLayerSource,
+    )) {
+  throw new Error(
+    "lowering APIs must receive semantic and registry contexts explicitly",
+  );
+}
+const removedContextFreeLoweringApis = [
+  "psx_lower_semantic_tree",
+  "psx_lower_semantic_initializer_syntax",
+  "lower_compound_literal_expression",
+  "lower_member_access_expression",
+];
+for (const name of removedContextFreeLoweringApis) {
+  if (new RegExp(`\\b${name}\\s*\\(`).test(loweringLayerSource)) {
+    throw new Error(`context-free lowering API ${name} must not return`);
+  }
+}
+const parserSourceFiles = allSourceFiles.filter(
+  (path) => path.startsWith("src/parser/"),
+);
+const parserLayerSource = (
+  await Promise.all(parserSourceFiles.map((path) => readFile(path, "utf8")))
+).join("\n");
+const removedContextFreeParserApis = [
+  "psx_eval_parsed_alignas_value",
+  "psx_parse_case_const_expr",
+  "psx_eval_parsed_enum_const_expr",
+  "psx_parse_initializer_syntax_value",
+  "psx_parse_initializer_syntax_list",
+  "psx_parse_static_assert_syntax",
+  "psx_parse_statement_expression",
+  "psx_decl_parse_initializer_for_var",
+  "psx_expr_expr",
+  "psx_expr_assign",
+  "psx_stmt_stmt",
+  "ps_parser_stream_begin",
+  "ps_expr",
+  "ps_expr_from",
+  "ps_expr_ctx",
+  "psx_parse_function_parameters_syntax",
+  "psx_parse_function_parameters_syntax_ex",
+  "psx_parse_function_parameters_syntax_with_typedef_lookup",
+  "psx_parse_aggregate_body",
+  "psx_parse_toplevel_declaration_syntax",
+  "psx_parse_toplevel_declaration_head_syntax",
+  "psx_finish_toplevel_declaration_syntax",
+  "ps_decl_reset_locals",
+  "ps_decl_reset_translation_unit_state",
+  "ps_decl_set_current_funcname",
+  "ps_decl_get_current_funcname",
+  "psx_parse_decl_specifier_syntax",
+  "psx_parse_declarator_syntax_tree",
+  "psx_parse_declarator_syntax_tree_into",
+  "psx_parse_declarator_syntax_tree_into_with_typedef_lookup",
+  "psx_parse_toplevel_declarator_syntax_tree",
+  "psx_try_parse_toplevel_declarator_syntax_tree",
+  "psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup",
+  "psx_parse_abstract_declarator_syntax_tree",
+  "psx_parse_parameter_declarator_syntax_tree",
+  "ps_parse_runtime_declarator_expressions",
+  "ps_prepare_constant_declarator_expressions",
+  "ps_prepare_decl_specifier_alignments",
+  "psx_parse_alignas_value",
+  "psx_parse_enum_const_expr",
+];
+for (const name of removedContextFreeParserApis) {
+  if (new RegExp(`\\b${name}\\s*\\(`).test(parserLayerSource)) {
+    throw new Error(`context-free parser API ${name} must not return`);
+  }
+}
+for (const path of [
+  "src/parser/array_suffixes.c",
+  "src/parser/array_suffixes.h",
+]) {
+  if (allSourceFiles.includes(path)) {
+    throw new Error(`unused legacy parser file ${path} must not return`);
   }
 }
 const forbiddenCompatibilityFiles = [
@@ -1906,7 +2001,7 @@ if (!/\bnode_t\s*\*\s*lower_source_cast_expression\s*\(/.test(
     "source cast lowering must return a replacement node without cross-struct overwrite",
   );
 }
-if (!/\bnode_t\s*\*\s*lower_compound_literal_expression\s*\(/.test(
+if (!/\bnode_t\s*\*\s*lower_compound_literal_expression_in_contexts\s*\(/.test(
       compoundLiteralLoweringHeader,
     ) ||
     /_Static_assert\s*\(\s*sizeof\s*\(\s*node_compound_literal_t\s*\)/.test(
@@ -2245,10 +2340,10 @@ for (const [file, typeName, fieldName] of readonlyTypeFields) {
 const readonlySemanticTypeResults = [
   ["src/semantic/declaration_resolution.h", "psx_resolve_decl_type"],
   ["src/semantic/declaration_resolution.h", "psx_resolve_decl_specifier_syntax_in_context"],
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier"],
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name"],
-  ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type"],
-  ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_decl_specifier_in_contexts"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_type_name_in_contexts"],
+  ["src/semantic/declaration_application.h", "psx_apply_parsed_declarator_type_in_contexts"],
+  ["src/semantic/declaration_application.h", "psx_apply_runtime_declarator_type_in_context"],
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_indirection_result_type"],
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_arithmetic_unary_result_type"],
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_binary_result_type"],

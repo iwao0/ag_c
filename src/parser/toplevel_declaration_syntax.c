@@ -71,12 +71,6 @@ static int parse_declarator_head(
   return 1;
 }
 
-int psx_parse_toplevel_declaration_head_syntax(
-    psx_parsed_toplevel_declaration_t *declaration) {
-  return psx_parse_toplevel_declaration_head_syntax_in_contexts(
-      declaration, ps_ctx_active(), ps_local_registry_active());
-}
-
 int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,
@@ -137,25 +131,6 @@ static void abort_toplevel_declaration(
     callbacks->finish_declaration(declaration_context);
 }
 
-int psx_finish_toplevel_declaration_syntax(
-    psx_parsed_toplevel_declaration_t *declaration,
-    const psx_toplevel_declaration_callbacks_t *callbacks) {
-  if (callbacks &&
-      ((callbacks->semantic_context == NULL) !=
-       (callbacks->local_registry == NULL))) {
-    ps_diag_ctx(current_token(), "toplevel-declaration-syntax",
-                "semantic and local contexts must be provided together");
-  }
-  psx_semantic_context_t *semantic_context =
-      callbacks && callbacks->semantic_context && callbacks->local_registry
-          ? callbacks->semantic_context : ps_ctx_active();
-  psx_local_registry_t *local_registry =
-      callbacks && callbacks->semantic_context && callbacks->local_registry
-          ? callbacks->local_registry : ps_local_registry_active();
-  return psx_finish_toplevel_declaration_syntax_in_contexts(
-      declaration, callbacks, semantic_context, local_registry);
-}
-
 int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
     const psx_toplevel_declaration_callbacks_t *callbacks,
@@ -211,11 +186,15 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
   return 1;
 }
 
-int psx_parse_toplevel_declaration_syntax(
+int psx_parse_toplevel_declaration_syntax_in_contexts(
     psx_parsed_toplevel_declaration_t *declaration,
-    const psx_toplevel_declaration_callbacks_t *callbacks) {
-  if (!psx_parse_toplevel_declaration_head_syntax(declaration)) return 0;
-  return psx_finish_toplevel_declaration_syntax(declaration, callbacks);
+    const psx_toplevel_declaration_callbacks_t *callbacks,
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry) {
+  if (!psx_parse_toplevel_declaration_head_syntax_in_contexts(
+          declaration, semantic_context, local_registry)) return 0;
+  return psx_finish_toplevel_declaration_syntax_in_contexts(
+      declaration, callbacks, semantic_context, local_registry);
 }
 
 void ps_dispose_toplevel_declaration_syntax(

@@ -2,18 +2,12 @@
 
 #include "diag.h"
 #include "dynarray.h"
-#include "local_registry.h"
-#include "semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 static token_t *current_token(void) { return tk_get_current_token(); }
-
-static int is_parameter_typedef_name(token_t *token, void *context) {
-  return psx_ctx_is_typedef_name_token_in(context, token);
-}
 
 static psx_parsed_function_parameter_t *append_function_parameter(
     psx_parsed_function_parameters_t *parameters) {
@@ -34,12 +28,6 @@ static psx_parsed_function_parameter_t *append_function_parameter(
   return parameter;
 }
 
-int psx_parse_function_parameters_syntax(
-    psx_parsed_function_parameters_t *parameters) {
-  return psx_parse_function_parameters_syntax_ex(
-      parameters, PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF);
-}
-
 static void synchronize_function_parameters(void) {
   int depth = 0;
   while (current_token()->kind != TK_EOF) {
@@ -54,25 +42,6 @@ static void synchronize_function_parameters(void) {
       depth--;
     }
   }
-}
-
-int psx_parse_function_parameters_syntax_ex(
-    psx_parsed_function_parameters_t *parameters,
-    psx_function_parameter_type_mode_t type_mode) {
-  return psx_parse_function_parameters_syntax_with_typedef_lookup(
-      parameters, type_mode, is_parameter_typedef_name,
-      ps_ctx_active());
-}
-
-int psx_parse_function_parameters_syntax_with_typedef_lookup(
-    psx_parsed_function_parameters_t *parameters,
-    psx_function_parameter_type_mode_t type_mode,
-    psx_decl_typedef_name_predicate_t is_typedef_name,
-    void *typedef_name_context) {
-  return psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
-      parameters, type_mode, ps_ctx_active(),
-      ps_local_registry_active(), is_typedef_name,
-      typedef_name_context);
 }
 
 int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(

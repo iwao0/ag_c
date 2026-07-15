@@ -11,12 +11,6 @@
 
 static token_t *current_token(void) { return tk_get_current_token(); }
 
-void psx_parse_static_assert_syntax(
-    psx_parsed_static_assert_declaration_t *declaration) {
-  psx_parse_static_assert_syntax_in_contexts(
-      declaration, ps_ctx_active(), ps_local_registry_active(), NULL);
-}
-
 void psx_parse_static_assert_syntax_in_contexts(
     psx_parsed_static_assert_declaration_t *declaration,
     psx_semantic_context_t *semantic_context,

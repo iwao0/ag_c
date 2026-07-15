@@ -22,13 +22,6 @@ void psx_prepare_optional_initializer_syntax(
   out->value_tok = curtok()->next;
 }
 
-void psx_parse_initializer_syntax_value(
-    psx_parsed_initializer_t *out, token_t *assign_tok) {
-  psx_parse_initializer_syntax_value_in_contexts(
-      out, assign_tok, ps_ctx_active(),
-      ps_local_registry_active(), NULL);
-}
-
 void psx_parse_initializer_syntax_value_in_contexts(
     psx_parsed_initializer_t *out, token_t *assign_tok,
     psx_semantic_context_t *semantic_context,
@@ -49,11 +42,6 @@ void psx_parse_initializer_syntax_value_in_contexts(
                    : psx_expr_assign_in_contexts(
                          semantic_context, local_registry,
                          local_declarations);
-}
-
-node_t *psx_parse_initializer_syntax_list(void) {
-  return psx_parse_initializer_syntax_list_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 node_t *psx_parse_initializer_syntax_list_in_contexts(

@@ -83,6 +83,16 @@
 static node_t **parsed_code;
 static ag_compilation_session_t *test_suite_session;
 
+static void reset_test_locals(void) {
+  ps_decl_reset_locals_in(
+      ag_compilation_session_local_registry(test_suite_session));
+}
+
+static void set_test_current_funcname(char *name, int len) {
+  ps_decl_set_current_funcname_in(
+      ag_compilation_session_local_registry(test_suite_session), name, len);
+}
+
 static void reset_test_translation_unit_state(void) {
   ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(
       test_suite_session));
@@ -91,6 +101,102 @@ static void reset_test_translation_unit_state(void) {
 static node_t **parse_test_program_from(token_t *start) {
   return psx_frontend_program_in_session(
       test_suite_session, NULL, start);
+}
+
+static node_t *parse_test_expression_from(token_t *start) {
+  return ps_expr_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      NULL, NULL, start);
+}
+
+static void begin_test_parser_stream(
+    psx_parser_stream_t *stream,
+    tokenizer_context_t *tokenizer_context, token_t *start,
+    const psx_toplevel_declaration_callbacks_t *toplevel_declarations) {
+  ps_parser_stream_begin_in_contexts(
+      stream,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      ag_compilation_session_parser_runtime_context(test_suite_session),
+      tokenizer_context, start, toplevel_declarations);
+}
+
+static void parse_test_aggregate_body(psx_parsed_aggregate_body_t *body) {
+  psx_parse_aggregate_body_with_options(
+      body,
+      &(psx_decl_specifier_syntax_options_t){
+          .semantic_context =
+              ag_compilation_session_semantic_context(test_suite_session),
+          .local_registry =
+              ag_compilation_session_local_registry(test_suite_session),
+      });
+}
+
+static int parse_test_toplevel_declaration_syntax(
+    psx_parsed_toplevel_declaration_t *declaration,
+    const psx_toplevel_declaration_callbacks_t *callbacks) {
+  return psx_parse_toplevel_declaration_syntax_in_contexts(
+      declaration, callbacks,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session));
+}
+
+static void parse_test_decl_specifier_syntax(
+    psx_parsed_decl_specifier_t *specifier) {
+  psx_parse_decl_specifier_syntax_ex(
+      specifier,
+      &(psx_decl_specifier_syntax_options_t){
+          .semantic_context =
+              ag_compilation_session_semantic_context(test_suite_session),
+          .local_registry =
+              ag_compilation_session_local_registry(test_suite_session),
+      });
+}
+
+static int parse_test_type_name_syntax_at(
+    token_t *start, psx_parsed_type_name_t *type_name) {
+  return psx_parse_type_name_syntax_at(
+      start,
+      &(psx_decl_specifier_syntax_options_t){
+          .semantic_context =
+              ag_compilation_session_semantic_context(test_suite_session),
+          .local_registry =
+              ag_compilation_session_local_registry(test_suite_session),
+      },
+      type_name);
+}
+
+static psx_parsed_declarator_t parse_test_declarator_syntax_tree(void) {
+  psx_parsed_declarator_t declarator;
+  psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
+      &declarator,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      NULL, NULL);
+  return declarator;
+}
+
+static void parse_test_runtime_declarator_expressions(
+    psx_parsed_declarator_t *declarator) {
+  ps_parse_runtime_declarator_expressions_in_contexts(
+      declarator,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session), NULL);
+}
+
+static void prepare_test_constant_declarator_expressions(
+    psx_parsed_declarator_t *declarator) {
+  ps_prepare_constant_declarator_expressions_in_context(
+      declarator,
+      ag_compilation_session_semantic_context(test_suite_session));
+}
+
+static void prepare_test_decl_specifier_alignments(
+    psx_parsed_decl_specifier_t *specifier) {
+  ps_prepare_decl_specifier_alignments_in_context(
+      specifier,
+      ag_compilation_session_semantic_context(test_suite_session));
 }
 
 static node_t *analyze_test_expression(
@@ -181,6 +287,68 @@ static void resolve_test_alignof_query(node_alignof_query_t *query) {
       ag_compilation_session_local_registry(test_suite_session), query);
 }
 
+static int apply_test_declaration_phase(
+    psx_declaration_phase_t *phase, int standalone_tag) {
+  return psx_apply_declaration_phase_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      phase, standalone_tag);
+}
+
+static int apply_test_parsed_aggregate_body_layout(
+    psx_parsed_aggregate_body_t *body,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    int *out_size, int *out_align) {
+  return psx_apply_parsed_aggregate_body_layout_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      body, tag_kind, tag_name, tag_len, out_size, out_align);
+}
+
+static const psx_type_t *apply_test_parsed_type_name(
+    const psx_parsed_type_name_t *type_name) {
+  return psx_apply_parsed_type_name_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session), type_name);
+}
+
+static void apply_test_runtime_parsed_declarator(
+    const psx_parsed_declarator_t *declarator,
+    psx_runtime_declarator_application_t *application) {
+  psx_apply_runtime_parsed_declarator_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      declarator, application);
+}
+
+static void apply_test_parsed_declarator(
+    const psx_parsed_declarator_t *declarator,
+    psx_declarator_shape_t *shape, int *bit_width) {
+  psx_apply_parsed_declarator_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_global_registry(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session),
+      declarator, shape, bit_width);
+}
+
+static void parse_test_initializer_syntax_value(
+    psx_parsed_initializer_t *initializer, token_t *assign_tok) {
+  psx_parse_initializer_syntax_value_in_contexts(
+      initializer, assign_tok,
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session), NULL);
+}
+
+static node_t *parse_test_initializer_for_var(lvar_t *var) {
+  return psx_decl_parse_initializer_for_var_in_contexts(
+      ag_compilation_session_semantic_context(test_suite_session),
+      ag_compilation_session_local_registry(test_suite_session), NULL, var);
+}
+
 /* Test-only storage fixtures may start with a simple scalar/array type and
  * replace it with the exact type under test. Production registration accepts
  * only an explicit canonical type. */
@@ -236,23 +404,23 @@ static void assert_semantic_tree_invariants(node_t *root) {
 }
 
 static node_t *parse_expr_input(const char *input) {
-  ps_decl_reset_locals();
+  reset_test_locals();
   preregister_test_locals();
   /* 単体式パースは関数本体内のコードを模す (ローカルを登録するのと同様)。
    * 複合リテラル `(int){3}` をローカル実体化経路 (ND_COMMA) で扱わせるため、
    * 現在関数名を非 NULL にしておく (本物のパースでは関数定義時に設定される)。 */
-  ps_decl_set_current_funcname((char *)"__test__", 8);
+  set_test_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
-  node_t *expr = ps_expr_from(head);
+  node_t *expr = parse_test_expression_from(head);
   node_t *analyzed = analyze_test_expression(expr, head);
   assert_semantic_tree_invariants(analyzed);
   return analyzed;
 }
 
 static node_t *parse_expr_input_with_existing_locals(const char *input) {
-  ps_decl_set_current_funcname((char *)"__test__", 8);
+  set_test_current_funcname((char *)"__test__", 8);
   token_t *head = tk_tokenize((char *)input);
-  return ps_expr_from(head);
+  return parse_test_expression_from(head);
 }
 
 static node_t *parse_analyzed_expr_input_with_existing_locals(
@@ -588,7 +756,7 @@ static void test_identifier_resolution_boundary() {
 
 static void test_persistent_local_scope_lookup_boundary() {
   printf("test_persistent_local_scope_lookup_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
 
   lvar_t *outer = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
@@ -743,7 +911,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_NOT_FOUND, resolution.status);
 
   psx_type_t *object_type = ps_type_clone(ps_lvar_get_decl_type(object));
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *raw_object = register_test_storage_fixture(
       (char *)"object", 6, 4, 4, 0);
   set_test_storage_fixture_type(raw_object, object_type);
@@ -1120,7 +1288,7 @@ static void test_expr_long_double_suffix_metadata() {
 
 static void test_expr_compound_literal() {
   printf("test_expr_compound_literal...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   node_t *raw = parse_expr_input_with_existing_locals("(int){3}");
   ASSERT_EQ(ND_COMPOUND_LITERAL, raw->kind);
   node_compound_literal_t *compound = (node_compound_literal_t *)raw;
@@ -1178,7 +1346,7 @@ static void test_expr_add_sub() {
 
 static void test_additive_semantic_lowering_boundary() {
   printf("test_additive_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
   set_test_storage_fixture_type(
       pointer,
@@ -1301,7 +1469,7 @@ static void test_additive_semantic_lowering_boundary() {
 
 static void test_subscript_semantic_lowering_boundary() {
   printf("test_subscript_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *row = ps_type_new_array(integer, 3, 12, 0);
   psx_type_t *matrix = ps_type_new_array(row, 2, 24, 0);
@@ -1368,7 +1536,7 @@ static void test_subscript_semantic_lowering_boundary() {
 
 static void test_unary_deref_semantic_lowering_boundary() {
   printf("test_unary_deref_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *pointer_type = ps_type_new_pointer(integer);
   ASSERT_TRUE(ps_type_dereference_result(pointer_type) == integer);
@@ -1422,7 +1590,7 @@ static void test_unary_deref_semantic_lowering_boundary() {
 
 static void test_unary_operator_semantic_lowering_boundary() {
   printf("test_unary_operator_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *integer = register_test_storage_fixture(
       (char *)"i", 1, 4, 4, 0);
   set_test_storage_fixture_type(
@@ -1545,7 +1713,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
             resolution.status);
   ASSERT_EQ(0, resolution.conflict_index);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *value = register_test_storage_fixture(
       (char *)"x", 1, 4, 4, 0);
   set_test_storage_fixture_type(
@@ -1585,7 +1753,7 @@ static void test_generic_selection_semantic_lowering_boundary() {
 
 static void test_sizeof_semantic_lowering_boundary() {
   printf("test_sizeof_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *value = register_test_storage_fixture(
       (char *)"x", 1, 4, 4, 0);
   set_test_storage_fixture_type(
@@ -1691,7 +1859,7 @@ static void test_sizeof_semantic_lowering_boundary() {
 
 static void test_expression_type_materialization_boundary() {
   printf("test_expression_type_materialization_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   node_t *ternary =
       parse_expr_input_with_existing_locals("(1, 2) ? 3 : 4");
   ASSERT_EQ(ND_TERNARY, ternary->kind);
@@ -1778,7 +1946,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(psx_ctx_track_function_type(
       function_name, function_name_len, function));
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   node_t *direct = parse_expr_input_with_existing_locals(
       "__call_type_boundary(3)");
   ASSERT_EQ(ND_FUNCALL, direct->kind);
@@ -1806,7 +1974,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_EQ(PSX_TYPE_POINTER, reference->type->kind);
   ASSERT_TRUE(ps_type_derived_function(reference->type) != NULL);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *fp = register_test_storage_fixture(
       (char *)"fp", 2, 8, 8, 0);
   set_test_storage_fixture_type(
@@ -1825,7 +1993,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_EQ(PSX_TYPE_FLOAT, indirect->type->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, indirect->type->fp_kind);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   node_t *implicit = parse_expr_input_with_existing_locals(
       "__implicit_call_type_boundary(5)");
   ASSERT_EQ(ND_FUNCALL, implicit->kind);
@@ -1844,7 +2012,7 @@ static void test_function_call_type_binding_boundary() {
 
 static void test_cast_semantic_lowering_boundary() {
   printf("test_cast_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   preregister_test_locals();
   node_t *node =
       parse_expr_input_with_existing_locals("(int)(unsigned long)a");
@@ -1944,7 +2112,7 @@ static void test_implicit_conversion_semantic_lowering_boundary() {
 
 static void test_compound_assignment_semantic_lowering_boundary() {
   printf("test_compound_assignment_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *value = register_test_storage_fixture((char *)"a", 1, 4, 4, 0);
   set_test_storage_fixture_type(
       value, ps_type_new_integer(TK_INT, 4, 0));
@@ -1962,7 +2130,7 @@ static void test_compound_assignment_semantic_lowering_boundary() {
   ASSERT_TRUE(!node->is_source_compound_assignment);
   ASSERT_EQ(ND_ADD, node->rhs->kind);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *pointer = register_test_storage_fixture((char *)"p", 1, 8, 4, 0);
   set_test_storage_fixture_type(
       pointer,
@@ -1984,7 +2152,7 @@ static void test_translation_unit_frontend_boundary() {
 
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &stream, NULL, tk_tokenize((char *)source), NULL);
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -2023,7 +2191,7 @@ static void test_toplevel_static_assert_frontend_boundary() {
 
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &stream, NULL, tk_tokenize((char *)source), NULL);
 
   psx_parsed_toplevel_item_t item;
@@ -2052,7 +2220,7 @@ static void test_toplevel_declaration_frontend_boundary() {
 
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &stream, NULL, tk_tokenize((char *)source), NULL);
   psx_parsed_toplevel_item_t item;
 
@@ -2124,7 +2292,7 @@ static void test_toplevel_callback_context_boundary() {
   psx_parsed_toplevel_declaration_t declaration;
   psx_toplevel_declaration_callbacks_t callbacks;
   init_test_toplevel_declaration_callbacks(&callbacks);
-  ASSERT_TRUE(psx_parse_toplevel_declaration_syntax(
+  ASSERT_TRUE(parse_test_toplevel_declaration_syntax(
       &declaration, &callbacks));
   ASSERT_TRUE(declaration.applied_during_parse);
   global_var_t *global = ps_find_global_var(
@@ -2143,7 +2311,7 @@ static void test_toplevel_compound_initializer_frontend_boundary() {
 
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &stream, NULL, tk_tokenize((char *)source), NULL);
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -2190,7 +2358,7 @@ static void assert_toplevel_syntax_kind(
     int expected_declarator_count) {
   reset_test_translation_unit_state();
   psx_parser_stream_t stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &stream, NULL, tk_tokenize((char *)source), NULL);
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
@@ -2238,7 +2406,7 @@ static void test_frontend_stream_lifecycle_boundary() {
                   (char *)"__stream_previous", 17) != NULL);
 
   psx_parser_stream_t parser_stream = {0};
-  ps_parser_stream_begin(
+  begin_test_parser_stream(
       &parser_stream, NULL, tk_tokenize((char *)""), NULL);
   ASSERT_TRUE(ps_ctx_get_function_type(
                   (char *)"__stream_previous", 17) != NULL);
@@ -2301,7 +2469,7 @@ static void test_frontend_stream_lifecycle_boundary() {
 
 static void test_complex_initializer_semantic_lowering_boundary() {
   printf("test_complex_initializer_semantic_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *value = register_test_storage_fixture((char *)"z", 1, 16, 16, 0);
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
   complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
@@ -2351,7 +2519,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(raw->lhs->lhs));
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(raw->rhs->lhs));
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *array = register_test_storage_fixture((char *)"a", 1, 12, 4, 1);
   set_test_storage_fixture_type(
       array,
@@ -2455,7 +2623,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(4, plan.storage_size);
   ASSERT_TRUE(!psx_plan_local_storage(vla, &plan));
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
           .local_registry = ps_local_registry_active(),
@@ -2477,7 +2645,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(3, stored_type->base->array_len);
   ASSERT_EQ(lowered, ps_decl_find_lvar((char *)"matrix", 6));
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_type_t *deferred_type =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
   lvar_t *declared = declare_incomplete_local_object(
@@ -2515,7 +2683,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
       declared, deferred_type));
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_type_t *pipeline_input =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
   psx_runtime_declarator_application_t pipeline_application = {0};
@@ -2557,7 +2725,7 @@ static void test_local_declaration_storage_plan_boundary() {
 
 static void test_vla_lowering_request_boundary() {
   printf("test_vla_lowering_request_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *vla_type = ps_type_new_array(integer, 0, 0, 1);
   node_t *request_dimensions[3] = {0};
@@ -2584,7 +2752,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ps_lvar_get_decl_type(result.var)->kind);
   ASSERT_TRUE(ps_lvar_get_decl_type(result.var)->is_vla);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   request.name = (char *)"vp";
   request.name_len = 2;
   request.dimensions[0] = ps_node_new_num(3);
@@ -2598,7 +2766,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(ND_MUL, result.init->lhs->kind);
   ASSERT_EQ(8, as_num(result.init->lhs->rhs)->val);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   request.name = (char *)"m";
   request.name_len = 1;
   request.dimensions[0] = ps_node_new_num(2);
@@ -2622,7 +2790,7 @@ static void test_vla_lowering_request_boundary() {
             ps_lvar_get_decl_type(result.var)->base->base->kind);
   ASSERT_TRUE(ps_lvar_vla_row_stride_frame_off(result.var) > 0);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   node_t *row_dimension = ps_node_new_num(5);
   psx_type_t *row_type = ps_type_new_array(integer, 0, 0, 1);
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
@@ -2655,7 +2823,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(row_dimension, result.init->rhs->lhs);
   ASSERT_EQ(4, as_num(result.init->rhs->rhs)->val);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *n = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
   lvar_t *k = register_test_storage_fixture(
@@ -2739,7 +2907,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_EQ(16, plan.storage_size);
   ASSERT_EQ(8, plan.alignment);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *lowered = lower_parameter_declaration(
       &(psx_parameter_lowering_request_t){
           .local_registry = ps_local_registry_active(),
@@ -2782,7 +2950,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
             ps_type_pointee_value_size(parameter_resolution.type));
   ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *dimension = register_test_storage_fixture(
       (char *)"n", 1, 4, 4, 0);
   dimension->is_param = 1;
@@ -3114,7 +3282,7 @@ static void test_declaration_pipeline_order_boundary() {
   token_t *assign_tok = tk_get_current_token();
   ASSERT_EQ(TK_ASSIGN, assign_tok->kind);
   tk_set_current_token(assign_tok->next);
-  psx_parse_initializer_syntax_value(&initializer, assign_tok);
+  parse_test_initializer_syntax_value(&initializer, assign_tok);
   ASSERT_TRUE(psx_finish_global_declaration_pipeline(&request, &result));
   ASSERT_TRUE(result.global != NULL);
   ASSERT_TRUE(result.initialized);
@@ -3294,7 +3462,7 @@ static void test_aggregate_body_phase_boundary() {
                "struct PrototypeOnly *, ...); }");
   tk_set_current_token(tokens);
   psx_parsed_aggregate_body_t body;
-  psx_parse_aggregate_body(&body);
+  parse_test_aggregate_body(&body);
   ASSERT_EQ(10, body.item_count);
   ASSERT_EQ(PSX_PARSED_AGGREGATE_MEMBER_DECLARATION,
             body.items[0].kind);
@@ -3387,7 +3555,7 @@ static void test_aggregate_body_phase_boundary() {
 
   int size = 0;
   int alignment = 0;
-  ASSERT_EQ(10, psx_apply_parsed_aggregate_body_layout(
+  ASSERT_EQ(10, apply_test_parsed_aggregate_body_layout(
                    &body, TK_STRUCT, (char *)"__ParsedBody", 12,
                    &size, &alignment));
   ASSERT_EQ(72, size);
@@ -3479,8 +3647,8 @@ static void test_declaration_phase_boundary() {
   tk_set_current_token(tokens);
   psx_declaration_phase_t phase;
   psx_parsed_decl_specifier_t syntax;
-  psx_parse_decl_specifier_syntax_ex(&syntax, NULL);
-  ps_prepare_decl_specifier_alignments(&syntax);
+  parse_test_decl_specifier_syntax(&syntax);
+  prepare_test_decl_specifier_alignments(&syntax);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(PSX_PARSED_DECL_TYPE_NONE, syntax.source);
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
@@ -3496,7 +3664,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
-  ASSERT_TRUE(psx_apply_declaration_phase(&phase, 0));
+  ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(PSX_DECLARATION_PHASE_RESOLVED_TYPE, phase.state);
   ASSERT_TRUE(phase.base_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, phase.base_type->kind);
@@ -3508,11 +3676,11 @@ static void test_declaration_phase_boundary() {
 
   tokens = tk_tokenize((char *)"_Alignas(16) int");
   tk_set_current_token(tokens);
-  psx_parse_decl_specifier_syntax_ex(&syntax, NULL);
-  ps_prepare_decl_specifier_alignments(&syntax);
+  parse_test_decl_specifier_syntax(&syntax);
+  prepare_test_decl_specifier_alignments(&syntax);
   psx_begin_declaration_phase(&phase, &syntax);
   ASSERT_EQ(0, phase.requested_alignment);
-  ASSERT_TRUE(psx_apply_declaration_phase(&phase, 0));
+  ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
   ASSERT_EQ(16, phase.requested_alignment);
   ASSERT_EQ(PSX_TYPE_INTEGER, phase.base_type->kind);
   psx_dispose_declaration_phase(&phase);
@@ -3524,13 +3692,13 @@ static void test_type_name_phase_boundary() {
   token_t *tokens = tk_tokenize((char *)"int (*)(double),");
   tk_set_current_token(tokens);
   psx_parsed_type_name_t syntax;
-  ASSERT_TRUE(psx_parse_type_name_syntax_at(tokens, NULL, &syntax));
+  ASSERT_TRUE(parse_test_type_name_syntax_at(tokens, &syntax));
   ASSERT_TRUE(tk_get_current_token() == tokens);
   ASSERT_TRUE(syntax.end != NULL);
   ASSERT_EQ(TK_COMMA, syntax.end->kind);
   ASSERT_TRUE(syntax.atomic_inner == NULL);
 
-  const psx_type_t *type = psx_apply_parsed_type_name(&syntax);
+  const psx_type_t *type = apply_test_parsed_type_name(&syntax);
   ASSERT_TRUE(type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, type->kind);
   ASSERT_TRUE(type->base != NULL);
@@ -3570,8 +3738,8 @@ static void test_local_declarator_application_boundary() {
   token_t *tokens = tk_tokenize((char *)"matrix[n][4]");
   tk_set_current_token(tokens);
   psx_parsed_declarator_t syntax =
-      psx_parse_declarator_syntax_tree();
-  ps_parse_runtime_declarator_expressions(&syntax);
+      parse_test_declarator_syntax_tree();
+  parse_test_runtime_declarator_expressions(&syntax);
   ASSERT_TRUE(syntax.identifier != NULL);
   ASSERT_EQ(2, syntax.array_bound_count);
   ASSERT_EQ(2, syntax.declarator_shape.count);
@@ -3589,7 +3757,7 @@ static void test_local_declarator_application_boundary() {
   token_t *after_syntax = tk_get_current_token();
 
   psx_runtime_declarator_application_t applied;
-  psx_apply_runtime_parsed_declarator(&syntax, &applied);
+  apply_test_runtime_parsed_declarator(&syntax, &applied);
   ASSERT_TRUE(tk_get_current_token() == after_syntax);
   ASSERT_EQ(2, applied.array_bound_count);
   ASSERT_TRUE(applied.shape.ops[0].is_vla_array);
@@ -4649,7 +4817,7 @@ static void test_initializer_resolution_boundary() {
 
 static void test_local_initializer_parse_lowering_boundary() {
   printf("test_local_initializer_parse_lowering_boundary...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *function_pointer =
@@ -4679,7 +4847,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   token_t *tokens = tk_tokenize((char *)"{0, 7}");
   tk_set_current_token(tokens);
 
-  node_t *raw = psx_decl_parse_initializer_for_var(object);
+  node_t *raw = parse_test_initializer_for_var(object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
@@ -4695,7 +4863,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   set_test_storage_fixture_type(source, aggregate);
   tokens = tk_tokenize((char *)"source");
   tk_set_current_token(tokens);
-  raw = psx_decl_parse_initializer_for_var(object);
+  raw = parse_test_initializer_for_var(object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
@@ -4725,7 +4893,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   set_test_storage_fixture_type(union_object, union_type);
   tokens = tk_tokenize((char *)"9");
   tk_set_current_token(tokens);
-  raw = psx_decl_parse_initializer_for_var(union_object);
+  raw = parse_test_initializer_for_var(union_object);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_EXPR,
             ((node_decl_init_t *)raw)->init_kind);
@@ -4739,7 +4907,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   set_test_storage_fixture_type(scalar, integer);
   tokens = tk_tokenize((char *)"{7,}");
   tk_set_current_token(tokens);
-  raw = psx_decl_parse_initializer_for_var(scalar);
+  raw = parse_test_initializer_for_var(scalar);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
@@ -4757,7 +4925,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   set_test_storage_fixture_type(complex_value, complex_type);
   tokens = tk_tokenize((char *)"{3, 4}");
   tk_set_current_token(tokens);
-  raw = psx_decl_parse_initializer_for_var(complex_value);
+  raw = parse_test_initializer_for_var(complex_value);
   ASSERT_EQ(ND_DECL_INIT, raw->kind);
   ASSERT_EQ(PSX_DECL_INIT_LIST,
             ((node_decl_init_t *)raw)->init_kind);
@@ -4936,7 +5104,7 @@ static void test_static_data_initializer_boundary() {
   ASSERT_EQ(-1, pointer_slot.symbol_len);
 
   ps_global_registry_reset_translation_unit();
-  ps_decl_reset_locals();
+  reset_test_locals();
   psx_static_local_lowering_reset();
   psx_type_t *static_incomplete =
       ps_type_new_array(integer, 0, 0, 0);
@@ -5546,7 +5714,7 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_NUM, ret_parenthesized_global_nested_fp->lhs->kind);
   ASSERT_EQ(29, as_num(ret_parenthesized_global_nested_fp->lhs)->val);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   char synthetic_nested_name[] = "p";
   psx_type_t *synthetic_nested_array = ps_type_new_array(
       ps_type_new_integer(TK_INT, 4, 0), 3, 12, 0);
@@ -5562,7 +5730,7 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_NUM, ret_structural_nested_fp->kind);
   ASSERT_EQ(31, as_num(ret_structural_nested_fp)->val);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   char synthetic_ret_funcptr_name[] = "q";
   psx_type_t *synthetic_ret_funcptr_param =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -5597,7 +5765,7 @@ static void test_expr_generic() {
   ASSERT_EQ(ND_NUM, ret_structural_ret_funcptr_ret_nomatch->kind);
   ASSERT_EQ(7, as_num(ret_structural_ret_funcptr_ret_nomatch)->val);
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   char synthetic_double_ret_funcptr_name[] = "r";
   psx_type_t *synthetic_double_ret_funcptr_param =
       ps_type_new_integer(TK_INT, 4, 0);
@@ -6079,7 +6247,7 @@ static void test_expr_sizeof() {
 
 static void test_expr_inc_dec() {
   printf("test_expr_inc_dec...\n");
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *integer = register_test_storage_fixture(
       (char *)"a", 1, 4, 4, 0);
   set_test_storage_fixture_type(
@@ -6558,7 +6726,7 @@ static void test_expr_deref_addr() {
   ASSERT_EQ(ND_LVAR, addr->lhs->kind);
 
   // *a (a は実際に pointer 型として登録する)
-  ps_decl_reset_locals();
+  reset_test_locals();
   lvar_t *pointer = register_test_storage_fixture(
       (char *)"a", 1, 8, 4, 0);
   set_test_storage_fixture_type(
@@ -7688,7 +7856,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_lvar_get_decl_type(sig_lvar) == NULL);
   sig_lvar->decl_type = sig_lvar_type;
 
-  ps_decl_reset_locals();
+  reset_test_locals();
   char funcptr_sync_lvar_name[] = "__tm_funcptr_sync_lvar";
   lvar_t *funcptr_sync_lvar =
       register_test_storage_fixture(funcptr_sync_lvar_name,
@@ -13977,7 +14145,7 @@ static void test_translation_unit_reset_decl_locals_state() {
   printf("test_translation_unit_reset_decl_locals_state...\n");
 
   char name[] = "x";
-  ps_decl_reset_locals();
+  reset_test_locals();
   ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
   ASSERT_TRUE(ps_decl_find_lvar(name, 1) != NULL);
   reset_test_translation_unit_state();
@@ -14919,7 +15087,7 @@ static void test_recursive_declarator_capacity_boundary() {
   token_t *tokens = tk_tokenize(pointer_declarator);
   tk_set_current_token(tokens);
   psx_parsed_declarator_t pointer_syntax =
-      psx_parse_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree();
   ASSERT_EQ(96, pointer_syntax.declarator_shape.count);
   ASSERT_TRUE(pointer_syntax.declarator_shape.capacity >= 96);
   psx_declarator_shape_t pointer_shape;
@@ -14981,13 +15149,13 @@ static void test_recursive_declarator_capacity_boundary() {
   tokens = tk_tokenize(array_declarator);
   tk_set_current_token(tokens);
   psx_parsed_declarator_t array_syntax =
-      psx_parse_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree();
   ASSERT_EQ(40, array_syntax.declarator_shape.count);
   ASSERT_EQ(40, array_syntax.array_bound_count);
   ASSERT_TRUE(array_syntax.array_bound_capacity >= 40);
-  ps_prepare_constant_declarator_expressions(&array_syntax);
+  prepare_test_constant_declarator_expressions(&array_syntax);
   psx_declarator_shape_t array_shape;
-  psx_apply_parsed_declarator(&array_syntax, &array_shape, NULL);
+  apply_test_parsed_declarator(&array_syntax, &array_shape, NULL);
   ASSERT_TRUE(array_shape.ops != array_syntax.declarator_shape.ops);
   psx_type_t *deep_array_type = ps_type_apply_declarator_shape(
       ps_type_new_integer(TK_INT, 4, 0), &array_shape);
@@ -15032,12 +15200,12 @@ static void test_recursive_declarator_capacity_boundary() {
   tokens = tk_tokenize(function_declarator);
   tk_set_current_token(tokens);
   psx_parsed_declarator_t function_syntax =
-      psx_parse_declarator_syntax_tree();
+      parse_test_declarator_syntax_tree();
   ASSERT_EQ(26, function_syntax.function_suffix_count);
   ASSERT_TRUE(function_syntax.function_suffix_capacity >= 26);
   ASSERT_EQ(51, function_syntax.declarator_shape.count);
   psx_declarator_shape_t function_shape;
-  psx_apply_parsed_declarator(&function_syntax, &function_shape, NULL);
+  apply_test_parsed_declarator(&function_syntax, &function_shape, NULL);
   psx_type_t *deep_function_type = ps_type_apply_declarator_shape(
       ps_type_new_integer(TK_INT, 4, 0), &function_shape);
   const psx_type_t *function_level = deep_function_type;

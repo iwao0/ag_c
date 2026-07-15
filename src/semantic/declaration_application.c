@@ -24,12 +24,6 @@
 
 #include <stdlib.h>
 
-int psx_apply_parsed_enum_body(const psx_parsed_enum_body_t *body) {
-  return psx_apply_parsed_enum_body_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), body);
-}
-
 int psx_apply_parsed_enum_body_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -127,16 +121,6 @@ int psx_apply_parsed_aggregate_body_layout_in_contexts(
   return member_count;
 }
 
-int psx_apply_parsed_aggregate_body_layout(
-    psx_parsed_aggregate_body_t *body,
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    int *out_size, int *out_align) {
-  return psx_apply_parsed_aggregate_body_layout_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), body, tag_kind, tag_name, tag_len,
-      out_size, out_align);
-}
-
 static void apply_decl_tag_action(
     const psx_parsed_tag_action_t *action,
     psx_semantic_context_t *semantic_context,
@@ -207,13 +191,6 @@ static psx_type_t *build_parsed_type_name(
       });
 }
 
-const psx_type_t *psx_apply_parsed_type_name(
-    const psx_parsed_type_name_t *type_name) {
-  return psx_apply_parsed_type_name_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), type_name);
-}
-
 const psx_type_t *psx_apply_parsed_type_name_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -245,14 +222,6 @@ const psx_type_t *psx_apply_parsed_declarator_type_in_contexts(
       });
 }
 
-const psx_type_t *psx_apply_parsed_declarator_type(
-    const psx_type_t *base_type,
-    const psx_parsed_declarator_t *declarator) {
-  return psx_apply_parsed_declarator_type_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), base_type, declarator);
-}
-
 const psx_type_t *psx_apply_runtime_declarator_type_in_context(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
@@ -266,13 +235,6 @@ const psx_type_t *psx_apply_runtime_declarator_type_in_context(
       });
 }
 
-const psx_type_t *psx_apply_runtime_declarator_type(
-    const psx_type_t *base_type,
-    const psx_runtime_declarator_application_t *application) {
-  return psx_apply_runtime_declarator_type_in_context(
-      ps_ctx_active(), base_type, application);
-}
-
 void psx_begin_declaration_phase(
     psx_declaration_phase_t *phase,
     psx_parsed_decl_specifier_t *syntax) {
@@ -283,18 +245,24 @@ void psx_begin_declaration_phase(
   phase->state = PSX_DECLARATION_PHASE_SYNTAX;
 }
 
-int psx_apply_declaration_phase(
+int psx_apply_declaration_phase_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_global_registry_t *global_registry,
+    psx_local_registry_t *local_registry,
     psx_declaration_phase_t *phase, int standalone_tag) {
-  if (!phase || phase->state != PSX_DECLARATION_PHASE_SYNTAX) return 0;
+  if (!semantic_context || !global_registry || !local_registry || !phase ||
+      phase->state != PSX_DECLARATION_PHASE_SYNTAX) return 0;
   phase->requested_alignment =
       psx_apply_parsed_decl_alignment(&phase->syntax);
   if (standalone_tag &&
       phase->syntax.source == PSX_PARSED_DECL_TYPE_TAG) {
-    psx_apply_parsed_standalone_tag(&phase->syntax);
+    psx_apply_parsed_standalone_tag_in_contexts(
+        semantic_context, global_registry, local_registry, &phase->syntax);
     phase->state = PSX_DECLARATION_PHASE_STANDALONE_TAG;
     return 1;
   }
-  phase->base_type = psx_apply_parsed_decl_specifier(&phase->syntax);
+  phase->base_type = psx_apply_parsed_decl_specifier_in_contexts(
+      semantic_context, global_registry, local_registry, &phase->syntax);
   if (!phase->base_type) return 0;
   phase->state = PSX_DECLARATION_PHASE_RESOLVED_TYPE;
   return 1;
@@ -304,13 +272,6 @@ void psx_dispose_declaration_phase(psx_declaration_phase_t *phase) {
   if (!phase) return;
   ps_dispose_decl_specifier_syntax(&phase->syntax);
   *phase = (psx_declaration_phase_t){0};
-}
-
-const psx_type_t *psx_apply_parsed_decl_specifier(
-    const psx_parsed_decl_specifier_t *specifier) {
-  return psx_apply_parsed_decl_specifier_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), specifier);
 }
 
 const psx_type_t *psx_apply_parsed_decl_specifier_in_contexts(
@@ -344,13 +305,6 @@ int psx_apply_parsed_decl_alignment(
   return alignment;
 }
 
-void psx_apply_parsed_standalone_tag(
-    const psx_parsed_decl_specifier_t *specifier) {
-  psx_apply_parsed_standalone_tag_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), specifier);
-}
-
 void psx_apply_parsed_standalone_tag_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -369,15 +323,6 @@ void psx_apply_parsed_standalone_tag_in_contexts(
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_FORWARD, 0, 0, 0,
       action->diagnostic_token);
-}
-
-void psx_apply_parsed_declarator(
-    const psx_parsed_declarator_t *declarator,
-    psx_declarator_shape_t *shape, int *bit_width) {
-  psx_apply_parsed_declarator_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      declarator, shape, bit_width);
 }
 
 void psx_apply_parsed_declarator_in_contexts(
@@ -409,15 +354,6 @@ void psx_apply_parsed_declarator_in_contexts(
   }
 }
 
-void psx_apply_runtime_parsed_declarator(
-    const psx_parsed_declarator_t *declarator,
-    psx_runtime_declarator_application_t *application) {
-  psx_apply_runtime_parsed_declarator_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      declarator, application);
-}
-
 void psx_apply_runtime_parsed_declarator_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_global_registry_t *global_registry,
@@ -427,16 +363,6 @@ void psx_apply_runtime_parsed_declarator_in_contexts(
   psx_apply_runtime_parsed_declarator_ex_in_contexts(
       semantic_context, global_registry, local_registry,
       declarator, application, -1);
-}
-
-void psx_apply_runtime_parsed_declarator_ex(
-    const psx_parsed_declarator_t *declarator,
-    psx_runtime_declarator_application_t *application,
-    int skipped_function_op_index) {
-  psx_apply_runtime_parsed_declarator_ex_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      declarator, application, skipped_function_op_index);
 }
 
 void psx_apply_runtime_parsed_declarator_ex_in_contexts(
@@ -528,15 +454,6 @@ void psx_apply_runtime_parsed_declarator_ex_in_contexts(
         suffix->parameters, function_op,
         declarator->diagnostic_token);
   }
-}
-
-void psx_apply_parsed_function_parameters(
-    psx_parsed_function_parameters_t *parameters,
-    psx_declarator_op_t *function_op, token_t *diagnostic_token) {
-  psx_apply_parsed_function_parameters_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(),
-      parameters, function_op, diagnostic_token);
 }
 
 void psx_apply_parsed_function_parameters_in_contexts(

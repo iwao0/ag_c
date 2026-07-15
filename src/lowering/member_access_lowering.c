@@ -5,7 +5,6 @@
 #include "../parser/arena.h"
 #include "../parser/diag.h"
 #include "../parser/node_utils.h"
-#include "../parser/local_registry.h"
 #include "../parser/type_builder.h"
 
 #include <stdio.h>
@@ -115,11 +114,4 @@ node_t *lower_member_access_expression_in(
       address, base, access->resolved_member);
   if (result) result->tok = access->base.tok;
   return result ? result : (node_t *)access;
-}
-
-node_t *lower_member_access_expression(
-    node_member_access_t *access,
-    const token_t *fallback_diag_tok) {
-  return lower_member_access_expression_in(
-      ps_local_registry_active(), access, fallback_diag_tok);
 }

@@ -37,13 +37,10 @@ typedef struct {
   int member_capacity;
 } psx_parsed_enum_body_t;
 
-long long psx_parse_enum_const_expr(void);
 long long psx_parse_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context);
-long long psx_parse_case_const_expr(void);
 long long psx_parse_case_const_expr_in_context(
     psx_semantic_context_t *semantic_context);
-long long psx_eval_parsed_enum_const_expr(token_t *start, token_t *end);
 long long psx_eval_parsed_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
     token_t *start, token_t *end);

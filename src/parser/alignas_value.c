@@ -6,10 +6,6 @@
 static inline token_t *curtok(void) { return tk_get_current_token(); }
 static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
 
-int psx_parse_alignas_value(void) {
-  return psx_parse_alignas_value_in_context(ps_ctx_active());
-}
-
 int psx_parse_alignas_value_in_context(
     psx_semantic_context_t *semantic_context) {
   tk_expect('(');
@@ -34,11 +30,6 @@ int psx_parse_alignas_value_in_context(
   }
   tk_expect(')');
   return val;
-}
-
-int psx_eval_parsed_alignas_value(token_t *start, token_t *end) {
-  return psx_eval_parsed_alignas_value_in_context(
-      ps_ctx_active(), start, end);
 }
 
 int psx_eval_parsed_alignas_value_in_context(

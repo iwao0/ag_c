@@ -31,7 +31,6 @@ struct psx_parsed_aggregate_body_t {
   int item_capacity;
 };
 
-void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body);
 void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options);

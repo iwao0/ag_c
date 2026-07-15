@@ -10,8 +10,4 @@ node_t *lower_member_access_expression_in(
     node_member_access_t *access,
     const token_t *fallback_diag_tok);
 
-node_t *lower_member_access_expression(
-    node_member_access_t *access,
-    const token_t *fallback_diag_tok);
-
 #endif

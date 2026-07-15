@@ -172,7 +172,8 @@ static node_t *parse_compound_literal_from_type(
   set_curtok(after_rparen);
   char *current_funcname = NULL;
   int current_funcname_len = 0;
-  ps_decl_get_current_funcname(&current_funcname, &current_funcname_len);
+  ps_decl_get_current_funcname_in(
+      ctx->local_registry, &current_funcname, &current_funcname_len);
   (void)current_funcname_len;
   token_t *initializer_tok = curtok();
   node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
@@ -306,12 +307,6 @@ void ps_expr_reset_translation_unit_state(void) {
   runtime->float_label_count = 0;
 }
 
-// expr = assign ("," assign)*
-node_t *psx_expr_expr(void) {
-  return psx_expr_expr_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), NULL);
-}
-
 node_t *psx_expr_expr_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
@@ -320,12 +315,6 @@ node_t *psx_expr_expr_in_contexts(
   expr_parse_ctx_t ctx = expr_parse_ctx_default(
       semantic_context, local_registry, local_declarations);
   return expr_internal_ctx(&ctx);
-}
-
-// assign = conditional (("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "<<=" | ">>=" | "&=" | "^=" | "|=") assign)?
-node_t *psx_expr_assign(void) {
-  return psx_expr_assign_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), NULL);
 }
 
 node_t *psx_expr_assign_in_contexts(
@@ -1033,10 +1022,11 @@ static node_string_t *make_string_lit_node(char *str, int len,
 }
 
 // C11 6.4.2.2 __func__: 各関数本体に暗黙定義される const char[] の関数名。
-static node_t *make_func_name_string_node(void) {
+static node_t *make_func_name_string_node(expr_parse_ctx_t *ctx) {
   char *current_funcname = NULL;
   int current_funcname_len = 0;
-  ps_decl_get_current_funcname(&current_funcname, &current_funcname_len);
+  ps_decl_get_current_funcname_in(
+      ctx->local_registry, &current_funcname, &current_funcname_len);
   const char *fname = current_funcname ? current_funcname : "";
   int flen = current_funcname ? current_funcname_len : 0;
   char *fstr = calloc((size_t)flen + 1, 1);
@@ -1107,7 +1097,7 @@ static node_t *try_parse_builtin_expect_call(token_ident_t *tok, expr_parse_ctx_
 
 static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (tok->len == 8 && memcmp(tok->str, "__func__", 8) == 0)
-    return make_func_name_string_node();
+    return make_func_name_string_node(ctx);
   if (tok->len == 13 && memcmp(tok->str, "__va_arg_area", 13) == 0) {
     node_t *node = arena_alloc(sizeof(*node));
     node->kind = ND_VA_ARG_AREA;

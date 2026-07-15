@@ -13,10 +13,6 @@
 #include "unary_deref_lowering.h"
 #include "unary_operator_lowering.h"
 #include "../parser/node_utils.h"
-#include "../parser/global_registry.h"
-#include "../parser/local_registry.h"
-
-#include "../parser/semantic_ctx.h"
 
 typedef struct {
   psx_semantic_context_t *semantic_context;
@@ -266,20 +262,6 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
       .local_registry = local_registry,
   };
   return lower_initializer(&context, syntax, fallback_diag_tok);
-}
-
-node_t *psx_lower_semantic_tree(
-    node_t *node, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_tree_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), node, fallback_diag_tok);
-}
-
-node_t *psx_lower_semantic_initializer_syntax(
-    node_t *syntax, const token_t *fallback_diag_tok) {
-  return psx_lower_semantic_initializer_syntax_in_contexts(
-      ps_ctx_active(), ps_global_registry_active(),
-      ps_local_registry_active(), syntax, fallback_diag_tok);
 }
 
 static const psx_type_t *call_function_type(node_function_call_t *call) {

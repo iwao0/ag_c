@@ -33,20 +33,12 @@ static long long parse_mul_ctx(enum_const_eval_ctx_t *ctx);
 static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx);
 static long long parse_primary_ctx(enum_const_eval_ctx_t *ctx);
 
-long long psx_parse_enum_const_expr(void) {
-  return psx_parse_enum_const_expr_in_context(ps_ctx_active());
-}
-
 long long psx_parse_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context) {
   enum_const_eval_ctx_t ctx = {
       .semantic_context = semantic_context,
   };
   return parse_conditional_ctx(&ctx);
-}
-
-long long psx_parse_case_const_expr(void) {
-  return psx_parse_case_const_expr_in_context(ps_ctx_active());
 }
 
 long long psx_parse_case_const_expr_in_context(
@@ -56,11 +48,6 @@ long long psx_parse_case_const_expr_in_context(
       .semantic_context = semantic_context,
   };
   return parse_conditional_ctx(&ctx);
-}
-
-long long psx_eval_parsed_enum_const_expr(token_t *start, token_t *end) {
-  return psx_eval_parsed_enum_const_expr_in_context(
-      ps_ctx_active(), start, end);
 }
 
 long long psx_eval_parsed_enum_const_expr_in_context(

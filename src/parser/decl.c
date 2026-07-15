@@ -7,9 +7,7 @@
 #include "lvar_internal.h"
 #include "local_registry.h"
 #include "node_utils.h"
-#include "semantic_ctx.h"
 #include "config_runtime.h"
-#include "../declaration_pipeline.h"
 #include "../diag/diag.h"
 #include "../lowering/local_storage.h"
 #include "../tokenizer/tokenizer.h"
@@ -34,22 +32,8 @@ void ps_decl_reset_locals_in(psx_local_registry_t *registry) {
   local_storage_reset();
 }
 
-void ps_decl_reset_locals(void) {
-  ps_decl_reset_locals_in(ps_local_registry_active());
-}
-
 void ps_decl_reserve_variadic_regs(void) {
   local_storage_reserve_prefix(64);
-}
-
-void ps_decl_set_current_funcname(char *name, int len) {
-  ps_decl_set_current_funcname_in(
-      ps_local_registry_active(), name, len);
-}
-
-void ps_decl_get_current_funcname(char **out_name, int *out_len) {
-  ps_decl_get_current_funcname_in(
-      ps_local_registry_active(), out_name, out_len);
 }
 
 void ps_decl_set_current_funcname_in(
@@ -215,11 +199,6 @@ void ps_decl_reset_translation_unit_state_in(
   ps_decl_set_current_funcname_in(registry, NULL, 0);
 }
 
-void ps_decl_reset_translation_unit_state(void) {
-  ps_decl_reset_translation_unit_state_in(ps_local_registry_active());
-  psx_declaration_pipeline_reset_translation_unit_state();
-}
-
 /* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
  * そのまま再利用する (Phase A1 リファクタリング)。 */
 
@@ -234,14 +213,23 @@ node_t *ps_decl_bind_initializer_for_var(
       target, initializer, initializer_kind, init_tok);
 }
 
-node_t *psx_decl_parse_initializer_for_var(lvar_t *var) {
+node_t *psx_decl_parse_initializer_for_var_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    psx_local_registry_t *local_registry,
+    const psx_local_declaration_callbacks_t *local_declarations,
+    lvar_t *var) {
+  if (!semantic_context || !local_registry) return NULL;
   if (curtok() && curtok()->kind == TK_LBRACE) {
     token_t *init_tok = curtok();
-    node_t *syntax = psx_parse_initializer_syntax_list();
+    node_t *syntax = psx_parse_initializer_syntax_list_in_contexts(
+        semantic_context, local_registry, local_declarations);
     return ps_decl_bind_initializer_for_var(
         var, syntax, PSX_DECL_INIT_LIST, init_tok);
   }
   token_t *init_tok = curtok();
   return ps_decl_bind_initializer_for_var(
-      var, psx_expr_assign(), PSX_DECL_INIT_EXPR, init_tok);
+      var,
+      psx_expr_assign_in_contexts(
+          semantic_context, local_registry, local_declarations),
+      PSX_DECL_INIT_EXPR, init_tok);
 }

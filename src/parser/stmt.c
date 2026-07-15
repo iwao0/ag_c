@@ -181,11 +181,6 @@ static int is_stmt_expr_value_stmt(node_t *s) {
   }
 }
 
-node_t *psx_parse_statement_expression(void) {
-  return psx_parse_statement_expression_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), NULL);
-}
-
 node_t *psx_parse_statement_expression_in_contexts(
     psx_semantic_context_t *semantic_context,
     psx_local_registry_t *local_registry,
@@ -401,12 +396,6 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
       context->semantic_context, ident->str, ident->len, curtok());
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
-}
-
-node_t *psx_stmt_stmt(
-    const psx_local_declaration_callbacks_t *local_declarations) {
-  return psx_stmt_stmt_in_contexts(
-      ps_ctx_active(), ps_local_registry_active(), local_declarations);
 }
 
 node_t *psx_stmt_stmt_in_contexts(

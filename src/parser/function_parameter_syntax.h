@@ -21,16 +21,6 @@ typedef enum {
   PSX_PARAMETER_TYPE_C11_STRICT,
 } psx_function_parameter_type_mode_t;
 
-int psx_parse_function_parameters_syntax(
-    psx_parsed_function_parameters_t *parameters);
-int psx_parse_function_parameters_syntax_ex(
-    psx_parsed_function_parameters_t *parameters,
-    psx_function_parameter_type_mode_t type_mode);
-int psx_parse_function_parameters_syntax_with_typedef_lookup(
-    psx_parsed_function_parameters_t *parameters,
-    psx_function_parameter_type_mode_t type_mode,
-    psx_decl_typedef_name_predicate_t is_typedef_name,
-    void *typedef_name_context);
 int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_parsed_function_parameters_t *parameters,
     psx_function_parameter_type_mode_t type_mode,

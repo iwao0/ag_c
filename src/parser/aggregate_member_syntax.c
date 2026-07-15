@@ -51,33 +51,14 @@ static psx_parsed_declarator_t *append_aggregate_declarator(
   return declarator;
 }
 
-void psx_parse_aggregate_body(psx_parsed_aggregate_body_t *body) {
-  psx_semantic_context_t *semantic_context = ps_ctx_active();
-  psx_local_registry_t *local_registry = ps_local_registry_active();
-  psx_parse_aggregate_body_with_options(
-      body,
-      &(psx_decl_specifier_syntax_options_t){
-          .semantic_context = semantic_context,
-          .local_registry = local_registry,
-      });
-}
-
 void psx_parse_aggregate_body_with_options(
     psx_parsed_aggregate_body_t *body,
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
-  psx_decl_specifier_syntax_options_t complete_options =
-      options ? *options : (psx_decl_specifier_syntax_options_t){0};
-  if ((complete_options.semantic_context == NULL) !=
-      (complete_options.local_registry == NULL)) {
+  if (!options || !options->semantic_context || !options->local_registry) {
     ps_diag_ctx(current_token(), "aggregate-syntax",
-                "semantic and local contexts must be provided together");
+                "semantic and local contexts must be provided explicitly");
   }
-  if (!complete_options.semantic_context) {
-    complete_options.semantic_context = ps_ctx_active();
-    complete_options.local_registry = ps_local_registry_active();
-  }
-  options = &complete_options;
   memset(body, 0, sizeof(*body));
   while (!tk_consume('}')) {
     psx_parsed_aggregate_item_t *item = append_aggregate_item(body);
