@@ -34,7 +34,7 @@ static node_t *lower_value_to_fp(arena_context_t *arena_context,
   if (!operand) return NULL;
   if (!target_type) return operand;
   tk_float_kind_t source = ps_node_value_fp_kind(operand);
-  if (source == target_type->fp_kind &&
+  if (source == ps_type_floating_token_kind(target_type) &&
       ps_type_shape_matches(ps_node_get_type(operand), target_type))
     return operand;
   return ps_node_new_int_to_fp_cast_in(
@@ -95,7 +95,7 @@ static cast_target_view_t target_view(
     else if (view.value->kind == PSX_TYPE_BOOL) view.kind = TK_BOOL;
     else if (view.value->kind == PSX_TYPE_FLOAT ||
              view.value->kind == PSX_TYPE_COMPLEX)
-      view.kind = view.value->fp_kind == TK_FLOAT_KIND_FLOAT
+      view.kind = view.value->floating_kind == PSX_FLOATING_KIND_FLOAT
                       ? TK_FLOAT : TK_DOUBLE;
     else if (ps_type_is_tag_aggregate(view.value))
       view.kind = ps_type_tag_token_kind(view.value);

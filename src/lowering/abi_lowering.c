@@ -78,7 +78,8 @@ ir_abi_param_info_t ir_abi_classify_type_id(
       return info;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      info.type = type->fp_kind == TK_FLOAT_KIND_FLOAT ? IR_TY_F32 : IR_TY_F64;
+      info.type = type->floating_kind == PSX_FLOATING_KIND_FLOAT
+                      ? IR_TY_F32 : IR_TY_F64;
       info.param_class = IR_ABI_PARAM_FLOAT;
       return info;
     case PSX_TYPE_BOOL:

@@ -217,7 +217,8 @@ static void write_scalar_value(
   if (!symbol && type && type->kind == PSX_TYPE_FLOAT &&
       target->union_member_index >= 0) {
     ps_gvar_init_slot_write_fp_sentinel(
-        lowering->global, index, type->fp_kind, type_size(lowering, type));
+        lowering->global, index, ps_type_floating_token_kind(type),
+        type_size(lowering, type));
   }
 }
 

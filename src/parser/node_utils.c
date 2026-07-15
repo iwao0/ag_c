@@ -177,7 +177,7 @@ static tk_float_kind_t gvar_initializer_fp_kind(const global_var_t *gv) {
   if (!type || (type->kind != PSX_TYPE_FLOAT &&
                 type->kind != PSX_TYPE_COMPLEX))
     return TK_FLOAT_KIND_NONE;
-  return type->fp_kind;
+  return ps_type_floating_token_kind(type);
 }
 
 int ps_gvar_is_bool_scalar(const global_var_t *gv) {
@@ -2253,7 +2253,7 @@ static int scalar_flag_from_type(const psx_type_t *type, node_scalar_flag_t flag
     case NODE_SCALAR_PLAIN_CHAR:
       return type->is_plain_char ? 1 : 0;
     case NODE_SCALAR_LONG_DOUBLE:
-      return type->fp_kind == TK_FLOAT_KIND_LONG_DOUBLE ? 1 : 0;
+      return type->floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE ? 1 : 0;
     default:
       return 0;
   }
@@ -2341,7 +2341,8 @@ tk_float_kind_t ps_node_value_fp_kind(node_t *node) {
   const psx_type_t *type = ps_node_get_type(node);
   if (type && !ps_type_is_pointer(type) &&
       (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
-    return type->fp_kind != TK_FLOAT_KIND_NONE ? type->fp_kind : TK_FLOAT_KIND_DOUBLE;
+    tk_float_kind_t kind = ps_type_floating_token_kind(type);
+    return kind != TK_FLOAT_KIND_NONE ? kind : TK_FLOAT_KIND_DOUBLE;
   }
   return TK_FLOAT_KIND_NONE;
 }

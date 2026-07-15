@@ -102,7 +102,7 @@ static int semantic_type_node_matches(
                  ps_type_integer_rank(candidate);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return canonical->fp_kind == candidate->fp_kind;
+      return canonical->floating_kind == candidate->floating_kind;
     case PSX_TYPE_POINTER:
       return 1;
     case PSX_TYPE_ARRAY:

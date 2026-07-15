@@ -1452,7 +1452,7 @@ static tk_float_kind_t canonical_node_pointee_fp_kind(node_t *node) {
   const psx_type_t *type = canonical_node_pointee_type(node);
   return type && (type->kind == PSX_TYPE_FLOAT ||
                   type->kind == PSX_TYPE_COMPLEX)
-             ? type->fp_kind
+             ? ps_type_floating_token_kind(type)
              : TK_FLOAT_KIND_NONE;
 }
 
@@ -2297,7 +2297,7 @@ static void test_additive_semantic_lowering_boundary() {
   mixed = analyze_test_expression(mixed, NULL);
   ASSERT_TRUE(mixed->type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, mixed->type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, mixed->type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, mixed->type->floating_kind);
 
   node_t *difference = parse_expr_input_with_existing_locals("p - p");
   ASSERT_EQ(ND_SUB, difference->kind);
@@ -2323,12 +2323,12 @@ static void test_additive_semantic_lowering_boundary() {
   ASSERT_TRUE(!ps_type_is_unsigned(ranked));
 
   psx_type_t *complex_float = ps_type_new(PSX_TYPE_COMPLEX);
-  complex_float->fp_kind = TK_FLOAT_KIND_FLOAT;
+  complex_float->floating_kind = PSX_FLOATING_KIND_FLOAT;
   const psx_type_t *complex_promoted = ps_type_usual_arithmetic_result(
       complex_float, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
       TK_FLOAT_KIND_NONE, 0);
   ASSERT_EQ(PSX_TYPE_COMPLEX, complex_promoted->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, complex_promoted->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, complex_promoted->floating_kind);
   ASSERT_EQ(16, ps_type_sizeof(complex_promoted));
 
   psx_type_t *pointer_type = ps_type_new_pointer(
@@ -2524,7 +2524,7 @@ static void test_unary_operator_semantic_lowering_boundary() {
   set_test_storage_fixture_type(
       floating, ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  complex_type->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   lvar_t *complex_value = register_test_storage_fixture(
       (char *)"z", 1, 16, 8, 0);
   set_test_storage_fixture_type(complex_value, complex_type);
@@ -2819,8 +2819,8 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_EQ(PSX_FUNCTION_CALL_RESOLUTION_OK, resolution.status);
   ASSERT_TRUE(resolution.function_type == function);
   ASSERT_EQ(PSX_TYPE_FLOAT, resolution.function_type->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            resolution.function_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            resolution.function_type->base->floating_kind);
 
   psx_type_t *function_pointer = ps_type_new_pointer(
       ps_type_clone(function));
@@ -2892,7 +2892,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(direct->type != NULL);
   ASSERT_TRUE(direct->type == direct_call->callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, direct->type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, direct->type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, direct->type->floating_kind);
 
   node_t *reference = parse_expr_input_with_existing_locals(
       "__call_type_boundary");
@@ -2921,7 +2921,7 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(indirect->type != NULL);
   ASSERT_TRUE(indirect->type == indirect_call->callee_type->base);
   ASSERT_EQ(PSX_TYPE_FLOAT, indirect->type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, indirect->type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, indirect->type->floating_kind);
 
   reset_test_locals();
   node_t *implicit = parse_expr_input_with_existing_locals(
@@ -3402,7 +3402,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
   reset_test_locals();
   lvar_t *value = register_test_storage_fixture((char *)"z", 1, 16, 16, 0);
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  complex_type->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   set_test_storage_fixture_type(value, complex_type);
 
   psx_initializer_entry_t *complex_entries =
@@ -3431,7 +3431,7 @@ static void test_complex_initializer_semantic_lowering_boundary() {
 
   lvar_t *float_value = register_test_storage_fixture((char *)"f", 1, 8, 8, 0);
   psx_type_t *float_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  float_complex_type->fp_kind = TK_FLOAT_KIND_FLOAT;
+  float_complex_type->floating_kind = PSX_FLOATING_KIND_FLOAT;
   set_test_storage_fixture_type(float_value, float_complex_type);
   complex_entries = calloc(2, sizeof(*complex_entries));
   complex_entries[0].value = ps_node_new_num(1);
@@ -3674,7 +3674,7 @@ static void test_target_type_layout_boundary() {
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *stale_integer = ps_type_new_integer(TK_INT, 1, 0);
   psx_type_t *float_complex = ps_type_new(PSX_TYPE_COMPLEX);
-  float_complex->fp_kind = TK_FLOAT_KIND_FLOAT;
+  float_complex->floating_kind = PSX_FLOATING_KIND_FLOAT;
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_type_t *pointer_array = ps_type_new_array(pointer, 3, 24, 0);
   psx_type_layout_t layout = {0};
@@ -4262,7 +4262,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(plan.is_byref);
 
   psx_type_t *complex = ps_type_new(PSX_TYPE_COMPLEX);
-  complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  complex->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   ASSERT_TRUE(plan_test_parameter_storage(complex, &plan));
   ASSERT_EQ(PSX_PARAMETER_STORAGE_COMPLEX, plan.kind);
   ASSERT_EQ(16, plan.storage_size);
@@ -4422,7 +4422,8 @@ static void test_parameter_declaration_storage_plan_boundary() {
       planned_callable->param_types[0], integer));
   ASSERT_EQ(PSX_TYPE_POINTER, planned_callable->base->kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, planned_callable->base->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, planned_callable->base->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            planned_callable->base->base->floating_kind);
 
   reset_test_translation_unit_state();
   integer = ps_type_new_integer(TK_INT, 4, 0);
@@ -5127,7 +5128,8 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(3, callback_type->param_count);
   ASSERT_TRUE(callback_type->is_variadic_function);
   ASSERT_EQ(PSX_TYPE_FLOAT, callback_type->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, callback_type->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            callback_type->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER, callback_type->param_types[1]->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, callback_type->param_types[1]->base->kind);
   ASSERT_EQ(PSX_TYPE_POINTER, callback_type->param_types[2]->kind);
@@ -5205,8 +5207,8 @@ static void test_type_name_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, type->base->kind);
   ASSERT_EQ(1, type->base->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, type->base->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            type->base->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            type->base->param_types[0]->floating_kind);
   psx_dispose_type_name_syntax(&syntax);
 }
 
@@ -6599,7 +6601,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   ASSERT_EQ(7, as_num(raw->rhs)->val);
 
   psx_type_t *complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  complex_type->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   lvar_t *complex_value = register_test_storage_fixture(
       (char *)"complex", 7, 16, 16, 0);
   set_test_storage_fixture_type(complex_value, complex_type);
@@ -7319,8 +7321,8 @@ static void test_expr_generic() {
   ASSERT_TRUE(canonical_expr_function->is_variadic_function);
   ASSERT_EQ(PSX_TYPE_FLOAT,
             canonical_expr_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            canonical_expr_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            canonical_expr_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER,
             canonical_expr_function->param_types[1]->kind);
 
@@ -8400,7 +8402,7 @@ static void test_stmt_return() {
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, ret_meta_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ret_meta_type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, ret_meta_type->floating_kind);
   analyze_test_function((node_t *)ret_meta_fn, NULL);
   ASSERT_TRUE(ret_meta_fn->base.type == NULL);
   ASSERT_TRUE(ret_meta_type ==
@@ -9592,8 +9594,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, sig_lvar_function->param_count);
   ASSERT_TRUE(sig_lvar_function->is_variadic_function);
   ASSERT_EQ(PSX_TYPE_FLOAT, sig_lvar_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            sig_lvar_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            sig_lvar_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER, sig_lvar_function->param_types[1]->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER,
             sig_lvar_function->param_types[1]->base->kind);
@@ -9670,8 +9672,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, returned_nested_param_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
             returned_nested_param_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            returned_nested_param_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            returned_nested_param_function->param_types[0]->floating_kind);
 
   parsed_code = parse_program_input(
       "int __tm_sig_gf(int x){ return x; } "
@@ -9696,7 +9698,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(2, top_function->param_count);
   ASSERT_TRUE(top_function->is_variadic_function);
   ASSERT_EQ(PSX_TYPE_FLOAT, top_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, top_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            top_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER, top_function->param_types[1]->kind);
   ASSERT_EQ(PSX_TYPE_INTEGER, top_function->param_types[1]->base->kind);
 
@@ -9738,8 +9741,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(returned_function != NULL);
   ASSERT_EQ(1, returned_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, returned_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            returned_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            returned_function->param_types[0]->floating_kind);
 
   const psx_type_t *explicit_return_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_explicit",
@@ -10303,7 +10306,7 @@ static void test_type_metadata_bridge() {
     vla_fp_leaf = vla_fp_leaf->base;
   ASSERT_TRUE(vla_fp_leaf != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, vla_fp_leaf->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, vla_fp_leaf->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, vla_fp_leaf->floating_kind);
 
   parsed_code = parse_program_input(
       "struct __tm_ptrarr_S { int x; }; "
@@ -10336,7 +10339,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_fp_ptr_double->kind);
   ASSERT_TRUE(tmp_fp_ptr_double->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, tmp_fp_ptr_double->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_fp_ptr_double->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            tmp_fp_ptr_double->base->floating_kind);
   ASSERT_TRUE(ps_lvar_value_is_pointer_like(&tmp_fp_ptr_lvar));
 
   lvar_t tmp_void_ptr_lvar = {0};
@@ -10350,7 +10354,7 @@ static void test_type_metadata_bridge() {
   lvar_t tmp_complex_lvar = {0};
   tmp_complex_lvar.size = 16;
   psx_type_t *canonical_complex = ps_type_new(PSX_TYPE_COMPLEX);
-  canonical_complex->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  canonical_complex->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   set_test_storage_fixture_type(&tmp_complex_lvar, canonical_complex);
   const psx_type_t *tmp_complex_type = tmp_complex_lvar.decl_type;
   ASSERT_TRUE(tmp_complex_type != NULL);
@@ -10365,7 +10369,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(tmp_complex_slot));
   ASSERT_TRUE(ps_node_get_type(tmp_complex_slot) != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, ps_node_get_type(tmp_complex_slot)->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_get_type(tmp_complex_slot)->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            ps_node_get_type(tmp_complex_slot)->floating_kind);
 
   node_t typed_complex_ptr_mem = {0};
   typed_complex_ptr_mem.kind = ND_DEREF;
@@ -10467,7 +10472,7 @@ static void test_type_metadata_bridge() {
   node_t typed_assign_complex_lhs_mem = {0};
   typed_assign_complex_lhs_mem.kind = ND_LVAR;
   psx_type_t *typed_assign_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  typed_assign_complex_type->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  typed_assign_complex_type->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   typed_assign_complex_lhs_mem.type = typed_assign_complex_type;
   node_t *typed_assign_complex = ps_node_new_assign(
       &typed_assign_complex_lhs_mem, ps_node_new_num(0));
@@ -12067,11 +12072,11 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, typed_funcptr_view_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
             typed_funcptr_view_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
-            typed_funcptr_view_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
+            typed_funcptr_view_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, typed_funcptr_view_function->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            typed_funcptr_view_function->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            typed_funcptr_view_function->base->floating_kind);
 
   node_t typed_funcptr_array_mem = {0};
   typed_funcptr_array_mem.kind = ND_DEREF;
@@ -12143,7 +12148,7 @@ static void test_type_metadata_bridge() {
   node_function_call_t typed_cached_complex_call = {0};
   typed_cached_complex_call.base.kind = ND_FUNCALL;
   psx_type_t *typed_cached_complex_type = ps_type_new(PSX_TYPE_COMPLEX);
-  typed_cached_complex_type->fp_kind = TK_FLOAT_KIND_FLOAT;
+  typed_cached_complex_type->floating_kind = PSX_FLOATING_KIND_FLOAT;
   typed_cached_complex_call.base.type = typed_cached_complex_type;
   ps_node_bind_type((node_t *)&typed_cached_complex_call,
                     typed_cached_complex_type);
@@ -12234,7 +12239,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(typed_complex_funcdef->base.type == NULL);
   ASSERT_TRUE(typed_complex_funcdef_ty != NULL);
   ASSERT_EQ(PSX_TYPE_COMPLEX, typed_complex_funcdef_ty->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, typed_complex_funcdef_ty->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            typed_complex_funcdef_ty->floating_kind);
 
   node_t typed_cached_pointer_stale_complex = {0};
   typed_cached_pointer_stale_complex.kind = ND_ADD;
@@ -12256,7 +12262,7 @@ static void test_type_metadata_bridge() {
   node_t typed_complex_operand = {0};
   typed_complex_operand.kind = ND_NUM;
   psx_type_t *typed_complex_operand_type = ps_type_new(PSX_TYPE_COMPLEX);
-  typed_complex_operand_type->fp_kind = TK_FLOAT_KIND_FLOAT;
+  typed_complex_operand_type->floating_kind = PSX_FLOATING_KIND_FLOAT;
   typed_complex_operand.type = typed_complex_operand_type;
   node_t *typed_complex_binary =
       ps_node_new_binary(ND_ADD, &typed_complex_operand, ps_node_new_num(1));
@@ -12364,7 +12370,8 @@ static void test_type_metadata_bridge() {
   typed_cached_long_double_ternary.base.kind = ND_TERNARY;
   psx_type_t *typed_cached_long_double_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  typed_cached_long_double_type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+  typed_cached_long_double_type->floating_kind =
+      PSX_FLOATING_KIND_LONG_DOUBLE;
   typed_cached_long_double_ternary.base.type =
       typed_cached_long_double_type;
   ASSERT_TRUE(ps_node_is_long_double_type(
@@ -12456,7 +12463,8 @@ static void test_type_metadata_bridge() {
   cached_long_double_stmt.rhs = &cached_scalar_rhs;
   psx_type_t *cached_long_double_stmt_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  cached_long_double_stmt_type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+  cached_long_double_stmt_type->floating_kind =
+      PSX_FLOATING_KIND_LONG_DOUBLE;
   cached_long_double_stmt.type = cached_long_double_stmt_type;
   ASSERT_TRUE(ps_node_is_long_double_type(&cached_long_double_stmt));
 
@@ -12803,7 +12811,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, param_fp_lvar->decl_type->kind);
   ASSERT_TRUE(param_fp_lvar->decl_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, param_fp_lvar->decl_type->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, param_fp_lvar->decl_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            param_fp_lvar->decl_type->base->floating_kind);
 
   parsed_code = parse_program_input(
       "int main() { struct R { int r[4]; }; struct R r1={{1,2,3,4}}; r1.r; return 0; }");
@@ -13167,7 +13176,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, tmp_gv_double_ptr->kind);
   ASSERT_TRUE(tmp_gv_double_ptr->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, tmp_gv_double_ptr->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, tmp_gv_double_ptr->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            tmp_gv_double_ptr->base->floating_kind);
 
   global_var_t tmp_arr_gv = {0};
   psx_type_t *tmp_arr_incomplete = ps_type_new_array(
@@ -13814,17 +13824,18 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(sd->is_static_local);
   ASSERT_TRUE(sd->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, sd->decl_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, sd->decl_type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, sd->decl_type->floating_kind);
   global_var_t *sd_gv = find_test_global_var(sd->static_global_name, sd->static_global_name_len);
   ASSERT_TRUE(sd_gv != NULL);
   ASSERT_TRUE(sd_gv->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, sd_gv->decl_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, sd_gv->decl_type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, sd_gv->decl_type->floating_kind);
   node_t *sd_node = psx_node_new_static_local_gvar_for(sd);
   ASSERT_TRUE(sd->static_global == sd_gv);
   ASSERT_TRUE(((node_gvar_t *)sd_node)->symbol == sd_gv);
   ASSERT_TRUE(ps_node_get_type(sd_node) == sd_gv->decl_type);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_get_type(sd_node)->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            ps_node_get_type(sd_node)->floating_kind);
 
   parsed_code = parse_program_input(
       "int __tm_static_scalar_flags(void) { "
@@ -14017,7 +14028,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(local_extern_dp != NULL);
   ASSERT_TRUE(local_extern_dp->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, local_extern_dp->decl_type->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, local_extern_dp->decl_type->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            local_extern_dp->decl_type->floating_kind);
 
   parsed_code = parse_program_input(
       "int __tm_block_extern_proto(void) { "
@@ -14029,8 +14041,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, block_declared_function->kind);
   ASSERT_TRUE(block_declared_function->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, block_declared_function->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            block_declared_function->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            block_declared_function->base->floating_kind);
   ASSERT_EQ(1, block_declared_function->param_count);
   ASSERT_EQ(PSX_TYPE_INTEGER,
             block_declared_function->param_types[0]->kind);
@@ -14288,8 +14300,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(17, many_param_function->param_count);
   ASSERT_TRUE(many_param_function->param_types != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, many_param_function->param_types[16]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            many_param_function->param_types[16]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            many_param_function->param_types[16]->floating_kind);
   assert_canonical_type_signature(
       many_param_function,
       "i32(i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,i32,f64)");
@@ -14334,7 +14346,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *many_param_last = tracked_many_param->param_types[16];
   ASSERT_TRUE(many_param_last != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, many_param_last->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, many_param_last->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE, many_param_last->floating_kind);
 
   const char many_param_source_name[] = "__tm_many_param_source";
   node_t **many_param_source_program = parse_program_input(
@@ -14357,7 +14369,8 @@ static void test_type_metadata_bridge() {
       many_param_source->param_types[16];
   ASSERT_TRUE(many_param_source_last != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, many_param_source_last->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, many_param_source_last->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            many_param_source_last->floating_kind);
 
   const char typedef_shape_name[] = "__tm_typedef_shape_cmp";
   psx_type_t *typedef_shape_int_ptr =
@@ -14438,8 +14451,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, ps_type_sizeof(gvar_view_sync.decl_type));
   ASSERT_EQ(PSX_TYPE_ARRAY, gvar_view_sync.decl_type->kind);
   ASSERT_TRUE(gvar_view_sync.decl_type->base != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            gvar_view_sync.decl_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            gvar_view_sync.decl_type->base->floating_kind);
 
   global_var_t gvar_view_array_shape = {0};
   gvar_view_array_shape.name = "__tm_gvar_view_array_shape";
@@ -14506,8 +14519,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_node_type_size(gvar_node_scalar_sync_node));
   ASSERT_EQ(PSX_TYPE_FLOAT,
             ps_node_get_type(gvar_node_scalar_sync_node)->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_get_type(gvar_node_scalar_sync_node)->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            ps_node_get_type(gvar_node_scalar_sync_node)->floating_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             canonical_node_pointee_fp_kind(gvar_node_scalar_sync_node));
   ASSERT_TRUE(!canonical_node_pointee_is_bool(gvar_node_scalar_sync_node));
@@ -14582,7 +14595,7 @@ static void test_type_metadata_bridge() {
 
   lvar_t lvar_view_complex_array = {0};
   psx_type_t *lvar_view_complex_leaf = ps_type_new(PSX_TYPE_COMPLEX);
-  lvar_view_complex_leaf->fp_kind = TK_FLOAT_KIND_DOUBLE;
+  lvar_view_complex_leaf->floating_kind = PSX_FLOATING_KIND_DOUBLE;
   lvar_view_complex_array.decl_type =
       ps_type_new_array(lvar_view_complex_leaf, 2, 32, 0);
   ASSERT_TRUE(ps_lvar_is_complex(&lvar_view_complex_array));
@@ -14707,8 +14720,9 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_node_type_size((node_t *)lvar_node_scalar_sync_node));
   ASSERT_EQ(PSX_TYPE_FLOAT,
             ps_node_get_type((node_t *)lvar_node_scalar_sync_node)->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            ps_node_get_type((node_t *)lvar_node_scalar_sync_node)->fp_kind);
+  ASSERT_EQ(
+      PSX_FLOATING_KIND_DOUBLE,
+      ps_node_get_type((node_t *)lvar_node_scalar_sync_node)->floating_kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             canonical_node_pointee_fp_kind((node_t *)lvar_node_scalar_sync_node));
   ASSERT_TRUE(!canonical_node_pointee_is_bool((node_t *)lvar_node_scalar_sync_node));
@@ -14877,8 +14891,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(dpa_function_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, dpa_function_type->base->base->kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, dpa_function_type->base->base->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            dpa_function_type->base->base->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            dpa_function_type->base->base->base->floating_kind);
 
   parsed_code = parse_program_input(
       "int (*__tm_deref_getrow(void))[3]; "
@@ -15028,7 +15042,8 @@ static void test_type_metadata_bridge() {
   tag_member_info_t dp_info = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
   ASSERT_TRUE(dp_info.decl_type != NULL && dp_info.decl_type->base != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.decl_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            dp_info.decl_type->base->floating_kind);
   ASSERT_TRUE(ps_type_derived_function(dp_info.decl_type) == NULL);
   node_t canonical_int_ptr = {0};
   canonical_int_ptr.kind = ND_LVAR;
@@ -15057,9 +15072,11 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(partial_sig_function != NULL);
   ASSERT_EQ(1, partial_sig_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, partial_sig_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT, partial_sig_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
+            partial_sig_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_FLOAT, partial_sig_function->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, partial_sig_function->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            partial_sig_function->base->floating_kind);
   const psx_type_t *partial_sig_member_decl_type =
       partial_sig_member.decl_type;
   ASSERT_TRUE(partial_sig_member.decl_type == partial_sig_member_decl_type);
@@ -15073,8 +15090,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(1, partial_sig_node_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT,
             partial_sig_node_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_FLOAT,
-            partial_sig_node_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_FLOAT,
+            partial_sig_node_function->param_types[0]->floating_kind);
 
   parsed_code = parse_program_input(
       "struct TM695F { int (*fns[2])(int, int); }; int main(void){ return 0; }");
@@ -15682,7 +15699,8 @@ static void test_type_metadata_bridge() {
   psx_typedef_info_t td_dp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_DP", 8, &td_dp));
   ASSERT_TRUE(td_dp.decl_type != NULL && td_dp.decl_type->base != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp.decl_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            td_dp.decl_type->base->floating_kind);
   assert_canonical_type_signature(td_dp.decl_type, "p<f64>");
   psx_typedef_info_t td_fp = {0};
   ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_FP", 8, &td_fp));
@@ -15694,7 +15712,8 @@ static void test_type_metadata_bridge() {
   fn = as_function_definition(parsed_code[1]);
   lvar_t *td_dp_lvar = find_func_lvar(fn, "dp");
   ASSERT_TRUE(td_dp_lvar != NULL);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp_lvar->decl_type->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            td_dp_lvar->decl_type->base->floating_kind);
   assert_canonical_type_signature(td_dp_lvar->decl_type, "p<f64>");
   lvar_t *td_fp_lvar = find_func_lvar(fn, "fp");
   ASSERT_TRUE(td_fp_lvar != NULL);
@@ -15987,7 +16006,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_FUNCTION, pick_add_ref_type->base->kind);
   ASSERT_TRUE(pick_add_ref_type->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_FLOAT, pick_add_ref_type->base->base->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, pick_add_ref_type->base->base->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            pick_add_ref_type->base->base->floating_kind);
   assert_canonical_type_signature(pick_add_ref_type, "p<f64(f64)>");
 
   parsed_code = parse_program_input(
@@ -16118,8 +16138,8 @@ static void test_multiple_funcdefs() {
   ASSERT_TRUE(deep_double_function != NULL);
   ASSERT_EQ(1, deep_double_function->param_count);
   ASSERT_EQ(PSX_TYPE_FLOAT, deep_double_function->param_types[0]->kind);
-  ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
-            deep_double_function->param_types[0]->fp_kind);
+  ASSERT_EQ(PSX_FLOATING_KIND_DOUBLE,
+            deep_double_function->param_types[0]->floating_kind);
   ASSERT_EQ(PSX_TYPE_POINTER, deep_double_function->base->kind);
   ASSERT_EQ(PSX_TYPE_ARRAY, deep_double_function->base->base->kind);
   ASSERT_EQ(3, deep_double_function->base->base->array_len);

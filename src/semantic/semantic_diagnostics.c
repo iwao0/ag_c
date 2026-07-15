@@ -15,8 +15,8 @@ static int fp_literal_fractional_part_known(double value) {
 static tk_float_kind_t type_fp_kind(const psx_type_t *type) {
   if (type && !ps_type_is_pointer(type) &&
       (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)) {
-    return type->fp_kind != TK_FLOAT_KIND_NONE
-               ? type->fp_kind
+    return ps_type_floating_token_kind(type) != TK_FLOAT_KIND_NONE
+               ? ps_type_floating_token_kind(type)
                : TK_FLOAT_KIND_DOUBLE;
   }
   return TK_FLOAT_KIND_NONE;

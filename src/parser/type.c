@@ -95,6 +95,18 @@ static psx_integer_kind_t integer_kind_from_token(token_kind_t token_kind) {
   }
 }
 
+static psx_floating_kind_t floating_kind_from_token(
+    tk_float_kind_t token_kind) {
+  switch (token_kind) {
+    case TK_FLOAT_KIND_FLOAT: return PSX_FLOATING_KIND_FLOAT;
+    case TK_FLOAT_KIND_LONG_DOUBLE: return PSX_FLOATING_KIND_LONG_DOUBLE;
+    case TK_FLOAT_KIND_DOUBLE: return PSX_FLOATING_KIND_DOUBLE;
+    case TK_FLOAT_KIND_NONE:
+    default:
+      return PSX_FLOATING_KIND_NONE;
+  }
+}
+
 psx_type_t *ps_type_new_in(
     arena_context_t *arena_context, psx_type_kind_t kind) {
   psx_type_t *type = arena_alloc_in(arena_context, sizeof(psx_type_t));
@@ -143,12 +155,20 @@ psx_type_t *ps_type_new_enum_in(
   return type;
 }
 
+psx_type_t *ps_type_new_floating_in(
+    arena_context_t *arena_context, psx_floating_kind_t floating_kind,
+    int is_complex) {
+  psx_type_t *type = ps_type_new_in(
+      arena_context, is_complex ? PSX_TYPE_COMPLEX : PSX_TYPE_FLOAT);
+  if (!type) return NULL;
+  type->floating_kind = floating_kind;
+  return type;
+}
+
 psx_type_t *ps_type_new_float_in(
     arena_context_t *arena_context, tk_float_kind_t fp_kind) {
-  psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FLOAT);
-  if (!type) return NULL;
-  type->fp_kind = fp_kind;
-  return type;
+  return ps_type_new_floating_in(
+      arena_context, floating_kind_from_token(fp_kind), 0);
 }
 
 int ps_type_integer_rank(const psx_type_t *type) {
@@ -276,11 +296,11 @@ int ps_type_usual_arithmetic_result_is_unsigned_for_target(
 }
 
 static ag_target_scalar_kind_t floating_target_kind(
-    tk_float_kind_t fp_kind, int is_complex) {
-  if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE)
+    psx_floating_kind_t floating_kind, int is_complex) {
+  if (floating_kind == PSX_FLOATING_KIND_LONG_DOUBLE)
     return is_complex ? AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX
                       : AG_TARGET_SCALAR_LONG_DOUBLE;
-  if (fp_kind == TK_FLOAT_KIND_FLOAT)
+  if (floating_kind == PSX_FLOATING_KIND_FLOAT)
     return is_complex ? AG_TARGET_SCALAR_FLOAT_COMPLEX
                       : AG_TARGET_SCALAR_FLOAT;
   return is_complex ? AG_TARGET_SCALAR_DOUBLE_COMPLEX
@@ -296,23 +316,21 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
       (lhs && lhs->kind == PSX_TYPE_COMPLEX) ||
       (rhs && rhs->kind == PSX_TYPE_COMPLEX);
   if (result_is_complex) {
-    tk_float_kind_t fp = fallback_fp_kind;
-    if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
-    if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
-    if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_COMPLEX);
-    type->fp_kind = fp;
-    return type;
+    psx_floating_kind_t fp = floating_kind_from_token(fallback_fp_kind);
+    if (lhs && lhs->floating_kind > fp) fp = lhs->floating_kind;
+    if (rhs && rhs->floating_kind > fp) fp = rhs->floating_kind;
+    if (fp == PSX_FLOATING_KIND_NONE) fp = PSX_FLOATING_KIND_DOUBLE;
+    return ps_type_new_floating_in(arena_context, fp, 1);
   }
 
   if ((lhs && lhs->kind == PSX_TYPE_FLOAT) ||
       (rhs && rhs->kind == PSX_TYPE_FLOAT) ||
       fallback_fp_kind != TK_FLOAT_KIND_NONE) {
-    tk_float_kind_t fp = fallback_fp_kind;
-    if (lhs && lhs->fp_kind > fp) fp = lhs->fp_kind;
-    if (rhs && rhs->fp_kind > fp) fp = rhs->fp_kind;
-    if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    return ps_type_new_float_in(arena_context, fp);
+    psx_floating_kind_t fp = floating_kind_from_token(fallback_fp_kind);
+    if (lhs && lhs->floating_kind > fp) fp = lhs->floating_kind;
+    if (rhs && rhs->floating_kind > fp) fp = rhs->floating_kind;
+    if (fp == PSX_FLOATING_KIND_NONE) fp = PSX_FLOATING_KIND_DOUBLE;
+    return ps_type_new_floating_in(arena_context, fp, 0);
   }
 
   integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
@@ -761,6 +779,18 @@ token_kind_t ps_type_tag_token_kind(const psx_type_t *type) {
   return TK_EOF;
 }
 
+tk_float_kind_t ps_type_floating_token_kind(const psx_type_t *type) {
+  if (!type) return TK_FLOAT_KIND_NONE;
+  switch (type->floating_kind) {
+    case PSX_FLOATING_KIND_FLOAT: return TK_FLOAT_KIND_FLOAT;
+    case PSX_FLOATING_KIND_DOUBLE: return TK_FLOAT_KIND_DOUBLE;
+    case PSX_FLOATING_KIND_LONG_DOUBLE: return TK_FLOAT_KIND_LONG_DOUBLE;
+    case PSX_FLOATING_KIND_NONE:
+    default:
+      return TK_FLOAT_KIND_NONE;
+  }
+}
+
 psx_type_t *ps_type_new_tag_in(
     arena_context_t *arena_context, token_kind_t tag_kind,
     char *tag_name, int tag_len, int tag_scope_depth_p1) {
@@ -927,7 +957,7 @@ int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b) {
       return a->integer_kind == b->integer_kind;
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return a->fp_kind == b->fp_kind;
+      return a->floating_kind == b->floating_kind;
     case PSX_TYPE_POINTER:
       return ps_type_shape_matches(a->base, b->base);
     case PSX_TYPE_ARRAY:
@@ -975,7 +1005,7 @@ static int semantic_type_matches(
              ps_type_integer_rank(a) == ps_type_integer_rank(b);
     case PSX_TYPE_FLOAT:
     case PSX_TYPE_COMPLEX:
-      return a->fp_kind == b->fp_kind;
+      return a->floating_kind == b->floating_kind;
     case PSX_TYPE_POINTER:
       return semantic_type_matches(a->base, b->base, 1);
     case PSX_TYPE_ARRAY:
@@ -1138,7 +1168,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       canonical_sig_uint(
           w, (unsigned int)(ag_target_info_scalar_size(
                                  target, floating_target_kind(
-                                             type->fp_kind,
+                                             type->floating_kind,
                                              0)) *
                              8));
       return;
@@ -1147,7 +1177,7 @@ static void canonical_sig_type(canonical_sig_writer_t *w,
       canonical_sig_uint(
           w, (unsigned int)(ag_target_info_scalar_size(
                                  target, floating_target_kind(
-                                             type->fp_kind,
+                                             type->floating_kind,
                                              1)) *
                              8));
       return;

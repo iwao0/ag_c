@@ -34,7 +34,7 @@ static inline tk_float_kind_t ps_tag_member_decl_fp_kind(
   const psx_type_t *type = ps_tag_member_decl_value_type(m);
   if (type) {
     return (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_COMPLEX)
-               ? type->fp_kind
+               ? ps_type_floating_token_kind(type)
                : TK_FLOAT_KIND_NONE;
   }
   return TK_FLOAT_KIND_NONE;

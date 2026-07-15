@@ -3444,7 +3444,14 @@ if (!canonicalTypeStruct ||
     /\btoken_kind_t\s+scalar_kind\s*;/.test(canonicalTypeStruct[1]) ||
     /\btoken_kind_t\s+tag_kind\s*;/.test(canonicalTypeStruct[1]) ||
     /\bis_long_long\b/.test(canonicalTypeStruct[1]) ||
-    !/\btk_float_kind_t\s+fp_kind\s*;/.test(canonicalTypeStruct[1]) ||
+    !/\bpsx_floating_kind_t\s+floating_kind\s*;/.test(
+      canonicalTypeStruct[1],
+    ) ||
+    /\btk_float_kind_t\s+fp_kind\s*;/.test(canonicalTypeStruct[1]) ||
+    !/\btk_float_kind_t\s+ps_type_floating_token_kind\s*\(/.test(
+      typeSource,
+    ) ||
+    !/\bps_type_new_floating_in\s*\(/.test(typeBuilderSource) ||
     /\bis_long_double\b/.test(canonicalTypeStruct[1]) ||
     !recordDeclStruct ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||

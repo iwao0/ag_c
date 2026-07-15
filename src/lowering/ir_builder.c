@@ -401,7 +401,7 @@ static ir_type_t ir_type_from_type(const psx_type_t *type) {
   tk_float_kind_t fp_kind =
       type && (type->kind == PSX_TYPE_FLOAT ||
                type->kind == PSX_TYPE_COMPLEX)
-          ? type->fp_kind
+          ? ps_type_floating_token_kind(type)
           : TK_FLOAT_KIND_NONE;
   if (fp_kind == TK_FLOAT_KIND_FLOAT) return IR_TY_F32;
   if (fp_kind >= TK_FLOAT_KIND_DOUBLE) return IR_TY_F64;
@@ -3532,7 +3532,7 @@ static int setup_function_params(
     if (param_type && param_type->kind == PSX_TYPE_COMPLEX) {
       /* _Complex 引数 (HFA): re→d{n}/s{n}, im→d{n+1}/s{n+1} の 2 FP レジスタで
        * 受け取り、slot+0 / slot+half に格納する (AAPCS64)。 */
-      ir_type_t pty = param_type->fp_kind == TK_FLOAT_KIND_FLOAT
+      ir_type_t pty = param_type->floating_kind == PSX_FLOATING_KIND_FLOAT
                           ? IR_TY_F32 : IR_TY_F64;
       int half = (pty == IR_TY_F32) ? 4 : 8;
       int base_ptr = address_of_lvar(ctx, lv->offset);
@@ -3811,7 +3811,7 @@ static int build_function(
   /* _Complex 戻り値 (HFA): re→d0/s0, im→d1/s1。half=8(double)/4(float)。 */
   if (ret_type->kind == PSX_TYPE_COMPLEX) {
     ctx->f->ret_complex_half =
-        (ret_type->fp_kind == TK_FLOAT_KIND_FLOAT) ? 4 : 8;
+        (ret_type->floating_kind == PSX_FLOATING_KIND_FLOAT) ? 4 : 8;
   }
   ctx->f->is_variadic = fn->signature->is_variadic_function;
   ctx->f->is_static = fn->is_static;

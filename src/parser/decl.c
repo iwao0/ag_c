@@ -111,7 +111,7 @@ tk_float_kind_t ps_lvar_fp_kind(const lvar_t *var) {
   const psx_type_t *type = lvar_public_decl_type(var);
   const psx_type_t *leaf = ps_type_array_leaf_type(type);
   if (leaf && (leaf->kind == PSX_TYPE_FLOAT || leaf->kind == PSX_TYPE_COMPLEX))
-    return leaf->fp_kind;
+    return ps_type_floating_token_kind(leaf);
   return TK_FLOAT_KIND_NONE;
 }
 

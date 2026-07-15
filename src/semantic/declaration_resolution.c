@@ -32,22 +32,21 @@ static psx_type_t *resolve_tag_base_type(
 static psx_type_t *resolve_builtin_base_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, const psx_type_spec_result_t *specifier) {
-  tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
+  psx_floating_kind_t floating_kind = PSX_FLOATING_KIND_NONE;
   if (kind == TK_FLOAT)
-    fp_kind = TK_FLOAT_KIND_FLOAT;
+    floating_kind = PSX_FLOATING_KIND_FLOAT;
   else if (kind == TK_DOUBLE)
-    fp_kind = TK_FLOAT_KIND_DOUBLE;
-  if (specifier->is_complex) {
-    psx_type_t *type = ps_type_new_in(
-        ps_ctx_arena(semantic_context), PSX_TYPE_COMPLEX);
-    type->fp_kind = fp_kind != TK_FLOAT_KIND_NONE
-                        ? fp_kind
-                        : TK_FLOAT_KIND_DOUBLE;
-    return type;
-  }
-  if (fp_kind != TK_FLOAT_KIND_NONE) {
-    return ps_type_new_float_in(ps_ctx_arena(semantic_context), fp_kind);
-  }
+    floating_kind = PSX_FLOATING_KIND_DOUBLE;
+  if (specifier->is_complex)
+    return ps_type_new_floating_in(
+        ps_ctx_arena(semantic_context),
+        floating_kind == PSX_FLOATING_KIND_NONE
+            ? PSX_FLOATING_KIND_DOUBLE
+            : floating_kind,
+        1);
+  if (floating_kind != PSX_FLOATING_KIND_NONE)
+    return ps_type_new_floating_in(
+        ps_ctx_arena(semantic_context), floating_kind, 0);
   if (kind == TK_VOID) {
     return ps_type_new_in(
         ps_ctx_arena(semantic_context), PSX_TYPE_VOID);
@@ -73,7 +72,7 @@ static void apply_decl_specifier_type_properties(
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;
   if (specifier->is_long_double) {
-    type->fp_kind = TK_FLOAT_KIND_LONG_DOUBLE;
+    type->floating_kind = PSX_FLOATING_KIND_LONG_DOUBLE;
   }
 }
 

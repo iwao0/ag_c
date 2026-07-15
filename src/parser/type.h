@@ -33,6 +33,13 @@ typedef enum {
 } psx_integer_kind_t;
 
 typedef enum {
+  PSX_FLOATING_KIND_NONE = 0,
+  PSX_FLOATING_KIND_FLOAT,
+  PSX_FLOATING_KIND_DOUBLE,
+  PSX_FLOATING_KIND_LONG_DOUBLE,
+} psx_floating_kind_t;
+
+typedef enum {
   PSX_TYPE_BINARY_COMMA = 0,
   PSX_TYPE_BINARY_ADD,
   PSX_TYPE_BINARY_SUB,
@@ -80,7 +87,7 @@ struct psx_type_t {
   int array_len;
 
   psx_integer_kind_t integer_kind;
-  tk_float_kind_t fp_kind;
+  psx_floating_kind_t floating_kind;
   char *tag_name;
   int tag_len;
   int tag_scope_depth_p1;
@@ -148,6 +155,7 @@ int ps_type_has_qualifier(const psx_type_t *type,
                           psx_type_qualifiers_t qualifier);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
 token_kind_t ps_type_tag_token_kind(const psx_type_t *type);
+tk_float_kind_t ps_type_floating_token_kind(const psx_type_t *type);
 const psx_type_t *ps_type_find_aggregate_object_type(
     const psx_type_t *type);
 int ps_type_tag_identity_matches(const psx_type_t *a,

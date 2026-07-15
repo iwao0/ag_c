@@ -44,10 +44,12 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
   }
   if (kind != ND_CREAL && kind != ND_CIMAG) return NULL;
   if (type->kind == PSX_TYPE_COMPLEX) {
-    tk_float_kind_t fp = type->fp_kind != TK_FLOAT_KIND_NONE
-                             ? type->fp_kind
-                             : TK_FLOAT_KIND_DOUBLE;
-    return ps_type_new_float_in(ps_ctx_arena(semantic_context), fp);
+    psx_floating_kind_t floating_kind =
+        type->floating_kind != PSX_FLOATING_KIND_NONE
+            ? type->floating_kind
+            : PSX_FLOATING_KIND_DOUBLE;
+    return ps_type_new_floating_in(
+        ps_ctx_arena(semantic_context), floating_kind, 0);
   }
   if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_INTEGER ||
       type->kind == PSX_TYPE_BOOL)
