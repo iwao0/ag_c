@@ -17,12 +17,12 @@ static psx_type_t *resolve_tag_base_type(
   if (kind == TK_ENUM) {
     return ps_type_new_enum_in(
         ps_ctx_arena(semantic_context), name, name_len,
-        scope_depth >= 0 ? scope_depth + 1 : 0, 4);
+        scope_depth >= 0 ? scope_depth + 1 : 0);
   }
   if (!ps_ctx_is_tag_aggregate_kind(kind)) return NULL;
   psx_type_t *type = ps_type_new_tag_in(
       ps_ctx_arena(semantic_context), kind, name, name_len,
-      scope_depth >= 0 ? scope_depth + 1 : 0, 0);
+      scope_depth >= 0 ? scope_depth + 1 : 0);
   ps_type_clear_cached_layout(type);
   type->aggregate_definition = ps_ctx_get_tag_definition_in(
       semantic_context, kind, name, name_len);
@@ -35,8 +35,6 @@ static psx_type_t *resolve_tag_base_type(
 static psx_type_t *resolve_builtin_base_type(
     psx_semantic_context_t *semantic_context,
     token_kind_t kind, const psx_type_spec_result_t *specifier) {
-  int elem_size = ps_ctx_scalar_type_size(kind);
-  if (specifier->is_complex) elem_size *= 2;
   tk_float_kind_t fp_kind = TK_FLOAT_KIND_NONE;
   if (kind == TK_FLOAT)
     fp_kind = TK_FLOAT_KIND_FLOAT;
@@ -51,8 +49,7 @@ static psx_type_t *resolve_builtin_base_type(
     return type;
   }
   if (fp_kind != TK_FLOAT_KIND_NONE) {
-    return ps_type_new_float_in(
-        ps_ctx_arena(semantic_context), fp_kind, elem_size);
+    return ps_type_new_float_in(ps_ctx_arena(semantic_context), fp_kind);
   }
   if (kind == TK_VOID) {
     psx_type_t *type = ps_type_new_in(
@@ -61,8 +58,7 @@ static psx_type_t *resolve_builtin_base_type(
     return type;
   }
   return ps_type_new_integer_in(
-      ps_ctx_arena(semantic_context), kind, elem_size,
-      specifier->is_unsigned);
+      ps_ctx_arena(semantic_context), kind, specifier->is_unsigned);
 }
 
 static void apply_decl_specifier_type_properties(

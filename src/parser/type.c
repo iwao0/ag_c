@@ -135,13 +135,12 @@ void ps_type_clear_record_layout_cache(psx_type_t *type) {
 
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_kind,
-    int size, int is_unsigned) {
+    int is_unsigned) {
   psx_type_t *type = ps_type_new_in(
       arena_context,
       scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
   if (!type) return NULL;
   type->scalar_kind = canonical_integer_scalar_kind(scalar_kind);
-  (void)size;
   type->is_unsigned = is_unsigned ? 1 : 0;
   if (scalar_kind == TK_CHAR) type->is_plain_char = 1;
   return type;
@@ -149,9 +148,9 @@ psx_type_t *ps_type_new_integer_in(
 
 psx_type_t *ps_type_new_enum_in(
     arena_context_t *arena_context, char *tag_name, int tag_len,
-    int tag_scope_depth_p1, int size) {
+    int tag_scope_depth_p1) {
   psx_type_t *type = ps_type_new_integer_in(
-      arena_context, TK_ENUM, size > 0 ? size : 4, 0);
+      arena_context, TK_ENUM, 0);
   if (!type) return NULL;
   type->tag_kind = TK_ENUM;
   type->tag_name = tag_name;
@@ -161,11 +160,10 @@ psx_type_t *ps_type_new_enum_in(
 }
 
 psx_type_t *ps_type_new_float_in(
-    arena_context_t *arena_context, tk_float_kind_t fp_kind, int size) {
+    arena_context_t *arena_context, tk_float_kind_t fp_kind) {
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_FLOAT);
   if (!type) return NULL;
   type->fp_kind = fp_kind;
-  (void)size;
   if (fp_kind == TK_FLOAT_KIND_LONG_DOUBLE) type->is_long_double = 1;
   return type;
 }
@@ -346,10 +344,7 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       fp = TK_FLOAT_KIND_LONG_DOUBLE;
     if (fp == TK_FLOAT_KIND_NONE) fp = TK_FLOAT_KIND_DOUBLE;
-    ag_target_scalar_kind_t target_kind = floating_target_kind(fp, 0);
-    psx_type_t *type = ps_type_new_float_in(
-        arena_context, fp,
-        ag_target_info_scalar_size(target, target_kind));
+    psx_type_t *type = ps_type_new_float_in(arena_context, fp);
     if ((lhs && lhs->is_long_double) || (rhs && rhs->is_long_double))
       type->is_long_double = 1;
     return type;
@@ -357,9 +352,8 @@ const psx_type_t *ps_type_usual_arithmetic_result_for_target_in(
 
   integer_conversion_t result = usual_integer_conversion(lhs, rhs, target);
   token_kind_t scalar_kind = result.rank >= 4 ? TK_LONG : TK_INT;
-  int size = integer_rank_size(result.rank, target);
   psx_type_t *type = ps_type_new_integer_in(
-      arena_context, scalar_kind, size, result.is_unsigned);
+      arena_context, scalar_kind, result.is_unsigned);
   type->is_long_long = result.rank >= 5;
   return type;
 }
@@ -382,8 +376,7 @@ const psx_type_t *ps_type_binary_result_for_target_in(
   if (op == PSX_TYPE_BINARY_COMMA)
     return ps_type_clone_in(arena_context, rhs);
   if (op == PSX_TYPE_BINARY_COMPARE || op == PSX_TYPE_BINARY_LOGICAL)
-    return ps_type_new_integer_in(
-        arena_context, TK_INT, integer_rank_size(3, target), 0);
+    return ps_type_new_integer_in(arena_context, TK_INT, 0);
   if (op == PSX_TYPE_BINARY_SHL || op == PSX_TYPE_BINARY_SHR)
     return ps_type_usual_arithmetic_result_for_target_in(
         arena_context, target, lhs, NULL, TK_FLOAT_KIND_NONE, 0);
@@ -398,8 +391,7 @@ const psx_type_t *ps_type_binary_result_for_target_in(
                      arena_context, lhs_pointer ? lhs : rhs);
   if (op == PSX_TYPE_BINARY_SUB) {
     if (lhs_pointer && rhs_pointer)
-      return ps_type_new_integer_in(
-          arena_context, TK_LONG, integer_rank_size(4, target), 0);
+      return ps_type_new_integer_in(arena_context, TK_LONG, 0);
     if (lhs_pointer)
       return lhs->kind == PSX_TYPE_ARRAY
                  ? ps_type_decay_array_in(arena_context, lhs)
@@ -509,12 +501,11 @@ const psx_type_t *ps_type_function_return_type(const psx_type_t *type) {
 
 psx_type_t *ps_type_new_array_in(
     arena_context_t *arena_context, const psx_type_t *base,
-    int array_len, int size, int is_vla) {
+    int array_len, int is_vla) {
   psx_type_t *type = ps_type_new_in(arena_context, PSX_TYPE_ARRAY);
   if (!type) return NULL;
   type->base = base;
   type->array_len = array_len;
-  (void)size;
   type->is_vla = is_vla ? 1 : 0;
   return type;
 }
@@ -581,8 +572,7 @@ psx_type_t *ps_type_wrap_array_dims_in(
   psx_type_t *result = NULL;
   for (int i = dim_count - 1; i >= 0; i--) {
     int len = dims[i];
-    result = ps_type_new_array_in(
-        arena_context, child, len, 0, 0);
+    result = ps_type_new_array_in(arena_context, child, len, 0);
     child = result;
   }
   return result;
@@ -787,8 +777,7 @@ psx_type_t *ps_type_apply_declarator_shape_in(
       ps_type_add_qualifiers(type, qualifiers);
     } else if (op->kind == PSX_DECL_OP_ARRAY) {
       type = ps_type_new_array_in(
-          arena_context, type, op->array_len,
-          0, op->is_vla_array);
+          arena_context, type, op->array_len, op->is_vla_array);
     } else if (op->kind == PSX_DECL_OP_FUNCTION) {
       type = ps_type_new_function_in(arena_context, type);
       if (op->has_canonical_function_params) {
@@ -824,7 +813,7 @@ psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind) {
 
 psx_type_t *ps_type_new_tag_in(
     arena_context_t *arena_context, token_kind_t tag_kind,
-    char *tag_name, int tag_len, int tag_scope_depth_p1, int size) {
+    char *tag_name, int tag_len, int tag_scope_depth_p1) {
   psx_type_t *type = ps_type_new_in(
       arena_context, ps_type_kind_from_tag_kind(tag_kind));
   if (!type) return NULL;
@@ -832,7 +821,6 @@ psx_type_t *ps_type_new_tag_in(
   type->tag_name = tag_name;
   type->tag_len = tag_len;
   type->tag_scope_depth_p1 = tag_scope_depth_p1;
-  (void)size;
   return type;
 }
 

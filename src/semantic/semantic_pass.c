@@ -401,7 +401,7 @@ static void semantic_resolve_function_call(
       semantic_bind_result_type(
           (node_t *)call,
           ps_type_new_integer_in(
-              ps_ctx_arena(semantic_context), TK_INT, 4, 0));
+              ps_ctx_arena(semantic_context), TK_INT, 0));
       return;
     }
   }

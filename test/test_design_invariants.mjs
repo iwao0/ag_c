@@ -3000,6 +3000,22 @@ for (const functionName of typeBuilderApiNames) {
     throw new Error(`${functionName} must be declared by parser/type_builder.h`);
   }
 }
+for (const functionName of [
+  "ps_type_new_integer_in",
+  "ps_type_new_enum_in",
+  "ps_type_new_float_in",
+  "ps_type_new_array_in",
+  "ps_type_new_tag_in",
+]) {
+  const declaration = typeBuilderSource.match(
+    new RegExp(`\\b${functionName}\\s*\\(([^;]*)\\)\\s*;`),
+  );
+  if (!declaration || /\b(?:size|align)\b/.test(declaration[1])) {
+    throw new Error(
+      `${functionName} must construct semantic identity without target layout arguments`,
+    );
+  }
+}
 if (/^\s*psx_type_t\s*\*/m.test(typeSource)) {
   throw new Error("parser/type.h must not publish mutable type results");
 }
@@ -3230,7 +3246,7 @@ if (!tagTypeStruct ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       tagAlignLookupFunction[0],
     ) ||
-    !/ps_type_new_tag_in\s*\([^]*?tag->scope_depth\s*\+\s*1\s*,\s*0\s*\)/.test(
+    !/ps_type_new_tag_in\s*\([^]*?tag->scope_depth\s*\+\s*1\s*\)/.test(
       tagContextSource,
     )) {
   throw new Error(

@@ -101,22 +101,22 @@ static arena_context_t *test_arena_context(void) {
  * every constructor call. Production code is forbidden from these aliases. */
 #define ps_type_new(...) \
   ps_type_new_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_new_integer(...) \
-  ps_type_new_integer_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_new_enum(...) \
-  ps_type_new_enum_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_new_float(...) \
-  ps_type_new_float_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_integer(kind, legacy_size, is_unsigned) \
+  ps_type_new_integer_in(test_arena_context(), kind, is_unsigned)
+#define ps_type_new_enum(name, len, scope_depth_p1, legacy_size) \
+  ps_type_new_enum_in(test_arena_context(), name, len, scope_depth_p1)
+#define ps_type_new_float(kind, legacy_size) \
+  ps_type_new_float_in(test_arena_context(), kind)
 #define ps_type_new_pointer(...) \
   ps_type_new_pointer_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_new_function(...) \
   ps_type_new_function_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_new_array(...) \
-  ps_type_new_array_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_array(base, len, legacy_size, is_vla) \
+  ps_type_new_array_in(test_arena_context(), base, len, is_vla)
 #define ps_type_clone(...) \
   ps_type_clone_in(test_arena_context(), __VA_ARGS__)
-#define ps_type_new_tag(...) \
-  ps_type_new_tag_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_new_tag(kind, name, len, scope_depth_p1, legacy_size) \
+  ps_type_new_tag_in(test_arena_context(), kind, name, len, scope_depth_p1)
 #define ps_type_set_function_params(...) \
   ps_type_set_function_params_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_wrap_array_dims(...) \
@@ -8651,10 +8651,8 @@ static void test_type_metadata_bridge() {
 
   psx_type_t *deep_array_leaf = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *deep_array = deep_array_leaf;
-  int deep_array_size = 4;
   for (int i = 0; i < 10; i++) {
-    deep_array_size *= 2;
-    deep_array = ps_type_new_array(deep_array, 2, deep_array_size, 0);
+    deep_array = ps_type_new_array(deep_array, 2, 0, 0);
   }
   ASSERT_EQ(10, ps_type_array_rank(deep_array));
   ASSERT_EQ(2, ps_type_array_dimension(deep_array, 9));
@@ -13017,12 +13015,13 @@ static void test_type_metadata_bridge() {
   tag_member_info_t flat_decl_array_member = {0};
   flat_decl_array_member.name = "arr";
   flat_decl_array_member.len = 3;
-  flat_decl_array_member.decl_type = ps_type_new_array(
+  psx_type_t *flat_decl_array_type = ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)flat_decl_inner_tag,
                        (int)sizeof(flat_decl_inner_tag) - 1, 0, 8),
       3, 24, 0);
   ps_ctx_attach_aggregate_definitions_in(
-      test_semantic_context(), flat_decl_array_member.decl_type);
+      test_semantic_context(), flat_decl_array_type);
+  flat_decl_array_member.decl_type = flat_decl_array_type;
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(
                     test_semantic_context(),
                     flat_decl_array_member.decl_type));
@@ -14121,12 +14120,13 @@ static void test_type_metadata_bridge() {
   lvar_t lvar_view_struct_array_shape = {0};
   lvar_view_struct_array_shape.offset = 100;
   lvar_view_struct_array_shape.size = 77;
-  lvar_view_struct_array_shape.decl_type = ps_type_new_array(
+  psx_type_t *lvar_view_struct_array_type = ps_type_new_array(
       ps_type_new_tag(TK_STRUCT, (char *)lvar_view_struct_array_tag_name,
                        (int)sizeof(lvar_view_struct_array_tag_name) - 1, 0, 12),
       2, 24, 0);
   ps_ctx_attach_aggregate_definitions_in(
-      test_semantic_context(), lvar_view_struct_array_shape.decl_type);
+      test_semantic_context(), lvar_view_struct_array_type);
+  lvar_view_struct_array_shape.decl_type = lvar_view_struct_array_type;
   ASSERT_TRUE(ps_lvar_is_array(&lvar_view_struct_array_shape));
   ASSERT_TRUE(ps_lvar_is_tag_aggregate(&lvar_view_struct_array_shape));
   ASSERT_EQ(24, ps_ctx_type_sizeof_in(
@@ -14152,11 +14152,12 @@ static void test_type_metadata_bridge() {
   lvar_t lvar_view_struct_object_size = {0};
   lvar_view_struct_object_size.offset = 200;
   lvar_view_struct_object_size.size = 77;
-  lvar_view_struct_object_size.decl_type =
+  psx_type_t *lvar_view_struct_object_type =
       ps_type_new_tag(TK_STRUCT, (char *)lvar_view_struct_array_tag_name,
                        (int)sizeof(lvar_view_struct_array_tag_name) - 1, 0, 12);
   ps_ctx_attach_aggregate_definitions_in(
-      test_semantic_context(), lvar_view_struct_object_size.decl_type);
+      test_semantic_context(), lvar_view_struct_object_type);
+  lvar_view_struct_object_size.decl_type = lvar_view_struct_object_type;
   ASSERT_EQ(12, ps_ctx_type_sizeof_in(
                     test_semantic_context(),
                     lvar_view_struct_object_size.decl_type));

@@ -11,25 +11,25 @@ psx_type_t *ps_type_new_in(
     arena_context_t *arena_context, psx_type_kind_t kind);
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_kind,
-    int size, int is_unsigned);
+    int is_unsigned);
 psx_type_t *ps_type_new_enum_in(
     arena_context_t *arena_context, char *tag_name, int tag_len,
-    int tag_scope_depth_p1, int size);
+    int tag_scope_depth_p1);
 psx_type_t *ps_type_new_float_in(
-    arena_context_t *arena_context, tk_float_kind_t fp_kind, int size);
+    arena_context_t *arena_context, tk_float_kind_t fp_kind);
 psx_type_t *ps_type_new_pointer_in(
     arena_context_t *arena_context, const psx_type_t *base);
 psx_type_t *ps_type_new_function_in(
     arena_context_t *arena_context, const psx_type_t *return_type);
 psx_type_t *ps_type_new_array_in(
     arena_context_t *arena_context, const psx_type_t *base,
-    int array_len, int size, int is_vla);
+    int array_len, int is_vla);
 psx_type_t *ps_type_clone_in(
     arena_context_t *arena_context, const psx_type_t *src);
 psx_type_t *ps_type_clone_persistent(const psx_type_t *src);
 psx_type_t *ps_type_new_tag_in(
     arena_context_t *arena_context, token_kind_t tag_kind,
-    char *tag_name, int tag_len, int tag_scope_depth_p1, int size);
+    char *tag_name, int tag_len, int tag_scope_depth_p1);
 void ps_type_normalize_scalar_identity(psx_type_t *type);
 void ps_type_clear_cached_layout(psx_type_t *type);
 void ps_type_clear_record_layout_cache(psx_type_t *type);

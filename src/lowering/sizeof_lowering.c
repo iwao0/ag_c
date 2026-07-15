@@ -17,7 +17,7 @@ node_t *lower_sizeof_query_expression(
         arena_context, query->runtime_size_slot, 8);
     result = ps_node_new_integer_cast_result_in(
         arena_context, slot,
-        ps_type_new_integer_in(arena_context, TK_LONG, 8, 1));
+        ps_type_new_integer_in(arena_context, TK_LONG, 1));
   } else {
     result = ps_node_new_num_in(
         arena_context, query->resolved_size);

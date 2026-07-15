@@ -752,12 +752,10 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
       continue;
     psx_type_t *type = kind == TK_ENUM
         ? ps_type_new_enum_in(
-              context->arena_context, name, len, tag->scope_depth + 1,
-              ag_target_info_scalar_size(
-                  &context->target, AG_TARGET_SCALAR_INT))
+              context->arena_context, name, len, tag->scope_depth + 1)
         : ps_type_new_tag_in(
               context->arena_context, kind, name, len,
-              tag->scope_depth + 1, 0);
+              tag->scope_depth + 1);
     type->aggregate_definition = tag->definition;
     type->record_id = tag->definition
                           ? tag->definition->record_id

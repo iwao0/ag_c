@@ -23,7 +23,7 @@ static node_t *fp_to_int(
     return operand;
   if (!type)
     type = ps_type_new_integer_in(
-        ps_lowering_arena(lowering_context), TK_INT, 4, 0);
+        ps_lowering_arena(lowering_context), TK_INT, 0);
   return ps_node_new_fp_to_int_cast_in(
       ps_lowering_arena(lowering_context), operand, type);
 }

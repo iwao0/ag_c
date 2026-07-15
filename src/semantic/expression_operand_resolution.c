@@ -36,7 +36,7 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
         (type->kind == PSX_TYPE_INTEGER &&
          ps_type_integer_rank(type) < 3))
       return ps_type_new_integer_in(
-          ps_ctx_arena(semantic_context), TK_INT, 4, 0);
+          ps_ctx_arena(semantic_context), TK_INT, 0);
     if (type->kind == PSX_TYPE_INTEGER || type->kind == PSX_TYPE_FLOAT ||
         type->kind == PSX_TYPE_COMPLEX)
       return ps_type_clone_in(ps_ctx_arena(semantic_context), type);
@@ -47,9 +47,7 @@ const psx_type_t *psx_resolve_arithmetic_unary_result_type(
     tk_float_kind_t fp = type->fp_kind != TK_FLOAT_KIND_NONE
                              ? type->fp_kind
                              : TK_FLOAT_KIND_DOUBLE;
-    return ps_type_new_float_in(
-        ps_ctx_arena(semantic_context), fp,
-        fp == TK_FLOAT_KIND_FLOAT ? 4 : 8);
+    return ps_type_new_float_in(ps_ctx_arena(semantic_context), fp);
   }
   if (type->kind == PSX_TYPE_FLOAT || type->kind == PSX_TYPE_INTEGER ||
       type->kind == PSX_TYPE_BOOL)

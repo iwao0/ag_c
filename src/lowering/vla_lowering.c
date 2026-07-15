@@ -53,11 +53,11 @@ static psx_type_t *runtime_stride_storage_type(
   if (count <= 0) return NULL;
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   psx_type_t *slot = ps_type_new_integer_in(
-      arena_context, TK_LONG, 8, 0);
+      arena_context, TK_LONG, 0);
   return count == 1
              ? slot
              : ps_type_new_array_in(
-                   arena_context, slot, count, count * 8, 0);
+                   arena_context, slot, count, 0);
 }
 
 psx_vla_lowering_result_t lower_vla_declaration(

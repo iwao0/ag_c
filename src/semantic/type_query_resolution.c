@@ -63,7 +63,7 @@ static node_t *widen_size_value(
   arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   return ps_node_new_integer_cast_result_in(
       arena_context, value,
-      ps_type_new_integer_in(arena_context, TK_LONG, 8, 1));
+      ps_type_new_integer_in(arena_context, TK_LONG, 1));
 }
 
 static void resolve_sizeof_type_name(
