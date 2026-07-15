@@ -4859,7 +4859,6 @@ static void test_record_decl_ownership_boundary() {
                         second->record_id));
   psx_type_t first_type = {
       .kind = PSX_TYPE_STRUCT,
-      .tag_kind = TK_STRUCT,
       .tag_name = tag_name,
       .tag_len = tag_name_len,
       .record_id = first->record_id,
@@ -5578,7 +5577,7 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(canonical_enum != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, canonical_enum->kind);
   ASSERT_EQ(PSX_INTEGER_KIND_ENUM, canonical_enum->integer_kind);
-  ASSERT_EQ(TK_ENUM, canonical_enum->tag_kind);
+  ASSERT_EQ(TK_ENUM, ps_type_tag_token_kind(canonical_enum));
   ASSERT_TRUE(ps_type_shape_matches(
       canonical_enum, ps_type_clone(canonical_enum)));
   ASSERT_TRUE(!ps_type_shape_matches(
@@ -10400,7 +10399,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_node_is_plain_char_type(&typed_mem));
   ASSERT_TRUE(!ps_node_is_long_double_type(&typed_mem));
   ASSERT_TRUE(!ps_type_is_tag_aggregate(typed_mem.type));
-  ASSERT_EQ(TK_EOF, typed_mem.type->tag_kind);
+  ASSERT_EQ(TK_EOF, ps_type_tag_token_kind(typed_mem.type));
   ASSERT_EQ(0, typed_mem.type->tag_scope_depth_p1);
   ASSERT_EQ(0, canonical_node_array_subscript_stride_bytes(&typed_mem, 0));
   ASSERT_EQ(0, ps_node_vla_row_stride_frame_off(&typed_mem));
@@ -12410,7 +12409,8 @@ static void test_type_metadata_bridge() {
       ps_node_get_type(&typed_stmt_tag_ptr);
   ASSERT_EQ(PSX_TYPE_POINTER, typed_stmt_tag_ptr_type->kind);
   ASSERT_TRUE(typed_stmt_tag_ptr_type->base != NULL);
-  ASSERT_EQ(TK_STRUCT, typed_stmt_tag_ptr_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT,
+            ps_type_tag_token_kind(typed_stmt_tag_ptr_type->base));
   ASSERT_EQ(7, typed_stmt_tag_ptr_type->base->tag_len);
   ASSERT_TRUE(strncmp(typed_stmt_tag_ptr_type->base->tag_name,
                       "StmtTag", 7) == 0);
@@ -12584,7 +12584,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *cached_tag_type = ps_node_get_type(&cached_tag_add);
   ASSERT_EQ(PSX_TYPE_POINTER, cached_tag_type->kind);
   ASSERT_TRUE(cached_tag_type->base == cached_own_tag);
-  ASSERT_EQ(TK_STRUCT, cached_tag_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(cached_tag_type->base));
   ASSERT_EQ(6, cached_tag_type->base->tag_len);
   ASSERT_TRUE(strncmp(cached_tag_type->base->tag_name,
                       "OwnTag", 6) == 0);
@@ -12597,7 +12597,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *typed_tag_ptr_type = ps_node_get_type(&typed_tag_mem);
   ASSERT_EQ(PSX_TYPE_POINTER, typed_tag_ptr_type->kind);
   ASSERT_TRUE(typed_tag_ptr_type->base == typed_tag);
-  ASSERT_EQ(TK_STRUCT, typed_tag_ptr_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(typed_tag_ptr_type->base));
   ASSERT_EQ(5, typed_tag_ptr_type->base->tag_len);
   ASSERT_TRUE(strncmp(typed_tag_ptr_type->base->tag_name,
                       "Typed", 5) == 0);
@@ -12759,7 +12759,7 @@ static void test_type_metadata_bridge() {
             typed_tag_ptr_cast_result_type->kind);
   ASSERT_TRUE(typed_tag_ptr_cast_result_type->base != NULL);
   ASSERT_EQ(TK_STRUCT,
-            typed_tag_ptr_cast_result_type->base->tag_kind);
+            ps_type_tag_token_kind(typed_tag_ptr_cast_result_type->base));
   ASSERT_EQ(5, typed_tag_ptr_cast_result_type->base->tag_len);
   ASSERT_TRUE(strncmp(typed_tag_ptr_cast_result_type->base->tag_name,
                       "PCast", 5) == 0);
@@ -12784,7 +12784,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, ptr_ty->kind);
   ASSERT_TRUE(ps_type_is_pointer(ptr_ty));
   ASSERT_TRUE(ptr_ty->base != NULL);
-  ASSERT_EQ(TK_STRUCT, ptr_ty->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(ptr_ty->base));
   ASSERT_EQ(1, ptr_ty->base->tag_len);
   ASSERT_TRUE(strncmp(ptr_ty->base->tag_name, "S", 1) == 0);
   lvar_t *p_lvar = find_func_lvar(fn, "p");
@@ -12793,7 +12793,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(p_lvar->decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, p_lvar->decl_type->kind);
   ASSERT_TRUE(p_lvar->decl_type->base != NULL);
-  ASSERT_EQ(TK_STRUCT, p_lvar->decl_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(p_lvar->decl_type->base));
 
   parsed_code = parse_program_input("double __tm_param_fp(double *p) { return p[0]; }");
   fn = as_function_definition(parsed_code[0]);
@@ -13035,7 +13035,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *flat_slot_tag_type =
       ps_tag_member_decl_tag_type(&flat_slot_member);
   ASSERT_TRUE(flat_slot_tag_type != NULL);
-  ASSERT_EQ(TK_UNION, flat_slot_tag_type->tag_kind);
+  ASSERT_EQ(TK_UNION, ps_type_tag_token_kind(flat_slot_tag_type));
   ASSERT_TRUE(test_tag_member_at_flat_slot(TK_STRUCT, "FlatOut", 7, 4,
                                           &flat_slot_member, &flat_slot_ordinal));
   ASSERT_EQ(5, flat_slot_ordinal);
@@ -14477,7 +14477,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_type_sizeof(gvar_view_scalar_stale_tag.decl_type));
   ASSERT_TRUE(!ps_type_is_tag_aggregate(
       gvar_view_scalar_stale_tag.decl_type));
-  ASSERT_EQ(TK_EOF, gvar_view_scalar_stale_tag.decl_type->tag_kind);
+  ASSERT_EQ(TK_EOF,
+            ps_type_tag_token_kind(gvar_view_scalar_stale_tag.decl_type));
 
   const char gvar_view_tag_name[] = "__tm_gvar_view_tag";
   global_var_t gvar_view_tag_ptr = {0};
@@ -14489,7 +14490,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_type_sizeof(gvar_view_tag_ptr.decl_type));
   ASSERT_EQ(PSX_TYPE_POINTER, gvar_view_tag_ptr.decl_type->kind);
   ASSERT_TRUE(gvar_view_tag_ptr.decl_type->base != NULL);
-  ASSERT_EQ(TK_STRUCT, gvar_view_tag_ptr.decl_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT,
+            ps_type_tag_token_kind(gvar_view_tag_ptr.decl_type->base));
   ASSERT_EQ((int)sizeof(gvar_view_tag_name) - 1,
             gvar_view_tag_ptr.decl_type->base->tag_len);
 
@@ -14529,7 +14531,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_STRUCT,
             ps_node_get_type(gvar_node_tag_sync_node)->kind);
   ASSERT_EQ(TK_STRUCT,
-            ps_node_get_type(gvar_node_tag_sync_node)->tag_kind);
+            ps_type_tag_token_kind(
+                ps_node_get_type(gvar_node_tag_sync_node)));
 
   global_var_t gvar_node_ptr_scalar_sync = {0};
   gvar_node_ptr_scalar_sync.name = "__tm_gvar_node_ptr_scalar";
@@ -15104,7 +15107,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_ARRAY, ops_info.decl_type->kind);
   ASSERT_TRUE(ops_info.decl_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, ops_info.decl_type->base->kind);
-  ASSERT_EQ(TK_STRUCT, ops_info.decl_type->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(ops_info.decl_type->base));
   ASSERT_EQ(8, ops_info.decl_type->base->tag_len);
 
   parsed_code = parse_program_input(
@@ -15628,7 +15631,7 @@ static void test_type_metadata_bridge() {
   const psx_type_t *gap_elem_type = ps_node_get_type(gap_elem);
   ASSERT_TRUE(gap_elem_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, gap_elem_type->kind);
-  ASSERT_EQ(TK_STRUCT, gap_elem_type->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(gap_elem_type));
 
   parsed_code = parse_program_input(
       "int __tm696_int_rows[2][3][4]; "
@@ -15882,7 +15885,8 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(const_struct_ptr_ty != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, const_struct_ptr_ty->kind);
   ASSERT_TRUE(const_struct_ptr_ty->base != NULL);
-  ASSERT_EQ(TK_STRUCT, const_struct_ptr_ty->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT,
+            ps_type_tag_token_kind(const_struct_ptr_ty->base));
   ASSERT_TRUE(ps_type_has_qualifier(const_struct_ptr_ty->base, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_EQ(2, const_struct_ptr_ty->base->tag_len);
   ASSERT_TRUE(strncmp(const_struct_ptr_ty->base->tag_name,
@@ -15927,7 +15931,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(funcptr_chain_ty != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, funcptr_chain_ty->kind);
   ASSERT_TRUE(funcptr_chain_ty->base != NULL);
-  ASSERT_EQ(TK_STRUCT, funcptr_chain_ty->base->tag_kind);
+  ASSERT_EQ(TK_STRUCT, ps_type_tag_token_kind(funcptr_chain_ty->base));
   ASSERT_EQ(2, funcptr_chain_ty->base->tag_len);
   ASSERT_TRUE(strncmp(funcptr_chain_ty->base->tag_name,
                       "FS", 2) == 0);

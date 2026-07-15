@@ -462,7 +462,7 @@ static int gvar_tag_identity_from_type(const global_var_t *gv, token_kind_t *kin
   const psx_type_t *type =
       ps_type_array_leaf_type(gvar_decl_type_view(gv));
   if (!type || !ps_type_is_tag_aggregate(type)) return 0;
-  if (kind) *kind = type->tag_kind;
+  if (kind) *kind = ps_type_tag_token_kind(type);
   if (name) *name = type->tag_name;
   if (len) *len = type->tag_len;
   if (scope_depth_p1) *scope_depth_p1 = type->tag_scope_depth_p1;
@@ -947,7 +947,8 @@ static int gvar_walk_struct_initializer(
     const psx_type_t *member_tag_type =
         ps_tag_member_decl_tag_type(&mi);
     token_kind_t member_tag_kind = member_tag_type
-                                       ? member_tag_type->tag_kind : TK_EOF;
+                                       ? ps_type_tag_token_kind(member_tag_type)
+                                       : TK_EOF;
     char *member_tag_name = member_tag_type
                                 ? member_tag_type->tag_name : NULL;
     int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
@@ -1108,7 +1109,8 @@ static int gvar_walk_union_initializer(
   int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
   const psx_type_t *member_tag_type = ps_tag_member_decl_tag_type(&mi);
   token_kind_t member_tag_kind = member_tag_type
-                                     ? member_tag_type->tag_kind : TK_EOF;
+                                     ? ps_type_tag_token_kind(member_tag_type)
+                                     : TK_EOF;
   char *member_tag_name = member_tag_type
                               ? member_tag_type->tag_name : NULL;
   int member_tag_len = member_tag_type ? member_tag_type->tag_len : 0;
@@ -1799,7 +1801,9 @@ int ps_tag_find_unnamed_union_covering_offset_in(
     }
     if (ps_tag_member_is_struct_aggregate(&mi)) {
       const psx_type_t *child_type = ps_tag_member_decl_tag_type(&mi);
-      token_kind_t child_kind = child_type ? child_type->tag_kind : TK_EOF;
+      token_kind_t child_kind = child_type
+                                    ? ps_type_tag_token_kind(child_type)
+                                    : TK_EOF;
       char *child_name = child_type ? child_type->tag_name : NULL;
       int child_len = child_type ? child_type->tag_len : 0;
       if (ps_tag_find_unnamed_union_covering_offset_in(
@@ -1820,7 +1824,8 @@ int ps_tag_member_flat_slots_in(
   if (ps_tag_member_is_tag_aggregate(mi)) {
     const psx_type_t *leaf = tag_member_direct_tag_leaf_from_type(mi);
     per = ps_tag_flat_slot_count_in(
-        semantic_context, leaf->tag_kind, leaf->tag_name, leaf->tag_len);
+        semantic_context, ps_type_tag_token_kind(leaf),
+        leaf->tag_name, leaf->tag_len);
   }
   int count = ps_type_array_flat_element_count(ps_tag_member_decl_type(mi));
   return count > 0 ? count * per : per;

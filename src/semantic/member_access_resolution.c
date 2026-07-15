@@ -94,13 +94,13 @@ void psx_resolve_member_access(
   int found = base_scope >= 0
       ? ps_ctx_find_tag_member_info_at_scope_in(
             semantic_context,
-            object_type->tag_kind, object_type->tag_name,
+            ps_type_tag_token_kind(object_type), object_type->tag_name,
             object_type->tag_len, base_scope,
             request->member_name, request->member_name_len,
             &resolution->member)
       : ps_ctx_find_tag_member_info_in(
             semantic_context,
-            object_type->tag_kind, object_type->tag_name,
+            ps_type_tag_token_kind(object_type), object_type->tag_name,
             object_type->tag_len,
             request->member_name, request->member_name_len,
             &resolution->member);

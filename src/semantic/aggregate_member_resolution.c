@@ -221,7 +221,8 @@ static int collect_promoted_aggregate_members(
       source_type->tag_len <= 0 || base_offset < 0)
     return 0;
   int source_count = ps_ctx_get_tag_member_count_in(
-      semantic_context, source_type->tag_kind, source_type->tag_name,
+      semantic_context, ps_type_tag_token_kind(source_type),
+      source_type->tag_name,
       source_type->tag_len);
   if (source_count < 0) return 0;
   tag_member_info_t *members = source_count > 0
@@ -233,7 +234,8 @@ static int collect_promoted_aggregate_members(
   for (int i = 0; i < source_count; i++) {
     tag_member_info_t source = {0};
     if (!ps_ctx_get_tag_member_info_in(
-            semantic_context, source_type->tag_kind, source_type->tag_name,
+            semantic_context, ps_type_tag_token_kind(source_type),
+            source_type->tag_name,
             source_type->tag_len, i, &source)) {
       free(members);
       return 0;

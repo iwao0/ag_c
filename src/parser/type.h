@@ -81,7 +81,6 @@ struct psx_type_t {
 
   psx_integer_kind_t integer_kind;
   tk_float_kind_t fp_kind;
-  token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
   int tag_scope_depth_p1;
@@ -148,6 +147,7 @@ psx_type_qualifiers_t ps_type_qualifiers(const psx_type_t *type);
 int ps_type_has_qualifier(const psx_type_t *type,
                           psx_type_qualifiers_t qualifier);
 int ps_type_is_tag_aggregate(const psx_type_t *type);
+token_kind_t ps_type_tag_token_kind(const psx_type_t *type);
 const psx_type_t *ps_type_find_aggregate_object_type(
     const psx_type_t *type);
 int ps_type_tag_identity_matches(const psx_type_t *a,

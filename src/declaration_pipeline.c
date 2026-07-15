@@ -606,7 +606,7 @@ int psx_begin_static_local_declaration_pipeline(
       memcmp(leaf->tag_name, "__anon_tag_", 11) == 0) {
     ps_ctx_promote_tag_to_file_scope_in(
         request->semantic_context,
-        leaf->tag_kind, leaf->tag_name, leaf->tag_len);
+        ps_type_tag_token_kind(leaf), leaf->tag_name, leaf->tag_len);
   }
 
   psx_static_local_kind_t kind = PSX_STATIC_LOCAL_SCALAR;

@@ -1136,7 +1136,8 @@ void ps_ctx_bind_record_ids_in(
     if (record_id == PSX_RECORD_ID_INVALID && type->tag_name &&
         type->tag_len > 0) {
       record_id = ps_ctx_resolve_tag_record_id_in(
-          context, type->tag_kind, type->tag_name, type->tag_len);
+          context, ps_type_tag_token_kind(type),
+          type->tag_name, type->tag_len);
     }
     type->record_id = record_id;
   }

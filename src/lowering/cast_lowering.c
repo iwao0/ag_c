@@ -85,7 +85,7 @@ static cast_target_view_t target_view(
   view.target = target;
   view.value = target_value_type(target);
   view.kind = integer_token_kind(view.value);
-  view.tag_kind = view.value ? view.value->tag_kind : TK_EOF;
+  view.tag_kind = ps_type_tag_token_kind(view.value);
   view.is_pointer = ps_type_is_pointer(target);
   view.elem_size = ps_lowering_type_size(lowering_context, view.value);
   view.is_unsigned = view.value ? ps_type_is_unsigned(view.value) : 0;
@@ -98,7 +98,7 @@ static cast_target_view_t target_view(
       view.kind = view.value->fp_kind == TK_FLOAT_KIND_FLOAT
                       ? TK_FLOAT : TK_DOUBLE;
     else if (ps_type_is_tag_aggregate(view.value))
-      view.kind = view.value->tag_kind;
+      view.kind = ps_type_tag_token_kind(view.value);
   }
   return view;
 }
@@ -135,7 +135,7 @@ static int size_compatible_tag_value(
   const psx_type_t *value_type = ps_node_get_type(value);
   int value_size = ps_lowering_type_size(lowering_context, value_type);
   return ps_type_is_tag_aggregate(value_type) &&
-         value_type->tag_kind == view->tag_kind &&
+         ps_type_tag_token_kind(value_type) == view->tag_kind &&
          value_size > 0 && view->elem_size > 0 &&
          value_size == view->elem_size;
 }

@@ -93,8 +93,7 @@ static int semantic_type_node_matches(
       return canonical->is_unsigned == candidate->is_unsigned;
     case PSX_TYPE_INTEGER:
       if (canonical->integer_kind == PSX_INTEGER_KIND_ENUM ||
-          candidate->integer_kind == PSX_INTEGER_KIND_ENUM ||
-          canonical->tag_kind == TK_ENUM || candidate->tag_kind == TK_ENUM) {
+          candidate->integer_kind == PSX_INTEGER_KIND_ENUM) {
         return ps_type_tag_identity_matches(canonical, candidate);
       }
       return canonical->is_unsigned == candidate->is_unsigned &&

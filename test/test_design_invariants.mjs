@@ -3429,6 +3429,7 @@ if (!canonicalTypeStruct ||
     ) ||
     /\baggregate_definition\b/.test(canonicalTypeStruct[1]) ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(canonicalTypeStruct[1]) ||
+    !/\btoken_kind_t\s+ps_type_tag_token_kind\s*\(/.test(typeSource) ||
     !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(
       canonicalTypeStruct[1],
     ) ||
@@ -3441,6 +3442,7 @@ if (!canonicalTypeStruct ||
       canonicalTypeStruct[1],
     ) ||
     /\btoken_kind_t\s+scalar_kind\s*;/.test(canonicalTypeStruct[1]) ||
+    /\btoken_kind_t\s+tag_kind\s*;/.test(canonicalTypeStruct[1]) ||
     /\bis_long_long\b/.test(canonicalTypeStruct[1]) ||
     !/\btk_float_kind_t\s+fp_kind\s*;/.test(canonicalTypeStruct[1]) ||
     /\bis_long_double\b/.test(canonicalTypeStruct[1]) ||
