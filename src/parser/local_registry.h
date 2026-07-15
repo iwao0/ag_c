@@ -14,9 +14,6 @@ typedef struct {
 
 psx_local_registry_t *ps_local_registry_create(void);
 void ps_local_registry_destroy(psx_local_registry_t *registry);
-psx_local_registry_t *ps_local_registry_activate(
-    psx_local_registry_t *registry);
-psx_local_registry_t *ps_local_registry_active(void);
 
 unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry);
@@ -54,22 +51,6 @@ void ps_local_registry_update_storage_object_in(
     psx_local_registry_t *registry,
     lvar_t *var, int offset, int storage_size, int alignment);
 
-unsigned ps_local_registry_current_scope_seq(void);
-unsigned ps_local_registry_register_binding_event(void);
-int ps_local_registry_scope_is_visible_from(
-    unsigned declaration_scope, unsigned reference_scope);
-psx_local_lookup_point_t ps_local_registry_capture_lookup_point(void);
-lvar_t *ps_local_registry_find_visible(
-    char *name, int name_len, psx_local_lookup_point_t point);
-void ps_local_registry_reset(void);
-void psx_local_registry_add(lvar_t *var);
-lvar_t *ps_local_registry_create_storage_object(
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type);
-lvar_t *ps_local_registry_create_type_binding(
-    char *name, int name_len, const psx_type_t *type);
-void ps_local_registry_update_storage_object(
-    lvar_t *var, int offset, int storage_size, int alignment);
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
 int ps_local_registry_complete_array_type(
     lvar_t *var, const psx_type_t *complete_type);

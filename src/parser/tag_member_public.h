@@ -81,45 +81,34 @@ static inline const psx_type_t *ps_tag_member_decl_tag_type(
   return ps_type_is_tag_aggregate(type) ? type : NULL;
 }
 
-bool ps_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
-                                  tag_member_info_t *out);
 bool ps_ctx_get_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int index,
     tag_member_info_t *out);
-bool ps_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
-                                   char *member_name, int member_len,
-                                   tag_member_info_t *out);
 bool ps_ctx_find_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     char *member_name, int member_len, tag_member_info_t *out);
-bool ps_ctx_get_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                          int scope_depth, int index,
-                                          tag_member_info_t *out);
 bool ps_ctx_get_tag_member_info_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     int scope_depth, int index, tag_member_info_t *out);
-bool ps_ctx_find_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                           int scope_depth,
-                                           char *member_name, int member_len,
-                                           tag_member_info_t *out);
 bool ps_ctx_find_tag_member_info_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth,
     char *member_name, int member_len, tag_member_info_t *out);
-int ps_ctx_get_tag_member_count(token_kind_t kind, char *name, int len);
 int ps_ctx_get_tag_member_count_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
-int ps_ctx_get_tag_member_count_at_scope(token_kind_t kind, char *name, int len, int scope_depth);
 int ps_ctx_get_tag_member_count_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth);
-int ps_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len);
 int ps_ctx_get_tag_scope_depth_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len);
+int psx_ctx_register_tag_member_in(
+    psx_semantic_context_t *context,
+    token_kind_t tag_kind, char *tag_name, int tag_len,
+    const tag_member_info_t *member, int *out_created);
 
 #endif

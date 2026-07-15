@@ -2643,8 +2643,7 @@ node_t *psx_node_new_static_local_gvar_for(lvar_t *var) {
 
 lvar_t *ps_node_lvar_symbol(node_t *node) {
   if (!node || node->kind != ND_LVAR) return NULL;
-  node_lvar_t *lv = (node_lvar_t *)node;
-  return lv->var ? lv->var : psx_decl_find_lvar_by_offset(lv->offset);
+  return ((node_lvar_t *)node)->var;
 }
 
 node_t *ps_node_clone_lvalue_with_lhs(node_t *target, node_t *lhs) {

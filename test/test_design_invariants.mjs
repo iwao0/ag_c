@@ -300,14 +300,22 @@ const semanticContextOwnershipSource = await readFile(
 );
 if (!/struct\s+psx_semantic_context_t\s*\{/.test(semanticContextOwnershipSource) ||
     !/psx_semantic_context_t\s*\*ps_ctx_create\s*\(/.test(semanticContextOwnershipSource) ||
-    !/psx_semantic_context_t\s*\*ps_ctx_activate\s*\(/.test(semanticContextOwnershipSource) ||
-    !/void\s+ps_ctx_destroy\s*\(/.test(semanticContextOwnershipSource)) {
+    !/void\s+ps_ctx_destroy\s*\(/.test(semanticContextOwnershipSource) ||
+    /default_semantic_context|active_semantic_context/.test(
+      semanticContextOwnershipSource,
+    ) ||
+    /ps_ctx_(?:active|activate)\s*\(/.test(semanticContextOwnershipSource)) {
   throw new Error("semantic state must be owned by an explicit context lifecycle");
 }
 const legacySemanticGlobals =
   /^static\s+.*\b(?:goto_refs_all|label_defs_by_bucket|deferred_parser_warnings_all|tag_types_by_bucket|all_tag_types|tag_members_by_bucket|enum_consts_by_bucket|all_enum_consts|typedefs_by_bucket|all_typedefs|func_names_by_bucket|tag_scope_depth|tag_member_decl_order)\b/gm;
 if (legacySemanticGlobals.test(semanticContextOwnershipSource)) {
   throw new Error("semantic registries must not return to file-scope global ownership");
+}
+const contextFreeSemanticRegistryApis =
+  /\b(?:ps_ctx_reset_function_names|ps_ctx_reset_translation_unit_scope|ps_ctx_reset_function_diag_state|ps_ctx_reset_tag_diag_state|ps_ctx_reset_function_scope|ps_ctx_enter_block_scope|ps_ctx_leave_block_scope|ps_ctx_has_tag_type|ps_ctx_register_tag_type|ps_ctx_get_tag_definition|ps_ctx_get_tag_size|ps_ctx_get_tag_align|ps_ctx_register_tag_members|ps_ctx_find_enum_const|ps_ctx_find_typedef_name|ps_ctx_find_typedef_decl_type|ps_ctx_find_function_symbol|ps_ctx_get_function_type)\s*\(/;
+if (contextFreeSemanticRegistryApis.test(semanticContextOwnershipSource)) {
+  throw new Error("semantic registry operations must require an explicit context");
 }
 const splitSemanticLocalContextApis =
   /\bps_ctx_(?:clone_tag_type_at|register_tag_type|register_enum_const|find_enum_const_at|register_typedef_name|find_typedef_decl_type_at)_in\s*\(/;
@@ -399,6 +407,7 @@ const sessionContextAccessorNames = [
   "semantic_context",
   "global_registry",
   "local_registry",
+  "preprocessor_context",
   "arena_context",
   "diagnostic_context",
   "parser_runtime_context",
@@ -416,9 +425,12 @@ if (sessionContextAccessorNames.some((name) =>
     !/ps_global_registry_destroy\s*\(/.test(compilationSessionSource) ||
     /ps_global_registry_activate\s*\(/.test(compilationSessionSource) ||
     /previous_global_registry/.test(compilationSessionSource) ||
+    /ps_ctx_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_semantic_context/.test(compilationSessionSource) ||
     !/ps_local_registry_create\s*\(/.test(compilationSessionSource) ||
-    !/ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
     !/ps_local_registry_destroy\s*\(/.test(compilationSessionSource) ||
+    /ps_local_registry_activate\s*\(/.test(compilationSessionSource) ||
+    /previous_local_registry/.test(compilationSessionSource) ||
     !/pp_context_create\s*\(/.test(compilationSessionSource) ||
     !/pp_context_activate\s*\(/.test(compilationSessionSource) ||
     !/pp_context_destroy\s*\(/.test(compilationSessionSource) ||
@@ -886,9 +898,6 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
     !/psx_local_registry_t\s*\*ps_local_registry_create\s*\(/.test(
       localRegistrySource,
     ) ||
-    !/psx_local_registry_t\s*\*ps_local_registry_activate\s*\(/.test(
-      localRegistrySource,
-    ) ||
     !/void\s+ps_local_registry_destroy\s*\(/.test(
       localRegistrySource,
     ) ||
@@ -897,9 +906,27 @@ if (!/struct\s+psx_local_registry_t\s*\{/.test(localRegistrySource) ||
       localRegistrySource,
     ) ||
     legacyLocalRegistryGlobals.test(localRegistrySource) ||
-    legacyActiveLocalRegistryMacros.test(localRegistrySource)) {
+    legacyActiveLocalRegistryMacros.test(localRegistrySource) ||
+    /default_local_registry|active_local_registry/.test(localRegistrySource) ||
+    /ps_local_registry_(?:active|activate)\s*\(/.test(
+      localRegistrySource,
+    )) {
   throw new Error(
     "function-local symbols, scopes, and usage events must be owned by an explicit registry",
+  );
+}
+const contextFreeLocalRegistryApis =
+  /\b(?:ps_local_registry_capture_lookup_point|ps_local_registry_find_visible|ps_local_registry_reset|psx_local_registry_add|ps_decl_enter_scope|ps_decl_leave_scope|ps_decl_get_locals|ps_decl_find_lvar|psx_decl_find_lvar_by_offset|ps_decl_replay_lvar_usage_events)\s*\(/;
+if (contextFreeLocalRegistryApis.test(localRegistrySource)) {
+  throw new Error("local registry operations must require an explicit registry");
+}
+const nodeUtilsSourceForRegistry = await readFile(
+  "src/parser/node_utils.c",
+  "utf8",
+);
+if (/psx_decl_find_lvar_by_offset\s*\(/.test(nodeUtilsSourceForRegistry)) {
+  throw new Error(
+    "local variable nodes must retain their symbol instead of resolving through an implicit registry",
   );
 }
 if (!/ps_ctx_register_tag_type_in_contexts\s*\(/.test(
@@ -2408,7 +2435,7 @@ const semanticContextSource = await readFile(
   "src/parser/semantic_ctx.h",
   "utf8",
 );
-if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition\s*\(/.test(
+if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s*\(/.test(
   semanticContextSource,
 )) {
   throw new Error("aggregate definition lookup must return a const view");

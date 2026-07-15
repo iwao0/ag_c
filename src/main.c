@@ -237,7 +237,6 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     wasm_adapter_session = NULL;
   }
   diag_reset_records();
-  pp_virtual_headers_clear();
   if (!source_addr || !out_addr || out_cap <= 0) return -1;
 
   ag_target_info_t target = ag_target_info_wasm32();
@@ -279,10 +278,12 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
     return -1;
   }
   if (virtual_bundle_addr) {
-    pp_virtual_headers_configure((const unsigned char *)(long)virtual_bundle_addr,
-                                 (size_t)virtual_bundle_len,
-                                 max_header_files, max_header_file_bytes,
-                                 max_header_total_bytes, max_include_depth);
+    pp_virtual_headers_configure_in(
+        ag_compilation_session_preprocessor_context(session),
+        (const unsigned char *)(long)virtual_bundle_addr,
+        (size_t)virtual_bundle_len,
+        max_header_files, max_header_file_bytes,
+        max_header_total_bytes, max_include_depth);
   }
   wasm_memory_output_t out = {(char *)(long)out_addr, out_cap, 0, 0};
   out.buf[0] = '\0';

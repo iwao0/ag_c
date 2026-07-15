@@ -213,12 +213,13 @@ static void pp_error(diag_error_id_t id, const char *arg) {
   diag_emit_internalf(id, "%s", msg);
 }
 
-void pp_virtual_headers_clear(void) {
-  free(g_virtual_headers);
-  g_virtual_headers = NULL;
-  g_virtual_header_count = 0;
-  g_virtual_headers_enabled = 0;
-  g_virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
+void pp_virtual_headers_clear_in(ag_preprocessor_context_t *context) {
+  if (!context) return;
+  free(context->virtual_headers);
+  context->virtual_headers = NULL;
+  context->virtual_header_count = 0;
+  context->virtual_headers_enabled = 0;
+  context->virtual_include_depth_limit = PP_MAX_INCLUDE_DEPTH;
 }
 
 static uint32_t virtual_bundle_u32(const unsigned char *p) {
@@ -277,10 +278,15 @@ static void validate_virtual_path_or_die(const char *path) {
   pp_error(id, NULL);
 }
 
-void pp_virtual_headers_configure(const unsigned char *bundle, size_t bundle_len,
-                                  int max_files, int max_file_bytes,
-                                  int max_total_bytes, int max_include_depth) {
-  pp_virtual_headers_clear();
+void pp_virtual_headers_configure_in(
+    ag_preprocessor_context_t *context,
+    const unsigned char *bundle, size_t bundle_len,
+    int max_files, int max_file_bytes,
+    int max_total_bytes, int max_include_depth) {
+  if (!context) {
+    pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
+  }
+  pp_virtual_headers_clear_in(context);
   if (!bundle || bundle_len < 4 || max_files < 0 || max_file_bytes < 0 ||
       max_total_bytes < 0 || max_include_depth <= 0 ||
       max_include_depth > PP_MAX_INCLUDE_DEPTH) {
@@ -348,10 +354,10 @@ void pp_virtual_headers_configure(const unsigned char *bundle, size_t bundle_len
     free(headers);
     pp_error(DIAG_ERR_PREPROCESS_INVALID_INCLUDE_FILENAME, NULL);
   }
-  g_virtual_headers = headers;
-  g_virtual_header_count = (int)count;
-  g_virtual_headers_enabled = 1;
-  g_virtual_include_depth_limit = max_include_depth;
+  context->virtual_headers = headers;
+  context->virtual_header_count = (int)count;
+  context->virtual_headers_enabled = 1;
+  context->virtual_include_depth_limit = max_include_depth;
 }
 
 static const pp_virtual_header_t *find_virtual_header(const char *path) {
@@ -3022,7 +3028,7 @@ void pp_context_destroy(ag_preprocessor_context_t *context) {
   reset_macros();
   reset_retired_include_sources();
   reset_pragma_once_list();
-  pp_virtual_headers_clear();
+  pp_virtual_headers_clear_in(context);
   while (cond_incl) {
     cond_incl_t *entry = cond_incl;
     cond_incl = entry->next;

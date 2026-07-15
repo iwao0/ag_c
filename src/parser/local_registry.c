@@ -48,31 +48,14 @@ struct psx_local_registry_t {
   int current_function_name_len;
 };
 
-static psx_local_registry_t default_local_registry;
-static psx_local_registry_t *active_local_registry =
-    &default_local_registry;
-
 psx_local_registry_t *ps_local_registry_create(void) {
   return calloc(1, sizeof(psx_local_registry_t));
 }
 
 void ps_local_registry_destroy(psx_local_registry_t *registry) {
-  if (!registry || registry == &default_local_registry) return;
-  if (active_local_registry == registry)
-    active_local_registry = &default_local_registry;
+  if (!registry) return;
   free(registry->scope_parent_by_seq);
   free(registry);
-}
-
-psx_local_registry_t *ps_local_registry_activate(
-    psx_local_registry_t *registry) {
-  psx_local_registry_t *previous = active_local_registry;
-  active_local_registry = registry ? registry : &default_local_registry;
-  return previous;
-}
-
-psx_local_registry_t *ps_local_registry_active(void) {
-  return active_local_registry;
 }
 
 static unsigned name_hash(const char *name, int len) {
@@ -119,12 +102,6 @@ int ps_local_registry_scope_is_visible_from_in(
   }
 }
 
-int ps_local_registry_scope_is_visible_from(
-    unsigned declaration_scope, unsigned reference_scope) {
-  return ps_local_registry_scope_is_visible_from_in(
-      active_local_registry, declaration_scope, reference_scope);
-}
-
 static void index_add(psx_local_registry_t *registry, lvar_t *var) {
   var->scope_seq = registry->current_scope_seq;
   var->declaration_seq =
@@ -167,17 +144,9 @@ unsigned ps_local_registry_current_scope_seq_in(
   return registry ? registry->current_scope_seq : 0;
 }
 
-unsigned ps_local_registry_current_scope_seq(void) {
-  return ps_local_registry_current_scope_seq_in(active_local_registry);
-}
-
 unsigned ps_local_registry_register_binding_event_in(
     psx_local_registry_t *registry) {
   return registry ? ++registry->next_declaration_seq : 0;
-}
-
-unsigned ps_local_registry_register_binding_event(void) {
-  return ps_local_registry_register_binding_event_in(active_local_registry);
 }
 
 psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
@@ -187,10 +156,6 @@ psx_local_lookup_point_t ps_local_registry_capture_lookup_point_in(
       .scope_seq = registry->current_scope_seq,
       .declaration_seq = registry->next_declaration_seq,
   };
-}
-
-psx_local_lookup_point_t ps_local_registry_capture_lookup_point(void) {
-  return ps_local_registry_capture_lookup_point_in(active_local_registry);
 }
 
 lvar_t *ps_local_registry_find_visible_in(
@@ -211,12 +176,6 @@ lvar_t *ps_local_registry_find_visible_in(
   return NULL;
 }
 
-lvar_t *ps_local_registry_find_visible(
-    char *name, int name_len, psx_local_lookup_point_t point) {
-  return ps_local_registry_find_visible_in(
-      active_local_registry, name, name_len, point);
-}
-
 void psx_local_registry_add_in(
     psx_local_registry_t *registry, lvar_t *var) {
   if (!registry || !var) return;
@@ -227,10 +186,6 @@ void psx_local_registry_add_in(
   registry->all_bindings = var;
   registry->locals = var;
   index_add(registry, var);
-}
-
-void psx_local_registry_add(lvar_t *var) {
-  psx_local_registry_add_in(active_local_registry, var);
 }
 
 lvar_t *ps_local_registry_create_storage_object_in(
@@ -263,14 +218,6 @@ lvar_t *ps_local_registry_create_storage_object_in(
   return var;
 }
 
-lvar_t *ps_local_registry_create_storage_object(
-    char *name, int name_len, int offset, int storage_size,
-    int alignment, const psx_type_t *decl_type) {
-  return ps_local_registry_create_storage_object_in(
-      active_local_registry, name, name_len, offset, storage_size,
-      alignment, decl_type);
-}
-
 lvar_t *ps_local_registry_create_type_binding_in(
     psx_local_registry_t *registry,
     char *name, int name_len, const psx_type_t *type) {
@@ -299,12 +246,6 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->next_hash = registry->lvars_by_bucket[bucket];
   registry->lvars_by_bucket[bucket] = var;
   return var;
-}
-
-lvar_t *ps_local_registry_create_type_binding(
-    char *name, int name_len, const psx_type_t *type) {
-  return ps_local_registry_create_type_binding_in(
-      active_local_registry, name, name_len, type);
 }
 
 lvar_t *ps_local_registry_create_static_alias_in(
@@ -341,12 +282,6 @@ void ps_local_registry_update_storage_object_in(
   unsigned bucket = offset_hash(offset);
   var->next_offhash = registry->lvars_by_offset[bucket];
   registry->lvars_by_offset[bucket] = var;
-}
-
-void ps_local_registry_update_storage_object(
-    lvar_t *var, int offset, int storage_size, int alignment) {
-  ps_local_registry_update_storage_object_in(
-      active_local_registry, var, offset, storage_size, alignment);
 }
 
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
@@ -508,10 +443,6 @@ void ps_local_registry_get_current_function_in(
     *out_len = registry ? registry->current_function_name_len : 0;
 }
 
-void ps_local_registry_reset(void) {
-  ps_local_registry_reset_in(active_local_registry);
-}
-
 void ps_decl_enter_scope_in(psx_local_registry_t *registry) {
   if (!registry) return;
   if (registry->lvar_scope_depth < LVAR_SCOPE_STACK_MAX) {
@@ -526,10 +457,6 @@ void ps_decl_enter_scope_in(psx_local_registry_t *registry) {
   ensure_scope_parent_capacity(registry, registry->current_scope_seq);
   registry->scope_parent_by_seq[registry->current_scope_seq] =
       parent_scope_seq;
-}
-
-void ps_decl_enter_scope(void) {
-  ps_decl_enter_scope_in(active_local_registry);
 }
 
 void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
@@ -547,16 +474,8 @@ void ps_decl_leave_scope_in(psx_local_registry_t *registry) {
   }
 }
 
-void ps_decl_leave_scope(void) {
-  ps_decl_leave_scope_in(active_local_registry);
-}
-
 lvar_t *ps_decl_get_locals_in(const psx_local_registry_t *registry) {
   return registry ? registry->all_locals : NULL;
-}
-
-lvar_t *ps_decl_get_locals(void) {
-  return ps_decl_get_locals_in(active_local_registry);
 }
 
 psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region_in(
@@ -569,19 +488,11 @@ psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region_in(
   return region;
 }
 
-psx_lvar_usage_region_t *psx_decl_begin_lvar_usage_region(void) {
-  return psx_decl_begin_lvar_usage_region_in(active_local_registry);
-}
-
 void psx_decl_end_lvar_usage_region_in(
     psx_local_registry_t *registry,
     psx_lvar_usage_region_t *region) {
   if (!registry || !region) return;
   registry->current_usage_region = region->prev;
-}
-
-void psx_decl_end_lvar_usage_region(psx_lvar_usage_region_t *region) {
-  psx_decl_end_lvar_usage_region_in(active_local_registry, region);
 }
 
 void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
@@ -591,10 +502,6 @@ void ps_decl_suppress_lvar_usage_region(psx_lvar_usage_region_t *region) {
 void psx_decl_attach_lvar_current_region_in(
     const psx_local_registry_t *registry, lvar_t *var) {
   if (registry && var) var->decl_region = registry->current_usage_region;
-}
-
-void psx_decl_attach_lvar_current_region(lvar_t *var) {
-  psx_decl_attach_lvar_current_region_in(active_local_registry, var);
 }
 
 void ps_decl_record_lvar_usage_in_region_in(
@@ -612,13 +519,6 @@ void ps_decl_record_lvar_usage_in_region_in(
   else
     registry->usage_events_tail->next = event;
   registry->usage_events_tail = event;
-}
-
-void ps_decl_record_lvar_usage_in_region(
-    lvar_t *var, psx_lvar_usage_kind_t kind,
-    psx_lvar_usage_region_t *region) {
-  ps_decl_record_lvar_usage_in_region_in(
-      active_local_registry, var, kind, region);
 }
 
 void ps_decl_replay_lvar_usage_events_in(
@@ -659,10 +559,6 @@ void ps_decl_replay_lvar_usage_events_in(
   }
 }
 
-void ps_decl_replay_lvar_usage_events(lvar_t *all) {
-  ps_decl_replay_lvar_usage_events_in(active_local_registry, all);
-}
-
 lvar_t *psx_decl_find_lvar_by_offset_in(
     const psx_local_registry_t *registry, int offset) {
   if (!registry) return NULL;
@@ -672,10 +568,6 @@ lvar_t *psx_decl_find_lvar_by_offset_in(
     if (var->offset == offset) return var;
   }
   return NULL;
-}
-
-lvar_t *psx_decl_find_lvar_by_offset(int offset) {
-  return psx_decl_find_lvar_by_offset_in(active_local_registry, offset);
 }
 
 lvar_t *ps_decl_find_lvar_in(
@@ -688,8 +580,4 @@ lvar_t *ps_decl_find_lvar_in(
       return var;
   }
   return NULL;
-}
-
-lvar_t *ps_decl_find_lvar(char *name, int len) {
-  return ps_decl_find_lvar_in(active_local_registry, name, len);
 }

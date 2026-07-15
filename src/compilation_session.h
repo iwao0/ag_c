@@ -36,6 +36,8 @@ psx_global_registry_t *ag_compilation_session_global_registry(
     const ag_compilation_session_t *session);
 psx_local_registry_t *ag_compilation_session_local_registry(
     const ag_compilation_session_t *session);
+ag_preprocessor_context_t *ag_compilation_session_preprocessor_context(
+    const ag_compilation_session_t *session);
 arena_context_t *ag_compilation_session_arena_context(
     const ag_compilation_session_t *session);
 ag_diagnostic_context_t *ag_compilation_session_diagnostic_context(

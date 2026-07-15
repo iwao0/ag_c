@@ -178,10 +178,6 @@ struct psx_semantic_context_t {
   int aggregate_member_decl_order;
 };
 
-static psx_semantic_context_t default_semantic_context;
-static psx_semantic_context_t *active_semantic_context =
-    &default_semantic_context;
-
 static void *ctx_calloc_in(
     psx_semantic_context_t *context, size_t count, size_t size) {
   if (!context) return NULL;
@@ -225,21 +221,9 @@ psx_semantic_context_t *ps_ctx_create(void) {
 }
 
 void ps_ctx_destroy(psx_semantic_context_t *context) {
-  if (!context || context == &default_semantic_context) return;
-  if (active_semantic_context == context)
-    active_semantic_context = &default_semantic_context;
+  if (!context) return;
   ctx_release_all(context);
   free(context);
-}
-
-psx_semantic_context_t *ps_ctx_activate(psx_semantic_context_t *context) {
-  psx_semantic_context_t *previous = active_semantic_context;
-  active_semantic_context = context ? context : &default_semantic_context;
-  return previous;
-}
-
-psx_semantic_context_t *ps_ctx_active(void) {
-  return active_semantic_context;
 }
 
 static psx_type_t *ctx_type_clone_persistent_in(
@@ -275,26 +259,6 @@ static void initialize_tag_member_record(
   const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
   m->decl_type = ctx_type_clone_persistent_in(context, desc_type);
 }
-
-#define goto_refs_all (active_semantic_context->goto_references_all)
-#define label_defs_by_bucket \
-  (active_semantic_context->label_definitions_by_bucket)
-#define deferred_parser_warnings_all \
-  (active_semantic_context->pending_warnings_all)
-#define tag_types_by_bucket (active_semantic_context->tags_by_bucket)
-#define all_tag_types (active_semantic_context->tags_all)
-#define tag_members_by_bucket \
-  (active_semantic_context->aggregate_members_by_bucket)
-#define enum_consts_by_bucket (active_semantic_context->enum_entries_by_bucket)
-#define all_enum_consts (active_semantic_context->enum_entries_all)
-#define typedefs_by_bucket \
-  (active_semantic_context->typedef_entries_by_bucket)
-#define all_typedefs (active_semantic_context->typedef_entries_all)
-#define func_names_by_bucket \
-  (active_semantic_context->function_symbols_by_bucket)
-#define tag_scope_depth (active_semantic_context->scope_depth)
-#define tag_member_decl_order \
-  (active_semantic_context->aggregate_member_decl_order)
 
 static void refresh_registered_member_type_completeness_in(
     psx_semantic_context_t *context) {
@@ -336,19 +300,11 @@ void ps_ctx_reset_function_names_in(psx_semantic_context_t *context) {
          sizeof(context->function_symbols_by_bucket));
 }
 
-void ps_ctx_reset_function_names(void) {
-  ps_ctx_reset_function_names_in(active_semantic_context);
-}
-
 void ps_ctx_reset_translation_unit_scope_in(
     psx_semantic_context_t *context) {
   if (!context) return;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
-}
-
-void ps_ctx_reset_translation_unit_scope(void) {
-  ps_ctx_reset_translation_unit_scope_in(active_semantic_context);
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(
@@ -364,12 +320,6 @@ void ps_ctx_record_unsupported_gnu_extension_warning_in(
   w->name = name;
   w->next_all = context->pending_warnings_all;
   context->pending_warnings_all = w;
-}
-
-void ps_ctx_record_unsupported_gnu_extension_warning(
-    const token_t *tok, const char *name) {
-  ps_ctx_record_unsupported_gnu_extension_warning_in(
-      active_semantic_context, tok, name);
 }
 
 void ps_ctx_emit_deferred_parser_warnings_in(
@@ -391,10 +341,6 @@ void ps_ctx_emit_deferred_parser_warnings_in(
                    w->name ? w->name : "");
     ctx_release_in(context, w);
   }
-}
-
-void ps_ctx_emit_deferred_parser_warnings(void) {
-  ps_ctx_emit_deferred_parser_warnings_in(active_semantic_context);
 }
 
 /* タグの完全型定義状態をソフトリセットする。member tableも翻訳単位ごとの情報なので
@@ -419,10 +365,6 @@ void ps_ctx_reset_tag_diag_state_in(
   context->aggregate_member_decl_order = 0;
 }
 
-void ps_ctx_reset_tag_diag_state(void) {
-  ps_ctx_reset_tag_diag_state_in(active_semantic_context);
-}
-
 /* 各 parse 開始時に呼ぶ、関数名テーブルの「ソフトリセット」: 累積状態 (関数情報) は残し、
  * 同一 parse 内でのみ意味を持つ is_defined のみクリアする。これにより同一プロセス内で複数回frontend parseを
  * を呼ぶユニットテストで前回パースの "function defined" 状態が今回パースに漏れない。 */
@@ -436,10 +378,6 @@ void ps_ctx_reset_function_diag_state_in(
       f->is_defined = 0;
     }
   }
-}
-
-void ps_ctx_reset_function_diag_state(void) {
-  ps_ctx_reset_function_diag_state_in(active_semantic_context);
 }
 
 void ps_ctx_reset_function_scope_in(
@@ -510,17 +448,9 @@ void ps_ctx_reset_function_scope_in(
   }
 }
 
-void ps_ctx_reset_function_scope(void) {
-  ps_ctx_reset_function_scope_in(active_semantic_context);
-}
-
 void ps_ctx_enter_block_scope_in(
     psx_semantic_context_t *context) {
   if (context) context->scope_depth++;
-}
-
-void ps_ctx_enter_block_scope(void) {
-  ps_ctx_enter_block_scope_in(active_semantic_context);
 }
 
 void ps_ctx_leave_block_scope_in(
@@ -574,10 +504,6 @@ void ps_ctx_leave_block_scope_in(
   }
 }
 
-void ps_ctx_leave_block_scope(void) {
-  ps_ctx_leave_block_scope_in(active_semantic_context);
-}
-
 void psx_ctx_register_goto_ref_in(
     psx_semantic_context_t *context,
     char *name, int len, token_t *tok) {
@@ -588,11 +514,6 @@ void psx_ctx_register_goto_ref_in(
   g->tok = tok;
   g->next_all = context->goto_references_all;
   context->goto_references_all = g;
-}
-
-void psx_ctx_register_goto_ref(char *name, int len, token_t *tok) {
-  psx_ctx_register_goto_ref_in(
-      active_semantic_context, name, len, tok);
 }
 
 void psx_ctx_register_label_def_in(
@@ -612,11 +533,6 @@ void psx_ctx_register_label_def_in(
   d->tok = tok;
   d->next_hash = context->label_definitions_by_bucket[bucket];
   context->label_definitions_by_bucket[bucket] = d;
-}
-
-void psx_ctx_register_label_def(char *name, int len, token_t *tok) {
-  psx_ctx_register_label_def_in(
-      active_semantic_context, name, len, tok);
 }
 
 void psx_ctx_validate_goto_refs_in(
@@ -640,10 +556,6 @@ void psx_ctx_validate_goto_refs_in(
   }
 }
 
-void psx_ctx_validate_goto_refs(void) {
-  psx_ctx_validate_goto_refs_in(active_semantic_context);
-}
-
 // tag_types_by_bucket から (kind, name, len) に一致するエントリを返す。なければ NULL。
 static tag_type_t *find_tag_type_in(
     psx_semantic_context_t *context,
@@ -663,11 +575,6 @@ bool ps_ctx_has_tag_type_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   return find_tag_type_in(context, kind, name, len) != NULL;
-}
-
-bool ps_ctx_has_tag_type(token_kind_t kind, char *name, int len) {
-  return ps_ctx_has_tag_type_in(
-      active_semantic_context, kind, name, len);
 }
 
 psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
@@ -695,33 +602,6 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
     return type;
   }
   return NULL;
-}
-
-psx_type_t *ps_ctx_clone_tag_type_at(
-    token_kind_t kind, char *name, int len,
-    psx_local_lookup_point_t point) {
-  return ps_ctx_clone_tag_type_at_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      kind, name, len, point);
-}
-
-void psx_ctx_define_tag_type(token_kind_t kind, char *name, int len) {
-  psx_ctx_define_tag_type_with_layout(kind, name, len, 0, 0, 0);
-}
-
-void psx_ctx_define_tag_type_with_members(token_kind_t kind, char *name, int len, int member_count) {
-  psx_ctx_define_tag_type_with_layout(kind, name, len, member_count, member_count > 0 ? 8 : 0, 0);
-}
-
-void psx_ctx_define_tag_type_with_layout(token_kind_t kind, char *name, int len,
-                                         int member_count, int tag_size, int tag_align) {
-  int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
-  if (!ps_ctx_register_tag_type(kind, name, len, is_complete,
-                                 member_count, tag_size, tag_align)) {
-    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT, NULL,
-                   "タグ '%.*s' は同一スコープで再定義されています (C11 6.7.2)",
-                   len, name);
-  }
 }
 
 int ps_ctx_register_tag_type_in_contexts(
@@ -778,20 +658,8 @@ int ps_ctx_register_tag_type_in_contexts(
   return 1;
 }
 
-int ps_ctx_register_tag_type(token_kind_t kind, char *name, int len,
-                             int is_complete, int member_count,
-                             int tag_size, int tag_align) {
-  return ps_ctx_register_tag_type_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      kind, name, len, is_complete, member_count, tag_size, tag_align);
-}
-
 int ps_ctx_current_tag_scope_depth_in(psx_semantic_context_t *context) {
   return context ? context->scope_depth : 0;
-}
-
-int ps_ctx_current_tag_scope_depth(void) {
-  return ps_ctx_current_tag_scope_depth_in(active_semantic_context);
 }
 
 int ps_ctx_find_tag_kind_at_current_scope_in(
@@ -812,22 +680,11 @@ int ps_ctx_find_tag_kind_at_current_scope_in(
   return 0;
 }
 
-int ps_ctx_find_tag_kind_at_current_scope(
-    char *name, int len, token_kind_t *out_kind) {
-  return ps_ctx_find_tag_kind_at_current_scope_in(
-      active_semantic_context, name, len, out_kind);
-}
-
 int ps_ctx_get_tag_member_count_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   return t ? t->member_count : -1;
-}
-
-int ps_ctx_get_tag_member_count(token_kind_t kind, char *name, int len) {
-  return ps_ctx_get_tag_member_count_in(
-      active_semantic_context, kind, name, len);
 }
 
 const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
@@ -845,12 +702,6 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
   return definition;
 }
 
-const psx_aggregate_definition_t *ps_ctx_get_tag_definition(
-    token_kind_t kind, char *name, int len) {
-  return ps_ctx_get_tag_definition_in(
-      active_semantic_context, kind, name, len);
-}
-
 int ps_ctx_get_tag_size_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
@@ -858,21 +709,11 @@ int ps_ctx_get_tag_size_in(
   return t ? t->size : -1;
 }
 
-int ps_ctx_get_tag_size(token_kind_t kind, char *name, int len) {
-  return ps_ctx_get_tag_size_in(
-      active_semantic_context, kind, name, len);
-}
-
 int ps_ctx_get_tag_align_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   return (t && t->align > 0) ? t->align : -1;
-}
-
-int ps_ctx_get_tag_align(token_kind_t kind, char *name, int len) {
-  return ps_ctx_get_tag_align_in(
-      active_semantic_context, kind, name, len);
 }
 
 static tag_member_t *find_tag_member_record_at_current_scope_in(
@@ -912,12 +753,13 @@ static int insert_tag_member_record_in(
   return 1;
 }
 
-int psx_ctx_register_tag_member(
+int psx_ctx_register_tag_member_in(
+    psx_semantic_context_t *context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *desc, int *out_created) {
   if (out_created) *out_created = 0;
-  if (!ps_ctx_register_tag_members(
-          tag_kind, tag_name, tag_len, desc, 1, NULL))
+  if (!ps_ctx_register_tag_members_in(
+          context, tag_kind, tag_name, tag_len, desc, 1, NULL))
     return 0;
   if (out_created) *out_created = 1;
   return 1;
@@ -975,15 +817,6 @@ int ps_ctx_register_tag_members_in(
   return 1;
 }
 
-int ps_ctx_register_tag_members(
-    token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *members, int member_count,
-    int *out_conflict_index) {
-  return ps_ctx_register_tag_members_in(
-      active_semantic_context, tag_kind, tag_name, tag_len,
-      members, member_count, out_conflict_index);
-}
-
 static int cmp_tag_member_ptr(const void *a, const void *b) {
   const tag_member_t *ma = *(const tag_member_t * const *)a;
   const tag_member_t *mb = *(const tag_member_t * const *)b;
@@ -1006,10 +839,6 @@ void ps_ctx_attach_aggregate_definitions_in(
     ps_ctx_attach_aggregate_definitions_in(
         context, psx_type_owned_base_mut(type));
   }
-}
-
-void ps_ctx_attach_aggregate_definitions(psx_type_t *type) {
-  ps_ctx_attach_aggregate_definitions_in(active_semantic_context, type);
 }
 
 static void fill_tag_member_info_in(
@@ -1096,12 +925,6 @@ static bool find_tag_member_info_impl_in(
 
 /* tag の index 番目 (offset 昇順) のメンバ全属性を取得する。最も内側 tag の scope_depth に
  * 固定 (shadow 対応)。 */
-bool ps_ctx_get_tag_member_info(token_kind_t kind, char *name, int len, int index,
-                                  tag_member_info_t *out) {
-  return ps_ctx_get_tag_member_info_in(
-      active_semantic_context, kind, name, len, index, out);
-}
-
 bool ps_ctx_get_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int index,
@@ -1111,14 +934,6 @@ bool ps_ctx_get_tag_member_info_in(
 }
 
 /* 名前検索版の統合 API。 */
-bool ps_ctx_find_tag_member_info(token_kind_t kind, char *name, int len,
-                                   char *member_name, int member_len,
-                                   tag_member_info_t *out) {
-  return ps_ctx_find_tag_member_info_in(
-      active_semantic_context, kind, name, len,
-      member_name, member_len, out);
-}
-
 bool ps_ctx_find_tag_member_info_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
@@ -1129,29 +944,12 @@ bool ps_ctx_find_tag_member_info_in(
 
 /* 特定 scope_depth に固定した版。タグ shadowing の応用形で、変数の宣言時 scope を引数で
  * 指定してその scope のメンバを引くのに使う。 */
-bool ps_ctx_get_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                          int scope_depth, int index,
-                                          tag_member_info_t *out) {
-  return ps_ctx_get_tag_member_info_at_scope_in(
-      active_semantic_context, kind, name, len,
-      scope_depth, index, out);
-}
-
 bool ps_ctx_get_tag_member_info_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len,
     int scope_depth, int index, tag_member_info_t *out) {
   return get_tag_member_info_impl_in(
       context, kind, name, len, scope_depth, index, out);
-}
-
-bool ps_ctx_find_tag_member_info_at_scope(token_kind_t kind, char *name, int len,
-                                           int scope_depth,
-                                           char *member_name, int member_len,
-                                           tag_member_info_t *out) {
-  return ps_ctx_find_tag_member_info_at_scope_in(
-      active_semantic_context, kind, name, len, scope_depth,
-      member_name, member_len, out);
 }
 
 bool ps_ctx_find_tag_member_info_at_scope_in(
@@ -1168,11 +966,6 @@ int ps_ctx_get_tag_scope_depth_in(
     token_kind_t kind, char *name, int len) {
   tag_type_t *t = find_tag_type_in(context, kind, name, len);
   return t ? t->scope_depth : -1;
-}
-
-int ps_ctx_get_tag_scope_depth(token_kind_t kind, char *name, int len) {
-  return ps_ctx_get_tag_scope_depth_in(
-      active_semantic_context, kind, name, len);
 }
 
 void ps_ctx_promote_tag_to_file_scope_in(
@@ -1194,12 +987,6 @@ void ps_ctx_promote_tag_to_file_scope_in(
   }
 }
 
-void ps_ctx_promote_tag_to_file_scope(
-    token_kind_t kind, char *name, int len) {
-  ps_ctx_promote_tag_to_file_scope_in(
-      active_semantic_context, kind, name, len);
-}
-
 int ps_ctx_get_tag_member_count_at_scope_in(
     psx_semantic_context_t *context,
     token_kind_t kind, char *name, int len, int scope_depth) {
@@ -1215,12 +1002,6 @@ int ps_ctx_get_tag_member_count_at_scope_in(
     }
   }
   return -1;
-}
-
-int ps_ctx_get_tag_member_count_at_scope(
-    token_kind_t kind, char *name, int len, int scope_depth) {
-  return ps_ctx_get_tag_member_count_at_scope_in(
-      active_semantic_context, kind, name, len, scope_depth);
 }
 
 // 任意のスコープから名前一致の enum_const を返す。なければ NULL。
@@ -1283,17 +1064,6 @@ int ps_ctx_register_enum_const_in_contexts(
   return 1;
 }
 
-int ps_ctx_register_enum_const(
-    char *name, int len, long long value, int *out_created) {
-  return ps_ctx_register_enum_const_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      name, len, value, out_created);
-}
-
-int psx_ctx_define_enum_const(char *name, int len, long long value) {
-  return ps_ctx_register_enum_const(name, len, value, NULL);
-}
-
 bool ps_ctx_find_enum_const_in(
     psx_semantic_context_t *context,
     char *name, int len, long long *out_value) {
@@ -1301,11 +1071,6 @@ bool ps_ctx_find_enum_const_in(
   if (!e) return false;
   if (out_value) *out_value = e->value;
   return true;
-}
-
-bool ps_ctx_find_enum_const(char *name, int len, long long *out_value) {
-  return ps_ctx_find_enum_const_in(
-      active_semantic_context, name, len, out_value);
 }
 
 bool ps_ctx_find_enum_const_at_in_contexts(
@@ -1329,22 +1094,9 @@ bool ps_ctx_find_enum_const_at_in_contexts(
   return false;
 }
 
-bool ps_ctx_find_enum_const_at(
-    char *name, int len, psx_local_lookup_point_t point,
-    long long *out_value) {
-  return ps_ctx_find_enum_const_at_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      name, len, point, out_value);
-}
-
 int ps_ctx_has_enum_const_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len) {
   return find_enum_const_in_current_scope_in(context, name, len) != NULL;
-}
-
-int ps_ctx_has_enum_const_in_current_scope(char *name, int len) {
-  return ps_ctx_has_enum_const_in_current_scope_in(
-      active_semantic_context, name, len);
 }
 
 static typedef_name_t *find_typedef_in(
@@ -1380,11 +1132,6 @@ int ps_ctx_has_typedef_in_current_scope_in(
   return find_typedef_in_current_scope_in(context, name, len) != NULL;
 }
 
-int ps_ctx_has_typedef_in_current_scope(char *name, int len) {
-  return ps_ctx_has_typedef_in_current_scope_in(
-      active_semantic_context, name, len);
-}
-
 void ps_ctx_refresh_type_completeness_in(
     psx_semantic_context_t *context, psx_type_t *type) {
   if (!context || !type) return;
@@ -1410,10 +1157,6 @@ void ps_ctx_refresh_type_completeness_in(
       ps_ctx_refresh_type_completeness_in(
           context, psx_type_owned_param_mut(type, i));
   }
-}
-
-void ps_ctx_refresh_type_completeness(psx_type_t *type) {
-  ps_ctx_refresh_type_completeness_in(active_semantic_context, type);
 }
 
 static void initialize_typedef_record(
@@ -1463,25 +1206,6 @@ int ps_ctx_register_typedef_name_in_contexts(
   return 1;
 }
 
-int ps_ctx_register_typedef_name(
-    char *name, int len, const psx_typedef_info_t *info,
-    int *out_created, int *out_redeclared) {
-  return ps_ctx_register_typedef_name_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      name, len, info,
-      out_created, out_redeclared);
-}
-
-int psx_ctx_define_typedef_name(
-    char *name, int len, const psx_typedef_info_t *info) {
-  return ps_ctx_register_typedef_name(name, len, info, NULL, NULL);
-}
-
-bool psx_ctx_find_typedef_sizeof(char *name, int len, int *out_sizeof_size) {
-  return psx_ctx_find_typedef_sizeof_in(
-      active_semantic_context, name, len, out_sizeof_size);
-}
-
 bool psx_ctx_find_typedef_sizeof_in(
     psx_semantic_context_t *context,
     char *name, int len, int *out_sizeof_size) {
@@ -1508,17 +1232,6 @@ bool ps_ctx_find_typedef_name_in(
   return true;
 }
 
-bool ps_ctx_find_typedef_name(char *name, int len, psx_typedef_info_t *out) {
-  return ps_ctx_find_typedef_name_in(
-      active_semantic_context, name, len, out);
-}
-
-bool ps_ctx_find_typedef_decl_type(
-    char *name, int len, const psx_type_t **out_type) {
-  return ps_ctx_find_typedef_decl_type_in(
-      active_semantic_context, name, len, out_type);
-}
-
 bool ps_ctx_find_typedef_decl_type_in(
     psx_semantic_context_t *context,
     char *name, int len, const psx_type_t **out_type) {
@@ -1528,14 +1241,6 @@ bool ps_ctx_find_typedef_decl_type_in(
       context, typedef_record_decl_type_mut(t));
   if (out_type) *out_type = typedef_record_decl_type(t);
   return true;
-}
-
-bool ps_ctx_find_typedef_decl_type_at(
-    char *name, int len, psx_local_lookup_point_t point,
-    const psx_type_t **out_type) {
-  return ps_ctx_find_typedef_decl_type_at_in_contexts(
-      active_semantic_context, ps_local_registry_active(),
-      name, len, point, out_type);
 }
 
 bool ps_ctx_find_typedef_decl_type_at_in_contexts(
@@ -1570,15 +1275,6 @@ bool psx_ctx_is_typedef_name_token_in(
       context, id->str, id->len, NULL);
 }
 
-bool psx_ctx_is_typedef_name_token(token_t *tok) {
-  return psx_ctx_is_typedef_name_token_in(
-      active_semantic_context, tok);
-}
-
-void psx_ctx_define_function_name(char *name, int len) {
-  psx_ctx_define_function_name_with_ret(name, len, 0);
-}
-
 // 任意のスコープから名前一致の関数名エントリを返す。なければ NULL。
 const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
     psx_semantic_context_t *context, char *name, int len) {
@@ -1594,21 +1290,10 @@ const psx_function_symbol_t *ps_ctx_find_function_symbol_in(
   return NULL;
 }
 
-const psx_function_symbol_t *ps_ctx_find_function_symbol(
-    char *name, int len) {
-  return ps_ctx_find_function_symbol_in(
-      active_semantic_context, name, len);
-}
-
 static psx_function_symbol_t *find_function_name_mut_in(
     psx_semantic_context_t *context, char *name, int len) {
   return (psx_function_symbol_t *)ps_ctx_find_function_symbol_in(
       context, name, len);
-}
-
-static psx_function_symbol_t *find_function_name_mut(
-    char *name, int len) {
-  return find_function_name_mut_in(active_semantic_context, name, len);
 }
 
 const psx_type_t *ps_function_symbol_type(
@@ -1628,12 +1313,6 @@ void ps_ctx_checkpoint_function_registration_in(
   checkpoint->existed = 1;
   checkpoint->is_defined = function->is_defined;
   checkpoint->function_type = function->function_type;
-}
-
-void ps_ctx_checkpoint_function_registration(
-    char *name, int len, psx_function_registration_checkpoint_t *checkpoint) {
-  ps_ctx_checkpoint_function_registration_in(
-      active_semantic_context, name, len, checkpoint);
 }
 
 void ps_ctx_rollback_function_registration_in(
@@ -1658,13 +1337,6 @@ void ps_ctx_rollback_function_registration_in(
   (*link)->function_type = checkpoint->function_type;
 }
 
-void ps_ctx_rollback_function_registration(
-    char *name, int len,
-    const psx_function_registration_checkpoint_t *checkpoint) {
-  ps_ctx_rollback_function_registration_in(
-      active_semantic_context, name, len, checkpoint);
-}
-
 static void define_function_name_with_ret_in(
     psx_semantic_context_t *context, char *name, int len,
     int ret_struct_size) {
@@ -1683,19 +1355,21 @@ static void define_function_name_with_ret_in(
   context->function_symbols_by_bucket[bucket] = f;
 }
 
-void psx_ctx_define_function_name_with_ret(char *name, int len,
-                                           int ret_struct_size) {
+void psx_ctx_define_function_name_with_ret_in(
+    psx_semantic_context_t *context, char *name, int len,
+    int ret_struct_size) {
   define_function_name_with_ret_in(
-      active_semantic_context, name, len, ret_struct_size);
+      context, name, len, ret_struct_size);
+}
+
+void psx_ctx_define_function_name_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  define_function_name_with_ret_in(context, name, len, 0);
 }
 
 bool ps_ctx_has_function_name_in(
     psx_semantic_context_t *context, char *name, int len) {
   return ps_ctx_find_function_symbol_in(context, name, len) != NULL;
-}
-
-bool ps_ctx_has_function_name(char *name, int len) {
-  return ps_ctx_has_function_name_in(active_semantic_context, name, len);
 }
 
 /* 同名関数の本体定義が初回かどうかをチェック・記録する (C11 6.9p3)。
@@ -1710,19 +1384,16 @@ int ps_ctx_track_function_defined_in(
   return 1;
 }
 
-int ps_ctx_track_function_defined(char *name, int len) {
-  return ps_ctx_track_function_defined_in(
-      active_semantic_context, name, len);
-}
-
-int ps_ctx_is_function_defined(char *name, int len) {
-  psx_function_symbol_t *f = find_function_name_mut(name, len);
+int ps_ctx_is_function_defined_in(
+    psx_semantic_context_t *context, char *name, int len) {
+  psx_function_symbol_t *f = find_function_name_mut_in(context, name, len);
   return f && f->is_defined;
 }
 
-const psx_type_t *psx_ctx_get_function_ret_type(char *name, int len) {
+const psx_type_t *psx_ctx_get_function_ret_type_in(
+    psx_semantic_context_t *context, char *name, int len) {
   const psx_function_symbol_t *f =
-      ps_ctx_find_function_symbol(name, len);
+      ps_ctx_find_function_symbol_in(context, name, len);
   return f ? ps_type_function_return_type(f->function_type) : NULL;
 }
 
@@ -1748,25 +1419,23 @@ const psx_function_symbol_t *ps_ctx_register_function_type_in(
   return f;
 }
 
-const psx_function_symbol_t *ps_ctx_register_function_type(
-    char *name, int len, const psx_type_t *function_type) {
+int psx_ctx_track_function_type_in(
+    psx_semantic_context_t *context, char *name, int len,
+    const psx_type_t *function_type) {
   return ps_ctx_register_function_type_in(
-      active_semantic_context, name, len, function_type);
+             context, name, len, function_type) != NULL;
 }
 
-int psx_ctx_track_function_type(char *name, int len,
-                                const psx_type_t *function_type) {
-  return ps_ctx_register_function_type(name, len, function_type) != NULL;
-}
-
-const psx_type_t *ps_ctx_get_function_type(char *name, int len) {
+const psx_type_t *ps_ctx_get_function_type_in(
+    psx_semantic_context_t *context, char *name, int len) {
   return ps_function_symbol_type(
-      ps_ctx_find_function_symbol(name, len));
+      ps_ctx_find_function_symbol_in(context, name, len));
 }
 
-int ps_ctx_format_function_signature(char *name, int len,
-                                     char *out, size_t out_size) {
-  const psx_type_t *type = ps_ctx_get_function_type(name, len);
+int ps_ctx_format_function_signature_in(
+    psx_semantic_context_t *context, char *name, int len,
+    char *out, size_t out_size) {
+  const psx_type_t *type = ps_ctx_get_function_type_in(context, name, len);
   if (!type) return -1;
   return ps_type_format_canonical_signature(type, out, out_size);
 }

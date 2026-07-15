@@ -29,9 +29,11 @@ token_t *pp_stream_open_for_target(pp_stream_t **out_s,
 void pp_stream_close(pp_stream_t *s);
 
 /** Wasm JS APIから渡されたcompile単位のvirtual header bundleを設定する。 */
-void pp_virtual_headers_configure(const unsigned char *bundle, size_t bundle_len,
-                                  int max_files, int max_file_bytes,
-                                  int max_total_bytes, int max_include_depth);
-void pp_virtual_headers_clear(void);
+void pp_virtual_headers_configure_in(
+    ag_preprocessor_context_t *context,
+    const unsigned char *bundle, size_t bundle_len,
+    int max_files, int max_file_bytes,
+    int max_total_bytes, int max_include_depth);
+void pp_virtual_headers_clear_in(ag_preprocessor_context_t *context);
 
 #endif

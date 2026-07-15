@@ -91,6 +91,75 @@ static psx_global_registry_t *test_global_registry(void) {
   return ag_compilation_session_global_registry(test_suite_session);
 }
 
+static psx_local_registry_t *test_local_registry(void) {
+  return ag_compilation_session_local_registry(test_suite_session);
+}
+
+static bool test_semantic_has_tag_type(
+    token_kind_t kind, char *name, int len) {
+  return ps_ctx_has_tag_type_in(
+      test_semantic_context(), kind, name, len);
+}
+
+static void test_semantic_define_tag_type_with_layout(
+    token_kind_t kind, char *name, int len,
+    int member_count, int tag_size, int tag_align) {
+  int is_complete = member_count > 0 || tag_size > 0 || tag_align > 0;
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      kind, name, len, is_complete, member_count, tag_size, tag_align));
+}
+
+static int test_semantic_register_tag_type(
+    token_kind_t kind, char *name, int len,
+    int is_complete, int member_count, int tag_size, int tag_align) {
+  return ps_ctx_register_tag_type_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      kind, name, len, is_complete, member_count, tag_size, tag_align);
+}
+
+static int test_semantic_register_tag_member(
+    token_kind_t kind, char *name, int len,
+    const tag_member_info_t *member, int *out_created) {
+  return psx_ctx_register_tag_member_in(
+      test_semantic_context(), kind, name, len, member, out_created);
+}
+
+static int test_semantic_register_tag_members(
+    token_kind_t kind, char *name, int len,
+    const tag_member_info_t *members, int member_count,
+    int *out_conflict_index) {
+  return ps_ctx_register_tag_members_in(
+      test_semantic_context(), kind, name, len, members, member_count,
+      out_conflict_index);
+}
+
+static int test_semantic_define_enum_const(
+    char *name, int len, long long value) {
+  return ps_ctx_register_enum_const_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      name, len, value, NULL);
+}
+
+static int test_semantic_define_typedef_name(
+    char *name, int len, const psx_typedef_info_t *info) {
+  return ps_ctx_register_typedef_name_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      name, len, info, NULL, NULL);
+}
+
+static void test_semantic_define_function_name_with_ret(
+    char *name, int len, int ret_struct_size) {
+  psx_ctx_define_function_name_with_ret_in(
+      test_semantic_context(), name, len, ret_struct_size);
+}
+
+static int test_semantic_track_function_type(
+    char *name, int len, const psx_type_t *function_type) {
+  return psx_ctx_track_function_type_in(
+      test_semantic_context(), name, len, function_type);
+}
+
 static global_var_t *find_test_global_var(char *name, int len) {
   return ps_find_global_var_in(test_global_registry(), name, len);
 }
@@ -803,7 +872,7 @@ static void test_local_declaration_frontend_boundary() {
   ASSERT_TRUE(find_func_lvar(main_function, "b") != NULL);
   ASSERT_TRUE(find_func_lvar(main_function, "value") != NULL);
   ASSERT_TRUE(find_func_lvar(main_function, "s") != NULL);
-  ASSERT_TRUE(ps_ctx_get_function_type((char *)"block_fn", 8) != NULL);
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(), (char *)"block_fn", 8) != NULL);
 }
 
 static void test_function_parameter_point_of_declaration_boundary() {
@@ -852,9 +921,9 @@ static void assert_identifier_resolution_kind(
   psx_identifier_resolution_t resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = name,
           .name_len = name_len,
           .is_call = is_call,
@@ -891,9 +960,9 @@ static void test_identifier_resolution_boundary() {
   psx_identifier_resolution_t function_call;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = (char *)"__identifier_function",
           .name_len = 21,
           .is_call = 1,
@@ -902,13 +971,13 @@ static void test_identifier_resolution_boundary() {
   ASSERT_EQ(PSX_IDENTIFIER_FUNCTION, function_call.kind);
   ASSERT_TRUE(function_call.function != NULL);
   ASSERT_TRUE(function_call.function ==
-              ps_ctx_find_function_symbol(
+              ps_ctx_find_function_symbol_in(test_semantic_context(),
                   (char *)"__identifier_function", 21));
   const psx_type_t *resolved_function_type =
       ps_function_symbol_type(function_call.function);
   ASSERT_TRUE(resolved_function_type != NULL);
   ASSERT_TRUE(resolved_function_type ==
-              ps_ctx_get_function_type(
+              ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__identifier_function", 21));
   ASSERT_EQ(PSX_TYPE_FUNCTION, resolved_function_type->kind);
   ASSERT_EQ(1, resolved_function_type->param_count);
@@ -929,33 +998,33 @@ static void test_persistent_local_scope_lookup_boundary() {
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(outer != NULL);
 
-  ps_decl_enter_scope();
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t before_inner =
-      ps_local_registry_capture_lookup_point();
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
   lvar_t *inner = register_test_storage_fixture(
       (char *)"__scope_value", 13, 4, 4, 0);
   ASSERT_TRUE(inner != NULL);
   psx_local_lookup_point_t after_inner =
-      ps_local_registry_capture_lookup_point();
-  ASSERT_TRUE(ps_local_registry_find_visible(
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__scope_value", 13, before_inner) == outer);
-  ASSERT_TRUE(ps_local_registry_find_visible(
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__scope_value", 13, after_inner) == inner);
 
-  ps_decl_enter_scope();
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t nested =
-      ps_local_registry_capture_lookup_point();
-  ASSERT_TRUE(ps_local_registry_find_visible(
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__scope_value", 13, nested) == inner);
-  ps_decl_leave_scope();
-  ps_decl_leave_scope();
+  ps_decl_leave_scope_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry());
 
   psx_identifier_resolution_t delayed_resolution;
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_local_lookup_point = 1,
@@ -966,9 +1035,9 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_TRUE(delayed_resolution.local == outer);
   psx_resolve_identifier(
       &(psx_identifier_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = (char *)"__scope_value",
           .name_len = 13,
           .has_local_lookup_point = 1,
@@ -978,56 +1047,56 @@ static void test_persistent_local_scope_lookup_boundary() {
   ASSERT_EQ(PSX_IDENTIFIER_LOCAL, delayed_resolution.kind);
   ASSERT_TRUE(delayed_resolution.local == inner);
 
-  ps_decl_enter_scope();
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t sibling_before_decl =
-      ps_local_registry_capture_lookup_point();
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
   lvar_t *sibling = register_test_storage_fixture(
       (char *)"__sibling_only", 14, 4, 4, 0);
   ASSERT_TRUE(sibling != NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible(
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
                   sibling_before_decl) == NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible(
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__scope_value", 13,
                   sibling_before_decl) == outer);
-  ps_decl_leave_scope();
+  ps_decl_leave_scope_in(test_local_registry());
 
-  ps_decl_enter_scope();
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t other_sibling =
-      ps_local_registry_capture_lookup_point();
-  ASSERT_TRUE(ps_local_registry_find_visible(
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__sibling_only", 14,
                   other_sibling) == NULL);
-  ASSERT_TRUE(ps_local_registry_find_visible(
+  ASSERT_TRUE(ps_local_registry_find_visible_in(test_local_registry(),
                   (char *)"__scope_value", 13,
                   other_sibling) == outer);
-  ps_decl_leave_scope();
+  ps_decl_leave_scope_in(test_local_registry());
 
-  ps_ctx_enter_block_scope();
-  ps_decl_enter_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t before_enum =
-      ps_local_registry_capture_lookup_point();
-  ASSERT_TRUE(psx_ctx_define_enum_const(
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ASSERT_TRUE(test_semantic_define_enum_const(
       (char *)"__scoped_enum", 13, 29));
   psx_local_lookup_point_t after_enum =
-      ps_local_registry_capture_lookup_point();
-  ps_decl_leave_scope();
-  ps_ctx_leave_block_scope();
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ps_decl_leave_scope_in(test_local_registry());
+  ps_ctx_leave_block_scope_in(test_semantic_context());
   long long enum_value = 0;
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at(
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, before_enum, &enum_value));
-  ASSERT_TRUE(ps_ctx_find_enum_const_at(
+  ASSERT_TRUE(ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, after_enum, &enum_value));
   ASSERT_EQ(29, enum_value);
 
-  ps_ctx_enter_block_scope();
-  ps_decl_enter_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   psx_local_lookup_point_t enum_sibling =
-      ps_local_registry_capture_lookup_point();
-  ASSERT_TRUE(!ps_ctx_find_enum_const_at(
+      ps_local_registry_capture_lookup_point_in(test_local_registry());
+  ASSERT_TRUE(!ps_ctx_find_enum_const_at_in_contexts(test_semantic_context(), test_local_registry(),
       (char *)"__scoped_enum", 13, enum_sibling, &enum_value));
-  ps_decl_leave_scope();
-  ps_ctx_leave_block_scope();
+  ps_decl_leave_scope_in(test_local_registry());
+  ps_ctx_leave_block_scope_in(test_semantic_context());
 }
 
 static void test_member_access_resolution_boundary() {
@@ -1045,7 +1114,7 @@ static void test_member_access_resolution_boundary() {
   psx_member_access_resolution_t resolution;
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base = base,
           .member_name = (char *)"value",
           .member_name_len = 5,
@@ -1059,7 +1128,7 @@ static void test_member_access_resolution_boundary() {
 
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base = base,
           .member_name = (char *)"value",
           .member_name_len = 5,
@@ -1069,7 +1138,7 @@ static void test_member_access_resolution_boundary() {
   ASSERT_EQ(PSX_MEMBER_ACCESS_INVALID_BASE, resolution.status);
   psx_resolve_member_access(
       &(psx_member_access_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base = base,
           .member_name = (char *)"missing",
           .member_name_len = 7,
@@ -1428,12 +1497,12 @@ static void test_expr_number() {
 static void test_expr_float() {
   printf("test_expr_float...\n");
     node_t *node = parse_expr_input("3.14 + 1.5f");
-  
+
   ASSERT_EQ(ND_ADD, node->kind);
   ASSERT_EQ(ND_NUM, node->lhs->kind);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, ps_node_value_fp_kind(node->lhs));
   ASSERT_TRUE(as_num(node->lhs)->fval > 3.13 && as_num(node->lhs)->fval < 3.15);
-  
+
   ASSERT_EQ(ND_NUM, node->rhs->kind);
   ASSERT_EQ(TK_FLOAT_KIND_FLOAT, ps_node_value_fp_kind(node->rhs));
   ASSERT_TRUE(as_num(node->rhs)->fval > 1.49 && as_num(node->rhs)->fval < 1.51);
@@ -2108,9 +2177,9 @@ static void test_function_call_type_binding_boundary() {
   ASSERT_TRUE(ps_type_derived_function(reference_type) != NULL);
   ASSERT_TRUE(psx_resolve_function_reference_type(parameter) == NULL);
 
-  psx_ctx_define_function_name_with_ret(
+  test_semantic_define_function_name_with_ret(
       function_name, function_name_len, 0);
-  ASSERT_TRUE(psx_ctx_track_function_type(
+  ASSERT_TRUE(test_semantic_track_function_type(
       function_name, function_name_len, function));
 
   reset_test_locals();
@@ -2324,12 +2393,12 @@ static void test_translation_unit_frontend_boundary() {
   psx_parsed_toplevel_item_t item;
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_FUNCTION_HEADER, item.kind);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__frontend_boundary", 19) == NULL);
   ASSERT_EQ(1, item.value.function_header.declarator
                    .function_suffixes[0].parameters->count);
   node_t *parsed = parse_raw_function_item(&stream, &item);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__frontend_boundary", 19) != NULL);
   ASSERT_TRUE(find_func_lvar(as_function_definition(parsed), "input") != NULL);
   node_block_t *parsed_body = as_block(as_function_definition(parsed)->base.rhs);
@@ -2396,30 +2465,30 @@ static void test_toplevel_declaration_frontend_boundary() {
   ASSERT_TRUE(item.value.declaration.is_typedef);
   ASSERT_EQ(1, item.value.declaration.declarator_count);
   psx_typedef_info_t typedef_info;
-  ASSERT_TRUE(!ps_ctx_find_typedef_name(
+  ASSERT_TRUE(!ps_ctx_find_typedef_name_in(test_semantic_context(),
       (char *)"__PhaseWord", 11, &typedef_info));
   apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(ps_ctx_find_typedef_name(
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(),
       (char *)"__PhaseWord", 11, &typedef_info));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_TRUE(item.value.declaration.is_standalone_tag);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
+  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseTag", 10));
   apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_EQ(1, ps_ctx_get_tag_member_count(
+  ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__PhaseTag", 10));
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
   ASSERT_TRUE(ps_parse_next_toplevel_item(&stream, &item));
   ASSERT_EQ(PSX_TOPLEVEL_ITEM_DECLARATION, item.kind);
   ASSERT_EQ(1, item.value.declaration.declarator_count);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__phase_proto", 13) == NULL);
   apply_test_toplevel_declaration(&item.value.declaration);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__phase_proto", 13) != NULL);
   ps_dispose_toplevel_declaration_syntax(&item.value.declaration);
 
@@ -2569,13 +2638,13 @@ static void test_frontend_stream_lifecycle_boundary() {
   node_t **program = parse_test_program_from(tk_tokenize(
       (char *)"int __stream_previous(void) { return 0; }"));
   ASSERT_TRUE(program != NULL);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__stream_previous", 17) != NULL);
 
   psx_parser_stream_t parser_stream = {0};
   begin_test_parser_stream(
       &parser_stream, NULL, tk_tokenize((char *)""), NULL);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(),
                   (char *)"__stream_previous", 17) != NULL);
   ps_parser_stream_end(&parser_stream);
 
@@ -2613,9 +2682,9 @@ static void test_frontend_stream_lifecycle_boundary() {
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
                   session_context.semantic_context,
                   (char *)"__stream_explicit", 17) != NULL);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(session_context.semantic_context,
                   (char *)"__stream_explicit", 17) != NULL);
-  ASSERT_TRUE(ps_ctx_get_function_type(
+  ASSERT_TRUE(ps_ctx_get_function_type_in(session_context.semantic_context,
                   (char *)"__stream_previous", 17) == NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
                   outer_session->semantic_context,
@@ -2793,7 +2862,7 @@ static void test_local_declaration_storage_plan_boundary() {
   reset_test_locals();
   lvar_t *lowered = lower_complete_local_object(
       &(psx_local_object_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"matrix",
           .name_len = 6,
@@ -2811,14 +2880,14 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(2, stored_type->array_len);
   ASSERT_TRUE(stored_type->base != NULL);
   ASSERT_EQ(3, stored_type->base->array_len);
-  ASSERT_EQ(lowered, ps_decl_find_lvar((char *)"matrix", 6));
+  ASSERT_EQ(lowered, ps_decl_find_lvar_in(test_local_registry(), (char *)"matrix", 6));
 
   reset_test_locals();
   psx_type_t *deferred_type =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
   lvar_t *declared = declare_incomplete_local_object(
       &(psx_local_object_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"deferred",
           .name_len = 8,
@@ -2827,7 +2896,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(declared != NULL);
   ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(declared,
-            ps_decl_find_lvar((char *)"deferred", 8));
+            ps_decl_find_lvar_in(test_local_registry(), (char *)"deferred", 8));
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
       declared, ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
@@ -2842,7 +2911,7 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_TRUE(complete_declared_local_object(
       declared,
       &(psx_local_object_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"deferred",
           .name_len = 8,
@@ -2874,7 +2943,7 @@ static void test_local_declaration_storage_plan_boundary() {
   psx_automatic_local_declaration_pipeline_result_t pipeline_result = {0};
   ASSERT_TRUE(psx_apply_automatic_local_declaration_pipeline(
       &(psx_automatic_local_declaration_pipeline_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"pipeline_deferred",
           .name_len = 17,
@@ -2903,7 +2972,7 @@ static void test_vla_lowering_request_boundary() {
   long long request_const_values[3] = {0};
   unsigned char request_is_const[3] = {0};
   psx_vla_lowering_request_t request = {
-      .local_registry = ps_local_registry_active(),
+      .local_registry = test_local_registry(),
       .lowering_context = test_lowering_context(),
       .dimensions = request_dimensions,
       .const_values = request_const_values,
@@ -2968,7 +3037,7 @@ static void test_vla_lowering_request_boundary() {
   psx_type_t *pointer_type = ps_type_new_pointer(row_type);
   result = lower_pointer_to_vla_declaration(
       &(psx_pointer_vla_lowering_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"p",
           .name_len = 1,
@@ -3007,7 +3076,7 @@ static void test_vla_lowering_request_boundary() {
       ps_type_new_array(integer, 0, 0, 1));
   psx_parameter_vla_dimension_t parameter_dimensions[3] = {0};
   psx_parameter_vla_lowering_request_t parameter_request = {
-      .local_registry = ps_local_registry_active(),
+      .local_registry = test_local_registry(),
       .lowering_context = test_lowering_context(),
       .name = (char *)"tensor",
       .name_len = 6,
@@ -3029,7 +3098,7 @@ static void test_vla_lowering_request_boundary() {
   ASSERT_EQ(24, ps_lvar_storage_size(
                     parameter_result.stride_storage, 0));
   ASSERT_EQ(parameter_result.stride_storage,
-            ps_decl_find_lvar((char *)"__rs_tensor", 11));
+            ps_decl_find_lvar_in(test_local_registry(), (char *)"__rs_tensor", 11));
   ASSERT_EQ(parameter_result.stride_storage->offset,
             ps_lvar_vla_row_stride_frame_off(parameter_result.var));
   ASSERT_EQ(3, ps_lvar_vla_param_inner_dim_count(
@@ -3084,7 +3153,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   reset_test_locals();
   lvar_t *lowered = lower_parameter_declaration(
       &(psx_parameter_lowering_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"value",
           .name_len = 5,
@@ -3105,7 +3174,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_parameter_dimension_t parameter_dimensions[1] = {0};
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &vla_parameter_shape,
       },
@@ -3131,7 +3200,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   dimension->is_param = 1;
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .name = (char *)"values",
           .name_len = 6,
@@ -3152,7 +3221,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_function_declaration_resolution_t planned_function = {0};
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = planned_function_name,
           .name_len = (int)sizeof(planned_function_name) - 1,
@@ -3177,7 +3246,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(!ps_type_is_well_formed(cyclic_function_type));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__cyclic_function",
           .name_len = 17,
@@ -3213,7 +3282,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   psx_function_declaration_resolution_t funcptr_resolution = {0};
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = funcptr_function_name,
           .name_len = (int)sizeof(funcptr_function_name) - 1,
@@ -3244,7 +3313,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ps_type_set_function_params(
       resolution_function_type, parameter_types, 2, 1);
   psx_function_declaration_resolution_request_t resolution_request = {
-      .semantic_context = ps_ctx_active(),
+      .semantic_context = test_semantic_context(),
       .global_registry = test_global_registry(),
       .name = (char *)"__resolution_fn",
       .name_len = 15,
@@ -3257,12 +3326,12 @@ static void test_parameter_declaration_storage_plan_boundary() {
   resolution_request.function_type = resolution_function_type;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
-  ASSERT_TRUE(ps_ctx_has_function_name("__resolution_fn", 15));
-  ASSERT_TRUE(ps_ctx_get_function_type("__resolution_fn", 15) != NULL);
+  ASSERT_TRUE(ps_ctx_has_function_name_in(test_semantic_context(), "__resolution_fn", 15));
+  ASSERT_TRUE(ps_ctx_get_function_type_in(test_semantic_context(), "__resolution_fn", 15) != NULL);
 
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
-  ASSERT_EQ(0, ps_ctx_is_function_defined("__resolution_fn", 15));
+  ASSERT_EQ(0, ps_ctx_is_function_defined_in(test_semantic_context(), "__resolution_fn", 15));
   psx_type_t *pointer_return_function_type =
       ps_type_new_function(ps_type_clone(pointer));
   ps_type_set_function_params(
@@ -3275,7 +3344,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
   resolution_request.is_definition = 1;
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_OK, resolution.status);
-  ASSERT_TRUE(ps_ctx_is_function_defined("__resolution_fn", 15));
+  ASSERT_TRUE(ps_ctx_is_function_defined_in(test_semantic_context(), "__resolution_fn", 15));
   psx_resolve_function_declaration(&resolution_request, &resolution);
   ASSERT_EQ(PSX_FUNCTION_DECLARATION_DUPLICATE_DEFINITION,
             resolution.status);
@@ -3299,7 +3368,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t first_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
@@ -3330,7 +3399,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t merged_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
@@ -3361,7 +3430,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t repeated_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
@@ -3385,7 +3454,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_declaration_resolution_t rejected_resolution;
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
@@ -3396,7 +3465,7 @@ static void test_global_declaration_resolution_boundary() {
             rejected_resolution.status);
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_incomplete",
           .name_len = 21,
@@ -3409,7 +3478,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_type_t *pointer = ps_type_new_pointer(integer);
   psx_resolve_global_declaration(
       &(psx_global_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_global",
           .name_len = 17,
@@ -3421,7 +3490,7 @@ static void test_global_declaration_resolution_boundary() {
   psx_global_object_result_t internal = {0};
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__boundary_static",
           .name_len = 17,
@@ -3443,9 +3512,9 @@ static void test_declaration_pipeline_order_boundary() {
   char *name = (char *)"__pipeline_object";
   int name_len = 17;
   psx_global_declaration_pipeline_request_t request = {
-      .semantic_context = ps_ctx_active(),
+      .semantic_context = test_semantic_context(),
       .global_registry = test_global_registry(),
-      .local_registry = ps_local_registry_active(),
+      .local_registry = test_local_registry(),
       .lowering_context = test_lowering_context(),
       .options = test_compilation_options(),
       .name = name,
@@ -3472,8 +3541,8 @@ static void test_tag_declaration_resolution_boundary() {
   printf("test_tag_declaration_resolution_boundary...\n");
   reset_test_translation_unit_state();
   psx_tag_declaration_resolution_request_t request = {
-      .semantic_context = ps_ctx_active(),
-      .local_registry = ps_local_registry_active(),
+      .semantic_context = test_semantic_context(),
+      .local_registry = test_local_registry(),
       .kind = TK_STRUCT,
       .name = (char *)"__TagBoundary",
       .name_len = 13,
@@ -3490,7 +3559,7 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(!resolution.registered);
   const psx_aggregate_definition_t *cached_definition =
-      ps_ctx_get_tag_definition(
+      ps_ctx_get_tag_definition_in(test_semantic_context(),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(cached_definition != NULL);
   ASSERT_EQ(0, cached_definition->align);
@@ -3501,7 +3570,7 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(cached_definition,
-            ps_ctx_get_tag_definition(
+            ps_ctx_get_tag_definition_in(test_semantic_context(),
                 TK_STRUCT, (char *)"__TagBoundary", 13));
   ASSERT_EQ(1, cached_definition->align);
   psx_resolve_tag_declaration(&request, &resolution);
@@ -3513,7 +3582,7 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_KIND_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
   request.kind = TK_STRUCT;
   request.mode = PSX_TAG_DECLARATION_FORWARD;
   psx_resolve_tag_declaration(&request, &resolution);
@@ -3525,8 +3594,8 @@ static void test_tag_declaration_resolution_boundary() {
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_EQ(1, resolution.scope_depth);
-  ps_ctx_leave_block_scope();
-  ASSERT_EQ(0, ps_ctx_get_tag_scope_depth(
+  ps_ctx_leave_block_scope_in(test_semantic_context());
+  ASSERT_EQ(0, ps_ctx_get_tag_scope_depth_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__TagBoundary", 13));
 }
 
@@ -3536,10 +3605,10 @@ static void test_aggregate_definition_ownership_boundary() {
 
   char tag_name[] = "__DefinitionOwner";
   int tag_name_len = (int)(sizeof(tag_name) - 1);
-  ASSERT_TRUE(ps_ctx_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 0, 0, 0, 0));
   const psx_aggregate_definition_t *first =
-      ps_ctx_get_tag_definition(TK_STRUCT, tag_name, tag_name_len);
+      ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(first != NULL);
   ASSERT_EQ(0, first->member_count);
 
@@ -3550,12 +3619,12 @@ static void test_aggregate_definition_ownership_boundary() {
       .offset = 0,
       .decl_type = integer,
   };
-  ASSERT_TRUE(ps_ctx_register_tag_members(
+  ASSERT_TRUE(test_semantic_register_tag_members(
       TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   ASSERT_TRUE(first ==
-              ps_ctx_get_tag_definition(
+              ps_ctx_get_tag_definition_in(test_semantic_context(),
                   TK_STRUCT, tag_name, tag_name_len));
   ASSERT_EQ(1, first->member_count);
   ASSERT_TRUE(first->members != NULL);
@@ -3563,16 +3632,16 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
   const tag_member_info_t *first_members = first->members;
 
-  ps_ctx_reset_tag_diag_state();
+  ps_ctx_reset_tag_diag_state_in(test_semantic_context());
   ASSERT_TRUE(first->members == first_members);
   ASSERT_EQ(5, first->members[0].len);
 
-  ASSERT_TRUE(ps_ctx_register_tag_members(
+  ASSERT_TRUE(test_semantic_register_tag_members(
       TK_STRUCT, tag_name, tag_name_len, &member, 1, NULL));
-  ASSERT_TRUE(ps_ctx_register_tag_type(
+  ASSERT_TRUE(test_semantic_register_tag_type(
       TK_STRUCT, tag_name, tag_name_len, 1, 1, 4, 4));
   const psx_aggregate_definition_t *second =
-      ps_ctx_get_tag_definition(TK_STRUCT, tag_name, tag_name_len);
+      ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(second != NULL);
   ASSERT_TRUE(second != first);
   ASSERT_EQ(1, second->member_count);
@@ -3596,7 +3665,7 @@ static int register_boundary_tag_member(
       .decl_type = type,
   };
   int created = 0;
-  return psx_ctx_register_tag_member(
+  return test_semantic_register_tag_member(
              tag_kind, tag_name, tag_name_len, &member, &created) &&
          created;
 }
@@ -3605,7 +3674,7 @@ static int register_test_tag_member(
     token_kind_t tag_kind, char *tag_name, int tag_name_len,
     const tag_member_info_t *member) {
   int created = 0;
-  return psx_ctx_register_tag_member(
+  return test_semantic_register_tag_member(
              tag_kind, tag_name, tag_name_len, member, &created) &&
          created;
 }
@@ -3617,8 +3686,8 @@ static void test_aggregate_body_phase_boundary() {
   psx_tag_declaration_resolution_t tag;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__ParsedBody",
           .name_len = 12,
@@ -3707,28 +3776,28 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
 
   tag_member_info_t member = {0};
-  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"a", 1, &member));
-  ASSERT_TRUE(!ps_ctx_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_TRUE(!ps_ctx_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(
       TK_ENUM, (char *)"PhaseEnumTag", 12));
   long long enum_value = 0;
-  ASSERT_TRUE(!ps_ctx_find_enum_const(
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"PhaseEnumZero", 13, &enum_value));
   const psx_type_t *deferred_alias_type = NULL;
-  ASSERT_TRUE(!ps_ctx_find_typedef_decl_type(
+  ASSERT_TRUE(!ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
       (char *)"DeferredAlias", 13, &deferred_alias_type));
 
   psx_typedef_info_t deferred_alias = {0};
   deferred_alias.decl_type = ps_type_new_integer(TK_INT, 4, 0);
-  ASSERT_TRUE(psx_ctx_define_typedef_name(
+  ASSERT_TRUE(test_semantic_define_typedef_name(
       (char *)"DeferredAlias", 13, &deferred_alias));
   psx_typedef_info_t deferred_parameter = {0};
   deferred_parameter.decl_type =
       ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  ASSERT_TRUE(psx_ctx_define_typedef_name(
+  ASSERT_TRUE(test_semantic_define_typedef_name(
       (char *)"DeferredParam", 13, &deferred_parameter));
 
   int size = 0;
@@ -3750,53 +3819,53 @@ static void test_aggregate_body_phase_boundary() {
                    .alignas_expressions[0].constant_value);
   ASSERT_TRUE(body.items[7].value.member_declaration.specifier
                   .alignas_expressions[0].has_constant_value);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"a", 1, &member));
   ASSERT_EQ(0, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"b", 1, &member));
   ASSERT_EQ(8, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"c", 1, &member));
   ASSERT_EQ(16, member.offset);
-  ASSERT_TRUE(ps_ctx_has_tag_type(
+  ASSERT_TRUE(test_semantic_has_tag_type(
       TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_EQ(4, ps_ctx_get_tag_size(
+  ASSERT_EQ(4, ps_ctx_get_tag_size_in(test_semantic_context(),
                    TK_STRUCT, (char *)"PhaseInnerTag", 13));
-  ASSERT_TRUE(ps_ctx_has_tag_type(
+  ASSERT_TRUE(test_semantic_has_tag_type(
       TK_ENUM, (char *)"PhaseEnumTag", 12));
-  ASSERT_TRUE(ps_ctx_find_enum_const(
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"PhaseEnumZero", 13, &enum_value));
   ASSERT_EQ(3, enum_value);
-  ASSERT_TRUE(ps_ctx_find_enum_const(
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"PhaseEnumNext", 13, &enum_value));
   ASSERT_EQ(5, enum_value);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"arr", 3, &member));
   ASSERT_EQ(28, member.offset);
   ASSERT_TRUE(member.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, member.decl_type->kind);
   ASSERT_EQ(5, member.decl_type->array_len);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"flags", 5, &member));
   ASSERT_EQ(48, member.offset);
   ASSERT_EQ(3, member.bit_width);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"aligned", 7, &member));
   ASSERT_EQ(56, member.offset);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"late", 4, &member));
   ASSERT_EQ(60, member.offset);
   ASSERT_EQ(PSX_TYPE_INTEGER, member.decl_type->kind);
   ASSERT_EQ(4, member.decl_type->size);
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"__ParsedBody", 12,
       (char *)"callback", 8, &member));
   ASSERT_EQ(64, member.offset);
@@ -3811,7 +3880,7 @@ static void test_aggregate_body_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_INTEGER, callback_type->param_types[1]->base->kind);
   ASSERT_EQ(PSX_TYPE_POINTER, callback_type->param_types[2]->kind);
   ASSERT_EQ(PSX_TYPE_STRUCT, callback_type->param_types[2]->base->kind);
-  ASSERT_TRUE(!ps_ctx_has_tag_type(
+  ASSERT_TRUE(!test_semantic_has_tag_type(
       TK_STRUCT, (char *)"PrototypeOnly", 13));
   psx_dispose_parsed_aggregate_body(&body);
 }
@@ -3831,7 +3900,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_PARSED_DECL_TYPE_NONE, syntax.source);
   ASSERT_EQ(PSX_DECLARATION_PHASE_SYNTAX, phase.state);
   ASSERT_TRUE(phase.base_type == NULL);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
+  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   const psx_type_t *unapplied_type =
@@ -3839,7 +3908,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_TRUE(unapplied_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, unapplied_type->kind);
   ASSERT_TRUE(unapplied_type->aggregate_definition == NULL);
-  ASSERT_EQ(-1, ps_ctx_get_tag_member_count(
+  ASSERT_EQ(-1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                     TK_STRUCT, (char *)"__PhaseObject", 13));
 
   ASSERT_TRUE(apply_test_declaration_phase(&phase, 0));
@@ -3848,7 +3917,7 @@ static void test_declaration_phase_boundary() {
   ASSERT_EQ(PSX_TYPE_STRUCT, phase.base_type->kind);
   ASSERT_TRUE(phase.base_type->aggregate_definition != NULL);
   ASSERT_EQ(1, phase.base_type->aggregate_definition->member_count);
-  ASSERT_EQ(1, ps_ctx_get_tag_member_count(
+  ASSERT_EQ(1, ps_ctx_get_tag_member_count_in(test_semantic_context(),
                    TK_STRUCT, (char *)"__PhaseObject", 13));
   psx_dispose_declaration_phase(&phase);
 
@@ -3895,7 +3964,7 @@ static void test_toplevel_declarator_phase_boundary() {
   parse_program_input("int __phase_fn(int), __phase_object;");
 
   const psx_type_t *function =
-      ps_ctx_get_function_type((char *)"__phase_fn", 10);
+      ps_ctx_get_function_type_in(test_semantic_context(), (char *)"__phase_fn", 10);
   ASSERT_TRUE(function != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, function->kind);
   ASSERT_EQ(1, function->param_count);
@@ -4073,7 +4142,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4090,7 +4159,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4109,7 +4178,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4127,7 +4196,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4145,7 +4214,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4177,7 +4246,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__SignBoundary",
           .target_tag_name_len = 14,
@@ -4194,7 +4263,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &bitfield_sign_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__SignBoundary",
           .target_tag_name_len = 14,
@@ -4214,7 +4283,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__LayoutBoundary",
           .target_tag_name_len = 16,
@@ -4234,7 +4303,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_UNION,
           .target_tag_name = (char *)"__UnionBoundary",
           .target_tag_name_len = 15,
@@ -4249,7 +4318,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_UNION,
           .target_tag_name = (char *)"__UnionBoundary",
           .target_tag_name_len = 15,
@@ -4270,7 +4339,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&member_shape, 3, 0);
   const psx_type_t *member_type = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &member_shape,
       });
@@ -4299,7 +4368,7 @@ static void test_aggregate_member_resolution_boundary() {
   ps_declarator_shape_append_array_ex(&pointer_array_shape, 3, 0);
   const psx_type_t *pointer_array_member = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base_type = ps_type_new_integer(TK_INT, 4, 0),
           .declarator_shape = &pointer_array_shape,
       });
@@ -4315,8 +4384,8 @@ static void test_aggregate_member_resolution_boundary() {
   psx_tag_declaration_resolution_t tag_resolution;
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__AlignedMember",
           .name_len = 15,
@@ -4334,8 +4403,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"__IncompleteMember",
           .name_len = 18,
@@ -4351,7 +4420,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -4368,14 +4437,14 @@ static void test_aggregate_member_resolution_boundary() {
       &incomplete_pointer_shape, 0, 0);
   const psx_type_t *incomplete_pointer = psx_resolve_decl_type(
       &(psx_decl_type_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .base_type = incomplete_base,
           .declarator_shape = &incomplete_pointer_shape,
       });
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -4392,7 +4461,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &constraint_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"__ConstraintBoundary",
           .target_tag_name_len = 20,
@@ -4421,7 +4490,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4438,7 +4507,7 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_TRUE(transaction.type != NULL);
   ASSERT_EQ(PSX_TYPE_INTEGER, transaction.type->kind);
   tag_member_info_t transaction_member_before = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope_in(test_semantic_context(),
       TK_STRUCT, (char *)"Txn", 3, 0, (char *)"a", 1,
       &transaction_member_before));
   const psx_type_t *transaction_type_before =
@@ -4452,12 +4521,12 @@ static void test_aggregate_member_resolution_boundary() {
       .decl_type = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8),
   };
   int replacement_created = 1;
-  ASSERT_TRUE(!psx_ctx_register_tag_member(
+  ASSERT_TRUE(!test_semantic_register_tag_member(
       TK_STRUCT, (char *)"Txn", 3, &replacement_member,
       &replacement_created));
   ASSERT_EQ(0, replacement_created);
   tag_member_info_t transaction_member_after = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope_in(test_semantic_context(),
       TK_STRUCT, (char *)"Txn", 3, 0, (char *)"a", 1,
       &transaction_member_after));
   ASSERT_TRUE(ps_tag_member_decl_type(&transaction_member_after) ==
@@ -4468,7 +4537,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4490,7 +4559,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4507,7 +4576,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4524,7 +4593,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4542,7 +4611,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &transaction_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"Txn",
           .target_tag_name_len = 3,
@@ -4558,7 +4627,7 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__MemberBoundary", 16,
       (char *)"x", 1, 4, integer, 3, 5, 1));
   tag_member_info_t resolved_named = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope_in(test_semantic_context(),
       TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
       (char *)"x", 1, &resolved_named));
   ASSERT_EQ(4, resolved_named.offset);
@@ -4575,7 +4644,7 @@ static void test_aggregate_member_resolution_boundary() {
       TK_STRUCT, (char *)"__MemberBoundary", 16,
       (char *)"p", 1, 8, member_type, 0, 0, 0));
   tag_member_info_t resolved_pointer = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_at_scope_in(test_semantic_context(),
       TK_STRUCT, (char *)"__MemberBoundary", 16, 0,
       (char *)"p", 1, &resolved_pointer));
   const psx_type_t *resolved_pointer_type =
@@ -4594,8 +4663,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"PromSrc",
           .name_len = 7,
@@ -4608,8 +4677,8 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"PromDst",
           .name_len = 7,
@@ -4627,7 +4696,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"PromDst",
           .target_tag_name_len = 7,
@@ -4641,7 +4710,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &promoted_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"PromDst",
           .target_tag_name_len = 7,
@@ -4653,7 +4722,7 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_OK, transaction.status);
   ASSERT_EQ(2, transaction.registered_member_count);
   tag_member_info_t promoted = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"PromDst", 7, (char *)"b", 1, &promoted));
   ASSERT_EQ(12, promoted.offset);
   ASSERT_EQ(3, promoted.bit_width);
@@ -4664,8 +4733,8 @@ static void test_aggregate_member_resolution_boundary() {
 
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchSrc",
           .name_len = 8,
@@ -4678,8 +4747,8 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, tag_resolution.status);
   psx_resolve_tag_declaration(
       &(psx_tag_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
-          .local_registry = ps_local_registry_active(),
+          .semantic_context = test_semantic_context(),
+          .local_registry = test_local_registry(),
           .kind = TK_STRUCT,
           .name = (char *)"BatchDst",
           .name_len = 8,
@@ -4698,10 +4767,10 @@ static void test_aggregate_member_resolution_boundary() {
       (char *)"b", 1, 0, integer, 0, 0, 0));
 
   tag_member_info_t absent_promoted = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"BatchDst", 8,
       (char *)"b", 1, &absent_promoted));
-  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"BatchDst", 8,
       (char *)"a", 1, &absent_promoted));
 
@@ -4714,7 +4783,7 @@ static void test_aggregate_member_resolution_boundary() {
   psx_resolve_aggregate_member_declaration(
       &anonymous_layout,
       &(psx_aggregate_member_declaration_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .target_tag_kind = TK_STRUCT,
           .target_tag_name = (char *)"BatchDst",
           .target_tag_name_len = 8,
@@ -4725,10 +4794,10 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_DUPLICATE, transaction.status);
   ASSERT_EQ(1, transaction.conflicting_name_len);
   ASSERT_EQ(0, psx_aggregate_layout_size(&anonymous_layout));
-  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"BatchDst", 8,
       (char *)"a", 1, &absent_promoted));
-  ASSERT_TRUE(!ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(!ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)"BatchDst", 8,
       (char *)"", 0, &absent_promoted));
 }
@@ -4755,9 +4824,9 @@ static void test_typedef_declaration_resolution_boundary() {
   reset_test_translation_unit_state();
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
   psx_typedef_declaration_resolution_request_t request = {
-      .semantic_context = ps_ctx_active(),
+      .semantic_context = test_semantic_context(),
       .global_registry = test_global_registry(),
-      .local_registry = ps_local_registry_active(),
+      .local_registry = test_local_registry(),
       .name = (char *)"__TypeBoundary",
       .name_len = 14,
       .type = integer,
@@ -4768,7 +4837,7 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(0, resolution.scope_depth);
   const psx_type_t *canonical_typedef_type = NULL;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type(
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
       request.name, request.name_len, &canonical_typedef_type));
   ASSERT_TRUE(canonical_typedef_type != NULL);
 
@@ -4777,7 +4846,7 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.redeclared);
   const psx_type_t *redeclared_typedef_type = NULL;
-  ASSERT_TRUE(ps_ctx_find_typedef_decl_type(
+  ASSERT_TRUE(ps_ctx_find_typedef_decl_type_in(test_semantic_context(),
       request.name, request.name_len, &redeclared_typedef_type));
   ASSERT_TRUE(redeclared_typedef_type == canonical_typedef_type);
 
@@ -4786,17 +4855,17 @@ static void test_typedef_declaration_resolution_boundary() {
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_TYPE_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
   psx_resolve_typedef_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(1, resolution.scope_depth);
-  ps_ctx_leave_block_scope();
+  ps_ctx_leave_block_scope_in(test_semantic_context());
 
   psx_global_object_result_t object;
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__TypeObject",
           .name_len = 12,
@@ -4815,7 +4884,7 @@ static void test_typedef_declaration_resolution_boundary() {
       ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__TypeFunction",
           .name_len = 14,
@@ -4829,7 +4898,7 @@ static void test_typedef_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TYPEDEF_DECLARATION_FUNCTION_NAME_CONFLICT,
             resolution.status);
 
-  ASSERT_TRUE(psx_ctx_define_enum_const(
+  ASSERT_TRUE(test_semantic_define_enum_const(
       (char *)"__TypeEnum", 10, 1));
   request.name = (char *)"__TypeEnum";
   request.name_len = 10;
@@ -4842,9 +4911,9 @@ static void test_enum_constant_resolution_boundary() {
   printf("test_enum_constant_resolution_boundary...\n");
   reset_test_translation_unit_state();
   psx_enum_constant_resolution_request_t request = {
-      .semantic_context = ps_ctx_active(),
+      .semantic_context = test_semantic_context(),
       .global_registry = test_global_registry(),
-      .local_registry = ps_local_registry_active(),
+      .local_registry = test_local_registry(),
       .name = (char *)"__EnumBoundary",
       .name_len = 14,
       .value = 7,
@@ -4857,18 +4926,18 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_DUPLICATE, resolution.status);
 
-  ps_ctx_enter_block_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
   request.value = 11;
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_OK, resolution.status);
   ASSERT_TRUE(resolution.created);
   ASSERT_EQ(1, resolution.scope_depth);
   long long value = 0;
-  ASSERT_TRUE(ps_ctx_find_enum_const(
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"__EnumBoundary", 14, &value));
   ASSERT_EQ(11, value);
-  ps_ctx_leave_block_scope();
-  ASSERT_TRUE(ps_ctx_find_enum_const(
+  ps_ctx_leave_block_scope_in(test_semantic_context());
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(test_semantic_context(),
       (char *)"__EnumBoundary", 14, &value));
   ASSERT_EQ(7, value);
 
@@ -4876,7 +4945,7 @@ static void test_enum_constant_resolution_boundary() {
   psx_global_object_result_t object;
   ASSERT_TRUE(lower_global_object_declaration(
       &(psx_global_object_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__EnumObject",
           .name_len = 12,
@@ -4893,7 +4962,7 @@ static void test_enum_constant_resolution_boundary() {
       ps_type_new_function(ps_type_clone(integer));
   psx_resolve_function_declaration(
       &(psx_function_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
           .name = (char *)"__EnumFunction",
           .name_len = 14,
@@ -4909,9 +4978,9 @@ static void test_enum_constant_resolution_boundary() {
   psx_typedef_declaration_resolution_t typedef_resolution;
   psx_resolve_typedef_declaration(
       &(psx_typedef_declaration_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = (char *)"__EnumType",
           .name_len = 10,
           .type = integer,
@@ -4923,16 +4992,16 @@ static void test_enum_constant_resolution_boundary() {
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_TYPEDEF_NAME_CONFLICT, resolution.status);
 
-  ps_ctx_enter_block_scope();
-  ps_decl_enter_scope();
+  ps_ctx_enter_block_scope_in(test_semantic_context());
+  ps_decl_enter_scope_in(test_local_registry());
   ASSERT_TRUE(register_test_storage_fixture(
       (char *)"__EnumLocal", 11, 4, 4, 0) != NULL);
   request.name = (char *)"__EnumLocal";
   request.name_len = 11;
   psx_resolve_enum_constant(&request, &resolution);
   ASSERT_EQ(PSX_ENUM_CONSTANT_OBJECT_NAME_CONFLICT, resolution.status);
-  ps_decl_leave_scope();
-  ps_ctx_leave_block_scope();
+  ps_decl_leave_scope_in(test_local_registry());
+  ps_ctx_leave_block_scope_in(test_semantic_context());
 }
 
 static void test_initializer_resolution_boundary() {
@@ -5241,7 +5310,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t inferred_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .type = inferred_type,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,
@@ -5287,7 +5356,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t pointer_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .type = pointer_array_type,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&pointer_list,
@@ -5314,7 +5383,7 @@ static void test_static_data_initializer_boundary() {
   psx_static_initializer_resolution_t static_initializer_resolution;
   psx_resolve_static_initializer(
       &(psx_static_initializer_resolution_request_t){
-          .semantic_context = ps_ctx_active(),
+          .semantic_context = test_semantic_context(),
           .type = static_incomplete,
           .kind = PSX_DECL_INIT_LIST,
           .initializer = (node_t *)&inferred_list,
@@ -5326,7 +5395,7 @@ static void test_static_data_initializer_boundary() {
   ASSERT_TRUE(lower_static_local_declaration(
       &(psx_static_local_declaration_request_t){
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .lowering_context = test_lowering_context(),
           .kind = PSX_STATIC_LOCAL_ARRAY,
           .function_name = (char *)"boundary",
@@ -5823,9 +5892,9 @@ static void test_expr_generic() {
       "typedef int (*unary_fn)(int); int generic_id(int x){return x;} "
       "int main(){return 0;}");
   psx_typedef_info_t unary_info = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name((char *)"unary_fn", 8, &unary_info));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), (char *)"unary_fn", 8, &unary_info));
   const psx_type_t *generic_id_type =
-      ps_ctx_get_function_type((char *)"generic_id", 10);
+      ps_ctx_get_function_type_in(test_semantic_context(), (char *)"generic_id", 10);
   ASSERT_TRUE(generic_id_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, generic_id_type->kind);
   psx_type_t *generic_id_pointer =
@@ -6656,7 +6725,7 @@ static void test_funcdef_with_params() {
       "typedef void VoidAlias; int no_args(VoidAlias); "
       "int main(void) { return 0; }");
   const psx_type_t *no_args_type =
-      ps_ctx_get_function_type((char *)"no_args", 7);
+      ps_ctx_get_function_type_in(test_semantic_context(), (char *)"no_args", 7);
   ASSERT_TRUE(no_args_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, no_args_type->kind);
   ASSERT_EQ(0, no_args_type->param_count);
@@ -6666,7 +6735,7 @@ static void test_funcdef_with_params() {
       "int nested(int (int()), F0); "
       "int nested(F1 fp, F0 arg) { return fp(arg); }");
   const psx_type_t *nested_type =
-      ps_ctx_get_function_type((char *)"nested", 6);
+      ps_ctx_get_function_type_in(test_semantic_context(), (char *)"nested", 6);
   ASSERT_TRUE(nested_type != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, nested_type->kind);
   ASSERT_EQ(2, nested_type->param_count);
@@ -8166,7 +8235,7 @@ static void test_type_metadata_bridge() {
       "int (*__tm_ret_nested(void))(double); "
       "int __tm_ret_explicit(void);");
   (void)parsed_code;
-  const psx_type_t *alias_return_function = ps_ctx_get_function_type(
+  const psx_type_t *alias_return_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_alias_fn",
       (int)(sizeof("__tm_ret_alias_fn") - 1));
   ASSERT_TRUE(alias_return_function != NULL);
@@ -8179,7 +8248,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ((int)(sizeof("__tm_ret_tag") - 1),
             alias_return_function->base->base->tag_len);
 
-  const psx_type_t *tag_return_function = ps_ctx_get_function_type(
+  const psx_type_t *tag_return_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_tag_fn",
       (int)(sizeof("__tm_ret_tag_fn") - 1));
   ASSERT_TRUE(tag_return_function != NULL);
@@ -8188,7 +8257,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(alias_return_function->base->base->tag_scope_depth_p1,
             tag_return_function->base->base->tag_scope_depth_p1);
 
-  const psx_type_t *nested_return_function = ps_ctx_get_function_type(
+  const psx_type_t *nested_return_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_nested",
       (int)(sizeof("__tm_ret_nested") - 1));
   ASSERT_TRUE(nested_return_function != NULL);
@@ -8200,7 +8269,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE,
             returned_function->param_types[0]->fp_kind);
 
-  const psx_type_t *explicit_return_function = ps_ctx_get_function_type(
+  const psx_type_t *explicit_return_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_ret_explicit",
       (int)(sizeof("__tm_ret_explicit") - 1));
   ASSERT_TRUE(explicit_return_function != NULL);
@@ -8504,13 +8573,13 @@ static void test_type_metadata_bridge() {
   tag_member_info_t canonical_member_p = {0};
   tag_member_info_t canonical_member_q = {0};
   tag_member_info_t canonical_member_cb = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_canonical", 21, "a", 1, &canonical_member_a));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_canonical", 21, "p", 1, &canonical_member_p));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_canonical", 21, "q", 1, &canonical_member_q));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_canonical", 21, "cb", 2, &canonical_member_cb));
   ASSERT_EQ(PSX_TYPE_ARRAY, canonical_member_a.decl_type->kind);
   ASSERT_EQ(2, canonical_member_a.decl_type->array_len);
@@ -8539,16 +8608,16 @@ static void test_type_metadata_bridge() {
   tag_member_info_t qualified_member_v = {0};
   tag_member_info_t qualified_member_a = {0};
   tag_member_info_t qualified_member_y = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)qualified_member_tag,
       (int)strlen(qualified_member_tag), "c", 1, &qualified_member_c));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)qualified_member_tag,
       (int)strlen(qualified_member_tag), "v", 1, &qualified_member_v));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)qualified_member_tag,
       (int)strlen(qualified_member_tag), "a", 1, &qualified_member_a));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)qualified_member_tag,
       (int)strlen(qualified_member_tag), "y", 1, &qualified_member_y));
   ASSERT_TRUE(qualified_member_c.decl_type->is_const_qualified);
@@ -9271,9 +9340,9 @@ static void test_type_metadata_bridge() {
   (void)parsed_code;
   psx_typedef_info_t tm_decl_array_ptr = {0};
   psx_typedef_info_t tm_decl_ptr_array = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TMDArrayPtr", 11,
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMDArrayPtr", 11,
                                         &tm_decl_array_ptr));
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TMDPtrArray", 11,
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMDPtrArray", 11,
                                         &tm_decl_ptr_array));
   const psx_type_t *tm_array_ptr_type =
       ps_ctx_typedef_decl_type(&tm_decl_array_ptr);
@@ -11306,7 +11375,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(5, test_tag_flat_slot_count(TK_STRUCT, "FlatOut", 7));
   ASSERT_EQ(2, test_tag_flat_slot_count(TK_UNION, "FlatU", 5));
   tag_member_info_t flat_member = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "FlatOut", 7, "in", 2, &flat_member));
   ASSERT_EQ(2, test_tag_member_flat_slots(&flat_member));
   ASSERT_EQ(2, test_tag_member_elem_flat_slots(&flat_member));
   int named_ordinal = -1;
@@ -11356,7 +11425,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_gvar_init_slot_is_plain_zero(&tmp_union_init, 0));
   ASSERT_EQ(4, ps_gvar_union_init_slot_fp_size(&tmp_union_init, 0));
   tag_member_info_t selected_union_member = {0};
-  ASSERT_TRUE(ps_ctx_get_tag_member_info(TK_UNION, "FlatFpU", 7, 0,
+  ASSERT_TRUE(ps_ctx_get_tag_member_info_in(test_semantic_context(), TK_UNION, "FlatFpU", 7, 0,
                                           &selected_union_member));
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
             ps_tag_member_decl_fp_kind(&selected_union_member));
@@ -11488,10 +11557,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
   test_tag_flat_cover_state_note(&flat_cover, TK_STRUCT, "FlatOut", 7, &flat_slot_member);
   tag_member_info_t flat_promoted_union_member = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "u", 1,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "FlatOut", 7, "u", 1,
                                            &flat_promoted_union_member));
   ASSERT_TRUE(ps_tag_flat_cover_state_covers(&flat_cover, &flat_promoted_union_member));
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "FlatOut", 7, "y", 1,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "FlatOut", 7, "y", 1,
                                            &flat_slot_member));
   ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
   int flat_ordinal = -1;
@@ -11919,7 +11988,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_tag_member_is_tag_aggregate(&tmp_member_decl_ptr));
   ASSERT_TRUE(!ps_tag_member_is_unnamed_aggregate(&tmp_member_decl_ptr));
   const char flat_decl_inner_tag[] = "__tm_flat_decl_inner";
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)flat_decl_inner_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)flat_decl_inner_tag,
                                       (int)sizeof(flat_decl_inner_tag) - 1,
                                       2, 8, 4);
   tag_member_info_t flat_decl_inner_a = {0};
@@ -11951,7 +12020,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(6, test_tag_member_flat_slots(&flat_decl_array_member));
   ASSERT_EQ(2, test_tag_member_elem_flat_slots(&flat_decl_array_member));
   const char flat_decl_union_tag[] = "__tm_flat_decl_union";
-  psx_ctx_define_tag_type_with_layout(TK_UNION, (char *)flat_decl_union_tag,
+  test_semantic_define_tag_type_with_layout(TK_UNION, (char *)flat_decl_union_tag,
                                       (int)sizeof(flat_decl_union_tag) - 1,
                                       2, 24, 8);
   tag_member_info_t flat_decl_union_large = {0};
@@ -11974,14 +12043,14 @@ static void test_type_metadata_bridge() {
       "int main(void){ return 0; }");
   (void)parsed_code;
   tag_member_info_t bf_wide_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "__tm_bf_decl_type", 17,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_bf_decl_type", 17,
                                            "wide", 4, &bf_wide_info));
   ASSERT_TRUE(bf_wide_info.decl_type != NULL);
   ASSERT_EQ(40, bf_wide_info.bit_width);
   ASSERT_EQ(8, ps_tag_member_decl_value_size(&bf_wide_info));
   ASSERT_EQ(8, ps_tag_member_decl_storage_size(&bf_wide_info));
   tag_member_info_t bf_bool_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "__tm_bf_decl_type", 17,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_bf_decl_type", 17,
                                            "flag", 4, &bf_bool_info));
   ASSERT_TRUE(bf_bool_info.decl_type != NULL);
   ASSERT_EQ(1, bf_bool_info.bit_width);
@@ -11990,7 +12059,7 @@ static void test_type_metadata_bridge() {
 
   const char member_sync_tag[] = "__tm_member_sync_clean";
   int member_sync_len = (int)sizeof(member_sync_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)member_sync_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)member_sync_tag,
                                       member_sync_len, 1, 4, 4);
   tag_member_info_t member_sync_stale = {0};
   member_sync_stale.name = "x";
@@ -12000,7 +12069,7 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)member_sync_tag, member_sync_len,
       &member_sync_stale));
   tag_member_info_t member_sync_out = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, (char *)member_sync_tag,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, (char *)member_sync_tag,
                                            member_sync_len, "x", 1,
                                            &member_sync_out));
   ASSERT_TRUE(member_sync_out.decl_type != NULL);
@@ -12024,7 +12093,7 @@ static void test_type_metadata_bridge() {
 
   const char canonical_member_tag[] = "__tm_canonical_member_desc";
   int canonical_member_tag_len = (int)sizeof(canonical_member_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)canonical_member_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)canonical_member_tag,
                                       canonical_member_tag_len, 1, 8, 8);
   tag_member_info_t canonical_member_desc = {0};
   canonical_member_desc.name = "p";
@@ -12035,7 +12104,7 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)canonical_member_tag, canonical_member_tag_len,
       &canonical_member_desc));
   tag_member_info_t canonical_member_out = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)canonical_member_tag, canonical_member_tag_len,
       "p", 1, &canonical_member_out));
   ASSERT_TRUE(canonical_member_out.decl_type != NULL);
@@ -12046,7 +12115,7 @@ static void test_type_metadata_bridge() {
 
   const char walk_inner_tag[] = "__tm_walk_inner";
   int walk_inner_len = (int)sizeof(walk_inner_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)walk_inner_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)walk_inner_tag,
                                       walk_inner_len, 2, 8, 4);
   tag_member_info_t walk_inner_a = {0};
   walk_inner_a.name = "a";
@@ -12064,7 +12133,7 @@ static void test_type_metadata_bridge() {
 
   const char walk_outer_tag[] = "__tm_walk_outer";
   int walk_outer_len = (int)sizeof(walk_outer_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)walk_outer_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)walk_outer_tag,
                                       walk_outer_len, 2, 20, 4);
   tag_member_info_t walk_outer_arr = {0};
   walk_outer_arr.name = "arr";
@@ -12110,7 +12179,7 @@ static void test_type_metadata_bridge() {
 
   const char walk_array_tag[] = "__tm_walk_array_elem";
   int walk_array_len = (int)sizeof(walk_array_tag) - 1;
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)walk_array_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)walk_array_tag,
                                       walk_array_len, 2, 8, 4);
   tag_member_info_t walk_array_a = {0};
   walk_array_a.name = "a";
@@ -12372,7 +12441,7 @@ static void test_type_metadata_bridge() {
       "int __tm_block_extern_proto(void) { "
       "extern double __tm_block_declared_fn(int); return 0; }");
   (void)parsed_code;
-  const psx_type_t *block_declared_function = ps_ctx_get_function_type(
+  const psx_type_t *block_declared_function = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)"__tm_block_declared_fn", 22);
   ASSERT_TRUE(block_declared_function != NULL);
   ASSERT_EQ(PSX_TYPE_FUNCTION, block_declared_function->kind);
@@ -12557,7 +12626,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(8, ps_node_deref_size(ptrptr_call));
   ASSERT_EQ(2, canonical_node_pointer_qual_levels(ptrptr_call));
   const psx_type_t *ptrptr_ret_type =
-      psx_ctx_get_function_ret_type("__tm_pp", 7);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm_pp", 7);
   ASSERT_TRUE(ptrptr_ret_type != NULL);
   assert_canonical_type_signature(ptrptr_ret_type, "p<p<i32>>");
   ASSERT_TRUE(double_ptr_to_array_call->type != NULL);
@@ -12574,26 +12643,26 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(16, ps_node_deref_size(double_ptr_to_array_call));
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, canonical_node_pointee_fp_kind(double_ptr_to_array_call));
   const psx_type_t *dpa_ret_type =
-      psx_ctx_get_function_ret_type("__tm_dp", 7);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm_dp", 7);
   ASSERT_TRUE(dpa_ret_type != NULL);
   ASSERT_TRUE(ps_type_shape_matches(dpa_ret_type, double_ptr_to_array_ty));
   ASSERT_TRUE(ps_type_derived_function(dpa_ret_type) == NULL);
   ASSERT_EQ(2, double_ptr_to_array_ty->base->array_len);
   ASSERT_EQ(8, ps_type_sizeof(double_ptr_to_array_ty->base->base));
-  psx_ctx_define_function_name_with_ret("__tm_manual_type", 16, 0);
+  test_semantic_define_function_name_with_ret("__tm_manual_type", 16, 0);
   psx_type_t *manual_ret_type =
       ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
   psx_type_t *manual_function_type =
       ps_type_new_function(manual_ret_type);
-  ASSERT_TRUE(psx_ctx_track_function_type("__tm_manual_type", 16,
+  ASSERT_TRUE(test_semantic_track_function_type("__tm_manual_type", 16,
                                           manual_function_type));
   const psx_type_t *manual_ret_stored =
-      psx_ctx_get_function_ret_type("__tm_manual_type", 16);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm_manual_type", 16);
   ASSERT_TRUE(manual_ret_stored != NULL);
   assert_canonical_type_signature(manual_ret_stored, "p<f64>");
 
   const char manual_ptrarr_name[] = "__tm_manual_ptrarr_type";
-  psx_ctx_define_function_name_with_ret(
+  test_semantic_define_function_name_with_ret(
       (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1, 0);
   psx_type_t *manual_ptrarr_element = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *manual_ptrarr_inner =
@@ -12604,10 +12673,10 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(manual_ptrarr_outer);
   psx_type_t *manual_ptrarr_function_type =
       ps_type_new_function(manual_ptrarr_ret);
-  ASSERT_TRUE(psx_ctx_track_function_type(
+  ASSERT_TRUE(test_semantic_track_function_type(
       (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1,
       manual_ptrarr_function_type));
-  const psx_type_t *manual_ptrarr_stored = psx_ctx_get_function_ret_type(
+  const psx_type_t *manual_ptrarr_stored = psx_ctx_get_function_ret_type_in(test_semantic_context(),
       (char *)manual_ptrarr_name, (int)sizeof(manual_ptrarr_name) - 1);
   ASSERT_TRUE(manual_ptrarr_stored != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, manual_ptrarr_stored->kind);
@@ -12624,7 +12693,7 @@ static void test_type_metadata_bridge() {
       manual_ptrarr_function_type, "p<a3<a4<i32>>>()");
 
   const char many_param_name[] = "__tm_many_param_type";
-  psx_ctx_define_function_name_with_ret(
+  test_semantic_define_function_name_with_ret(
       (char *)many_param_name, (int)sizeof(many_param_name) - 1, 0);
   psx_type_t *many_param_function = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
@@ -12673,10 +12742,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_type_shape_matches(many_param_function,
                                      many_param_variant));
 
-  ASSERT_TRUE(psx_ctx_track_function_type(
+  ASSERT_TRUE(test_semantic_track_function_type(
       (char *)many_param_name, (int)sizeof(many_param_name) - 1,
       many_param_function));
-  const psx_type_t *tracked_many_param = ps_ctx_get_function_type(
+  const psx_type_t *tracked_many_param = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)many_param_name, (int)sizeof(many_param_name) - 1);
   ASSERT_TRUE(tracked_many_param != NULL);
   ASSERT_EQ(17, tracked_many_param->param_count);
@@ -12693,7 +12762,7 @@ static void test_type_metadata_bridge() {
       "double p16){return p0;}");
   ASSERT_TRUE(many_param_source_program != NULL);
   ASSERT_TRUE(many_param_source_program[0] != NULL);
-  const psx_type_t *many_param_source = ps_ctx_get_function_type(
+  const psx_type_t *many_param_source = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)many_param_source_name,
       (int)sizeof(many_param_source_name) - 1);
   ASSERT_TRUE(many_param_source != NULL);
@@ -12709,28 +12778,28 @@ static void test_type_metadata_bridge() {
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
   psx_typedef_info_t typedef_shape_a = {0};
   typedef_shape_a.decl_type = typedef_shape_int_ptr;
-  ASSERT_TRUE(psx_ctx_define_typedef_name((char *)typedef_shape_name,
+  ASSERT_TRUE(test_semantic_define_typedef_name((char *)typedef_shape_name,
                                           (int)sizeof(typedef_shape_name) - 1,
                                           &typedef_shape_a));
   psx_typedef_info_t typedef_shape_same_type = typedef_shape_a;
-  ASSERT_TRUE(psx_ctx_define_typedef_name(
+  ASSERT_TRUE(test_semantic_define_typedef_name(
       (char *)typedef_shape_name, (int)sizeof(typedef_shape_name) - 1,
       &typedef_shape_same_type));
   psx_typedef_info_t typedef_shape_different = typedef_shape_a;
   typedef_shape_different.decl_type =
       ps_type_new_pointer(ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8));
-  ASSERT_TRUE(!psx_ctx_define_typedef_name((char *)typedef_shape_name,
+  ASSERT_TRUE(!test_semantic_define_typedef_name((char *)typedef_shape_name,
                                            (int)sizeof(typedef_shape_name) - 1,
                                            &typedef_shape_different));
   const char typedef_sync_name[] = "__tm_typedef_sync_from_type";
   psx_typedef_info_t typedef_sync = {0};
   typedef_sync.decl_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  ASSERT_TRUE(psx_ctx_define_typedef_name((char *)typedef_sync_name,
+  ASSERT_TRUE(test_semantic_define_typedef_name((char *)typedef_sync_name,
                                           (int)sizeof(typedef_sync_name) - 1,
                                           &typedef_sync));
   psx_typedef_info_t typedef_sync_out = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name((char *)typedef_sync_name,
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), (char *)typedef_sync_name,
                                         (int)sizeof(typedef_sync_name) - 1,
                                         &typedef_sync_out));
   ASSERT_TRUE(ps_ctx_typedef_decl_type(&typedef_sync_out) != NULL);
@@ -12741,7 +12810,7 @@ static void test_type_metadata_bridge() {
 
   const char tag_member_desc_tag[] = "__tm_tag_member_desc_sync";
   const char tag_member_desc_name[] = "rows";
-  psx_ctx_define_tag_type_with_layout(TK_STRUCT, (char *)tag_member_desc_tag,
+  test_semantic_define_tag_type_with_layout(TK_STRUCT, (char *)tag_member_desc_tag,
                                       (int)sizeof(tag_member_desc_tag) - 1,
                                       1, 6, 1);
   tag_member_info_t tag_member_desc = {0};
@@ -12757,7 +12826,7 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)tag_member_desc_tag,
       (int)sizeof(tag_member_desc_tag) - 1, &tag_member_desc));
   tag_member_info_t tag_member_desc_out = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)tag_member_desc_tag,
       (int)sizeof(tag_member_desc_tag) - 1,
       (char *)tag_member_desc_name, (int)sizeof(tag_member_desc_name) - 1,
@@ -13263,7 +13332,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_VOID, void_ptr_call_type->base->kind);
   ASSERT_TRUE(!ps_node_value_is_void(void_ptr_call));
   const psx_type_t *void_ptr_ret_type =
-      psx_ctx_get_function_ret_type("get", 3);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "get", 3);
   ASSERT_TRUE(void_ptr_ret_type != NULL);
   assert_canonical_type_signature(void_ptr_ret_type, "p<v>");
 
@@ -13273,11 +13342,11 @@ static void test_type_metadata_bridge() {
       "int main(void){TMFuncs ops={tm_add,tm_add,tm_add}; TMFuncs *pa=&ops; "
       "return (*pa)[0](1,2);}");
   psx_typedef_info_t tm_func_info = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TMFunc", 6, &tm_func_info));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMFunc", 6, &tm_func_info));
   ASSERT_TRUE(ps_type_derived_function(
       ps_ctx_typedef_decl_type(&tm_func_info)) != NULL);
   psx_typedef_info_t tm_funcs_info = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TMFuncs", 7, &tm_funcs_info));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TMFuncs", 7, &tm_funcs_info));
   ASSERT_TRUE(ps_type_derived_function(
       ps_ctx_typedef_decl_type(&tm_funcs_info)) != NULL);
   fn = as_function_definition(parsed_code[1]);
@@ -13345,7 +13414,7 @@ static void test_type_metadata_bridge() {
       "struct TM695 { double *dp; double (*fp)(void); }; int main(void){ return 0; }");
   (void)parsed_code;
   tag_member_info_t dp_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695", 5, "dp", 2, &dp_info));
   ASSERT_TRUE(dp_info.decl_type != NULL && dp_info.decl_type->base != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, dp_info.decl_type->base->fp_kind);
   ASSERT_TRUE(ps_type_derived_function(dp_info.decl_type) == NULL);
@@ -13356,7 +13425,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(TK_FLOAT_KIND_NONE, canonical_node_pointee_fp_kind(&canonical_int_ptr));
 
   tag_member_info_t fp_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695", 5, "fp", 2, &fp_info));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695", 5, "fp", 2, &fp_info));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_tag_member_decl_fp_kind(&fp_info));
   ASSERT_TRUE(fp_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, fp_info.decl_type->kind);
@@ -13399,7 +13468,7 @@ static void test_type_metadata_bridge() {
       "struct TM695F { int (*fns[2])(int, int); }; int main(void){ return 0; }");
   (void)parsed_code;
   tag_member_info_t fns_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695F", 6, "fns", 3, &fns_info));
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695F", 6, "fns", 3, &fns_info));
   ASSERT_TRUE(fns_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, fns_info.decl_type->kind);
   ASSERT_EQ(2, fns_info.decl_type->array_len);
@@ -13420,7 +13489,7 @@ static void test_type_metadata_bridge() {
       "int main(void){ struct TM695Holder h; h.ops[0].d = __tm695_d; return 0; }");
   (void)parsed_code;
   tag_member_info_t ops_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695Holder", 11,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695Holder", 11,
                                            "ops", 3, &ops_info));
   ASSERT_TRUE(ops_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, ops_info.decl_type->kind);
@@ -13436,7 +13505,7 @@ static void test_type_metadata_bridge() {
       "return h.rows[0][1][2]; }");
   (void)parsed_code;
   tag_member_info_t rows_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM695RowHolder", 14,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM695RowHolder", 14,
                                            "rows", 4, &rows_info));
   ASSERT_TRUE(rows_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, rows_info.decl_type->kind);
@@ -13456,7 +13525,7 @@ static void test_type_metadata_bridge() {
       "struct TMPtrRows { int (*p[2])[3]; }; int main(void){return 0;}");
   (void)parsed_code;
   tag_member_info_t ptr_rows_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "TMPtrRows", 9, "p", 1, &ptr_rows_info));
   ASSERT_TRUE(ptr_rows_info.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, ptr_rows_info.decl_type->kind);
@@ -13478,7 +13547,7 @@ static void test_type_metadata_bridge() {
   lvar_t *member_ptrarr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_ptrarr_h != NULL);
   tag_member_info_t member_ptrarr_p_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "__tm_member_ptrarr", 18,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_member_ptrarr", 18,
                                            "p", 1, &member_ptrarr_p_info));
   node_t *member_ptrarr_p_node = ps_node_new_tag_member_lvar_ref_for(
       member_ptrarr_h, member_ptrarr_p_info.offset, &member_ptrarr_p_info);
@@ -13513,7 +13582,7 @@ static void test_type_metadata_bridge() {
   lvar_t *member_ip_ptrarr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_ip_ptrarr_h != NULL);
   tag_member_info_t member_ip_ptrarr_p_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_ip_ptrarr",
       (int)sizeof("__tm_member_ip_ptrarr") - 1, "p", 1,
       &member_ip_ptrarr_p_info));
@@ -13560,7 +13629,7 @@ static void test_type_metadata_bridge() {
       "int main(void){ struct __tm_member_pp h; return 0; }");
   (void)parsed_code;
   tag_member_info_t member_pp_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, "__tm_member_pp", (int)sizeof("__tm_member_pp") - 1,
       "pp", 2, &member_pp_info));
   ASSERT_TRUE(member_pp_info.decl_type != NULL);
@@ -13606,7 +13675,7 @@ static void test_type_metadata_bridge() {
   lvar_t *member_arr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_arr_h != NULL);
   tag_member_info_t member_arr_a_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "__tm_member_arr", 15,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "__tm_member_arr", 15,
                                            "a", 1, &member_arr_a_info));
   node_t *member_arr_a_node = ps_node_new_tag_member_lvar_ref_for(
       member_arr_h, member_arr_a_info.offset, &member_arr_a_info);
@@ -13676,7 +13745,7 @@ static void test_type_metadata_bridge() {
   lvar_t *member_plain_ptr_h = find_func_lvar(fn, "h");
   ASSERT_TRUE(member_plain_ptr_h != NULL);
   tag_member_info_t member_plain_ptr_p_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT,
                                            "__tm_member_plain_ptr", 21,
                                            "p", 1,
                                            &member_plain_ptr_p_info));
@@ -13760,7 +13829,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(member_scalar_h != NULL);
   const char *member_scalar_tag = "__tm_member_scalar";
   tag_member_info_t member_scalar_u_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)member_scalar_tag, (int)strlen(member_scalar_tag),
       "u", 1, &member_scalar_u_info));
   ASSERT_TRUE(member_scalar_u_info.decl_type != NULL);
@@ -13775,7 +13844,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_type_is_unsigned(ps_node_get_type(member_scalar_u_deref)));
 
   tag_member_info_t member_scalar_b_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)member_scalar_tag, (int)strlen(member_scalar_tag),
       "b", 1, &member_scalar_b_info));
   ASSERT_TRUE(member_scalar_b_info.decl_type != NULL);
@@ -13791,7 +13860,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(member_scalar_b_deref)->kind);
 
   tag_member_info_t member_scalar_a_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)member_scalar_tag, (int)strlen(member_scalar_tag),
       "a", 1, &member_scalar_a_info));
   ASSERT_TRUE(member_scalar_a_info.decl_type != NULL);
@@ -13814,7 +13883,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!ps_node_value_is_pointer_like(member_scalar_a_deref));
 
   tag_member_info_t member_scalar_z_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)member_scalar_tag, (int)strlen(member_scalar_tag),
       "z", 1, &member_scalar_z_info));
   ASSERT_TRUE(member_scalar_z_info.decl_type != NULL);
@@ -13989,12 +14058,12 @@ static void test_type_metadata_bridge() {
       "return fp() == *dp; }");
   (void)parsed_code;
   psx_typedef_info_t td_dp = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TM697_DP", 8, &td_dp));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_DP", 8, &td_dp));
   ASSERT_TRUE(td_dp.decl_type != NULL && td_dp.decl_type->base != NULL);
   ASSERT_EQ(TK_FLOAT_KIND_DOUBLE, td_dp.decl_type->base->fp_kind);
   assert_canonical_type_signature(td_dp.decl_type, "p<f64>");
   psx_typedef_info_t td_fp = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TM697_FP", 8, &td_fp));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM697_FP", 8, &td_fp));
   ASSERT_TRUE(td_fp.decl_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, td_fp.decl_type->kind);
   assert_canonical_type_signature(td_fp.decl_type, "p<f64()>");
@@ -14023,17 +14092,17 @@ static void test_type_metadata_bridge() {
       "typedef int (**TM817_LOCAL_PP)(int); TM817_LOCAL_GET lget=__tm817_retp; "
       "TM817_LOCAL_PP lpp=&p; lget(); (*lpp)(1); } return *get()+*get2()+(*pp)(1); }");
   psx_typedef_info_t tm817_get_td = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_GET", 9, &tm817_get_td));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET", 9, &tm817_get_td));
   assert_canonical_type_signature(
       tm817_get_td.decl_type, "p<p<i32>()>");
   ASSERT_EQ(1, ps_type_pointer_depth(tm817_get_td.decl_type));
   psx_typedef_info_t tm817_get2_td = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_GET2", 10, &tm817_get2_td));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_GET2", 10, &tm817_get2_td));
   assert_canonical_type_signature(
       tm817_get2_td.decl_type, "p<p<i32>()>");
   ASSERT_EQ(1, ps_type_pointer_depth(tm817_get2_td.decl_type));
   psx_typedef_info_t tm817_pp_td = {0};
-  ASSERT_TRUE(ps_ctx_find_typedef_name("TM817_PP", 8, &tm817_pp_td));
+  ASSERT_TRUE(ps_ctx_find_typedef_name_in(test_semantic_context(), "TM817_PP", 8, &tm817_pp_td));
   assert_canonical_type_signature(
       tm817_pp_td.decl_type, "p<p<i32(i32)>>");
   ASSERT_EQ(2, ps_type_pointer_depth(tm817_pp_td.decl_type));
@@ -14127,12 +14196,12 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       tm816_param_fp->decl_type, "p<p<i32>()>");
   tag_member_info_t tm816_fp_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM816", 5, "fp", 2,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM816", 5, "fp", 2,
                                            &tm816_fp_info));
   assert_canonical_type_signature(
       tm816_fp_info.decl_type, "p<p<i32>()>");
   tag_member_info_t tm816_pp_info = {0};
-  ASSERT_TRUE(ps_ctx_find_tag_member_info(TK_STRUCT, "TM816", 5, "pp", 2,
+  ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "TM816", 5, "pp", 2,
                                            &tm816_pp_info));
   ASSERT_EQ(2, canonical_pointer_qual_levels(
                    tm816_pp_info.decl_type));
@@ -14219,7 +14288,7 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       go_return_type, "p<p<s{2:FS}>()>");
   const psx_type_t *go_ctx_return =
-      psx_ctx_get_function_ret_type("__tm_go", 7);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm_go", 7);
   ASSERT_TRUE(go_ctx_return != NULL);
   ASSERT_TRUE(ps_type_shape_matches(go_ctx_return, go_return_type));
   fn = as_function_definition(parsed_code[3]);
@@ -14274,7 +14343,7 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_node_value_is_pointer_like((node_t *)&pick_call));
   assert_canonical_type_signature(pick_call_type, "p<f64(f64)>");
   const psx_type_t *pick_ctx_return =
-      psx_ctx_get_function_ret_type("__tm698_pick", 12);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm698_pick", 12);
   ASSERT_TRUE(pick_ctx_return != NULL);
   ASSERT_TRUE(ps_type_shape_matches(
       pick_ctx_return, pick_def->signature->base));
@@ -14307,7 +14376,7 @@ static void test_type_metadata_bridge() {
   assert_canonical_type_signature(
       tm818_getpp_def->signature, "p<p<i32(i32)>>()");
   ASSERT_EQ(2, ps_type_pointer_depth(
-                   psx_ctx_get_function_ret_type("__tm818_getpp", 13)));
+                   psx_ctx_get_function_ret_type_in(test_semantic_context(), "__tm818_getpp", 13)));
 }
 
 static void test_translation_unit_reset_static_local_state() {
@@ -14337,14 +14406,14 @@ static void test_translation_unit_reset_anonymous_tag_state() {
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
-  ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
+  ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
 
   reset_test_translation_unit_state();
   parsed_code = parse_program_input(input);
   ASSERT_TRUE(parsed_code[0] != NULL);
-  ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
-  ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
+  ASSERT_TRUE(test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_0", 12));
+  ASSERT_TRUE(!test_semantic_has_tag_type(TK_STRUCT, "__anon_tag_1", 12));
   reset_test_translation_unit_state();
 }
 
@@ -14354,9 +14423,9 @@ static void test_translation_unit_reset_decl_locals_state() {
   char name[] = "x";
   reset_test_locals();
   ASSERT_TRUE(register_test_default_storage_fixture(name, 1) != NULL);
-  ASSERT_TRUE(ps_decl_find_lvar(name, 1) != NULL);
+  ASSERT_TRUE(ps_decl_find_lvar_in(test_local_registry(), name, 1) != NULL);
   reset_test_translation_unit_state();
-  ASSERT_TRUE(ps_decl_find_lvar(name, 1) == NULL);
+  ASSERT_TRUE(ps_decl_find_lvar_in(test_local_registry(), name, 1) == NULL);
 }
 
 static void test_translation_unit_reset_pragma_pack_state() {
@@ -14404,18 +14473,18 @@ static void test_multiple_funcdefs() {
   parsed_code = parse_program_input("int **sig_proto_pp(void); int main(void) { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(2, ps_type_pointer_depth(
-                   psx_ctx_get_function_ret_type("sig_proto_pp", 12)));
+                   psx_ctx_get_function_ret_type_in(test_semantic_context(), "sig_proto_pp", 12)));
 
   parsed_code = parse_program_input("int **sig_def_pp(void) { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   ASSERT_EQ(2, ps_type_pointer_depth(
-                   psx_ctx_get_function_ret_type("sig_def_pp", 10)));
+                   psx_ctx_get_function_ret_type_in(test_semantic_context(), "sig_def_pp", 10)));
 
   parsed_code = parse_program_input(
       "int (*(*(*sig_deep(void))(int))(double))[3] { return 0; }");
   ASSERT_TRUE(parsed_code[0] != NULL);
   const psx_type_t *deep_return =
-      psx_ctx_get_function_ret_type("sig_deep", 8);
+      psx_ctx_get_function_ret_type_in(test_semantic_context(), "sig_deep", 8);
   const psx_type_t *deep_int_function =
       ps_type_derived_function(deep_return);
   ASSERT_TRUE(deep_int_function != NULL);
@@ -15450,7 +15519,6 @@ static void test_arena_checkpoint_rollback() {
 
 static void test_semantic_context_isolation() {
   printf("test_semantic_context_isolation...\n");
-  psx_semantic_context_t *previous = ps_ctx_active();
   psx_semantic_context_t *first = ps_ctx_create();
   psx_semantic_context_t *second = ps_ctx_create();
   ASSERT_TRUE(first != NULL);
@@ -15464,29 +15532,33 @@ static void test_semantic_context_isolation() {
   char enum_name[] = "ContextValue";
   char tag_name[] = "ContextTag";
   long long value = 0;
-  ps_ctx_activate(first);
-  ASSERT_TRUE(psx_ctx_define_enum_const(enum_name, 12, 11));
-  ASSERT_TRUE(ps_ctx_register_tag_type(
+  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
+      first, test_local_registry(), enum_name, 12, 11, NULL));
+  ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
+      first, test_local_registry(),
       TK_STRUCT, tag_name, 10, 0, 0, 0, 0));
 
-  ps_ctx_activate(second);
-  ASSERT_TRUE(!ps_ctx_find_enum_const(enum_name, 12, &value));
-  ASSERT_TRUE(!ps_ctx_has_tag_type(TK_STRUCT, tag_name, 10));
-  ASSERT_TRUE(psx_ctx_define_enum_const(enum_name, 12, 22));
-  ASSERT_TRUE(ps_ctx_find_enum_const(enum_name, 12, &value));
+  ASSERT_TRUE(!ps_ctx_find_enum_const_in(
+      second, enum_name, 12, &value));
+  ASSERT_TRUE(!ps_ctx_has_tag_type_in(
+      second, TK_STRUCT, tag_name, 10));
+  ASSERT_TRUE(ps_ctx_register_enum_const_in_contexts(
+      second, test_local_registry(), enum_name, 12, 22, NULL));
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(
+      second, enum_name, 12, &value));
   ASSERT_EQ(22, value);
 
-  ps_ctx_activate(first);
-  ASSERT_TRUE(ps_ctx_find_enum_const(enum_name, 12, &value));
+  ASSERT_TRUE(ps_ctx_find_enum_const_in(first, enum_name, 12, &value));
   ASSERT_EQ(11, value);
-  ASSERT_TRUE(ps_ctx_has_tag_type(TK_STRUCT, tag_name, 10));
+  ASSERT_TRUE(ps_ctx_has_tag_type_in(
+      first, TK_STRUCT, tag_name, 10));
 
   char function_name[] = "ContextFunction";
   psx_type_t *function_type = ps_type_new_function(
       ps_type_new_integer(TK_INT, 4, 0));
   ASSERT_TRUE(ps_ctx_register_function_type_in(
                   second, function_name, 15, function_type) != NULL);
-  ASSERT_TRUE(ps_ctx_find_function_symbol(
+  ASSERT_TRUE(ps_ctx_find_function_symbol_in(first,
                   function_name, 15) == NULL);
   ASSERT_TRUE(ps_ctx_find_function_symbol_in(
                   first, function_name, 15) == NULL);
@@ -15497,7 +15569,7 @@ static void test_semantic_context_isolation() {
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = function_name,
           .name_len = 15,
           .is_call = 1,
@@ -15514,7 +15586,7 @@ static void test_semantic_context_isolation() {
       &(psx_enum_constant_resolution_request_t){
           .semantic_context = second,
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = direct_enum_name,
           .name_len = 10,
           .value = 37,
@@ -15531,7 +15603,7 @@ static void test_semantic_context_isolation() {
       &(psx_identifier_resolution_request_t){
           .semantic_context = second,
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = direct_enum_name,
           .name_len = 10,
       },
@@ -15554,7 +15626,7 @@ static void test_semantic_context_isolation() {
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = direct_typedef_name,
           .name_len = 13,
           .type = direct_typedef_type,
@@ -15604,13 +15676,13 @@ static void test_semantic_context_isolation() {
       .decl_type = ps_type_new_integer(TK_INT, 4, 0),
   };
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, ps_local_registry_active(),
+      second, test_local_registry(),
       TK_STRUCT, direct_tag_name, 9, 0, 0, 0, 0));
   ASSERT_TRUE(ps_ctx_register_tag_members_in(
       second, TK_STRUCT, direct_tag_name, 9,
       &direct_member, 1, NULL));
   ASSERT_TRUE(ps_ctx_register_tag_type_in_contexts(
-      second, ps_local_registry_active(),
+      second, test_local_registry(),
       TK_STRUCT, direct_tag_name, 9, 1, 1, 4, 4));
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
       first, TK_STRUCT, direct_tag_name, 9));
@@ -15640,7 +15712,7 @@ static void test_semantic_context_isolation() {
   const psx_type_t *direct_tag_type =
       psx_apply_parsed_decl_specifier_in_contexts(
           second, test_global_registry(),
-          ps_local_registry_active(), &direct_tag_specifier);
+          test_local_registry(), &direct_tag_specifier);
   ASSERT_TRUE(direct_tag_type != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, direct_tag_type->kind);
   ASSERT_EQ(4, ps_type_sizeof(direct_tag_type));
@@ -15684,7 +15756,7 @@ static void test_semantic_context_isolation() {
       .member_name_len = 5,
   };
   psx_semantic_resolve_tree_in_contexts(
-      second, test_global_registry(), ps_local_registry_active(),
+      second, test_global_registry(), test_local_registry(),
       (node_t *)&detached_access, NULL, NULL);
   ASSERT_TRUE(detached_access.resolved_member != NULL);
   ASSERT_EQ(4, ps_type_sizeof(detached_access.base.type));
@@ -15715,7 +15787,7 @@ static void test_semantic_context_isolation() {
 
   char applied_tag_name[] = "AppliedTag";
   psx_apply_parsed_tag_declaration_in_contexts(
-      second, ps_local_registry_active(),
+      second, test_local_registry(),
       TK_STRUCT, applied_tag_name, 10,
       PSX_TAG_DECLARATION_DEFINITION, 0, 8, 8, NULL);
   ASSERT_TRUE(!ps_ctx_has_tag_type_in(
@@ -15756,7 +15828,7 @@ static void test_semantic_context_isolation() {
       &(psx_typedef_declaration_resolution_request_t){
           .semantic_context = second,
           .global_registry = test_global_registry(),
-          .local_registry = ps_local_registry_active(),
+          .local_registry = test_local_registry(),
           .name = (char *)"StreamType",
           .name_len = 10,
           .type = ps_type_new_integer(TK_INT, 4, 0),
@@ -15769,7 +15841,7 @@ static void test_semantic_context_isolation() {
   psx_parser_stream_t parser_stream = {0};
   ps_parser_stream_begin_in_contexts(
       &parser_stream, second, test_global_registry(),
-      ps_local_registry_active(),
+      test_local_registry(),
       ag_compilation_session_parser_runtime_context(test_suite_session), NULL,
       tk_tokenize((char *)
           "{ StreamType value = 0; "
@@ -15780,7 +15852,7 @@ static void test_semantic_context_isolation() {
   psx_local_declaration_callbacks_t local_declarations;
   psx_frontend_init_local_declaration_callbacks_in_contexts(
       &local_declarations, second, test_global_registry(),
-      ps_local_registry_active(),
+      test_local_registry(),
       ag_compilation_session_parser_runtime_context(test_suite_session),
       test_lowering_context(),
       test_compilation_options());
@@ -15793,7 +15865,6 @@ static void test_semantic_context_isolation() {
   ASSERT_EQ(0, ps_ctx_current_tag_scope_depth_in(second));
   ps_parser_stream_end(&parser_stream);
 
-  ps_ctx_activate(previous);
   ps_ctx_destroy(first);
   ps_ctx_destroy(second);
 }
@@ -15946,7 +16017,7 @@ static void test_compilation_session_registry_isolation() {
                   (char *)".Lshared") == NULL);
 
   ASSERT_TRUE(ag_compilation_session_activate(&second));
-  ps_local_registry_reset();
+  ps_local_registry_reset_in(second.local_registry);
   ps_local_registry_reset_in(first.local_registry);
   ps_ctx_enter_block_scope_in(first.semantic_context);
   ps_decl_enter_scope_in(first.local_registry);
@@ -16091,8 +16162,8 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(ps_find_global_var_in(
       first.global_registry, (char *)"pipeline_first", 14) ==
       isolated_global_result.global);
-  ASSERT_TRUE(find_test_global_var(
-      (char *)"pipeline_first", 14) == NULL);
+  ASSERT_TRUE(ps_find_global_var_in(
+      second.global_registry, (char *)"pipeline_first", 14) == NULL);
   ASSERT_TRUE(!ps_ctx_find_typedef_name_in(
       second.semantic_context, (char *)"FirstType", 9, NULL));
   ASSERT_TRUE(!ps_ctx_find_enum_const_in(
@@ -16110,7 +16181,7 @@ static void test_compilation_session_registry_isolation() {
           .type = ps_type_new_integer(TK_INT, 4, 0),
       });
   ASSERT_TRUE(lowered_into_first != NULL);
-  ASSERT_TRUE(ps_decl_find_lvar(
+  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
                   (char *)"lowered_into_first", 18) == NULL);
   ASSERT_TRUE(ps_decl_find_lvar_in(
                   first.local_registry,
@@ -16118,7 +16189,7 @@ static void test_compilation_session_registry_isolation() {
               lowered_into_first);
   psx_local_registry_add_in(
       first.local_registry, &explicit_first_local);
-  ASSERT_TRUE(ps_decl_find_lvar(
+  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
                   (char *)"explicit_first_local", 20) == NULL);
   ASSERT_TRUE(ps_decl_find_lvar_in(
                   first.local_registry,
@@ -16131,14 +16202,14 @@ static void test_compilation_session_registry_isolation() {
                   (char *)"explicit_first_local", 20,
                   explicit_first_point) == &explicit_first_local);
   psx_register_string_lit_in(second.global_registry, &second_literal);
-  psx_local_registry_add(&second_local);
+  psx_local_registry_add_in(second.local_registry, &second_local);
   ASSERT_TRUE(ps_find_global_var_in(
                   second.global_registry,
                   (char *)"shared_global", 13) == &second_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
                   second.global_registry,
                   (char *)".Lshared") == &second_literal);
-  ASSERT_TRUE(ps_decl_find_lvar(
+  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
                   (char *)"shared_local", 12) == &second_local);
   ir_data_module_t *first_data =
       lower_ir_translation_unit_data_in_session(&first);
@@ -16165,17 +16236,17 @@ static void test_compilation_session_registry_isolation() {
   ag_compilation_session_deactivate(&second);
 
   ASSERT_TRUE(ag_compilation_session_activate(&first));
-  ps_local_registry_reset();
+  ps_local_registry_reset_in(first.local_registry);
   ASSERT_TRUE(ps_find_global_var_in(
                   first.global_registry,
                   (char *)"shared_global", 13) == &first_global);
   ASSERT_TRUE(ps_find_string_lit_by_label_in(
                   first.global_registry,
                   (char *)".Lshared") == &first_literal);
-  ASSERT_TRUE(ps_decl_find_lvar(
+  ASSERT_TRUE(ps_decl_find_lvar_in(first.local_registry,
                   (char *)"shared_local", 12) == NULL);
-  psx_local_registry_add(&first_local);
-  ASSERT_TRUE(ps_decl_find_lvar(
+  psx_local_registry_add_in(first.local_registry, &first_local);
+  ASSERT_TRUE(ps_decl_find_lvar_in(first.local_registry,
                   (char *)"shared_local", 12) == &first_local);
   ir_data_module_t *second_data =
       lower_ir_translation_unit_data_in_session(&second);
@@ -16202,7 +16273,7 @@ static void test_compilation_session_registry_isolation() {
   ag_compilation_session_deactivate(&first);
 
   ASSERT_TRUE(ag_compilation_session_activate(&second));
-  ASSERT_TRUE(ps_decl_find_lvar(
+  ASSERT_TRUE(ps_decl_find_lvar_in(second.local_registry,
                   (char *)"shared_local", 12) == &second_local);
   ag_compilation_session_deactivate(&second);
 
@@ -16278,6 +16349,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               host.global_registry);
   ASSERT_TRUE(ag_compilation_session_local_registry(&host) ==
               host.local_registry);
+  ASSERT_TRUE(ag_compilation_session_preprocessor_context(&host) ==
+              host.preprocessor_context);
   ASSERT_TRUE(ag_compilation_session_arena_context(&host) ==
               host.arena_context);
   ASSERT_TRUE(ag_compilation_session_diagnostic_context(&host) ==
@@ -16300,6 +16373,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
               wasm.global_registry);
   ASSERT_TRUE(ag_compilation_session_local_registry(&wasm) ==
               wasm.local_registry);
+  ASSERT_TRUE(ag_compilation_session_preprocessor_context(&wasm) ==
+              wasm.preprocessor_context);
   ASSERT_EQ(8, ag_target_info_pointer_size(
                    ag_compilation_session_target(&host)));
   ASSERT_EQ(4, ag_target_info_pointer_size(

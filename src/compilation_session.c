@@ -103,10 +103,6 @@ int ag_compilation_session_activate(ag_compilation_session_t *session) {
     return 0;
   session->previous_session = active_compilation_session;
   active_compilation_session = session;
-  session->previous_semantic_context =
-      ps_ctx_activate(session->semantic_context);
-  session->previous_local_registry =
-      ps_local_registry_activate(session->local_registry);
   session->previous_preprocessor_context =
       pp_context_activate(session->preprocessor_context);
   session->previous_arena_context =
@@ -143,18 +139,14 @@ int ag_compilation_session_deactivate(ag_compilation_session_t *session) {
   diag_context_activate(session->previous_diagnostic_context);
   arena_context_activate(session->previous_arena_context);
   pp_context_activate(session->previous_preprocessor_context);
-  ps_local_registry_activate(session->previous_local_registry);
-  ps_ctx_activate(session->previous_semantic_context);
   active_compilation_session = session->previous_session;
   session->previous_session = NULL;
-  session->previous_local_registry = NULL;
   session->previous_preprocessor_context = NULL;
   session->previous_arena_context = NULL;
   session->previous_diagnostic_context = NULL;
   session->previous_tokenizer_context = NULL;
   session->previous_token_allocator_context = NULL;
   session->previous_codegen_emit_context = NULL;
-  session->previous_semantic_context = NULL;
   session->is_active = 0;
   return 1;
 }
@@ -212,6 +204,13 @@ psx_local_registry_t *ag_compilation_session_local_registry(
     const ag_compilation_session_t *session) {
   return ag_compilation_session_is_complete(session)
              ? session->local_registry
+             : NULL;
+}
+
+ag_preprocessor_context_t *ag_compilation_session_preprocessor_context(
+    const ag_compilation_session_t *session) {
+  return ag_compilation_session_is_complete(session)
+             ? session->preprocessor_context
              : NULL;
 }
 
