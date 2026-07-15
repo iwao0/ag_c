@@ -776,6 +776,8 @@ int psx_begin_automatic_local_declaration_pipeline(
           .arena_context = ps_lowering_arena(request->lowering_context),
           .semantic_types = ps_ctx_semantic_type_table_in(
               request->semantic_context),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              request->semantic_context),
           .type_id = declaration_identity.type_id,
           .target = ps_lowering_target(request->lowering_context),
           .application = request->application,

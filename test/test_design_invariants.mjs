@@ -3415,6 +3415,9 @@ if (!runtimeArrayBoundStruct ||
 if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
+    !/\bconst\s+psx_record_layout_table_t\s*\*\s*record_layouts\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
@@ -3424,14 +3427,17 @@ if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
-    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    ) ||
+    /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       localDeclarationResolutionImplementation,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
       localDeclarationResolutionImplementation,
     )) {
   throw new Error(
-    "local declaration resolution must derive type meaning and layout from TypeId",
+    "local declaration resolution must derive layout from TypeId and record layouts",
   );
 }
 

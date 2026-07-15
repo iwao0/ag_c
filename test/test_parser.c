@@ -4539,6 +4539,8 @@ static void test_local_declaration_resolution_boundary() {
               ag_compilation_session_arena_context(test_suite_session),
           .semantic_types = ps_ctx_semantic_type_table_in(
               test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              test_semantic_context()),
           .type_id = intern_test_type_id(integer),
           .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
@@ -4557,6 +4559,8 @@ static void test_local_declaration_resolution_boundary() {
               ag_compilation_session_arena_context(test_suite_session),
           .semantic_types = ps_ctx_semantic_type_table_in(
               test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              test_semantic_context()),
           .type_id = intern_test_type_id(incomplete),
           .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
@@ -4569,6 +4573,8 @@ static void test_local_declaration_resolution_boundary() {
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
           .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
               test_semantic_context()),
           .type_id = intern_test_type_id(incomplete),
           .target = ag_compilation_session_target(test_suite_session),
@@ -4609,6 +4615,8 @@ static void test_local_declaration_resolution_boundary() {
               ag_compilation_session_arena_context(test_suite_session),
           .semantic_types = ps_ctx_semantic_type_table_in(
               test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              test_semantic_context()),
           .type_id = intern_test_type_id(vla),
           .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
@@ -4643,6 +4651,8 @@ static void test_local_declaration_resolution_boundary() {
               ag_compilation_session_arena_context(test_suite_session),
           .semantic_types = ps_ctx_semantic_type_table_in(
               test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              test_semantic_context()),
           .type_id = intern_test_type_id(pointer_to_vla),
           .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
@@ -4653,6 +4663,40 @@ static void test_local_declaration_resolution_boundary() {
   ASSERT_TRUE(ps_ctx_semantic_expression_in(
                   test_semantic_context(),
                   resolution.pointer_row_dimension_id) == runtime_bound);
+
+  char record_element_tag[] = "LocalRecordElement";
+  test_semantic_define_tag_type_with_layout(
+      TK_STRUCT, record_element_tag, 18, 0, 8, 4);
+  psx_type_t *record_element = ps_ctx_clone_tag_type_at_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      TK_STRUCT, record_element_tag, 18,
+      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+  ASSERT_TRUE(record_element != NULL);
+  ASSERT_TRUE(record_element->aggregate_definition != NULL);
+  ((psx_record_decl_t *)record_element->aggregate_definition)->size = 0;
+  psx_type_t *incomplete_record_array = ps_type_new_array(
+      record_element, 0, 0, 0);
+  application = (psx_runtime_declarator_application_t){0};
+  ps_declarator_shape_init(&application.shape);
+  ASSERT_TRUE(ps_declarator_shape_append_array_ex(
+      &application.shape, 0, 1));
+  psx_resolve_local_declaration(
+      &(psx_local_declaration_resolution_request_t){
+          .arena_context =
+              ag_compilation_session_arena_context(test_suite_session),
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .record_layouts = ps_ctx_record_layout_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(incomplete_record_array),
+          .target = ag_compilation_session_target(test_suite_session),
+          .application = &application,
+          .has_initializer = 1,
+      },
+      &resolution);
+  ASSERT_EQ(PSX_LOCAL_DECLARATION_OK, resolution.status);
+  ASSERT_EQ(PSX_LOCAL_STORAGE_INCOMPLETE_ARRAY,
+            resolution.storage_kind);
 }
 
 static void test_aggregate_member_resolution_boundary() {
