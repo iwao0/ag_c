@@ -41,6 +41,17 @@ const psx_semantic_type_table_t *ps_lowering_semantic_types(
   return ctx ? ctx->semantic_types : NULL;
 }
 
+void ps_lowering_context_bind_record_decls(
+    psx_lowering_context_t *ctx,
+    const psx_record_decl_table_t *record_decls) {
+  if (ctx) ctx->record_decls = record_decls;
+}
+
+const psx_record_decl_table_t *ps_lowering_record_decls(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? ctx->record_decls : NULL;
+}
+
 void ps_lowering_context_bind_record_layouts(
     psx_lowering_context_t *ctx,
     const psx_record_layout_table_t *record_layouts) {

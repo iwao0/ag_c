@@ -164,6 +164,7 @@ struct psx_semantic_context_t {
   psx_record_id_t next_record_id;
   psx_semantic_expression_table_t *semantic_expressions;
   psx_semantic_type_table_t *semantic_types;
+  psx_record_decl_table_t *record_decls;
   psx_record_layout_table_t *record_layouts;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
@@ -275,6 +276,11 @@ const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
   return context ? context->semantic_types : NULL;
 }
 
+const psx_record_decl_table_t *ps_ctx_record_decl_table_in(
+    const psx_semantic_context_t *context) {
+  return context ? context->record_decls : NULL;
+}
+
 const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
     const psx_semantic_context_t *context) {
   return context ? context->record_layouts : NULL;
@@ -307,11 +313,13 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
     context->semantic_expressions =
         psx_semantic_expression_table_create();
     context->semantic_types = psx_semantic_type_table_create();
+    context->record_decls = psx_record_decl_table_create();
     context->record_layouts = psx_record_layout_table_create();
     if (!context->semantic_expressions || !context->semantic_types ||
-        !context->record_layouts) {
+        !context->record_decls || !context->record_layouts) {
       psx_semantic_expression_table_destroy(context->semantic_expressions);
       psx_semantic_type_table_destroy(context->semantic_types);
+      psx_record_decl_table_destroy(context->record_decls);
       psx_record_layout_table_destroy(context->record_layouts);
       free(context);
       return NULL;
@@ -327,6 +335,7 @@ void ps_ctx_destroy(psx_semantic_context_t *context) {
   ctx_release_all(context);
   psx_semantic_expression_table_destroy(context->semantic_expressions);
   psx_semantic_type_table_destroy(context->semantic_types);
+  psx_record_decl_table_destroy(context->record_decls);
   psx_record_layout_table_destroy(context->record_layouts);
   free(context);
 }
@@ -430,6 +439,7 @@ void ps_ctx_reset_translation_unit_scope_in(
   psx_semantic_expression_table_t *semantic_expressions =
       context->semantic_expressions;
   psx_semantic_type_table_t *semantic_types = context->semantic_types;
+  psx_record_decl_table_t *record_decls = context->record_decls;
   psx_record_layout_table_t *record_layouts = context->record_layouts;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
@@ -438,9 +448,11 @@ void ps_ctx_reset_translation_unit_scope_in(
   context->target = target;
   context->semantic_expressions = semantic_expressions;
   context->semantic_types = semantic_types;
+  context->record_decls = record_decls;
   context->record_layouts = record_layouts;
   psx_semantic_expression_table_reset(semantic_expressions);
   psx_semantic_type_table_reset(semantic_types);
+  psx_record_decl_table_reset(record_decls);
   psx_record_layout_table_reset(record_layouts);
 }
 
@@ -816,6 +828,9 @@ int ps_ctx_register_tag_type_in_contexts(
         context, 1, sizeof(psx_aggregate_definition_t));
     if (!t->definition) return 0;
     t->definition->record_id = allocate_record_id(context);
+    if (!psx_record_decl_table_define(
+            context->record_decls, t->definition))
+      return 0;
     refresh_cached_tag_definition(context, t);
   }
   if (t->is_complete) {
@@ -870,14 +885,17 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
   tag->definition = definition;
   if (kind == TK_STRUCT || kind == TK_UNION)
     definition->record_id = allocate_record_id(context);
+  if (definition->record_id != PSX_RECORD_ID_INVALID &&
+      !psx_record_decl_table_define(context->record_decls, definition))
+    return NULL;
   refresh_cached_tag_definition(context, tag);
   return definition;
 }
 
 const psx_record_decl_t *ps_ctx_get_record_decl_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
-  tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
-  return tag ? tag->definition : NULL;
+  return psx_record_decl_table_lookup(
+      ps_ctx_record_decl_table_in(context), record_id);
 }
 
 int ps_ctx_publish_record_layout_in(

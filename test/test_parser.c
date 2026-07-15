@@ -436,6 +436,13 @@ static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
       test_semantic_context(), type).type_id;
 }
 
+static int define_test_record_decl(const psx_record_decl_t *record) {
+  return psx_record_decl_table_define(
+      (psx_record_decl_table_t *)ps_ctx_record_decl_table_in(
+          test_semantic_context()),
+      record);
+}
+
 static int test_type_size_id(psx_type_id_t type_id) {
   return ps_type_sizeof_id_with_records(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
@@ -4787,6 +4794,9 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_TRUE(first->record_id != PSX_RECORD_ID_INVALID);
   ASSERT_EQ(first, ps_ctx_get_record_decl_in(
                        test_semantic_context(), first->record_id));
+  ASSERT_EQ(first, psx_record_decl_table_lookup(
+                       ps_ctx_record_decl_table_in(test_semantic_context()),
+                       first->record_id));
   ASSERT_TRUE(!first->is_complete);
   ASSERT_EQ(0, first->member_count);
 
@@ -4826,6 +4836,9 @@ static void test_aggregate_definition_ownership_boundary() {
   ASSERT_TRUE(second->record_id != first->record_id);
   ASSERT_EQ(second, ps_ctx_get_record_decl_in(
                         test_semantic_context(), second->record_id));
+  ASSERT_EQ(second, psx_record_decl_table_lookup(
+                        ps_ctx_record_decl_table_in(test_semantic_context()),
+                        second->record_id));
   psx_type_t first_type = {
       .kind = PSX_TYPE_STRUCT,
       .tag_kind = TK_STRUCT,
@@ -6438,15 +6451,27 @@ static void test_local_initializer_parse_lowering_boundary() {
        .decl_type = integer},
   };
   psx_aggregate_definition_t definition = {
+      .record_id = 0x1a20u,
       .tag_kind = TK_STRUCT,
       .tag_name = (char *)"LocalInitBoundary",
       .tag_len = 17,
+      .is_complete = 1,
       .member_count = 2,
       .members = members,
   };
   psx_type_t *aggregate = ps_type_new_tag(
       TK_STRUCT, definition.tag_name, definition.tag_len, 0, 16);
   aggregate->aggregate_definition = &definition;
+  aggregate->record_id = definition.record_id;
+  ASSERT_TRUE(define_test_record_decl(&definition));
+  const psx_record_member_layout_t aggregate_layout_members[2] = {
+      {.offset = 0}, {.offset = 8},
+  };
+  ASSERT_TRUE(psx_record_layout_table_define(
+      (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      definition.record_id, ps_ctx_target_info(test_semantic_context()),
+      16, 8, aggregate_layout_members, 2));
 
   lvar_t *object = register_test_storage_fixture(
       (char *)"object", 6, 16, 16, 0);
@@ -6484,15 +6509,28 @@ static void test_local_initializer_parse_lowering_boundary() {
        .decl_type = integer},
   };
   psx_aggregate_definition_t union_definition = {
+      .record_id = 0x1a21u,
       .tag_kind = TK_UNION,
       .tag_name = (char *)"LocalUnionBoundary",
       .tag_len = 18,
+      .is_complete = 1,
       .member_count = 1,
       .members = union_members,
   };
   psx_type_t *union_type = ps_type_new_tag(
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 4);
   union_type->aggregate_definition = &union_definition;
+  union_type->record_id = union_definition.record_id;
+  ASSERT_TRUE(define_test_record_decl(&union_definition));
+  const psx_record_member_layout_t union_layout_members[1] = {
+      {.offset = 0},
+  };
+  ASSERT_TRUE(psx_record_layout_table_define(
+      (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      union_definition.record_id,
+      ps_ctx_target_info(test_semantic_context()), 4, 4,
+      union_layout_members, 1));
   lvar_t *union_object = register_test_storage_fixture(
       (char *)"u", 1, 4, 4, 0);
   set_test_storage_fixture_type(union_object, union_type);
@@ -6597,6 +6635,7 @@ static void test_static_data_initializer_boundary() {
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 8);
   union_type->aggregate_definition = &union_definition;
   union_type->record_id = union_definition.record_id;
+  ASSERT_TRUE(define_test_record_decl(&union_definition));
   const psx_record_member_layout_t union_layout_members[2] = {
       {.offset = 0}, {.offset = 0},
   };
@@ -17668,6 +17707,8 @@ static void test_semantic_context_isolation() {
       second_lowering_context, ps_ctx_target_info(second));
   ps_lowering_context_bind_semantic_types(
       second_lowering_context, ps_ctx_semantic_type_table_in(second));
+  ps_lowering_context_bind_record_decls(
+      second_lowering_context, ps_ctx_record_decl_table_in(second));
   ps_lowering_context_bind_record_layouts(
       second_lowering_context, ps_ctx_record_layout_table_in(second));
   psx_local_declaration_callbacks_t local_declarations;

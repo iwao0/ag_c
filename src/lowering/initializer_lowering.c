@@ -18,6 +18,7 @@ typedef struct {
   ag_diagnostic_context_t *diagnostic_context;
   const ag_compilation_options_t *options;
   const psx_semantic_type_table_t *semantic_types;
+  const psx_record_decl_table_t *record_decls;
   const psx_record_layout_table_t *record_layouts;
   const ag_target_info_t *target;
 } initializer_lowering_context_t;
@@ -79,6 +80,15 @@ static int record_member_offset(
   return member_layout ? member_layout->offset : -1;
 }
 
+static const psx_record_decl_t *record_decl(
+    const initializer_lowering_context_t *context,
+    const psx_type_t *type) {
+  return context && type
+             ? psx_record_decl_table_lookup(
+                   context->record_decls, ps_type_record_id(type))
+             : NULL;
+}
+
 static ag_diagnostic_context_t *diagnostics(
     const initializer_lowering_context_t *context) {
   return context->diagnostic_context;
@@ -102,25 +112,26 @@ static int initializer_value_is_zero(const node_t *value) {
              : number->val == 0;
 }
 
-int psx_initializer_lowering_supports_recursive_aggregate(
+static int initializer_supports_recursive_aggregate(
+    const initializer_lowering_context_t *context,
     const psx_type_t *type) {
   type = ps_type_array_leaf_type(type);
   if (!type || !ps_type_is_tag_aggregate(type)) return 0;
-  const psx_aggregate_definition_t *definition = type->aggregate_definition;
-  if (!definition) return 0;
-  for (int i = 0; i < definition->member_count; i++) {
-    const tag_member_info_t *member = &definition->members[i];
+  const psx_record_decl_t *record = record_decl(context, type);
+  if (!record) return 0;
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *member = &record->members[i];
     if (member->len <= 0) {
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
       if (!member_type || !ps_type_is_tag_aggregate(member_type) ||
-          !psx_initializer_lowering_supports_recursive_aggregate(member_type))
+          !initializer_supports_recursive_aggregate(context, member_type))
         return 0;
       continue;
     }
     const psx_type_t *member_type = ps_tag_member_decl_type(member);
     const psx_type_t *leaf = ps_type_array_leaf_type(member_type);
     if (leaf && ps_type_is_tag_aggregate(leaf) &&
-        !psx_initializer_lowering_supports_recursive_aggregate(member_type))
+        !initializer_supports_recursive_aggregate(context, member_type))
       return 0;
   }
   return 1;
@@ -512,12 +523,12 @@ static node_t *append_object_zero_fill(
 static int aggregate_member_index(
     const initializer_lowering_context_t *context,
     const psx_type_t *aggregate_type, psx_type_id_t aggregate_type_id,
-    const psx_aggregate_definition_t *definition,
+    const psx_record_decl_t *record,
     const psx_initializer_entry_t *entry, int positional_index) {
   if (!entry->has_member) {
     int covered_end = -1;
-    for (int i = 0; i < definition->member_count; i++) {
-      const tag_member_info_t *member = &definition->members[i];
+    for (int i = 0; i < record->member_count; i++) {
+      const tag_member_info_t *member = &record->members[i];
       psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
           context->semantic_types, aggregate_type_id, i).type_id;
       int member_size = type_size_id(context, member_type_id);
@@ -534,8 +545,8 @@ static int aggregate_member_index(
     }
     return -1;
   }
-  for (int i = 0; i < definition->member_count; i++) {
-    const tag_member_info_t *member = &definition->members[i];
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *member = &record->members[i];
     if (member->len == entry->member_len && member->name &&
         memcmp(member->name, entry->member_name,
                (size_t)entry->member_len) == 0) return i;
@@ -545,25 +556,26 @@ static int aggregate_member_index(
 
 static int aggregate_ordinal_after_member(
     const initializer_lowering_context_t *context,
-    psx_type_id_t aggregate_type_id,
-    const psx_aggregate_definition_t *definition, int member_index) {
-  if (!definition || member_index < 0 ||
-      member_index >= definition->member_count) return member_index + 1;
-  const tag_member_info_t *selected = &definition->members[member_index];
-  for (int i = 0; i < definition->member_count; i++) {
-    const tag_member_info_t *container = &definition->members[i];
+    const psx_type_t *aggregate_type, psx_type_id_t aggregate_type_id,
+    const psx_record_decl_t *record, int member_index) {
+  if (!record || member_index < 0 ||
+      member_index >= record->member_count) return member_index + 1;
+  int selected_offset = record_member_offset(
+      context, aggregate_type, member_index);
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *container = &record->members[i];
     if (container->len > 0) continue;
     psx_type_id_t container_type_id =
         psx_semantic_type_table_record_member(
             context->semantic_types, aggregate_type_id, i).type_id;
     int size = type_size_id(context, container_type_id);
     if (size <= 0) continue;
-    int start = container->offset;
+    int start = record_member_offset(context, aggregate_type, i);
     int end = start + size;
-    if (selected->offset < start || selected->offset >= end) continue;
+    if (selected_offset < start || selected_offset >= end) continue;
     int next = i + 1;
-    while (next < definition->member_count &&
-           definition->members[next].offset < end)
+    while (next < record->member_count &&
+           record_member_offset(context, aggregate_type, next) < end)
       next++;
     return next;
   }
@@ -817,10 +829,10 @@ static int immediate_subobject_at_leaf_cursor(
     return type->base->kind == PSX_TYPE_ARRAY ||
            ps_type_is_tag_aggregate(type->base);
   }
-  if (type->kind == PSX_TYPE_STRUCT && type->aggregate_definition) {
-    const psx_aggregate_definition_t *definition = type->aggregate_definition;
-    for (int i = 0; i < definition->member_count; i++) {
-      const tag_member_info_t *member = &definition->members[i];
+  if (type->kind == PSX_TYPE_STRUCT) {
+    const psx_record_decl_t *record = record_decl(context, type);
+    for (int i = 0; record && i < record->member_count; i++) {
+      const tag_member_info_t *member = &record->members[i];
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
       int member_offset = relative_offset +
                           record_member_offset(context, type, i);
@@ -1095,9 +1107,9 @@ static node_t *lower_typed_aggregate_initializer_list(
     lvar_t *var, const psx_type_t *type, psx_type_id_t type_id,
     int relative_offset,
     node_init_list_t *list, node_t *chain, token_t *fallback_tok) {
-  const psx_aggregate_definition_t *definition = type->aggregate_definition;
-  if (!definition) return chain;
-  if (type->kind == PSX_TYPE_UNION && definition->member_count > 0 &&
+  const psx_record_decl_t *record = record_decl(context, type);
+  if (!record) return chain;
+  if (type->kind == PSX_TYPE_UNION && record->member_count > 0 &&
       initializer_list_has_no_nested_values(list)) {
     int has_designator = 0;
     for (int i = 0; i < list->entry_count; i++) {
@@ -1107,7 +1119,7 @@ static node_t *lower_typed_aggregate_initializer_list(
         break;
       }
     }
-    const tag_member_info_t *first = &definition->members[0];
+    const tag_member_info_t *first = &record->members[0];
     const psx_type_t *first_type = ps_tag_member_decl_type(first);
     if (!has_designator && first_type &&
         first_type->kind == PSX_TYPE_ARRAY) {
@@ -1120,7 +1132,7 @@ static node_t *lower_typed_aggregate_initializer_list(
           context, var, first_type,
           psx_semantic_type_table_record_member(
               context->semantic_types, type_id, 0).type_id,
-          relative_offset + first->offset,
+          relative_offset + record_member_offset(context, type, 0),
           list, chain, fallback_tok);
     }
   }
@@ -1167,19 +1179,19 @@ static node_t *lower_typed_aggregate_initializer_list(
           entry->tok ? entry->tok : fallback_tok);
       if (type->kind == PSX_TYPE_STRUCT)
         ordinal = aggregate_ordinal_after_member(
-            context, type_id, definition, target.first_member_index);
+            context, type, type_id, record, target.first_member_index);
       continue;
     }
     int member_index = aggregate_member_index(
-        context, type, type_id, definition, entry, ordinal);
-    if (member_index < 0 || member_index >= definition->member_count) {
+        context, type, type_id, record, entry, ordinal);
+    if (member_index < 0 || member_index >= record->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : fallback_tok, "init", "%s",
                    diag_message_for_in(diagnostics(context),
                        type->kind == PSX_TYPE_UNION
                            ? DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND
                            : DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    const tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &record->members[member_index];
     const psx_type_t *target_type = ps_tag_member_decl_type(member);
     psx_type_id_t target_type_id = psx_semantic_type_table_record_member(
         context->semantic_types, type_id, member_index).type_id;
@@ -1198,7 +1210,7 @@ static node_t *lower_typed_aggregate_initializer_list(
         chain, entry->tok ? entry->tok : fallback_tok);
     if (type->kind == PSX_TYPE_STRUCT)
       ordinal = aggregate_ordinal_after_member(
-          context, type_id, definition, member_index);
+          context, type, type_id, record, member_index);
   }
   return chain;
 }
@@ -1235,12 +1247,11 @@ static node_t *lower_struct_list_initializer(
     node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_aggregate_definition_t *definition =
-      type ? type->aggregate_definition : NULL;
-  if (!var || !definition || !initializer->base.rhs ||
+  const psx_record_decl_t *record = record_decl(context, type);
+  if (!var || !record || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
-  if (psx_initializer_lowering_supports_recursive_aggregate(type)) {
+  if (initializer_supports_recursive_aggregate(context, type)) {
     node_t *chain = append_typed_object_zero_fill(
         context, var, type, ps_lvar_decl_type_id(var), NULL);
     return lower_typed_initializer_list(
@@ -1253,13 +1264,13 @@ static node_t *lower_struct_list_initializer(
     psx_initializer_entry_t *entry = &list->entries[i];
     int member_index = aggregate_member_index(
         context, type, ps_lvar_decl_type_id(var),
-        definition, entry, ordinal);
-    if (member_index < 0 || member_index >= definition->member_count) {
+        record, entry, ordinal);
+    if (member_index < 0 || member_index >= record->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_STRUCT_INIT_TOO_MANY_MEMBERS));
     }
-    const tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &record->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
         context->arena_context, var,
         record_member_offset(context, type, member_index), member);
@@ -1268,7 +1279,7 @@ static node_t *lower_struct_list_initializer(
         ps_node_new_assign_in(
             context->arena_context, lhs, entry->value));
     ordinal = aggregate_ordinal_after_member(
-        context, ps_lvar_decl_type_id(var), definition, member_index);
+        context, type, ps_lvar_decl_type_id(var), record, member_index);
   }
   return chain
              ? chain
@@ -1280,12 +1291,11 @@ static node_t *lower_union_list_initializer(
     node_decl_init_t *initializer) {
   lvar_t *var = ps_node_lvar_symbol(initializer->base.lhs);
   const psx_type_t *type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_aggregate_definition_t *definition =
-      type ? type->aggregate_definition : NULL;
-  if (!var || !definition || !initializer->base.rhs ||
+  const psx_record_decl_t *record = record_decl(context, type);
+  if (!var || !record || !initializer->base.rhs ||
       initializer->base.rhs->kind != ND_INIT_LIST) return NULL;
   node_init_list_t *list = (node_init_list_t *)initializer->base.rhs;
-  if (psx_initializer_lowering_supports_recursive_aggregate(type)) {
+  if (initializer_supports_recursive_aggregate(context, type)) {
     node_t *chain = append_typed_object_zero_fill(
         context, var, type, ps_lvar_decl_type_id(var), NULL);
     return lower_typed_initializer_list(
@@ -1302,13 +1312,13 @@ static node_t *lower_union_list_initializer(
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_SINGLE_ELEMENT_ONLY));
     }
     int member_index = aggregate_member_index(
-        context, type, ps_lvar_decl_type_id(var), definition, entry, 0);
-    if (member_index < 0 || member_index >= definition->member_count) {
+        context, type, ps_lvar_decl_type_id(var), record, entry, 0);
+    if (member_index < 0 || member_index >= record->member_count) {
       ps_diag_ctx_in(diagnostics(context), entry->tok ? entry->tok : initializer->base.tok,
                    "init", "%s",
                    diag_message_for_in(diagnostics(context), DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
     }
-    const tag_member_info_t *member = &definition->members[member_index];
+    const tag_member_info_t *member = &record->members[member_index];
     node_t *lhs = ps_node_new_tag_member_lvar_ref_for_in(
         context->arena_context, var,
         record_member_offset(context, type, member_index), member);
@@ -1360,15 +1370,14 @@ static node_t *lower_aggregate_expr_initializer(
                      DIAG_ERR_PARSER_STRUCT_COPY_COMPAT_REQUIRED));
   }
 
-  const psx_aggregate_definition_t *definition =
-      target_type->aggregate_definition;
-  if (!definition) {
+  const psx_record_decl_t *record = record_decl(context, target_type);
+  if (!record) {
     ps_diag_ctx_in(diagnostics(context), tok, "decl", "%s",
                  diag_message_for_in(diagnostics(context),
                      DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
   }
-  for (int i = 0; i < definition->member_count; i++) {
-    const tag_member_info_t *member = &definition->members[i];
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *member = &record->members[i];
     if (member->len <= 0) continue;
     node_t *target = ps_node_new_tag_member_lvar_ref_for_in(
         context->arena_context, var,
@@ -1492,6 +1501,7 @@ node_t *lower_decl_initializer(
       .diagnostic_context = ps_lowering_diagnostics(lowering_context),
       .options = options,
       .semantic_types = ps_lowering_semantic_types(lowering_context),
+      .record_decls = ps_lowering_record_decls(lowering_context),
       .record_layouts = ps_lowering_record_layouts(lowering_context),
       .target = ps_lowering_target(lowering_context),
   };

@@ -4054,11 +4054,43 @@ const initializerLoweringSource = await readFile(
   "utf8",
 );
 if (/\bmember->offset\b/.test(initializerLoweringSource) ||
+    /\b(?:first|selected|container)->offset\b/.test(
+      initializerLoweringSource,
+    ) ||
+    /\baggregate_definition\b/.test(initializerLoweringSource) ||
     /\bmember->offset\b/.test(staticDataInitializerSource) ||
+    !/\bpsx_record_decl_table_lookup\s*\(/.test(
+      initializerLoweringSource,
+    ) ||
     !/\brecord_member_offset\s*\(/.test(initializerLoweringSource) ||
     !/\brecord_member_offset\s*\(/.test(staticDataInitializerSource)) {
   throw new Error(
     "initializer lowering must resolve member offsets from RecordLayoutTable",
+  );
+}
+
+const recordDeclTableHeader = await readFile(
+  "src/semantic/record_decl_table.h",
+  "utf8",
+);
+const recordDeclTableSource = await readFile(
+  "src/semantic/record_decl_table.c",
+  "utf8",
+);
+if (!/\bpsx_record_decl_table_define\s*\(/.test(recordDeclTableHeader) ||
+    !/\bpsx_record_decl_table_lookup\s*\(/.test(recordDeclTableHeader) ||
+    !/records\s*\[\s*record->record_id\s*\]\s*=\s*record/.test(
+      recordDeclTableSource,
+    ) ||
+    !/\bps_lowering_context_bind_record_decls\s*\(/.test(
+      loweringRuntimeSource,
+    ) ||
+    !/\bps_lowering_record_decls\s*\(/.test(loweringRuntimeSource) ||
+    !/\bps_lowering_context_bind_record_decls\s*\(/.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "RecordDeclTable must be an explicit semantic-to-lowering phase input",
   );
 }
 for (const functionName of [

@@ -7,6 +7,7 @@
 #include "tag_member_public.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
+#include "../semantic/record_decl_table.h"
 #include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"
 #include "../tokenizer/token.h"
@@ -45,6 +46,8 @@ psx_qual_type_t ps_ctx_find_interned_qual_type_in(
 const psx_type_t *ps_ctx_type_by_id_in(
     const psx_semantic_context_t *context, psx_type_id_t type_id);
 const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
+    const psx_semantic_context_t *context);
+const psx_record_decl_table_t *ps_ctx_record_decl_table_in(
     const psx_semantic_context_t *context);
 const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
     const psx_semantic_context_t *context);
