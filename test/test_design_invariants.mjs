@@ -378,6 +378,14 @@ if (/\bps_parser_runtime_context_active\s*\(/.test(parserSyntaxSource)) {
   );
 }
 const removedContextFreeParserApis = [
+  "ps_type_sizeof",
+  "ps_type_deref_size",
+  "ps_type_pointee_value_size",
+  "ps_type_array_scalar_element_size",
+  "ps_type_array_subscript_stride_bytes",
+  "ps_type_subscript_static_stride",
+  "ps_type_pointer_view_structural_base_deref_size",
+  "ps_type_pointer_view_structural_ptr_array_pointee_bytes",
   "psx_eval_parsed_alignas_value",
   "psx_parse_case_const_expr",
   "psx_eval_parsed_enum_const_expr",

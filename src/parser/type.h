@@ -129,22 +129,17 @@ const psx_type_t *ps_type_callable_function(const psx_type_t *type);
 const psx_type_t *ps_type_function_return_type(const psx_type_t *type);
 psx_type_kind_t ps_type_kind_from_tag_kind(token_kind_t tag_kind);
 
-int ps_type_sizeof(const psx_type_t *type);
-int ps_type_deref_size(const psx_type_t *type);
 int ps_type_integer_rank(const psx_type_t *type);
 int ps_type_character_code_unit_width(const psx_type_t *type);
 int ps_type_is_incomplete_array(const psx_type_t *type);
 const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type);
 const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type);
-int ps_type_pointee_value_size(const psx_type_t *type);
 const psx_type_t *ps_type_derived_leaf_type(const psx_type_t *type);
 int ps_type_array_rank(const psx_type_t *type);
 int ps_type_array_dimension(const psx_type_t *type, int index);
 int ps_type_array_flat_element_count(const psx_type_t *type);
-int ps_type_array_scalar_element_size(const psx_type_t *type);
 int ps_type_array_subscript_stride_elements(const psx_type_t *type,
                                              int depth);
-int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth);
 const psx_type_t *ps_type_address_result_in(
     arena_context_t *arena_context, const psx_type_t *type);
 const psx_type_t *ps_type_decay_array_in(
@@ -152,7 +147,6 @@ const psx_type_t *ps_type_decay_array_in(
 const psx_type_t *ps_type_dereference_result(const psx_type_t *type);
 const psx_type_t *ps_type_subscript_result_in(
     arena_context_t *arena_context, const psx_type_t *type);
-int ps_type_subscript_static_stride(const psx_type_t *type);
 int ps_type_is_pointer(const psx_type_t *type);
 int ps_type_is_pointer_like(const psx_type_t *type);
 int ps_type_contains_vla_array(const psx_type_t *type);
@@ -195,8 +189,5 @@ int ps_type_generic_select_index(
     const psx_type_t *const *association_types,
     const unsigned char *is_default, int association_count);
 int ps_type_pointer_depth(const psx_type_t *type);
-int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type);
-int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-    const psx_type_t *type);
 
 #endif

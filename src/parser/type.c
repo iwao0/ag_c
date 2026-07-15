@@ -824,22 +824,6 @@ psx_type_t *ps_type_new_tag_in(
   return type;
 }
 
-int ps_type_sizeof(const psx_type_t *type) {
-  ag_target_info_t target = ag_target_info_host();
-  return ps_type_sizeof_for_target(type, &target);
-}
-
-int ps_type_deref_size(const psx_type_t *type) {
-  if (!type) return 0;
-  if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) {
-    if (type->base && type->base->kind == PSX_TYPE_ARRAY &&
-        ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base)))
-      return 0;
-    return ps_type_sizeof(type->base);
-  }
-  return 0;
-}
-
 const psx_type_t *ps_type_array_leaf_type(const psx_type_t *type) {
   while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
   return type;
@@ -851,10 +835,6 @@ const psx_type_t *ps_type_pointee_value_type(const psx_type_t *type) {
     return NULL;
   }
   return ps_type_array_leaf_type(type->base);
-}
-
-int ps_type_pointee_value_size(const psx_type_t *type) {
-  return ps_type_sizeof(ps_type_pointee_value_type(type));
 }
 
 const psx_type_t *ps_type_derived_leaf_type(const psx_type_t *type) {
@@ -894,11 +874,6 @@ int ps_type_array_flat_element_count(const psx_type_t *type) {
   return count;
 }
 
-int ps_type_array_scalar_element_size(const psx_type_t *type) {
-  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-  return ps_type_sizeof(ps_type_array_leaf_type(type));
-}
-
 int ps_type_array_subscript_stride_elements(const psx_type_t *type,
                                              int depth) {
   if (!type || type->kind != PSX_TYPE_ARRAY || depth < 0) return 0;
@@ -910,15 +885,6 @@ int ps_type_array_subscript_stride_elements(const psx_type_t *type,
   if (!selected) return 0;
   if (selected->kind != PSX_TYPE_ARRAY) return 1;
   return ps_type_array_flat_element_count(selected);
-}
-
-int ps_type_array_subscript_stride_bytes(const psx_type_t *type, int depth) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || depth < 0) return 0;
-  while (depth-- > 0) {
-    type = type->base;
-    if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
-  }
-  return ps_type_sizeof(type->base);
 }
 
 const psx_type_t *ps_type_address_result_in(
@@ -948,14 +914,6 @@ const psx_type_t *ps_type_subscript_result_in(
     return NULL;
   }
   return ps_type_clone_in(arena_context, type->base);
-}
-
-int ps_type_subscript_static_stride(const psx_type_t *type) {
-  if (!type || !type->base ||
-      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
-    return 0;
-  }
-  return ps_type_sizeof(type->base);
 }
 
 int ps_type_is_pointer(const psx_type_t *type) {
@@ -1432,10 +1390,6 @@ const tag_member_info_t *ps_type_find_aggregate_member(
   return NULL;
 }
 
-static int psx_type_is_pointer_view_type(const psx_type_t *type) {
-  return type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
-}
-
 int ps_type_pointer_depth(const psx_type_t *type) {
   int depth = 0;
   while (type && type->kind == PSX_TYPE_POINTER) {
@@ -1443,38 +1397,6 @@ int ps_type_pointer_depth(const psx_type_t *type) {
     type = type->base;
   }
   return depth;
-}
-
-static int type_structural_base_deref_size(const psx_type_t *type,
-                                           int *structurally_known) {
-  if (structurally_known) *structurally_known = 0;
-  if (!psx_type_is_pointer_view_type(type)) return 0;
-  const psx_type_t *cur = ps_type_derived_leaf_type(type);
-  if (!cur) return 0;
-  if (structurally_known) *structurally_known = 1;
-  return ps_type_sizeof(cur);
-}
-
-int ps_type_pointer_view_structural_base_deref_size(const psx_type_t *type) {
-  int structurally_known = 0;
-  int base_deref_size =
-      type_structural_base_deref_size(type, &structurally_known);
-  return structurally_known && base_deref_size > 0 ? base_deref_size : 0;
-}
-
-int ps_type_pointer_view_structural_ptr_array_pointee_bytes(
-    const psx_type_t *type) {
-  if (!type) return 0;
-  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
-  if (!type || type->kind != PSX_TYPE_POINTER || !type->base ||
-      type->base->kind != PSX_TYPE_ARRAY) {
-    return 0;
-  }
-  if (ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base)))
-    return 0;
-  int bytes = ps_type_sizeof(type->base);
-  if (bytes <= 0) bytes = ps_type_deref_size(type);
-  return bytes > 0 ? bytes : 0;
 }
 
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,

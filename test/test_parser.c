@@ -141,6 +141,20 @@ static arena_context_t *test_arena_context(void) {
   ps_type_generic_control_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_generic_select_index(...) \
   ps_type_generic_select_index_in(test_arena_context(), __VA_ARGS__)
+#define ps_type_sizeof(...) test_type_sizeof(__VA_ARGS__)
+#define ps_type_deref_size(...) test_type_deref_size(__VA_ARGS__)
+#define ps_type_pointee_value_size(...) \
+  test_type_pointee_value_size(__VA_ARGS__)
+#define ps_type_array_scalar_element_size(...) \
+  test_type_array_scalar_element_size(__VA_ARGS__)
+#define ps_type_array_subscript_stride_bytes(...) \
+  test_type_array_subscript_stride_bytes(__VA_ARGS__)
+#define ps_type_subscript_static_stride(...) \
+  test_type_subscript_static_stride(__VA_ARGS__)
+#define ps_type_pointer_view_structural_base_deref_size(...) \
+  test_type_pointer_view_structural_base_deref_size(__VA_ARGS__)
+#define ps_type_pointer_view_structural_ptr_array_pointee_bytes(...) \
+  test_type_pointer_view_structural_ptr_array_pointee_bytes(__VA_ARGS__)
 #define ps_declarator_shape_append_pointer(...) \
   ps_declarator_shape_append_pointer_in(test_arena_context(), __VA_ARGS__)
 #define ps_declarator_shape_append_array(...) \
@@ -1170,6 +1184,74 @@ static node_block_t *as_block(node_t *n) { return (node_block_t *)n; }
 static node_ctrl_t *as_ctrl(node_t *n) { return (node_ctrl_t *)n; }
 static node_string_t *as_string(node_t *n) { return (node_string_t *)n; }
 static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
+
+static int test_type_sizeof(const psx_type_t *type) {
+  ag_target_info_t target = ag_target_info_host();
+  return ps_type_sizeof_for_target(type, &target);
+}
+
+static int test_type_deref_size(const psx_type_t *type) {
+  if (!type ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  if (type->base && type->base->kind == PSX_TYPE_ARRAY &&
+      ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base))) {
+    return 0;
+  }
+  return test_type_sizeof(type->base);
+}
+
+static int test_type_pointee_value_size(const psx_type_t *type) {
+  return test_type_sizeof(ps_type_pointee_value_type(type));
+}
+
+static int test_type_array_scalar_element_size(const psx_type_t *type) {
+  if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
+  return test_type_sizeof(ps_type_array_leaf_type(type));
+}
+
+static int test_type_array_subscript_stride_bytes(
+    const psx_type_t *type, int depth) {
+  if (!type || type->kind != PSX_TYPE_ARRAY || depth < 0) return 0;
+  while (depth-- > 0) {
+    type = type->base;
+    if (!type || type->kind != PSX_TYPE_ARRAY) return 0;
+  }
+  return test_type_sizeof(type->base);
+}
+
+static int test_type_subscript_static_stride(const psx_type_t *type) {
+  if (!type || !type->base ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  return test_type_sizeof(type->base);
+}
+
+static int test_type_pointer_view_structural_base_deref_size(
+    const psx_type_t *type) {
+  if (!type ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  const psx_type_t *leaf = ps_type_derived_leaf_type(type);
+  int size = leaf ? test_type_sizeof(leaf) : 0;
+  return size > 0 ? size : 0;
+}
+
+static int test_type_pointer_view_structural_ptr_array_pointee_bytes(
+    const psx_type_t *type) {
+  while (type && type->kind == PSX_TYPE_ARRAY) type = type->base;
+  if (!type || type->kind != PSX_TYPE_POINTER || !type->base ||
+      type->base->kind != PSX_TYPE_ARRAY ||
+      ps_type_is_tag_aggregate(ps_type_array_leaf_type(type->base))) {
+    return 0;
+  }
+  int bytes = test_type_sizeof(type->base);
+  if (bytes <= 0) bytes = test_type_deref_size(type);
+  return bytes > 0 ? bytes : 0;
+}
 
 static const psx_type_t *canonical_node_pointee_type(node_t *node) {
   return node ? ps_type_pointee_value_type(ps_node_get_type(node)) : NULL;
