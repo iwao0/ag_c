@@ -186,13 +186,16 @@ static node_t *lower_aggregate_cast(
   }
 
   tag_member_info_t member = {0};
+  int member_index = -1;
   int member_found = 0;
-  const psx_aggregate_definition_t *definition =
-      view.value->aggregate_definition;
-  if (definition) {
-    for (int i = 0; i < definition->member_count; i++) {
-      if (definition->members[i].len <= 0) continue;
-      member = definition->members[i];
+  const psx_record_decl_t *record = psx_record_decl_table_lookup(
+      ps_lowering_record_decls(lowering_context),
+      ps_type_record_id(view.value));
+  if (record) {
+    for (int i = 0; i < record->member_count; i++) {
+      if (record->members[i].len <= 0) continue;
+      member = record->members[i];
+      member_index = i;
       member_found = 1;
       break;
     }
@@ -206,6 +209,20 @@ static node_t *lower_aggregate_cast(
   }
 
   int object_size = view.elem_size > 0 ? view.elem_size : 8;
+  const psx_record_layout_t *record_layout =
+      psx_record_layout_table_lookup(
+          ps_lowering_record_layouts(lowering_context),
+          ps_type_record_id(view.value),
+          ps_lowering_target(lowering_context));
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(record_layout, member_index);
+  if (!member_layout) {
+    ps_diag_ctx_in(
+        diagnostics, diag_tok, "cast", "%s",
+        diag_message_for_in(
+            diagnostics,
+            DIAG_ERR_PARSER_UNION_INIT_TARGET_MEMBER_NOT_FOUND));
+  }
   char *temp_name = new_aggregate_temp_name(lowering_context);
   int offset = local_storage_allocate(
       lowering_context, object_size, object_size);
@@ -216,7 +233,7 @@ static node_t *lower_aggregate_cast(
   node_t *member_ref =
       ps_node_new_tag_member_lvar_ref_for_in(
           ps_lowering_arena(lowering_context),
-          temp, member.offset, &member);
+          temp, member_layout->offset, &member);
   node_t *assign = ps_node_new_assign_in(
       ps_lowering_arena(lowering_context), member_ref, operand);
   node_t *result = ps_node_new_lvar_expr_ref_for_in(

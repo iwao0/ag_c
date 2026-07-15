@@ -103,6 +103,11 @@ if (/\bps_lvar_(?:storage_size|decl_sizeof|elem_size)\s*\(/.test(
     "lowering must separate frame storage from TypeId target layout",
   );
 }
+if (/\baggregate_definition\b/.test(loweringLayerSource)) {
+  throw new Error(
+    "lowering must resolve aggregate identity through RecordId and RecordDeclTable",
+  );
+}
 const explicitArenaDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
