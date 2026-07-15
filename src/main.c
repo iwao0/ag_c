@@ -340,6 +340,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
       .target = ag_compilation_session_target(session),
       .semantic_types = ps_ctx_semantic_type_table_in(
           ag_compilation_session_semantic_context(session)),
+      .record_decls = ps_ctx_record_decl_table_in(
+          ag_compilation_session_semantic_context(session)),
       .record_layouts = ps_ctx_record_layout_table_in(
           ag_compilation_session_semantic_context(session)),
       .continuation = ag_compilation_session_continuation(session),
@@ -627,6 +629,8 @@ int main(int argc, char **argv) {
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(session),
       .semantic_types = ps_ctx_semantic_type_table_in(
+          ag_compilation_session_semantic_context(session)),
+      .record_decls = ps_ctx_record_decl_table_in(
           ag_compilation_session_semantic_context(session)),
       .record_layouts = ps_ctx_record_layout_table_in(
           ag_compilation_session_semantic_context(session)),

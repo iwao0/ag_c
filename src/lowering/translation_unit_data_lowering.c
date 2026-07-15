@@ -284,9 +284,11 @@ static int lower_global_aggregate(
     void *user, const psx_gvar_initializer_class_t *init_class) {
   (void)init_class;
   global_data_lowering_t *ctx = user;
-  return ps_gvar_walk_aggregate_initializer_in(
-      ctx->lowering->semantic_context,
-      ctx->global, 0, &aggregate_lowering_ops, ctx);
+  return ps_gvar_walk_resolved_aggregate_initializer(
+      ctx->lowering->semantic_types, ctx->lowering->record_decls,
+      ctx->lowering->record_layouts, ctx->lowering->target,
+      ps_gvar_decl_type_id(ctx->global), ctx->global, 0,
+      &aggregate_lowering_ops, ctx);
 }
 
 static int lower_global_slots(

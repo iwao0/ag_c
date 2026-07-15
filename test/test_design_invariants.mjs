@@ -897,7 +897,7 @@ const irTargetOnlyEntryBodies = [
     "\nint ir_build_each_and_emit_with_options(",
   ),
 ];
-if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
+if (!/typedef\s+struct\s*\{[\s\S]*?const\s+ag_target_info_t\s*\*target\s*;[\s\S]*?const\s+psx_record_decl_table_t\s*\*record_decls\s*;[\s\S]*?const\s+ag_continuation_options_t\s*\*continuation\s*;[\s\S]*?ag_diagnostic_context_t\s*\*diagnostic_context\s*;[\s\S]*?\}\s*ir_build_options_t\s*;/.test(
       irBuilderHeader,
     ) ||
     !/ctx->configured_continuation/.test(irBuilderSource) ||
@@ -988,13 +988,13 @@ if (!/lower_ir_translation_unit_data_in_session\s*\(/.test(
     !/ps_gvar_symbol_ref_named_function_in\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/ps_gvar_walk_aggregate_initializer_in\s*\(/.test(
+    !/ps_gvar_walk_resolved_aggregate_initializer\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
     /\bps_gvar_symbol_ref_named_function\s*\(/.test(
       translationUnitDataLoweringSource,
     ) ||
-    /\bps_gvar_walk_aggregate_initializer\s*\(/.test(
+    /\bps_gvar_walk_aggregate_initializer_in\s*\(/.test(
       translationUnitDataLoweringSource,
     )) {
   throw new Error(
@@ -2418,7 +2418,7 @@ if (!/struct node_gvar_t\s*\{[\s\S]*?struct global_var_t\s*\*symbol\s*;/.test(
     ) ||
     /\bps_find_global_var\s*\(/.test(constantExpressionSource) ||
     /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
-    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*,\s*ctx->semantic_types\s*,\s*ctx->record_layouts\s*,\s*ctx->target\s*\)/.test(
+    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*,\s*ctx->semantic_types\s*,\s*ctx->record_decls\s*,\s*ctx->record_layouts\s*,\s*ctx->target\s*\)/.test(
       irBuilderSource,
     )) {
   throw new Error(
@@ -4192,7 +4192,7 @@ if (!aggregateWalkerLayoutSection ||
     /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_value_size\s*\(/.test(
       aggregateWalkerLayoutSection[0],
     ) ||
-    !/\bps_gvar_walk_resolved_aggregate_initializer\s*\(\s*const\s+psx_semantic_type_table_t\s*\*[^,]*,\s*const\s+psx_record_layout_table_t\s*\*[^,]*,\s*const\s+ag_target_info_t\s*\*[^,]*,\s*psx_type_id_t\s+root_type_id/.test(
+    !/\bps_gvar_walk_resolved_aggregate_initializer\s*\(\s*const\s+psx_semantic_type_table_t\s*\*[^,]*,\s*const\s+psx_record_decl_table_t\s*\*[^,]*,\s*const\s+psx_record_layout_table_t\s*\*[^,]*,\s*const\s+ag_target_info_t\s*\*[^,]*,\s*psx_type_id_t\s+root_type_id/.test(
       gvarPublicSource,
     ) ||
     /\bps_gvar_storage_size\s*\(|\bsymbol_alignment\s*\(/.test(
@@ -4210,10 +4210,19 @@ if (!aggregateWalkerLayoutSection ||
     (irBuilderSource.match(
       /ctx\.record_layouts\s*=\s*options\s*\?\s*options->record_layouts\s*:\s*NULL\s*;/g,
     ) ?? []).length !== 2 ||
+    (irBuilderSource.match(
+      /ctx\.record_decls\s*=\s*options\s*\?\s*options->record_decls\s*:\s*NULL\s*;/g,
+    ) ?? []).length !== 2 ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*semantic_types\s*;/.test(
       irBuilderHeader,
     ) ||
+    !/\bconst\s+psx_record_decl_table_t\s*\*record_decls\s*;/.test(
+      irBuilderHeader,
+    ) ||
     !/\.semantic_types\s*=\s*ps_ctx_semantic_type_table_in\s*\(/.test(
+      compilerMainSource,
+    ) ||
+    !/\.record_decls\s*=\s*ps_ctx_record_decl_table_in\s*\(/.test(
       compilerMainSource,
     ) ||
     !/\.record_layouts\s*=\s*ps_ctx_record_layout_table_in\s*\(/.test(

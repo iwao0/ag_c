@@ -6,6 +6,7 @@
 #include "arena.h"
 #include "diag.h"
 #include "../diag/diag.h"
+#include "../semantic/record_decl_table.h"
 #include "../type_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
@@ -520,6 +521,7 @@ typedef struct {
 
 static gvar_aggregate_layout_t gvar_aggregate_layout(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t root_type_id,
     const global_var_t *gv);
@@ -631,6 +633,7 @@ static int gvar_apply_record_member_layout(
 
 static gvar_aggregate_layout_t gvar_aggregate_layout(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t root_type_id,
     const global_var_t *gv) {
@@ -659,9 +662,11 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(
       .is_array = ps_gvar_is_array(gv),
       .is_union = ps_gvar_is_union_aggregate(gv),
       .aggregate_type_id = aggregate_type_id,
-      .definition = aggregate_type && ps_type_is_tag_aggregate(aggregate_type)
-                        ? aggregate_type->aggregate_definition
-                        : NULL,
+      .definition =
+          aggregate_type && ps_type_is_tag_aggregate(aggregate_type)
+              ? psx_record_decl_table_lookup(
+                    record_decls, ps_type_record_id(aggregate_type))
+              : NULL,
   };
   if (layout.is_array) {
     layout.elem_size = ps_type_sizeof_id_with_records(
@@ -1202,6 +1207,7 @@ static int gvar_walk_union_initializer(
 static int gvar_walk_aggregate_initializer(
     psx_semantic_context_t *semantic_context,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t root_type_id,
     global_var_t *gv, long long base_offset,
@@ -1210,7 +1216,8 @@ static int gvar_walk_aggregate_initializer(
   if (!ps_gvar_is_tag_aggregate(gv)) return 0;
   gvar_aggregate_layout_t layout =
       gvar_aggregate_layout(
-          semantic_types, record_layouts, target, root_type_id, gv);
+          semantic_types, record_decls, record_layouts, target,
+          root_type_id, gv);
   if (require_resolved_definition && !layout.definition) return 0;
   gvar_init_cursor_t cur = gvar_init_cursor(gv);
   if (!layout.is_array) {
@@ -1282,6 +1289,7 @@ int ps_gvar_walk_aggregate_initializer_in(
   return gvar_walk_aggregate_initializer(
       semantic_context,
       ps_ctx_semantic_type_table_in(semantic_context),
+      ps_ctx_record_decl_table_in(semantic_context),
       ps_ctx_record_layout_table_in(semantic_context),
       ps_ctx_target_info(semantic_context), ps_gvar_decl_type_id(gv),
       gv, base_offset, ops, user, 0);
@@ -1289,15 +1297,16 @@ int ps_gvar_walk_aggregate_initializer_in(
 
 int ps_gvar_walk_resolved_aggregate_initializer(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t root_type_id,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user) {
-  if (!semantic_types || !record_layouts || !target ||
+  if (!semantic_types || !record_decls || !record_layouts || !target ||
       root_type_id == PSX_TYPE_ID_INVALID)
     return 0;
   return gvar_walk_aggregate_initializer(
-      NULL, semantic_types, record_layouts, target, root_type_id,
+      NULL, semantic_types, record_decls, record_layouts, target, root_type_id,
       gv, base_offset, ops, user, 1);
 }
 

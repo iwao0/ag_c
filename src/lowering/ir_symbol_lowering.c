@@ -75,10 +75,11 @@ static const psx_gvar_aggregate_walk_ops_t func_ref_walk_ops = {
 ir_symbol_t *lower_ir_global_symbol(
     ir_module_t *module, global_var_t *global,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_decl_table_t *record_decls,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target) {
-  if (!module || !global || !semantic_types || !record_layouts || !target ||
-      !global->name || global->name_len <= 0)
+  if (!module || !global || !semantic_types || !record_decls ||
+      !record_layouts || !target || !global->name || global->name_len <= 0)
     return NULL;
   const char *name = global->name;
   int name_len = global->name_len;
@@ -119,7 +120,7 @@ ir_symbol_t *lower_ir_global_symbol(
   lower_func_ref(&ctx, 0, scalar, type_id);
   if (ps_gvar_has_aggregate_initializer(global)) {
     ps_gvar_walk_resolved_aggregate_initializer(
-        semantic_types, record_layouts, target, type_id,
+        semantic_types, record_decls, record_layouts, target, type_id,
         global, 0, &func_ref_walk_ops, &ctx);
   }
   return symbol;
