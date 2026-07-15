@@ -4421,6 +4421,38 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(ND_MUL, wasm_record_vla.init->lhs->kind);
   ASSERT_EQ(8, as_num(wasm_record_vla.init->lhs->rhs)->val);
 
+  reset_test_locals();
+  lvar_t *wasm_dimension = register_test_storage_fixture(
+      (char *)"target_n", 8, 4, 4, 0);
+  wasm_dimension->is_param = 1;
+  psx_type_t *wasm_vla_parameter_type = ps_type_new_pointer(
+      ps_type_new_array(integer, 0, 0, 1));
+  ASSERT_TRUE(intern_test_type_id(wasm_vla_parameter_type) !=
+              PSX_TYPE_ID_INVALID);
+  psx_type_t *wasm_stride_storage_type =
+      ps_type_new_integer(TK_LONG, 8, 0);
+  ASSERT_TRUE(intern_test_type_id(wasm_stride_storage_type) !=
+              PSX_TYPE_ID_INVALID);
+  psx_parameter_vla_dimension_t wasm_parameter_dimension = {
+      .expression =
+          psx_node_new_lvar_identifier_ref_for(wasm_dimension),
+  };
+  psx_parameter_vla_lowering_result_t wasm_parameter_vla =
+      lower_parameter_vla_declaration(
+          &(psx_parameter_vla_lowering_request_t){
+              .local_registry = test_local_registry(),
+              .lowering_context = lowering,
+              .name = (char *)"target_values",
+              .name_len = 13,
+              .inner_dimensions = &wasm_parameter_dimension,
+              .inner_dimension_count = 1,
+              .type = wasm_vla_parameter_type,
+              .stride_storage_type = wasm_stride_storage_type,
+          });
+  ASSERT_TRUE(wasm_parameter_vla.var != NULL);
+  ASSERT_EQ(4, ps_lvar_frame_storage_size(wasm_parameter_vla.var));
+  ASSERT_EQ(4, ps_lvar_align_bytes(wasm_parameter_vla.var));
+
   ps_lowering_context_bind_target(lowering, &host);
   ASSERT_EQ(16, ps_lowering_type_size(lowering, record_type));
   ASSERT_EQ(8, ps_lowering_type_alignment(lowering, record_type));
@@ -4646,11 +4678,12 @@ static void test_vla_lowering_request_boundary() {
       .stride_storage_type = ps_ctx_type_by_id_in(
           test_semantic_context(), stride_storage_type_id),
   };
-  parameter_request.inner_dimensions[0].source_name = (char *)"n";
-  parameter_request.inner_dimensions[0].source_name_len = 1;
-  parameter_request.inner_dimensions[1].constant = 3;
-  parameter_request.inner_dimensions[2].source_name = (char *)"k";
-  parameter_request.inner_dimensions[2].source_name_len = 1;
+  parameter_request.inner_dimensions[0].expression =
+      psx_node_new_lvar_identifier_ref_for(n);
+  parameter_request.inner_dimensions[1].constant_value = 3;
+  parameter_request.inner_dimensions[1].is_constant = 1;
+  parameter_request.inner_dimensions[2].expression =
+      psx_node_new_lvar_identifier_ref_for(k);
   psx_parameter_vla_lowering_result_t parameter_result =
       lower_parameter_vla_declaration(&parameter_request);
   ASSERT_TRUE(parameter_result.var != NULL);
@@ -4755,6 +4788,15 @@ static void test_parameter_declaration_storage_plan_boundary() {
   ASSERT_TRUE(ps_declarator_shape_append_vla_array(
       &vla_parameter_shape));
   psx_parameter_dimension_t parameter_dimensions[1] = {0};
+  reset_test_locals();
+  lvar_t *dimension = register_test_storage_fixture(
+      (char *)"n", 1, 4, 4, 0);
+  dimension->is_param = 1;
+  node_t *dimension_expression =
+      psx_node_new_lvar_identifier_ref_for(dimension);
+  parameter_dimensions[0].expression_id =
+      ps_ctx_register_semantic_expression_in(
+          test_semantic_context(), dimension_expression);
   psx_parameter_declaration_resolution_request_t parameter_request = {
       .type = {
           .semantic_context = test_semantic_context(),
@@ -4764,8 +4806,6 @@ static void test_parameter_declaration_storage_plan_boundary() {
       .inner_dimensions = parameter_dimensions,
       .inner_dimension_count = 1,
   };
-  parameter_request.inner_dimensions[0].source_name = (char *)"n";
-  parameter_request.inner_dimensions[0].source_name_len = 1;
   psx_parameter_declaration_resolution_t parameter_resolution;
   ASSERT_TRUE(psx_resolve_parameter_declaration(
       &parameter_request, &parameter_resolution));
@@ -4777,10 +4817,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
             ps_type_pointee_value_size(parameter_resolution.type));
   ASSERT_EQ(PSX_TYPE_POINTER, parameter_resolution.type->kind);
 
-  reset_test_locals();
-  lvar_t *dimension = register_test_storage_fixture(
-      (char *)"n", 1, 4, 4, 0);
-  dimension->is_param = 1;
+  node_t *inner_dimension_expressions[1] = {dimension_expression};
   lvar_t *resolved_lowered = lower_resolved_parameter_declaration(
       &(psx_resolved_parameter_lowering_request_t){
           .local_registry = test_local_registry(),
@@ -4788,6 +4825,7 @@ static void test_parameter_declaration_storage_plan_boundary() {
           .name = (char *)"values",
           .name_len = 6,
           .resolution = &parameter_resolution,
+          .inner_dimension_expressions = inner_dimension_expressions,
       });
   ASSERT_TRUE(resolved_lowered != NULL);
   ASSERT_TRUE(resolved_lowered->is_param);
@@ -17859,6 +17897,37 @@ static void test_semantic_type_identity() {
   ASSERT_EQ(array_leaf_identity.type_id, pointee_value_identity.type_id);
   ASSERT_EQ(array_leaf_identity.qualifiers,
             pointee_value_identity.qualifiers);
+  psx_qual_type_t derived_array_pointer_identity =
+      ps_ctx_intern_pointer_to_qual_type_in(context,
+                                            nested_array_identity);
+  ASSERT_TRUE(derived_array_pointer_identity.type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(derived_array_pointer_identity.type_id,
+            ps_ctx_intern_pointer_to_qual_type_in(
+                context, nested_array_identity).type_id);
+  psx_qual_type_t derived_array_pointer_base =
+      psx_semantic_type_table_base(
+          ps_ctx_semantic_type_table_in(context),
+          derived_array_pointer_identity.type_id);
+  ASSERT_EQ(nested_array_identity.type_id,
+            derived_array_pointer_base.type_id);
+  ASSERT_EQ(nested_array_identity.qualifiers,
+            derived_array_pointer_base.qualifiers);
+
+  psx_qual_type_t const_nested_array_identity = nested_array_identity;
+  const_nested_array_identity.qualifiers = PSX_TYPE_QUALIFIER_CONST;
+  psx_qual_type_t derived_const_array_pointer_identity =
+      ps_ctx_intern_pointer_to_qual_type_in(
+          context, const_nested_array_identity);
+  ASSERT_TRUE(derived_const_array_pointer_identity.type_id !=
+              derived_array_pointer_identity.type_id);
+  psx_qual_type_t derived_const_array_pointer_base =
+      psx_semantic_type_table_base(
+          ps_ctx_semantic_type_table_in(context),
+          derived_const_array_pointer_identity.type_id);
+  ASSERT_EQ(const_nested_array_identity.type_id,
+            derived_const_array_pointer_base.type_id);
+  ASSERT_EQ(const_nested_array_identity.qualifiers,
+            derived_const_array_pointer_base.qualifiers);
   ASSERT_EQ(PSX_TYPE_ID_INVALID,
             psx_semantic_type_table_pointee_value(
                 ps_ctx_semantic_type_table_in(context),

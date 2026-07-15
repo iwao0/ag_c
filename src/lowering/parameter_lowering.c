@@ -81,12 +81,14 @@ lvar_t *lower_resolved_parameter_declaration(
         sizeof(*vla.inner_dimensions));
   }
   for (int i = 0; i < resolution->inner_dimension_count; i++) {
-    vla.inner_dimensions[i].constant =
-        resolution->inner_dimensions[i].constant;
-    vla.inner_dimensions[i].source_name =
-        resolution->inner_dimensions[i].source_name;
-    vla.inner_dimensions[i].source_name_len =
-        resolution->inner_dimensions[i].source_name_len;
+    vla.inner_dimensions[i].expression =
+        request->inner_dimension_expressions
+            ? request->inner_dimension_expressions[i]
+            : NULL;
+    vla.inner_dimensions[i].constant_value =
+        resolution->inner_dimensions[i].constant_value;
+    vla.inner_dimensions[i].is_constant =
+        resolution->inner_dimensions[i].is_constant;
   }
   psx_parameter_vla_lowering_result_t lowered =
       lower_parameter_vla_declaration(&vla);

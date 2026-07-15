@@ -12,7 +12,9 @@ static int has_runtime_inner_dimension(
   for (int i = 0; i < request->inner_dimension_count; i++) {
     const psx_parameter_dimension_t *dimension =
         &request->inner_dimensions[i];
-    if (dimension->constant <= 0 && dimension->source_name) return 1;
+    if (!dimension->is_constant &&
+        dimension->expression_id != PSX_SEMANTIC_EXPR_ID_INVALID)
+      return 1;
   }
   return 0;
 }
@@ -75,6 +77,13 @@ int psx_resolve_parameter_declaration(
     if (storage_identity.type_id == PSX_TYPE_ID_INVALID) return 0;
     resolution->runtime_stride_storage_type_id =
         storage_identity.type_id;
+  }
+
+  for (int i = 0; i < request->inner_dimension_count; i++) {
+    if (!request->inner_dimensions[i].is_constant &&
+        request->inner_dimensions[i].expression_id ==
+            PSX_SEMANTIC_EXPR_ID_INVALID)
+      return 0;
   }
 
   resolution->inner_dimension_count = request->inner_dimension_count;

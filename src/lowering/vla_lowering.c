@@ -208,10 +208,15 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
   int element_size = type_size(
       request->lowering_context,
       ps_type_pointee_value_type(request->type));
+  int parameter_storage_size = type_size(
+      request->lowering_context, request->type);
+  int parameter_alignment = ps_lowering_type_alignment(
+      request->lowering_context, request->type);
   if (!request->local_registry ||
       !request->type ||
       !request->name || request->name_len <= 0 ||
-      element_size <= 0 || count < 0 ||
+      element_size <= 0 || parameter_storage_size <= 0 ||
+      parameter_alignment <= 0 || count < 0 ||
       (count > 0 && !request->inner_dimensions)) {
     ps_diag_ctx_in(
         diagnostics, request->diag_tok, "vla-lowering", "%s",
@@ -221,13 +226,14 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
 
   result.var = create_vla_storage(
       request->local_registry, request->lowering_context,
-      request->name, request->name_len, 8, 0, request->type,
+      request->name, request->name_len,
+      parameter_storage_size, parameter_alignment, request->type,
       request->diag_tok);
   if (!result.var) return result;
 
   int has_runtime_dimension = 0;
   for (int i = 0; i < count; i++) {
-    if (request->inner_dimensions[i].constant <= 0) {
+    if (!request->inner_dimensions[i].is_constant) {
       has_runtime_dimension = 1;
       break;
     }
@@ -257,18 +263,20 @@ psx_parameter_vla_lowering_result_t lower_parameter_vla_declaration(
     for (int i = 0; i < count; i++) {
       const psx_parameter_vla_dimension_t *dimension =
           &request->inner_dimensions[i];
-      constants[i] = dimension->constant;
-      if (dimension->constant > 0 || !dimension->source_name) continue;
-      lvar_t *source = ps_decl_find_lvar_in(
-          request->local_registry,
-          dimension->source_name, dimension->source_name_len);
+      constants[i] = dimension->is_constant
+                         ? (int)dimension->constant_value : 0;
+      if (dimension->is_constant) continue;
+      lvar_t *source = ps_node_lvar_symbol(dimension->expression);
       if (!source || !ps_lvar_is_param(source)) {
+        const char *source_name = source ? ps_lvar_name(source)
+                                         : "<expression>";
+        int source_name_len = source ? ps_lvar_name_len(source) : 12;
         ps_diag_ctx_in(
             diagnostics, request->diag_tok, "param",
             diag_message_for_in(
                 diagnostics,
                 DIAG_ERR_PARSER_VLA_PARAM_DIM_NOT_PRECEDING_PARAM),
-            dimension->source_name_len, dimension->source_name);
+            source_name_len, source_name);
       }
       source_offsets[i] = ps_lvar_offset(source);
     }

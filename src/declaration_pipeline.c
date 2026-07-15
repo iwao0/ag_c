@@ -319,7 +319,6 @@ static const psx_runtime_array_bound_t *parameter_bound_for_op(
 static int resolve_definition_parameter(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *base_type,
-    const psx_parsed_declarator_t *declarator,
     const psx_runtime_declarator_application_t *application,
     psx_parameter_declaration_resolution_t *resolution) {
   psx_parameter_declaration_resolution_request_t semantic_request = {
@@ -347,18 +346,11 @@ static int resolve_definition_parameter(
     psx_parameter_dimension_t *dimension =
         &semantic_request.inner_dimensions[
             semantic_request.inner_dimension_count++];
-    if (bound && bound->is_constant) {
-      dimension->constant = (int)bound->constant_value;
-      continue;
-    }
-    for (int i = 0; declarator && i < declarator->array_bound_count; i++) {
-      const psx_parsed_array_bound_t *parsed = &declarator->array_bounds[i];
-      if (parsed->declarator_op_index != op_index) continue;
-      dimension->source_name = parsed->expression.identifier_name;
-      dimension->source_name_len =
-          parsed->expression.identifier_name_len;
-      break;
-    }
+    dimension->expression_id =
+        bound ? bound->expression_id : PSX_SEMANTIC_EXPR_ID_INVALID;
+    dimension->constant_value =
+        bound && bound->is_constant ? bound->constant_value : 0;
+    dimension->is_constant = bound && bound->is_constant;
   }
   return psx_resolve_parameter_declaration(
       &semantic_request, resolution);
@@ -405,8 +397,7 @@ static int append_definition_parameter(
 
   psx_parameter_declaration_resolution_t resolution;
   if (!resolve_definition_parameter(
-          semantic_context, base_type, &parameter->declarator,
-          &applied, &resolution)) {
+          semantic_context, base_type, &applied, &resolution)) {
     ps_diag_ctx_in(
         ps_ctx_diagnostics(semantic_context),
         parameter->declarator.diagnostic_token, "param",
@@ -428,6 +419,24 @@ static int append_definition_parameter(
     return 1;
   }
 
+  node_t **inner_dimension_expressions = NULL;
+  if (resolution.inner_dimension_count > 0) {
+    inner_dimension_expressions = arena_alloc_in(
+        ps_ctx_arena(semantic_context),
+        (size_t)resolution.inner_dimension_count *
+        sizeof(*inner_dimension_expressions));
+  }
+  for (int i = 0; i < resolution.inner_dimension_count; i++) {
+    inner_dimension_expressions[i] = ps_ctx_semantic_expression_in(
+        semantic_context, resolution.inner_dimensions[i].expression_id);
+    if (!resolution.inner_dimensions[i].is_constant &&
+        !inner_dimension_expressions[i]) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->declarator.diagnostic_token, "param",
+          "VLA parameter bound expression lookup failed");
+    }
+  }
   lvar_t *lowered = lower_resolved_parameter_declaration(
           &(psx_resolved_parameter_lowering_request_t){
               .local_registry = local_registry,
@@ -435,6 +444,8 @@ static int append_definition_parameter(
               .name = name->str,
               .name_len = name->len,
               .resolution = &resolution,
+              .inner_dimension_expressions =
+                  inner_dimension_expressions,
               .diag_tok = parameter->declarator.diagnostic_token,
           });
   if (!lowered) {

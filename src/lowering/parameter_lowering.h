@@ -26,6 +26,7 @@ typedef struct {
   char *name;
   int name_len;
   const psx_parameter_declaration_resolution_t *resolution;
+  node_t *const *inner_dimension_expressions;
   token_t *diag_tok;
 } psx_resolved_parameter_lowering_request_t;
 

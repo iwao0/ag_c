@@ -332,6 +332,15 @@ psx_qual_type_t ps_ctx_intern_qual_type_in(
   return psx_semantic_type_table_intern(context->semantic_types, type);
 }
 
+psx_qual_type_t ps_ctx_intern_pointer_to_qual_type_in(
+    psx_semantic_context_t *context, psx_qual_type_t pointee) {
+  return context
+             ? psx_semantic_type_table_intern_pointer_to(
+                   context->semantic_types, pointee)
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_qual_type_t ps_ctx_find_interned_qual_type_in(
     const psx_semantic_context_t *context, const psx_type_t *type) {
   if (!context) {

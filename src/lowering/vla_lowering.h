@@ -44,9 +44,9 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
     const psx_pointer_vla_lowering_request_t *request);
 
 typedef struct {
-  int constant;
-  char *source_name;
-  int source_name_len;
+  node_t *expression;
+  long long constant_value;
+  int is_constant;
 } psx_parameter_vla_dimension_t;
 
 typedef struct {

@@ -5,9 +5,9 @@
 #include "parameter_declaration_plan.h"
 
 typedef struct {
-  int constant;
-  char *source_name;
-  int source_name_len;
+  psx_semantic_expr_id_t expression_id;
+  long long constant_value;
+  int is_constant;
 } psx_parameter_dimension_t;
 
 typedef enum {

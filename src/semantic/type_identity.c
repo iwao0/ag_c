@@ -339,6 +339,35 @@ psx_qual_type_t psx_semantic_type_table_intern(
              : invalid_qual_type();
 }
 
+psx_qual_type_t psx_semantic_type_table_intern_pointer_to(
+    psx_semantic_type_table_t *table, psx_qual_type_t pointee) {
+  const psx_type_t *pointee_type = psx_semantic_type_table_lookup(
+      table, pointee.type_id);
+  if (!table || !pointee_type) return invalid_qual_type();
+  for (psx_type_id_t id = 1; id <= table->next_id; id++) {
+    if ((size_t)id >= table->capacity ||
+        !table->entries[id].type ||
+        table->entries[id].type->kind != PSX_TYPE_POINTER)
+      continue;
+    psx_qual_type_t base = table->entries[id].base_type;
+    if (base.type_id == pointee.type_id &&
+        base.qualifiers == pointee.qualifiers) {
+      return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
+    }
+  }
+  if (table->next_id == UINT_MAX) return invalid_qual_type();
+  psx_type_id_t id = table->next_id + 1;
+  if (!reserve_type_id(table, id)) return invalid_qual_type();
+  psx_type_t *pointer = ps_type_new_pointer_in(
+      table->arena_context, pointee_type);
+  if (!pointer) return invalid_qual_type();
+  table->entries[id].type = pointer;
+  table->entries[id].base_type = pointee;
+  table->entries[id].canonical_relations_materialized = 1;
+  table->next_id = id;
+  return (psx_qual_type_t){id, PSX_TYPE_QUALIFIER_NONE};
+}
+
 const psx_type_t *psx_semantic_type_table_lookup(
     const psx_semantic_type_table_t *table, psx_type_id_t type_id) {
   if (!table || type_id == PSX_TYPE_ID_INVALID ||
@@ -390,6 +419,18 @@ psx_qual_type_t psx_semantic_type_table_pointee_value(
   }
   psx_qual_type_t base = psx_semantic_type_table_base(table, type_id);
   return semantic_type_table_array_leaf_from(table, base);
+}
+
+psx_qual_type_t psx_semantic_type_table_callable_function(
+    const psx_semantic_type_table_t *table, psx_qual_type_t type) {
+  const psx_type_t *current = psx_semantic_type_table_lookup(
+      table, type.type_id);
+  if (current && current->kind == PSX_TYPE_POINTER) {
+    type = psx_semantic_type_table_base(table, type.type_id);
+    current = psx_semantic_type_table_lookup(table, type.type_id);
+  }
+  return current && current->kind == PSX_TYPE_FUNCTION
+             ? type : invalid_qual_type();
 }
 
 psx_qual_type_t psx_semantic_type_table_aggregate_object(

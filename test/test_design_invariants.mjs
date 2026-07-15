@@ -4448,6 +4448,14 @@ const localDeclarationResolutionImplementation = await readFile(
 const localVlaDimensionStruct = localDeclarationResolutionSource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_local_vla_dimension_t\s*;/,
 );
+const parameterDeclarationResolutionHeader = await readFile(
+  "src/semantic/parameter_declaration_resolution.h",
+  "utf8",
+);
+const parameterVlaDimensionStruct =
+  parameterDeclarationResolutionHeader.match(
+    /typedef\s+struct\s*\{([^]*?)\}\s*psx_parameter_dimension_t\s*;/,
+  );
 if (!runtimeArrayBoundStruct ||
     !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
       runtimeArrayBoundStruct[1],
@@ -4458,6 +4466,13 @@ if (!runtimeArrayBoundStruct ||
       localVlaDimensionStruct[1],
     ) ||
     /\bnode_t\s*\*/.test(localVlaDimensionStruct[1]) ||
+    !parameterVlaDimensionStruct ||
+    !/\bpsx_semantic_expr_id_t\s+expression_id\s*;/.test(
+      parameterVlaDimensionStruct[1],
+    ) ||
+    /\b(?:node_t\s*\*|source_name)\b/.test(
+      parameterVlaDimensionStruct[1],
+    ) ||
     !/\bpsx_semantic_expr_id_t\s+pointer_row_dimension_id\s*;/.test(
       localDeclarationResolutionSource,
     ) ||
@@ -4467,6 +4482,42 @@ if (!runtimeArrayBoundStruct ||
     /\bpsx_semantic_expr_id_t\b/.test(canonicalTypeStruct[1])) {
   throw new Error(
     "VLA runtime bounds must use semantic expression IDs outside canonical types",
+  );
+}
+const parameterVlaLoweringFunction = vlaLoweringSource.match(
+  /psx_parameter_vla_lowering_result_t\s+lower_parameter_vla_declaration\s*\([^]*?\n\}/,
+);
+if (!/dimension->expression_id\s*=/.test(localDeclarationPipelineSource) ||
+    !/ps_ctx_semantic_expression_in\s*\([^]*?resolution\.inner_dimensions\[i\]\.expression_id/.test(
+      localDeclarationPipelineSource,
+    ) ||
+    !parameterVlaLoweringFunction ||
+    !/parameter_storage_size\s*=\s*type_size\s*\(/.test(
+      parameterVlaLoweringFunction[0],
+    ) ||
+    !/parameter_alignment\s*=\s*ps_lowering_type_alignment\s*\(/.test(
+      parameterVlaLoweringFunction[0],
+    ) ||
+    /request->name_len\s*,\s*8\b/.test(parameterVlaLoweringFunction[0]) ||
+    /ps_decl_find_lvar_in\s*\(/.test(parameterVlaLoweringFunction[0])) {
+  throw new Error(
+    "parameter VLA bounds must cross semantic/lowering by expression identity and use target layout",
+  );
+}
+if (!/static\s+int\s+semantic_bind_address_result_type\s*\([^]*?ps_ctx_intern_pointer_to_qual_type_in\s*\(/.test(
+      semanticPassSource,
+    ) ||
+    !/psx_semantic_type_table_intern_pointer_to\s*\([^]*?base\.type_id\s*==\s*pointee\.type_id[^]*?base\.qualifiers\s*==\s*pointee\.qualifiers/.test(
+      typeIdentityImplementationSource,
+    ) ||
+    !/psx_semantic_type_table_callable_function\s*\(/.test(
+      typeIdentityImplementationSource,
+    ) ||
+    !/psx_semantic_type_table_callable_function\s*\([^]*?psx_semantic_type_table_base\s*\(/.test(
+      semanticPassSource,
+    )) {
+  throw new Error(
+    "address decay and function-call results must preserve recursive QualType relations",
   );
 }
 if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
