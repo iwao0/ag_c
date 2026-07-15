@@ -8,6 +8,7 @@ typedef struct psx_local_registry_t psx_local_registry_t;
 typedef struct global_var_t global_var_t;
 typedef struct token_t token_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
+typedef struct psx_semantic_type_table_t psx_semantic_type_table_t;
 
 typedef struct {
   unsigned scope_seq;
@@ -17,6 +18,9 @@ typedef struct {
 psx_local_registry_t *ps_local_registry_create(
     ag_diagnostic_context_t *diagnostic_context);
 void ps_local_registry_destroy(psx_local_registry_t *registry);
+void ps_local_registry_bind_semantic_types(
+    psx_local_registry_t *registry,
+    const psx_semantic_type_table_t *semantic_types);
 
 unsigned ps_local_registry_current_scope_seq_in(
     const psx_local_registry_t *registry);
@@ -58,7 +62,8 @@ void ps_local_registry_update_storage_object_in(
 
 void ps_local_registry_mark_parameter(lvar_t *var, int is_byref);
 int ps_local_registry_complete_array_type(
-    lvar_t *var, const psx_type_t *complete_type);
+    psx_local_registry_t *registry, lvar_t *var,
+    const psx_type_t *complete_type);
 void ps_local_registry_set_vla_descriptor(
     lvar_t *var, int row_stride_frame_off, int strides_remaining,
     int row_stride_src_offset,

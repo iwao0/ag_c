@@ -58,7 +58,8 @@ int complete_declared_local_object(
                       ? request->requested_alignment : plan.alignment;
   int offset = local_storage_allocate(
       request->lowering_context, plan.storage_size, alignment);
-  if (!ps_local_registry_complete_array_type(var, request->type)) return 0;
+  if (!ps_local_registry_complete_array_type(
+          request->local_registry, var, request->type)) return 0;
   ps_local_registry_update_storage_object_in(
       request->local_registry, var, offset, plan.storage_size, alignment);
   return 1;

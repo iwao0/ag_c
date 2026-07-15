@@ -7,6 +7,7 @@
 #include "node_utils.h"
 #include "type.h"
 #include "type_builder.h"
+#include "../semantic/type_identity.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -28,6 +29,7 @@ struct lvar_usage_event_t {
 
 struct psx_local_registry_t {
   ag_diagnostic_context_t *diagnostic_context;
+  const psx_semantic_type_table_t *semantic_types;
   lvar_t *locals;
   lvar_t *all_locals;
   lvar_t *all_bindings;
@@ -60,6 +62,18 @@ void ps_local_registry_destroy(psx_local_registry_t *registry) {
   if (!registry) return;
   free(registry->scope_parent_by_seq);
   free(registry);
+}
+
+void ps_local_registry_bind_semantic_types(
+    psx_local_registry_t *registry,
+    const psx_semantic_type_table_t *semantic_types) {
+  if (registry) registry->semantic_types = semantic_types;
+}
+
+static psx_type_id_t local_decl_type_id(
+    const psx_local_registry_t *registry, const psx_type_t *type) {
+  return psx_semantic_type_table_find(
+      registry ? registry->semantic_types : NULL, type).type_id;
 }
 
 static unsigned name_hash(const char *name, int len) {
@@ -220,6 +234,7 @@ lvar_t *ps_local_registry_create_storage_object_in(
     free(var);
     return NULL;
   }
+  var->decl_type_id = local_decl_type_id(registry, decl_type);
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -246,6 +261,7 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->declaration_seq =
       ps_local_registry_register_binding_event_in(registry);
   var->decl_type = ps_type_clone_persistent(type);
+  var->decl_type_id = local_decl_type_id(registry, type);
   var->is_param = 1;
   var->next = registry->locals;
   var->next_binding = registry->all_bindings;
@@ -275,6 +291,7 @@ lvar_t *ps_local_registry_create_static_alias_in(
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
   var->decl_type = ps_type_clone_persistent(type);
+  var->decl_type_id = local_decl_type_id(registry, type);
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -300,7 +317,8 @@ void ps_local_registry_mark_parameter(lvar_t *var, int is_byref) {
 }
 
 int ps_local_registry_complete_array_type(
-    lvar_t *var, const psx_type_t *complete_type) {
+    psx_local_registry_t *registry, lvar_t *var,
+    const psx_type_t *complete_type) {
   const psx_type_t *current = var ? var->decl_type : NULL;
   if (!ps_type_is_incomplete_array(current) || !complete_type ||
       complete_type->kind != PSX_TYPE_ARRAY ||
@@ -312,6 +330,7 @@ int ps_local_registry_complete_array_type(
   psx_type_t *replacement = ps_type_clone_persistent(complete_type);
   if (!replacement) return 0;
   var->decl_type = replacement;
+  var->decl_type_id = local_decl_type_id(registry, complete_type);
   return 1;
 }
 

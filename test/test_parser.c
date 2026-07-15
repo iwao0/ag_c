@@ -3100,11 +3100,18 @@ static void test_local_declaration_storage_plan_boundary() {
   ASSERT_EQ(2, stored_type->array_len);
   ASSERT_TRUE(stored_type->base != NULL);
   ASSERT_EQ(3, stored_type->base->array_len);
+  ASSERT_TRUE(ps_lvar_decl_type_id(lowered) != PSX_TYPE_ID_INVALID);
+  ASSERT_EQ(24, ps_type_sizeof_id_for_target(
+                    ps_ctx_semantic_type_table_in(test_semantic_context()),
+                    ps_lvar_decl_type_id(lowered),
+                    ps_ctx_target_info(test_semantic_context())));
   ASSERT_EQ(lowered, ps_decl_find_lvar_in(test_local_registry(), (char *)"matrix", 6));
 
   reset_test_locals();
   psx_type_t *deferred_type =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
+  psx_type_id_t incomplete_type_id = intern_test_type_id(deferred_type);
+  ASSERT_TRUE(incomplete_type_id != PSX_TYPE_ID_INVALID);
   lvar_t *declared = declare_incomplete_local_object(
       &(psx_local_object_request_t){
           .local_registry = test_local_registry(),
@@ -3114,13 +3121,15 @@ static void test_local_declaration_storage_plan_boundary() {
           .type = deferred_type,
       });
   ASSERT_TRUE(declared != NULL);
+  ASSERT_EQ(incomplete_type_id, ps_lvar_decl_type_id(declared));
   ASSERT_EQ(0, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(declared,
             ps_decl_find_lvar_in(test_local_registry(), (char *)"deferred", 8));
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
-      declared, ps_type_new_integer(TK_INT, 4, 0)));
+      test_local_registry(), declared,
+      ps_type_new_integer(TK_INT, 4, 0)));
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
-      declared,
+      test_local_registry(), declared,
       ps_type_new_array(
           ps_type_new_float(TK_FLOAT_KIND_FLOAT, 4), 3, 12, 0)));
   ASSERT_TRUE(psx_resolve_incomplete_array_type(
@@ -3128,6 +3137,9 @@ static void test_local_declaration_storage_plan_boundary() {
       &(psx_incomplete_array_resolution_t){
           .initializer_count = 3,
       }));
+  psx_type_id_t complete_type_id = intern_test_type_id(deferred_type);
+  ASSERT_TRUE(complete_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(complete_type_id != incomplete_type_id);
   ASSERT_TRUE(complete_declared_local_object(
       declared,
       &(psx_local_object_request_t){
@@ -3139,8 +3151,9 @@ static void test_local_declaration_storage_plan_boundary() {
       }));
   ASSERT_EQ(12, ps_lvar_storage_size(declared, 0));
   ASSERT_EQ(3, ps_lvar_get_decl_type(declared)->array_len);
+  ASSERT_EQ(complete_type_id, ps_lvar_decl_type_id(declared));
   ASSERT_TRUE(!ps_local_registry_complete_array_type(
-      declared, deferred_type));
+      test_local_registry(), declared, deferred_type));
 
   reset_test_locals();
   psx_type_t *pipeline_input =

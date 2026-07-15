@@ -2,6 +2,7 @@
 #define PARSER_LVAR_PUBLIC_H
 
 #include "core.h"
+#include "../semantic/type_identity.h"
 
 typedef struct lvar_t lvar_t;
 typedef struct psx_type_t psx_type_t;
@@ -26,6 +27,7 @@ lvar_t *ps_lvar_next_all(const lvar_t *var);
 lvar_t *ps_lvar_find_owner(lvar_t *head, int offset);
 psx_lvar_registry_view_t ps_lvar_registry_view(const lvar_t *var);
 const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var);
+psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var);
 
 const char *ps_lvar_name(const lvar_t *var);
 int ps_lvar_name_len(const lvar_t *var);

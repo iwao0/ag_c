@@ -3333,6 +3333,21 @@ if (!lvarStruct ||
     "local and global symbol canonical types must be exposed as const views",
   );
 }
+if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
+    !/\bpsx_type_id_t\s+ps_lvar_decl_type_id\s*\(/.test(
+      lvarPublicSource,
+    ) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
+    !/\bps_local_registry_bind_semantic_types\s*\(/.test(
+      compilationSessionSource,
+    )) {
+  throw new Error(
+    "local symbols must retain their declaration TypeId from the compilation unit semantic type table",
+  );
+}
 
 const staticInitializerSource = await readFile(
   "src/semantic/static_initializer_resolution.h",

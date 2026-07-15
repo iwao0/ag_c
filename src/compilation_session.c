@@ -64,6 +64,9 @@ int ag_compilation_session_init(
   session->global_registry = ps_global_registry_create();
   session->local_registry = ps_local_registry_create(
       session->diagnostic_context);
+  ps_local_registry_bind_semantic_types(
+      session->local_registry,
+      ps_ctx_semantic_type_table_in(session->semantic_context));
   ps_ctx_bind_diagnostic_context(
       session->semantic_context, session->diagnostic_context);
   ps_ctx_bind_target_info(session->semantic_context, &session->target);

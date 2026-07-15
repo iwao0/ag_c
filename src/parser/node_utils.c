@@ -147,6 +147,10 @@ const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
 
+psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var) {
+  return var ? var->decl_type_id : PSX_TYPE_ID_INVALID;
+}
+
 int ps_gvar_storage_size(const global_var_t *gv, int fallback_size) {
   return ps_gvar_decl_sizeof(gv, fallback_size);
 }

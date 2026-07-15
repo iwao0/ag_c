@@ -688,7 +688,7 @@ int psx_finish_static_local_declaration_pipeline(
   }
   if (result->type_completed &&
       !ps_local_registry_complete_array_type(
-          result->alias, resolution.type))
+          request->local_registry, result->alias, resolution.type))
     return 0;
   result->initialized = 1;
   return 1;

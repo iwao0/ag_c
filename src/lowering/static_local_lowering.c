@@ -160,7 +160,8 @@ int lower_static_local_declaration(
   }
   if (lowered.type_completed &&
       !ps_local_registry_complete_array_type(
-          lowered.alias, request->initializer_resolution->type)) {
+          request->local_registry, lowered.alias,
+          request->initializer_resolution->type)) {
     return 0;
   }
   if (result) *result = lowered;

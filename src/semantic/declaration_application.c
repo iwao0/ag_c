@@ -529,6 +529,14 @@ void psx_apply_parsed_function_parameters_in_contexts(
     }
     psx_type_t *adjusted = ps_type_adjust_parameter_type_in(
         ps_ctx_arena(semantic_context), type);
+    if (adjusted && ps_ctx_intern_qual_type_in(
+                        semantic_context, adjusted).type_id ==
+                        PSX_TYPE_ID_INVALID) {
+      ps_diag_ctx_in(
+          ps_ctx_diagnostics(semantic_context),
+          parameter->specifier.diagnostic_token, "param",
+          "prototype parameter type interning failed");
+    }
     resolved_types[resolved_count] = adjusted;
     resolved_count++;
     token_ident_t *name = parameter->declarator.identifier;
