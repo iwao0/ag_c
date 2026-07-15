@@ -1463,7 +1463,9 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   int nlocals = f->next_vreg_id;
   int frame_size = collect_frame_size(f);
   int has_variadic_varargs = func_has_variadic_varargs(f);
-  int has_stack_restore = !f->is_continuation_entry &&
+  int has_persistent_continuation_frame =
+      f->is_continuation_entry && f->continuation_has_suspend;
+  int has_stack_restore = !has_persistent_continuation_frame &&
       (frame_size > 0 || func_has_vla_alloc(f) || has_variadic_varargs);
   int has_control_flow = func_has_control_flow(f);
   int has_atomic_cas32 = func_has_atomic_cas_width(f, 0);
@@ -1486,7 +1488,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
   int atomic_tmp64_local = extra_base + extra_count;
   int atomic_exp64_local = atomic_tmp64_local + 1;
   if (has_atomic_cas64) extra_count += 2;
-  obj_global_t *stack_pointer = has_stack_restore ? intern_stack_pointer_global() : NULL;
+  obj_global_t *stack_pointer =
+      (has_stack_restore || has_variadic_varargs)
+          ? intern_stack_pointer_global()
+          : NULL;
   int continuation_frame_data = -1;
   int continuation_status_data = -1;
   int continuation_result_data = -1;
@@ -1496,10 +1501,12 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
                      f->continuation_entry_name);
     if (n < 0 || n >= (int)sizeof(name))
       obj_unsupported_msg("continuation data symbol name too long");
-    obj_data_t *frame = intern_data(name, n, 4, 1, 0);
-    continuation_frame_data = data_index(frame);
-    data_note_alloc_size(frame, (size_t)(frame_size > 0 ? frame_size : 16));
-    frame->is_emitted = 1;
+    if (has_persistent_continuation_frame) {
+      obj_data_t *frame = intern_data(name, n, 4, 1, 0);
+      continuation_frame_data = data_index(frame);
+      data_note_alloc_size(frame, (size_t)(frame_size > 0 ? frame_size : 16));
+      frame->is_emitted = 1;
+    }
     n = snprintf(name, sizeof(name), "__agc_cont_status_%s",
                  f->continuation_entry_name);
     obj_data_t *status = intern_data(name, n, 2, 1, 0);
@@ -1569,7 +1576,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     emit_stack_global_get(&body, of, stack_pointer);
     emit_local_set(&body, old_sp_local);
   }
-  if (frame_size > 0 && f->is_continuation_entry) {
+  if (frame_size > 0 && has_persistent_continuation_frame) {
     emit_data_address(&body, of, continuation_frame_data, 0);
     emit_local_set(&body, fp_local);
   } else if (frame_size > 0) {
@@ -1608,26 +1615,28 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
     wb_u8(&body, 0x47); /* i32.ne */
     emit_local_set(&body, resumed_local);
 
-    /* Every invocation reconstructs ALLOCA pointer vregs from the same frame. */
-    for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
-      for (ir_inst_t *i = blk->head; i; i = i->next) {
-        if (i->op != IR_ALLOCA) continue;
-        int off = alloca_offset(f, i->dst.id);
-        emit_local_get(&body, fp_local);
-        emit_const(&body, IR_TY_I32, off);
-        wb_u8(&body, 0x6a);
-        emit_local_set(&body, local_index(param_count, i->dst.id));
+    if (has_persistent_continuation_frame) {
+      /* Every invocation reconstructs ALLOCA pointer vregs from the same frame. */
+      for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
+        for (ir_inst_t *i = blk->head; i; i = i->next) {
+          if (i->op != IR_ALLOCA) continue;
+          int off = alloca_offset(f, i->dst.id);
+          emit_local_get(&body, fp_local);
+          emit_const(&body, IR_TY_I32, off);
+          wb_u8(&body, 0x6a);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+        }
       }
-    }
-    for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
-      for (ir_inst_t *i = blk->head; i; i = i->next) {
-        if (i->op != IR_ALIGN_PTR) continue;
-        emit_addr_val(&body, i->src1, param_count);
-        emit_const(&body, IR_TY_I32, i->alloca_align - 1);
-        wb_u8(&body, 0x6a);
-        emit_const(&body, IR_TY_I32, -i->alloca_align);
-        wb_u8(&body, 0x71);
-        emit_local_set(&body, local_index(param_count, i->dst.id));
+      for (ir_block_t *blk = f->entry; blk; blk = blk->next) {
+        for (ir_inst_t *i = blk->head; i; i = i->next) {
+          if (i->op != IR_ALIGN_PTR) continue;
+          emit_addr_val(&body, i->src1, param_count);
+          emit_const(&body, IR_TY_I32, i->alloca_align - 1);
+          wb_u8(&body, 0x6a);
+          emit_const(&body, IR_TY_I32, -i->alloca_align);
+          wb_u8(&body, 0x71);
+          emit_local_set(&body, local_index(param_count, i->dst.id));
+        }
       }
     }
   }
@@ -1679,7 +1688,7 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
           emit_local_set(&body, local_index(param_count, i->dst.id));
           break;
         case IR_ALLOCA: {
-          if (f->is_continuation_entry) break;
+          if (has_persistent_continuation_frame) break;
           int off = alloca_offset(f, i->dst.id);
           if (off < 0 || frame_size <= 0) obj_unsupported_op(i->op);
           emit_local_get(&body, fp_local);
@@ -2084,6 +2093,10 @@ static void gen_func_body(const ir_module_t *module, obj_func_t *of,
             emit_memarg(&body, IR_TY_I32);
             emit_continuation_data_store_const(
                 &body, of, continuation_status_data, 3);
+            if (has_stack_restore) {
+              emit_local_get(&body, old_sp_local);
+              emit_stack_global_set(&body, of, stack_pointer);
+            }
             emit_const(&body, IR_TY_I32, 3);
           } else {
             if (i->ret_complex_half > 0) {

@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createToolchain } from "./agc-toolchain.js";
 import { inlineStandardIncludes } from "./agc-include-inline.js";
+import { createAgcRuntimeImports } from "./agc-runtime-imports.js";
 
 const compilerWasmPath = process.argv[2] || "build/wasm_selfhost_api/ag_c_wasm_api.wasm";
 const linkerWasmPath = process.argv[3] || "build/wasm_linker_selfhost/ag_wasm_link.wasm";
@@ -21,6 +22,32 @@ async function freshToolchain() {
 }
 let toolchain = await freshToolchain();
 const loadInclude = async (name) => readFile(new URL(`../../include/${name}`, import.meta.url), "utf8");
+
+const synchronousContinuationProgram = await toolchain.instantiateLinkedWasm(`
+int main(void) {
+  int count = 2;
+  int values[count];
+  values[0] = 17;
+  values[1] = 20;
+  int result = values[0] + values[1];
+  goto done;
+  result = 0;
+done:
+  return result;
+}
+`, {
+  exports: ["main"],
+  useStdlib: false,
+  continuation: { entry: "main", frameCondition: "game_running" },
+});
+const synchronousContinuation = synchronousContinuationProgram.instance.exports;
+if (synchronousContinuation.main() !== 3 ||
+    synchronousContinuation.__agc_continuation_status() !== 3 ||
+    synchronousContinuation.__agc_continuation_result() !== 37 ||
+    synchronousContinuation.__agc_continuation_resume(1) !== -1 ||
+    synchronousContinuation.main() !== -1) {
+  throw new Error("loop-free continuation did not complete exactly once");
+}
 
 const continuationProgram = await toolchain.instantiateLinkedWasm(`
 int game_running(void);
@@ -58,6 +85,188 @@ if (continuation.__agc_continuation_resume(0) !== 3 ||
     continuation.__agc_continuation_resume(1) !== -1 ||
     continuation.main() !== -1) {
   throw new Error("continuation completion state is incorrect");
+}
+
+const continuationStdioProgram = await toolchain.instantiateLinkedWasm(`
+int printf(const char *, ...);
+int frame_gate(void);
+int main(void) {
+  int frame = 0;
+  printf("before=%d %s %.1f %lld\\n", 7, "ok", 2.5, 4294967338LL);
+  while (frame_gate()) {
+    frame++;
+    printf("frame=%d %s\\n", frame, "ok");
+  }
+  printf("after=%d\\n", frame);
+  return frame;
+}
+`, {
+  exports: [
+    "main",
+    "__agc_runtime_stdout_ptr",
+    "__agc_runtime_stdout_len",
+  ],
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+});
+const continuationStdioObserved = {
+  start: continuationStdioProgram.instance.exports.main(),
+};
+continuationStdioObserved.afterStart = continuationStdioProgram.readStdout();
+continuationStdioObserved.resume =
+  continuationStdioProgram.instance.exports.__agc_continuation_resume(1);
+continuationStdioObserved.afterResume = continuationStdioProgram.readStdout();
+continuationStdioObserved.complete =
+  continuationStdioProgram.instance.exports.__agc_continuation_resume(0);
+continuationStdioObserved.afterComplete = continuationStdioProgram.readStdout();
+continuationStdioObserved.result =
+  continuationStdioProgram.instance.exports.__agc_continuation_result();
+if (continuationStdioObserved.start !== 2 ||
+    continuationStdioObserved.afterStart !== "before=7 ok 2.5 4294967338\n" ||
+    continuationStdioObserved.resume !== 2 ||
+    continuationStdioObserved.afterResume !== "before=7 ok 2.5 4294967338\nframe=1 ok\n" ||
+    continuationStdioObserved.complete !== 3 ||
+    continuationStdioObserved.afterComplete !==
+      "before=7 ok 2.5 4294967338\nframe=1 ok\nafter=1\n" ||
+    continuationStdioObserved.result !== 1) {
+  throw new Error(`continuation variadic calls failed: ${JSON.stringify(continuationStdioObserved)}`);
+}
+
+const hostWriteSource = await inlineStandardIncludes(`#include <stdio.h>
+#include <stdarg.h>
+long write(int fd, const void *bytes, unsigned long length);
+static int call_vprintf(const char *fmt, ...) {
+  va_list ap;
+  int n;
+  va_start(ap, fmt);
+  n = vprintf(fmt, ap);
+  va_end(ap);
+  return n;
+}
+int main(void) {
+  printf("Grüße / 中文 %d %.1f\\n", 42, 2.5);
+  call_vprintf("via=%s\\n", "vprintf");
+  fprintf(stderr, "err=%d\\n", 9);
+  puts("line");
+  putchar('!');
+  fwrite("raw", 1, 3, stdout);
+  write(1, "W", 1);
+  write(2, "E", 1);
+  return 0;
+}
+`);
+const hostWriteWasm = toolchain.compileLinkedWasm(hostWriteSource, {
+  exports: ["main"],
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+  stdio: {
+    writeImportModule: "host_io",
+    writeImportName: "write_bytes",
+  },
+});
+let hostWriteInstance;
+const hostWriteChunks = [];
+const hostWriteResult = await WebAssembly.instantiate(hostWriteWasm, {
+  host_io: {
+    write_bytes(stream, pointer, length) {
+      const bytes = new Uint8Array(
+        hostWriteInstance.exports.memory.buffer,
+        Number(pointer),
+        Number(length),
+      ).slice();
+      hostWriteChunks.push({ stream: Number(stream), bytes });
+      return Number(length);
+    },
+  },
+});
+hostWriteInstance = hostWriteResult.instance;
+if (hostWriteInstance.exports.main() !== 3 ||
+    hostWriteInstance.exports.__agc_continuation_status() !== 3 ||
+    hostWriteInstance.exports.__agc_continuation_result() !== 0 ||
+    hostWriteInstance.exports.__agc_continuation_resume(1) !== -1) {
+  throw new Error("host-write synchronous continuation state is incorrect");
+}
+const hostWriteDecoder = new TextDecoder();
+const hostStdout = hostWriteChunks
+  .filter(({ stream }) => stream === 1)
+  .map(({ bytes }) => hostWriteDecoder.decode(bytes))
+  .join("");
+const hostStderr = hostWriteChunks
+  .filter(({ stream }) => stream === 2)
+  .map(({ bytes }) => hostWriteDecoder.decode(bytes))
+  .join("");
+if (hostStdout !== "Grüße / 中文 42 2.5\nvia=vprintf\nline\n!rawW" ||
+    hostStderr !== "err=9\nE") {
+  throw new Error(`host-write stdio mismatch: ${JSON.stringify({ hostStdout, hostStderr })}`);
+}
+
+const boundaryWriteWasm = toolchain.compileLinkedWasm(`
+int printf(const char *, ...);
+int main(void) {
+  static char text[4097];
+  int i;
+  for (i = 0; i < 4096; i++) text[i] = 'x';
+  text[4096] = 0;
+  return printf("%s", text);
+}
+`, {
+  exports: ["main"],
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+  stdio: {},
+});
+let boundaryWriteInstance;
+let boundaryWriteBytes = new Uint8Array();
+const boundaryWriteResult = await WebAssembly.instantiate(boundaryWriteWasm, {
+  env: {
+    __agc_host_write(stream, pointer, length) {
+      if (Number(stream) !== 1) return -1;
+      boundaryWriteBytes = new Uint8Array(
+        boundaryWriteInstance.exports.memory.buffer,
+        Number(pointer),
+        Number(length),
+      ).slice();
+      return Number(length);
+    },
+  },
+});
+boundaryWriteInstance = boundaryWriteResult.instance;
+if (boundaryWriteInstance.exports.main() !== 3 ||
+    boundaryWriteInstance.exports.__agc_continuation_result() !== 4096 ||
+    boundaryWriteBytes.length !== 4096 ||
+    boundaryWriteBytes.some((byte) => byte !== 120)) {
+  throw new Error("4 KiB formatted host write boundary failed");
+}
+
+const shortWriteWasm = toolchain.compileLinkedWasm(`
+int printf(const char *, ...);
+int main(void) { return printf("short-write"); }
+`, {
+  exports: ["main"],
+  continuation: { entry: "main", frameCondition: "frame_gate" },
+  stdio: {},
+});
+let shortWriteInstance;
+const shortWriteResult = await WebAssembly.instantiate(shortWriteWasm, {
+  env: {
+    __agc_host_write(_stream, _pointer, length) {
+      return Math.max(0, Number(length) - 1);
+    },
+  },
+});
+shortWriteInstance = shortWriteResult.instance;
+if (shortWriteInstance.exports.main() !== 3 ||
+    shortWriteInstance.exports.__agc_continuation_result() !== -1) {
+  throw new Error("short host write was reported as successful");
+}
+
+let hostMemory = new WebAssembly.Memory({ initial: 1 });
+const guardedHostWrite = createAgcRuntimeImports({
+  stdio: { getMemory: () => hostMemory, maxWriteBytes: 4096 },
+}).env.__agc_host_write;
+if (guardedHostWrite(3, 0, 1) !== -1 ||
+    guardedHostWrite(1, 65535, 2) !== -1 ||
+    guardedHostWrite(1, 0xffffffff, 2) !== -1 ||
+    guardedHostWrite(1, 0, 4097) !== -1 ||
+    guardedHostWrite(1, 0, 0) !== 0) {
+  throw new Error("host-write bounds or stream validation failed");
 }
 
 const breakContinuationProgram = await toolchain.instantiateLinkedWasm(`

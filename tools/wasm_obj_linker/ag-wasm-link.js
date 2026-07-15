@@ -139,6 +139,21 @@ export async function createLinker(wasmSource, options = {}) {
     return decoder.decode(new Uint8Array(callbackMemory.buffer, p, n));
   }
   const envImports = {
+    __agc_host_write(stream, ptr, len) {
+      const n = Number(len);
+      if (n === 0) return 0;
+      const text = readCallbackBytes(ptr, len);
+      if (!text || (Number(stream) !== 1 && Number(stream) !== 2)) return -1;
+      if (Number(stream) === 2) {
+        if (typeof options.onStderr === "function") options.onStderr(text);
+        else stderrChunks.push(text);
+      } else if (typeof options.onStdout === "function") {
+        options.onStdout(text);
+      } else {
+        stdoutChunks.push(text);
+      }
+      return n;
+    },
     __agc_runtime_stdout_write(ptr, len) {
       const text = readCallbackBytes(ptr, len);
       if (!text) return;
@@ -325,7 +340,7 @@ export async function createLinker(wasmSource, options = {}) {
     }
     const hasLayoutOptions = options.initialMemoryPages !== undefined ||
       options.maximumMemoryPages !== undefined || options.stackSize !== undefined ||
-      options.maximumTableElements !== undefined;
+      options.maximumTableElements !== undefined || options.stdio !== undefined;
     if (hasLayoutOptions && typeof linkObjectsWithOptions !== "function" &&
         typeof linkObjectsWithExportSignatures !== "function") {
       throw new Error("this ag_wasm_link module does not support memory/table layout options");
@@ -391,19 +406,43 @@ export async function createLinker(wasmSource, options = {}) {
         const stackSize = asU32Option(options.stackSize, 0, "stackSize");
         const maximumTableElements = options.maximumTableElements === undefined
           ? 0 : asU32Option(options.maximumTableElements, 0, "maximumTableElements");
+        const stdio = options.stdio;
+        if (stdio !== undefined &&
+            (!stdio || typeof stdio !== "object" || Array.isArray(stdio))) {
+          throw new TypeError("stdio must be an object");
+        }
+        const writeImportModule = stdio?.writeImportModule ?? "env";
+        const writeImportName = stdio?.writeImportName ?? "__agc_host_write";
+        if (stdio !== undefined &&
+            (typeof writeImportModule !== "string" || writeImportModule.length === 0 ||
+             writeImportModule.includes("\0") || typeof writeImportName !== "string" ||
+             writeImportName.length === 0 || writeImportName.includes("\0"))) {
+          throw new TypeError("stdio write import module/name must be non-empty strings without NUL");
+        }
         let flags = 0;
         if (options.maximumMemoryPages !== undefined) flags |= 1;
         if (options.maximumTableElements !== undefined) flags |= 2;
-        linkerOptionsPtr = callMalloc(malloc, 20);
+        if (stdio !== undefined) flags |= 4;
+        let writeImportModulePtr = 0;
+        let writeImportNamePtr = 0;
+        if (stdio !== undefined) {
+          writeImportModulePtr = allocCString(writeImportModule);
+          writeImportNamePtr = allocCString(writeImportName);
+          allocations.push(writeImportModulePtr, writeImportNamePtr);
+        }
+        linkerOptionsPtr = callMalloc(malloc, 40);
         if (!linkerOptionsPtr) throw new Error("ag_wasm_link malloc failed for linker options");
         allocations.push(linkerOptionsPtr);
         refresh();
-        ensureMemoryRange(memory, linkerOptionsPtr, 20, "linker options");
+        ensureMemoryRange(memory, linkerOptionsPtr, 40, "linker options");
         setU32(linkerOptionsPtr, flags);
         setU32(linkerOptionsPtr + 4, initialMemoryPages);
         setU32(linkerOptionsPtr + 8, maximumMemoryPages);
         setU32(linkerOptionsPtr + 12, stackSize);
         setU32(linkerOptionsPtr + 16, maximumTableElements);
+        setU32(linkerOptionsPtr + 20, 0);
+        setU64(linkerOptionsPtr + 24, writeImportModulePtr);
+        setU64(linkerOptionsPtr + 32, writeImportNamePtr);
       }
 
       try {

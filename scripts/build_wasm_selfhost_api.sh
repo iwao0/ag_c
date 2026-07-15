@@ -39,6 +39,8 @@ for src in "${sources[@]}"; do
 done
 
 AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
+  --stdio-write-import-module=env \
+  --stdio-write-import-name=__agc_host_write \
   --initial-memory-pages=4096 \
   --maximum-memory-pages=4096 \
   --stack-size=16777216 \

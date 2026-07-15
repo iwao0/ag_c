@@ -14,6 +14,10 @@ export interface AgcWasmLinkOptions {
   /** Maximum linked Wasm output bytes. Used internally by the toolchain resource policy. */
   maxOutputBytes?: number;
   maximumTableElements?: number;
+  stdio?: {
+    writeImportModule?: string;
+    writeImportName?: string;
+  };
 }
 
 export interface AgcWasmLinkerOptions {

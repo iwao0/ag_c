@@ -1,15 +1,15 @@
 int __agc_runtime_fgetc(long stream_addr);
 
 int __agc_runtime_putchar(int c) {
-  ag_rt_stdout_write_mem((char *)&c, 1);
-  return c;
+  return ag_rt_stdout_write_mem((char *)&c, 1) == 1 ? c : -1;
 }
 
 int __agc_runtime_puts(long s_addr) {
   char *s = ag_rt_ptr(s_addr);
-  ag_rt_stdout_write_str(s);
-  ag_rt_stdout_write_mem("\n", 1);
-  return (int)__agc_runtime_strlen(s_addr) + 1;
+  long n = __agc_runtime_strlen(s_addr);
+  if (ag_rt_stdout_write_str(s) != n ||
+      ag_rt_stdout_write_mem("\n", 1) != 1) return -1;
+  return (int)n + 1;
 }
 
 static long ag_rt_file_write_mem(struct ag_rt_file *f, char *src, long total) {
@@ -61,9 +61,9 @@ int __agc_runtime_fputs(long s_addr, long stream_addr) {
   long n = __agc_runtime_strlen(s_addr);
   (void)ag_rt_orient_stream(stream_addr, -1);
   if (ag_rt_is_stderr_stream(stream_addr)) {
-    ag_rt_stderr_write_str(s);
+    if (ag_rt_stderr_write_str(s) != n) return -1;
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
-    ag_rt_stdout_write_str(s);
+    if (ag_rt_stdout_write_str(s) != n) return -1;
   } else {
     return ag_rt_file_write_mem(ag_rt_input_stream(stream_addr), s, n) == n ? (int)n : -1;
   }
@@ -74,9 +74,9 @@ int __agc_runtime_fputc(int c, long stream_addr) {
   char ch = (char)c;
   (void)ag_rt_orient_stream(stream_addr, -1);
   if (ag_rt_is_stderr_stream(stream_addr)) {
-    ag_rt_stderr_write_char(c);
+    if (ag_rt_stderr_write_char(c) != 1) return -1;
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
-    ag_rt_stdout_write_mem((char *)&c, 1);
+    if (ag_rt_stdout_write_mem((char *)&c, 1) != 1) return -1;
   } else if (ag_rt_file_write_mem(ag_rt_input_stream(stream_addr), &ch, 1) != 1) {
     return -1;
   }
@@ -642,6 +642,16 @@ long __agc_runtime_read(int fd, long buf_addr, unsigned long count) {
 }
 
 long __agc_runtime_write(int fd, long buf_addr, unsigned long count) {
+  if (fd == 1 || fd == 2) {
+    if (count > 0xffffffffu) {
+      ag_rt_set_errno(22);
+      return -1;
+    }
+    char *src = ag_rt_ptr(buf_addr);
+    return fd == 1
+        ? ag_rt_stdout_write_mem(src, (long)count)
+        : ag_rt_stderr_write_mem(src, (long)count);
+  }
   int idx = fd - 3;
   long limit;
   long i = 0;
@@ -957,11 +967,11 @@ long __agc_runtime_fwrite(long ptr_addr, long size, long nmemb, long stream_addr
     return 0;
   }
   if (ag_rt_is_stderr_stream(stream_addr)) {
-    ag_rt_stderr_write_mem(src, total);
-    return size == 0 ? 0 : nmemb;
+    long accepted = ag_rt_stderr_write_mem(src, total);
+    return size == 0 || accepted < 0 ? 0 : accepted / size;
   } else if (ag_rt_is_stdout_stream(stream_addr)) {
-    ag_rt_stdout_write_mem(src, total);
-    return size == 0 ? 0 : nmemb;
+    long accepted = ag_rt_stdout_write_mem(src, total);
+    return size == 0 || accepted < 0 ? 0 : accepted / size;
   }
   f = ag_rt_input_stream(stream_addr);
   long i = ag_rt_file_write_mem(f, src, total);

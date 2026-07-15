@@ -2117,60 +2117,79 @@ int __agc_runtime_vfscanf(long stream_addr, long fmt_addr, long ap_addr) {
   return ag_rt_vfscan(stream_addr, fmt, ap);
 }
 
+static int ag_rt_vformat_stream(long stream_addr, char *fmt, va_list ap) {
+  char stack_buf[1024];
+  char *buf = stack_buf;
+  va_list count_args;
+  va_copy(count_args, ap);
+  int n = ag_rt_vformat(0, 0, 1, fmt, count_args);
+  va_end(count_args);
+  if (n < 0) return n;
+  if (n >= (int)sizeof(stack_buf)) {
+    buf = (char *)__agc_runtime_malloc((unsigned long)n + 1);
+    if (!buf) return -1;
+  }
+  va_list render_args;
+  va_copy(render_args, ap);
+  int rendered = ag_rt_vformat(buf, (size_t)n + 1, 1, fmt, render_args);
+  va_end(render_args);
+  if (rendered != n) {
+    if (buf != stack_buf) __agc_runtime_free(buf);
+    return -1;
+  }
+  long accepted;
+  int is_host_stream = 0;
+  if (ag_rt_is_stderr_stream(stream_addr)) {
+    is_host_stream = 1;
+    accepted = ag_rt_stderr_write_mem(buf, n);
+  } else if (ag_rt_is_stdout_stream(stream_addr)) {
+    is_host_stream = 1;
+    accepted = ag_rt_stdout_write_mem(buf, n);
+  } else {
+    struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
+    if (!f) {
+      ag_rt_set_errno(AG_RT_EBADF);
+      accepted = -1;
+    } else {
+      accepted = ag_rt_file_write_mem(f, buf, n);
+    }
+  }
+  if (buf != stack_buf) __agc_runtime_free(buf);
+  if (accepted != n) {
+    if (is_host_stream && accepted >= 0) ag_rt_set_errno(AG_RT_EIO);
+    return -1;
+  }
+  return n;
+}
+
 int __agc_runtime_printf(long fmt_addr, ...) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap;
   va_start(ap, fmt_addr);
-  char buf[1024];
-  int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
+  int n = ag_rt_vformat_stream((long)__stdoutp, fmt, ap);
   va_end(ap);
-  ag_rt_stdout_write_mem(buf, n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1);
   return n;
 }
 
 int __agc_runtime_vprintf(long fmt_addr, long ap_addr) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap = (va_list)(long)ap_addr;
-  char buf[1024];
-  int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
-  ag_rt_stdout_write_mem(buf, n < (int)sizeof(buf) ? n : (int)sizeof(buf) - 1);
-  return n;
-}
-
-static int ag_rt_write_formatted_stream(long stream_addr, char *buf, int n) {
-  int len = n < 1024 ? n : 1023;
-  if (len < 0) len = 0;
-  if (ag_rt_is_stderr_stream(stream_addr)) {
-    ag_rt_stderr_write_mem(buf, len);
-  } else if (ag_rt_is_stdout_stream(stream_addr)) {
-    ag_rt_stdout_write_mem(buf, len);
-  } else {
-    struct ag_rt_file *f = ag_rt_input_stream(stream_addr);
-    if (!f) {
-      ag_rt_set_errno(9);
-      return -1;
-    }
-    if (ag_rt_file_write_mem(f, buf, len) != len) return -1;
-  }
-  return n;
+  return ag_rt_vformat_stream((long)__stdoutp, fmt, ap);
 }
 
 int __agc_runtime_fprintf(long stream_addr, long fmt_addr, ...) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap;
   va_start(ap, fmt_addr);
-  char buf[1024];
-  int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
+  int n = ag_rt_vformat_stream(stream_addr, fmt, ap);
   va_end(ap);
-  return ag_rt_write_formatted_stream(stream_addr, buf, n);
+  return n;
 }
 
 int __agc_runtime_vfprintf(long stream_addr, long fmt_addr, long ap_addr) {
   char *fmt = (char *)(long)fmt_addr;
   va_list ap = (va_list)(long)ap_addr;
-  char buf[1024];
-  int n = ag_rt_vformat(buf, sizeof(buf), 1, fmt, ap);
-  return ag_rt_write_formatted_stream(stream_addr, buf, n);
+  return ag_rt_vformat_stream(stream_addr, fmt, ap);
 }
 
 int __agc_runtime_swprintf(long buf_addr, size_t size, long fmt_addr, ...) {

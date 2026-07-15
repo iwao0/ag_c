@@ -3,6 +3,7 @@ export interface AgcRuntimeStdioOptions {
   onStdout?: (chunk: string) => void;
   onStderr?: (chunk: string) => void;
   stdin?: string | ArrayBuffer | Uint8Array;
+  maxWriteBytes?: number;
 }
 
 export type AgcRuntimeImports = WebAssembly.Imports & {

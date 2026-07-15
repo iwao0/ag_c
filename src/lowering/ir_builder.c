@@ -111,18 +111,26 @@ typedef struct {
   int condition_call_count;
   node_t *invalid_node;
   const char *invalid_reason;
+  node_t *frame_invalid_node;
+  const char *frame_invalid_reason;
 } continuation_scan_t;
 
 static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
   if (!node || scan->invalid_node) return;
   if (node->kind == ND_GOTO || node->kind == ND_LABEL) {
-    scan->invalid_node = node;
-    scan->invalid_reason = "continuation entry does not support goto or labels";
+    if (!scan->frame_invalid_node) {
+      scan->frame_invalid_node = node;
+      scan->frame_invalid_reason =
+          "continuation entry does not support goto or labels across frames";
+    }
     return;
   }
   if (node->kind == ND_VLA_ALLOC) {
-    scan->invalid_node = node;
-    scan->invalid_reason = "continuation entry does not support VLA across frames";
+    if (!scan->frame_invalid_node) {
+      scan->frame_invalid_node = node;
+      scan->frame_invalid_reason =
+          "continuation entry does not support VLA across frames";
+    }
     return;
   }
   if (node->kind == ND_FUNCALL) {
@@ -140,10 +148,11 @@ static void scan_continuation_node(node_t *node, continuation_scan_t *scan) {
     if (name_matches(call->direct_name, call->direct_name_len, "alloca") ||
         name_matches(call->direct_name, call->direct_name_len,
                      "__builtin_alloca")) {
-      scan->invalid_node = node;
-      scan->invalid_reason =
-          "continuation entry does not support alloca across frames";
-      return;
+      if (!scan->frame_invalid_node) {
+        scan->frame_invalid_node = node;
+        scan->frame_invalid_reason =
+            "continuation entry does not support alloca across frames";
+      }
     }
     scan_continuation_node(call->callee, scan);
     for (int i = 0; i < call->argument_count; i++)
@@ -198,12 +207,22 @@ static int prepare_continuation_entry(ir_build_ctx_t *ctx,
                    scan.invalid_node->tok, "%s", scan.invalid_reason);
     return 0;
   }
-  if (scan.frame_while_count != 1 || scan.condition_call_count != 1) {
+  int is_synchronous =
+      scan.frame_while_count == 0 && scan.condition_call_count == 0;
+  int is_frame_continuation =
+      scan.frame_while_count == 1 && scan.condition_call_count == 1;
+  if (!is_synchronous && !is_frame_continuation) {
     diag_emit_tokf(
         DIAG_ERR_PARSER_INVALID_CONTEXT, fn->base.tok, "%s",
         scan.frame_while_count == 0
             ? "continuation entry requires one direct while(frame_condition()) loop"
             : "continuation entry permits exactly one frame condition call");
+    return 0;
+  }
+  if (is_frame_continuation && scan.frame_invalid_node) {
+    diag_emit_tokf(DIAG_ERR_PARSER_INVALID_CONTEXT,
+                   scan.frame_invalid_node->tok, "%s",
+                   scan.frame_invalid_reason);
     return 0;
   }
   ctx->continuation = options;
@@ -3637,6 +3656,7 @@ static int build_function(
   ctx->f = ir_func_new(ctx->m, ir_name, ir_name_len, ret_ty);
   if (ctx->continuation) {
     ctx->f->is_continuation_entry = 1;
+    ctx->f->continuation_has_suspend = ctx->continuation_while != NULL;
     ctx->f->continuation_entry_name = ir_strdup(ctx->continuation->entry);
     ctx->f->continuation_condition_name =
         ir_strdup(ctx->continuation->frame_condition);

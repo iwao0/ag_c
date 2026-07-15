@@ -198,6 +198,7 @@ typedef struct {
 enum {
   LINK_OPT_MAX_MEMORY = 1u << 0,
   LINK_OPT_MAX_TABLE = 1u << 1,
+  LINK_OPT_STDIO_WRITE_IMPORT = 1u << 2,
 };
 
 typedef struct {
@@ -206,6 +207,8 @@ typedef struct {
   uint32_t maximum_memory_pages;
   uint32_t stack_size;
   uint32_t maximum_table_elements;
+  uint64_t stdio_write_import_module_addr;
+  uint64_t stdio_write_import_name_addr;
 } linker_options_t;
 
 static linker_options_t default_linker_options(void) {
@@ -991,6 +994,16 @@ static int make_printf_stub_body(str_t name, type_t *type, buf_t *b) {
   buf_u8(b, 0x0b);      /* end block */
   buf_u8(b, 0x20);      /* local.get len */
   buf_uleb(b, len_local);
+  return 1;
+}
+
+static int make_host_write_memory_sink_body(str_t name, type_t *type,
+                                            buf_t *b) {
+  if (!str_eq_lit(name, "__agc_host_write")) return 0;
+  runtime_param_count(type, 3, name);
+  if (wasm_type_result_valtype(type) != 0x7f) return 0;
+  buf_uleb(b, 0);
+  emit_i32_from_param(b, type, 2);
   return 1;
 }
 
@@ -2385,6 +2398,7 @@ static unsigned char *make_runtime_stub_body(str_t name, type_t *type, size_t *o
   } else if (str_eq_lit(name, "__agc_runtime_trap")) {
     buf_uleb(&b, 0); /* local decl count */
     buf_u8(&b, 0x00); /* unreachable */
+  } else if (make_host_write_memory_sink_body(name, type, &b)) {
   } else if (make_printf_stub_body(name, type, &b)) {
   } else if (make_strlen_stub_body(name, type, &b)) {
   } else if (make_strcmp_stub_body(name, type, &b)) {
@@ -2668,7 +2682,9 @@ static void fill_main_wrapper_body(func_t *wrapper, type_t *main_type, int main_
   wrapper->body_len = b.len;
 }
 
-static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *runtime) {
+static void synthesize_runtime_object(object_t *objs, int obj_count,
+                                      object_t *runtime,
+                                      int use_memory_stdio_sink) {
   const char *runtime_path = "<ag_wasm_link_runtime>";
   runtime->path = str_dup(runtime_path, (int)strlen(runtime_path));
   runtime->code_section_index = -1;
@@ -2681,6 +2697,17 @@ static void synthesize_runtime_object(object_t *objs, int obj_count, object_t *r
           is_runtime_data_symbol(sym->name) &&
           !find_defined_data(objs, obj_count, sym->name, NULL, NULL, NULL)) {
         add_runtime_data_symbol(runtime, sym->name);
+      } else if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) &&
+                 use_memory_stdio_sink &&
+                 str_eq_lit(sym->name, "__agc_host_write") &&
+                 !find_defined_func(objs, obj_count, sym->name, NULL, NULL)) {
+        if (sym->index < 0 || sym->index >= o->func_count)
+          die("bad stdio host write symbol index");
+        int type_index = o->funcs[sym->index].type_index;
+        if (type_index < 0 || type_index >= o->type_count)
+          die("bad stdio host write type index");
+        add_runtime_func_symbol(objs, obj_count, runtime, sym->name,
+                                &o->types[type_index]);
       } else if (sym->kind == SYM_FUNCTION && (sym->flags & SYM_UNDEFINED) &&
                  is_unsupported_control_flow_symbol(sym->name) &&
                  !find_defined_func(objs, obj_count, sym->name, NULL, NULL)) {
@@ -3139,7 +3166,11 @@ static void build_module_into(buf_t *out, const export_spec_t *exports, int expo
   validate_continuation_metadata(objs, obj_count);
   object_t runtime;
   memset(&runtime, 0, sizeof(runtime));
-  if (use_stdlib) synthesize_runtime_object(objs, obj_count, &runtime);
+  if (use_stdlib) {
+    synthesize_runtime_object(
+        objs, obj_count, &runtime,
+        (options.flags & LINK_OPT_STDIO_WRITE_IMPORT) == 0);
+  }
   func_t *main_wrapper = NULL;
   maybe_add_main_wrapper(objs, obj_count,
                          export_list_contains(exports, export_count, "main") ? "main" : NULL,
@@ -3267,8 +3298,21 @@ static void build_module_into(buf_t *out, const export_spec_t *exports, int expo
   if (import_count > 0) {
     buf_uleb(&sec, (uint32_t)import_count);
     for (int i = 0; i < import_count; i++) {
-      buf_str(&sec, str_dup("env", 3));
-      buf_str(&sec, imports[i].name);
+      str_t import_module = str_dup("env", 3);
+      str_t import_name = imports[i].name;
+      if ((options.flags & LINK_OPT_STDIO_WRITE_IMPORT) &&
+          str_eq_lit(import_name, "__agc_host_write")) {
+        const char *module = (const char *)(uintptr_t)
+            options.stdio_write_import_module_addr;
+        const char *name = (const char *)(uintptr_t)
+            options.stdio_write_import_name_addr;
+        if (!module || !module[0] || !name || !name[0])
+          die("invalid stdio host write import option");
+        import_module = str_dup(module, (int)strlen(module));
+        import_name = str_dup(name, (int)strlen(name));
+      }
+      buf_str(&sec, import_module);
+      buf_str(&sec, import_name);
       buf_u8(&sec, 0);
       buf_uleb(&sec, (uint32_t)imports[i].type_index);
     }
@@ -3498,6 +3542,8 @@ static void usage(void) {
           "usage: ag_wasm_link [--nostdlib] --no-entry [--export=name ...] "
           "[--initial-memory-pages=N] [--maximum-memory-pages=N] "
           "[--stack-size=N] [--maximum-table-elements=N] "
+          "[--stdio-write-import-module=NAME] "
+          "[--stdio-write-import-name=NAME] "
           "-o out.wasm a.o b.o ...\n");
   exit(2);
 }
@@ -3533,6 +3579,8 @@ int main(int argc, char **argv) {
   int export_count = 0, export_cap = argc + 1;
   int use_stdlib = 1;
   linker_options_t options = default_linker_options();
+  const char *stdio_write_import_module = "env";
+  const char *stdio_write_import_name = "__agc_host_write";
   const char **inputs = xmalloc(((size_t)argc + 1) * sizeof(char *));
   int input_count = 0;
   for (int i = 1; i < argc; i++) {
@@ -3565,11 +3613,25 @@ int main(int argc, char **argv) {
       options.maximum_table_elements =
           parse_u32_option(argv[i] + 25, "--maximum-table-elements");
       options.flags |= LINK_OPT_MAX_TABLE;
+    } else if (strncmp(argv[i], "--stdio-write-import-module=", 28) == 0) {
+      stdio_write_import_module = argv[i] + 28;
+      if (!stdio_write_import_module[0]) usage();
+      options.flags |= LINK_OPT_STDIO_WRITE_IMPORT;
+    } else if (strncmp(argv[i], "--stdio-write-import-name=", 26) == 0) {
+      stdio_write_import_name = argv[i] + 26;
+      if (!stdio_write_import_name[0]) usage();
+      options.flags |= LINK_OPT_STDIO_WRITE_IMPORT;
     } else if (argv[i][0] == '-') {
       usage();
     } else {
       inputs[input_count++] = argv[i];
     }
+  }
+  if (options.flags & LINK_OPT_STDIO_WRITE_IMPORT) {
+    options.stdio_write_import_module_addr =
+        (uint64_t)(uintptr_t)stdio_write_import_module;
+    options.stdio_write_import_name_addr =
+        (uint64_t)(uintptr_t)stdio_write_import_name;
   }
   if (!out || input_count == 0) usage();
   const char *runtime_path = runtime_object_path();

@@ -227,6 +227,7 @@ export const AGC_RUNTIME_IMPORT_MANIFEST = Object.freeze({
         "truncl"
       ]),
       stdio: Object.freeze([
+        "__agc_host_write",
         "__agc_runtime_stderr_write",
         "__agc_runtime_stdout_write",
         "__error",

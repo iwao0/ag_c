@@ -312,6 +312,7 @@ typedef struct ir_func_t {
   ir_type_t param_abi_types[32];
   int continuation_condition_block_id;
   unsigned char is_continuation_entry;
+  unsigned char continuation_has_suspend;
 } ir_func_t;
 
 /* ------------------------------------------------------------------ */

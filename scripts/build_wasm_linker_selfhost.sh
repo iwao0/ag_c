@@ -24,6 +24,8 @@ mkdir -p "$(dirname "$runtime_obj")"
   tools/wasm_obj_linker/runtime/libagc_runtime_js.c)
 
 AGC_WASM_RUNTIME_OBJECT="$runtime_obj" "$root/build/ag_wasm_link" --no-entry \
+  --stdio-write-import-module=env \
+  --stdio-write-import-name=__agc_host_write \
   --export=agc_wasm_link_objects \
   --export=agc_wasm_link_objects_with_options \
   --export=agc_wasm_link_objects_with_resource_limits \

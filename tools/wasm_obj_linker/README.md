@@ -192,6 +192,37 @@ remain available through the fenv flag APIs.
 rejected by the linker with an explicit unsupported-control-flow error. They are
 not mapped to ordinary runtime functions.
 
+## Host Stdio
+
+Linked stdio uses one Wasm callback ABI for stdout and stderr:
+
+```c
+int __agc_host_write(int stream, const void *bytes, unsigned int length);
+```
+
+`stream` is `1` for stdout and `2` for stderr. The callback returns the accepted
+byte count or a negative value on failure. A short write is reported to C as an
+I/O failure. `printf`, `vprintf`, `fprintf`, `vfprintf`, `puts`, `fputs`,
+`putchar`, stdout/stderr `fwrite`, and `write(1/2, ...)` share this path.
+Memory-only formatting such as `snprintf` does not call the host.
+
+The JavaScript link API can select the final import module and name:
+
+```js
+const wasm = toolchain.compileLinkedWasm(source, {
+  stdio: {
+    writeImportModule: "host_io",
+    writeImportName: "write_bytes",
+  },
+});
+```
+
+The CLI equivalents are `--stdio-write-import-module=NAME` and
+`--stdio-write-import-name=NAME`. If no stdio import option is present, the
+linker selects the runtime's bounded in-memory stdout/stderr sink and emits no
+host import. `createAgcRuntimeImports` validates stream numbers, memory ranges,
+and the optional `stdio.maxWriteBytes` limit before accepting a write.
+
 ## Resumable Entry
 
 The JavaScript toolchain can turn one direct frame loop in an entry function
@@ -212,6 +243,11 @@ suspended, `3` is completed, and `-1` rejects an invalid start or resume.
 The `start`, `resume`, `status`, and `result` names can be overridden in the
 `continuation` option. Object files retain this contract in the
 `agc.continuation` custom section for link-time validation.
+
+An entry with no frame-condition call is also accepted. It executes once,
+returns status `3`, stores the C result, and rejects every later resume. Because
+there is no suspension point, ordinary automatic storage, VLA, `alloca`, and
+goto/label control flow keep their synchronous function semantics.
 
 ## Smoke Test
 

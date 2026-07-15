@@ -873,6 +873,10 @@ function makeStdio(options = {}) {
   const getMemory = options.getMemory || defaultGetMemory;
   const writeStdout = options.onStdout || defaultWrite;
   const writeStderr = options.onStderr || writeStdout;
+  const maxWriteBytes = options.maxWriteBytes ?? 0xffffffff;
+  if (!Number.isInteger(maxWriteBytes) || maxWriteBytes < 0 || maxWriteBytes > 0xffffffff) {
+    throw new RangeError("stdio.maxWriteBytes must be an unsigned 32-bit integer");
+  }
   const stdinBytes = normalizeBytes(options.stdin);
   let stdinOffset = 0;
   const stdinPushback = [];
@@ -1309,11 +1313,33 @@ function makeStdio(options = {}) {
   }
 
   function runtimeStdoutWrite(ptr, len) {
-    emitStdout(bytesToOutput(readMemoryBytes(getMemory(), ptr, len)));
+    return hostWrite(1, ptr, len);
   }
 
   function runtimeStderrWrite(ptr, len) {
-    emitStderr(bytesToOutput(readMemoryBytes(getMemory(), ptr, len)));
+    return hostWrite(2, ptr, len);
+  }
+
+  function hostWrite(stream, ptr, len) {
+    stream = Number(stream);
+    ptr = Number(ptr);
+    len = Number(len);
+    const memory = getMemory();
+    if ((stream !== 1 && stream !== 2) ||
+        !Number.isInteger(ptr) || ptr < 0 || ptr > 0xffffffff ||
+        !Number.isInteger(len) || len < 0 || len > maxWriteBytes ||
+        !memory || !memory.buffer || ptr + len > memory.buffer.byteLength) {
+      return -1;
+    }
+    if (len === 0) return 0;
+    const bytes = new Uint8Array(memory.buffer, ptr, len).slice();
+    const output = bytesToOutput(bytes);
+    if (stream === 2) {
+      emitStderr(output);
+    } else {
+      emitStdout(output);
+    }
+    return len;
   }
 
   return {
@@ -1348,6 +1374,7 @@ function makeStdio(options = {}) {
     __error,
     runtimeStdoutWrite,
     runtimeStderrWrite,
+    hostWrite,
   };
 }
 
@@ -1368,6 +1395,7 @@ export function createAgcRuntimeStdioEnvImports(options = {}) {
     ungetc: stdio.ungetc,
     __agc_runtime_stdout_write: stdio.runtimeStdoutWrite,
     __agc_runtime_stderr_write: stdio.runtimeStderrWrite,
+    __agc_host_write: stdio.hostWrite,
     fopen: stdio.fopen,
     fclose: stdio.fclose,
     fread: stdio.fread,

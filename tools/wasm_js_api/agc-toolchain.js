@@ -296,6 +296,19 @@ export async function createToolchain(options) {
         getMemory: () => memory,
       },
     });
+    const writeImportModule = linkOptions.stdio?.writeImportModule ?? "env";
+    const writeImportName = linkOptions.stdio?.writeImportName ?? "__agc_host_write";
+    const configuredWrite = runtimeImports[writeImportModule]?.[writeImportName];
+    if (typeof configuredWrite !== "function") {
+      const defaultWrite = runtimeImports.env?.__agc_host_write;
+      if (typeof defaultWrite !== "function") {
+        throw new Error("stdio host write callback is not configured");
+      }
+      runtimeImports[writeImportModule] = {
+        ...(runtimeImports[writeImportModule] || {}),
+        [writeImportName]: defaultWrite,
+      };
+    }
     const result = await WebAssembly.instantiate(wasm, runtimeImports);
     memory = result.instance.exports.memory;
     if (stdinBytes) {

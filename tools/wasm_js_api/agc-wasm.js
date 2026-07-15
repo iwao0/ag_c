@@ -246,6 +246,21 @@ export async function createCompiler(wasmSource, options = {}) {
     return decoder.decode(new Uint8Array(callbackMemory.buffer, p, n));
   }
   const envImports = {
+    __agc_host_write(stream, ptr, len) {
+      const n = Number(len);
+      if (n === 0) return 0;
+      const text = readCallbackBytes(ptr, len);
+      if (!text || (Number(stream) !== 1 && Number(stream) !== 2)) return -1;
+      if (Number(stream) === 2) {
+        if (typeof options.onStderr === "function") options.onStderr(text);
+        else stderrChunks.push(text);
+      } else if (typeof options.onStdout === "function") {
+        options.onStdout(text);
+      } else {
+        stdoutChunks.push(text);
+      }
+      return n;
+    },
     __agc_runtime_stdout_write(ptr, len) {
       const text = readCallbackBytes(ptr, len);
       if (!text) return;

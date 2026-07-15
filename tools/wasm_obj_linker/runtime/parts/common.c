@@ -107,10 +107,7 @@ void *__stdinp;
 void *__stdoutp = (void *)1;
 void *__stderrp = (void *)2;
 
-#ifdef AGC_RUNTIME_JS_CALLBACKS
-void __agc_runtime_stdout_write(long ptr_addr, long len);
-void __agc_runtime_stderr_write(long ptr_addr, long len);
-#endif
+int __agc_host_write(int stream, const void *bytes, unsigned int length);
 
 struct ag_rt_file {
   long pos;
@@ -610,23 +607,30 @@ static void ag_rt_stdout_reset_impl(void) {
   ag_rt_stdout_buf[0] = 0;
 }
 
-static void ag_rt_stdout_write_mem(const char *s, long n) {
-  if (!s || n <= 0) return;
-#ifdef AGC_RUNTIME_JS_CALLBACKS
-  __agc_runtime_stdout_write((long)s, n);
-#endif
+static long ag_rt_host_write(int stream, const char *s, long n) {
+  if (!s || n <= 0) return n == 0 ? 0 : -1;
+  if ((unsigned long)n > 0xffffffffu) return -1;
+  int accepted = __agc_host_write(stream, s, (unsigned int)n);
+  if (accepted < 0 || accepted > n) return -1;
+  return accepted;
+}
+
+static long ag_rt_stdout_write_mem(const char *s, long n) {
+  long accepted = ag_rt_host_write(1, s, n);
+  if (accepted < 0) return -1;
   long i = 0;
-  while (i < n && ag_rt_stdout_len + 1 < (long)sizeof(ag_rt_stdout_buf)) {
+  while (i < accepted && ag_rt_stdout_len + 1 < (long)sizeof(ag_rt_stdout_buf)) {
     ag_rt_stdout_buf[ag_rt_stdout_len++] = s[i++];
   }
   ag_rt_stdout_buf[ag_rt_stdout_len] = 0;
+  return accepted;
 }
 
-static void ag_rt_stdout_write_str(const char *s) {
+static long ag_rt_stdout_write_str(const char *s) {
   if (!s) s = "(null)";
   long n = 0;
   while (s[n]) n++;
-  ag_rt_stdout_write_mem(s, n);
+  return ag_rt_stdout_write_mem(s, n);
 }
 
 static void ag_rt_stderr_reset_impl(void) {
@@ -634,28 +638,27 @@ static void ag_rt_stderr_reset_impl(void) {
   ag_rt_stderr_buf[0] = 0;
 }
 
-static void ag_rt_stderr_write_mem(const char *s, long n) {
-  if (!s || n <= 0) return;
-#ifdef AGC_RUNTIME_JS_CALLBACKS
-  __agc_runtime_stderr_write((long)s, n);
-#endif
+static long ag_rt_stderr_write_mem(const char *s, long n) {
+  long accepted = ag_rt_host_write(2, s, n);
+  if (accepted < 0) return -1;
   long i = 0;
-  while (i < n && ag_rt_stderr_len + 1 < (long)sizeof(ag_rt_stderr_buf)) {
+  while (i < accepted && ag_rt_stderr_len + 1 < (long)sizeof(ag_rt_stderr_buf)) {
     ag_rt_stderr_buf[ag_rt_stderr_len++] = s[i++];
   }
   ag_rt_stderr_buf[ag_rt_stderr_len] = 0;
+  return accepted;
 }
 
-static void ag_rt_stderr_write_str(const char *s) {
+static long ag_rt_stderr_write_str(const char *s) {
   if (!s) s = "(null)";
   long n = 0;
   while (s[n]) n++;
-  ag_rt_stderr_write_mem(s, n);
+  return ag_rt_stderr_write_mem(s, n);
 }
 
-static void ag_rt_stderr_write_char(int ch) {
+static long ag_rt_stderr_write_char(int ch) {
   char c = (char)ch;
-  ag_rt_stderr_write_mem(&c, 1);
+  return ag_rt_stderr_write_mem(&c, 1);
 }
 
 long __agc_runtime_stdout_ptr(void) {
