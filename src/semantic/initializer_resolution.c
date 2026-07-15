@@ -10,9 +10,29 @@
 
 static int initializer_type_size(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
-  return ps_type_sizeof_id_for_target(
-      semantic_types, type_id, target);
+  return record_layouts
+             ? ps_type_sizeof_id_with_records(
+                   semantic_types, record_layouts, type_id, target)
+             : ps_type_sizeof_id_for_target(
+                   semantic_types, type_id, target);
+}
+
+static int initializer_member_offset(
+    const psx_record_layout_table_t *record_layouts,
+    const psx_type_t *aggregate_type, const ag_target_info_t *target,
+    int member_index, const tag_member_info_t *member) {
+  if (!member) return 0;
+  if (!record_layouts) return member->offset;
+  if (!aggregate_type ||
+      aggregate_type->record_id == PSX_RECORD_ID_INVALID)
+    return -1;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, aggregate_type->record_id, target);
+  const psx_record_member_layout_t *member_layout =
+      psx_record_layout_member(layout, member_index);
+  return member_layout ? member_layout->offset : -1;
 }
 
 static long long resolve_designator_index(
@@ -54,9 +74,10 @@ static int aggregate_member_index_by_name(
   return -1;
 }
 
-psx_initializer_target_t psx_resolve_initializer_designator_path(
+psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
     ag_diagnostic_context_t *diagnostics,
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *layout_target,
     const psx_initializer_entry_t *entry, psx_type_id_t root_type_id,
     int root_relative_offset, token_t *fallback_tok) {
@@ -104,7 +125,8 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       target.relative_offset +=
           (int)index *
               initializer_type_size(
-                  semantic_types, element_type_id, layout_target);
+                  semantic_types, record_layouts,
+                  element_type_id, layout_target);
       target.type = target.type->base;
       target.type_id = element_type_id;
       target.direct_member = NULL;
@@ -131,13 +153,26 @@ psx_initializer_target_t psx_resolve_initializer_designator_path(
       target.union_member_index = member_index;
     }
     const tag_member_info_t *member = &definition->members[member_index];
-    target.relative_offset += member->offset;
+    target.relative_offset += initializer_member_offset(
+        record_layouts, aggregate_type, layout_target,
+        member_index, member);
     target.type = ps_tag_member_decl_type(member);
     target.type_id = psx_semantic_type_table_record_member(
         semantic_types, target.type_id, member_index).type_id;
     target.direct_member = member;
   }
   return target;
+}
+
+psx_initializer_target_t psx_resolve_initializer_designator_path(
+    ag_diagnostic_context_t *diagnostics,
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *layout_target,
+    const psx_initializer_entry_t *entry, psx_type_id_t root_type_id,
+    int root_relative_offset, token_t *fallback_tok) {
+  return psx_resolve_initializer_designator_path_with_records(
+      diagnostics, semantic_types, NULL, layout_target, entry,
+      root_type_id, root_relative_offset, fallback_tok);
 }
 
 static int append_scalar_leaf(
@@ -162,11 +197,13 @@ static int append_scalar_leaf(
 
 static int canonical_definition_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id);
 
 static int canonical_member_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, const tag_member_info_t *member,
     psx_type_id_t member_type_id) {
   if (!member || ps_tag_member_is_unnamed_struct(member)) return 0;
@@ -181,7 +218,7 @@ static int canonical_member_flat_slot_count(
       semantic_types, aggregate_type_id);
   if (aggregate_type && aggregate_type->aggregate_definition) {
     per = canonical_definition_flat_slot_count(
-        semantic_types, target, aggregate_type_id);
+        semantic_types, record_layouts, target, aggregate_type_id);
   }
   int count = ps_type_array_flat_element_count(member_type);
   return count > 0 ? count * per : per;
@@ -189,6 +226,7 @@ static int canonical_member_flat_slot_count(
 
 static int canonical_definition_flat_slot_count(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target,
     psx_type_id_t aggregate_type_id) {
   const psx_type_t *aggregate_type = psx_semantic_type_table_lookup(
@@ -205,10 +243,10 @@ static int canonical_definition_flat_slot_count(
     psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
         semantic_types, aggregate_type_id, i).type_id;
     int member_slots = canonical_member_flat_slot_count(
-        semantic_types, target, member, member_type_id);
+        semantic_types, record_layouts, target, member, member_type_id);
     if (definition->tag_kind == TK_UNION) {
       int bytes = initializer_type_size(
-          semantic_types, member_type_id, target);
+          semantic_types, record_layouts, member_type_id, target);
       if (bytes > union_max_bytes ||
           (bytes == union_max_bytes && member_slots > slots)) {
         union_max_bytes = bytes;
@@ -217,23 +255,26 @@ static int canonical_definition_flat_slot_count(
       continue;
     }
     if (ps_tag_member_is_unnamed_struct(member)) continue;
+    int member_offset = initializer_member_offset(
+        record_layouts, aggregate_type, target, i, member);
     if (covered_union_size > 0 &&
-        member->offset >= covered_union_offset &&
-        member->offset < covered_union_offset + covered_union_size) {
+        member_offset >= covered_union_offset &&
+        member_offset < covered_union_offset + covered_union_size) {
       continue;
     }
     slots += member_slots;
     if (ps_tag_member_is_unnamed_union(member)) {
-      covered_union_offset = member->offset;
+      covered_union_offset = member_offset;
       covered_union_size = initializer_type_size(
-          semantic_types, member_type_id, target);
+          semantic_types, record_layouts, member_type_id, target);
     }
   }
   return slots > 0 ? slots : 1;
 }
 
-int psx_collect_initializer_scalar_leaves(
+static int collect_initializer_scalar_leaves(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *target, psx_type_id_t type_id,
     int relative_offset,
     psx_initializer_scalar_leaf_list_t *list) {
@@ -244,7 +285,7 @@ int psx_collect_initializer_scalar_leaves(
     psx_type_id_t child_type_id = psx_semantic_type_table_base(
         semantic_types, type_id).type_id;
     int child_size = initializer_type_size(
-        semantic_types, child_type_id, target);
+        semantic_types, record_layouts, child_type_id, target);
     if (type->base && type->base->kind != PSX_TYPE_ARRAY &&
         !ps_type_is_tag_aggregate(type->base)) {
       for (int i = 0; i < type->array_len; i++) {
@@ -257,8 +298,8 @@ int psx_collect_initializer_scalar_leaves(
       return 1;
     }
     for (int i = 0; i < type->array_len; i++) {
-      if (!psx_collect_initializer_scalar_leaves(
-              semantic_types, target, child_type_id,
+      if (!collect_initializer_scalar_leaves(
+              semantic_types, record_layouts, target, child_type_id,
               relative_offset + i * child_size, list))
         return 0;
     }
@@ -278,9 +319,10 @@ int psx_collect_initializer_scalar_leaves(
             psx_semantic_type_table_record_member(
                 semantic_types, type_id, i).type_id;
         int bytes = initializer_type_size(
-            semantic_types, candidate_type_id, target);
+            semantic_types, record_layouts, candidate_type_id, target);
         int slots = canonical_member_flat_slot_count(
-            semantic_types, target, candidate, candidate_type_id);
+            semantic_types, record_layouts, target,
+            candidate, candidate_type_id);
         if (bytes > max_bytes || (bytes == max_bytes && slots > max_slots)) {
           first_member = i;
           max_bytes = bytes;
@@ -292,27 +334,29 @@ int psx_collect_initializer_scalar_leaves(
     int covered_end = -1;
     for (int i = first_member; i < member_count; i++) {
       const tag_member_info_t *member = &definition->members[i];
-      if (type->kind == PSX_TYPE_STRUCT && member->offset < covered_end)
+      int member_offset = initializer_member_offset(
+          record_layouts, type, target, i, member);
+      if (type->kind == PSX_TYPE_STRUCT && member_offset < covered_end)
         continue;
       const psx_type_t *member_type = ps_tag_member_decl_type(member);
       psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
           semantic_types, type_id, i).type_id;
       if (member_type && (member_type->kind == PSX_TYPE_ARRAY ||
                           ps_type_is_tag_aggregate(member_type))) {
-        if (!psx_collect_initializer_scalar_leaves(
-                semantic_types, target, member_type_id,
-                relative_offset + member->offset, list))
+        if (!collect_initializer_scalar_leaves(
+                semantic_types, record_layouts, target, member_type_id,
+                relative_offset + member_offset, list))
           return 0;
       } else if (!append_scalar_leaf(
                      list, member_type, member_type_id,
-                     relative_offset + member->offset,
+                     relative_offset + member_offset,
                      member, NULL, PSX_TYPE_ID_INVALID, 0)) {
         return 0;
       }
       if (type->kind == PSX_TYPE_STRUCT && member->len <= 0) {
         int member_size = initializer_type_size(
-            semantic_types, member_type_id, target);
-        int end = member->offset + member_size;
+            semantic_types, record_layouts, member_type_id, target);
+        int end = member_offset + member_size;
         if (member_size > 0 && end > covered_end) covered_end = end;
       }
     }
@@ -323,8 +367,28 @@ int psx_collect_initializer_scalar_leaves(
       NULL, PSX_TYPE_ID_INVALID, 0);
 }
 
-int psx_initializer_leaf_cursor_after_target(
+int psx_collect_initializer_scalar_leaves_with_records(
     const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_id_t type_id,
+    int relative_offset, psx_initializer_scalar_leaf_list_t *list) {
+  if (!record_layouts) return 0;
+  return collect_initializer_scalar_leaves(
+      semantic_types, record_layouts, target, type_id,
+      relative_offset, list);
+}
+
+int psx_collect_initializer_scalar_leaves(
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *target, psx_type_id_t type_id,
+    int relative_offset, psx_initializer_scalar_leaf_list_t *list) {
+  return collect_initializer_scalar_leaves(
+      semantic_types, NULL, target, type_id, relative_offset, list);
+}
+
+int psx_initializer_leaf_cursor_after_target_with_records(
+    const psx_semantic_type_table_t *semantic_types,
+    const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *layout_target,
     const psx_initializer_scalar_leaf_list_t *leaves,
     const psx_initializer_target_t *target) {
@@ -339,7 +403,7 @@ int psx_initializer_leaf_cursor_after_target(
     }
   }
   int target_size = initializer_type_size(
-      semantic_types, target->type_id, layout_target);
+      semantic_types, record_layouts, target->type_id, layout_target);
   if (target_size <= 0) target_size = 1;
   int end_offset = target->relative_offset + target_size;
   int cursor = 0;
@@ -347,6 +411,15 @@ int psx_initializer_leaf_cursor_after_target(
          leaves->items[cursor].relative_offset < end_offset)
     cursor++;
   return cursor;
+}
+
+int psx_initializer_leaf_cursor_after_target(
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *layout_target,
+    const psx_initializer_scalar_leaf_list_t *leaves,
+    const psx_initializer_target_t *target) {
+  return psx_initializer_leaf_cursor_after_target_with_records(
+      semantic_types, NULL, layout_target, leaves, target);
 }
 
 void psx_initializer_scalar_leaf_list_dispose(

@@ -27,8 +27,9 @@ static ag_diagnostic_context_t *diagnostics(
 static int lowering_type_size(
     const psx_lowering_context_t *lowering_context,
     const psx_type_t *type) {
-  return ps_type_sizeof_id_for_target(
+  return ps_type_sizeof_id_with_records(
       ps_lowering_semantic_types(lowering_context),
+      ps_lowering_record_layouts(lowering_context),
       ps_lowering_type_id(lowering_context, type),
       ps_lowering_target(lowering_context));
 }
@@ -246,9 +247,10 @@ static void lower_array_list(
     psx_initializer_entry_t *entry = &list->entries[i];
     token_t *tok = entry->tok ? entry->tok : lowering->fallback_tok;
     psx_initializer_target_t target = entry->designator_count > 0
-        ? psx_resolve_initializer_designator_path(
+        ? psx_resolve_initializer_designator_path_with_records(
               diagnostics(lowering),
               ps_lowering_semantic_types(lowering->lowering_context),
+              ps_lowering_record_layouts(lowering->lowering_context),
               ps_lowering_target(lowering->lowering_context), entry,
               ps_lowering_type_id(
                   lowering->lowering_context, context_type),
@@ -298,8 +300,9 @@ static void lower_array_list(
     } else {
       write_scalar_value(lowering, &target, entry->value, tok);
     }
-    cursor = psx_initializer_leaf_cursor_after_target(
+    cursor = psx_initializer_leaf_cursor_after_target_with_records(
         ps_lowering_semantic_types(lowering->lowering_context),
+        ps_lowering_record_layouts(lowering->lowering_context),
         ps_lowering_target(lowering->lowering_context),
         &lowering->leaves, &target);
   }
@@ -333,8 +336,9 @@ int lower_static_object_initializer(
       .global = global,
       .fallback_tok = fallback_tok,
   };
-  if (!psx_collect_initializer_scalar_leaves(
+  if (!psx_collect_initializer_scalar_leaves_with_records(
           ps_lowering_semantic_types(lowering_context),
+          ps_lowering_record_layouts(lowering_context),
           ps_lowering_target(lowering_context),
           ps_gvar_decl_type_id(global), 0,
           &lowering.leaves) || lowering.leaves.count <= 0) {

@@ -2500,7 +2500,13 @@ if (!initializerTargetType ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
-    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /member_layout\s*\?\s*member_layout->offset\s*:\s*member->offset/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_storage_size\s*\(/.test(
@@ -3217,7 +3223,15 @@ for (const [name, source] of [
   ["static data initializer", explicitDiagnosticStaticDataInitializerSource],
   ["translation unit data", translationUnitDataLoweringSource],
 ]) {
-  if (!/\bps_type_sizeof_id_for_target\s*\(/.test(source) ||
+  const requiresRecordLayouts = [
+    "initializer",
+    "static data initializer",
+    "translation unit data",
+  ].includes(name);
+  const requiredLayoutCall = requiresRecordLayouts
+    ? /\bps_type_sizeof_id_with_records\s*\(/
+    : /\bps_type_sizeof_id_for_target\s*\(/;
+  if (!requiredLayoutCall.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
     throw new Error(
       `${name} lowering must obtain target layout through an interned TypeId`,
@@ -3239,6 +3253,9 @@ if (!automaticLocalPipeline ||
   );
 }
 if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      loweringRuntimeHeader,
+    ) ||
+    !/\bconst\s+psx_record_layout_table_t\s*\*\s*record_layouts\s*;/.test(
       loweringRuntimeHeader,
     ) ||
     /\bpsx_semantic_context_t\b/.test(loweringRuntimeHeader) ||
@@ -3598,7 +3615,7 @@ if (!/\btype_size_id\s*\(\s*lowering\s*,\s*ps_gvar_decl_type_id\s*\(\s*global\s*
     !/\bpsx_type_id_t\s+type_id\s*=\s*ps_gvar_decl_type_id\s*\(\s*ctx->global\s*\)\s*;/.test(
       translationUnitDataLoweringSource,
     ) ||
-    !/\bpsx_collect_initializer_scalar_leaves\s*\([\s\S]*?\bps_gvar_decl_type_id\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
+    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bps_gvar_decl_type_id\s*\(\s*global\s*\)\s*,\s*0\s*,/.test(
       staticDataInitializerSource,
     )) {
   throw new Error(

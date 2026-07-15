@@ -38,16 +38,22 @@ typedef struct {
 static int type_size_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_sizeof_id_for_target(
-      lowering ? lowering->semantic_types : NULL, type_id,
+  return ps_type_sizeof_id_with_records(
+      lowering ? lowering->semantic_types : NULL,
+      lowering && lowering->semantic_context
+          ? ps_ctx_record_layout_table_in(lowering->semantic_context) : NULL,
+      type_id,
       lowering ? lowering->target : NULL);
 }
 
 static int type_alignment_id(
     const translation_unit_data_lowering_t *lowering,
     psx_type_id_t type_id) {
-  return ps_type_alignof_id_for_target(
-      lowering ? lowering->semantic_types : NULL, type_id,
+  return ps_type_alignof_id_with_records(
+      lowering ? lowering->semantic_types : NULL,
+      lowering && lowering->semantic_context
+          ? ps_ctx_record_layout_table_in(lowering->semantic_context) : NULL,
+      type_id,
       lowering ? lowering->target : NULL);
 }
 
@@ -273,8 +279,10 @@ static int lower_global_slots(
   global_data_lowering_t *ctx = user;
   psx_initializer_scalar_leaf_list_t leaves = {0};
   psx_type_id_t type_id = ps_gvar_decl_type_id(ctx->global);
-  if (!psx_collect_initializer_scalar_leaves(
-          ctx->lowering->semantic_types, ctx->lowering->target,
+  if (!psx_collect_initializer_scalar_leaves_with_records(
+          ctx->lowering->semantic_types,
+          ps_ctx_record_layout_table_in(ctx->lowering->semantic_context),
+          ctx->lowering->target,
           type_id, 0, &leaves)) {
     return 0;
   }

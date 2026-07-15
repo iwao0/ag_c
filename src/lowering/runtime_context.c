@@ -40,6 +40,17 @@ const psx_semantic_type_table_t *ps_lowering_semantic_types(
   return ctx ? ctx->semantic_types : NULL;
 }
 
+void ps_lowering_context_bind_record_layouts(
+    psx_lowering_context_t *ctx,
+    const psx_record_layout_table_t *record_layouts) {
+  if (ctx) ctx->record_layouts = record_layouts;
+}
+
+const psx_record_layout_table_t *ps_lowering_record_layouts(
+    const psx_lowering_context_t *ctx) {
+  return ctx ? ctx->record_layouts : NULL;
+}
+
 psx_type_id_t ps_lowering_type_id(
     const psx_lowering_context_t *ctx, const psx_type_t *type) {
   return psx_semantic_type_table_find(

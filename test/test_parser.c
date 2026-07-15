@@ -5790,6 +5790,7 @@ static void test_static_data_initializer_boundary() {
        .decl_type = pair},
   };
   psx_aggregate_definition_t union_definition = {
+      .record_id = 0xfacdu,
       .tag_kind = TK_UNION,
       .tag_name = (char *)"InitUnion",
       .tag_len = 9,
@@ -5801,6 +5802,16 @@ static void test_static_data_initializer_boundary() {
   psx_type_t *union_type = ps_type_new_tag(
       TK_UNION, union_definition.tag_name, union_definition.tag_len, 0, 8);
   union_type->aggregate_definition = &union_definition;
+  union_type->record_id = union_definition.record_id;
+  const psx_record_member_layout_t union_layout_members[2] = {
+      {.offset = 0}, {.offset = 0},
+  };
+  ASSERT_TRUE(psx_record_layout_table_define(
+      (psx_record_layout_table_t *)ps_ctx_record_layout_table_in(
+          test_semantic_context()),
+      union_definition.record_id,
+      ps_ctx_target_info(test_semantic_context()), 8, 8,
+      union_layout_members, 2));
   node_num_t union_index = {0};
   union_index.base.kind = ND_NUM;
   union_index.val = 1;

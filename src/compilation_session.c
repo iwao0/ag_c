@@ -88,6 +88,9 @@ int ag_compilation_session_init(
   ps_lowering_context_bind_semantic_types(
       session->lowering_context,
       ps_ctx_semantic_type_table_in(session->semantic_context));
+  ps_lowering_context_bind_record_layouts(
+      session->lowering_context,
+      ps_ctx_record_layout_table_in(session->semantic_context));
   session->codegen_emit_context = cg_context_create(
       session->diagnostic_context);
   if (!session->semantic_context || !session->global_registry ||
@@ -120,6 +123,7 @@ int ag_compilation_session_is_complete(
          session->parser_runtime_context &&
          session->lowering_context &&
          ps_lowering_semantic_types(session->lowering_context) &&
+         ps_lowering_record_layouts(session->lowering_context) &&
          session->codegen_emit_context &&
          (session->target.pointer_size == 4 ||
           session->target.pointer_size == 8);
