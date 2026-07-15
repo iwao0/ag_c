@@ -110,6 +110,7 @@ static void refresh_cached_tag_definition(
   definition->tag_kind = tag->kind;
   definition->tag_name = tag->name;
   definition->tag_len = tag->len;
+  definition->is_complete = tag->is_complete ? 1 : 0;
   definition->size = tag->size;
   definition->align = tag->align;
   definition->member_count = member_count;
@@ -166,6 +167,7 @@ struct psx_semantic_context_t {
   arena_context_t *arena_context;
   ag_diagnostic_context_t *diagnostic_context;
   ag_target_info_t target;
+  psx_record_id_t next_record_id;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -181,6 +183,15 @@ struct psx_semantic_context_t {
   int scope_depth;
   int aggregate_member_decl_order;
 };
+
+static psx_record_id_t allocate_record_id(
+    psx_semantic_context_t *context) {
+  if (!context) return PSX_RECORD_ID_INVALID;
+  context->next_record_id++;
+  if (context->next_record_id == PSX_RECORD_ID_INVALID)
+    context->next_record_id++;
+  return context->next_record_id;
+}
 
 static void *ctx_calloc_in(
     psx_semantic_context_t *context, size_t count, size_t size) {
@@ -656,6 +667,9 @@ psx_type_t *ps_ctx_clone_tag_type_at_in_contexts(
               context->arena_context, kind, name, len,
               tag->scope_depth + 1, tag->size);
     type->aggregate_definition = tag->definition;
+    type->record_id = tag->definition
+                          ? tag->definition->record_id
+                          : PSX_RECORD_ID_INVALID;
     if (tag->align > 0) type->align = tag->align;
     return type;
   }
@@ -709,6 +723,13 @@ int ps_ctx_register_tag_type_in_contexts(
   context->tags_by_bucket[bucket] = t;
   t->next_all = context->tags_all;
   context->tags_all = t;
+  if (kind == TK_STRUCT || kind == TK_UNION) {
+    t->definition = ctx_calloc_in(
+        context, 1, sizeof(psx_aggregate_definition_t));
+    if (!t->definition) return 0;
+    t->definition->record_id = allocate_record_id(context);
+    refresh_cached_tag_definition(context, t);
+  }
   if (t->is_complete) {
     refresh_registered_member_type_completeness_in(context);
     (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
@@ -756,6 +777,8 @@ const psx_aggregate_definition_t *ps_ctx_get_tag_definition_in(
       ctx_calloc_in(context, 1, sizeof(psx_aggregate_definition_t));
   if (!definition) return NULL;
   tag->definition = definition;
+  if (kind == TK_STRUCT || kind == TK_UNION)
+    definition->record_id = allocate_record_id(context);
   refresh_cached_tag_definition(context, tag);
   return definition;
 }
@@ -892,6 +915,8 @@ void ps_ctx_attach_aggregate_definitions_in(
     type->aggregate_definition = ps_ctx_get_tag_definition_in(
         context, type->tag_kind, type->tag_name, type->tag_len);
   }
+  if (ps_type_is_tag_aggregate(type) && type->aggregate_definition)
+    type->record_id = type->aggregate_definition->record_id;
   if (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY ||
       type->kind == PSX_TYPE_FUNCTION) {
     ps_ctx_attach_aggregate_definitions_in(

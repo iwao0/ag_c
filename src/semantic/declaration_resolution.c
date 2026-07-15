@@ -28,6 +28,9 @@ static psx_type_t *resolve_tag_base_type(
       scope_depth >= 0 ? scope_depth + 1 : 0, size);
   type->aggregate_definition = ps_ctx_get_tag_definition_in(
       semantic_context, kind, name, name_len);
+  type->record_id = type->aggregate_definition
+                        ? type->aggregate_definition->record_id
+                        : PSX_RECORD_ID_INVALID;
   if (type->aggregate_definition && type->aggregate_definition->align > 0)
     type->align = type->aggregate_definition->align;
   return type;

@@ -12,6 +12,10 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b) {
   if (!a || !b || a->tag_kind != b->tag_kind || a->tag_len != b->tag_len)
     return 0;
+  psx_record_id_t a_id = ps_type_record_id(a);
+  psx_record_id_t b_id = ps_type_record_id(b);
+  if (a_id != PSX_RECORD_ID_INVALID && b_id != PSX_RECORD_ID_INVALID)
+    return a_id == b_id;
   if (a->aggregate_definition && b->aggregate_definition &&
       a->aggregate_definition == b->aggregate_definition)
     return 1;
@@ -24,6 +28,15 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
     return 0;
   return a->tag_scope_depth_p1 == 0 || b->tag_scope_depth_p1 == 0 ||
          a->tag_scope_depth_p1 == b->tag_scope_depth_p1;
+}
+
+psx_record_id_t ps_type_record_id(const psx_type_t *type) {
+  if (!type || !ps_type_is_tag_aggregate(type))
+    return PSX_RECORD_ID_INVALID;
+  if (type->record_id != PSX_RECORD_ID_INVALID) return type->record_id;
+  return type->aggregate_definition
+             ? type->aggregate_definition->record_id
+             : PSX_RECORD_ID_INVALID;
 }
 
 typedef struct psx_type_validation_path_t psx_type_validation_path_t;

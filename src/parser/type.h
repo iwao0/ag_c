@@ -38,15 +38,24 @@ typedef enum {
 struct tag_member_info_t;
 typedef struct arena_context_t arena_context_t;
 
-typedef struct psx_aggregate_definition_t {
+typedef unsigned int psx_record_id_t;
+
+#define PSX_RECORD_ID_INVALID ((psx_record_id_t)0)
+
+typedef struct psx_record_decl_t {
+  psx_record_id_t record_id;
   token_kind_t tag_kind;
   char *tag_name;
   int tag_len;
+  unsigned char is_complete;
   int size;
   int align;
   int member_count;
   const struct tag_member_info_t *members;
-} psx_aggregate_definition_t;
+} psx_record_decl_t;
+
+/* Transitional name for initializer APIs while record ownership migrates. */
+typedef psx_record_decl_t psx_aggregate_definition_t;
 
 struct psx_type_t {
   psx_type_kind_t kind;
@@ -62,6 +71,7 @@ struct psx_type_t {
   char *tag_name;
   int tag_len;
   int tag_scope_depth_p1;
+  psx_record_id_t record_id;
   const psx_aggregate_definition_t *aggregate_definition;
 
   unsigned int is_unsigned : 1;
@@ -131,6 +141,7 @@ const psx_type_t *ps_type_find_aggregate_object_type(
     const psx_type_t *type);
 int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b);
+psx_record_id_t ps_type_record_id(const psx_type_t *type);
 int ps_type_is_well_formed(const psx_type_t *type);
 const struct tag_member_info_t *ps_type_find_aggregate_member(
     const psx_type_t *type, token_kind_t tag_kind,

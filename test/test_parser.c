@@ -3860,6 +3860,9 @@ static void test_tag_declaration_resolution_boundary() {
       ps_ctx_get_tag_definition_in(test_semantic_context(),
           TK_STRUCT, (char *)"__TagBoundary", 13);
   ASSERT_TRUE(cached_definition != NULL);
+  ASSERT_TRUE(cached_definition->record_id != PSX_RECORD_ID_INVALID);
+  ASSERT_TRUE(!cached_definition->is_complete);
+  psx_record_id_t outer_record_id = cached_definition->record_id;
   ASSERT_EQ(0, cached_definition->align);
 
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
@@ -3871,6 +3874,8 @@ static void test_tag_declaration_resolution_boundary() {
             ps_ctx_get_tag_definition_in(test_semantic_context(),
                 TK_STRUCT, (char *)"__TagBoundary", 13));
   ASSERT_EQ(1, cached_definition->align);
+  ASSERT_TRUE(cached_definition->is_complete);
+  ASSERT_EQ(outer_record_id, cached_definition->record_id);
   psx_resolve_tag_declaration(&request, &resolution);
   ASSERT_EQ(PSX_TAG_DECLARATION_REDEFINITION, resolution.status);
 
@@ -3887,6 +3892,11 @@ static void test_tag_declaration_resolution_boundary() {
   ASSERT_EQ(PSX_TAG_DECLARATION_OK, resolution.status);
   ASSERT_TRUE(resolution.registered);
   ASSERT_EQ(1, resolution.scope_depth);
+  const psx_aggregate_definition_t *shadow_definition =
+      ps_ctx_get_tag_definition_in(test_semantic_context(),
+          TK_STRUCT, (char *)"__TagBoundary", 13);
+  ASSERT_TRUE(shadow_definition != NULL);
+  ASSERT_TRUE(shadow_definition->record_id != outer_record_id);
   request.mode = PSX_TAG_DECLARATION_DEFINITION;
   request.alignment = 1;
   psx_resolve_tag_declaration(&request, &resolution);
@@ -3908,6 +3918,8 @@ static void test_aggregate_definition_ownership_boundary() {
   const psx_aggregate_definition_t *first =
       ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(first != NULL);
+  ASSERT_TRUE(first->record_id != PSX_RECORD_ID_INVALID);
+  ASSERT_TRUE(!first->is_complete);
   ASSERT_EQ(0, first->member_count);
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
@@ -3925,6 +3937,7 @@ static void test_aggregate_definition_ownership_boundary() {
               ps_ctx_get_tag_definition_in(test_semantic_context(),
                   TK_STRUCT, tag_name, tag_name_len));
   ASSERT_EQ(1, first->member_count);
+  ASSERT_TRUE(first->is_complete);
   ASSERT_TRUE(first->members != NULL);
   ASSERT_EQ(5, first->members[0].len);
   ASSERT_EQ(4, ps_type_sizeof(first->members[0].decl_type));
@@ -3942,6 +3955,19 @@ static void test_aggregate_definition_ownership_boundary() {
       ps_ctx_get_tag_definition_in(test_semantic_context(), TK_STRUCT, tag_name, tag_name_len);
   ASSERT_TRUE(second != NULL);
   ASSERT_TRUE(second != first);
+  ASSERT_TRUE(second->record_id != first->record_id);
+  psx_type_t first_type = {
+      .kind = PSX_TYPE_STRUCT,
+      .tag_kind = TK_STRUCT,
+      .tag_name = tag_name,
+      .tag_len = tag_name_len,
+      .record_id = first->record_id,
+      .aggregate_definition = first,
+  };
+  psx_type_t second_type = first_type;
+  second_type.record_id = second->record_id;
+  second_type.aggregate_definition = second;
+  ASSERT_TRUE(!ps_type_tag_identity_matches(&first_type, &second_type));
   ASSERT_EQ(1, second->member_count);
   ASSERT_EQ(5, second->members[0].len);
   ASSERT_TRUE(first->members == first_members);

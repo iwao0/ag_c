@@ -2890,8 +2890,8 @@ for (const functionName of [
 const canonicalTypeStruct = typeSource.match(
   /struct psx_type_t\s*\{([\s\S]*?)\n\};/,
 );
-const aggregateDefinitionStruct = typeSource.match(
-  /typedef struct psx_aggregate_definition_t\s*\{([\s\S]*?)\}\s*psx_aggregate_definition_t\s*;/,
+const recordDeclStruct = typeSource.match(
+  /typedef struct psx_record_decl_t\s*\{([\s\S]*?)\}\s*psx_record_decl_t\s*;/,
 );
 if (!canonicalTypeStruct ||
     !/\bconst\s+psx_type_t\s*\*\s*base\s*;/.test(
@@ -2903,13 +2903,36 @@ if (!canonicalTypeStruct ||
     !/\bconst\s+psx_aggregate_definition_t\s*\*\s*aggregate_definition\s*;/.test(
       canonicalTypeStruct[1],
     ) ||
-    !aggregateDefinitionStruct ||
+    !/\bpsx_record_id_t\s+record_id\s*;/.test(canonicalTypeStruct[1]) ||
+    !recordDeclStruct ||
+    !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||
+    !/\bunsigned\s+char\s+is_complete\s*;/.test(recordDeclStruct[1]) ||
     !/\bconst\s+struct\s+tag_member_info_t\s*\*\s*members\s*;/.test(
-      aggregateDefinitionStruct[1],
+      recordDeclStruct[1],
     )) {
   throw new Error(
-    "canonical recursive type children and aggregate definitions must be exposed as const views",
+    "canonical recursive types must expose const record declarations with stable identity and explicit completeness",
   );
+}
+
+const typeLayoutSource = await readFile("src/type_layout.c", "utf8");
+if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
+    /out->is_complete\s*=\s*type->aggregate_definition->align/.test(
+      typeLayoutSource,
+    )) {
+  throw new Error(
+    "record completeness must come from RecordDecl rather than target layout",
+  );
+}
+
+const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
+const tagIdentityFunction = canonicalTypeSource.match(
+  /int\s+ps_type_tag_identity_matches\s*\([^]*?\n\}/,
+);
+if (!tagIdentityFunction ||
+    !/ps_type_record_id\s*\(\s*a\s*\)/.test(tagIdentityFunction[0]) ||
+    !/ps_type_record_id\s*\(\s*b\s*\)/.test(tagIdentityFunction[0])) {
+  throw new Error("tag identity must prefer stable RecordId values");
 }
 
 const semanticContextSource = await readFile(
@@ -3142,5 +3165,5 @@ if (astTypeOwnershipViolations.length) {
 }
 
 console.log(
-  "design invariants: ok (IR/backend isolation and read-only canonical type ownership verified)",
+  "design invariants: ok (IR/backend isolation, canonical type ownership, and record identity verified)",
 );

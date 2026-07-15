@@ -41,7 +41,7 @@ static int layout_of(
         out->alignment = type->aggregate_definition->align > 0
                              ? type->aggregate_definition->align
                              : 1;
-        out->is_complete = type->aggregate_definition->align > 0;
+        out->is_complete = type->aggregate_definition->is_complete;
         return 1;
       }
       out->size = type->size;
