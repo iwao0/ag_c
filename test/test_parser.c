@@ -1711,10 +1711,25 @@ static void expect_parse_ok_with_message(const char *input, const char *needle) 
 
 static void test_expr_number() {
   printf("test_expr_number...\n");
-    node_t *node = parse_expr_input("42");
+  node_t *node = parse_expr_input("42");
   ASSERT_EQ(ND_NUM, node->kind);
   ASSERT_EQ(42, as_num(node)->val);
   ASSERT_EQ(TK_EOF, tk_get_current_token()->kind);
+
+  node_t *long_node = parse_expr_input("0L");
+  ASSERT_EQ(ND_NUM, long_node->kind);
+  ASSERT_EQ(TK_LONG, ps_node_get_type(long_node)->scalar_kind);
+  ASSERT_EQ(8, ps_node_type_size(long_node));
+
+  node_t *unsigned_long_node = parse_expr_input("0UL");
+  ASSERT_EQ(ND_NUM, unsigned_long_node->kind);
+  ASSERT_EQ(TK_LONG, ps_node_get_type(unsigned_long_node)->scalar_kind);
+  ASSERT_TRUE(ps_node_is_unsigned_type(unsigned_long_node));
+
+  node_t *long_long_node = parse_expr_input("0LL");
+  ASSERT_EQ(ND_NUM, long_long_node->kind);
+  ASSERT_EQ(TK_LONG, ps_node_get_type(long_long_node)->scalar_kind);
+  ASSERT_TRUE(ps_node_is_long_long_type(long_long_node));
 }
 
 static void test_expr_float() {

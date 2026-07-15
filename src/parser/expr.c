@@ -1041,8 +1041,9 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
     int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
     int int_size = is_long ? 8 : 4;
     psx_type_t *literal_type = ps_type_new_integer_in(
-        ctx->arena_context, is_unsigned ? TK_UNSIGNED : TK_INT, int_size,
-        is_unsigned);
+        ctx->arena_context,
+        is_long ? TK_LONG : (is_unsigned ? TK_UNSIGNED : TK_INT),
+        int_size, is_unsigned);
     literal_type->is_long_long = is_long_long ? 1 : 0;
     ps_node_bind_type((node_t *)node, literal_type);
   } else {
