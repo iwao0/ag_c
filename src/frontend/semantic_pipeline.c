@@ -42,7 +42,7 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   current_function->lvars = ps_decl_get_locals_in(local_registry);
   psx_emit_semantic_warnings(
-      ps_ctx_diagnostics(semantic_context), function, current_function,
+      semantic_context, function, current_function,
       fallback_diag_tok);
   psx_emit_unreachable_warnings(
       semantic_context, function, fallback_diag_tok);

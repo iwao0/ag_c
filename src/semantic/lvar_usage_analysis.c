@@ -7,7 +7,7 @@
 
 static int is_aggregate_lvar(node_t *node) {
   return node && node->kind == ND_LVAR &&
-         ps_node_aggregate_value_size(node) > 0;
+         ps_type_is_tag_aggregate(ps_node_get_type(node));
 }
 
 static node_t *assigned_aggregate_lvar_from_member_base(node_t *base);

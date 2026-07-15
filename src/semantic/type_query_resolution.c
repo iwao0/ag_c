@@ -277,7 +277,6 @@ void psx_resolve_sizeof_query_in_contexts(
   }
   int size = type ? query_type_size(semantic_context, type) : 0;
   if (type && type->kind == PSX_TYPE_VOID) size = 1;
-  if (size <= 0 && query->operand) size = ps_node_type_size(query->operand);
   query->resolved_size = size > 0 ? size : 8;
 }
 

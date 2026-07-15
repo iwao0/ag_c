@@ -293,6 +293,13 @@ const parserSourceFiles = allSourceFiles.filter(
 const parserLayerSource = (
   await Promise.all(parserSourceFiles.map((path) => readFile(path, "utf8")))
 ).join("\n");
+if (/\bps_node_(?:type|storage_type|deref|aggregate_value)_size\s*\(/.test(
+      explicitSemanticLayerSource,
+    )) {
+  throw new Error(
+    "semantic passes must classify types or query target layout instead of reading parser node sizes",
+  );
+}
 const parserContextLifecycleFiles = new Set([
   "src/parser/semantic_ctx.c",
   "src/parser/semantic_ctx.h",

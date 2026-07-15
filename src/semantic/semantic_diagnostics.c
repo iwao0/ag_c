@@ -3,6 +3,7 @@
 #include "../diag/diag.h"
 #include "../parser/lvar_public.h"
 #include "../parser/node_utils.h"
+#include "../parser/semantic_ctx.h"
 
 #include <string.h>
 
@@ -43,16 +44,19 @@ static void warn_float_to_int(
 }
 
 static void warn_decl_initializer_overflow(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *lhs, node_t *rhs,
     const token_t *tok) {
   if (!lhs || !rhs || lhs->kind != ND_LVAR || rhs->kind != ND_NUM) return;
   if (node_fp_kind(lhs) != TK_FLOAT_KIND_NONE ||
       node_fp_kind(rhs) != TK_FLOAT_KIND_NONE ||
-      ps_node_value_is_pointer_like(lhs) || ps_node_aggregate_value_size(lhs) > 0)
+      ps_node_value_is_pointer_like(lhs) ||
+      ps_type_is_tag_aggregate(ps_node_get_type(lhs)))
     return;
   const psx_type_t *lhs_type = ps_node_get_type(lhs);
   if (lhs_type && lhs_type->kind == PSX_TYPE_BOOL) return;
-  int type_size = ps_node_type_size(lhs);
+  int type_size = ps_ctx_type_sizeof_in(
+      semantic_context, lhs_type);
   if (type_size <= 0 || type_size >= 4) return;
 
   long long value = ((node_num_t *)rhs)->val;
@@ -76,6 +80,7 @@ static void warn_decl_initializer_overflow(
 }
 
 static void warn_assignment(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || node->kind != ND_ASSIGN ||
@@ -107,7 +112,8 @@ static void warn_assignment(
     }
   }
   if (node->is_decl_initializer)
-    warn_decl_initializer_overflow(diagnostics, lhs, rhs, tok);
+    warn_decl_initializer_overflow(
+        semantic_context, diagnostics, lhs, rhs, tok);
 }
 
 static void warn_return(
@@ -310,6 +316,7 @@ static int is_plain_int_literal(node_t *node) {
 }
 
 static void warn_arithmetic(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     const token_t *fallback) {
   if (!node || node->source_op == TK_EOF) return;
@@ -334,7 +341,12 @@ static void warn_arithmetic(
   if ((node->source_op == TK_SHL || node->source_op == TK_SHR) &&
       node->rhs && node->rhs->kind == ND_NUM) {
     long long amount = ((node_num_t *)node->rhs)->val;
-    int width = node->lhs && ps_node_type_size(node->lhs) >= 8 ? 64 : 32;
+    int width = node->lhs &&
+                        ps_ctx_type_sizeof_in(
+                            semantic_context,
+                            ps_node_get_type(node->lhs)) >= 8
+                    ? 64
+                    : 32;
     if (amount < 0 || amount >= width) {
       diag_warn_tokf_in(diagnostics,
           DIAG_WARN_PARSER_SHIFT_OUT_OF_RANGE, tok,
@@ -395,13 +407,15 @@ static void warn_condition(
 }
 
 static void emit_node_warning(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
   switch (node->kind) {
     case ND_ASSIGN:
-      warn_assignment(diagnostics, node, fallback_diag_tok);
+      warn_assignment(
+          semantic_context, diagnostics, node, fallback_diag_tok);
       break;
     case ND_RETURN:
       warn_return(diagnostics, node, current_func, fallback_diag_tok);
@@ -423,7 +437,8 @@ static void emit_node_warning(
     case ND_MOD:
     case ND_SHL:
     case ND_SHR:
-      warn_arithmetic(diagnostics, node, fallback_diag_tok);
+      warn_arithmetic(
+          semantic_context, diagnostics, node, fallback_diag_tok);
       break;
     case ND_FUNCDEF:
     case ND_FUNCALL:
@@ -439,49 +454,58 @@ static void emit_node_warning(
 }
 
 static void emit_warning_tree(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok);
 
 static void emit_warning_array(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t **nodes,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!nodes) return;
   for (int i = 0; nodes[i]; i++)
     emit_warning_tree(
-        diagnostics, nodes[i], current_func, fallback_diag_tok);
+        semantic_context, diagnostics, nodes[i], current_func,
+        fallback_diag_tok);
 }
 
 static void emit_warning_tree(
+    psx_semantic_context_t *semantic_context,
     ag_diagnostic_context_t *diagnostics, node_t *node,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
   if (!node) return;
-  emit_node_warning(diagnostics, node, current_func, fallback_diag_tok);
+  emit_node_warning(
+      semantic_context, diagnostics, node, current_func,
+      fallback_diag_tok);
   switch (node->kind) {
     case ND_BLOCK:
       emit_warning_array(
-          diagnostics, ((node_block_t *)node)->body, current_func,
-          fallback_diag_tok);
+          semantic_context, diagnostics, ((node_block_t *)node)->body,
+          current_func, fallback_diag_tok);
       return;
     case ND_FUNCDEF: {
       node_function_definition_t *function =
           (node_function_definition_t *)node;
       emit_warning_array(
-          diagnostics, function->parameters, function, fallback_diag_tok);
+          semantic_context, diagnostics, function->parameters, function,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, node->rhs, function, fallback_diag_tok);
+          semantic_context, diagnostics, node->rhs, function,
+          fallback_diag_tok);
       return;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
       emit_warning_tree(
-          diagnostics, call->callee, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, call->callee, current_func,
+          fallback_diag_tok);
       for (int i = 0; i < call->argument_count; i++)
         emit_warning_tree(
-            diagnostics, call->arguments[i], current_func,
-            fallback_diag_tok);
+            semantic_context, diagnostics, call->arguments[i],
+            current_func, fallback_diag_tok);
       return;
     }
     case ND_IF:
@@ -490,30 +514,40 @@ static void emit_warning_tree(
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
       emit_warning_tree(
-          diagnostics, control->init, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, control->init, current_func,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, node->lhs, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, node->lhs, current_func,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, node->rhs, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, node->rhs, current_func,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, control->inc, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, control->inc, current_func,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, control->els, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, control->els, current_func,
+          fallback_diag_tok);
       return;
     }
     default:
       emit_warning_tree(
-          diagnostics, node->lhs, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, node->lhs, current_func,
+          fallback_diag_tok);
       emit_warning_tree(
-          diagnostics, node->rhs, current_func, fallback_diag_tok);
+          semantic_context, diagnostics, node->rhs, current_func,
+          fallback_diag_tok);
       return;
   }
 }
 
 void psx_emit_semantic_warnings(
-    ag_diagnostic_context_t *diagnostics, node_t *root,
+    psx_semantic_context_t *semantic_context, node_t *root,
     node_function_definition_t *current_func,
     const token_t *fallback_diag_tok) {
+  ag_diagnostic_context_t *diagnostics =
+      ps_ctx_diagnostics(semantic_context);
   emit_warning_tree(
-      diagnostics, root, current_func, fallback_diag_tok);
+      semantic_context, diagnostics, root, current_func,
+      fallback_diag_tok);
 }
