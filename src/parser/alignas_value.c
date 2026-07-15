@@ -3,32 +3,46 @@
 #include "semantic_ctx.h"
 #include "../tokenizer/tokenizer.h"
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
-static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
+static inline token_t *curtok(tokenizer_context_t *tokenizer_context) {
+  return tk_get_current_token_ctx(tokenizer_context);
+}
 
-int psx_parse_alignas_value_in_context(
-    psx_semantic_context_t *semantic_context) {
-  tk_expect('(');
+static inline void set_curtok(
+    tokenizer_context_t *tokenizer_context, token_t *tok) {
+  tk_set_current_token_ctx(tokenizer_context, tok);
+}
+
+int psx_parse_alignas_value_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context) {
+  if (!semantic_context || !tokenizer_context) return 1;
+  tk_expect_ctx(tokenizer_context, '(');
   int val = 1;
-  if (psx_ctx_is_type_token(curtok()->kind) ||
-      psx_ctx_is_typedef_name_token_in(semantic_context, curtok())) {
+  if (psx_ctx_is_type_token(curtok(tokenizer_context)->kind) ||
+      psx_ctx_is_typedef_name_token_in(
+          semantic_context, curtok(tokenizer_context))) {
     int elem_size = 8;
-    if (curtok()->kind == TK_IDENT) {
-      token_ident_t *identifier = (token_ident_t *)curtok();
+    if (curtok(tokenizer_context)->kind == TK_IDENT) {
+      token_ident_t *identifier =
+          (token_ident_t *)curtok(tokenizer_context);
       psx_ctx_find_typedef_sizeof_in(
           semantic_context, identifier->str, identifier->len,
           &elem_size);
     } else {
-      psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+      psx_ctx_get_type_info(
+          curtok(tokenizer_context)->kind, NULL, &elem_size);
     }
     val = elem_size;
-    while (curtok()->kind != TK_RPAREN && curtok()->kind != TK_EOF) set_curtok(curtok()->next);
+    while (curtok(tokenizer_context)->kind != TK_RPAREN &&
+           curtok(tokenizer_context)->kind != TK_EOF)
+      set_curtok(
+          tokenizer_context, curtok(tokenizer_context)->next);
   } else {
-    long long v = psx_parse_enum_const_expr_in_context(
-        semantic_context);
+    long long v = psx_parse_enum_const_expr_in_contexts(
+        semantic_context, tokenizer_context);
     val = (v > 0) ? (int)v : 1;
   }
-  tk_expect(')');
+  tk_expect_ctx(tokenizer_context, ')');
   return val;
 }
 
@@ -36,28 +50,24 @@ int psx_eval_parsed_alignas_value_in_context(
     psx_semantic_context_t *semantic_context,
     token_t *start, token_t *end) {
   if (!start || !end) return 1;
-  token_t *saved_token = curtok();
-  set_curtok(start);
   int value = 1;
-  if (psx_ctx_is_type_token(curtok()->kind) ||
-      psx_ctx_is_typedef_name_token_in(semantic_context, curtok())) {
+  if (psx_ctx_is_type_token(start->kind) ||
+      psx_ctx_is_typedef_name_token_in(
+          semantic_context, start)) {
     int elem_size = 8;
-    if (curtok()->kind == TK_IDENT) {
-      token_ident_t *identifier = (token_ident_t *)curtok();
+    if (start->kind == TK_IDENT) {
+      token_ident_t *identifier = (token_ident_t *)start;
       psx_ctx_find_typedef_sizeof_in(
           semantic_context, identifier->str, identifier->len,
           &elem_size);
     } else {
-      psx_ctx_get_type_info(curtok()->kind, NULL, &elem_size);
+      psx_ctx_get_type_info(start->kind, NULL, &elem_size);
     }
     value = elem_size;
-    set_curtok(end);
   } else {
     long long parsed = psx_eval_parsed_enum_const_expr_in_context(
         semantic_context, start, end);
     value = parsed > 0 ? (int)parsed : 1;
   }
-  if (curtok() != end) set_curtok(end);
-  set_curtok(saved_token);
   return value;
 }

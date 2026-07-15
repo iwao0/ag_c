@@ -16261,7 +16261,7 @@ static void test_compilation_session_registry_isolation() {
                "_Static_assert(sizeof(FirstType) == 4, \"ok\"); "
                "} *); }");
   tk_set_current_token_ctx(&first.tokenizer, nested_context_tokens);
-  ASSERT_TRUE(ag_compilation_session_activate(&first));
+  ASSERT_TRUE(ag_compilation_session_is_active(&second));
   psx_parsed_aggregate_body_t nested_context_body;
   psx_parse_aggregate_body_with_options(
       &nested_context_body,
@@ -16271,7 +16271,6 @@ static void test_compilation_session_registry_isolation() {
           .local_registry = first.local_registry,
           .runtime_context = first.parser_runtime_context,
       });
-  ASSERT_TRUE(ag_compilation_session_deactivate(&first));
   ASSERT_TRUE(ag_compilation_session_is_active(&second));
   ASSERT_EQ(1, nested_context_body.item_count);
   psx_parsed_declarator_t *nested_context_callback =

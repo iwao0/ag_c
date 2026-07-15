@@ -3,6 +3,7 @@
 #include "diag.h"
 #include "dynarray.h"
 #include "local_registry.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../pragma_pack.h"
@@ -11,12 +12,21 @@
 #include <stdlib.h>
 #include <string.h>
 
-static token_t *current_token(void) { return tk_get_current_token(); }
+static tokenizer_context_t *tokenizer(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_tokenizer(runtime_context);
+}
+
+static token_t *current_token(
+    psx_parser_runtime_context_t *runtime_context) {
+  return tk_get_current_token_ctx(tokenizer(runtime_context));
+}
 
 static psx_parsed_aggregate_item_t *append_aggregate_item(
-    psx_parsed_aggregate_body_t *body) {
+    psx_parsed_aggregate_body_t *body,
+    psx_parser_runtime_context_t *runtime_context) {
   if (body->item_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(), "aggregate-syntax",
+    ps_diag_ctx(current_token(runtime_context), "aggregate-syntax",
                  "aggregate declaration limit exceeded");
   }
   if (body->item_count == body->item_capacity) {
@@ -31,9 +41,10 @@ static psx_parsed_aggregate_item_t *append_aggregate_item(
 }
 
 static psx_parsed_declarator_t *append_aggregate_declarator(
-    psx_parsed_aggregate_member_declaration_t *declaration) {
+    psx_parsed_aggregate_member_declaration_t *declaration,
+    psx_parser_runtime_context_t *runtime_context) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(), "aggregate-syntax",
+    ps_diag_ctx(current_token(runtime_context), "aggregate-syntax",
                  "aggregate declarator limit exceeded");
   }
   if (declaration->declarator_count == declaration->declarator_capacity) {
@@ -56,14 +67,18 @@ void psx_parse_aggregate_body_with_options(
     const psx_decl_specifier_syntax_options_t *options) {
   if (!body) return;
   if (!options || !options->semantic_context || !options->global_registry ||
-      !options->local_registry || !options->runtime_context) {
-    ps_diag_ctx(current_token(), "aggregate-syntax",
+      !options->local_registry || !options->runtime_context ||
+      !tokenizer(options->runtime_context)) {
+    ps_diag_ctx(NULL, "aggregate-syntax",
                 "parser contexts must be provided explicitly");
   }
+  psx_parser_runtime_context_t *runtime_context = options->runtime_context;
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   memset(body, 0, sizeof(*body));
-  while (!tk_consume('}')) {
-    psx_parsed_aggregate_item_t *item = append_aggregate_item(body);
-    if (current_token()->kind == TK_STATIC_ASSERT) {
+  while (!tk_consume_ctx(tk_ctx, '}')) {
+    psx_parsed_aggregate_item_t *item =
+        append_aggregate_item(body, runtime_context);
+    if (current_token(runtime_context)->kind == TK_STATIC_ASSERT) {
       item->kind = PSX_PARSED_AGGREGATE_STATIC_ASSERT;
       psx_parse_static_assert_syntax_in_contexts(
           &item->value.static_assertion,
@@ -83,7 +98,7 @@ void psx_parse_aggregate_body_with_options(
         options->runtime_context);
     for (;;) {
       psx_parsed_declarator_t *declarator =
-          append_aggregate_declarator(declaration);
+          append_aggregate_declarator(declaration, runtime_context);
       psx_parse_declarator_syntax_tree_into_with_typedef_lookup_in_contexts(
           declarator, options ? options->semantic_context : NULL,
           options ? options->global_registry : NULL,
@@ -91,12 +106,14 @@ void psx_parse_aggregate_body_with_options(
           options ? options->runtime_context : NULL,
           options ? options->is_typedef_name : NULL,
           options ? options->context : NULL);
-      int has_comma = tk_consume(',');
+      int has_comma = tk_consume_ctx(tk_ctx, ',');
       if (!declarator->identifier && !declarator->has_bitfield && has_comma)
-        ps_diag_missing(current_token(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+        ps_diag_missing(
+            current_token(runtime_context),
+            diag_text_for(DIAG_TEXT_MEMBER_NAME));
       if (!has_comma) break;
     }
-    tk_expect(';');
+    tk_expect_ctx(tk_ctx, ';');
   }
 }
 

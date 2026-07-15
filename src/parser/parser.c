@@ -66,13 +66,18 @@ psx_float_lit_view_t ps_float_lit_view(const float_lit_t *lit) {
 }
 
 static token_kind_t parse_atomic_type_specifier(
-    psx_semantic_context_t *semantic_context);
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context);
 static void psx_type_spec_result_reset(psx_type_spec_result_t *out);
 static void skip_cv_qualifiers_into_ex(
     psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax);
 static inline token_t *curtok(void);
 static inline void set_curtok(token_t *tok);
+static inline token_t *curtok_in(tokenizer_context_t *tokenizer_context);
+static inline void set_curtok_in(
+    tokenizer_context_t *tokenizer_context, token_t *tok);
 
 bool psx_is_decl_prefix_token(token_kind_t k) {
   return k == TK_CONST || k == TK_VOLATILE || k == TK_EXTERN || k == TK_STATIC ||
@@ -105,10 +110,15 @@ void psx_skip_gnu_attributes_at(token_t **t) {
 }
 
 void psx_skip_gnu_attributes(void) {
-  while (psx_is_gnu_attribute_token(curtok())) {
-    token_t *t = curtok();
+  psx_skip_gnu_attributes_ctx(tk_context_active());
+}
+
+void psx_skip_gnu_attributes_ctx(
+    tokenizer_context_t *tokenizer_context) {
+  while (psx_is_gnu_attribute_token(curtok_in(tokenizer_context))) {
+    token_t *t = curtok_in(tokenizer_context);
     psx_skip_gnu_attributes_at(&t);
-    set_curtok(t);
+    set_curtok_in(tokenizer_context, t);
   }
 }
 
@@ -120,8 +130,19 @@ static inline void set_curtok(token_t *tok) {
   tk_set_current_token(tok);
 }
 
+static inline token_t *curtok_in(
+    tokenizer_context_t *tokenizer_context) {
+  return tk_get_current_token_ctx(tokenizer_context);
+}
+
+static inline void set_curtok_in(
+    tokenizer_context_t *tokenizer_context, token_t *tok) {
+  tk_set_current_token_ctx(tokenizer_context, tok);
+}
+
 static void skip_cv_qualifiers_into_ex(
     psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
   psx_type_spec_result_reset(out);
   /* C11 6.7.1p2: 宣言指定子に storage class 指定子は高々 1 個。
@@ -129,41 +150,53 @@ static void skip_cv_qualifiers_into_ex(
   int storage_count = 0;
   int saw_thread_local = 0;
   token_t *first_storage_tok = NULL;
-  while (psx_is_decl_prefix_token(curtok()->kind)) {
-    if (curtok()->kind == TK_CONST) out->is_const_qualified = 1;
-    if (curtok()->kind == TK_VOLATILE) out->is_volatile_qualified = 1;
-    if (curtok()->kind == TK_EXTERN) out->is_extern = 1;
-    if (curtok()->kind == TK_STATIC) out->is_static = 1;
-    if (curtok()->kind == TK_EXTERN || curtok()->kind == TK_STATIC ||
-        curtok()->kind == TK_AUTO || curtok()->kind == TK_REGISTER) {
-      if (!first_storage_tok) first_storage_tok = curtok();
+  while (psx_is_decl_prefix_token(curtok_in(tokenizer_context)->kind)) {
+    if (curtok_in(tokenizer_context)->kind == TK_CONST)
+      out->is_const_qualified = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_VOLATILE)
+      out->is_volatile_qualified = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_EXTERN) out->is_extern = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_STATIC) out->is_static = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_EXTERN ||
+        curtok_in(tokenizer_context)->kind == TK_STATIC ||
+        curtok_in(tokenizer_context)->kind == TK_AUTO ||
+        curtok_in(tokenizer_context)->kind == TK_REGISTER) {
+      if (!first_storage_tok)
+        first_storage_tok = curtok_in(tokenizer_context);
       storage_count++;
     }
-    if (curtok()->kind == TK_THREAD_LOCAL) saw_thread_local = 1;
-    if (curtok()->kind == TK_ALIGNAS) {
+    if (curtok_in(tokenizer_context)->kind == TK_THREAD_LOCAL)
+      saw_thread_local = 1;
+    if (curtok_in(tokenizer_context)->kind == TK_ALIGNAS) {
       if (syntax && syntax->consume_alignas) {
-        syntax->consume_alignas(syntax->context, out);
+        syntax->consume_alignas(
+            syntax->consume_alignas_context, out);
         continue;
       }
-      set_curtok(curtok()->next);
-      if (curtok()->kind != TK_LPAREN) {
-        ps_diag_ctx(curtok(), "decl", "%s",
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
+      if (curtok_in(tokenizer_context)->kind != TK_LPAREN) {
+        ps_diag_ctx(curtok_in(tokenizer_context), "decl", "%s",
                      diag_message_for(DIAG_ERR_PARSER_ALIGNAS_LPAREN_REQUIRED));
       }
-      int av = psx_parse_alignas_value_in_context(semantic_context);
+      int av = psx_parse_alignas_value_in_contexts(
+          semantic_context, tokenizer_context);
       if (av > out->alignas_value) out->alignas_value = av;
       continue;
     }
-    if (curtok()->kind == TK_ATOMIC && curtok()->next && curtok()->next->kind == TK_LPAREN) {
+    if (curtok_in(tokenizer_context)->kind == TK_ATOMIC &&
+        curtok_in(tokenizer_context)->next &&
+        curtok_in(tokenizer_context)->next->kind == TK_LPAREN) {
       return;
     }
-    if (curtok()->kind == TK_ATOMIC) {
+    if (curtok_in(tokenizer_context)->kind == TK_ATOMIC) {
       out->is_atomic = 1;
     }
-    if (curtok()->kind == TK_THREAD_LOCAL) {
+    if (curtok_in(tokenizer_context)->kind == TK_THREAD_LOCAL) {
       out->is_thread_local = 1;
     }
-    set_curtok(curtok()->next);
+    set_curtok_in(
+        tokenizer_context, curtok_in(tokenizer_context)->next);
   }
   /* storage class が 2 個以上同時指定されているとエラー。
    * `_Thread_local` 単独は storage_count に数えていないので
@@ -173,31 +206,36 @@ static void skip_cv_qualifiers_into_ex(
                  "storage class 指定子は1つまでです (C11 6.7.1p2)");
   }
   (void)saw_thread_local;
-  psx_skip_gnu_attributes();
+  psx_skip_gnu_attributes_ctx(tokenizer_context);
 }
 
 static token_kind_t parse_atomic_type_specifier(
-    psx_semantic_context_t *semantic_context) {
-  if (curtok()->kind != TK_ATOMIC) return TK_EOF;
-  set_curtok(curtok()->next);
-  if (!tk_consume('(')) {
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context) {
+  if (curtok_in(tokenizer_context)->kind != TK_ATOMIC) return TK_EOF;
+  set_curtok_in(
+      tokenizer_context, curtok_in(tokenizer_context)->next);
+  if (!tk_consume_ctx(tokenizer_context, '(')) {
     // qualifier-form: "_Atomic int" は前置指定子として扱う
     return TK_EOF;
   }
   psx_type_spec_result_t inner_spec;
-  token_kind_t inner = psx_consume_type_kind_ex(
-      semantic_context, &inner_spec);
+  token_kind_t inner = psx_consume_type_kind_in_contexts(
+      semantic_context, tokenizer_context, &inner_spec);
   if (inner == TK_EOF) {
-    ps_diag_ctx(curtok(), "decl", "%s",
+    ps_diag_ctx(curtok_in(tokenizer_context), "decl", "%s",
                  diag_message_for(DIAG_ERR_PARSER_ATOMIC_TYPE_NAME_REQUIRED));
   }
   // Minimal support for derived declarators in _Atomic(type), e.g. _Atomic(int*).
-  while (tk_consume('*')) {
-    while (curtok()->kind == TK_CONST || curtok()->kind == TK_VOLATILE || curtok()->kind == TK_RESTRICT) {
-      set_curtok(curtok()->next);
+  while (tk_consume_ctx(tokenizer_context, '*')) {
+    while (curtok_in(tokenizer_context)->kind == TK_CONST ||
+           curtok_in(tokenizer_context)->kind == TK_VOLATILE ||
+           curtok_in(tokenizer_context)->kind == TK_RESTRICT) {
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
     }
   }
-  tk_expect(')');
+  tk_expect_ctx(tokenizer_context, ')');
   return inner;
 }
 
@@ -389,8 +427,10 @@ static void psx_type_spec_result_reset(psx_type_spec_result_t *out) {
   out->kind = TK_EOF;
 }
 
-static void emit_invalid_type_spec_diag(void) {
-  diag_emit_tokf(DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok(), "%s",
+static void emit_invalid_type_spec_diag(
+    tokenizer_context_t *tokenizer_context) {
+  diag_emit_tokf(
+      DIAG_ERR_PARSER_INVALID_TYPE_SPEC, curtok_in(tokenizer_context), "%s",
                  diag_message_for(DIAG_ERR_PARSER_INVALID_TYPE_SPEC));
 }
 
@@ -398,7 +438,9 @@ static void emit_invalid_type_spec_diag(void) {
 /* 後置 cv/atomic 修飾子トークンを 1 つ消費する。const/volatile/restrict/atomic
  * いずれも同じ「対応 flag を立てて trailing トークンを進める」パターンなので
  * 集約する。消費したら 1、該当しなければ 0 (呼出側で loop を抜ける)。 */
-static int try_consume_post_cv_qualifier(psx_type_spec_result_t *out, token_kind_t k) {
+static int try_consume_post_cv_qualifier(
+    tokenizer_context_t *tokenizer_context,
+    psx_type_spec_result_t *out, token_kind_t k) {
   switch (k) {
     case TK_CONST:    out->is_const_qualified = 1; break;
     case TK_VOLATILE: out->is_volatile_qualified = 1; break;
@@ -406,7 +448,8 @@ static int try_consume_post_cv_qualifier(psx_type_spec_result_t *out, token_kind
     case TK_ATOMIC:   out->is_atomic = 1; break;
     default: return 0;
   }
-  set_curtok(curtok()->next);
+  set_curtok_in(
+      tokenizer_context, curtok_in(tokenizer_context)->next);
   return 1;
 }
 
@@ -425,34 +468,45 @@ static token_kind_t resolve_type_kind_from_flags(int saw_void, int saw_float, in
   return TK_INT;
 }
 
-token_kind_t psx_consume_type_kind_ex(
+token_kind_t psx_consume_type_kind_in_contexts(
     psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out) {
+  psx_type_spec_syntax_t syntax = {
+      .tokenizer_context = tokenizer_context,
+  };
   return psx_consume_type_kind_with_syntax_ex(
-      semantic_context, out, NULL);
+      semantic_context, out, &syntax);
 }
 
 token_kind_t psx_consume_type_kind_with_syntax_ex(
     psx_semantic_context_t *semantic_context,
     psx_type_spec_result_t *out, const psx_type_spec_syntax_t *syntax) {
-  if (!semantic_context) return TK_EOF;
+  if (!semantic_context || !syntax || !syntax->tokenizer_context)
+    return TK_EOF;
+  tokenizer_context_t *tokenizer_context = syntax->tokenizer_context;
   psx_type_spec_result_t local;
   if (!out) out = &local;
-  skip_cv_qualifiers_into_ex(semantic_context, out, syntax);
-  if (curtok()->kind == TK_ATOMIC && curtok()->next && curtok()->next->kind == TK_LPAREN) {
+  skip_cv_qualifiers_into_ex(
+      semantic_context, tokenizer_context, out, syntax);
+  if (curtok_in(tokenizer_context)->kind == TK_ATOMIC &&
+      curtok_in(tokenizer_context)->next &&
+      curtok_in(tokenizer_context)->next->kind == TK_LPAREN) {
     out->is_atomic = 1;
-    token_kind_t inner = parse_atomic_type_specifier(semantic_context);
+    token_kind_t inner = parse_atomic_type_specifier(
+        semantic_context, tokenizer_context);
     if (inner != TK_EOF) {
       out->kind = inner;
       return inner;
     }
   }
   // qualifier-form: _Atomic int x;
-  if (curtok()->kind == TK_ATOMIC) {
+  if (curtok_in(tokenizer_context)->kind == TK_ATOMIC) {
     out->is_atomic = 1;
-    set_curtok(curtok()->next);
+    set_curtok_in(
+        tokenizer_context, curtok_in(tokenizer_context)->next);
   }
-  token_t *start = curtok();
+  token_t *start = curtok_in(tokenizer_context);
   int saw_signed = 0;
   int saw_unsigned = 0;
   int long_count = 0;
@@ -467,105 +521,117 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
   int saw_imaginary = 0;
 
   while (true) {
-    token_kind_t k = curtok()->kind;
+    token_kind_t k = curtok_in(tokenizer_context)->kind;
     if (k == TK_COMPLEX) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_complex = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_IMAGINARY) {
       if (saw_complex || saw_imaginary || saw_void || saw_char || saw_short || saw_int || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_imaginary = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_SIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_signed = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_UNSIGNED) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_unsigned = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_LONG) {
       if (saw_char || saw_short || saw_void || saw_float || saw_bool || long_count >= 2) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       long_count++;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_SHORT) {
       if (saw_char || saw_short || long_count || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_short = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_INT) {
       if (saw_int || saw_char || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_int = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_CHAR) {
       if (saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_char = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_VOID) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_float || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_void = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_FLOAT) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_double || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_float = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_DOUBLE) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || saw_int || saw_void || saw_float || saw_bool) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_double = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     if (k == TK_BOOL) {
       if (saw_signed || saw_unsigned || saw_char || saw_short || long_count || saw_int || saw_void || saw_float || saw_double) {
-        emit_invalid_type_spec_diag();
+        emit_invalid_type_spec_diag(tokenizer_context);
       }
       saw_bool = 1;
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     // 後置 cv 修飾子（int const, volatile int const など）は同じ形なので集約。
-    if (try_consume_post_cv_qualifier(out, k)) continue;
+    if (try_consume_post_cv_qualifier(tokenizer_context, out, k)) continue;
     /* C11 6.7p1: declaration-specifiers の順序は任意。型指定子の後ろに storage class
      * (static / extern / auto / register / inline / _Noreturn / _Thread_local / _Alignas) が
      * 来てもよい (`int static x = 5;` 等)。ここで遭遇したら skip_cv_qualifiers と同じ要領で
@@ -578,7 +644,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       int is_new_storage = (k == TK_STATIC || k == TK_EXTERN ||
                             k == TK_AUTO || k == TK_REGISTER);
       if (is_new_storage && (out->is_static || out->is_extern)) {
-        ps_diag_ctx(curtok(), "decl",
+        ps_diag_ctx(curtok_in(tokenizer_context), "decl",
                      "storage class 指定子は1つまでです (C11 6.7.1p2)");
       }
       if (k == TK_CONST)        out->is_const_qualified = 1;
@@ -589,14 +655,17 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
       else if (k == TK_ATOMIC) {
         /* `int _Atomic(int) x` 形式は ATOMIC 後に `(` が来る (型指定子)。型指定子の後の
          * 単独 `_Atomic` は qualifier 形 (`int _Atomic x`)。 */
-        if (curtok()->next && curtok()->next->kind == TK_LPAREN) break;
+        if (curtok_in(tokenizer_context)->next &&
+            curtok_in(tokenizer_context)->next->kind == TK_LPAREN)
+          break;
         out->is_atomic = 1;
       }
       /* TK_AUTO / TK_REGISTER / TK_INLINE / TK_NORETURN / TK_ALIGNAS(...) は flag を立てずに
        * 単純消費。TK_ALIGNAS は `(value)` 形のため複雑だが、型指定子の後の出現は稀 (実例は
        * `int _Alignas(8) x` で C11 では基本的に typespec の前)。ここでは省略 — 必要ならば
        * 既存の skip_cv_qualifiers の TK_ALIGNAS 分岐を引用する。 */
-      set_curtok(curtok()->next);
+      set_curtok_in(
+          tokenizer_context, curtok_in(tokenizer_context)->next);
       continue;
     }
     break;

@@ -4,6 +4,7 @@
 #include "../tokenizer/token.h"
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct tokenizer_context_t tokenizer_context_t;
 
 typedef enum {
   PSX_ENUM_EXPR_VALUE = 0,
@@ -37,14 +38,19 @@ typedef struct {
   int member_capacity;
 } psx_parsed_enum_body_t;
 
-long long psx_parse_enum_const_expr_in_context(
-    psx_semantic_context_t *semantic_context);
-long long psx_parse_case_const_expr_in_context(
-    psx_semantic_context_t *semantic_context);
+long long psx_parse_enum_const_expr_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context);
+long long psx_parse_case_const_expr_in_contexts(
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context);
 long long psx_eval_parsed_enum_const_expr_in_context(
     psx_semantic_context_t *semantic_context,
     token_t *start, token_t *end);
-void psx_parse_enum_body(psx_parsed_enum_body_t *body);
+void psx_parse_enum_body_in_contexts(
+    psx_parsed_enum_body_t *body,
+    psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context);
 void psx_dispose_parsed_enum_body(psx_parsed_enum_body_t *body);
 
 #endif

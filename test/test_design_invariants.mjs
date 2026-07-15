@@ -115,6 +115,7 @@ const explicitPhaseArenaSource = [
   await readFile("src/parser/declarator_syntax.c", "utf8"),
   parserExpressionSource,
   parserStatementSource,
+  await readFile("src/parser/expr.c", "utf8"),
   parserLocalDeclarationSource,
   await readFile("src/main.c", "utf8"),
 ].join("\n");
@@ -145,7 +146,16 @@ const explicitParserTokenizerSources = [
   parserStatementSource,
   await readFile("src/parser/initializer_syntax.c", "utf8"),
   await readFile("src/parser/static_assert_declaration.c", "utf8"),
+  await readFile("src/parser/declarator_syntax.c", "utf8"),
+  await readFile("src/parser/declaration_syntax.c", "utf8"),
+  await readFile("src/parser/function_parameter_syntax.c", "utf8"),
+  await readFile("src/parser/aggregate_member_syntax.c", "utf8"),
+  await readFile("src/parser/local_declaration_syntax.c", "utf8"),
+  await readFile("src/parser/toplevel_declaration_syntax.c", "utf8"),
+  await readFile("src/parser/enum_const.c", "utf8"),
+  await readFile("src/parser/alignas_value.c", "utf8"),
 ];
+const parserCoreHeader = await readFile("src/parser/core.h", "utf8");
 if (!/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
       parserRuntimeOwnershipHeader,
     ) ||
@@ -154,6 +164,10 @@ if (!/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
     ) ||
     !/ps_parser_runtime_tokenizer\s*\(\s*runtime_context\s*\)/.test(
       parserStatementSource,
+    ) ||
+    /\bpsx_consume_type_kind_ex\s*\(/.test(parserCoreHeader) ||
+    !/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
+      parserCoreHeader,
     ) ||
     explicitParserTokenizerSources.some((source) =>
       implicitTokenizerCursorApiRe.test(source)

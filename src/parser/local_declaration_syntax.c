@@ -10,7 +10,17 @@
 #include "../diag/error_catalog.h"
 #include "../tokenizer/tokenizer.h"
 
-static token_t *curtok(void) { return tk_get_current_token(); }
+static tokenizer_context_t *tokenizer(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  return callbacks && callbacks->runtime_context
+             ? ps_parser_runtime_tokenizer(callbacks->runtime_context)
+             : NULL;
+}
+
+static token_t *curtok(
+    const psx_local_declaration_callbacks_t *callbacks) {
+  return tk_get_current_token_ctx(tokenizer(callbacks));
+}
 
 static int is_local_typedef_name(token_t *token, void *context) {
   return psx_ctx_is_typedef_name_token_in(context, token);
@@ -23,8 +33,8 @@ static void require_callbacks(
       !callbacks->finish_declarator || !callbacks->finish_declaration ||
       !callbacks->semantic_context || !callbacks->global_registry ||
       !callbacks->local_registry || !callbacks->runtime_context ||
-      !callbacks->options) {
-    ps_diag_ctx(curtok(), "local-declaration-syntax",
+      !callbacks->options || !tokenizer(callbacks)) {
+    ps_diag_ctx(NULL, "local-declaration-syntax",
                 "local declaration application callbacks are required");
   }
 }
@@ -32,7 +42,8 @@ static void require_callbacks(
 node_t *psx_parse_local_declaration_syntax(
     const psx_local_declaration_callbacks_t *callbacks) {
   require_callbacks(callbacks);
-  if (curtok()->kind == TK_STATIC_ASSERT) {
+  tokenizer_context_t *tk_ctx = tokenizer(callbacks);
+  if (curtok(callbacks)->kind == TK_STATIC_ASSERT) {
     psx_parsed_static_assert_declaration_t assertion;
     psx_parse_static_assert_syntax_in_contexts(
           &assertion, callbacks->semantic_context,
@@ -46,8 +57,9 @@ node_t *psx_parse_local_declaration_syntax(
         ps_parser_runtime_arena(callbacks->runtime_context), 0);
   }
 
-  int is_typedef = curtok()->kind == TK_TYPEDEF;
-  if (is_typedef) tk_set_current_token(curtok()->next);
+  int is_typedef = curtok(callbacks)->kind == TK_TYPEDEF;
+  if (is_typedef)
+    tk_set_current_token_ctx(tk_ctx, curtok(callbacks)->next);
   psx_parsed_decl_specifier_t specifier;
   if (!psx_try_parse_decl_specifier_syntax_ex(
           &specifier,
@@ -60,7 +72,7 @@ node_t *psx_parse_local_declaration_syntax(
               .runtime_context = callbacks->runtime_context,
           })) {
     diag_report_tokf(
-        DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(), "%s",
+        DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, curtok(callbacks), "%s",
         diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     ps_parser_mark_recoverable_syntax_error_in(
         callbacks->runtime_context);
@@ -70,12 +82,12 @@ node_t *psx_parse_local_declaration_syntax(
       &specifier, callbacks->semantic_context);
   int standalone_tag =
       specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
-      curtok()->kind == TK_SEMI;
+      curtok(callbacks)->kind == TK_SEMI;
   void *declaration_context = callbacks->begin_declaration(
       callbacks->context, &specifier, is_typedef, standalone_tag);
 
   if (standalone_tag) {
-    tk_expect(';');
+    tk_expect_ctx(tk_ctx, ';');
     node_t *result =
         callbacks->finish_declaration(declaration_context);
     ps_dispose_decl_specifier_syntax(&specifier);
@@ -85,7 +97,7 @@ node_t *psx_parse_local_declaration_syntax(
   int declarator_count = 0;
   for (;;) {
     if (++declarator_count > PS_MAX_DECLARATOR_COUNT) {
-      ps_diag_ctx(curtok(), "decl",
+      ps_diag_ctx(curtok(callbacks), "decl",
                   diag_message_for(
                       DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
                   PS_MAX_DECLARATOR_COUNT);
@@ -103,7 +115,7 @@ node_t *psx_parse_local_declaration_syntax(
         callbacks->local_registry, callbacks->runtime_context,
         callbacks);
     if (!declarator.identifier) {
-      ps_diag_ctx(curtok(), "decl", "%s",
+      ps_diag_ctx(curtok(callbacks), "decl", "%s",
                   diag_message_for(
                       DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
     }
@@ -133,7 +145,7 @@ node_t *psx_parse_local_declaration_syntax(
         declaration_context, &declarator, &initializer);
     if (initializer.has_initializer) {
       token_t *assign_tok = initializer.assign_tok;
-      tk_expect('=');
+      tk_expect_ctx(tk_ctx, '=');
       psx_parse_initializer_syntax_value_in_contexts(
           &initializer, assign_tok, callbacks->semantic_context,
           callbacks->global_registry,
@@ -143,9 +155,9 @@ node_t *psx_parse_local_declaration_syntax(
     callbacks->finish_declarator(
         declaration_context, &initializer);
     psx_dispose_declarator_syntax(&declarator);
-    if (!tk_consume(',')) break;
+    if (!tk_consume_ctx(tk_ctx, ',')) break;
   }
-  tk_expect(';');
+  tk_expect_ctx(tk_ctx, ';');
   node_t *result = callbacks->finish_declaration(declaration_context);
   ps_dispose_decl_specifier_syntax(&specifier);
   return result;

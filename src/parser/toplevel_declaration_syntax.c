@@ -3,6 +3,7 @@
 #include "core.h"
 #include "diag.h"
 #include "local_registry.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
 #include "../diag/error_catalog.h"
@@ -11,25 +12,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-static token_t *current_token(void) { return tk_get_current_token(); }
+static tokenizer_context_t *tokenizer(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_tokenizer(runtime_context);
+}
+
+static token_t *current_token(
+    psx_parser_runtime_context_t *runtime_context) {
+  return tk_get_current_token_ctx(tokenizer(runtime_context));
+}
 
 static int is_toplevel_typedef_name(token_t *token, void *context) {
   return psx_ctx_is_typedef_name_token_in(context, token);
 }
 
 static void require_declarator_name(
-    const psx_parsed_declarator_t *declarator) {
+    const psx_parsed_declarator_t *declarator,
+    psx_parser_runtime_context_t *runtime_context) {
   if (declarator && declarator->identifier) return;
   diag_emit_tokf(
-      DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED, current_token(), "%s",
+      DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED,
+      current_token(runtime_context), "%s",
       diag_message_for(DIAG_ERR_PARSER_VARIABLE_NAME_REQUIRED));
 }
 
 static void append_declarator_slot(
-    psx_parsed_toplevel_declaration_t *declaration) {
+    psx_parsed_toplevel_declaration_t *declaration,
+    psx_parser_runtime_context_t *runtime_context) {
   if (declaration->declarator_count >= PS_MAX_DECLARATOR_COUNT) {
     ps_diag_ctx(
-        current_token(), "decl",
+        current_token(runtime_context), "decl",
         diag_message_for(DIAG_ERR_PARSER_DECLARATOR_LIST_TOO_LONG),
         PS_MAX_DECLARATOR_COUNT);
   }
@@ -38,7 +50,7 @@ static void append_declarator_slot(
       declaration->declarators,
       sizeof(*declaration->declarators) * (size_t)next_count);
   if (!grown) {
-    ps_diag_ctx(current_token(), "decl",
+    ps_diag_ctx(current_token(runtime_context), "decl",
                 "top-level declaration syntax allocation failed");
   }
   declaration->declarators = grown;
@@ -46,7 +58,7 @@ static void append_declarator_slot(
       declaration->initializers,
       sizeof(*declaration->initializers) * (size_t)next_count);
   if (!grown_initializers) {
-    ps_diag_ctx(current_token(), "decl",
+    ps_diag_ctx(current_token(runtime_context), "decl",
                 "top-level initializer syntax allocation failed");
   }
   declaration->initializers = grown_initializers;
@@ -61,7 +73,7 @@ static int parse_declarator_head(
     psx_global_registry_t *global_registry,
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context) {
-  append_declarator_slot(declaration);
+  append_declarator_slot(declaration, runtime_context);
   psx_parsed_declarator_t *declarator =
       &declaration->declarators[declaration->declarator_count - 1];
   if (!psx_try_parse_toplevel_declarator_syntax_tree_with_typedef_lookup_in_contexts(
@@ -70,7 +82,7 @@ static int parse_declarator_head(
           is_toplevel_typedef_name, semantic_context)) return 0;
   ps_prepare_constant_declarator_expressions_in_context(
       declarator, semantic_context);
-  require_declarator_name(declarator);
+  require_declarator_name(declarator, runtime_context);
   return 1;
 }
 
@@ -81,13 +93,15 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context) {
   if (!declaration || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+      !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   *declaration = (psx_parsed_toplevel_declaration_t){0};
-  declaration->diagnostic_token = current_token();
-  if (current_token()->kind == TK_TYPEDEF) {
+  declaration->diagnostic_token = current_token(runtime_context);
+  if (current_token(runtime_context)->kind == TK_TYPEDEF) {
     declaration->is_typedef = 1;
-    tk_set_current_token(current_token()->next);
+    tk_set_current_token_ctx(
+        tk_ctx, current_token(runtime_context)->next);
   }
 
   if (!psx_try_parse_decl_specifier_syntax_ex(
@@ -103,7 +117,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
           })) {
     diag_report_tokf(
         DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN,
-        current_token(), "%s",
+        current_token(runtime_context), "%s",
         diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
     return 0;
   }
@@ -115,7 +129,7 @@ int psx_parse_toplevel_declaration_head_syntax_in_contexts(
       declaration->specifier.type_spec.is_thread_local;
   declaration->is_standalone_tag =
       declaration->specifier.source == PSX_PARSED_DECL_TYPE_TAG &&
-      current_token()->kind == TK_SEMI;
+      current_token(runtime_context)->kind == TK_SEMI;
   if (!declaration->is_standalone_tag &&
       !parse_declarator_head(
           declaration, semantic_context, global_registry, local_registry,
@@ -150,14 +164,15 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
     psx_local_registry_t *local_registry,
     psx_parser_runtime_context_t *runtime_context) {
   if (!declaration || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+      !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   void *declaration_context = callbacks && callbacks->begin_declaration
       ? callbacks->begin_declaration(callbacks->context, declaration)
       : NULL;
   declaration->applied_during_parse = callbacks ? 1 : 0;
   if (declaration->is_standalone_tag) {
-    tk_expect(';');
+    tk_expect_ctx(tk_ctx, ';');
     if (callbacks && callbacks->finish_declaration)
       callbacks->finish_declaration(declaration_context);
     return 1;
@@ -185,14 +200,14 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
           declaration_context, declarator, initializer);
     if (initializer->has_initializer) {
       token_t *assign_tok = initializer->assign_tok;
-      tk_expect('=');
+      tk_expect_ctx(tk_ctx, '=');
       psx_parse_initializer_syntax_value_in_contexts(
           initializer, assign_tok, semantic_context,
           global_registry, local_registry, runtime_context, NULL);
     }
     if (callbacks && callbacks->finish_declarator)
       callbacks->finish_declarator(declaration_context, initializer);
-    if (!tk_consume(',')) break;
+    if (!tk_consume_ctx(tk_ctx, ',')) break;
     if (!parse_declarator_head(
             declaration, semantic_context, global_registry,
             local_registry, runtime_context)) {
@@ -200,7 +215,7 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
       return 0;
     }
   }
-  tk_expect(';');
+  tk_expect_ctx(tk_ctx, ';');
   if (callbacks && callbacks->finish_declaration)
     callbacks->finish_declaration(declaration_context);
   return 1;

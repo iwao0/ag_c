@@ -10,6 +10,7 @@
 #define PS_MAX_INITIALIZER_ELEMENTS 4096
 
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct tokenizer_context_t tokenizer_context_t;
 
 typedef struct {
   token_kind_t kind;
@@ -29,12 +30,15 @@ typedef struct {
 
 typedef struct {
   void *context;
+  tokenizer_context_t *tokenizer_context;
+  void *consume_alignas_context;
   void (*consume_alignas)(void *context, psx_type_spec_result_t *result);
   void (*diagnose_complex_requires_float)(void *context, token_t *token);
 } psx_type_spec_syntax_t;
 
-token_kind_t psx_consume_type_kind_ex(
+token_kind_t psx_consume_type_kind_in_contexts(
     psx_semantic_context_t *semantic_context,
+    tokenizer_context_t *tokenizer_context,
     psx_type_spec_result_t *out);
 token_kind_t psx_consume_type_kind_with_syntax_ex(
     psx_semantic_context_t *semantic_context,
@@ -42,6 +46,7 @@ token_kind_t psx_consume_type_kind_with_syntax_ex(
 bool psx_is_decl_prefix_token(token_kind_t k);
 bool psx_is_gnu_attribute_token(const token_t *t);
 void psx_skip_gnu_attributes(void);
+void psx_skip_gnu_attributes_ctx(tokenizer_context_t *tokenizer_context);
 void psx_skip_gnu_attributes_at(token_t **t);
 typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 bool psx_try_consume_pragma_pack_marker_in(

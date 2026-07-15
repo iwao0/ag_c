@@ -6,7 +6,16 @@
 
 #include <string.h>
 
-static token_t *current_token(void) { return tk_get_current_token(); }
+static token_t *current_token(const psx_declarator_syntax_t *syntax) {
+  return tk_get_current_token_ctx(syntax->tokenizer_context);
+}
+
+static void skip_gnu_attributes(
+    const psx_declarator_syntax_t *syntax) {
+  token_t *token = current_token(syntax);
+  psx_skip_gnu_attributes_at(&token);
+  tk_set_current_token_ctx(syntax->tokenizer_context, token);
+}
 
 typedef struct {
   token_ident_t *name;
@@ -20,11 +29,11 @@ typedef struct {
 
 static declarator_parse_result_t parse_declarator_recursive(
     const psx_declarator_syntax_t *syntax, int nesting_depth) {
-  psx_skip_gnu_attributes();
+  skip_gnu_attributes(syntax);
   declarator_pointer_qualifiers_t *pointer_qualifiers = NULL;
   int pointer_count = 0;
   int pointer_capacity = 0;
-  while (tk_consume('*')) {
+  while (tk_consume_ctx(syntax->tokenizer_context, '*')) {
     if (pointer_count == pointer_capacity) {
       int capacity = pda_next_cap(pointer_capacity, pointer_count + 1);
       declarator_pointer_qualifiers_t *qualifiers =
@@ -38,42 +47,44 @@ static declarator_parse_result_t parse_declarator_recursive(
       pointer_qualifiers = qualifiers;
       pointer_capacity = capacity;
     }
-    while (current_token()->kind == TK_CONST ||
-           current_token()->kind == TK_VOLATILE ||
-           current_token()->kind == TK_RESTRICT) {
-      if (current_token()->kind == TK_CONST)
+    while (current_token(syntax)->kind == TK_CONST ||
+           current_token(syntax)->kind == TK_VOLATILE ||
+           current_token(syntax)->kind == TK_RESTRICT) {
+      if (current_token(syntax)->kind == TK_CONST)
         pointer_qualifiers[pointer_count].is_const = 1;
-      if (current_token()->kind == TK_VOLATILE)
+      if (current_token(syntax)->kind == TK_VOLATILE)
         pointer_qualifiers[pointer_count].is_volatile = 1;
-      tk_set_current_token(current_token()->next);
+      tk_set_current_token_ctx(
+          syntax->tokenizer_context, current_token(syntax)->next);
     }
     pointer_count++;
-    psx_skip_gnu_attributes();
+    skip_gnu_attributes(syntax);
   }
 
   token_ident_t *name = NULL;
   int direct_was_parenthesized = 0;
   int direct_pointer_count = 0;
-  int is_grouping = current_token()->kind == TK_LPAREN &&
+  int is_grouping = current_token(syntax)->kind == TK_LPAREN &&
                     (!syntax->is_grouping_parenthesis ||
                      syntax->is_grouping_parenthesis(
                          syntax->context, nesting_depth));
-  if (is_grouping && tk_consume('(')) {
+  if (is_grouping && tk_consume_ctx(syntax->tokenizer_context, '(')) {
     direct_was_parenthesized = 1;
     declarator_parse_result_t direct =
         parse_declarator_recursive(syntax, nesting_depth + 1);
     name = direct.name;
     direct_pointer_count = direct.pointer_count;
-    tk_expect(')');
+    tk_expect_ctx(syntax->tokenizer_context, ')');
   } else {
-    name = tk_consume_ident();
+    name = tk_consume_ident_ctx(syntax->tokenizer_context);
     if (!name && syntax->require_identifier &&
         syntax->diagnose_missing_identifier) {
-      syntax->diagnose_missing_identifier(syntax->context, current_token());
+      syntax->diagnose_missing_identifier(
+          syntax->context, current_token(syntax));
     }
   }
 
-  psx_skip_gnu_attributes();
+  skip_gnu_attributes(syntax);
   while (syntax->consume_suffix &&
          syntax->consume_suffix(syntax->context, nesting_depth,
                                 direct_was_parenthesized,
@@ -85,7 +96,8 @@ static declarator_parse_result_t parse_declarator_recursive(
             syntax->context, pointer_qualifiers[i].is_const,
             pointer_qualifiers[i].is_volatile, nesting_depth)) {
       if (syntax->diagnose_too_complex)
-        syntax->diagnose_too_complex(syntax->context, current_token());
+        syntax->diagnose_too_complex(
+            syntax->context, current_token(syntax));
       return (declarator_parse_result_t){
           .name = name,
           .pointer_count = direct_pointer_count + pointer_count,
@@ -100,7 +112,7 @@ static declarator_parse_result_t parse_declarator_recursive(
 
 token_ident_t *psx_parse_declarator_syntax(
     const psx_declarator_syntax_t *syntax) {
-  if (!syntax) return NULL;
+  if (!syntax || !syntax->tokenizer_context) return NULL;
   declarator_parse_result_t result = parse_declarator_recursive(syntax, 0);
   return result.name;
 }

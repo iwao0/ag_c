@@ -371,8 +371,8 @@ static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
       context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
-  node->val = psx_parse_case_const_expr_in_context(
-      context->semantic_context);
+  node->val = psx_parse_case_const_expr_in_contexts(
+      context->semantic_context, context->tokenizer_context);
   tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;

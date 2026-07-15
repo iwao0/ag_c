@@ -2,17 +2,27 @@
 
 #include "diag.h"
 #include "dynarray.h"
+#include "runtime_context.h"
 #include "../tokenizer/tokenizer.h"
 
 #include <stdlib.h>
 #include <string.h>
 
-static token_t *current_token(void) { return tk_get_current_token(); }
+static tokenizer_context_t *tokenizer(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_tokenizer(runtime_context);
+}
+
+static token_t *current_token(
+    psx_parser_runtime_context_t *runtime_context) {
+  return tk_get_current_token_ctx(tokenizer(runtime_context));
+}
 
 static psx_parsed_function_parameter_t *append_function_parameter(
-    psx_parsed_function_parameters_t *parameters) {
+    psx_parsed_function_parameters_t *parameters,
+    psx_parser_runtime_context_t *runtime_context) {
   if (parameters->count >= PS_MAX_DECLARATOR_COUNT) {
-    ps_diag_ctx(current_token(), "function-parameter-syntax",
+    ps_diag_ctx(current_token(runtime_context), "function-parameter-syntax",
                  "function parameter limit exceeded");
   }
   if (parameters->count == parameters->capacity) {
@@ -28,13 +38,16 @@ static psx_parsed_function_parameter_t *append_function_parameter(
   return parameter;
 }
 
-static void synchronize_function_parameters(void) {
+static void synchronize_function_parameters(
+    psx_parser_runtime_context_t *runtime_context) {
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
   int depth = 0;
-  while (current_token()->kind != TK_EOF) {
-    token_kind_t kind = current_token()->kind;
-    tk_ensure_lookahead();
-    if (current_token()->next)
-      tk_set_current_token(current_token()->next);
+  while (current_token(runtime_context)->kind != TK_EOF) {
+    token_kind_t kind = current_token(runtime_context)->kind;
+    tk_ensure_lookahead_ctx(tk_ctx);
+    if (current_token(runtime_context)->next)
+      tk_set_current_token_ctx(
+          tk_ctx, current_token(runtime_context)->next);
     if (kind == TK_LPAREN) {
       depth++;
     } else if (kind == TK_RPAREN) {
@@ -54,19 +67,21 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
     psx_decl_typedef_name_predicate_t is_typedef_name,
     void *typedef_name_context) {
   if (!parameters || !semantic_context || !global_registry ||
-      !local_registry || !runtime_context)
+      !local_registry || !runtime_context || !tokenizer(runtime_context))
     return 0;
-  tk_expect('(');
-  if (tk_consume(')')) return 1;
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
+  tk_expect_ctx(tk_ctx, '(');
+  if (tk_consume_ctx(tk_ctx, ')')) return 1;
   for (;;) {
-    if (current_token()->kind == TK_ELLIPSIS) {
-      tk_set_current_token(current_token()->next);
+    if (current_token(runtime_context)->kind == TK_ELLIPSIS) {
+      tk_set_current_token_ctx(
+          tk_ctx, current_token(runtime_context)->next);
       parameters->is_variadic = 1;
-      tk_expect(')');
+      tk_expect_ctx(tk_ctx, ')');
       return 1;
     }
     psx_parsed_function_parameter_t *parameter =
-        append_function_parameter(parameters);
+        append_function_parameter(parameters, runtime_context);
     psx_decl_specifier_syntax_options_t specifier_options = {
         .is_typedef_name =
             type_mode == PSX_PARAMETER_TYPE_DEFERRED_TYPEDEF
@@ -83,9 +98,10 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
         &parameter->specifier, &specifier_options);
     if (!parsed_specifier) {
       diag_report_tokf(
-          DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN, current_token(), "%s",
+          DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN,
+          current_token(runtime_context), "%s",
           diag_message_for(DIAG_ERR_PARSER_IMPLICIT_INT_FORBIDDEN));
-      synchronize_function_parameters();
+      synchronize_function_parameters(runtime_context);
       return 0;
     }
     parameter->declarator =
@@ -93,8 +109,8 @@ int psx_parse_function_parameters_syntax_with_typedef_lookup_in_contexts(
             semantic_context, global_registry, local_registry,
             runtime_context,
             is_typedef_name, typedef_name_context);
-    if (tk_consume(',')) continue;
-    tk_expect(')');
+    if (tk_consume_ctx(tk_ctx, ',')) continue;
+    tk_expect_ctx(tk_ctx, ')');
     return 1;
   }
 }

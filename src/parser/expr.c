@@ -25,20 +25,27 @@
 #define PS_MAX_EXPR_NEST_DEPTH 1024
 #define PS_MAX_PAREN_NEST_DEPTH 1024
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
-static inline void set_curtok(token_t *tok) { tk_set_current_token(tok); }
-
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
   arena_context_t *arena_context;
+  tokenizer_context_t *tokenizer_context;
   const psx_local_declaration_callbacks_t *local_declarations;
   int unevaluated_operand_depth;
   int expr_nest_depth;
   int paren_nest_depth;
 } expr_parse_ctx_t;
+
+static inline token_t *curtok(expr_parse_ctx_t *ctx) {
+  return tk_get_current_token_ctx(ctx->tokenizer_context);
+}
+
+static inline void set_curtok(
+    expr_parse_ctx_t *ctx, token_t *tok) {
+  tk_set_current_token_ctx(ctx->tokenizer_context, tok);
+}
 
 typedef struct {
   psx_type_name_ref_t type_name;
@@ -57,6 +64,7 @@ static expr_parse_ctx_t expr_parse_ctx_default(
       .local_registry = local_registry,
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
+      .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
   };
   return ctx;
@@ -83,7 +91,7 @@ static void enter_expr_nest_or_die(expr_parse_ctx_t *ctx) {
   if (!ctx) return;
   ctx->expr_nest_depth++;
   if (ctx->expr_nest_depth > PS_MAX_EXPR_NEST_DEPTH) {
-    ps_diag_ctx(curtok(), "expr",
+    ps_diag_ctx(curtok(ctx), "expr",
                  diag_message_for(DIAG_ERR_PARSER_EXPR_NEST_TOO_DEEP),
                  PS_MAX_EXPR_NEST_DEPTH);
   }
@@ -97,7 +105,7 @@ static void enter_paren_nest_or_die(expr_parse_ctx_t *ctx) {
   if (!ctx) return;
   ctx->paren_nest_depth++;
   if (ctx->paren_nest_depth > PS_MAX_PAREN_NEST_DEPTH) {
-    ps_diag_ctx(curtok(), "paren",
+    ps_diag_ctx(curtok(ctx), "paren",
                  diag_message_for(DIAG_ERR_PARSER_PAREN_NEST_TOO_DEEP),
                  PS_MAX_PAREN_NEST_DEPTH);
   }
@@ -156,16 +164,16 @@ static int parse_generic_assoc_type(
     psx_type_name_ref_t *out, expr_parse_ctx_t *ctx) {
   token_t *end = NULL;
   if (!capture_type_name_ref_at(
-          curtok(), 0, out, &end, ctx)) return 0;
-  set_curtok(end);
+          curtok(ctx), 0, out, &end, ctx)) return 0;
+  set_curtok(ctx, end);
   return 1;
 }
 
 static node_t *build_member_access(
     node_t *base, int from_ptr, token_t *op_tok, expr_parse_ctx_t *ctx) {
-  token_ident_t *member = tk_consume_ident();
+  token_ident_t *member = tk_consume_ident_ctx(ctx->tokenizer_context);
   if (!member) {
-    ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+    ps_diag_missing(curtok(ctx), diag_text_for(DIAG_TEXT_MEMBER_NAME));
   }
   node_member_access_t *syntax = arena_alloc_in(
       ctx->arena_context, sizeof(*syntax));
@@ -181,13 +189,13 @@ static node_t *build_member_access(
 static node_t *parse_compound_literal_from_type(
     psx_type_name_ref_t type_name, token_t *after_rparen,
     expr_parse_ctx_t *ctx) {
-  set_curtok(after_rparen);
+  set_curtok(ctx, after_rparen);
   char *current_funcname = NULL;
   int current_funcname_len = 0;
   ps_decl_get_current_funcname_in(
       ctx->local_registry, &current_funcname, &current_funcname_len);
   (void)current_funcname_len;
-  token_t *initializer_tok = curtok();
+  token_t *initializer_tok = curtok(ctx);
   node_t *initializer = psx_parse_initializer_syntax_list_in_contexts(
       ctx->semantic_context, ctx->global_registry, ctx->local_registry,
       ctx->runtime_context,
@@ -204,7 +212,7 @@ static int parse_parenthesized_type_name(
   if (!out || !tok || tok->kind != TK_LPAREN ||
       !is_type_name_start_token(tok->next, ctx))
     return 0;
-  tk_ensure_lookahead();
+  tk_ensure_lookahead_ctx(ctx->tokenizer_context);
   token_t *end = NULL;
   psx_type_name_ref_t type_name = {0};
   if (!capture_type_name_ref_at(
@@ -354,8 +362,8 @@ node_t *psx_expr_assign_in_contexts(
 static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
   enter_expr_nest_or_die(ctx);
   node_t *node = assign_ctx(ctx);
-  while (curtok()->kind == TK_COMMA) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_COMMA) {
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *rhs = assign_ctx(ctx);
     node_t *comma = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_COMMA, node, rhs);
@@ -380,10 +388,10 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
    * "ir build/emit failed" になっていたのを、ここで分かりやすい診断にする。
    * 代入系トークン (`=`/`+=`/`-=`/...) が来ているときだけ check し、それ以外
    * (関数呼び出し `f(...)` や関数アドレス取得 `&f` 等) は素通し。 */
-  switch (curtok()->kind) {
+  switch (curtok(ctx)->kind) {
     case TK_ASSIGN: {
-      token_t *assign_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *assign_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = assign_ctx(ctx);
       node_t *assign_node = psx_node_new_raw_assign_in(
           ctx->arena_context, assign_target, rhs);
@@ -405,8 +413,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
     case TK_ANDEQ:
     case TK_XOREQ:
     case TK_OREQ: {
-      token_t *op_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *op_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *compound = psx_node_new_raw_assign_in(
           ctx->arena_context, assign_target, assign_ctx(ctx));
       compound->is_source_compound_assignment = 1;
@@ -425,14 +433,14 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = logical_or_ctx(ctx);
-  if (curtok()->kind == TK_QUESTION) {
-    set_curtok(curtok()->next);
+  if (curtok(ctx)->kind == TK_QUESTION) {
+    set_curtok(ctx, curtok(ctx)->next);
     node_ctrl_t *ternary = arena_alloc_in(
         ctx->arena_context, sizeof(node_ctrl_t));
     ternary->base.kind = ND_TERNARY;
     ternary->base.lhs = node;
     ternary->base.rhs = expr_internal_ctx(ctx);
-    tk_expect(':');
+    tk_expect_ctx(ctx->tokenizer_context, ':');
     ternary->els = conditional_ctx(ctx);
     return (node_t *)ternary;
   }
@@ -441,8 +449,8 @@ static node_t *conditional_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *logical_or_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = logical_and_ctx(ctx);
-  while (curtok()->kind == TK_OROR) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_OROR) {
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *rhs = logical_and_ctx(ctx);
     node = new_binary_with_source_op(
         ctx, ND_LOGOR, node, rhs, TK_OROR);
@@ -452,8 +460,8 @@ static node_t *logical_or_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *logical_and_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = bit_or_ctx(ctx);
-  while (curtok()->kind == TK_ANDAND) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_ANDAND) {
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *rhs = bit_or_ctx(ctx);
     node = new_binary_with_source_op(
         ctx, ND_LOGAND, node, rhs, TK_ANDAND);
@@ -463,8 +471,8 @@ static node_t *logical_and_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *bit_or_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = bit_xor_ctx(ctx);
-  while (curtok()->kind == TK_PIPE) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_PIPE) {
+    set_curtok(ctx, curtok(ctx)->next);
     node = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_BITOR, node, bit_xor_ctx(ctx));
   }
@@ -473,8 +481,8 @@ static node_t *bit_or_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *bit_xor_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = bit_and_ctx(ctx);
-  while (curtok()->kind == TK_CARET) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_CARET) {
+    set_curtok(ctx, curtok(ctx)->next);
     node = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_BITXOR, node, bit_and_ctx(ctx));
   }
@@ -483,8 +491,8 @@ static node_t *bit_xor_ctx(expr_parse_ctx_t *ctx) {
 
 static node_t *bit_and_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = equality_ctx(ctx);
-  while (curtok()->kind == TK_AMP) {
-    set_curtok(curtok()->next);
+  while (curtok(ctx)->kind == TK_AMP) {
+    set_curtok(ctx, curtok(ctx)->next);
     node = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_BITAND, node, equality_ctx(ctx));
   }
@@ -494,12 +502,12 @@ static node_t *bit_and_ctx(expr_parse_ctx_t *ctx) {
 static node_t *equality_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = relational_ctx(ctx);
   for (;;) {
-    if (curtok()->kind == TK_EQEQ) {
-      set_curtok(curtok()->next);
+    if (curtok(ctx)->kind == TK_EQEQ) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = relational_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_EQ, node, rhs, TK_EQEQ);
-    } else if (curtok()->kind == TK_NEQ) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_NEQ) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = relational_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_NE, node, rhs, TK_NEQ);
     }
@@ -510,20 +518,20 @@ static node_t *equality_ctx(expr_parse_ctx_t *ctx) {
 static node_t *relational_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = shift_ctx(ctx);
   for (;;) {
-    if (curtok()->kind == TK_LT) {
-      set_curtok(curtok()->next);
+    if (curtok(ctx)->kind == TK_LT) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_LT, node, rhs, TK_LT);
-    } else if (curtok()->kind == TK_LE) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_LE) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_LE, node, rhs, TK_LE);
-    } else if (curtok()->kind == TK_GT) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_GT) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_LT, rhs, node, TK_GT);
-    } else if (curtok()->kind == TK_GE) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_GE) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = shift_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_LE, rhs, node, TK_GE);
     }
@@ -534,12 +542,12 @@ static node_t *relational_ctx(expr_parse_ctx_t *ctx) {
 static node_t *shift_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = add_ctx(ctx);
   for (;;) {
-    if (curtok()->kind == TK_SHL) {
-      set_curtok(curtok()->next);
+    if (curtok(ctx)->kind == TK_SHL) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = add_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_SHL, node, rhs, TK_SHL);
-    } else if (curtok()->kind == TK_SHR) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_SHR) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = add_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_SHR, node, rhs, TK_SHR);
     }
@@ -550,12 +558,12 @@ static node_t *shift_ctx(expr_parse_ctx_t *ctx) {
 static node_t *add_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = mul_ctx(ctx);
   for (;;) {
-    if (curtok()->kind == TK_PLUS) {
-      set_curtok(curtok()->next);
+    if (curtok(ctx)->kind == TK_PLUS) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = mul_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_ADD, node, rhs, TK_PLUS);
-    } else if (curtok()->kind == TK_MINUS) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_MINUS) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = mul_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_SUB, node, rhs, TK_MINUS);
     }
@@ -566,16 +574,16 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
 static node_t *mul_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = cast_ctx(ctx);
   for (;;) {
-    if (curtok()->kind == TK_MUL) {
-      set_curtok(curtok()->next);
+    if (curtok(ctx)->kind == TK_MUL) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = cast_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_MUL, node, rhs, TK_MUL);
-    } else if (curtok()->kind == TK_DIV) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_DIV) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = cast_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_DIV, node, rhs, TK_DIV);
-    } else if (curtok()->kind == TK_MOD) {
-      set_curtok(curtok()->next);
+    } else if (curtok(ctx)->kind == TK_MOD) {
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *rhs = cast_ctx(ctx);
       node = new_binary_with_source_op(ctx, ND_MOD, node, rhs, TK_MOD);
     }
@@ -584,13 +592,13 @@ static node_t *mul_ctx(expr_parse_ctx_t *ctx) {
 }
 
 static node_t *cast_ctx(expr_parse_ctx_t *ctx) {
-  token_t *cast_tok = curtok();
-  if (parenthesized_type_name_is_compound_literal(curtok(), ctx)) {
+  token_t *cast_tok = curtok(ctx);
+  if (parenthesized_type_name_is_compound_literal(curtok(ctx), ctx)) {
     return unary_ctx(ctx);
   }
   parsed_parenthesized_type_name_t parsed_type;
-  if (parse_parenthesized_type_name(curtok(), &parsed_type, ctx)) {
-    set_curtok(parsed_type.after_rparen);
+  if (parse_parenthesized_type_name(curtok(ctx), &parsed_type, ctx)) {
+    set_curtok(ctx, parsed_type.after_rparen);
     node_t *operand = cast_ctx(ctx);
     node_t *source_cast =
         psx_node_new_source_cast_in(
@@ -609,19 +617,19 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
   query->base.type = ps_type_new_integer_in(
       ctx->arena_context, TK_UNSIGNED, 8, 1);
 
-  if (curtok()->kind == TK_LPAREN) {
+  if (curtok(ctx)->kind == TK_LPAREN) {
     psx_type_name_ref_t captured = {0};
     token_t *type_end = NULL;
     if (capture_type_name_ref_at(
-            curtok()->next, 1, &captured, &type_end, ctx) &&
+            curtok(ctx)->next, 1, &captured, &type_end, ctx) &&
         type_end && type_end->kind == TK_RPAREN && type_end->next &&
         type_end->next->kind != TK_LBRACE) {
       query->is_type_name = 1;
       query->type_name = captured;
-      set_curtok(type_end->next);
+      set_curtok(ctx, type_end->next);
       return (node_t *)query;
     }
-    token_t *outer = curtok();
+    token_t *outer = curtok(ctx);
     captured = (psx_type_name_ref_t){0};
     type_end = NULL;
     if (outer->next && outer->next->kind == TK_LPAREN &&
@@ -631,14 +639,14 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
         type_end->next->kind == TK_RPAREN) {
       query->is_type_name = 1;
       query->type_name = captured;
-      set_curtok(type_end->next->next);
+      set_curtok(ctx, type_end->next->next);
       return (node_t *)query;
     }
 
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
     expr_parse_ctx_t child_ctx = expr_parse_ctx_unevaluated_child(ctx);
     query->operand = expr_internal_ctx(&child_ctx);
-    tk_expect(')');
+    tk_expect_ctx(ctx->tokenizer_context, ')');
     return (node_t *)query;
   }
 
@@ -659,13 +667,13 @@ static node_t *parse_alignof_type_name(
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
   if (capture_type_name_ref_at(
-          curtok(), 0, &captured, &type_end, ctx) &&
+          curtok(ctx), 0, &captured, &type_end, ctx) &&
       type_end && type_end->kind == TK_RPAREN) {
     query->type_name = captured;
-    set_curtok(type_end->next);
+    set_curtok(ctx, type_end->next);
     return (node_t *)query;
   }
-  token_t *outer = curtok();
+  token_t *outer = curtok(ctx);
   captured = (psx_type_name_ref_t){0};
   type_end = NULL;
   if (outer && outer->kind == TK_LPAREN &&
@@ -674,10 +682,10 @@ static node_t *parse_alignof_type_name(
       type_end && type_end->kind == TK_RPAREN && type_end->next &&
       type_end->next->kind == TK_RPAREN) {
     query->type_name = captured;
-    set_curtok(type_end->next->next);
+    set_curtok(ctx, type_end->next->next);
     return (node_t *)query;
   }
-  ps_diag_ctx(curtok(), "alignof", "%s",
+  ps_diag_ctx(curtok(ctx), "alignof", "%s",
               diag_message_for(DIAG_ERR_PARSER_ALIGNOF_TYPE_NAME_REQUIRED));
   return (node_t *)query;
 }
@@ -740,21 +748,21 @@ static node_t *build_unary_addr_node(
 }
 
 static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
-  token_kind_t k = curtok()->kind;
+  token_kind_t k = curtok(ctx)->kind;
   if (k == TK_SIZEOF) {
-    token_t *op_tok = curtok();
-    set_curtok(curtok()->next);
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
     return parse_sizeof_operand(ctx, op_tok);
   }
   /* GNU 拡張 __real__ / __imag__: 複素数の実部/虚部を取り出す単項演算子
    * (実数オペランドでは __real__ x = x, __imag__ x = 0)。キーワードではなく
    * 特殊識別子として扱う (__func__ と同様)。creal/cimag を rvalue にも効かせる。 */
   if (k == TK_IDENT) {
-    token_ident_t *kid = (token_ident_t *)curtok();
+    token_ident_t *kid = (token_ident_t *)curtok(ctx);
     if (kid->len == 8 && (memcmp(kid->str, "__real__", 8) == 0 ||
                           memcmp(kid->str, "__imag__", 8) == 0)) {
       int is_real = (kid->str[2] == 'r');
-      set_curtok(curtok()->next);
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *operand = cast_ctx(ctx);
       node_t *n = arena_alloc_in(ctx->arena_context, sizeof(node_t));
       n->kind = is_real ? ND_CREAL : ND_CIMAG;
@@ -764,21 +772,21 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     }
   }
   if (k == TK_ALIGNOF) {
-    token_t *op_tok = curtok();
-    set_curtok(curtok()->next);
-    tk_expect('(');
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
+    tk_expect_ctx(ctx->tokenizer_context, '(');
     return parse_alignof_type_name(op_tok, ctx);
   }
   if (k == TK_INC || k == TK_DEC) {
-    token_t *op_tok = curtok();
-    set_curtok(curtok()->next);
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
     return build_pre_inc_dec_node(
         k == TK_INC ? ND_PRE_INC : ND_PRE_DEC, op_tok, ctx);
   }
-  if (k == TK_PLUS)  { set_curtok(curtok()->next); return cast_ctx(ctx); }
+  if (k == TK_PLUS)  { set_curtok(ctx, curtok(ctx)->next); return cast_ctx(ctx); }
   if (k == TK_MINUS) {
-    token_t *op_tok = curtok();
-    set_curtok(curtok()->next);
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *operand = cast_ctx(ctx);
     node_t *negate = arena_alloc_in(ctx->arena_context, sizeof(node_t));
     negate->kind = ND_UNARY_NEGATE;
@@ -787,7 +795,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return negate;
   }
   if (k == TK_BANG)  {
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *eq = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_EQ, cast_ctx(ctx),
         ps_node_new_num_in(ctx->arena_context, 0));
@@ -795,7 +803,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
     return eq;
   }
   if (k == TK_TILDE) {
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *neg = psx_node_new_raw_binary_in(
         ctx->arena_context, ND_SUB,
         ps_node_new_num_in(ctx->arena_context, 0), cast_ctx(ctx));
@@ -804,12 +812,12 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
         ps_node_new_num_in(ctx->arena_context, 1));
   }
   if (k == TK_MUL) {
-    token_t *op_tok = curtok();
-    set_curtok(curtok()->next);
+    token_t *op_tok = curtok(ctx);
+    set_curtok(ctx, curtok(ctx)->next);
     return build_unary_deref_syntax(cast_ctx(ctx), op_tok, ctx);
   }
   if (k == TK_AMP) {
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *operand = cast_ctx(ctx);
     return build_unary_addr_node(operand, ctx);
   }
@@ -844,17 +852,17 @@ static bool is_postfix_op_token(token_kind_t k) {
 
 static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
   // 後置演算がコンマ式の rhs 側に適用される: `(a, b)++` ⇒ `(a, b++)`。
-  if (node && node->kind == ND_COMMA && is_postfix_op_token(curtok()->kind)) {
+  if (node && node->kind == ND_COMMA && is_postfix_op_token(curtok(ctx)->kind)) {
     node->rhs = apply_postfix(node->rhs, ctx);
     return node;
   }
   for (;;) {
-    token_kind_t k = curtok()->kind;
+    token_kind_t k = curtok(ctx)->kind;
     if (k == TK_LBRACKET) {
-      token_t *op_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *op_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node_t *idx = expr_internal_ctx(ctx);
-      tk_expect(']');
+      tk_expect_ctx(ctx->tokenizer_context, ']');
       node = build_subscript_syntax(node, idx, op_tok, ctx);
       continue;
     }
@@ -863,21 +871,21 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
       continue;
     }
     if (k == TK_DOT || k == TK_ARROW) {
-      token_t *op_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *op_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node = build_member_access(
           node, k == TK_ARROW ? 1 : 0, op_tok, ctx);
       continue;
     }
     if (k == TK_INC) {
-      token_t *op_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *op_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node = build_post_inc_dec_node(ND_POST_INC, node, op_tok, ctx);
       continue;
     }
     if (k == TK_DEC) {
-      token_t *op_tok = curtok();
-      set_curtok(curtok()->next);
+      token_t *op_tok = curtok(ctx);
+      set_curtok(ctx, curtok(ctx)->next);
       node = build_post_inc_dec_node(ND_POST_DEC, node, op_tok, ctx);
       continue;
     }
@@ -886,8 +894,8 @@ static node_t *apply_postfix(node_t *node, expr_parse_ctx_t *ctx) {
 }
 
 static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
-  token_t *call_tok = curtok();
-  tk_expect('(');
+  token_t *call_tok = curtok(ctx);
+  tk_expect_ctx(ctx->tokenizer_context, '(');
   node_function_call_t *node =
       arena_alloc_in(ctx->arena_context, sizeof(node_function_call_t));
   node->base.kind = ND_FUNCALL;
@@ -914,12 +922,12 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
   int nargs = 0;
   int arg_cap = 16;
   node->arguments = calloc(arg_cap, sizeof(node_t *));
-  if (curtok()->kind == TK_RPAREN) {
-    set_curtok(curtok()->next);
+  if (curtok(ctx)->kind == TK_RPAREN) {
+    set_curtok(ctx, curtok(ctx)->next);
   } else {
     node->arguments[nargs++] = assign_ctx(ctx);
-    while (curtok()->kind == TK_COMMA) {
-      set_curtok(curtok()->next);
+    while (curtok(ctx)->kind == TK_COMMA) {
+      set_curtok(ctx, curtok(ctx)->next);
       if (nargs >= arg_cap) {
         arg_cap = pda_next_cap(arg_cap, nargs + 1);
         node->arguments = pda_xreallocarray(
@@ -927,7 +935,7 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
       }
       node->arguments[nargs++] = assign_ctx(ctx);
     }
-    tk_expect(')');
+    tk_expect_ctx(ctx->tokenizer_context, ')');
   }
   node->argument_count = nargs;
   return (node_t *)node;
@@ -937,8 +945,8 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
 // パースできたら結果ノードを返し、できなければ NULL（呼び出し側は通常の式へ）。
 static node_t *try_parse_compound_literal(expr_parse_ctx_t *ctx) {
   parsed_parenthesized_type_name_t parsed_type;
-  if (curtok()->kind == TK_LPAREN &&
-      parse_parenthesized_type_name(curtok(), &parsed_type, ctx) &&
+  if (curtok(ctx)->kind == TK_LPAREN &&
+      parse_parenthesized_type_name(curtok(ctx), &parsed_type, ctx) &&
       parsed_type.after_rparen &&
       parsed_type.after_rparen->kind == TK_LBRACE) {
     return parse_compound_literal_from_type(
@@ -948,13 +956,13 @@ static node_t *try_parse_compound_literal(expr_parse_ctx_t *ctx) {
 }
 
 static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
-  token_t *generic_tok = curtok();
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  token_t *generic_tok = curtok(ctx);
+  set_curtok(ctx, curtok(ctx)->next);
+  tk_expect_ctx(ctx->tokenizer_context, '(');
 
   expr_parse_ctx_t control_ctx = expr_parse_ctx_unevaluated_child(ctx);
   node_t *control = assign_ctx(&control_ctx);
-  tk_expect(',');
+  tk_expect_ctx(ctx->tokenizer_context, ',');
 
   int count = 0;
   int capacity = 4;
@@ -969,21 +977,21 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
     }
     psx_generic_association_t *association = &associations[count++];
     *association = (psx_generic_association_t){0};
-    association->tok = curtok();
-    if (curtok()->kind == TK_DEFAULT) {
+    association->tok = curtok(ctx);
+    if (curtok(ctx)->kind == TK_DEFAULT) {
       association->is_default = 1;
-      set_curtok(curtok()->next);
+      set_curtok(ctx, curtok(ctx)->next);
     } else if (!parse_generic_assoc_type(
                    &association->type_name, ctx)) {
-      ps_diag_ctx(curtok(), "generic", "%s",
+      ps_diag_ctx(curtok(ctx), "generic", "%s",
                   diag_message_for(
                       DIAG_ERR_PARSER_GENERIC_ASSOC_TYPE_INVALID));
     }
-    tk_expect(':');
+    tk_expect_ctx(ctx->tokenizer_context, ':');
     association->expression = assign_ctx(ctx);
-    if (!tk_consume(',')) break;
+    if (!tk_consume_ctx(ctx->tokenizer_context, ',')) break;
   }
-  tk_expect(')');
+  tk_expect_ctx(ctx->tokenizer_context, ')');
 
   node_generic_selection_t *selection =
       arena_alloc_in(ctx->arena_context, sizeof(node_generic_selection_t));
@@ -997,7 +1005,7 @@ static node_t *parse_generic_selection(expr_parse_ctx_t *ctx) {
 }
 
 static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
-  token_t *tok = curtok();
+  token_t *tok = curtok(ctx);
   token_num_t *num = (token_num_t *)tok;
   node_num_t *node = arena_alloc_in(ctx->arena_context, sizeof(node_num_t));
   node->base.kind = ND_NUM;
@@ -1033,7 +1041,7 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
     psx_register_float_lit_in(ctx->global_registry, lit);
     node->fval_id = lit->id;
   }
-  set_curtok(curtok()->next);
+  set_curtok(ctx, curtok(ctx)->next);
   return (node_t *)node;
 }
 
@@ -1102,7 +1110,7 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
   tk_char_width_t merged_width = TK_CHAR_WIDTH_CHAR;
   tk_string_prefix_kind_t merged_prefix_kind = TK_STR_PREFIX_NONE;
   size_t total_len = 0;
-  token_t *t = curtok();
+  token_t *t = curtok(ctx);
   while (t && t->kind == TK_STRING) {
     token_string_t *st = (token_string_t *)t;
     /* char_width 0 は接頭辞なし (通常の char 文字列) として扱う。stringize `#x` の
@@ -1125,7 +1133,7 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
     t = t->next;
   }
   if (total_len > (size_t)INT_MAX) {
-    diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(), "%s",
+    diag_emit_tokf(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE, curtok(ctx), "%s",
                    diag_message_for(DIAG_ERR_PARSER_STRING_LITERAL_TOO_LARGE));
   }
   char *merged = calloc(total_len + 1, 1);
@@ -1133,15 +1141,15 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
     diag_emit_internalf(DIAG_ERR_INTERNAL_OOM, "%s", diag_message_for(DIAG_ERR_INTERNAL_OOM));
   }
   size_t off = 0;
-  while (curtok() && curtok()->kind == TK_STRING) {
-    token_string_t *st = (token_string_t *)curtok();
+  while (curtok(ctx) && curtok(ctx)->kind == TK_STRING) {
+    token_string_t *st = (token_string_t *)curtok(ctx);
     if (st->len < 0 || (size_t)st->len > total_len - off) {
-      diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(), "%s",
+      diag_emit_tokf(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID, curtok(ctx), "%s",
                      diag_message_for(DIAG_ERR_PARSER_STRING_CONCAT_SIZE_INVALID));
     }
     memcpy(merged + off, st->str, (size_t)st->len);
     off += (size_t)st->len;
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
   }
   return (node_t *)make_string_lit_node(
       ctx, merged, (int)total_len, merged_width, merged_prefix_kind);
@@ -1150,12 +1158,12 @@ static node_t *parse_string_literal_sequence(expr_parse_ctx_t *ctx) {
 // GCC __builtin_expect(exp, c): 第1引数 exp をそのまま返す (分岐ヒントは無視)。
 static node_t *try_parse_builtin_expect_call(token_ident_t *tok, expr_parse_ctx_t *ctx) {
   if (tok->len != 16 || memcmp(tok->str, "__builtin_expect", 16) != 0) return NULL;
-  if (curtok()->kind != TK_LPAREN) return NULL;
-  set_curtok(curtok()->next); // skip '('
+  if (curtok(ctx)->kind != TK_LPAREN) return NULL;
+  set_curtok(ctx, curtok(ctx)->next); // skip '('
   node_t *exp = assign_ctx(ctx);
-  tk_expect(',');
+  tk_expect_ctx(ctx->tokenizer_context, ',');
   (void)assign_ctx(ctx); // discard hint
-  tk_expect(')');
+  tk_expect_ctx(ctx->tokenizer_context, ')');
   return exp;
 }
 
@@ -1168,7 +1176,7 @@ static node_t *parse_identifier_syntax(token_ident_t *tok, expr_parse_ctx_t *ctx
     node->tok = (token_t *)tok;
     return node;
   }
-  if (curtok()->kind == TK_LPAREN) {
+  if (curtok(ctx)->kind == TK_LPAREN) {
     node_t *builtin = try_parse_builtin_expect_call(tok, ctx);
     if (builtin) return builtin;
   }
@@ -1192,35 +1200,35 @@ static node_t *primary_ctx(expr_parse_ctx_t *ctx) {
   node_t *cl = try_parse_compound_literal(ctx);
   if (cl) return cl;
 
-  if (curtok()->kind == TK_GENERIC) return parse_generic_selection(ctx);
+  if (curtok(ctx)->kind == TK_GENERIC) return parse_generic_selection(ctx);
 
-  if (curtok()->kind == TK_NUM) return parse_num_literal(ctx);
+  if (curtok(ctx)->kind == TK_NUM) return parse_num_literal(ctx);
 
-  if (curtok()->kind == TK_LPAREN && curtok()->next &&
-      curtok()->next->kind == TK_LBRACE) {
+  if (curtok(ctx)->kind == TK_LPAREN && curtok(ctx)->next &&
+      curtok(ctx)->next->kind == TK_LBRACE) {
     return psx_parse_statement_expression_in_contexts(
         ctx->semantic_context, ctx->global_registry, ctx->local_registry,
         ctx->runtime_context,
         ctx->local_declarations);
   }
 
-  if (curtok()->kind == TK_LPAREN) {
+  if (curtok(ctx)->kind == TK_LPAREN) {
     enter_paren_nest_or_die(ctx);
-    set_curtok(curtok()->next);
+    set_curtok(ctx, curtok(ctx)->next);
     node_t *node = expr_internal_ctx(ctx);
-    tk_expect(')');
+    tk_expect_ctx(ctx->tokenizer_context, ')');
     leave_paren_nest(ctx);
     return node;
   }
 
-  token_ident_t *tok = tk_consume_ident();
+  token_ident_t *tok = tk_consume_ident_ctx(ctx->tokenizer_context);
   if (tok) return parse_identifier_syntax(tok, ctx);
 
-  if (curtok()->kind == TK_STRING) {
+  if (curtok(ctx)->kind == TK_STRING) {
     return parse_string_literal_sequence(ctx);
   }
 
-  ps_diag_ctx(curtok(), "primary", "%s",
+  ps_diag_ctx(curtok(ctx), "primary", "%s",
                diag_message_for(DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED));
   return NULL;
 }
