@@ -952,9 +952,9 @@ static void assert_pointer_qualifiers(
   for (int i = 0; i < levels; i++) {
     const psx_type_t *pointer = canonical_pointer_level(type, i);
     ASSERT_TRUE(pointer != NULL);
-    ASSERT_EQ(const_levels[i] == '1', pointer->is_const_qualified);
+    ASSERT_EQ(const_levels[i] == '1', ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_CONST));
     ASSERT_EQ(volatile_levels[i] == '1',
-              pointer->is_volatile_qualified);
+              ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_VOLATILE));
   }
 }
 
@@ -982,12 +982,12 @@ static int canonical_node_pointee_is_void(node_t *node) {
 
 static int canonical_node_pointee_is_const_qualified(node_t *node) {
   const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && type->is_const_qualified;
+  return type && ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST);
 }
 
 static int canonical_node_pointee_is_volatile_qualified(node_t *node) {
   const psx_type_t *type = canonical_node_pointee_type(node);
-  return type && type->is_volatile_qualified;
+  return type && ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
 static tk_float_kind_t canonical_node_pointee_fp_kind(node_t *node) {
@@ -4831,11 +4831,11 @@ static void test_aggregate_member_resolution_boundary() {
   ASSERT_EQ(PSX_AGGREGATE_MEMBER_FUNCTION_TYPE, boundary.status);
 
   psx_type_t *bool_base = ps_type_new_integer(TK_BOOL, 1, 1);
-  bool_base->is_atomic = 1;
+  ps_type_add_qualifiers(bool_base, PSX_TYPE_QUALIFIER_ATOMIC);
   ASSERT_TRUE(bool_base != NULL);
   ASSERT_EQ(PSX_TYPE_BOOL, bool_base->kind);
   ASSERT_TRUE(ps_type_is_unsigned(bool_base));
-  ASSERT_TRUE(bool_base->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(bool_base, PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_EQ(TK_BOOL, bool_base->scalar_kind);
 
   psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
@@ -7762,8 +7762,10 @@ static void test_type_decl() {
   parsed_code = parse_program_input("int main() { int x={3}; return x; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
-  ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_volatile_qualified);
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
 
   parsed_code = parse_program_input("int main() { enum E { A=1 }; return (enum E)42; }");
@@ -7774,11 +7776,15 @@ static void test_type_decl() {
   parsed_code = parse_program_input("int main() { const int cx=1; volatile int vx=2; return cx+vx; }");
   body = as_block(as_function_definition(parsed_code[0])->base.rhs);
   ASSERT_EQ(ND_ASSIGN, body->body[0]->kind);
-  ASSERT_TRUE(ps_node_get_type(body->body[0]->lhs)->is_const_qualified);
-  ASSERT_TRUE(!ps_node_get_type(body->body[0]->lhs)->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      ps_node_get_type(body->body[0]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_EQ(ND_ASSIGN, body->body[1]->kind);
-  ASSERT_TRUE(!ps_node_get_type(body->body[1]->lhs)->is_const_qualified);
-  ASSERT_TRUE(ps_node_get_type(body->body[1]->lhs)->is_volatile_qualified);
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      ps_node_get_type(body->body[1]->lhs), PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(body->body[1]->lhs), PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_EQ(ND_RETURN, body->body[2]->kind);
 
   parsed_code = parse_program_input("int main() { int *const pc=0; int *volatile pv=0; return (pc==0)+(pv==0); }");
@@ -7796,12 +7802,12 @@ static void test_type_decl() {
       ps_node_get_type(body->body[0]->lhs);
   ASSERT_TRUE(qualified_pp_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_pp_type->kind);
-  ASSERT_TRUE(!qualified_pp_type->is_const_qualified);
-  ASSERT_TRUE(qualified_pp_type->is_volatile_qualified);
+  ASSERT_TRUE(!ps_type_has_qualifier(qualified_pp_type, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_pp_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(qualified_pp_type->base != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_pp_type->base->kind);
-  ASSERT_TRUE(qualified_pp_type->base->is_const_qualified);
-  ASSERT_TRUE(!qualified_pp_type->base->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_pp_type->base, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(!ps_type_has_qualifier(qualified_pp_type->base, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_EQ(2, canonical_node_pointer_qual_levels(body->body[0]->lhs));
   assert_node_pointer_qualifiers(body->body[0]->lhs, "01", "10");
   ASSERT_EQ(ND_RETURN, body->body[1]->kind);
@@ -8179,10 +8185,11 @@ static void test_type_metadata_bridge() {
   lvar_t *atomic_ref_lvar = find_func_lvar(fn, "a");
   ASSERT_TRUE(atomic_ref_lvar != NULL);
   ASSERT_TRUE(ps_lvar_get_decl_type(atomic_ref_lvar) != NULL);
-  ASSERT_TRUE(atomic_ref_lvar->decl_type->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(atomic_ref_lvar->decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
   node_t *atomic_ref_node = psx_node_new_lvar_for(atomic_ref_lvar);
   ASSERT_TRUE(ps_node_get_type(atomic_ref_node) == atomic_ref_lvar->decl_type);
-  ASSERT_TRUE(ps_node_get_type(atomic_ref_node)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(atomic_ref_node), PSX_TYPE_QUALIFIER_ATOMIC));
 
   parsed_code = parse_program_input(
       "int __tm_param_identity(const long long ll, volatile char ch, "
@@ -8194,11 +8201,11 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(param_ll != NULL && param_ll->decl_type != NULL);
   ASSERT_TRUE(param_ch != NULL && param_ch->decl_type != NULL);
   ASSERT_TRUE(param_ai != NULL && param_ai->decl_type != NULL);
-  ASSERT_TRUE(param_ll->decl_type->is_const_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(param_ll->decl_type, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_TRUE(param_ll->decl_type->is_long_long);
-  ASSERT_TRUE(param_ch->decl_type->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(param_ch->decl_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(param_ch->decl_type->is_plain_char);
-  ASSERT_TRUE(param_ai->decl_type->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(param_ai->decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
 
   parsed_code = parse_program_input(
       "typedef int *__tm_qualified_ptr_alias; "
@@ -8211,9 +8218,9 @@ static void test_type_metadata_bridge() {
       ps_lvar_get_decl_type(qualified_ptr_alias);
   ASSERT_TRUE(qualified_ptr_alias_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, qualified_ptr_alias_type->kind);
-  ASSERT_TRUE(qualified_ptr_alias_type->is_const_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_ptr_alias_type, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_TRUE(qualified_ptr_alias_type->base != NULL);
-  ASSERT_TRUE(!qualified_ptr_alias_type->base->is_const_qualified);
+  ASSERT_TRUE(!ps_type_has_qualifier(qualified_ptr_alias_type->base, PSX_TYPE_QUALIFIER_CONST));
 
   parsed_code = parse_program_input(
       "typedef const int __tm_const_array_alias[2]; "
@@ -8227,18 +8234,20 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(qualified_array_alias_type != NULL);
   ASSERT_EQ(PSX_TYPE_ARRAY, qualified_array_alias_type->kind);
   ASSERT_TRUE(qualified_array_alias_type->base != NULL);
-  ASSERT_TRUE(qualified_array_alias_type->base->is_const_qualified);
-  ASSERT_TRUE(qualified_array_alias_type->base->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_array_alias_type->base, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      qualified_array_alias_type->base, PSX_TYPE_QUALIFIER_VOLATILE));
 
   psx_type_t *typed_atomic_int = ps_type_new_integer(TK_INT, 4, 0);
-  typed_atomic_int->is_atomic = 1;
+  ps_type_add_qualifiers(typed_atomic_int, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t typed_atomic_ptr_mem = {0};
   typed_atomic_ptr_mem.kind = ND_DEREF;
   typed_atomic_ptr_mem.type = ps_type_new_pointer(typed_atomic_int);
   node_t *typed_atomic_deref =
       ps_node_new_unary_deref_for(&typed_atomic_ptr_mem);
   ASSERT_TRUE(ps_node_get_type(typed_atomic_deref) == typed_atomic_int);
-  ASSERT_EQ(1, ps_node_get_type(typed_atomic_deref)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(typed_atomic_deref), PSX_TYPE_QUALIFIER_ATOMIC));
 
   lvar_t tmp_lvar = {0};
   tmp_lvar.size = 4;
@@ -8270,10 +8279,10 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)nested_tag_ptr_array_name,
       (int)sizeof(nested_tag_ptr_array_name) - 1, 0, 8);
   psx_type_t *tmp_nested_inner_ptr = ps_type_new_pointer(tmp_nested_tag);
-  tmp_nested_inner_ptr->is_const_qualified = 1;
-  tmp_nested_inner_ptr->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(tmp_nested_inner_ptr, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(tmp_nested_inner_ptr, PSX_TYPE_QUALIFIER_VOLATILE);
   psx_type_t *tmp_nested_ptr = ps_type_new_pointer(tmp_nested_inner_ptr);
-  tmp_nested_ptr->is_const_qualified = 1;
+  ps_type_add_qualifiers(tmp_nested_ptr, PSX_TYPE_QUALIFIER_CONST);
   psx_type_t *tmp_nested_array = ps_type_new_array(
       tmp_nested_ptr, 2, 16, 0);
   set_test_storage_fixture_type(&tmp_lvar_nested_tag_ptr_array,
@@ -8493,7 +8502,8 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(4, ps_type_sizeof(ps_lvar_get_decl_type(aligned_value)));
   ASSERT_EQ(PSX_TYPE_STRUCT,
             ps_lvar_get_decl_type(alias_value)->kind);
-  ASSERT_TRUE(ps_lvar_get_decl_type(alias_value)->is_const_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_lvar_get_decl_type(alias_value), PSX_TYPE_QUALIFIER_CONST));
   ASSERT_TRUE(sig_lvar != NULL);
   const psx_type_t *sig_lvar_type = ps_lvar_get_decl_type(sig_lvar);
   ASSERT_TRUE(sig_lvar_type != NULL);
@@ -8624,7 +8634,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, alias_return_function->base->kind);
   ASSERT_TRUE(alias_return_function->base->base != NULL);
   ASSERT_EQ(PSX_TYPE_STRUCT, alias_return_function->base->base->kind);
-  ASSERT_TRUE(alias_return_function->base->base->is_const_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(alias_return_function->base->base, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_EQ((int)(sizeof("__tm_ret_tag") - 1),
             alias_return_function->base->base->tag_len);
 
@@ -9000,12 +9010,12 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(),
       TK_STRUCT, (char *)qualified_member_tag,
       (int)strlen(qualified_member_tag), "y", 1, &qualified_member_y));
-  ASSERT_TRUE(qualified_member_c.decl_type->is_const_qualified);
-  ASSERT_TRUE(qualified_member_v.decl_type->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_member_c.decl_type, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_member_v.decl_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ASSERT_TRUE(qualified_member_v.decl_type->is_unsigned);
   ASSERT_TRUE(qualified_member_v.decl_type->is_long_long);
   ASSERT_EQ(8, ps_type_sizeof(qualified_member_v.decl_type));
-  ASSERT_TRUE(qualified_member_a.decl_type->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(qualified_member_a.decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_EQ(0, qualified_member_y.offset % 8);
 
   parsed_code = parse_program_input(
@@ -9384,19 +9394,20 @@ static void test_type_metadata_bridge() {
   typed_assign_atomic_lhs_mem.kind = ND_LVAR;
   psx_type_t *typed_assign_atomic_type =
       ps_type_new_integer(TK_INT, 4, 0);
-  typed_assign_atomic_type->is_atomic = 1;
+  ps_type_add_qualifiers(typed_assign_atomic_type, PSX_TYPE_QUALIFIER_ATOMIC);
   typed_assign_atomic_lhs_mem.type = typed_assign_atomic_type;
   node_t *typed_assign_atomic = ps_node_new_assign(
       &typed_assign_atomic_lhs_mem, ps_node_new_num(0));
   ASSERT_TRUE(ps_node_get_type(typed_assign_atomic) ==
               typed_assign_atomic_lhs_mem.type);
-  ASSERT_EQ(1, ps_node_get_type(typed_assign_atomic)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(typed_assign_atomic), PSX_TYPE_QUALIFIER_ATOMIC));
 
   node_t typed_addr_ptr_operand_mem = {0};
   typed_addr_ptr_operand_mem.kind = ND_LVAR;
   psx_type_t *typed_addr_ptr_operand_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  typed_addr_ptr_operand_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_addr_ptr_operand_type, PSX_TYPE_QUALIFIER_CONST);
   typed_addr_ptr_operand_mem.type = typed_addr_ptr_operand_type;
   node_t *typed_addr_ptr =
       ps_node_new_unary_addr_for(&typed_addr_ptr_operand_mem);
@@ -9460,11 +9471,11 @@ static void test_type_metadata_bridge() {
   typed_nested_ptr_stale_quals_mem.kind = ND_LVAR;
   psx_type_t *typed_nested_ptr_inner =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  typed_nested_ptr_inner->is_const_qualified = 1;
-  typed_nested_ptr_inner->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(typed_nested_ptr_inner, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(typed_nested_ptr_inner, PSX_TYPE_QUALIFIER_VOLATILE);
   psx_type_t *typed_nested_ptr_outer =
       ps_type_new_pointer(typed_nested_ptr_inner);
-  typed_nested_ptr_outer->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_nested_ptr_outer, PSX_TYPE_QUALIFIER_CONST);
   typed_nested_ptr_stale_quals_mem.type = typed_nested_ptr_outer;
   ASSERT_EQ(2, canonical_node_pointer_qual_levels(
                    &typed_nested_ptr_stale_quals_mem));
@@ -9475,14 +9486,14 @@ static void test_type_metadata_bridge() {
   canonical_nested_ptr.kind = ND_DEREF;
   psx_type_t *raw_nested_ptr_inner = ps_type_new_pointer(
       ps_type_new_integer(TK_INT, 4, 0));
-  raw_nested_ptr_inner->is_const_qualified = 1;
-  raw_nested_ptr_inner->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(raw_nested_ptr_inner, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(raw_nested_ptr_inner, PSX_TYPE_QUALIFIER_VOLATILE);
   psx_type_t *raw_nested_ptr_middle =
       ps_type_new_pointer(raw_nested_ptr_inner);
-  raw_nested_ptr_middle->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(raw_nested_ptr_middle, PSX_TYPE_QUALIFIER_VOLATILE);
   psx_type_t *raw_nested_ptr_type =
       ps_type_new_pointer(raw_nested_ptr_middle);
-  raw_nested_ptr_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(raw_nested_ptr_type, PSX_TYPE_QUALIFIER_CONST);
   canonical_nested_ptr.type = raw_nested_ptr_type;
   ASSERT_TRUE(raw_nested_ptr_type != NULL);
   ASSERT_EQ(PSX_TYPE_POINTER, raw_nested_ptr_type->kind);
@@ -9501,12 +9512,12 @@ static void test_type_metadata_bridge() {
   node_t typed_ptr_mem = {0};
   typed_ptr_mem.kind = ND_LVAR;
   psx_type_t *typed_ptr_base = ps_type_new_float(TK_FLOAT_KIND_DOUBLE, 8);
-  typed_ptr_base->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_ptr_base, PSX_TYPE_QUALIFIER_CONST);
   psx_type_t *typed_ptr_row = ps_type_new_array(
       typed_ptr_base, 2, 16, 1);
   psx_type_t *typed_ptr_type = ps_type_new_pointer(typed_ptr_row);
-  typed_ptr_type->is_const_qualified = 1;
-  typed_ptr_type->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(typed_ptr_type, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(typed_ptr_type, PSX_TYPE_QUALIFIER_VOLATILE);
   typed_ptr_mem.type = typed_ptr_type;
   ps_node_set_vla_runtime_view(&typed_ptr_mem, 24, 3);
   ASSERT_TRUE(ps_node_value_is_pointer_like(&typed_ptr_mem));
@@ -10916,7 +10927,7 @@ static void test_type_metadata_bridge() {
   typed_scalar_canonical_const_mem.kind = ND_LVAR;
   psx_type_t *typed_scalar_canonical_const_type =
       ps_type_new_integer(TK_INT, 4, 0);
-  typed_scalar_canonical_const_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_scalar_canonical_const_type, PSX_TYPE_QUALIFIER_CONST);
   typed_scalar_canonical_const_mem.type =
       typed_scalar_canonical_const_type;
   expect_const_assign_fail_for_node(
@@ -10926,7 +10937,7 @@ static void test_type_metadata_bridge() {
   typed_ptr_canonical_self_const_mem.kind = ND_LVAR;
   psx_type_t *typed_ptr_canonical_self_const_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  typed_ptr_canonical_self_const_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_ptr_canonical_self_const_type, PSX_TYPE_QUALIFIER_CONST);
   typed_ptr_canonical_self_const_mem.type =
       typed_ptr_canonical_self_const_type;
   expect_const_assign_fail_for_node(
@@ -10939,7 +10950,7 @@ static void test_type_metadata_bridge() {
   node_t typed_const_ptr_rhs_mem = {0};
   typed_const_ptr_rhs_mem.kind = ND_LVAR;
   psx_type_t *typed_const_rhs_base = ps_type_new_integer(TK_INT, 4, 0);
-  typed_const_rhs_base->is_const_qualified = 1;
+  ps_type_add_qualifiers(typed_const_rhs_base, PSX_TYPE_QUALIFIER_CONST);
   typed_const_ptr_rhs_mem.type = ps_type_new_pointer(typed_const_rhs_base);
   expect_const_qual_discard_fail_for_nodes(&typed_nonconst_ptr_lhs_mem,
                                            &typed_const_ptr_rhs_mem);
@@ -11356,7 +11367,7 @@ static void test_type_metadata_bridge() {
   cached_add_ptr.rhs = ps_node_new_num(1);
   psx_type_t *cached_add_ptr_type =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  cached_add_ptr_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(cached_add_ptr_type, PSX_TYPE_QUALIFIER_CONST);
   cached_add_ptr.type = cached_add_ptr_type;
   ASSERT_EQ(1, canonical_node_pointer_qual_levels(&cached_add_ptr));
   ASSERT_EQ(4, canonical_node_base_deref_size(&cached_add_ptr));
@@ -11368,11 +11379,11 @@ static void test_type_metadata_bridge() {
   cached_nested_ptr.rhs = ps_node_new_num(1);
   psx_type_t *cached_nested_inner =
       ps_type_new_pointer(ps_type_new_integer(TK_INT, 4, 0));
-  cached_nested_inner->is_const_qualified = 1;
-  cached_nested_inner->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(cached_nested_inner, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(cached_nested_inner, PSX_TYPE_QUALIFIER_VOLATILE);
   psx_type_t *cached_nested_ptr_type =
       ps_type_new_pointer(cached_nested_inner);
-  cached_nested_ptr_type->is_const_qualified = 1;
+  ps_type_add_qualifiers(cached_nested_ptr_type, PSX_TYPE_QUALIFIER_CONST);
   cached_nested_ptr.type = cached_nested_ptr_type;
   ASSERT_EQ(2, canonical_node_pointer_qual_levels(&cached_nested_ptr));
   assert_node_pointer_qualifiers(&cached_nested_ptr, "11", "01");
@@ -11547,11 +11558,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(typed_bool_cast_node)->kind);
 
   psx_type_t *typed_atomic_cast_type = ps_type_new_integer(TK_INT, 4, 0);
-  typed_atomic_cast_type->is_atomic = 1;
+  ps_type_add_qualifiers(typed_atomic_cast_type, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t *typed_atomic_cast_node = ps_node_new_integer_cast_result_ex(
       ps_node_new_num(1), typed_atomic_cast_type, 0);
   ASSERT_TRUE(ps_node_get_type(typed_atomic_cast_node) == typed_atomic_cast_type);
-  ASSERT_EQ(1, ps_node_get_type(typed_atomic_cast_node)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(typed_atomic_cast_node), PSX_TYPE_QUALIFIER_ATOMIC));
 
   psx_type_t *typed_fp_to_unsigned_type = ps_type_new_integer(TK_UNSIGNED, 4, 1);
   node_t *typed_fp_to_unsigned = ps_node_new_fp_to_int_cast(
@@ -11568,11 +11580,12 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_BOOL, ps_node_get_type(typed_fp_to_bool)->kind);
 
   psx_type_t *typed_fp_to_atomic_type = ps_type_new_integer(TK_INT, 4, 0);
-  typed_fp_to_atomic_type->is_atomic = 1;
+  ps_type_add_qualifiers(typed_fp_to_atomic_type, PSX_TYPE_QUALIFIER_ATOMIC);
   node_t *typed_fp_to_atomic = ps_node_new_fp_to_int_cast(
       ps_node_new_num(1), typed_fp_to_atomic_type);
   ASSERT_TRUE(ps_node_get_type(typed_fp_to_atomic) == typed_fp_to_atomic_type);
-  ASSERT_EQ(1, ps_node_get_type(typed_fp_to_atomic)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(typed_fp_to_atomic), PSX_TYPE_QUALIFIER_ATOMIC));
 
   parsed_code = parse_program_input(
       "unsigned __tm_fp_to_unsigned_expr(double d){ return (unsigned)d; }");
@@ -13452,8 +13465,8 @@ static void test_type_metadata_bridge() {
   lvar_view_const_array_addr.size = 8;
   psx_type_t *lvar_view_const_array_leaf =
       ps_type_new_integer(TK_INT, 4, 0);
-  lvar_view_const_array_leaf->is_const_qualified = 1;
-  lvar_view_const_array_leaf->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(lvar_view_const_array_leaf, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(lvar_view_const_array_leaf, PSX_TYPE_QUALIFIER_VOLATILE);
   lvar_view_const_array_addr.decl_type =
       ps_type_new_array(lvar_view_const_array_leaf, 2, 8, 0);
   node_t *lvar_view_const_array_addr_node =
@@ -13554,18 +13567,20 @@ static void test_type_metadata_bridge() {
   psx_type_t *member_const_owner_type =
       ps_type_new_tag(TK_STRUCT, (char *)stale_node_tag_name,
                        (int)sizeof(stale_node_tag_name) - 1, 0, 4);
-  member_const_owner_type->is_const_qualified = 1;
-  member_const_owner_type->is_volatile_qualified = 1;
+  ps_type_add_qualifiers(member_const_owner_type, PSX_TYPE_QUALIFIER_CONST);
+  ps_type_add_qualifiers(member_const_owner_type, PSX_TYPE_QUALIFIER_VOLATILE);
   member_const_owner.decl_type = member_const_owner_type;
   node_lvar_t *member_const_owner_node =
       as_lvar(ps_node_new_tag_member_lvar_ref_for(
           &member_const_owner, member_const_owner_info.offset,
           &member_const_owner_info));
   ASSERT_TRUE(ps_node_get_type((node_t *)member_const_owner_node) != NULL);
-  ASSERT_TRUE(ps_node_get_type((node_t *)member_const_owner_node)
-                  ->is_const_qualified);
-  ASSERT_TRUE(ps_node_get_type((node_t *)member_const_owner_node)
-                  ->is_volatile_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type((node_t *)member_const_owner_node),
+      PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type((node_t *)member_const_owner_node),
+      PSX_TYPE_QUALIFIER_VOLATILE));
   expect_const_assign_fail_for_node((node_t *)member_const_owner_node);
 
   tag_member_info_t member_pointer_decl_type_wins = {0};
@@ -14249,10 +14264,11 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)member_scalar_tag, (int)strlen(member_scalar_tag),
       "a", 1, &member_scalar_a_info));
   ASSERT_TRUE(member_scalar_a_info.decl_type != NULL);
-  ASSERT_TRUE(member_scalar_a_info.decl_type->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(member_scalar_a_info.decl_type, PSX_TYPE_QUALIFIER_ATOMIC));
   node_t *member_scalar_a_node = ps_node_new_tag_member_lvar_ref_for(
       member_scalar_h, member_scalar_a_info.offset, &member_scalar_a_info);
-  ASSERT_TRUE(ps_node_get_type(member_scalar_a_node)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(member_scalar_a_node), PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_EQ(PSX_TYPE_INTEGER, ps_node_get_type(member_scalar_a_node)->kind);
   ASSERT_EQ(0, canonical_node_pointer_qual_levels(member_scalar_a_node));
   ASSERT_EQ(TK_FLOAT_KIND_NONE, ps_node_value_fp_kind(member_scalar_a_node));
@@ -14260,7 +14276,8 @@ static void test_type_metadata_bridge() {
   node_t *member_scalar_a_deref = ps_node_new_tag_member_deref_for(
       ps_node_new_num(0), psx_node_new_lvar_for(member_scalar_h),
       &member_scalar_a_info);
-  ASSERT_TRUE(ps_node_get_type(member_scalar_a_deref)->is_atomic);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      ps_node_get_type(member_scalar_a_deref), PSX_TYPE_QUALIFIER_ATOMIC));
   ASSERT_EQ(PSX_TYPE_INTEGER,
             ps_node_get_type(member_scalar_a_deref)->kind);
   ASSERT_EQ(TK_FLOAT_KIND_NONE,
@@ -14649,7 +14666,7 @@ static void test_type_metadata_bridge() {
   ASSERT_EQ(PSX_TYPE_POINTER, const_struct_ptr_ty->kind);
   ASSERT_TRUE(const_struct_ptr_ty->base != NULL);
   ASSERT_EQ(TK_STRUCT, const_struct_ptr_ty->base->tag_kind);
-  ASSERT_TRUE(const_struct_ptr_ty->base->is_const_qualified);
+  ASSERT_TRUE(ps_type_has_qualifier(const_struct_ptr_ty->base, PSX_TYPE_QUALIFIER_CONST));
   ASSERT_EQ(2, const_struct_ptr_ty->base->tag_len);
   ASSERT_TRUE(strncmp(const_struct_ptr_ty->base->tag_name,
                       "CQ", 2) == 0);
@@ -15767,8 +15784,8 @@ static void test_recursive_declarator_capacity_boundary() {
         deep_pointer_type, i);
     ASSERT_TRUE(pointer != NULL);
     ASSERT_EQ(i == 0 || i == 90,
-              pointer->is_const_qualified);
-    ASSERT_EQ(i == 25, pointer->is_volatile_qualified);
+              ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_CONST));
+    ASSERT_EQ(i == 25, ps_type_has_qualifier(pointer, PSX_TYPE_QUALIFIER_VOLATILE));
   }
   char deep_pointer_signature[512];
   ASSERT_EQ(294, ps_type_format_canonical_signature(

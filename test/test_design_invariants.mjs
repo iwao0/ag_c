@@ -2906,6 +2906,12 @@ if (!canonicalTypeStruct ||
       canonicalTypeStruct[1],
     ) ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(canonicalTypeStruct[1]) ||
+    !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(
+      canonicalTypeStruct[1],
+    ) ||
+    /\bis_(?:const_qualified|volatile_qualified|atomic)\b/.test(
+      canonicalTypeStruct[1],
+    ) ||
     !recordDeclStruct ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||
     !/\bunsigned\s+char\s+is_complete\s*;/.test(recordDeclStruct[1]) ||
@@ -2913,7 +2919,7 @@ if (!canonicalTypeStruct ||
       recordDeclStruct[1],
     )) {
   throw new Error(
-    "canonical recursive types must expose const record declarations with stable identity and explicit completeness",
+    "canonical recursive types must expose one qualifier value and const record declarations with stable identity and explicit completeness",
   );
 }
 

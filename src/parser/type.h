@@ -82,10 +82,8 @@ struct psx_type_t {
   psx_record_id_t record_id;
   const psx_aggregate_definition_t *aggregate_definition;
 
+  psx_type_qualifiers_t qualifiers;
   unsigned int is_unsigned : 1;
-  unsigned int is_const_qualified : 1;
-  unsigned int is_volatile_qualified : 1;
-  unsigned int is_atomic : 1;
   unsigned int is_long_long : 1;
   unsigned int is_plain_char : 1;
   unsigned int is_long_double : 1;
