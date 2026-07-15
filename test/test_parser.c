@@ -364,24 +364,25 @@ static psx_lowering_context_t *test_lowering_context(void) {
   return ag_compilation_session_lowering_context(test_suite_session);
 }
 
+static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
+  return ps_ctx_intern_qual_type_in(
+      test_semantic_context(), type).type_id;
+}
+
 static int plan_test_local_storage(
     const psx_type_t *type, psx_local_storage_plan_t *plan) {
-  psx_qual_type_t identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
   ag_target_info_t target = ag_target_info_host();
   return psx_plan_local_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
-      identity.type_id, &target, plan);
+      intern_test_type_id(type), &target, plan);
 }
 
 static int plan_test_parameter_storage(
     const psx_type_t *type, psx_parameter_storage_plan_t *plan) {
-  psx_qual_type_t identity =
-      ps_ctx_intern_qual_type_in(test_semantic_context(), type);
   ag_target_info_t target = ag_target_info_host();
   return psx_plan_parameter_storage_for_type_id(
       ps_ctx_semantic_type_table_in(test_semantic_context()),
-      identity.type_id, &target, plan);
+      intern_test_type_id(type), &target, plan);
 }
 
 static int test_tag_flat_slot_count(
@@ -4409,7 +4410,10 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .type = integer,
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(integer),
+          .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
       },
       &resolution);
@@ -4424,7 +4428,10 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .type = incomplete,
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(incomplete),
+          .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
       },
       &resolution);
@@ -4434,7 +4441,10 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .type = incomplete,
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(incomplete),
+          .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
           .has_initializer = 1,
       },
@@ -4470,7 +4480,10 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .type = vla,
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(vla),
+          .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
       },
       &resolution);
@@ -4501,7 +4514,10 @@ static void test_local_declaration_resolution_boundary() {
       &(psx_local_declaration_resolution_request_t){
           .arena_context =
               ag_compilation_session_arena_context(test_suite_session),
-          .type = pointer_to_vla,
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              test_semantic_context()),
+          .type_id = intern_test_type_id(pointer_to_vla),
+          .target = ag_compilation_session_target(test_suite_session),
           .application = &application,
       },
       &resolution);

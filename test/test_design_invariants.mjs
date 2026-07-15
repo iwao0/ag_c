@@ -3154,6 +3154,10 @@ const localDeclarationResolutionSource = await readFile(
   "src/semantic/local_declaration_resolution.h",
   "utf8",
 );
+const localDeclarationResolutionImplementation = await readFile(
+  "src/semantic/local_declaration_resolution.c",
+  "utf8",
+);
 const localVlaDimensionStruct = localDeclarationResolutionSource.match(
   /typedef\s+struct\s*\{([^]*?)\}\s*psx_local_vla_dimension_t\s*;/,
 );
@@ -3176,6 +3180,28 @@ if (!runtimeArrayBoundStruct ||
     /\bpsx_semantic_expr_id_t\b/.test(canonicalTypeStruct[1])) {
   throw new Error(
     "VLA runtime bounds must use semantic expression IDs outside canonical types",
+  );
+}
+if (!/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_type_id_t\s+type_id\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    /\bconst\s+psx_type_t\s*\*\s*type\s*;/.test(
+      localDeclarationResolutionSource,
+    ) ||
+    !/\bpsx_semantic_type_table_lookup\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    ) ||
+    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    ) ||
+    /\bps_type_(?:size|align)of_for_target\s*\(/.test(
+      localDeclarationResolutionImplementation,
+    )) {
+  throw new Error(
+    "local declaration resolution must derive type meaning and layout from TypeId",
   );
 }
 
@@ -3226,7 +3252,6 @@ const readonlyTypeFields = [
   ["src/declaration_pipeline.h", "psx_block_extern_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_temporary_local_declaration_pipeline_request_t", "type"],
   ["src/declaration_pipeline.h", "psx_function_definition_pipeline_result_t", "function_type"],
-  ["src/semantic/local_declaration_resolution.h", "psx_local_declaration_resolution_request_t", "type"],
   ["src/semantic/parameter_declaration_resolution.h", "psx_parameter_declaration_resolution_t", "type"],
   ["src/semantic/aggregate_member_resolution.h", "psx_aggregate_member_declaration_resolution_t", "type"],
   ["src/semantic/static_initializer_resolution.h", "psx_static_initializer_resolution_t", "type"],

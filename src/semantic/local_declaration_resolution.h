@@ -2,6 +2,7 @@
 #define SEMANTIC_LOCAL_DECLARATION_RESOLUTION_H
 
 #include "declaration_resolution.h"
+#include "type_identity.h"
 
 typedef struct arena_context_t arena_context_t;
 typedef struct ag_target_info_t ag_target_info_t;
@@ -30,8 +31,9 @@ typedef struct {
 
 typedef struct {
   arena_context_t *arena_context;
+  const psx_semantic_type_table_t *semantic_types;
+  psx_type_id_t type_id;
   const ag_target_info_t *target;
-  const psx_type_t *type;
   const psx_runtime_declarator_application_t *application;
   int has_initializer;
 } psx_local_declaration_resolution_request_t;

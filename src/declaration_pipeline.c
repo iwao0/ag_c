@@ -763,9 +763,9 @@ int psx_begin_automatic_local_declaration_pipeline(
       !request->local_registry || !request->lowering_context)
     return 0;
 
-  if (ps_ctx_intern_qual_type_in(
-          request->semantic_context, request->type).type_id ==
-      PSX_TYPE_ID_INVALID) {
+  psx_qual_type_t declaration_identity = ps_ctx_intern_qual_type_in(
+      request->semantic_context, request->type);
+  if (declaration_identity.type_id == PSX_TYPE_ID_INVALID) {
     return 0;
   }
 
@@ -773,8 +773,10 @@ int psx_begin_automatic_local_declaration_pipeline(
   psx_resolve_local_declaration(
       &(psx_local_declaration_resolution_request_t){
           .arena_context = ps_lowering_arena(request->lowering_context),
+          .semantic_types = ps_ctx_semantic_type_table_in(
+              request->semantic_context),
+          .type_id = declaration_identity.type_id,
           .target = ps_lowering_target(request->lowering_context),
-          .type = request->type,
           .application = request->application,
           .has_initializer = request->initializer->has_initializer,
       },
