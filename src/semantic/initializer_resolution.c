@@ -12,11 +12,8 @@ static int initializer_type_size(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     psx_type_id_t type_id, const ag_target_info_t *target) {
-  return record_layouts
-             ? ps_type_sizeof_id_with_records(
-                   semantic_types, record_layouts, type_id, target)
-             : ps_type_sizeof_id_for_target(
-                   semantic_types, type_id, target);
+  return ps_type_sizeof_id_with_records(
+      semantic_types, record_layouts, type_id, target);
 }
 
 static int initializer_member_offset(
@@ -24,7 +21,7 @@ static int initializer_member_offset(
     const psx_type_t *aggregate_type, const ag_target_info_t *target,
     int member_index, const tag_member_info_t *member) {
   if (!member) return 0;
-  if (!record_layouts) return member->offset;
+  if (!record_layouts) return -1;
   if (!aggregate_type ||
       aggregate_type->record_id == PSX_RECORD_ID_INVALID)
     return -1;
@@ -91,6 +88,7 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
       .union_relative_offset = -1,
       .union_member_index = -1,
   };
+  if (!record_layouts) return target;
   if (!entry) return target;
   for (int d = 0; d < entry->designator_count; d++) {
     const psx_initializer_designator_t *designator = &entry->designators[d];
@@ -162,17 +160,6 @@ psx_initializer_target_t psx_resolve_initializer_designator_path_with_records(
     target.direct_member = member;
   }
   return target;
-}
-
-psx_initializer_target_t psx_resolve_initializer_designator_path(
-    ag_diagnostic_context_t *diagnostics,
-    const psx_semantic_type_table_t *semantic_types,
-    const ag_target_info_t *layout_target,
-    const psx_initializer_entry_t *entry, psx_type_id_t root_type_id,
-    int root_relative_offset, token_t *fallback_tok) {
-  return psx_resolve_initializer_designator_path_with_records(
-      diagnostics, semantic_types, NULL, layout_target, entry,
-      root_type_id, root_relative_offset, fallback_tok);
 }
 
 static int append_scalar_leaf(
@@ -378,21 +365,13 @@ int psx_collect_initializer_scalar_leaves_with_records(
       relative_offset, list);
 }
 
-int psx_collect_initializer_scalar_leaves(
-    const psx_semantic_type_table_t *semantic_types,
-    const ag_target_info_t *target, psx_type_id_t type_id,
-    int relative_offset, psx_initializer_scalar_leaf_list_t *list) {
-  return collect_initializer_scalar_leaves(
-      semantic_types, NULL, target, type_id, relative_offset, list);
-}
-
 int psx_initializer_leaf_cursor_after_target_with_records(
     const psx_semantic_type_table_t *semantic_types,
     const psx_record_layout_table_t *record_layouts,
     const ag_target_info_t *layout_target,
-    const psx_initializer_scalar_leaf_list_t *leaves,
-    const psx_initializer_target_t *target) {
-  if (!leaves || !target) return 0;
+  const psx_initializer_scalar_leaf_list_t *leaves,
+  const psx_initializer_target_t *target) {
+  if (!record_layouts || !leaves || !target) return 0;
   if (target->direct_member && target->type &&
       target->type->kind != PSX_TYPE_ARRAY &&
       !ps_type_is_tag_aggregate(target->type)) {
@@ -411,15 +390,6 @@ int psx_initializer_leaf_cursor_after_target_with_records(
          leaves->items[cursor].relative_offset < end_offset)
     cursor++;
   return cursor;
-}
-
-int psx_initializer_leaf_cursor_after_target(
-    const psx_semantic_type_table_t *semantic_types,
-    const ag_target_info_t *layout_target,
-    const psx_initializer_scalar_leaf_list_t *leaves,
-    const psx_initializer_target_t *target) {
-  return psx_initializer_leaf_cursor_after_target_with_records(
-      semantic_types, NULL, layout_target, leaves, target);
 }
 
 void psx_initializer_scalar_leaf_list_dispose(

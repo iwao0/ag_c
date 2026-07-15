@@ -2491,16 +2491,28 @@ if (!initializerTargetType ||
     !/\bpsx_type_id_t\s+string_array_type_id\s*;/.test(
       initializerLeafType[1],
     ) ||
-    !/\bpsx_resolve_initializer_designator_path\s*\([\s\S]*?\bpsx_type_id_t\s+root_type_id\b/.test(
+    !/\bpsx_resolve_initializer_designator_path_with_records\s*\([\s\S]*?\bpsx_type_id_t\s+root_type_id\b/.test(
       initializerResolutionHeader,
     ) ||
-    !/\bpsx_collect_initializer_scalar_leaves\s*\([\s\S]*?\bpsx_type_id_t\s+type_id\b/.test(
+    !/\bpsx_collect_initializer_scalar_leaves_with_records\s*\([\s\S]*?\bpsx_type_id_t\s+type_id\b/.test(
+      initializerResolutionHeader,
+    ) ||
+    /\bpsx_resolve_initializer_designator_path\s*\(/.test(
+      initializerResolutionHeader,
+    ) ||
+    /\bpsx_collect_initializer_scalar_leaves\s*\(/.test(
+      initializerResolutionHeader,
+    ) ||
+    /\bpsx_initializer_leaf_cursor_after_target\s*\(/.test(
       initializerResolutionHeader,
     ) ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      explicitDiagnosticInitializerResolutionSource,
+    ) ||
+    /\bps_type_sizeof_id_for_target\s*\(/.test(
       explicitDiagnosticInitializerResolutionSource,
     ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
