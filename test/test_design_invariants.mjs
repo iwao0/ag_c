@@ -2534,6 +2534,37 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const arrayDecayPointerArithmeticType = nodeUtilsSource.match(
+  /const\s+psx_type_t\s*\*ps_node_array_decay_pointer_arith_type_in\s*\([^]*?\n\}/,
+);
+for (const removedApi of [
+  "ps_node_type_size",
+  "ps_node_storage_type_size",
+  "ps_node_deref_size",
+  "ps_node_aggregate_value_size",
+  "ps_node_cast_i64_extension_info",
+  "ps_node_i64_widen_source_is_unsigned",
+  "ps_node_row_decay_pointer_arith_type_in",
+]) {
+  if (new RegExp(`\\b${removedApi}\\s*\\(`).test(
+        `${parserLayerSource}\n${loweringLayerSource}`,
+      )) {
+    throw new Error(
+      `context-free parser node layout API ${removedApi} must not return`,
+    );
+  }
+}
+if (!arrayDecayPointerArithmeticType ||
+    /\bps_type_(?:size|align)of\s*\(/.test(
+      arrayDecayPointerArithmeticType[0],
+    ) ||
+    !/ps_node_array_decay_pointer_arith_type_in\s*\(/.test(
+      expressionLoweringSource,
+    )) {
+  throw new Error(
+    "array decay result typing must follow semantic type shape without querying target layout",
+  );
+}
 const parserTypeImplementationSource = await readFile(
   "src/parser/type.c",
   "utf8",
@@ -3837,7 +3868,7 @@ const readonlySemanticTypeResults = [
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_address_result_type"],
   ["src/semantic/expression_operand_resolution.h", "psx_resolve_incdec_result_type"],
   ["src/semantic/function_call_resolution.h", "psx_resolve_function_reference_type"],
-  ["src/parser/node_utils.h", "ps_node_row_decay_pointer_arith_type_in"],
+  ["src/parser/node_utils.h", "ps_node_array_decay_pointer_arith_type_in"],
 ];
 for (const [file, functionName] of readonlySemanticTypeResults) {
   const source = await readFile(file, "utf8");

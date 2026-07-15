@@ -59,7 +59,7 @@ static node_t *new_pointer_result(
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   node_t *result = ps_node_new_binary_in(
       arena_context, kind, pointer, offset);
-  const psx_type_t *type = ps_node_row_decay_pointer_arith_type_in(
+  const psx_type_t *type = ps_node_array_decay_pointer_arith_type_in(
       arena_context, pointer);
   if (type) ps_node_bind_type(result, type);
   return result;

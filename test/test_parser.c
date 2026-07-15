@@ -161,8 +161,18 @@ static arena_context_t *test_arena_context(void) {
 #define ps_node_new_binary(...) \
   ps_node_new_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_row_decay_pointer_arith_type(...) \
-  ps_node_row_decay_pointer_arith_type_in( \
+  ps_node_array_decay_pointer_arith_type_in( \
       test_arena_context(), __VA_ARGS__)
+#define ps_node_type_size(...) test_node_type_size(__VA_ARGS__)
+#define ps_node_storage_type_size(...) \
+  test_node_type_size(__VA_ARGS__)
+#define ps_node_deref_size(...) test_node_deref_size(__VA_ARGS__)
+#define ps_node_aggregate_value_size(...) \
+  test_node_aggregate_value_size(__VA_ARGS__)
+#define ps_node_cast_i64_extension_info(...) \
+  test_node_cast_i64_extension_info(__VA_ARGS__)
+#define ps_node_i64_widen_source_is_unsigned(...) \
+  test_node_i64_widen_source_is_unsigned(__VA_ARGS__)
 #define psx_node_new_raw_binary(...) \
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_shift_trunc_extend(...) \
@@ -407,6 +417,55 @@ static int test_node_atomic_pointer_info(
                        : ps_type_is_unsigned(pointee);
   }
   return 1;
+}
+
+static int test_node_type_size(node_t *node) {
+  return node ? ps_type_sizeof_for_target(
+                    ps_node_get_type(node),
+                    ps_ctx_target_info(test_semantic_context()))
+              : 0;
+}
+
+static int test_node_deref_size(node_t *node) {
+  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
+  if (!type || !type->base ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  return ps_type_sizeof_for_target(
+      type->base, ps_ctx_target_info(test_semantic_context()));
+}
+
+static int test_node_aggregate_value_size(node_t *node) {
+  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
+  return ps_type_is_tag_aggregate(type) ? test_node_type_size(node) : 0;
+}
+
+static int test_node_cast_i64_extension_info(
+    node_t *node, int *target_size,
+    int *widen_zext_i64, int *needs_i64_extend) {
+  if (target_size) *target_size = 0;
+  if (widen_zext_i64) *widen_zext_i64 = 0;
+  if (needs_i64_extend) *needs_i64_extend = 0;
+  if (!node) return 0;
+  int size = test_node_type_size(node);
+  if (target_size) *target_size = size;
+  if (widen_zext_i64) *widen_zext_i64 = node->widen_zext_i64 ? 1 : 0;
+  if (needs_i64_extend) {
+    *needs_i64_extend =
+        !ps_node_value_is_pointer_like(node) && size >= 8;
+  }
+  return 1;
+}
+
+static int test_node_i64_widen_source_is_unsigned(node_t *node) {
+  const psx_type_t *type = node ? ps_node_get_type(node) : NULL;
+  if (!type || (type->kind != PSX_TYPE_BOOL &&
+                type->kind != PSX_TYPE_INTEGER)) {
+    return 0;
+  }
+  return test_node_type_size(node) >= 4 &&
+         ps_node_conversion_value_is_unsigned(node);
 }
 
 static int plan_test_local_storage(

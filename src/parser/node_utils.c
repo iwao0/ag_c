@@ -2262,18 +2262,6 @@ void ps_node_bind_type(node_t *node, const psx_type_t *type) {
   }
 }
 
-int ps_node_type_size(node_t *node) {
-  return node ? ps_type_sizeof(ps_node_get_type(node)) : 0;
-}
-
-int ps_node_storage_type_size(node_t *node) {
-  return ps_node_type_size(node);
-}
-
-int ps_node_deref_size(node_t *node) {
-  return node ? ps_type_deref_size(ps_node_get_type(node)) : 0;
-}
-
 static int type_is_pointer_view_type(const psx_type_t *type) {
   return type && (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY);
 }
@@ -2315,24 +2303,6 @@ static int node_pointee_is_const_qualified(node_t *node) {
 static int node_pointee_is_volatile_qualified(node_t *node) {
   const psx_type_t *pointee = node_pointee_value_type(node);
   return ps_type_has_qualifier(pointee, PSX_TYPE_QUALIFIER_VOLATILE);
-}
-
-int ps_node_cast_i64_extension_info(node_t *node, int *target_size,
-                                     int *widen_zext_i64, int *needs_i64_extend) {
-  if (target_size) *target_size = 0;
-  if (widen_zext_i64) *widen_zext_i64 = 0;
-  if (needs_i64_extend) *needs_i64_extend = 0;
-  if (!node) return 0;
-
-  int sz = ps_type_sizeof(ps_node_get_type(node));
-  if (sz <= 0) sz = ps_node_type_size(node);
-
-  int zext = node->widen_zext_i64 ? 1 : 0;
-  int extend = (!ps_node_value_is_pointer_like(node) && sz >= 8) ? 1 : 0;
-  if (target_size) *target_size = sz;
-  if (widen_zext_i64) *widen_zext_i64 = zext;
-  if (needs_i64_extend) *needs_i64_extend = extend;
-  return 1;
 }
 
 static int node_self_is_const_qualified(node_t *node) {
@@ -2429,16 +2399,6 @@ int ps_node_integer_value_is_unsigned(node_t *node) {
 
 int ps_node_conversion_value_is_unsigned(node_t *node) {
   return node_is_unsigned(node);
-}
-
-/* Source signedness for widening an integer value to i64. */
-int ps_node_i64_widen_source_is_unsigned(node_t *node) {
-  if (!node) return 0;
-  const psx_type_t *type = ps_node_get_type(node);
-  if (!type_is_integer_like(type)) return 0;
-  int size = ps_type_sizeof(type);
-  if (size <= 0) size = ps_node_type_size(node);
-  return size >= 4 && node_is_unsigned(node);
 }
 
 int ps_node_shift_operation_is_unsigned(node_t *node) {
@@ -3161,12 +3121,9 @@ int ps_node_deref_decays_to_address(node_t *node) {
   return type && type->kind == PSX_TYPE_ARRAY;
 }
 
-const psx_type_t *ps_node_row_decay_pointer_arith_type_in(
+const psx_type_t *ps_node_array_decay_pointer_arith_type_in(
     arena_context_t *arena_context, node_t *node) {
   if (!node || (node->kind != ND_DEREF && node->kind != ND_ADDR)) return NULL;
-  int ds = ps_node_deref_size(node);
-  if (ds <= 0 || ps_node_type_size(node) <= ds) return NULL;
-
   const psx_type_t *type = ps_node_get_type(node);
   const psx_type_t *base =
       (type && type->kind == PSX_TYPE_ARRAY && type->base)
@@ -3197,14 +3154,6 @@ int ps_node_value_is_pointer_like(node_t *node) {
   if (ps_type_is_pointer_like(ps_node_get_type(node))) return 1;
   if (ps_node_scalar_ptr_member_lvalue(node)) return 1;
   return 0;
-}
-
-int ps_node_aggregate_value_size(node_t *node) {
-  if (!node) return 0;
-  const psx_type_t *type = ps_node_get_type(node);
-  if (!ps_type_is_tag_aggregate(type)) return 0;
-  int size = ps_type_sizeof(type);
-  return size > 0 ? size : 0;
 }
 
 int ps_node_vla_alloc_descriptor_info(node_t *node, int *descriptor_frame_off,
