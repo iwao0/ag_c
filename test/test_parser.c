@@ -17216,6 +17216,13 @@ static void test_semantic_type_identity() {
       pointer_to_const_identity.type_id);
   ASSERT_EQ(plain_int_identity.type_id, qualified_pointer_base.type_id);
   ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST, qualified_pointer_base.qualifiers);
+  const psx_type_t *canonical_pointer_to_const =
+      ps_ctx_type_by_id_in(context, pointer_to_const_identity.type_id);
+  ASSERT_TRUE(canonical_pointer_to_const != NULL);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(canonical_pointer_to_const));
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(canonical_pointer_to_const->base));
 
   psx_type_t *const_int_array = ps_type_new_array(const_int, 3, 12, 0);
   psx_type_t *nested_const_int_array = ps_type_new_array(
@@ -17258,6 +17265,11 @@ static void test_semantic_type_identity() {
             psx_semantic_type_table_parameter(
                 ps_ctx_semantic_type_table_in(context),
                 function_identity.type_id, 0).qualifiers);
+  const psx_type_t *canonical_function =
+      ps_ctx_type_by_id_in(context, function_identity.type_id);
+  ASSERT_TRUE(canonical_function != NULL);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE,
+            ps_type_qualifiers(canonical_function->param_types[0]));
   ASSERT_EQ(host_pointer_identity.type_id,
             psx_semantic_type_table_parameter(
                 ps_ctx_semantic_type_table_in(context),

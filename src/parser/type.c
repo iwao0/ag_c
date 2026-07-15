@@ -1347,3 +1347,12 @@ void ps_type_remove_qualifiers(psx_type_t *type,
                       PSX_TYPE_QUALIFIER_VOLATILE |
                       PSX_TYPE_QUALIFIER_ATOMIC));
 }
+
+void ps_type_remove_all_qualifiers_recursive(psx_type_t *type) {
+  if (!type) return;
+  type->qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  ps_type_remove_all_qualifiers_recursive(psx_type_owned_base_mut(type));
+  for (int i = 0; i < type->param_count; i++)
+    ps_type_remove_all_qualifiers_recursive(
+        psx_type_owned_param_mut(type, i));
+}

@@ -53,5 +53,6 @@ void ps_type_add_qualifiers(psx_type_t *type,
                             psx_type_qualifiers_t qualifiers);
 void ps_type_remove_qualifiers(psx_type_t *type,
                                psx_type_qualifiers_t qualifiers);
+void ps_type_remove_all_qualifiers_recursive(psx_type_t *type);
 
 #endif

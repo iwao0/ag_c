@@ -3207,6 +3207,7 @@ const typeBuilderApiNames = [
   "ps_type_set_decl_spec_qualifiers",
   "ps_type_add_qualifiers",
   "ps_type_remove_qualifiers",
+  "ps_type_remove_all_qualifiers_recursive",
 ];
 for (const functionName of typeBuilderApiNames) {
   const name = new RegExp(`\\b${functionName}\\b`);
@@ -3748,7 +3749,7 @@ const qualTypeStruct = semanticTypeIdentityHeader.match(
 if (!qualTypeStruct ||
     !/\bpsx_type_id_t\s+type_id\s*;/.test(qualTypeStruct[1]) ||
     !/\bpsx_type_qualifiers_t\s+qualifiers\s*;/.test(qualTypeStruct[1]) ||
-    !/\bps_type_unqualified_semantic_matches\s*\(/.test(
+    !/relation\.qualifiers\s*==\s*ps_type_qualifiers\s*\(\s*candidate\s*\)/.test(
       semanticTypeIdentitySource,
     ) ||
     /#include\s+"\.\.\/(?:target_info|type_layout)\.h"/.test(
@@ -3768,6 +3769,12 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     !/\bps_type_clone_in\s*\(/.test(
       semanticTypeIdentitySource,
     ) ||
+    !/\bps_type_remove_all_qualifiers_recursive\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
+    !/\bsemantic_type_entry_matches\s*\(/.test(
+      semanticTypeIdentitySource,
+    ) ||
     /\bps_type_clone_for_identity_in\s*\(/.test(
       `${semanticTypeIdentitySource}\n${canonicalTypeSource}`,
     ) ||
@@ -3781,16 +3788,13 @@ if (!/table->entries\[id\]\.type\s*=\s*canonical\s*;[^]*?table->next_id\s*=\s*id
     "semantic type interning must resolve record relations through RecordDeclTable without retaining embedded declarations",
   );
 }
-if (!/\bpsx_type_id_t\s+base_type_id\s*;/.test(
+if (!/\bpsx_qual_type_t\s+base_type\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/\bpsx_type_id_t\s*\*\s*parameter_type_ids\s*;/.test(
+    !/\bpsx_qual_type_t\s*\*\s*parameter_types\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
-    !/\bpsx_type_id_t\s*\*\s*record_member_type_ids\s*;/.test(
-      semanticTypeIdentitySource,
-    ) ||
-    !/\bpsx_type_qualifiers_t\s*\*\s*record_member_qualifiers\s*;/.test(
+    !/\bpsx_qual_type_t\s*\*\s*record_member_types\s*;/.test(
       semanticTypeIdentitySource,
     ) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(
@@ -3803,7 +3807,7 @@ if (!/\bpsx_type_id_t\s+base_type_id\s*;/.test(
       semanticTypeIdentityHeader,
     )) {
   throw new Error(
-    "interned TypeIds must retain recursive base, parameter, and record member TypeId relationships",
+    "interned TypeIds must retain recursive base, parameter, and record member QualType relationships",
   );
 }
 
