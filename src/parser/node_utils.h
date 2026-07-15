@@ -62,7 +62,7 @@ node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset);
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
                                   int offset, int type_size);
-node_t *ps_node_new_lvar_typed_at_for_in(
+node_t *ps_node_new_lvar_storage_slot_for_in(
     arena_context_t *arena_context, struct lvar_t *owner, int offset,
     int type_size);
 node_t *ps_node_new_lvar_type_at_for_in(
@@ -93,8 +93,6 @@ node_t *psx_node_new_vla_decay_ref_for_in(
     arena_context_t *arena_context, struct lvar_t *var);
 node_t *ps_node_new_param_lvar_for_in(arena_context_t *arena_context,
                                       struct lvar_t *var);
-node_t *ps_node_new_array_elem_lvar_for_in(
-    arena_context_t *arena_context, struct lvar_t *var, int idx);
 node_t *ps_node_new_fp_to_int_cast_in(arena_context_t *arena_context,
                                        node_t *operand,
                                        const psx_type_t *cast_type);

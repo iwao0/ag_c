@@ -482,18 +482,6 @@ static void gvar_tag_identity(const global_var_t *gv, token_kind_t *kind,
   if (scope_depth_p1) *scope_depth_p1 = out_scope_depth_p1;
 }
 
-static const psx_type_t *type_array_element_type_for_size(
-    const psx_type_t *type, int type_size) {
-  if (!type || type->kind != PSX_TYPE_ARRAY || type_size <= 0) return NULL;
-  const psx_type_t *cur = type;
-  while (cur && cur->kind == PSX_TYPE_ARRAY && cur->base) {
-    int elem_size = ps_type_sizeof(cur->base);
-    if (elem_size == type_size) return cur->base;
-    cur = cur->base;
-  }
-  return NULL;
-}
-
 typedef struct {
   const global_var_t *gv;
   int index;
@@ -2509,25 +2497,13 @@ node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
           arena_context, integer_kind_for_storage_size(size), 0));
 }
 
-node_t *ps_node_new_lvar_typed_at_for_in(
+node_t *ps_node_new_lvar_storage_slot_for_in(
     arena_context_t *arena_context, lvar_t *owner, int offset,
     int type_size) {
-  const psx_type_t *type = NULL;
-  if (owner) {
-    const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
-    int rel = offset - owner->offset;
-    int scalar_elem_size = ps_lvar_array_scalar_element_size(owner);
-    if (rel == 0 && ps_type_sizeof(owner_type) == type_size)
-      type = owner_type;
-    else if (rel >= 0 && scalar_elem_size > 0 &&
-             (rel % scalar_elem_size) == 0)
-      type = type_array_element_type_for_size(owner_type, type_size);
-  }
-  if (!type)
-    type = ps_type_new_integer_in(
-        arena_context,
-        integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
-        0);
+  const psx_type_t *type = ps_type_new_integer_in(
+      arena_context,
+      integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
+      0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, owner, type);
 }
@@ -2634,23 +2610,6 @@ node_t *ps_node_new_param_lvar_for_in(arena_context_t *arena_context,
   const psx_type_t *decl_type = var ? ps_lvar_get_decl_type(var) : NULL;
   return (node_t *)new_lvar_symbol_node(
       arena_context, var ? var->offset : 0, var, decl_type);
-}
-
-node_t *ps_node_new_array_elem_lvar_for_in(
-    arena_context_t *arena_context, lvar_t *var, int idx) {
-  const psx_type_t *array_type = var ? ps_lvar_get_decl_type(var) : NULL;
-  const psx_type_t *elem_type =
-      array_type && array_type->kind == PSX_TYPE_ARRAY
-          ? ps_type_array_leaf_type(array_type)
-          : NULL;
-  int canonical_elem_size = ps_type_sizeof(elem_type);
-  int elem_size = canonical_elem_size > 0 ? canonical_elem_size
-                  : ps_lvar_array_scalar_element_size(var);
-  int offset = var ? var->offset + idx * elem_size : 0;
-  if (!elem_type)
-    elem_type = ps_type_new_integer_in(arena_context, TK_INT, 0);
-  return (node_t *)new_lvar_symbol_node(
-      arena_context, offset, var, elem_type);
 }
 
 static node_t *annotate_explicit_type(node_t *node,

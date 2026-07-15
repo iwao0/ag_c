@@ -2534,6 +2534,10 @@ if (!typeNameRef ||
 }
 
 const nodeUtilsSource = await readFile("src/parser/node_utils.c", "utf8");
+const initializerLoweringSourceForLocalLayout = await readFile(
+  "src/lowering/initializer_lowering.c",
+  "utf8",
+);
 const arrayDecayPointerArithmeticType = nodeUtilsSource.match(
   /const\s+psx_type_t\s*\*ps_node_array_decay_pointer_arith_type_in\s*\([^]*?\n\}/,
 );
@@ -2569,6 +2573,39 @@ for (const removedApi of [
       `context-free global layout API ${removedApi} must not return`,
     );
   }
+}
+for (const removedApi of [
+  "ps_lvar_decl_sizeof",
+  "ps_lvar_storage_size",
+  "ps_lvar_elem_size",
+  "ps_lvar_array_scalar_element_size",
+  "ps_node_new_lvar_typed_at_for_in",
+  "ps_node_new_array_elem_lvar_for_in",
+]) {
+  if (new RegExp(`\\b${removedApi}\\s*\\(`).test(
+        `${parserLayerSource}\n${loweringLayerSource}`,
+      )) {
+    throw new Error(
+      `context-free local layout API ${removedApi} must not return`,
+    );
+  }
+}
+const storageSlotConstructor = nodeUtilsSource.match(
+  /node_t\s*\*ps_node_new_lvar_storage_slot_for_in\s*\([^]*?\n\}/,
+);
+if (!storageSlotConstructor ||
+    /\bps_(?:lvar|type)_[A-Za-z0-9_]*(?:size|sizeof)\s*\(/.test(
+      storageSlotConstructor[0],
+    ) ||
+    !/ps_node_new_lvar_type_at_for_in\s*\([^;]*\belement\s*\)/s.test(
+      initializerLoweringSourceForLocalLayout,
+    ) ||
+    !/ps_node_new_lvar_storage_slot_for_in\s*\(/.test(
+      initializerLoweringSourceForLocalLayout,
+    )) {
+  throw new Error(
+    "local initializer lowering must pass semantic element types directly and label byte-wise zero fill as storage slots",
+  );
 }
 const classifiedInitializerVisitor = nodeUtilsSource.match(
   /int\s+ps_gvar_visit_initializer_classified\s*\([^]*?\n\}/,

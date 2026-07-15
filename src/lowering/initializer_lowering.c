@@ -131,13 +131,10 @@ static node_t *new_array_elem_assign(
   const psx_type_t *array_type = ps_lvar_get_decl_type(var);
   const psx_type_t *element = ps_type_array_leaf_type(array_type);
   int element_size = type_size(context, element);
-  node_t *target = element && element_size > 0
-                       ? ps_node_new_lvar_type_at_for_in(
-                             context->arena_context, var,
-                             ps_lvar_offset(var) + idx * element_size,
-                             element)
-                       : ps_node_new_array_elem_lvar_for_in(
-                             context->arena_context, var, idx);
+  node_t *target = ps_node_new_lvar_type_at_for_in(
+      context->arena_context, var,
+      ps_lvar_offset(var) + idx * (element_size > 0 ? element_size : 0),
+      element);
   return ps_node_new_assign_in(
       context->arena_context, target, value);
 }
@@ -239,9 +236,9 @@ static node_t *lower_array_expr_initializer(
       node_t *dst = ps_node_new_lvar_type_at_for_in(
           context->arena_context, var,
           ps_lvar_offset(var) + i * elem_size, element);
-      node_t *src = ps_node_new_lvar_typed_at_for_in(
+      node_t *src = ps_node_new_lvar_type_at_for_in(
           context->arena_context, source->var,
-          source->offset + i * elem_size, elem_size);
+          source->offset + i * elem_size, element);
       chain = append_init(
           context, chain,
           ps_node_new_assign_in(context->arena_context, dst, src));
@@ -497,7 +494,7 @@ static node_t *append_object_zero_fill(
   for (int w = 0; w < 4; w++) {
     int width = widths[w];
     while (offset + width <= size) {
-      node_t *slot = ps_node_new_lvar_typed_at_for_in(
+      node_t *slot = ps_node_new_lvar_storage_slot_for_in(
           context->arena_context, var,
           ps_lvar_offset(var) + offset, width);
       chain = append_init(

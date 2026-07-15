@@ -181,6 +181,10 @@ static arena_context_t *test_arena_context(void) {
   test_gvar_initializer_element_size(__VA_ARGS__)
 #define ps_gvar_initializer_element_count(...) \
   test_gvar_initializer_element_count(__VA_ARGS__)
+#define ps_lvar_decl_sizeof(...) test_lvar_decl_sizeof(__VA_ARGS__)
+#define ps_lvar_storage_size(...) test_lvar_storage_size(__VA_ARGS__)
+#define ps_lvar_array_scalar_element_size(...) \
+  test_lvar_array_scalar_element_size(__VA_ARGS__)
 #define psx_node_new_raw_binary(...) \
   psx_node_new_raw_binary_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_shift_trunc_extend(...) \
@@ -192,7 +196,7 @@ static arena_context_t *test_arena_context(void) {
 #define ps_node_new_lvar_typed(...) \
   ps_node_new_lvar_typed_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_lvar_typed_at_for(...) \
-  ps_node_new_lvar_typed_at_for_in(test_arena_context(), __VA_ARGS__)
+  test_node_new_lvar_typed_at_for(__VA_ARGS__)
 #define ps_node_new_lvar_type_at_for(...) \
   ps_node_new_lvar_type_at_for_in(test_arena_context(), __VA_ARGS__)
 #define psx_node_new_lvar_scalar_slot_at(...) \
@@ -218,7 +222,7 @@ static arena_context_t *test_arena_context(void) {
 #define ps_node_new_param_lvar_for(...) \
   ps_node_new_param_lvar_for_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_array_elem_lvar_for(...) \
-  ps_node_new_array_elem_lvar_for_in(test_arena_context(), __VA_ARGS__)
+  test_node_new_array_elem_lvar_for(__VA_ARGS__)
 #define ps_node_new_fp_to_int_cast(...) \
   ps_node_new_fp_to_int_cast_in(test_arena_context(), __VA_ARGS__)
 #define ps_node_new_int_to_fp_cast(...) \
@@ -513,6 +517,85 @@ static int test_gvar_initializer_element_count(
   return element_size > 0
              ? (storage_size + element_size - 1) / element_size
              : 0;
+}
+
+static int test_lvar_decl_sizeof(
+    const lvar_t *var, int fallback_size) {
+  int size = ps_type_sizeof_for_target(
+      ps_lvar_get_decl_type(var),
+      ps_ctx_target_info(test_semantic_context()));
+  return size > 0 ? size : fallback_size;
+}
+
+static int test_lvar_storage_size(
+    const lvar_t *var, int fallback_size) {
+  int declaration_size = test_lvar_decl_sizeof(var, 0);
+  int frame_size = ps_lvar_frame_storage_size(var);
+  int size = frame_size > declaration_size ? frame_size : declaration_size;
+  return size > 0 ? size : fallback_size;
+}
+
+static int test_lvar_array_scalar_element_size(const lvar_t *var) {
+  const psx_type_t *type = ps_lvar_get_decl_type(var);
+  const psx_type_t *element = type && type->kind == PSX_TYPE_ARRAY
+                                  ? ps_type_array_leaf_type(type)
+                                  : ps_type_pointee_value_type(type);
+  return ps_type_sizeof_for_target(
+      element, ps_ctx_target_info(test_semantic_context()));
+}
+
+static token_kind_t test_integer_kind_for_storage_size(int size) {
+  if (size <= 1) return TK_CHAR;
+  if (size == 2) return TK_SHORT;
+  if (size >= 8) return TK_LONG;
+  return TK_INT;
+}
+
+static const psx_type_t *test_array_element_type_for_size(
+    const psx_type_t *type, int type_size) {
+  while (type && type->kind == PSX_TYPE_ARRAY && type->base) {
+    int element_size = ps_type_sizeof_for_target(
+        type->base, ps_ctx_target_info(test_semantic_context()));
+    if (element_size == type_size) return type->base;
+    type = type->base;
+  }
+  return NULL;
+}
+
+static node_t *test_node_new_lvar_typed_at_for(
+    lvar_t *owner, int offset, int type_size) {
+  const psx_type_t *type = NULL;
+  if (owner) {
+    const psx_type_t *owner_type = ps_lvar_get_decl_type(owner);
+    int relative_offset = offset - ps_lvar_offset(owner);
+    int scalar_size = test_lvar_array_scalar_element_size(owner);
+    if (relative_offset == 0 &&
+        test_lvar_decl_sizeof(owner, 0) == type_size) {
+      type = owner_type;
+    } else if (relative_offset >= 0 && scalar_size > 0 &&
+               relative_offset % scalar_size == 0) {
+      type = test_array_element_type_for_size(owner_type, type_size);
+    }
+  }
+  if (!type) {
+    type = ps_type_new_integer(
+        test_integer_kind_for_storage_size(
+            type_size > 0 ? type_size : 8),
+        type_size, 0);
+  }
+  return ps_node_new_lvar_type_at_for_in(
+      test_arena_context(), owner, offset, type);
+}
+
+static node_t *test_node_new_array_elem_lvar_for(
+    lvar_t *var, int index) {
+  const psx_type_t *array_type = ps_lvar_get_decl_type(var);
+  const psx_type_t *element = ps_type_array_leaf_type(array_type);
+  int element_size = test_lvar_array_scalar_element_size(var);
+  if (!element) element = ps_type_new_integer(TK_INT, 4, 0);
+  return ps_node_new_lvar_type_at_for_in(
+      test_arena_context(), var,
+      ps_lvar_offset(var) + index * element_size, element);
 }
 
 static int plan_test_local_storage(

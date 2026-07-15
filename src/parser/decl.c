@@ -51,39 +51,12 @@ static token_kind_t lvar_public_tag_kind_from_type(const psx_type_t *type) {
   return TK_EOF;
 }
 
-int ps_lvar_storage_size(const lvar_t *var, int fallback_size) {
-  int decl_size = ps_lvar_decl_sizeof(var, 0);
-  int storage_size = (var && var->size > 0) ? var->size : 0;
-  if (storage_size > decl_size) return storage_size;
-  if (decl_size > 0) return decl_size;
-  return storage_size > 0 ? storage_size : fallback_size;
-}
-
 int ps_lvar_frame_storage_size(const lvar_t *var) {
   return var && var->size > 0 ? var->size : 0;
 }
 
-int ps_lvar_decl_sizeof(const lvar_t *var, int fallback_size) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  int decl_size = ps_type_sizeof(type);
-  return decl_size > 0 ? decl_size : fallback_size;
-}
-
-int ps_lvar_elem_size(const lvar_t *var, int fallback_size) {
-  const psx_type_t *type = lvar_public_decl_type(var);
-  int size = ps_type_deref_size(type);
-  return size > 0 ? size : fallback_size;
-}
-
 int ps_lvar_array_flat_element_count(const lvar_t *var) {
   return var ? ps_type_array_flat_element_count(lvar_public_decl_type(var)) : 0;
-}
-
-int ps_lvar_array_scalar_element_size(const lvar_t *var) {
-  if (!ps_lvar_is_array(var)) return ps_lvar_elem_size(var, 0);
-  int elem = ps_type_array_scalar_element_size(lvar_public_decl_type(var));
-  if (elem > 0) return elem;
-  return ps_lvar_elem_size(var, 0);
 }
 
 int ps_lvar_array_designator_stride_elements(const lvar_t *var, int depth) {
