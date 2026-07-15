@@ -19,9 +19,12 @@ node_t *lower_sizeof_query_expression(
                   ps_lowering_arena(lowering_context),
                   TK_UNSIGNED, 8, 1));
   } else {
-    result = ps_node_new_num(query->resolved_size);
+    result = ps_node_new_num_in(
+        ps_lowering_arena(lowering_context), query->resolved_size);
   }
   return evaluated_prefix
-             ? ps_node_new_binary(ND_COMMA, evaluated_prefix, result)
+             ? ps_node_new_binary_in(
+                   ps_lowering_arena(lowering_context), ND_COMMA,
+                   evaluated_prefix, result)
              : result;
 }

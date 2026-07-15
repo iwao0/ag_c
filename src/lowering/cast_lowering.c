@@ -196,7 +196,8 @@ static node_t *lower_aggregate_cast(
       ps_node_new_tag_member_lvar_ref_for(temp, member.offset, &member);
   node_t *assign = ps_node_new_assign(member_ref, operand);
   node_t *result = ps_node_new_lvar_expr_ref_for(temp);
-  return ps_node_new_binary(ND_COMMA, assign, result);
+  return ps_node_new_binary_in(
+      ps_lowering_arena(lowering_context), ND_COMMA, assign, result);
 }
 
 static node_t *pointer_result(node_t *operand, cast_target_view_t view) {
@@ -219,6 +220,7 @@ static node_t *lower_cast(
     node_t *operand, cast_target_view_t view,
     token_t *diag_tok,
     const ag_compilation_options_t *options) {
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   if (!view.is_pointer && ps_ctx_is_tag_aggregate_kind(view.tag_kind))
     return lower_aggregate_cast(
         lowering_context, local_registry, operand, view, diag_tok, options);
@@ -230,7 +232,8 @@ static node_t *lower_cast(
        view.kind == TK_SHORT || view.kind == TK_CHAR ||
        view.kind == TK_ENUM || view.kind == TK_SIGNED ||
        view.kind == TK_UNSIGNED || view.kind == TK_BOOL)) {
-    operand = ps_node_new_num((long long)((node_num_t *)operand)->fval);
+    operand = ps_node_new_num_in(
+        arena_context, (long long)((node_num_t *)operand)->fval);
   }
 
   if (view.is_pointer || view.kind == TK_LONG) {
@@ -280,7 +283,8 @@ static node_t *lower_cast(
                           (view.is_unsigned || view.kind == TK_UNSIGNED);
     if (operand->kind == ND_NUM) {
       long long value = ((node_num_t *)operand)->val;
-      node_t *number = ps_node_new_num(
+      node_t *number = ps_node_new_num_in(
+          arena_context,
           target_unsigned ? (long long)(unsigned)value
                           : (long long)(int)value);
       return annotate(number, view.target);
@@ -292,16 +296,18 @@ static node_t *lower_cast(
     if (target_unsigned && size >= 1 && size < 4 &&
         ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
         !ps_node_value_is_pointer_like(operand)) {
-      node_t *masked = ps_node_new_binary(
-          ND_BITAND, operand, ps_node_new_num(0xffffffffLL));
+      node_t *masked = ps_node_new_binary_in(
+          arena_context, ND_BITAND, operand,
+          ps_node_new_num_in(arena_context, 0xffffffffLL));
       return integer_result(masked, view);
     }
     return integer_result(operand, view);
   }
 
   if (view.kind == TK_BOOL)
-    return annotate(ps_node_new_binary(
-                        ND_NE, operand, ps_node_new_num(0)),
+    return annotate(ps_node_new_binary_in(
+                        arena_context, ND_NE, operand,
+                        ps_node_new_num_in(arena_context, 0)),
                     view.target);
   if (view.kind == TK_VOID)
     return ps_node_new_void_cast_result(operand, view.target);
@@ -317,17 +323,18 @@ static node_t *lower_cast(
                               : (long long)(short)value)
           : (view.is_unsigned ? (long long)(unsigned char)value
                               : (long long)(signed char)value);
-      node_t *number = ps_node_new_num(truncated);
+      node_t *number = ps_node_new_num_in(arena_context, truncated);
       return annotate(number, view.target);
     }
     if (view.is_unsigned) {
-      node_t *masked = ps_node_new_binary(
-          ND_BITAND, operand, ps_node_new_num(mask));
+      node_t *masked = ps_node_new_binary_in(
+          arena_context, ND_BITAND, operand,
+          ps_node_new_num_in(arena_context, mask));
       return integer_result(masked, view);
     }
     int source_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
-    node_t *truncated = ps_node_new_shift_trunc_extend(
-        operand, source_width - width, 0);
+    node_t *truncated = ps_node_new_shift_trunc_extend_in(
+        arena_context, operand, source_width - width, 0);
     return integer_result_ex(truncated, view, 0);
   }
 
@@ -337,7 +344,9 @@ static node_t *lower_cast(
   return annotate(operand, view.target);
 }
 
-node_t *lower_implicit_value_conversion(node_t *operand,
+node_t *lower_implicit_value_conversion(
+                                        psx_lowering_context_t *lowering_context,
+                                        node_t *operand,
                                         const psx_type_t *target_type,
                                         token_t *fallback_diag_tok,
                                         const ag_compilation_options_t *options) {
@@ -350,8 +359,10 @@ node_t *lower_implicit_value_conversion(node_t *operand,
     return ps_node_new_fp_to_int_cast(operand, target_type);
   }
   if (target_type->kind == PSX_TYPE_BOOL)
-    return annotate(ps_node_new_binary(
-                        ND_NE, operand, ps_node_new_num(0)),
+    return annotate(ps_node_new_binary_in(
+                        ps_lowering_arena(lowering_context), ND_NE, operand,
+                        ps_node_new_num_in(
+                            ps_lowering_arena(lowering_context), 0)),
                     target_type);
   if (target_type->kind == PSX_TYPE_INTEGER &&
       ps_node_value_fp_kind(operand) != TK_FLOAT_KIND_NONE) {
@@ -384,7 +395,7 @@ node_t *lower_implicit_value_conversion(node_t *operand,
   if (source_type && ps_type_shape_matches(source_type, target_type))
     return operand;
   return lower_cast(
-      NULL, NULL, operand, view, fallback_diag_tok, options);
+      lowering_context, NULL, operand, view, fallback_diag_tok, options);
 }
 
 node_t *lower_source_cast_expression(
@@ -412,7 +423,8 @@ node_t *lower_source_cast_expression(
   return lowered;
 }
 
-node_t *lower_aggregate_address_expression(node_t *node) {
+node_t *lower_aggregate_address_expression(
+    psx_lowering_context_t *lowering_context, node_t *node) {
   if (!node || node->kind != ND_ADDR || !node->lhs) return node;
   node_t *value = node->lhs;
   token_t *source_tok = node->tok;
@@ -427,7 +439,8 @@ node_t *lower_aggregate_address_expression(node_t *node) {
   if (value->kind != ND_COMMA || !value->rhs) return node;
 
   node_t *address = ps_node_new_addr_value_for(value->rhs);
-  node_t *lowered = ps_node_new_binary(ND_COMMA, value->lhs, address);
+  node_t *lowered = ps_node_new_binary_in(
+      ps_lowering_arena(lowering_context), ND_COMMA, value->lhs, address);
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;
   return lowered;

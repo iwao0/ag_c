@@ -3,6 +3,7 @@
 #include "diag.h"
 #include "node_utils.h"
 #include "parser_recovery.h"
+#include "runtime_context.h"
 #include "semantic_ctx.h"
 #include "static_assert_declaration.h"
 #include "../diag/diag.h"
@@ -41,7 +42,8 @@ node_t *psx_parse_local_declaration_syntax(
     callbacks->apply_static_assert(
         callbacks->context, assertion.condition,
         assertion.diagnostic_token);
-    return ps_node_new_num(0);
+    return ps_node_new_num_in(
+        ps_parser_runtime_arena(callbacks->runtime_context), 0);
   }
 
   int is_typedef = curtok()->kind == TK_TYPEDEF;

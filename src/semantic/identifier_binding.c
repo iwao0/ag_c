@@ -127,7 +127,8 @@ static node_t *materialize_identifier(
     case PSX_IDENTIFIER_LOCAL:
       return materialize_local(identifier, resolution.local);
     case PSX_IDENTIFIER_ENUM_CONSTANT: {
-      node_t *node = ps_node_new_num(resolution.enum_value);
+      node_t *node = ps_node_new_num_in(
+          ps_ctx_arena(context->semantic_context), resolution.enum_value);
       copy_identifier_source_state(node, identifier);
       return node;
     }

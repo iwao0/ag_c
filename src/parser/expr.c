@@ -111,9 +111,11 @@ static int in_unevaluated_operand(const expr_parse_ctx_t *ctx) {
   return ctx && ctx->unevaluated_operand_depth > 0;
 }
 
-static node_t *new_binary_with_source_op(node_kind_t kind, node_t *lhs, node_t *rhs,
-                                         token_kind_t source_op) {
-  node_t *node = psx_node_new_raw_binary(kind, lhs, rhs);
+static node_t *new_binary_with_source_op(
+    expr_parse_ctx_t *ctx, node_kind_t kind, node_t *lhs, node_t *rhs,
+    token_kind_t source_op) {
+  node_t *node = psx_node_new_raw_binary_in(
+      ctx->arena_context, kind, lhs, rhs);
   if (node) node->source_op = source_op;
   return node;
 }
@@ -355,7 +357,8 @@ static node_t *expr_internal_ctx(expr_parse_ctx_t *ctx) {
   while (curtok()->kind == TK_COMMA) {
     set_curtok(curtok()->next);
     node_t *rhs = assign_ctx(ctx);
-    node_t *comma = psx_node_new_raw_binary(ND_COMMA, node, rhs);
+    node_t *comma = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_COMMA, node, rhs);
     node = comma;
   }
   leave_expr_nest(ctx);
@@ -387,7 +390,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       assign_node->tok = assign_tok;
       node = (node_t *)assign_node;
       if (lhs_prefix)
-        node = psx_node_new_raw_binary(ND_COMMA, lhs_prefix, node);
+        node = psx_node_new_raw_binary_in(
+            ctx->arena_context, ND_COMMA, lhs_prefix, node);
       break;
     }
     case TK_PLUSEQ:
@@ -408,7 +412,8 @@ static node_t *assign_ctx(expr_parse_ctx_t *ctx) {
       compound->source_op = op_tok->kind;
       compound->tok = op_tok;
       node = lhs_prefix
-                 ? psx_node_new_raw_binary(ND_COMMA, lhs_prefix, compound)
+                 ? psx_node_new_raw_binary_in(
+                       ctx->arena_context, ND_COMMA, lhs_prefix, compound)
                  : compound;
       break;
     }
@@ -438,7 +443,8 @@ static node_t *logical_or_ctx(expr_parse_ctx_t *ctx) {
   while (curtok()->kind == TK_OROR) {
     set_curtok(curtok()->next);
     node_t *rhs = logical_and_ctx(ctx);
-    node = new_binary_with_source_op(ND_LOGOR, node, rhs, TK_OROR);
+    node = new_binary_with_source_op(
+        ctx, ND_LOGOR, node, rhs, TK_OROR);
   }
   return node;
 }
@@ -448,7 +454,8 @@ static node_t *logical_and_ctx(expr_parse_ctx_t *ctx) {
   while (curtok()->kind == TK_ANDAND) {
     set_curtok(curtok()->next);
     node_t *rhs = bit_or_ctx(ctx);
-    node = new_binary_with_source_op(ND_LOGAND, node, rhs, TK_ANDAND);
+    node = new_binary_with_source_op(
+        ctx, ND_LOGAND, node, rhs, TK_ANDAND);
   }
   return node;
 }
@@ -457,7 +464,8 @@ static node_t *bit_or_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = bit_xor_ctx(ctx);
   while (curtok()->kind == TK_PIPE) {
     set_curtok(curtok()->next);
-    node = psx_node_new_raw_binary(ND_BITOR, node, bit_xor_ctx(ctx));
+    node = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_BITOR, node, bit_xor_ctx(ctx));
   }
   return node;
 }
@@ -466,7 +474,8 @@ static node_t *bit_xor_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = bit_and_ctx(ctx);
   while (curtok()->kind == TK_CARET) {
     set_curtok(curtok()->next);
-    node = psx_node_new_raw_binary(ND_BITXOR, node, bit_and_ctx(ctx));
+    node = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_BITXOR, node, bit_and_ctx(ctx));
   }
   return node;
 }
@@ -475,7 +484,8 @@ static node_t *bit_and_ctx(expr_parse_ctx_t *ctx) {
   node_t *node = equality_ctx(ctx);
   while (curtok()->kind == TK_AMP) {
     set_curtok(curtok()->next);
-    node = psx_node_new_raw_binary(ND_BITAND, node, equality_ctx(ctx));
+    node = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_BITAND, node, equality_ctx(ctx));
   }
   return node;
 }
@@ -486,11 +496,11 @@ static node_t *equality_ctx(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_EQEQ) {
       set_curtok(curtok()->next);
       node_t *rhs = relational_ctx(ctx);
-      node = new_binary_with_source_op(ND_EQ, node, rhs, TK_EQEQ);
+      node = new_binary_with_source_op(ctx, ND_EQ, node, rhs, TK_EQEQ);
     } else if (curtok()->kind == TK_NEQ) {
       set_curtok(curtok()->next);
       node_t *rhs = relational_ctx(ctx);
-      node = new_binary_with_source_op(ND_NE, node, rhs, TK_NEQ);
+      node = new_binary_with_source_op(ctx, ND_NE, node, rhs, TK_NEQ);
     }
     else return node;
   }
@@ -502,19 +512,19 @@ static node_t *relational_ctx(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_LT) {
       set_curtok(curtok()->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ND_LT, node, rhs, TK_LT);
+      node = new_binary_with_source_op(ctx, ND_LT, node, rhs, TK_LT);
     } else if (curtok()->kind == TK_LE) {
       set_curtok(curtok()->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ND_LE, node, rhs, TK_LE);
+      node = new_binary_with_source_op(ctx, ND_LE, node, rhs, TK_LE);
     } else if (curtok()->kind == TK_GT) {
       set_curtok(curtok()->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ND_LT, rhs, node, TK_GT);
+      node = new_binary_with_source_op(ctx, ND_LT, rhs, node, TK_GT);
     } else if (curtok()->kind == TK_GE) {
       set_curtok(curtok()->next);
       node_t *rhs = shift_ctx(ctx);
-      node = new_binary_with_source_op(ND_LE, rhs, node, TK_GE);
+      node = new_binary_with_source_op(ctx, ND_LE, rhs, node, TK_GE);
     }
     else return node;
   }
@@ -526,11 +536,11 @@ static node_t *shift_ctx(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_SHL) {
       set_curtok(curtok()->next);
       node_t *rhs = add_ctx(ctx);
-      node = new_binary_with_source_op(ND_SHL, node, rhs, TK_SHL);
+      node = new_binary_with_source_op(ctx, ND_SHL, node, rhs, TK_SHL);
     } else if (curtok()->kind == TK_SHR) {
       set_curtok(curtok()->next);
       node_t *rhs = add_ctx(ctx);
-      node = new_binary_with_source_op(ND_SHR, node, rhs, TK_SHR);
+      node = new_binary_with_source_op(ctx, ND_SHR, node, rhs, TK_SHR);
     }
     else return node;
   }
@@ -542,11 +552,11 @@ static node_t *add_ctx(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_PLUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul_ctx(ctx);
-      node = new_binary_with_source_op(ND_ADD, node, rhs, TK_PLUS);
+      node = new_binary_with_source_op(ctx, ND_ADD, node, rhs, TK_PLUS);
     } else if (curtok()->kind == TK_MINUS) {
       set_curtok(curtok()->next);
       node_t *rhs = mul_ctx(ctx);
-      node = new_binary_with_source_op(ND_SUB, node, rhs, TK_MINUS);
+      node = new_binary_with_source_op(ctx, ND_SUB, node, rhs, TK_MINUS);
     }
     else return node;
   }
@@ -558,15 +568,15 @@ static node_t *mul_ctx(expr_parse_ctx_t *ctx) {
     if (curtok()->kind == TK_MUL) {
       set_curtok(curtok()->next);
       node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ND_MUL, node, rhs, TK_MUL);
+      node = new_binary_with_source_op(ctx, ND_MUL, node, rhs, TK_MUL);
     } else if (curtok()->kind == TK_DIV) {
       set_curtok(curtok()->next);
       node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ND_DIV, node, rhs, TK_DIV);
+      node = new_binary_with_source_op(ctx, ND_DIV, node, rhs, TK_DIV);
     } else if (curtok()->kind == TK_MOD) {
       set_curtok(curtok()->next);
       node_t *rhs = cast_ctx(ctx);
-      node = new_binary_with_source_op(ND_MOD, node, rhs, TK_MOD);
+      node = new_binary_with_source_op(ctx, ND_MOD, node, rhs, TK_MOD);
     }
     else return node;
   }
@@ -594,7 +604,8 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
       ctx->arena_context, sizeof(node_sizeof_query_t));
   query->base.kind = ND_SIZEOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer(TK_UNSIGNED, 8, 1);
+  query->base.type = ps_type_new_integer_in(
+      ctx->arena_context, TK_UNSIGNED, 8, 1);
 
   if (curtok()->kind == TK_LPAREN) {
     psx_type_name_ref_t captured = {0};
@@ -640,7 +651,8 @@ static node_t *parse_alignof_type_name(
       ctx->arena_context, sizeof(node_alignof_query_t));
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
-  query->base.type = ps_type_new_integer(TK_UNSIGNED, 8, 1);
+  query->base.type = ps_type_new_integer_in(
+      ctx->arena_context, TK_UNSIGNED, 8, 1);
 
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
@@ -685,7 +697,8 @@ static node_t *build_unary_deref_syntax(node_t *operand, token_t *op_tok) {
 }
 
 // `&operand`。コンマ式 (a, b) に対する `&(a, b)` は a を評価した上で &b を返す形に組み立てる。
-static node_t *build_unary_addr_node(node_t *operand) {
+static node_t *build_unary_addr_node(
+    node_t *operand, expr_parse_ctx_t *ctx) {
   if (operand && operand->kind == ND_COMPOUND_LITERAL) {
     node_compound_literal_t *compound =
         (node_compound_literal_t *)operand;
@@ -697,8 +710,9 @@ static node_t *build_unary_addr_node(node_t *operand) {
      * ロジックを再帰適用する (直接 ND_ADDR で包むと配列複合リテラルの rhs が
      * 既に ND_ADDR (decay 済み) のとき二重に ND_ADDR でラップされ ir_build が
      * 失敗する)。下の ND_ADDR/ND_FUNCREF 簡約をここでも効かせる。 */
-    return psx_node_new_raw_binary(
-        ND_COMMA, operand->lhs, build_unary_addr_node(operand->rhs));
+    return psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_COMMA, operand->lhs,
+        build_unary_addr_node(operand->rhs, ctx));
   }
   // C 仕様: 配列名 `arr` は (sizeof/&/レジスタ変数を除く) 文脈ではポインタ崩壊する。
   // `&arr` ではアドレス値はそのまま (型だけ `int(*)[N]` に変わる)。
@@ -769,16 +783,20 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
   }
   if (k == TK_BANG)  {
     set_curtok(curtok()->next);
-    node_t *eq = psx_node_new_raw_binary(
-        ND_EQ, cast_ctx(ctx), ps_node_new_num(0));
+    node_t *eq = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_EQ, cast_ctx(ctx),
+        ps_node_new_num_in(ctx->arena_context, 0));
     eq->from_logical_not = 1;  /* `!p == 0` の precedence-trap 警告に使う */
     return eq;
   }
   if (k == TK_TILDE) {
     set_curtok(curtok()->next);
-    node_t *neg = psx_node_new_raw_binary(
-        ND_SUB, ps_node_new_num(0), cast_ctx(ctx));
-    return psx_node_new_raw_binary(ND_SUB, neg, ps_node_new_num(1));
+    node_t *neg = psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_SUB,
+        ps_node_new_num_in(ctx->arena_context, 0), cast_ctx(ctx));
+    return psx_node_new_raw_binary_in(
+        ctx->arena_context, ND_SUB, neg,
+        ps_node_new_num_in(ctx->arena_context, 1));
   }
   if (k == TK_MUL) {
     token_t *op_tok = curtok();
@@ -788,7 +806,7 @@ static node_t *unary_ctx(expr_parse_ctx_t *ctx) {
   if (k == TK_AMP) {
     set_curtok(curtok()->next);
     node_t *operand = cast_ctx(ctx);
-    return build_unary_addr_node(operand);
+    return build_unary_addr_node(operand, ctx);
   }
   return apply_postfix(primary_ctx(ctx), ctx);
 }
@@ -878,7 +896,9 @@ static node_t *parse_call_postfix(node_t *callee, expr_parse_ctx_t *ctx) {
     node->direct_name_len = fr->funcname_len;
     const psx_type_t *function = ps_type_callable_function(
         ps_node_get_type((node_t *)fr));
-    node->callee_type = function ? ps_type_clone(function) : NULL;
+    node->callee_type = function
+                            ? ps_type_clone_in(ctx->arena_context, function)
+                            : NULL;
     node->callee = NULL;
     callee = NULL;
   } else {
@@ -984,8 +1004,9 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
         tk_as_num_int(tok)->int_size == TK_INT_SIZE_LONG_LONG;
     int is_unsigned = tk_as_num_int(tok)->is_unsigned ? 1 : 0;
     int int_size = is_long ? 8 : 4;
-    psx_type_t *literal_type = ps_type_new_integer(
-        is_unsigned ? TK_UNSIGNED : TK_INT, int_size, is_unsigned);
+    psx_type_t *literal_type = ps_type_new_integer_in(
+        ctx->arena_context, is_unsigned ? TK_UNSIGNED : TK_INT, int_size,
+        is_unsigned);
     literal_type->is_long_long = is_long_long ? 1 : 0;
     ps_node_bind_type((node_t *)node, literal_type);
   } else {
@@ -993,8 +1014,8 @@ static node_t *parse_num_literal(expr_parse_ctx_t *ctx) {
     node->float_suffix_kind = tk_as_num_float(tok)->float_suffix_kind;
     node->fval = tk_as_num_float(tok)->fval;
     ps_node_bind_type((node_t *)node,
-                      ps_type_new_float(
-                          fp_kind,
+                      ps_type_new_float_in(
+                          ctx->arena_context, fp_kind,
                           fp_kind == TK_FLOAT_KIND_FLOAT ? 4 : 8));
     float_lit_t *lit = calloc(1, sizeof(float_lit_t));
     lit->id = ps_global_registry_next_float_literal_id(
@@ -1043,9 +1064,9 @@ static node_string_t *make_string_lit_node(
   token_kind_t elem_kind = elem_width == TK_CHAR_WIDTH_CHAR
                                ? TK_CHAR
                                : (elem_is_unsigned ? TK_UNSIGNED : TK_INT);
-  psx_type_t *elem_type =
-      ps_type_new_integer(elem_kind, elem_width, elem_is_unsigned);
-  snode->base.type = ps_type_new_pointer(elem_type);
+  psx_type_t *elem_type = ps_type_new_integer_in(
+      ctx->arena_context, elem_kind, elem_width, elem_is_unsigned);
+  snode->base.type = ps_type_new_pointer_in(ctx->arena_context, elem_type);
   /* byte_len は「デコード後」の内容長 (要素数)。str はソースのまま (`\t` 等の
    * エスケープシーケンスを含む raw) なので、エスケープを 1 要素に畳んで数える。
    * これがないと sizeof("\t") が raw の 2(+1) を返していた (正しくは 1+1)。 */

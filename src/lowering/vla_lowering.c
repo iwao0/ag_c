@@ -13,8 +13,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-static node_t *append_init(node_t *chain, node_t *node) {
-  return chain ? ps_node_new_binary(ND_COMMA, chain, node) : node;
+static node_t *append_init(
+    psx_lowering_context_t *lowering_context,
+    node_t *chain, node_t *node) {
+  return chain
+             ? ps_node_new_binary_in(
+                   ps_lowering_arena(lowering_context),
+                   ND_COMMA, chain, node)
+             : node;
 }
 
 static lvar_t *create_vla_storage(
@@ -58,6 +64,8 @@ psx_vla_lowering_result_t lower_vla_declaration(
 
   frame_vla_layout_t layout = frame_layout_vla_storage(
       count, count == 2 && request->is_const[1]);
+  arena_context_t *arena_context = ps_lowering_arena(
+      request->lowering_context);
   int row_stride_offset = 0;
   int outer_stride = 0;
   int remaining_strides = 0;
@@ -82,21 +90,23 @@ psx_vla_lowering_result_t lower_vla_declaration(
   node_t *alloc_lhs = NULL;
   node_t *alloc_rhs = NULL;
   if (count == 1) {
-    alloc_lhs = ps_node_new_binary(
-        ND_MUL, request->dimensions[0],
-        ps_node_new_num(element_size));
+    alloc_lhs = ps_node_new_binary_in(
+        arena_context, ND_MUL, request->dimensions[0],
+        ps_node_new_num_in(arena_context, element_size));
   } else if (count == 2 && request->is_const[1]) {
-    alloc_lhs = ps_node_new_binary(
-        ND_MUL, request->dimensions[0], ps_node_new_num(outer_stride));
+    alloc_lhs = ps_node_new_binary_in(
+        arena_context, ND_MUL, request->dimensions[0],
+        ps_node_new_num_in(arena_context, outer_stride));
   } else if (count == 2) {
     alloc_lhs = request->dimensions[0];
-    alloc_rhs = ps_node_new_binary(
-        ND_MUL, request->dimensions[1],
-        ps_node_new_num(element_size));
+    alloc_rhs = ps_node_new_binary_in(
+        arena_context, ND_MUL, request->dimensions[1],
+        ps_node_new_num_in(arena_context, element_size));
   } else {
-    node_t *outer = ps_node_new_num(element_size);
+    node_t *outer = ps_node_new_num_in(arena_context, element_size);
     for (int i = count - 1; i >= 1; i--)
-      outer = ps_node_new_binary(ND_MUL, outer, request->dimensions[i]);
+      outer = ps_node_new_binary_in(
+          arena_context, ND_MUL, outer, request->dimensions[i]);
     alloc_lhs = request->dimensions[0];
     alloc_rhs = outer;
   }
@@ -104,13 +114,15 @@ psx_vla_lowering_result_t lower_vla_declaration(
       var_offset, row_stride_offset, alloc_lhs, alloc_rhs);
 
   for (int level = 1; level < count - 1; level++) {
-    node_t *stride = ps_node_new_num(element_size);
+    node_t *stride = ps_node_new_num_in(arena_context, element_size);
     for (int i = count - 1; i >= level + 1; i--)
-      stride = ps_node_new_binary(ND_MUL, stride, request->dimensions[i]);
+      stride = ps_node_new_binary_in(
+          arena_context, ND_MUL, stride, request->dimensions[i]);
     node_t *slot = ps_node_new_lvar_typed(
         frame_layout_vla_stride_offset(var_offset, level), 8);
     result.init = append_init(
-        result.init, ps_node_new_assign(slot, stride));
+        request->lowering_context, result.init,
+        ps_node_new_assign(slot, stride));
   }
   return result;
 }
@@ -141,9 +153,11 @@ psx_vla_lowering_result_t lower_pointer_to_vla_declaration(
       result.var, row_stride_offset, 0, 0, element_size);
 
   node_t *slot = ps_node_new_lvar_typed(row_stride_offset, 8);
-  node_t *stride = ps_node_new_binary(
-      ND_MUL, request->row_dimension,
-      ps_node_new_num(element_size));
+  arena_context_t *arena_context = ps_lowering_arena(
+      request->lowering_context);
+  node_t *stride = ps_node_new_binary_in(
+      arena_context, ND_MUL, request->row_dimension,
+      ps_node_new_num_in(arena_context, element_size));
   result.init = (node_t *)ps_node_new_assign(slot, stride);
   return result;
 }

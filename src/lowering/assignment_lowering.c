@@ -67,17 +67,22 @@ node_t *lower_compound_assignment_expression(
   node_t *target = materialize_lvalue_address_once(
       lowering_context, local_registry, node->lhs, &prefix);
   node_t *rhs = node->rhs;
+  arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   if ((binary_kind == ND_ADD || binary_kind == ND_SUB) &&
       ps_node_value_is_pointer_like(target)) {
     int scale = ps_node_deref_size(target);
     if (scale > 1)
-      rhs = ps_node_new_binary(ND_MUL, rhs, ps_node_new_num(scale));
+      rhs = ps_node_new_binary_in(
+          arena_context, ND_MUL, rhs,
+          ps_node_new_num_in(arena_context, scale));
   }
 
-  node_t *value = ps_node_new_binary(binary_kind, target, rhs);
+  node_t *value = ps_node_new_binary_in(
+      arena_context, binary_kind, target, rhs);
   node_t *assign = ps_node_new_assign(target, value);
   node_t *lowered = prefix
-                        ? ps_node_new_binary(ND_COMMA, prefix, assign)
+                        ? ps_node_new_binary_in(
+                              arena_context, ND_COMMA, prefix, assign)
                         : assign;
   if (!lowered) return node;
   if (!lowered->tok) lowered->tok = source_tok;

@@ -3,6 +3,9 @@
 
 #include "../parser/ast.h"
 
-node_t *lower_subscript_expression(node_t *node);
+typedef struct psx_lowering_context_t psx_lowering_context_t;
+
+node_t *lower_subscript_expression(
+    psx_lowering_context_t *lowering_context, node_t *node);
 
 #endif

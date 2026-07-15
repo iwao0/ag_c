@@ -2,6 +2,7 @@
 #define PARSER_NODE_UTILS_H
 
 #include "core.h"
+#include "arena.h"
 #include "ast.h"
 #include "init_slot.h"
 #include "gvar_public.h"
@@ -41,14 +42,24 @@ int ps_node_subscript_deref_uses_base_address(node_t *node);
 const psx_type_t *ps_node_row_decay_pointer_arith_type(node_t *node);
 int ps_node_bitfield_width(node_t *node);
 
+node_t *ps_node_new_binary_in(arena_context_t *arena_context,
+                              node_kind_t kind, node_t *lhs, node_t *rhs);
 node_t *ps_node_new_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
+node_t *psx_node_new_raw_binary_in(arena_context_t *arena_context,
+                                   node_kind_t kind, node_t *lhs,
+                                   node_t *rhs);
 node_t *psx_node_new_raw_binary(node_kind_t kind, node_t *lhs, node_t *rhs);
 int ps_node_binary_type_op(
     node_kind_t kind, psx_type_binary_op_t *op);
 node_t *ps_node_new_vla_alloc(int descriptor_frame_off,
                                int row_stride_frame_off,
                                node_t *lhs, node_t *rhs);
-node_t *ps_node_new_shift_trunc_extend(node_t *operand, int left_shift, int is_unsigned);
+node_t *ps_node_new_shift_trunc_extend_in(
+    arena_context_t *arena_context, node_t *operand, int left_shift,
+    int is_unsigned);
+node_t *ps_node_new_shift_trunc_extend(node_t *operand, int left_shift,
+                                       int is_unsigned);
+node_t *ps_node_new_num_in(arena_context_t *arena_context, long long val);
 node_t *ps_node_new_num(long long val);
 node_t *psx_node_new_lvar(int offset);
 node_t *ps_node_new_lvar_typed(int offset, int type_size);

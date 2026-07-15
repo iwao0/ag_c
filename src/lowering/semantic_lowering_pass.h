@@ -25,6 +25,7 @@ node_t *psx_lower_semantic_initializer_syntax_in_contexts(
     node_t *syntax, const token_t *fallback_diag_tok);
 
 void psx_lower_implicit_conversions(
+    psx_lowering_context_t *lowering_context,
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok,
     const ag_compilation_options_t *options);

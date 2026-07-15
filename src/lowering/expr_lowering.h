@@ -3,6 +3,10 @@
 
 #include "../parser/ast.h"
 
-node_t *lower_additive_expression(node_kind_t kind, node_t *lhs, node_t *rhs);
+typedef struct psx_lowering_context_t psx_lowering_context_t;
+
+node_t *lower_additive_expression(
+    psx_lowering_context_t *lowering_context,
+    node_kind_t kind, node_t *lhs, node_t *rhs);
 
 #endif

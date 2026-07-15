@@ -3,6 +3,10 @@
 
 #include "../parser/ast.h"
 
-node_t *lower_alignof_query_expression(node_alignof_query_t *query);
+typedef struct psx_lowering_context_t psx_lowering_context_t;
+
+node_t *lower_alignof_query_expression(
+    psx_lowering_context_t *lowering_context,
+    node_alignof_query_t *query);
 
 #endif

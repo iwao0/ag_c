@@ -661,9 +661,13 @@ static void diagnose_local_declaration(
   }
 }
 
-static node_t *append_local_initialization(node_t *chain, node_t *node) {
+static node_t *append_local_initialization(
+    psx_lowering_context_t *lowering_context, node_t *chain, node_t *node) {
   if (!node) return chain;
-  return chain ? ps_node_new_binary(ND_COMMA, chain, node) : node;
+  return chain ? ps_node_new_binary_in(
+                     ps_lowering_arena(lowering_context),
+                     ND_COMMA, chain, node)
+               : node;
 }
 
 int psx_begin_automatic_local_declaration_pipeline(
@@ -802,7 +806,7 @@ int psx_finish_automatic_local_declaration_pipeline(
         result->var, request->initializer->value, request->initializer->kind,
         request->initializer->value_tok);
     result->initialization = append_local_initialization(
-        result->initialization, initializer);
+        request->lowering_context, result->initialization, initializer);
   }
   return 1;
 }

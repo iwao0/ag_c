@@ -8,6 +8,7 @@
 #include "generic_selection_lowering.h"
 #include "initializer_lowering.h"
 #include "member_access_lowering.h"
+#include "runtime_context.h"
 #include "sizeof_lowering.h"
 #include "subscript_lowering.h"
 #include "unary_deref_lowering.h"
@@ -67,7 +68,8 @@ static node_t *lower_initializer(
   return syntax;
 }
 
-static node_t *lower_additive_expression_node(node_t *node) {
+static node_t *lower_additive_expression_node(
+    const psx_semantic_lowering_context_t *context, node_t *node) {
   if (!node ||
       (node->source_op != TK_PLUS && node->source_op != TK_MINUS) ||
       (node->kind != ND_ADD && node->kind != ND_SUB)) {
@@ -75,7 +77,7 @@ static node_t *lower_additive_expression_node(node_t *node) {
   }
   token_t *source_tok = node->tok;
   node_t *lowered = lower_additive_expression(
-      node->kind, node->lhs, node->rhs);
+      context->lowering_context, node->kind, node->lhs, node->rhs);
   if (!lowered || lowered == node) return node;
   if (!lowered->tok) lowered->tok = source_tok;
   return lowered;
@@ -89,7 +91,11 @@ static node_t *lower_sizeof_vla_indices(
       context, operand->lhs, fallback_diag_tok);
   node_t *index = lower_tree(
       context, operand->rhs, fallback_diag_tok);
-  return prefix ? ps_node_new_binary(ND_COMMA, prefix, index) : index;
+  return prefix
+             ? ps_node_new_binary_in(
+                   ps_lowering_arena(context->lowering_context),
+                   ND_COMMA, prefix, index)
+             : index;
 }
 
 static node_t *lower_source_cast_node(
@@ -143,6 +149,7 @@ static node_t *lower_tree(
     }
     case ND_ALIGNOF_QUERY:
       return lower_alignof_query_expression(
+          context->lowering_context,
           (node_alignof_query_t *)node);
     case ND_DECL_INIT: {
       node_decl_init_t *init = (node_decl_init_t *)node;
@@ -155,7 +162,8 @@ static node_t *lower_tree(
         node->rhs = lower_tree(
             context, node->rhs, fallback_diag_tok);
       }
-      node = lower_decl_initializer(node, context->options);
+      node = lower_decl_initializer(
+          context->lowering_context, node, context->options);
       break;
     }
     case ND_BLOCK:
@@ -186,7 +194,7 @@ static node_t *lower_tree(
           context, node->lhs, fallback_diag_tok);
       node->rhs = lower_tree(
           context, node->rhs, fallback_diag_tok);
-      return lower_subscript_expression(node);
+      return lower_subscript_expression(context->lowering_context, node);
     case ND_MEMBER_ACCESS:
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
@@ -201,13 +209,15 @@ static node_t *lower_tree(
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
       return lower_tree(
-          context, lower_unary_negate_expression(node),
+          context, lower_unary_negate_expression(
+                       context->lowering_context, node),
           fallback_diag_tok);
     case ND_CREAL:
     case ND_CIMAG: {
       node->lhs = lower_tree(
           context, node->lhs, fallback_diag_tok);
-      node_t *lowered = lower_complex_part_expression(node);
+      node_t *lowered = lower_complex_part_expression(
+          context->lowering_context, node);
       return lowered == node
                  ? node
                  : lower_tree(
@@ -235,8 +245,9 @@ static node_t *lower_tree(
       node->rhs = lower_tree(
           context, node->rhs, fallback_diag_tok);
       node = lower_source_cast_node(context, node, fallback_diag_tok);
-      node = lower_aggregate_address_expression(node);
-      node = lower_additive_expression_node(node);
+      node = lower_aggregate_address_expression(
+          context->lowering_context, node);
+      node = lower_additive_expression_node(context, node);
       node = lower_compound_assignment_expression(
           context->lowering_context, context->local_registry, node);
       break;
@@ -290,6 +301,7 @@ static const psx_type_t *call_function_type(node_function_call_t *call) {
 }
 
 static void lower_call_arguments(
+    psx_lowering_context_t *lowering_context,
     node_function_call_t *call, const token_t *fallback_diag_tok,
     const ag_compilation_options_t *options) {
   const psx_type_t *function = call_function_type(call);
@@ -299,7 +311,7 @@ static void lower_call_arguments(
   if (count > 16) count = 16;
   for (int i = 0; i < count; i++) {
     call->arguments[i] = lower_implicit_value_conversion(
-        call->arguments[i], function->param_types[i],
+        lowering_context, call->arguments[i], function->param_types[i],
         call->base.tok ? call->base.tok
                        : (token_t *)fallback_diag_tok,
         options);
@@ -307,17 +319,19 @@ static void lower_call_arguments(
 }
 
 static void lower_assignment_conversion(
+    psx_lowering_context_t *lowering_context,
     node_t *node, const token_t *fallback_diag_tok,
     const ag_compilation_options_t *options) {
   if (!node || node->kind != ND_ASSIGN || !node->lhs || !node->rhs)
     return;
   node->rhs = lower_implicit_value_conversion(
-      node->rhs, ps_node_get_type(node->lhs),
+      lowering_context, node->rhs, ps_node_get_type(node->lhs),
       node->tok ? node->tok : (token_t *)fallback_diag_tok,
       options);
 }
 
 void psx_lower_implicit_conversions(
+    psx_lowering_context_t *lowering_context,
     node_t *node, node_function_definition_t *current_func,
     const token_t *fallback_diag_tok,
     const ag_compilation_options_t *options) {
@@ -327,7 +341,8 @@ void psx_lower_implicit_conversions(
       for (node_t **body = ((node_block_t *)node)->body;
            body && *body; body++) {
         psx_lower_implicit_conversions(
-            *body, current_func, fallback_diag_tok, options);
+            lowering_context, *body, current_func,
+            fallback_diag_tok, options);
       }
       break;
     case ND_FUNCDEF: {
@@ -335,19 +350,24 @@ void psx_lower_implicit_conversions(
           (node_function_definition_t *)node;
       for (int i = 0; i < function->parameter_count; i++)
         psx_lower_implicit_conversions(
-            function->parameters[i], function, fallback_diag_tok, options);
+            lowering_context, function->parameters[i], function,
+            fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          node->rhs, function, fallback_diag_tok, options);
+          lowering_context, node->rhs, function,
+          fallback_diag_tok, options);
       break;
     }
     case ND_FUNCALL: {
       node_function_call_t *call = (node_function_call_t *)node;
       psx_lower_implicit_conversions(
-          call->callee, current_func, fallback_diag_tok, options);
+          lowering_context, call->callee, current_func,
+          fallback_diag_tok, options);
       for (int i = 0; i < call->argument_count; i++)
         psx_lower_implicit_conversions(
-            call->arguments[i], current_func, fallback_diag_tok, options);
-      lower_call_arguments(call, fallback_diag_tok, options);
+            lowering_context, call->arguments[i], current_func,
+            fallback_diag_tok, options);
+      lower_call_arguments(
+          lowering_context, call, fallback_diag_tok, options);
       break;
     }
     case ND_IF:
@@ -355,23 +375,29 @@ void psx_lower_implicit_conversions(
     case ND_TERNARY: {
       node_ctrl_t *control = (node_ctrl_t *)node;
       psx_lower_implicit_conversions(
-          control->init, current_func, fallback_diag_tok, options);
+          lowering_context, control->init, current_func,
+          fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          node->lhs, current_func, fallback_diag_tok, options);
+          lowering_context, node->lhs, current_func,
+          fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          node->rhs, current_func, fallback_diag_tok, options);
+          lowering_context, node->rhs, current_func,
+          fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          control->inc, current_func, fallback_diag_tok, options);
+          lowering_context, control->inc, current_func,
+          fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          control->els, current_func, fallback_diag_tok, options);
+          lowering_context, control->els, current_func,
+          fallback_diag_tok, options);
       break;
     }
     case ND_RETURN:
       psx_lower_implicit_conversions(
-          node->lhs, current_func, fallback_diag_tok, options);
+          lowering_context, node->lhs, current_func,
+          fallback_diag_tok, options);
       if (current_func && node->lhs) {
         node->lhs = lower_implicit_value_conversion(
-            node->lhs,
+            lowering_context, node->lhs,
             ps_function_definition_return_type(current_func),
             node->tok ? node->tok : (token_t *)fallback_diag_tok,
             options);
@@ -379,10 +405,13 @@ void psx_lower_implicit_conversions(
       break;
     default:
       psx_lower_implicit_conversions(
-          node->lhs, current_func, fallback_diag_tok, options);
+          lowering_context, node->lhs, current_func,
+          fallback_diag_tok, options);
       psx_lower_implicit_conversions(
-          node->rhs, current_func, fallback_diag_tok, options);
-      lower_assignment_conversion(node, fallback_diag_tok, options);
+          lowering_context, node->rhs, current_func,
+          fallback_diag_tok, options);
+      lower_assignment_conversion(
+          lowering_context, node, fallback_diag_tok, options);
       break;
   }
 }

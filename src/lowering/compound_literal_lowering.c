@@ -133,8 +133,9 @@ static node_t *lower_local_compound_literal(
                     ? ps_node_new_explicit_addr_value_for(reference)
                     : ps_node_new_unary_addr_for(reference);
   }
-  return ps_node_new_binary(
-      ND_COMMA, object.initialization, reference);
+  return ps_node_new_binary_in(
+      ps_lowering_arena(lowering_context), ND_COMMA,
+      object.initialization, reference);
 }
 
 node_t *lower_compound_literal_expression_in_contexts(

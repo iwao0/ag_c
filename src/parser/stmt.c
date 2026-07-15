@@ -97,7 +97,8 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context);
 
 static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
-  if (tk_consume(';')) return ps_node_new_num(0);
+  if (tk_consume(';'))
+    return ps_node_new_num_in(context->arena_context, 0);
   if (curtok()->kind == TK_LBRACE) return parse_stmt_block(context);
   if (is_label_start_stmt()) return parse_stmt_label(context);
   if (is_decl_like_start_stmt(context)) return parse_decl_like_stmt(context);
@@ -218,7 +219,7 @@ node_t *psx_parse_statement_expression_in_contexts(
       if (is_stmt_expr_value_stmt(b->body[i])) value = b->body[i];
     }
   }
-  if (!value) value = ps_node_new_num(0);
+  if (!value) value = ps_node_new_num_in(context.arena_context, 0);
   node_t *node = arena_alloc_in(context.arena_context, sizeof(node_t));
   node->kind = ND_STMT_EXPR;
   node->lhs = block;

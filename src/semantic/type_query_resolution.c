@@ -121,28 +121,31 @@ static void resolve_sizeof_type_name(
 
   int base_size = ps_type_sizeof(base_type);
   if (base_type->kind == PSX_TYPE_VOID) base_size = 1;
+  arena_context_t *arena_context = ps_ctx_arena(semantic_context);
   node_t *size = widen_size_value(
-      semantic_context, ps_node_new_num(base_size));
+      semantic_context, ps_node_new_num_in(arena_context, base_size));
   int is_runtime = 0;
   for (int i = shape->count - 1; i >= 0; i--) {
     psx_declarator_op_t *op = &shape->ops[i];
     if (op->kind == PSX_DECL_OP_POINTER) {
       size = widen_size_value(
-          semantic_context, ps_node_new_num(8));
+          semantic_context, ps_node_new_num_in(arena_context, 8));
       is_runtime = 0;
       continue;
     }
     if (op->kind != PSX_DECL_OP_ARRAY) continue;
     node_t *bound = sizeof_type_bound_for_op(query, i);
     if (op->is_vla_array && bound) {
-      size = ps_node_new_binary(
-          ND_MUL, widen_size_value(semantic_context, bound), size);
+      size = ps_node_new_binary_in(
+          arena_context, ND_MUL,
+          widen_size_value(semantic_context, bound), size);
       is_runtime = 1;
     } else {
-      size = ps_node_new_binary(
-          ND_MUL,
+      size = ps_node_new_binary_in(
+          arena_context, ND_MUL,
           widen_size_value(
-              semantic_context, ps_node_new_num(op->array_len)),
+              semantic_context,
+              ps_node_new_num_in(arena_context, op->array_len)),
           size);
     }
   }

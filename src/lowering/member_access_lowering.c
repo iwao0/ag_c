@@ -60,8 +60,8 @@ static node_t *materialize_call_rvalue(
       lowering_context, local_registry, access, fallback_diag_tok);
   node_t *target = ps_node_new_lvar_expr_ref_for(temporary);
   node_t *assign = ps_node_new_assign(target, base);
-  return ps_node_new_binary(
-      ND_COMMA, assign,
+  return ps_node_new_binary_in(
+      ps_lowering_arena(lowering_context), ND_COMMA, assign,
       ps_node_new_lvar_expr_ref_for(temporary));
 }
 
@@ -83,8 +83,8 @@ static node_t *materialize_ternary_rvalue(
   select->els = ps_node_new_assign(
       ps_node_new_lvar_expr_ref_for(temporary),
       ternary->els);
-  return ps_node_new_binary(
-      ND_COMMA, (node_t *)select,
+  return ps_node_new_binary_in(
+      ps_lowering_arena(lowering_context), ND_COMMA, (node_t *)select,
       ps_node_new_lvar_expr_ref_for(temporary));
 }
 
@@ -114,8 +114,8 @@ node_t *lower_member_access_expression_in(
   node_t *address = base;
   if (!access->from_pointer) {
     if (base->kind == ND_COMMA && base->rhs) {
-      address = ps_node_new_binary(
-          ND_COMMA, base->lhs,
+      address = ps_node_new_binary_in(
+          ps_lowering_arena(lowering_context), ND_COMMA, base->lhs,
           ps_node_new_addr_value_for(base->rhs));
     } else {
       address = ps_node_new_addr_value_for(base);

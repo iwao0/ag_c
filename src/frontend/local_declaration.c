@@ -10,6 +10,7 @@
 #include "../parser/local_registry.h"
 #include "../parser/global_registry.h"
 #include "../parser/semantic_ctx.h"
+#include "../lowering/runtime_context.h"
 
 #include <stdlib.h>
 
@@ -228,8 +229,9 @@ static void finish_declarator(
       }
       if (application->automatic_result.initialization) {
         application->initialization = application->initialization
-            ? ps_node_new_binary(
-                  ND_COMMA, application->initialization,
+            ? ps_node_new_binary_in(
+                  ps_lowering_arena(application->lowering_context), ND_COMMA,
+                  application->initialization,
                   application->automatic_result.initialization)
             : application->automatic_result.initialization;
       }
@@ -245,7 +247,9 @@ static node_t *finish_declaration(void *declaration_context) {
   psx_local_declaration_application_t *application = declaration_context;
   node_t *result = application && application->initialization
                        ? application->initialization
-                       : ps_node_new_num(0);
+                       : ps_node_new_num_in(
+                             ps_lowering_arena(application->lowering_context),
+                             0);
   free(application);
   return result;
 }

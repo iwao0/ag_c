@@ -41,7 +41,8 @@ static void analyze_function_in_contexts(
       function, current_function, fallback_diag_tok);
   psx_emit_unreachable_warnings(function, fallback_diag_tok);
   psx_lower_implicit_conversions(
-      function, current_function, fallback_diag_tok, options);
+      lowering_context, function, current_function,
+      fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
       function, fallback_diag_tok);
   psx_analyze_function_lvar_usage_in(
@@ -82,7 +83,7 @@ node_t *psx_frontend_analyze_expression_in_contexts(
       semantic_context, global_registry, local_registry,
       expression, NULL, fallback_diag_tok);
   psx_lower_implicit_conversions(
-      expression, NULL, fallback_diag_tok, options);
+      lowering_context, expression, NULL, fallback_diag_tok, options);
   psx_require_semantic_tree_has_canonical_expression_types(
       expression, fallback_diag_tok);
   return expression;
@@ -150,7 +151,7 @@ void psx_frontend_analyze_program_in_contexts(
         semantic_context, global_registry, local_registry,
         program[i], NULL, program[i]->tok);
     psx_lower_implicit_conversions(
-        program[i], NULL, program[i]->tok, options);
+        lowering_context, program[i], NULL, program[i]->tok, options);
     psx_require_semantic_tree_has_canonical_expression_types(
         program[i], program[i]->tok);
   }

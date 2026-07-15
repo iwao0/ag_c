@@ -100,6 +100,12 @@ const explicitArenaDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",
 );
+const parserExpressionSource = await readFile("src/parser/expr.c", "utf8");
+const parserStatementSource = await readFile("src/parser/stmt.c", "utf8");
+const parserLocalDeclarationSource = await readFile(
+  "src/parser/local_declaration_syntax.c",
+  "utf8",
+);
 const explicitPhaseArenaSource = [
   frontendLayerSource,
   explicitSemanticLayerSource,
@@ -107,6 +113,9 @@ const explicitPhaseArenaSource = [
   explicitArenaDeclarationPipelineSource,
   await readFile("src/parser/declaration_syntax.c", "utf8"),
   await readFile("src/parser/declarator_syntax.c", "utf8"),
+  parserExpressionSource,
+  parserStatementSource,
+  parserLocalDeclarationSource,
   await readFile("src/main.c", "utf8"),
 ].join("\n");
 if (/\barena_(?:alloc|total_reserved_bytes)\s*\(/.test(
@@ -114,6 +123,29 @@ if (/\barena_(?:alloc|total_reserved_bytes)\s*\(/.test(
     )) {
   throw new Error(
     "frontend, semantic, declaration, lowering, declarator syntax, and driver code must use an explicit CompilationSession-owned arena",
+  );
+}
+if (/\bps_type_(?:new(?:_integer|_enum|_float|_pointer|_function|_array|_tag)?|clone|apply_declarator_shape|adjust_parameter_type|binary_result|conditional_result|address_result|decay_array|subscript_result|generic_control)\s*\(/.test(
+      explicitPhaseArenaSource,
+    )) {
+  throw new Error(
+    "frontend, semantic, declaration, lowering, parser expression, and driver code must allocate types in an explicit CompilationSession-owned arena",
+  );
+}
+const explicitFrontendSemanticAndExpressionNodeSource = [
+  frontendLayerSource,
+  explicitSemanticLayerSource,
+  loweringLayerSource,
+  explicitArenaDeclarationPipelineSource,
+  parserExpressionSource,
+  parserStatementSource,
+  parserLocalDeclarationSource,
+].join("\n");
+if (/\b(?:ps_node_new_binary|psx_node_new_raw_binary|ps_node_new_num|ps_node_new_shift_trunc_extend)\s*\(/.test(
+      explicitFrontendSemanticAndExpressionNodeSource,
+    )) {
+  throw new Error(
+    "frontend, semantic, declaration, lowering, and parser syntax code must allocate constructed AST nodes in an explicit CompilationSession-owned arena",
   );
 }
 if (/\b(?:ps_ctx_active|ps_global_registry_active|ps_local_registry_active)\s*\(/.test(
