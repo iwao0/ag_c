@@ -790,7 +790,9 @@ static int gvar_aggregate_member_next(gvar_aggregate_member_iter_t *iter,
             iter->semantic_types, iter->record_layouts, iter->target,
             iter->aggregate_type_id, ordinal, &mi))
       return 0;
-    if (ps_tag_flat_cover_state_covers(&iter->cover_state, &mi)) continue;
+    if (ps_tag_flat_cover_state_covers(
+            &iter->cover_state, mi.offset))
+      continue;
     gvar_aggregate_member_iter_note_cover(iter, &mi, ordinal);
     *out = mi;
     if (out_ordinal) *out_ordinal = ordinal;
@@ -931,9 +933,15 @@ static void gvar_aggregate_member_iter_note_cover(
     int member_ordinal) {
   if (!iter || !member) return;
   if (!iter->record_decl) {
+    psx_record_member_decl_t declaration =
+        gvar_member_declaration_view(member);
+    psx_record_member_layout_t layout = {
+        .offset = member->offset,
+        .bit_offset = member->bit_offset,
+    };
     ps_tag_flat_cover_state_note_in(
         iter->semantic_context, &iter->cover_state, iter->tag_kind,
-        iter->tag_name, iter->tag_len, member);
+        iter->tag_name, iter->tag_len, &declaration, &layout);
     return;
   }
   psx_type_id_t member_type_id = psx_semantic_type_table_record_member(
@@ -1587,7 +1595,7 @@ static int gvar_record_flat_slot_count(
       continue;
     }
     if (ps_tag_member_is_unnamed_struct(&member) ||
-        ps_tag_flat_cover_state_covers(&cover_state, &member))
+        ps_tag_flat_cover_state_covers(&cover_state, member.offset))
       continue;
     slots += member_slots;
     gvar_record_flat_cover_state_note(
@@ -1846,10 +1854,10 @@ void ps_tag_flat_cover_state_init(psx_tag_flat_cover_state_t *state) {
 }
 
 int ps_tag_flat_cover_state_covers(const psx_tag_flat_cover_state_t *state,
-                                    const tag_member_info_t *mi) {
-  if (!state || !mi || state->covered_union_size <= 0) return 0;
-  return mi->offset >= state->covered_union_off &&
-         mi->offset < state->covered_union_off + state->covered_union_size;
+                                    int member_offset) {
+  if (!state || state->covered_union_size <= 0) return 0;
+  return member_offset >= state->covered_union_off &&
+         member_offset < state->covered_union_off + state->covered_union_size;
 }
 
 int ps_tag_find_unnamed_union_covering_offset_in(
@@ -1861,19 +1869,23 @@ void ps_tag_flat_cover_state_note_in(
     psx_semantic_context_t *semantic_context,
     psx_tag_flat_cover_state_t *state,
     token_kind_t tag_kind, char *tag_name, int tag_len,
-    const tag_member_info_t *mi) {
-  if (!state || !mi) return;
-  if (ps_tag_member_is_unnamed_union(mi)) {
-    state->covered_union_off = mi->offset;
+    const psx_record_member_decl_t *declaration,
+    const psx_record_member_layout_t *layout) {
+  if (!state || !declaration || !layout) return;
+  tag_member_info_t member = ps_tag_member_declaration_view(declaration);
+  member.offset = layout->offset;
+  member.bit_offset = layout->bit_offset;
+  if (ps_tag_member_is_unnamed_union(&member)) {
+    state->covered_union_off = layout->offset;
     state->covered_union_size =
-        tag_member_decl_storage_size_in(semantic_context, mi);
+        tag_member_decl_storage_size_in(semantic_context, &member);
     return;
   }
   int cover_off = 0;
   int cover_size = 0;
   if (ps_tag_find_unnamed_union_covering_offset_in(
           semantic_context, tag_kind, tag_name, tag_len,
-          0, mi->offset, &cover_off, &cover_size)) {
+          0, layout->offset, &cover_off, &cover_size)) {
     state->covered_union_off = cover_off;
     state->covered_union_size = cover_size;
   }
@@ -1982,10 +1994,17 @@ int ps_tag_flat_slot_count_in(
       continue;
     }
     if (ps_tag_member_is_unnamed_struct(&mi)) continue;
-    if (ps_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
+    if (ps_tag_flat_cover_state_covers(&cover_state, mi.offset)) continue;
     slots += ps_tag_member_flat_slots_in(semantic_context, &mi);
+    psx_record_member_decl_t declaration =
+        gvar_member_declaration_view(&mi);
+    psx_record_member_layout_t layout = {
+        .offset = mi.offset,
+        .bit_offset = mi.bit_offset,
+    };
     ps_tag_flat_cover_state_note_in(
-        semantic_context, &cover_state, tag_kind, tag_name, tag_len, &mi);
+        semantic_context, &cover_state, tag_kind, tag_name, tag_len,
+        &declaration, &layout);
   }
   return slots > 0 ? slots : 1;
 }
@@ -2006,15 +2025,22 @@ int ps_tag_member_at_flat_slot_in(
             semantic_context, tag_kind, tag_name, tag_len, i, &mi))
       break;
     if (ps_tag_member_is_unnamed_struct(&mi)) continue;
-    if (ps_tag_flat_cover_state_covers(&cover_state, &mi)) continue;
+    if (ps_tag_flat_cover_state_covers(&cover_state, mi.offset)) continue;
     int member_slots = ps_tag_member_flat_slots_in(semantic_context, &mi);
     if (flat_slot < slot + member_slots) {
       if (out) *out = mi;
       if (out_ordinal) *out_ordinal = i;
       return 1;
     }
+    psx_record_member_decl_t declaration =
+        gvar_member_declaration_view(&mi);
+    psx_record_member_layout_t layout = {
+        .offset = mi.offset,
+        .bit_offset = mi.bit_offset,
+    };
     ps_tag_flat_cover_state_note_in(
-        semantic_context, &cover_state, tag_kind, tag_name, tag_len, &mi);
+        semantic_context, &cover_state, tag_kind, tag_name, tag_len,
+        &declaration, &layout);
     slot += member_slots;
   }
   return 0;

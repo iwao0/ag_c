@@ -858,8 +858,20 @@ static void test_tag_flat_cover_state_note(
     psx_tag_flat_cover_state_t *state,
     token_kind_t tag_kind, char *tag_name, int tag_len,
     const tag_member_info_t *member) {
+  psx_record_member_decl_t declaration = {
+      .name = member->name,
+      .len = member->len,
+      .bit_width = member->bit_width,
+      .bit_is_signed = member->bit_is_signed,
+      .decl_type = ps_tag_member_decl_type(member),
+  };
+  psx_record_member_layout_t layout = {
+      .offset = member->offset,
+      .bit_offset = member->bit_offset,
+  };
   ps_tag_flat_cover_state_note_in(
-      test_semantic_context(), state, tag_kind, tag_name, tag_len, member);
+      test_semantic_context(), state, tag_kind, tag_name, tag_len,
+      &declaration, &layout);
 }
 
 static int test_tag_member_designator_slot(
@@ -13307,15 +13319,18 @@ static void test_type_metadata_bridge() {
                                           &flat_slot_member, &flat_slot_ordinal));
   psx_tag_flat_cover_state_t flat_cover;
   ps_tag_flat_cover_state_init(&flat_cover);
-  ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
+  ASSERT_TRUE(!ps_tag_flat_cover_state_covers(
+      &flat_cover, flat_slot_member.offset));
   test_tag_flat_cover_state_note(&flat_cover, TK_STRUCT, "FlatOut", 7, &flat_slot_member);
   tag_member_info_t flat_promoted_union_member = {0};
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "FlatOut", 7, "u", 1,
                                            &flat_promoted_union_member));
-  ASSERT_TRUE(ps_tag_flat_cover_state_covers(&flat_cover, &flat_promoted_union_member));
+  ASSERT_TRUE(ps_tag_flat_cover_state_covers(
+      &flat_cover, flat_promoted_union_member.offset));
   ASSERT_TRUE(ps_ctx_find_tag_member_info_in(test_semantic_context(), TK_STRUCT, "FlatOut", 7, "y", 1,
                                            &flat_slot_member));
-  ASSERT_TRUE(!ps_tag_flat_cover_state_covers(&flat_cover, &flat_slot_member));
+  ASSERT_TRUE(!ps_tag_flat_cover_state_covers(
+      &flat_cover, flat_slot_member.offset));
   int flat_ordinal = -1;
   ASSERT_EQ(4, test_tag_member_designator_slot(TK_STRUCT, "FlatOut", 7, "y", 1,
                                               &flat_ordinal));

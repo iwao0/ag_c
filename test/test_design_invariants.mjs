@@ -3551,6 +3551,10 @@ const tagMemberPublicSource = await readFile(
   "src/parser/tag_member_public.h",
   "utf8",
 );
+const tagFlatCoverSource = await readFile(
+  "src/parser/tag_flat_cover.h",
+  "utf8",
+);
 const recordLayoutHeaderSource = await readFile(
   "src/semantic/record_layout.h",
   "utf8",
@@ -3560,6 +3564,17 @@ if (/\bps_ctx_(?:get|find)_tag_member_info(?:_at_scope)?_in\s*\(/.test(
     )) {
   throw new Error(
     "semantic context must not expose combined tag member declaration and layout queries",
+  );
+}
+if (/\btag_member_info_t\b/.test(tagFlatCoverSource) ||
+    !/ps_tag_flat_cover_state_covers\s*\([^;]*int\s+member_offset/s.test(
+      tagFlatCoverSource,
+    ) ||
+    !/ps_tag_flat_cover_state_note_in\s*\([^;]*const\s+psx_record_member_decl_t\s*\*\s*declaration\s*,[^;]*const\s+psx_record_member_layout_t\s*\*\s*layout/s.test(
+      tagFlatCoverSource,
+    )) {
+  throw new Error(
+    "flat-cover APIs must receive member declaration and target layout separately",
   );
 }
 const tagTypeStruct = tagContextSource.match(
