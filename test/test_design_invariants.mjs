@@ -1909,6 +1909,15 @@ if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
     !/resolution->record_id\s*=/.test(memberAccessResolutionSource) ||
+    !/declaration\.offset\s*=\s*0\s*;/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/declaration\.bit_offset\s*=\s*0\s*;/.test(
+      memberAccessResolutionSource,
+    ) ||
+    /resolution->member\.(?:offset|bit_offset)\s*=/.test(
+      memberAccessResolutionSource,
+    ) ||
     !/\bpsx_record_layout_table_lookup\s*\(/.test(
       memberAccessTargetLoweringSource,
     ) ||

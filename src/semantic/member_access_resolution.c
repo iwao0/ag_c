@@ -42,6 +42,14 @@ static const tag_member_info_t *aggregate_member_named(
   return NULL;
 }
 
+static tag_member_info_t member_declaration_view(
+    const tag_member_info_t *member) {
+  tag_member_info_t declaration = member ? *member : (tag_member_info_t){0};
+  declaration.offset = 0;
+  declaration.bit_offset = 0;
+  return declaration;
+}
+
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution) {
@@ -83,7 +91,7 @@ void psx_resolve_member_access(
     resolution->member_index = aggregate_member_index(
         record, member,
         request->member_name, request->member_name_len);
-    resolution->member = *member;
+    resolution->member = member_declaration_view(member);
     resolution->status = PSX_MEMBER_ACCESS_OK;
     return;
   }
@@ -110,5 +118,6 @@ void psx_resolve_member_access(
     resolution->member_index = aggregate_member_index(
         record, &resolution->member,
         request->member_name, request->member_name_len);
+    resolution->member = member_declaration_view(&resolution->member);
   }
 }
