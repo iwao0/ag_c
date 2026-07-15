@@ -1487,14 +1487,15 @@ int ps_ctx_register_typedef_name_in_contexts(
   return 1;
 }
 
-bool psx_ctx_find_typedef_sizeof_in(
+bool psx_ctx_find_typedef_layout_in(
     psx_semantic_context_t *context,
-    char *name, int len, int *out_sizeof_size) {
+    char *name, int len, int *out_size, int *out_alignment) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  if (out_sizeof_size)
-    *out_sizeof_size = ps_ctx_type_sizeof_in(
-        context, typedef_record_decl_type(t));
+  const psx_type_t *type = typedef_record_decl_type(t);
+  if (out_size) *out_size = ps_ctx_type_sizeof_in(context, type);
+  if (out_alignment)
+    *out_alignment = ps_ctx_type_alignof_in(context, type);
   return true;
 }
 
@@ -1738,56 +1739,42 @@ const char *ps_ctx_tag_kind_spelling(token_kind_t kind) {
   }
 }
 
-int ps_ctx_scalar_type_size(token_kind_t kind) {
-  switch (kind) {
-    case TK_CHAR: return 1;
-    case TK_BOOL: return 1;
-    case TK_SHORT: return 2;
-    case TK_INT:
-    case TK_SIGNED:
-    case TK_UNSIGNED:
-    case TK_FLOAT:
-      return 4;
-    case TK_LONG:
-    case TK_DOUBLE:
-      return 8;
-    default:
-      return 8;
-  }
-}
-
-void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size) {
-  bool is_type = false;
-  int size = 8;
+bool psx_ctx_get_type_token_layout_in(
+    const psx_semantic_context_t *context, token_kind_t kind,
+    int *out_size, int *out_alignment) {
+  ag_target_scalar_kind_t scalar_kind = AG_TARGET_SCALAR_COUNT;
   switch (kind) {
     case TK_CHAR:
     case TK_BOOL:
-      is_type = true;
-      size = 1;
+      scalar_kind = AG_TARGET_SCALAR_CHAR;
       break;
     case TK_SHORT:
-      is_type = true;
-      size = 2;
+      scalar_kind = AG_TARGET_SCALAR_SHORT;
       break;
     case TK_INT:
     case TK_SIGNED:
     case TK_UNSIGNED:
-    case TK_FLOAT:
-      is_type = true;
-      size = 4;
+      scalar_kind = AG_TARGET_SCALAR_INT;
       break;
     case TK_LONG:
-    case TK_DOUBLE:
-      is_type = true;
-      size = 8;
+      scalar_kind = AG_TARGET_SCALAR_LONG;
       break;
-    case TK_VOID:
-      is_type = true;
-      size = 8;
+    case TK_FLOAT:
+      scalar_kind = AG_TARGET_SCALAR_FLOAT;
+      break;
+    case TK_DOUBLE:
+      scalar_kind = AG_TARGET_SCALAR_DOUBLE;
+      break;
+    case TK_COMPLEX:
+      scalar_kind = AG_TARGET_SCALAR_DOUBLE_COMPLEX;
       break;
     default:
-      break;
+      return false;
   }
-  if (is_type_token) *is_type_token = is_type;
-  if (scalar_size) *scalar_size = size;
+  const ag_target_info_t *target = ps_ctx_target_info(context);
+  if (out_size)
+    *out_size = ag_target_info_scalar_size(target, scalar_kind);
+  if (out_alignment)
+    *out_alignment = ag_target_info_scalar_alignment(target, scalar_kind);
+  return true;
 }

@@ -233,19 +233,22 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
     set_curtok(ctx, curtok(ctx)->next);
     return !parse_unary_ctx(ctx);
   }
-  // sizeof / _Alignof: ag_c では基本型に対して両者は同じ値を返すので、
-  // 定数式評価器ではトークンだけ違う形で共通の処理を通す。
-  // `_Alignas(_Alignof(T))` のネストでも _Alignof が定数として扱えるようにする。
+  // sizeof / _Alignof share type-name parsing, but select distinct values
+  // from the active target layout.
   if (curtok(ctx)->kind == TK_SIZEOF || curtok(ctx)->kind == TK_ALIGNOF) {
+    int wants_alignment = curtok(ctx)->kind == TK_ALIGNOF;
     set_curtok(ctx, curtok(ctx)->next);
     if (curtok(ctx)->kind == TK_LPAREN) {
       set_curtok(ctx, curtok(ctx)->next);
-      int sz = 8;
+      int size = 0;
+      int alignment = 1;
       if (psx_ctx_is_type_token(curtok(ctx)->kind) ||
           psx_ctx_is_tag_keyword(curtok(ctx)->kind) ||
           psx_ctx_is_typedef_name_token_in(
               ctx->semantic_context, curtok(ctx))) {
-        psx_ctx_get_type_info(curtok(ctx)->kind, NULL, &sz);
+        psx_ctx_get_type_token_layout_in(
+            ctx->semantic_context, curtok(ctx)->kind,
+            &size, &alignment);
         if (psx_ctx_is_tag_keyword(curtok(ctx)->kind)) {
           token_kind_t tk = curtok(ctx)->kind;
           set_curtok(ctx, curtok(ctx)->next);
@@ -254,17 +257,17 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
           if (tag && ps_ctx_has_tag_type_in(
                          ctx->semantic_context,
                          tk, tag->str, tag->len)) {
-            sz = ps_ctx_get_tag_size_in(
+            size = ps_ctx_get_tag_size_in(
+                ctx->semantic_context, tk, tag->str, tag->len);
+            alignment = ps_ctx_get_tag_align_in(
                 ctx->semantic_context, tk, tag->str, tag->len);
           }
         } else if (psx_ctx_is_typedef_name_token_in(
                        ctx->semantic_context, curtok(ctx))) {
           token_ident_t *id = (token_ident_t *)curtok(ctx);
-          int td_sizeof = 8;
-          if (psx_ctx_find_typedef_sizeof_in(
-                  ctx->semantic_context,
-                  id->str, id->len, &td_sizeof))
-            sz = td_sizeof;
+          psx_ctx_find_typedef_layout_in(
+              ctx->semantic_context,
+              id->str, id->len, &size, &alignment);
           set_curtok(ctx, curtok(ctx)->next);
         } else {
           set_curtok(ctx, curtok(ctx)->next);
@@ -272,13 +275,15 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
             set_curtok(ctx, curtok(ctx)->next);
         }
         while (curtok(ctx)->kind == TK_MUL) {
-          sz = ag_target_info_pointer_size(
-              ps_ctx_target_info(ctx->semantic_context));
+          const ag_target_info_t *target =
+              ps_ctx_target_info(ctx->semantic_context);
+          size = ag_target_info_pointer_size(target);
+          alignment = ag_target_info_pointer_alignment(target);
           set_curtok(ctx, curtok(ctx)->next);
         }
       }
       tk_expect_ctx(ctx->tokenizer_context, ')');
-      return sz;
+      return wants_alignment ? alignment : size;
     }
     return parse_unary_ctx(ctx);
   }

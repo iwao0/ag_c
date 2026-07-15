@@ -24,6 +24,5 @@ const psx_type_t *ps_ctx_get_function_type_in(
 int ps_ctx_format_function_signature_in(
     psx_semantic_context_t *context, char *name, int len,
     char *out, size_t out_size);
-int ps_ctx_scalar_type_size(token_kind_t kind);
 
 #endif

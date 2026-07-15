@@ -3825,6 +3825,45 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
                    semantic_context, pointer_type_tokens,
                    pointer_type_end));
+  ag_target_info_t split_layout_target = wasm;
+  split_layout_target.pointer_alignment = 8;
+  split_layout_target.scalar[AG_TARGET_SCALAR_LONG] =
+      (ag_target_scalar_layout_t){12, 4};
+  ps_ctx_bind_target_info(semantic_context, &split_layout_target);
+  int token_size = 0;
+  int token_alignment = 0;
+  ASSERT_TRUE(psx_ctx_get_type_token_layout_in(
+      semantic_context, TK_LONG, &token_size, &token_alignment));
+  ASSERT_EQ(12, token_size);
+  ASSERT_EQ(4, token_alignment);
+  token_t *long_alignas_tokens = tk_tokenize((char *)"long)");
+  token_t *long_alignas_end = long_alignas_tokens;
+  while (long_alignas_end && long_alignas_end->kind != TK_RPAREN)
+    long_alignas_end = long_alignas_end->next;
+  ASSERT_TRUE(long_alignas_end != NULL);
+  ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
+                   semantic_context, long_alignas_tokens,
+                   long_alignas_end));
+  ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
+                   semantic_context, pointer_type_tokens,
+                   pointer_type_end));
+  token_t *sizeof_long_tokens = tk_tokenize((char *)"sizeof(long)");
+  token_t *sizeof_long_end = sizeof_long_tokens;
+  while (sizeof_long_end && sizeof_long_end->kind != TK_EOF)
+    sizeof_long_end = sizeof_long_end->next;
+  ASSERT_TRUE(sizeof_long_end != NULL);
+  ASSERT_EQ(12, psx_eval_parsed_enum_const_expr_in_context(
+                    semantic_context, sizeof_long_tokens,
+                    sizeof_long_end));
+  token_t *alignof_long_tokens = tk_tokenize((char *)"_Alignof(long)");
+  token_t *alignof_long_end = alignof_long_tokens;
+  while (alignof_long_end && alignof_long_end->kind != TK_EOF)
+    alignof_long_end = alignof_long_end->next;
+  ASSERT_TRUE(alignof_long_end != NULL);
+  ASSERT_EQ(4, psx_eval_parsed_enum_const_expr_in_context(
+                   semantic_context, alignof_long_tokens,
+                   alignof_long_end));
+  ps_ctx_bind_target_info(semantic_context, &host);
   psx_record_decl_t *record = arena_alloc_in(
       test_arena_context(), sizeof(*record));
   memset(record, 0, sizeof(*record));

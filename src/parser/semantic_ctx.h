@@ -215,9 +215,9 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
     const psx_type_t **out_type);
 int ps_ctx_has_typedef_in_current_scope_in(
     psx_semantic_context_t *context, char *name, int len);
-bool psx_ctx_find_typedef_sizeof_in(
+bool psx_ctx_find_typedef_layout_in(
     psx_semantic_context_t *context,
-    char *name, int len, int *out_sizeof_size);
+    char *name, int len, int *out_size, int *out_alignment);
 bool psx_ctx_is_typedef_name_token_in(
     psx_semantic_context_t *context, token_t *tok);
 struct psx_function_registration_checkpoint_t {
@@ -229,6 +229,8 @@ bool psx_ctx_is_type_token(token_kind_t kind);
 bool psx_ctx_is_tag_keyword(token_kind_t kind);
 bool ps_ctx_is_tag_aggregate_kind(token_kind_t kind);
 const char *ps_ctx_tag_kind_spelling(token_kind_t kind);
-void psx_ctx_get_type_info(token_kind_t kind, bool *is_type_token, int *scalar_size);
+bool psx_ctx_get_type_token_layout_in(
+    const psx_semantic_context_t *context, token_kind_t kind,
+    int *out_size, int *out_alignment);
 
 #endif

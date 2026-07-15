@@ -2168,6 +2168,10 @@ const localDeclarationSyntaxSource = await readFile(
   "utf8",
 );
 const enumConstSource = await readFile("src/parser/enum_const.c", "utf8");
+const alignasValueSource = await readFile(
+  "src/parser/alignas_value.c",
+  "utf8",
+);
 const functionParameterResolutionSource = await readFile(
   "src/semantic/function_parameter_resolution.c",
   "utf8",
@@ -3544,6 +3548,22 @@ if (!recordTypeIdLayoutFunction ||
     )) {
   throw new Error(
     "record ABI layout must be an explicit RecordLayoutTable input separate from TypeId",
+  );
+}
+if (/\bpsx_ctx_get_type_info\s*\(/.test(tagContextSource) ||
+    /\bps_ctx_scalar_type_size\s*\(/.test(tagContextSource) ||
+    !/\bpsx_ctx_get_type_token_layout_in\s*\(/.test(tagContextSource) ||
+    !/\bag_target_info_scalar_size\s*\(/.test(tagContextSource) ||
+    !/\bag_target_info_scalar_alignment\s*\(/.test(tagContextSource) ||
+    !/\bpsx_ctx_find_typedef_layout_in\s*\(/.test(tagContextSource) ||
+    !/\bag_target_info_pointer_alignment\s*\(/.test(
+      alignasValueSource,
+    ) ||
+    !/wants_alignment\s*\?\s*alignment\s*:\s*size/.test(
+      enumConstSource,
+    )) {
+  throw new Error(
+    "parser type-name constants must derive size and alignment independently from TargetSpec",
   );
 }
 

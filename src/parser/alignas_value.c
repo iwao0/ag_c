@@ -22,22 +22,23 @@ int psx_parse_alignas_value_in_contexts(
   if (psx_ctx_is_type_token(curtok(tokenizer_context)->kind) ||
       psx_ctx_is_typedef_name_token_in(
           semantic_context, curtok(tokenizer_context))) {
-    int elem_size = 8;
+    int alignment = 1;
     if (curtok(tokenizer_context)->kind == TK_IDENT) {
       token_ident_t *identifier =
           (token_ident_t *)curtok(tokenizer_context);
-      psx_ctx_find_typedef_sizeof_in(
+      psx_ctx_find_typedef_layout_in(
           semantic_context, identifier->str, identifier->len,
-          &elem_size);
+          NULL, &alignment);
     } else {
-      psx_ctx_get_type_info(
-          curtok(tokenizer_context)->kind, NULL, &elem_size);
+      psx_ctx_get_type_token_layout_in(
+          semantic_context, curtok(tokenizer_context)->kind,
+          NULL, &alignment);
     }
-    val = elem_size;
+    val = alignment;
     while (curtok(tokenizer_context)->kind != TK_RPAREN &&
            curtok(tokenizer_context)->kind != TK_EOF) {
       if (curtok(tokenizer_context)->kind == TK_MUL) {
-        val = ag_target_info_pointer_size(
+        val = ag_target_info_pointer_alignment(
             ps_ctx_target_info(semantic_context));
       }
       set_curtok(
@@ -60,20 +61,21 @@ int psx_eval_parsed_alignas_value_in_context(
   if (psx_ctx_is_type_token(start->kind) ||
       psx_ctx_is_typedef_name_token_in(
           semantic_context, start)) {
-    int elem_size = 8;
+    int alignment = 1;
     if (start->kind == TK_IDENT) {
       token_ident_t *identifier = (token_ident_t *)start;
-      psx_ctx_find_typedef_sizeof_in(
+      psx_ctx_find_typedef_layout_in(
           semantic_context, identifier->str, identifier->len,
-          &elem_size);
+          NULL, &alignment);
     } else {
-      psx_ctx_get_type_info(start->kind, NULL, &elem_size);
+      psx_ctx_get_type_token_layout_in(
+          semantic_context, start->kind, NULL, &alignment);
     }
-    value = elem_size;
+    value = alignment;
     for (token_t *token = start; token && token != end;
          token = token->next) {
       if (token->kind == TK_MUL) {
-        value = ag_target_info_pointer_size(
+        value = ag_target_info_pointer_alignment(
             ps_ctx_target_info(semantic_context));
         break;
       }
