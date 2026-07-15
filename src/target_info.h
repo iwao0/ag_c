@@ -38,10 +38,4 @@ int ag_target_info_scalar_alignment(
     const ag_target_info_t *target, ag_target_scalar_kind_t kind);
 int ag_target_info_equal(
     const ag_target_info_t *lhs, const ag_target_info_t *rhs);
-
-/* Compatibility API for context-free callers. New compilation paths must
- * carry ag_target_info_t explicitly. */
-int ag_target_pointer_size(void);
-void ag_target_set_pointer_size(int size);
-
 #endif

@@ -18,24 +18,6 @@ static const ag_target_info_t standard_target = {
     },
 };
 
-static ag_target_info_t default_target = {
-    .pointer_size = 8,
-    .pointer_alignment = 8,
-    .scalar = {
-        [AG_TARGET_SCALAR_CHAR] = {1, 1},
-        [AG_TARGET_SCALAR_SHORT] = {2, 2},
-        [AG_TARGET_SCALAR_INT] = {4, 4},
-        [AG_TARGET_SCALAR_LONG] = {8, 8},
-        [AG_TARGET_SCALAR_LONG_LONG] = {8, 8},
-        [AG_TARGET_SCALAR_FLOAT] = {4, 4},
-        [AG_TARGET_SCALAR_DOUBLE] = {8, 8},
-        [AG_TARGET_SCALAR_LONG_DOUBLE] = {8, 8},
-        [AG_TARGET_SCALAR_FLOAT_COMPLEX] = {8, 8},
-        [AG_TARGET_SCALAR_DOUBLE_COMPLEX] = {16, 8},
-        [AG_TARGET_SCALAR_LONG_DOUBLE_COMPLEX] = {16, 8},
-    },
-};
-
 ag_target_info_t ag_target_info_host(void) {
   return standard_target;
 }
@@ -88,13 +70,4 @@ int ag_target_info_equal(
       return 0;
   }
   return 1;
-}
-
-int ag_target_pointer_size(void) {
-  return ag_target_info_pointer_size(&default_target);
-}
-
-void ag_target_set_pointer_size(int size) {
-  default_target.pointer_size = size == 4 ? 4 : 8;
-  default_target.pointer_alignment = default_target.pointer_size;
 }

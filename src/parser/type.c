@@ -116,14 +116,6 @@ void ps_type_normalize_scalar_identity(psx_type_t *type) {
   }
 }
 
-void ps_type_clear_cached_layout(psx_type_t *type) {
-  (void)type;
-}
-
-void ps_type_clear_record_layout_cache(psx_type_t *type) {
-  (void)type;
-}
-
 psx_type_t *ps_type_new_integer_in(
     arena_context_t *arena_context, token_kind_t scalar_kind,
     int is_unsigned) {

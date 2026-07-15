@@ -24,7 +24,6 @@ static psx_type_t *resolve_tag_base_type(
   psx_type_t *type = ps_type_new_tag_in(
       ps_ctx_arena(semantic_context), kind, name, name_len,
       scope_depth >= 0 ? scope_depth + 1 : 0);
-  ps_type_clear_cached_layout(type);
   type->record_id = ps_ctx_resolve_tag_record_id_in(
       semantic_context, kind, name, name_len);
   return type;
@@ -93,7 +92,6 @@ psx_type_t *psx_build_decl_type(const psx_decl_type_request_t *request) {
         request->declarator_shape);
   }
   ps_ctx_bind_record_ids_in(semantic_context, type);
-  ps_type_clear_record_layout_cache(type);
   return type;
 }
 
@@ -145,7 +143,6 @@ psx_type_t *psx_build_decl_specifier_type_in_context(
   }
   apply_decl_specifier_type_properties(type, syntax, override_plain_char);
   ps_ctx_bind_record_ids_in(semantic_context, type);
-  ps_type_clear_record_layout_cache(type);
   return type;
 }
 

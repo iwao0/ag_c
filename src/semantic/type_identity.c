@@ -262,7 +262,6 @@ psx_qual_type_t psx_semantic_type_table_intern(
       table->arena_context, type);
   if (!canonical) return result;
   ps_type_normalize_scalar_identity(canonical);
-  ps_type_clear_cached_layout(canonical);
   ps_type_remove_all_qualifiers_recursive(canonical);
   table->entries[id].type = canonical;
   table->next_id = id;

@@ -3654,14 +3654,17 @@ if (!/\bscalar\s*\[\s*AG_TARGET_SCALAR_COUNT\s*\]/.test(targetInfoHeaderSource) 
     !/\bag_target_info_scalar_size\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_scalar_alignment\s*\(/.test(targetInfoHeaderSource) ||
     !/\bag_target_info_equal\s*\(/.test(targetInfoHeaderSource) ||
+    /\bag_target_(?:pointer_size|set_pointer_size)\s*\(/.test(
+      targetInfoHeaderSource + targetInfoImplementationSource,
+    ) ||
+    /\bdefault_target\b/.test(targetInfoImplementationSource) ||
     !/\blayout_scalar\s*\(/.test(await readFile("src/type_layout.c", "utf8")) ||
     !/\bAG_TARGET_SCALAR_FLOAT_COMPLEX\b/.test(targetInfoImplementationSource) ||
     !/\bag_target_info_equal\s*\(/.test(recordLayoutImplementationSource) ||
-    !/\bps_type_clear_cached_layout\s*\(\s*canonical\s*\)/.test(
-      typeIdentityImplementationSource,
-    ) ||
-    !/\bps_type_clear_record_layout_cache\s*\(/.test(
-      await readFile("src/semantic/declaration_resolution.c", "utf8"),
+    /\bps_type_clear_(?:cached_layout|record_layout_cache)\s*\(/.test(
+      typeSource +
+        typeIdentityImplementationSource +
+        await readFile("src/semantic/declaration_resolution.c", "utf8"),
     )) {
   throw new Error(
     "scalar size and alignment must be selected by TargetSpec instead of semantic type caches",
@@ -3720,7 +3723,7 @@ if (!targetCanonicalSignatureSection ||
   );
 }
 const scalarIdentityNormalizer = canonicalTypeSource.match(
-  /void\s+ps_type_normalize_scalar_identity\s*\([^]*?\n\}\n\nvoid\s+ps_type_clear_cached_layout/,
+  /void\s+ps_type_normalize_scalar_identity\s*\([^]*?\n\}/,
 );
 if (!/static\s+token_kind_t\s+canonical_integer_scalar_kind\s*\(\s*token_kind_t\s+scalar_kind\s*\)/.test(
       canonicalTypeSource,

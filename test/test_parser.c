@@ -18469,7 +18469,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_activate(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&host));
   ASSERT_TRUE(!ag_compilation_session_is_active(&wasm));
-  ag_target_set_pointer_size(4);
   ASSERT_EQ(8, ag_compilation_session_target(&host)->pointer_size);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   gen_set_output_callback_in(
@@ -18514,7 +18513,6 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ag_compilation_session_activate(&wasm));
   ASSERT_TRUE(!ag_compilation_session_is_active(&host));
   ASSERT_TRUE(ag_compilation_session_is_active(&wasm));
-  ag_target_set_pointer_size(8);
   ASSERT_EQ(4, ag_compilation_session_target(&wasm)->pointer_size);
   ASSERT_TRUE(tk_context_active() == previous_tokenizer);
   cg_emitf_in(
@@ -18602,11 +18600,9 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(tk_ctx_get_strict_c11_mode(host_tokenizer));
   ASSERT_TRUE(!tk_ctx_get_strict_c11_mode(wasm_tokenizer));
 
-  ag_target_set_pointer_size(4);
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ag_compilation_session_target(&wasm)));
   ASSERT_EQ(8, ag_compilation_session_target(previous_session)->pointer_size);
-  ag_target_set_pointer_size(8);
   ASSERT_TRUE(ag_compilation_session_dispose(&host));
   ASSERT_TRUE(ag_compilation_session_dispose(&wasm));
   ASSERT_EQ(1, host_backend.destroy_count);
