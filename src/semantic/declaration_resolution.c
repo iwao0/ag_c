@@ -77,9 +77,12 @@ static void apply_decl_specifier_type_properties(
   if (!type || !specifier) return;
   ps_type_set_decl_spec_qualifiers(
       type,
-      type->is_const_qualified || specifier->is_const_qualified,
-      type->is_volatile_qualified || specifier->is_volatile_qualified);
-  if (specifier->is_atomic) type->is_atomic = 1;
+      ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST) ||
+          specifier->is_const_qualified,
+      ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE) ||
+          specifier->is_volatile_qualified);
+  if (specifier->is_atomic)
+    ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
   if (specifier->is_long_long) type->is_long_long = 1;
   if (override_plain_char)
     type->is_plain_char = specifier->is_plain_char ? 1 : 0;

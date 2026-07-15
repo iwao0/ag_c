@@ -8022,6 +8022,23 @@ static void test_type_decl() {
 static void test_type_metadata_bridge() {
   printf("test_type_metadata_bridge...\n");
 
+  psx_type_t *qualified = ps_type_new_integer(TK_INT, 4, 0);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_NONE, ps_type_qualifiers(qualified));
+  ps_type_add_qualifiers(
+      qualified,
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_ATOMIC);
+  ASSERT_TRUE(ps_type_has_qualifier(
+      qualified, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      qualified, PSX_TYPE_QUALIFIER_ATOMIC));
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      qualified, PSX_TYPE_QUALIFIER_VOLATILE));
+  ps_type_remove_qualifiers(qualified, PSX_TYPE_QUALIFIER_CONST);
+  ASSERT_TRUE(!ps_type_has_qualifier(
+      qualified, PSX_TYPE_QUALIFIER_CONST));
+  ASSERT_TRUE(ps_type_has_qualifier(
+      qualified, PSX_TYPE_QUALIFIER_ATOMIC));
+
   psx_type_t *deep_array_leaf = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *deep_array = deep_array_leaf;
   int deep_array_size = 4;

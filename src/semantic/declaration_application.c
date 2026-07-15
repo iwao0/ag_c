@@ -169,7 +169,7 @@ static psx_type_t *build_parsed_type_name(
         semantic_context, global_registry, local_registry,
         type_name->atomic_inner);
     if (!base_type) return NULL;
-    base_type->is_atomic = 1;
+    ps_type_add_qualifiers(base_type, PSX_TYPE_QUALIFIER_ATOMIC);
   } else {
     apply_decl_tag_action(
         &type_name->specifier.tag_action, semantic_context,

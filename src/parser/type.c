@@ -838,6 +838,21 @@ int ps_type_is_unsigned(const psx_type_t *type) {
   return type->is_unsigned ? 1 : 0;
 }
 
+psx_type_qualifiers_t ps_type_qualifiers(const psx_type_t *type) {
+  if (!type) return PSX_TYPE_QUALIFIER_NONE;
+  psx_type_qualifiers_t qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  if (type->is_const_qualified) qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+  if (type->is_volatile_qualified) qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+  if (type->is_atomic) qualifiers |= PSX_TYPE_QUALIFIER_ATOMIC;
+  return qualifiers;
+}
+
+int ps_type_has_qualifier(const psx_type_t *type,
+                          psx_type_qualifiers_t qualifier) {
+  return qualifier != PSX_TYPE_QUALIFIER_NONE &&
+         (ps_type_qualifiers(type) & qualifier) == qualifier;
+}
+
 int ps_type_is_scalar(const psx_type_t *type) {
   if (!type) return 0;
   switch (type->kind) {
@@ -1251,6 +1266,30 @@ void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
   while (type && type->kind == PSX_TYPE_ARRAY)
     type = psx_type_owned_base_mut(type);
   if (!type || type->kind == PSX_TYPE_FUNCTION) return;
-  if (is_const_qualified) type->is_const_qualified = 1;
-  if (is_volatile_qualified) type->is_volatile_qualified = 1;
+  psx_type_qualifiers_t qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  if (is_const_qualified) qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+  if (is_volatile_qualified) qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+  ps_type_add_qualifiers(type, qualifiers);
+}
+
+void ps_type_add_qualifiers(psx_type_t *type,
+                            psx_type_qualifiers_t qualifiers) {
+  if (!type) return;
+  if (qualifiers & PSX_TYPE_QUALIFIER_CONST)
+    type->is_const_qualified = 1;
+  if (qualifiers & PSX_TYPE_QUALIFIER_VOLATILE)
+    type->is_volatile_qualified = 1;
+  if (qualifiers & PSX_TYPE_QUALIFIER_ATOMIC)
+    type->is_atomic = 1;
+}
+
+void ps_type_remove_qualifiers(psx_type_t *type,
+                               psx_type_qualifiers_t qualifiers) {
+  if (!type) return;
+  if (qualifiers & PSX_TYPE_QUALIFIER_CONST)
+    type->is_const_qualified = 0;
+  if (qualifiers & PSX_TYPE_QUALIFIER_VOLATILE)
+    type->is_volatile_qualified = 0;
+  if (qualifiers & PSX_TYPE_QUALIFIER_ATOMIC)
+    type->is_atomic = 0;
 }

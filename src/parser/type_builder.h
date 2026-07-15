@@ -47,5 +47,9 @@ int ps_type_complete_array(psx_type_t *type, int array_len);
 void ps_type_set_decl_spec_qualifiers(psx_type_t *type,
                                       int is_const_qualified,
                                       int is_volatile_qualified);
+void ps_type_add_qualifiers(psx_type_t *type,
+                            psx_type_qualifiers_t qualifiers);
+void ps_type_remove_qualifiers(psx_type_t *type,
+                               psx_type_qualifiers_t qualifiers);
 
 #endif

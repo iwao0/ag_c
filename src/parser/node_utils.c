@@ -77,8 +77,10 @@ static psx_type_t *type_with_self_qualifiers_in(
         is_const_qualified, is_volatile_qualified);
     return copy;
   }
-  if (is_const_qualified) copy->is_const_qualified = 1;
-  if (is_volatile_qualified) copy->is_volatile_qualified = 1;
+  psx_type_qualifiers_t qualifiers = PSX_TYPE_QUALIFIER_NONE;
+  if (is_const_qualified) qualifiers |= PSX_TYPE_QUALIFIER_CONST;
+  if (is_volatile_qualified) qualifiers |= PSX_TYPE_QUALIFIER_VOLATILE;
+  ps_type_add_qualifiers(copy, qualifiers);
   return copy;
 }
 
@@ -132,17 +134,13 @@ int ps_lvar_is_tag_aggregate(const lvar_t *var) {
 static int lvar_self_is_const_qualified(const lvar_t *var) {
   const psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
-  if (type_is_pointer_view_type(value_type))
-    return value_type->is_const_qualified ? 1 : 0;
-  return value_type && value_type->is_const_qualified ? 1 : 0;
+  return ps_type_has_qualifier(value_type, PSX_TYPE_QUALIFIER_CONST);
 }
 
 static int lvar_self_is_volatile_qualified(const lvar_t *var) {
   const psx_type_t *type = lvar_decl_type_view(var);
   const psx_type_t *value_type = ps_type_array_leaf_type(type);
-  if (type_is_pointer_view_type(value_type))
-    return value_type->is_volatile_qualified ? 1 : 0;
-  return value_type && value_type->is_volatile_qualified ? 1 : 0;
+  return ps_type_has_qualifier(value_type, PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
 const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
@@ -1985,12 +1983,12 @@ static const psx_type_t *node_pointee_value_type(node_t *node) {
 
 static int node_pointee_is_const_qualified(node_t *node) {
   const psx_type_t *pointee = node_pointee_value_type(node);
-  return pointee && pointee->is_const_qualified;
+  return ps_type_has_qualifier(pointee, PSX_TYPE_QUALIFIER_CONST);
 }
 
 static int node_pointee_is_volatile_qualified(node_t *node) {
   const psx_type_t *pointee = node_pointee_value_type(node);
-  return pointee && pointee->is_volatile_qualified;
+  return ps_type_has_qualifier(pointee, PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
 int ps_node_atomic_pointer_info(node_t *ptr_arg, int *width, int *is_unsigned) {
@@ -2029,17 +2027,13 @@ int ps_node_cast_i64_extension_info(node_t *node, int *target_size,
 static int node_self_is_const_qualified(node_t *node) {
   if (!node) return 0;
   const psx_type_t *type = ps_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->is_const_qualified ? 1 : 0;
-  return type && type->is_const_qualified ? 1 : 0;
+  return ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_CONST);
 }
 
 static int node_self_is_volatile_qualified(node_t *node) {
   if (!node) return 0;
   const psx_type_t *type = ps_node_get_type(node);
-  if (type_is_pointer_view_type(type))
-    return type->is_volatile_qualified ? 1 : 0;
-  return type && type->is_volatile_qualified ? 1 : 0;
+  return ps_type_has_qualifier(type, PSX_TYPE_QUALIFIER_VOLATILE);
 }
 
 int ps_node_is_unsigned_type(node_t *node) {

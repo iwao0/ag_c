@@ -309,8 +309,9 @@ static void semantic_resolve_member_access(
                                 : NULL;
   if (access_type && object_type)
     ps_type_set_decl_spec_qualifiers(
-        access_type, object_type->is_const_qualified,
-        object_type->is_volatile_qualified);
+        access_type,
+        ps_type_has_qualifier(object_type, PSX_TYPE_QUALIFIER_CONST),
+        ps_type_has_qualifier(object_type, PSX_TYPE_QUALIFIER_VOLATILE));
   ps_node_bind_type((node_t *)access, access_type);
   access->base.type_state.bit_width =
       (unsigned char)access->resolved_member->bit_width;

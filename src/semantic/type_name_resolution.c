@@ -24,7 +24,8 @@ static psx_type_t *apply_reference_qualifiers(
   const psx_type_spec_result_t *syntax = &specifier->type_spec;
   ps_type_set_decl_spec_qualifiers(
       base, syntax->is_const_qualified, syntax->is_volatile_qualified);
-  if (syntax->is_atomic) base->is_atomic = 1;
+  if (syntax->is_atomic)
+    ps_type_add_qualifiers(base, PSX_TYPE_QUALIFIER_ATOMIC);
   return base;
 }
 
@@ -45,7 +46,7 @@ static const psx_type_t *bind_base_type(
         ps_ctx_arena(semantic_context),
         psx_resolve_bound_type_name_ref_in_contexts(
             semantic_context, global_registry, local_registry, &inner));
-    if (type) type->is_atomic = 1;
+    ps_type_add_qualifiers(type, PSX_TYPE_QUALIFIER_ATOMIC);
     return type;
   }
 

@@ -2711,6 +2711,8 @@ const typeBuilderApiNames = [
   "ps_type_adjust_parameter_type_in",
   "ps_type_complete_array",
   "ps_type_set_decl_spec_qualifiers",
+  "ps_type_add_qualifiers",
+  "ps_type_remove_qualifiers",
 ];
 for (const functionName of typeBuilderApiNames) {
   const name = new RegExp(`\\b${functionName}\\b`);
