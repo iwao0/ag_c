@@ -8,6 +8,7 @@
 typedef struct global_var_t global_var_t;
 typedef struct psx_type_t psx_type_t;
 typedef struct psx_semantic_context_t psx_semantic_context_t;
+typedef struct ag_target_info_t ag_target_info_t;
 typedef void (*global_var_visitor_t)(global_var_t *gv, void *user);
 
 typedef enum {
@@ -83,7 +84,8 @@ typedef struct {
                  psx_type_id_t value_type_id, int slot, long long offset);
   void (*bitfield_unit)(void *user, const psx_gvar_bitfield_unit_t *unit,
                         long long base_offset);
-  void (*bitfield_member)(void *user, const tag_member_info_t *mi, int slot,
+  void (*bitfield_member)(void *user, const tag_member_info_t *mi,
+                          psx_type_id_t value_type_id, int slot,
                           long long base_offset);
   void (*padding)(void *user, long long offset, int size);
 } psx_gvar_aggregate_walk_ops_t;
@@ -145,6 +147,8 @@ int ps_gvar_walk_aggregate_initializer_in(
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user);
 int ps_gvar_walk_resolved_aggregate_initializer(
+    const psx_semantic_type_table_t *semantic_types,
+    const ag_target_info_t *target, psx_type_id_t root_type_id,
     global_var_t *gv, long long base_offset,
     const psx_gvar_aggregate_walk_ops_t *ops, void *user);
 unsigned long long ps_gvar_init_slot_bitfield_bits(const global_var_t *gv, int idx,

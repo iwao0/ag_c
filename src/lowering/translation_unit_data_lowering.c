@@ -231,13 +231,14 @@ static void lower_aggregate_bitfield_unit(
 }
 
 static void lower_aggregate_bitfield_member(
-    void *user, const tag_member_info_t *member, int slot,
+    void *user, const tag_member_info_t *member,
+    psx_type_id_t value_type_id, int slot,
     long long base_offset) {
   global_data_lowering_t *ctx = user;
   long long offset = base_offset + member->offset;
   unsigned long long packed = ps_gvar_init_slot_bitfield_bits(
       ctx->global, slot, member->bit_width, member->bit_offset);
-  int size = ps_tag_member_decl_value_size(member);
+  int size = type_size_id(ctx->lowering, value_type_id);
   if (offset < 0 || offset > INT32_MAX ||
       !write_bits(ctx->object, (int)offset, packed, size))
     ctx->lowering->failed = 1;

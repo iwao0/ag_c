@@ -2283,7 +2283,7 @@ if (!/struct node_gvar_t\s*\{[\s\S]*?struct global_var_t\s*\*symbol\s*;/.test(
     ) ||
     /\bps_find_global_var\s*\(/.test(constantExpressionSource) ||
     /\bps_find_global_var\s*\(/.test(irSymbolLoweringSource) ||
-    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*\)/.test(
+    !/lower_ir_global_symbol\s*\(\s*ctx->m\s*,\s*gv->symbol\s*,\s*ctx->semantic_types\s*,\s*ctx->target\s*\)/.test(
       irBuilderSource,
     )) {
   throw new Error(
@@ -3593,6 +3593,35 @@ if (!/void\s*\(\s*\*scalar\s*\)\s*\([^;]*\bpsx_type_id_t\s+value_type_id\b/.test
     !/\bpsx_semantic_type_table_array_leaf\s*\(/.test(nodeUtilsSource)) {
   throw new Error(
     "aggregate initializer scalar events must carry member value TypeIds through recursive traversal",
+  );
+}
+const aggregateWalkerLayoutSection = nodeUtilsSource.match(
+  /static\s+int\s+gvar_member_value_size_for_target\s*\([^]*?int\s+ps_gvar_initializer_element_size\s*\(/,
+);
+if (!aggregateWalkerLayoutSection ||
+    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    /\bps_type_sizeof_for_target\s*\(|\bps_tag_member_decl_value_size\s*\(/.test(
+      aggregateWalkerLayoutSection[0],
+    ) ||
+    !/\bps_gvar_walk_resolved_aggregate_initializer\s*\(\s*const\s+psx_semantic_type_table_t\s*\*[^,]*,\s*const\s+ag_target_info_t\s*\*[^,]*,\s*psx_type_id_t\s+root_type_id/.test(
+      gvarPublicSource,
+    ) ||
+    /\bps_gvar_storage_size\s*\(|\bsymbol_alignment\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
+      irSymbolLoweringSource,
+    ) ||
+    !/\bconst\s+psx_semantic_type_table_t\s*\*semantic_types\s*;/.test(
+      irBuilderHeader,
+    ) ||
+    !/\.semantic_types\s*=\s*ps_ctx_semantic_type_table_in\s*\(/.test(
+      compilerMainSource,
+    )) {
+  throw new Error(
+    "aggregate walking and IR symbol layout must consume TypeId and explicit TargetSpec",
   );
 }
 const typedInitializerSection = initializerLoweringSource.match(

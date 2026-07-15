@@ -3,6 +3,7 @@
 #include "target_info.h"
 #include "config/config.h"
 #include "parser/parser.h"
+#include "parser/semantic_ctx.h"
 #include "parser/arena.h"
 #include "frontend/translation_unit.h"
 #include "tokenizer/tokenizer.h"
@@ -337,6 +338,8 @@ static int agc_wasm_compile_to_memory(int source_addr, int source_name_addr,
   }
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          ag_compilation_session_semantic_context(session)),
       .continuation = ag_compilation_session_continuation(session),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),
@@ -621,6 +624,8 @@ int main(int argc, char **argv) {
   }
   ir_build_options_t ir_options = {
       .target = ag_compilation_session_target(session),
+      .semantic_types = ps_ctx_semantic_type_table_in(
+          ag_compilation_session_semantic_context(session)),
       .continuation = ag_compilation_session_continuation(session),
       .diagnostic_context =
           ag_compilation_session_diagnostic_context(session),

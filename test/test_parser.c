@@ -1396,6 +1396,7 @@ typedef struct {
   long long scalar_offsets[16];
   long long scalar_values[16];
   int scalar_sizes[16];
+  psx_type_id_t scalar_type_ids[16];
   int padding_count;
   long long padding_offsets[16];
   int padding_sizes[16];
@@ -1404,7 +1405,6 @@ typedef struct {
 static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
                                         psx_type_id_t value_type_id,
                                         int slot, long long offset) {
-  (void)value_type_id;
   aggregate_walk_trace_t *trace = user;
   if (!trace || trace->scalar_count >= 16) return;
   int idx = trace->scalar_count++;
@@ -1413,6 +1413,7 @@ static void aggregate_walk_trace_scalar(void *user, const tag_member_info_t *mi,
   trace->scalar_offsets[idx] = offset;
   trace->scalar_values[idx] = value.value;
   trace->scalar_sizes[idx] = value.size;
+  trace->scalar_type_ids[idx] = value_type_id;
 }
 
 static void aggregate_walk_trace_padding(void *user, long long offset, int size) {
@@ -12685,8 +12686,13 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, &walk_outer_tail));
 
   global_var_t walk_gv = {0};
-  walk_gv.decl_type =
-      ps_type_new_tag(TK_STRUCT, (char *)walk_outer_tag, walk_outer_len, 0, 20);
+  walk_gv.decl_type = ps_ctx_clone_tag_type_at_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
+      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+  ASSERT_TRUE(walk_gv.decl_type != NULL);
+  walk_gv.decl_type_id = intern_test_type_id(walk_gv.decl_type);
+  ASSERT_TRUE(walk_gv.decl_type_id != PSX_TYPE_ID_INVALID);
   ps_gvar_init_slots_alloc(&walk_gv, 5, 0);
   walk_gv.init_count = 5;
   for (int i = 0; i < 5; i++)
@@ -12707,6 +12713,7 @@ static void test_type_metadata_bridge() {
   for (int i = 0; i < 5; i++) {
     ASSERT_EQ(i + 1, walk_trace.scalar_values[i]);
     ASSERT_EQ(4, walk_trace.scalar_sizes[i]);
+    ASSERT_TRUE(walk_trace.scalar_type_ids[i] != PSX_TYPE_ID_INVALID);
   }
   ASSERT_EQ(0, walk_trace.padding_count);
 
@@ -12729,9 +12736,16 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_array_tag, walk_array_len, &walk_array_b));
 
   global_var_t walk_array_gv = {0};
+  psx_type_t *walk_array_element = ps_ctx_clone_tag_type_at_in_contexts(
+      test_semantic_context(), test_local_registry(),
+      TK_STRUCT, (char *)walk_array_tag, walk_array_len,
+      ps_local_registry_capture_lookup_point_in(test_local_registry()));
+  ASSERT_TRUE(walk_array_element != NULL);
   walk_array_gv.decl_type = ps_type_new_array(
-      ps_type_new_tag(TK_STRUCT, (char *)walk_array_tag, walk_array_len, 0, 8),
-      2, 16, 0);
+      walk_array_element, 2, 16, 0);
+  walk_array_gv.decl_type_id = intern_test_type_id(
+      walk_array_gv.decl_type);
+  ASSERT_TRUE(walk_array_gv.decl_type_id != PSX_TYPE_ID_INVALID);
   ps_gvar_init_slots_alloc(&walk_array_gv, 4, 0);
   walk_array_gv.init_count = 4;
   for (int i = 0; i < 4; i++)
@@ -12747,6 +12761,8 @@ static void test_type_metadata_bridge() {
   for (int i = 0; i < 4; i++) {
     ASSERT_EQ(i + 11, walk_array_trace.scalar_values[i]);
     ASSERT_EQ(4, walk_array_trace.scalar_sizes[i]);
+    ASSERT_TRUE(
+        walk_array_trace.scalar_type_ids[i] != PSX_TYPE_ID_INVALID);
   }
   ASSERT_EQ(0, walk_array_trace.padding_count);
 
