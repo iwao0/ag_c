@@ -96,6 +96,13 @@ const loweringSourceFiles = allSourceFiles.filter(
 const loweringLayerSource = (
   await Promise.all(loweringSourceFiles.map((path) => readFile(path, "utf8")))
 ).join("\n");
+if (/\bps_lvar_(?:storage_size|decl_sizeof|elem_size)\s*\(/.test(
+      loweringLayerSource,
+    )) {
+  throw new Error(
+    "lowering must separate frame storage from TypeId target layout",
+  );
+}
 const explicitArenaDeclarationPipelineSource = await readFile(
   "src/declaration_pipeline.c",
   "utf8",

@@ -131,6 +131,31 @@ static int ir_type_deref_size(
   return ir_c_type_size(ctx, type->base);
 }
 
+static int ir_lvar_decl_size(
+    const ir_build_ctx_t *ctx, const lvar_t *var) {
+  if (!ctx || !var) return 0;
+  psx_type_id_t type_id = ps_lvar_decl_type_id(var);
+  if (type_id != PSX_TYPE_ID_INVALID) {
+    return ps_type_sizeof_id_with_records(
+        ctx->semantic_types, ctx->record_layouts, type_id, ctx->target);
+  }
+  return ir_c_type_size(ctx, ps_lvar_get_decl_type(var));
+}
+
+static int ir_lvar_storage_size(
+    const ir_build_ctx_t *ctx, const lvar_t *var, int fallback_size) {
+  int declaration_size = ir_lvar_decl_size(ctx, var);
+  int frame_size = ps_lvar_frame_storage_size(var);
+  int size = frame_size > declaration_size ? frame_size : declaration_size;
+  return size > 0 ? size : fallback_size;
+}
+
+static int ir_lvar_element_size(
+    const ir_build_ctx_t *ctx, const lvar_t *var, int fallback_size) {
+  int size = ir_type_deref_size(ctx, ps_lvar_get_decl_type(var));
+  return size > 0 ? size : fallback_size;
+}
+
 static char *ir_strdup(const char *text) {
   if (!text) return NULL;
   size_t len = strlen(text);
@@ -399,8 +424,8 @@ static int alloca_for_owner(ir_build_ctx_t *ctx, lvar_t *var) {
     fail(ctx, "too many local variables");
     return -1;
   }
-  int size = ps_lvar_storage_size(var, 4);
-  int elem = ps_lvar_elem_size(var, 4);
+  int size = ir_lvar_storage_size(ctx, var, 4);
+  int elem = ir_lvar_element_size(ctx, var, 4);
   int align_bytes = ps_lvar_align_bytes(var);
   int align = (elem >= 8) ? 8 : (elem >= 4 ? 4 : (elem >= 2 ? 2 : 1));
   /* struct のような複合型は 8B align を優先 (簡略化) */
@@ -1973,7 +1998,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
       if (arg && arg->kind == ND_COMMA && arg->rhs && arg->rhs->kind == ND_LVAR) {
         node_lvar_t *rlv = (node_lvar_t *)arg->rhs;
         lvar_t *owner_cl = find_owning_lvar(ctx, rlv->offset);
-        int cl_sz = owner_cl ? ps_lvar_storage_size(owner_cl, 0)
+        int cl_sz = owner_cl ? ir_lvar_storage_size(ctx, owner_cl, 0)
                              : ir_node_type_size(ctx, arg->rhs);
         if (aggregate_size_from_node(ctx, arg->rhs) > 0 &&
             (cl_sz == 8 || cg_size_needs_indirect_struct(cl_sz))) {
@@ -2031,7 +2056,7 @@ static ir_val_t build_node_funcall(ir_build_ctx_t *ctx, node_t *node) {
          * 入れない。lvar->size は記述子サイズ (16/24) のことがある。 */
         if (!ps_node_value_is_pointer_like(arg)) {
           lvar_t *owner = find_owning_lvar(ctx, lv->offset);
-          if (owner) arg_full_size = ps_lvar_storage_size(owner, 0);
+          if (owner) arg_full_size = ir_lvar_storage_size(ctx, owner, 0);
           if (forced_arg_full_size > 0) arg_full_size = forced_arg_full_size;
           if (arg_full_size == 0) arg_full_size = ir_node_type_size(ctx, arg);
           /* 非 clean サイズ (3/5/6/7) は scalar に存在しないので struct/union 値で
@@ -3468,8 +3493,8 @@ static int setup_function_params(
     node_lvar_t *lv = (node_lvar_t *)arg;
     lvar_t *owner = find_owning_lvar(ctx, lv->offset);
     int param_full_size = owner
-                              ? ps_lvar_storage_size(
-                                    owner, ir_node_type_size(ctx, arg))
+                              ? ir_lvar_storage_size(
+                                    ctx, owner, ir_node_type_size(ctx, arg))
                               : ir_node_type_size(ctx, arg);
     const psx_type_t *param_type = ps_node_get_type(arg);
     /* caller と同じ判定: struct/union 値で 1/2/4/8 でないサイズ (3/5/6/7) は

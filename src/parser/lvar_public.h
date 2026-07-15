@@ -32,6 +32,7 @@ psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var);
 const char *ps_lvar_name(const lvar_t *var);
 int ps_lvar_name_len(const lvar_t *var);
 int ps_lvar_offset(const lvar_t *var);
+int ps_lvar_frame_storage_size(const lvar_t *var);
 int ps_lvar_decl_sizeof(const lvar_t *var, int fallback_size);
 int ps_lvar_storage_size(const lvar_t *var, int fallback_size);
 int ps_lvar_elem_size(const lvar_t *var, int fallback_size);

@@ -48,6 +48,24 @@ static int type_size_id(
       type_id, context->target);
 }
 
+static int lvar_decl_size(
+    const initializer_lowering_context_t *context, const lvar_t *var) {
+  if (!context || !var) return 0;
+  psx_type_id_t declaration_type_id = ps_lvar_decl_type_id(var);
+  return declaration_type_id != PSX_TYPE_ID_INVALID
+             ? type_size_id(context, declaration_type_id)
+             : type_size(context, ps_lvar_get_decl_type(var));
+}
+
+static int lvar_storage_size(
+    const initializer_lowering_context_t *context, const lvar_t *var,
+    int fallback_size) {
+  int declaration_size = lvar_decl_size(context, var);
+  int frame_size = ps_lvar_frame_storage_size(var);
+  int size = frame_size > declaration_size ? frame_size : declaration_size;
+  return size > 0 ? size : fallback_size;
+}
+
 static int record_member_offset(
     const initializer_lowering_context_t *context,
     const psx_type_t *aggregate_type, int member_index) {
@@ -198,7 +216,7 @@ static node_t *lower_array_expr_initializer(
   int elem_size = array_leaf_size(context, var);
   int array_len = ps_lvar_array_flat_element_count(var);
   if (array_len <= 0 && elem_size > 0) {
-    array_len = ps_lvar_storage_size(var, 0) / elem_size;
+    array_len = lvar_storage_size(context, var, 0) / elem_size;
   }
 
   if (value->kind == ND_STRING) {
@@ -444,7 +462,7 @@ static node_t *lower_array_list_initializer(
   int array_len = ps_lvar_array_flat_element_count(var);
   int elem_size = array_leaf_size(context, var);
   if (array_len <= 0 && elem_size > 0) {
-    array_len = ps_lvar_storage_size(var, 0) / elem_size;
+    array_len = lvar_storage_size(context, var, 0) / elem_size;
   }
 
   unsigned char *assigned = calloc(
@@ -472,7 +490,8 @@ static node_t *lower_array_list_initializer(
 static node_t *append_object_zero_fill(
     const initializer_lowering_context_t *context,
     lvar_t *var, node_t *chain) {
-  int size = ps_lvar_decl_sizeof(var, ps_lvar_storage_size(var, 0));
+  int size = lvar_decl_size(context, var);
+  if (size <= 0) size = lvar_storage_size(context, var, 0);
   int offset = 0;
   const int widths[] = {8, 4, 2, 1};
   for (int w = 0; w < 4; w++) {
@@ -1404,8 +1423,9 @@ static node_t *lower_complex_list_initializer(
     }
   }
 
-  int complex_size = ps_lvar_decl_sizeof(
-      var, ps_lvar_storage_size(var, 0));
+  int complex_size = lvar_decl_size(context, var);
+  if (complex_size <= 0)
+    complex_size = lvar_storage_size(context, var, 0);
   int half = complex_size > 0 ? complex_size / 2 : 8;
   node_t *real_lhs = ps_node_new_lvar_fp_slot_for_in(
       context->arena_context, var, ps_lvar_offset(var), half);

@@ -59,6 +59,10 @@ int ps_lvar_storage_size(const lvar_t *var, int fallback_size) {
   return storage_size > 0 ? storage_size : fallback_size;
 }
 
+int ps_lvar_frame_storage_size(const lvar_t *var) {
+  return var && var->size > 0 ? var->size : 0;
+}
+
 int ps_lvar_decl_sizeof(const lvar_t *var, int fallback_size) {
   const psx_type_t *type = lvar_public_decl_type(var);
   int decl_size = ps_type_sizeof(type);
