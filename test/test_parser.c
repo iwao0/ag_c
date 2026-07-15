@@ -16608,22 +16608,22 @@ static void test_semantic_type_identity() {
 
   psx_type_t *plain_int = ps_type_new_integer(TK_INT, 4, 0);
   psx_type_t *stale_wide_int = ps_type_new_integer(TK_INT, 8, 0);
-  psx_type_t *legacy_unsigned_char =
+  psx_type_t *stale_narrow_unsigned_int =
       ps_type_new_integer(TK_UNSIGNED, 1, 1);
-  psx_type_t *legacy_unsigned_long =
+  psx_type_t *stale_wide_unsigned_int =
       ps_type_new_integer(TK_UNSIGNED, 8, 1);
   ASSERT_EQ(3, ps_type_integer_rank(plain_int));
   ASSERT_EQ(3, ps_type_integer_rank(stale_wide_int));
   ASSERT_TRUE(ps_type_unqualified_semantic_matches(
       plain_int, stale_wide_int));
-  ASSERT_EQ(TK_CHAR, legacy_unsigned_char->scalar_kind);
-  ASSERT_EQ(1, ps_type_integer_rank(legacy_unsigned_char));
-  ASSERT_TRUE(!ps_type_integer_promotion_is_unsigned(
-      legacy_unsigned_char));
-  ASSERT_EQ(TK_LONG, legacy_unsigned_long->scalar_kind);
-  ASSERT_EQ(4, ps_type_integer_rank(legacy_unsigned_long));
+  ASSERT_EQ(TK_INT, stale_narrow_unsigned_int->scalar_kind);
+  ASSERT_EQ(3, ps_type_integer_rank(stale_narrow_unsigned_int));
   ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
-      legacy_unsigned_long));
+      stale_narrow_unsigned_int));
+  ASSERT_EQ(TK_INT, stale_wide_unsigned_int->scalar_kind);
+  ASSERT_EQ(3, ps_type_integer_rank(stale_wide_unsigned_int));
+  ASSERT_TRUE(ps_type_integer_promotion_is_unsigned(
+      stale_wide_unsigned_int));
   psx_type_t *stale_wide_short =
       ps_type_new_integer(TK_SHORT, 64, 1);
   psx_type_t *stale_narrow_int =
@@ -16631,7 +16631,8 @@ static void test_semantic_type_identity() {
   psx_type_t *boolean = ps_type_new_integer(TK_BOOL, 1, 0);
   ASSERT_EQ(2, ps_type_character_code_unit_width(stale_wide_short));
   ASSERT_EQ(4, ps_type_character_code_unit_width(stale_narrow_int));
-  ASSERT_EQ(1, ps_type_character_code_unit_width(legacy_unsigned_char));
+  ASSERT_EQ(4, ps_type_character_code_unit_width(
+      stale_narrow_unsigned_int));
   ASSERT_EQ(0, ps_type_character_code_unit_width(boolean));
   node_string_t utf16_string = {0};
   utf16_string.base.kind = ND_STRING;

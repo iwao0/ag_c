@@ -2593,10 +2593,17 @@ static node_lvar_t *new_lvar_symbol_node(arena_context_t *arena_context,
   return node;
 }
 
+static token_kind_t integer_kind_for_storage_size(int size) {
+  if (size <= 1) return TK_CHAR;
+  if (size == 2) return TK_SHORT;
+  if (size >= 8) return TK_LONG;
+  return TK_INT;
+}
+
 node_t *psx_node_new_lvar_in(arena_context_t *arena_context, int offset) {
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
-      ps_type_new_integer_in(arena_context, TK_INT, 8, 0));
+      ps_type_new_integer_in(arena_context, TK_LONG, 8, 0));
 }
 
 node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
@@ -2604,7 +2611,8 @@ node_t *ps_node_new_lvar_typed_in(arena_context_t *arena_context,
   int size = type_size > 0 ? type_size : 8;
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
-      ps_type_new_integer_in(arena_context, TK_INT, size, 0));
+      ps_type_new_integer_in(
+          arena_context, integer_kind_for_storage_size(size), size, 0));
 }
 
 node_t *ps_node_new_lvar_typed_at_for_in(
@@ -2623,7 +2631,9 @@ node_t *ps_node_new_lvar_typed_at_for_in(
   }
   if (!type)
     type = ps_type_new_integer_in(
-        arena_context, TK_INT, type_size > 0 ? type_size : 8, 0);
+        arena_context,
+        integer_kind_for_storage_size(type_size > 0 ? type_size : 8),
+        type_size > 0 ? type_size : 8, 0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, owner, type);
 }
@@ -2645,7 +2655,9 @@ node_t *psx_node_new_lvar_scalar_slot_at_in(
                          ? ps_type_new_integer_in(
                                arena_context, TK_BOOL, type_size, 1)
                          : ps_type_new_integer_in(
-                               arena_context, TK_INT, type_size, 0);
+                               arena_context,
+                               integer_kind_for_storage_size(type_size),
+                               type_size, 0);
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL, type);
 }
@@ -2681,7 +2693,8 @@ node_t *ps_node_new_unsigned_lvar_typed_in(
   return (node_t *)new_lvar_symbol_node(
       arena_context, offset, NULL,
       ps_type_new_integer_in(
-          arena_context, TK_UNSIGNED, type_size, 1));
+          arena_context, integer_kind_for_storage_size(type_size),
+          type_size, 1));
 }
 
 node_t *psx_node_new_lvar_for_in(arena_context_t *arena_context,

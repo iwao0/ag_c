@@ -85,14 +85,10 @@ psx_type_t *psx_type_owned_param_mut(psx_type_t *owner, int index) {
   return (psx_type_t *)owner->param_types[index];
 }
 
-static token_kind_t canonical_integer_scalar_kind(
-    token_kind_t scalar_kind, int size) {
+static token_kind_t canonical_integer_scalar_kind(token_kind_t scalar_kind) {
   if (scalar_kind != TK_SIGNED && scalar_kind != TK_UNSIGNED &&
       scalar_kind != TK_EOF)
     return scalar_kind;
-  if (size <= 1) return TK_CHAR;
-  if (size == 2) return TK_SHORT;
-  if (size >= 8) return TK_LONG;
   return TK_INT;
 }
 
@@ -111,8 +107,7 @@ void ps_type_normalize_integer_identity(psx_type_t *type) {
   if (type->kind == PSX_TYPE_INTEGER) {
     if (type->tag_kind == TK_ENUM) type->scalar_kind = TK_ENUM;
     else
-      type->scalar_kind = canonical_integer_scalar_kind(
-          type->scalar_kind, type->size);
+      type->scalar_kind = canonical_integer_scalar_kind(type->scalar_kind);
   }
   ps_type_normalize_integer_identity(psx_type_owned_base_mut(type));
   if (type->kind == PSX_TYPE_FUNCTION) {
@@ -163,7 +158,7 @@ psx_type_t *ps_type_new_integer_in(
       arena_context,
       scalar_kind == TK_BOOL ? PSX_TYPE_BOOL : PSX_TYPE_INTEGER);
   if (!type) return NULL;
-  type->scalar_kind = canonical_integer_scalar_kind(scalar_kind, size);
+  type->scalar_kind = canonical_integer_scalar_kind(scalar_kind);
   type->size = size;
   type->align = size > 0 ? size : 1;
   if (type->align > 8) type->align = 8;
@@ -301,15 +296,19 @@ const psx_type_t *ps_type_usual_arithmetic_result_in(
     return type;
   }
 
-  int lhs_size = type_integer_promotion_size(lhs);
-  int rhs_size = type_integer_promotion_size(rhs);
   int result_unsigned =
       ps_type_usual_arithmetic_result_is_unsigned(lhs, rhs);
-  int size = lhs_size > rhs_size ? lhs_size : rhs_size;
+  int lhs_rank = lhs ? ps_type_integer_rank(lhs) : 0;
+  int rhs_rank = rhs ? ps_type_integer_rank(rhs) : 0;
+  if (lhs_rank > 0 && lhs_rank < 3) lhs_rank = 3;
+  if (rhs_rank > 0 && rhs_rank < 3) rhs_rank = 3;
+  int result_rank = lhs_rank > rhs_rank ? lhs_rank : rhs_rank;
+  if (result_rank < 3) result_rank = 3;
+  token_kind_t scalar_kind = result_rank >= 4 ? TK_LONG : TK_INT;
+  int size = result_rank >= 4 ? 8 : 4;
   psx_type_t *type = ps_type_new_integer_in(
-      arena_context, TK_EOF, size, result_unsigned);
-  type->is_long_long =
-      (lhs && lhs->is_long_long) || (rhs && rhs->is_long_long);
+      arena_context, scalar_kind, size, result_unsigned);
+  type->is_long_long = result_rank >= 5;
   return type;
 }
 
@@ -1305,7 +1304,7 @@ int ps_type_generic_select_index(
     if (normalized.tag_kind == TK_ENUM) normalized.scalar_kind = TK_ENUM;
     else
       normalized.scalar_kind = canonical_integer_scalar_kind(
-          normalized.scalar_kind, normalized.size);
+          normalized.scalar_kind);
   }
   int default_index = -1;
   for (int i = 0; i < association_count; i++) {

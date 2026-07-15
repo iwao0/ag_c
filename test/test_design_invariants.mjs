@@ -3437,6 +3437,18 @@ for (const [name, source] of [
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");
+const integerIdentityNormalizer = canonicalTypeSource.match(
+  /void\s+ps_type_normalize_integer_identity\s*\([^]*?\n\}\n\nvoid\s+ps_type_clear_cached_layout/,
+);
+if (!/static\s+token_kind_t\s+canonical_integer_scalar_kind\s*\(\s*token_kind_t\s+scalar_kind\s*\)/.test(
+      canonicalTypeSource,
+    ) ||
+    !integerIdentityNormalizer ||
+    /->(?:size|align)\b/.test(integerIdentityNormalizer[0])) {
+  throw new Error(
+    "integer TypeId identity must follow C scalar kind instead of cached target layout",
+  );
+}
 const tagIdentityFunction = canonicalTypeSource.match(
   /int\s+ps_type_tag_identity_matches\s*\([^]*?\n\}/,
 );

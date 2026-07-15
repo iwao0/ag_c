@@ -628,7 +628,7 @@ static node_t *parse_sizeof_operand(expr_parse_ctx_t *ctx, token_t *op_tok) {
   query->base.kind = ND_SIZEOF_QUERY;
   query->base.tok = op_tok;
   query->base.type = ps_type_new_integer_in(
-      ctx->arena_context, TK_UNSIGNED, 8, 1);
+      ctx->arena_context, TK_LONG, 8, 1);
 
   if (curtok(ctx)->kind == TK_LPAREN) {
     psx_type_name_ref_t captured = {0};
@@ -675,7 +675,7 @@ static node_t *parse_alignof_type_name(
   query->base.kind = ND_ALIGNOF_QUERY;
   query->base.tok = op_tok;
   query->base.type = ps_type_new_integer_in(
-      ctx->arena_context, TK_UNSIGNED, 8, 1);
+      ctx->arena_context, TK_LONG, 8, 1);
 
   psx_type_name_ref_t captured = {0};
   token_t *type_end = NULL;
@@ -1100,7 +1100,8 @@ static node_string_t *make_string_lit_node(
                          prefix_kind == TK_STR_PREFIX_U;
   token_kind_t elem_kind = elem_width == TK_CHAR_WIDTH_CHAR
                                ? TK_CHAR
-                               : (elem_is_unsigned ? TK_UNSIGNED : TK_INT);
+                           : elem_width == 2 ? TK_SHORT
+                                             : TK_INT;
   psx_type_t *elem_type = ps_type_new_integer_in(
       ctx->arena_context, elem_kind, elem_width, elem_is_unsigned);
   snode->base.type = ps_type_new_pointer_in(ctx->arena_context, elem_type);
