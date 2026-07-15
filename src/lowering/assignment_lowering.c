@@ -73,7 +73,8 @@ node_t *lower_compound_assignment_expression(
   arena_context_t *arena_context = ps_lowering_arena(lowering_context);
   if ((binary_kind == ND_ADD || binary_kind == ND_SUB) &&
       ps_node_value_is_pointer_like(target)) {
-    int scale = ps_node_deref_size(target);
+    int scale = ps_lowering_type_deref_size(
+        lowering_context, ps_node_get_type(target));
     if (scale > 1)
       rhs = ps_node_new_binary_in(
           arena_context, ND_MUL, rhs,

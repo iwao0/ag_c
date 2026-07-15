@@ -65,6 +65,15 @@ int ps_lowering_type_size(
       ps_lowering_type_id(ctx, type), ps_lowering_target(ctx));
 }
 
+int ps_lowering_type_deref_size(
+    const psx_lowering_context_t *ctx, const psx_type_t *type) {
+  if (!type ||
+      (type->kind != PSX_TYPE_POINTER && type->kind != PSX_TYPE_ARRAY)) {
+    return 0;
+  }
+  return ps_lowering_type_size(ctx, type->base);
+}
+
 int ps_lowering_type_alignment(
     const psx_lowering_context_t *ctx, const psx_type_t *type) {
   return ps_type_alignof_id_with_records(

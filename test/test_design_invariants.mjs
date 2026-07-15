@@ -2503,6 +2503,10 @@ const explicitDiagnosticCastLoweringSource = await readFile(
   "src/lowering/cast_lowering.c",
   "utf8",
 );
+const assignmentLoweringSource = await readFile(
+  "src/lowering/assignment_lowering.c",
+  "utf8",
+);
 const explicitDiagnosticInitializerResolutionSource = await readFile(
   "src/semantic/initializer_resolution.c",
   "utf8",
@@ -3275,25 +3279,14 @@ for (const [name, header, source, functionName] of [
   }
 }
 
-for (const [name, source] of [
-  ["expression", expressionLoweringSource],
-  ["subscript", subscriptLoweringSource],
-  ["initializer", explicitDiagnosticInitializerLoweringSource],
-  ["VLA", vlaLoweringSource],
-  ["static data initializer", explicitDiagnosticStaticDataInitializerSource],
-  ["translation unit data", translationUnitDataLoweringSource],
+for (const [name, source, requiredLayoutCall] of [
+  ["expression", expressionLoweringSource, /\bps_lowering_type_deref_size\s*\(/],
+  ["subscript", subscriptLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["initializer", explicitDiagnosticInitializerLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["VLA", vlaLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["static data initializer", explicitDiagnosticStaticDataInitializerSource, /\bps_type_sizeof_id_with_records\s*\(/],
+  ["translation unit data", translationUnitDataLoweringSource, /\bps_type_sizeof_id_with_records\s*\(/],
 ]) {
-  const requiresRecordLayouts = [
-    "expression",
-    "subscript",
-    "initializer",
-    "VLA",
-    "static data initializer",
-    "translation unit data",
-  ].includes(name);
-  const requiredLayoutCall = requiresRecordLayouts
-    ? /\bps_type_sizeof_id_with_records\s*\(/
-    : /\bps_type_sizeof_id_for_target\s*\(/;
   if (!requiredLayoutCall.test(source) ||
       /\bps_type_(?:size|align)of_for_target\s*\(/.test(source)) {
     throw new Error(
@@ -3337,6 +3330,7 @@ const targetSensitiveLoweringSources = [
   irBuilderSource,
 ].join("\n");
 if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
+    !/\bps_lowering_type_deref_size\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_lowering_type_alignment\s*\(/.test(loweringRuntimeHeader) ||
     !/\bps_type_sizeof_id_with_records\s*\(/.test(
       loweringRuntimeSource,
@@ -3348,6 +3342,17 @@ if (!/\bps_lowering_type_size\s*\(/.test(loweringRuntimeHeader) ||
   throw new Error(
     "target-sensitive lowering must resolve C type layout through TypeId, RecordLayoutTable, and TargetSpec",
   );
+}
+for (const [name, source] of [
+  ["expression", expressionLoweringSource],
+  ["assignment", assignmentLoweringSource],
+  ["cast", explicitDiagnosticCastLoweringSource],
+]) {
+  if (/\bps_node_(?:type|storage_type|deref)_size\s*\(/.test(source)) {
+    throw new Error(
+      `${name} lowering must not read target layout cached on parser nodes`,
+    );
+  }
 }
 
 const canonicalTypeSource = await readFile("src/parser/type.c", "utf8");

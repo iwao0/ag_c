@@ -49,6 +49,8 @@ psx_type_id_t ps_lowering_type_id(
     const psx_lowering_context_t *ctx, const psx_type_t *type);
 int ps_lowering_type_size(
     const psx_lowering_context_t *ctx, const psx_type_t *type);
+int ps_lowering_type_deref_size(
+    const psx_lowering_context_t *ctx, const psx_type_t *type);
 int ps_lowering_type_alignment(
     const psx_lowering_context_t *ctx, const psx_type_t *type);
 const ag_target_info_t *ps_lowering_target(

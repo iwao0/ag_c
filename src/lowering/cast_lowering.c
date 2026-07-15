@@ -275,9 +275,10 @@ static node_t *lower_cast(
         return annotate(operand, view.target);
       }
       if (!ps_node_value_is_pointer_like(operand)) {
+        int operand_size = ps_lowering_type_size(
+            lowering_context, ps_node_get_type(operand));
         int zext = ps_node_integer_value_is_unsigned(operand) &&
-                   ps_node_type_size(operand) >= 1 &&
-                   ps_node_type_size(operand) < 8;
+                   operand_size >= 1 && operand_size < 8;
         return integer_result_ex(arena_context, operand, view, zext);
       }
     }
@@ -320,10 +321,11 @@ static node_t *lower_cast(
                           : (long long)(int)value);
       return annotate(number, view.target);
     }
-    if (ps_node_type_size(operand) > 4 && !ps_node_value_is_pointer_like(operand))
+    int size = ps_lowering_type_size(
+        lowering_context, ps_node_get_type(operand));
+    if (size > 4 && !ps_node_value_is_pointer_like(operand))
       return ps_node_new_i64_to_i32_trunc_cast_in(
           arena_context, operand, view.target);
-    int size = ps_node_type_size(operand);
     if (target_unsigned && size >= 1 && size < 4 &&
         ps_node_value_fp_kind(operand) == TK_FLOAT_KIND_NONE &&
         !ps_node_value_is_pointer_like(operand)) {
@@ -364,7 +366,10 @@ static node_t *lower_cast(
           ps_node_new_num_in(arena_context, mask));
       return integer_result(arena_context, masked, view);
     }
-    int source_width = ps_node_type_size(operand) >= 8 ? 64 : 32;
+    int source_width =
+        ps_lowering_type_size(lowering_context, ps_node_get_type(operand)) >= 8
+            ? 64
+            : 32;
     node_t *truncated = ps_node_new_shift_trunc_extend_in(
         arena_context, operand, source_width - width, 0);
     return integer_result_ex(arena_context, truncated, view, 0);
