@@ -5,6 +5,7 @@
 #include "type_builder.h"
 #include "../diag/diag.h"
 #include "../semantic/type_identity.h"
+#include "../semantic/record_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
 #include <limits.h>
@@ -171,6 +172,7 @@ struct psx_semantic_context_t {
   psx_record_id_t next_record_id;
   psx_semantic_expression_table_t *semantic_expressions;
   psx_semantic_type_table_t *semantic_types;
+  psx_record_layout_table_t *record_layouts;
   psx_ctx_allocation_t *allocations;
   goto_ref_t *goto_references_all;
   label_def_t *label_definitions_by_bucket[PCTX_HASH_BUCKETS];
@@ -281,6 +283,11 @@ const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
   return context ? context->semantic_types : NULL;
 }
 
+const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
+    const psx_semantic_context_t *context) {
+  return context ? context->record_layouts : NULL;
+}
+
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
@@ -288,9 +295,12 @@ psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
     context->semantic_expressions =
         psx_semantic_expression_table_create();
     context->semantic_types = psx_semantic_type_table_create();
-    if (!context->semantic_expressions || !context->semantic_types) {
+    context->record_layouts = psx_record_layout_table_create();
+    if (!context->semantic_expressions || !context->semantic_types ||
+        !context->record_layouts) {
       psx_semantic_expression_table_destroy(context->semantic_expressions);
       psx_semantic_type_table_destroy(context->semantic_types);
+      psx_record_layout_table_destroy(context->record_layouts);
       free(context);
       return NULL;
     }
@@ -305,6 +315,7 @@ void ps_ctx_destroy(psx_semantic_context_t *context) {
   ctx_release_all(context);
   psx_semantic_expression_table_destroy(context->semantic_expressions);
   psx_semantic_type_table_destroy(context->semantic_types);
+  psx_record_layout_table_destroy(context->record_layouts);
   free(context);
 }
 
@@ -420,6 +431,7 @@ void ps_ctx_reset_translation_unit_scope_in(
   psx_semantic_expression_table_t *semantic_expressions =
       context->semantic_expressions;
   psx_semantic_type_table_t *semantic_types = context->semantic_types;
+  psx_record_layout_table_t *record_layouts = context->record_layouts;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
@@ -427,8 +439,10 @@ void ps_ctx_reset_translation_unit_scope_in(
   context->target = target;
   context->semantic_expressions = semantic_expressions;
   context->semantic_types = semantic_types;
+  context->record_layouts = record_layouts;
   psx_semantic_expression_table_reset(semantic_expressions);
   psx_semantic_type_table_reset(semantic_types);
+  psx_record_layout_table_reset(record_layouts);
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(
@@ -865,6 +879,33 @@ const psx_record_decl_t *ps_ctx_get_record_decl_in(
     psx_semantic_context_t *context, psx_record_id_t record_id) {
   tag_type_t *tag = find_tag_type_by_record_id_in(context, record_id);
   return tag ? tag->definition : NULL;
+}
+
+int ps_ctx_publish_record_layout_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id,
+    int size, int alignment) {
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      context, record_id);
+  if (!context || !record || !record->is_complete || size < 0 ||
+      alignment <= 0 || record->member_count < 0)
+    return 0;
+  psx_record_member_layout_t *members = NULL;
+  if (record->member_count > 0) {
+    members = malloc((size_t)record->member_count * sizeof(*members));
+    if (!members) return 0;
+    for (int i = 0; i < record->member_count; i++) {
+      members[i] = (psx_record_member_layout_t){
+          .offset = record->members[i].offset,
+          .bit_offset = record->members[i].bit_offset,
+          .bit_width = record->members[i].bit_width,
+      };
+    }
+  }
+  int published = psx_record_layout_table_define(
+      context->record_layouts, record_id, &context->target,
+      size, alignment, members, record->member_count);
+  free(members);
+  return published;
 }
 
 int ps_ctx_get_tag_size_in(

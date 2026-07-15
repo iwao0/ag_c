@@ -316,10 +316,12 @@ void psx_resolve_aggregate_member_declaration(
     resolution->status = validate_aggregate_member_type(
         semantic_types, identity.type_id);
     if (resolution->status != PSX_AGGREGATE_MEMBER_OK) return;
-    int storage_size = ps_type_sizeof_id_for_target(
-        semantic_types, identity.type_id, target);
-    int storage_alignment = ps_type_alignof_id_for_target(
-        semantic_types, identity.type_id, target);
+    const psx_record_layout_table_t *record_layouts =
+        ps_ctx_record_layout_table_in(semantic_context);
+    int storage_size = ps_type_sizeof_id_with_records(
+        semantic_types, record_layouts, identity.type_id, target);
+    int storage_alignment = ps_type_alignof_id_with_records(
+        semantic_types, record_layouts, identity.type_id, target);
     if (storage_size < 0) return;
     if (storage_alignment <= 0) storage_alignment = 1;
     aggregate_object_placement_t placement;

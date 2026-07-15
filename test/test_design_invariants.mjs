@@ -1702,7 +1702,13 @@ if (!aggregateMemberResolutionType ||
     !/\bps_type_sizeof_id_for_target\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
-    !/\bps_type_alignof_id_for_target\s*\(/.test(
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
+      aggregateMemberResolutionSource,
+    ) ||
+    !/\bps_ctx_record_layout_table_in\s*\(/.test(
       aggregateMemberResolutionSource,
     ) ||
     !/aggregate_definition->is_complete/.test(
@@ -3098,6 +3104,9 @@ const typeLayoutSource = await readFile("src/type_layout.c", "utf8");
 const typeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
 );
+const recordTypeIdLayoutFunction = typeLayoutSource.match(
+  /int\s+ps_type_layout_of_id_with_records\s*\([^]*?\n\}/,
+);
 if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
     !/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
@@ -3110,6 +3119,20 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
     )) {
   throw new Error(
     "layout must resolve TypeId with an explicit target and get record completeness from RecordDecl",
+  );
+}
+if (!recordTypeIdLayoutFunction ||
+    !/\blayout_of_id_with_records\s*\(/.test(
+      recordTypeIdLayoutFunction[0],
+    ) ||
+    !/\bpsx_record_layout_table_lookup\s*\(/.test(typeLayoutSource) ||
+    /aggregate_definition\s*->\s*(?:size|align)/.test(
+      typeLayoutSource.match(
+        /static\s+int\s+layout_non_array_with_records\s*\([^]*?\n\}/,
+      )?.[0] ?? "",
+    )) {
+  throw new Error(
+    "record ABI layout must be an explicit RecordLayoutTable input separate from TypeId",
   );
 }
 

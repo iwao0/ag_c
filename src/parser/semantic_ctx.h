@@ -7,6 +7,7 @@
 #include "tag_member_public.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
+#include "../semantic/record_layout.h"
 #include "../semantic/type_identity.h"
 #include "../tokenizer/token.h"
 #include <stdbool.h>
@@ -45,6 +46,11 @@ const psx_type_t *ps_ctx_type_by_id_in(
     const psx_semantic_context_t *context, psx_type_id_t type_id);
 const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
     const psx_semantic_context_t *context);
+const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
+    const psx_semantic_context_t *context);
+int ps_ctx_publish_record_layout_in(
+    psx_semantic_context_t *context, psx_record_id_t record_id,
+    int size, int alignment);
 
 /* Explicit-context lifecycle and deferred diagnostic operations. */
 void ps_ctx_reset_translation_unit_scope_in(

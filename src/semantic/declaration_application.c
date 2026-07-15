@@ -158,6 +158,13 @@ static void apply_decl_tag_action(
       action->kind, action->name, action->name_len,
       PSX_TAG_DECLARATION_DEFINITION, member_count, size, alignment,
       action->diagnostic_token);
+  if (action->kind == TK_STRUCT || action->kind == TK_UNION) {
+    const psx_record_decl_t *record = ps_ctx_get_tag_definition_in(
+        semantic_context, action->kind, action->name, action->name_len);
+    if (record)
+      (void)ps_ctx_publish_record_layout_in(
+          semantic_context, record->record_id, size, alignment);
+  }
 }
 
 static psx_type_t *build_parsed_type_name(

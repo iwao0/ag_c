@@ -3240,6 +3240,60 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(12, ps_type_sizeof_id_for_target(
                     types, pointer_array_identity.type_id, &wasm));
 
+  psx_record_decl_t *record = arena_alloc_in(
+      test_arena_context(), sizeof(*record));
+  memset(record, 0, sizeof(*record));
+  record->record_id = 0xfaceu;
+  record->tag_kind = TK_STRUCT;
+  record->is_complete = 1;
+  record->size = 64;
+  record->align = 32;
+  psx_type_t *record_type = ps_type_new_tag(
+      TK_STRUCT, (char *)"__TargetRecord", 14, 1, 64);
+  record_type->record_id = record->record_id;
+  record_type->aggregate_definition = record;
+  record_type->align = 32;
+  psx_qual_type_t record_identity = ps_ctx_intern_qual_type_in(
+      test_semantic_context(), record_type);
+  ASSERT_TRUE(record_identity.type_id != PSX_TYPE_ID_INVALID);
+
+  psx_record_layout_table_t *record_layouts =
+      psx_record_layout_table_create();
+  ASSERT_TRUE(record_layouts != NULL);
+  const psx_record_member_layout_t host_members[] = {
+      {.offset = 0}, {.offset = 8},
+  };
+  const psx_record_member_layout_t wasm_members[] = {
+      {.offset = 0}, {.offset = 4},
+  };
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, record->record_id, &host, 16, 8,
+      host_members, 2));
+  ASSERT_TRUE(psx_record_layout_table_define(
+      record_layouts, record->record_id, &wasm, 8, 4,
+      wasm_members, 2));
+  ASSERT_EQ(64, ps_type_sizeof_id_for_target(
+                    types, record_identity.type_id, &host));
+  ASSERT_EQ(16, ps_type_sizeof_id_with_records(
+                    types, record_layouts, record_identity.type_id, &host));
+  ASSERT_EQ(8, ps_type_alignof_id_with_records(
+                   types, record_layouts, record_identity.type_id, &host));
+  ASSERT_EQ(8, ps_type_sizeof_id_with_records(
+                   types, record_layouts, record_identity.type_id, &wasm));
+  ASSERT_EQ(4, ps_type_alignof_id_with_records(
+                   types, record_layouts, record_identity.type_id, &wasm));
+  const psx_record_layout_t *host_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record->record_id, &host);
+  const psx_record_layout_t *wasm_record_layout =
+      psx_record_layout_table_lookup(
+          record_layouts, record->record_id, &wasm);
+  ASSERT_TRUE(host_record_layout != NULL);
+  ASSERT_TRUE(wasm_record_layout != NULL);
+  ASSERT_EQ(8, psx_record_layout_member(host_record_layout, 1)->offset);
+  ASSERT_EQ(4, psx_record_layout_member(wasm_record_layout, 1)->offset);
+  psx_record_layout_table_destroy(record_layouts);
+
   psx_local_storage_plan_t local = {0};
   ASSERT_TRUE(psx_plan_local_storage_for_type_id(
       types, pointer_array_identity.type_id, &wasm, &local));

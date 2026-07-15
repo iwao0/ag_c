@@ -46,6 +46,25 @@ static int layout_non_array(
   }
 }
 
+static int layout_non_array_with_records(
+    const psx_type_t *type,
+    const psx_record_layout_table_t *record_layouts,
+    const ag_target_info_t *target, psx_type_layout_t *out) {
+  if (!type || !out) return 0;
+  if (type->kind != PSX_TYPE_STRUCT && type->kind != PSX_TYPE_UNION)
+    return layout_non_array(type, target, out);
+  memset(out, 0, sizeof(*out));
+  out->alignment = 1;
+  if (type->record_id == PSX_RECORD_ID_INVALID) return 1;
+  const psx_record_layout_t *layout = psx_record_layout_table_lookup(
+      record_layouts, type->record_id, target);
+  if (!layout) return 1;
+  out->size = layout->size;
+  out->alignment = layout->alignment;
+  out->is_complete = 1;
+  return 1;
+}
+
 static int complete_array_layout(
     const psx_type_t *array_type, const psx_type_layout_t *element,
     psx_type_layout_t *out) {
@@ -85,6 +104,25 @@ static int layout_of_id(
       types, type_id).type_id;
   psx_type_layout_t element = {0};
   if (!layout_of_id(types, element_type_id, target, &element)) return 0;
+  return complete_array_layout(type, &element, out);
+}
+
+static int layout_of_id_with_records(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_type_id_t type_id, const ag_target_info_t *target,
+    psx_type_layout_t *out) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
+  if (!type || !out) return 0;
+  if (type->kind != PSX_TYPE_ARRAY)
+    return layout_non_array_with_records(
+        type, record_layouts, target, out);
+  psx_type_id_t element_type_id = psx_semantic_type_table_base(
+      types, type_id).type_id;
+  psx_type_layout_t element = {0};
+  if (!layout_of_id_with_records(
+          types, record_layouts, element_type_id, target, &element))
+    return 0;
   return complete_array_layout(type, &element, out);
 }
 
@@ -131,6 +169,39 @@ int ps_type_alignof_id_for_target(
     const ag_target_info_t *target) {
   psx_type_layout_t layout = {0};
   return ps_type_layout_of_id(types, type_id, target, &layout)
+             ? layout.alignment
+             : 0;
+}
+
+int ps_type_layout_of_id_with_records(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_type_id_t type_id, const ag_target_info_t *target,
+    psx_type_layout_t *out) {
+  if (!types || !record_layouts || !target || !out) return 0;
+  return layout_of_id_with_records(
+      types, record_layouts, type_id, target, out);
+}
+
+int ps_type_sizeof_id_with_records(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_type_id_t type_id, const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return ps_type_layout_of_id_with_records(
+             types, record_layouts, type_id, target, &layout) &&
+                 layout.is_complete
+             ? layout.size
+             : 0;
+}
+
+int ps_type_alignof_id_with_records(
+    const psx_semantic_type_table_t *types,
+    const psx_record_layout_table_t *record_layouts,
+    psx_type_id_t type_id, const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return ps_type_layout_of_id_with_records(
+             types, record_layouts, type_id, target, &layout)
              ? layout.alignment
              : 0;
 }
