@@ -3573,6 +3573,14 @@ const tagPublicSource = await readFile(
   "src/parser/tag_public.h",
   "utf8",
 );
+const semanticContextHeaderSource = await readFile(
+  "src/parser/semantic_ctx.h",
+  "utf8",
+);
+const nodeUtilsHeaderSource = await readFile(
+  "src/parser/node_utils.h",
+  "utf8",
+);
 const tagFlatCoverSource = await readFile(
   "src/parser/tag_flat_cover.h",
   "utf8",
@@ -3599,6 +3607,14 @@ if (/\btag_member_info_t\b|#include\s+"tag_member_public\.h"/.test(
     )) {
   throw new Error(
     "public tag APIs must expose semantic member declarations without compatibility member views",
+  );
+}
+if (/#include\s+"tag_member_public\.h"/.test(
+      `${semanticContextHeaderSource}\n${parserTypeImplementationSource}`,
+    ) ||
+    /\btag_member_info_t\b/.test(nodeUtilsHeaderSource)) {
+  throw new Error(
+    "compatibility tag member views must stay out of production parser headers and type implementation",
   );
 }
 for (const functionName of [

@@ -160,9 +160,6 @@ void ps_decl_reset_translation_unit_state_in(
   ps_decl_set_current_funcname_in(registry, NULL, 0);
 }
 
-/* 集合体メンバ情報は semantic_ctx 側の統合 API (tag_member_info_t) を
- * そのまま再利用する (Phase A1 リファクタリング)。 */
-
 node_t *ps_decl_bind_initializer_for_var_in(
     arena_context_t *arena_context,
     lvar_t *var, node_t *initializer,

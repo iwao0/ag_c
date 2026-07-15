@@ -4,7 +4,6 @@
 #include "core.h"
 #include "function_public.h"
 #include "local_registry.h"
-#include "tag_member_public.h"
 #include "type.h"
 #include "../semantic/expression_identity.h"
 #include "../semantic/record_decl_table.h"

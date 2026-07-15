@@ -2,7 +2,6 @@
 #include "type_builder.h"
 #include "declarator_shape_builder.h"
 #include "arena.h"
-#include "tag_member_public.h"
 #include "type_owned_internal.h"
 #include "../target_info.h"
 #include "../type_layout.h"

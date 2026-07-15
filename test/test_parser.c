@@ -20,6 +20,7 @@
 #include "../src/parser/node_utils.h"
 #include "../src/parser/node_vla_public.h"
 #include "../src/parser/tag_public.h"
+#include "../src/parser/tag_member_public.h"
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/runtime_context.h"
 #include "../src/parser/stmt.h"

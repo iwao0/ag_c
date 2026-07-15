@@ -13,7 +13,6 @@
 
 struct lvar_t;
 struct global_var_t;
-struct tag_member_info_t;
 typedef struct ag_diagnostic_context_t ag_diagnostic_context_t;
 
 void ps_node_bind_type(node_t *node, const psx_type_t *type);
