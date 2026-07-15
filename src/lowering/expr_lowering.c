@@ -3,6 +3,7 @@
 #include "../parser/node_type_public.h"
 #include "../parser/node_utils.h"
 #include "../parser/node_vla_public.h"
+#include "../type_layout.h"
 
 
 static int is_pointer_arithmetic_operand(node_t *node) {
@@ -16,6 +17,20 @@ static int is_pointer_arithmetic_operand(node_t *node) {
   return 0;
 }
 
+static int pointer_arithmetic_stride(
+    const psx_lowering_context_t *lowering_context,
+    node_t *pointer) {
+  const psx_type_t *type = ps_node_get_type(pointer);
+  if (type &&
+      (type->kind == PSX_TYPE_POINTER || type->kind == PSX_TYPE_ARRAY) &&
+      type->base) {
+    int stride = ps_type_sizeof_for_target(
+        type->base, ps_lowering_target(lowering_context));
+    if (stride > 0) return stride;
+  }
+  return ps_node_deref_size(pointer);
+}
+
 static node_t *scale_pointer_offset(
     psx_lowering_context_t *lowering_context,
     node_t *pointer, node_t *offset) {
@@ -27,7 +42,7 @@ static node_t *scale_pointer_offset(
         ps_node_new_lvar_typed_in(arena_context, stride_offset, 8));
   }
 
-  int deref_size = ps_node_deref_size(pointer);
+  int deref_size = pointer_arithmetic_stride(lowering_context, pointer);
   if (deref_size > 1) {
     return ps_node_new_binary_in(
         arena_context, ND_MUL, offset,
@@ -67,7 +82,7 @@ node_t *lower_additive_expression(
     if (is_pointer_arithmetic_operand(rhs)) {
       node_t *difference = ps_node_new_binary_in(
           arena_context, ND_SUB, lhs, rhs);
-      int deref_size = ps_node_deref_size(lhs);
+      int deref_size = pointer_arithmetic_stride(lowering_context, lhs);
       return deref_size > 1
                  ? ps_node_new_binary_in(
                        arena_context, ND_DIV, difference,

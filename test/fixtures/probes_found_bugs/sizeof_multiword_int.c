@@ -21,6 +21,6 @@ int main(void) {
     assert(sizeof(long) == 8);
     assert(sizeof(int) == 4);
     assert(sizeof(long double) == 8);   // macOS/AArch64 では double と同じ
-    assert(sizeof(long long *) == 8);
+    assert(sizeof(long long *) == sizeof(void*));
     return 0;
 }

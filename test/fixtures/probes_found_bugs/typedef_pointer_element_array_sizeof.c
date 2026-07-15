@@ -40,24 +40,24 @@ typedef StrPtr StrArr5[5];
 int main(void) {
   /* (1) 関数ポインタ要素 */
   assert(sizeof(OpArr3) == 3 * sizeof(BinOp));
-  assert(sizeof(OpArr3) == 3 * 8);
+  assert(sizeof(OpArr3) == 3 * sizeof(void*));
 
   /* (2) データポインタ要素 */
   assert(sizeof(IPA4) == 4 * sizeof(IP));
-  assert(sizeof(IPA4) == 4 * 8);
+  assert(sizeof(IPA4) == 4 * sizeof(void*));
 
   /* (3) const char* 要素 */
   assert(sizeof(StrArr5) == 5 * sizeof(StrPtr));
-  assert(sizeof(StrArr5) == 5 * 8);
+  assert(sizeof(StrArr5) == 5 * sizeof(void*));
 
-  /* (4) 回帰確認: 単純 pointer typedef は 8 のまま */
-  assert(sizeof(BinOp) == 8);
-  assert(sizeof(IP) == 8);
-  assert(sizeof(StrPtr) == 8);
+  /* (4) 回帰確認: 単純 pointer typedef は target pointer size */
+  assert(sizeof(BinOp) == sizeof(void*));
+  assert(sizeof(IP) == sizeof(void*));
+  assert(sizeof(StrPtr) == sizeof(void*));
 
-  /* (5) 回帰確認: pointer-to-array typedef は 8 (pointer) */
+  /* (5) 回帰確認: pointer-to-array typedef は pointer */
   typedef int (*PA)[3];
-  assert(sizeof(PA) == 8);
+  assert(sizeof(PA) == sizeof(void*));
 
   /* (6) 回帰確認: 普通の配列 typedef */
   typedef int IntArr3[3];

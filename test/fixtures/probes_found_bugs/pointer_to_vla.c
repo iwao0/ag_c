@@ -68,8 +68,8 @@ int main(void) {
   struct S (*sp)[k] = sa;
   assert(sp[1][1].x == 7 && sp[0][1].y == 4);
 
-  /* sizeof はポインタ (8) */
-  assert(sizeof(p) == 8);
+  /* sizeof は target のポインタサイズ */
+  assert(sizeof(p) == sizeof(void*));
 
   /* 仮引数 int (*a)[n] read / write / fp */
   assert(psum(3, a) == 1 + 2 + 3 + 4 + 5 + 6 - 0);

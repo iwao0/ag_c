@@ -30,9 +30,9 @@ int main(void) {
         p = p->next;
     }
 
-    // sizeof がポインタサイズ (8) を返すことも確認
-    if (sizeof(struct N *) != 8) return 1;
-    if (sizeof(p) != 8) return 2;
+    // sizeof が target のポインタサイズを返すことも確認
+    if (sizeof(struct N *) != sizeof(void*)) return 1;
+    if (sizeof(p) != sizeof(void*)) return 2;
 
     assert(sum == 42); return 0;             // 42
 }

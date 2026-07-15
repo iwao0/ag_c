@@ -23,7 +23,7 @@ int main(void) {
   assert(_Alignof(char) == 1);
   assert(_Alignof(int) == 4);
   assert(_Alignof(double) == 8);
-  assert(_Alignof(int*) == 8);
+  assert(_Alignof(int*) == _Alignof(void*));
 
   // sizeof は変わらない
   assert(sizeof(struct P) == 8);

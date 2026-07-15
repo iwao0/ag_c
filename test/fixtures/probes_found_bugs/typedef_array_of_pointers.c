@@ -20,9 +20,9 @@ typedef const char *CStrArr3[3];
 int g1 = 1, g2 = 2, g3 = 3, g4 = 4, g5 = 5;
 
 int main(void) {
-    /* (a) sizeof — N * pointer size (8 バイト) */
-    assert(sizeof(IntPtr5) == 5 * 8);
-    assert(sizeof(CStrArr3) == 3 * 8);
+    /* (a) sizeof — N * target pointer size */
+    assert(sizeof(IntPtr5) == 5 * sizeof(void*));
+    assert(sizeof(CStrArr3) == 3 * sizeof(void*));
 
     /* (b) 局所変数として使う — 全要素にアクセスできる */
     IntPtr5 a;

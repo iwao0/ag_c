@@ -1,4 +1,3 @@
-// _Alignof(int*) = 8
-// 期待: exit=8
+// _Alignof(int*) = target pointer alignment
 #include <assert.h>
-int main(void) { assert(_Alignof(int*) == 8); return 0; }
+int main(void) { assert(_Alignof(int*) == _Alignof(void*)); return 0; }

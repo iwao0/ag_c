@@ -50,7 +50,7 @@ int local_double_multilevel(void) {
 }
 
 int main(void) {
-    assert(sizeof(gp) == 8);
+    assert(sizeof(gp) == sizeof(void*));
     assert(**gp == 9);          // 直書き 2 段 deref
     assert(**tp == 9);          // typedef 経由
     assert(***g3 == 7);         // 3 段

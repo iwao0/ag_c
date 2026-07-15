@@ -10,7 +10,7 @@ int main(void) {
     assert(sizeof(enum E) == 4);
     assert(_Alignof(enum E) == 4);
     assert(sizeof(enum Color) == 4);
-    assert(sizeof(enum E *) == 8);     // enum へのポインタ
+    assert(sizeof(enum E *) == sizeof(void*)); // enum へのポインタ
     enum Color c = G;
     assert((int)sizeof(enum Color) + c == 5);
     return 0;

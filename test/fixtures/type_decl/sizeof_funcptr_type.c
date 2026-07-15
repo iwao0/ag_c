@@ -1,4 +1,3 @@
-// sizeof(関数ポインタ) = 8
-// 期待: exit=8
+// sizeof(関数ポインタ) = target pointer size
 #include <assert.h>
-int main(void) { assert(sizeof(int (*)(int)) == 8); return 0; }
+int main(void) { assert(sizeof(int (*)(int)) == sizeof(void*)); return 0; }

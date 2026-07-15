@@ -21,7 +21,7 @@ int main(void) {
     int x = 42;
     int *xp = &x;
     PP pp = &xp;
-    assert(sizeof(pp) == 8);    // ポインタ
+    assert(sizeof(pp) == sizeof(void*)); // ポインタ
     assert(**pp == 42);         // 2 段 deref
     *pp = xp;                   // 1 段 lvalue
     assert(**pp == 42);

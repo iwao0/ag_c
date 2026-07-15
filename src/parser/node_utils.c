@@ -6,6 +6,7 @@
 #include "arena.h"
 #include "diag.h"
 #include "../diag/diag.h"
+#include "../type_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../tokenizer/literals.h"
 #include <stdint.h>
@@ -552,7 +553,8 @@ typedef struct {
   psx_tag_flat_cover_state_t cover_state;
 } gvar_aggregate_member_iter_t;
 
-static gvar_aggregate_layout_t gvar_aggregate_layout(const global_var_t *gv);
+static gvar_aggregate_layout_t gvar_aggregate_layout(
+    psx_semantic_context_t *semantic_context, const global_var_t *gv);
 static gvar_aggregate_member_iter_t gvar_aggregate_member_iter(
     psx_semantic_context_t *semantic_context,
     token_kind_t tag_kind, char *tag_name, int tag_len,
@@ -602,15 +604,34 @@ static int tag_union_init_member_for_slot_scoped(
     const psx_aggregate_definition_t *definition,
     const global_var_t *gv, int idx, tag_member_info_t *out);
 
-static gvar_aggregate_layout_t gvar_aggregate_layout(const global_var_t *gv) {
+static int gvar_member_value_size_for_target(
+    psx_semantic_context_t *semantic_context,
+    const tag_member_info_t *member) {
+  return ps_type_sizeof_for_target(
+      ps_tag_member_decl_value_type(member),
+      ps_ctx_target_info(semantic_context));
+}
+
+static int gvar_member_storage_size_for_target(
+    psx_semantic_context_t *semantic_context,
+    const tag_member_info_t *member) {
+  return ps_type_sizeof_for_target(
+      ps_tag_member_decl_type(member),
+      ps_ctx_target_info(semantic_context));
+}
+
+static gvar_aggregate_layout_t gvar_aggregate_layout(
+    psx_semantic_context_t *semantic_context, const global_var_t *gv) {
   token_kind_t tag_kind = TK_EOF;
   char *tag_name = NULL;
   int tag_len = 0;
   int tag_scope_depth_p1 = 0;
   gvar_tag_identity(gv, &tag_kind, &tag_name, &tag_len, &tag_scope_depth_p1);
-  int type_size = ps_gvar_decl_sizeof(gv, 0);
+  const psx_type_t *decl_type = gvar_decl_type_view(gv);
+  const ag_target_info_t *target = ps_ctx_target_info(semantic_context);
+  int type_size = ps_type_sizeof_for_target(decl_type, target);
   const psx_type_t *aggregate_type =
-      ps_type_array_leaf_type(gvar_decl_type_view(gv));
+      ps_type_array_leaf_type(decl_type);
   gvar_aggregate_layout_t layout = {
       .tag_kind = tag_kind,
       .tag_name = tag_name,
@@ -626,8 +647,8 @@ static gvar_aggregate_layout_t gvar_aggregate_layout(const global_var_t *gv) {
                         : NULL,
   };
   if (layout.is_array) {
-    layout.elem_size = ps_gvar_initializer_element_size(gv, type_size);
-    layout.elem_count = ps_gvar_initializer_element_count(gv, type_size);
+    layout.elem_size = ps_type_sizeof_for_target(aggregate_type, target);
+    layout.elem_count = ps_type_array_flat_element_count(decl_type);
   }
   return layout;
 }
@@ -752,8 +773,10 @@ static int gvar_walk_struct_initializer(
       prev_end = unit.offset + unit.size;
       continue;
     }
-    int member_value_size = ps_tag_member_decl_value_size(&mi);
-    int member_storage_size = ps_tag_member_decl_storage_size(&mi);
+    int member_value_size =
+        gvar_member_value_size_for_target(semantic_context, &mi);
+    int member_storage_size =
+        gvar_member_storage_size_for_target(semantic_context, &mi);
     int member_array_count =
         ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
     const psx_type_t *member_tag_type =
@@ -868,8 +891,10 @@ static int gvar_walk_union_initializer(
     }
     return 0;
   }
-  int member_value_size = ps_tag_member_decl_value_size(&mi);
-  int member_storage_size = ps_tag_member_decl_storage_size(&mi);
+  int member_value_size =
+      gvar_member_value_size_for_target(semantic_context, &mi);
+  int member_storage_size =
+      gvar_member_storage_size_for_target(semantic_context, &mi);
   int member_array_count =
       ps_type_array_flat_element_count(ps_tag_member_decl_type(&mi));
   int emitted = member_array_count > 0 ? member_storage_size : member_value_size;
@@ -975,7 +1000,8 @@ static int gvar_walk_aggregate_initializer(
     const psx_gvar_aggregate_walk_ops_t *ops, void *user,
     int require_resolved_definition) {
   if (!ps_gvar_is_tag_aggregate(gv)) return 0;
-  gvar_aggregate_layout_t layout = gvar_aggregate_layout(gv);
+  gvar_aggregate_layout_t layout =
+      gvar_aggregate_layout(semantic_context, gv);
   if (require_resolved_definition && !layout.definition) return 0;
   gvar_init_cursor_t cur = gvar_init_cursor(gv);
   if (!layout.is_array) {

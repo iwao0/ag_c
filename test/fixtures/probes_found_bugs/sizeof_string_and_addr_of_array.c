@@ -21,9 +21,9 @@ int main(void) {
 
     /* A1: &array はポインタ (8 バイト) */
     int a[4];
-    assert(sizeof(&a) == 8);
+    assert(sizeof(&a) == sizeof(void*));
     assert(sizeof(a) == 16);            /* 配列全体は不変 */
-    assert(sizeof(&a[0]) == 8);
+    assert(sizeof(&a[0]) == sizeof(void*));
 
     /* &array を値として使う経路も維持 */
     int b[4] = { 1, 2, 30, 4 };

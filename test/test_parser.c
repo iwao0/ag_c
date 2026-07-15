@@ -61,6 +61,7 @@
 #include "../src/semantic/tag_declaration_resolution.h"
 #include "../src/semantic/typedef_declaration_resolution.h"
 #include "../src/lowering/global_object_lowering.h"
+#include "../src/lowering/expr_lowering.h"
 #include "../src/lowering/runtime_context.h"
 #include "../src/lowering/local_storage.h"
 #include "../src/lowering/local_object_lowering.h"
@@ -3187,6 +3188,74 @@ static void test_target_type_layout_boundary() {
   ASSERT_EQ(PSX_PARAMETER_STORAGE_POINTER, parameter.kind);
   ASSERT_EQ(4, parameter.storage_size);
   ASSERT_EQ(4, parameter.alignment);
+
+  psx_lowering_context_t *lowering = test_lowering_context();
+  ps_lowering_context_bind_target(lowering, &wasm);
+  node_t *pointer_value = ps_node_new_num(0);
+  ps_node_bind_type(pointer_value, ps_type_new_pointer(pointer));
+  node_t *pointer_add = lower_additive_expression(
+      lowering, ND_ADD, pointer_value, ps_node_new_num(2));
+  ASSERT_EQ(ND_MUL, pointer_add->rhs->kind);
+  ASSERT_EQ(4, as_num(pointer_add->rhs->rhs)->val);
+  ps_lowering_context_bind_target(lowering, &host);
+}
+
+static void test_wasm_target_global_pointer_data_layout() {
+  printf("test_wasm_target_global_pointer_data_layout...\n");
+  ag_target_info_t wasm_target = ag_target_info_wasm32();
+  ag_compilation_session_t session;
+  ASSERT_TRUE(ag_compilation_session_init(&session, &wasm_target));
+
+  psx_type_t *integer = ps_type_new_integer(TK_INT, 4, 0);
+  psx_type_t *pointer = ps_type_new_pointer(integer);
+  psx_type_t *array = ps_type_new_array(pointer, 2, 16, 0);
+  global_var_t first = {
+      .name = (char *)"layout_first",
+      .name_len = 12,
+      .decl_type = integer,
+  };
+  global_var_t second = {
+      .name = (char *)"layout_second",
+      .name_len = 13,
+      .decl_type = integer,
+  };
+  global_var_t pointers = {
+      .name = (char *)"layout_pointers",
+      .name_len = 15,
+      .decl_type = array,
+      .has_init = 1,
+      .init_count = 2,
+  };
+  ps_gvar_init_slots_alloc(&pointers, 2, 0);
+  ps_gvar_init_slot_write(
+      &pointers, 0, 0, 0.0, first.name, first.name_len);
+  ps_gvar_init_slot_write(
+      &pointers, 1, 0, 0.0, second.name, second.name_len);
+  ps_register_global_var_in(session.global_registry, &first);
+  ps_register_global_var_in(session.global_registry, &second);
+  ps_register_global_var_in(session.global_registry, &pointers);
+
+  ir_data_module_t *module =
+      lower_ir_translation_unit_data_in_session(&session);
+  ASSERT_TRUE(module != NULL);
+  ir_data_object_t *object = ir_data_module_find_object(
+      module, pointers.name, pointers.name_len);
+  ASSERT_TRUE(object != NULL);
+  ASSERT_EQ(8, object->byte_size);
+  ASSERT_EQ(4, object->alignment);
+  ASSERT_TRUE(object->relocs != NULL);
+  ASSERT_EQ(0, object->relocs->offset);
+  ASSERT_EQ(4, object->relocs->width);
+  ASSERT_TRUE(object->relocs->next != NULL);
+  ASSERT_EQ(4, object->relocs->next->offset);
+  ASSERT_EQ(4, object->relocs->next->width);
+
+  ir_data_module_free(module);
+  free(pointers.init_values);
+  free(pointers.init_value_symbols);
+  free(pointers.init_value_symbol_lens);
+  free(pointers.init_union_ordinals);
+  ASSERT_TRUE(ag_compilation_session_dispose(&session));
 }
 
 static void test_vla_lowering_request_boundary() {
@@ -16688,6 +16757,16 @@ static void test_compilation_session_owns_target_and_tokenizer() {
                    ps_lowering_target(host.lowering_context)));
   ASSERT_EQ(4, ag_target_info_pointer_size(
                    ps_lowering_target(wasm.lowering_context)));
+  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&host));
+  ASSERT_TRUE(psx_frontend_reset_translation_unit_state_in_session(&wasm));
+  ASSERT_EQ(8, ag_target_info_pointer_size(
+                   ps_ctx_target_info(host.semantic_context)));
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ps_ctx_target_info(wasm.semantic_context)));
+  ASSERT_EQ(8, ag_target_info_pointer_size(
+                   ps_lowering_target(host.lowering_context)));
+  ASSERT_EQ(4, ag_target_info_pointer_size(
+                   ps_lowering_target(wasm.lowering_context)));
   ASSERT_TRUE(host.preprocessor_context != NULL);
   ASSERT_TRUE(wasm.preprocessor_context != NULL);
   ASSERT_TRUE(host.preprocessor_context != wasm.preprocessor_context);
@@ -16946,6 +17025,7 @@ int main() {
   test_complex_initializer_semantic_lowering_boundary();
   test_local_declaration_storage_plan_boundary();
   test_target_type_layout_boundary();
+  test_wasm_target_global_pointer_data_layout();
   test_vla_lowering_request_boundary();
   test_parameter_declaration_storage_plan_boundary();
   test_global_declaration_resolution_boundary();

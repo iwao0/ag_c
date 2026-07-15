@@ -161,14 +161,12 @@ static int lower_symbol_reloc(global_data_lowering_t *ctx, int offset,
 
 static int lower_init_value(global_data_lowering_t *ctx, int offset,
                             psx_gvar_init_value_t value,
-                            const psx_type_t *callable_type) {
+                            const psx_type_t *value_type) {
+  int target_size = ps_type_sizeof_for_target(
+      value_type, ps_ctx_target_info(ctx->lowering->semantic_context));
+  if (target_size > 0) value.size = target_size;
   if (value.kind == PSX_GVAR_INIT_VALUE_SYMBOL) {
-    if (ps_type_is_pointer_like(callable_type) ||
-        (callable_type && callable_type->kind == PSX_TYPE_FUNCTION)) {
-      value.size = ag_target_info_pointer_size(
-          ps_ctx_target_info(ctx->lowering->semantic_context));
-    }
-    return lower_symbol_reloc(ctx, offset, value, callable_type);
+    return lower_symbol_reloc(ctx, offset, value, value_type);
   }
   if (value.kind == PSX_GVAR_INIT_VALUE_FLOAT) {
     psx_gvar_fp_bits_t bits;
@@ -210,7 +208,7 @@ static void lower_aggregate_scalar(void *user, const tag_member_info_t *member,
       ps_gvar_init_member_value(ctx->global, slot, member);
   if (offset < 0 || offset > INT32_MAX ||
       !lower_init_value(ctx, (int)offset, value,
-                        ps_tag_member_decl_type(member)))
+                        ps_tag_member_decl_value_type(member)))
     ctx->lowering->failed = 1;
 }
 

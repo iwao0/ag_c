@@ -344,10 +344,12 @@ void ps_ctx_reset_translation_unit_scope_in(
   if (!context) return;
   arena_context_t *arena_context = context->arena_context;
   ag_diagnostic_context_t *diagnostic_context = context->diagnostic_context;
+  ag_target_info_t target = context->target;
   ctx_release_all(context);
   memset(context, 0, sizeof(*context));
   context->arena_context = arena_context;
   context->diagnostic_context = diagnostic_context;
+  context->target = target;
 }
 
 void ps_ctx_record_unsupported_gnu_extension_warning_in(

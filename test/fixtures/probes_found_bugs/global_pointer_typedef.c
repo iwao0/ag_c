@@ -42,7 +42,7 @@ PA pa = m;
 PB pb = c;
 
 int main(void) {
-    assert(sizeof(pi) == 8);            // ポインタとして登録されること
+    assert(sizeof(pi) == sizeof(void*)); // ポインタとして登録されること
     assert(pi[0] == 7 && pi[2] == 9);
     assert(pc[0] == 1 && pc[2] == 3);
     assert(pd[1] == 2.5 && *pd == 1.5); // fp pointee の load
