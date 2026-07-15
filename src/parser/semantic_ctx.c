@@ -112,7 +112,7 @@ static void refresh_cached_record_decl(
 
   ctx_release_in(context, tag->record_decl_members);
   tag->record_decl_members = members;
-  record_decl->tag_kind = tag->kind;
+  record_decl->record_kind = ps_type_kind_from_tag_kind(tag->kind);
   record_decl->tag_name = tag->name;
   record_decl->tag_len = tag->len;
   record_decl->member_count = member_count;
@@ -835,7 +835,7 @@ int ps_ctx_register_tag_type_in_contexts(
         context, 1, sizeof(psx_record_decl_t));
     if (!t->record_decl) return 0;
     t->record_decl->record_id = allocate_record_id(context);
-    t->record_decl->tag_kind = kind;
+    t->record_decl->record_kind = ps_type_kind_from_tag_kind(kind);
     t->record_decl->tag_name = name;
     t->record_decl->tag_len = len;
     t->record_decl->is_complete = is_complete ? 1 : 0;
@@ -893,7 +893,7 @@ const psx_record_decl_t *ps_ctx_ensure_tag_record_decl_in(
   if (!record_decl) return NULL;
   tag->record_decl = record_decl;
   record_decl->record_id = allocate_record_id(context);
-  record_decl->tag_kind = kind;
+  record_decl->record_kind = ps_type_kind_from_tag_kind(kind);
   record_decl->tag_name = name;
   record_decl->tag_len = len;
   if (record_decl->record_id != PSX_RECORD_ID_INVALID &&

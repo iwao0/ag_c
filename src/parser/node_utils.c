@@ -1475,7 +1475,7 @@ static int gvar_record_flat_slot_count(
     const tag_member_info_t *member = &record_decl->members[i];
     int member_slots =
         gvar_member_flat_slot_count(semantic_context, member);
-    if (record_decl->tag_kind == TK_UNION) {
+    if (record_decl->record_kind == PSX_TYPE_UNION) {
       int bytes = tag_member_decl_storage_size_in(
           semantic_context, member);
       if (bytes > union_max_bytes ||

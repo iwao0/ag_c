@@ -46,7 +46,9 @@ static int reserve_record_id(
 
 int psx_record_decl_table_define(
     psx_record_decl_table_t *table, const psx_record_decl_t *record) {
-  if (!table || !record || record->record_id == PSX_RECORD_ID_INVALID)
+  if (!table || !record || record->record_id == PSX_RECORD_ID_INVALID ||
+      (record->record_kind != PSX_TYPE_STRUCT &&
+       record->record_kind != PSX_TYPE_UNION))
     return 0;
   if (!reserve_record_id(table, record->record_id)) return 0;
   const psx_record_decl_t *existing = table->records[record->record_id];

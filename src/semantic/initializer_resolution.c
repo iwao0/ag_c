@@ -239,7 +239,7 @@ static int canonical_definition_flat_slot_count(
     int member_slots = canonical_member_flat_slot_count(
         semantic_types, record_decls, record_layouts, target,
         member, member_type_id);
-    if (record->tag_kind == TK_UNION) {
+    if (record->record_kind == PSX_TYPE_UNION) {
       int bytes = initializer_type_size(
           semantic_types, record_layouts, member_type_id, target);
       if (bytes > union_max_bytes ||

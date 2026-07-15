@@ -72,7 +72,7 @@ enum {
 
 typedef struct psx_record_decl_t {
   psx_record_id_t record_id;
-  token_kind_t tag_kind;
+  psx_type_kind_t record_kind;
   char *tag_name;
   int tag_len;
   unsigned char is_complete;

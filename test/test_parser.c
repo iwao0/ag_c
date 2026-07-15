@@ -3802,7 +3802,7 @@ static void test_target_type_layout_boundary() {
       test_arena_context(), sizeof(*record));
   memset(record, 0, sizeof(*record));
   record->record_id = 0xfaceu;
-  record->tag_kind = TK_STRUCT;
+  record->record_kind = PSX_TYPE_STRUCT;
   record->is_complete = 1;
   psx_type_t *record_type = ps_type_new_tag(
       TK_STRUCT, (char *)"__TargetRecord", 14, 1, 64);
@@ -6367,7 +6367,7 @@ static void test_initializer_resolution_boundary() {
   };
   psx_record_decl_t definition = {
       .record_id = 0x1a11u,
-      .tag_kind = TK_STRUCT,
+      .record_kind = PSX_TYPE_STRUCT,
       .tag_name = (char *)"InitBoundary",
       .tag_len = 12,
       .member_count = 2,
@@ -6450,7 +6450,7 @@ static void test_initializer_resolution_boundary() {
   };
   psx_record_decl_t recursive_definition = {
       .record_id = 0x1a12u,
-      .tag_kind = TK_STRUCT,
+      .record_kind = PSX_TYPE_STRUCT,
       .tag_name = (char *)"RecursiveInit",
       .tag_len = 13,
       .member_count = 2,
@@ -6495,7 +6495,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   };
   psx_record_decl_t definition = {
       .record_id = 0x1a20u,
-      .tag_kind = TK_STRUCT,
+      .record_kind = PSX_TYPE_STRUCT,
       .tag_name = (char *)"LocalInitBoundary",
       .tag_len = 17,
       .is_complete = 1,
@@ -6552,7 +6552,7 @@ static void test_local_initializer_parse_lowering_boundary() {
   };
   psx_record_decl_t union_definition = {
       .record_id = 0x1a21u,
-      .tag_kind = TK_UNION,
+      .record_kind = PSX_TYPE_UNION,
       .tag_name = (char *)"LocalUnionBoundary",
       .tag_len = 18,
       .is_complete = 1,
@@ -6666,7 +6666,7 @@ static void test_static_data_initializer_boundary() {
   };
   psx_record_decl_t union_definition = {
       .record_id = 0xfacdu,
-      .tag_kind = TK_UNION,
+      .record_kind = PSX_TYPE_UNION,
       .tag_name = (char *)"InitUnion",
       .tag_len = 9,
       .member_count = 2,
@@ -17345,7 +17345,7 @@ static void test_semantic_type_identity() {
   };
   psx_record_decl_t recursive_definition = {
       .record_id = 43,
-      .tag_kind = TK_STRUCT,
+      .record_kind = PSX_TYPE_STRUCT,
       .tag_name = recursive_name,
       .tag_len = 23,
       .is_complete = 1,
@@ -17373,7 +17373,7 @@ static void test_semantic_type_identity() {
   char completed_record_name[] = "CompletedIdentityRecord";
   psx_record_decl_t completed_definition = {
       .record_id = 44,
-      .tag_kind = TK_STRUCT,
+      .record_kind = PSX_TYPE_STRUCT,
       .tag_name = completed_record_name,
       .tag_len = 23,
   };

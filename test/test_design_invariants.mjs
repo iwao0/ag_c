@@ -3455,6 +3455,8 @@ if (!canonicalTypeStruct ||
     /\bis_long_double\b/.test(canonicalTypeStruct[1]) ||
     !recordDeclStruct ||
     !/\bpsx_record_id_t\s+record_id\s*;/.test(recordDeclStruct[1]) ||
+    !/\bpsx_type_kind_t\s+record_kind\s*;/.test(recordDeclStruct[1]) ||
+    /\btoken_kind_t\s+tag_kind\s*;/.test(recordDeclStruct[1]) ||
     !/\bunsigned\s+char\s+is_complete\s*;/.test(recordDeclStruct[1]) ||
     /\b(?:size|align)\s*;/.test(recordDeclStruct[1]) ||
     !/\bconst\s+struct\s+tag_member_info_t\s*\*\s*members\s*;/.test(
