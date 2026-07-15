@@ -3996,11 +3996,21 @@ if (!lvarStruct ||
     "local and global symbol canonical types must be exposed as const views",
   );
 }
-if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
+if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(lvarStruct[1]) ||
+    /\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
+    !/\bpsx_qual_type_t\s+ps_lvar_decl_qual_type\s*\(/.test(
+      lvarPublicSource,
+    ) ||
     !/\bpsx_type_id_t\s+ps_lvar_decl_type_id\s*\(/.test(
       lvarPublicSource,
     ) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      localRegistrySource,
+    ) ||
+    !/\bstatic\s+psx_qual_type_t\s+local_decl_qual_type\s*\(/.test(
+      localRegistrySource,
+    ) ||
+    !/\bdecl_qual_type\s*=\s*local_decl_qual_type\s*\(/.test(
       localRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(localRegistrySource) ||
@@ -4008,14 +4018,24 @@ if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(lvarStruct[1]) ||
       compilationSessionSource,
     )) {
   throw new Error(
-    "local symbols must retain their declaration TypeId from the compilation unit semantic type table",
+    "local symbols must retain their declaration QualType from the compilation unit semantic type table",
   );
 }
-if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
+if (!/\bpsx_qual_type_t\s+decl_qual_type\s*;/.test(gvarStruct[1]) ||
+    /\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
+    !/\bpsx_qual_type_t\s+ps_gvar_decl_qual_type\s*\(/.test(
+      gvarPublicSource,
+    ) ||
     !/\bpsx_type_id_t\s+ps_gvar_decl_type_id\s*\(/.test(
       gvarPublicSource,
     ) ||
     !/\bconst\s+psx_semantic_type_table_t\s*\*\s*semantic_types\s*;/.test(
+      globalRegistrySource,
+    ) ||
+    !/\bstatic\s+psx_qual_type_t\s+global_decl_qual_type\s*\(/.test(
+      globalRegistrySource,
+    ) ||
+    !/\bdecl_qual_type\s*=\s*global_decl_qual_type\s*\(/.test(
       globalRegistrySource,
     ) ||
     !/\bpsx_semantic_type_table_find\s*\(/.test(globalRegistrySource) ||
@@ -4023,7 +4043,7 @@ if (!/\bpsx_type_id_t\s+decl_type_id\s*;/.test(gvarStruct[1]) ||
       compilationSessionSource,
     )) {
   throw new Error(
-    "global symbols must retain their declaration TypeId from the compilation unit semantic type table",
+    "global symbols must retain their declaration QualType from the compilation unit semantic type table",
   );
 }
 

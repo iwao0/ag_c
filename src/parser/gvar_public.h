@@ -156,6 +156,7 @@ int ps_gvar_is_static_storage(const global_var_t *gv);
 char *ps_gvar_name(const global_var_t *gv);
 int ps_gvar_name_len(const global_var_t *gv);
 const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv);
+psx_qual_type_t ps_gvar_decl_qual_type(const global_var_t *gv);
 psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv);
 
 #endif

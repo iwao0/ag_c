@@ -431,9 +431,12 @@ static psx_lowering_context_t *test_lowering_context(void) {
   return ag_compilation_session_lowering_context(test_suite_session);
 }
 
+static psx_qual_type_t intern_test_qual_type(const psx_type_t *type) {
+  return ps_ctx_intern_qual_type_in(test_semantic_context(), type);
+}
+
 static psx_type_id_t intern_test_type_id(const psx_type_t *type) {
-  return ps_ctx_intern_qual_type_in(
-      test_semantic_context(), type).type_id;
+  return intern_test_qual_type(type).type_id;
 }
 
 static int define_test_record_decl(const psx_record_decl_t *record) {
@@ -3626,6 +3629,30 @@ static void test_local_declaration_storage_plan_boundary() {
       test_local_registry(), declared, deferred_type));
 
   reset_test_locals();
+  psx_type_t *qualified_local_type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  ps_type_add_qualifiers(
+      qualified_local_type,
+      PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE);
+  psx_qual_type_t qualified_local_identity =
+      intern_test_qual_type(qualified_local_type);
+  lvar_t *qualified_local = lower_complete_local_object(
+      &(psx_local_object_request_t){
+          .local_registry = test_local_registry(),
+          .lowering_context = test_lowering_context(),
+          .name = (char *)"qualified_local",
+          .name_len = 15,
+          .type = qualified_local_type,
+      });
+  ASSERT_TRUE(qualified_local != NULL);
+  ASSERT_EQ(qualified_local_identity.type_id,
+            ps_lvar_decl_qual_type(qualified_local).type_id);
+  ASSERT_EQ(qualified_local_identity.qualifiers,
+            ps_lvar_decl_qual_type(qualified_local).qualifiers);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST | PSX_TYPE_QUALIFIER_VOLATILE,
+            ps_lvar_decl_qual_type(qualified_local).qualifiers);
+
+  reset_test_locals();
   psx_type_t *pipeline_input =
       ps_type_new_array(ps_type_new_integer(TK_INT, 4, 0), 0, 0, 0);
   psx_runtime_declarator_application_t pipeline_application = {0};
@@ -4029,13 +4056,13 @@ static void test_wasm_target_global_pointer_data_layout() {
       &pointers, 0, 0, 0.0, first.name, first.name_len);
   ps_gvar_init_slot_write(
       &pointers, 1, 0, 0.0, second.name, second.name_len);
-  first.decl_type_id = ps_ctx_intern_qual_type_in(
-      session.semantic_context, integer).type_id;
-  ASSERT_TRUE(first.decl_type_id != PSX_TYPE_ID_INVALID);
-  second.decl_type_id = first.decl_type_id;
-  pointers.decl_type_id = ps_ctx_intern_qual_type_in(
-      session.semantic_context, array).type_id;
-  ASSERT_TRUE(pointers.decl_type_id != PSX_TYPE_ID_INVALID);
+  first.decl_qual_type = ps_ctx_intern_qual_type_in(
+      session.semantic_context, integer);
+  ASSERT_TRUE(first.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  second.decl_qual_type = first.decl_qual_type;
+  pointers.decl_qual_type = ps_ctx_intern_qual_type_in(
+      session.semantic_context, array);
+  ASSERT_TRUE(pointers.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ps_register_global_var_in(session.global_registry, &first);
   ps_register_global_var_in(session.global_registry, &second);
   ps_register_global_var_in(session.global_registry, &pointers);
@@ -6649,6 +6676,21 @@ static void test_static_data_initializer_boundary() {
   ASSERT_TRUE(ps_global_registry_bind_decl_type(
       test_global_registry(), &global, array));
   ASSERT_EQ(array_type_id, ps_gvar_decl_type_id(&global));
+
+  psx_type_t *qualified_global_type =
+      ps_type_new_integer(TK_INT, 4, 0);
+  ps_type_add_qualifiers(
+      qualified_global_type, PSX_TYPE_QUALIFIER_CONST);
+  psx_qual_type_t qualified_global_identity =
+      intern_test_qual_type(qualified_global_type);
+  global_var_t qualified_global = {0};
+  ASSERT_TRUE(ps_global_registry_bind_decl_type(
+      test_global_registry(), &qualified_global, qualified_global_type));
+  ASSERT_EQ(qualified_global_identity.type_id,
+            ps_gvar_decl_qual_type(&qualified_global).type_id);
+  ASSERT_EQ(PSX_TYPE_QUALIFIER_CONST,
+            ps_gvar_decl_qual_type(&qualified_global).qualifiers);
+
   ASSERT_TRUE(lower_static_scalar_array_initializer(
       test_lowering_context(), &global, array, &list, NULL));
   ASSERT_EQ(3, global.init_count);
@@ -13681,8 +13723,8 @@ static void test_type_metadata_bridge() {
       TK_STRUCT, (char *)walk_outer_tag, walk_outer_len,
       ps_local_registry_capture_lookup_point_in(test_local_registry()));
   ASSERT_TRUE(walk_gv.decl_type != NULL);
-  walk_gv.decl_type_id = intern_test_type_id(walk_gv.decl_type);
-  ASSERT_TRUE(walk_gv.decl_type_id != PSX_TYPE_ID_INVALID);
+  walk_gv.decl_qual_type = intern_test_qual_type(walk_gv.decl_type);
+  ASSERT_TRUE(walk_gv.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
   psx_record_decl_t *walk_outer_record =
       test_record_decl_mut(walk_gv.decl_type);
   ASSERT_TRUE(walk_outer_record != NULL);
@@ -13744,9 +13786,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(walk_array_element != NULL);
   walk_array_gv.decl_type = ps_type_new_array(
       walk_array_element, 2, 16, 0);
-  walk_array_gv.decl_type_id = intern_test_type_id(
+  walk_array_gv.decl_qual_type = intern_test_qual_type(
       walk_array_gv.decl_type);
-  ASSERT_TRUE(walk_array_gv.decl_type_id != PSX_TYPE_ID_INVALID);
+  ASSERT_TRUE(walk_array_gv.decl_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
   psx_record_decl_t *walk_array_record =
       test_record_decl_mut(walk_array_element);
   ASSERT_TRUE(walk_array_record != NULL);
@@ -17969,28 +18012,29 @@ static void test_compilation_session_registry_isolation() {
   ASSERT_TRUE(second_aggregate_type != NULL);
   first_aggregate.decl_type = first_aggregate_type;
   second_aggregate.decl_type = second_aggregate_type;
-  first_global.decl_type_id = ps_ctx_intern_qual_type_in(
-      first.semantic_context, first_global.decl_type).type_id;
-  ASSERT_TRUE(first_global.decl_type_id != PSX_TYPE_ID_INVALID);
-  first_callback.decl_type_id = ps_ctx_intern_qual_type_in(
-      first.semantic_context, session_callback_type).type_id;
-  ASSERT_TRUE(first_callback.decl_type_id != PSX_TYPE_ID_INVALID);
-  first_aggregate.decl_type_id = ps_ctx_intern_qual_type_in(
-      first.semantic_context, first_aggregate_type).type_id;
-  ASSERT_TRUE(first_aggregate.decl_type_id != PSX_TYPE_ID_INVALID);
+  first_global.decl_qual_type = ps_ctx_intern_qual_type_in(
+      first.semantic_context, first_global.decl_type);
+  ASSERT_TRUE(first_global.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  first_callback.decl_qual_type = ps_ctx_intern_qual_type_in(
+      first.semantic_context, session_callback_type);
+  ASSERT_TRUE(first_callback.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  first_aggregate.decl_qual_type = ps_ctx_intern_qual_type_in(
+      first.semantic_context, first_aggregate_type);
+  ASSERT_TRUE(first_aggregate.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
                   first.semantic_context,
                   first_aggregate_members[0].decl_type).type_id !=
               PSX_TYPE_ID_INVALID);
-  second_global.decl_type_id = ps_ctx_intern_qual_type_in(
-      second.semantic_context, second_global.decl_type).type_id;
-  ASSERT_TRUE(second_global.decl_type_id != PSX_TYPE_ID_INVALID);
-  second_callback.decl_type_id = ps_ctx_intern_qual_type_in(
-      second.semantic_context, session_callback_type).type_id;
-  ASSERT_TRUE(second_callback.decl_type_id != PSX_TYPE_ID_INVALID);
-  second_aggregate.decl_type_id = ps_ctx_intern_qual_type_in(
-      second.semantic_context, second_aggregate_type).type_id;
-  ASSERT_TRUE(second_aggregate.decl_type_id != PSX_TYPE_ID_INVALID);
+  second_global.decl_qual_type = ps_ctx_intern_qual_type_in(
+      second.semantic_context, second_global.decl_type);
+  ASSERT_TRUE(second_global.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  second_callback.decl_qual_type = ps_ctx_intern_qual_type_in(
+      second.semantic_context, session_callback_type);
+  ASSERT_TRUE(second_callback.decl_qual_type.type_id != PSX_TYPE_ID_INVALID);
+  second_aggregate.decl_qual_type = ps_ctx_intern_qual_type_in(
+      second.semantic_context, second_aggregate_type);
+  ASSERT_TRUE(second_aggregate.decl_qual_type.type_id !=
+              PSX_TYPE_ID_INVALID);
   ASSERT_TRUE(ps_ctx_intern_qual_type_in(
                   second.semantic_context,
                   second_aggregate_members[0].decl_type).type_id !=

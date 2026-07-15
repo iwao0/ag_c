@@ -70,10 +70,10 @@ void ps_local_registry_bind_semantic_types(
   if (registry) registry->semantic_types = semantic_types;
 }
 
-static psx_type_id_t local_decl_type_id(
+static psx_qual_type_t local_decl_qual_type(
     const psx_local_registry_t *registry, const psx_type_t *type) {
   return psx_semantic_type_table_find(
-      registry ? registry->semantic_types : NULL, type).type_id;
+      registry ? registry->semantic_types : NULL, type);
 }
 
 static unsigned name_hash(const char *name, int len) {
@@ -234,7 +234,7 @@ lvar_t *ps_local_registry_create_storage_object_in(
     free(var);
     return NULL;
   }
-  var->decl_type_id = local_decl_type_id(registry, decl_type);
+  var->decl_qual_type = local_decl_qual_type(registry, decl_type);
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -261,7 +261,7 @@ lvar_t *ps_local_registry_create_type_binding_in(
   var->declaration_seq =
       ps_local_registry_register_binding_event_in(registry);
   var->decl_type = ps_type_clone_persistent(type);
-  var->decl_type_id = local_decl_type_id(registry, type);
+  var->decl_qual_type = local_decl_qual_type(registry, type);
   var->is_param = 1;
   var->next = registry->locals;
   var->next_binding = registry->all_bindings;
@@ -291,7 +291,7 @@ lvar_t *ps_local_registry_create_static_alias_in(
   var->static_global_name = global_name;
   var->static_global_name_len = global_name_len;
   var->decl_type = ps_type_clone_persistent(type);
-  var->decl_type_id = local_decl_type_id(registry, type);
+  var->decl_qual_type = local_decl_qual_type(registry, type);
   psx_decl_attach_lvar_current_region_in(registry, var);
   psx_local_registry_add_in(registry, var);
   return var;
@@ -330,7 +330,7 @@ int ps_local_registry_complete_array_type(
   psx_type_t *replacement = ps_type_clone_persistent(complete_type);
   if (!replacement) return 0;
   var->decl_type = replacement;
-  var->decl_type_id = local_decl_type_id(registry, complete_type);
+  var->decl_qual_type = local_decl_qual_type(registry, complete_type);
   return 1;
 }
 

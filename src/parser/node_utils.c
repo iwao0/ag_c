@@ -148,8 +148,14 @@ const psx_type_t *ps_lvar_get_decl_type(const lvar_t *var) {
   return lvar_decl_type_consistent(var);
 }
 
+psx_qual_type_t ps_lvar_decl_qual_type(const lvar_t *var) {
+  return var ? var->decl_qual_type
+             : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                 PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_type_id_t ps_lvar_decl_type_id(const lvar_t *var) {
-  return var ? var->decl_type_id : PSX_TYPE_ID_INVALID;
+  return ps_lvar_decl_qual_type(var).type_id;
 }
 
 int ps_gvar_is_array(const global_var_t *gv) {
@@ -2125,8 +2131,14 @@ const psx_type_t *ps_gvar_get_decl_type(const global_var_t *gv) {
   return gvar_decl_type_consistent(gv);
 }
 
+psx_qual_type_t ps_gvar_decl_qual_type(const global_var_t *gv) {
+  return gv ? gv->decl_qual_type
+            : (psx_qual_type_t){PSX_TYPE_ID_INVALID,
+                                PSX_TYPE_QUALIFIER_NONE};
+}
+
 psx_type_id_t ps_gvar_decl_type_id(const global_var_t *gv) {
-  return gv ? gv->decl_type_id : PSX_TYPE_ID_INVALID;
+  return ps_gvar_decl_qual_type(gv).type_id;
 }
 
 static int type_is_integer_like(const psx_type_t *type) {

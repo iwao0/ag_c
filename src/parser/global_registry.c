@@ -34,10 +34,10 @@ void ps_global_registry_bind_semantic_types(
   if (registry) registry->semantic_types = semantic_types;
 }
 
-static psx_type_id_t global_decl_type_id(
+static psx_qual_type_t global_decl_qual_type(
     const psx_global_registry_t *registry, const psx_type_t *type) {
   return psx_semantic_type_table_find(
-      registry ? registry->semantic_types : NULL, type).type_id;
+      registry ? registry->semantic_types : NULL, type);
 }
 
 int ps_global_registry_bind_decl_type(
@@ -45,7 +45,7 @@ int ps_global_registry_bind_decl_type(
     const psx_type_t *type) {
   if (!global || global->decl_type || !type) return 0;
   global->decl_type = ps_type_clone_persistent(type);
-  global->decl_type_id = global_decl_type_id(registry, type);
+  global->decl_qual_type = global_decl_qual_type(registry, type);
   return global->decl_type != NULL;
 }
 
@@ -63,7 +63,7 @@ int ps_global_registry_complete_array_type(
   psx_type_t *replacement = ps_type_clone_persistent(complete_type);
   if (!replacement) return 0;
   global->decl_type = replacement;
-  global->decl_type_id = global_decl_type_id(registry, complete_type);
+  global->decl_qual_type = global_decl_qual_type(registry, complete_type);
   return 1;
 }
 

@@ -30,7 +30,7 @@ struct lvar_t {
   int align_bytes;
   int used_count;
   const psx_type_t *decl_type;
-  psx_type_id_t decl_type_id;
+  psx_qual_type_t decl_qual_type;
   psx_vla_runtime_descriptor_t vla_runtime;
   psx_lvar_usage_region_t *decl_region;
 };
