@@ -372,8 +372,8 @@ static int append_definition_parameter(
     ps_diag_ctx(parameter->declarator.diagnostic_token, "param",
                  "canonical parameter declaration resolution failed");
   }
-  if (result->nargs >= *capacity) {
-    *capacity = pda_next_cap(*capacity, result->nargs + 1);
+  if (result->nargs + 1 >= *capacity) {
+    *capacity = pda_next_cap(*capacity, result->nargs + 2);
     result->args = pda_xreallocarray(
         result->args, (size_t)*capacity, sizeof(node_t *));
   }
@@ -381,6 +381,7 @@ static int append_definition_parameter(
     result->args[result->nargs++] =
         ps_node_new_param_placeholder_in(
             ps_lowering_arena(lowering_context), resolution.type);
+    result->args[result->nargs] = NULL;
     return 1;
   }
 
@@ -401,6 +402,7 @@ static int append_definition_parameter(
   result->args[result->nargs++] =
       ps_node_new_param_lvar_for_in(
           ps_lowering_arena(lowering_context), lowered);
+  result->args[result->nargs] = NULL;
   return 0;
 }
 
@@ -459,6 +461,7 @@ int psx_apply_function_definition_parameter_pipeline(
                   "void parameter must be the only parameter");
     }
     state->result->nargs = 0;
+    state->result->args[0] = NULL;
     return 1;
   }
   if (applied > 0) state->result->has_unnamed_parameter = 1;

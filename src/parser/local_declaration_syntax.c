@@ -109,7 +109,8 @@ node_t *psx_parse_local_declaration_syntax(
     }
 
     psx_parsed_initializer_t initializer;
-    psx_prepare_optional_initializer_syntax(&initializer);
+    psx_prepare_optional_initializer_syntax(
+        &initializer, callbacks->runtime_context);
     if (initializer.has_initializer && initializer.value_tok &&
         (initializer.value_tok->kind == TK_SEMI ||
          initializer.value_tok->kind == TK_COMMA ||

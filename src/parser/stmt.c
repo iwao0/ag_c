@@ -18,22 +18,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-static inline token_t *curtok(void) {
-  return tk_get_current_token();
-}
-
-static inline void set_curtok(token_t *tok) {
-  tk_set_current_token(tok);
-}
-
 typedef struct {
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;
   psx_parser_runtime_context_t *runtime_context;
   arena_context_t *arena_context;
+  tokenizer_context_t *tokenizer_context;
   const psx_local_declaration_callbacks_t *local_declarations;
 } psx_statement_parse_context_t;
+
+static inline token_t *curtok(psx_statement_parse_context_t *context) {
+  return tk_get_current_token_ctx(context->tokenizer_context);
+}
+
+static inline void set_curtok(
+    psx_statement_parse_context_t *context, token_t *tok) {
+  tk_set_current_token_ctx(context->tokenizer_context, tok);
+}
 
 static node_t *stmt_internal(psx_statement_parse_context_t *context);
 static node_t *parse_stmt_label(psx_statement_parse_context_t *context);
@@ -42,19 +44,20 @@ static int is_decl_like_start_stmt(
     psx_statement_parse_context_t *context);
 static node_t *parse_decl_like_stmt(
     psx_statement_parse_context_t *context);
-static int is_label_start_stmt(void) {
-  return curtok()->kind == TK_IDENT && curtok()->next &&
-         curtok()->next->kind == TK_COLON;
+static int is_label_start_stmt(psx_statement_parse_context_t *context) {
+  return curtok(context)->kind == TK_IDENT && curtok(context)->next &&
+         curtok(context)->next->kind == TK_COLON;
 }
 
 static int is_decl_like_start_stmt(
     psx_statement_parse_context_t *context) {
-  if (curtok()->kind == TK_TYPEDEF) return 1;
-  if (curtok()->kind == TK_STATIC_ASSERT) return 1;
-  if (psx_ctx_is_type_token(curtok()->kind) || psx_is_decl_prefix_token(curtok()->kind) ||
+  if (curtok(context)->kind == TK_TYPEDEF) return 1;
+  if (curtok(context)->kind == TK_STATIC_ASSERT) return 1;
+  if (psx_ctx_is_type_token(curtok(context)->kind) ||
+      psx_is_decl_prefix_token(curtok(context)->kind) ||
       psx_ctx_is_typedef_name_token_in(
-          context->semantic_context, curtok())) return 1;
-  if (psx_ctx_is_tag_keyword(curtok()->kind)) return 1;
+          context->semantic_context, curtok(context))) return 1;
+  if (psx_ctx_is_tag_keyword(curtok(context)->kind)) return 1;
   return 0;
 }
 
@@ -65,7 +68,7 @@ static node_t *parse_decl_like_stmt(
 }
 
 static node_t *block_item(psx_statement_parse_context_t *context) {
-  if (is_label_start_stmt()) {
+  if (is_label_start_stmt(context)) {
     return parse_stmt_label(context);
   }
   if (is_decl_like_start_stmt(context)) {
@@ -97,12 +100,12 @@ static node_t *parse_stmt_label(psx_statement_parse_context_t *context);
 
 static node_t *stmt_internal(psx_statement_parse_context_t *context) {
   // 空文（null statement）: C11 6.8.3 — セミコロンだけの文
-  if (tk_consume(';'))
+  if (tk_consume_ctx(context->tokenizer_context, ';'))
     return ps_node_new_num_in(context->arena_context, 0);
-  if (curtok()->kind == TK_LBRACE) return parse_stmt_block(context);
-  if (is_label_start_stmt()) return parse_stmt_label(context);
+  if (curtok(context)->kind == TK_LBRACE) return parse_stmt_block(context);
+  if (is_label_start_stmt(context)) return parse_stmt_label(context);
   if (is_decl_like_start_stmt(context)) return parse_decl_like_stmt(context);
-  switch (curtok()->kind) {
+  switch (curtok(context)->kind) {
     case TK_RETURN:   return parse_stmt_return(context);
     case TK_IF:       return parse_stmt_if(context);
     case TK_WHILE:    return parse_stmt_while(context);
@@ -121,12 +124,12 @@ static node_t *stmt_internal(psx_statement_parse_context_t *context) {
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
 
 static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
-  tk_consume('{');
+  tk_consume_ctx(context->tokenizer_context, '{');
   ps_ctx_enter_block_scope_in(context->semantic_context);
   ps_decl_enter_scope_in(context->local_registry);
   ps_parser_enter_recovery_block_in(context->runtime_context);
@@ -136,7 +139,7 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
   int i = 0;
   int cap = 16;
   node->body = calloc(cap, sizeof(node_t*));
-  while (!tk_consume('}')) {
+  while (!tk_consume_ctx(context->tokenizer_context, '}')) {
     // #pragma pack マーカーはブロック内でも透過的に処理（AST には載せない）。
     if (psx_try_consume_pragma_pack_marker_in(context->runtime_context))
       continue;
@@ -144,7 +147,7 @@ static node_t *parse_stmt_block(psx_statement_parse_context_t *context) {
       cap = pda_next_cap(cap, i + 2);
       node->body = pda_xreallocarray(node->body, (size_t)cap, sizeof(node_t *));
     }
-    token_t *stmt_tok = curtok();
+    token_t *stmt_tok = curtok(context);
     psx_lvar_usage_region_t *region =
         psx_decl_begin_lvar_usage_region_in(context->local_registry);
     node->body[i] = block_item(context);
@@ -207,11 +210,13 @@ node_t *psx_parse_statement_expression_in_contexts(
       .local_registry = local_registry,
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
+      .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
   };
-  tk_expect('(');
+  if (!context.tokenizer_context) return NULL;
+  tk_expect_ctx(context.tokenizer_context, '(');
   node_t *block = parse_stmt_block(&context);
-  tk_expect(')');
+  tk_expect_ctx(context.tokenizer_context, ')');
   node_block_t *b = (node_block_t *)block;
   node_t *value = NULL;
   if (b->body) {
@@ -229,12 +234,12 @@ node_t *psx_parse_statement_expression_in_contexts(
 
 static node_t *parse_stmt_return(
     psx_statement_parse_context_t *context) {
-  token_t *return_tok = curtok();
-  set_curtok(curtok()->next);
+  token_t *return_tok = curtok(context);
+  set_curtok(context, curtok(context)->next);
   node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_RETURN;
   node->tok = return_tok;
-  if (tk_consume(';')) {
+  if (tk_consume_ctx(context->tokenizer_context, ';')) {
     node->lhs = NULL;
     return node;
   }
@@ -242,13 +247,13 @@ static node_t *parse_stmt_return(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
 
 static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  set_curtok(context, curtok(context)->next);
+  tk_expect_ctx(context->tokenizer_context, '(');
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_IF;
@@ -256,21 +261,21 @@ static node_t *parse_stmt_if(psx_statement_parse_context_t *context) {
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(')');
+  tk_expect_ctx(context->tokenizer_context, ')');
   /* `if (cond);` のように `)` の直後に `;` が来たら空本体を警告
    * (clang -Wempty-body 相当)。 */
-  if (curtok()->kind == TK_SEMI) node->base.has_empty_body = 1;
+  if (curtok(context)->kind == TK_SEMI) node->base.has_empty_body = 1;
   node->base.rhs = stmt_internal(context);
-  if (curtok()->kind == TK_ELSE) {
-    set_curtok(curtok()->next);
+  if (curtok(context)->kind == TK_ELSE) {
+    set_curtok(context, curtok(context)->next);
     node->els = stmt_internal(context);
   }
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  set_curtok(context, curtok(context)->next);
+  tk_expect_ctx(context->tokenizer_context, '(');
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_WHILE;
@@ -278,39 +283,39 @@ static node_t *parse_stmt_while(psx_statement_parse_context_t *context) {
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(')');
+  tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_do_while(psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
+  set_curtok(context, curtok(context)->next);
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_DO_WHILE;
   node->base.rhs = stmt_internal(context);
-  if (curtok()->kind != TK_WHILE) {
-    ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_WHILE));
+  if (curtok(context)->kind != TK_WHILE) {
+    ps_diag_missing(curtok(context), diag_text_for(DIAG_TEXT_WHILE));
   }
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  set_curtok(context, curtok(context)->next);
+  tk_expect_ctx(context->tokenizer_context, '(');
   node->base.lhs = psx_expr_expr_in_contexts(
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(')');
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ')');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  set_curtok(context, curtok(context)->next);
+  tk_expect_ctx(context->tokenizer_context, '(');
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_FOR;
   int for_has_decl = 0;
-  if (!tk_consume(';')) {
+  if (!tk_consume_ctx(context->tokenizer_context, ';')) {
     if (is_decl_like_start_stmt(context)) {
       for_has_decl = 1;
       ps_decl_enter_scope_in(context->local_registry);
@@ -320,22 +325,22 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
           context->semantic_context, context->global_registry,
           context->local_registry, context->runtime_context,
           context->local_declarations);
-      tk_expect(';');
+      tk_expect_ctx(context->tokenizer_context, ';');
     }
   }
-  if (!tk_consume(';')) {
+  if (!tk_consume_ctx(context->tokenizer_context, ';')) {
     node->base.lhs = psx_expr_expr_in_contexts(
         context->semantic_context, context->global_registry,
         context->local_registry, context->runtime_context,
         context->local_declarations);
-    tk_expect(';');
+    tk_expect_ctx(context->tokenizer_context, ';');
   }
-  if (!tk_consume(')')) {
+  if (!tk_consume_ctx(context->tokenizer_context, ')')) {
     node->inc = psx_expr_expr_in_contexts(
         context->semantic_context, context->global_registry,
         context->local_registry, context->runtime_context,
         context->local_declarations);
-    tk_expect(')');
+    tk_expect_ctx(context->tokenizer_context, ')');
   }
   node->base.rhs = stmt_internal(context);
   if (for_has_decl) ps_decl_leave_scope_in(context->local_registry);
@@ -343,9 +348,9 @@ static node_t *parse_stmt_for(psx_statement_parse_context_t *context) {
 }
 
 static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
-  token_t *switch_tok = curtok();
-  set_curtok(curtok()->next);
-  tk_expect('(');
+  token_t *switch_tok = curtok(context);
+  set_curtok(context, curtok(context)->next);
+  tk_expect_ctx(context->tokenizer_context, '(');
   node_ctrl_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_ctrl_t));
   node->base.kind = ND_SWITCH;
@@ -354,61 +359,62 @@ static node_t *parse_stmt_switch(psx_statement_parse_context_t *context) {
       context->semantic_context, context->global_registry,
       context->local_registry, context->runtime_context,
       context->local_declarations);
-  tk_expect(')');
+  tk_expect_ctx(context->tokenizer_context, ')');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_case(psx_statement_parse_context_t *context) {
-  token_t *case_tok = curtok();
-  set_curtok(curtok()->next);
+  token_t *case_tok = curtok(context);
+  set_curtok(context, curtok(context)->next);
   node_case_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_case_t));
   node->base.kind = ND_CASE;
   node->base.tok = case_tok;
   node->val = psx_parse_case_const_expr_in_context(
       context->semantic_context);
-  tk_expect(':');
+  tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_default(psx_statement_parse_context_t *context) {
-  token_t *default_tok = curtok();
-  set_curtok(curtok()->next);
+  token_t *default_tok = curtok(context);
+  set_curtok(context, curtok(context)->next);
   node_default_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_default_t));
   node->base.kind = ND_DEFAULT;
   node->base.tok = default_tok;
-  tk_expect(':');
+  tk_expect_ctx(context->tokenizer_context, ':');
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_break(
     psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
+  set_curtok(context, curtok(context)->next);
   node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_BREAK;
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
 
 static node_t *parse_stmt_continue(
     psx_statement_parse_context_t *context) {
-  set_curtok(curtok()->next);
+  set_curtok(context, curtok(context)->next);
   node_t *node = arena_alloc_in(context->arena_context, sizeof(node_t));
   node->kind = ND_CONTINUE;
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return node;
 }
 
 static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
-  token_t *goto_tok = curtok();
-  set_curtok(curtok()->next);
-  token_ident_t *ident = tk_consume_ident();
+  token_t *goto_tok = curtok(context);
+  set_curtok(context, curtok(context)->next);
+  token_ident_t *ident = tk_consume_ident_ctx(context->tokenizer_context);
   if (!ident) {
-    ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
+    ps_diag_missing(
+        curtok(context), diag_text_for(DIAG_TEXT_GOTO_LABEL_AFTER));
   }
   node_jump_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_jump_t));
@@ -417,20 +423,20 @@ static node_t *parse_stmt_goto(psx_statement_parse_context_t *context) {
   node->name_len = ident->len;
   psx_ctx_register_goto_ref_in(
       context->semantic_context, ident->str, ident->len, goto_tok);
-  tk_expect(';');
+  tk_expect_ctx(context->tokenizer_context, ';');
   return (node_t *)node;
 }
 
 static node_t *parse_stmt_label(psx_statement_parse_context_t *context) {
-  token_ident_t *ident = tk_consume_ident();
-  tk_expect(':');
+  token_ident_t *ident = tk_consume_ident_ctx(context->tokenizer_context);
+  tk_expect_ctx(context->tokenizer_context, ':');
   node_jump_t *node = arena_alloc_in(
       context->arena_context, sizeof(node_jump_t));
   node->base.kind = ND_LABEL;
   node->name = ident->str;
   node->name_len = ident->len;
   psx_ctx_register_label_def_in(
-      context->semantic_context, ident->str, ident->len, curtok());
+      context->semantic_context, ident->str, ident->len, curtok(context));
   node->base.rhs = stmt_internal(context);
   return (node_t *)node;
 }
@@ -450,8 +456,10 @@ node_t *psx_stmt_stmt_in_contexts(
       .local_registry = local_registry,
       .runtime_context = runtime_context,
       .arena_context = ps_parser_runtime_arena(runtime_context),
+      .tokenizer_context = ps_parser_runtime_tokenizer(runtime_context),
       .local_declarations = local_declarations,
   };
+  if (!context.tokenizer_context) return NULL;
   node_t *result = stmt_internal(&context);
   return result;
 }

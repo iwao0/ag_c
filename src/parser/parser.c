@@ -207,27 +207,32 @@ static token_kind_t parse_atomic_type_specifier(
 bool psx_try_consume_pragma_pack_marker_in(
     psx_parser_runtime_context_t *runtime_context) {
   if (!runtime_context) return false;
-  token_kind_t k = curtok()->kind;
+  tokenizer_context_t *tokenizer_context =
+      ps_parser_runtime_tokenizer(runtime_context);
+  if (!tokenizer_context) return false;
+  token_t *token = tk_get_current_token_ctx(tokenizer_context);
+  if (!token) return false;
+  token_kind_t k = token->kind;
   if (k == TK_PRAGMA_PACK_PUSH) {
     pragma_pack_push_in(
-        runtime_context, (int)((token_num_int_t *)curtok())->val);
-    set_curtok(curtok()->next);
+        runtime_context, (int)((token_num_int_t *)token)->val);
+    tk_set_current_token_ctx(tokenizer_context, token->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_POP) {
     pragma_pack_pop_in(runtime_context);
-    set_curtok(curtok()->next);
+    tk_set_current_token_ctx(tokenizer_context, token->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_SET) {
     pragma_pack_set_in(
-        runtime_context, (int)((token_num_int_t *)curtok())->val);
-    set_curtok(curtok()->next);
+        runtime_context, (int)((token_num_int_t *)token)->val);
+    tk_set_current_token_ctx(tokenizer_context, token->next);
     return true;
   }
   if (k == TK_PRAGMA_PACK_RESET) {
     pragma_pack_reset_in(runtime_context);
-    set_curtok(curtok()->next);
+    tk_set_current_token_ctx(tokenizer_context, token->next);
     return true;
   }
   return false;
@@ -245,15 +250,18 @@ void ps_parser_stream_begin_in_contexts(
   if (!stream || !semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     abort();
-  stream->tk_ctx = tk_ctx;
   stream->semantic_context = semantic_context;
   stream->global_registry = global_registry;
   stream->local_registry = local_registry;
   stream->runtime_context = runtime_context;
   stream->toplevel_declarations = toplevel_declarations;
-  if (tk_ctx) {
-    tk_set_current_token_ctx(tk_ctx, start);
-  }
+  tokenizer_context_t *runtime_tokenizer =
+      tk_ctx ? tk_ctx : ps_parser_runtime_tokenizer(runtime_context);
+  if (!runtime_tokenizer) abort();
+  stream->tk_ctx = runtime_tokenizer;
+  stream->previous_runtime_tokenizer_context =
+      ps_parser_runtime_bind_tokenizer(runtime_context, runtime_tokenizer);
+  tk_set_current_token_ctx(runtime_tokenizer, start);
   tk_set_current_token(start);
   runtime_context->recoverable_syntax_error = 0;
   runtime_context->function_block_depth = 0;
@@ -361,7 +369,14 @@ int ps_parse_next_toplevel_item(
 
 void ps_parser_stream_end(psx_parser_stream_t *stream) {
   if (stream) {
+    if (stream->runtime_context &&
+        stream->previous_runtime_tokenizer_context) {
+      ps_parser_runtime_bind_tokenizer(
+          stream->runtime_context,
+          stream->previous_runtime_tokenizer_context);
+    }
     stream->tk_ctx = NULL;
+    stream->previous_runtime_tokenizer_context = NULL;
     stream->semantic_context = NULL;
     stream->local_registry = NULL;
     stream->toplevel_declarations = NULL;
@@ -717,16 +732,21 @@ node_t *ps_expr_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return NULL;
-  if (tk_ctx) {
-    tk_set_current_token_ctx(tk_ctx, start);
-  }
+  tokenizer_context_t *runtime_tokenizer =
+      tk_ctx ? tk_ctx : ps_parser_runtime_tokenizer(runtime_context);
+  if (!runtime_tokenizer) return NULL;
+  tokenizer_context_t *previous_runtime_tokenizer =
+      ps_parser_runtime_bind_tokenizer(runtime_context, runtime_tokenizer);
+  tk_set_current_token_ctx(runtime_tokenizer, start);
   tk_set_current_token(start);
   node_t *node = psx_expr_expr_in_contexts(
       semantic_context, global_registry, local_registry,
       runtime_context,
       local_declarations);
-  if (tk_ctx) {
-    tk_set_current_token_ctx(tk_ctx, tk_get_current_token());
+  tk_set_current_token_ctx(runtime_tokenizer, tk_get_current_token());
+  if (previous_runtime_tokenizer) {
+    ps_parser_runtime_bind_tokenizer(
+        runtime_context, previous_runtime_tokenizer);
   }
   return node;
 }

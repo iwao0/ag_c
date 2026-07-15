@@ -16,6 +16,7 @@ typedef struct psx_parser_runtime_context_t psx_parser_runtime_context_t;
 
 typedef struct {
   tokenizer_context_t *tk_ctx;
+  tokenizer_context_t *previous_runtime_tokenizer_context;
   psx_semantic_context_t *semantic_context;
   psx_global_registry_t *global_registry;
   psx_local_registry_t *local_registry;

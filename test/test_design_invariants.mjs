@@ -136,6 +136,32 @@ if (/\barena_context_(?:activate|active)\s*\(/.test(
     "CompilationSession activation must not mutate a process-global arena",
   );
 }
+const parserRuntimeOwnershipHeader = await readFile(
+  "src/parser/runtime_context.h",
+  "utf8",
+);
+const implicitTokenizerCursorApiRe = /\b(?:tk_get_current_token|tk_set_current_token|tk_consume|tk_consume_str|tk_consume_ident|tk_expect|tk_expect_number|tk_at_eof|tk_ensure_lookahead)\s*\(/;
+const explicitParserTokenizerSources = [
+  parserStatementSource,
+  await readFile("src/parser/initializer_syntax.c", "utf8"),
+  await readFile("src/parser/static_assert_declaration.c", "utf8"),
+];
+if (!/tokenizer_context_t\s*\*tokenizer_context\s*;/.test(
+      parserRuntimeOwnershipHeader,
+    ) ||
+    !/ps_parser_runtime_context_create\s*\(\s*session->arena_context\s*,\s*&session->tokenizer\s*\)/.test(
+      compilationSessionArenaSource,
+    ) ||
+    !/ps_parser_runtime_tokenizer\s*\(\s*runtime_context\s*\)/.test(
+      parserStatementSource,
+    ) ||
+    explicitParserTokenizerSources.some((source) =>
+      implicitTokenizerCursorApiRe.test(source)
+    )) {
+  throw new Error(
+    "migrated parser syntax must use the CompilationSession-owned tokenizer through parser runtime",
+  );
+}
 if (/\bps_type_(?:new(?:_integer|_enum|_float|_pointer|_function|_array|_tag)?|clone|apply_declarator_shape|adjust_parameter_type|binary_result|conditional_result|address_result|decay_array|subscript_result|generic_control)\s*\(/.test(
       explicitPhaseArenaSource,
     )) {

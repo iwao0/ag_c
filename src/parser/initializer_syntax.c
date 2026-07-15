@@ -11,16 +11,27 @@
 #include "../tokenizer/tokenizer.h"
 #include <stdlib.h>
 
-static inline token_t *curtok(void) { return tk_get_current_token(); }
+static inline tokenizer_context_t *tokenizer(
+    psx_parser_runtime_context_t *runtime_context) {
+  return ps_parser_runtime_tokenizer(runtime_context);
+}
+
+static inline token_t *curtok(
+    psx_parser_runtime_context_t *runtime_context) {
+  return tk_get_current_token_ctx(tokenizer(runtime_context));
+}
 
 void psx_prepare_optional_initializer_syntax(
-    psx_parsed_initializer_t *out) {
-  if (!out) return;
+    psx_parsed_initializer_t *out,
+    psx_parser_runtime_context_t *runtime_context) {
+  if (!out || !tokenizer(runtime_context)) return;
   *out = (psx_parsed_initializer_t){0};
-  if (!curtok() || curtok()->kind != TK_ASSIGN) return;
+  if (!curtok(runtime_context) ||
+      curtok(runtime_context)->kind != TK_ASSIGN)
+    return;
   out->has_initializer = 1;
-  out->assign_tok = curtok();
-  out->value_tok = curtok()->next;
+  out->assign_tok = curtok(runtime_context);
+  out->value_tok = curtok(runtime_context)->next;
 }
 
 void psx_parse_initializer_syntax_value_in_contexts(
@@ -35,10 +46,11 @@ void psx_parse_initializer_syntax_value_in_contexts(
     return;
   *out = (psx_parsed_initializer_t){
       .has_initializer = 1,
-      .kind = curtok()->kind == TK_LBRACE ? PSX_DECL_INIT_LIST
-                                          : PSX_DECL_INIT_EXPR,
+      .kind = curtok(runtime_context)->kind == TK_LBRACE
+                  ? PSX_DECL_INIT_LIST
+                  : PSX_DECL_INIT_EXPR,
       .assign_tok = assign_tok,
-      .value_tok = curtok(),
+      .value_tok = curtok(runtime_context),
   };
   out->value = out->kind == PSX_DECL_INIT_LIST
                    ? psx_parse_initializer_syntax_list_in_contexts(
@@ -60,16 +72,18 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
   if (!semantic_context || !global_registry || !local_registry ||
       !runtime_context)
     return NULL;
-  token_t *brace_tok = curtok();
-  tk_expect('{');
+  tokenizer_context_t *tk_ctx = tokenizer(runtime_context);
+  if (!tk_ctx) return NULL;
+  token_t *brace_tok = curtok(runtime_context);
+  tk_expect_ctx(tk_ctx, '{');
   psx_initializer_entry_t *entries = NULL;
   int count = 0;
   int capacity = 0;
-  if (!tk_consume('}')) {
+  if (!tk_consume_ctx(tk_ctx, '}')) {
     for (;;) {
       if (count >= PS_MAX_INITIALIZER_ELEMENTS) {
         free(entries);
-        ps_diag_ctx(curtok(), "initializer-syntax",
+        ps_diag_ctx(curtok(runtime_context), "initializer-syntax",
                      diag_message_for(DIAG_ERR_PARSER_INITIALIZER_ELEMENT_LIMIT_EXCEEDED),
                      PS_MAX_INITIALIZER_ELEMENTS);
       }
@@ -79,31 +93,34 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
             entries, sizeof(*entries) * (size_t)next_capacity);
         if (!next) {
           free(entries);
-          ps_diag_ctx(curtok(), "initializer-syntax",
+          ps_diag_ctx(curtok(runtime_context), "initializer-syntax",
                        "initializer allocation failed");
         }
         entries = next;
         capacity = next_capacity;
       }
 
-      token_t *entry_tok = curtok();
+      token_t *entry_tok = curtok(runtime_context);
       token_ident_t *member = NULL;
       psx_initializer_designator_t designators[8] = {0};
       int designator_count = 0;
       node_t *index_exprs[8] = {0};
       int index_expr_count = 0;
-      while (curtok()->kind == TK_DOT || curtok()->kind == TK_LBRACKET) {
+      while (curtok(runtime_context)->kind == TK_DOT ||
+             curtok(runtime_context)->kind == TK_LBRACKET) {
         if (designator_count >= 8) {
           free(entries);
-          ps_diag_ctx(curtok(), "initializer-syntax", "%s",
+          ps_diag_ctx(curtok(runtime_context), "initializer-syntax", "%s",
                        diag_message_for(DIAG_ERR_PARSER_ARRAY_INIT_TOO_MANY_ELEMENTS));
         }
-        token_t *designator_tok = curtok();
-        if (tk_consume('.')) {
-          token_ident_t *current_member = tk_consume_ident();
+        token_t *designator_tok = curtok(runtime_context);
+        if (tk_consume_ctx(tk_ctx, '.')) {
+          token_ident_t *current_member = tk_consume_ident_ctx(tk_ctx);
           if (!current_member) {
             free(entries);
-            ps_diag_missing(curtok(), diag_text_for(DIAG_TEXT_MEMBER_NAME));
+            ps_diag_missing(
+                curtok(runtime_context),
+                diag_text_for(DIAG_TEXT_MEMBER_NAME));
           }
           if (!member) member = current_member;
           designators[designator_count++] = (psx_initializer_designator_t){
@@ -113,24 +130,26 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
               .tok = designator_tok,
           };
         } else {
-          tk_expect('[');
+          tk_expect_ctx(tk_ctx, '[');
           node_t *index_expr = psx_expr_assign_in_contexts(
               semantic_context, global_registry, local_registry,
               runtime_context,
               local_declarations);
           node_t *range_end_expr = NULL;
           int is_range = 0;
-          if (curtok()->kind == TK_ELLIPSIS) {
+          if (curtok(runtime_context)->kind == TK_ELLIPSIS) {
             ps_ctx_record_unsupported_gnu_extension_warning_in(
-                semantic_context, curtok(), "array range designator");
-            tk_set_current_token(curtok()->next);
+                semantic_context, curtok(runtime_context),
+                "array range designator");
+            tk_set_current_token_ctx(
+                tk_ctx, curtok(runtime_context)->next);
             range_end_expr = psx_expr_assign_in_contexts(
                 semantic_context, global_registry, local_registry,
                 runtime_context,
                 local_declarations);
             is_range = 1;
           }
-          tk_expect(']');
+          tk_expect_ctx(tk_ctx, ']');
           designators[designator_count++] = (psx_initializer_designator_t){
               .kind = PSX_INIT_DESIGNATOR_INDEX,
               .index_expr = index_expr,
@@ -141,9 +160,9 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
           index_exprs[index_expr_count++] = index_expr;
         }
       }
-      if (designator_count > 0) tk_expect('=');
+      if (designator_count > 0) tk_expect_ctx(tk_ctx, '=');
 
-      node_t *value = curtok()->kind == TK_LBRACE
+      node_t *value = curtok(runtime_context)->kind == TK_LBRACE
                           ? psx_parse_initializer_syntax_list_in_contexts(
                                 semantic_context, global_registry,
                                 local_registry,
@@ -170,9 +189,9 @@ node_t *psx_parse_initializer_syntax_list_in_contexts(
       for (int d = 0; d < index_expr_count; d++)
         entries[count - 1].index_exprs[d] = index_exprs[d];
 
-      if (tk_consume('}')) break;
-      tk_expect(',');
-      if (tk_consume('}')) break;
+      if (tk_consume_ctx(tk_ctx, '}')) break;
+      tk_expect_ctx(tk_ctx, ',');
+      if (tk_consume_ctx(tk_ctx, '}')) break;
     }
   }
   return psx_node_new_initializer_list_in(

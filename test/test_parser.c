@@ -20,6 +20,7 @@
 #include "../src/parser/tag_public.h"
 #include "../src/parser/semantic_ctx.h"
 #include "../src/parser/runtime_context.h"
+#include "../src/parser/stmt.h"
 #include "../src/parser/symtab.h"
 #include "../src/parser/type_builder.h"
 #include "../src/parser/aggregate_member_syntax.h"
@@ -3688,7 +3689,9 @@ static void test_declaration_pipeline_order_boundary() {
   token_t *tokens = tk_tokenize((char *)"= 37");
   tk_set_current_token(tokens);
   psx_parsed_initializer_t initializer;
-  psx_prepare_optional_initializer_syntax(&initializer);
+  psx_prepare_optional_initializer_syntax(
+      &initializer,
+      ag_compilation_session_parser_runtime_context(test_suite_session));
   char *name = (char *)"__pipeline_object";
   int name_len = 17;
   psx_global_declaration_pipeline_request_t request = {
@@ -12953,6 +12956,10 @@ static void test_type_metadata_bridge() {
       "double p16){return p0;}");
   ASSERT_TRUE(many_param_source_program != NULL);
   ASSERT_TRUE(many_param_source_program[0] != NULL);
+  node_function_definition_t *many_param_source_function =
+      as_function_definition(many_param_source_program[0]);
+  ASSERT_EQ(17, many_param_source_function->parameter_count);
+  ASSERT_TRUE(many_param_source_function->parameters[17] == NULL);
   const psx_type_t *many_param_source = ps_ctx_get_function_type_in(test_semantic_context(),
       (char *)many_param_source_name,
       (int)sizeof(many_param_source_name) - 1);
@@ -16247,12 +16254,14 @@ static void test_compilation_session_registry_isolation() {
       first.semantic_context, first.local_registry,
       TK_STRUCT, (char *)"FirstTag", 8,
       first_namespace_point) != NULL);
-  token_t *nested_context_tokens = tk_tokenize(
+  token_t *nested_context_tokens = tk_tokenize_ctx(
+      &first.tokenizer,
       (char *)"int (*callback)(struct NestedContextParameter { "
                "FirstType member; "
                "_Static_assert(sizeof(FirstType) == 4, \"ok\"); "
                "} *); }");
-  tk_set_current_token(nested_context_tokens);
+  tk_set_current_token_ctx(&first.tokenizer, nested_context_tokens);
+  ASSERT_TRUE(ag_compilation_session_activate(&first));
   psx_parsed_aggregate_body_t nested_context_body;
   psx_parse_aggregate_body_with_options(
       &nested_context_body,
@@ -16262,6 +16271,8 @@ static void test_compilation_session_registry_isolation() {
           .local_registry = first.local_registry,
           .runtime_context = first.parser_runtime_context,
       });
+  ASSERT_TRUE(ag_compilation_session_deactivate(&first));
+  ASSERT_TRUE(ag_compilation_session_is_active(&second));
   ASSERT_EQ(1, nested_context_body.item_count);
   psx_parsed_declarator_t *nested_context_callback =
       &nested_context_body.items[0].value.member_declaration.declarators[0];
@@ -16558,6 +16569,8 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_ctx_arena(host.semantic_context) == host.arena_context);
   ASSERT_TRUE(ps_parser_runtime_arena(host.parser_runtime_context) ==
               host.arena_context);
+  ASSERT_TRUE(ps_parser_runtime_tokenizer(host.parser_runtime_context) ==
+              &host.tokenizer);
   ASSERT_TRUE(ps_lowering_arena(host.lowering_context) ==
               host.arena_context);
   ASSERT_TRUE(ag_compilation_session_options(&host) == &host.options);
@@ -16579,6 +16592,10 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(ps_ctx_arena(wasm.semantic_context) == wasm.arena_context);
   ASSERT_TRUE(ps_parser_runtime_arena(wasm.parser_runtime_context) ==
               wasm.arena_context);
+  ASSERT_TRUE(ps_parser_runtime_tokenizer(wasm.parser_runtime_context) ==
+              &wasm.tokenizer);
+  ASSERT_TRUE(ps_parser_runtime_tokenizer(host.parser_runtime_context) !=
+              ps_parser_runtime_tokenizer(wasm.parser_runtime_context));
   ASSERT_TRUE(ps_lowering_arena(wasm.lowering_context) ==
               wasm.arena_context);
   ASSERT_EQ(8, ag_target_info_pointer_size(
@@ -16614,6 +16631,21 @@ static void test_compilation_session_owns_target_and_tokenizer() {
   ASSERT_TRUE(host.codegen_emit_context != NULL);
   ASSERT_TRUE(wasm.codegen_emit_context != NULL);
   ASSERT_TRUE(host.codegen_emit_context != wasm.codegen_emit_context);
+  token_t *active_cursor_before_explicit_statement = tk_get_current_token();
+  token_t wasm_statement_eof = {.kind = TK_EOF};
+  token_t wasm_statement = {
+      .kind = TK_SEMI,
+      .next = &wasm_statement_eof,
+  };
+  tk_set_current_token_ctx(&wasm.tokenizer, &wasm_statement);
+  node_t *wasm_null_statement = psx_stmt_stmt_in_contexts(
+      wasm.semantic_context, wasm.global_registry, wasm.local_registry,
+      wasm.parser_runtime_context, NULL);
+  ASSERT_TRUE(wasm_null_statement != NULL);
+  ASSERT_EQ(ND_NUM, wasm_null_statement->kind);
+  ASSERT_TRUE(tk_at_eof_ctx(&wasm.tokenizer));
+  ASSERT_TRUE(tk_get_current_token() ==
+              active_cursor_before_explicit_statement);
   ASSERT_TRUE(arena_alloc_in(host.arena_context, 16) != NULL);
   ASSERT_TRUE(arena_alloc_in(wasm.arena_context, 32) != NULL);
   ASSERT_TRUE(arena_current_reserved_bytes_in(host.arena_context) > 0);

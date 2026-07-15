@@ -171,7 +171,8 @@ int psx_finish_toplevel_declaration_syntax_in_contexts(
     ps_parse_runtime_declarator_expressions_in_contexts(
         declarator, semantic_context, global_registry, local_registry,
         runtime_context, NULL);
-    psx_prepare_optional_initializer_syntax(initializer);
+    psx_prepare_optional_initializer_syntax(
+        initializer, runtime_context);
     if (initializer_value_is_missing(initializer)) {
       diag_report_tokf(
           DIAG_ERR_PARSER_PRIMARY_NUMBER_EXPECTED, initializer->value_tok,

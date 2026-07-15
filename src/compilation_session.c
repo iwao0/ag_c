@@ -64,7 +64,7 @@ int ag_compilation_session_init(
   tk_context_set_allocator(
       &session->tokenizer, session->token_allocator_context);
   session->parser_runtime_context = ps_parser_runtime_context_create(
-      session->arena_context);
+      session->arena_context, &session->tokenizer);
   session->lowering_context = ps_lowering_context_create(
       session->arena_context);
   session->codegen_emit_context = cg_context_create();
