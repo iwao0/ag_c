@@ -1838,17 +1838,9 @@ const typeQueryResolutionSource = await readFile(
   "src/semantic/type_query_resolution.c",
   "utf8",
 );
-if (!/\bps_ctx_intern_qual_type_in\s*\(/.test(typeQueryResolutionSource) ||
-    !/\bps_type_sizeof_id_with_records\s*\(/.test(
-      typeQueryResolutionSource,
-    ) ||
-    !/\bps_type_alignof_id_with_records\s*\(/.test(
-      typeQueryResolutionSource,
-    ) ||
-    !/\bps_ctx_record_layout_table_in\s*\(/.test(
-      typeQueryResolutionSource,
-    ) ||
-    /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
+if (!/\bps_ctx_type_sizeof_in\s*\(/.test(typeQueryResolutionSource) ||
+    !/\bps_ctx_type_alignof_in\s*\(/.test(typeQueryResolutionSource) ||
+    /\bps_type_(?:size|align)of_id_with_records\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
@@ -3445,9 +3437,15 @@ if (!/\bconst\s+psx_aggregate_definition_t\s*\*\s*ps_ctx_get_tag_definition_in\s
     ) ||
     !/\bconst\s+psx_type_t\s*\*\s*ps_ctx_type_by_id_in\s*\(/.test(
       semanticContextSource,
-    )) {
+    ) ||
+    !/\bps_ctx_type_sizeof_in\s*\(/.test(semanticContextSource) ||
+    !/\bps_ctx_type_alignof_in\s*\(/.test(semanticContextSource) ||
+    /\bps_ctx_refresh_type_completeness_in\s*\(/.test(
+      `${semanticContextSource}\n${parserSemanticContextImplementation}`,
+    ) ||
+    /\bps_type_sizeof\s*\(/.test(parserSemanticContextImplementation)) {
   throw new Error(
-    "semantic context must expose const record and interned QualType views",
+    "semantic context must expose immutable type identity and target layout queries",
   );
 }
 if (!/\bfind_tag_type_by_record_id_in\s*\(/.test(

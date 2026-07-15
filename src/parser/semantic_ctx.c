@@ -8,7 +8,7 @@
 #include "../semantic/record_layout.h"
 #include "../tokenizer/tokenizer.h"
 #include "../target_info.h"
-#include <limits.h>
+#include "../type_layout.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -150,10 +150,6 @@ static const psx_type_t *typedef_record_decl_type(const typedef_name_t *t) {
   return t ? t->decl_type : NULL;
 }
 
-static psx_type_t *typedef_record_decl_type_mut(typedef_name_t *t) {
-  return t ? t->decl_type : NULL;
-}
-
 struct psx_function_symbol_t {
   psx_function_symbol_t *next_hash;
   char *name;
@@ -288,6 +284,26 @@ const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
   return context ? context->record_layouts : NULL;
 }
 
+int ps_ctx_type_sizeof_in(
+    psx_semantic_context_t *context, const psx_type_t *type) {
+  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
+      context, type).type_id;
+  return ps_type_sizeof_id_with_records(
+      ps_ctx_semantic_type_table_in(context),
+      ps_ctx_record_layout_table_in(context), type_id,
+      ps_ctx_target_info(context));
+}
+
+int ps_ctx_type_alignof_in(
+    psx_semantic_context_t *context, const psx_type_t *type) {
+  psx_type_id_t type_id = ps_ctx_intern_qual_type_in(
+      context, type).type_id;
+  return ps_type_alignof_id_with_records(
+      ps_ctx_semantic_type_table_in(context),
+      ps_ctx_record_layout_table_in(context), type_id,
+      ps_ctx_target_info(context));
+}
+
 psx_semantic_context_t *ps_ctx_create(arena_context_t *arena_context) {
   if (!arena_context) return NULL;
   psx_semantic_context_t *context = calloc(1, sizeof(*context));
@@ -380,20 +396,7 @@ static void initialize_tag_member_record(
   m->bit_is_signed = desc->bit_is_signed;
   const psx_type_t *desc_type = ps_tag_member_decl_type(desc);
   m->decl_type = ctx_type_clone_persistent_in(context, desc_type);
-}
-
-static void refresh_registered_member_type_completeness_in(
-    psx_semantic_context_t *context) {
-  if (!context) return;
-  for (int bucket = 0; bucket < PCTX_HASH_BUCKETS; bucket++) {
-    for (tag_member_t *member =
-             context->aggregate_members_by_bucket[bucket]; member;
-         member = member->next_hash) {
-      ps_ctx_refresh_type_completeness_in(
-          context,
-          tag_member_record_decl_type_mut(member));
-    }
-  }
+  ps_ctx_attach_aggregate_definitions_in(context, m->decl_type);
 }
 
 static unsigned psx_ctx_hash_name(const char *name, int len) {
@@ -789,8 +792,6 @@ int ps_ctx_register_tag_type_in_contexts(
     if (tag_size > existing->size) existing->size = tag_size;
     if (tag_align > existing->align) existing->align = tag_align;
     if (is_complete) existing->is_complete = 1;
-    if (is_complete)
-      refresh_registered_member_type_completeness_in(context);
     if (existing->is_complete && !existing->definition)
       (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
     else
@@ -828,7 +829,6 @@ int ps_ctx_register_tag_type_in_contexts(
     refresh_cached_tag_definition(context, t);
   }
   if (t->is_complete) {
-    refresh_registered_member_type_completeness_in(context);
     (void)ps_ctx_get_tag_definition_in(context, kind, name, len);
     if (t->definition)
       (void)ps_ctx_publish_record_layout_in(
@@ -1088,7 +1088,6 @@ static void fill_tag_member_info_in(
   out->bit_offset = m->bit_offset;
   out->bit_is_signed = m->bit_is_signed;
   psx_type_t *decl_type = tag_member_record_decl_type_mut((tag_member_t *)m);
-  ps_ctx_refresh_type_completeness_in(context, decl_type);
   ps_ctx_attach_aggregate_definitions_in(context, decl_type);
   out->decl_type = decl_type;
 }
@@ -1368,39 +1367,13 @@ int ps_ctx_has_typedef_in_current_scope_in(
   return find_typedef_in_current_scope_in(context, name, len) != NULL;
 }
 
-void ps_ctx_refresh_type_completeness_in(
-    psx_semantic_context_t *context, psx_type_t *type) {
-  if (!context || !type) return;
-  if (type->kind == PSX_TYPE_STRUCT || type->kind == PSX_TYPE_UNION) {
-    int size = ps_ctx_get_tag_size_in(
-        context, type->tag_kind, type->tag_name, type->tag_len);
-    if (size > 0) {
-      type->size = size;
-      if (type->align <= 0) type->align = size >= 8 ? 8 : size;
-    }
-  }
-  ps_ctx_refresh_type_completeness_in(
-      context, psx_type_owned_base_mut(type));
-  if (type->kind == PSX_TYPE_ARRAY && type->base) {
-    int element_size = ps_type_sizeof(type->base);
-    if (element_size > 0) {
-      if (type->array_len > 0 && type->array_len <= INT_MAX / element_size)
-        type->size = type->array_len * element_size;
-    }
-  }
-  if (type->kind == PSX_TYPE_FUNCTION) {
-    for (int i = 0; i < type->param_count; i++)
-      ps_ctx_refresh_type_completeness_in(
-          context, psx_type_owned_param_mut(type, i));
-  }
-}
-
 static void initialize_typedef_record(
     psx_semantic_context_t *context,
     typedef_name_t *t, const psx_typedef_info_t *info) {
   if (!t || !info || t->decl_type) return;
   t->decl_type = ctx_type_clone_persistent_in(
       context, ps_ctx_typedef_decl_type(info));
+  ps_ctx_attach_aggregate_definitions_in(context, t->decl_type);
 }
 
 int ps_ctx_register_typedef_name_in_contexts(
@@ -1447,10 +1420,9 @@ bool psx_ctx_find_typedef_sizeof_in(
     char *name, int len, int *out_sizeof_size) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  ps_ctx_refresh_type_completeness_in(
-      context, typedef_record_decl_type_mut(t));
   if (out_sizeof_size)
-    *out_sizeof_size = ps_type_sizeof(typedef_record_decl_type(t));
+    *out_sizeof_size = ps_ctx_type_sizeof_in(
+        context, typedef_record_decl_type(t));
   return true;
 }
 
@@ -1459,8 +1431,6 @@ bool ps_ctx_find_typedef_name_in(
     char *name, int len, psx_typedef_info_t *out) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  ps_ctx_refresh_type_completeness_in(
-      context, typedef_record_decl_type_mut(t));
   if (out) {
     memset(out, 0, sizeof(*out));
     out->decl_type = typedef_record_decl_type(t);
@@ -1473,8 +1443,6 @@ bool ps_ctx_find_typedef_decl_type_in(
     char *name, int len, const psx_type_t **out_type) {
   typedef_name_t *t = find_typedef_in(context, name, len);
   if (!t) return false;
-  ps_ctx_refresh_type_completeness_in(
-      context, typedef_record_decl_type_mut(t));
   if (out_type) *out_type = typedef_record_decl_type(t);
   return true;
 }
@@ -1494,9 +1462,6 @@ bool ps_ctx_find_typedef_decl_type_at_in_contexts(
         !ps_local_registry_scope_is_visible_from_in(
             local_registry, type->scope_seq, point.scope_seq))
       continue;
-    ps_ctx_refresh_type_completeness_in(
-        context,
-        typedef_record_decl_type_mut(type));
     if (out_type) *out_type = typedef_record_decl_type(type);
     return true;
   }

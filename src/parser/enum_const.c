@@ -3,6 +3,7 @@
 #include "dynarray.h"
 #include "semantic_ctx.h"
 #include "../diag/diag.h"
+#include "../target_info.h"
 #include "../tokenizer/tokenizer.h"
 
 #include <stdlib.h>
@@ -271,7 +272,8 @@ static long long parse_unary_ctx(enum_const_eval_ctx_t *ctx) {
             set_curtok(ctx, curtok(ctx)->next);
         }
         while (curtok(ctx)->kind == TK_MUL) {
-          sz = 8;
+          sz = ag_target_info_pointer_size(
+              ps_ctx_target_info(ctx->semantic_context));
           set_curtok(ctx, curtok(ctx)->next);
         }
       }

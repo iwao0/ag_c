@@ -48,6 +48,10 @@ const psx_semantic_type_table_t *ps_ctx_semantic_type_table_in(
     const psx_semantic_context_t *context);
 const psx_record_layout_table_t *ps_ctx_record_layout_table_in(
     const psx_semantic_context_t *context);
+int ps_ctx_type_sizeof_in(
+    psx_semantic_context_t *context, const psx_type_t *type);
+int ps_ctx_type_alignof_in(
+    psx_semantic_context_t *context, const psx_type_t *type);
 int ps_ctx_publish_record_layout_in(
     psx_semantic_context_t *context, psx_record_id_t record_id,
     int size, int alignment);
@@ -153,8 +157,6 @@ int ps_ctx_register_record_members_in(
     const tag_member_info_t *members, int member_count,
     int *out_conflict_index);
 void ps_ctx_attach_aggregate_definitions_in(
-    psx_semantic_context_t *context, psx_type_t *type);
-void ps_ctx_refresh_type_completeness_in(
     psx_semantic_context_t *context, psx_type_t *type);
 void ps_ctx_promote_tag_to_file_scope_in(
     psx_semantic_context_t *context,

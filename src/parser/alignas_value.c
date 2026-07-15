@@ -1,6 +1,7 @@
 #include "alignas_value.h"
 #include "enum_const.h"
 #include "semantic_ctx.h"
+#include "../target_info.h"
 #include "../tokenizer/tokenizer.h"
 
 static inline token_t *curtok(tokenizer_context_t *tokenizer_context) {
@@ -34,9 +35,14 @@ int psx_parse_alignas_value_in_contexts(
     }
     val = elem_size;
     while (curtok(tokenizer_context)->kind != TK_RPAREN &&
-           curtok(tokenizer_context)->kind != TK_EOF)
+           curtok(tokenizer_context)->kind != TK_EOF) {
+      if (curtok(tokenizer_context)->kind == TK_MUL) {
+        val = ag_target_info_pointer_size(
+            ps_ctx_target_info(semantic_context));
+      }
       set_curtok(
           tokenizer_context, curtok(tokenizer_context)->next);
+    }
   } else {
     long long v = psx_parse_enum_const_expr_in_contexts(
         semantic_context, tokenizer_context);
@@ -64,6 +70,14 @@ int psx_eval_parsed_alignas_value_in_context(
       psx_ctx_get_type_info(start->kind, NULL, &elem_size);
     }
     value = elem_size;
+    for (token_t *token = start; token && token != end;
+         token = token->next) {
+      if (token->kind == TK_MUL) {
+        value = ag_target_info_pointer_size(
+            ps_ctx_target_info(semantic_context));
+        break;
+      }
+    }
   } else {
     long long parsed = psx_eval_parsed_enum_const_expr_in_context(
         semantic_context, start, end);

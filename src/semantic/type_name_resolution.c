@@ -111,7 +111,7 @@ const psx_type_t *psx_resolve_bound_type_name_ref_in_contexts(
           .base_type = type_name->bound_base_type,
           .declarator_shape = &shape,
       });
-  ps_ctx_refresh_type_completeness_in(semantic_context, resolved);
+  ps_ctx_attach_aggregate_definitions_in(semantic_context, resolved);
   type_name->resolved_type = resolved;
   return type_name->resolved_type;
 }

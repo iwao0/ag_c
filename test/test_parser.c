@@ -4,6 +4,7 @@
 #include "../src/codegen_emit.h"
 #include "../src/declaration_pipeline.h"
 #include "../src/parser/arena.h"
+#include "../src/parser/alignas_value.h"
 #include "../src/parser/decl.h"
 #include "../src/parser/declarator_shape_builder.h"
 #include "../src/parser/lvar_internal.h"
@@ -3279,6 +3280,26 @@ static void test_target_type_layout_boundary() {
                     types, pointer_array_identity.type_id, &host));
   ASSERT_EQ(12, ps_type_sizeof_id_for_target(
                     types, pointer_array_identity.type_id, &wasm));
+  psx_semantic_context_t *semantic_context = test_semantic_context();
+  token_t *pointer_type_tokens = tk_tokenize((char *)"int *)");
+  token_t *pointer_type_end = pointer_type_tokens;
+  while (pointer_type_end && pointer_type_end->kind != TK_RPAREN)
+    pointer_type_end = pointer_type_end->next;
+  ASSERT_TRUE(pointer_type_end != NULL);
+  ps_ctx_bind_target_info(semantic_context, &wasm);
+  ASSERT_EQ(12, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
+  ASSERT_EQ(4, ps_ctx_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(4, psx_eval_parsed_alignas_value_in_context(
+                   semantic_context, pointer_type_tokens,
+                   pointer_type_end));
+  ps_ctx_bind_target_info(semantic_context, &host);
+  ASSERT_EQ(24, ps_ctx_type_sizeof_in(semantic_context, pointer_array));
+  ASSERT_EQ(8, ps_ctx_type_alignof_in(semantic_context, pointer_array));
+  ASSERT_EQ(8, psx_eval_parsed_alignas_value_in_context(
+                   semantic_context, pointer_type_tokens,
+                   pointer_type_end));
+  ASSERT_EQ(0, pointer->size);
+  ASSERT_EQ(0, pointer->align);
 
   psx_record_decl_t *record = arena_alloc_in(
       test_arena_context(), sizeof(*record));

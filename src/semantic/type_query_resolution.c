@@ -12,35 +12,19 @@
 #include "../parser/node_utils.h"
 #include "../parser/semantic_ctx.h"
 #include "../parser/type_builder.h"
-#include "../type_layout.h"
 
 #include <string.h>
-
-static psx_type_id_t query_type_id(
-    psx_semantic_context_t *semantic_context,
-    const psx_type_t *type) {
-  return ps_ctx_intern_qual_type_in(
-      semantic_context, type).type_id;
-}
 
 static int query_type_size(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *type) {
-  return ps_type_sizeof_id_with_records(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context),
-      query_type_id(semantic_context, type),
-      ps_ctx_target_info(semantic_context));
+  return ps_ctx_type_sizeof_in(semantic_context, type);
 }
 
 static int query_type_alignment(
     psx_semantic_context_t *semantic_context,
     const psx_type_t *type) {
-  return ps_type_alignof_id_with_records(
-      ps_ctx_semantic_type_table_in(semantic_context),
-      ps_ctx_record_layout_table_in(semantic_context),
-      query_type_id(semantic_context, type),
-      ps_ctx_target_info(semantic_context));
+  return ps_ctx_type_alignof_in(semantic_context, type);
 }
 
 static node_t *sizeof_base(node_t *operand, int *subscript_depth) {
@@ -140,7 +124,7 @@ static void resolve_sizeof_type_name(
           .base_type = base_type,
           .declarator_shape = shape,
       });
-  ps_ctx_refresh_type_completeness_in(
+  ps_ctx_attach_aggregate_definitions_in(
       semantic_context, resolved_type);
   query->type_name.resolved_type = resolved_type;
   if (!query->type_name.resolved_type) {
@@ -249,7 +233,7 @@ void psx_resolve_sizeof_query_in_contexts(
   if (!query->is_type_name && type) {
     psx_type_t *completed_view = ps_type_clone_in(
         ps_ctx_arena(semantic_context), type);
-    ps_ctx_refresh_type_completeness_in(
+    ps_ctx_attach_aggregate_definitions_in(
         semantic_context, completed_view);
     type = completed_view;
   }
