@@ -1831,10 +1831,16 @@ const typeQueryResolutionSource = await readFile(
   "utf8",
 );
 if (!/\bps_ctx_intern_qual_type_in\s*\(/.test(typeQueryResolutionSource) ||
-    !/\bps_type_sizeof_id_for_target\s*\(/.test(
+    !/\bps_type_sizeof_id_with_records\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
-    !/\bps_type_alignof_id_for_target\s*\(/.test(
+    !/\bps_type_alignof_id_with_records\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    !/\bps_ctx_record_layout_table_in\s*\(/.test(
+      typeQueryResolutionSource,
+    ) ||
+    /\bps_type_(?:size|align)of_id_for_target\s*\(/.test(
       typeQueryResolutionSource,
     ) ||
     /\bps_type_(?:size|align)of_for_target\s*\(/.test(
