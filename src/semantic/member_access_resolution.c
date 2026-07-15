@@ -28,6 +28,20 @@ static int aggregate_member_index(
   return -1;
 }
 
+static const tag_member_info_t *aggregate_member_named(
+    const psx_record_decl_t *record, const char *member_name,
+    int member_name_len) {
+  if (!record || !record->members || !member_name || member_name_len <= 0)
+    return NULL;
+  for (int i = 0; i < record->member_count; i++) {
+    const tag_member_info_t *member = &record->members[i];
+    if (member->name && member->len == member_name_len &&
+        memcmp(member->name, member_name, (size_t)member_name_len) == 0)
+      return member;
+  }
+  return NULL;
+}
+
 void psx_resolve_member_access(
     const psx_member_access_resolution_request_t *request,
     psx_member_access_resolution_t *resolution) {
@@ -58,17 +72,16 @@ void psx_resolve_member_access(
     return;
   }
   resolution->base_object_type = object_type;
-  const psx_record_decl_t *record = object_type->aggregate_definition;
-  resolution->record_id = record ? record->record_id : object_type->record_id;
   psx_semantic_context_t *semantic_context = request->semantic_context;
+  resolution->record_id = ps_type_record_id(object_type);
+  const psx_record_decl_t *record = ps_ctx_get_record_decl_in(
+      semantic_context, resolution->record_id);
 
-  const tag_member_info_t *member = ps_type_find_aggregate_member(
-      base_type, object_type->tag_kind,
-      object_type->tag_name, object_type->tag_len,
-      request->member_name, request->member_name_len);
+  const tag_member_info_t *member = aggregate_member_named(
+      record, request->member_name, request->member_name_len);
   if (member) {
     resolution->member_index = aggregate_member_index(
-        object_type->aggregate_definition, member,
+        record, member,
         request->member_name, request->member_name_len);
     resolution->member = *member;
     resolution->status = PSX_MEMBER_ACCESS_OK;
@@ -95,7 +108,7 @@ void psx_resolve_member_access(
                              : PSX_MEMBER_ACCESS_NOT_FOUND;
   if (found) {
     resolution->member_index = aggregate_member_index(
-        object_type->aggregate_definition, &resolution->member,
+        record, &resolution->member,
         request->member_name, request->member_name_len);
   }
 }

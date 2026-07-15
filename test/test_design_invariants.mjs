@@ -1888,6 +1888,13 @@ const memberAccessTargetLoweringSource = await readFile(
 if (/\bpsx_record_layout_(?:table_lookup|member)\s*\(/.test(
       memberAccessResolutionSource,
     ) ||
+    /\baggregate_definition\b/.test(memberAccessResolutionSource) ||
+    /\bps_type_find_aggregate_member\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
+    !/\bps_ctx_get_record_decl_in\s*\(/.test(
+      memberAccessResolutionSource,
+    ) ||
     !/resolution->member_index\s*=\s*aggregate_member_index/.test(
       memberAccessResolutionSource,
     ) ||

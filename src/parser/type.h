@@ -149,10 +149,6 @@ int ps_type_tag_identity_matches(const psx_type_t *a,
                                  const psx_type_t *b);
 psx_record_id_t ps_type_record_id(const psx_type_t *type);
 int ps_type_is_well_formed(const psx_type_t *type);
-const struct tag_member_info_t *ps_type_find_aggregate_member(
-    const psx_type_t *type, token_kind_t tag_kind,
-    const char *tag_name, int tag_len,
-    const char *member_name, int member_len);
 int ps_type_shape_matches(const psx_type_t *a, const psx_type_t *b);
 /* Compares C type meaning while excluding top-level qualifiers and target
  * layout. Recursive child qualifiers remain part of the containing type. */

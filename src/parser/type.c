@@ -1319,32 +1319,6 @@ const psx_type_t *ps_type_find_aggregate_object_type(
   return NULL;
 }
 
-const tag_member_info_t *ps_type_find_aggregate_member(
-    const psx_type_t *type, token_kind_t tag_kind,
-    const char *tag_name, int tag_len,
-    const char *member_name, int member_len) {
-  for (const psx_type_t *cursor = type; cursor; cursor = cursor->base) {
-    if (!ps_type_is_tag_aggregate(cursor) ||
-        cursor->tag_kind != tag_kind || cursor->tag_len != tag_len)
-      continue;
-    if (tag_len > 0 &&
-        (!cursor->tag_name || !tag_name ||
-         strncmp(cursor->tag_name, tag_name, (size_t)tag_len) != 0))
-      continue;
-    const psx_aggregate_definition_t *definition =
-        cursor->aggregate_definition;
-    if (!definition) return NULL;
-    for (int i = 0; i < definition->member_count; i++) {
-      const tag_member_info_t *member = &definition->members[i];
-      if (member->len == member_len && member->name && member_name &&
-          strncmp(member->name, member_name, (size_t)member_len) == 0)
-        return member;
-    }
-    return NULL;
-  }
-  return NULL;
-}
-
 int ps_type_pointer_depth(const psx_type_t *type) {
   int depth = 0;
   while (type && type->kind == PSX_TYPE_POINTER) {

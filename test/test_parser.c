@@ -8394,11 +8394,14 @@ static void test_expr_member_access() {
   lvar_t *anonymous_static = find_func_lvar(fn, "s");
   ASSERT_TRUE(anonymous_static != NULL);
   ASSERT_TRUE(anonymous_static->decl_type != NULL);
-  ASSERT_TRUE(anonymous_static->decl_type->aggregate_definition != NULL);
-  ASSERT_TRUE(ps_type_find_aggregate_member(
-                  anonymous_static->decl_type, TK_STRUCT,
-                  anonymous_static->decl_type->tag_name,
-                  anonymous_static->decl_type->tag_len, "n", 1) != NULL);
+  const psx_record_decl_t *anonymous_record = ps_ctx_get_record_decl_in(
+      test_semantic_context(),
+      ps_type_record_id(anonymous_static->decl_type));
+  ASSERT_TRUE(anonymous_record != NULL);
+  ASSERT_TRUE(anonymous_record->member_count == 2);
+  ASSERT_TRUE(anonymous_record->members[0].name != NULL);
+  ASSERT_TRUE(anonymous_record->members[0].len == 1);
+  ASSERT_TRUE(memcmp(anonymous_record->members[0].name, "n", 1) == 0);
 
   parsed_code = parse_program_input(
       "typedef unsigned char u8; "
