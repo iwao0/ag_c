@@ -2725,6 +2725,31 @@ if (resolvedRecordMemberHelpers.some((source) => !source) ||
     "resolved RecordDecl traversal must keep member declarations separate from target layouts",
   );
 }
+const splitTagTraversalFunctions = [
+  "ps_tag_flat_cover_state_note_in",
+  "ps_tag_find_unnamed_union_covering_offset_in",
+  "ps_tag_flat_slot_count_in",
+  "ps_tag_member_at_flat_slot_in",
+  "ps_tag_next_named_member_in",
+  "ps_tag_find_named_member_in",
+  "ps_tag_select_union_member_for_init_slot_in",
+  "ps_tag_union_init_member_for_slot_in",
+  "ps_tag_member_designator_slot_in",
+].map((name) =>
+  nodeUtilsSource.match(
+    new RegExp(`(?:void|int)\\s+${name}\\s*\\([^]*?\\n\\}`),
+  )?.[0]
+);
+const splitTagTraversalSource = splitTagTraversalFunctions.join("\n");
+if (splitTagTraversalFunctions.some((source) => !source) ||
+    /\btag_member_info_t\b|\bctx_get_tag_member_compat_view\s*\(|\bsplit_tag_member_compat_view\s*\(/.test(
+      splitTagTraversalSource,
+    ) ||
+    !/\bps_ctx_get_tag_member_in\s*\(/.test(splitTagTraversalSource)) {
+  throw new Error(
+    "tag lookup and flat-slot traversal must process declarations and target layouts directly",
+  );
+}
 const initializerLoweringSourceForLocalLayout = await readFile(
   "src/lowering/initializer_lowering.c",
   "utf8",
