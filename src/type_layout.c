@@ -5,7 +5,7 @@
 #include <limits.h>
 #include <string.h>
 
-static int layout_of(
+static int layout_non_array(
     const psx_type_t *type, const ag_target_info_t *target,
     psx_type_layout_t *out) {
   if (!type || !out) return 0;
@@ -22,18 +22,8 @@ static int layout_of(
       out->alignment = out->size;
       out->is_complete = 1;
       return 1;
-    case PSX_TYPE_ARRAY: {
-      psx_type_layout_t element = {0};
-      if (!layout_of(type->base, target, &element)) return 0;
-      out->alignment = element.alignment;
-      if (!element.is_complete || type->is_vla || type->array_len <= 0)
-        return 1;
-      if (element.size > 0 && type->array_len > INT_MAX / element.size)
-        return 0;
-      out->size = type->array_len * element.size;
-      out->is_complete = 1;
-      return 1;
-    }
+    case PSX_TYPE_ARRAY:
+      return 0;
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
       if (type->aggregate_definition) {
@@ -54,6 +44,48 @@ static int layout_of(
       out->is_complete = type->size > 0;
       return 1;
   }
+}
+
+static int complete_array_layout(
+    const psx_type_t *array_type, const psx_type_layout_t *element,
+    psx_type_layout_t *out) {
+  if (!array_type || !element || !out) return 0;
+  memset(out, 0, sizeof(*out));
+  out->alignment = element->alignment;
+  if (!element->is_complete || array_type->is_vla ||
+      array_type->array_len <= 0)
+    return 1;
+  if (element->size > 0 &&
+      array_type->array_len > INT_MAX / element->size)
+    return 0;
+  out->size = array_type->array_len * element->size;
+  out->is_complete = 1;
+  return 1;
+}
+
+static int layout_of(
+    const psx_type_t *type, const ag_target_info_t *target,
+    psx_type_layout_t *out) {
+  if (!type || !out) return 0;
+  if (type->kind != PSX_TYPE_ARRAY)
+    return layout_non_array(type, target, out);
+  psx_type_layout_t element = {0};
+  if (!layout_of(type->base, target, &element)) return 0;
+  return complete_array_layout(type, &element, out);
+}
+
+static int layout_of_id(
+    const psx_semantic_type_table_t *types, psx_type_id_t type_id,
+    const ag_target_info_t *target, psx_type_layout_t *out) {
+  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
+  if (!type || !out) return 0;
+  if (type->kind != PSX_TYPE_ARRAY)
+    return layout_non_array(type, target, out);
+  psx_type_id_t element_type_id = psx_semantic_type_table_base(
+      types, type_id).type_id;
+  psx_type_layout_t element = {0};
+  if (!layout_of_id(types, element_type_id, target, &element)) return 0;
+  return complete_array_layout(type, &element, out);
 }
 
 int ps_type_layout_of(
@@ -81,8 +113,7 @@ int ps_type_alignof_for_target(
 int ps_type_layout_of_id(
     const psx_semantic_type_table_t *types, psx_type_id_t type_id,
     const ag_target_info_t *target, psx_type_layout_t *out) {
-  const psx_type_t *type = psx_semantic_type_table_lookup(types, type_id);
-  return type ? ps_type_layout_of(type, target, out) : 0;
+  return layout_of_id(types, type_id, target, out);
 }
 
 int ps_type_sizeof_id_for_target(
