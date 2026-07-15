@@ -13,16 +13,6 @@ typedef struct {
   unsigned char is_complete;
 } psx_type_layout_t;
 
-/* Computes object layout from semantic type identity and an explicit target.
- * Target-dependent code must use this API instead of psx_type_t::size/align. */
-int ps_type_layout_of(
-    const psx_type_t *type, const ag_target_info_t *target,
-    psx_type_layout_t *out);
-int ps_type_sizeof_for_target(
-    const psx_type_t *type, const ag_target_info_t *target);
-int ps_type_alignof_for_target(
-    const psx_type_t *type, const ag_target_info_t *target);
-
 /* Layout boundary for resolved semantic types. The TypeId carries C type
  * identity; all ABI-dependent values come from the explicit target. */
 int ps_type_layout_of_id(

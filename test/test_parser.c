@@ -139,6 +139,18 @@ static arena_context_t *test_arena_context(void) {
       ps_ctx_target_info(test_semantic_context()), __VA_ARGS__)
 #define ps_type_format_canonical_signature(...) \
   test_type_format_canonical_signature(__VA_ARGS__)
+#define ps_type_layout_of(...) test_type_layout_of(__VA_ARGS__)
+#define ps_type_sizeof_for_target(...) \
+  test_type_sizeof_for_target(__VA_ARGS__)
+#define ps_type_alignof_for_target(...) \
+  test_type_alignof_for_target(__VA_ARGS__)
+static int test_type_layout_of(
+    const psx_type_t *type, const ag_target_info_t *target,
+    psx_type_layout_t *out);
+static int test_type_sizeof_for_target(
+    const psx_type_t *type, const ag_target_info_t *target);
+static int test_type_alignof_for_target(
+    const psx_type_t *type, const ag_target_info_t *target);
 #define ps_type_address_result(...) \
   ps_type_address_result_in(test_arena_context(), __VA_ARGS__)
 #define ps_type_decay_array(...) \
@@ -1204,6 +1216,35 @@ static node_case_t *as_case(node_t *n) { return (node_case_t *)n; }
 static int test_type_sizeof(const psx_type_t *type) {
   ag_target_info_t target = ag_target_info_host();
   return ps_type_sizeof_for_target(type, &target);
+}
+
+static int test_type_layout_of(
+    const psx_type_t *type, const ag_target_info_t *target,
+    psx_type_layout_t *out) {
+  psx_semantic_type_table_t *types = psx_semantic_type_table_create();
+  if (!types) return 0;
+  psx_qual_type_t identity = psx_semantic_type_table_intern(types, type);
+  int resolved = identity.type_id != PSX_TYPE_ID_INVALID &&
+                 ps_type_layout_of_id(
+                     types, identity.type_id, target, out);
+  psx_semantic_type_table_destroy(types);
+  return resolved;
+}
+
+static int test_type_sizeof_for_target(
+    const psx_type_t *type, const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return test_type_layout_of(type, target, &layout) && layout.is_complete
+             ? layout.size
+             : 0;
+}
+
+static int test_type_alignof_for_target(
+    const psx_type_t *type, const ag_target_info_t *target) {
+  psx_type_layout_t layout = {0};
+  return test_type_layout_of(type, target, &layout)
+             ? layout.alignment
+             : 0;
 }
 
 static int test_type_format_canonical_signature(
@@ -10299,10 +10340,10 @@ static void test_type_metadata_bridge() {
   ASSERT_TRUE(!canonical_node_pointee_is_bool(&typed_stale_pointee_flags_mem));
   ASSERT_TRUE(!canonical_node_pointee_is_void(&typed_stale_pointee_flags_mem));
 
-  node_t typed_missing_size_mem = {0};
-  typed_missing_size_mem.kind = ND_LVAR;
-  typed_missing_size_mem.type = ps_type_new(PSX_TYPE_INTEGER);
-  ASSERT_EQ(0, ps_node_type_size(&typed_missing_size_mem));
+  node_t typed_default_int_mem = {0};
+  typed_default_int_mem.kind = ND_LVAR;
+  typed_default_int_mem.type = ps_type_new(PSX_TYPE_INTEGER);
+  ASSERT_EQ(4, ps_node_type_size(&typed_default_int_mem));
 
   node_t typed_unsigned_mem = {0};
   typed_unsigned_mem.kind = ND_LVAR;

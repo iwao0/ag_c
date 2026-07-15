@@ -3441,16 +3441,20 @@ if (!tagTypeStruct ||
 }
 
 const typeLayoutSource = await readFile("src/type_layout.c", "utf8");
+const typeLayoutHeader = await readFile("src/type_layout.h", "utf8");
 const typeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id\s*\([^]*?\n\}/,
 );
 const recordTypeIdLayoutFunction = typeLayoutSource.match(
   /int\s+ps_type_layout_of_id_with_records\s*\([^]*?\n\}/,
 );
-if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
-    !/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
+if (!/\bps_type_layout_of_id\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_lookup\s*\(/.test(typeLayoutSource) ||
     !/\bpsx_semantic_type_table_base\s*\(/.test(typeLayoutSource) ||
+    /\baggregate_definition\b/.test(typeLayoutSource) ||
+    /\bps_type_(?:layout_of|sizeof_for_target|alignof_for_target)\s*\(/.test(
+      `${typeLayoutHeader}\n${typeLayoutSource}`,
+    ) ||
     /\btype\s*->\s*(?:size|align)\b/.test(typeLayoutSource) ||
     !typeIdLayoutFunction ||
     !/\blayout_of_id\s*\(/.test(typeIdLayoutFunction[0]) ||
@@ -3462,7 +3466,7 @@ if (!/aggregate_definition->is_complete/.test(typeLayoutSource) ||
       typeLayoutSource,
     )) {
   throw new Error(
-    "layout must resolve TypeId with an explicit target and get record completeness from RecordDecl",
+    "layout must resolve TypeId with an explicit target and get record completeness from RecordLayoutTable",
   );
 }
 if (!recordTypeIdLayoutFunction ||

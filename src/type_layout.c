@@ -80,8 +80,6 @@ static int layout_non_array(
       return layout_scalar(type, target, out);
     case PSX_TYPE_STRUCT:
     case PSX_TYPE_UNION:
-      out->is_complete = type->aggregate_definition &&
-                         type->aggregate_definition->is_complete;
       return 1;
     default:
       return 0;
@@ -124,17 +122,6 @@ static int complete_array_layout(
   return 1;
 }
 
-static int layout_of(
-    const psx_type_t *type, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
-  if (!type || !out) return 0;
-  if (type->kind != PSX_TYPE_ARRAY)
-    return layout_non_array(type, target, out);
-  psx_type_layout_t element = {0};
-  if (!layout_of(type->base, target, &element)) return 0;
-  return complete_array_layout(type, &element, out);
-}
-
 static int layout_of_id(
     const psx_semantic_type_table_t *types, psx_type_id_t type_id,
     const ag_target_info_t *target, psx_type_layout_t *out) {
@@ -166,28 +153,6 @@ static int layout_of_id_with_records(
           types, record_layouts, element_type_id, target, &element))
     return 0;
   return complete_array_layout(type, &element, out);
-}
-
-int ps_type_layout_of(
-    const psx_type_t *type, const ag_target_info_t *target,
-    psx_type_layout_t *out) {
-  return layout_of(type, target, out);
-}
-
-int ps_type_sizeof_for_target(
-    const psx_type_t *type, const ag_target_info_t *target) {
-  psx_type_layout_t layout = {0};
-  return ps_type_layout_of(type, target, &layout) && layout.is_complete
-             ? layout.size
-             : 0;
-}
-
-int ps_type_alignof_for_target(
-    const psx_type_t *type, const ag_target_info_t *target) {
-  psx_type_layout_t layout = {0};
-  return ps_type_layout_of(type, target, &layout)
-             ? layout.alignment
-             : 0;
 }
 
 int ps_type_layout_of_id(
